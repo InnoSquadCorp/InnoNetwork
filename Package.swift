@@ -20,6 +20,10 @@ let package = Package(
             name: "InnoNetworkDownload",
             targets: ["InnoNetworkDownload"]
         ),
+        .library(
+            name: "InnoNetworkWebSocket",
+            targets: ["InnoNetworkWebSocket"]
+        ),
     ],
     targets: [
         .target(
@@ -31,6 +35,11 @@ let package = Package(
             dependencies: ["InnoNetwork"],
             path: "Sources/InnoNetworkDownload"
         ),
+        .target(
+            name: "InnoNetworkWebSocket",
+            dependencies: ["InnoNetwork"],
+            path: "Sources/InnoNetworkWebSocket"
+        ),
         .testTarget(
             name: "InnoNetworkTests",
             dependencies: ["InnoNetwork"],
@@ -40,6 +49,11 @@ let package = Package(
             name: "InnoNetworkDownloadTests",
             dependencies: ["InnoNetworkDownload"],
             path: "Tests/InnoNetworkDownloadTests"
+        ),
+        .testTarget(
+            name: "InnoNetworkWebSocketTests",
+            dependencies: ["InnoNetworkWebSocket"],
+            path: "Tests/InnoNetworkWebSocketTests"
         ),
     ]
 )
