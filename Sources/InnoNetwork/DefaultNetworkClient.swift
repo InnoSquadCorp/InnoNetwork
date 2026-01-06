@@ -207,12 +207,22 @@ extension APIDefinition {
     }
 
     func decode(data: Data, response: Response) throws -> Self.APIResponse {
-        if Self.APIResponse.self == EmptyResponse.self && (data.isEmpty || response.statusCode == 204) {
-            return EmptyResponse() as! Self.APIResponse
-        }
-        
         do {
             return try decoder.decode(Self.APIResponse.self, from: data)
+        } catch {
+            throw NetworkError.objectMapping(error, response)
+        }
+    }
+}
+
+
+extension APIDefinition where APIResponse == EmptyResponse {
+    func decode(data: Data, response: Response) throws -> EmptyResponse {
+        if data.isEmpty || response.statusCode == 204 {
+            return EmptyResponse()
+        }
+        do {
+            return try decoder.decode(EmptyResponse.self, from: data)
         } catch {
             throw NetworkError.objectMapping(error, response)
         }
@@ -234,12 +244,22 @@ extension MultipartAPIDefinition {
     }
 
     func decode(data: Data, response: Response) throws -> Self.APIResponse {
-        if Self.APIResponse.self == EmptyResponse.self && (data.isEmpty || response.statusCode == 204) {
-            return EmptyResponse() as! Self.APIResponse
-        }
-        
         do {
             return try decoder.decode(Self.APIResponse.self, from: data)
+        } catch {
+            throw NetworkError.objectMapping(error, response)
+        }
+    }
+}
+
+
+extension MultipartAPIDefinition where APIResponse == EmptyResponse {
+    func decode(data: Data, response: Response) throws -> EmptyResponse {
+        if data.isEmpty || response.statusCode == 204 {
+            return EmptyResponse()
+        }
+        do {
+            return try decoder.decode(EmptyResponse.self, from: data)
         } catch {
             throw NetworkError.objectMapping(error, response)
         }
