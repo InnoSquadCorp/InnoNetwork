@@ -1,0 +1,263 @@
+---
+description: "InnoNetwork 프레임워크 아키텍처, API 정의, async/await 패턴, Sendable 준수, 스레드 안전성."
+globs: ["Sources/**/*.swift"]
+alwaysApply: false
+---
+
+# InnoNetwork Framework Architecture
+
+## 프로젝트 개요
+
+InnoNetwork는 타입-세이프 Swift 네트워크 라이브러리입니다:
+
+- **Core REST API**: JSON, Form URL-encoded, Multipart/Form-data
+- **Download Module**: 백그라운드 다운로드, 일시정지/재개, AsyncSequence 이벤트
+- **Swift 6.2 Concurrency**: Full Sendable compliance
+
+## 아키텍처
+
+### 코어 컴포넌트
+
+- **APIConfigure**: 기본 API 설정 (host, basePath, baseURL)
+- **APIDefinition**: 단일 API 엔드포인트 프로토콜
+- **MultipartAPIDefinition**: 파일 업로드용 멀티파트 프로토콜
+- **DefaultNetworkClient**: 네트워크 요청 수행 클라이언트
+- **NetworkConfiguration**: 네트워크 설정 (timeout, cache, retry)
+
+### 다운로드 컴포넌트 (InnoNetworkDownload)
+
+- **DownloadManager**: 다운로드 관리 (async callbacks + AsyncSequence)
+- **DownloadTask**: 개별 다운로드 작업 (actor 기반)
+- **DownloadConfiguration**: 다운로드 설정
+- **DownloadState**: 상태 열거형
+- **DownloadEvent**: AsyncSequence 이벤트
+
+## 데이터 흐름
+
+### 요청 흐름
+
+1. **Request Build**: `APIDefinition`이 `URLRequest`로 변환
+2. **Request Interception**: 인터셉터로 요청 수정
+3. **Network Request**: `URLSession`을 통해 실제 요청 전송
+4. **Response Interception**: 인터셉터로 응답 수정
+5. **Response Decoding**: 응답 데이터를 `APIResponse` 타입으로 디코딩
+6. **Return**: 결과를 호출자에게 반환
+
+### 에러 처리 흐름
+
+1. **Error Detection**: `NetworkError`로 변환
+2. **Retry Decision**: `RetryPolicy`에 따라 재시도 여부 결정
+3. **Delay**: `retryDelay`만큼 대기
+4. **Retry**: 재시도 시도
+5. **Throw**: 최종 에러 던짐
+
+## API 정의 패턴
+
+### 기본 GET 요청
+
+```swift
+struct GetUser: APIDefinition {
+    typealias Parameter = EmptyParameter
+    typealias APIResponse = User
+
+    var method: HTTPMethod { .get }
+    var path: String { "/user/\(id)" }
+    let id: Int
+
+    init(id: Int) { self.id = id }
+}
+
+let user = try await client.request(GetUser(id: 1))
+```
+
+### 파라미터 있는 요청
+
+```swift
+struct CreatePost: APIDefinition {
+    struct PostParameter: Encodable, Sendable {
+        let title: String
+        let body: String
+    }
+
+    typealias Parameter = PostParameter
+    typealias APIResponse = Post
+
+    let parameters: PostParameter?
+    var method: HTTPMethod { .post }
+    var path: String { "/posts" }
+
+    init(title: String, body: String) {
+        self.parameters = PostParameter(title: title, body: body)
+    }
+}
+```
+
+### Form URL-encoded
+
+```swift
+struct LoginRequest: APIDefinition {
+    struct LoginParameter: Encodable, Sendable {
+        let email: String
+        let password: String
+    }
+
+    typealias Parameter = LoginParameter
+    typealias APIResponse = AuthResponse
+
+    let parameters: LoginParameter?
+    var method: HTTPMethod { .post }
+    var path: String { "/login" }
+    var contentType: ContentType { .formUrlEncoded }
+
+    init(email: String, password: String) {
+        self.parameters = LoginParameter(email: email, password: password)
+    }
+}
+```
+
+### Multipart/Form-data 업로드
+
+```swift
+struct UploadImage: MultipartAPIDefinition {
+    typealias APIResponse = UploadResponse
+
+    var multipartFormData: MultipartFormData {
+        MultipartFormData()
+            .addText(name: "title", value: "My Image")
+            .addFile(data: imageData, fileName: "image.jpg", name: "file", mimeType: "image/jpeg")
+    }
+
+    var method: HTTPMethod { .post }
+    var path: String { "/upload" }
+    let imageData: Data
+
+    init(imageData: Data) { self.imageData = imageData }
+}
+
+let response = try await client.upload(UploadImage(imageData: data))
+```
+
+### 커스텀 헤더
+
+```swift
+struct GetPosts: APIDefinition {
+    var headers: HTTPHeaders {
+        var customHeaders = HTTPHeaders.default
+        customHeaders.add(.authorization(bearerToken: "token"))
+        return customHeaders
+    }
+    // ...
+}
+```
+
+### 인터셉터 사용
+
+```swift
+struct AuthInterceptor: RequestInterceptor {
+    func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
+        var request = urlRequest
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+}
+
+struct GetProfile: APIDefinition {
+    var requestInterceptors: [RequestInterceptor] { [AuthInterceptor()] }
+    // ...
+}
+```
+
+## 다운로드 (AsyncSequence)
+
+```swift
+let manager = DownloadManager.shared
+let task = await manager.download(url: url, to: destination)
+
+// AsyncSequence 이벤트 스트림
+for await event in manager.events(for: task) {
+    switch event {
+    case .progress(let progress):
+        print(progress.percentCompleted)
+    case .completed(let url):
+        print("Downloaded: \(url)")
+    case .failed(let error):
+        print("Failed: \(error)")
+    default:
+        break
+    }
+}
+
+// 또는 콜백 사용
+manager.onProgress = { task, progress in
+    print(progress.percentCompleted)
+}
+
+// 제어
+await manager.pause(task)
+await manager.resume(task)
+await manager.cancel(task)
+```
+
+## 스레드 안전성
+
+### Actor 사용
+
+DownloadTask와 내부 스토리지는 actor로 구현:
+
+```swift
+public actor DownloadTask: Identifiable {
+    private var _state: DownloadState = .idle
+    private var _progress: DownloadProgress = .zero
+    // ...
+}
+```
+
+### Sendable 준수
+
+네트워크 관련 타입은 Sendable을 준수:
+
+```swift
+public protocol APIDefinition: Sendable {
+    associatedtype Parameter: Encodable & Sendable
+    associatedtype APIResponse: Decodable & Sendable
+}
+
+public protocol NetworkClient: Sendable {
+    func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse
+}
+```
+
+## 모듈 구조
+
+```
+InnoNetwork/
+├── Package.swift
+├── Sources/
+│   ├── InnoNetwork/              # Core (REST API)
+│   │   ├── API.swift
+│   │   ├── APIDefinition.swift   # APIDefinition, MultipartAPIDefinition
+│   │   ├── DefaultNetworkClient.swift
+│   │   ├── NetworkConfiguration.swift
+│   │   ├── RequestInterceptor.swift
+│   │   ├── ResponseInterceptor.swift
+│   │   ├── NetworkError.swift
+│   │   ├── NetworkLogger.swift
+│   │   ├── Encodable+.swift      # Form URL-encoded 지원
+│   │   ├── URLSessionProtocol.swift
+│   │   └── Model/
+│   │       ├── MultipartFormData.swift
+│   │       ├── Response.swift
+│   │       ├── EmptyParameter.swift
+│   │       └── EmptyResponse.swift
+│   │
+│   └── InnoNetworkDownload/      # Download 모듈 (별도 product)
+│       ├── DownloadManager.swift
+│       ├── DownloadTask.swift    # actor 기반
+│       ├── DownloadConfiguration.swift
+│       ├── DownloadState.swift
+│       └── DownloadSessionDelegate.swift
+│
+└── Tests/
+    ├── InnoNetworkTests/
+    └── InnoNetworkDownloadTests/
+```

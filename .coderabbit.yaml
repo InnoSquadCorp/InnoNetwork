@@ -1,0 +1,48 @@
+# CodeRabbit Configuration for InnoFlow
+# See https://docs.coderabbit.ai for more options
+
+# Language settings
+language: ko-KR  # 한국어로 리뷰 및 응답
+
+# Review settings
+reviews:
+  # Review style: 'chill' (friendly) or 'assertive' (strict)
+  profile: chill
+  
+  # Add high-level summary to PR description
+  high_level_summary: true
+  
+  # Review comment style
+  comment_mode: concise  # 'concise' or 'verbose'
+  
+  # Paths to ignore
+  ignore:
+    - "**/*.xcodeproj/**"
+    - "**/*.xcworkspace/**"
+    - "**/xcuserdata/**"
+    # Examples directory는 리뷰에서 제외 (선택사항)
+    # - "Examples/**"
+  
+  # Paths to focus on
+  focus:
+    - "Sources/**"
+    - "Tests/**"
+    - "Package.swift"
+  
+  # Review categories to enable
+  review_categories:
+    - security
+    - performance
+    - best_practices
+    - code_quality
+    - documentation
+    - testing
+
+# Chat settings (for PR comments)
+chat:
+  # Enable chat in PR comments
+  enabled: true
+  
+  # Auto-reply to comments
+  auto_reply: true
+

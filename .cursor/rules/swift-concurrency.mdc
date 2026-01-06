@@ -1,0 +1,259 @@
+---
+description: "Swift Concurrency 가이드라인, Actor 기반 타입, async/await 패턴, Sendable 준수, structured concurrency. 비동기 코드, Actor 사용, 동시 작업 시 적용."
+globs: ["Sources/**/*.swift"]
+alwaysApply: false
+---
+
+# Swift Concurrency Guidelines for InnoNetwork
+
+## Actor Isolation (Swift 6 Strict Mode)
+
+모든 코드는 Swift 6 엄격한 동시성 규칙을 따라야 합니다.
+
+### DownloadTask는 Actor
+
+DownloadTask는 actor로 구현하여 스레드 안전성을 보장합니다:
+
+```swift
+public actor DownloadTask: Identifiable {
+    private var _state: DownloadState = .idle
+    private var _progress: DownloadProgress = .zero
+    private var _retryCount: Int = 0
+    private var _resumeData: Data?
+    private var _error: DownloadError?
+
+    var state: DownloadState { _state }
+    var progress: DownloadProgress { _progress }
+    // ...
+}
+```
+
+### DownloadStorage는 Actor
+
+내부 스토리지도 actor로 관리:
+
+```swift
+private actor DownloadStorage {
+    private var tasks: [String: DownloadTask] = [:]
+    private var identifierToTask: [Int: DownloadTask] = [:]
+    private var eventListeners: [String: @Sendable (DownloadEvent) -> Void] = [:]
+    // ...
+}
+```
+
+## Async/Await Patterns
+
+### 네트워크 요청
+
+네트워크 요청은 async/await 사용:
+
+```swift
+let user = try await client.request(GetUser(id: 1))
+
+// 에러 처리
+do {
+    let response = try await client.request(api)
+} catch let error as NetworkError {
+    switch error {
+    case .statusCode(let response):
+        print("HTTP Error: \(response.statusCode)")
+    case .underlying(let error, _):
+        print("Network Error: \(error)")
+    case .cancelled:
+        print("Request cancelled")
+    default:
+        break
+    }
+}
+```
+
+### AsyncSequence 이벤트 스트림
+
+다운로드 이벤트는 AsyncSequence로 수신:
+
+```swift
+for await event in manager.events(for: task) {
+    switch event {
+    case .progress(let progress):
+        print("Progress: \(progress.percentCompleted)%")
+    case .completed(let url):
+        print("Downloaded: \(url)")
+    case .failed(let error):
+        print("Failed: \(error)")
+    case .stateChanged(let state):
+        print("State: \(state)")
+    }
+}
+```
+
+### Task 사용
+
+비동기 작업은 structured concurrency 사용:
+
+```swift
+// ✅ 올바른 예시
+Task {
+    let task = await manager.download(url: url, to: destination)
+    // ...
+}
+
+// 백그라운드에서 작업
+Task.detached {
+    let result = try await self.fetchData()
+    await MainActor.run {
+        self.data = result
+    }
+}
+```
+
+## Structured Concurrency
+
+### 태스크 취소
+
+네트워크 요청은 Task.checkCancellation() 사용:
+
+```swift
+private func executeRequest<T: APIDefinition>(
+    _ apiDefinition: T,
+    configuration: NetworkConfiguration
+) async throws -> T.APIResponse {
+    try Task.checkCancellation()
+
+    do {
+        let urlRequest = try apiDefinition.asURLRequest(configuration: configuration)
+        let (data, response) = try await session.data(for: urlRequest)
+
+        try Task.checkCancellation()
+        // ...
+    }
+}
+```
+
+## Sendable 준수
+
+### 프로토콜
+
+```swift
+public protocol APIDefinition: Sendable {
+    associatedtype Parameter: Encodable & Sendable
+    associatedtype APIResponse: Decodable & Sendable
+}
+
+public protocol NetworkClient: Sendable {
+    func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse
+    func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse
+}
+```
+
+### 모델
+
+```swift
+// struct는 값 타입이므로 Sendable
+struct User: Codable, Sendable {
+    let id: Int
+    let name: String
+}
+
+// enum도 Sendable
+enum DownloadState: Sendable {
+    case idle
+    case waiting
+    case downloading
+    case paused
+    case completed
+    case failed
+    case cancelled
+}
+```
+
+## Thread Safety
+
+### Actor 기반 타입
+
+```swift
+// DownloadTask는 actor - 상태 접근은 모두 async
+public actor DownloadTask: Identifiable {
+    func updateState(_ newState: DownloadState) {
+        _state = newState
+    }
+
+    func updateProgress(_ newProgress: DownloadProgress) {
+        _progress = newProgress
+    }
+
+    func incrementRetryCount() -> Int {
+        _retryCount += 1
+        return _retryCount
+    }
+}
+
+// 사용 시 await 필요
+await task.updateState(.downloading)
+let progress = await task.progress
+```
+
+### NSObject特殊情况
+
+DownloadManager는 NSObject를 상속해야 하므로 @unchecked Sendable:
+
+```swift
+public final class DownloadManager: NSObject, Sendable {
+    // NSObject subclass이므로 @unchecked Sendable 필요
+    private let storage = DownloadStorage()
+    // ...
+}
+```
+
+## Required Patterns
+
+1. **DownloadTask는 actor** - 스레드 안전성 보장
+2. **내부 스토리지는 actor** - DownloadStorage로 통합
+3. **비동기 작업은 async/await** - structured concurrency
+4. **Sendable 준수** - 네트워크 관련 타입은 Sendable
+5. **Task.checkCancellation()** - 네트워크 요청에서 취소 체크
+6. **AsyncSequence 이벤트** - 다운로드 이벤트 수신
+
+## 비동기 에러 처리
+
+```swift
+do {
+    let response = try await client.request(MyAPIRequest())
+    print("Success: \(response)")
+} catch let error as NetworkError {
+    switch error {
+    case .invalidBaseURL(let url):
+        print("Invalid URL: \(url)")
+    case .statusCode(let response):
+        print("HTTP Error: \(response.statusCode)")
+    case .objectMapping(let decodingError, _):
+        print("Decoding Error: \(decodingError)")
+    case .underlying(let underlyingError, _):
+        if let urlError = underlyingError as? URLError {
+            switch urlError.code {
+            case .timedOut, .notConnectedToInternet, .networkConnectionLost:
+                print("네트워크 오류: 재시도 필요")
+            default:
+                print("네트워크 오류: \(urlError)")
+            }
+        }
+    case .cancelled:
+        print("요청이 취소됨")
+    default:
+        print("Unknown error: \(error)")
+    }
+}
+```
+
+## Migration from GCD
+
+프레임워크 내부에서는 GCD를 사용하지 않고 Swift Concurrency만 사용합니다:
+
+```swift
+// ❌ 사용하지 않음: GCD
+DispatchQueue.main.async { ... }
+
+// ✅ 사용: Swift Concurrency
+await MainActor.run { ... }
+```
+
+모든 동시성 코드는 이러한 엄격한 동시성 가이드라인을 따라야 합니다.

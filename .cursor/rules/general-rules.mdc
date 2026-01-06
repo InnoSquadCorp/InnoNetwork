@@ -1,0 +1,48 @@
+---
+description: "공통 개발 가이드라인, 프로젝트 개요, 개발 명령어."
+globs: []
+alwaysApply: false
+---
+
+# General Development Guidelines
+
+공통 개발 작업 전에 읽으세요:
+
+- `developer-guidelines.mdc` - 기본 개발자 가이드라인
+- `innoflow-framework.mdc` - 프레임워크 아키텍처 가이드 (InnoNetwork 아키텍처)
+
+## 프로젝트 개요
+
+InnoNetwork는 타입-세이프 Swift 네트워크 라이브러리입니다:
+
+- **Core**: JSON, Form URL-encoded, Multipart/Form-data 지원
+- **Download Module**: 백그라운드 다운로드, 일시정지/재개, AsyncSequence 이벤트
+- **Swift 6.2 Concurrency**: Full Sendable compliance, actor 기반 스레드 안전성
+
+## 개발 명령어
+
+```bash
+# 빌드
+swift build
+
+# 테스트 실행
+swift test
+
+# 테스트 및 코드 커버리지
+swift test --enable-code-coverage --parallel
+```
+
+## InnoNetwork 특정 사항
+
+- **API 정의**: `struct` 또는 `actor`로 `APIDefinition` 프로토콜 준수
+- **네트워크 요청**: `DefaultNetworkClient` 사용
+- **업로드**: `MultipartAPIDefinition` + `client.upload()`
+- **다운로드**: `DownloadManager` (별도 모듈 InnoNetworkDownload)
+- **테스트**: Swift Testing 프레임워크 사용
+- **이벤트 스트림**: AsyncSequence 기반 `events(for:)` 메서드
+
+InnoNetwork 개발 중에는 이 파일들을 참고하세요:
+
+- `swift-concurrency.mdc` - 동시성 패턴 가이드
+- `swift-testing.mdc` - 테스트 작성 가이드
+- `swift-package.mdc` - SPM 패키지 구조 가이드
