@@ -42,14 +42,17 @@ public final class DefaultNetworkClient: NetworkClient, @unchecked Sendable {
         try await performProtobufRequest(request, configuration: configuration)
     }
 
-    private func performRequest<T: APIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
-        let retryPolicy = configuration.retryPolicy
+    /// Generic retry wrapper that handles retry logic for any request type
+    private func performRequestWithRetry<Response>(
+        retryPolicy: RetryPolicy?,
+        operation: @Sendable (Int) async throws -> Response
+    ) async throws -> Response {
         var attempt = 0
 
         while true {
             do {
                 try Task.checkCancellation()
-                return try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
+                return try await operation(attempt)
             } catch let error as NetworkError {
                 guard let policy = retryPolicy, policy.shouldRetry(error: error, attempt: attempt) else {
                     throw error
@@ -59,46 +62,24 @@ public final class DefaultNetworkClient: NetworkClient, @unchecked Sendable {
             } catch {
                 throw error
             }
+        }
+    }
+
+    private func performRequest<T: APIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
+        try await performRequestWithRetry(retryPolicy: configuration.retryPolicy) { attempt in
+            try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
         }
     }
 
     private func performMultipartRequest<T: MultipartAPIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
-        let retryPolicy = configuration.retryPolicy
-        var attempt = 0
-
-        while true {
-            do {
-                try Task.checkCancellation()
-                return try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
-            } catch let error as NetworkError {
-                guard let policy = retryPolicy, policy.shouldRetry(error: error, attempt: attempt) else {
-                    throw error
-                }
-                attempt += 1
-                try await Task.sleep(nanoseconds: UInt64(policy.retryDelay * 1_000_000_000))
-            } catch {
-                throw error
-            }
+        try await performRequestWithRetry(retryPolicy: configuration.retryPolicy) { attempt in
+            try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
         }
     }
 
     private func performProtobufRequest<T: ProtobufAPIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
-        let retryPolicy = configuration.retryPolicy
-        var attempt = 0
-
-        while true {
-            do {
-                try Task.checkCancellation()
-                return try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
-            } catch let error as NetworkError {
-                guard let policy = retryPolicy, policy.shouldRetry(error: error, attempt: attempt) else {
-                    throw error
-                }
-                attempt += 1
-                try await Task.sleep(nanoseconds: UInt64(policy.retryDelay * 1_000_000_000))
-            } catch {
-                throw error
-            }
+        try await performRequestWithRetry(retryPolicy: configuration.retryPolicy) { attempt in
+            try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
         }
     }
 
