@@ -1,9 +1,11 @@
 import Foundation
+import SwiftProtobuf
 
 
 public protocol NetworkClient: Sendable {
     func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse
     func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse
+    func protobufRequest<T: ProtobufAPIDefinition>(_ request: T) async throws -> T.APIResponse
 }
 
 
@@ -36,14 +38,21 @@ public final class DefaultNetworkClient: NetworkClient, @unchecked Sendable {
         try await performMultipartRequest(request, configuration: configuration)
     }
 
-    private func performRequest<T: APIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
-        let retryPolicy = configuration.retryPolicy
+    public func protobufRequest<T: ProtobufAPIDefinition>(_ request: T) async throws -> T.APIResponse {
+        try await performProtobufRequest(request, configuration: configuration)
+    }
+
+    /// Generic retry wrapper that handles retry logic for any request type
+    private func performRequestWithRetry<Response>(
+        retryPolicy: RetryPolicy?,
+        operation: @Sendable (Int) async throws -> Response
+    ) async throws -> Response {
         var attempt = 0
 
         while true {
             do {
                 try Task.checkCancellation()
-                return try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
+                return try await operation(attempt)
             } catch let error as NetworkError {
                 guard let policy = retryPolicy, policy.shouldRetry(error: error, attempt: attempt) else {
                     throw error
@@ -56,23 +65,21 @@ public final class DefaultNetworkClient: NetworkClient, @unchecked Sendable {
         }
     }
 
-    private func performMultipartRequest<T: MultipartAPIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
-        let retryPolicy = configuration.retryPolicy
-        var attempt = 0
+    private func performRequest<T: APIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
+        try await performRequestWithRetry(retryPolicy: configuration.retryPolicy) { attempt in
+            try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
+        }
+    }
 
-        while true {
-            do {
-                try Task.checkCancellation()
-                return try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
-            } catch let error as NetworkError {
-                guard let policy = retryPolicy, policy.shouldRetry(error: error, attempt: attempt) else {
-                    throw error
-                }
-                attempt += 1
-                try await Task.sleep(nanoseconds: UInt64(policy.retryDelay * 1_000_000_000))
-            } catch {
-                throw error
-            }
+    private func performMultipartRequest<T: MultipartAPIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
+        try await performRequestWithRetry(retryPolicy: configuration.retryPolicy) { attempt in
+            try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
+        }
+    }
+
+    private func performProtobufRequest<T: ProtobufAPIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
+        try await performRequestWithRetry(retryPolicy: configuration.retryPolicy) { attempt in
+            try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
         }
     }
 
@@ -127,6 +134,56 @@ public final class DefaultNetworkClient: NetworkClient, @unchecked Sendable {
     }
     
     private func performSingleRequest<T: MultipartAPIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration, attempt: Int) async throws -> T.APIResponse {
+        try Task.checkCancellation()
+
+        do {
+            var urlRequest = try apiDefinition.asURLRequest(configuration: configuration)
+
+            for interceptor in apiDefinition.requestInterceptors {
+                urlRequest = try await interceptor.adapt(urlRequest)
+            }
+
+            apiDefinition.logger.log(request: urlRequest)
+
+            let (data, response) = try await session.data(for: urlRequest)
+
+            try Task.checkCancellation()
+
+            guard let httpURLResponse = response as? HTTPURLResponse else {
+                throw NetworkError.nonHTTPResponse(response)
+            }
+
+            var networkResponse = Response(
+                statusCode: httpURLResponse.statusCode,
+                data: data,
+                request: urlRequest,
+                response: httpURLResponse
+            )
+
+            for interceptor in apiDefinition.responseInterceptors {
+                networkResponse = try await interceptor.adapt(networkResponse, request: urlRequest)
+            }
+
+            guard (200..<300).contains(httpURLResponse.statusCode) else {
+                throw NetworkError.statusCode(networkResponse)
+            }
+
+            apiDefinition.logger.log(response: networkResponse, isError: false)
+
+            return try apiDefinition.decode(data: data, response: networkResponse)
+        } catch let error as NetworkError {
+            apiDefinition.logger.log(error: error)
+            throw error
+        } catch where NetworkError.isCancellation(error) {
+            apiDefinition.logger.log(error: NetworkError.cancelled)
+            throw NetworkError.cancelled
+        } catch {
+            apiDefinition.logger.log(error: NetworkError.underlying(error, nil))
+            throw NetworkError.underlying(error, nil)
+        }
+    }
+
+    private func performSingleRequest<T: ProtobufAPIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration, attempt: Int) async throws -> T.APIResponse {
         try Task.checkCancellation()
 
         do {
@@ -237,9 +294,54 @@ extension MultipartAPIDefinition {
         if Self.APIResponse.self == EmptyResponse.self && (data.isEmpty || response.statusCode == 204) {
             return EmptyResponse() as! Self.APIResponse
         }
-        
+
         do {
             return try decoder.decode(Self.APIResponse.self, from: data)
+        } catch {
+            throw NetworkError.objectMapping(error, response)
+        }
+    }
+}
+
+
+extension ProtobufAPIDefinition {
+    func asURLRequest(configuration: NetworkConfiguration) throws -> URLRequest {
+        var httpBody: Data?
+        let targetURL = configuration.baseURL.appendingPathComponent(path)
+
+        if case .get = method {
+            // GET requests with protobuf parameters are not supported
+            // Protobuf binary data cannot be serialized to URL query parameters
+            if parameters != nil {
+                throw NetworkError.invalidRequestConfiguration(
+                    "GET requests with protobuf parameters are not supported. " +
+                    "Protobuf messages cannot be serialized to URL query parameters. " +
+                    "Use POST/PUT methods for requests with protobuf body, or set parameters to nil for GET requests."
+                )
+            }
+        } else {
+            // Serialize protobuf message to binary data
+            if let params = parameters {
+                httpBody = try params.serializedData()
+            }
+        }
+
+        var urlRequest = URLRequest(url: targetURL)
+        urlRequest.httpMethod = method.rawValue
+        urlRequest.allHTTPHeaderFields = headers.dictionary
+        urlRequest.cachePolicy = configuration.cachePolicy
+        urlRequest.timeoutInterval = configuration.timeout
+        urlRequest.httpBody = httpBody
+        return urlRequest
+    }
+
+    func decode(data: Data, response: Response) throws -> Self.APIResponse {
+        if Self.APIResponse.self == ProtobufEmptyResponse.self && (data.isEmpty || response.statusCode == 204) {
+            return ProtobufEmptyResponse() as! Self.APIResponse
+        }
+
+        do {
+            return try Self.APIResponse(serializedData: data)
         } catch {
             throw NetworkError.objectMapping(error, response)
         }

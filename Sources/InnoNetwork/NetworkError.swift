@@ -10,6 +10,8 @@ import Foundation
 
 public enum NetworkError: Error {
     case invalidBaseURL(String)
+    /// Indicates an invalid request configuration
+    case invalidRequestConfiguration(String)
     /// Indicates a response failed to map to a JSON structure.
     case jsonMapping(Response)
     /// Indicates a response failed with an invalid HTTP status code.
@@ -31,6 +33,8 @@ extension NetworkError: LocalizedError {
         switch self {
         case .invalidBaseURL(let string):
             return "Invalid base URL: \(string)"
+        case .invalidRequestConfiguration(let message):
+            return "Invalid request configuration: \(message)"
         case .jsonMapping:
             return "Failed to map data to JSON."
         case .objectMapping:
@@ -54,6 +58,7 @@ public extension NetworkError {
     var response: Response? {
         switch self {
         case .invalidBaseURL: return nil
+        case .invalidRequestConfiguration: return nil
         case .jsonMapping(let response): return response
         case .objectMapping(_, let response): return response
         case .statusCode(let response): return response
@@ -68,6 +73,7 @@ public extension NetworkError {
     internal var underlyingError: Swift.Error? {
         switch self {
         case .invalidBaseURL: return nil
+        case .invalidRequestConfiguration: return nil
         case .jsonMapping: return nil
         case .objectMapping(let error, _): return error
         case .statusCode: return nil
