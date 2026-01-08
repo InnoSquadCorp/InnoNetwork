@@ -32,7 +32,7 @@ import SwiftProtobuf
 ///   set `parameters` to `nil` or use path parameters in the `path` property.
 /// - **Content Type**: All protobuf requests use `application/x-protobuf` content type.
 /// - **Empty Responses**: For endpoints that return no data (204 No Content), use
-///   `EmptyResponse` as the `APIResponse` type.
+///   `ProtobufEmptyResponse` as the `APIResponse` type.
 ///
 /// ## Associated Types
 ///

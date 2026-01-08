@@ -307,7 +307,7 @@ extension MultipartAPIDefinition {
 extension ProtobufAPIDefinition {
     func asURLRequest(configuration: NetworkConfiguration) throws -> URLRequest {
         var httpBody: Data?
-        var targetURL = configuration.baseURL.appendingPathComponent(path)
+        let targetURL = configuration.baseURL.appendingPathComponent(path)
 
         if case .get = method {
             // GET requests with protobuf parameters are not supported
@@ -336,8 +336,8 @@ extension ProtobufAPIDefinition {
     }
 
     func decode(data: Data, response: Response) throws -> Self.APIResponse {
-        if Self.APIResponse.self == EmptyResponse.self && (data.isEmpty || response.statusCode == 204) {
-            return EmptyResponse() as! Self.APIResponse
+        if Self.APIResponse.self == ProtobufEmptyResponse.self && (data.isEmpty || response.statusCode == 204) {
+            return ProtobufEmptyResponse() as! Self.APIResponse
         }
 
         do {

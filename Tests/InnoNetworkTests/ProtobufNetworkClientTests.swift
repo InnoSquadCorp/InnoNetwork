@@ -126,7 +126,7 @@ struct GetUserProtobufGET: ProtobufAPIDefinition {
 // Empty response API definition
 struct DeleteUserProtobuf: ProtobufAPIDefinition {
     typealias Parameter = TestUserRequest
-    typealias APIResponse = EmptyResponse
+    typealias APIResponse = ProtobufEmptyResponse
 
     var method: HTTPMethod { .delete }
     var path: String { "/user/\(userID)" }
@@ -279,7 +279,7 @@ struct ProtobufNetworkClientTests {
         }
     }
 
-    @Test("Empty response with 204 status code succeeds for EmptyResponse")
+    @Test("Empty response with 204 status code succeeds for ProtobufEmptyResponse")
     func protobufEmptyResponseSuccess() async throws {
         let mockSession = MockURLSession()
         mockSession.setMockResponse(statusCode: 204, data: Data())
@@ -293,7 +293,7 @@ struct ProtobufNetworkClientTests {
         #expect(mockSession.capturedRequest?.httpMethod == "DELETE")
     }
 
-    @Test("Empty data with 200 status succeeds for EmptyResponse")
+    @Test("Empty data with 200 status succeeds for ProtobufEmptyResponse")
     func protobufEmptyDataSuccess() async throws {
         let mockSession = MockURLSession()
         mockSession.setMockResponse(statusCode: 200, data: Data())
@@ -304,6 +304,18 @@ struct ProtobufNetworkClientTests {
         )
 
         _ = try await client.protobufRequest(DeleteUserProtobuf(userID: 1))
+    }
+
+    @Test("ProtobufEmptyResponse serialization and deserialization")
+    func protobufEmptyResponseSerializationTest() throws {
+        // Test empty response serialization
+        let emptyResponse = ProtobufEmptyResponse()
+        let data = try emptyResponse.serializedData()
+        #expect(data.isEmpty)
+
+        // Test deserialization
+        let decoded = try ProtobufEmptyResponse(serializedData: data)
+        #expect(emptyResponse.isEqualTo(message: decoded))
     }
 
     @Test("Request interceptor modifies request")
