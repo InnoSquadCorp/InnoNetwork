@@ -26,13 +26,13 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.28.0")
+        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.33.3")
     ],
     targets: [
         .target(
             name: "InnoNetwork",
             dependencies: [
-                .product(name: "SwiftProtobuf", package: "swift-protobuf")
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ],
             path: "Sources/InnoNetwork"
         ),
