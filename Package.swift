@@ -11,6 +11,9 @@ let package = Package(
         .watchOS(.v26),
         .visionOS(.v26)
     ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.28.0")
+    ],
     products: [
         .library(
             name: "InnoNetwork",
@@ -28,6 +31,9 @@ let package = Package(
     targets: [
         .target(
             name: "InnoNetwork",
+            dependencies: [
+                .product(name: "SwiftProtobuf", package: "swift-protobuf")
+            ],
             path: "Sources/InnoNetwork"
         ),
         .target(

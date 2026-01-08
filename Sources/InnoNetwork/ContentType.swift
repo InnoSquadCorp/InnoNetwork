@@ -18,4 +18,5 @@ public enum ContentType: String {
     case imagePNG = "image/png"
     case imageJPEG = "image/jpeg"
     case pdf = "application/pdf"
+    case protobuf = "application/x-protobuf"
 }
