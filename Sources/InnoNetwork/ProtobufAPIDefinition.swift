@@ -18,11 +18,6 @@ public protocol ProtobufAPIDefinition: Sendable {
 }
 
 
-extension ProtobufAPIDefinition where Parameter == EmptyParameter {
-    public var parameters: Parameter? { nil }
-}
-
-
 public extension ProtobufAPIDefinition {
     var headers: HTTPHeaders {
         var defaultHeaders = HTTPHeaders.default
