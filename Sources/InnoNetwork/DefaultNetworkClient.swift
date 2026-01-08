@@ -348,12 +348,8 @@ extension ProtobufAPIDefinition {
     }
 
     func decode(data: Data, response: Response) throws -> Self.APIResponse {
-        // Protobuf doesn't have an equivalent to EmptyResponse, so we handle empty data
-        guard !data.isEmpty else {
-            throw NetworkError.objectMapping(
-                NSError(domain: "ProtobufDecoding", code: -1, userInfo: [NSLocalizedDescriptionKey: "Empty data received"]),
-                response
-            )
+        if Self.APIResponse.self == EmptyResponse.self && (data.isEmpty || response.statusCode == 204) {
+            return EmptyResponse() as! Self.APIResponse
         }
 
         do {
