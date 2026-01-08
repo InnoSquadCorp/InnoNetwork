@@ -329,8 +329,15 @@ extension ProtobufAPIDefinition {
         var targetURL = configuration.baseURL.appendingPathComponent(path)
 
         if case .get = method {
-            // For GET requests, protobuf parameters are not typically used
-            // If needed, they could be serialized to query parameters
+            // GET requests with protobuf parameters are not supported
+            // Protobuf binary data cannot be serialized to URL query parameters
+            if parameters != nil {
+                throw NetworkError.invalidRequestConfiguration(
+                    "GET requests with protobuf parameters are not supported. " +
+                    "Protobuf messages cannot be serialized to URL query parameters. " +
+                    "Use POST/PUT methods for requests with protobuf body, or set parameters to nil for GET requests."
+                )
+            }
         } else {
             // Serialize protobuf message to binary data
             if let params = parameters {

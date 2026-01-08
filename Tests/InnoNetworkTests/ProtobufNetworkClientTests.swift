@@ -371,6 +371,55 @@ struct ProtobufNetworkClientTests {
 }
 
 
+@Suite("Protobuf Request Configuration Tests")
+struct ProtobufRequestConfigTests {
+
+    @Test("GET request with parameters throws error")
+    func getRequestWithParametersError() async throws {
+        struct InvalidGetRequest: ProtobufAPIDefinition {
+            typealias Parameter = TestUserRequest
+            typealias APIResponse = TestUserResponse
+
+            var method: HTTPMethod { .get }
+            var path: String { "/user" }
+            let parameters: TestUserRequest?
+
+            init() {
+                // Invalid: GET request should not have parameters
+                self.parameters = TestUserRequest(userID: 1)
+            }
+        }
+
+        let mockSession = MockURLSession()
+        let client = try DefaultNetworkClient(
+            configuration: TestAPIConfiguration(),
+            session: mockSession
+        )
+
+        await #expect(throws: NetworkError.self) {
+            try await client.protobufRequest(InvalidGetRequest())
+        }
+    }
+
+    @Test("GET request without parameters succeeds")
+    func getRequestWithoutParametersSuccess() async throws {
+        let mockSession = MockURLSession()
+        let expectedResponse = TestUserResponse(userID: 1, name: "Test", email: "test@example.com")
+        let protobufData = try expectedResponse.serializedData()
+        mockSession.setMockResponse(statusCode: 200, data: protobufData)
+
+        let client = try DefaultNetworkClient(
+            configuration: TestAPIConfiguration(),
+            session: mockSession
+        )
+
+        // This should succeed as parameters is nil
+        let response = try await client.protobufRequest(GetUserProtobufGET(userID: 1))
+        #expect(response.userID == 1)
+    }
+}
+
+
 @Suite("Protobuf Retry Policy Tests")
 struct ProtobufRetryTests {
 
