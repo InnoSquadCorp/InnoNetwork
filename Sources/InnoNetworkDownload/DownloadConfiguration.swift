@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetwork
 
 
 public struct DownloadConfiguration: Sendable {
@@ -9,6 +10,9 @@ public struct DownloadConfiguration: Sendable {
     public let timeoutForResource: TimeInterval
     public let allowsCellularAccess: Bool
     public let sessionIdentifier: String
+    public let networkMonitor: (any NetworkMonitoring)?
+    public let waitsForNetworkChanges: Bool
+    public let networkChangeTimeout: TimeInterval?
     
     public init(
         maxConcurrentDownloads: Int = 3,
@@ -17,7 +21,10 @@ public struct DownloadConfiguration: Sendable {
         timeoutForRequest: TimeInterval = 30,
         timeoutForResource: TimeInterval = 60 * 60 * 24,
         allowsCellularAccess: Bool = true,
-        sessionIdentifier: String = "com.innonetwork.download"
+        sessionIdentifier: String = "com.innonetwork.download",
+        networkMonitor: (any NetworkMonitoring)? = NetworkMonitor.shared,
+        waitsForNetworkChanges: Bool = true,
+        networkChangeTimeout: TimeInterval? = 10.0
     ) {
         self.maxConcurrentDownloads = maxConcurrentDownloads
         self.maxRetryCount = maxRetryCount
@@ -26,6 +33,9 @@ public struct DownloadConfiguration: Sendable {
         self.timeoutForResource = timeoutForResource
         self.allowsCellularAccess = allowsCellularAccess
         self.sessionIdentifier = sessionIdentifier
+        self.networkMonitor = networkMonitor
+        self.waitsForNetworkChanges = waitsForNetworkChanges
+        self.networkChangeTimeout = networkChangeTimeout
     }
     
     public static let `default` = DownloadConfiguration()

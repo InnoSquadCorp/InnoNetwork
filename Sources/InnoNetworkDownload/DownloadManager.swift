@@ -249,10 +249,14 @@ public final class DownloadManager: NSObject, Sendable {
         if let urlError = error as? URLError, urlError.code == .cancelled {
             return
         }
-        
+
         let retryCount = await task.incrementRetryCount()
-        
+
         if retryCount < configuration.maxRetryCount {
+            if configuration.waitsForNetworkChanges, let monitor = configuration.networkMonitor {
+                let snapshot = await monitor.currentSnapshot()
+                _ = await monitor.waitForChange(from: snapshot, timeout: configuration.networkChangeTimeout)
+            }
             try? await Task.sleep(nanoseconds: UInt64(configuration.retryDelay * 1_000_000_000))
             let state = await task.state
             if state != .cancelled {
