@@ -14,7 +14,7 @@ public struct NetworkConfiguration: Sendable {
         timeout: TimeInterval = 30.0,
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
         retryPolicy: RetryPolicy? = nil,
-        networkMonitor: (any NetworkMonitoring)? = nil,
+        networkMonitor: (any NetworkMonitoring)? = NetworkMonitor.shared,
         metricsReporter: (any NetworkMetricsReporting)? = nil
     ) {
         self.baseURL = baseURL
