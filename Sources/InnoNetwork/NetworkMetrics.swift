@@ -34,7 +34,8 @@ final class MetricsURLSession: NSObject, URLSessionProtocol, @unchecked Sendable
     private let session: URLSession
     private let delegate: MetricsSessionDelegate
 
-    /// - Note: 전달된 URLSessionConfiguration으로 새 URLSession을 생성합니다.
+    /// - Note: URLSession/URLSessionTask는 Sendable을 보장하지 않으므로 `@unchecked Sendable`을 사용합니다.
+    ///         전달된 URLSessionConfiguration으로 새 URLSession을 생성합니다.
     ///         기존 URLSession의 delegateQueue 등은 유지되지 않습니다.
     init(configuration: URLSessionConfiguration, reporter: any NetworkMetricsReporting) {
         let delegate = MetricsSessionDelegate(reporter: reporter)

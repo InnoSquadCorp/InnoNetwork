@@ -108,6 +108,7 @@ struct MetricsGetRequest: APIDefinition {
 
 struct RetryOncePolicy: RetryPolicy {
     let maxRetries: Int = 1
+    let maxTotalRetries: Int = 1
     let retryDelay: TimeInterval = 0
 
     func retryDelay(for attempt: Int) -> TimeInterval {
@@ -240,6 +241,7 @@ struct RetryPolicyTests {
     func backoffBaseDelay() {
         let policy = ExponentialBackoffRetryPolicy(
             maxRetries: 3,
+            maxTotalRetries: 3,
             retryDelay: 1.5,
             maxDelay: 10,
             jitterRatio: 0.0,
@@ -254,6 +256,7 @@ struct RetryPolicyTests {
     func backoffGrowth() {
         let policy = ExponentialBackoffRetryPolicy(
             maxRetries: 3,
+            maxTotalRetries: 3,
             retryDelay: 1.0,
             maxDelay: 10,
             jitterRatio: 0.0,
@@ -280,6 +283,7 @@ struct RetryPolicyTests {
         )
         let policy = ExponentialBackoffRetryPolicy(
             maxRetries: 1,
+            maxTotalRetries: 1,
             retryDelay: 1,
             maxDelay: 10,
             jitterRatio: 0,
@@ -293,6 +297,7 @@ struct RetryPolicyTests {
     func resetAttemptsOnSnapshotChange() {
         let policy = ExponentialBackoffRetryPolicy(
             maxRetries: 1,
+            maxTotalRetries: 1,
             retryDelay: 1,
             maxDelay: 10,
             jitterRatio: 0,

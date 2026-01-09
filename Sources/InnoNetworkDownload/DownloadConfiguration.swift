@@ -11,6 +11,7 @@ public struct DownloadConfiguration: Sendable {
     public let allowsCellularAccess: Bool
     public let sessionIdentifier: String
     public let networkMonitor: (any NetworkMonitoring)?
+    /// 기본값이 true이므로, 다운로드 실패 시 네트워크 변화가 감지될 때까지 대기할 수 있습니다.
     public let waitsForNetworkChanges: Bool
     public let networkChangeTimeout: TimeInterval?
     

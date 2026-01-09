@@ -71,6 +71,7 @@ public actor NetworkMonitor: NetworkMonitoring {
     private let queue: DispatchQueue
     private var current: NetworkSnapshot?
     private var continuations: [UUID: AsyncStream<NetworkSnapshot>.Continuation] = [:]
+    private var isMonitoring = false
 
     public init() {
         monitor = NWPathMonitor()
@@ -78,14 +79,15 @@ public actor NetworkMonitor: NetworkMonitoring {
         monitor.pathUpdateHandler = { [weak self] path in
             Task { await self?.update(with: path) }
         }
-        monitor.start(queue: queue)
     }
 
     public func currentSnapshot() async -> NetworkSnapshot? {
+        startMonitoringIfNeeded()
         current
     }
 
     public func waitForChange(from snapshot: NetworkSnapshot?, timeout: TimeInterval?) async -> NetworkSnapshot? {
+        startMonitoringIfNeeded()
         if let current, current != snapshot {
             return current
         }
@@ -124,6 +126,12 @@ public actor NetworkMonitor: NetworkMonitoring {
         let snapshot = NetworkSnapshot(path: path)
         current = snapshot
         continuations.values.forEach { $0.yield(snapshot) }
+    }
+
+    private func startMonitoringIfNeeded() {
+        guard !isMonitoring else { return }
+        isMonitoring = true
+        monitor.start(queue: queue)
     }
 
     private func removeContinuation(_ id: UUID) {

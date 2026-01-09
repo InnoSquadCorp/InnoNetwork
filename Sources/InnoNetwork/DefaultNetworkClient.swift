@@ -59,6 +59,7 @@ public actor DefaultNetworkClient: NetworkClient {
         operation: @Sendable (Int) async throws -> Response
     ) async throws -> Response {
         var attempt = 0
+        var totalAttempts = 0
         var snapshot = await networkMonitor?.currentSnapshot()
 
         while true {
@@ -66,7 +67,11 @@ public actor DefaultNetworkClient: NetworkClient {
                 try Task.checkCancellation()
                 return try await operation(attempt)
             } catch let error as NetworkError {
+                totalAttempts += 1
                 guard let policy = retryPolicy, policy.shouldRetry(error: error, attempt: attempt) else {
+                    throw error
+                }
+                if totalAttempts > policy.maxTotalRetries {
                     throw error
                 }
                 var nextAttempt = attempt + 1
