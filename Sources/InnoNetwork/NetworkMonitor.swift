@@ -102,7 +102,8 @@ public actor NetworkMonitor: NetworkMonitoring {
             }
             if let timeout {
                 group.addTask {
-                    try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                    let safeTimeout = max(0, timeout)
+                    try? await Task.sleep(for: .seconds(safeTimeout), clock: .suspending)
                     return nil
                 }
             }
