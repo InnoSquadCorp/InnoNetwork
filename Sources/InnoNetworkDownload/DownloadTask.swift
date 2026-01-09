@@ -36,6 +36,10 @@ public actor DownloadTask: Identifiable {
         _retryCount += 1
         return _retryCount
     }
+
+    func resetRetryCount() {
+        _retryCount = 0
+    }
     
     func setResumeData(_ data: Data?) {
         _resumeData = data

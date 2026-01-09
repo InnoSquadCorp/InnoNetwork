@@ -255,7 +255,13 @@ public final class DownloadManager: NSObject, Sendable {
         if retryCount < configuration.maxRetryCount {
             if configuration.waitsForNetworkChanges, let monitor = configuration.networkMonitor {
                 let snapshot = await monitor.currentSnapshot()
-                _ = await monitor.waitForChange(from: snapshot, timeout: configuration.networkChangeTimeout)
+                let newSnapshot = await monitor.waitForChange(
+                    from: snapshot,
+                    timeout: configuration.networkChangeTimeout
+                )
+                if let snapshot, let newSnapshot, snapshot != newSnapshot {
+                    await task.resetRetryCount()
+                }
             }
             try? await Task.sleep(nanoseconds: UInt64(configuration.retryDelay * 1_000_000_000))
             let state = await task.state

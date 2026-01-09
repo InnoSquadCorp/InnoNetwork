@@ -20,6 +20,11 @@ public struct NetworkSnapshot: Sendable, Equatable {
     public let status: NetworkReachabilityStatus
     public let interfaceTypes: Set<NetworkInterfaceType>
 
+    public init(status: NetworkReachabilityStatus, interfaceTypes: Set<NetworkInterfaceType>) {
+        self.status = status
+        self.interfaceTypes = interfaceTypes
+    }
+
     init(path: NWPath) {
         switch path.status {
         case .satisfied:
