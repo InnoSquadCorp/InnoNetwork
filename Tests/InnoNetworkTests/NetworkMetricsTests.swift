@@ -3,30 +3,25 @@ import Testing
 @testable import InnoNetwork
 
 
-final class MetricsRecorder: NetworkMetricsReporting, @unchecked Sendable {
+actor MetricsRecorder: NetworkMetricsReporting {
     private var metrics: [URLSessionTaskMetrics] = []
     private var responses: [URLResponse?] = []
-    private let lock = NSLock()
 
-    func report(metrics: URLSessionTaskMetrics, for request: URLRequest, response: URLResponse?) {
-        lock.lock()
+    nonisolated func report(metrics: URLSessionTaskMetrics, for request: URLRequest, response: URLResponse?) {
+        Task { await record(metrics: metrics, response: response) }
+    }
+
+    private func record(metrics: URLSessionTaskMetrics, response: URLResponse?) {
         self.metrics.append(metrics)
-        responses.append(response)
-        lock.unlock()
+        self.responses.append(response)
     }
 
     var count: Int {
-        lock.lock()
-        let value = metrics.count
-        lock.unlock()
-        return value
+        metrics.count
     }
 
     var lastResponse: URLResponse? {
-        lock.lock()
-        let value = responses.last ?? nil
-        lock.unlock()
-        return value
+        responses.last ?? nil
     }
 }
 
@@ -147,7 +142,7 @@ struct NetworkMetricsTests {
 
         let reported = await waitForMetrics(recorder: recorder, count: 1)
         #expect(reported)
-        if let response = recorder.lastResponse as? HTTPURLResponse {
+        if let response = await recorder.lastResponse as? HTTPURLResponse {
             #expect(response.statusCode == 200)
         } else {
             #expect(false)
@@ -206,7 +201,7 @@ struct NetworkMetricsTests {
     private func waitForMetrics(recorder: MetricsRecorder, count: Int) async -> Bool {
         let deadline = Date().addingTimeInterval(2.0)
         while Date() < deadline {
-            if recorder.count >= count {
+            if await recorder.count >= count {
                 return true
             }
             try? await Task.sleep(nanoseconds: 50_000_000)

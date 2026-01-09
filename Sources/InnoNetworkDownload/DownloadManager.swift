@@ -251,8 +251,16 @@ public final class DownloadManager: NSObject, Sendable {
         }
 
         let retryCount = await task.incrementRetryCount()
-
         if retryCount < configuration.maxRetryCount {
+            let totalRetryCount = await task.incrementTotalRetryCount()
+            guard totalRetryCount < configuration.maxTotalRetries else {
+                await task.updateState(.failed)
+                await task.setError(.maxRetriesExceeded)
+                await storage.onStateChanged?(task, .failed)
+                await storage.onFailed?(task, .maxRetriesExceeded)
+                await storage.emitEvent(.failed(.maxRetriesExceeded), for: task.id)
+                return
+            }
             if configuration.waitsForNetworkChanges, let monitor = configuration.networkMonitor {
                 let snapshot = await monitor.currentSnapshot()
                 let newSnapshot = await monitor.waitForChange(
@@ -260,8 +268,17 @@ public final class DownloadManager: NSObject, Sendable {
                     timeout: configuration.networkChangeTimeout
                 )
                 if let snapshot, let newSnapshot, snapshot != newSnapshot {
-                    // 네트워크 상태가 변경되면 재시도 카운트를 리셋합니다.
-                    await task.resetRetryCount()
+                    if totalRetryCount < configuration.maxTotalRetries {
+                        // 네트워크 상태가 변경되면 재시도 카운트를 리셋합니다.
+                        await task.resetRetryCount()
+                    } else {
+                        await task.updateState(.failed)
+                        await task.setError(.maxRetriesExceeded)
+                        await storage.onStateChanged?(task, .failed)
+                        await storage.onFailed?(task, .maxRetriesExceeded)
+                        await storage.emitEvent(.failed(.maxRetriesExceeded), for: task.id)
+                        return
+                    }
                 }
             }
             try? await Task.sleep(nanoseconds: UInt64(configuration.retryDelay * 1_000_000_000))

@@ -2,24 +2,38 @@ import Foundation
 import Network
 
 
+/// 네트워크 연결에 사용되는 인터페이스 유형입니다.
 public enum NetworkInterfaceType: String, Sendable {
+    /// Wi-Fi 연결입니다.
     case wifi
+    /// 셀룰러 네트워크 연결입니다.
     case cellular
+    /// 유선 이더넷 연결입니다.
     case wiredEthernet
+    /// 로컬 루프백 인터페이스입니다.
     case loopback
+    /// 알려진 유형으로 판별되지 않은 인터페이스입니다.
     case other
 }
 
+/// 네트워크 도달 가능 상태를 나타냅니다.
 public enum NetworkReachabilityStatus: Sendable {
+    /// 네트워크에 도달 가능합니다.
     case satisfied
+    /// 네트워크에 도달 불가능합니다.
     case unsatisfied
+    /// 네트워크에 도달하려면 추가 연결이 필요합니다.
     case requiresConnection
 }
 
+/// 특정 시점의 네트워크 상태를 나타내는 스냅샷입니다.
 public struct NetworkSnapshot: Sendable, Equatable {
+    /// 도달 가능 상태입니다.
     public let status: NetworkReachabilityStatus
+    /// 사용 중인 인터페이스 유형 집합입니다.
     public let interfaceTypes: Set<NetworkInterfaceType>
 
+    /// 지정한 상태와 인터페이스 유형으로 스냅샷을 생성합니다.
     public init(status: NetworkReachabilityStatus, interfaceTypes: Set<NetworkInterfaceType>) {
         self.status = status
         self.interfaceTypes = interfaceTypes
@@ -107,7 +121,7 @@ public actor NetworkMonitor: NetworkMonitoring {
                     return nil
                 }
             }
-            let result = await group.next() ?? nil
+            let result = await group.next()
             group.cancelAll()
             return result
         }

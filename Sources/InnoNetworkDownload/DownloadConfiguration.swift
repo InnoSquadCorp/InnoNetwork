@@ -5,6 +5,8 @@ import InnoNetwork
 public struct DownloadConfiguration: Sendable {
     public let maxConcurrentDownloads: Int
     public let maxRetryCount: Int
+    /// 네트워크 변화로 재시도 카운트를 리셋하더라도 허용되는 총 재시도 횟수입니다.
+    public let maxTotalRetries: Int
     public let retryDelay: TimeInterval
     public let timeoutForRequest: TimeInterval
     public let timeoutForResource: TimeInterval
@@ -18,6 +20,7 @@ public struct DownloadConfiguration: Sendable {
     public init(
         maxConcurrentDownloads: Int = 3,
         maxRetryCount: Int = 3,
+        maxTotalRetries: Int = 3,
         retryDelay: TimeInterval = 1.0,
         timeoutForRequest: TimeInterval = 30,
         timeoutForResource: TimeInterval = 60 * 60 * 24,
@@ -29,6 +32,7 @@ public struct DownloadConfiguration: Sendable {
     ) {
         self.maxConcurrentDownloads = maxConcurrentDownloads
         self.maxRetryCount = maxRetryCount
+        self.maxTotalRetries = maxTotalRetries
         self.retryDelay = retryDelay
         self.timeoutForRequest = timeoutForRequest
         self.timeoutForResource = timeoutForResource

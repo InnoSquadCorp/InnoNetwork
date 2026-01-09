@@ -12,6 +12,7 @@ struct DownloadConfigurationTests {
         
         #expect(config.maxConcurrentDownloads == 3)
         #expect(config.maxRetryCount == 3)
+        #expect(config.maxTotalRetries == 3)
         #expect(config.retryDelay == 1.0)
         #expect(config.allowsCellularAccess == true)
     }
@@ -21,12 +22,14 @@ struct DownloadConfigurationTests {
         let config = DownloadConfiguration(
             maxConcurrentDownloads: 5,
             maxRetryCount: 5,
+            maxTotalRetries: 8,
             retryDelay: 2.0,
             allowsCellularAccess: false
         )
         
         #expect(config.maxConcurrentDownloads == 5)
         #expect(config.maxRetryCount == 5)
+        #expect(config.maxTotalRetries == 8)
         #expect(config.retryDelay == 2.0)
         #expect(config.allowsCellularAccess == false)
     }
@@ -60,6 +63,7 @@ struct DownloadTaskTests {
         #expect(await task.state == .idle)
         #expect(await task.progress.fractionCompleted == 0)
         #expect(await task.retryCount == 0)
+        #expect(await task.totalRetryCount == 0)
         #expect(await task.error == nil)
     }
     
@@ -103,11 +107,13 @@ struct DownloadTaskTests {
         await task.updateState(.failed)
         await task.setError(.maxRetriesExceeded)
         _ = await task.incrementRetryCount()
+        _ = await task.incrementTotalRetryCount()
         
         await task.reset()
         
         #expect(await task.state == .idle)
         #expect(await task.retryCount == 0)
+        #expect(await task.totalRetryCount == 0)
         #expect(await task.error == nil)
     }
 }
