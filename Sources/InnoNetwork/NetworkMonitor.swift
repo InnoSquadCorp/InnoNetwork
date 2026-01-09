@@ -47,11 +47,23 @@ public struct NetworkSnapshot: Sendable, Equatable {
     }
 }
 
+/// 네트워크 상태를 관찰하기 위한 프로토콜입니다.
+/// - Note: 스냅샷은 아직 경로 업데이트를 받지 못했을 때 `nil`일 수 있습니다.
+/// - Important: `waitForChange(from:timeout:)`의 `timeout`이 `nil`이면 변화가 감지될 때까지 대기합니다.
 public protocol NetworkMonitoring: Sendable {
+    /// 현재 네트워크 상태 스냅샷을 반환합니다.
+    /// - Returns: 아직 관찰된 경로가 없으면 `nil`을 반환합니다.
     func currentSnapshot() async -> NetworkSnapshot?
+    /// 지정한 스냅샷과 다른 상태로 변경될 때까지 대기합니다.
+    /// - Parameters:
+    ///   - snapshot: 기준이 되는 스냅샷입니다.
+    ///   - timeout: `nil`이면 변화가 있을 때까지 대기하며, 값이 있으면 해당 시간 내 변화가 없을 경우 `nil`을 반환합니다.
+    /// - Returns: 변화가 감지되면 새 스냅샷을, 타임아웃이면 `nil`을 반환합니다.
     func waitForChange(from snapshot: NetworkSnapshot?, timeout: TimeInterval?) async -> NetworkSnapshot?
 }
 
+/// `NWPathMonitor` 기반의 네트워크 모니터입니다.
+/// - Note: `shared`는 앱 전역에서 재사용 가능한 싱글턴 인스턴스를 제공합니다.
 public actor NetworkMonitor: NetworkMonitoring {
     public static let shared = NetworkMonitor()
 
