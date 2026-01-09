@@ -225,7 +225,11 @@ struct NetworkMonitorTests {
         let monitor = NetworkMonitor()
         let snapshot = await monitor.currentSnapshot()
         let result = await monitor.waitForChange(from: snapshot, timeout: 0.05)
-        #expect(result == nil || result != snapshot)
+        if let result {
+            #expect(result != snapshot)
+        } else {
+            #expect(result == nil)
+        }
     }
 }
 
