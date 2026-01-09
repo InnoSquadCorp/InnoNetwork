@@ -4,6 +4,8 @@ import Foundation
 public protocol RetryPolicy: Sendable {
     var maxRetries: Int { get }
     var retryDelay: TimeInterval { get }
+    /// 재시도 시도 횟수에 따른 지연 시간(초)을 반환합니다.
+    func retryDelay(for attempt: Int) -> TimeInterval
     func shouldRetry(error: NetworkError, attempt: Int) -> Bool
     var waitsForNetworkChanges: Bool { get }
     var networkChangeTimeout: TimeInterval? { get }
@@ -30,6 +32,13 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
     public let waitsForNetworkChanges: Bool
     public let networkChangeTimeout: TimeInterval?
 
+    /// - Parameters:
+    ///   - maxRetries: 최대 재시도 횟수입니다.
+    ///   - retryDelay: 기본 재시도 지연(초)입니다.
+    ///   - maxDelay: 지수 백오프의 최대 지연(초)입니다.
+    ///   - jitterRatio: 지연 시간에 적용할 지터 비율입니다. (예: 0.2는 ±20%)
+    ///   - waitsForNetworkChanges: 재시도 전 네트워크 변화 감지를 기다릴지 여부입니다.
+    ///   - networkChangeTimeout: 네트워크 변화 대기 제한 시간입니다. `nil`이면 변화가 있을 때까지 대기합니다.
     public init(
         maxRetries: Int = 3,
         retryDelay: TimeInterval = 1.0,
@@ -65,7 +74,7 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
     }
 
     public func retryDelay(for attempt: Int) -> TimeInterval {
-        let exponent = pow(2.0, Double(max(attempt - 1, 0)))
+        let exponent = pow(2.0, Double(max(attempt, 0)))
         let base = min(retryDelay * exponent, maxDelay)
         let jitter = base * jitterRatio
         let range = (-jitter)...(jitter)

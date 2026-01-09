@@ -78,7 +78,11 @@ public actor DefaultNetworkClient: NetworkClient {
                     if policy.shouldResetAttempts(afterNetworkChangeFrom: snapshot, to: newSnapshot) {
                         nextAttempt = 0
                     }
-                    snapshot = newSnapshot ?? snapshot
+                    if let newSnapshot {
+                        snapshot = newSnapshot
+                    } else {
+                        snapshot = await monitor.currentSnapshot() ?? snapshot
+                    }
                 }
                 attempt = nextAttempt
                 let delay = policy.retryDelay(for: attempt)

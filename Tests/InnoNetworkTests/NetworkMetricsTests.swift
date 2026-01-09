@@ -110,6 +110,10 @@ struct RetryOncePolicy: RetryPolicy {
     let maxRetries: Int = 1
     let retryDelay: TimeInterval = 0
 
+    func retryDelay(for attempt: Int) -> TimeInterval {
+        retryDelay
+    }
+
     func shouldRetry(error: NetworkError, attempt: Int) -> Bool {
         guard attempt < maxRetries else { return false }
         switch error {
@@ -207,5 +211,96 @@ struct NetworkMetricsTests {
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
         return false
+    }
+}
+
+@Suite("Network Monitor Tests")
+struct NetworkMonitorTests {
+
+    @Test("NetworkSnapshot init sets status and interface types")
+    func snapshotInit() {
+        let snapshot = NetworkSnapshot(status: .satisfied, interfaceTypes: [.wifi, .cellular])
+        #expect(snapshot.status == .satisfied)
+        #expect(snapshot.interfaceTypes == [.wifi, .cellular])
+    }
+
+    @Test("waitForChange returns nil or a different snapshot on timeout")
+    func waitForChangeTimeout() async {
+        let monitor = NetworkMonitor()
+        let snapshot = await monitor.currentSnapshot()
+        let result = await monitor.waitForChange(from: snapshot, timeout: 0.05)
+        #expect(result == nil || result != snapshot)
+    }
+}
+
+@Suite("Retry Policy Tests")
+struct RetryPolicyTests {
+
+    @Test("ExponentialBackoffRetryPolicy uses base delay on first attempt")
+    func backoffBaseDelay() {
+        let policy = ExponentialBackoffRetryPolicy(
+            maxRetries: 3,
+            retryDelay: 1.5,
+            maxDelay: 10,
+            jitterRatio: 0.0,
+            waitsForNetworkChanges: false,
+            networkChangeTimeout: nil
+        )
+        let delay = policy.retryDelay(for: 0)
+        #expect(delay == 1.5)
+    }
+
+    @Test("ExponentialBackoffRetryPolicy grows delay with attempts")
+    func backoffGrowth() {
+        let policy = ExponentialBackoffRetryPolicy(
+            maxRetries: 3,
+            retryDelay: 1.0,
+            maxDelay: 10,
+            jitterRatio: 0.0,
+            waitsForNetworkChanges: false,
+            networkChangeTimeout: nil
+        )
+        #expect(policy.retryDelay(for: 0) == 1.0)
+        #expect(policy.retryDelay(for: 1) == 2.0)
+        #expect(policy.retryDelay(for: 2) == 4.0)
+    }
+
+    @Test("ExponentialBackoffRetryPolicy evaluates retryable status codes")
+    func statusCodeRetryable() {
+        let response = Response(
+            statusCode: 503,
+            data: Data(),
+            request: nil,
+            response: HTTPURLResponse(
+                url: URL(string: "https://example.com")!,
+                statusCode: 503,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+        )
+        let policy = ExponentialBackoffRetryPolicy(
+            maxRetries: 1,
+            retryDelay: 1,
+            maxDelay: 10,
+            jitterRatio: 0,
+            waitsForNetworkChanges: false,
+            networkChangeTimeout: nil
+        )
+        #expect(policy.shouldRetry(error: .statusCode(response), attempt: 0))
+    }
+
+    @Test("shouldResetAttempts detects snapshot changes")
+    func resetAttemptsOnSnapshotChange() {
+        let policy = ExponentialBackoffRetryPolicy(
+            maxRetries: 1,
+            retryDelay: 1,
+            maxDelay: 10,
+            jitterRatio: 0,
+            waitsForNetworkChanges: true,
+            networkChangeTimeout: 0.1
+        )
+        let oldSnapshot = NetworkSnapshot(status: .satisfied, interfaceTypes: [.wifi])
+        let newSnapshot = NetworkSnapshot(status: .satisfied, interfaceTypes: [.cellular])
+        #expect(policy.shouldResetAttempts(afterNetworkChangeFrom: oldSnapshot, to: newSnapshot))
     }
 }
