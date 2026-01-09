@@ -83,7 +83,7 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
     public func retryDelay(for attempt: Int) -> TimeInterval {
         let exponent = pow(2.0, Double(max(attempt, 0)))
         let base = min(retryDelay * exponent, maxDelay)
-        let jitter = base * jitterRatio
+        let jitter = abs(base * jitterRatio)
         let range = (-jitter)...(jitter)
         let randomOffset = Double.random(in: range)
         return max(0.0, base + randomOffset)
