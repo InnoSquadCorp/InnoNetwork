@@ -21,7 +21,7 @@ actor MetricsRecorder: NetworkMetricsReporting {
     }
 
     var lastResponse: URLResponse? {
-        responses.last ?? nil
+        responses.last.flatMap { $0 }
     }
 }
 

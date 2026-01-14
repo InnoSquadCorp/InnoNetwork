@@ -268,7 +268,7 @@ public final class DownloadManager: NSObject, Sendable {
                     timeout: configuration.networkChangeTimeout
                 )
                 if let newSnapshot, newSnapshot != snapshot {
-                    // 네트워크 상태가 변경되면 재시도 카운트를 리셋합니다.
+                    // Reset retry count when network state changes.
                     await task.resetRetryCount()
                 }
             }

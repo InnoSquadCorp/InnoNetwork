@@ -5,7 +5,7 @@ import InnoNetwork
 public struct DownloadConfiguration: Sendable {
     public let maxConcurrentDownloads: Int
     public let maxRetryCount: Int
-    /// 네트워크 변화로 재시도 카운트를 리셋하더라도 허용되는 총 재시도 횟수입니다.
+    /// Maximum total retry count even if the counter is reset due to network changes.
     public let maxTotalRetries: Int
     public let retryDelay: TimeInterval
     public let timeoutForRequest: TimeInterval
@@ -13,7 +13,7 @@ public struct DownloadConfiguration: Sendable {
     public let allowsCellularAccess: Bool
     public let sessionIdentifier: String
     public let networkMonitor: (any NetworkMonitoring)?
-    /// 기본값이 true이므로, 다운로드 실패 시 네트워크 변화가 감지될 때까지 대기할 수 있습니다.
+    /// When true, waits for network changes before retrying on download failure.
     public let waitsForNetworkChanges: Bool
     public let networkChangeTimeout: TimeInterval?
     
@@ -27,7 +27,7 @@ public struct DownloadConfiguration: Sendable {
         allowsCellularAccess: Bool = true,
         sessionIdentifier: String = "com.innonetwork.download",
         networkMonitor: (any NetworkMonitoring)? = NetworkMonitor.shared,
-        waitsForNetworkChanges: Bool = true,
+        waitsForNetworkChanges: Bool = false,
         networkChangeTimeout: TimeInterval? = 10.0
     ) {
         self.maxConcurrentDownloads = maxConcurrentDownloads

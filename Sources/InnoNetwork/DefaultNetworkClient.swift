@@ -71,7 +71,7 @@ public actor DefaultNetworkClient: NetworkClient {
                 guard let policy = retryPolicy, policy.shouldRetry(error: error, attempt: attempt) else {
                     throw error
                 }
-                if totalAttempts > policy.maxTotalRetries {
+                if totalAttempts >= policy.maxTotalRetries {
                     throw error
                 }
                 var nextAttempt = attempt + 1

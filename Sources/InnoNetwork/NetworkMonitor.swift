@@ -2,38 +2,38 @@ import Foundation
 import Network
 
 
-/// 네트워크 연결에 사용되는 인터페이스 유형입니다.
+/// The type of network interface used for connectivity.
 public enum NetworkInterfaceType: String, Sendable {
-    /// Wi-Fi 연결입니다.
+    /// Wi-Fi connection.
     case wifi
-    /// 셀룰러 네트워크 연결입니다.
+    /// Cellular network connection.
     case cellular
-    /// 유선 이더넷 연결입니다.
+    /// Wired Ethernet connection.
     case wiredEthernet
-    /// 로컬 루프백 인터페이스입니다.
+    /// Local loopback interface.
     case loopback
-    /// 알려진 유형으로 판별되지 않은 인터페이스입니다.
+    /// Interface type that could not be identified.
     case other
 }
 
-/// 네트워크 도달 가능 상태를 나타냅니다.
+/// Represents the network reachability status.
 public enum NetworkReachabilityStatus: Sendable {
-    /// 네트워크에 도달 가능합니다.
+    /// The network is reachable.
     case satisfied
-    /// 네트워크에 도달 불가능합니다.
+    /// The network is not reachable.
     case unsatisfied
-    /// 네트워크에 도달하려면 추가 연결이 필요합니다.
+    /// Additional connection is required to reach the network.
     case requiresConnection
 }
 
-/// 특정 시점의 네트워크 상태를 나타내는 스냅샷입니다.
+/// A snapshot representing the network state at a specific point in time.
 public struct NetworkSnapshot: Sendable, Equatable {
-    /// 도달 가능 상태입니다.
+    /// The reachability status.
     public let status: NetworkReachabilityStatus
-    /// 사용 중인 인터페이스 유형 집합입니다.
+    /// The set of interface types currently in use.
     public let interfaceTypes: Set<NetworkInterfaceType>
 
-    /// 지정한 상태와 인터페이스 유형으로 스냅샷을 생성합니다.
+    /// Creates a snapshot with the specified status and interface types.
     public init(status: NetworkReachabilityStatus, interfaceTypes: Set<NetworkInterfaceType>) {
         self.status = status
         self.interfaceTypes = interfaceTypes
@@ -61,23 +61,23 @@ public struct NetworkSnapshot: Sendable, Equatable {
     }
 }
 
-/// 네트워크 상태를 관찰하기 위한 프로토콜입니다.
-/// - Note: 스냅샷은 아직 경로 업데이트를 받지 못했을 때 `nil`일 수 있습니다.
-/// - Important: `waitForChange(from:timeout:)`의 `timeout`이 `nil`이면 변화가 감지될 때까지 대기합니다.
+/// Protocol for observing network state.
+/// - Note: The snapshot may be `nil` when no path updates have been received yet.
+/// - Important: If `timeout` in `waitForChange(from:timeout:)` is `nil`, it waits until a change is detected.
 public protocol NetworkMonitoring: Sendable {
-    /// 현재 네트워크 상태 스냅샷을 반환합니다.
-    /// - Returns: 아직 관찰된 경로가 없으면 `nil`을 반환합니다.
+    /// Returns the current network state snapshot.
+    /// - Returns: `nil` if no path has been observed yet.
     func currentSnapshot() async -> NetworkSnapshot?
-    /// 지정한 스냅샷과 다른 상태로 변경될 때까지 대기합니다.
+    /// Waits until the network state changes from the specified snapshot.
     /// - Parameters:
-    ///   - snapshot: 기준이 되는 스냅샷입니다.
-    ///   - timeout: `nil`이면 변화가 있을 때까지 대기하며, 값이 있으면 해당 시간 내 변화가 없을 경우 `nil`을 반환합니다.
-    /// - Returns: 변화가 감지되면 새 스냅샷을, 타임아웃이면 `nil`을 반환합니다.
+    ///   - snapshot: The reference snapshot.
+    ///   - timeout: If `nil`, waits indefinitely until a change occurs. If set, returns `nil` if no change within the timeout.
+    /// - Returns: A new snapshot if a change is detected, or `nil` on timeout.
     func waitForChange(from snapshot: NetworkSnapshot?, timeout: TimeInterval?) async -> NetworkSnapshot?
 }
 
-/// `NWPathMonitor` 기반의 네트워크 모니터입니다.
-/// - Note: `shared`는 앱 전역에서 재사용 가능한 싱글턴 인스턴스를 제공합니다.
+/// A network monitor based on `NWPathMonitor`.
+/// - Note: `shared` provides a singleton instance reusable across the app.
 public actor NetworkMonitor: NetworkMonitoring {
     public static let shared = NetworkMonitor()
 
