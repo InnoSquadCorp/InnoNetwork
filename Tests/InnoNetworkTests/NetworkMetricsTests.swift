@@ -220,15 +220,23 @@ struct NetworkMonitorTests {
         #expect(snapshot.interfaceTypes == [.wifi, .cellular])
     }
 
-    @Test("waitForChange returns nil or a different snapshot on timeout")
-    func waitForChangeTimeout() async {
+    @Test("waitForChange returns nil on timeout when no network change occurs")
+    func waitForChangeTimesOutReturnsNil() async {
+        let monitor = NetworkMonitor()
+        let snapshot = await monitor.currentSnapshot()
+        let result = await monitor.waitForChange(from: snapshot, timeout: 0.01)
+        // With a very short timeout and no network change, expect nil
+        #expect(result == nil)
+    }
+
+    @Test("waitForChange returns different snapshot when network state differs")
+    func waitForChangeDetectsDifferentSnapshot() async {
         let monitor = NetworkMonitor()
         let snapshot = await monitor.currentSnapshot()
         let result = await monitor.waitForChange(from: snapshot, timeout: 0.05)
+        // If a result is returned, it must be different from the original snapshot
         if let result {
             #expect(result != snapshot)
-        } else {
-            #expect(result == nil)
         }
     }
 }
