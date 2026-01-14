@@ -9,7 +9,7 @@ public protocol NetworkClient: Sendable {
 }
 
 
-public final class DefaultNetworkClient: NetworkClient, @unchecked Sendable {
+public actor DefaultNetworkClient: NetworkClient {
     private let configuration: NetworkConfiguration
     private let session: URLSessionProtocol
 
@@ -21,13 +21,23 @@ public final class DefaultNetworkClient: NetworkClient, @unchecked Sendable {
         guard let baseURL = configuration.baseURL else {
             throw NetworkError.invalidBaseURL("\(configuration.host)/\(configuration.basePath)")
         }
+        let metricsReporter = networkConfiguration?.metricsReporter
         self.configuration = NetworkConfiguration(
             baseURL: baseURL,
             timeout: networkConfiguration?.timeout ?? 30.0,
             cachePolicy: networkConfiguration?.cachePolicy ?? .useProtocolCachePolicy,
-            retryPolicy: networkConfiguration?.retryPolicy
+            retryPolicy: networkConfiguration?.retryPolicy,
+            networkMonitor: networkConfiguration?.networkMonitor ?? NetworkMonitor.shared,
+            metricsReporter: metricsReporter
         )
-        self.session = session
+        if let metricsReporter, let urlSession = session as? URLSession {
+            self.session = MetricsURLSession(
+                configuration: urlSession.configuration,
+                reporter: metricsReporter
+            )
+        } else {
+            self.session = session
+        }
     }
 
     public func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
@@ -45,20 +55,45 @@ public final class DefaultNetworkClient: NetworkClient, @unchecked Sendable {
     /// Generic retry wrapper that handles retry logic for any request type
     private func performRequestWithRetry<Response>(
         retryPolicy: RetryPolicy?,
+        networkMonitor: (any NetworkMonitoring)?,
         operation: @Sendable (Int) async throws -> Response
     ) async throws -> Response {
         var attempt = 0
+        var totalAttempts = 0
+        var snapshot = await networkMonitor?.currentSnapshot()
 
         while true {
             do {
                 try Task.checkCancellation()
                 return try await operation(attempt)
             } catch let error as NetworkError {
+                totalAttempts += 1
                 guard let policy = retryPolicy, policy.shouldRetry(error: error, attempt: attempt) else {
                     throw error
                 }
-                attempt += 1
-                try await Task.sleep(nanoseconds: UInt64(policy.retryDelay * 1_000_000_000))
+                if totalAttempts >= policy.maxTotalRetries {
+                    throw error
+                }
+                var nextAttempt = attempt + 1
+                if policy.waitsForNetworkChanges, let monitor = networkMonitor {
+                    let newSnapshot = await monitor.waitForChange(
+                        from: snapshot,
+                        timeout: policy.networkChangeTimeout
+                    )
+                    if policy.shouldResetAttempts(afterNetworkChangeFrom: snapshot, to: newSnapshot) {
+                        nextAttempt = 0
+                    }
+                    if let newSnapshot {
+                        snapshot = newSnapshot
+                    } else {
+                        snapshot = await monitor.currentSnapshot() ?? snapshot
+                    }
+                }
+                attempt = nextAttempt
+                let delay = policy.retryDelay(for: attempt)
+                if delay > 0 {
+                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
             } catch {
                 throw error
             }
@@ -66,19 +101,28 @@ public final class DefaultNetworkClient: NetworkClient, @unchecked Sendable {
     }
 
     private func performRequest<T: APIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
-        try await performRequestWithRetry(retryPolicy: configuration.retryPolicy) { attempt in
+        try await performRequestWithRetry(
+            retryPolicy: configuration.retryPolicy,
+            networkMonitor: configuration.networkMonitor
+        ) { attempt in
             try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
         }
     }
 
     private func performMultipartRequest<T: MultipartAPIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
-        try await performRequestWithRetry(retryPolicy: configuration.retryPolicy) { attempt in
+        try await performRequestWithRetry(
+            retryPolicy: configuration.retryPolicy,
+            networkMonitor: configuration.networkMonitor
+        ) { attempt in
             try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
         }
     }
 
     private func performProtobufRequest<T: ProtobufAPIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
-        try await performRequestWithRetry(retryPolicy: configuration.retryPolicy) { attempt in
+        try await performRequestWithRetry(
+            retryPolicy: configuration.retryPolicy,
+            networkMonitor: configuration.networkMonitor
+        ) { attempt in
             try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
         }
     }

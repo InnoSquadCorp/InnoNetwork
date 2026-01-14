@@ -9,12 +9,14 @@ public actor DownloadTask: Identifiable {
     private var _state: DownloadState = .idle
     private var _progress: DownloadProgress = .zero
     private var _retryCount: Int = 0
+    private var _totalRetryCount: Int = 0
     private var _resumeData: Data?
     private var _error: DownloadError?
     
     public var state: DownloadState { _state }
     public var progress: DownloadProgress { _progress }
     public var retryCount: Int { _retryCount }
+    public var totalRetryCount: Int { _totalRetryCount }
     public var resumeData: Data? { _resumeData }
     public var error: DownloadError? { _error }
     
@@ -36,6 +38,15 @@ public actor DownloadTask: Identifiable {
         _retryCount += 1
         return _retryCount
     }
+
+    func incrementTotalRetryCount() -> Int {
+        _totalRetryCount += 1
+        return _totalRetryCount
+    }
+
+    func resetRetryCount() {
+        _retryCount = 0
+    }
     
     func setResumeData(_ data: Data?) {
         _resumeData = data
@@ -49,6 +60,7 @@ public actor DownloadTask: Identifiable {
         _state = .idle
         _progress = .zero
         _retryCount = 0
+        _totalRetryCount = 0
         _error = nil
     }
 }

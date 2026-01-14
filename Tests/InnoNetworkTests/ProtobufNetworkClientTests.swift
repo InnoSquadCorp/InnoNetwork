@@ -434,6 +434,19 @@ struct ProtobufRequestConfigTests {
 
 @Suite("Protobuf Retry Policy Tests")
 struct ProtobufRetryTests {
+    struct SimpleRetryPolicy: RetryPolicy {
+        let maxRetries: Int
+        let maxTotalRetries: Int
+        let retryDelay: TimeInterval
+
+        func retryDelay(for attempt: Int) -> TimeInterval {
+            retryDelay
+        }
+
+        func shouldRetry(error: NetworkError, attempt: Int) -> Bool {
+            attempt < maxRetries
+        }
+    }
 
     @Test("Retry policy retries on network error")
     func retryOnNetworkError() async throws {
@@ -460,7 +473,7 @@ struct ProtobufRetryTests {
         }
 
         let mockSession = RetryMockSession()
-        let retryPolicy = RetryPolicy(maxRetries: 3, retryDelay: 0.01)
+        let retryPolicy = SimpleRetryPolicy(maxRetries: 3, maxTotalRetries: 3, retryDelay: 0.01)
         let networkConfig = NetworkConfiguration(
             baseURL: URL(string: "https://test.example.com")!,
             timeout: 30,
@@ -491,7 +504,7 @@ struct ProtobufRetryTests {
         }
 
         let mockSession = AlwaysFailSession()
-        let retryPolicy = RetryPolicy(maxRetries: 2, retryDelay: 0.01)
+        let retryPolicy = SimpleRetryPolicy(maxRetries: 2, maxTotalRetries: 2, retryDelay: 0.01)
         let networkConfig = NetworkConfiguration(
             baseURL: URL(string: "https://test.example.com")!,
             timeout: 30,

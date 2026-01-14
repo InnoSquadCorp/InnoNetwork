@@ -180,7 +180,6 @@ public final class WebSocketManager: NSObject, Sendable {
 
     private func startConnection(_ task: WebSocketTask) async {
         await task.updateState(.connecting)
-        await storage.onDisconnected?(task, nil)
 
         var request = URLRequest(url: task.url)
         request.timeoutInterval = configuration.connectionTimeout

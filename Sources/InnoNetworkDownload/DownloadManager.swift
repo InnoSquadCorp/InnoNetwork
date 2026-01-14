@@ -249,22 +249,44 @@ public final class DownloadManager: NSObject, Sendable {
         if let urlError = error as? URLError, urlError.code == .cancelled {
             return
         }
-        
-        let retryCount = await task.incrementRetryCount()
-        
-        if retryCount < configuration.maxRetryCount {
-            try? await Task.sleep(nanoseconds: UInt64(configuration.retryDelay * 1_000_000_000))
-            let state = await task.state
-            if state != .cancelled {
-                await startDownload(task)
-            }
-        } else {
-            await task.updateState(.failed)
-            await task.setError(.maxRetriesExceeded)
-            await storage.onStateChanged?(task, .failed)
-            await storage.onFailed?(task, .maxRetriesExceeded)
-            await storage.emitEvent(.failed(.maxRetriesExceeded), for: task.id)
+
+        let totalRetryCount = await task.incrementTotalRetryCount()
+        guard totalRetryCount < configuration.maxTotalRetries else {
+            await markTaskFailed(task)
+            return
         }
+
+        let retryCount = await task.incrementRetryCount()
+        guard retryCount < configuration.maxRetryCount else {
+            await markTaskFailed(task)
+            return
+        }
+
+        if configuration.waitsForNetworkChanges, let monitor = configuration.networkMonitor {
+            let snapshot = await monitor.currentSnapshot()
+            let newSnapshot = await monitor.waitForChange(
+                from: snapshot,
+                timeout: configuration.networkChangeTimeout
+            )
+            // Reset retry count when network state changes (including nil -> non-nil transition).
+            if newSnapshot != snapshot {
+                await task.resetRetryCount()
+            }
+        }
+
+        try? await Task.sleep(nanoseconds: UInt64(configuration.retryDelay * 1_000_000_000))
+        let state = await task.state
+        if state != .cancelled {
+            await startDownload(task)
+        }
+    }
+
+    private func markTaskFailed(_ task: DownloadTask) async {
+        await task.updateState(.failed)
+        await task.setError(.maxRetriesExceeded)
+        await storage.onStateChanged?(task, .failed)
+        await storage.onFailed?(task, .maxRetriesExceeded)
+        await storage.emitEvent(.failed(.maxRetriesExceeded), for: task.id)
     }
     
     public func handleBackgroundSessionCompletion(_ identifier: String, completion: @escaping @Sendable () -> Void) {
