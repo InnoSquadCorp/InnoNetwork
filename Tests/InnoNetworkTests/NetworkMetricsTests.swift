@@ -27,12 +27,12 @@ actor MetricsRecorder: NetworkMetricsReporting {
 
 
 final class TestURLProtocol: URLProtocol {
-    enum ResponseSpec {
+    enum ResponseSpec: Sendable {
         case success(statusCode: Int, data: Data)
         case failure(Error)
     }
 
-    private static var responses: [ResponseSpec] = []
+    nonisolated(unsafe) private static var responses: [ResponseSpec] = []
     private static let lock = NSLock()
 
     static func enqueue(_ response: ResponseSpec) {

@@ -97,7 +97,7 @@ public actor NetworkMonitor: NetworkMonitoring {
 
     public func currentSnapshot() async -> NetworkSnapshot? {
         startMonitoringIfNeeded()
-        current
+        return current
     }
 
     public func waitForChange(from snapshot: NetworkSnapshot?, timeout: TimeInterval?) async -> NetworkSnapshot? {
@@ -121,7 +121,7 @@ public actor NetworkMonitor: NetworkMonitoring {
                     return nil
                 }
             }
-            let result = await group.next()
+            let result = await group.next() ?? nil
             group.cancelAll()
             return result
         }
