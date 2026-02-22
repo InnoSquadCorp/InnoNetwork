@@ -61,6 +61,11 @@ Deprecated property APIs are removed from v2.
   - `events(for:)`
   - `addEventListener(for:listener:)` / `removeEventListener(_:)`
 
+Listener lifecycle semantics are now explicit:
+- Download listeners remain attached across retry attempts.
+- WebSocket listeners remain attached across auto reconnect attempts.
+- Listeners are removed only on terminal states (`completed`, explicit `cancel`/`disconnect`, final `failed`).
+
 ## 3. NetworkConfiguration Additions
 
 `NetworkConfiguration` now supports trust policy and lifecycle events.
@@ -134,7 +139,12 @@ form.append("My title", name: "title")
 form.append(imageData, name: "file", fileName: "image.jpg", mimeType: "image/jpeg")
 ```
 
-## 9. Concurrency Policy
+## 9. Listener Lifecycle Semantics
+
+If your app assumed listeners were dropped after each retry/reconnect cycle, update that behavior.
+v2 keeps listener subscriptions stable until terminal cleanup.
+
+## 10. Concurrency Policy
 
 - Production sources no longer use `@unchecked Sendable`.
 - If you maintain downstream extensions, prefer actor isolation or immutable sendable structures over unchecked conformance.

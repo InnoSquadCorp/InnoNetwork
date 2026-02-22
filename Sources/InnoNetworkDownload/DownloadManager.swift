@@ -23,13 +23,20 @@ public final class DownloadManager: NSObject, Sendable {
     private let configuration: DownloadConfiguration
     private let session: URLSession
     private let delegate: DownloadSessionDelegate
+    private let backgroundCompletionStore: BackgroundCompletionStore
     private let persistence: DownloadTaskPersistence
 
     private let storage = DownloadStorage()
 
     public init(configuration: DownloadConfiguration = .default) {
         self.configuration = configuration
-        self.delegate = DownloadSessionDelegate()
+        let callbacks = DownloadSessionDelegateCallbacks()
+        let backgroundCompletionStore = BackgroundCompletionStore()
+        self.delegate = DownloadSessionDelegate(
+            callbacks: callbacks,
+            backgroundCompletionStore: backgroundCompletionStore
+        )
+        self.backgroundCompletionStore = backgroundCompletionStore
         self.persistence = DownloadTaskPersistence(sessionIdentifier: configuration.sessionIdentifier)
 
         let sessionConfig = configuration.makeURLSessionConfiguration()
@@ -41,7 +48,24 @@ public final class DownloadManager: NSObject, Sendable {
 
         super.init()
 
-        delegate.manager = self
+        callbacks.setHandlers(
+            onProgress: { [weak self] taskIdentifier, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite in
+                self?.handleProgress(
+                    taskIdentifier: taskIdentifier,
+                    bytesWritten: bytesWritten,
+                    totalBytesWritten: totalBytesWritten,
+                    totalBytesExpectedToWrite: totalBytesExpectedToWrite
+                )
+            },
+            onCompletion: { [weak self] taskIdentifier, location, error in
+                self?.handleCompletion(
+                    taskIdentifier: taskIdentifier,
+                    location: location,
+                    error: error
+                )
+            }
+        )
+
         restorePendingDownloads()
     }
 
@@ -116,7 +140,7 @@ public final class DownloadManager: NSObject, Sendable {
             urlTask.cancel()
         }
 
-        await storage.remove(taskId: task.id)
+        await storage.removeTaskAndListeners(taskId: task.id)
         await storage.remove(task)
         await persistence.remove(id: task.id)
     }
@@ -151,6 +175,14 @@ public final class DownloadManager: NSObject, Sendable {
             }
         }
         return result
+    }
+
+    func runtimeTaskIdentifier(for task: DownloadTask) async -> Int? {
+        await storage.taskIdentifier(for: task.id)
+    }
+
+    func listenerCount(for task: DownloadTask) async -> Int {
+        await storage.eventListenerCount(for: task.id)
     }
 
     public func addEventListener(
@@ -265,21 +297,26 @@ public final class DownloadManager: NSObject, Sendable {
         }
     }
 
-    func handleCompletion(taskIdentifier: Int, location: URL?, error: Error?) {
+    func handleCompletion(taskIdentifier: Int, location: URL?, error: SendableUnderlyingError?) {
         Task {
             guard let task = await storage.downloadTask(for: taskIdentifier) else { return }
 
-            defer {
-                Task { await storage.remove(taskIdentifier: taskIdentifier) }
-            }
-
             if let error {
+                await storage.detachRuntime(taskIdentifier: taskIdentifier)
                 await handleError(task: task, error: error)
                 return
             }
 
             guard let location else {
-                await handleError(task: task, error: DownloadError.unknown)
+                await storage.detachRuntime(taskIdentifier: taskIdentifier)
+                await handleError(
+                    task: task,
+                    error: SendableUnderlyingError(
+                        domain: "InnoNetworkDownload",
+                        code: -1,
+                        message: "Download completed without temporary file location."
+                    )
+                )
                 return
             }
 
@@ -302,19 +339,25 @@ public final class DownloadManager: NSObject, Sendable {
                 await storage.onCompleted?(task, task.destinationURL)
                 await storage.emitEvent(.stateChanged(.completed), for: task.id)
                 await storage.emitEvent(.completed(task.destinationURL), for: task.id)
+                await storage.removeTaskAndListeners(taskId: task.id)
                 await storage.remove(task)
                 await persistence.remove(id: task.id)
             } catch {
+                await storage.detachRuntime(taskIdentifier: taskIdentifier)
                 await handleError(
                     task: task,
-                    error: DownloadError.fileSystemError(SendableUnderlyingError(error))
+                    error: SendableUnderlyingError(error)
                 )
             }
         }
     }
 
-    private func handleError(task: DownloadTask, error: Error) async {
-        if let urlError = error as? URLError, urlError.code == .cancelled {
+    private func isCancelledTransportError(_ error: SendableUnderlyingError) -> Bool {
+        error.domain == NSURLErrorDomain && error.code == URLError.cancelled.rawValue
+    }
+
+    private func handleError(task: DownloadTask, error: SendableUnderlyingError) async {
+        if isCancelledTransportError(error) {
             return
         }
         let totalRetryCount = await task.incrementTotalRetryCount()
@@ -354,6 +397,8 @@ public final class DownloadManager: NSObject, Sendable {
         await storage.onFailed?(task, .maxRetriesExceeded)
         await storage.emitEvent(.stateChanged(.failed), for: task.id)
         await storage.emitEvent(.failed(.maxRetriesExceeded), for: task.id)
+        await storage.removeTaskAndListeners(taskId: task.id)
+        await storage.remove(task)
         await persistence.remove(id: task.id)
     }
 
@@ -362,7 +407,9 @@ public final class DownloadManager: NSObject, Sendable {
             completion()
             return
         }
-        delegate.backgroundCompletionHandler = completion
+        Task {
+            await backgroundCompletionStore.set(completion)
+        }
     }
 }
 
@@ -430,7 +477,6 @@ private actor DownloadStorage {
 
     func remove(_ task: DownloadTask) {
         tasks.removeValue(forKey: task.id)
-        eventListeners.removeValue(forKey: task.id)
     }
 
     func task(withId id: String) -> DownloadTask? {
@@ -457,16 +503,25 @@ private actor DownloadStorage {
         taskIdToURLTask[taskId]
     }
 
-    func remove(taskIdentifier: Int) {
-        if let task = identifierToTask.removeValue(forKey: taskIdentifier) {
-            taskIdToURLTask.removeValue(forKey: task.id)
-            eventListeners.removeValue(forKey: task.id)
-        }
+    func taskIdentifier(for taskId: String) -> Int? {
+        identifierToTask.first { $0.value.id == taskId }?.key
     }
 
-    func remove(taskId: String) {
+    func eventListenerCount(for taskId: String) -> Int {
+        eventListeners[taskId]?.count ?? 0
+    }
+
+    func detachRuntime(taskIdentifier: Int) {
+        identifierToTask.removeValue(forKey: taskIdentifier)
+    }
+
+    func removeTaskRuntime(taskId: String) {
         taskIdToURLTask.removeValue(forKey: taskId)
         identifierToTask = identifierToTask.filter { $0.value.id != taskId }
+    }
+
+    func removeTaskAndListeners(taskId: String) {
+        removeTaskRuntime(taskId: taskId)
         eventListeners.removeValue(forKey: taskId)
     }
 }

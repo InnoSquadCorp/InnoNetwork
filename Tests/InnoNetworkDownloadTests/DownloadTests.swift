@@ -357,3 +357,171 @@ struct DownloadTaskPersistenceTests {
         #expect(await persistence.record(forID: "task-2")?.destinationURL == secondDestination)
     }
 }
+
+
+private actor DownloadEventRecorder {
+    private var events: [DownloadEvent] = []
+
+    func record(_ event: DownloadEvent) {
+        events.append(event)
+    }
+
+    func snapshot() -> [DownloadEvent] {
+        events
+    }
+}
+
+
+@Suite("Download Listener Lifecycle Tests")
+struct DownloadListenerLifecycleTests {
+    @Test("Listener persists across retry and receives completion")
+    func listenerPersistsAcrossRetryAndCompletion() async throws {
+        let config = DownloadConfiguration(
+            maxRetryCount: 1,
+            maxTotalRetries: 1,
+            retryDelay: 0.0,
+            sessionIdentifier: "test.download.listener.retry.\(UUID().uuidString)"
+        )
+        let manager = DownloadManager(configuration: config)
+        let recorder = DownloadEventRecorder()
+
+        let destination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-result.zip")
+        let task = await manager.download(
+            url: URL(string: "https://example.invalid/file.zip")!,
+            to: destination
+        )
+        let _ = await manager.addEventListener(for: task) { event in
+            Task {
+                await recorder.record(event)
+            }
+        }
+
+        let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        manager.handleCompletion(
+            taskIdentifier: firstTaskIdentifier,
+            location: nil,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.networkConnectionLost.rawValue,
+                message: "network lost"
+            )
+        )
+
+        let retriedTaskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: manager,
+                task: task,
+                excluding: firstTaskIdentifier
+            )
+        )
+
+        #expect(await manager.listenerCount(for: task) == 1)
+
+        let temporaryLocation = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-temp.data")
+        try Data("payload".utf8).write(to: temporaryLocation)
+        manager.handleCompletion(
+            taskIdentifier: retriedTaskIdentifier,
+            location: temporaryLocation,
+            error: nil
+        )
+
+        let completedReceived = await waitForEvent(
+            recorder: recorder,
+            timeout: 2.0
+        ) { event in
+            if case .completed(let outputURL) = event {
+                return outputURL == destination
+            }
+            return false
+        }
+        #expect(completedReceived)
+
+        #expect(await manager.listenerCount(for: task) == 0)
+        #expect(await manager.task(withId: task.id) == nil)
+
+        try? FileManager.default.removeItem(at: destination)
+        await manager.cancelAll()
+    }
+
+    @Test("Terminal failure removes listeners and task runtime")
+    func terminalFailureRemovesListeners() async throws {
+        let config = DownloadConfiguration(
+            maxRetryCount: 0,
+            maxTotalRetries: 0,
+            retryDelay: 0.0,
+            sessionIdentifier: "test.download.listener.terminal.\(UUID().uuidString)"
+        )
+        let manager = DownloadManager(configuration: config)
+        let recorder = DownloadEventRecorder()
+
+        let task = await manager.download(
+            url: URL(string: "https://example.invalid/file.zip")!,
+            to: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-terminal.zip")
+        )
+        let _ = await manager.addEventListener(for: task) { event in
+            Task {
+                await recorder.record(event)
+            }
+        }
+
+        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        manager.handleCompletion(
+            taskIdentifier: taskIdentifier,
+            location: nil,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.networkConnectionLost.rawValue,
+                message: "network lost"
+            )
+        )
+
+        let failedReceived = await waitForEvent(
+            recorder: recorder,
+            timeout: 2.0
+        ) { event in
+            if case .failed(.maxRetriesExceeded) = event {
+                return true
+            }
+            return false
+        }
+        #expect(failedReceived)
+
+        #expect(await manager.listenerCount(for: task) == 0)
+        #expect(await manager.task(withId: task.id) == nil)
+        await manager.cancelAll()
+    }
+
+    private func waitForRuntimeTaskIdentifier(
+        manager: DownloadManager,
+        task: DownloadTask,
+        excluding previousIdentifier: Int? = nil,
+        timeout: TimeInterval = 2.0
+    ) async -> Int? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let identifier = await manager.runtimeTaskIdentifier(for: task) {
+                if previousIdentifier == nil || identifier != previousIdentifier {
+                    return identifier
+                }
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return nil
+    }
+
+    private func waitForEvent(
+        recorder: DownloadEventRecorder,
+        timeout: TimeInterval,
+        predicate: @escaping (DownloadEvent) -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let events = await recorder.snapshot()
+            if events.contains(where: predicate) {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
+    }
+}

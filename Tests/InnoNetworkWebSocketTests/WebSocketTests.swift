@@ -203,3 +203,142 @@ struct WebSocketManagerTests {
         #expect(!WebSocketManager.shouldReconnect(currentState: .failed, autoReconnectEnabled: false))
     }
 }
+
+
+private actor WebSocketEventRecorder {
+    private var events: [WebSocketEvent] = []
+
+    func record(_ event: WebSocketEvent) {
+        events.append(event)
+    }
+
+    func snapshot() -> [WebSocketEvent] {
+        events
+    }
+}
+
+
+@Suite("WebSocket Listener Lifecycle Tests")
+struct WebSocketListenerLifecycleTests {
+    @Test("Listener persists across auto reconnect and is cleaned on disconnect")
+    func listenerPersistsAcrossReconnect() async throws {
+        let config = WebSocketConfiguration(
+            heartbeatInterval: 0,
+            reconnectDelay: 0,
+            maxReconnectAttempts: 3,
+            sessionIdentifier: "test.websocket.listener.retry.\(UUID().uuidString)"
+        )
+        let manager = WebSocketManager(configuration: config)
+        let recorder = WebSocketEventRecorder()
+
+        let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        let _ = await manager.addEventListener(for: task) { event in
+            Task {
+                await recorder.record(event)
+            }
+        }
+
+        let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        manager.handleDisconnected(
+            taskIdentifier: firstTaskIdentifier,
+            closeCode: .abnormalClosure,
+            reason: "transient network error"
+        )
+
+        let reconnectedTaskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: manager,
+                task: task,
+                excluding: firstTaskIdentifier
+            )
+        )
+
+        #expect(await manager.listenerCount(for: task) == 1)
+
+        manager.handleConnected(taskIdentifier: reconnectedTaskIdentifier, protocolName: "chat")
+        let connectedReceived = await waitForEvent(
+            recorder: recorder,
+            timeout: 2.0
+        ) { event in
+            if case .connected(let protocolName) = event {
+                return protocolName == "chat"
+            }
+            return false
+        }
+        #expect(connectedReceived)
+
+        await manager.disconnect(task)
+        #expect(await waitForListenerCleanup(manager: manager, task: task))
+    }
+
+    @Test("Final reconnect failure removes listeners and task runtime")
+    func terminalFailureRemovesListeners() async throws {
+        let config = WebSocketConfiguration(
+            heartbeatInterval: 0,
+            reconnectDelay: 0,
+            maxReconnectAttempts: 1,
+            sessionIdentifier: "test.websocket.listener.terminal.\(UUID().uuidString)"
+        )
+        let manager = WebSocketManager(configuration: config)
+
+        let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        let _ = await manager.addEventListener(for: task) { _ in }
+
+        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        manager.handleError(taskIdentifier: taskIdentifier, error: URLError(.cannotConnectToHost))
+
+        #expect(await waitForListenerCleanup(manager: manager, task: task))
+        #expect(await manager.task(withId: task.id) == nil)
+    }
+
+    private func waitForRuntimeTaskIdentifier(
+        manager: WebSocketManager,
+        task: WebSocketTask,
+        excluding previousIdentifier: Int? = nil,
+        timeout: TimeInterval = 2.0
+    ) async -> Int? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let identifier = await manager.runtimeTaskIdentifier(for: task) {
+                if previousIdentifier == nil || identifier != previousIdentifier {
+                    return identifier
+                }
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return nil
+    }
+
+    private func waitForEvent(
+        recorder: WebSocketEventRecorder,
+        timeout: TimeInterval,
+        predicate: @escaping (WebSocketEvent) -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let events = await recorder.snapshot()
+            if events.contains(where: predicate) {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
+    }
+
+    private func waitForListenerCleanup(
+        manager: WebSocketManager,
+        task: WebSocketTask,
+        timeout: TimeInterval = 2.0
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let listenerCount = await manager.listenerCount(for: task)
+            let runtimeIdentifier = await manager.runtimeTaskIdentifier(for: task)
+            if listenerCount == 0 && runtimeIdentifier == nil {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
+    }
+}

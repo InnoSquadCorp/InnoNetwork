@@ -138,14 +138,15 @@ enum TrustEvaluator {
 
     private static func extractPublicKeyPins(from trust: SecTrust) -> Set<String> {
         var pins = Set<String>()
-        let certificateCount = SecTrustGetCertificateCount(trust)
-        for index in 0..<certificateCount {
-            guard let certificate = SecTrustGetCertificateAtIndex(trust, index),
-                  let key = SecCertificateCopyKey(certificate),
+        guard let certificateChain = SecTrustCopyCertificateChain(trust) as? [SecCertificate] else {
+            return pins
+        }
+
+        for certificate in certificateChain {
+            guard let key = SecCertificateCopyKey(certificate),
                   let keyData = SecKeyCopyExternalRepresentation(key, nil) as Data?
-            else {
-                continue
-            }
+            else { continue }
+
             let digest = SHA256.hash(data: keyData)
             let hashValue = Data(digest).base64EncodedString()
             pins.insert(hashValue)

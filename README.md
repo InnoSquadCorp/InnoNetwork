@@ -232,6 +232,10 @@ await manager.pause(task)
 await manager.resume(task)
 ```
 
+리스너 생명주기 규칙:
+- retry/reconnect 동안 기존 `events(for:)` / `addEventListener` 구독은 유지됩니다.
+- terminal 상태(`completed`, 명시적 `cancel`, 최종 `failed`)에서만 리스너가 정리됩니다.
+
 ### Advanced Configuration
 
 ```swift
@@ -526,6 +530,8 @@ public final class DownloadManager: Sendable {
 }
 ```
 
+리스너는 retry 동안 유지되며, `completed`/`cancel`/최종 `failed`에서 정리됩니다.
+
 #### DownloadEvent
 
 이벤트 스트림을 통해 수신되는 이벤트:
@@ -568,6 +574,8 @@ public final class WebSocketManager: Sendable {
     public func setOnErrorHandler(_ callback: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?) async
 }
 ```
+
+리스너는 auto-reconnect 동안 유지되며, 명시적 `disconnect` 또는 최종 실패 시 정리됩니다.
 
 #### WebSocketConfiguration
 

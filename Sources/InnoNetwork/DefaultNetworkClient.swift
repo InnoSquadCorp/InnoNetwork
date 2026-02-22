@@ -573,7 +573,8 @@ extension ProtobufAPIDefinition {
         } else {
             // Serialize protobuf message to binary data
             if let params = parameters {
-                httpBody = try params.serializedData()
+                let bytes: [UInt8] = try params.serializedBytes()
+                httpBody = bytes.withUnsafeBufferPointer { Data(buffer: $0) }
             }
         }
 
@@ -592,7 +593,7 @@ extension ProtobufAPIDefinition {
         }
 
         do {
-            return try Self.APIResponse(serializedData: data)
+            return try Self.APIResponse(serializedBytes: Array(data))
         } catch {
             throw NetworkError.objectMapping(SendableUnderlyingError(error), response)
         }

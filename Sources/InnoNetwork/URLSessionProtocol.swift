@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 
 public protocol URLSessionProtocol: Sendable {
@@ -42,8 +43,7 @@ extension URLSession: URLSessionProtocol {
 private final class RequestTaskDelegate: NSObject, URLSessionTaskDelegate {
     private let request: URLRequest
     private let context: NetworkRequestContext
-    private let lock = NSLock()
-    private var _trustFailureReason: TrustFailureReason?
+    private let trustFailureReasonLock = OSAllocatedUnfairLock<TrustFailureReason?>(initialState: nil)
 
     init(request: URLRequest, context: NetworkRequestContext) {
         self.request = request
@@ -51,9 +51,7 @@ private final class RequestTaskDelegate: NSObject, URLSessionTaskDelegate {
     }
 
     var trustFailureReason: TrustFailureReason? {
-        lock.lock()
-        defer { lock.unlock() }
-        return _trustFailureReason
+        trustFailureReasonLock.withLock { $0 }
     }
 
     func urlSession(
@@ -77,9 +75,7 @@ private final class RequestTaskDelegate: NSObject, URLSessionTaskDelegate {
         case .useCredential(let credential):
             completionHandler(.useCredential, credential)
         case .cancel(let reason):
-            lock.lock()
-            _trustFailureReason = reason
-            lock.unlock()
+            trustFailureReasonLock.withLock { $0 = reason }
             completionHandler(.cancelAuthenticationChallenge, nil)
         }
     }
