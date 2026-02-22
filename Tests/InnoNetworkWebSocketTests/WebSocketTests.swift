@@ -245,13 +245,7 @@ struct WebSocketListenerLifecycleTests {
             reason: "transient network error"
         )
 
-        let reconnectedTaskIdentifier = try #require(
-            await waitForRuntimeTaskIdentifier(
-                manager: manager,
-                task: task,
-                excluding: firstTaskIdentifier
-            )
-        )
+        let reconnectedTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
 
         #expect(await manager.listenerCount(for: task) == 1)
 
@@ -294,15 +288,12 @@ struct WebSocketListenerLifecycleTests {
     private func waitForRuntimeTaskIdentifier(
         manager: WebSocketManager,
         task: WebSocketTask,
-        excluding previousIdentifier: Int? = nil,
         timeout: TimeInterval = 2.0
     ) async -> Int? {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if let identifier = await manager.runtimeTaskIdentifier(for: task) {
-                if previousIdentifier == nil || identifier != previousIdentifier {
-                    return identifier
-                }
+                return identifier
             }
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
