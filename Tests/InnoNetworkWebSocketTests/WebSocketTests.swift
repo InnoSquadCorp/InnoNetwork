@@ -182,4 +182,16 @@ struct WebSocketManagerTests {
 
         #expect(activeTasks.isEmpty)
     }
+
+    @Test("Deprecated callback property getter mirrors assigned value")
+    @available(*, deprecated)
+    func deprecatedCallbackGetterMirrorsAssignedValue() {
+        let manager = WebSocketManager(configuration: WebSocketConfiguration(sessionIdentifier: "test.websocket.deprecated.\(UUID().uuidString)"))
+
+        manager.onConnected = { _, _ in }
+        #expect(manager.onConnected != nil)
+
+        manager.onConnected = nil
+        #expect(manager.onConnected == nil)
+    }
 }

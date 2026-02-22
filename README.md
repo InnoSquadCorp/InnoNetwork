@@ -60,9 +60,8 @@ import InnoNetwork
 
 // API 설정
 struct MyAPI: APIConfigure {
-    var host: String { "api.example.com" }
+    var host: String { "https://api.example.com" }
     var basePath: String { "v1" }
-    var baseURL: URL? { URL(string: "https://api.example.com") }
 }
 
 // 클라이언트 생성
@@ -107,9 +106,8 @@ do {
 import InnoNetwork
 
 struct MyAPI: APIConfigure {
-    var host: String { "api.example.com" }
+    var host: String { "https://api.example.com" }
     var basePath: String { "v1" }
-    var baseURL: URL? { URL(string: "https://api.example.com") }
 }
 
 let client = try DefaultNetworkClient(configuration: MyAPI())
@@ -225,6 +223,7 @@ await manager.resume(task)
 // 커스텀 재시도 정책 정의
 struct MyRetryPolicy: RetryPolicy {
     let maxRetries: Int = 3
+    let maxTotalRetries: Int = 6
     let retryDelay: TimeInterval = 2.0
 
     func shouldRetry(error: NetworkError, attempt: Int) -> Bool {
@@ -431,8 +430,27 @@ public final class DownloadManager: Sendable {
     
     // 이벤트 스트림
     public func events(for task: DownloadTask) -> AsyncStream<DownloadEvent>
+    public func addEventListener(
+        for task: DownloadTask,
+        listener: @escaping @Sendable (DownloadEvent) -> Void
+    ) async -> DownloadEventSubscription
+    public func removeEventListener(_ subscription: DownloadEventSubscription) async
     
-    // 콜백
+    // 권장 콜백 등록 API (race-free)
+    public func setOnProgressHandler(
+        _ callback: (@Sendable (DownloadTask, DownloadProgress) async -> Void)?
+    ) async
+    public func setOnStateChangedHandler(
+        _ callback: (@Sendable (DownloadTask, DownloadState) async -> Void)?
+    ) async
+    public func setOnCompletedHandler(
+        _ callback: (@Sendable (DownloadTask, URL) async -> Void)?
+    ) async
+    public func setOnFailedHandler(
+        _ callback: (@Sendable (DownloadTask, DownloadError) async -> Void)?
+    ) async
+
+    // Deprecated: 하위 호환용 (새 코드에서는 setOn*Handler 사용)
     public var onProgress: (@Sendable (DownloadTask, DownloadProgress) async -> Void)?
     public var onStateChanged: (@Sendable (DownloadTask, DownloadState) async -> Void)?
     public var onCompleted: (@Sendable (DownloadTask, URL) async -> Void)?
@@ -450,6 +468,36 @@ public enum DownloadEvent: Sendable {
     case stateChanged(DownloadState)
     case completed(URL)
     case failed(DownloadError)
+}
+```
+
+#### WebSocketManager
+
+```swift
+public final class WebSocketManager: Sendable {
+    public static let shared = WebSocketManager()
+
+    public func connect(url: URL, subprotocols: [String]? = nil) async -> WebSocketTask
+    public func disconnect(_ task: WebSocketTask, closeCode: URLSessionWebSocketTask.CloseCode = .normalClosure) async
+    public func disconnectAll(closeCode: URLSessionWebSocketTask.CloseCode = .normalClosure) async
+
+    public func send(_ task: WebSocketTask, message: Data) async throws
+    public func send(_ task: WebSocketTask, string: String) async throws
+    public func ping(_ task: WebSocketTask) async throws
+
+    public func events(for task: WebSocketTask) -> AsyncStream<WebSocketEvent>
+    public func addEventListener(
+        for task: WebSocketTask,
+        listener: @escaping @Sendable (WebSocketEvent) -> Void
+    ) async -> WebSocketEventSubscription
+    public func removeEventListener(_ subscription: WebSocketEventSubscription) async
+
+    // 권장 콜백 등록 API (race-free)
+    public func setOnConnectedHandler(_ callback: (@Sendable (WebSocketTask, String?) async -> Void)?) async
+    public func setOnDisconnectedHandler(_ callback: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?) async
+    public func setOnMessageHandler(_ callback: (@Sendable (WebSocketTask, Data) async -> Void)?) async
+    public func setOnStringHandler(_ callback: (@Sendable (WebSocketTask, String) async -> Void)?) async
+    public func setOnErrorHandler(_ callback: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?) async
 }
 ```
 
@@ -472,6 +520,9 @@ swift build
 
 # 테스트 실행
 swift test
+
+# 외부 네트워크 통합 테스트 포함 실행
+INNONETWORK_RUN_INTEGRATION_TESTS=1 swift test
 
 # 테스트 및 코드 커버리지
 swift test --enable-code-coverage --parallel
@@ -506,17 +557,25 @@ InnoNetwork/
 │   │   │   ├── EmptyResponse.swift
 │   │   │   └── Response.swift
 │   │   └── ... (interceptors, error, logger 등)
-│   │
+│
 │   └── InnoNetworkDownload/      # Download 모듈 (별도 product)
 │       ├── DownloadManager.swift
 │       ├── DownloadTask.swift    # actor 기반 다운로드 작업
 │       ├── DownloadConfiguration.swift
 │       ├── DownloadState.swift
-│       └── DownloadSessionDelegate.swift
+│       ├── DownloadSessionDelegate.swift
+│       └── DownloadTaskPersistence.swift
+│   │
+│   └── InnoNetworkWebSocket/     # WebSocket 모듈 (별도 product)
+│       ├── WebSocketManager.swift
+│       ├── WebSocketTask.swift
+│       ├── WebSocketConfiguration.swift
+│       └── WebSocketSessionDelegate.swift
 │
 └── Tests/
     ├── InnoNetworkTests/
-    └── InnoNetworkDownloadTests/
+    ├── InnoNetworkDownloadTests/
+    └── InnoNetworkWebSocketTests/
 ```
 
 ## License

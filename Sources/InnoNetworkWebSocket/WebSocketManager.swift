@@ -11,6 +11,13 @@ public enum WebSocketEvent: Sendable {
     case error(WebSocketError)
 }
 
+public struct WebSocketEventSubscription: Hashable, Sendable {
+    fileprivate let taskId: String
+    fileprivate let listenerID: UUID
+
+    public var id: UUID { listenerID }
+}
+
 
 public final class WebSocketManager: NSObject, Sendable {
     public static let shared = WebSocketManager()
@@ -18,28 +25,63 @@ public final class WebSocketManager: NSObject, Sendable {
     private let configuration: WebSocketConfiguration
     private let session: URLSession
     private let delegate: WebSocketSessionDelegate
+    private let callbackMirror = WebSocketCallbackMirror()
 
     private let storage = WebSocketStorage()
 
+    @available(*, deprecated, message: "Use setOnConnectedHandler(_:) to avoid callback registration races.")
     public var onConnected: (@Sendable (WebSocketTask, String?) async -> Void)? {
-        get { storage.onConnectedSync }
-        set { storage.onConnectedSync = newValue }
+        get { callbackMirror.onConnected }
+        set {
+            callbackMirror.onConnected = newValue
+            Task {
+                await setOnConnectedHandler(newValue)
+            }
+        }
     }
+
+    @available(*, deprecated, message: "Use setOnDisconnectedHandler(_:) to avoid callback registration races.")
     public var onDisconnected: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)? {
-        get { storage.onDisconnectedSync }
-        set { storage.onDisconnectedSync = newValue }
+        get { callbackMirror.onDisconnected }
+        set {
+            callbackMirror.onDisconnected = newValue
+            Task {
+                await setOnDisconnectedHandler(newValue)
+            }
+        }
     }
+
+    @available(*, deprecated, message: "Use setOnMessageHandler(_:) to avoid callback registration races.")
     public var onMessage: (@Sendable (WebSocketTask, Data) async -> Void)? {
-        get { storage.onMessageSync }
-        set { storage.onMessageSync = newValue }
+        get { callbackMirror.onMessage }
+        set {
+            callbackMirror.onMessage = newValue
+            Task {
+                await setOnMessageHandler(newValue)
+            }
+        }
     }
+
+    @available(*, deprecated, message: "Use setOnStringHandler(_:) to avoid callback registration races.")
     public var onString: (@Sendable (WebSocketTask, String) async -> Void)? {
-        get { storage.onStringSync }
-        set { storage.onStringSync = newValue }
+        get { callbackMirror.onString }
+        set {
+            callbackMirror.onString = newValue
+            Task {
+                await setOnStringHandler(newValue)
+            }
+        }
     }
+
+    @available(*, deprecated, message: "Use setOnErrorHandler(_:) to avoid callback registration races.")
     public var onError: (@Sendable (WebSocketTask, WebSocketError) async -> Void)? {
-        get { storage.onErrorSync }
-        set { storage.onErrorSync = newValue }
+        get { callbackMirror.onError }
+        set {
+            callbackMirror.onError = newValue
+            Task {
+                await setOnErrorHandler(newValue)
+            }
+        }
     }
 
     public init(configuration: WebSocketConfiguration = .default) {
@@ -56,6 +98,31 @@ public final class WebSocketManager: NSObject, Sendable {
         super.init()
 
         delegate.manager = self
+    }
+
+    public func setOnConnectedHandler(_ callback: (@Sendable (WebSocketTask, String?) async -> Void)?) async {
+        callbackMirror.onConnected = callback
+        await storage.setOnConnected(callback)
+    }
+
+    public func setOnDisconnectedHandler(_ callback: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?) async {
+        callbackMirror.onDisconnected = callback
+        await storage.setOnDisconnected(callback)
+    }
+
+    public func setOnMessageHandler(_ callback: (@Sendable (WebSocketTask, Data) async -> Void)?) async {
+        callbackMirror.onMessage = callback
+        await storage.setOnMessage(callback)
+    }
+
+    public func setOnStringHandler(_ callback: (@Sendable (WebSocketTask, String) async -> Void)?) async {
+        callbackMirror.onString = callback
+        await storage.setOnString(callback)
+    }
+
+    public func setOnErrorHandler(_ callback: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?) async {
+        callbackMirror.onError = callback
+        await storage.setOnError(callback)
     }
 
     @discardableResult
@@ -114,14 +181,8 @@ public final class WebSocketManager: NSObject, Sendable {
         guard let urlTask = await storage.urlTask(for: task.id) else {
             throw WebSocketError.disconnected(nil)
         }
-
-        try await urlTask.sendPing { error in
-            if let error = error {
-                Task {
-                    await self.handleError(taskIdentifier: urlTask.taskIdentifier, error: error)
-                }
-            }
-        }
+        try await sendPing(urlTask)
+        await storage.emitEvent(.pong, for: task.id)
     }
 
     public func task(withId id: String) async -> WebSocketTask? {
@@ -143,19 +204,30 @@ public final class WebSocketManager: NSObject, Sendable {
         return result
     }
 
+    public func addEventListener(
+        for task: WebSocketTask,
+        listener: @escaping @Sendable (WebSocketEvent) -> Void
+    ) async -> WebSocketEventSubscription {
+        let listenerID = await storage.addEventListener(taskId: task.id, listener: listener)
+        return WebSocketEventSubscription(taskId: task.id, listenerID: listenerID)
+    }
+
+    public func removeEventListener(_ subscription: WebSocketEventSubscription) async {
+        await storage.removeEventListener(taskId: subscription.taskId, listenerID: subscription.listenerID)
+    }
+
     public func events(for task: WebSocketTask) -> AsyncStream<WebSocketEvent> {
         AsyncStream { [storage] continuation in
             let taskId = task.id
 
             Task {
-                await storage.addEventListener(taskId: taskId) { event in
+                let listenerID = await storage.addEventListener(taskId: taskId) { event in
                     continuation.yield(event)
                 }
-            }
-
-            continuation.onTermination = { @Sendable _ in
-                Task {
-                    await storage.removeEventListener(taskId: taskId)
+                continuation.onTermination = { @Sendable _ in
+                    Task {
+                        await storage.removeEventListener(taskId: taskId, listenerID: listenerID)
+                    }
                 }
             }
         }
@@ -220,7 +292,19 @@ public final class WebSocketManager: NSObject, Sendable {
                     }
                 }
             } catch {
-                await handleError(taskIdentifier: urlTask.taskIdentifier, error: error)
+                handleError(taskIdentifier: urlTask.taskIdentifier, error: error)
+            }
+        }
+    }
+
+    private func sendPing(_ urlTask: URLSessionWebSocketTask) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            urlTask.sendPing { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
             }
         }
     }
@@ -314,7 +398,7 @@ private actor WebSocketStorage {
     private var tasks: [String: WebSocketTask] = [:]
     private var identifierToTask: [Int: WebSocketTask] = [:]
     private var taskIdToURLTask: [String: URLSessionWebSocketTask] = [:]
-    private var eventListeners: [String: @Sendable (WebSocketEvent) -> Void] = [:]
+    private var eventListeners: [String: [UUID: @Sendable (WebSocketEvent) -> Void]] = [:]
 
     private var _onConnected: (@Sendable (WebSocketTask, String?) async -> Void)?
     private var _onDisconnected: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?
@@ -328,53 +412,49 @@ private actor WebSocketStorage {
     var onString: (@Sendable (WebSocketTask, String) async -> Void)? { _onString }
     var onError: (@Sendable (WebSocketTask, WebSocketError) async -> Void)? { _onError }
 
-    nonisolated var onConnectedSync: (@Sendable (WebSocketTask, String?) async -> Void)? {
-        get { nil }
-        set { Task { await self.setOnConnected(newValue) } }
-    }
-    nonisolated var onDisconnectedSync: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)? {
-        get { nil }
-        set { Task { await self.setOnDisconnected(newValue) } }
-    }
-    nonisolated var onMessageSync: (@Sendable (WebSocketTask, Data) async -> Void)? {
-        get { nil }
-        set { Task { await self.setOnMessage(newValue) } }
-    }
-    nonisolated var onStringSync: (@Sendable (WebSocketTask, String) async -> Void)? {
-        get { nil }
-        set { Task { await self.setOnString(newValue) } }
-    }
-    nonisolated var onErrorSync: (@Sendable (WebSocketTask, WebSocketError) async -> Void)? {
-        get { nil }
-        set { Task { await self.setOnError(newValue) } }
-    }
-
     func setOnConnected(_ callback: (@Sendable (WebSocketTask, String?) async -> Void)?) {
         _onConnected = callback
     }
+
     func setOnDisconnected(_ callback: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?) {
         _onDisconnected = callback
     }
+
     func setOnMessage(_ callback: (@Sendable (WebSocketTask, Data) async -> Void)?) {
         _onMessage = callback
     }
+
     func setOnString(_ callback: (@Sendable (WebSocketTask, String) async -> Void)?) {
         _onString = callback
     }
+
     func setOnError(_ callback: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?) {
         _onError = callback
     }
 
-    func addEventListener(taskId: String, listener: @escaping @Sendable (WebSocketEvent) -> Void) {
-        eventListeners[taskId] = listener
+    func addEventListener(taskId: String, listener: @escaping @Sendable (WebSocketEvent) -> Void) -> UUID {
+        let listenerID = UUID()
+        var listeners = eventListeners[taskId] ?? [:]
+        listeners[listenerID] = listener
+        eventListeners[taskId] = listeners
+        return listenerID
     }
 
-    func removeEventListener(taskId: String) {
-        eventListeners.removeValue(forKey: taskId)
+    func removeEventListener(taskId: String, listenerID: UUID) {
+        guard var listeners = eventListeners[taskId] else { return }
+        listeners.removeValue(forKey: listenerID)
+        if listeners.isEmpty {
+            eventListeners.removeValue(forKey: taskId)
+        } else {
+            eventListeners[taskId] = listeners
+        }
     }
 
     func emitEvent(_ event: WebSocketEvent, for taskId: String) {
-        eventListeners[taskId]?(event)
+        guard let listeners = eventListeners[taskId] else { return }
+        for listener in listeners.values {
+            listener(event)
+        }
     }
 
     func add(_ task: WebSocketTask) {
@@ -418,5 +498,79 @@ private actor WebSocketStorage {
     func remove(taskId: String) {
         taskIdToURLTask.removeValue(forKey: taskId)
         identifierToTask = identifierToTask.filter { $0.value.id != taskId }
+    }
+}
+
+private final class WebSocketCallbackMirror: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _onConnected: (@Sendable (WebSocketTask, String?) async -> Void)?
+    private var _onDisconnected: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?
+    private var _onMessage: (@Sendable (WebSocketTask, Data) async -> Void)?
+    private var _onString: (@Sendable (WebSocketTask, String) async -> Void)?
+    private var _onError: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?
+
+    var onConnected: (@Sendable (WebSocketTask, String?) async -> Void)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _onConnected
+        }
+        set {
+            lock.lock()
+            _onConnected = newValue
+            lock.unlock()
+        }
+    }
+
+    var onDisconnected: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _onDisconnected
+        }
+        set {
+            lock.lock()
+            _onDisconnected = newValue
+            lock.unlock()
+        }
+    }
+
+    var onMessage: (@Sendable (WebSocketTask, Data) async -> Void)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _onMessage
+        }
+        set {
+            lock.lock()
+            _onMessage = newValue
+            lock.unlock()
+        }
+    }
+
+    var onString: (@Sendable (WebSocketTask, String) async -> Void)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _onString
+        }
+        set {
+            lock.lock()
+            _onString = newValue
+            lock.unlock()
+        }
+    }
+
+    var onError: (@Sendable (WebSocketTask, WebSocketError) async -> Void)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _onError
+        }
+        set {
+            lock.lock()
+            _onError = newValue
+            lock.unlock()
+        }
     }
 }

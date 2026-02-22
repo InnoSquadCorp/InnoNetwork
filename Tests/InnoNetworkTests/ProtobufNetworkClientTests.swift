@@ -525,6 +525,40 @@ struct ProtobufRetryTests {
         // Initial attempt + 2 retries = 3 total attempts
         #expect(mockSession.attemptCount == 3)
     }
+
+    @Test("Retry policy respects max total retries across attempts")
+    func respectsMaxTotalRetries() async throws {
+        final class AlwaysFailSession: URLSessionProtocol, @unchecked Sendable {
+            var attemptCount = 0
+
+            func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+                attemptCount += 1
+                throw URLError(.networkConnectionLost)
+            }
+        }
+
+        let mockSession = AlwaysFailSession()
+        let retryPolicy = SimpleRetryPolicy(maxRetries: 5, maxTotalRetries: 1, retryDelay: 0.01)
+        let networkConfig = NetworkConfiguration(
+            baseURL: URL(string: "https://test.example.com")!,
+            timeout: 30,
+            cachePolicy: .useProtocolCachePolicy,
+            retryPolicy: retryPolicy
+        )
+
+        let client = try DefaultNetworkClient(
+            configuration: TestAPIConfiguration(),
+            networkConfiguration: networkConfig,
+            session: mockSession
+        )
+
+        await #expect(throws: NetworkError.self) {
+            try await client.protobufRequest(GetUserProtobuf(userID: 1))
+        }
+
+        // Initial attempt + 1 total retry = 2 attempts.
+        #expect(mockSession.attemptCount == 2)
+    }
 }
 
 

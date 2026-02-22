@@ -13,10 +13,12 @@ public protocol NetworkMetricsReporting: Sendable {
     func report(metrics: URLSessionTaskMetrics, for request: URLRequest, response: URLResponse?)
 }
 
-final class MetricsSessionDelegate: NSObject, URLSessionTaskDelegate, Sendable {
+final class MetricsTaskDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let request: URLRequest
     private let reporter: any NetworkMetricsReporting
 
-    init(reporter: any NetworkMetricsReporting) {
+    init(request: URLRequest, reporter: any NetworkMetricsReporting) {
+        self.request = request
         self.reporter = reporter
     }
 
@@ -25,26 +27,29 @@ final class MetricsSessionDelegate: NSObject, URLSessionTaskDelegate, Sendable {
         task: URLSessionTask,
         didFinishCollecting metrics: URLSessionTaskMetrics
     ) {
-        guard let request = task.originalRequest else { return }
         reporter.report(metrics: metrics, for: request, response: task.response)
     }
 }
 
-final class MetricsURLSession: NSObject, URLSessionProtocol, @unchecked Sendable {
+final class MetricsURLSession: URLSessionProtocol, @unchecked Sendable {
     private let session: URLSession
-    private let delegate: MetricsSessionDelegate
+    private let reporter: any NetworkMetricsReporting
 
     /// - Note: URLSession/URLSessionTask do not guarantee Sendable, hence `@unchecked Sendable` is used.
-    ///         Creates a new URLSession with the provided URLSessionConfiguration.
-    ///         The original URLSession's delegateQueue and other settings are not preserved.
+    ///         Wraps an existing URLSession to preserve custom configuration behaviors.
+    init(session: URLSession, reporter: any NetworkMetricsReporting) {
+        self.session = session
+        self.reporter = reporter
+    }
+
+    /// - Note: Convenience initializer for tests and standalone use.
     init(configuration: URLSessionConfiguration, reporter: any NetworkMetricsReporting) {
-        let delegate = MetricsSessionDelegate(reporter: reporter)
-        self.session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
-        self.delegate = delegate
-        super.init()
+        self.session = URLSession(configuration: configuration)
+        self.reporter = reporter
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        try await session.data(for: request)
+        let delegate = MetricsTaskDelegate(request: request, reporter: reporter)
+        return try await session.data(for: request, delegate: delegate)
     }
 }

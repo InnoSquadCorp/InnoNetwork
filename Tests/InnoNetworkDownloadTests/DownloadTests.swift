@@ -233,3 +233,121 @@ struct DownloadManagerTests {
         #expect((await manager.allTasks()).isEmpty)
     }
 }
+
+
+actor DownloadStateRecorder {
+    private var states: [DownloadState] = []
+
+    func record(_ state: DownloadState) {
+        states.append(state)
+    }
+
+    func snapshot() -> [DownloadState] {
+        states
+    }
+
+    func count() -> Int {
+        states.count
+    }
+}
+
+@Suite("Download Callback Tests")
+struct DownloadCallbackTests {
+    @Test("Deprecated callback property getter mirrors assigned value")
+    @available(*, deprecated)
+    func deprecatedCallbackGetterMirrorsAssignedValue() {
+        let config = DownloadConfiguration(sessionIdentifier: "test.callback.deprecated.\(UUID().uuidString)")
+        let manager = DownloadManager(configuration: config)
+
+        manager.onStateChanged = { _, _ in }
+        #expect(manager.onStateChanged != nil)
+
+        manager.onStateChanged = nil
+        #expect(manager.onStateChanged == nil)
+    }
+
+    @Test("State callback receives waiting and downloading immediately after start")
+    func stateCallbackOrdering() async {
+        let config = DownloadConfiguration(sessionIdentifier: "test.callback.\(UUID().uuidString)")
+        let manager = DownloadManager(configuration: config)
+        let recorder = DownloadStateRecorder()
+
+        await manager.setOnStateChangedHandler { _, state in
+            await recorder.record(state)
+        }
+
+        let task = await manager.download(
+            url: URL(string: "https://example.com/file.zip")!,
+            to: URL(fileURLWithPath: "/tmp/test-callback-\(UUID().uuidString).zip")
+        )
+
+        let received = await waitForStates(recorder: recorder, expectedCount: 2)
+        #expect(received)
+
+        let firstTwoStates = Array((await recorder.snapshot()).prefix(2))
+        #expect(firstTwoStates == [.waiting, .downloading])
+
+        await manager.cancel(task)
+    }
+
+    private func waitForStates(recorder: DownloadStateRecorder, expectedCount: Int) async -> Bool {
+        let deadline = Date().addingTimeInterval(2.0)
+        while Date() < deadline {
+            if await recorder.count() >= expectedCount {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return false
+    }
+}
+
+@Suite("Download Task Persistence Tests")
+struct DownloadTaskPersistenceTests {
+
+    @Test("Persisted tasks can be restored after actor recreation")
+    func persistenceRoundTrip() async {
+        let sessionIdentifier = "test.persistence.\(UUID().uuidString)"
+        let persistenceKey = "com.innonetwork.download.tasks.\(sessionIdentifier)"
+        UserDefaults.standard.removeObject(forKey: persistenceKey)
+        defer { UserDefaults.standard.removeObject(forKey: persistenceKey) }
+
+        let taskID = "task-\(UUID().uuidString)"
+        let url = URL(string: "https://example.com/file.zip")!
+        let destinationURL = URL(fileURLWithPath: "/tmp/\(UUID().uuidString).zip")
+
+        let writer = DownloadTaskPersistence(sessionIdentifier: sessionIdentifier)
+        await writer.upsert(id: taskID, url: url, destinationURL: destinationURL)
+
+        let reader = DownloadTaskPersistence(sessionIdentifier: sessionIdentifier)
+        let restored = await reader.record(forID: taskID)
+
+        #expect(restored?.id == taskID)
+        #expect(restored?.url == url)
+        #expect(restored?.destinationURL == destinationURL)
+    }
+
+    @Test("Prune removes stale task records")
+    func pruneRemovesStaleRecords() async {
+        let sessionIdentifier = "test.persistence.prune.\(UUID().uuidString)"
+        let persistenceKey = "com.innonetwork.download.tasks.\(sessionIdentifier)"
+        UserDefaults.standard.removeObject(forKey: persistenceKey)
+        defer { UserDefaults.standard.removeObject(forKey: persistenceKey) }
+
+        let keptID = "task-kept"
+        let removedID = "task-removed"
+        let keptURL = URL(string: "https://example.com/kept.zip")!
+        let removedURL = URL(string: "https://example.com/removed.zip")!
+        let keptDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-kept.zip")
+        let removedDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-removed.zip")
+
+        let persistence = DownloadTaskPersistence(sessionIdentifier: sessionIdentifier)
+        await persistence.upsert(id: keptID, url: keptURL, destinationURL: keptDestination)
+        await persistence.upsert(id: removedID, url: removedURL, destinationURL: removedDestination)
+
+        await persistence.prune(keeping: [keptID])
+
+        #expect(await persistence.record(forID: keptID) != nil)
+        #expect(await persistence.record(forID: removedID) == nil)
+    }
+}

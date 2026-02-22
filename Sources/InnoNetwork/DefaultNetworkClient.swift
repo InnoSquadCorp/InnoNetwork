@@ -31,10 +31,7 @@ public actor DefaultNetworkClient: NetworkClient {
             metricsReporter: metricsReporter
         )
         if let metricsReporter, let urlSession = session as? URLSession {
-            self.session = MetricsURLSession(
-                configuration: urlSession.configuration,
-                reporter: metricsReporter
-            )
+            self.session = MetricsURLSession(session: urlSession, reporter: metricsReporter)
         } else {
             self.session = session
         }
@@ -59,7 +56,7 @@ public actor DefaultNetworkClient: NetworkClient {
         operation: @Sendable (Int) async throws -> Response
     ) async throws -> Response {
         var attempt = 0
-        var totalAttempts = 0
+        var totalRetries = 0
         var snapshot = await networkMonitor?.currentSnapshot()
 
         while true {
@@ -67,13 +64,13 @@ public actor DefaultNetworkClient: NetworkClient {
                 try Task.checkCancellation()
                 return try await operation(attempt)
             } catch let error as NetworkError {
-                totalAttempts += 1
                 guard let policy = retryPolicy, policy.shouldRetry(error: error, attempt: attempt) else {
                     throw error
                 }
-                if totalAttempts >= policy.maxTotalRetries {
+                guard totalRetries < policy.maxTotalRetries else {
                     throw error
                 }
+                totalRetries += 1
                 var nextAttempt = attempt + 1
                 if policy.waitsForNetworkChanges, let monitor = networkMonitor {
                     let newSnapshot = await monitor.waitForChange(
