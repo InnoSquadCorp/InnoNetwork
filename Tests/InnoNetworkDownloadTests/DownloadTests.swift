@@ -350,4 +350,22 @@ struct DownloadTaskPersistenceTests {
         #expect(await persistence.record(forID: keptID) != nil)
         #expect(await persistence.record(forID: removedID) == nil)
     }
+
+    @Test("record(forURL:) returns nil when multiple records share the same URL")
+    func recordForURLIsNilWhenAmbiguous() async {
+        let sessionIdentifier = "test.persistence.duplicate-url.\(UUID().uuidString)"
+        let persistenceKey = "com.innonetwork.download.tasks.\(sessionIdentifier)"
+        UserDefaults.standard.removeObject(forKey: persistenceKey)
+        defer { UserDefaults.standard.removeObject(forKey: persistenceKey) }
+
+        let sharedURL = URL(string: "https://example.com/shared.zip")!
+        let firstDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-first.zip")
+        let secondDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-second.zip")
+
+        let persistence = DownloadTaskPersistence(sessionIdentifier: sessionIdentifier)
+        await persistence.upsert(id: "task-1", url: sharedURL, destinationURL: firstDestination)
+        await persistence.upsert(id: "task-2", url: sharedURL, destinationURL: secondDestination)
+
+        #expect(await persistence.record(forURL: sharedURL) == nil)
+    }
 }

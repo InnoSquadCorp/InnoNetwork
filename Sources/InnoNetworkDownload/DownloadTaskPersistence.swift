@@ -41,7 +41,9 @@ actor DownloadTaskPersistence {
 
     func record(forURL url: URL?) -> Record? {
         guard let url else { return nil }
-        return records.values.first { $0.url == url }
+        let matches = records.values.filter { $0.url == url }
+        guard matches.count == 1 else { return nil }
+        return matches[0]
     }
 
     func prune(keeping ids: Set<String>) {

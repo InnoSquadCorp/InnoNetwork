@@ -482,6 +482,7 @@ private actor DownloadStorage {
 
     func remove(_ task: DownloadTask) {
         tasks.removeValue(forKey: task.id)
+        eventListeners.removeValue(forKey: task.id)
     }
 
     func task(withId id: String) -> DownloadTask? {
@@ -511,12 +512,14 @@ private actor DownloadStorage {
     func remove(taskIdentifier: Int) {
         if let task = identifierToTask.removeValue(forKey: taskIdentifier) {
             taskIdToURLTask.removeValue(forKey: task.id)
+            eventListeners.removeValue(forKey: task.id)
         }
     }
 
     func remove(taskId: String) {
         taskIdToURLTask.removeValue(forKey: taskId)
         identifierToTask = identifierToTask.filter { $0.value.id != taskId }
+        eventListeners.removeValue(forKey: taskId)
     }
 }
 

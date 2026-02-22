@@ -30,11 +30,7 @@ public actor DefaultNetworkClient: NetworkClient {
             networkMonitor: networkConfiguration?.networkMonitor ?? NetworkMonitor.shared,
             metricsReporter: metricsReporter
         )
-        if let metricsReporter, let urlSession = session as? URLSession {
-            self.session = MetricsURLSession(session: urlSession, reporter: metricsReporter)
-        } else {
-            self.session = session
-        }
+        self.session = session
     }
 
     public func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
@@ -136,7 +132,10 @@ public actor DefaultNetworkClient: NetworkClient {
 
             apiDefinition.logger.log(request: urlRequest)
 
-            let (data, response) = try await session.data(for: urlRequest)
+            let (data, response) = try await session.data(
+                for: urlRequest,
+                metricsReporter: configuration.metricsReporter
+            )
 
             try Task.checkCancellation()
 
@@ -186,7 +185,10 @@ public actor DefaultNetworkClient: NetworkClient {
 
             apiDefinition.logger.log(request: urlRequest)
 
-            let (data, response) = try await session.data(for: urlRequest)
+            let (data, response) = try await session.data(
+                for: urlRequest,
+                metricsReporter: configuration.metricsReporter
+            )
 
             try Task.checkCancellation()
 
@@ -236,7 +238,10 @@ public actor DefaultNetworkClient: NetworkClient {
 
             apiDefinition.logger.log(request: urlRequest)
 
-            let (data, response) = try await session.data(for: urlRequest)
+            let (data, response) = try await session.data(
+                for: urlRequest,
+                metricsReporter: configuration.metricsReporter
+            )
 
             try Task.checkCancellation()
 

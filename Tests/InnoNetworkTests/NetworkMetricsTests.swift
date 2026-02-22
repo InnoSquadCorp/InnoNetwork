@@ -95,6 +95,51 @@ final class TestURLProtocol: URLProtocol {
 }
 
 
+actor MetricsForwardingProbe {
+    private var didReceiveReporterValue = false
+
+    func markReceivedReporter(_ received: Bool) {
+        didReceiveReporterValue = received
+    }
+
+    var didReceiveReporter: Bool {
+        didReceiveReporterValue
+    }
+}
+
+final class MetricsAwareMockSession: URLSessionProtocol, @unchecked Sendable {
+    private let probe: MetricsForwardingProbe
+
+    init(probe: MetricsForwardingProbe) {
+        self.probe = probe
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        return (Data(#""fallback""#.utf8), response)
+    }
+
+    func data(
+        for request: URLRequest,
+        metricsReporter: (any NetworkMetricsReporting)?
+    ) async throws -> (Data, URLResponse) {
+        await probe.markReceivedReporter(metricsReporter != nil)
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        return (Data(#""forwarded""#.utf8), response)
+    }
+}
+
+
 struct MetricsTestAPI: APIConfigure {
     var host: String { "https://example.com" }
     var basePath: String { "api" }
@@ -202,6 +247,30 @@ struct NetworkMetricsTests {
 
         let reported = await waitForMetrics(recorder: recorder, count: 2)
         #expect(reported)
+    }
+
+    @Test("Metrics reporter is forwarded to custom URLSessionProtocol implementations")
+    func metricsReporterForwardingToCustomSession() async throws {
+        let probe = MetricsForwardingProbe()
+        let session = MetricsAwareMockSession(probe: probe)
+        let recorder = MetricsRecorder()
+
+        let networkConfiguration = NetworkConfiguration(
+            baseURL: URL(string: "https://example.com/api")!,
+            retryPolicy: nil,
+            networkMonitor: nil,
+            metricsReporter: recorder
+        )
+
+        let client = try DefaultNetworkClient(
+            configuration: MetricsTestAPI(),
+            networkConfiguration: networkConfiguration,
+            session: session
+        )
+
+        let result = try await client.request(MetricsGetRequest())
+        #expect(result == "forwarded")
+        #expect(await probe.didReceiveReporter)
     }
 
     private func waitForMetrics(recorder: MetricsRecorder, count: Int) async -> Bool {

@@ -136,6 +136,7 @@ public final class WebSocketManager: NSObject, Sendable {
     public func disconnect(_ task: WebSocketTask, closeCode: URLSessionWebSocketTask.CloseCode = .normalClosure) async {
         guard await task.state == .connected else { return }
 
+        await task.setAutoReconnectEnabled(false)
         await task.updateState(.disconnecting)
         await storage.onDisconnected?(task, nil)
 
@@ -157,6 +158,7 @@ public final class WebSocketManager: NSObject, Sendable {
     public func retry(_ task: WebSocketTask) async {
         let state = await task.state
         guard state == .failed || state == .disconnected else { return }
+        await task.setAutoReconnectEnabled(true)
         await task.reset()
         await startConnection(task)
     }
@@ -251,6 +253,7 @@ public final class WebSocketManager: NSObject, Sendable {
     }
 
     private func startConnection(_ task: WebSocketTask) async {
+        await task.setAutoReconnectEnabled(true)
         await task.updateState(.connecting)
 
         var request = URLRequest(url: task.url)
@@ -313,6 +316,9 @@ public final class WebSocketManager: NSObject, Sendable {
         Task {
             guard let task = await storage.webSocketTask(for: taskIdentifier) else { return }
 
+            await task.resetReconnectCount()
+            await task.setAutoReconnectEnabled(true)
+            await task.setError(nil)
             await task.updateState(.connected)
             await storage.onConnected?(task, protocolName)
             await storage.emitEvent(.connected(protocolName), for: task.id)
@@ -322,6 +328,7 @@ public final class WebSocketManager: NSObject, Sendable {
     func handleDisconnected(taskIdentifier: Int, closeCode: URLSessionWebSocketTask.CloseCode, reason: String?) {
         Task {
             guard let task = await storage.webSocketTask(for: taskIdentifier) else { return }
+            let previousState = await task.state
 
             defer {
                 Task { await storage.remove(taskIdentifier: taskIdentifier) }
@@ -333,6 +340,9 @@ public final class WebSocketManager: NSObject, Sendable {
             await task.setError(error)
             await storage.onDisconnected?(task, error)
             await storage.emitEvent(.disconnected(error), for: task.id)
+
+            guard previousState != .disconnecting else { return }
+            guard await task.autoReconnectEnabled else { return }
 
             let reconnectCount = await task.incrementReconnectCount()
             if reconnectCount < configuration.maxReconnectAttempts {
@@ -364,6 +374,7 @@ public final class WebSocketManager: NSObject, Sendable {
             await storage.onError?(task, wsError)
             await storage.emitEvent(.error(wsError), for: task.id)
 
+            guard await task.autoReconnectEnabled else { return }
             let reconnectCount = await task.incrementReconnectCount()
             if reconnectCount < configuration.maxReconnectAttempts {
                 await attemptReconnect(task: task)
@@ -377,10 +388,21 @@ public final class WebSocketManager: NSObject, Sendable {
 
         try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
 
+        guard await task.autoReconnectEnabled else { return }
         let state = await task.state
-        if state != .disconnected && state != .connected {
+        if Self.shouldReconnect(currentState: state, autoReconnectEnabled: true) {
             await task.updateState(.reconnecting)
             await startConnection(task)
+        }
+    }
+
+    static func shouldReconnect(currentState: WebSocketState, autoReconnectEnabled: Bool) -> Bool {
+        guard autoReconnectEnabled else { return false }
+        switch currentState {
+        case .failed, .disconnected, .reconnecting:
+            return true
+        case .idle, .connecting, .connected, .disconnecting:
+            return false
         }
     }
 
@@ -463,6 +485,7 @@ private actor WebSocketStorage {
 
     func remove(_ task: WebSocketTask) {
         tasks.removeValue(forKey: task.id)
+        eventListeners.removeValue(forKey: task.id)
     }
 
     func task(withId id: String) -> WebSocketTask? {
@@ -492,12 +515,14 @@ private actor WebSocketStorage {
     func remove(taskIdentifier: Int) {
         if let task = identifierToTask.removeValue(forKey: taskIdentifier) {
             taskIdToURLTask.removeValue(forKey: task.id)
+            eventListeners.removeValue(forKey: task.id)
         }
     }
 
     func remove(taskId: String) {
         taskIdToURLTask.removeValue(forKey: taskId)
         identifierToTask = identifierToTask.filter { $0.value.id != taskId }
+        eventListeners.removeValue(forKey: taskId)
     }
 }
 

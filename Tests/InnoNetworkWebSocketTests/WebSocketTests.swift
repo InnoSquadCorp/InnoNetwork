@@ -194,4 +194,15 @@ struct WebSocketManagerTests {
         manager.onConnected = nil
         #expect(manager.onConnected == nil)
     }
+
+    @Test("Reconnect decision allows disconnected and failed states only when enabled")
+    func reconnectDecision() {
+        #expect(WebSocketManager.shouldReconnect(currentState: .failed, autoReconnectEnabled: true))
+        #expect(WebSocketManager.shouldReconnect(currentState: .disconnected, autoReconnectEnabled: true))
+        #expect(WebSocketManager.shouldReconnect(currentState: .reconnecting, autoReconnectEnabled: true))
+
+        #expect(!WebSocketManager.shouldReconnect(currentState: .connected, autoReconnectEnabled: true))
+        #expect(!WebSocketManager.shouldReconnect(currentState: .disconnecting, autoReconnectEnabled: true))
+        #expect(!WebSocketManager.shouldReconnect(currentState: .failed, autoReconnectEnabled: false))
+    }
 }
