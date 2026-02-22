@@ -8,7 +8,7 @@
 import Foundation
 
 
-public enum NetworkError: Error {
+public enum NetworkError: Error, Sendable {
     case invalidBaseURL(String)
     /// Indicates an invalid request configuration
     case invalidRequestConfiguration(String)
@@ -17,11 +17,12 @@ public enum NetworkError: Error {
     /// Indicates a response failed with an invalid HTTP status code.
     case statusCode(Response)
     /// Indicates a response failed to map to a Decodable object.
-    case objectMapping(Swift.Error, Response)
+    case objectMapping(SendableUnderlyingError, Response)
 
     case nonHTTPResponse(URLResponse)
 
-    case underlying(Swift.Error, Response?)
+    case underlying(SendableUnderlyingError, Response?)
+    case trustEvaluationFailed(TrustFailureReason)
 
     case undefined
     case cancelled
@@ -37,14 +38,31 @@ extension NetworkError: LocalizedError {
             return "Invalid request configuration: \(message)"
         case .jsonMapping:
             return "Failed to map data to JSON."
-        case .objectMapping:
-            return "Failed to map data to a Decodable object."
+        case .objectMapping(let error, _):
+            return "Failed to map data to a Decodable object: \(error.message)"
         case .statusCode:
             return "Status code didn fall within the given range."
         case .underlying(let error, _):
-            return error.localizedDescription
+            return error.message
         case .nonHTTPResponse:
             return "Failed to convert nonHTTPResponse"
+        case .trustEvaluationFailed(let reason):
+            switch reason {
+            case .unsupportedAuthenticationMethod(let method):
+                return "Unsupported authentication method: \(method)"
+            case .missingServerTrust:
+                return "Missing server trust."
+            case .systemTrustEvaluationFailed:
+                return "System trust evaluation failed."
+            case .hostNotPinned(let host):
+                return "No pin configured for host: \(host)"
+            case .publicKeyExtractionFailed:
+                return "Failed to extract public key from certificate chain."
+            case .pinMismatch(let host):
+                return "Public key pin mismatch for host: \(host)"
+            case .custom(let message):
+                return message
+            }
         case .undefined:
             return "Undefined Error"
         case .cancelled:
@@ -64,13 +82,14 @@ public extension NetworkError {
         case .statusCode(let response): return response
         case .underlying(_, let response): return response
         case .nonHTTPResponse: return nil
+        case .trustEvaluationFailed: return nil
         case .undefined: return nil
         case .cancelled: return nil
         }
     }
 
     /// Depending on error type, returns an underlying `Error`.
-    internal var underlyingError: Swift.Error? {
+    internal var underlyingError: SendableUnderlyingError? {
         switch self {
         case .invalidBaseURL: return nil
         case .invalidRequestConfiguration: return nil
@@ -79,6 +98,7 @@ public extension NetworkError {
         case .statusCode: return nil
         case .underlying(let error, _): return error
         case .nonHTTPResponse: return nil
+        case .trustEvaluationFailed: return nil
         case .undefined: return nil
         case .cancelled: return nil
         }
@@ -88,10 +108,16 @@ public extension NetworkError {
 // MARK: - Error User Info
 
 extension NetworkError: CustomNSError {
+    public static var errorDomain: String {
+        "com.innosquad.innonetwork"
+    }
+
     public var errorUserInfo: [String: Any] {
         var userInfo: [String: Any] = [:]
-        userInfo[NSLocalizedDescriptionKey] = errorDescription
-        userInfo[NSUnderlyingErrorKey] = underlyingError
+        userInfo[NSLocalizedDescriptionKey] = errorDescription ?? "Network error"
+        if let underlyingError {
+            userInfo[NSUnderlyingErrorKey] = underlyingError
+        }
         return userInfo
     }
 }

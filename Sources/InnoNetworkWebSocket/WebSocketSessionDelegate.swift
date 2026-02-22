@@ -1,7 +1,7 @@
 import Foundation
 
 
-final class WebSocketSessionDelegate: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
+final class WebSocketSessionDelegate: NSObject, URLSessionWebSocketDelegate {
     weak var manager: WebSocketManager?
     var backgroundCompletionHandler: (() -> Void)?
 

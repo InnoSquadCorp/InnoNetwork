@@ -253,19 +253,6 @@ actor DownloadStateRecorder {
 
 @Suite("Download Callback Tests")
 struct DownloadCallbackTests {
-    @Test("Deprecated callback property getter mirrors assigned value")
-    @available(*, deprecated)
-    func deprecatedCallbackGetterMirrorsAssignedValue() {
-        let config = DownloadConfiguration(sessionIdentifier: "test.callback.deprecated.\(UUID().uuidString)")
-        let manager = DownloadManager(configuration: config)
-
-        manager.onStateChanged = { _, _ in }
-        #expect(manager.onStateChanged != nil)
-
-        manager.onStateChanged = nil
-        #expect(manager.onStateChanged == nil)
-    }
-
     @Test("State callback receives waiting and downloading immediately after start")
     func stateCallbackOrdering() async {
         let config = DownloadConfiguration(sessionIdentifier: "test.callback.\(UUID().uuidString)")
@@ -351,8 +338,8 @@ struct DownloadTaskPersistenceTests {
         #expect(await persistence.record(forID: removedID) == nil)
     }
 
-    @Test("record(forURL:) returns nil when multiple records share the same URL")
-    func recordForURLIsNilWhenAmbiguous() async {
+    @Test("restore metadata remains keyed by task id even when URLs are duplicated")
+    func restoreMetadataIsTaskIDBased() async {
         let sessionIdentifier = "test.persistence.duplicate-url.\(UUID().uuidString)"
         let persistenceKey = "com.innonetwork.download.tasks.\(sessionIdentifier)"
         UserDefaults.standard.removeObject(forKey: persistenceKey)
@@ -366,6 +353,7 @@ struct DownloadTaskPersistenceTests {
         await persistence.upsert(id: "task-1", url: sharedURL, destinationURL: firstDestination)
         await persistence.upsert(id: "task-2", url: sharedURL, destinationURL: secondDestination)
 
-        #expect(await persistence.record(forURL: sharedURL) == nil)
+        #expect(await persistence.record(forID: "task-1")?.destinationURL == firstDestination)
+        #expect(await persistence.record(forID: "task-2")?.destinationURL == secondDestination)
     }
 }

@@ -126,9 +126,9 @@ final class MetricsAwareMockSession: URLSessionProtocol, @unchecked Sendable {
 
     func data(
         for request: URLRequest,
-        metricsReporter: (any NetworkMetricsReporting)?
+        context: NetworkRequestContext
     ) async throws -> (Data, URLResponse) {
-        await probe.markReceivedReporter(metricsReporter != nil)
+        await probe.markReceivedReporter(context.metricsReporter != nil)
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: 200,
@@ -160,12 +160,13 @@ struct RetryOncePolicy: RetryPolicy {
     let maxTotalRetries: Int = 1
     let retryDelay: TimeInterval = 0
 
-    func retryDelay(for attempt: Int) -> TimeInterval {
-        retryDelay
+    func retryDelay(for retryIndex: Int) -> TimeInterval {
+        _ = retryIndex
+        return retryDelay
     }
 
-    func shouldRetry(error: NetworkError, attempt: Int) -> Bool {
-        guard attempt < maxRetries else { return false }
+    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
+        guard retryIndex < maxRetries else { return false }
         switch error {
         case .underlying:
             return true
@@ -189,10 +190,11 @@ struct NetworkMetricsTests {
         let recorder = MetricsRecorder()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [TestURLProtocol.self]
-        let session = MetricsURLSession(configuration: config, reporter: recorder)
+        let session = URLSession(configuration: config)
+        let context = NetworkRequestContext(metricsReporter: recorder)
 
         let request = URLRequest(url: URL(string: "https://example.com/api/metrics")!)
-        _ = try await session.data(for: request)
+        _ = try await session.data(for: request, context: context)
 
         let reported = await waitForMetrics(recorder: recorder, count: 1)
         #expect(reported)
@@ -208,11 +210,12 @@ struct NetworkMetricsTests {
         let recorder = MetricsRecorder()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [TestURLProtocol.self]
-        let session = MetricsURLSession(configuration: config, reporter: recorder)
+        let session = URLSession(configuration: config)
+        let context = NetworkRequestContext(metricsReporter: recorder)
 
         let request = URLRequest(url: URL(string: "https://example.com/api/metrics")!)
         await #expect(throws: URLError.self) {
-            _ = try await session.data(for: request)
+            _ = try await session.data(for: request, context: context)
         }
 
         let reported = await waitForMetrics(recorder: recorder, count: 1)
@@ -375,7 +378,7 @@ struct RetryPolicyTests {
             waitsForNetworkChanges: false,
             networkChangeTimeout: nil
         )
-        #expect(policy.shouldRetry(error: .statusCode(response), attempt: 0))
+        #expect(policy.shouldRetry(error: .statusCode(response), retryIndex: 0))
     }
 
     @Test("shouldResetAttempts detects snapshot changes")

@@ -4,9 +4,11 @@ import Foundation
 public struct WebSocketConfiguration: Sendable {
     public let maxConcurrentConnections: Int
     public let connectionTimeout: TimeInterval
-    public let pingInterval: TimeInterval
-    public let pingTimeout: TimeInterval
+    public let heartbeatInterval: TimeInterval
+    public let pongTimeout: TimeInterval
+    public let maxMissedPongs: Int
     public let reconnectDelay: TimeInterval
+    public let reconnectJitterRatio: Double
     public let maxReconnectAttempts: Int
     public let allowsCellularAccess: Bool
     public let sessionIdentifier: String
@@ -15,9 +17,11 @@ public struct WebSocketConfiguration: Sendable {
     public init(
         maxConcurrentConnections: Int = 5,
         connectionTimeout: TimeInterval = 30,
-        pingInterval: TimeInterval = 30,
-        pingTimeout: TimeInterval = 10,
+        heartbeatInterval: TimeInterval = 30,
+        pongTimeout: TimeInterval = 10,
+        maxMissedPongs: Int = 1,
         reconnectDelay: TimeInterval = 1.0,
+        reconnectJitterRatio: Double = 0.2,
         maxReconnectAttempts: Int = 5,
         allowsCellularAccess: Bool = true,
         sessionIdentifier: String = "com.innonetwork.websocket",
@@ -25,9 +29,11 @@ public struct WebSocketConfiguration: Sendable {
     ) {
         self.maxConcurrentConnections = maxConcurrentConnections
         self.connectionTimeout = connectionTimeout
-        self.pingInterval = pingInterval
-        self.pingTimeout = pingTimeout
+        self.heartbeatInterval = heartbeatInterval
+        self.pongTimeout = pongTimeout
+        self.maxMissedPongs = max(1, maxMissedPongs)
         self.reconnectDelay = reconnectDelay
+        self.reconnectJitterRatio = max(0, reconnectJitterRatio)
         self.maxReconnectAttempts = maxReconnectAttempts
         self.allowsCellularAccess = allowsCellularAccess
         self.sessionIdentifier = sessionIdentifier
@@ -39,7 +45,7 @@ public struct WebSocketConfiguration: Sendable {
     func makeURLSessionConfiguration() -> URLSessionConfiguration {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = connectionTimeout
-        config.timeoutIntervalForResource = pingInterval + pingTimeout
+        config.timeoutIntervalForResource = heartbeatInterval + pongTimeout
         config.allowsCellularAccess = allowsCellularAccess
         config.httpMaximumConnectionsPerHost = maxConcurrentConnections
         return config

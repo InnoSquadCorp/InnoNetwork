@@ -24,53 +24,8 @@ public final class DownloadManager: NSObject, Sendable {
     private let session: URLSession
     private let delegate: DownloadSessionDelegate
     private let persistence: DownloadTaskPersistence
-    private let callbackMirror = DownloadCallbackMirror()
 
     private let storage = DownloadStorage()
-
-    @available(*, deprecated, message: "Use setOnProgressHandler(_:) to avoid callback registration races.")
-    public var onProgress: (@Sendable (DownloadTask, DownloadProgress) async -> Void)? {
-        get { callbackMirror.onProgress }
-        set {
-            callbackMirror.onProgress = newValue
-            Task {
-                await setOnProgressHandler(newValue)
-            }
-        }
-    }
-
-    @available(*, deprecated, message: "Use setOnStateChangedHandler(_:) to avoid callback registration races.")
-    public var onStateChanged: (@Sendable (DownloadTask, DownloadState) async -> Void)? {
-        get { callbackMirror.onStateChanged }
-        set {
-            callbackMirror.onStateChanged = newValue
-            Task {
-                await setOnStateChangedHandler(newValue)
-            }
-        }
-    }
-
-    @available(*, deprecated, message: "Use setOnCompletedHandler(_:) to avoid callback registration races.")
-    public var onCompleted: (@Sendable (DownloadTask, URL) async -> Void)? {
-        get { callbackMirror.onCompleted }
-        set {
-            callbackMirror.onCompleted = newValue
-            Task {
-                await setOnCompletedHandler(newValue)
-            }
-        }
-    }
-
-    @available(*, deprecated, message: "Use setOnFailedHandler(_:) to avoid callback registration races.")
-    public var onFailed: (@Sendable (DownloadTask, DownloadError) async -> Void)? {
-        get { callbackMirror.onFailed }
-        set {
-            callbackMirror.onFailed = newValue
-            Task {
-                await setOnFailedHandler(newValue)
-            }
-        }
-    }
 
     public init(configuration: DownloadConfiguration = .default) {
         self.configuration = configuration
@@ -91,22 +46,18 @@ public final class DownloadManager: NSObject, Sendable {
     }
 
     public func setOnProgressHandler(_ callback: (@Sendable (DownloadTask, DownloadProgress) async -> Void)?) async {
-        callbackMirror.onProgress = callback
         await storage.setOnProgress(callback)
     }
 
     public func setOnStateChangedHandler(_ callback: (@Sendable (DownloadTask, DownloadState) async -> Void)?) async {
-        callbackMirror.onStateChanged = callback
         await storage.setOnStateChanged(callback)
     }
 
     public func setOnCompletedHandler(_ callback: (@Sendable (DownloadTask, URL) async -> Void)?) async {
-        callbackMirror.onCompleted = callback
         await storage.setOnCompleted(callback)
     }
 
     public func setOnFailedHandler(_ callback: (@Sendable (DownloadTask, DownloadError) async -> Void)?) async {
-        callbackMirror.onFailed = callback
         await storage.setOnFailed(callback)
     }
 
@@ -264,12 +215,7 @@ public final class DownloadManager: NSObject, Sendable {
     }
 
     private func restoreTrackedTask(for urlTask: URLSessionDownloadTask) async -> DownloadTask? {
-        let taskID: String
-        if let existingTaskID = urlTask.taskDescription {
-            taskID = existingTaskID
-        } else if let record = await persistence.record(forURL: urlTask.originalRequest?.url) {
-            taskID = record.id
-        } else {
+        guard let taskID = urlTask.taskDescription else {
             return nil
         }
 
@@ -359,7 +305,10 @@ public final class DownloadManager: NSObject, Sendable {
                 await storage.remove(task)
                 await persistence.remove(id: task.id)
             } catch {
-                await handleError(task: task, error: DownloadError.fileSystemError(error))
+                await handleError(
+                    task: task,
+                    error: DownloadError.fileSystemError(SendableUnderlyingError(error))
+                )
             }
         }
     }
@@ -368,7 +317,6 @@ public final class DownloadManager: NSObject, Sendable {
         if let urlError = error as? URLError, urlError.code == .cancelled {
             return
         }
-
         let totalRetryCount = await task.incrementTotalRetryCount()
         guard totalRetryCount <= configuration.maxTotalRetries else {
             await markTaskFailed(task)
@@ -520,65 +468,5 @@ private actor DownloadStorage {
         taskIdToURLTask.removeValue(forKey: taskId)
         identifierToTask = identifierToTask.filter { $0.value.id != taskId }
         eventListeners.removeValue(forKey: taskId)
-    }
-}
-
-private final class DownloadCallbackMirror: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _onProgress: (@Sendable (DownloadTask, DownloadProgress) async -> Void)?
-    private var _onStateChanged: (@Sendable (DownloadTask, DownloadState) async -> Void)?
-    private var _onCompleted: (@Sendable (DownloadTask, URL) async -> Void)?
-    private var _onFailed: (@Sendable (DownloadTask, DownloadError) async -> Void)?
-
-    var onProgress: (@Sendable (DownloadTask, DownloadProgress) async -> Void)? {
-        get {
-            lock.lock()
-            defer { lock.unlock() }
-            return _onProgress
-        }
-        set {
-            lock.lock()
-            _onProgress = newValue
-            lock.unlock()
-        }
-    }
-
-    var onStateChanged: (@Sendable (DownloadTask, DownloadState) async -> Void)? {
-        get {
-            lock.lock()
-            defer { lock.unlock() }
-            return _onStateChanged
-        }
-        set {
-            lock.lock()
-            _onStateChanged = newValue
-            lock.unlock()
-        }
-    }
-
-    var onCompleted: (@Sendable (DownloadTask, URL) async -> Void)? {
-        get {
-            lock.lock()
-            defer { lock.unlock() }
-            return _onCompleted
-        }
-        set {
-            lock.lock()
-            _onCompleted = newValue
-            lock.unlock()
-        }
-    }
-
-    var onFailed: (@Sendable (DownloadTask, DownloadError) async -> Void)? {
-        get {
-            lock.lock()
-            defer { lock.unlock() }
-            return _onFailed
-        }
-        set {
-            lock.lock()
-            _onFailed = newValue
-            lock.unlock()
-        }
     }
 }

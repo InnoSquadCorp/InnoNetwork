@@ -6,6 +6,8 @@ A Swift package for type-safe network communication using async/await and Swift 
 
 InnoNetwork는 async/await 기반의 타입-세이프 Swift 네트워크 라이브러리입니다. Swift Concurrency(Actor, Sendable)를 활용하여 스레드 안전한 요청/응답 처리를 제공합니다.
 
+> v2 마이그레이션 가이드는 `MIGRATION_v2.md`를 참고하세요.
+
 ## Features
 
 ### Core
@@ -20,6 +22,8 @@ InnoNetwork는 async/await 기반의 타입-세이프 Swift 네트워크 라이�
 - **자동 재시도 로직** - 커스텀 RetryPolicy 지원
 - **설정 가능한 타임아웃 및 캐싱**
 - **Actor 기반 API 정의** - 스레드 안전성 보장
+- **Trust Policy / Public Key Pinning** - 시스템 기본 신뢰 + 핀닝 옵션
+- **Lifecycle 관측 이벤트** - request start/finish/retry/failure 이벤트 제공
 
 ### Content Types
 - **JSON** - 기본 콘텐츠 타입
@@ -32,6 +36,11 @@ InnoNetwork는 async/await 기반의 타입-세이프 Swift 네트워크 라이�
 - **자동 재시도** - 실패한 다운로드 자동 재시도
 - **AsyncSequence 이벤트 스트림** - Swift Concurrency 네이티브 이벤트 수신
 
+### WebSocket Module (별도 모듈)
+- **자동 heartbeat/pong timeout** - 운영 상태 모니터링
+- **자동 reconnect + jitter** - 장애 상황 복구 내장
+- **멀티 리스너 이벤트 스트림** - task 단위 구독 지원
+
 ## Requirements
 
 - Swift 6.2+
@@ -42,7 +51,7 @@ InnoNetwork는 async/await 기반의 타입-세이프 Swift 네트워크 라이�
 ### InnoNetwork (Core)
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquad/InnoNetwork.git", from: "1.0.0")
+    .package(url: "https://github.com/InnoSquad/InnoNetwork.git", from: "2.0.0")
 ]
 ```
 
@@ -172,9 +181,15 @@ struct UploadImage: MultipartAPIDefinition {
     typealias APIResponse = UploadResponse
 
     var multipartFormData: MultipartFormData {
-        MultipartFormData()
-            .addText(name: "title", value: "My Image")
-            .addFile(data: imageData, fileName: "image.jpg", name: "file", mimeType: "image/jpeg")
+        var formData = MultipartFormData()
+        formData.append("My Image", name: "title")
+        formData.append(
+            imageData,
+            name: "file",
+            fileName: "image.jpg",
+            mimeType: "image/jpeg"
+        )
+        return formData
     }
 
     var method: HTTPMethod { .post }
@@ -226,22 +241,19 @@ struct MyRetryPolicy: RetryPolicy {
     let maxTotalRetries: Int = 6
     let retryDelay: TimeInterval = 2.0
 
-    func shouldRetry(error: NetworkError, attempt: Int) -> Bool {
-        guard attempt < maxRetries else { return false }
+    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
+        guard retryIndex < maxRetries else { return false }
 
         switch error {
         case .statusCode(let response):
             return [500, 502, 503, 504].contains(response.statusCode)
         case .underlying(let underlyingError, _):
-            if let urlError = underlyingError as? URLError {
-                switch urlError.code {
-                case .timedOut, .notConnectedToInternet, .networkConnectionLost:
-                    return true
-                default:
-                    return false
-                }
-            }
-            return false
+            return underlyingError.domain == NSURLErrorDomain
+                && [
+                    URLError.timedOut.rawValue,
+                    URLError.notConnectedToInternet.rawValue,
+                    URLError.networkConnectionLost.rawValue
+                ].contains(underlyingError.code)
         default:
             return false
         }
@@ -253,12 +265,57 @@ let networkConfig = NetworkConfiguration(
     baseURL: URL(string: "https://api.example.com")!,
     timeout: 30.0,
     cachePolicy: .useProtocolCachePolicy,
-    retryPolicy: MyRetryPolicy()
+    retryPolicy: MyRetryPolicy(),
+    trustPolicy: .publicKeyPinning(
+        PublicKeyPinningPolicy(
+            pinsByHost: [
+                "api.example.com": [
+                    "sha256/PRIMARY_PIN_BASE64",
+                    "sha256/BACKUP_PIN_BASE64"
+                ]
+            ],
+            includesSubdomains: true,
+            allowDefaultEvaluationForUnpinnedHosts: true
+        )
+    ),
+    eventObservers: [OSLogNetworkEventObserver()]
 )
 
 let client = try DefaultNetworkClient(
     configuration: MyAPI(),
     networkConfiguration: networkConfig
+)
+```
+
+### Trust & Pinning
+
+```swift
+let trustPolicy: TrustPolicy = .publicKeyPinning(
+    PublicKeyPinningPolicy(
+        pinsByHost: [
+            "api.example.com": [
+                "sha256/PRIMARY_PIN_BASE64",
+                "sha256/BACKUP_PIN_BASE64"
+            ]
+        ],
+        includesSubdomains: true,
+        allowDefaultEvaluationForUnpinnedHosts: true
+    )
+)
+```
+
+### Observability Events
+
+```swift
+struct EventObserver: NetworkEventObserving {
+    func handle(_ event: NetworkEvent) {
+        print("Network event: \(event)")
+    }
+}
+
+let networkConfig = NetworkConfiguration(
+    baseURL: URL(string: "https://api.example.com")!,
+    eventObservers: [EventObserver()]
 )
 ```
 
@@ -336,7 +393,9 @@ do {
     case .objectMapping(let decodingError, _):
         print("Decoding Error: \(decodingError)")
     case .underlying(let underlyingError, _):
-        print("Network Error: \(underlyingError)")
+        print("Network Error: \(underlyingError.domain) (\(underlyingError.code))")
+    case .trustEvaluationFailed(let reason):
+        print("Trust Evaluation Failed: \(reason)")
     case .cancelled:
         print("Request was cancelled")
     default:
@@ -407,6 +466,21 @@ public protocol NetworkClient: Sendable {
 }
 ```
 
+#### NetworkConfiguration
+
+```swift
+public struct NetworkConfiguration: Sendable {
+    public let baseURL: URL
+    public let timeout: TimeInterval
+    public let cachePolicy: URLRequest.CachePolicy
+    public let retryPolicy: (any RetryPolicy)?
+    public let networkMonitor: (any NetworkMonitoring)?
+    public let metricsReporter: (any NetworkMetricsReporting)?
+    public let trustPolicy: TrustPolicy
+    public let eventObservers: [any NetworkEventObserving]
+}
+```
+
 ### Download Module (InnoNetworkDownload)
 
 #### DownloadManager
@@ -449,12 +523,6 @@ public final class DownloadManager: Sendable {
     public func setOnFailedHandler(
         _ callback: (@Sendable (DownloadTask, DownloadError) async -> Void)?
     ) async
-
-    // Deprecated: 하위 호환용 (새 코드에서는 setOn*Handler 사용)
-    public var onProgress: (@Sendable (DownloadTask, DownloadProgress) async -> Void)?
-    public var onStateChanged: (@Sendable (DownloadTask, DownloadState) async -> Void)?
-    public var onCompleted: (@Sendable (DownloadTask, URL) async -> Void)?
-    public var onFailed: (@Sendable (DownloadTask, DownloadError) async -> Void)?
 }
 ```
 
@@ -498,6 +566,18 @@ public final class WebSocketManager: Sendable {
     public func setOnMessageHandler(_ callback: (@Sendable (WebSocketTask, Data) async -> Void)?) async
     public func setOnStringHandler(_ callback: (@Sendable (WebSocketTask, String) async -> Void)?) async
     public func setOnErrorHandler(_ callback: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?) async
+}
+```
+
+#### WebSocketConfiguration
+
+```swift
+public struct WebSocketConfiguration: Sendable {
+    public let heartbeatInterval: TimeInterval
+    public let pongTimeout: TimeInterval
+    public let maxMissedPongs: Int
+    public let reconnectJitterRatio: Double
+    // ... existing reconnect/session fields
 }
 ```
 

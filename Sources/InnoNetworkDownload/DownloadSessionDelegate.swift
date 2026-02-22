@@ -1,7 +1,7 @@
 import Foundation
 
 
-final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate {
     weak var manager: DownloadManager?
     var backgroundCompletionHandler: (() -> Void)?
     

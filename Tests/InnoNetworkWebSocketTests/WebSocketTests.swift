@@ -12,8 +12,11 @@ struct WebSocketConfigurationTests {
 
         #expect(config.maxConcurrentConnections == 5)
         #expect(config.connectionTimeout == 30)
-        #expect(config.pingInterval == 30)
+        #expect(config.heartbeatInterval == 30)
+        #expect(config.pongTimeout == 10)
+        #expect(config.maxMissedPongs == 1)
         #expect(config.reconnectDelay == 1.0)
+        #expect(config.reconnectJitterRatio == 0.2)
         #expect(config.maxReconnectAttempts == 5)
         #expect(config.allowsCellularAccess == true)
     }
@@ -23,8 +26,11 @@ struct WebSocketConfigurationTests {
         let config = WebSocketConfiguration(
             maxConcurrentConnections: 10,
             connectionTimeout: 60,
-            pingInterval: 15,
+            heartbeatInterval: 15,
+            pongTimeout: 6,
+            maxMissedPongs: 2,
             reconnectDelay: 2.0,
+            reconnectJitterRatio: 0.1,
             maxReconnectAttempts: 10,
             allowsCellularAccess: false,
             requestHeaders: ["Authorization": "Bearer token"]
@@ -32,8 +38,11 @@ struct WebSocketConfigurationTests {
 
         #expect(config.maxConcurrentConnections == 10)
         #expect(config.connectionTimeout == 60)
-        #expect(config.pingInterval == 15)
+        #expect(config.heartbeatInterval == 15)
+        #expect(config.pongTimeout == 6)
+        #expect(config.maxMissedPongs == 2)
         #expect(config.reconnectDelay == 2.0)
+        #expect(config.reconnectJitterRatio == 0.1)
         #expect(config.maxReconnectAttempts == 10)
         #expect(config.allowsCellularAccess == false)
         #expect(config.requestHeaders["Authorization"] == "Bearer token")
@@ -181,18 +190,6 @@ struct WebSocketManagerTests {
         let activeTasks = await manager.activeTasks()
 
         #expect(activeTasks.isEmpty)
-    }
-
-    @Test("Deprecated callback property getter mirrors assigned value")
-    @available(*, deprecated)
-    func deprecatedCallbackGetterMirrorsAssignedValue() {
-        let manager = WebSocketManager(configuration: WebSocketConfiguration(sessionIdentifier: "test.websocket.deprecated.\(UUID().uuidString)"))
-
-        manager.onConnected = { _, _ in }
-        #expect(manager.onConnected != nil)
-
-        manager.onConnected = nil
-        #expect(manager.onConnected == nil)
     }
 
     @Test("Reconnect decision allows disconnected and failed states only when enabled")

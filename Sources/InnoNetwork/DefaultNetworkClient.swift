@@ -28,7 +28,9 @@ public actor DefaultNetworkClient: NetworkClient {
             cachePolicy: networkConfiguration?.cachePolicy ?? .useProtocolCachePolicy,
             retryPolicy: networkConfiguration?.retryPolicy,
             networkMonitor: networkConfiguration?.networkMonitor ?? NetworkMonitor.shared,
-            metricsReporter: metricsReporter
+            metricsReporter: metricsReporter,
+            trustPolicy: networkConfiguration?.trustPolicy ?? .systemDefault,
+            eventObservers: networkConfiguration?.eventObservers ?? []
         )
         self.session = session
     }
@@ -49,32 +51,45 @@ public actor DefaultNetworkClient: NetworkClient {
     private func performRequestWithRetry<Response>(
         retryPolicy: RetryPolicy?,
         networkMonitor: (any NetworkMonitoring)?,
-        operation: @Sendable (Int) async throws -> Response
+        requestID: UUID,
+        eventObservers: [any NetworkEventObserving],
+        operation: @Sendable (Int, UUID) async throws -> Response
     ) async throws -> Response {
-        var attempt = 0
+        var retryIndex = 0
         var totalRetries = 0
         var snapshot = await networkMonitor?.currentSnapshot()
 
         while true {
             do {
                 try Task.checkCancellation()
-                return try await operation(attempt)
+                return try await operation(retryIndex, requestID)
             } catch let error as NetworkError {
-                guard let policy = retryPolicy, policy.shouldRetry(error: error, attempt: attempt) else {
+                guard let policy = retryPolicy, policy.shouldRetry(error: error, retryIndex: retryIndex) else {
                     throw error
                 }
                 guard totalRetries < policy.maxTotalRetries else {
                     throw error
                 }
+                let currentRetryIndex = retryIndex
+                let delay = policy.retryDelay(for: currentRetryIndex)
+                notify(
+                    .retryScheduled(
+                        requestID: requestID,
+                        retryIndex: currentRetryIndex,
+                        delay: delay,
+                        reason: error.localizedDescription
+                    ),
+                    observers: eventObservers
+                )
                 totalRetries += 1
-                var nextAttempt = attempt + 1
+                var nextRetryIndex = currentRetryIndex + 1
                 if policy.waitsForNetworkChanges, let monitor = networkMonitor {
                     let newSnapshot = await monitor.waitForChange(
                         from: snapshot,
                         timeout: policy.networkChangeTimeout
                     )
                     if policy.shouldResetAttempts(afterNetworkChangeFrom: snapshot, to: newSnapshot) {
-                        nextAttempt = 0
+                        nextRetryIndex = 0
                     }
                     if let newSnapshot {
                         snapshot = newSnapshot
@@ -82,59 +97,90 @@ public actor DefaultNetworkClient: NetworkClient {
                         snapshot = await monitor.currentSnapshot() ?? snapshot
                     }
                 }
-                attempt = nextAttempt
-                let delay = policy.retryDelay(for: attempt)
                 if delay > 0 {
                     try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 }
+                retryIndex = nextRetryIndex
             } catch {
-                throw error
+                throw toNetworkError(error)
             }
         }
     }
 
     private func performRequest<T: APIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
-        try await performRequestWithRetry(
+        let requestID = UUID()
+        return try await performRequestWithRetry(
             retryPolicy: configuration.retryPolicy,
-            networkMonitor: configuration.networkMonitor
-        ) { attempt in
-            try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
+            networkMonitor: configuration.networkMonitor,
+            requestID: requestID,
+            eventObservers: configuration.eventObservers
+        ) { retryIndex, requestID in
+            try await performSingleRequest(
+                apiDefinition,
+                configuration: configuration,
+                retryIndex: retryIndex,
+                requestID: requestID
+            )
         }
     }
 
     private func performMultipartRequest<T: MultipartAPIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
-        try await performRequestWithRetry(
+        let requestID = UUID()
+        return try await performRequestWithRetry(
             retryPolicy: configuration.retryPolicy,
-            networkMonitor: configuration.networkMonitor
-        ) { attempt in
-            try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
+            networkMonitor: configuration.networkMonitor,
+            requestID: requestID,
+            eventObservers: configuration.eventObservers
+        ) { retryIndex, requestID in
+            try await performSingleRequest(
+                apiDefinition,
+                configuration: configuration,
+                retryIndex: retryIndex,
+                requestID: requestID
+            )
         }
     }
 
     private func performProtobufRequest<T: ProtobufAPIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration) async throws -> T.APIResponse {
-        try await performRequestWithRetry(
+        let requestID = UUID()
+        return try await performRequestWithRetry(
             retryPolicy: configuration.retryPolicy,
-            networkMonitor: configuration.networkMonitor
-        ) { attempt in
-            try await performSingleRequest(apiDefinition, configuration: configuration, attempt: attempt)
+            networkMonitor: configuration.networkMonitor,
+            requestID: requestID,
+            eventObservers: configuration.eventObservers
+        ) { retryIndex, requestID in
+            try await performSingleRequest(
+                apiDefinition,
+                configuration: configuration,
+                retryIndex: retryIndex,
+                requestID: requestID
+            )
         }
     }
 
-    private func performSingleRequest<T: APIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration, attempt: Int) async throws -> T.APIResponse {
+    private func performSingleRequest<T: APIDefinition>(
+        _ apiDefinition: T,
+        configuration: NetworkConfiguration,
+        retryIndex: Int,
+        requestID: UUID
+    ) async throws -> T.APIResponse {
         try Task.checkCancellation()
 
         do {
             var urlRequest = try apiDefinition.asURLRequest(configuration: configuration)
+            notifyRequestStart(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             for interceptor in apiDefinition.requestInterceptors {
                 urlRequest = try await interceptor.adapt(urlRequest)
             }
+            notifyRequestAdapted(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             apiDefinition.logger.log(request: urlRequest)
 
+            let context = makeRequestContext(configuration: configuration, retryIndex: retryIndex, requestID: requestID)
             let (data, response) = try await session.data(
                 for: urlRequest,
-                metricsReporter: configuration.metricsReporter
+                context: context
             )
 
             try Task.checkCancellation()
@@ -142,6 +188,14 @@ public actor DefaultNetworkClient: NetworkClient {
             guard let httpURLResponse = response as? HTTPURLResponse else {
                 throw NetworkError.nonHTTPResponse(response)
             }
+            notify(
+                .responseReceived(
+                    requestID: requestID,
+                    statusCode: httpURLResponse.statusCode,
+                    byteCount: data.count
+                ),
+                observers: configuration.eventObservers
+            )
 
             var networkResponse = Response(
                 statusCode: httpURLResponse.statusCode,
@@ -159,35 +213,55 @@ public actor DefaultNetworkClient: NetworkClient {
             }
 
             apiDefinition.logger.log(response: networkResponse, isError: false)
+            notify(
+                .requestFinished(
+                    requestID: requestID,
+                    statusCode: httpURLResponse.statusCode,
+                    byteCount: data.count
+                ),
+                observers: configuration.eventObservers
+            )
 
             return try apiDefinition.decode(data: data, response: networkResponse)
         } catch let error as NetworkError {
             apiDefinition.logger.log(error: error)
+            notifyNetworkFailure(error, requestID: requestID, configuration: configuration)
             throw error
         } catch where NetworkError.isCancellation(error) {
             apiDefinition.logger.log(error: NetworkError.cancelled)
+            notifyNetworkFailure(.cancelled, requestID: requestID, configuration: configuration)
             throw NetworkError.cancelled
         } catch {
-            apiDefinition.logger.log(error: NetworkError.underlying(error, nil))
-            throw NetworkError.underlying(error, nil)
+            let networkError = toNetworkError(error)
+            apiDefinition.logger.log(error: networkError)
+            notifyNetworkFailure(networkError, requestID: requestID, configuration: configuration)
+            throw networkError
         }
     }
     
-    private func performSingleRequest<T: MultipartAPIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration, attempt: Int) async throws -> T.APIResponse {
+    private func performSingleRequest<T: MultipartAPIDefinition>(
+        _ apiDefinition: T,
+        configuration: NetworkConfiguration,
+        retryIndex: Int,
+        requestID: UUID
+    ) async throws -> T.APIResponse {
         try Task.checkCancellation()
 
         do {
             var urlRequest = try apiDefinition.asURLRequest(configuration: configuration)
+            notifyRequestStart(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             for interceptor in apiDefinition.requestInterceptors {
                 urlRequest = try await interceptor.adapt(urlRequest)
             }
+            notifyRequestAdapted(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             apiDefinition.logger.log(request: urlRequest)
 
+            let context = makeRequestContext(configuration: configuration, retryIndex: retryIndex, requestID: requestID)
             let (data, response) = try await session.data(
                 for: urlRequest,
-                metricsReporter: configuration.metricsReporter
+                context: context
             )
 
             try Task.checkCancellation()
@@ -195,6 +269,14 @@ public actor DefaultNetworkClient: NetworkClient {
             guard let httpURLResponse = response as? HTTPURLResponse else {
                 throw NetworkError.nonHTTPResponse(response)
             }
+            notify(
+                .responseReceived(
+                    requestID: requestID,
+                    statusCode: httpURLResponse.statusCode,
+                    byteCount: data.count
+                ),
+                observers: configuration.eventObservers
+            )
 
             var networkResponse = Response(
                 statusCode: httpURLResponse.statusCode,
@@ -212,35 +294,55 @@ public actor DefaultNetworkClient: NetworkClient {
             }
 
             apiDefinition.logger.log(response: networkResponse, isError: false)
+            notify(
+                .requestFinished(
+                    requestID: requestID,
+                    statusCode: httpURLResponse.statusCode,
+                    byteCount: data.count
+                ),
+                observers: configuration.eventObservers
+            )
 
             return try apiDefinition.decode(data: data, response: networkResponse)
         } catch let error as NetworkError {
             apiDefinition.logger.log(error: error)
+            notifyNetworkFailure(error, requestID: requestID, configuration: configuration)
             throw error
         } catch where NetworkError.isCancellation(error) {
             apiDefinition.logger.log(error: NetworkError.cancelled)
+            notifyNetworkFailure(.cancelled, requestID: requestID, configuration: configuration)
             throw NetworkError.cancelled
         } catch {
-            apiDefinition.logger.log(error: NetworkError.underlying(error, nil))
-            throw NetworkError.underlying(error, nil)
+            let networkError = toNetworkError(error)
+            apiDefinition.logger.log(error: networkError)
+            notifyNetworkFailure(networkError, requestID: requestID, configuration: configuration)
+            throw networkError
         }
     }
 
-    private func performSingleRequest<T: ProtobufAPIDefinition>(_ apiDefinition: T, configuration: NetworkConfiguration, attempt: Int) async throws -> T.APIResponse {
+    private func performSingleRequest<T: ProtobufAPIDefinition>(
+        _ apiDefinition: T,
+        configuration: NetworkConfiguration,
+        retryIndex: Int,
+        requestID: UUID
+    ) async throws -> T.APIResponse {
         try Task.checkCancellation()
 
         do {
             var urlRequest = try apiDefinition.asURLRequest(configuration: configuration)
+            notifyRequestStart(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             for interceptor in apiDefinition.requestInterceptors {
                 urlRequest = try await interceptor.adapt(urlRequest)
             }
+            notifyRequestAdapted(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             apiDefinition.logger.log(request: urlRequest)
 
+            let context = makeRequestContext(configuration: configuration, retryIndex: retryIndex, requestID: requestID)
             let (data, response) = try await session.data(
                 for: urlRequest,
-                metricsReporter: configuration.metricsReporter
+                context: context
             )
 
             try Task.checkCancellation()
@@ -248,6 +350,14 @@ public actor DefaultNetworkClient: NetworkClient {
             guard let httpURLResponse = response as? HTTPURLResponse else {
                 throw NetworkError.nonHTTPResponse(response)
             }
+            notify(
+                .responseReceived(
+                    requestID: requestID,
+                    statusCode: httpURLResponse.statusCode,
+                    byteCount: data.count
+                ),
+                observers: configuration.eventObservers
+            )
 
             var networkResponse = Response(
                 statusCode: httpURLResponse.statusCode,
@@ -265,18 +375,113 @@ public actor DefaultNetworkClient: NetworkClient {
             }
 
             apiDefinition.logger.log(response: networkResponse, isError: false)
+            notify(
+                .requestFinished(
+                    requestID: requestID,
+                    statusCode: httpURLResponse.statusCode,
+                    byteCount: data.count
+                ),
+                observers: configuration.eventObservers
+            )
 
             return try apiDefinition.decode(data: data, response: networkResponse)
         } catch let error as NetworkError {
             apiDefinition.logger.log(error: error)
+            notifyNetworkFailure(error, requestID: requestID, configuration: configuration)
             throw error
         } catch where NetworkError.isCancellation(error) {
             apiDefinition.logger.log(error: NetworkError.cancelled)
+            notifyNetworkFailure(.cancelled, requestID: requestID, configuration: configuration)
             throw NetworkError.cancelled
         } catch {
-            apiDefinition.logger.log(error: NetworkError.underlying(error, nil))
-            throw NetworkError.underlying(error, nil)
+            let networkError = toNetworkError(error)
+            apiDefinition.logger.log(error: networkError)
+            notifyNetworkFailure(networkError, requestID: requestID, configuration: configuration)
+            throw networkError
         }
+    }
+
+    private func makeRequestContext(
+        configuration: NetworkConfiguration,
+        retryIndex: Int,
+        requestID: UUID
+    ) -> NetworkRequestContext {
+        NetworkRequestContext(
+            requestID: requestID,
+            retryIndex: retryIndex,
+            metricsReporter: configuration.metricsReporter,
+            trustPolicy: configuration.trustPolicy,
+            eventObservers: configuration.eventObservers
+        )
+    }
+
+    private func notify(_ event: NetworkEvent, observers: [any NetworkEventObserving]) {
+        for observer in observers {
+            observer.handle(event)
+        }
+    }
+
+    private func notifyRequestStart(
+        _ request: URLRequest,
+        retryIndex: Int,
+        requestID: UUID,
+        configuration: NetworkConfiguration
+    ) {
+        notify(
+            .requestStart(
+                requestID: requestID,
+                method: request.httpMethod ?? "UNKNOWN",
+                url: request.url?.absoluteString ?? "",
+                retryIndex: retryIndex
+            ),
+            observers: configuration.eventObservers
+        )
+    }
+
+    private func notifyRequestAdapted(
+        _ request: URLRequest,
+        retryIndex: Int,
+        requestID: UUID,
+        configuration: NetworkConfiguration
+    ) {
+        notify(
+            .requestAdapted(
+                requestID: requestID,
+                method: request.httpMethod ?? "UNKNOWN",
+                url: request.url?.absoluteString ?? "",
+                retryIndex: retryIndex
+            ),
+            observers: configuration.eventObservers
+        )
+    }
+
+    private func notifyNetworkFailure(
+        _ networkError: NetworkError,
+        requestID: UUID,
+        configuration: NetworkConfiguration
+    ) {
+        let nsError = networkError as NSError
+        notify(
+            .requestFailed(
+                requestID: requestID,
+                errorCode: nsError.code,
+                message: networkError.localizedDescription
+            ),
+            observers: configuration.eventObservers
+        )
+    }
+
+    private func toNetworkError(_ error: Error) -> NetworkError {
+        if let trustEvaluationError = error as? TrustEvaluationError {
+            switch trustEvaluationError {
+            case .failed(let reason, _):
+                return .trustEvaluationFailed(reason)
+            }
+        }
+        if NetworkError.isCancellation(error) {
+            return .cancelled
+        }
+        return .underlying(SendableUnderlyingError(error), nil)
     }
 }
 
@@ -317,7 +522,7 @@ extension APIDefinition {
         do {
             return try decoder.decode(Self.APIResponse.self, from: data)
         } catch {
-            throw NetworkError.objectMapping(error, response)
+            throw NetworkError.objectMapping(SendableUnderlyingError(error), response)
         }
     }
 }
@@ -344,7 +549,7 @@ extension MultipartAPIDefinition {
         do {
             return try decoder.decode(Self.APIResponse.self, from: data)
         } catch {
-            throw NetworkError.objectMapping(error, response)
+            throw NetworkError.objectMapping(SendableUnderlyingError(error), response)
         }
     }
 }
@@ -389,7 +594,7 @@ extension ProtobufAPIDefinition {
         do {
             return try Self.APIResponse(serializedData: data)
         } catch {
-            throw NetworkError.objectMapping(error, response)
+            throw NetworkError.objectMapping(SendableUnderlyingError(error), response)
         }
     }
 }

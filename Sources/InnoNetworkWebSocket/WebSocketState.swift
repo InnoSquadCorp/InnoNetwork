@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetwork
 
 
 public enum WebSocketState: String, Sendable {
@@ -14,8 +15,8 @@ public enum WebSocketState: String, Sendable {
 
 public enum WebSocketError: Error, Sendable {
     case invalidURL(String)
-    case connectionFailed(Error)
-    case disconnected(Error?)
+    case connectionFailed(SendableUnderlyingError)
+    case disconnected(SendableUnderlyingError?)
     case pingTimeout
     case maxReconnectAttemptsExceeded
     case cancelled
@@ -29,10 +30,10 @@ extension WebSocketError: LocalizedError {
         case .invalidURL(let url):
             return "Invalid WebSocket URL: \(url)"
         case .connectionFailed(let error):
-            return "WebSocket connection failed: \(error.localizedDescription)"
+            return "WebSocket connection failed: \(error.message)"
         case .disconnected(let error):
             if let error = error {
-                return "WebSocket disconnected with error: \(error.localizedDescription)"
+                return "WebSocket disconnected with error: \(error.message)"
             }
             return "WebSocket disconnected"
         case .pingTimeout:

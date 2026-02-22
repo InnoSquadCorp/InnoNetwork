@@ -439,12 +439,14 @@ struct ProtobufRetryTests {
         let maxTotalRetries: Int
         let retryDelay: TimeInterval
 
-        func retryDelay(for attempt: Int) -> TimeInterval {
-            retryDelay
+        func retryDelay(for retryIndex: Int) -> TimeInterval {
+            _ = retryIndex
+            return retryDelay
         }
 
-        func shouldRetry(error: NetworkError, attempt: Int) -> Bool {
-            attempt < maxRetries
+        func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
+            _ = error
+            return retryIndex < maxRetries
         }
     }
 

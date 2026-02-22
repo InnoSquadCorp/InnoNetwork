@@ -6,9 +6,10 @@ public protocol RetryPolicy: Sendable {
     /// Maximum total retry count, even if retry count is reset due to network changes.
     var maxTotalRetries: Int { get }
     var retryDelay: TimeInterval { get }
-    /// Returns the delay (in seconds) for the given attempt number.
-    func retryDelay(for attempt: Int) -> TimeInterval
-    func shouldRetry(error: NetworkError, attempt: Int) -> Bool
+    /// Returns the delay (in seconds) for the given retry index.
+    /// `retryIndex` is 0-based and represents actual retry executions.
+    func retryDelay(for retryIndex: Int) -> TimeInterval
+    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool
     var waitsForNetworkChanges: Bool { get }
     var networkChangeTimeout: TimeInterval? { get }
     func shouldResetAttempts(afterNetworkChangeFrom oldSnapshot: NetworkSnapshot?, to newSnapshot: NetworkSnapshot?) -> Bool
@@ -22,8 +23,9 @@ public extension RetryPolicy {
         false
     }
 
-    func retryDelay(for attempt: Int) -> TimeInterval {
-        retryDelay
+    func retryDelay(for retryIndex: Int) -> TimeInterval {
+        _ = retryIndex
+        return retryDelay
     }
 }
 
@@ -62,8 +64,8 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         self.networkChangeTimeout = networkChangeTimeout
     }
 
-    public func shouldRetry(error: NetworkError, attempt: Int) -> Bool {
-        guard attempt < maxRetries else { return false }
+    public func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
+        guard retryIndex < maxRetries else { return false }
         switch error {
         case .statusCode(let response):
             return response.statusCode == 408
@@ -80,8 +82,8 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         }
     }
 
-    public func retryDelay(for attempt: Int) -> TimeInterval {
-        let exponent = pow(2.0, Double(max(attempt, 0)))
+    public func retryDelay(for retryIndex: Int) -> TimeInterval {
+        let exponent = pow(2.0, Double(max(retryIndex, 0)))
         let base = min(retryDelay * exponent, maxDelay)
         let jitter = abs(base * jitterRatio)
         let range = (-jitter)...(jitter)
