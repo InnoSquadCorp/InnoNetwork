@@ -35,7 +35,6 @@ public final class WebSocketManager: NSObject, Sendable {
     private let configuration: WebSocketConfiguration
     private let session: URLSession
     private let delegate: WebSocketSessionDelegate
-    private let backgroundCompletionStore: BackgroundCompletionStore
 
     private let storage = WebSocketStorage()
 
@@ -47,7 +46,6 @@ public final class WebSocketManager: NSObject, Sendable {
             callbacks: callbacks,
             backgroundCompletionStore: backgroundCompletionStore
         )
-        self.backgroundCompletionStore = backgroundCompletionStore
 
         let sessionConfig = configuration.makeURLSessionConfiguration()
         self.session = URLSession(
@@ -332,6 +330,12 @@ public final class WebSocketManager: NSObject, Sendable {
     func handleConnected(taskIdentifier: Int, protocolName: String?) {
         Task {
             guard let task = await storage.webSocketTask(for: taskIdentifier) else { return }
+            let state = await task.state
+            let autoReconnectEnabled = await task.autoReconnectEnabled
+            if state == .disconnecting || state == .disconnected || !autoReconnectEnabled {
+                await storage.detachRuntime(taskIdentifier: taskIdentifier)
+                return
+            }
 
             await task.resetReconnectCount()
             await task.setAutoReconnectEnabled(true)
@@ -575,13 +579,8 @@ public final class WebSocketManager: NSObject, Sendable {
     }
 
     public func handleBackgroundSessionCompletion(_ identifier: String, completion: @escaping @Sendable () -> Void) {
-        guard identifier == configuration.sessionIdentifier else {
-            completion()
-            return
-        }
-        Task {
-            await backgroundCompletionStore.set(completion)
-        }
+        _ = identifier
+        completion()
     }
 }
 

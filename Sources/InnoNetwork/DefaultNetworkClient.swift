@@ -12,6 +12,7 @@ public protocol NetworkClient: Sendable {
 public actor DefaultNetworkClient: NetworkClient {
     private let configuration: NetworkConfiguration
     private let session: URLSessionProtocol
+    private let eventDispatcher = NetworkEventDispatcher()
 
     public init(
         configuration: APIConfigure,
@@ -72,7 +73,7 @@ public actor DefaultNetworkClient: NetworkClient {
                 }
                 let currentRetryIndex = retryIndex
                 let delay = policy.retryDelay(for: currentRetryIndex)
-                notify(
+                await notify(
                     .retryScheduled(
                         requestID: requestID,
                         retryIndex: currentRetryIndex,
@@ -168,12 +169,12 @@ public actor DefaultNetworkClient: NetworkClient {
 
         do {
             var urlRequest = try apiDefinition.asURLRequest(configuration: configuration)
-            notifyRequestStart(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
+            await notifyRequestStart(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             for interceptor in apiDefinition.requestInterceptors {
                 urlRequest = try await interceptor.adapt(urlRequest)
             }
-            notifyRequestAdapted(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
+            await notifyRequestAdapted(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             apiDefinition.logger.log(request: urlRequest)
 
@@ -188,7 +189,7 @@ public actor DefaultNetworkClient: NetworkClient {
             guard let httpURLResponse = response as? HTTPURLResponse else {
                 throw NetworkError.nonHTTPResponse(response)
             }
-            notify(
+            await notify(
                 .responseReceived(
                     requestID: requestID,
                     statusCode: httpURLResponse.statusCode,
@@ -213,7 +214,7 @@ public actor DefaultNetworkClient: NetworkClient {
             }
 
             apiDefinition.logger.log(response: networkResponse, isError: false)
-            notify(
+            await notify(
                 .requestFinished(
                     requestID: requestID,
                     statusCode: httpURLResponse.statusCode,
@@ -225,16 +226,16 @@ public actor DefaultNetworkClient: NetworkClient {
             return try apiDefinition.decode(data: data, response: networkResponse)
         } catch let error as NetworkError {
             apiDefinition.logger.log(error: error)
-            notifyNetworkFailure(error, requestID: requestID, configuration: configuration)
+            await notifyNetworkFailure(error, requestID: requestID, configuration: configuration)
             throw error
         } catch where NetworkError.isCancellation(error) {
             apiDefinition.logger.log(error: NetworkError.cancelled)
-            notifyNetworkFailure(.cancelled, requestID: requestID, configuration: configuration)
+            await notifyNetworkFailure(.cancelled, requestID: requestID, configuration: configuration)
             throw NetworkError.cancelled
         } catch {
             let networkError = toNetworkError(error)
             apiDefinition.logger.log(error: networkError)
-            notifyNetworkFailure(networkError, requestID: requestID, configuration: configuration)
+            await notifyNetworkFailure(networkError, requestID: requestID, configuration: configuration)
             throw networkError
         }
     }
@@ -249,12 +250,12 @@ public actor DefaultNetworkClient: NetworkClient {
 
         do {
             var urlRequest = try apiDefinition.asURLRequest(configuration: configuration)
-            notifyRequestStart(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
+            await notifyRequestStart(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             for interceptor in apiDefinition.requestInterceptors {
                 urlRequest = try await interceptor.adapt(urlRequest)
             }
-            notifyRequestAdapted(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
+            await notifyRequestAdapted(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             apiDefinition.logger.log(request: urlRequest)
 
@@ -269,7 +270,7 @@ public actor DefaultNetworkClient: NetworkClient {
             guard let httpURLResponse = response as? HTTPURLResponse else {
                 throw NetworkError.nonHTTPResponse(response)
             }
-            notify(
+            await notify(
                 .responseReceived(
                     requestID: requestID,
                     statusCode: httpURLResponse.statusCode,
@@ -294,7 +295,7 @@ public actor DefaultNetworkClient: NetworkClient {
             }
 
             apiDefinition.logger.log(response: networkResponse, isError: false)
-            notify(
+            await notify(
                 .requestFinished(
                     requestID: requestID,
                     statusCode: httpURLResponse.statusCode,
@@ -306,16 +307,16 @@ public actor DefaultNetworkClient: NetworkClient {
             return try apiDefinition.decode(data: data, response: networkResponse)
         } catch let error as NetworkError {
             apiDefinition.logger.log(error: error)
-            notifyNetworkFailure(error, requestID: requestID, configuration: configuration)
+            await notifyNetworkFailure(error, requestID: requestID, configuration: configuration)
             throw error
         } catch where NetworkError.isCancellation(error) {
             apiDefinition.logger.log(error: NetworkError.cancelled)
-            notifyNetworkFailure(.cancelled, requestID: requestID, configuration: configuration)
+            await notifyNetworkFailure(.cancelled, requestID: requestID, configuration: configuration)
             throw NetworkError.cancelled
         } catch {
             let networkError = toNetworkError(error)
             apiDefinition.logger.log(error: networkError)
-            notifyNetworkFailure(networkError, requestID: requestID, configuration: configuration)
+            await notifyNetworkFailure(networkError, requestID: requestID, configuration: configuration)
             throw networkError
         }
     }
@@ -330,12 +331,12 @@ public actor DefaultNetworkClient: NetworkClient {
 
         do {
             var urlRequest = try apiDefinition.asURLRequest(configuration: configuration)
-            notifyRequestStart(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
+            await notifyRequestStart(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             for interceptor in apiDefinition.requestInterceptors {
                 urlRequest = try await interceptor.adapt(urlRequest)
             }
-            notifyRequestAdapted(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
+            await notifyRequestAdapted(urlRequest, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             apiDefinition.logger.log(request: urlRequest)
 
@@ -350,7 +351,7 @@ public actor DefaultNetworkClient: NetworkClient {
             guard let httpURLResponse = response as? HTTPURLResponse else {
                 throw NetworkError.nonHTTPResponse(response)
             }
-            notify(
+            await notify(
                 .responseReceived(
                     requestID: requestID,
                     statusCode: httpURLResponse.statusCode,
@@ -375,7 +376,7 @@ public actor DefaultNetworkClient: NetworkClient {
             }
 
             apiDefinition.logger.log(response: networkResponse, isError: false)
-            notify(
+            await notify(
                 .requestFinished(
                     requestID: requestID,
                     statusCode: httpURLResponse.statusCode,
@@ -387,16 +388,16 @@ public actor DefaultNetworkClient: NetworkClient {
             return try apiDefinition.decode(data: data, response: networkResponse)
         } catch let error as NetworkError {
             apiDefinition.logger.log(error: error)
-            notifyNetworkFailure(error, requestID: requestID, configuration: configuration)
+            await notifyNetworkFailure(error, requestID: requestID, configuration: configuration)
             throw error
         } catch where NetworkError.isCancellation(error) {
             apiDefinition.logger.log(error: NetworkError.cancelled)
-            notifyNetworkFailure(.cancelled, requestID: requestID, configuration: configuration)
+            await notifyNetworkFailure(.cancelled, requestID: requestID, configuration: configuration)
             throw NetworkError.cancelled
         } catch {
             let networkError = toNetworkError(error)
             apiDefinition.logger.log(error: networkError)
-            notifyNetworkFailure(networkError, requestID: requestID, configuration: configuration)
+            await notifyNetworkFailure(networkError, requestID: requestID, configuration: configuration)
             throw networkError
         }
     }
@@ -415,10 +416,8 @@ public actor DefaultNetworkClient: NetworkClient {
         )
     }
 
-    private func notify(_ event: NetworkEvent, observers: [any NetworkEventObserving]) {
-        for observer in observers {
-            observer.handle(event)
-        }
+    private func notify(_ event: NetworkEvent, observers: [any NetworkEventObserving]) async {
+        await eventDispatcher.enqueue(event, observers: observers)
     }
 
     private func notifyRequestStart(
@@ -426,8 +425,8 @@ public actor DefaultNetworkClient: NetworkClient {
         retryIndex: Int,
         requestID: UUID,
         configuration: NetworkConfiguration
-    ) {
-        notify(
+    ) async {
+        await notify(
             .requestStart(
                 requestID: requestID,
                 method: request.httpMethod ?? "UNKNOWN",
@@ -443,8 +442,8 @@ public actor DefaultNetworkClient: NetworkClient {
         retryIndex: Int,
         requestID: UUID,
         configuration: NetworkConfiguration
-    ) {
-        notify(
+    ) async {
+        await notify(
             .requestAdapted(
                 requestID: requestID,
                 method: request.httpMethod ?? "UNKNOWN",
@@ -459,9 +458,9 @@ public actor DefaultNetworkClient: NetworkClient {
         _ networkError: NetworkError,
         requestID: UUID,
         configuration: NetworkConfiguration
-    ) {
+    ) async {
         let nsError = networkError as NSError
-        notify(
+        await notify(
             .requestFailed(
                 requestID: requestID,
                 errorCode: nsError.code,
@@ -482,6 +481,38 @@ public actor DefaultNetworkClient: NetworkClient {
             return .cancelled
         }
         return .underlying(SendableUnderlyingError(error), nil)
+    }
+}
+
+
+private actor NetworkEventDispatcher {
+    private struct EnqueuedEvent: Sendable {
+        let event: NetworkEvent
+        let observers: [any NetworkEventObserving]
+    }
+
+    private var queue: [EnqueuedEvent] = []
+    private var isProcessing = false
+
+    func enqueue(_ event: NetworkEvent, observers: [any NetworkEventObserving]) {
+        guard !observers.isEmpty else { return }
+        queue.append(EnqueuedEvent(event: event, observers: observers))
+        guard !isProcessing else { return }
+        isProcessing = true
+
+        Task {
+            await drain()
+        }
+    }
+
+    private func drain() async {
+        while !queue.isEmpty {
+            let enqueued = queue.removeFirst()
+            for observer in enqueued.observers {
+                observer.handle(enqueued.event)
+            }
+        }
+        isProcessing = false
     }
 }
 

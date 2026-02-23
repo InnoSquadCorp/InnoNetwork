@@ -13,6 +13,8 @@ public struct WebSocketConfiguration: Sendable {
     /// Total connection attempts are `1 + maxReconnectAttempts`.
     public let maxReconnectAttempts: Int
     public let allowsCellularAccess: Bool
+    /// Reserved for API compatibility with managers that support background sessions.
+    /// WebSocketManager currently uses a default URLSession configuration.
     public let sessionIdentifier: String
     public let requestHeaders: [String: String]
 

@@ -147,11 +147,106 @@ enum TrustEvaluator {
                   let keyData = SecKeyCopyExternalRepresentation(key, nil) as Data?
             else { continue }
 
-            let digest = SHA256.hash(data: keyData)
-            let hashValue = Data(digest).base64EncodedString()
-            pins.insert(hashValue)
-            pins.insert("sha256/\(hashValue)")
+            pins.formUnion(pinHashes(for: keyData))
+
+            let keyAttributes = (SecKeyCopyAttributes(key) as? [CFString: Any]) ?? [:]
+            let keyType = (keyAttributes[kSecAttrKeyType] as? String) ?? ""
+            let keySizeInBits = (keyAttributes[kSecAttrKeySizeInBits] as? Int) ?? 0
+            if let spkiData = spkiData(
+                publicKeyData: keyData,
+                keyType: keyType,
+                keySizeInBits: keySizeInBits
+            ) {
+                pins.formUnion(pinHashes(for: spkiData))
+            }
         }
         return pins
+    }
+
+    static func spkiData(
+        publicKeyData: Data,
+        keyType: String,
+        keySizeInBits: Int
+    ) -> Data? {
+        guard let algorithmIdentifier = algorithmIdentifierData(
+            keyType: keyType,
+            keySizeInBits: keySizeInBits
+        ) else {
+            return nil
+        }
+
+        let subjectPublicKey = derBitString(publicKeyData)
+        return derSequence(algorithmIdentifier + subjectPublicKey)
+    }
+
+    private static func pinHashes(for bytes: Data) -> Set<String> {
+        let digest = SHA256.hash(data: bytes)
+        let hashValue = Data(digest).base64EncodedString()
+        return [hashValue, "sha256/\(hashValue)"]
+    }
+
+    private static func algorithmIdentifierData(
+        keyType: String,
+        keySizeInBits: Int
+    ) -> Data? {
+        let rsaKeyType = kSecAttrKeyTypeRSA as String
+        let ecPrimeRandomKeyType = kSecAttrKeyTypeECSECPrimeRandom as String
+        let ecKeyType = kSecAttrKeyTypeEC as String
+
+        switch keyType {
+        case rsaKeyType:
+            // rsaEncryption OID (1.2.840.113549.1.1.1) + NULL params
+            return Data([0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00])
+        case ecPrimeRandomKeyType, ecKeyType:
+            // id-ecPublicKey OID (1.2.840.10045.2.1) + named curve OID
+            if keySizeInBits <= 256 {
+                // prime256v1 (1.2.840.10045.3.1.7)
+                return Data([0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07])
+            } else if keySizeInBits <= 384 {
+                // secp384r1 (1.3.132.0.34)
+                return Data([0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x22])
+            } else {
+                // secp521r1 (1.3.132.0.35)
+                return Data([0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23])
+            }
+        default:
+            return nil
+        }
+    }
+
+    private static func derSequence(_ payload: Data) -> Data {
+        derWrap(tag: 0x30, payload: payload)
+    }
+
+    private static func derBitString(_ payload: Data) -> Data {
+        // First byte is the number of unused bits in the final octet (0 for full bytes).
+        var bitPayload = Data([0x00])
+        bitPayload.append(payload)
+        return derWrap(tag: 0x03, payload: bitPayload)
+    }
+
+    private static func derWrap(tag: UInt8, payload: Data) -> Data {
+        var result = Data([tag])
+        result.append(derLength(payload.count))
+        result.append(payload)
+        return result
+    }
+
+    private static func derLength(_ count: Int) -> Data {
+        precondition(count >= 0)
+        if count < 0x80 {
+            return Data([UInt8(count)])
+        }
+
+        var value = count
+        var bytes: [UInt8] = []
+        while value > 0 {
+            bytes.insert(UInt8(value & 0xff), at: 0)
+            value >>= 8
+        }
+
+        var result = Data([0x80 | UInt8(bytes.count)])
+        result.append(contentsOf: bytes)
+        return result
     }
 }

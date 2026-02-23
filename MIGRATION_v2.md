@@ -101,6 +101,9 @@ let config = NetworkConfiguration(
 
 Existing custom session mocks should implement `data(for:context:)` for full behavior.
 
+Observability note:
+- `NetworkEventObserving` callbacks are delivered asynchronously (best effort) so request paths are not blocked by slow observers.
+
 ## 5. WebSocket Runtime Configuration Changes
 
 `WebSocketConfiguration` heartbeat/reconnect fields changed:
@@ -124,6 +127,11 @@ Manual disconnect behavior was tightened:
 Close reason propagation:
 - `WebSocketEvent.disconnected` preserves close reason via
   `WebSocketError.disconnected(SendableUnderlyingError(...))` when available.
+
+Background completion note:
+- `WebSocketManager` does not use a background URLSession runtime.
+- `handleBackgroundSessionCompletion(_:completion:)` now invokes `completion` immediately for compatibility.
+- `WebSocketConfiguration.sessionIdentifier` is retained as a compatibility field.
 
 ## 6. Error Model Is Sendable-Safe
 

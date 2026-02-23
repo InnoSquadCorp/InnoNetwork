@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 @testable import InnoNetwork
 
@@ -95,6 +96,20 @@ private struct RecordingNetworkEventObserver: NetworkEventObserving {
         Task {
             await store.append(event)
         }
+    }
+}
+
+
+private final class SlowNetworkEventObserver: NetworkEventObserving, Sendable {
+    private let delay: TimeInterval
+
+    init(delay: TimeInterval) {
+        self.delay = delay
+    }
+
+    func handle(_ event: NetworkEvent) {
+        _ = event
+        Thread.sleep(forTimeInterval: delay)
     }
 }
 
@@ -300,6 +315,60 @@ struct TrustAndObservabilityTests {
         default:
             Issue.record("Expected forwarded trust policy to be public key pinning.")
         }
+    }
+
+    @Test("Slow observers do not block request completion path")
+    func slowObserverNonBlocking() async throws {
+        let session = FlakyContextSession(failuresBeforeSuccess: 0)
+        let slowObserver = SlowNetworkEventObserver(delay: 0.2)
+        let networkConfiguration = NetworkConfiguration(
+            baseURL: URL(string: "https://api.example.com/v2")!,
+            retryPolicy: nil,
+            networkMonitor: nil,
+            metricsReporter: nil,
+            trustPolicy: .systemDefault,
+            eventObservers: [slowObserver]
+        )
+        let client = try DefaultNetworkClient(
+            configuration: TrustObservabilityAPIConfig(),
+            networkConfiguration: networkConfiguration,
+            session: session
+        )
+
+        let start = Date()
+        let value = try await client.request(TrustObservabilityRequest())
+        let elapsed = Date().timeIntervalSince(start)
+
+        #expect(value == "ok")
+        #expect(elapsed < 0.75)
+    }
+
+    @Test("SPKI helper supports common key types")
+    func spkiEncodingHelperSupportsCommonKeyTypes() {
+        let keyData = Data([0x01, 0x02, 0x03, 0x04, 0x05])
+
+        let rsa = TrustEvaluator.spkiData(
+            publicKeyData: keyData,
+            keyType: kSecAttrKeyTypeRSA as String,
+            keySizeInBits: 2048
+        )
+        #expect(rsa != nil)
+        #expect((rsa?.count ?? 0) > keyData.count)
+
+        let p256 = TrustEvaluator.spkiData(
+            publicKeyData: keyData,
+            keyType: kSecAttrKeyTypeECSECPrimeRandom as String,
+            keySizeInBits: 256
+        )
+        #expect(p256 != nil)
+        #expect((p256?.count ?? 0) > keyData.count)
+
+        let unsupported = TrustEvaluator.spkiData(
+            publicKeyData: keyData,
+            keyType: "com.innonetwork.unsupported",
+            keySizeInBits: 0
+        )
+        #expect(unsupported == nil)
     }
 
     private func waitForEvents(

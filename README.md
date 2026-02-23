@@ -323,6 +323,9 @@ let networkConfig = NetworkConfiguration(
 )
 ```
 
+`eventObservers`는 요청 경로를 막지 않도록 비동기(best-effort)로 전달됩니다.
+관측 로직은 빠르게 반환하도록 구현하는 것을 권장합니다.
+
 ### Interceptors
 
 요청 및 응답 인터셉터를 사용하여 요청/응답을 수정할 수 있습니다:
@@ -573,6 +576,10 @@ public final class WebSocketManager: Sendable {
     public func setOnMessageHandler(_ callback: (@Sendable (WebSocketTask, Data) async -> Void)?) async
     public func setOnStringHandler(_ callback: (@Sendable (WebSocketTask, String) async -> Void)?) async
     public func setOnErrorHandler(_ callback: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?) async
+
+    // WebSocketManager does not use a background URLSession.
+    // This callback is invoked immediately for compatibility.
+    public func handleBackgroundSessionCompletion(_ identifier: String, completion: @escaping @Sendable () -> Void)
 }
 ```
 
@@ -589,6 +596,8 @@ public struct WebSocketConfiguration: Sendable {
     public let maxMissedPongs: Int
     public let reconnectJitterRatio: Double
     public let maxReconnectAttempts: Int
+    // Reserved for compatibility; WebSocketManager currently uses default URLSession configuration.
+    public let sessionIdentifier: String
     // ... existing session fields
 }
 ```

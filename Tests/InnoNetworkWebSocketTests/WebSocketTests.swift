@@ -254,6 +254,17 @@ struct WebSocketManagerTests {
         #expect(await waitForTaskRemoval(manager: manager, taskID: reconnectingTask.id))
     }
 
+    @Test("Background completion callback is immediate for websocket manager")
+    func backgroundCompletionImmediate() async {
+        let manager = WebSocketManager()
+
+        await confirmation("background completion called") { confirm in
+            manager.handleBackgroundSessionCompletion("websocket.any-id") {
+                confirm()
+            }
+        }
+    }
+
     private func waitForTaskRemoval(
         manager: WebSocketManager,
         taskID: String,
@@ -511,6 +522,43 @@ struct WebSocketListenerLifecycleTests {
         }
         #expect(!duplicateDelivered)
         await manager.disconnect(task)
+    }
+
+    @Test("Disconnecting task ignores stale connected callback")
+    func disconnectingTaskIgnoresStaleConnectedCallback() async throws {
+        let manager = WebSocketManager(
+            configuration: WebSocketConfiguration(
+                heartbeatInterval: 0,
+                reconnectDelay: 0,
+                maxReconnectAttempts: 0,
+                sessionIdentifier: "test.websocket.stale-connected.\(UUID().uuidString)"
+            )
+        )
+        let recorder = WebSocketEventRecorder()
+
+        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        _ = await manager.addEventListener(for: task) { event in
+            Task {
+                await recorder.record(event)
+            }
+        }
+
+        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        await task.updateState(.disconnecting)
+        await task.setAutoReconnectEnabled(false)
+        manager.handleConnected(taskIdentifier: taskIdentifier, protocolName: "stale")
+
+        let connectedDelivered = await waitForEvent(recorder: recorder, timeout: 0.3) { event in
+            if case .connected = event { return true }
+            return false
+        }
+        #expect(!connectedDelivered)
+        #expect(await task.state == .disconnecting)
+
+        await task.updateState(.connected)
+        await task.setAutoReconnectEnabled(true)
+        await manager.disconnect(task)
+        #expect(await waitForListenerCleanup(manager: manager, task: task))
     }
 
     @Test("Final reconnect failure removes listeners and task runtime")
