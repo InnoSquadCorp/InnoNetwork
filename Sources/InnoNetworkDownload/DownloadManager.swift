@@ -91,7 +91,10 @@ public final class DownloadManager: NSObject, Sendable {
 
     @discardableResult
     public func download(url: URL, to destinationURL: URL) async -> DownloadTask {
-        await waitForRestore()
+        guard await waitForRestore() else {
+            // Preserve API shape for cancellation-aware callers without mutating manager state.
+            return DownloadTask(url: url, destinationURL: destinationURL)
+        }
         let task = DownloadTask(url: url, destinationURL: destinationURL)
         await storage.add(task)
         await startDownload(task)
@@ -100,14 +103,18 @@ public final class DownloadManager: NSObject, Sendable {
 
     @discardableResult
     public func download(url: URL, toDirectory directory: URL, fileName: String? = nil) async -> DownloadTask {
-        await waitForRestore()
+        guard await waitForRestore() else {
+            let name = fileName ?? url.lastPathComponent
+            let destinationURL = directory.appendingPathComponent(name)
+            return DownloadTask(url: url, destinationURL: destinationURL)
+        }
         let name = fileName ?? url.lastPathComponent
         let destinationURL = directory.appendingPathComponent(name)
         return await download(url: url, to: destinationURL)
     }
 
     public func pause(_ task: DownloadTask) async {
-        await waitForRestore()
+        guard await waitForRestore() else { return }
         guard await task.state == .downloading else { return }
 
         if let urlTask = await storage.urlTask(for: task.id) {
@@ -120,7 +127,7 @@ public final class DownloadManager: NSObject, Sendable {
     }
 
     public func resume(_ task: DownloadTask) async {
-        await waitForRestore()
+        guard await waitForRestore() else { return }
         guard await task.state == .paused else { return }
 
         if let resumeData = await task.resumeData {
@@ -138,7 +145,7 @@ public final class DownloadManager: NSObject, Sendable {
     }
 
     public func cancel(_ task: DownloadTask) async {
-        await waitForRestore()
+        guard await waitForRestore() else { return }
         await task.updateState(.cancelled)
         await task.setError(.cancelled)
         await storage.onStateChanged?(task, .cancelled)
@@ -154,31 +161,31 @@ public final class DownloadManager: NSObject, Sendable {
     }
 
     public func cancelAll() async {
-        await waitForRestore()
+        guard await waitForRestore() else { return }
         for task in await storage.allTasks() {
             await cancel(task)
         }
     }
 
     public func retry(_ task: DownloadTask) async {
-        await waitForRestore()
+        guard await waitForRestore() else { return }
         guard await task.state == .failed else { return }
         await task.reset()
         await startDownload(task)
     }
 
     public func task(withId id: String) async -> DownloadTask? {
-        await waitForRestore()
+        guard await waitForRestore() else { return nil }
         return await storage.task(withId: id)
     }
 
     public func allTasks() async -> [DownloadTask] {
-        await waitForRestore()
+        guard await waitForRestore() else { return [] }
         return await storage.allTasks()
     }
 
     public func activeTasks() async -> [DownloadTask] {
-        await waitForRestore()
+        guard await waitForRestore() else { return [] }
         var result: [DownloadTask] = []
         for task in await storage.allTasks() {
             let state = await task.state
@@ -226,8 +233,14 @@ public final class DownloadManager: NSObject, Sendable {
         }
     }
 
-    private func waitForRestore() async {
-        await restoreBarrier.wait()
+    private func waitForRestore() async -> Bool {
+        do {
+            try await restoreBarrier.wait()
+            try Task.checkCancellation()
+            return true
+        } catch {
+            return false
+        }
     }
 
     private func fetchDownloadTasks() async -> [URLSessionDownloadTask] {
@@ -381,17 +394,16 @@ public final class DownloadManager: NSObject, Sendable {
         if isCancelledTransportError(error) {
             return
         }
-        let totalRetryCount = await task.incrementTotalRetryCount()
-        guard totalRetryCount <= configuration.maxTotalRetries else {
+        let totalRetryCount = await task.totalRetryCount
+        let retryCount = await task.retryCount
+        guard totalRetryCount < configuration.maxTotalRetries,
+              retryCount < configuration.maxRetryCount
+        else {
             await markTaskFailed(task)
             return
         }
-
-        let retryCount = await task.incrementRetryCount()
-        guard retryCount <= configuration.maxRetryCount else {
-            await markTaskFailed(task)
-            return
-        }
+        _ = await task.incrementTotalRetryCount()
+        _ = await task.incrementRetryCount()
 
         if configuration.waitsForNetworkChanges, let monitor = configuration.networkMonitor {
             let snapshot = await monitor.currentSnapshot()
@@ -438,6 +450,7 @@ public final class DownloadManager: NSObject, Sendable {
 private actor DownloadStorage {
     private var tasks: [String: DownloadTask] = [:]
     private var identifierToTask: [Int: DownloadTask] = [:]
+    private var taskIdToIdentifier: [String: Int] = [:]
     private var taskIdToURLTask: [String: URLSessionDownloadTask] = [:]
     private var eventListeners: [String: [UUID: @Sendable (DownloadEvent) -> Void]] = [:]
 
@@ -510,6 +523,7 @@ private actor DownloadStorage {
 
     func setMapping(downloadTask: DownloadTask, for identifier: Int) {
         identifierToTask[identifier] = downloadTask
+        taskIdToIdentifier[downloadTask.id] = identifier
     }
 
     func setURLTask(_ urlTask: URLSessionDownloadTask, for taskId: String) {
@@ -525,7 +539,7 @@ private actor DownloadStorage {
     }
 
     func taskIdentifier(for taskId: String) -> Int? {
-        identifierToTask.first { $0.value.id == taskId }?.key
+        taskIdToIdentifier[taskId]
     }
 
     func eventListenerCount(for taskId: String) -> Int {
@@ -533,12 +547,23 @@ private actor DownloadStorage {
     }
 
     func detachRuntime(taskIdentifier: Int) {
-        identifierToTask.removeValue(forKey: taskIdentifier)
+        guard let task = identifierToTask.removeValue(forKey: taskIdentifier) else { return }
+        taskIdToIdentifier.removeValue(forKey: task.id)
     }
 
     func removeTaskRuntime(taskId: String) {
         taskIdToURLTask.removeValue(forKey: taskId)
-        identifierToTask = identifierToTask.filter { $0.value.id != taskId }
+        if let identifier = taskIdToIdentifier.removeValue(forKey: taskId) {
+            identifierToTask.removeValue(forKey: identifier)
+        } else {
+            identifierToTask = identifierToTask.filter { entry in
+                let isTarget = entry.value.id == taskId
+                if isTarget {
+                    taskIdToIdentifier.removeValue(forKey: taskId)
+                }
+                return !isTarget
+            }
+        }
     }
 
     func removeTaskAndListeners(taskId: String) {
@@ -550,20 +575,36 @@ private actor DownloadStorage {
 
 private actor RestoreBarrier {
     private var isCompleted = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
 
-    func wait() async {
+    func wait() async throws {
         guard !isCompleted else { return }
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
+        let waiterID = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                if isCompleted {
+                    continuation.resume(returning: ())
+                    return
+                }
+                waiters[waiterID] = continuation
+            }
+        } onCancel: {
+            Task {
+                await self.cancelWaiter(waiterID)
+            }
         }
+    }
+
+    private func cancelWaiter(_ waiterID: UUID) {
+        guard let waiter = waiters.removeValue(forKey: waiterID) else { return }
+        waiter.resume(throwing: CancellationError())
     }
 
     func complete() {
         guard !isCompleted else { return }
         isCompleted = true
-        for waiter in waiters {
-            waiter.resume()
+        for waiter in waiters.values {
+            waiter.resume(returning: ())
         }
         waiters.removeAll(keepingCapacity: false)
     }

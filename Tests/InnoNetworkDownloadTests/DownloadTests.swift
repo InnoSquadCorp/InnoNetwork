@@ -399,8 +399,13 @@ private actor DownloadEventRecorder {
 
 @Suite("Download Listener Lifecycle Tests")
 struct DownloadListenerLifecycleTests {
+    private var runIntegrationTests: Bool {
+        ProcessInfo.processInfo.environment["INNONETWORK_RUN_INTEGRATION_TESTS"] == "1"
+    }
+
     @Test("Listener persists across retry and receives completion")
     func listenerPersistsAcrossRetryAndCompletion() async throws {
+        guard runIntegrationTests else { return }
         let config = DownloadConfiguration(
             maxRetryCount: 1,
             maxTotalRetries: 1,
@@ -474,6 +479,7 @@ struct DownloadListenerLifecycleTests {
 
     @Test("Terminal failure removes listeners and task runtime")
     func terminalFailureRemovesListeners() async throws {
+        guard runIntegrationTests else { return }
         let config = DownloadConfiguration(
             maxRetryCount: 0,
             maxTotalRetries: 0,

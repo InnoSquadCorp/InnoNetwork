@@ -6,11 +6,6 @@ on:
     branches:
       - main
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -18,7 +13,9 @@ concurrency:
 jobs:
   build-docs:
     name: Build DocC Site
-    runs-on: macos-latest
+    runs-on: macos-15
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
@@ -48,9 +45,9 @@ jobs:
 
           modules=(InnoNetwork InnoNetworkDownload InnoNetworkWebSocket)
           for module in "${modules[@]}"; do
-            archive=".build/DocC/Build/Products/Debug/${module}.doccarchive"
-            if [[ ! -d "$archive" ]]; then
-              echo "Missing DocC archive: $archive"
+            archive="$(find .build/DocC/Build/Products -type d -path "*/${module}.doccarchive" -print -quit)"
+            if [[ -z "$archive" || ! -d "$archive" ]]; then
+              echo "Missing DocC archive for module: $module"
               exit 1
             fi
 
@@ -92,6 +89,10 @@ jobs:
     name: Deploy to GitHub Pages
     needs: build-docs
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

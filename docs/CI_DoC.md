@@ -15,7 +15,7 @@ The `CI` workflow must pass all of the following:
 1. `swift package resolve`
 2. `swift build -Xswiftc -strict-concurrency=complete`
 3. `swift test`
-4. `rg "@unchecked Sendable" Sources` returns no matches
+4. `rg -n "@unchecked Sendable" Sources` returns no matches
 
 ## Pass/Fail Policy
 
@@ -36,5 +36,5 @@ Run the same commands locally:
 swift package resolve
 swift build -Xswiftc -strict-concurrency=complete
 swift test
-rg "@unchecked Sendable" Sources
+rg -n "@unchecked Sendable" Sources
 ```

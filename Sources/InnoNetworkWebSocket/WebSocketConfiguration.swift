@@ -2,20 +2,36 @@ import Foundation
 
 
 public struct WebSocketConfiguration: Sendable {
+    /// Maximum number of concurrent socket connections per host.
+    /// Values lower than `1` are clamped to `1`.
     public let maxConcurrentConnections: Int
+    /// Connection timeout in seconds used for initial handshake requests.
+    /// Negative values are clamped to `0`.
     public let connectionTimeout: TimeInterval
+    /// Heartbeat ping interval in seconds.
+    /// Set to `0` to disable heartbeat.
     public let heartbeatInterval: TimeInterval
+    /// Maximum time in seconds to wait for each pong response.
+    /// Negative values are clamped to `0`.
     public let pongTimeout: TimeInterval
+    /// Number of consecutive missed pongs tolerated before declaring ping timeout.
+    /// Values lower than `1` are clamped to `1`.
     public let maxMissedPongs: Int
+    /// Base reconnect delay in seconds before jitter/backoff is applied.
+    /// Negative values are clamped to `0`.
     public let reconnectDelay: TimeInterval
+    /// Jitter ratio applied to reconnect delay (`0.0...1.0`).
+    /// Values outside the range are clamped.
     public let reconnectJitterRatio: Double
     /// Number of reconnect retries after the initial connection attempt.
     /// Total connection attempts are `1 + maxReconnectAttempts`.
     public let maxReconnectAttempts: Int
+    /// Whether cellular data is allowed for socket connections.
     public let allowsCellularAccess: Bool
     /// Reserved for API compatibility with managers that support background sessions.
     /// WebSocketManager currently uses a default URLSession configuration.
     public let sessionIdentifier: String
+    /// Additional HTTP headers sent when establishing the WebSocket handshake.
     public let requestHeaders: [String: String]
 
     public init(

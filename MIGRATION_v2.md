@@ -91,7 +91,7 @@ let config = NetworkConfiguration(
 
 `URLSessionProtocol` now has context-based overload for trust/metrics/event correlation.
 
-- Added: `data(for:context:)`
+- Added: `func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse)`
 - `NetworkRequestContext` carries:
   - `requestID`
   - `retryIndex`
@@ -99,7 +99,7 @@ let config = NetworkConfiguration(
   - `trustPolicy`
   - `eventObservers`
 
-Existing custom session mocks should implement `data(for:context:)` for full behavior.
+Existing custom session mocks should implement `data(for request:context:)` for full behavior.
 
 Observability note:
 - `NetworkEventObserving` callbacks are delivered asynchronously (best effort) so request paths are not blocked by slow observers.

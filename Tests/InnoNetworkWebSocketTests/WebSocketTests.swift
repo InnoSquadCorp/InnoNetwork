@@ -516,7 +516,25 @@ struct WebSocketListenerLifecycleTests {
             return false
         }
         #expect(!duplicateDelivered)
+
+        await task.updateState(.disconnected)
+        manager.handleDisconnected(
+            taskIdentifier: taskIdentifier,
+            closeCode: .goingAway,
+            reason: "duplicate-check-disconnected"
+        )
+
+        let duplicateWhenDisconnected = await waitForEvent(recorder: recorder, timeout: 0.3) { event in
+            if case .disconnected(.disconnected(let underlying)) = event {
+                return underlying?.message == "duplicate-check-disconnected"
+            }
+            return false
+        }
+        #expect(!duplicateWhenDisconnected)
+
+        await task.updateState(.connected)
         await manager.disconnect(task)
+        #expect(await waitForListenerCleanup(manager: manager, task: task))
     }
 
     @Test("Disconnecting task ignores stale connected callback")
@@ -564,19 +582,20 @@ struct WebSocketListenerLifecycleTests {
         )
         let manager = WebSocketManager(configuration: config)
 
-        let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
         let _ = await manager.addEventListener(for: task) { _ in }
 
         let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
         manager.handleError(taskIdentifier: firstTaskIdentifier, error: URLError(.cannotConnectToHost))
 
-        if let secondTaskIdentifier = await waitForRuntimeTaskIdentifier(
-            manager: manager,
-            task: task,
-            excluding: [firstTaskIdentifier]
-        ) {
-            manager.handleError(taskIdentifier: secondTaskIdentifier, error: URLError(.cannotConnectToHost))
-        }
+        let secondTaskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: manager,
+                task: task,
+                excluding: [firstTaskIdentifier]
+            )
+        )
+        manager.handleError(taskIdentifier: secondTaskIdentifier, error: URLError(.cannotConnectToHost))
 
         #expect(await waitForListenerCleanup(manager: manager, task: task))
         #expect(await manager.task(withId: task.id) == nil)

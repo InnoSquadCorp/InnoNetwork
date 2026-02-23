@@ -175,12 +175,10 @@ struct GetUserProtobufWithInterceptors: ProtobufAPIDefinition {
 
 
 private func protobufData<M: SwiftProtobuf.Message>(_ message: M) throws -> Data {
-    let bytes: [UInt8] = try message.serializedBytes()
-    return Data(bytes)
+    try message.serializedData()
 }
 
-private func decodeProtobuf<M: SwiftProtobuf.Message>(_ type: M.Type, from data: Data) throws -> M {
-    _ = type
+private func decodeProtobuf<M: SwiftProtobuf.Message>(_: M.Type, from data: Data) throws -> M {
     return try M(serializedBytes: data)
 }
 

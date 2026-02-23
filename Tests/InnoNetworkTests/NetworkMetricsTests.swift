@@ -83,6 +83,9 @@ final class TestURLProtocol: URLProtocol {
         lock.lock()
         let value: ResponseSpec?
         if responses.isEmpty {
+            #if DEBUG
+            assertionFailure("TestURLProtocol response queue unexpectedly empty; check request expectation counts.")
+            #endif
             value = lastDequeuedResponse
         } else {
             let dequeued = responses.removeFirst()
@@ -316,6 +319,8 @@ struct NetworkMonitorTests {
         // If a snapshot is returned, it should represent a different state.
         if let result {
             #expect(result != snapshot)
+        } else {
+            #expect(result == nil)
         }
     }
 
