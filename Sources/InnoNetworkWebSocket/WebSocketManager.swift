@@ -115,13 +115,15 @@ public final class WebSocketManager: NSObject, Sendable {
         await task.setAutoReconnectEnabled(false)
         await storage.cancelHeartbeatTask(for: task.id)
         await task.updateState(.disconnecting)
-        await storage.onDisconnected?(task, nil)
+        let disconnectError: WebSocketError? = nil
+        await storage.onDisconnected?(task, disconnectError)
 
         if let urlTask = await storage.urlTask(for: task.id) {
             urlTask.cancel(with: closeCode, reason: nil)
         } else {
             await task.updateState(.disconnected)
             await task.setCloseCode(closeCode)
+            await storage.emitEvent(.disconnected(disconnectError), for: task.id)
             await storage.removeTaskAndListeners(taskId: task.id)
             await storage.remove(task)
             return
@@ -129,6 +131,7 @@ public final class WebSocketManager: NSObject, Sendable {
 
         await task.updateState(.disconnected)
         await task.setCloseCode(closeCode)
+        await storage.emitEvent(.disconnected(disconnectError), for: task.id)
         await storage.removeTaskAndListeners(taskId: task.id)
         await storage.remove(task)
     }

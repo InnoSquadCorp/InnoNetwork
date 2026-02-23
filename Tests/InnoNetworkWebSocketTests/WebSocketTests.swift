@@ -263,6 +263,44 @@ private actor WebSocketEventRecorder {
 
 @Suite("WebSocket Listener Lifecycle Tests")
 struct WebSocketListenerLifecycleTests {
+    @Test("Reconnect runtime chain reaches max reconnect attempts")
+    func reconnectRuntimeChainReachesMaxAttempts() async throws {
+        let manager = WebSocketManager(
+            configuration: WebSocketConfiguration(
+                connectionTimeout: 0.5,
+                heartbeatInterval: 0,
+                reconnectDelay: 0.01,
+                maxReconnectAttempts: 2,
+                sessionIdentifier: "test.websocket.reconnect-runtime.\(UUID().uuidString)"
+            )
+        )
+        let recorder = WebSocketEventRecorder()
+
+        let task = await manager.connect(url: URL(string: "ws://127.0.0.1:1/socket")!)
+        _ = await manager.addEventListener(for: task) { event in
+            Task {
+                await recorder.record(event)
+            }
+        }
+
+        #expect(await waitForTaskError(task: task, timeout: 5.0) { error in
+            if case .maxReconnectAttemptsExceeded = error {
+                return true
+            }
+            return false
+        })
+        #expect(await task.reconnectCount >= 3)
+        #expect(await waitForListenerCleanup(manager: manager, task: task))
+
+        let maxExceededEvent = await waitForEvent(recorder: recorder, timeout: 1.0) { event in
+            if case .error(.maxReconnectAttemptsExceeded) = event {
+                return true
+            }
+            return false
+        }
+        #expect(maxExceededEvent)
+    }
+
     @Test("Max reconnect attempts zero fails immediately")
     func maxReconnectAttemptsZeroFailsImmediately() async throws {
         let manager = WebSocketManager(
@@ -304,13 +342,10 @@ struct WebSocketListenerLifecycleTests {
             sessionIdentifier: "test.websocket.listener.retry.\(UUID().uuidString)"
         )
         let manager = WebSocketManager(configuration: config)
-        let recorder = WebSocketEventRecorder()
 
         let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
         let _ = await manager.addEventListener(for: task) { event in
-            Task {
-                await recorder.record(event)
-            }
+            _ = event
         }
 
         let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
@@ -423,6 +458,21 @@ struct WebSocketListenerLifecycleTests {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if await manager.listenerCount(for: task) == expected {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
+    }
+
+    private func waitForTaskError(
+        task: WebSocketTask,
+        timeout: TimeInterval = 2.0,
+        predicate: @escaping (WebSocketError?) -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if predicate(await task.error) {
                 return true
             }
             try? await Task.sleep(nanoseconds: 10_000_000)
