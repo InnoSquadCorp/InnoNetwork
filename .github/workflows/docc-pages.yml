@@ -21,10 +21,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
       - name: Show Xcode and Swift versions
         run: |
           xcodebuild -version
-          swift --version
+          xcrun swift --version
 
       - name: Build DocC archives
         run: |

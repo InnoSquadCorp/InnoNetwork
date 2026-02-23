@@ -12,9 +12,9 @@ This document defines the minimum completion criteria (DoC) for pull requests in
 
 The `CI` workflow must pass all of the following:
 
-1. `swift package resolve`
-2. `swift build -Xswiftc -strict-concurrency=complete`
-3. `swift test`
+1. `xcrun swift package resolve`
+2. `xcrun swift build -Xswiftc -strict-concurrency=complete`
+3. `xcrun swift test`
 4. `rg -n "@unchecked Sendable" Sources` returns no matches
 
 ## Pass/Fail Policy
@@ -33,8 +33,9 @@ The `CI` workflow must pass all of the following:
 Run the same commands locally:
 
 ```bash
-swift package resolve
-swift build -Xswiftc -strict-concurrency=complete
-swift test
+sudo xcode-select -s /Applications/Xcode_26.0.1.app
+xcrun swift package resolve
+xcrun swift build -Xswiftc -strict-concurrency=complete
+xcrun swift test
 rg -n "@unchecked Sendable" Sources
 ```
