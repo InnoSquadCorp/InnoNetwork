@@ -448,6 +448,7 @@ struct DownloadListenerLifecycleTests {
             #expect(await manager.listenerCount(for: task) == 1)
 
             let temporaryLocation = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-temp.data")
+            defer { try? FileManager.default.removeItem(at: temporaryLocation) }
             try Data("payload".utf8).write(to: temporaryLocation)
             manager.handleCompletion(
                 taskIdentifier: retriedTaskIdentifier,

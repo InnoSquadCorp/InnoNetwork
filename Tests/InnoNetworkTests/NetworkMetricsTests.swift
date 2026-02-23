@@ -314,13 +314,17 @@ struct NetworkMonitorTests {
     func waitForChangeTimesOutReturnsNil() async {
         let monitor = NetworkMonitor()
         let snapshot = await monitor.currentSnapshot()
-        let result = await monitor.waitForChange(from: snapshot, timeout: 0.01)
+        let timeout: TimeInterval = 0.01
+        let start = Date()
+        let result = await monitor.waitForChange(from: snapshot, timeout: timeout)
+        let elapsed = Date().timeIntervalSince(start)
         // Real network state can change immediately on CI/local machines.
         // If a snapshot is returned, it should represent a different state.
         if let result {
             #expect(result != snapshot)
         } else {
-            #expect(result == nil)
+            // When no change is observed, this path should represent an actual timeout.
+            #expect(elapsed >= timeout * 0.8)
         }
     }
 
