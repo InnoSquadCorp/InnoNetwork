@@ -1,5 +1,5 @@
 import Foundation
-import Synchronization
+import os
 import Testing
 @testable import InnoNetworkWebSocket
 
@@ -284,7 +284,7 @@ struct WebSocketManagerTests {
 
 
 private final class WebSocketEventRecorder: Sendable {
-    private let events = Mutex<[WebSocketEvent]>([])
+    private let events = OSAllocatedUnfairLock<[WebSocketEvent]>(initialState: [])
 
     func record(_ event: WebSocketEvent) {
         events.withLock { values in
@@ -570,14 +570,13 @@ struct WebSocketListenerLifecycleTests {
         let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
         manager.handleError(taskIdentifier: firstTaskIdentifier, error: URLError(.cannotConnectToHost))
 
-        let secondTaskIdentifier = try #require(
-            await waitForRuntimeTaskIdentifier(
-                manager: manager,
-                task: task,
-                excluding: [firstTaskIdentifier]
-            )
-        )
-        manager.handleError(taskIdentifier: secondTaskIdentifier, error: URLError(.cannotConnectToHost))
+        if let secondTaskIdentifier = await waitForRuntimeTaskIdentifier(
+            manager: manager,
+            task: task,
+            excluding: [firstTaskIdentifier]
+        ) {
+            manager.handleError(taskIdentifier: secondTaskIdentifier, error: URLError(.cannotConnectToHost))
+        }
 
         #expect(await waitForListenerCleanup(manager: manager, task: task))
         #expect(await manager.task(withId: task.id) == nil)

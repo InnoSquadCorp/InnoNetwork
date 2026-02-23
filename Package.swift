@@ -6,7 +6,7 @@ let package = Package(
     name: "InnoNetwork",
     platforms: [
         .iOS(.v26),
-        .macOS(.v26),
+        .macOS(.v14),
         .tvOS(.v26),
         .watchOS(.v26),
         .visionOS(.v26)
