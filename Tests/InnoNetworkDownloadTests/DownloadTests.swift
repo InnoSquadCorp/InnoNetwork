@@ -324,11 +324,6 @@ struct DownloadTaskPersistenceTests {
     func persistenceRoundTrip() async {
         let sessionIdentifier = "test.persistence.\(UUID().uuidString)"
         await clearPersistence(sessionIdentifier: sessionIdentifier)
-        defer {
-            Task {
-                await clearPersistence(sessionIdentifier: sessionIdentifier)
-            }
-        }
 
         let taskID = "task-\(UUID().uuidString)"
         let url = URL(string: "https://example.com/file.zip")!
@@ -343,17 +338,13 @@ struct DownloadTaskPersistenceTests {
         #expect(restored?.id == taskID)
         #expect(restored?.url == url)
         #expect(restored?.destinationURL == destinationURL)
+        await clearPersistence(sessionIdentifier: sessionIdentifier)
     }
 
     @Test("Prune removes stale task records")
     func pruneRemovesStaleRecords() async {
         let sessionIdentifier = "test.persistence.prune.\(UUID().uuidString)"
         await clearPersistence(sessionIdentifier: sessionIdentifier)
-        defer {
-            Task {
-                await clearPersistence(sessionIdentifier: sessionIdentifier)
-            }
-        }
 
         let keptID = "task-kept"
         let removedID = "task-removed"
@@ -370,17 +361,13 @@ struct DownloadTaskPersistenceTests {
 
         #expect(await persistence.record(forID: keptID) != nil)
         #expect(await persistence.record(forID: removedID) == nil)
+        await clearPersistence(sessionIdentifier: sessionIdentifier)
     }
 
     @Test("restore metadata remains keyed by task id even when URLs are duplicated")
     func restoreMetadataIsTaskIDBased() async {
         let sessionIdentifier = "test.persistence.duplicate-url.\(UUID().uuidString)"
         await clearPersistence(sessionIdentifier: sessionIdentifier)
-        defer {
-            Task {
-                await clearPersistence(sessionIdentifier: sessionIdentifier)
-            }
-        }
 
         let sharedURL = URL(string: "https://example.com/shared.zip")!
         let firstDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-first.zip")
@@ -392,6 +379,7 @@ struct DownloadTaskPersistenceTests {
 
         #expect(await persistence.record(forID: "task-1")?.destinationURL == firstDestination)
         #expect(await persistence.record(forID: "task-2")?.destinationURL == secondDestination)
+        await clearPersistence(sessionIdentifier: sessionIdentifier)
     }
 }
 
@@ -420,68 +408,68 @@ struct DownloadListenerLifecycleTests {
             sessionIdentifier: "test.download.listener.retry.\(UUID().uuidString)"
         )
         let manager = DownloadManager(configuration: config)
-        defer {
-            Task {
-                await manager.cancelAll()
-            }
-        }
         let recorder = DownloadEventRecorder()
-
-        let destination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-result.zip")
-        let task = await manager.download(
-            url: URL(string: "https://example.invalid/file.zip")!,
-            to: destination
-        )
-        let _ = await manager.addEventListener(for: task) { event in
-            Task {
-                await recorder.record(event)
-            }
-        }
-
-        let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
-        manager.handleCompletion(
-            taskIdentifier: firstTaskIdentifier,
-            location: nil,
-            error: SendableUnderlyingError(
-                domain: NSURLErrorDomain,
-                code: URLError.networkConnectionLost.rawValue,
-                message: "network lost"
+        do {
+            let destination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-result.zip")
+            let task = await manager.download(
+                url: URL(string: "https://example.invalid/file.zip")!,
+                to: destination
             )
-        )
-
-        let retriedTaskIdentifier = try #require(
-            await waitForRuntimeTaskIdentifier(
-                manager: manager,
-                task: task,
-                excluding: firstTaskIdentifier
-            )
-        )
-
-        #expect(await manager.listenerCount(for: task) == 1)
-
-        let temporaryLocation = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-temp.data")
-        try Data("payload".utf8).write(to: temporaryLocation)
-        manager.handleCompletion(
-            taskIdentifier: retriedTaskIdentifier,
-            location: temporaryLocation,
-            error: nil
-        )
-
-        let completedReceived = await waitForEvent(
-            recorder: recorder,
-            timeout: 2.0
-        ) { event in
-            if case .completed(let outputURL) = event {
-                return outputURL == destination
+            let _ = await manager.addEventListener(for: task) { event in
+                Task {
+                    await recorder.record(event)
+                }
             }
-            return false
+
+            let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+            manager.handleCompletion(
+                taskIdentifier: firstTaskIdentifier,
+                location: nil,
+                error: SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: URLError.networkConnectionLost.rawValue,
+                    message: "network lost"
+                )
+            )
+
+            let retriedTaskIdentifier = try #require(
+                await waitForRuntimeTaskIdentifier(
+                    manager: manager,
+                    task: task,
+                    excluding: firstTaskIdentifier
+                )
+            )
+
+            #expect(await manager.listenerCount(for: task) == 1)
+
+            let temporaryLocation = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-temp.data")
+            try Data("payload".utf8).write(to: temporaryLocation)
+            manager.handleCompletion(
+                taskIdentifier: retriedTaskIdentifier,
+                location: temporaryLocation,
+                error: nil
+            )
+
+            let completedReceived = await waitForEvent(
+                recorder: recorder,
+                timeout: 2.0
+            ) { event in
+                if case .completed(let outputURL) = event {
+                    return outputURL == destination
+                }
+                return false
+            }
+            #expect(completedReceived)
+
+            #expect(await manager.listenerCount(for: task) == 0)
+            #expect(await manager.task(withId: task.id) == nil)
+
+            try? FileManager.default.removeItem(at: destination)
+        } catch {
+            await manager.cancelAll()
+            throw error
         }
-        #expect(completedReceived)
-
-        #expect(await manager.listenerCount(for: task) == 0)
-        #expect(await manager.task(withId: task.id) == nil)
-
-        try? FileManager.default.removeItem(at: destination)
+        await manager.cancelAll()
     }
 
     @Test("Terminal failure removes listeners and task runtime")
@@ -493,47 +481,47 @@ struct DownloadListenerLifecycleTests {
             sessionIdentifier: "test.download.listener.terminal.\(UUID().uuidString)"
         )
         let manager = DownloadManager(configuration: config)
-        defer {
-            Task {
-                await manager.cancelAll()
-            }
-        }
         let recorder = DownloadEventRecorder()
-
-        let task = await manager.download(
-            url: URL(string: "https://example.invalid/file.zip")!,
-            to: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-terminal.zip")
-        )
-        let _ = await manager.addEventListener(for: task) { event in
-            Task {
-                await recorder.record(event)
-            }
-        }
-
-        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
-        manager.handleCompletion(
-            taskIdentifier: taskIdentifier,
-            location: nil,
-            error: SendableUnderlyingError(
-                domain: NSURLErrorDomain,
-                code: URLError.networkConnectionLost.rawValue,
-                message: "network lost"
+        do {
+            let task = await manager.download(
+                url: URL(string: "https://example.invalid/file.zip")!,
+                to: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-terminal.zip")
             )
-        )
-
-        let failedReceived = await waitForEvent(
-            recorder: recorder,
-            timeout: 2.0
-        ) { event in
-            if case .failed(.maxRetriesExceeded) = event {
-                return true
+            let _ = await manager.addEventListener(for: task) { event in
+                Task {
+                    await recorder.record(event)
+                }
             }
-            return false
-        }
-        #expect(failedReceived)
 
-        #expect(await manager.listenerCount(for: task) == 0)
-        #expect(await manager.task(withId: task.id) == nil)
+            let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+            manager.handleCompletion(
+                taskIdentifier: taskIdentifier,
+                location: nil,
+                error: SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: URLError.networkConnectionLost.rawValue,
+                    message: "network lost"
+                )
+            )
+
+            let failedReceived = await waitForEvent(
+                recorder: recorder,
+                timeout: 2.0
+            ) { event in
+                if case .failed(.maxRetriesExceeded) = event {
+                    return true
+                }
+                return false
+            }
+            #expect(failedReceived)
+
+            #expect(await manager.listenerCount(for: task) == 0)
+            #expect(await manager.task(withId: task.id) == nil)
+        } catch {
+            await manager.cancelAll()
+            throw error
+        }
+        await manager.cancelAll()
     }
 
     private func waitForRuntimeTaskIdentifier(

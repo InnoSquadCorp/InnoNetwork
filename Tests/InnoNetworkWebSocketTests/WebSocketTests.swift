@@ -567,8 +567,17 @@ struct WebSocketListenerLifecycleTests {
         let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
         let _ = await manager.addEventListener(for: task) { _ in }
 
-        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
-        manager.handleError(taskIdentifier: taskIdentifier, error: URLError(.cannotConnectToHost))
+        let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        manager.handleError(taskIdentifier: firstTaskIdentifier, error: URLError(.cannotConnectToHost))
+
+        let secondTaskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: manager,
+                task: task,
+                excluding: [firstTaskIdentifier]
+            )
+        )
+        manager.handleError(taskIdentifier: secondTaskIdentifier, error: URLError(.cannotConnectToHost))
 
         #expect(await waitForListenerCleanup(manager: manager, task: task))
         #expect(await manager.task(withId: task.id) == nil)

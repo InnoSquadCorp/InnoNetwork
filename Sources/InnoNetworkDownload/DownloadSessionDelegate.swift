@@ -58,7 +58,6 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate {
     }
     
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        _ = session
         Task {
             guard let completion = await backgroundCompletionStore.take() else { return }
             await MainActor.run {

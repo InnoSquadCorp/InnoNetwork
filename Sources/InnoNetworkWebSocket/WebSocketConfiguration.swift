@@ -37,7 +37,7 @@ public struct WebSocketConfiguration: Sendable {
         self.pongTimeout = max(0, pongTimeout)
         self.maxMissedPongs = max(1, maxMissedPongs)
         self.reconnectDelay = max(0, reconnectDelay)
-        self.reconnectJitterRatio = max(0, reconnectJitterRatio)
+        self.reconnectJitterRatio = min(1.0, max(0.0, reconnectJitterRatio))
         self.maxReconnectAttempts = max(0, maxReconnectAttempts)
         self.allowsCellularAccess = allowsCellularAccess
         self.sessionIdentifier = sessionIdentifier
@@ -49,7 +49,6 @@ public struct WebSocketConfiguration: Sendable {
     func makeURLSessionConfiguration() -> URLSessionConfiguration {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = connectionTimeout
-        config.timeoutIntervalForResource = heartbeatInterval + pongTimeout
         config.allowsCellularAccess = allowsCellularAccess
         config.httpMaximumConnectionsPerHost = maxConcurrentConnections
         return config

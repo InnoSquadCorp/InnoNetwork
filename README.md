@@ -674,12 +674,12 @@ InnoNetwork/
 │   │   └── ... (interceptors, error, logger 등)
 │
 │   ├── InnoNetworkDownload/      # Download 모듈 (별도 product)
-│       ├── DownloadManager.swift
-│       ├── DownloadTask.swift    # actor 기반 다운로드 작업
-│       ├── DownloadConfiguration.swift
-│       ├── DownloadState.swift
-│       ├── DownloadSessionDelegate.swift
-│       └── DownloadTaskPersistence.swift
+│   │   ├── DownloadManager.swift
+│   │   ├── DownloadTask.swift    # actor 기반 다운로드 작업
+│   │   ├── DownloadConfiguration.swift
+│   │   ├── DownloadState.swift
+│   │   ├── DownloadSessionDelegate.swift
+│   │   └── DownloadTaskPersistence.swift
 │
 │   └── InnoNetworkWebSocket/     # WebSocket 모듈 (별도 product)
 │       ├── WebSocketManager.swift

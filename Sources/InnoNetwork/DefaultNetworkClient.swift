@@ -605,7 +605,7 @@ extension ProtobufAPIDefinition {
             // Serialize protobuf message to binary data
             if let params = parameters {
                 let bytes: [UInt8] = try params.serializedBytes()
-                httpBody = bytes.withUnsafeBufferPointer { Data(buffer: $0) }
+                httpBody = Data(bytes)
             }
         }
 
@@ -624,7 +624,7 @@ extension ProtobufAPIDefinition {
         }
 
         do {
-            return try Self.APIResponse(serializedBytes: Array(data))
+            return try Self.APIResponse(serializedBytes: data)
         } catch {
             throw NetworkError.objectMapping(SendableUnderlyingError(error), response)
         }

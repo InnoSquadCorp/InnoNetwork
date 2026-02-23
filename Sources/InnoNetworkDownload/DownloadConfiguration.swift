@@ -40,7 +40,7 @@ public struct DownloadConfiguration: Sendable {
         self.sessionIdentifier = sessionIdentifier
         self.networkMonitor = networkMonitor
         self.waitsForNetworkChanges = waitsForNetworkChanges
-        self.networkChangeTimeout = networkChangeTimeout
+        self.networkChangeTimeout = networkChangeTimeout.map { max(0, $0) }
     }
     
     public static let `default` = DownloadConfiguration()

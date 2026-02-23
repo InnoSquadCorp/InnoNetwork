@@ -67,8 +67,7 @@ public final class DownloadManager: NSObject, Sendable {
             }
         )
 
-        Task { [weak self] in
-            guard let self else { return }
+        Task { [self] in
             await self.restorePendingDownloads()
             await self.restoreBarrier.complete()
         }
@@ -95,7 +94,6 @@ public final class DownloadManager: NSObject, Sendable {
         await waitForRestore()
         let task = DownloadTask(url: url, destinationURL: destinationURL)
         await storage.add(task)
-        await persistence.upsert(id: task.id, url: task.url, destinationURL: task.destinationURL)
         await startDownload(task)
         return task
     }
@@ -166,7 +164,6 @@ public final class DownloadManager: NSObject, Sendable {
         await waitForRestore()
         guard await task.state == .failed else { return }
         await task.reset()
-        await persistence.upsert(id: task.id, url: task.url, destinationURL: task.destinationURL)
         await startDownload(task)
     }
 

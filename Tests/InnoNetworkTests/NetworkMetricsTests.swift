@@ -115,12 +115,17 @@ final class MetricsAwareMockSession: URLSessionProtocol, Sendable {
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        let response = HTTPURLResponse(
-            url: request.url!,
+        guard let url = request.url else {
+            throw URLError(.badURL)
+        }
+        guard let response = HTTPURLResponse(
+            url: url,
             statusCode: 200,
             httpVersion: nil,
             headerFields: nil
-        )!
+        ) else {
+            throw URLError(.badServerResponse)
+        }
         return (Data(#""fallback""#.utf8), response)
     }
 
@@ -129,12 +134,17 @@ final class MetricsAwareMockSession: URLSessionProtocol, Sendable {
         context: NetworkRequestContext
     ) async throws -> (Data, URLResponse) {
         await probe.markReceivedReporter(context.metricsReporter != nil)
-        let response = HTTPURLResponse(
-            url: request.url!,
+        guard let url = request.url else {
+            throw URLError(.badURL)
+        }
+        guard let response = HTTPURLResponse(
+            url: url,
             statusCode: 200,
             httpVersion: nil,
             headerFields: nil
-        )!
+        ) else {
+            throw URLError(.badServerResponse)
+        }
         return (Data(#""forwarded""#.utf8), response)
     }
 }
@@ -160,8 +170,7 @@ struct RetryOncePolicy: RetryPolicy {
     let maxTotalRetries: Int = 1
     let retryDelay: TimeInterval = 0
 
-    func retryDelay(for retryIndex: Int) -> TimeInterval {
-        _ = retryIndex
+    func retryDelay(for _: Int) -> TimeInterval {
         return retryDelay
     }
 

@@ -385,7 +385,7 @@ actor RealWorldAPIExample {
     func batchProcessingScenario() async {
         print("\n=== Scenario 7: Batch Processing (Multiple Pages) ===")
         var allPosts: [Post] = []
-        var totalPages = 3
+        let totalPages = 3
 
         do {
             for page in 1...totalPages {

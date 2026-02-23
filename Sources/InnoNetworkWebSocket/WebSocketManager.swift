@@ -255,8 +255,9 @@ public final class WebSocketManager: NSObject, Sendable {
         let listenerID = await storage.addEventListener(taskId: taskId) { event in
             stream.continuation.yield(event)
         }
-        stream.continuation.onTermination = { @Sendable _ in
+        stream.continuation.onTermination = { @Sendable [weak self] _ in
             Task {
+                guard let self else { return }
                 await self.storage.removeEventListener(taskId: taskId, listenerID: listenerID)
             }
         }

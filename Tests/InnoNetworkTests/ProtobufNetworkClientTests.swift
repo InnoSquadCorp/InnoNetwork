@@ -176,11 +176,12 @@ struct GetUserProtobufWithInterceptors: ProtobufAPIDefinition {
 
 private func protobufData<M: SwiftProtobuf.Message>(_ message: M) throws -> Data {
     let bytes: [UInt8] = try message.serializedBytes()
-    return bytes.withUnsafeBufferPointer { Data(buffer: $0) }
+    return Data(bytes)
 }
 
 private func decodeProtobuf<M: SwiftProtobuf.Message>(_ type: M.Type, from data: Data) throws -> M {
-    try M(serializedBytes: Array(data))
+    _ = type
+    return try M(serializedBytes: data)
 }
 
 
@@ -191,8 +192,8 @@ struct ProtobufNetworkClientTests {
     func protobufPostRequestSuccess() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 1, name: "Test User", email: "test@example.com")
-        let protobufData = try protobufData(expectedResponse)
-        mockSession.setMockResponse(statusCode: 200, data: protobufData)
+        let responseData = try protobufData(expectedResponse)
+        mockSession.setMockResponse(statusCode: 200, data: responseData)
 
         let client = try DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
@@ -211,8 +212,8 @@ struct ProtobufNetworkClientTests {
     func protobufGetRequestSuccess() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 42, name: "Jane Doe", email: "jane@example.com")
-        let protobufData = try protobufData(expectedResponse)
-        mockSession.setMockResponse(statusCode: 200, data: protobufData)
+        let responseData = try protobufData(expectedResponse)
+        mockSession.setMockResponse(statusCode: 200, data: responseData)
 
         let client = try DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
@@ -330,8 +331,8 @@ struct ProtobufNetworkClientTests {
     func protobufRequestInterceptor() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 1, name: "Test", email: "test@example.com")
-        let protobufData = try protobufData(expectedResponse)
-        mockSession.setMockResponse(statusCode: 200, data: protobufData)
+        let responseData = try protobufData(expectedResponse)
+        mockSession.setMockResponse(statusCode: 200, data: responseData)
 
         let client = try DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
@@ -370,8 +371,8 @@ struct ProtobufNetworkClientTests {
     func protobufRequestBodyEncoding() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 1, name: "Test", email: "test@example.com")
-        let protobufData = try protobufData(expectedResponse)
-        mockSession.setMockResponse(statusCode: 200, data: protobufData)
+        let responseData = try protobufData(expectedResponse)
+        mockSession.setMockResponse(statusCode: 200, data: responseData)
 
         let client = try DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
@@ -425,8 +426,8 @@ struct ProtobufRequestConfigTests {
     func getRequestWithoutParametersSuccess() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 1, name: "Test", email: "test@example.com")
-        let protobufData = try protobufData(expectedResponse)
-        mockSession.setMockResponse(statusCode: 200, data: protobufData)
+        let responseData = try protobufData(expectedResponse)
+        mockSession.setMockResponse(statusCode: 200, data: responseData)
 
         let client = try DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
@@ -447,14 +448,25 @@ struct ProtobufRetryTests {
         let maxTotalRetries: Int
         let retryDelay: TimeInterval
 
-        func retryDelay(for retryIndex: Int) -> TimeInterval {
-            _ = retryIndex
+        func retryDelay(for _: Int) -> TimeInterval {
             return retryDelay
         }
 
         func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
             _ = error
             return retryIndex < maxRetries
+        }
+    }
+
+    actor AlwaysFailSession: URLSessionProtocol {
+        private var _attemptCount = 0
+
+        var attemptCount: Int { _attemptCount }
+
+        func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+            _ = request
+            _attemptCount += 1
+            throw URLError(.networkConnectionLost)
         }
     }
 
@@ -474,12 +486,17 @@ struct ProtobufRetryTests {
 
                 let response = TestUserResponse(userID: 1, name: "Success", email: "test@example.com")
                 let data = try protobufData(response)
-                let httpResponse = HTTPURLResponse(
-                    url: request.url!,
+                guard let url = request.url else {
+                    throw URLError(.badURL)
+                }
+                guard let httpResponse = HTTPURLResponse(
+                    url: url,
                     statusCode: 200,
                     httpVersion: nil,
                     headerFields: nil
-                )!
+                ) else {
+                    throw URLError(.badServerResponse)
+                }
                 return (data, httpResponse)
             }
         }
@@ -506,17 +523,6 @@ struct ProtobufRetryTests {
 
     @Test("Retry policy stops after max retries")
     func stopAfterMaxRetries() async throws {
-        actor AlwaysFailSession: URLSessionProtocol {
-            private var _attemptCount = 0
-
-            var attemptCount: Int { _attemptCount }
-
-            func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-                _attemptCount += 1
-                throw URLError(.networkConnectionLost)
-            }
-        }
-
         let mockSession = AlwaysFailSession()
         let retryPolicy = SimpleRetryPolicy(maxRetries: 2, maxTotalRetries: 2, retryDelay: 0.01)
         let networkConfig = NetworkConfiguration(
@@ -542,17 +548,6 @@ struct ProtobufRetryTests {
 
     @Test("Retry policy respects max total retries across attempts")
     func respectsMaxTotalRetries() async throws {
-        actor AlwaysFailSession: URLSessionProtocol {
-            private var _attemptCount = 0
-
-            var attemptCount: Int { _attemptCount }
-
-            func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-                _attemptCount += 1
-                throw URLError(.networkConnectionLost)
-            }
-        }
-
         let mockSession = AlwaysFailSession()
         let retryPolicy = SimpleRetryPolicy(maxRetries: 5, maxTotalRetries: 1, retryDelay: 0.01)
         let networkConfig = NetworkConfiguration(
