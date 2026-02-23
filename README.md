@@ -697,6 +697,8 @@ InnoNetwork/
 
 - GitHub Actions CI: `.github/workflows/ci.yml`
 - Definition of Completion (DoC): `docs/CI_DoC.md`
+- DocC GitHub Pages deployment: `.github/workflows/docc-pages.yml`
+- DocC 운영 가이드: `docs/DocC_Deployment.md`
 
 ## License
 
