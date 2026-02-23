@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and Test (SwiftPM)
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: ${{ runner.os }}-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-xcode-26.0.1-
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Build (strict concurrency)
+        run: |
+          set -eo pipefail
+          echo "🔨 Building InnoNetwork..."
+          xcrun swift --version
+          xcrun swift build -Xswiftc -strict-concurrency=complete
+          echo "✅ Build completed successfully!"
+
+      - name: Test
+        run: |
+          set -eo pipefail
+          echo "🧪 Running tests..."
+          xcrun swift test
+          echo "✅ Tests completed successfully!"
+
+      - name: Enforce no unchecked sendable in production sources
+        run: |
+          if rg -n "@unchecked Sendable" Sources; then
+            echo "Found forbidden @unchecked Sendable in Sources"
+            exit 1
+          fi

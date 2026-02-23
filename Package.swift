@@ -6,7 +6,7 @@ let package = Package(
     name: "InnoNetwork",
     platforms: [
         .iOS(.v26),
-        .macOS(.v26),
+        .macOS(.v14),
         .tvOS(.v26),
         .watchOS(.v26),
         .visionOS(.v26)
@@ -26,7 +26,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.33.3")
+        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.35.0")
     ],
     targets: [
         .target(

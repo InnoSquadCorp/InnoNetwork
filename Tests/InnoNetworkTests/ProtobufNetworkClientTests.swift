@@ -152,9 +152,7 @@ struct TestProtobufRequestInterceptor: RequestInterceptor {
 // Response interceptor for testing
 struct TestProtobufResponseInterceptor: ResponseInterceptor {
     func adapt(_ response: Response, request: URLRequest) async throws -> Response {
-        var modifiedResponse = response
-        // Simple modification for testing
-        return modifiedResponse
+        response
     }
 }
 
@@ -176,6 +174,15 @@ struct GetUserProtobufWithInterceptors: ProtobufAPIDefinition {
 }
 
 
+private func protobufData<M: SwiftProtobuf.Message>(_ message: M) throws -> Data {
+    try message.serializedData()
+}
+
+private func decodeProtobuf<M: SwiftProtobuf.Message>(_: M.Type, from data: Data) throws -> M {
+    return try M(serializedBytes: data)
+}
+
+
 @Suite("Protobuf Network Tests")
 struct ProtobufNetworkClientTests {
 
@@ -183,8 +190,8 @@ struct ProtobufNetworkClientTests {
     func protobufPostRequestSuccess() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 1, name: "Test User", email: "test@example.com")
-        let protobufData = try expectedResponse.serializedData()
-        mockSession.setMockResponse(statusCode: 200, data: protobufData)
+        let responseData = try protobufData(expectedResponse)
+        mockSession.setMockResponse(statusCode: 200, data: responseData)
 
         let client = try DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
@@ -203,8 +210,8 @@ struct ProtobufNetworkClientTests {
     func protobufGetRequestSuccess() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 42, name: "Jane Doe", email: "jane@example.com")
-        let protobufData = try expectedResponse.serializedData()
-        mockSession.setMockResponse(statusCode: 200, data: protobufData)
+        let responseData = try protobufData(expectedResponse)
+        mockSession.setMockResponse(statusCode: 200, data: responseData)
 
         let client = try DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
@@ -310,11 +317,11 @@ struct ProtobufNetworkClientTests {
     func protobufEmptyResponseSerializationTest() throws {
         // Test empty response serialization
         let emptyResponse = ProtobufEmptyResponse()
-        let data = try emptyResponse.serializedData()
+        let data = try protobufData(emptyResponse)
         #expect(data.isEmpty)
 
         // Test deserialization
-        let decoded = try ProtobufEmptyResponse(serializedData: data)
+        let decoded = try decodeProtobuf(ProtobufEmptyResponse.self, from: data)
         #expect(emptyResponse.isEqualTo(message: decoded))
     }
 
@@ -322,8 +329,8 @@ struct ProtobufNetworkClientTests {
     func protobufRequestInterceptor() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 1, name: "Test", email: "test@example.com")
-        let protobufData = try expectedResponse.serializedData()
-        mockSession.setMockResponse(statusCode: 200, data: protobufData)
+        let responseData = try protobufData(expectedResponse)
+        mockSession.setMockResponse(statusCode: 200, data: responseData)
 
         let client = try DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
@@ -340,19 +347,19 @@ struct ProtobufNetworkClientTests {
     func protobufSerializationTest() throws {
         // Test request serialization
         let request = TestUserRequest(userID: 42)
-        let data = try request.serializedData()
+        let data = try protobufData(request)
         #expect(!data.isEmpty)
 
         // Test deserialization
-        let decoded = try TestUserRequest(serializedData: data)
+        let decoded = try decodeProtobuf(TestUserRequest.self, from: data)
         #expect(decoded.userID == 42)
 
         // Test response serialization
         let response = TestUserResponse(userID: 100, name: "John", email: "john@test.com")
-        let responseData = try response.serializedData()
+        let responseData = try protobufData(response)
         #expect(!responseData.isEmpty)
 
-        let decodedResponse = try TestUserResponse(serializedData: responseData)
+        let decodedResponse = try decodeProtobuf(TestUserResponse.self, from: responseData)
         #expect(decodedResponse.userID == 100)
         #expect(decodedResponse.name == "John")
         #expect(decodedResponse.email == "john@test.com")
@@ -362,8 +369,8 @@ struct ProtobufNetworkClientTests {
     func protobufRequestBodyEncoding() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 1, name: "Test", email: "test@example.com")
-        let protobufData = try expectedResponse.serializedData()
-        mockSession.setMockResponse(statusCode: 200, data: protobufData)
+        let responseData = try protobufData(expectedResponse)
+        mockSession.setMockResponse(statusCode: 200, data: responseData)
 
         let client = try DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
@@ -377,7 +384,7 @@ struct ProtobufNetworkClientTests {
         #expect(!requestBody.isEmpty)
 
         // Verify we can decode it back
-        let decodedRequest = try TestUserRequest(serializedData: requestBody)
+        let decodedRequest = try decodeProtobuf(TestUserRequest.self, from: requestBody)
         #expect(decodedRequest.userID == 99)
     }
 }
@@ -417,8 +424,8 @@ struct ProtobufRequestConfigTests {
     func getRequestWithoutParametersSuccess() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 1, name: "Test", email: "test@example.com")
-        let protobufData = try expectedResponse.serializedData()
-        mockSession.setMockResponse(statusCode: 200, data: protobufData)
+        let responseData = try protobufData(expectedResponse)
+        mockSession.setMockResponse(statusCode: 200, data: responseData)
 
         let client = try DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
@@ -439,35 +446,55 @@ struct ProtobufRetryTests {
         let maxTotalRetries: Int
         let retryDelay: TimeInterval
 
-        func retryDelay(for attempt: Int) -> TimeInterval {
-            retryDelay
+        func retryDelay(for _: Int) -> TimeInterval {
+            return retryDelay
         }
 
-        func shouldRetry(error: NetworkError, attempt: Int) -> Bool {
-            attempt < maxRetries
+        func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
+            _ = error
+            return retryIndex < maxRetries
+        }
+    }
+
+    actor AlwaysFailSession: URLSessionProtocol {
+        private var _attemptCount = 0
+
+        var attemptCount: Int { _attemptCount }
+
+        func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+            _ = request
+            _attemptCount += 1
+            throw URLError(.networkConnectionLost)
         }
     }
 
     @Test("Retry policy retries on network error")
     func retryOnNetworkError() async throws {
-        final class RetryMockSession: URLSessionProtocol, @unchecked Sendable {
-            var attemptCount = 0
+        actor RetryMockSession: URLSessionProtocol {
+            private var _attemptCount = 0
             let maxAttempts = 2
 
+            var attemptCount: Int { _attemptCount }
+
             func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-                attemptCount += 1
-                if attemptCount < maxAttempts {
+                _attemptCount += 1
+                if _attemptCount < maxAttempts {
                     throw URLError(.networkConnectionLost)
                 }
 
                 let response = TestUserResponse(userID: 1, name: "Success", email: "test@example.com")
-                let data = try response.serializedData()
-                let httpResponse = HTTPURLResponse(
-                    url: request.url!,
+                let data = try protobufData(response)
+                guard let url = request.url else {
+                    throw URLError(.badURL)
+                }
+                guard let httpResponse = HTTPURLResponse(
+                    url: url,
                     statusCode: 200,
                     httpVersion: nil,
                     headerFields: nil
-                )!
+                ) else {
+                    throw URLError(.badServerResponse)
+                }
                 return (data, httpResponse)
             }
         }
@@ -489,20 +516,11 @@ struct ProtobufRetryTests {
 
         let response = try await client.protobufRequest(GetUserProtobuf(userID: 1))
         #expect(response.userID == 1)
-        #expect(mockSession.attemptCount == 2)
+        #expect(await mockSession.attemptCount == 2)
     }
 
     @Test("Retry policy stops after max retries")
     func stopAfterMaxRetries() async throws {
-        final class AlwaysFailSession: URLSessionProtocol, @unchecked Sendable {
-            var attemptCount = 0
-
-            func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-                attemptCount += 1
-                throw URLError(.networkConnectionLost)
-            }
-        }
-
         let mockSession = AlwaysFailSession()
         let retryPolicy = SimpleRetryPolicy(maxRetries: 2, maxTotalRetries: 2, retryDelay: 0.01)
         let networkConfig = NetworkConfiguration(
@@ -523,7 +541,32 @@ struct ProtobufRetryTests {
         }
 
         // Initial attempt + 2 retries = 3 total attempts
-        #expect(mockSession.attemptCount == 3)
+        #expect(await mockSession.attemptCount == 3)
+    }
+
+    @Test("Retry policy respects max total retries across attempts")
+    func respectsMaxTotalRetries() async throws {
+        let mockSession = AlwaysFailSession()
+        let retryPolicy = SimpleRetryPolicy(maxRetries: 5, maxTotalRetries: 1, retryDelay: 0.01)
+        let networkConfig = NetworkConfiguration(
+            baseURL: URL(string: "https://test.example.com")!,
+            timeout: 30,
+            cachePolicy: .useProtocolCachePolicy,
+            retryPolicy: retryPolicy
+        )
+
+        let client = try DefaultNetworkClient(
+            configuration: TestAPIConfiguration(),
+            networkConfiguration: networkConfig,
+            session: mockSession
+        )
+
+        await #expect(throws: NetworkError.self) {
+            try await client.protobufRequest(GetUserProtobuf(userID: 1))
+        }
+
+        // Initial attempt + 1 total retry = 2 attempts.
+        #expect(await mockSession.attemptCount == 2)
     }
 }
 

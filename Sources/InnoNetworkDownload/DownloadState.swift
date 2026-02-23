@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetwork
 
 
 public enum DownloadState: String, Sendable {
@@ -36,8 +37,8 @@ public struct DownloadProgress: Sendable {
 
 public enum DownloadError: Error, Sendable {
     case invalidURL(String)
-    case networkError(Error)
-    case fileSystemError(Error)
+    case networkError(SendableUnderlyingError)
+    case fileSystemError(SendableUnderlyingError)
     case cancelled
     case maxRetriesExceeded
     case noResumeData
@@ -50,9 +51,9 @@ extension DownloadError: LocalizedError {
         case .invalidURL(let url):
             return "Invalid URL: \(url)"
         case .networkError(let error):
-            return "Network error: \(error.localizedDescription)"
+            return "Network error: \(error.message)"
         case .fileSystemError(let error):
-            return "File system error: \(error.localizedDescription)"
+            return "File system error: \(error.message)"
         case .cancelled:
             return "Download was cancelled"
         case .maxRetriesExceeded:

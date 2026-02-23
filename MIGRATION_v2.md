@@ -1,0 +1,175 @@
+# InnoNetwork v2 Migration Guide
+
+This document summarizes breaking changes from v1 to v2.
+
+## 1. RetryPolicy Semantics
+
+`RetryPolicy` now uses retry count semantics explicitly.
+
+- Old: `shouldRetry(error:attempt:)`
+- New: `shouldRetry(error:retryIndex:)`
+- `retryIndex` is 0-based and represents retry executions.
+- `maxRetries` now strictly means retry count.
+- Total request attempts are always `1 + maxRetries` (unless cancelled/failed earlier).
+
+Example:
+
+```swift
+struct RetryOncePolicy: RetryPolicy {
+    let maxRetries: Int = 1
+    let retryDelay: TimeInterval = 0.5
+
+    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
+        retryIndex < maxRetries
+    }
+}
+```
+
+## 2. Deprecated Callback Properties Removed
+
+Deprecated property APIs are removed from v2.
+
+### DownloadManager
+
+- Removed:
+  - `onProgress`
+  - `onStateChanged`
+  - `onCompleted`
+  - `onFailed`
+- Use:
+  - `setOnProgressHandler(_:)`
+  - `setOnStateChangedHandler(_:)`
+  - `setOnCompletedHandler(_:)`
+  - `setOnFailedHandler(_:)`
+  - `events(for:)`
+  - `addEventListener(for:listener:)` / `removeEventListener(_:)`
+
+### WebSocketManager
+
+- Removed:
+  - `onConnected`
+  - `onDisconnected`
+  - `onMessage`
+  - `onString`
+  - `onError`
+- Use:
+  - `setOnConnectedHandler(_:)`
+  - `setOnDisconnectedHandler(_:)`
+  - `setOnMessageHandler(_:)`
+  - `setOnStringHandler(_:)`
+  - `setOnErrorHandler(_:)`
+  - `events(for:)`
+  - `addEventListener(for:listener:)` / `removeEventListener(_:)`
+
+Listener lifecycle semantics are now explicit:
+- Download listeners remain attached across retry attempts.
+- WebSocket listeners remain attached across auto reconnect attempts.
+- Listeners are removed only on terminal states (`completed`, explicit `cancel`/`disconnect`, final `failed`).
+
+## 3. NetworkConfiguration Additions
+
+`NetworkConfiguration` now supports trust policy and lifecycle events.
+
+- Added `trustPolicy: TrustPolicy`
+- Added `eventObservers: [any NetworkEventObserving]`
+
+Example:
+
+```swift
+let config = NetworkConfiguration(
+    baseURL: URL(string: "https://api.example.com")!,
+    trustPolicy: .publicKeyPinning(
+        PublicKeyPinningPolicy(
+            pinsByHost: ["api.example.com": ["sha256/PRIMARY_PIN", "sha256/BACKUP_PIN"]]
+        )
+    ),
+    eventObservers: [OSLogNetworkEventObserver()]
+)
+```
+
+## 4. URLSessionProtocol Context Overload
+
+`URLSessionProtocol` now has context-based overload for trust/metrics/event correlation.
+
+- Added: `func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse)`
+- `NetworkRequestContext` carries:
+  - `requestID`
+  - `retryIndex`
+  - `metricsReporter`
+  - `trustPolicy`
+  - `eventObservers`
+
+Existing custom session mocks should implement `data(for request:context:)` for full behavior.
+
+Observability note:
+- `NetworkEventObserving` callbacks are delivered asynchronously (best effort) so request paths are not blocked by slow observers.
+
+## 5. WebSocket Runtime Configuration Changes
+
+`WebSocketConfiguration` heartbeat/reconnect fields changed:
+
+- Added:
+  - `heartbeatInterval`
+  - `pongTimeout`
+  - `maxMissedPongs`
+  - `reconnectJitterRatio`
+- Removed/renamed old ping-specific fields.
+
+Reconnect semantics are explicit in v2:
+- `maxReconnectAttempts` means reconnect retry count.
+- Total connection attempts are `1 + maxReconnectAttempts`.
+- Reconnect is not scheduled after the retry budget is exceeded (`maxReconnectAttemptsExceeded`).
+
+Manual disconnect behavior was tightened:
+- `disconnect(_:)` is allowed while state is `connected`, `connecting`, or `reconnecting`.
+- Once `disconnect(_:)` is called, auto reconnect is disabled and terminal cleanup is guaranteed.
+
+Close reason propagation:
+- `WebSocketEvent.disconnected` preserves close reason via
+  `WebSocketError.disconnected(SendableUnderlyingError(...))` when available.
+
+Event stream registration:
+- `WebSocketManager.events(for:)` is now `async` and returns only after listener registration completes.
+- This removes the initial race window where early events could be emitted before stream listener attachment.
+
+Background completion note:
+- `WebSocketManager` does not use a background URLSession runtime.
+- `handleBackgroundSessionCompletion(_:completion:)` now invokes `completion` immediately for compatibility.
+- `WebSocketConfiguration.sessionIdentifier` is retained as a compatibility field.
+
+## 6. Error Model Is Sendable-Safe
+
+Raw `Error` payloads are removed from public error enums.
+
+- `NetworkError.objectMapping` now uses `SendableUnderlyingError`
+- `NetworkError.underlying` now uses `SendableUnderlyingError`
+- Added `NetworkError.trustEvaluationFailed(TrustFailureReason)`
+
+Download/WebSocket errors also use `SendableUnderlyingError` instead of raw `Error`.
+
+## 7. Download Restore Behavior Tightened
+
+Background task restore no longer falls back to URL-only matching.
+
+- v2 restore uses task-id (`taskDescription`) and persisted metadata only.
+- Orphaned tasks are ignored unless tracked metadata exists.
+
+## 8. MultipartFormData API Usage
+
+Use mutating `append` APIs in v2.
+
+```swift
+var form = MultipartFormData()
+form.append("My title", name: "title")
+form.append(imageData, name: "file", fileName: "image.jpg", mimeType: "image/jpeg")
+```
+
+## 9. Listener Lifecycle Semantics
+
+If your app assumed listeners were dropped after each retry/reconnect cycle, update that behavior.
+v2 keeps listener subscriptions stable until terminal cleanup.
+
+## 10. Concurrency Policy
+
+- Production sources no longer use `@unchecked Sendable`.
+- If you maintain downstream extensions, prefer actor isolation or immutable sendable structures over unchecked conformance.

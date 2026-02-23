@@ -22,7 +22,12 @@ struct Profile: Decodable, Sendable {
 struct NetworkClientTests {
     let client = try! DefaultNetworkClient(configuration: APIDefinitionTests())
 
+    private var runIntegrationTests: Bool {
+        ProcessInfo.processInfo.environment["INNONETWORK_RUN_INTEGRATION_TESTS"] == "1"
+    }
+
     @Test func getRequestSuccess() async throws {
+        guard runIntegrationTests else { return }
         let profile = try await client.request(GetProfile())
         #expect(profile.id == 1)
         #expect(profile.name == "Leanne Graham")

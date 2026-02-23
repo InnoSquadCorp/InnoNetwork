@@ -1,0 +1,107 @@
+name: DocC Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-docs:
+    name: Build DocC Site
+    runs-on: macos-15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Build DocC archives
+        run: |
+          xcodebuild docbuild \
+            -scheme InnoNetwork-Package \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath .build/DocC
+
+      - name: Transform DocC archives for static hosting
+        env:
+          BASE_PATH: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+
+          SITE_DIR=".build/docc-site"
+          mkdir -p "$SITE_DIR"
+          touch "$SITE_DIR/.nojekyll"
+
+          modules=(InnoNetwork InnoNetworkDownload InnoNetworkWebSocket)
+          for module in "${modules[@]}"; do
+            archive="$(find .build/DocC/Build/Products -type d -path "*/${module}.doccarchive" -print -quit)"
+            if [[ -z "$archive" || ! -d "$archive" ]]; then
+              echo "Missing DocC archive for module: $module"
+              exit 1
+            fi
+
+            xcrun docc process-archive transform-for-static-hosting "$archive" \
+              --output-path "$SITE_DIR/$module" \
+              --hosting-base-path "$BASE_PATH/$module"
+          done
+
+          cat > "$SITE_DIR/index.html" <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>InnoNetwork DocC</title>
+          </head>
+          <body>
+            <main>
+              <h1>InnoNetwork Documentation</h1>
+              <ul>
+                <li><a href="./InnoNetwork/documentation/innonetwork">InnoNetwork</a></li>
+                <li><a href="./InnoNetworkDownload/documentation/innonetworkdownload">InnoNetworkDownload</a></li>
+                <li><a href="./InnoNetworkWebSocket/documentation/innonetworkwebsocket">InnoNetworkWebSocket</a></li>
+              </ul>
+            </main>
+          </body>
+          </html>
+          HTML
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .build/docc-site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build-docs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

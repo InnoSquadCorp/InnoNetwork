@@ -33,6 +33,7 @@ final class TestURLProtocol: URLProtocol {
     }
 
     nonisolated(unsafe) private static var responses: [ResponseSpec] = []
+    nonisolated(unsafe) private static var lastDequeuedResponse: ResponseSpec?
     private static let lock = NSLock()
 
     static func enqueue(_ response: ResponseSpec) {
@@ -44,6 +45,7 @@ final class TestURLProtocol: URLProtocol {
     static func reset() {
         lock.lock()
         responses.removeAll()
+        lastDequeuedResponse = nil
         lock.unlock()
     }
 
@@ -79,9 +81,74 @@ final class TestURLProtocol: URLProtocol {
 
     private static func dequeue() -> ResponseSpec? {
         lock.lock()
-        let value = responses.isEmpty ? nil : responses.removeFirst()
+        let value: ResponseSpec?
+        if responses.isEmpty {
+            #if DEBUG
+            assertionFailure("TestURLProtocol response queue unexpectedly empty; check request expectation counts.")
+            #endif
+            value = lastDequeuedResponse
+        } else {
+            let dequeued = responses.removeFirst()
+            lastDequeuedResponse = dequeued
+            value = dequeued
+        }
         lock.unlock()
         return value
+    }
+}
+
+
+actor MetricsForwardingProbe {
+    private var didReceiveReporterValue = false
+
+    func markReceivedReporter(_ received: Bool) {
+        didReceiveReporterValue = received
+    }
+
+    var didReceiveReporter: Bool {
+        didReceiveReporterValue
+    }
+}
+
+final class MetricsAwareMockSession: URLSessionProtocol, Sendable {
+    private let probe: MetricsForwardingProbe
+
+    init(probe: MetricsForwardingProbe) {
+        self.probe = probe
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        guard let url = request.url else {
+            throw URLError(.badURL)
+        }
+        guard let response = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        ) else {
+            throw URLError(.badServerResponse)
+        }
+        return (Data(#""fallback""#.utf8), response)
+    }
+
+    func data(
+        for request: URLRequest,
+        context: NetworkRequestContext
+    ) async throws -> (Data, URLResponse) {
+        await probe.markReceivedReporter(context.metricsReporter != nil)
+        guard let url = request.url else {
+            throw URLError(.badURL)
+        }
+        guard let response = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        ) else {
+            throw URLError(.badServerResponse)
+        }
+        return (Data(#""forwarded""#.utf8), response)
     }
 }
 
@@ -106,12 +173,12 @@ struct RetryOncePolicy: RetryPolicy {
     let maxTotalRetries: Int = 1
     let retryDelay: TimeInterval = 0
 
-    func retryDelay(for attempt: Int) -> TimeInterval {
-        retryDelay
+    func retryDelay(for _: Int) -> TimeInterval {
+        return retryDelay
     }
 
-    func shouldRetry(error: NetworkError, attempt: Int) -> Bool {
-        guard attempt < maxRetries else { return false }
+    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
+        guard retryIndex < maxRetries else { return false }
         switch error {
         case .underlying:
             return true
@@ -124,7 +191,7 @@ struct RetryOncePolicy: RetryPolicy {
 }
 
 
-@Suite("Network Metrics Tests")
+@Suite("Network Metrics Tests", .serialized)
 struct NetworkMetricsTests {
 
     @Test("Metrics are reported for successful requests")
@@ -135,18 +202,16 @@ struct NetworkMetricsTests {
         let recorder = MetricsRecorder()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [TestURLProtocol.self]
-        let session = MetricsURLSession(configuration: config, reporter: recorder)
+        let session = URLSession(configuration: config)
+        let context = NetworkRequestContext(metricsReporter: recorder)
 
         let request = URLRequest(url: URL(string: "https://example.com/api/metrics")!)
-        _ = try await session.data(for: request)
+        _ = try await session.data(for: request, context: context)
 
         let reported = await waitForMetrics(recorder: recorder, count: 1)
         #expect(reported)
-        if let response = await recorder.lastResponse as? HTTPURLResponse {
-            #expect(response.statusCode == 200)
-        } else {
-            #expect(false)
-        }
+        let response = try #require(await recorder.lastResponse as? HTTPURLResponse)
+        #expect(response.statusCode == 200)
     }
 
     @Test("Metrics are reported for failed requests")
@@ -157,11 +222,12 @@ struct NetworkMetricsTests {
         let recorder = MetricsRecorder()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [TestURLProtocol.self]
-        let session = MetricsURLSession(configuration: config, reporter: recorder)
+        let session = URLSession(configuration: config)
+        let context = NetworkRequestContext(metricsReporter: recorder)
 
         let request = URLRequest(url: URL(string: "https://example.com/api/metrics")!)
         await #expect(throws: URLError.self) {
-            _ = try await session.data(for: request)
+            _ = try await session.data(for: request, context: context)
         }
 
         let reported = await waitForMetrics(recorder: recorder, count: 1)
@@ -198,6 +264,30 @@ struct NetworkMetricsTests {
         #expect(reported)
     }
 
+    @Test("Metrics reporter is forwarded to custom URLSessionProtocol implementations")
+    func metricsReporterForwardingToCustomSession() async throws {
+        let probe = MetricsForwardingProbe()
+        let session = MetricsAwareMockSession(probe: probe)
+        let recorder = MetricsRecorder()
+
+        let networkConfiguration = NetworkConfiguration(
+            baseURL: URL(string: "https://example.com/api")!,
+            retryPolicy: nil,
+            networkMonitor: nil,
+            metricsReporter: recorder
+        )
+
+        let client = try DefaultNetworkClient(
+            configuration: MetricsTestAPI(),
+            networkConfiguration: networkConfiguration,
+            session: session
+        )
+
+        let result = try await client.request(MetricsGetRequest())
+        #expect(result == "forwarded")
+        #expect(await probe.didReceiveReporter)
+    }
+
     private func waitForMetrics(recorder: MetricsRecorder, count: Int) async -> Bool {
         let deadline = Date().addingTimeInterval(2.0)
         while Date() < deadline {
@@ -224,9 +314,18 @@ struct NetworkMonitorTests {
     func waitForChangeTimesOutReturnsNil() async {
         let monitor = NetworkMonitor()
         let snapshot = await monitor.currentSnapshot()
-        let result = await monitor.waitForChange(from: snapshot, timeout: 0.01)
-        // With a very short timeout and no network change, expect nil
-        #expect(result == nil)
+        let timeout: TimeInterval = 0.01
+        let start = Date()
+        let result = await monitor.waitForChange(from: snapshot, timeout: timeout)
+        let elapsed = Date().timeIntervalSince(start)
+        // Real network state can change immediately on CI/local machines.
+        // If a snapshot is returned, it should represent a different state.
+        if let result {
+            #expect(result != snapshot)
+        } else {
+            // When no change is observed, this path should represent an actual timeout.
+            #expect(elapsed >= timeout * 0.8)
+        }
     }
 
     @Test("waitForChange returns different snapshot when network state differs")
@@ -297,7 +396,7 @@ struct RetryPolicyTests {
             waitsForNetworkChanges: false,
             networkChangeTimeout: nil
         )
-        #expect(policy.shouldRetry(error: .statusCode(response), attempt: 0))
+        #expect(policy.shouldRetry(error: .statusCode(response), retryIndex: 0))
     }
 
     @Test("shouldResetAttempts detects snapshot changes")
