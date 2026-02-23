@@ -267,21 +267,44 @@ struct WebSocketListenerLifecycleTests {
     func reconnectRuntimeChainReachesMaxAttempts() async throws {
         let manager = WebSocketManager(
             configuration: WebSocketConfiguration(
-                connectionTimeout: 0.5,
+                connectionTimeout: 30,
                 heartbeatInterval: 0,
-                reconnectDelay: 0.01,
+                reconnectDelay: 0,
                 maxReconnectAttempts: 2,
                 sessionIdentifier: "test.websocket.reconnect-runtime.\(UUID().uuidString)"
             )
         )
         let recorder = WebSocketEventRecorder()
 
-        let task = await manager.connect(url: URL(string: "ws://127.0.0.1:1/socket")!)
+        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
         _ = await manager.addEventListener(for: task) { event in
             Task {
                 await recorder.record(event)
             }
         }
+
+        let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        manager.handleError(taskIdentifier: firstTaskIdentifier, error: URLError(.cannotConnectToHost))
+
+        let secondTaskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: manager,
+                task: task,
+                excluding: [firstTaskIdentifier],
+                timeout: 3.0
+            )
+        )
+        manager.handleError(taskIdentifier: secondTaskIdentifier, error: URLError(.cannotConnectToHost))
+
+        let thirdTaskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: manager,
+                task: task,
+                excluding: [firstTaskIdentifier, secondTaskIdentifier],
+                timeout: 3.0
+            )
+        )
+        manager.handleError(taskIdentifier: thirdTaskIdentifier, error: URLError(.cannotConnectToHost))
 
         #expect(await waitForTaskError(task: task, timeout: 5.0) { error in
             if case .maxReconnectAttemptsExceeded = error {
@@ -398,6 +421,38 @@ struct WebSocketListenerLifecycleTests {
         #expect(reasonDelivered)
     }
 
+    @Test("Manual disconnect emits contextual disconnected reason")
+    func manualDisconnectReasonPropagation() async throws {
+        let manager = WebSocketManager(
+            configuration: WebSocketConfiguration(
+                heartbeatInterval: 0,
+                reconnectDelay: 0,
+                maxReconnectAttempts: 0,
+                sessionIdentifier: "test.websocket.manual-disconnect-reason.\(UUID().uuidString)"
+            )
+        )
+        let recorder = WebSocketEventRecorder()
+
+        let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        _ = await manager.addEventListener(for: task) { event in
+            Task {
+                await recorder.record(event)
+            }
+        }
+
+        await manager.disconnect(task, closeCode: .goingAway)
+
+        let reasonDelivered = await waitForEvent(recorder: recorder, timeout: 2.0) { event in
+            if case .disconnected(.disconnected(let underlying)) = event {
+                return underlying?.domain == "InnoNetworkWebSocket.ManualDisconnect"
+                    && underlying?.message == "Client initiated disconnect."
+                    && underlying?.code == Int(URLSessionWebSocketTask.CloseCode.goingAway.rawValue)
+            }
+            return false
+        }
+        #expect(reasonDelivered)
+    }
+
     @Test("Final reconnect failure removes listeners and task runtime")
     func terminalFailureRemovesListeners() async throws {
         let config = WebSocketConfiguration(
@@ -421,11 +476,12 @@ struct WebSocketListenerLifecycleTests {
     private func waitForRuntimeTaskIdentifier(
         manager: WebSocketManager,
         task: WebSocketTask,
+        excluding: Set<Int> = [],
         timeout: TimeInterval = 2.0
     ) async -> Int? {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if let identifier = await manager.runtimeTaskIdentifier(for: task) {
+            if let identifier = await manager.runtimeTaskIdentifier(for: task), !excluding.contains(identifier) {
                 return identifier
             }
             try? await Task.sleep(nanoseconds: 10_000_000)

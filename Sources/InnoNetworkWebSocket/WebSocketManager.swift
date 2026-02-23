@@ -115,7 +115,7 @@ public final class WebSocketManager: NSObject, Sendable {
         await task.setAutoReconnectEnabled(false)
         await storage.cancelHeartbeatTask(for: task.id)
         await task.updateState(.disconnecting)
-        let disconnectError: WebSocketError? = nil
+        let disconnectError: WebSocketError? = makeManualDisconnectError(closeCode: closeCode)
         await storage.onDisconnected?(task, disconnectError)
 
         if let urlTask = await storage.urlTask(for: task.id) {
@@ -474,6 +474,16 @@ public final class WebSocketManager: NSObject, Sendable {
                 domain: "InnoNetworkWebSocket.CloseReason",
                 code: Int(closeCode.rawValue),
                 message: reason
+            )
+        )
+    }
+
+    private func makeManualDisconnectError(closeCode: URLSessionWebSocketTask.CloseCode) -> WebSocketError {
+        .disconnected(
+            SendableUnderlyingError(
+                domain: "InnoNetworkWebSocket.ManualDisconnect",
+                code: Int(closeCode.rawValue),
+                message: "Client initiated disconnect."
             )
         )
     }
