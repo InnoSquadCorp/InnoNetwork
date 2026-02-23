@@ -460,13 +460,15 @@ struct ProtobufRetryTests {
 
     @Test("Retry policy retries on network error")
     func retryOnNetworkError() async throws {
-        final class RetryMockSession: URLSessionProtocol, @unchecked Sendable {
-            var attemptCount = 0
+        actor RetryMockSession: URLSessionProtocol {
+            private var _attemptCount = 0
             let maxAttempts = 2
 
+            var attemptCount: Int { _attemptCount }
+
             func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-                attemptCount += 1
-                if attemptCount < maxAttempts {
+                _attemptCount += 1
+                if _attemptCount < maxAttempts {
                     throw URLError(.networkConnectionLost)
                 }
 
@@ -499,16 +501,18 @@ struct ProtobufRetryTests {
 
         let response = try await client.protobufRequest(GetUserProtobuf(userID: 1))
         #expect(response.userID == 1)
-        #expect(mockSession.attemptCount == 2)
+        #expect(await mockSession.attemptCount == 2)
     }
 
     @Test("Retry policy stops after max retries")
     func stopAfterMaxRetries() async throws {
-        final class AlwaysFailSession: URLSessionProtocol, @unchecked Sendable {
-            var attemptCount = 0
+        actor AlwaysFailSession: URLSessionProtocol {
+            private var _attemptCount = 0
+
+            var attemptCount: Int { _attemptCount }
 
             func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-                attemptCount += 1
+                _attemptCount += 1
                 throw URLError(.networkConnectionLost)
             }
         }
@@ -533,16 +537,18 @@ struct ProtobufRetryTests {
         }
 
         // Initial attempt + 2 retries = 3 total attempts
-        #expect(mockSession.attemptCount == 3)
+        #expect(await mockSession.attemptCount == 3)
     }
 
     @Test("Retry policy respects max total retries across attempts")
     func respectsMaxTotalRetries() async throws {
-        final class AlwaysFailSession: URLSessionProtocol, @unchecked Sendable {
-            var attemptCount = 0
+        actor AlwaysFailSession: URLSessionProtocol {
+            private var _attemptCount = 0
+
+            var attemptCount: Int { _attemptCount }
 
             func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-                attemptCount += 1
+                _attemptCount += 1
                 throw URLError(.networkConnectionLost)
             }
         }
@@ -567,7 +573,7 @@ struct ProtobufRetryTests {
         }
 
         // Initial attempt + 1 total retry = 2 attempts.
-        #expect(mockSession.attemptCount == 2)
+        #expect(await mockSession.attemptCount == 2)
     }
 }
 

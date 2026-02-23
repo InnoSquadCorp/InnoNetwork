@@ -107,7 +107,7 @@ actor MetricsForwardingProbe {
     }
 }
 
-final class MetricsAwareMockSession: URLSessionProtocol, @unchecked Sendable {
+final class MetricsAwareMockSession: URLSessionProtocol, Sendable {
     private let probe: MetricsForwardingProbe
 
     init(probe: MetricsForwardingProbe) {

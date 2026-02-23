@@ -63,6 +63,29 @@ struct WebSocketConfigurationTests {
         #expect(sessionConfig.allowsCellularAccess == false)
         #expect(sessionConfig.httpMaximumConnectionsPerHost == 4)
     }
+
+    @Test("Negative values are clamped to safe bounds")
+    func negativeValueClamping() {
+        let config = WebSocketConfiguration(
+            maxConcurrentConnections: -1,
+            connectionTimeout: -10,
+            heartbeatInterval: -5,
+            pongTimeout: -3,
+            maxMissedPongs: -2,
+            reconnectDelay: -1,
+            reconnectJitterRatio: -0.5,
+            maxReconnectAttempts: -4
+        )
+
+        #expect(config.maxConcurrentConnections == 1)
+        #expect(config.connectionTimeout == 0)
+        #expect(config.heartbeatInterval == 0)
+        #expect(config.pongTimeout == 0)
+        #expect(config.maxMissedPongs == 1)
+        #expect(config.reconnectDelay == 0)
+        #expect(config.reconnectJitterRatio == 0)
+        #expect(config.maxReconnectAttempts == 0)
+    }
 }
 
 
@@ -451,6 +474,43 @@ struct WebSocketListenerLifecycleTests {
             return false
         }
         #expect(reasonDelivered)
+    }
+
+    @Test("Disconnecting callback does not emit duplicate disconnected reason")
+    func disconnectingCallbackSkipsDuplicateEmission() async throws {
+        let manager = WebSocketManager(
+            configuration: WebSocketConfiguration(
+                heartbeatInterval: 0,
+                reconnectDelay: 0,
+                maxReconnectAttempts: 0,
+                sessionIdentifier: "test.websocket.disconnecting-duplicate.\(UUID().uuidString)"
+            )
+        )
+        let recorder = WebSocketEventRecorder()
+
+        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        _ = await manager.addEventListener(for: task) { event in
+            Task {
+                await recorder.record(event)
+            }
+        }
+
+        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        await task.updateState(.disconnecting)
+        manager.handleDisconnected(
+            taskIdentifier: taskIdentifier,
+            closeCode: .goingAway,
+            reason: "duplicate-check"
+        )
+
+        let duplicateDelivered = await waitForEvent(recorder: recorder, timeout: 0.3) { event in
+            if case .disconnected(.disconnected(let underlying)) = event {
+                return underlying?.message == "duplicate-check"
+            }
+            return false
+        }
+        #expect(!duplicateDelivered)
+        await manager.disconnect(task)
     }
 
     @Test("Final reconnect failure removes listeners and task runtime")

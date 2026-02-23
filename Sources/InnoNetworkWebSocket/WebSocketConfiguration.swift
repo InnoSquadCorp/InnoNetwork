@@ -29,14 +29,14 @@ public struct WebSocketConfiguration: Sendable {
         sessionIdentifier: String = "com.innonetwork.websocket",
         requestHeaders: [String: String] = [:]
     ) {
-        self.maxConcurrentConnections = maxConcurrentConnections
-        self.connectionTimeout = connectionTimeout
-        self.heartbeatInterval = heartbeatInterval
-        self.pongTimeout = pongTimeout
+        self.maxConcurrentConnections = max(1, maxConcurrentConnections)
+        self.connectionTimeout = max(0, connectionTimeout)
+        self.heartbeatInterval = max(0, heartbeatInterval)
+        self.pongTimeout = max(0, pongTimeout)
         self.maxMissedPongs = max(1, maxMissedPongs)
-        self.reconnectDelay = reconnectDelay
+        self.reconnectDelay = max(0, reconnectDelay)
         self.reconnectJitterRatio = max(0, reconnectJitterRatio)
-        self.maxReconnectAttempts = maxReconnectAttempts
+        self.maxReconnectAttempts = max(0, maxReconnectAttempts)
         self.allowsCellularAccess = allowsCellularAccess
         self.sessionIdentifier = sessionIdentifier
         self.requestHeaders = requestHeaders

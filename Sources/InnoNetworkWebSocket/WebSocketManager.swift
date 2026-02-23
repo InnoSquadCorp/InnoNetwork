@@ -347,6 +347,12 @@ public final class WebSocketManager: NSObject, Sendable {
         Task {
             guard let task = await storage.webSocketTask(for: taskIdentifier) else { return }
             let previousState = await task.state
+            if previousState == .disconnecting {
+                // Manual disconnect already emitted terminal events and cleanup.
+                // Ignore delegate callbacks arriving during cancellation to avoid duplicates.
+                await storage.detachRuntime(taskIdentifier: taskIdentifier)
+                return
+            }
 
             let error = makeDisconnectedError(closeCode: closeCode, reason: reason)
             await task.updateState(.disconnected)

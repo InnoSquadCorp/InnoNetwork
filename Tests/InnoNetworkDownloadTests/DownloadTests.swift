@@ -48,6 +48,25 @@ struct DownloadConfigurationTests {
         #expect(sessionConfig.allowsCellularAccess == false)
         #expect(sessionConfig.httpMaximumConnectionsPerHost == 4)
     }
+
+    @Test("Negative values are clamped to safe bounds")
+    func negativeValueClamping() {
+        let config = DownloadConfiguration(
+            maxConcurrentDownloads: -1,
+            maxRetryCount: -2,
+            maxTotalRetries: -3,
+            retryDelay: -0.5,
+            timeoutForRequest: -10,
+            timeoutForResource: -20
+        )
+
+        #expect(config.maxConcurrentDownloads == 1)
+        #expect(config.maxRetryCount == 0)
+        #expect(config.maxTotalRetries == 0)
+        #expect(config.retryDelay == 0)
+        #expect(config.timeoutForRequest == 0)
+        #expect(config.timeoutForResource == 0)
+    }
 }
 
 

@@ -30,12 +30,12 @@ public struct DownloadConfiguration: Sendable {
         waitsForNetworkChanges: Bool = false,
         networkChangeTimeout: TimeInterval? = 10.0
     ) {
-        self.maxConcurrentDownloads = maxConcurrentDownloads
-        self.maxRetryCount = maxRetryCount
-        self.maxTotalRetries = maxTotalRetries
-        self.retryDelay = retryDelay
-        self.timeoutForRequest = timeoutForRequest
-        self.timeoutForResource = timeoutForResource
+        self.maxConcurrentDownloads = max(1, maxConcurrentDownloads)
+        self.maxRetryCount = max(0, maxRetryCount)
+        self.maxTotalRetries = max(0, maxTotalRetries)
+        self.retryDelay = max(0, retryDelay)
+        self.timeoutForRequest = max(0, timeoutForRequest)
+        self.timeoutForResource = max(0, timeoutForResource)
         self.allowsCellularAccess = allowsCellularAccess
         self.sessionIdentifier = sessionIdentifier
         self.networkMonitor = networkMonitor
