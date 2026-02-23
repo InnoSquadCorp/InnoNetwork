@@ -22,6 +22,12 @@ private enum WebSocketInternalError: Error {
     case pingTimeout
 }
 
+private enum ReconnectAction {
+    case retry
+    case terminal
+    case exceeded
+}
+
 
 public final class WebSocketManager: NSObject, Sendable {
     public static let shared = WebSocketManager()
@@ -98,7 +104,13 @@ public final class WebSocketManager: NSObject, Sendable {
     }
 
     public func disconnect(_ task: WebSocketTask, closeCode: URLSessionWebSocketTask.CloseCode = .normalClosure) async {
-        guard await task.state == .connected else { return }
+        let state = await task.state
+        switch state {
+        case .connected, .connecting, .reconnecting:
+            break
+        case .idle, .disconnecting, .disconnected, .failed:
+            return
+        }
 
         await task.setAutoReconnectEnabled(false)
         await storage.cancelHeartbeatTask(for: task.id)
@@ -107,6 +119,12 @@ public final class WebSocketManager: NSObject, Sendable {
 
         if let urlTask = await storage.urlTask(for: task.id) {
             urlTask.cancel(with: closeCode, reason: nil)
+        } else {
+            await task.updateState(.disconnected)
+            await task.setCloseCode(closeCode)
+            await storage.removeTaskAndListeners(taskId: task.id)
+            await storage.remove(task)
+            return
         }
 
         await task.updateState(.disconnected)
@@ -326,9 +344,8 @@ public final class WebSocketManager: NSObject, Sendable {
         Task {
             guard let task = await storage.webSocketTask(for: taskIdentifier) else { return }
             let previousState = await task.state
-            _ = reason
 
-            let error = WebSocketError.disconnected(nil)
+            let error = makeDisconnectedError(closeCode: closeCode, reason: reason)
             await task.updateState(.disconnected)
             await task.setCloseCode(closeCode)
             await task.setError(error)
@@ -336,13 +353,19 @@ public final class WebSocketManager: NSObject, Sendable {
             await storage.onDisconnected?(task, error)
             await storage.emitEvent(.disconnected(error), for: task.id)
 
-            if previousState != .disconnecting, await task.autoReconnectEnabled {
-                let reconnectCount = await task.incrementReconnectCount()
-                if reconnectCount < configuration.maxReconnectAttempts {
-                    await storage.detachRuntime(taskIdentifier: taskIdentifier)
-                    await attemptReconnect(task: task)
-                    return
-                }
+            let reconnectAction = await reconnectAction(task: task, previousState: previousState)
+            switch reconnectAction {
+            case .retry:
+                await storage.detachRuntime(taskIdentifier: taskIdentifier)
+                await attemptReconnect(task: task)
+                return
+            case .exceeded:
+                await task.updateState(.failed)
+                await task.setError(.maxReconnectAttemptsExceeded)
+                await storage.onError?(task, .maxReconnectAttemptsExceeded)
+                await storage.emitEvent(.error(.maxReconnectAttemptsExceeded), for: task.id)
+            case .terminal:
+                break
             }
 
             await storage.removeTaskAndListeners(taskId: task.id)
@@ -407,24 +430,68 @@ public final class WebSocketManager: NSObject, Sendable {
         Task {
             guard let task = await storage.webSocketTask(for: taskIdentifier) else { return }
 
-            await task.updateState(.failed)
-            await task.setError(error)
-            await storage.cancelHeartbeatTask(for: task.id)
-            await storage.onError?(task, error)
-            await storage.emitEvent(.error(error), for: task.id)
+            let reconnectAction = await reconnectAction(task: task)
+            let finalError: WebSocketError
+            switch reconnectAction {
+            case .exceeded:
+                finalError = .maxReconnectAttemptsExceeded
+            case .retry, .terminal:
+                finalError = error
+            }
 
-            if await task.autoReconnectEnabled {
-                let reconnectCount = await task.incrementReconnectCount()
-                if reconnectCount < configuration.maxReconnectAttempts {
-                    await storage.detachRuntime(taskIdentifier: taskIdentifier)
-                    await attemptReconnect(task: task)
-                    return
-                }
+            await task.updateState(.failed)
+            await task.setError(finalError)
+            await storage.cancelHeartbeatTask(for: task.id)
+            await storage.onError?(task, finalError)
+            await storage.emitEvent(.error(finalError), for: task.id)
+
+            switch reconnectAction {
+            case .retry:
+                await storage.detachRuntime(taskIdentifier: taskIdentifier)
+                await attemptReconnect(task: task)
+                return
+            case .terminal, .exceeded:
+                break
             }
 
             await storage.removeTaskAndListeners(taskId: task.id)
             await storage.remove(task)
         }
+    }
+
+    private func makeDisconnectedError(
+        closeCode: URLSessionWebSocketTask.CloseCode,
+        reason: String?
+    ) -> WebSocketError {
+        guard let reason, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .disconnected(nil)
+        }
+        return .disconnected(
+            SendableUnderlyingError(
+                domain: "InnoNetworkWebSocket.CloseReason",
+                code: Int(closeCode.rawValue),
+                message: reason
+            )
+        )
+    }
+
+    private func reconnectAction(
+        task: WebSocketTask,
+        previousState: WebSocketState? = nil
+    ) async -> ReconnectAction {
+        if let previousState, previousState == .disconnecting {
+            return .terminal
+        }
+
+        guard await task.autoReconnectEnabled else {
+            return .terminal
+        }
+
+        let reconnectCount = await task.incrementReconnectCount()
+        if Self.shouldRetryReconnect(after: reconnectCount, maxReconnectAttempts: configuration.maxReconnectAttempts) {
+            return .retry
+        }
+        return .exceeded
     }
 
     private func attemptReconnect(task: WebSocketTask) async {
@@ -482,6 +549,10 @@ public final class WebSocketManager: NSObject, Sendable {
         case .idle, .connecting, .connected, .disconnecting:
             return false
         }
+    }
+
+    static func shouldRetryReconnect(after reconnectCount: Int, maxReconnectAttempts: Int) -> Bool {
+        reconnectCount <= maxReconnectAttempts
     }
 
     public func handleBackgroundSessionCompletion(_ identifier: String, completion: @escaping @Sendable () -> Void) {

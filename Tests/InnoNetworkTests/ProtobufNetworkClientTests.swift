@@ -152,9 +152,7 @@ struct TestProtobufRequestInterceptor: RequestInterceptor {
 // Response interceptor for testing
 struct TestProtobufResponseInterceptor: ResponseInterceptor {
     func adapt(_ response: Response, request: URLRequest) async throws -> Response {
-        var modifiedResponse = response
-        // Simple modification for testing
-        return modifiedResponse
+        response
     }
 }
 
@@ -176,6 +174,16 @@ struct GetUserProtobufWithInterceptors: ProtobufAPIDefinition {
 }
 
 
+private func protobufData<M: SwiftProtobuf.Message>(_ message: M) throws -> Data {
+    let bytes: [UInt8] = try message.serializedBytes()
+    return bytes.withUnsafeBufferPointer { Data(buffer: $0) }
+}
+
+private func decodeProtobuf<M: SwiftProtobuf.Message>(_ type: M.Type, from data: Data) throws -> M {
+    try M(serializedBytes: Array(data))
+}
+
+
 @Suite("Protobuf Network Tests")
 struct ProtobufNetworkClientTests {
 
@@ -183,7 +191,7 @@ struct ProtobufNetworkClientTests {
     func protobufPostRequestSuccess() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 1, name: "Test User", email: "test@example.com")
-        let protobufData = try expectedResponse.serializedData()
+        let protobufData = try protobufData(expectedResponse)
         mockSession.setMockResponse(statusCode: 200, data: protobufData)
 
         let client = try DefaultNetworkClient(
@@ -203,7 +211,7 @@ struct ProtobufNetworkClientTests {
     func protobufGetRequestSuccess() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 42, name: "Jane Doe", email: "jane@example.com")
-        let protobufData = try expectedResponse.serializedData()
+        let protobufData = try protobufData(expectedResponse)
         mockSession.setMockResponse(statusCode: 200, data: protobufData)
 
         let client = try DefaultNetworkClient(
@@ -310,11 +318,11 @@ struct ProtobufNetworkClientTests {
     func protobufEmptyResponseSerializationTest() throws {
         // Test empty response serialization
         let emptyResponse = ProtobufEmptyResponse()
-        let data = try emptyResponse.serializedData()
+        let data = try protobufData(emptyResponse)
         #expect(data.isEmpty)
 
         // Test deserialization
-        let decoded = try ProtobufEmptyResponse(serializedData: data)
+        let decoded = try decodeProtobuf(ProtobufEmptyResponse.self, from: data)
         #expect(emptyResponse.isEqualTo(message: decoded))
     }
 
@@ -322,7 +330,7 @@ struct ProtobufNetworkClientTests {
     func protobufRequestInterceptor() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 1, name: "Test", email: "test@example.com")
-        let protobufData = try expectedResponse.serializedData()
+        let protobufData = try protobufData(expectedResponse)
         mockSession.setMockResponse(statusCode: 200, data: protobufData)
 
         let client = try DefaultNetworkClient(
@@ -340,19 +348,19 @@ struct ProtobufNetworkClientTests {
     func protobufSerializationTest() throws {
         // Test request serialization
         let request = TestUserRequest(userID: 42)
-        let data = try request.serializedData()
+        let data = try protobufData(request)
         #expect(!data.isEmpty)
 
         // Test deserialization
-        let decoded = try TestUserRequest(serializedData: data)
+        let decoded = try decodeProtobuf(TestUserRequest.self, from: data)
         #expect(decoded.userID == 42)
 
         // Test response serialization
         let response = TestUserResponse(userID: 100, name: "John", email: "john@test.com")
-        let responseData = try response.serializedData()
+        let responseData = try protobufData(response)
         #expect(!responseData.isEmpty)
 
-        let decodedResponse = try TestUserResponse(serializedData: responseData)
+        let decodedResponse = try decodeProtobuf(TestUserResponse.self, from: responseData)
         #expect(decodedResponse.userID == 100)
         #expect(decodedResponse.name == "John")
         #expect(decodedResponse.email == "john@test.com")
@@ -362,7 +370,7 @@ struct ProtobufNetworkClientTests {
     func protobufRequestBodyEncoding() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 1, name: "Test", email: "test@example.com")
-        let protobufData = try expectedResponse.serializedData()
+        let protobufData = try protobufData(expectedResponse)
         mockSession.setMockResponse(statusCode: 200, data: protobufData)
 
         let client = try DefaultNetworkClient(
@@ -377,7 +385,7 @@ struct ProtobufNetworkClientTests {
         #expect(!requestBody.isEmpty)
 
         // Verify we can decode it back
-        let decodedRequest = try TestUserRequest(serializedData: requestBody)
+        let decodedRequest = try decodeProtobuf(TestUserRequest.self, from: requestBody)
         #expect(decodedRequest.userID == 99)
     }
 }
@@ -417,7 +425,7 @@ struct ProtobufRequestConfigTests {
     func getRequestWithoutParametersSuccess() async throws {
         let mockSession = MockURLSession()
         let expectedResponse = TestUserResponse(userID: 1, name: "Test", email: "test@example.com")
-        let protobufData = try expectedResponse.serializedData()
+        let protobufData = try protobufData(expectedResponse)
         mockSession.setMockResponse(statusCode: 200, data: protobufData)
 
         let client = try DefaultNetworkClient(
@@ -463,7 +471,7 @@ struct ProtobufRetryTests {
                 }
 
                 let response = TestUserResponse(userID: 1, name: "Success", email: "test@example.com")
-                let data = try response.serializedData()
+                let data = try protobufData(response)
                 let httpResponse = HTTPURLResponse(
                     url: request.url!,
                     statusCode: 200,

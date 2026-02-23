@@ -9,6 +9,8 @@ public struct WebSocketConfiguration: Sendable {
     public let maxMissedPongs: Int
     public let reconnectDelay: TimeInterval
     public let reconnectJitterRatio: Double
+    /// Number of reconnect retries after the initial connection attempt.
+    /// Total connection attempts are `1 + maxReconnectAttempts`.
     public let maxReconnectAttempts: Int
     public let allowsCellularAccess: Bool
     public let sessionIdentifier: String

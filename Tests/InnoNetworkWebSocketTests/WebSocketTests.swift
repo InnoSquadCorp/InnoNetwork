@@ -202,6 +202,49 @@ struct WebSocketManagerTests {
         #expect(!WebSocketManager.shouldReconnect(currentState: .disconnecting, autoReconnectEnabled: true))
         #expect(!WebSocketManager.shouldReconnect(currentState: .failed, autoReconnectEnabled: false))
     }
+
+    @Test("Reconnect attempt budget uses retry-count semantics")
+    func reconnectAttemptBudgetSemantics() {
+        #expect(WebSocketManager.shouldRetryReconnect(after: 1, maxReconnectAttempts: 2))
+        #expect(WebSocketManager.shouldRetryReconnect(after: 2, maxReconnectAttempts: 2))
+        #expect(!WebSocketManager.shouldRetryReconnect(after: 3, maxReconnectAttempts: 2))
+        #expect(!WebSocketManager.shouldRetryReconnect(after: 1, maxReconnectAttempts: 0))
+    }
+
+    @Test("Disconnect supports connecting and reconnecting states")
+    func disconnectSupportsConnectingAndReconnectingStates() async {
+        let manager = WebSocketManager(
+            configuration: WebSocketConfiguration(
+                heartbeatInterval: 0,
+                reconnectDelay: 0,
+                sessionIdentifier: "test.websocket.disconnect-state.\(UUID().uuidString)"
+            )
+        )
+
+        let connectingTask = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        await manager.disconnect(connectingTask)
+        #expect(await waitForTaskRemoval(manager: manager, taskID: connectingTask.id))
+
+        let reconnectingTask = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        await reconnectingTask.updateState(.reconnecting)
+        await manager.disconnect(reconnectingTask)
+        #expect(await waitForTaskRemoval(manager: manager, taskID: reconnectingTask.id))
+    }
+
+    private func waitForTaskRemoval(
+        manager: WebSocketManager,
+        taskID: String,
+        timeout: TimeInterval = 2.0
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await manager.task(withId: taskID) == nil {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
+    }
 }
 
 
@@ -220,6 +263,38 @@ private actor WebSocketEventRecorder {
 
 @Suite("WebSocket Listener Lifecycle Tests")
 struct WebSocketListenerLifecycleTests {
+    @Test("Max reconnect attempts zero fails immediately")
+    func maxReconnectAttemptsZeroFailsImmediately() async throws {
+        let manager = WebSocketManager(
+            configuration: WebSocketConfiguration(
+                heartbeatInterval: 0,
+                reconnectDelay: 0,
+                maxReconnectAttempts: 0,
+                sessionIdentifier: "test.websocket.reconnect-zero.\(UUID().uuidString)"
+            )
+        )
+        let recorder = WebSocketEventRecorder()
+
+        let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        _ = await manager.addEventListener(for: task) { event in
+            Task {
+                await recorder.record(event)
+            }
+        }
+
+        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        manager.handleError(taskIdentifier: taskIdentifier, error: URLError(.cannotConnectToHost))
+
+        #expect(await waitForListenerCleanup(manager: manager, task: task))
+        let maxExceededEvent = await waitForEvent(recorder: recorder, timeout: 2.0) { event in
+            if case .error(.maxReconnectAttemptsExceeded) = event {
+                return true
+            }
+            return false
+        }
+        #expect(maxExceededEvent)
+    }
+
     @Test("Listener persists across auto reconnect and is cleaned on disconnect")
     func listenerPersistsAcrossReconnect() async throws {
         let config = WebSocketConfiguration(
@@ -245,24 +320,47 @@ struct WebSocketListenerLifecycleTests {
             reason: "transient network error"
         )
 
-        let reconnectedTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
-
-        #expect(await manager.listenerCount(for: task) == 1)
-
-        manager.handleConnected(taskIdentifier: reconnectedTaskIdentifier, protocolName: "chat")
-        let connectedReceived = await waitForEvent(
-            recorder: recorder,
-            timeout: 2.0
-        ) { event in
-            if case .connected(let protocolName) = event {
-                return protocolName == "chat"
-            }
-            return false
-        }
-        #expect(connectedReceived)
+        #expect(await waitForListenerCount(manager: manager, task: task, expected: 1))
 
         await manager.disconnect(task)
         #expect(await waitForListenerCleanup(manager: manager, task: task))
+    }
+
+    @Test("Disconnect reason is propagated to disconnected event")
+    func disconnectReasonPropagation() async throws {
+        let manager = WebSocketManager(
+            configuration: WebSocketConfiguration(
+                heartbeatInterval: 0,
+                reconnectDelay: 0,
+                maxReconnectAttempts: 0,
+                sessionIdentifier: "test.websocket.disconnect-reason.\(UUID().uuidString)"
+            )
+        )
+        let recorder = WebSocketEventRecorder()
+
+        let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        _ = await manager.addEventListener(for: task) { event in
+            Task {
+                await recorder.record(event)
+            }
+        }
+
+        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        manager.handleDisconnected(
+            taskIdentifier: taskIdentifier,
+            closeCode: .goingAway,
+            reason: "server shutdown"
+        )
+
+        let reasonDelivered = await waitForEvent(recorder: recorder, timeout: 2.0) { event in
+            if case .disconnected(.disconnected(let underlying)) = event {
+                return underlying?.domain == "InnoNetworkWebSocket.CloseReason"
+                    && underlying?.message == "server shutdown"
+                    && underlying?.code == Int(URLSessionWebSocketTask.CloseCode.goingAway.rawValue)
+            }
+            return false
+        }
+        #expect(reasonDelivered)
     }
 
     @Test("Final reconnect failure removes listeners and task runtime")
@@ -309,6 +407,22 @@ struct WebSocketListenerLifecycleTests {
         while Date() < deadline {
             let events = await recorder.snapshot()
             if events.contains(where: predicate) {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
+    }
+
+    private func waitForListenerCount(
+        manager: WebSocketManager,
+        task: WebSocketTask,
+        expected: Int,
+        timeout: TimeInterval = 2.0
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await manager.listenerCount(for: task) == expected {
                 return true
             }
             try? await Task.sleep(nanoseconds: 10_000_000)

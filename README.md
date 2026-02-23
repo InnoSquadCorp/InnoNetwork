@@ -552,6 +552,7 @@ public final class WebSocketManager: Sendable {
     public static let shared = WebSocketManager()
 
     public func connect(url: URL, subprotocols: [String]? = nil) async -> WebSocketTask
+    // Can be called while task is connected, connecting, or reconnecting
     public func disconnect(_ task: WebSocketTask, closeCode: URLSessionWebSocketTask.CloseCode = .normalClosure) async
     public func disconnectAll(closeCode: URLSessionWebSocketTask.CloseCode = .normalClosure) async
 
@@ -576,6 +577,8 @@ public final class WebSocketManager: Sendable {
 ```
 
 리스너는 auto-reconnect 동안 유지되며, 명시적 `disconnect` 또는 최종 실패 시 정리됩니다.
+`WebSocketEvent.disconnected`는 close reason이 존재할 때
+`WebSocketError.disconnected(SendableUnderlyingError)` 형태로 reason을 전달합니다.
 
 #### WebSocketConfiguration
 
@@ -585,9 +588,12 @@ public struct WebSocketConfiguration: Sendable {
     public let pongTimeout: TimeInterval
     public let maxMissedPongs: Int
     public let reconnectJitterRatio: Double
-    // ... existing reconnect/session fields
+    public let maxReconnectAttempts: Int
+    // ... existing session fields
 }
 ```
+
+`maxReconnectAttempts`는 "재연결 횟수" 의미이며, 총 연결 시도 수는 `1 + maxReconnectAttempts`입니다.
 
 ## Error Types
 

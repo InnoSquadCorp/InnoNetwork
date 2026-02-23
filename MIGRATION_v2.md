@@ -112,6 +112,19 @@ Existing custom session mocks should implement `data(for:context:)` for full beh
   - `reconnectJitterRatio`
 - Removed/renamed old ping-specific fields.
 
+Reconnect semantics are explicit in v2:
+- `maxReconnectAttempts` means reconnect retry count.
+- Total connection attempts are `1 + maxReconnectAttempts`.
+- Reconnect is not scheduled after the retry budget is exceeded (`maxReconnectAttemptsExceeded`).
+
+Manual disconnect behavior was tightened:
+- `disconnect(_:)` is allowed while state is `connected`, `connecting`, or `reconnecting`.
+- Once `disconnect(_:)` is called, auto reconnect is disabled and terminal cleanup is guaranteed.
+
+Close reason propagation:
+- `WebSocketEvent.disconnected` preserves close reason via
+  `WebSocketError.disconnected(SendableUnderlyingError(...))` when available.
+
 ## 6. Error Model Is Sendable-Safe
 
 Raw `Error` payloads are removed from public error enums.
