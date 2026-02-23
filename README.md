@@ -693,6 +693,11 @@ InnoNetwork/
     └── InnoNetworkWebSocketTests/
 ```
 
+## CI and DoC
+
+- GitHub Actions CI: `.github/workflows/ci.yml`
+- Definition of Completion (DoC): `docs/CI_DoC.md`
+
 ## License
 
 MIT License
