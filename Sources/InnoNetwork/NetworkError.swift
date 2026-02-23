@@ -41,7 +41,7 @@ extension NetworkError: LocalizedError {
         case .objectMapping(let error, _):
             return "Failed to map data to a Decodable object: \(error.message)"
         case .statusCode:
-            return "Status code didn fall within the given range."
+            return "Status code didn't fall within the given range."
         case .underlying(let error, _):
             return error.message
         case .nonHTTPResponse:

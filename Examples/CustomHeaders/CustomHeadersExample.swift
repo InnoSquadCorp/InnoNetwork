@@ -12,7 +12,7 @@ import InnoNetwork
 // MARK: - 1. API Configuration
 
 struct MyAPI: APIConfigure {
-    var host: String { "httpbin.org" }
+    var host: String { "https://httpbin.org" }
     var basePath: String { "" }
 }
 

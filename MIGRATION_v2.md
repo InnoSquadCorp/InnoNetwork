@@ -128,6 +128,10 @@ Close reason propagation:
 - `WebSocketEvent.disconnected` preserves close reason via
   `WebSocketError.disconnected(SendableUnderlyingError(...))` when available.
 
+Event stream registration:
+- `WebSocketManager.events(for:)` is now `async` and returns only after listener registration completes.
+- This removes the initial race window where early events could be emitted before stream listener attachment.
+
 Background completion note:
 - `WebSocketManager` does not use a background URLSession runtime.
 - `handleBackgroundSessionCompletion(_:completion:)` now invokes `completion` immediately for compatibility.

@@ -77,6 +77,9 @@ struct MyAPI: APIConfigure {
 let client = try DefaultNetworkClient(configuration: MyAPI())
 ```
 
+`host`는 스킴(`https://`)을 포함한 값을 기본값으로 사용하세요.
+호스트 문자열만 사용하는 경우에는 `baseURL`을 명시적으로 override하세요.
+
 ## Core Concepts
 
 ### Actor-based API Definitions
@@ -120,6 +123,14 @@ struct MyAPI: APIConfigure {
 }
 
 let client = try DefaultNetworkClient(configuration: MyAPI())
+```
+
+```swift
+struct LegacyStyleAPI: APIConfigure {
+    var host: String { "api.example.com" }
+    var basePath: String { "v1" }
+    var baseURL: URL? { URL(string: "https://api.example.com/v1") }
+}
 ```
 
 ### Request with Parameters
@@ -563,7 +574,8 @@ public final class WebSocketManager: Sendable {
     public func send(_ task: WebSocketTask, string: String) async throws
     public func ping(_ task: WebSocketTask) async throws
 
-    public func events(for task: WebSocketTask) -> AsyncStream<WebSocketEvent>
+    // Returns after listener registration completes (no initial event loss window).
+    public func events(for task: WebSocketTask) async -> AsyncStream<WebSocketEvent>
     public func addEventListener(
         for task: WebSocketTask,
         listener: @escaping @Sendable (WebSocketEvent) -> Void
@@ -661,14 +673,14 @@ InnoNetwork/
 │   │   │   └── Response.swift
 │   │   └── ... (interceptors, error, logger 등)
 │
-│   └── InnoNetworkDownload/      # Download 모듈 (별도 product)
+│   ├── InnoNetworkDownload/      # Download 모듈 (별도 product)
 │       ├── DownloadManager.swift
 │       ├── DownloadTask.swift    # actor 기반 다운로드 작업
 │       ├── DownloadConfiguration.swift
 │       ├── DownloadState.swift
 │       ├── DownloadSessionDelegate.swift
 │       └── DownloadTaskPersistence.swift
-│   │
+│
 │   └── InnoNetworkWebSocket/     # WebSocket 모듈 (별도 product)
 │       ├── WebSocketManager.swift
 │       ├── WebSocketTask.swift

@@ -12,7 +12,7 @@ import InnoNetwork
 // MARK: - 1. API Configuration
 
 struct MyAPI: APIConfigure {
-    var host: String { "jsonplaceholder.typicode.com" }
+    var host: String { "https://jsonplaceholder.typicode.com" }
     var basePath: String { "" }
 }
 

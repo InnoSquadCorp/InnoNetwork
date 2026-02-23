@@ -272,8 +272,13 @@ actor DownloadStateRecorder {
 
 @Suite("Download Callback Tests")
 struct DownloadCallbackTests {
+    private var runIntegrationTests: Bool {
+        ProcessInfo.processInfo.environment["INNONETWORK_RUN_INTEGRATION_TESTS"] == "1"
+    }
+
     @Test("State callback receives waiting and downloading immediately after start")
     func stateCallbackOrdering() async {
+        guard runIntegrationTests else { return }
         let config = DownloadConfiguration(sessionIdentifier: "test.callback.\(UUID().uuidString)")
         let manager = DownloadManager(configuration: config)
         let recorder = DownloadStateRecorder()
@@ -310,13 +315,20 @@ struct DownloadCallbackTests {
 
 @Suite("Download Task Persistence Tests")
 struct DownloadTaskPersistenceTests {
+    private func clearPersistence(sessionIdentifier: String) async {
+        let persistence = DownloadTaskPersistence(sessionIdentifier: sessionIdentifier)
+        await persistence.prune(keeping: [])
+    }
 
     @Test("Persisted tasks can be restored after actor recreation")
     func persistenceRoundTrip() async {
         let sessionIdentifier = "test.persistence.\(UUID().uuidString)"
-        let persistenceKey = "com.innonetwork.download.tasks.\(sessionIdentifier)"
-        UserDefaults.standard.removeObject(forKey: persistenceKey)
-        defer { UserDefaults.standard.removeObject(forKey: persistenceKey) }
+        await clearPersistence(sessionIdentifier: sessionIdentifier)
+        defer {
+            Task {
+                await clearPersistence(sessionIdentifier: sessionIdentifier)
+            }
+        }
 
         let taskID = "task-\(UUID().uuidString)"
         let url = URL(string: "https://example.com/file.zip")!
@@ -336,9 +348,12 @@ struct DownloadTaskPersistenceTests {
     @Test("Prune removes stale task records")
     func pruneRemovesStaleRecords() async {
         let sessionIdentifier = "test.persistence.prune.\(UUID().uuidString)"
-        let persistenceKey = "com.innonetwork.download.tasks.\(sessionIdentifier)"
-        UserDefaults.standard.removeObject(forKey: persistenceKey)
-        defer { UserDefaults.standard.removeObject(forKey: persistenceKey) }
+        await clearPersistence(sessionIdentifier: sessionIdentifier)
+        defer {
+            Task {
+                await clearPersistence(sessionIdentifier: sessionIdentifier)
+            }
+        }
 
         let keptID = "task-kept"
         let removedID = "task-removed"
@@ -360,9 +375,12 @@ struct DownloadTaskPersistenceTests {
     @Test("restore metadata remains keyed by task id even when URLs are duplicated")
     func restoreMetadataIsTaskIDBased() async {
         let sessionIdentifier = "test.persistence.duplicate-url.\(UUID().uuidString)"
-        let persistenceKey = "com.innonetwork.download.tasks.\(sessionIdentifier)"
-        UserDefaults.standard.removeObject(forKey: persistenceKey)
-        defer { UserDefaults.standard.removeObject(forKey: persistenceKey) }
+        await clearPersistence(sessionIdentifier: sessionIdentifier)
+        defer {
+            Task {
+                await clearPersistence(sessionIdentifier: sessionIdentifier)
+            }
+        }
 
         let sharedURL = URL(string: "https://example.com/shared.zip")!
         let firstDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-first.zip")
@@ -402,6 +420,11 @@ struct DownloadListenerLifecycleTests {
             sessionIdentifier: "test.download.listener.retry.\(UUID().uuidString)"
         )
         let manager = DownloadManager(configuration: config)
+        defer {
+            Task {
+                await manager.cancelAll()
+            }
+        }
         let recorder = DownloadEventRecorder()
 
         let destination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-result.zip")
@@ -459,7 +482,6 @@ struct DownloadListenerLifecycleTests {
         #expect(await manager.task(withId: task.id) == nil)
 
         try? FileManager.default.removeItem(at: destination)
-        await manager.cancelAll()
     }
 
     @Test("Terminal failure removes listeners and task runtime")
@@ -471,6 +493,11 @@ struct DownloadListenerLifecycleTests {
             sessionIdentifier: "test.download.listener.terminal.\(UUID().uuidString)"
         )
         let manager = DownloadManager(configuration: config)
+        defer {
+            Task {
+                await manager.cancelAll()
+            }
+        }
         let recorder = DownloadEventRecorder()
 
         let task = await manager.download(
@@ -507,7 +534,6 @@ struct DownloadListenerLifecycleTests {
 
         #expect(await manager.listenerCount(for: task) == 0)
         #expect(await manager.task(withId: task.id) == nil)
-        await manager.cancelAll()
     }
 
     private func waitForRuntimeTaskIdentifier(

@@ -27,6 +27,7 @@ public final class DownloadManager: NSObject, Sendable {
     private let persistence: DownloadTaskPersistence
 
     private let storage = DownloadStorage()
+    private let restoreBarrier = RestoreBarrier()
 
     public init(configuration: DownloadConfiguration = .default) {
         self.configuration = configuration
@@ -66,7 +67,11 @@ public final class DownloadManager: NSObject, Sendable {
             }
         )
 
-        restorePendingDownloads()
+        Task { [weak self] in
+            guard let self else { return }
+            await self.restorePendingDownloads()
+            await self.restoreBarrier.complete()
+        }
     }
 
     public func setOnProgressHandler(_ callback: (@Sendable (DownloadTask, DownloadProgress) async -> Void)?) async {
@@ -87,6 +92,7 @@ public final class DownloadManager: NSObject, Sendable {
 
     @discardableResult
     public func download(url: URL, to destinationURL: URL) async -> DownloadTask {
+        await waitForRestore()
         let task = DownloadTask(url: url, destinationURL: destinationURL)
         await storage.add(task)
         await persistence.upsert(id: task.id, url: task.url, destinationURL: task.destinationURL)
@@ -96,12 +102,14 @@ public final class DownloadManager: NSObject, Sendable {
 
     @discardableResult
     public func download(url: URL, toDirectory directory: URL, fileName: String? = nil) async -> DownloadTask {
+        await waitForRestore()
         let name = fileName ?? url.lastPathComponent
         let destinationURL = directory.appendingPathComponent(name)
         return await download(url: url, to: destinationURL)
     }
 
     public func pause(_ task: DownloadTask) async {
+        await waitForRestore()
         guard await task.state == .downloading else { return }
 
         if let urlTask = await storage.urlTask(for: task.id) {
@@ -114,6 +122,7 @@ public final class DownloadManager: NSObject, Sendable {
     }
 
     public func resume(_ task: DownloadTask) async {
+        await waitForRestore()
         guard await task.state == .paused else { return }
 
         if let resumeData = await task.resumeData {
@@ -131,6 +140,7 @@ public final class DownloadManager: NSObject, Sendable {
     }
 
     public func cancel(_ task: DownloadTask) async {
+        await waitForRestore()
         await task.updateState(.cancelled)
         await task.setError(.cancelled)
         await storage.onStateChanged?(task, .cancelled)
@@ -146,12 +156,14 @@ public final class DownloadManager: NSObject, Sendable {
     }
 
     public func cancelAll() async {
+        await waitForRestore()
         for task in await storage.allTasks() {
             await cancel(task)
         }
     }
 
     public func retry(_ task: DownloadTask) async {
+        await waitForRestore()
         guard await task.state == .failed else { return }
         await task.reset()
         await persistence.upsert(id: task.id, url: task.url, destinationURL: task.destinationURL)
@@ -159,14 +171,17 @@ public final class DownloadManager: NSObject, Sendable {
     }
 
     public func task(withId id: String) async -> DownloadTask? {
-        await storage.task(withId: id)
+        await waitForRestore()
+        return await storage.task(withId: id)
     }
 
     public func allTasks() async -> [DownloadTask] {
-        await storage.allTasks()
+        await waitForRestore()
+        return await storage.allTasks()
     }
 
     public func activeTasks() async -> [DownloadTask] {
+        await waitForRestore()
         var result: [DownloadTask] = []
         for task in await storage.allTasks() {
             let state = await task.state
@@ -200,50 +215,59 @@ public final class DownloadManager: NSObject, Sendable {
     public func events(for task: DownloadTask) -> AsyncStream<DownloadEvent> {
         AsyncStream { [storage] continuation in
             let taskId = task.id
-            Task {
-                let listenerID = await storage.addEventListener(taskId: taskId) { event in
+            let registrationTask = Task {
+                await storage.addEventListener(taskId: taskId) { event in
                     continuation.yield(event)
                 }
-                continuation.onTermination = { @Sendable _ in
-                    Task {
-                        await storage.removeEventListener(taskId: taskId, listenerID: listenerID)
-                    }
+            }
+            continuation.onTermination = { @Sendable _ in
+                Task {
+                    let listenerID = await registrationTask.value
+                    await storage.removeEventListener(taskId: taskId, listenerID: listenerID)
                 }
             }
         }
     }
 
-    private func restorePendingDownloads() {
-        session.getTasksWithCompletionHandler { [weak self] _, _, downloadTasks in
-            guard let self else { return }
-            Task {
-                var restoredTaskIDs = Set<String>()
+    private func waitForRestore() async {
+        await restoreBarrier.wait()
+    }
 
-                for urlTask in downloadTasks {
-                    guard let downloadTask = await self.restoreTrackedTask(for: urlTask) else { continue }
-                    restoredTaskIDs.insert(downloadTask.id)
-
-                    await self.register(urlTask: urlTask, for: downloadTask)
-
-                    let state: DownloadState
-                    switch urlTask.state {
-                    case .running:
-                        state = .downloading
-                    case .suspended:
-                        state = .paused
-                    case .canceling:
-                        state = .cancelled
-                    case .completed:
-                        state = .completed
-                    @unknown default:
-                        state = .waiting
-                    }
-                    await downloadTask.updateState(state)
-                }
-
-                await self.persistence.prune(keeping: restoredTaskIDs)
+    private func fetchDownloadTasks() async -> [URLSessionDownloadTask] {
+        await withCheckedContinuation { continuation in
+            session.getTasksWithCompletionHandler { _, _, downloadTasks in
+                continuation.resume(returning: downloadTasks)
             }
         }
+    }
+
+    private func restorePendingDownloads() async {
+        let downloadTasks = await fetchDownloadTasks()
+        var restoredTaskIDs = Set<String>()
+
+        for urlTask in downloadTasks {
+            guard let downloadTask = await restoreTrackedTask(for: urlTask) else { continue }
+            restoredTaskIDs.insert(downloadTask.id)
+
+            await register(urlTask: urlTask, for: downloadTask)
+
+            let state: DownloadState
+            switch urlTask.state {
+            case .running:
+                state = .downloading
+            case .suspended:
+                state = .paused
+            case .canceling:
+                state = .cancelled
+            case .completed:
+                state = .completed
+            @unknown default:
+                state = .waiting
+            }
+            await downloadTask.updateState(state)
+        }
+
+        await persistence.prune(keeping: restoredTaskIDs)
     }
 
     private func restoreTrackedTask(for urlTask: URLSessionDownloadTask) async -> DownloadTask? {
@@ -523,5 +547,27 @@ private actor DownloadStorage {
     func removeTaskAndListeners(taskId: String) {
         removeTaskRuntime(taskId: taskId)
         eventListeners.removeValue(forKey: taskId)
+    }
+}
+
+
+private actor RestoreBarrier {
+    private var isCompleted = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isCompleted else { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func complete() {
+        guard !isCompleted else { return }
+        isCompleted = true
+        for waiter in waiters {
+            waiter.resume()
+        }
+        waiters.removeAll(keepingCapacity: false)
     }
 }

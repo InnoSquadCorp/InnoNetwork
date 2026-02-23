@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import InnoNetworkWebSocket
 
@@ -282,15 +283,19 @@ struct WebSocketManagerTests {
 }
 
 
-private actor WebSocketEventRecorder {
-    private var events: [WebSocketEvent] = []
+private final class WebSocketEventRecorder: Sendable {
+    private let events = Mutex<[WebSocketEvent]>([])
 
     func record(_ event: WebSocketEvent) {
-        events.append(event)
+        events.withLock { values in
+            values.append(event)
+        }
     }
 
     func snapshot() -> [WebSocketEvent] {
-        events
+        events.withLock { values in
+            values
+        }
     }
 }
 
@@ -312,9 +317,7 @@ struct WebSocketListenerLifecycleTests {
 
         let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
         _ = await manager.addEventListener(for: task) { event in
-            Task {
-                await recorder.record(event)
-            }
+            recorder.record(event)
         }
 
         let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
@@ -372,9 +375,7 @@ struct WebSocketListenerLifecycleTests {
 
         let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
         _ = await manager.addEventListener(for: task) { event in
-            Task {
-                await recorder.record(event)
-            }
+            recorder.record(event)
         }
 
         let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
@@ -432,9 +433,7 @@ struct WebSocketListenerLifecycleTests {
 
         let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
         _ = await manager.addEventListener(for: task) { event in
-            Task {
-                await recorder.record(event)
-            }
+            recorder.record(event)
         }
 
         let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
@@ -469,9 +468,7 @@ struct WebSocketListenerLifecycleTests {
 
         let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
         _ = await manager.addEventListener(for: task) { event in
-            Task {
-                await recorder.record(event)
-            }
+            recorder.record(event)
         }
 
         await manager.disconnect(task, closeCode: .goingAway)
@@ -501,9 +498,7 @@ struct WebSocketListenerLifecycleTests {
 
         let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
         _ = await manager.addEventListener(for: task) { event in
-            Task {
-                await recorder.record(event)
-            }
+            recorder.record(event)
         }
 
         let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
@@ -538,9 +533,7 @@ struct WebSocketListenerLifecycleTests {
 
         let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
         _ = await manager.addEventListener(for: task) { event in
-            Task {
-                await recorder.record(event)
-            }
+            recorder.record(event)
         }
 
         let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
@@ -604,7 +597,7 @@ struct WebSocketListenerLifecycleTests {
     ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            let events = await recorder.snapshot()
+            let events = recorder.snapshot()
             if events.contains(where: predicate) {
                 return true
             }

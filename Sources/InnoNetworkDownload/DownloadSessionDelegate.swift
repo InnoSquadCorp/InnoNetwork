@@ -73,15 +73,21 @@ final class DownloadSessionDelegateCallbacks: Sendable {
     typealias ProgressHandler = @Sendable (Int, Int64, Int64, Int64) -> Void
     typealias CompletionHandler = @Sendable (Int, URL?, SendableUnderlyingError?) -> Void
 
-    private let progressHandlerLock = OSAllocatedUnfairLock<ProgressHandler?>(initialState: nil)
-    private let completionHandlerLock = OSAllocatedUnfairLock<CompletionHandler?>(initialState: nil)
+    private struct Handlers {
+        var progress: ProgressHandler?
+        var completion: CompletionHandler?
+    }
+
+    private let handlersLock = OSAllocatedUnfairLock<Handlers>(initialState: .init())
 
     func setHandlers(
         onProgress: @escaping ProgressHandler,
         onCompletion: @escaping CompletionHandler
     ) {
-        progressHandlerLock.withLock { $0 = onProgress }
-        completionHandlerLock.withLock { $0 = onCompletion }
+        handlersLock.withLock {
+            $0.progress = onProgress
+            $0.completion = onCompletion
+        }
     }
 
     func handleProgress(
@@ -90,7 +96,7 @@ final class DownloadSessionDelegateCallbacks: Sendable {
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        progressHandlerLock.withLock { $0 }?(
+        handlersLock.withLock { $0.progress }?(
             taskIdentifier,
             bytesWritten,
             totalBytesWritten,
@@ -103,7 +109,7 @@ final class DownloadSessionDelegateCallbacks: Sendable {
         location: URL?,
         error: SendableUnderlyingError?
     ) {
-        completionHandlerLock.withLock { $0 }?(taskIdentifier, location, error)
+        handlersLock.withLock { $0.completion }?(taskIdentifier, location, error)
     }
 }
 
