@@ -235,6 +235,18 @@ struct WebSocketManagerTests {
         #expect(!WebSocketManager.shouldRetryReconnect(after: 1, maxReconnectAttempts: 0))
     }
 
+    @Test("WebSocket lifecycle helper documents legal transitions")
+    func stateTransitionModel() {
+        #expect(WebSocketState.connected.nextStates == [.disconnecting, .disconnected, .reconnecting, .failed])
+        #expect(WebSocketState.idle.canTransition(to: .connecting))
+        #expect(WebSocketState.connecting.canTransition(to: .connected))
+        #expect(WebSocketState.connected.canTransition(to: .reconnecting))
+        #expect(WebSocketState.failed.canTransition(to: .idle))
+        #expect(!WebSocketState.connected.canTransition(to: .idle))
+        #expect(WebSocketState.failed.isTerminal)
+        #expect(!WebSocketState.reconnecting.isTerminal)
+    }
+
     @Test("Disconnect supports connecting and reconnecting states")
     func disconnectSupportsConnectingAndReconnectingStates() async {
         let manager = WebSocketManager(

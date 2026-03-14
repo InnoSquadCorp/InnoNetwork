@@ -12,6 +12,46 @@ public enum WebSocketState: String, Sendable {
     case failed
 }
 
+public extension WebSocketState {
+    /// Returns all documented next states from the current lifecycle point.
+    var nextStates: Set<Self> {
+        switch self {
+        case .idle:
+            [.connecting]
+        case .connecting:
+            [.connected, .disconnected, .failed, .disconnecting]
+        case .connected:
+            [.disconnecting, .disconnected, .reconnecting, .failed]
+        case .disconnecting:
+            [.disconnected]
+        case .disconnected:
+            [.connecting, .reconnecting, .failed]
+        case .reconnecting:
+            [.connecting, .connected, .failed, .disconnected]
+        case .failed:
+            [.idle, .connecting]
+        }
+    }
+
+    /// Whether the socket is in a terminal state from the manager's perspective.
+    var isTerminal: Bool {
+        switch self {
+        case .disconnected, .failed:
+            return true
+        case .idle, .connecting, .connected, .disconnecting, .reconnecting:
+            return false
+        }
+    }
+
+    /// Documents the intended connection lifecycle transitions.
+    ///
+    /// This keeps reconnect and disconnect semantics explicit without turning
+    /// the whole networking stack into a generic automata framework.
+    func canTransition(to next: Self) -> Bool {
+        next == self || nextStates.contains(next)
+    }
+}
+
 
 public enum WebSocketError: Error, Sendable {
     case invalidURL(String)
