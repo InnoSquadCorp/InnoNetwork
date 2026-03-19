@@ -280,7 +280,9 @@ struct InnoNetworkBenchmarks {
 
         return try await measure(name: "append-log-replay", group: "persistence", iterations: iterations) {
             let replayed = DownloadTaskPersistence(sessionIdentifier: "bench.replay", baseDirectoryURL: directory)
-            _ = await replayed.allRecords()
+            for _ in 0..<iterations {
+                _ = await replayed.allRecords()
+            }
         }
     }
 

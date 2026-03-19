@@ -78,7 +78,9 @@ struct InnoNetworkDocSmoke {
         }
         _ = networkAdvanced
 
-        let downloadDefaults = DownloadConfiguration.safeDefaults()
+        let downloadDefaults = DownloadConfiguration.safeDefaults(
+            sessionIdentifier: "com.example.docsmoke.downloads"
+        )
         let downloadAdvanced = DownloadConfiguration.advanced { builder in
             builder.maxTotalRetries = 5
             builder.waitsForNetworkChanges = true

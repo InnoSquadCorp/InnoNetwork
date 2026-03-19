@@ -128,7 +128,9 @@ let network = NetworkConfiguration.safeDefaults(
     baseURL: URL(string: "https://api.example.com")!
 )
 
-let download = DownloadConfiguration.safeDefaults()
+let download = DownloadConfiguration.safeDefaults(
+    sessionIdentifier: "com.example.app.downloads"
+)
 
 let socket = WebSocketConfiguration.safeDefaults()
 

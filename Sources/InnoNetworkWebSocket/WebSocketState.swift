@@ -53,7 +53,7 @@ public extension WebSocketState {
 }
 
 
-public enum WebSocketError: Error, Sendable {
+public enum WebSocketError: Error, Sendable, Equatable {
     case invalidURL(String)
     case connectionFailed(SendableUnderlyingError)
     case disconnected(SendableUnderlyingError?)

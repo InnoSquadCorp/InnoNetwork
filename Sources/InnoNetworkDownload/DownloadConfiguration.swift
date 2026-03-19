@@ -4,8 +4,10 @@ import InnoNetwork
 
 /// Configures download transport behavior, retry policy, and event delivery.
 public struct DownloadConfiguration: Sendable {
+    private static let defaultSessionIdentifier = "com.innonetwork.download"
+
     package enum Presets {
-        static func safeDefaults() -> DownloadConfiguration {
+        static func safeDefaults(sessionIdentifier: String) -> DownloadConfiguration {
             DownloadConfiguration(
                 maxConnectionsPerHost: 3,
                 maxRetryCount: 3,
@@ -14,7 +16,7 @@ public struct DownloadConfiguration: Sendable {
                 timeoutForRequest: 30,
                 timeoutForResource: 60 * 60 * 24,
                 allowsCellularAccess: true,
-                sessionIdentifier: "com.innonetwork.download",
+                sessionIdentifier: sessionIdentifier,
                 networkMonitor: NetworkMonitor.shared,
                 waitsForNetworkChanges: false,
                 networkChangeTimeout: 10.0,
@@ -23,7 +25,7 @@ public struct DownloadConfiguration: Sendable {
             )
         }
 
-        static func advancedTuning() -> DownloadConfiguration {
+        static func advancedTuning(sessionIdentifier: String) -> DownloadConfiguration {
             DownloadConfiguration(
                 maxConnectionsPerHost: 6,
                 maxRetryCount: 5,
@@ -32,7 +34,7 @@ public struct DownloadConfiguration: Sendable {
                 timeoutForRequest: 60,
                 timeoutForResource: 60 * 60 * 24,
                 allowsCellularAccess: true,
-                sessionIdentifier: "com.innonetwork.download",
+                sessionIdentifier: sessionIdentifier,
                 networkMonitor: NetworkMonitor.shared,
                 waitsForNetworkChanges: true,
                 networkChangeTimeout: 20.0,
@@ -54,27 +56,51 @@ public struct DownloadConfiguration: Sendable {
     public let timeoutForRequest: TimeInterval
     public let timeoutForResource: TimeInterval
     public let allowsCellularAccess: Bool
+    /// Background `URLSession` identifier and persistence scope.
+    ///
+    /// The preset factories use a shared identifier intended for a single download manager per process.
+    /// Override this value when you need multiple independent managers or persistence domains.
     public let sessionIdentifier: String
     public let networkMonitor: (any NetworkMonitoring)?
     /// When true, waits for network changes before retrying on download failure.
     public let waitsForNetworkChanges: Bool
     public let networkChangeTimeout: TimeInterval?
+    /// Event buffering policy used for task listeners and async streams.
     public let eventDeliveryPolicy: EventDeliveryPolicy
+    /// Optional reporter that receives raw and aggregate event pipeline metrics.
     public let eventMetricsReporter: (any EventPipelineMetricsReporting)?
 
+    /// Mutable builder seeded from the advanced tuning preset.
+    ///
+    /// Use this to override the high-tuning defaults returned by `advanced(_:)`.
     public struct AdvancedBuilder: Sendable {
+        /// Maximum simultaneous connections per host. Defaults to `6` in the advanced preset.
         public var maxConnectionsPerHost: Int
+        /// Maximum retry attempts for a single failure chain. Defaults to `5` in the advanced preset.
         public var maxRetryCount: Int
+        /// Maximum cumulative retries even after network change resets. Defaults to `8` in the advanced preset.
         public var maxTotalRetries: Int
+        /// Base retry delay in seconds. Defaults to `0.5` in the advanced preset.
         public var retryDelay: TimeInterval
+        /// Request timeout in seconds. Defaults to `60` in the advanced preset.
         public var timeoutForRequest: TimeInterval
+        /// Resource timeout in seconds. Defaults to `24h` in both presets.
         public var timeoutForResource: TimeInterval
+        /// Whether downloads may use cellular connectivity. Defaults to `true`.
         public var allowsCellularAccess: Bool
+        /// Background session identifier and persistence scope.
+        ///
+        /// Override this when you need more than one download manager in the same process.
         public var sessionIdentifier: String
+        /// Optional network monitor used for retry and restore coordination.
         public var networkMonitor: (any NetworkMonitoring)?
+        /// Whether retry logic waits for a network change before retrying. Defaults to `true`.
         public var waitsForNetworkChanges: Bool
+        /// Maximum time to wait for a network change before failing the retry. Defaults to `20` seconds.
         public var networkChangeTimeout: TimeInterval?
+        /// Event buffering and overflow policy for listeners and async streams.
         public var eventDeliveryPolicy: EventDeliveryPolicy
+        /// Optional reporter that receives raw and aggregate event pipeline metrics.
         public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
 
         fileprivate init(preset: DownloadConfiguration) {
@@ -113,16 +139,40 @@ public struct DownloadConfiguration: Sendable {
     }
 
     /// Returns conservative defaults suitable for most production download flows.
+    ///
+    /// The returned configuration uses the shared `com.innonetwork.download` session identifier,
+    /// which is intended for a single download manager per process.
     public static func safeDefaults() -> DownloadConfiguration {
-        Presets.safeDefaults()
+        safeDefaults(sessionIdentifier: defaultSessionIdentifier)
+    }
+
+    /// Returns conservative defaults suitable for most production download flows.
+    ///
+    /// - Parameter sessionIdentifier: Background session identifier and persistence scope used by `DownloadManager`.
+    ///   Supply a unique value when multiple download managers must coexist in the same process.
+    public static func safeDefaults(sessionIdentifier: String) -> DownloadConfiguration {
+        Presets.safeDefaults(sessionIdentifier: sessionIdentifier)
     }
 
     /// Returns an advanced configuration seeded from the high-tuning preset.
     ///
     /// Use this when you need explicit control over connection limits, retry behavior,
-    /// or event delivery settings.
+    /// or event delivery settings. The builder starts from `Presets.advancedTuning()`.
     public static func advanced(_ configure: (inout AdvancedBuilder) -> Void) -> DownloadConfiguration {
-        var builder = AdvancedBuilder(preset: Presets.advancedTuning())
+        advanced(sessionIdentifier: defaultSessionIdentifier, configure)
+    }
+
+    /// Returns an advanced configuration seeded from the high-tuning preset.
+    ///
+    /// - Parameters:
+    ///   - sessionIdentifier: Background session identifier and persistence scope used by `DownloadManager`.
+    ///     Supply a unique value when multiple download managers must coexist in the same process.
+    ///   - configure: Closure that mutates an `AdvancedBuilder` seeded from `Presets.advancedTuning()`.
+    public static func advanced(
+        sessionIdentifier: String,
+        _ configure: (inout AdvancedBuilder) -> Void
+    ) -> DownloadConfiguration {
+        var builder = AdvancedBuilder(preset: Presets.advancedTuning(sessionIdentifier: sessionIdentifier))
         configure(&builder)
         return builder.build()
     }

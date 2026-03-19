@@ -1,5 +1,6 @@
 import Foundation
 import InnoNetwork
+import os
 
 
 public enum DownloadEvent: Sendable {
@@ -19,6 +20,7 @@ public struct DownloadEventSubscription: Hashable, Sendable {
 
 public final class DownloadManager: NSObject, Sendable {
     public static let shared = DownloadManager()
+    private static let activeSessionIdentifiers = OSAllocatedUnfairLock(initialState: Set<String>())
 
     private let configuration: DownloadConfiguration
     private let session: URLSession
@@ -69,6 +71,7 @@ public final class DownloadManager: NSObject, Sendable {
         configuration: DownloadConfiguration = .default,
         persistence: DownloadTaskPersistence
     ) {
+        Self.registerSessionIdentifier(configuration.sessionIdentifier)
         self.configuration = configuration
         let callbacks = DownloadSessionDelegateCallbacks()
         let backgroundCompletionStore = BackgroundCompletionStore()
@@ -338,6 +341,26 @@ public final class DownloadManager: NSObject, Sendable {
         }
         Task {
             await backgroundCompletionStore.set(completion)
+        }
+    }
+
+    deinit {
+        Self.unregisterSessionIdentifier(configuration.sessionIdentifier)
+    }
+
+    private static func registerSessionIdentifier(_ identifier: String) {
+        let inserted = activeSessionIdentifiers.withLock { identifiers in
+            identifiers.insert(identifier).inserted
+        }
+        precondition(
+            inserted,
+            "DownloadManager sessionIdentifier '\(identifier)' is already in use. Use a unique sessionIdentifier for multiple managers."
+        )
+    }
+
+    private static func unregisterSessionIdentifier(_ identifier: String) {
+        _ = activeSessionIdentifiers.withLock { identifiers in
+            identifiers.remove(identifier)
         }
     }
 }

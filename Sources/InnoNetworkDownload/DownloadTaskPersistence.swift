@@ -271,7 +271,12 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         }
 
         if fileManager.fileExists(atPath: logURL.path()) {
-            let replayResult = try replayLog(at: logURL, onto: records, fileManager: fileManager)
+            let replayResult = try replayLog(
+                at: logURL,
+                onto: records,
+                checkpointURL: checkpointURL,
+                fileManager: fileManager
+            )
             records = replayResult.records
             nextSequence = replayResult.nextSequence
             logEventCount = replayResult.logEventCount
@@ -290,6 +295,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     private static func replayLog(
         at logURL: URL,
         onto initialRecords: [String: DownloadTaskPersistence.Record],
+        checkpointURL: URL,
         fileManager: FileManager
     ) throws -> (records: [String: DownloadTaskPersistence.Record], nextSequence: Int64, logEventCount: Int, tombstoneCount: Int) {
         var records = initialRecords
@@ -338,6 +344,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         }
 
         if validPrefixEvents.count != lines.count {
+            try writeCheckpoint(records: records, to: checkpointURL, fileManager: fileManager)
             try resetLog(at: logURL, fileManager: fileManager)
         }
 

@@ -109,7 +109,7 @@ package enum WebSocketCloseDisposition: Sendable, Equatable {
         case (.handshakeTimeout(let l), .handshakeTimeout(let r)):
             return l == r
         case (.transportFailure(let l), .transportFailure(let r)):
-            return l.localizedDescription == r.localizedDescription
+            return l == r
         default:
             return false
         }

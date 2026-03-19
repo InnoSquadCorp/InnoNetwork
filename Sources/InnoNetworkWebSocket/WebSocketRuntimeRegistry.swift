@@ -129,6 +129,18 @@ package actor WebSocketRuntimeRegistry {
         messageListenerTasks[taskId] = task
     }
 
+    package func createMessageListenerTask(
+        for taskId: String,
+        operation: @escaping @Sendable () async -> Void
+    ) async {
+        if let previousTask = messageListenerTasks[taskId] {
+            previousTask.cancel()
+            await previousTask.value
+        }
+        let listenerTask = Task(operation: operation)
+        messageListenerTasks[taskId] = listenerTask
+    }
+
     package func cancelMessageListenerTask(for taskId: String) async {
         guard let listenerTask = messageListenerTasks.removeValue(forKey: taskId) else { return }
         listenerTask.cancel()

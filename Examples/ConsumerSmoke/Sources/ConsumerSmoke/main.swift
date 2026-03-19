@@ -24,7 +24,7 @@ let client = DefaultNetworkClient(
 )
 _ = client
 _ = ConsumerRequest()
-_ = DownloadConfiguration.safeDefaults()
+_ = DownloadConfiguration.safeDefaults(sessionIdentifier: "com.example.consumer.downloads")
 _ = WebSocketConfiguration.safeDefaults()
 
 print("ConsumerSmoke OK")

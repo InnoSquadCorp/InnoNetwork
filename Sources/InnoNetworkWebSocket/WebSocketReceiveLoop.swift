@@ -19,7 +19,7 @@ package struct WebSocketReceiveLoop {
         urlTask: URLSessionWebSocketTask,
         onError: @escaping @Sendable (Int, Error) -> Void
     ) async {
-        let listenerTask = Task {
+        await runtimeRegistry.createMessageListenerTask(for: task.id) {
             do {
                 while true {
                     try Task.checkCancellation()
@@ -42,7 +42,5 @@ package struct WebSocketReceiveLoop {
                 onError(urlTask.taskIdentifier, error)
             }
         }
-
-        await runtimeRegistry.setMessageListenerTask(listenerTask, for: task.id)
     }
 }
