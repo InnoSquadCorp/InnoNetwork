@@ -229,17 +229,17 @@ struct DownloadErrorTests {
 struct DownloadManagerTests {
     
     @Test("Manager can be created with custom configuration")
-    func customManager() async {
+    func customManager() async throws {
         let config = DownloadConfiguration(maxConnectionsPerHost: 5)
-        let manager = DownloadManager(configuration: config)
+        let manager = try DownloadManager(configuration: config)
         
         #expect((await manager.allTasks()).isEmpty)
     }
     
     @Test("Download task is created and tracked")
-    func downloadCreation() async {
+    func downloadCreation() async throws {
         let config = DownloadConfiguration(sessionIdentifier: "test.download.\(UUID().uuidString)")
-        let manager = DownloadManager(configuration: config)
+        let manager = try DownloadManager(configuration: config)
         
         let url = URL(string: "https://example.com/file.zip")!
         let destination = URL(fileURLWithPath: "/tmp/test-file.zip")
@@ -254,9 +254,9 @@ struct DownloadManagerTests {
     }
     
     @Test("Task can be cancelled")
-    func cancelTask() async {
+    func cancelTask() async throws {
         let config = DownloadConfiguration(sessionIdentifier: "test.cancel.\(UUID().uuidString)")
-        let manager = DownloadManager(configuration: config)
+        let manager = try DownloadManager(configuration: config)
         
         let url = URL(string: "https://example.com/file.zip")!
         let destination = URL(fileURLWithPath: "/tmp/test-file.zip")
@@ -269,9 +269,9 @@ struct DownloadManagerTests {
     }
     
     @Test("All tasks can be cancelled")
-    func cancelAllTasks() async {
+    func cancelAllTasks() async throws {
         let config = DownloadConfiguration(sessionIdentifier: "test.cancelall.\(UUID().uuidString)")
-        let manager = DownloadManager(configuration: config)
+        let manager = try DownloadManager(configuration: config)
         
         let url1 = URL(string: "https://example.com/file1.zip")!
         let url2 = URL(string: "https://example.com/file2.zip")!
@@ -286,6 +286,24 @@ struct DownloadManagerTests {
         await manager.cancelAll()
         
         #expect((await manager.allTasks()).isEmpty)
+    }
+
+    @Test("Duplicate session identifiers surface a recoverable initialization error")
+    func duplicateSessionIdentifierThrows() throws {
+        let identifier = "test.duplicate.\(UUID().uuidString)"
+        let first = try DownloadManager(
+            configuration: DownloadConfiguration(sessionIdentifier: identifier)
+        )
+        _ = first
+
+        #expect(
+            throws: DownloadManagerError.duplicateSessionIdentifier(identifier),
+            performing: {
+                _ = try DownloadManager(
+                    configuration: DownloadConfiguration(sessionIdentifier: identifier)
+                )
+            }
+        )
     }
 }
 
@@ -313,10 +331,10 @@ struct DownloadCallbackTests {
     }
 
     @Test("State callback receives waiting and downloading immediately after start")
-    func stateCallbackOrdering() async {
+    func stateCallbackOrdering() async throws {
         guard runIntegrationTests else { return }
         let config = DownloadConfiguration(sessionIdentifier: "test.callback.\(UUID().uuidString)")
-        let manager = DownloadManager(configuration: config)
+        let manager = try DownloadManager(configuration: config)
         let recorder = DownloadStateRecorder()
 
         await manager.setOnStateChangedHandler { _, state in
@@ -592,7 +610,7 @@ struct DownloadListenerLifecycleTests {
             retryDelay: 0.0,
             sessionIdentifier: "test.download.listener.retry.\(UUID().uuidString)"
         )
-        let manager = DownloadManager(configuration: config)
+        let manager = try DownloadManager(configuration: config)
         let recorder = DownloadEventRecorder()
         do {
             let destination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-result.zip")
@@ -665,7 +683,7 @@ struct DownloadListenerLifecycleTests {
             retryDelay: 0.0,
             sessionIdentifier: "test.download.listener.terminal.\(UUID().uuidString)"
         )
-        let manager = DownloadManager(configuration: config)
+        let manager = try DownloadManager(configuration: config)
         let recorder = DownloadEventRecorder()
         do {
             let task = await manager.download(

@@ -17,9 +17,28 @@ public struct DownloadEventSubscription: Hashable, Sendable {
     public var id: UUID { listenerID }
 }
 
+public enum DownloadManagerError: Error, Sendable, Equatable {
+    case duplicateSessionIdentifier(String)
+}
+
+extension DownloadManagerError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .duplicateSessionIdentifier(let identifier):
+            return "DownloadManager sessionIdentifier '\(identifier)' is already in use. Use a unique sessionIdentifier for multiple managers."
+        }
+    }
+}
+
 
 public final class DownloadManager: NSObject, Sendable {
-    public static let shared = DownloadManager()
+    public static let shared: DownloadManager = {
+        do {
+            return try DownloadManager(configuration: .default)
+        } catch {
+            fatalError("Failed to initialize DownloadManager.shared: \(error.localizedDescription)")
+        }
+    }()
     private static let activeSessionIdentifiers = OSAllocatedUnfairLock(initialState: Set<String>())
 
     private let configuration: DownloadConfiguration
@@ -60,8 +79,8 @@ public final class DownloadManager: NSObject, Sendable {
         )
     }
 
-    public convenience init(configuration: DownloadConfiguration = .default) {
-        self.init(
+    public convenience init(configuration: DownloadConfiguration = .default) throws {
+        try self.init(
             configuration: configuration,
             persistence: DownloadTaskPersistence(sessionIdentifier: configuration.sessionIdentifier)
         )
@@ -70,8 +89,8 @@ public final class DownloadManager: NSObject, Sendable {
     package init(
         configuration: DownloadConfiguration = .default,
         persistence: DownloadTaskPersistence
-    ) {
-        Self.registerSessionIdentifier(configuration.sessionIdentifier)
+    ) throws {
+        try Self.registerSessionIdentifier(configuration.sessionIdentifier)
         self.configuration = configuration
         let callbacks = DownloadSessionDelegateCallbacks()
         let backgroundCompletionStore = BackgroundCompletionStore()
@@ -348,14 +367,13 @@ public final class DownloadManager: NSObject, Sendable {
         Self.unregisterSessionIdentifier(configuration.sessionIdentifier)
     }
 
-    private static func registerSessionIdentifier(_ identifier: String) {
+    private static func registerSessionIdentifier(_ identifier: String) throws {
         let inserted = activeSessionIdentifiers.withLock { identifiers in
             identifiers.insert(identifier).inserted
         }
-        precondition(
-            inserted,
-            "DownloadManager sessionIdentifier '\(identifier)' is already in use. Use a unique sessionIdentifier for multiple managers."
-        )
+        guard inserted else {
+            throw DownloadManagerError.duplicateSessionIdentifier(identifier)
+        }
     }
 
     private static func unregisterSessionIdentifier(_ identifier: String) {
