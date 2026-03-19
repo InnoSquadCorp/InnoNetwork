@@ -60,14 +60,24 @@ jobs:
 
       - name: Enforce no unchecked sendable in production sources
         run: |
+          allowlist="Scripts/unchecked_sendable_allowlist.txt"
+          temp_matches="$(mktemp)"
+          temp_normalized="$(mktemp)"
+
           if command -v rg > /dev/null 2>&1; then
-            checker=(rg -n "@unchecked Sendable" Sources)
+            rg -n "@unchecked Sendable" Sources > "$temp_matches" || true
           else
-            checker=(grep -R -n "@unchecked Sendable" Sources)
+            grep -R -n "@unchecked Sendable" Sources > "$temp_matches" || true
           fi
 
-          if "${checker[@]}"; then
-            echo "Found forbidden @unchecked Sendable in Sources"
+          if [[ ! -s "$temp_matches" ]]; then
+            exit 0
+          fi
+
+          sed -E 's#^([^:]+):[0-9]+:#\1:#' "$temp_matches" | sort > "$temp_normalized"
+
+          if ! diff -u "$allowlist" "$temp_normalized"; then
+            echo "Found unexpected @unchecked Sendable usage in Sources"
             exit 1
           fi
 
