@@ -242,13 +242,11 @@ struct EventHubTests {
 
         await hub.publish(1, for: "aggregate")
         _ = try await waitForValues(store: store, expectedCount: 1)
-        try await Task.sleep(for: .milliseconds(120))
-
-        let metrics = recorder.snapshot()
-        let snapshots = metrics.compactMap { metric -> EventPipelineAggregateSnapshotMetric? in
-            guard case .aggregateSnapshot(let snapshot) = metric else { return nil }
-            return snapshot.hubKind == .genericTask ? snapshot : nil
-        }
+        let snapshots = try await waitForAggregateSnapshots(
+            recorder: recorder,
+            hubKind: .genericTask,
+            minimumCount: 1
+        )
         #expect(!snapshots.isEmpty)
         #expect(snapshots.contains(where: { $0.activePartitionCount >= 1 }))
         #expect(snapshots.contains(where: { $0.activeConsumerCount >= 1 }))
@@ -349,6 +347,28 @@ private func waitForLatencyMetrics(
     return recorder.snapshot().compactMap { metric -> EventPipelineConsumerDeliveryLatencyMetric? in
         guard case .consumerDeliveryLatency(let latency) = metric else { return nil }
         return latency.partitionID == partitionID ? latency : nil
+    }
+}
+
+private func waitForAggregateSnapshots(
+    recorder: EventPipelineMetricRecorder,
+    hubKind: EventPipelineHubKind,
+    minimumCount: Int
+) async throws -> [EventPipelineAggregateSnapshotMetric] {
+    for _ in 0..<50 {
+        let snapshots = recorder.snapshot().compactMap { metric -> EventPipelineAggregateSnapshotMetric? in
+            guard case .aggregateSnapshot(let snapshot) = metric else { return nil }
+            return snapshot.hubKind == hubKind ? snapshot : nil
+        }
+        if snapshots.count >= minimumCount {
+            return snapshots
+        }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+
+    return recorder.snapshot().compactMap { metric -> EventPipelineAggregateSnapshotMetric? in
+        guard case .aggregateSnapshot(let snapshot) = metric else { return nil }
+        return snapshot.hubKind == hubKind ? snapshot : nil
     }
 }
 
