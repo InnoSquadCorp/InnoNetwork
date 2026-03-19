@@ -60,26 +60,7 @@ jobs:
               --hosting-base-path "$BASE_PATH/$module"
           done
 
-          cat > "$SITE_DIR/index.html" <<'HTML'
-          <!doctype html>
-          <html lang="en">
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>InnoNetwork DocC</title>
-          </head>
-          <body>
-            <main>
-              <h1>InnoNetwork Documentation</h1>
-              <ul>
-                <li><a href="./InnoNetwork/documentation/innonetwork">InnoNetwork</a></li>
-                <li><a href="./InnoNetworkDownload/documentation/innonetworkdownload">InnoNetworkDownload</a></li>
-                <li><a href="./InnoNetworkWebSocket/documentation/innonetworkwebsocket">InnoNetworkWebSocket</a></li>
-              </ul>
-            </main>
-          </body>
-          </html>
-          HTML
+          cp docs/site/index.html "$SITE_DIR/index.html"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
