@@ -74,7 +74,7 @@ jobs:
             exit 0
           fi
 
-          sed -E 's#^([^:]+):[0-9]+:#\1:#' "$temp_matches" | sort > "$temp_normalized"
+          sed -E 's#^([^:]+):[0-9]+:#\1:#' "$temp_matches" | LC_ALL=C sort > "$temp_normalized"
 
           if ! diff -u "$allowlist" "$temp_normalized"; then
             echo "Found unexpected @unchecked Sendable usage in Sources"
