@@ -10,24 +10,48 @@ struct DownloadConfigurationTests {
     func defaultConfiguration() {
         let config = DownloadConfiguration.default
         
-        #expect(config.maxConcurrentDownloads == 3)
+        #expect(config.maxConnectionsPerHost == 3)
         #expect(config.maxRetryCount == 3)
         #expect(config.maxTotalRetries == 3)
         #expect(config.retryDelay == 1.0)
         #expect(config.allowsCellularAccess == true)
     }
+
+    @Test("safeDefaults matches default configuration")
+    func safeDefaultsMatchesDefault() {
+        let config = DownloadConfiguration.safeDefaults()
+        let defaultConfig = DownloadConfiguration.default
+
+        #expect(config.maxConnectionsPerHost == defaultConfig.maxConnectionsPerHost)
+        #expect(config.maxRetryCount == defaultConfig.maxRetryCount)
+        #expect(config.maxTotalRetries == defaultConfig.maxTotalRetries)
+        #expect(config.retryDelay == defaultConfig.retryDelay)
+    }
+
+    @Test("advanced builder can override high-tuning configuration")
+    func advancedBuilderOverrides() {
+        let config = DownloadConfiguration.advanced {
+            $0.maxConnectionsPerHost = 9
+            $0.waitsForNetworkChanges = true
+            $0.networkChangeTimeout = 30
+        }
+
+        #expect(config.maxConnectionsPerHost == 9)
+        #expect(config.waitsForNetworkChanges == true)
+        #expect(config.networkChangeTimeout == 30)
+    }
     
     @Test("Custom configuration is applied correctly")
     func customConfiguration() {
         let config = DownloadConfiguration(
-            maxConcurrentDownloads: 5,
+            maxConnectionsPerHost: 5,
             maxRetryCount: 5,
             maxTotalRetries: 8,
             retryDelay: 2.0,
             allowsCellularAccess: false
         )
         
-        #expect(config.maxConcurrentDownloads == 5)
+        #expect(config.maxConnectionsPerHost == 5)
         #expect(config.maxRetryCount == 5)
         #expect(config.maxTotalRetries == 8)
         #expect(config.retryDelay == 2.0)
@@ -37,7 +61,7 @@ struct DownloadConfigurationTests {
     @Test("URLSessionConfiguration is created correctly")
     func urlSessionConfiguration() {
         let config = DownloadConfiguration(
-            maxConcurrentDownloads: 4,
+            maxConnectionsPerHost: 4,
             allowsCellularAccess: false,
             sessionIdentifier: "test.session"
         )
@@ -52,7 +76,7 @@ struct DownloadConfigurationTests {
     @Test("Negative values are clamped to safe bounds")
     func negativeValueClamping() {
         let config = DownloadConfiguration(
-            maxConcurrentDownloads: -1,
+            maxConnectionsPerHost: -1,
             maxRetryCount: -2,
             maxTotalRetries: -3,
             retryDelay: -0.5,
@@ -60,7 +84,7 @@ struct DownloadConfigurationTests {
             timeoutForResource: -20
         )
 
-        #expect(config.maxConcurrentDownloads == 1)
+        #expect(config.maxConnectionsPerHost == 1)
         #expect(config.maxRetryCount == 0)
         #expect(config.maxTotalRetries == 0)
         #expect(config.retryDelay == 0)
@@ -135,6 +159,18 @@ struct DownloadTaskTests {
         #expect(await task.totalRetryCount == 0)
         #expect(await task.error == nil)
     }
+
+    @Test("Download lifecycle helper documents legal transitions")
+    func stateTransitionModel() {
+        #expect(DownloadState.idle.nextStates == [.waiting, .downloading, .cancelled])
+        #expect(DownloadState.idle.canTransition(to: .waiting))
+        #expect(DownloadState.waiting.canTransition(to: .downloading))
+        #expect(DownloadState.downloading.canTransition(to: .completed))
+        #expect(DownloadState.failed.canTransition(to: .idle))
+        #expect(!DownloadState.completed.canTransition(to: .downloading))
+        #expect(DownloadState.completed.isTerminal)
+        #expect(!DownloadState.waiting.isTerminal)
+    }
 }
 
 
@@ -193,17 +229,17 @@ struct DownloadErrorTests {
 struct DownloadManagerTests {
     
     @Test("Manager can be created with custom configuration")
-    func customManager() async {
-        let config = DownloadConfiguration(maxConcurrentDownloads: 5)
-        let manager = DownloadManager(configuration: config)
+    func customManager() async throws {
+        let config = DownloadConfiguration(maxConnectionsPerHost: 5)
+        let manager = try DownloadManager(configuration: config)
         
         #expect((await manager.allTasks()).isEmpty)
     }
     
     @Test("Download task is created and tracked")
-    func downloadCreation() async {
+    func downloadCreation() async throws {
         let config = DownloadConfiguration(sessionIdentifier: "test.download.\(UUID().uuidString)")
-        let manager = DownloadManager(configuration: config)
+        let manager = try DownloadManager(configuration: config)
         
         let url = URL(string: "https://example.com/file.zip")!
         let destination = URL(fileURLWithPath: "/tmp/test-file.zip")
@@ -218,9 +254,9 @@ struct DownloadManagerTests {
     }
     
     @Test("Task can be cancelled")
-    func cancelTask() async {
+    func cancelTask() async throws {
         let config = DownloadConfiguration(sessionIdentifier: "test.cancel.\(UUID().uuidString)")
-        let manager = DownloadManager(configuration: config)
+        let manager = try DownloadManager(configuration: config)
         
         let url = URL(string: "https://example.com/file.zip")!
         let destination = URL(fileURLWithPath: "/tmp/test-file.zip")
@@ -233,9 +269,9 @@ struct DownloadManagerTests {
     }
     
     @Test("All tasks can be cancelled")
-    func cancelAllTasks() async {
+    func cancelAllTasks() async throws {
         let config = DownloadConfiguration(sessionIdentifier: "test.cancelall.\(UUID().uuidString)")
-        let manager = DownloadManager(configuration: config)
+        let manager = try DownloadManager(configuration: config)
         
         let url1 = URL(string: "https://example.com/file1.zip")!
         let url2 = URL(string: "https://example.com/file2.zip")!
@@ -250,6 +286,24 @@ struct DownloadManagerTests {
         await manager.cancelAll()
         
         #expect((await manager.allTasks()).isEmpty)
+    }
+
+    @Test("Duplicate session identifiers surface a recoverable initialization error")
+    func duplicateSessionIdentifierThrows() throws {
+        let identifier = "test.duplicate.\(UUID().uuidString)"
+        let first = try DownloadManager(
+            configuration: DownloadConfiguration(sessionIdentifier: identifier)
+        )
+        _ = first
+
+        #expect(
+            throws: DownloadManagerError.duplicateSessionIdentifier(identifier),
+            performing: {
+                _ = try DownloadManager(
+                    configuration: DownloadConfiguration(sessionIdentifier: identifier)
+                )
+            }
+        )
     }
 }
 
@@ -277,10 +331,10 @@ struct DownloadCallbackTests {
     }
 
     @Test("State callback receives waiting and downloading immediately after start")
-    func stateCallbackOrdering() async {
+    func stateCallbackOrdering() async throws {
         guard runIntegrationTests else { return }
         let config = DownloadConfiguration(sessionIdentifier: "test.callback.\(UUID().uuidString)")
-        let manager = DownloadManager(configuration: config)
+        let manager = try DownloadManager(configuration: config)
         let recorder = DownloadStateRecorder()
 
         await manager.setOnStateChangedHandler { _, state in
@@ -315,36 +369,59 @@ struct DownloadCallbackTests {
 
 @Suite("Download Task Persistence Tests")
 struct DownloadTaskPersistenceTests {
-    private func clearPersistence(sessionIdentifier: String) async {
-        let persistence = DownloadTaskPersistence(sessionIdentifier: sessionIdentifier)
+    private func makeBaseDirectoryURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("InnoNetworkDownloadTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    }
+
+    private func sessionDirectoryURL(sessionIdentifier: String, baseDirectoryURL: URL) -> URL {
+        baseDirectoryURL
+            .appendingPathComponent("InnoNetworkDownload", isDirectory: true)
+            .appendingPathComponent(sessionIdentifier, isDirectory: true)
+    }
+
+    private func clearPersistence(sessionIdentifier: String, baseDirectoryURL: URL) async {
+        let persistence = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
         await persistence.prune(keeping: [])
     }
 
     @Test("Persisted tasks can be restored after actor recreation")
     func persistenceRoundTrip() async {
         let sessionIdentifier = "test.persistence.\(UUID().uuidString)"
-        await clearPersistence(sessionIdentifier: sessionIdentifier)
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
 
         let taskID = "task-\(UUID().uuidString)"
         let url = URL(string: "https://example.com/file.zip")!
         let destinationURL = URL(fileURLWithPath: "/tmp/\(UUID().uuidString).zip")
 
-        let writer = DownloadTaskPersistence(sessionIdentifier: sessionIdentifier)
+        let writer = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
         await writer.upsert(id: taskID, url: url, destinationURL: destinationURL)
 
-        let reader = DownloadTaskPersistence(sessionIdentifier: sessionIdentifier)
+        let reader = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
         let restored = await reader.record(forID: taskID)
 
         #expect(restored?.id == taskID)
         #expect(restored?.url == url)
         #expect(restored?.destinationURL == destinationURL)
-        await clearPersistence(sessionIdentifier: sessionIdentifier)
+        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
     }
 
     @Test("Prune removes stale task records")
     func pruneRemovesStaleRecords() async {
         let sessionIdentifier = "test.persistence.prune.\(UUID().uuidString)"
-        await clearPersistence(sessionIdentifier: sessionIdentifier)
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
 
         let keptID = "task-kept"
         let removedID = "task-removed"
@@ -353,7 +430,10 @@ struct DownloadTaskPersistenceTests {
         let keptDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-kept.zip")
         let removedDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-removed.zip")
 
-        let persistence = DownloadTaskPersistence(sessionIdentifier: sessionIdentifier)
+        let persistence = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
         await persistence.upsert(id: keptID, url: keptURL, destinationURL: keptDestination)
         await persistence.upsert(id: removedID, url: removedURL, destinationURL: removedDestination)
 
@@ -361,25 +441,143 @@ struct DownloadTaskPersistenceTests {
 
         #expect(await persistence.record(forID: keptID) != nil)
         #expect(await persistence.record(forID: removedID) == nil)
-        await clearPersistence(sessionIdentifier: sessionIdentifier)
+        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
     }
 
     @Test("restore metadata remains keyed by task id even when URLs are duplicated")
     func restoreMetadataIsTaskIDBased() async {
         let sessionIdentifier = "test.persistence.duplicate-url.\(UUID().uuidString)"
-        await clearPersistence(sessionIdentifier: sessionIdentifier)
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
 
         let sharedURL = URL(string: "https://example.com/shared.zip")!
         let firstDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-first.zip")
         let secondDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-second.zip")
 
-        let persistence = DownloadTaskPersistence(sessionIdentifier: sessionIdentifier)
+        let persistence = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
         await persistence.upsert(id: "task-1", url: sharedURL, destinationURL: firstDestination)
         await persistence.upsert(id: "task-2", url: sharedURL, destinationURL: secondDestination)
 
         #expect(await persistence.record(forID: "task-1")?.destinationURL == firstDestination)
         #expect(await persistence.record(forID: "task-2")?.destinationURL == secondDestination)
-        await clearPersistence(sessionIdentifier: sessionIdentifier)
+        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+    }
+
+    @Test("Corrupted persistence file is quarantined and store restarts cleanly")
+    func corruptedStoreIsQuarantined() async throws {
+        let sessionIdentifier = "test.persistence.corrupted.\(UUID().uuidString)"
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        let storeDirectory = sessionDirectoryURL(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+        try FileManager.default.createDirectory(at: storeDirectory, withIntermediateDirectories: true)
+        let checkpointURL = storeDirectory.appendingPathComponent("checkpoint.json")
+        try Data("not-json".utf8).write(to: checkpointURL)
+
+        let persistence = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+
+        #expect(await persistence.allRecords().isEmpty)
+
+        let files = try FileManager.default.contentsOfDirectory(atPath: storeDirectory.path)
+        #expect(files.contains(where: { $0.contains(".corrupted-") }))
+        #expect(files.contains("checkpoint.json") == false)
+    }
+
+    @Test("Append log preserves concurrent updates across store instances")
+    func appendLogPreservesConcurrentUpdates() async {
+        let sessionIdentifier = "test.persistence.concurrent.\(UUID().uuidString)"
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+
+        let firstStore = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        let secondStore = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+
+        async let writeA: Void = firstStore.upsert(
+            id: "task-a",
+            url: URL(string: "https://example.com/a.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/a-\(UUID().uuidString).zip")
+        )
+        async let writeB: Void = secondStore.upsert(
+            id: "task-b",
+            url: URL(string: "https://example.com/b.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/b-\(UUID().uuidString).zip")
+        )
+        _ = await (writeA, writeB)
+
+        let reader = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        let records = await reader.allRecords()
+        #expect(records.count == 2)
+    }
+
+    @Test("Append log compacts into checkpoint after threshold")
+    func appendLogCompactsAfterThreshold() async throws {
+        let sessionIdentifier = "test.persistence.compaction.\(UUID().uuidString)"
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        let persistence = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+
+        for index in 0..<1_000 {
+            await persistence.upsert(
+                id: "task-\(index)",
+                url: URL(string: "https://example.com/\(index).zip")!,
+                destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-\(index).zip")
+            )
+        }
+
+        let storeDirectory = sessionDirectoryURL(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+        let checkpointURL = storeDirectory.appendingPathComponent("checkpoint.json")
+        let logURL = storeDirectory.appendingPathComponent("events.log")
+        #expect(FileManager.default.fileExists(atPath: checkpointURL.path))
+        let logData = try Data(contentsOf: logURL)
+        #expect(logData.isEmpty)
+    }
+
+    @Test("Corrupted append log tail replays valid prefix and quarantines the log")
+    func corruptedLogTailReplaysValidPrefix() async throws {
+        let sessionIdentifier = "test.persistence.log-tail.\(UUID().uuidString)"
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        let writer = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        let destinationURL = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-valid.zip")
+        await writer.upsert(
+            id: "task-valid",
+            url: URL(string: "https://example.com/valid.zip")!,
+            destinationURL: destinationURL
+        )
+
+        let storeDirectory = sessionDirectoryURL(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+        let logURL = storeDirectory.appendingPathComponent("events.log")
+        let handle = try FileHandle(forWritingTo: logURL)
+        try handle.seekToEnd()
+        handle.write(Data("not-json\n".utf8))
+        try handle.close()
+
+        let reader = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        let restored = await reader.record(forID: "task-valid")
+        #expect(restored?.destinationURL == destinationURL)
+
+        let files = try FileManager.default.contentsOfDirectory(atPath: storeDirectory.path)
+        #expect(files.contains(where: { $0.hasPrefix("events.corrupted-") }))
     }
 }
 
@@ -412,7 +610,7 @@ struct DownloadListenerLifecycleTests {
             retryDelay: 0.0,
             sessionIdentifier: "test.download.listener.retry.\(UUID().uuidString)"
         )
-        let manager = DownloadManager(configuration: config)
+        let manager = try DownloadManager(configuration: config)
         let recorder = DownloadEventRecorder()
         do {
             let destination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-result.zip")
@@ -421,9 +619,7 @@ struct DownloadListenerLifecycleTests {
                 to: destination
             )
             let _ = await manager.addEventListener(for: task) { event in
-                Task {
-                    await recorder.record(event)
-                }
+                await recorder.record(event)
             }
 
             let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
@@ -487,7 +683,7 @@ struct DownloadListenerLifecycleTests {
             retryDelay: 0.0,
             sessionIdentifier: "test.download.listener.terminal.\(UUID().uuidString)"
         )
-        let manager = DownloadManager(configuration: config)
+        let manager = try DownloadManager(configuration: config)
         let recorder = DownloadEventRecorder()
         do {
             let task = await manager.download(
@@ -495,9 +691,7 @@ struct DownloadListenerLifecycleTests {
                 to: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-terminal.zip")
             )
             let _ = await manager.addEventListener(for: task) { event in
-                Task {
-                    await recorder.record(event)
-                }
+                await recorder.record(event)
             }
 
             let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))

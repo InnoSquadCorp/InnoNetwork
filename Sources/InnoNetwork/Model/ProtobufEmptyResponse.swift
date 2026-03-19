@@ -27,10 +27,14 @@ import SwiftProtobuf
 ///     let userID: Int
 /// }
 /// ```
-public struct ProtobufEmptyResponse: SwiftProtobuf.Message, Sendable {
+public struct ProtobufEmptyResponse: HTTPEmptyResponseMessage {
     public var unknownFields = SwiftProtobuf.UnknownStorage()
 
     public init() {}
+
+    public static func emptyResponseValue() -> Self {
+        Self()
+    }
 
     public static let protoMessageName: String = "ProtobufEmptyResponse"
 

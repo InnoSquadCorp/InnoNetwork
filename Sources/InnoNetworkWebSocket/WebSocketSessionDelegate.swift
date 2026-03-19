@@ -52,7 +52,8 @@ final class WebSocketSessionDelegate: NSObject, URLSessionWebSocketDelegate {
         guard let error = error else { return }
         callbacks.handleError(
             taskIdentifier: task.taskIdentifier,
-            error: SendableUnderlyingError(error)
+            error: SendableUnderlyingError(error),
+            statusCode: (task.response as? HTTPURLResponse)?.statusCode
         )
     }
 
@@ -71,7 +72,7 @@ final class WebSocketSessionDelegate: NSObject, URLSessionWebSocketDelegate {
 final class WebSocketSessionDelegateCallbacks: Sendable {
     typealias ConnectedHandler = @Sendable (Int, String?) -> Void
     typealias DisconnectedHandler = @Sendable (Int, URLSessionWebSocketTask.CloseCode, String?) -> Void
-    typealias ErrorHandler = @Sendable (Int, SendableUnderlyingError) -> Void
+    typealias ErrorHandler = @Sendable (Int, SendableUnderlyingError, Int?) -> Void
 
     private let connectedHandlerLock = OSAllocatedUnfairLock<ConnectedHandler?>(initialState: nil)
     private let disconnectedHandlerLock = OSAllocatedUnfairLock<DisconnectedHandler?>(initialState: nil)
@@ -95,8 +96,8 @@ final class WebSocketSessionDelegateCallbacks: Sendable {
         disconnectedHandlerLock.withLock { $0 }?(taskIdentifier, closeCode, reason)
     }
 
-    func handleError(taskIdentifier: Int, error: SendableUnderlyingError) {
-        errorHandlerLock.withLock { $0 }?(taskIdentifier, error)
+    func handleError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int?) {
+        errorHandlerLock.withLock { $0 }?(taskIdentifier, error, statusCode)
     }
 }
 

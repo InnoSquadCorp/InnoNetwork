@@ -12,6 +12,44 @@ public enum DownloadState: String, Sendable {
     case cancelled
 }
 
+public extension DownloadState {
+    /// Returns all documented next states from the current lifecycle point.
+    var nextStates: Set<Self> {
+        switch self {
+        case .idle:
+            [.waiting, .downloading, .cancelled]
+        case .waiting:
+            [.downloading, .failed, .cancelled]
+        case .downloading:
+            [.paused, .completed, .failed, .cancelled, .waiting]
+        case .paused:
+            [.downloading, .cancelled]
+        case .completed, .cancelled:
+            []
+        case .failed:
+            [.idle]
+        }
+    }
+
+    /// Whether the state ends the download lifecycle.
+    var isTerminal: Bool {
+        switch self {
+        case .completed, .failed, .cancelled:
+            return true
+        case .idle, .waiting, .downloading, .paused:
+            return false
+        }
+    }
+
+    /// Documents the intended download lifecycle transitions.
+    ///
+    /// This is an invariant helper for session/task lifecycle modeling. It is
+    /// not enforced by a generic state machine runtime.
+    func canTransition(to next: Self) -> Bool {
+        next == self || nextStates.contains(next)
+    }
+}
+
 
 public struct DownloadProgress: Sendable {
     public let bytesWritten: Int64

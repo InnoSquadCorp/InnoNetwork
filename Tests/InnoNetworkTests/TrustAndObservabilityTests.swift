@@ -3,13 +3,6 @@ import Security
 import Testing
 @testable import InnoNetwork
 
-
-private struct TrustObservabilityAPIConfig: APIConfigure {
-    var host: String { "https://api.example.com" }
-    var basePath: String { "v2" }
-}
-
-
 private struct TrustObservabilityRequest: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = String
@@ -92,10 +85,8 @@ private actor NetworkEventStore {
 private struct RecordingNetworkEventObserver: NetworkEventObserving {
     let store: NetworkEventStore
 
-    func handle(_ event: NetworkEvent) {
-        Task {
-            await store.append(event)
-        }
+    func handle(_ event: NetworkEvent) async {
+        await store.append(event)
     }
 }
 
@@ -107,9 +98,9 @@ private final class SlowNetworkEventObserver: NetworkEventObserving, Sendable {
         self.delay = delay
     }
 
-    func handle(_ event: NetworkEvent) {
+    func handle(_ event: NetworkEvent) async {
         _ = event
-        Thread.sleep(forTimeInterval: delay)
+        try? await Task.sleep(for: .seconds(delay))
     }
 }
 
@@ -224,9 +215,8 @@ struct TrustAndObservabilityTests {
             trustPolicy: .systemDefault,
             eventObservers: [observer]
         )
-        let client = try DefaultNetworkClient(
-            configuration: TrustObservabilityAPIConfig(),
-            networkConfiguration: networkConfiguration,
+        let client = DefaultNetworkClient(
+            configuration: networkConfiguration,
             session: session
         )
 
@@ -294,9 +284,8 @@ struct TrustAndObservabilityTests {
             trustPolicy: trustPolicy,
             eventObservers: []
         )
-        let client = try DefaultNetworkClient(
-            configuration: TrustObservabilityAPIConfig(),
-            networkConfiguration: networkConfiguration,
+        let client = DefaultNetworkClient(
+            configuration: networkConfiguration,
             session: session
         )
 
@@ -329,9 +318,8 @@ struct TrustAndObservabilityTests {
             trustPolicy: .systemDefault,
             eventObservers: [slowObserver]
         )
-        let client = try DefaultNetworkClient(
-            configuration: TrustObservabilityAPIConfig(),
-            networkConfiguration: networkConfiguration,
+        let client = DefaultNetworkClient(
+            configuration: networkConfiguration,
             session: session
         )
 

@@ -45,6 +45,7 @@ public protocol ProtobufAPIDefinition: Sendable {
     var parameters: Parameter? { get }
     var method: HTTPMethod { get }
     var path: String { get }
+    var responseDecoder: AnyResponseDecoder<APIResponse> { get }
 
     var headers: HTTPHeaders { get }
 
@@ -53,8 +54,25 @@ public protocol ProtobufAPIDefinition: Sendable {
     var responseInterceptors: [ResponseInterceptor] { get }
 }
 
+extension ProtobufAPIDefinition {
+    var transportPolicy: TransportPolicy<APIResponse> {
+        TransportPolicy(
+            requestEncoding: requestEncodingPolicy,
+            responseDecoding: responseDecodingStrategy,
+            responseDecoder: responseDecoder
+        )
+    }
+
+    var requestEncodingPolicy: RequestEncodingPolicy { .protobuf }
+
+    var responseDecodingStrategy: ResponseDecodingStrategy<APIResponse> {
+        .protobuf
+    }
+}
 
 public extension ProtobufAPIDefinition {
+    var responseDecoder: AnyResponseDecoder<APIResponse> { AnyResponseDecoder(strategy: responseDecodingStrategy) }
+
     var headers: HTTPHeaders {
         var defaultHeaders = HTTPHeaders.default
         defaultHeaders.add(.contentType(ContentType.protobuf.rawValue))
@@ -66,4 +84,12 @@ public extension ProtobufAPIDefinition {
     var requestInterceptors: [RequestInterceptor] { [] }
 
     var responseInterceptors: [ResponseInterceptor] { [] }
+}
+
+extension ProtobufAPIDefinition where APIResponse: HTTPEmptyResponseMessage {
+    var responseDecodingStrategy: ResponseDecodingStrategy<APIResponse> { .protobufAllowingEmpty }
+}
+
+public extension ProtobufAPIDefinition where APIResponse: HTTPEmptyResponseMessage {
+    var responseDecoder: AnyResponseDecoder<APIResponse> { AnyResponseDecoder(strategy: responseDecodingStrategy) }
 }

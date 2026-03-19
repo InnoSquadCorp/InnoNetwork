@@ -11,12 +11,15 @@ public actor WebSocketTask: Identifiable {
     private var _error: WebSocketError?
     private var _closeCode: URLSessionWebSocketTask.CloseCode?
     private var _autoReconnectEnabled: Bool = true
+    private var _pendingManualDisconnectError: WebSocketError?
+    private var _awaitingCloseHandshake = false
 
     public var state: WebSocketState { _state }
     public var reconnectCount: Int { _reconnectCount }
     public var error: WebSocketError? { _error }
     public var closeCode: URLSessionWebSocketTask.CloseCode? { _closeCode }
     public var autoReconnectEnabled: Bool { _autoReconnectEnabled }
+    public var awaitingCloseHandshake: Bool { _awaitingCloseHandshake }
 
     public init(url: URL, subprotocols: [String]? = nil, id: String = UUID().uuidString) {
         self.id = id
@@ -49,12 +52,30 @@ public actor WebSocketTask: Identifiable {
         _autoReconnectEnabled = enabled
     }
 
+    func beginManualDisconnect(error: WebSocketError?) {
+        _pendingManualDisconnectError = error
+        _awaitingCloseHandshake = true
+    }
+
+    func completeManualDisconnect() -> WebSocketError? {
+        let error = _pendingManualDisconnectError
+        _pendingManualDisconnectError = nil
+        _awaitingCloseHandshake = false
+        return error
+    }
+
+    func isClientInitiatedCloseFlow() -> Bool {
+        _awaitingCloseHandshake || _pendingManualDisconnectError != nil
+    }
+
     func reset() {
         _state = .idle
         _reconnectCount = 0
         _error = nil
         _closeCode = nil
         _autoReconnectEnabled = true
+        _pendingManualDisconnectError = nil
+        _awaitingCloseHandshake = false
     }
 }
 

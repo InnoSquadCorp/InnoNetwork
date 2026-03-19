@@ -193,7 +193,7 @@ struct ProtobufNetworkClientTests {
         let responseData = try protobufData(expectedResponse)
         mockSession.setMockResponse(statusCode: 200, data: responseData)
 
-        let client = try DefaultNetworkClient(
+        let client = DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
             session: mockSession
         )
@@ -213,7 +213,7 @@ struct ProtobufNetworkClientTests {
         let responseData = try protobufData(expectedResponse)
         mockSession.setMockResponse(statusCode: 200, data: responseData)
 
-        let client = try DefaultNetworkClient(
+        let client = DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
             session: mockSession
         )
@@ -230,7 +230,7 @@ struct ProtobufNetworkClientTests {
         let mockSession = MockURLSession()
         mockSession.setMockResponse(statusCode: 404, data: Data())
 
-        let client = try DefaultNetworkClient(
+        let client = DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
             session: mockSession
         )
@@ -245,7 +245,7 @@ struct ProtobufNetworkClientTests {
         let mockSession = MockURLSession()
         mockSession.setMockResponse(statusCode: 500, data: Data())
 
-        let client = try DefaultNetworkClient(
+        let client = DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
             session: mockSession
         )
@@ -260,7 +260,7 @@ struct ProtobufNetworkClientTests {
         let mockSession = MockURLSession()
         mockSession.mockError = URLError(.notConnectedToInternet)
 
-        let client = try DefaultNetworkClient(
+        let client = DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
             session: mockSession
         )
@@ -276,7 +276,7 @@ struct ProtobufNetworkClientTests {
         let invalidData = "not a valid protobuf".data(using: .utf8)!
         mockSession.setMockResponse(statusCode: 200, data: invalidData)
 
-        let client = try DefaultNetworkClient(
+        let client = DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
             session: mockSession
         )
@@ -291,7 +291,7 @@ struct ProtobufNetworkClientTests {
         let mockSession = MockURLSession()
         mockSession.setMockResponse(statusCode: 204, data: Data())
 
-        let client = try DefaultNetworkClient(
+        let client = DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
             session: mockSession
         )
@@ -305,7 +305,7 @@ struct ProtobufNetworkClientTests {
         let mockSession = MockURLSession()
         mockSession.setMockResponse(statusCode: 200, data: Data())
 
-        let client = try DefaultNetworkClient(
+        let client = DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
             session: mockSession
         )
@@ -332,7 +332,7 @@ struct ProtobufNetworkClientTests {
         let responseData = try protobufData(expectedResponse)
         mockSession.setMockResponse(statusCode: 200, data: responseData)
 
-        let client = try DefaultNetworkClient(
+        let client = DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
             session: mockSession
         )
@@ -372,7 +372,7 @@ struct ProtobufNetworkClientTests {
         let responseData = try protobufData(expectedResponse)
         mockSession.setMockResponse(statusCode: 200, data: responseData)
 
-        let client = try DefaultNetworkClient(
+        let client = DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
             session: mockSession
         )
@@ -410,7 +410,7 @@ struct ProtobufRequestConfigTests {
         }
 
         let mockSession = MockURLSession()
-        let client = try DefaultNetworkClient(
+        let client = DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
             session: mockSession
         )
@@ -427,7 +427,7 @@ struct ProtobufRequestConfigTests {
         let responseData = try protobufData(expectedResponse)
         mockSession.setMockResponse(statusCode: 200, data: responseData)
 
-        let client = try DefaultNetworkClient(
+        let client = DefaultNetworkClient(
             configuration: TestAPIConfiguration(),
             session: mockSession
         )
@@ -508,9 +508,8 @@ struct ProtobufRetryTests {
             retryPolicy: retryPolicy
         )
 
-        let client = try DefaultNetworkClient(
-            configuration: TestAPIConfiguration(),
-            networkConfiguration: networkConfig,
+        let client = DefaultNetworkClient(
+            configuration: networkConfig,
             session: mockSession
         )
 
@@ -530,9 +529,8 @@ struct ProtobufRetryTests {
             retryPolicy: retryPolicy
         )
 
-        let client = try DefaultNetworkClient(
-            configuration: TestAPIConfiguration(),
-            networkConfiguration: networkConfig,
+        let client = DefaultNetworkClient(
+            configuration: networkConfig,
             session: mockSession
         )
 
@@ -555,9 +553,8 @@ struct ProtobufRetryTests {
             retryPolicy: retryPolicy
         )
 
-        let client = try DefaultNetworkClient(
-            configuration: TestAPIConfiguration(),
-            networkConfiguration: networkConfig,
+        let client = DefaultNetworkClient(
+            configuration: networkConfig,
             session: mockSession
         )
 
@@ -571,7 +568,6 @@ struct ProtobufRetryTests {
 }
 
 
-struct TestAPIConfiguration: APIConfigure {
-    var host: String { "https://test.example.com" }
-    var basePath: String { "" }
+private func TestAPIConfiguration() -> NetworkConfiguration {
+    makeTestNetworkConfiguration(baseURL: "https://test.example.com")
 }

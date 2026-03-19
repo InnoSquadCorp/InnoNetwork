@@ -7,12 +7,9 @@ This example demonstrates how to handle various errors that can occur during net
 ```swift
 import InnoNetwork
 
-struct MyAPI: APIConfigure {
-    var host: String { "jsonplaceholder.typicode.com" }
-    var basePath: String { "" }
-}
-
-API.configure(MyAPI())
+let configuration = NetworkConfiguration.safeDefaults(
+    baseURL: URL(string: "https://jsonplaceholder.typicode.com")!
+)
 ```
 
 ## Error Types

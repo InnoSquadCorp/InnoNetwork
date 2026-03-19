@@ -9,14 +9,11 @@
 import Foundation
 import InnoNetwork
 
-// MARK: - 1. API Configuration
+// MARK: - 1. Client Configuration
 
-struct MyAPI: APIConfigure {
-    var host: String { "https://jsonplaceholder.typicode.com" }
-    var basePath: String { "" }
-}
-
-API.configure(MyAPI())
+private let clientConfiguration = NetworkConfiguration.safeDefaults(
+    baseURL: URL(string: "https://jsonplaceholder.typicode.com")!
+)
 
 // MARK: - 2. Data Models
 
@@ -43,9 +40,6 @@ actor ValidRequest: APIDefinition {
     var method: HTTPMethod { .get }
     var path: String { "/posts/1" }
 
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://jsonplaceholder.typicode.com")!)
-    }
 }
 
 // Request that will fail with 404
@@ -56,9 +50,6 @@ actor NotFoundRequest: APIDefinition {
     var method: HTTPMethod { .get }
     var path: String { "/posts/99999" }
 
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://jsonplaceholder.typicode.com")!)
-    }
 }
 
 // Invalid URL request
@@ -69,9 +60,6 @@ actor InvalidURLRequest: APIDefinition {
     var method: HTTPMethod { .get }
     var path: String { "/posts/1" }
 
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://invalid-domain-12345.com")!)
-    }
 }
 
 // Request with custom headers (for testing)
@@ -90,10 +78,6 @@ actor PostWithBody: APIDefinition {
     var method: HTTPMethod { .post }
     var path: String { "/posts" }
 
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://jsonplaceholder.typicode.com")!)
-    }
-
     init(title: String, body: String, userId: Int = 1) {
         self.parameters = PostParameter(title: title, body: body, userId: userId)
     }
@@ -104,8 +88,8 @@ actor PostWithBody: APIDefinition {
 actor ErrorHandlingExample {
     let client: DefaultNetworkClient
 
-    init() throws {
-        self.client = try DefaultNetworkClient(configuration: MyAPI())
+    init() {
+        self.client = DefaultNetworkClient(configuration: clientConfiguration)
     }
 
     // Example 1: Basic error handling with do-catch

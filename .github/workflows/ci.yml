@@ -60,7 +60,99 @@ jobs:
 
       - name: Enforce no unchecked sendable in production sources
         run: |
-          if rg -n "@unchecked Sendable" Sources; then
-            echo "Found forbidden @unchecked Sendable in Sources"
+          allowlist="Scripts/unchecked_sendable_allowlist.txt"
+          temp_matches="$(mktemp)"
+          temp_normalized="$(mktemp)"
+
+          if command -v rg > /dev/null 2>&1; then
+            rg -n "@unchecked Sendable" Sources > "$temp_matches" || true
+          else
+            grep -R -n "@unchecked Sendable" Sources > "$temp_matches" || true
+          fi
+
+          if [[ ! -s "$temp_matches" ]]; then
+            exit 0
+          fi
+
+          sed -E 's#^([^:]+):[0-9]+:#\1:#' "$temp_matches" | LC_ALL=C sort > "$temp_normalized"
+
+          if ! diff -u "$allowlist" "$temp_normalized"; then
+            echo "Found unexpected @unchecked Sendable usage in Sources"
             exit 1
           fi
+
+  docs-contract-sync:
+    name: Docs / Contract Sync
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Verify docs and stability contract
+        run: bash Scripts/check_docs_contract_sync.sh
+
+      - name: Build documentation smoke target
+        run: xcrun swift build --target InnoNetworkDocSmoke
+
+      - name: Run documentation smoke target
+        run: xcrun swift run InnoNetworkDocSmoke
+
+  consumer-smoke:
+    name: Consumer Smoke
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Build consumer smoke package
+        working-directory: Examples/ConsumerSmoke
+        run: xcrun swift build
+
+  benchmark-smoke:
+    name: Benchmark Smoke
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Build benchmark target
+        run: xcrun swift build --target InnoNetworkBenchmarks

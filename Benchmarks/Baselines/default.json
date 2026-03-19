@@ -1,0 +1,69 @@
+{
+  "generatedAt": "2026-03-19T05:35:45Z",
+  "results": [
+    {
+      "elapsedSeconds": 0.024379875,
+      "group": "encoding",
+      "iterations": 2000,
+      "name": "query-encoder-small",
+      "operationsPerSecond": 82034.8750762668
+    },
+    {
+      "elapsedSeconds": 0.21811125,
+      "group": "encoding",
+      "iterations": 2000,
+      "name": "query-encoder-large",
+      "operationsPerSecond": 9169.632469668575
+    },
+    {
+      "elapsedSeconds": 0.002173542,
+      "group": "events",
+      "iterations": 400,
+      "name": "task-event-fanout-single",
+      "operationsPerSecond": 184031.41048114092
+    },
+    {
+      "elapsedSeconds": 0.007972042,
+      "group": "events",
+      "iterations": 400,
+      "name": "task-event-fanout-many",
+      "operationsPerSecond": 50175.350305480075
+    },
+    {
+      "elapsedSeconds": 0.005419417,
+      "group": "events",
+      "iterations": 400,
+      "name": "task-event-slow-isolation",
+      "operationsPerSecond": 73808.67720642276
+    },
+    {
+      "elapsedSeconds": 1.095837542,
+      "group": "persistence",
+      "iterations": 300,
+      "name": "append-log-write",
+      "operationsPerSecond": 273.7632071378697
+    },
+    {
+      "elapsedSeconds": 0.005765917,
+      "group": "persistence",
+      "iterations": 300,
+      "name": "append-log-replay",
+      "operationsPerSecond": 52029.88527236865
+    },
+    {
+      "elapsedSeconds": 10.857802875,
+      "group": "persistence",
+      "iterations": 1050,
+      "name": "append-log-compaction",
+      "operationsPerSecond": 96.70464753210948
+    },
+    {
+      "elapsedSeconds": 0.001487291,
+      "group": "websocket",
+      "iterations": 2000,
+      "name": "websocket-reconnect-decision",
+      "operationsPerSecond": 1344726.7548852242
+    }
+  ],
+  "version": 1
+}

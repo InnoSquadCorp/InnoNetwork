@@ -9,14 +9,11 @@
 import Foundation
 import InnoNetwork
 
-// MARK: - 1. API Configuration
+// MARK: - 1. Client Configuration
 
-struct MyAPI: APIConfigure {
-    var host: String { "https://httpbin.org" }
-    var basePath: String { "" }
-}
-
-API.configure(MyAPI())
+private let clientConfiguration = NetworkConfiguration.safeDefaults(
+    baseURL: URL(string: "https://httpbin.org")!
+)
 
 // MARK: - 2. Data Models
 
@@ -39,10 +36,6 @@ actor BasicAuthRequest: APIDefinition {
         defaultHeaders.add(.authorization(username: "user", password: "pass"))
         return defaultHeaders
     }
-
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://httpbin.org")!)
-    }
 }
 
 // Example 2: Bearer Token Authentication
@@ -59,10 +52,6 @@ actor BearerTokenRequest: APIDefinition {
         var defaultHeaders = HTTPHeaders.default
         defaultHeaders.add(.authorization(bearerToken: token))
         return defaultHeaders
-    }
-
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://httpbin.org")!)
     }
 
     init(token: String) {
@@ -92,10 +81,6 @@ actor CustomContentTypeRequest: APIDefinition {
         return defaultHeaders
     }
 
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://httpbin.org")!)
-    }
-
     init(message: String) {
         self.parameters = BodyParameter(message: message)
     }
@@ -113,10 +98,6 @@ actor CustomUserAgentRequest: APIDefinition {
         var defaultHeaders = HTTPHeaders.default
         defaultHeaders.add(.userAgent("MyApp/1.0.0 (iOS)"))
         return defaultHeaders
-    }
-
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://httpbin.org")!)
     }
 }
 
@@ -149,10 +130,6 @@ actor MultipleHeadersRequest: APIDefinition {
         return customHeaders
     }
 
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://httpbin.org")!)
-    }
-
     init(key: String, value: String) {
         self.parameters = PostData(key: key, value: value)
     }
@@ -171,10 +148,6 @@ actor AcceptLanguageRequest: APIDefinition {
         defaultHeaders.add(.acceptLanguage("ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"))
         return defaultHeaders
     }
-
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://httpbin.org")!)
-    }
 }
 
 // Example 7: Accept-Encoding Header
@@ -190,10 +163,6 @@ actor AcceptEncodingRequest: APIDefinition {
         defaultHeaders.add(.acceptEncoding("gzip, deflate, br"))
         return defaultHeaders
     }
-
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://httpbin.org")!)
-    }
 }
 
 // MARK: - 4. Usage Examples
@@ -201,8 +170,8 @@ actor AcceptEncodingRequest: APIDefinition {
 actor CustomHeadersExample {
     let client: DefaultNetworkClient
 
-    init() throws {
-        self.client = try DefaultNetworkClient(configuration: MyAPI())
+    init() {
+        self.client = DefaultNetworkClient(configuration: clientConfiguration)
     }
 
     // Example 1: Basic Authentication
@@ -323,11 +292,7 @@ actor CustomHeadersExample {
 @main
 struct CustomHeadersApp {
     static func main() async {
-        do {
-            let example = try CustomHeadersExample()
-            await example.runAllExamples()
-        } catch {
-            print("Failed to create network client: \(error)")
-        }
+        let example = CustomHeadersExample()
+        await example.runAllExamples()
     }
 }

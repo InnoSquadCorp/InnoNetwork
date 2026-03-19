@@ -85,7 +85,7 @@ Add InnoNetwork to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquad/InnoNetwork.git", from: "1.0.0")
+    .package(url: "https://github.com/InnoSquad/InnoNetwork.git", from: "3.0.0")
 ]
 ```
 
@@ -111,13 +111,11 @@ First, configure your API:
 ```swift
 import InnoNetwork
 
-struct MyAPI: APIConfigure {
-    var host: String { "api.example.com" }
-    var basePath: String { "v1" }
-    var baseURL: URL? { URL(string: "https://api.example.com") }
-}
-
-let client = try DefaultNetworkClient(configuration: MyAPI())
+let client = DefaultNetworkClient(
+    configuration: NetworkConfiguration.safeDefaults(
+        baseURL: URL(string: "https://api.example.com/v1")!
+    )
+)
 ```
 
 ### Making Requests
@@ -199,9 +197,15 @@ struct UploadImage: MultipartAPIDefinition {
     typealias APIResponse = UploadResponse
 
     var multipartFormData: MultipartFormData {
-        MultipartFormData()
-            .addText(name: "title", value: "My Image")
-            .addFile(data: imageData, fileName: "image.jpg", name: "file", mimeType: "image/jpeg")
+        var formData = MultipartFormData()
+        formData.append("My Image", name: "title")
+        formData.append(
+            imageData,
+            name: "file",
+            fileName: "image.jpg",
+            mimeType: "image/jpeg"
+        )
+        return formData
     }
 
     var method: HTTPMethod { .post }
@@ -243,7 +247,7 @@ let task = await manager.download(
 )
 
 // AsyncSequence events
-for await event in manager.events(for: task) {
+for await event in await manager.events(for: task) {
     switch event {
     case .progress(let progress):
         print("Progress: \(progress.percentCompleted)%")

@@ -11,7 +11,7 @@ struct WebSocketConfigurationTests {
     func defaultConfiguration() {
         let config = WebSocketConfiguration.default
 
-        #expect(config.maxConcurrentConnections == 5)
+        #expect(config.maxConnectionsPerHost == 5)
         #expect(config.connectionTimeout == 30)
         #expect(config.heartbeatInterval == 30)
         #expect(config.pongTimeout == 10)
@@ -22,10 +22,34 @@ struct WebSocketConfigurationTests {
         #expect(config.allowsCellularAccess == true)
     }
 
+    @Test("safeDefaults matches default configuration")
+    func safeDefaultsMatchesDefault() {
+        let config = WebSocketConfiguration.safeDefaults()
+        let defaultConfig = WebSocketConfiguration.default
+
+        #expect(config.maxConnectionsPerHost == defaultConfig.maxConnectionsPerHost)
+        #expect(config.connectionTimeout == defaultConfig.connectionTimeout)
+        #expect(config.heartbeatInterval == defaultConfig.heartbeatInterval)
+        #expect(config.maxReconnectAttempts == defaultConfig.maxReconnectAttempts)
+    }
+
+    @Test("advanced builder can override reconnect tuning")
+    func advancedBuilderOverrides() {
+        let config = WebSocketConfiguration.advanced {
+            $0.connectionTimeout = 60
+            $0.reconnectDelay = 2
+            $0.maxReconnectAttempts = 12
+        }
+
+        #expect(config.connectionTimeout == 60)
+        #expect(config.reconnectDelay == 2)
+        #expect(config.maxReconnectAttempts == 12)
+    }
+
     @Test("Custom configuration is applied correctly")
     func customConfiguration() {
         let config = WebSocketConfiguration(
-            maxConcurrentConnections: 10,
+            maxConnectionsPerHost: 10,
             connectionTimeout: 60,
             heartbeatInterval: 15,
             pongTimeout: 6,
@@ -37,7 +61,7 @@ struct WebSocketConfigurationTests {
             requestHeaders: ["Authorization": "Bearer token"]
         )
 
-        #expect(config.maxConcurrentConnections == 10)
+        #expect(config.maxConnectionsPerHost == 10)
         #expect(config.connectionTimeout == 60)
         #expect(config.heartbeatInterval == 15)
         #expect(config.pongTimeout == 6)
@@ -52,7 +76,7 @@ struct WebSocketConfigurationTests {
     @Test("URLSessionConfiguration is created correctly")
     func urlSessionConfiguration() {
         let config = WebSocketConfiguration(
-            maxConcurrentConnections: 4,
+            maxConnectionsPerHost: 4,
             connectionTimeout: 45,
             allowsCellularAccess: false,
             sessionIdentifier: "test.websocket"
@@ -68,7 +92,7 @@ struct WebSocketConfigurationTests {
     @Test("Negative values are clamped to safe bounds")
     func negativeValueClamping() {
         let config = WebSocketConfiguration(
-            maxConcurrentConnections: -1,
+            maxConnectionsPerHost: -1,
             connectionTimeout: -10,
             heartbeatInterval: -5,
             pongTimeout: -3,
@@ -78,7 +102,7 @@ struct WebSocketConfigurationTests {
             maxReconnectAttempts: -4
         )
 
-        #expect(config.maxConcurrentConnections == 1)
+        #expect(config.maxConnectionsPerHost == 1)
         #expect(config.connectionTimeout == 0)
         #expect(config.heartbeatInterval == 0)
         #expect(config.pongTimeout == 0)
@@ -195,7 +219,7 @@ struct WebSocketManagerTests {
 
     @Test("Manager can be created with custom configuration")
     func customManager() async {
-        let config = WebSocketConfiguration(maxConcurrentConnections: 5)
+        let config = WebSocketConfiguration(maxConnectionsPerHost: 5)
         let manager = WebSocketManager(configuration: config)
 
         #expect((await manager.allTasks()).isEmpty)
@@ -227,12 +251,103 @@ struct WebSocketManagerTests {
         #expect(!WebSocketManager.shouldReconnect(currentState: .failed, autoReconnectEnabled: false))
     }
 
+    @Test("Handshake classification maps HTTP auth and retryable responses")
+    func handshakeClassification() {
+        #expect(WebSocketCloseDisposition.classifyHandshake(
+            statusCode: 401,
+            error: SendableUnderlyingError(domain: NSURLErrorDomain, code: URLError.userAuthenticationRequired.rawValue, message: "401")
+        ) == .handshakeUnauthorized(401))
+
+        #expect(WebSocketCloseDisposition.classifyHandshake(
+            statusCode: 403,
+            error: SendableUnderlyingError(domain: NSURLErrorDomain, code: URLError.noPermissionsToReadFile.rawValue, message: "403")
+        ) == .handshakeForbidden(403))
+
+        #expect(WebSocketCloseDisposition.classifyHandshake(
+            statusCode: 503,
+            error: SendableUnderlyingError(domain: NSURLErrorDomain, code: URLError.badServerResponse.rawValue, message: "503")
+        ) == .handshakeServerUnavailable(503))
+
+        #expect(WebSocketCloseDisposition.classifyHandshake(
+            statusCode: 422,
+            error: SendableUnderlyingError(domain: NSURLErrorDomain, code: URLError.badServerResponse.rawValue, message: "422")
+        ) == .handshakeTerminalHTTP(422))
+    }
+
+    @Test("Handshake classification treats transient network errors as retryable")
+    func handshakeTransientNetworkClassification() {
+        let disposition = WebSocketCloseDisposition.classifyHandshake(
+            statusCode: nil,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.networkConnectionLost.rawValue,
+                message: "connection lost"
+            )
+        )
+
+        switch disposition {
+        case .handshakeTransientNetwork(let error):
+            #expect(error.code == URLError.networkConnectionLost.rawValue)
+        default:
+            Issue.record("Expected transient network handshake classification")
+        }
+    }
+
+    @Test("Retry coordinator suppresses reconnect for auth handshake failures")
+    func retryCoordinatorSuppressesAuthHandshakeFailures() async {
+        let task = WebSocketTask(url: URL(string: "wss://example.com/socket")!)
+        let coordinator = WebSocketReconnectCoordinator(
+            configuration: .safeDefaults(),
+            runtimeRegistry: WebSocketRuntimeRegistry()
+        )
+
+        let action = await coordinator.reconnectAction(
+            task: task,
+            closeDisposition: .handshakeUnauthorized(401),
+            previousState: .connecting
+        )
+
+        #expect(action == .terminal)
+    }
+
+    @Test("Retry coordinator retries retryable handshake server failures")
+    func retryCoordinatorRetriesRetryableHandshakeFailures() async {
+        let task = WebSocketTask(url: URL(string: "wss://example.com/socket")!)
+        let coordinator = WebSocketReconnectCoordinator(
+            configuration: .advanced {
+                $0.maxReconnectAttempts = 2
+                $0.reconnectDelay = 0
+            },
+            runtimeRegistry: WebSocketRuntimeRegistry()
+        )
+
+        let action = await coordinator.reconnectAction(
+            task: task,
+            closeDisposition: .handshakeServerUnavailable(503),
+            previousState: .connecting
+        )
+
+        #expect(action == .retry)
+    }
+
     @Test("Reconnect attempt budget uses retry-count semantics")
     func reconnectAttemptBudgetSemantics() {
         #expect(WebSocketManager.shouldRetryReconnect(after: 1, maxReconnectAttempts: 2))
         #expect(WebSocketManager.shouldRetryReconnect(after: 2, maxReconnectAttempts: 2))
         #expect(!WebSocketManager.shouldRetryReconnect(after: 3, maxReconnectAttempts: 2))
         #expect(!WebSocketManager.shouldRetryReconnect(after: 1, maxReconnectAttempts: 0))
+    }
+
+    @Test("WebSocket lifecycle helper documents legal transitions")
+    func stateTransitionModel() {
+        #expect(WebSocketState.connected.nextStates == [.disconnecting, .disconnected, .reconnecting, .failed])
+        #expect(WebSocketState.idle.canTransition(to: .connecting))
+        #expect(WebSocketState.connecting.canTransition(to: .connected))
+        #expect(WebSocketState.connected.canTransition(to: .reconnecting))
+        #expect(WebSocketState.failed.canTransition(to: .idle))
+        #expect(!WebSocketState.connected.canTransition(to: .idle))
+        #expect(WebSocketState.failed.isTerminal)
+        #expect(!WebSocketState.reconnecting.isTerminal)
     }
 
     @Test("Disconnect supports connecting and reconnecting states")
@@ -246,12 +361,28 @@ struct WebSocketManagerTests {
         )
 
         let connectingTask = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        let connectingIdentifier = await manager.runtimeTaskIdentifier(for: connectingTask)
         await manager.disconnect(connectingTask)
+        if let connectingIdentifier {
+            manager.handleDisconnected(
+                taskIdentifier: connectingIdentifier,
+                closeCode: .normalClosure,
+                reason: nil
+            )
+        }
         #expect(await waitForTaskRemoval(manager: manager, taskID: connectingTask.id))
 
         let reconnectingTask = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
         await reconnectingTask.updateState(.reconnecting)
+        let reconnectingIdentifier = await manager.runtimeTaskIdentifier(for: reconnectingTask)
         await manager.disconnect(reconnectingTask)
+        if let reconnectingIdentifier {
+            manager.handleDisconnected(
+                taskIdentifier: reconnectingIdentifier,
+                closeCode: .normalClosure,
+                reason: nil
+            )
+        }
         #expect(await waitForTaskRemoval(manager: manager, taskID: reconnectingTask.id))
     }
 
@@ -373,7 +504,7 @@ struct WebSocketListenerLifecycleTests {
         )
         let recorder = WebSocketEventRecorder()
 
-        let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
         _ = await manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
@@ -471,7 +602,23 @@ struct WebSocketListenerLifecycleTests {
             recorder.record(event)
         }
 
-        await manager.disconnect(task, closeCode: .goingAway)
+        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        await task.setAutoReconnectEnabled(false)
+        await task.beginManualDisconnect(
+            error: .disconnected(
+                SendableUnderlyingError(
+                    domain: "InnoNetworkWebSocket.ManualDisconnect",
+                    code: Int(URLSessionWebSocketTask.CloseCode.goingAway.rawValue),
+                    message: "Client initiated disconnect."
+                )
+            )
+        )
+        await task.updateState(.disconnecting)
+        manager.handleDisconnected(
+            taskIdentifier: taskIdentifier,
+            closeCode: .goingAway,
+            reason: nil
+        )
 
         let reasonDelivered = await waitForEvent(recorder: recorder, timeout: 2.0) { event in
             if case .disconnected(.disconnected(let underlying)) = event {
@@ -482,6 +629,97 @@ struct WebSocketListenerLifecycleTests {
             return false
         }
         #expect(reasonDelivered)
+    }
+
+    @Test("Manual disconnect remains disconnecting until close ack arrives")
+    func manualDisconnectWaitsForCloseAck() async throws {
+        let manager = WebSocketManager(
+            configuration: WebSocketConfiguration(
+                heartbeatInterval: 0,
+                reconnectDelay: 0,
+                maxReconnectAttempts: 0,
+                sessionIdentifier: "test.websocket.manual-close-ack.\(UUID().uuidString)"
+            )
+        )
+
+        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+
+        await task.setAutoReconnectEnabled(false)
+        await task.beginManualDisconnect(
+            error: .disconnected(
+                SendableUnderlyingError(
+                    domain: "InnoNetworkWebSocket.ManualDisconnect",
+                    code: Int(URLSessionWebSocketTask.CloseCode.goingAway.rawValue),
+                    message: "Client initiated disconnect."
+                )
+            )
+        )
+        await task.updateState(.disconnecting)
+        #expect(await task.state == .disconnecting)
+        #expect(await manager.task(withId: task.id) != nil)
+
+        manager.handleDisconnected(
+            taskIdentifier: taskIdentifier,
+            closeCode: .goingAway,
+            reason: "server-ack"
+        )
+
+        #expect(await waitForListenerCleanup(manager: manager, task: task))
+    }
+
+    @Test("Cancelled transport during manual close is not emitted as error")
+    func cancelledTransportDuringManualCloseIsIgnored() async throws {
+        let manager = WebSocketManager(
+            configuration: WebSocketConfiguration(
+                heartbeatInterval: 0,
+                reconnectDelay: 0,
+                maxReconnectAttempts: 0,
+                sessionIdentifier: "test.websocket.manual-close-cancelled.\(UUID().uuidString)"
+            )
+        )
+        let recorder = WebSocketEventRecorder()
+
+        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        _ = await manager.addEventListener(for: task) { event in
+            recorder.record(event)
+        }
+
+        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        await task.setAutoReconnectEnabled(false)
+        await task.beginManualDisconnect(
+            error: .disconnected(
+                SendableUnderlyingError(
+                    domain: "InnoNetworkWebSocket.ManualDisconnect",
+                    code: Int(URLSessionWebSocketTask.CloseCode.normalClosure.rawValue),
+                    message: "Client initiated disconnect."
+                )
+            )
+        )
+        await task.updateState(.disconnecting)
+        manager.handleSessionError(
+            taskIdentifier: taskIdentifier,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.cancelled.rawValue,
+                message: "manual close transport cancellation"
+            )
+        )
+
+        let cancelledErrorDelivered = await waitForEvent(recorder: recorder, timeout: 0.3) { event in
+            if case .error(.cancelled) = event {
+                return true
+            }
+            return false
+        }
+        #expect(!cancelledErrorDelivered)
+
+        manager.handleDisconnected(
+            taskIdentifier: taskIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+        #expect(await waitForListenerCleanup(manager: manager, task: task))
     }
 
     @Test("Disconnecting callback does not emit duplicate disconnected reason")
@@ -533,7 +771,22 @@ struct WebSocketListenerLifecycleTests {
         #expect(!duplicateWhenDisconnected)
 
         await task.updateState(.connected)
-        await manager.disconnect(task)
+        await task.setAutoReconnectEnabled(false)
+        await task.beginManualDisconnect(
+            error: .disconnected(
+                SendableUnderlyingError(
+                    domain: "InnoNetworkWebSocket.ManualDisconnect",
+                    code: Int(URLSessionWebSocketTask.CloseCode.normalClosure.rawValue),
+                    message: "Client initiated disconnect."
+                )
+            )
+        )
+        await task.updateState(.disconnecting)
+        manager.handleDisconnected(
+            taskIdentifier: taskIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
         #expect(await waitForListenerCleanup(manager: manager, task: task))
     }
 
@@ -599,6 +852,59 @@ struct WebSocketListenerLifecycleTests {
 
         #expect(await waitForListenerCleanup(manager: manager, task: task))
         #expect(await manager.task(withId: task.id) == nil)
+    }
+
+    @Test("Server normal close does not trigger reconnect")
+    func serverNormalCloseDoesNotReconnect() async throws {
+        let manager = WebSocketManager(
+            configuration: WebSocketConfiguration(
+                heartbeatInterval: 0,
+                reconnectDelay: 0,
+                maxReconnectAttempts: 3,
+                sessionIdentifier: "test.websocket.server-normal-close.\(UUID().uuidString)"
+            )
+        )
+
+        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+
+        manager.handleDisconnected(
+            taskIdentifier: firstTaskIdentifier,
+            closeCode: .normalClosure,
+            reason: "server-finished"
+        )
+
+        #expect(await waitForTaskRemoval(manager: manager, task: task))
+    }
+
+    @Test("Retryable server close triggers reconnect")
+    func retryableServerCloseReconnects() async throws {
+        let manager = WebSocketManager(
+            configuration: WebSocketConfiguration(
+                heartbeatInterval: 0,
+                reconnectDelay: 0,
+                maxReconnectAttempts: 2,
+                sessionIdentifier: "test.websocket.retryable-close.\(UUID().uuidString)"
+            )
+        )
+
+        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+
+        manager.handleDisconnected(
+            taskIdentifier: firstTaskIdentifier,
+            closeCode: .goingAway,
+            reason: "server-restart"
+        )
+
+        let secondTaskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: manager,
+                task: task,
+                excluding: [firstTaskIdentifier]
+            )
+        )
+        #expect(secondTaskIdentifier != firstTaskIdentifier)
     }
 
     private func waitForRuntimeTaskIdentifier(
@@ -677,6 +983,21 @@ struct WebSocketListenerLifecycleTests {
                 return true
             }
             try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
+    }
+
+    private func waitForTaskRemoval(
+        manager: WebSocketManager,
+        task: WebSocketTask,
+        timeout: TimeInterval = 2.0
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await manager.task(withId: task.id) == nil {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
         }
         return false
     }

@@ -9,12 +9,11 @@
 import Foundation
 import InnoNetwork
 
-// MARK: - 1. API Configuration
+// MARK: - 1. Client Configuration
 
-struct MyAPI: APIConfigure {
-    var host: String { "https://jsonplaceholder.typicode.com" }
-    var basePath: String { "" }
-}
+private let clientConfiguration = NetworkConfiguration.safeDefaults(
+    baseURL: URL(string: "https://jsonplaceholder.typicode.com")!
+)
 
 // MARK: - 2. Data Models
 
@@ -130,8 +129,8 @@ struct DeletePost: APIDefinition {
 class BasicRequestExample {
     let client: DefaultNetworkClient
 
-    init() throws {
-        self.client = try DefaultNetworkClient(configuration: MyAPI())
+    init() {
+        self.client = DefaultNetworkClient(configuration: clientConfiguration)
     }
 
     func getAllTodos() async {
@@ -222,11 +221,7 @@ class BasicRequestExample {
 @main
 struct BasicRequestApp {
     static func main() async {
-        do {
-            let example = try BasicRequestExample()
-            await example.runAllExamples()
-        } catch {
-            print("Failed to create network client: \(error)")
-        }
+        let example = BasicRequestExample()
+        await example.runAllExamples()
     }
 }
