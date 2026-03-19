@@ -14,7 +14,7 @@ The package is built around Swift Concurrency, explicit transport policies, and 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquad/InnoNetwork.git", from: "3.0.0")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.0")
 ]
 ```
 
@@ -152,15 +152,15 @@ do {
 } catch let error as NetworkError {
     switch error {
     case .invalidBaseURL(let url):
-        print("Invalid base URL: \\(url)")
+        print("Invalid base URL: \(url)")
     case .invalidRequestConfiguration(let message):
-        print("Invalid request configuration: \\(message)")
+        print("Invalid request configuration: \(message)")
     case .statusCode(let response):
-        print("Unexpected status code: \\(response.statusCode)")
+        print("Unexpected status code: \(response.statusCode)")
     case .objectMapping(let underlying, _):
-        print("Decoding failed: \\(underlying)")
+        print("Decoding failed: \(underlying)")
     case .trustEvaluationFailed(let reason):
-        print("Trust evaluation failed: \\(reason)")
+        print("Trust evaluation failed: \(reason)")
     case .cancelled:
         print("Request cancelled")
     default:

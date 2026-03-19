@@ -18,6 +18,11 @@ private struct BenchmarkReport: Codable, Sendable {
     let results: [BenchmarkResult]
 }
 
+private struct BenchmarkIdentifier: Hashable, Sendable {
+    let group: String
+    let name: String
+}
+
 private struct BenchmarkOptions: Sendable {
     let quick: Bool
     let jsonOutputPath: String?
@@ -332,16 +337,44 @@ struct InnoNetworkBenchmarks {
             return
         }
 
-        let baselineMap = Dictionary(uniqueKeysWithValues: baseline.results.map { ($0.name, $0) })
+        let baselineMap: [BenchmarkIdentifier: BenchmarkResult]
+        do {
+            baselineMap = try makeBenchmarkMap(from: baseline.results)
+        } catch {
+            print("No baseline loaded from \(baselinePath) (\(error.localizedDescription))")
+            return
+        }
         print("Baseline diff:")
         for result in report.results {
-            guard let baseline = baselineMap[result.name] else {
-                print("- \(result.name): no baseline entry")
+            let identifier = BenchmarkIdentifier(group: result.group, name: result.name)
+            guard let baseline = baselineMap[identifier] else {
+                print("- \(result.group)/\(result.name): no baseline entry")
                 continue
             }
             let delta = ((result.operationsPerSecond - baseline.operationsPerSecond) / max(baseline.operationsPerSecond, 0.000_001)) * 100.0
-            print("- \(result.name): \(String(format: "%+.2f", delta))% vs baseline")
+            print("- \(result.group)/\(result.name): \(String(format: "%+.2f", delta))% vs baseline")
         }
+    }
+
+    private static func makeBenchmarkMap(
+        from results: [BenchmarkResult]
+    ) throws -> [BenchmarkIdentifier: BenchmarkResult] {
+        var map: [BenchmarkIdentifier: BenchmarkResult] = [:]
+        for result in results {
+            let identifier = BenchmarkIdentifier(group: result.group, name: result.name)
+            guard map.updateValue(result, forKey: identifier) == nil else {
+                throw NSError(
+                    domain: "InnoNetworkBenchmarks",
+                    code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Duplicate benchmark identifier found for \(result.group)/\(result.name). " +
+                            "Benchmark names must be unique within a group."
+                    ]
+                )
+            }
+        }
+        return map
     }
 
     private static func makeTemporaryDirectory(prefix: String) throws -> URL {

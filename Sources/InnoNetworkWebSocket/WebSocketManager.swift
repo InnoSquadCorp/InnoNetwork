@@ -188,6 +188,8 @@ public final class WebSocketManager: NSObject, Sendable {
             let closeTimeoutTask = Task { [weak self] in
                 do {
                     try await Task.sleep(for: closeHandshakeTimeout)
+                } catch is CancellationError {
+                    return
                 } catch {
                     return
                 }

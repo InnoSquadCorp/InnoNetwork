@@ -38,10 +38,12 @@ public enum NetworkEvent: Sendable {
     )
 }
 
+/// Receives request lifecycle events emitted by the networking client.
 public protocol NetworkEventObserving: Sendable {
     func handle(_ event: NetworkEvent) async
 }
 
+/// An observer that intentionally ignores all events.
 public struct NoOpNetworkEventObserver: NetworkEventObserving {
     public init() {}
 
@@ -50,6 +52,7 @@ public struct NoOpNetworkEventObserver: NetworkEventObserving {
     }
 }
 
+/// An observer that mirrors request lifecycle events to `OSLog`.
 public struct OSLogNetworkEventObserver: NetworkEventObserving {
     public init() {}
 

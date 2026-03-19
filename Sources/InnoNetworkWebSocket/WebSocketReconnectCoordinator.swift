@@ -72,6 +72,14 @@ package struct WebSocketReconnectCoordinator {
                 return
             }
 
+            do {
+                try Task.checkCancellation()
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
+
             guard await task.autoReconnectEnabled else { return }
             let state = await task.state
             if Self.shouldReconnect(currentState: state, autoReconnectEnabled: true) {

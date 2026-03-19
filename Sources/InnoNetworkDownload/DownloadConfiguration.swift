@@ -2,6 +2,7 @@ import Foundation
 import InnoNetwork
 
 
+/// Configures download transport behavior, retry policy, and event delivery.
 public struct DownloadConfiguration: Sendable {
     package enum Presets {
         static func safeDefaults() -> DownloadConfiguration {

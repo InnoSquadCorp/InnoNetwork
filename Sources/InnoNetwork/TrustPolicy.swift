@@ -53,6 +53,7 @@ public struct PublicKeyPinningPolicy: Sendable {
     }
 }
 
+/// Controls how TLS trust challenges are evaluated for outbound requests.
 public enum TrustPolicy: Sendable {
     case systemDefault
     case publicKeyPinning(PublicKeyPinningPolicy)

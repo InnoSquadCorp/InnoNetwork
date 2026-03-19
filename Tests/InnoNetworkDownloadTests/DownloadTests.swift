@@ -464,7 +464,7 @@ struct DownloadTaskPersistenceTests {
 
         #expect(await persistence.allRecords().isEmpty)
 
-        let files = try FileManager.default.contentsOfDirectory(atPath: storeDirectory.path())
+        let files = try FileManager.default.contentsOfDirectory(atPath: storeDirectory.path)
         #expect(files.contains(where: { $0.contains(".corrupted-") }))
         #expect(files.contains("checkpoint.json") == false)
     }
@@ -523,7 +523,7 @@ struct DownloadTaskPersistenceTests {
         let storeDirectory = sessionDirectoryURL(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
         let checkpointURL = storeDirectory.appendingPathComponent("checkpoint.json")
         let logURL = storeDirectory.appendingPathComponent("events.log")
-        #expect(FileManager.default.fileExists(atPath: checkpointURL.path()))
+        #expect(FileManager.default.fileExists(atPath: checkpointURL.path))
         let logData = try Data(contentsOf: logURL)
         #expect(logData.isEmpty)
     }
@@ -557,7 +557,7 @@ struct DownloadTaskPersistenceTests {
         let restored = await reader.record(forID: "task-valid")
         #expect(restored?.destinationURL == destinationURL)
 
-        let files = try FileManager.default.contentsOfDirectory(atPath: storeDirectory.path())
+        let files = try FileManager.default.contentsOfDirectory(atPath: storeDirectory.path)
         #expect(files.contains(where: { $0.hasPrefix("events.corrupted-") }))
     }
 }

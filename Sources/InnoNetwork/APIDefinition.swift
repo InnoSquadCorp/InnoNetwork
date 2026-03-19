@@ -1,6 +1,7 @@
 import Foundation
 
 
+/// Describes a request/response endpoint executed by `DefaultNetworkClient`.
 public protocol APIDefinition: Sendable {
     associatedtype Parameter: Encodable & Sendable
     associatedtype APIResponse: Decodable & Sendable
@@ -23,6 +24,7 @@ public protocol APIDefinition: Sendable {
 }
 
 
+/// Describes a multipart endpoint executed by `DefaultNetworkClient`.
 public protocol MultipartAPIDefinition: Sendable {
     associatedtype APIResponse: Decodable & Sendable
 

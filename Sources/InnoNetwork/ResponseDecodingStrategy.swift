@@ -1,6 +1,4 @@
 import Foundation
-import SwiftProtobuf
-
 
 package enum ResponseDecodingStrategy<Output: Sendable>: Sendable {
     case json(JSONDecoder)

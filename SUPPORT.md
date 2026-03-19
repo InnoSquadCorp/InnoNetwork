@@ -26,6 +26,6 @@ InnoNetwork is maintained under a lightweight maintainer model.
 ## What Helps
 
 - Small repros
-- exact versions and platform info
+- Exact versions and platform info
 - failing requests or websocket/download lifecycle traces
 - benchmark diffs for performance claims

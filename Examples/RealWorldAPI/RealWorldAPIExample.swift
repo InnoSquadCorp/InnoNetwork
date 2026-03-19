@@ -192,7 +192,7 @@ actor FetchUserProfile: APIDefinition {
 
 // Scenario 9: Search Posts by User
 actor SearchUserPosts: APIDefinition {
-    typealias Parameter = EmptyParameter
+    typealias Parameter = QueryParameter
     typealias APIResponse = [Post]
 
     let userId: Int

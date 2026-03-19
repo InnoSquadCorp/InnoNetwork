@@ -130,16 +130,15 @@ package actor TaskEventHub<Event: Sendable> {
 
     private func drain(taskID: String) async {
         while let pendingEvent = popNextEvent(taskID: taskID) {
-            if let continuations = partitions[taskID]?.continuations.values {
-                for continuation in continuations {
-                    continuation.yield(pendingEvent.event)
-                }
+            let continuations = partitions[taskID].map { Array($0.continuations.values) } ?? []
+            let listeners = partitions[taskID].map { Array($0.listeners.values) } ?? []
+
+            for continuation in continuations {
+                continuation.yield(pendingEvent.event)
             }
 
-            if let listeners = partitions[taskID]?.listeners.values {
-                for listener in listeners {
-                    await listener.enqueue(pendingEvent.event, enqueuedAt: pendingEvent.enqueuedAt)
-                }
+            for listener in listeners {
+                await listener.enqueue(pendingEvent.event, enqueuedAt: pendingEvent.enqueuedAt)
             }
         }
 
