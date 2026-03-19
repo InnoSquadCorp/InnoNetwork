@@ -10,7 +10,7 @@
 
 1. Update `CHANGELOG.md`
 2. Confirm `docs/releases/<version>.md`
-3. Push an annotated tag such as `v3.0.0`
+3. Push an annotated tag such as `3.0.0`
 4. Let the `Release` workflow run:
    - `swift test`
    - docs contract sync
