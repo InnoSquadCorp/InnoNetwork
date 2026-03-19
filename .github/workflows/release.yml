@@ -106,11 +106,10 @@ jobs:
           if [[ -f "$notes_source" ]]; then
             cp "$notes_source" "$notes_target"
           else
-            cat > "$notes_target" <<EOF
-# InnoNetwork ${version}
-
-See CHANGELOG.md for the summarized release history.
-EOF
+            printf '%s\n' \
+              "# InnoNetwork ${version}" \
+              "" \
+              "See CHANGELOG.md for the summarized release history." > "$notes_target"
           fi
 
           echo "version=${version}" >> "$GITHUB_OUTPUT"

@@ -484,16 +484,17 @@ struct DownloadTaskPersistenceTests {
             baseDirectoryURL: baseDirectoryURL
         )
 
-        await firstStore.upsert(
+        async let writeA: Void = firstStore.upsert(
             id: "task-a",
             url: URL(string: "https://example.com/a.zip")!,
             destinationURL: URL(fileURLWithPath: "/tmp/a-\(UUID().uuidString).zip")
         )
-        await secondStore.upsert(
+        async let writeB: Void = secondStore.upsert(
             id: "task-b",
             url: URL(string: "https://example.com/b.zip")!,
             destinationURL: URL(fileURLWithPath: "/tmp/b-\(UUID().uuidString).zip")
         )
+        _ = await (writeA, writeB)
 
         let reader = DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,

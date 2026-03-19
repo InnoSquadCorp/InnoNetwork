@@ -11,10 +11,15 @@ public protocol APIDefinition: Sendable {
     var path: String { get }
 
     var contentType: ContentType { get }
+    /// Encoder used to serialize request body parameters as JSON.
     var requestEncoder: JSONEncoder { get }
+    /// Encoder used to serialize query-string and form-url-encoded parameters.
     var queryEncoder: URLQueryEncoder { get }
+    /// Optional root key used when wrapping top-level query or form parameters.
     var queryRootKey: String? { get }
+    /// Decoder used by the default JSON response decoding strategy.
     var decoder: JSONDecoder { get }
+    /// Type-erased decoder used to transform the HTTP response body into `APIResponse`.
     var responseDecoder: AnyResponseDecoder<APIResponse> { get }
     var headers: HTTPHeaders { get }
 
@@ -60,6 +65,8 @@ extension APIDefinition {
                 return .json(requestEncoder)
             case .formUrlEncoded:
                 return .formURLEncoded(queryEncoder, rootKey: queryRootKey)
+            case .multipartFormData:
+                return .json(requestEncoder)
             default:
                 return .json(requestEncoder)
             }

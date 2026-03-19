@@ -198,13 +198,11 @@ struct EventHubTests {
         }
 
         await hub.publish(1, for: "latency")
-        try await Task.sleep(for: .milliseconds(350))
-
-        let metrics = recorder.snapshot()
-        let latencies = metrics.compactMap { metric -> EventPipelineConsumerDeliveryLatencyMetric? in
-            guard case .consumerDeliveryLatency(let latency) = metric else { return nil }
-            return latency.partitionID == "latency" ? latency : nil
-        }
+        let latencies = try await waitForLatencyMetrics(
+            recorder: recorder,
+            partitionID: "latency",
+            minimumCount: 1
+        )
         #expect(latencies.contains(where: { $0.latency >= 0 }))
     }
 
@@ -330,6 +328,28 @@ private func waitForNetworkEvents(
     }
 
     return await recorder.snapshot()
+}
+
+private func waitForLatencyMetrics(
+    recorder: EventPipelineMetricRecorder,
+    partitionID: String,
+    minimumCount: Int
+) async throws -> [EventPipelineConsumerDeliveryLatencyMetric] {
+    for _ in 0..<50 {
+        let latencies = recorder.snapshot().compactMap { metric -> EventPipelineConsumerDeliveryLatencyMetric? in
+            guard case .consumerDeliveryLatency(let latency) = metric else { return nil }
+            return latency.partitionID == partitionID ? latency : nil
+        }
+        if latencies.count >= minimumCount {
+            return latencies
+        }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+
+    return recorder.snapshot().compactMap { metric -> EventPipelineConsumerDeliveryLatencyMetric? in
+        guard case .consumerDeliveryLatency(let latency) = metric else { return nil }
+        return latency.partitionID == partitionID ? latency : nil
+    }
 }
 
 private func requestID(of event: NetworkEvent) -> UUID {

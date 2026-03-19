@@ -112,10 +112,15 @@ public struct DownloadConfiguration: Sendable {
         }
     }
 
+    /// Returns conservative defaults suitable for most production download flows.
     public static func safeDefaults() -> DownloadConfiguration {
         Presets.safeDefaults()
     }
 
+    /// Returns an advanced configuration seeded from the high-tuning preset.
+    ///
+    /// Use this when you need explicit control over connection limits, retry behavior,
+    /// or event delivery settings.
     public static func advanced(_ configure: (inout AdvancedBuilder) -> Void) -> DownloadConfiguration {
         var builder = AdvancedBuilder(preset: Presets.advancedTuning())
         configure(&builder)

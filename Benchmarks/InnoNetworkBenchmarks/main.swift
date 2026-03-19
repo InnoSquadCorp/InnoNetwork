@@ -33,7 +33,7 @@ private struct BenchmarkOptions: Sendable {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("Baselines/default.json")
-            .path()
+            .path
 
         var quick = false
         var jsonOutputPath: String?
@@ -65,27 +65,37 @@ private struct BenchmarkOptions: Sendable {
 
 private actor BenchmarkCounter {
     private var value = 0
-    private var continuation: CheckedContinuation<Void, Never>?
+    private var continuations: [CheckedContinuation<Void, Never>] = []
     private var target = 0
 
     func reset(target: Int) {
         value = 0
         self.target = target
-        continuation = nil
+        continuations.removeAll(keepingCapacity: true)
     }
 
     func increment() {
         value += 1
         if value >= target {
-            continuation?.resume()
-            continuation = nil
+            let pendingContinuations = continuations
+            continuations.removeAll(keepingCapacity: true)
+            for continuation in pendingContinuations {
+                continuation.resume()
+            }
         }
     }
 
     func wait() async {
         if value >= target { return }
         await withCheckedContinuation { continuation in
-            self.continuation = continuation
+            self.continuations.append(continuation)
+            if self.value >= self.target {
+                let pendingContinuations = self.continuations
+                self.continuations.removeAll(keepingCapacity: true)
+                for pendingContinuation in pendingContinuations {
+                    pendingContinuation.resume()
+                }
+            }
         }
     }
 }
@@ -119,7 +129,9 @@ struct InnoNetworkBenchmarks {
             try jsonData.write(to: URL(fileURLWithPath: jsonOutputPath), options: .atomic)
             print("JSON summary written to \(jsonOutputPath)")
         }
-        print(String(decoding: jsonData, as: UTF8.self))
+        if let jsonString = String(data: jsonData, encoding: .utf8) {
+            print(jsonString)
+        }
     }
 
     private static func runBenchmarks(options: BenchmarkOptions) async throws -> [BenchmarkResult] {

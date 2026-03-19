@@ -60,7 +60,13 @@ jobs:
 
       - name: Enforce no unchecked sendable in production sources
         run: |
-          if rg -n "@unchecked Sendable" Sources; then
+          if command -v rg > /dev/null 2>&1; then
+            checker=(rg -n "@unchecked Sendable" Sources)
+          else
+            checker=(grep -R -n "@unchecked Sendable" Sources)
+          fi
+
+          if "${checker[@]}"; then
             echo "Found forbidden @unchecked Sendable in Sources"
             exit 1
           fi
