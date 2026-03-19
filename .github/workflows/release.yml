@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-release:
+    name: Validate Release
+    runs-on: macos-15
+    timeout-minutes: 90
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: ${{ runner.os }}-release-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-release-xcode-26.0.1-
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Verify docs and stability contract
+        run: bash Scripts/check_docs_contract_sync.sh
+
+      - name: Build and run documentation smoke target
+        run: |
+          xcrun swift build --target InnoNetworkDocSmoke
+          xcrun swift run InnoNetworkDocSmoke
+
+      - name: Build consumer smoke package
+        working-directory: Examples/ConsumerSmoke
+        run: xcrun swift build
+
+      - name: Run quick benchmarks
+        run: |
+          mkdir -p .build/release-artifacts
+          xcrun swift run InnoNetworkBenchmarks --quick --json-path .build/release-artifacts/benchmarks.json
+
+      - name: Run tests
+        run: xcrun swift test
+
+      - name: Build DocC archives
+        run: |
+          xcodebuild docbuild \
+            -scheme InnoNetwork-Package \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath .build/DocC
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            .build/release-artifacts/benchmarks.json
+
+  publish-release:
+    name: Publish Release
+    needs: validate-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: .release-artifacts
+
+      - name: Prepare release notes
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          notes_source="docs/releases/${version}.md"
+          notes_target=".release-artifacts/release-notes.md"
+
+          if [[ -f "$notes_source" ]]; then
+            cp "$notes_source" "$notes_target"
+          else
+            cat > "$notes_target" <<EOF
+# InnoNetwork ${version}
+
+See CHANGELOG.md for the summarized release history.
+EOF
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "notes_path=${notes_target}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: InnoNetwork ${{ steps.notes.outputs.version }}
+          body_path: ${{ steps.notes.outputs.notes_path }}
+          files: .release-artifacts/benchmarks.json

@@ -9,13 +9,16 @@
 ## Release Process
 
 1. Update `CHANGELOG.md`
-2. Confirm `swift test`
-3. Confirm docs contract sync
-4. Confirm doc smoke build/run
-5. Confirm benchmark quick run
-6. Confirm DocC build
-7. Create annotated git tag
-8. Publish GitHub Release notes
+2. Confirm `docs/releases/<version>.md`
+3. Push an annotated tag such as `v3.0.0`
+4. Let the `Release` workflow run:
+   - `swift test`
+   - docs contract sync
+   - doc smoke build/run
+   - consumer smoke build
+   - benchmark quick run
+   - DocC build smoke
+   - GitHub Release creation with benchmark artifact upload
 
 ## Benchmarks
 
