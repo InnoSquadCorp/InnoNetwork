@@ -1,0 +1,20 @@
+name: Documentation issue
+description: Report confusing, missing, or incorrect docs
+title: "[Docs]: "
+labels:
+  - documentation
+body:
+  - type: textarea
+    id: location
+    attributes:
+      label: Location
+      description: Which file, section, or page is wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is wrong?
+      description: Describe the problem and the expected wording or behavior.
+    validations:
+      required: true

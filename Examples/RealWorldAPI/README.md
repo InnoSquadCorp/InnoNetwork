@@ -7,12 +7,11 @@ This example demonstrates common real-world API scenarios using InnoNetwork.
 ```swift
 import InnoNetwork
 
-struct BlogAPI: APIConfigure {
-    var host: String { "jsonplaceholder.typicode.com" }
-    var basePath: String { "" }
-}
-
-API.configure(BlogAPI())
+let client = DefaultNetworkClient(
+    configuration: NetworkConfiguration.safeDefaults(
+        baseURL: URL(string: "https://jsonplaceholder.typicode.com")!
+    )
+)
 ```
 
 ## Running the Examples
@@ -57,10 +56,6 @@ actor CreatePost: APIDefinition {
     var method: HTTPMethod { .post }
     var path: String { "/posts" }
 
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://jsonplaceholder.typicode.com")!)
-    }
-
     init(title: String, body: String, userId: Int = 1) {
         self.parameters = PostParameter(title: title, body: body, userId: userId)
     }
@@ -70,7 +65,11 @@ actor CreatePost: APIDefinition {
 ### Making Requests
 
 ```swift
-let client = try! DefaultNetworkClient(configuration: BlogAPI())
+let client = DefaultNetworkClient(
+    configuration: NetworkConfiguration.safeDefaults(
+        baseURL: URL(string: "https://jsonplaceholder.typicode.com")!
+    )
+)
 
 // Simple GET request
 let posts = try await client.request(FetchPosts(page: 1, limit: 10))
@@ -95,7 +94,7 @@ let createdPost = try await client.request(CreatePost(
     title: "New Post",
     body: "Content here"
 ))
-print("Created post #\(createdPost.id ?? 0)")
+print("Created post #\(createdPost.id)")
 ```
 
 2. **READ**: Fetch post

@@ -14,7 +14,9 @@ import XCTest
 
 @Suite
 struct Request {
-    let client = try! DefaultNetworkClient(configuration: RequestAPI())
+    let client = DefaultNetworkClient(
+        configuration: makeTestNetworkConfiguration(baseURL: "https://jsonplaceholder.typicode.com")
+    )
 
     private var runIntegrationTests: Bool {
         ProcessInfo.processInfo.environment["INNONETWORK_RUN_INTEGRATION_TESTS"] == "1"
@@ -64,9 +66,3 @@ struct Request {
         }
     }
 }
-
-struct RequestAPI: APIConfigure {
-    var host: String { "https://jsonplaceholder.typicode.com" }
-    var basePath: String { "" }
-}
-

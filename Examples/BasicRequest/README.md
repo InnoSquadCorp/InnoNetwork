@@ -9,13 +9,11 @@ First, configure the API:
 ```swift
 import InnoNetwork
 
-struct MyAPI: APIConfigure {
-    var host: String { "jsonplaceholder.typicode.com" }
-    var basePath: String { "" }
-    var baseURL: URL? { URL(string: "https://jsonplaceholder.typicode.com") }
-}
+let configuration = NetworkConfiguration.safeDefaults(
+    baseURL: URL(string: "https://jsonplaceholder.typicode.com")!
+)
 
-let client = try DefaultNetworkClient(configuration: MyAPI())
+let client = DefaultNetworkClient(configuration: configuration)
 ```
 
 ## Running the Examples
@@ -71,7 +69,7 @@ struct GetTodos: APIDefinition {
 Use the `DefaultNetworkClient` to make requests:
 
 ```swift
-let client = try! DefaultNetworkClient(configuration: MyAPI())
+let client = DefaultNetworkClient(configuration: configuration)
 let todos = try await client.request(GetTodos())
 ```
 
@@ -145,10 +143,16 @@ struct UploadImage: MultipartAPIDefinition {
     typealias APIResponse = UploadResponse
 
     var multipartFormData: MultipartFormData {
-        MultipartFormData()
-            .addText(name: "title", value: "My Image")
-            .addText(name: "userId", value: "1")
-            .addFile(data: imageData, fileName: "image.jpg", name: "image", mimeType: "image/jpeg")
+        var formData = MultipartFormData()
+        formData.append("My Image", name: "title")
+        formData.append("1", name: "userId")
+        formData.append(
+            imageData,
+            name: "image",
+            fileName: "image.jpg",
+            mimeType: "image/jpeg"
+        )
+        return formData
     }
 
     var method: HTTPMethod { .post }

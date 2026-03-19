@@ -5,11 +5,11 @@ import PackageDescription
 let package = Package(
     name: "InnoNetwork",
     platforms: [
-        .iOS(.v26),
-        .macOS(.v14),
-        .tvOS(.v26),
-        .watchOS(.v26),
-        .visionOS(.v26)
+        .iOS(.v18),
+        .macOS(.v15),
+        .tvOS(.v18),
+        .watchOS(.v11),
+        .visionOS(.v2)
     ],
     products: [
         .library(
@@ -45,6 +45,24 @@ let package = Package(
             name: "InnoNetworkWebSocket",
             dependencies: ["InnoNetwork"],
             path: "Sources/InnoNetworkWebSocket"
+        ),
+        .executableTarget(
+            name: "InnoNetworkBenchmarks",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkDownload",
+                "InnoNetworkWebSocket",
+            ],
+            path: "Benchmarks/InnoNetworkBenchmarks"
+        ),
+        .executableTarget(
+            name: "InnoNetworkDocSmoke",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkDownload",
+                "InnoNetworkWebSocket",
+            ],
+            path: "SmokeTests/InnoNetworkDocSmoke"
         ),
         .testTarget(
             name: "InnoNetworkTests",

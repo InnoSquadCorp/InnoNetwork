@@ -9,14 +9,11 @@
 import Foundation
 import InnoNetwork
 
-// MARK: - 1. API Configuration
+// MARK: - 1. Client Configuration
 
-struct BlogAPI: APIConfigure {
-    var host: String { "https://jsonplaceholder.typicode.com" }
-    var basePath: String { "" }
-}
-
-API.configure(BlogAPI())
+private let clientConfiguration = NetworkConfiguration.safeDefaults(
+    baseURL: URL(string: "https://jsonplaceholder.typicode.com")!
+)
 
 // MARK: - 2. Data Models
 
@@ -64,10 +61,6 @@ actor LoginUser: APIDefinition {
     var method: HTTPMethod { .post }
     var path: String { "/login" }
 
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://jsonplaceholder.typicode.com")!)
-    }
-
     init(username: String, password: String) {
         self.parameters = LoginRequest(username: username, password: password)
     }
@@ -88,10 +81,6 @@ actor FetchPosts: APIDefinition {
     var method: HTTPMethod { .get }
     var path: String { "/posts" }
 
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://jsonplaceholder.typicode.com")!)
-    }
-
     init(page: Int = 1, limit: Int = 10) {
         self.parameters = QueryParameter(_page: page, _limit: limit)
     }
@@ -107,10 +96,6 @@ actor FetchPostDetail: APIDefinition {
     var method: HTTPMethod { .get }
     var path: String { "/posts/\(postId)" }
 
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://jsonplaceholder.typicode.com")!)
-    }
-
     init(postId: Int) {
         self.postId = postId
     }
@@ -125,10 +110,6 @@ actor FetchPostComments: APIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/posts/\(postId)/comments" }
-
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://jsonplaceholder.typicode.com")!)
-    }
 
     init(postId: Int) {
         self.postId = postId
@@ -151,10 +132,6 @@ actor CreatePost: APIDefinition {
     var method: HTTPMethod { .post }
     var path: String { "/posts" }
 
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://jsonplaceholder.typicode.com")!)
-    }
-
     init(title: String, body: String, userId: Int = 1) {
         self.parameters = PostParameter(title: title, body: body, userId: userId)
     }
@@ -172,15 +149,13 @@ actor UpdatePost: APIDefinition {
     typealias APIResponse = Post
 
     let parameters: PostParameter?
+    let postId: Int
 
     var method: HTTPMethod { .put }
-    var path: String { "/posts/\(parameters?.id ?? 0)" }
-
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://jsonplaceholder.typicode.com")!)
-    }
+    var path: String { "/posts/\(postId)" }
 
     init(id: Int, title: String, body: String) {
+        self.postId = id
         self.parameters = PostParameter(id: id, title: title, body: body)
     }
 }
@@ -194,10 +169,6 @@ actor DeletePost: APIDefinition {
 
     var method: HTTPMethod { .delete }
     var path: String { "/posts/\(postId)" }
-
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://jsonplaceholder.typicode.com")!)
-    }
 
     init(postId: Int) {
         self.postId = postId
@@ -214,10 +185,6 @@ actor FetchUserProfile: APIDefinition {
     var method: HTTPMethod { .get }
     var path: String { "/users/\(userId)" }
 
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://jsonplaceholder.typicode.com")!)
-    }
-
     init(userId: Int) {
         self.userId = userId
     }
@@ -231,10 +198,11 @@ actor SearchUserPosts: APIDefinition {
     let userId: Int
 
     var method: HTTPMethod { .get }
-    var path: String { "/posts?userId=\(userId)" }
+    var path: String { "/posts" }
+    var parameters: QueryParameter? { QueryParameter(userId: userId) }
 
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://jsonplaceholder.typicode.com")!)
+    struct QueryParameter: Encodable, Sendable {
+        let userId: Int
     }
 
     init(userId: Int) {
@@ -247,8 +215,8 @@ actor SearchUserPosts: APIDefinition {
 actor RealWorldAPIExample {
     let client: DefaultNetworkClient
 
-    init() throws {
-        self.client = try DefaultNetworkClient(configuration: BlogAPI())
+    init() {
+        self.client = DefaultNetworkClient(configuration: clientConfiguration)
     }
 
     // Scenario 1: User Login
@@ -308,7 +276,7 @@ actor RealWorldAPIExample {
                 title: "My New Post",
                 body: "This is a sample post content"
             ))
-            print("✅ Created post #\(newPost.id ?? 0)")
+            print("✅ Created post #\(newPost.id)")
 
             // Update the post
             let updatedPost = try await client.request(UpdatePost(
@@ -332,7 +300,7 @@ actor RealWorldAPIExample {
                 title: "CRUD Test Post",
                 body: "Testing CRUD operations"
             ))
-            print("   ✅ Created post #\(createdPost.id ?? 0)")
+            print("   ✅ Created post #\(createdPost.id)")
 
             // READ: Fetch the post
             print("2. Reading post...")
@@ -419,11 +387,7 @@ actor RealWorldAPIExample {
 @main
 struct RealWorldAPIApp {
     static func main() async {
-        do {
-            let example = try RealWorldAPIExample()
-            await example.runAllScenarios()
-        } catch {
-            print("Failed to create network client: \(error)")
-        }
+        let example = RealWorldAPIExample()
+        await example.runAllScenarios()
     }
 }

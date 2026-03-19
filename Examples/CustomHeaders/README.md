@@ -7,12 +7,11 @@ This example demonstrates how to add and customize HTTP headers in your network 
 ```swift
 import InnoNetwork
 
-struct MyAPI: APIConfigure {
-    var host: String { "httpbin.org" }
-    var basePath: String { "" }
-}
-
-API.configure(MyAPI())
+let client = DefaultNetworkClient(
+    configuration: NetworkConfiguration.safeDefaults(
+        baseURL: URL(string: "https://httpbin.org")!
+    )
+)
 ```
 
 ## Header Types
@@ -64,10 +63,6 @@ actor MyAPIRequest: APIDefinition {
         customHeaders.add(.authorization(bearerToken: "my-token"))
         customHeaders.add(.accept("application/json"))
         return customHeaders
-    }
-
-    var configuration: NetworkConfiguration? {
-        NetworkConfiguration(baseURL: URL(string: "https://api.example.com")!)
     }
 }
 ```

@@ -20,7 +20,9 @@ struct Profile: Decodable, Sendable {
 
 @Suite
 struct NetworkClientTests {
-    let client = try! DefaultNetworkClient(configuration: APIDefinitionTests())
+    let client = DefaultNetworkClient(
+        configuration: makeTestNetworkConfiguration(baseURL: "https://jsonplaceholder.typicode.com")
+    )
 
     private var runIntegrationTests: Bool {
         ProcessInfo.processInfo.environment["INNONETWORK_RUN_INTEGRATION_TESTS"] == "1"
@@ -32,10 +34,4 @@ struct NetworkClientTests {
         #expect(profile.id == 1)
         #expect(profile.name == "Leanne Graham")
     }
-}
-
-
-struct APIDefinitionTests: APIConfigure {
-    var host: String { "https://jsonplaceholder.typicode.com" }
-    var basePath: String { "" }
 }

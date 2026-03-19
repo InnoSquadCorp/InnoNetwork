@@ -1,0 +1,53 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+
+concurrency:
+  group: benchmarks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run-benchmarks:
+    name: Run Benchmarks
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: ${{ runner.os }}-bench-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-bench-xcode-26.0.1-
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Run quick benchmarks
+        run: |
+          mkdir -p .build/benchmarks
+          xcrun swift run InnoNetworkBenchmarks --quick --json-path .build/benchmarks/results.json
+
+      - name: Upload benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: innonetwork-benchmarks
+          path: .build/benchmarks/results.json

@@ -2,13 +2,6 @@ import Foundation
 import Testing
 @testable import InnoNetwork
 
-
-struct MockTestAPI: APIConfigure {
-    var host: String { "https://api.example.com" }
-    var basePath: String { "v1" }
-}
-
-
 struct SimpleGetRequest: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = MockUser
@@ -53,8 +46,8 @@ struct MockNetworkTests {
         let expectedUser = MockUser(id: 1, name: "John", email: "john@example.com")
         try mockSession.setMockJSON(expectedUser)
         
-        let client = try DefaultNetworkClient(
-            configuration: MockTestAPI(),
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
             session: mockSession
         )
         
@@ -71,8 +64,8 @@ struct MockNetworkTests {
         let expectedUser = MockUser(id: 2, name: "Jane", email: "jane@example.com")
         try mockSession.setMockJSON(expectedUser, statusCode: 201)
         
-        let client = try DefaultNetworkClient(
-            configuration: MockTestAPI(),
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
             session: mockSession
         )
         
@@ -88,8 +81,8 @@ struct MockNetworkTests {
         let mockSession = MockURLSession()
         mockSession.setMockResponse(statusCode: 404)
         
-        let client = try DefaultNetworkClient(
-            configuration: MockTestAPI(),
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
             session: mockSession
         )
         
@@ -103,8 +96,8 @@ struct MockNetworkTests {
         let mockSession = MockURLSession()
         mockSession.mockError = URLError(.notConnectedToInternet)
         
-        let client = try DefaultNetworkClient(
-            configuration: MockTestAPI(),
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
             session: mockSession
         )
         
@@ -119,8 +112,8 @@ struct MockNetworkTests {
         mockSession.mockData = "invalid json".data(using: .utf8)!
         mockSession.setMockResponse(statusCode: 200, data: "invalid json".data(using: .utf8)!)
         
-        let client = try DefaultNetworkClient(
-            configuration: MockTestAPI(),
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
             session: mockSession
         )
         
@@ -142,8 +135,8 @@ struct MockNetworkTests {
         let mockSession = MockURLSession()
         mockSession.setMockResponse(statusCode: 204, data: Data())
         
-        let client = try DefaultNetworkClient(
-            configuration: MockTestAPI(),
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
             session: mockSession
         )
         
@@ -156,13 +149,13 @@ struct MockNetworkTests {
 struct QueryParameterTests {
     
     @Test("Array parameters are encoded correctly")
-    func arrayParameterEncoding() {
+    func arrayParameterEncoding() throws {
         struct ArrayParam: Encodable {
             let tags: [String]
         }
         
         let param = ArrayParam(tags: ["swift", "ios", "network"])
-        let queryItems = param.encodedQueryItems
+        let queryItems = try URLQueryEncoder().encode(param)
         
         #expect(queryItems.count == 3)
         #expect(queryItems.contains { $0.name == "tags[0]" && $0.value == "swift" })
@@ -171,7 +164,7 @@ struct QueryParameterTests {
     }
     
     @Test("Nested object parameters are encoded correctly")
-    func nestedObjectEncoding() {
+    func nestedObjectEncoding() throws {
         struct NestedParam: Encodable {
             struct Filter: Encodable {
                 let minAge: Int
@@ -181,21 +174,21 @@ struct QueryParameterTests {
         }
         
         let param = NestedParam(filter: .init(minAge: 18, maxAge: 65))
-        let queryItems = param.encodedQueryItems
+        let queryItems = try URLQueryEncoder().encode(param)
         
         #expect(queryItems.contains { $0.name == "filter[minAge]" && $0.value == "18" })
         #expect(queryItems.contains { $0.name == "filter[maxAge]" && $0.value == "65" })
     }
     
     @Test("Boolean parameters are encoded as true/false")
-    func booleanEncoding() {
+    func booleanEncoding() throws {
         struct BoolParam: Encodable {
             let active: Bool
             let verified: Bool
         }
         
         let param = BoolParam(active: true, verified: false)
-        let queryItems = param.encodedQueryItems
+        let queryItems = try URLQueryEncoder().encode(param)
         
         #expect(queryItems.contains { $0.name == "active" && $0.value == "true" })
         #expect(queryItems.contains { $0.name == "verified" && $0.value == "false" })
@@ -214,7 +207,7 @@ struct FormURLEncodedTests {
         }
         
         let param = LoginParam(username: "testuser", password: "secret123")
-        let data = try #require(param.formURLEncodedData)
+        let data = try URLQueryEncoder().encodeForm(param)
         let string = try #require(String(data: data, encoding: .utf8))
         #expect(string.contains("username=testuser"))
         #expect(string.contains("password=secret123"))
@@ -251,8 +244,8 @@ struct FormURLEncodedTests {
         let expectedUser = MockUser(id: 1, name: "Test User", email: "test@example.com")
         try mockSession.setMockJSON(expectedUser)
         
-        let client = try DefaultNetworkClient(
-            configuration: MockTestAPI(),
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
             session: mockSession
         )
         
@@ -336,8 +329,8 @@ struct MultipartFormDataTests {
         let expectedUser = MockUser(id: 1, name: "Test User", email: "test@example.com")
         try mockSession.setMockJSON(expectedUser)
         
-        let client = try DefaultNetworkClient(
-            configuration: MockTestAPI(),
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
             session: mockSession
         )
         

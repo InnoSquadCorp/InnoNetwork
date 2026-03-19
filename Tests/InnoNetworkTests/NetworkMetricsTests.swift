@@ -152,13 +152,6 @@ final class MetricsAwareMockSession: URLSessionProtocol, Sendable {
     }
 }
 
-
-struct MetricsTestAPI: APIConfigure {
-    var host: String { "https://example.com" }
-    var basePath: String { "api" }
-}
-
-
 struct MetricsGetRequest: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = String
@@ -251,9 +244,8 @@ struct NetworkMetricsTests {
             networkMonitor: nil,
             metricsReporter: recorder
         )
-        let client = try DefaultNetworkClient(
-            configuration: MetricsTestAPI(),
-            networkConfiguration: networkConfiguration,
+        let client = DefaultNetworkClient(
+            configuration: networkConfiguration,
             session: urlSession
         )
 
@@ -277,9 +269,8 @@ struct NetworkMetricsTests {
             metricsReporter: recorder
         )
 
-        let client = try DefaultNetworkClient(
-            configuration: MetricsTestAPI(),
-            networkConfiguration: networkConfiguration,
+        let client = DefaultNetworkClient(
+            configuration: networkConfiguration,
             session: session
         )
 
@@ -374,6 +365,24 @@ struct RetryPolicyTests {
         #expect(policy.retryDelay(for: 2) == 4.0)
     }
 
+    @Test("ExponentialBackoffRetryPolicy caps delay at maxDelay")
+    func backoffCap() {
+        let policy = ExponentialBackoffRetryPolicy(
+            maxRetries: 5,
+            maxTotalRetries: 5,
+            retryDelay: 2.0,
+            maxDelay: 5.0,
+            jitterRatio: 0.0,
+            waitsForNetworkChanges: false,
+            networkChangeTimeout: nil
+        )
+
+        #expect(policy.retryDelay(for: 0) == 2.0)
+        #expect(policy.retryDelay(for: 1) == 4.0)
+        #expect(policy.retryDelay(for: 2) == 5.0)
+        #expect(policy.retryDelay(for: 3) == 5.0)
+    }
+
     @Test("ExponentialBackoffRetryPolicy evaluates retryable status codes")
     func statusCodeRetryable() {
         let response = Response(
@@ -399,6 +408,21 @@ struct RetryPolicyTests {
         #expect(policy.shouldRetry(error: .statusCode(response), retryIndex: 0))
     }
 
+    @Test("ExponentialBackoffRetryPolicy never retries cancellation")
+    func cancellationIsNotRetried() {
+        let policy = ExponentialBackoffRetryPolicy(
+            maxRetries: 3,
+            maxTotalRetries: 3,
+            retryDelay: 1,
+            maxDelay: 10,
+            jitterRatio: 0,
+            waitsForNetworkChanges: false,
+            networkChangeTimeout: nil
+        )
+
+        #expect(!policy.shouldRetry(error: .cancelled, retryIndex: 0))
+    }
+
     @Test("shouldResetAttempts detects snapshot changes")
     func resetAttemptsOnSnapshotChange() {
         let policy = ExponentialBackoffRetryPolicy(
@@ -413,5 +437,84 @@ struct RetryPolicyTests {
         let oldSnapshot = NetworkSnapshot(status: .satisfied, interfaceTypes: [.wifi])
         let newSnapshot = NetworkSnapshot(status: .satisfied, interfaceTypes: [.cellular])
         #expect(policy.shouldResetAttempts(afterNetworkChangeFrom: oldSnapshot, to: newSnapshot))
+    }
+
+    @Test(
+        "ExponentialBackoffRetryPolicy delay remains monotonic and capped when jitter is disabled",
+        arguments: Array(0..<100)
+    )
+    func backoffDelayLaw(seed: Int) {
+        var rng = SeededGenerator(seed: UInt64(seed + 1))
+        let baseDelay = Double(rng.nextInt(upperBound: 5) + 1)
+        let maxDelay = Double(rng.nextInt(upperBound: 8) + 2)
+        let policy = ExponentialBackoffRetryPolicy(
+            maxRetries: 8,
+            maxTotalRetries: 8,
+            retryDelay: baseDelay,
+            maxDelay: maxDelay,
+            jitterRatio: 0.0,
+            waitsForNetworkChanges: false,
+            networkChangeTimeout: nil
+        )
+
+        var previous = 0.0
+        for retryIndex in 0..<8 {
+            let current = policy.retryDelay(for: retryIndex)
+            #expect(current >= previous)
+            #expect(current <= maxDelay)
+            previous = current
+        }
+    }
+
+    @Test(
+        "ExponentialBackoffRetryPolicy stops retrying once retryIndex reaches maxRetries",
+        arguments: Array(0..<100)
+    )
+    func retryBoundLaw(seed: Int) {
+        var rng = SeededGenerator(seed: UInt64(seed + 101))
+        let maxRetries = rng.nextInt(upperBound: 6) + 1
+        let policy = ExponentialBackoffRetryPolicy(
+            maxRetries: maxRetries,
+            maxTotalRetries: maxRetries + 2,
+            retryDelay: 1,
+            maxDelay: 10,
+            jitterRatio: 0,
+            waitsForNetworkChanges: false,
+            networkChangeTimeout: nil
+        )
+        let response = Response(
+            statusCode: 503,
+            data: Data(),
+            request: nil,
+            response: HTTPURLResponse(
+                url: URL(string: "https://example.com")!,
+                statusCode: 503,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+        )
+
+        for retryIndex in 0..<maxRetries {
+            #expect(policy.shouldRetry(error: .statusCode(response), retryIndex: retryIndex))
+        }
+        #expect(!policy.shouldRetry(error: .statusCode(response), retryIndex: maxRetries))
+    }
+}
+
+private struct SeededGenerator {
+    private var state: UInt64
+
+    init(seed: UInt64) {
+        self.state = seed == 0 ? 0x1234_5678_9ABC_DEF0 : seed
+    }
+
+    mutating func next() -> UInt64 {
+        state = 2862933555777941757 &* state &+ 3037000493
+        return state
+    }
+
+    mutating func nextInt(upperBound: Int) -> Int {
+        precondition(upperBound > 0)
+        return Int(next() % UInt64(upperBound))
     }
 }

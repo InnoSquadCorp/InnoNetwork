@@ -2,9 +2,51 @@ import Foundation
 
 
 public struct WebSocketConfiguration: Sendable {
+    package enum Presets {
+        static func safeDefaults() -> WebSocketConfiguration {
+            WebSocketConfiguration(
+                maxConnectionsPerHost: 5,
+                connectionTimeout: 30,
+                heartbeatInterval: 30,
+                pongTimeout: 10,
+                maxMissedPongs: 1,
+                reconnectDelay: 1.0,
+                reconnectJitterRatio: 0.2,
+                maxReconnectAttempts: 5,
+                allowsCellularAccess: true,
+                sessionIdentifier: "com.innonetwork.websocket",
+                requestHeaders: [:],
+                eventDeliveryPolicy: .default,
+                eventMetricsReporter: nil
+            )
+        }
+
+        static func advancedTuning() -> WebSocketConfiguration {
+            WebSocketConfiguration(
+                maxConnectionsPerHost: 8,
+                connectionTimeout: 45,
+                heartbeatInterval: 15,
+                pongTimeout: 5,
+                maxMissedPongs: 2,
+                reconnectDelay: 0.5,
+                reconnectJitterRatio: 0.1,
+                maxReconnectAttempts: 8,
+                allowsCellularAccess: true,
+                sessionIdentifier: "com.innonetwork.websocket",
+                requestHeaders: [:],
+                eventDeliveryPolicy: EventDeliveryPolicy(
+                    maxBufferedEventsPerPartition: 512,
+                    maxBufferedEventsPerConsumer: 512,
+                    overflowPolicy: .dropOldest
+                ),
+                eventMetricsReporter: nil
+            )
+        }
+    }
+
     /// Maximum number of concurrent socket connections per host.
     /// Values lower than `1` are clamped to `1`.
-    public let maxConcurrentConnections: Int
+    public let maxConnectionsPerHost: Int
     /// Connection timeout in seconds used for initial handshake requests.
     /// Negative values are clamped to `0`.
     public let connectionTimeout: TimeInterval
@@ -33,9 +75,71 @@ public struct WebSocketConfiguration: Sendable {
     public let sessionIdentifier: String
     /// Additional HTTP headers sent when establishing the WebSocket handshake.
     public let requestHeaders: [String: String]
+    public let eventDeliveryPolicy: EventDeliveryPolicy
+    public let eventMetricsReporter: (any EventPipelineMetricsReporting)?
+
+    public struct AdvancedBuilder: Sendable {
+        public var maxConnectionsPerHost: Int
+        public var connectionTimeout: TimeInterval
+        public var heartbeatInterval: TimeInterval
+        public var pongTimeout: TimeInterval
+        public var maxMissedPongs: Int
+        public var reconnectDelay: TimeInterval
+        public var reconnectJitterRatio: Double
+        public var maxReconnectAttempts: Int
+        public var allowsCellularAccess: Bool
+        public var sessionIdentifier: String
+        public var requestHeaders: [String: String]
+        public var eventDeliveryPolicy: EventDeliveryPolicy
+        public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
+
+        fileprivate init(preset: WebSocketConfiguration) {
+            self.maxConnectionsPerHost = preset.maxConnectionsPerHost
+            self.connectionTimeout = preset.connectionTimeout
+            self.heartbeatInterval = preset.heartbeatInterval
+            self.pongTimeout = preset.pongTimeout
+            self.maxMissedPongs = preset.maxMissedPongs
+            self.reconnectDelay = preset.reconnectDelay
+            self.reconnectJitterRatio = preset.reconnectJitterRatio
+            self.maxReconnectAttempts = preset.maxReconnectAttempts
+            self.allowsCellularAccess = preset.allowsCellularAccess
+            self.sessionIdentifier = preset.sessionIdentifier
+            self.requestHeaders = preset.requestHeaders
+            self.eventDeliveryPolicy = preset.eventDeliveryPolicy
+            self.eventMetricsReporter = preset.eventMetricsReporter
+        }
+
+        fileprivate func build() -> WebSocketConfiguration {
+            WebSocketConfiguration(
+                maxConnectionsPerHost: maxConnectionsPerHost,
+                connectionTimeout: connectionTimeout,
+                heartbeatInterval: heartbeatInterval,
+                pongTimeout: pongTimeout,
+                maxMissedPongs: maxMissedPongs,
+                reconnectDelay: reconnectDelay,
+                reconnectJitterRatio: reconnectJitterRatio,
+                maxReconnectAttempts: maxReconnectAttempts,
+                allowsCellularAccess: allowsCellularAccess,
+                sessionIdentifier: sessionIdentifier,
+                requestHeaders: requestHeaders,
+                eventDeliveryPolicy: eventDeliveryPolicy,
+                eventMetricsReporter: eventMetricsReporter
+            )
+        }
+    }
+
+    public static func safeDefaults() -> WebSocketConfiguration {
+        Presets.safeDefaults()
+    }
+
+    public static func advanced(_ configure: (inout AdvancedBuilder) -> Void) -> WebSocketConfiguration {
+        var builder = AdvancedBuilder(preset: Presets.advancedTuning())
+        configure(&builder)
+        return builder.build()
+    }
 
     public init(
-        maxConcurrentConnections: Int = 5,
+        maxConnectionsPerHost: Int = 5,
         connectionTimeout: TimeInterval = 30,
         heartbeatInterval: TimeInterval = 30,
         pongTimeout: TimeInterval = 10,
@@ -45,9 +149,11 @@ public struct WebSocketConfiguration: Sendable {
         maxReconnectAttempts: Int = 5,
         allowsCellularAccess: Bool = true,
         sessionIdentifier: String = "com.innonetwork.websocket",
-        requestHeaders: [String: String] = [:]
+        requestHeaders: [String: String] = [:],
+        eventDeliveryPolicy: EventDeliveryPolicy = .default,
+        eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil
     ) {
-        self.maxConcurrentConnections = max(1, maxConcurrentConnections)
+        self.maxConnectionsPerHost = max(1, maxConnectionsPerHost)
         self.connectionTimeout = max(0, connectionTimeout)
         self.heartbeatInterval = max(0, heartbeatInterval)
         self.pongTimeout = max(0, pongTimeout)
@@ -58,15 +164,17 @@ public struct WebSocketConfiguration: Sendable {
         self.allowsCellularAccess = allowsCellularAccess
         self.sessionIdentifier = sessionIdentifier
         self.requestHeaders = requestHeaders
+        self.eventDeliveryPolicy = eventDeliveryPolicy
+        self.eventMetricsReporter = eventMetricsReporter
     }
 
-    public static let `default` = WebSocketConfiguration()
+    public static let `default` = safeDefaults()
 
     func makeURLSessionConfiguration() -> URLSessionConfiguration {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = connectionTimeout
         config.allowsCellularAccess = allowsCellularAccess
-        config.httpMaximumConnectionsPerHost = maxConcurrentConnections
+        config.httpMaximumConnectionsPerHost = maxConnectionsPerHost
         return config
     }
 }

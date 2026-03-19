@@ -39,13 +39,13 @@ public enum NetworkEvent: Sendable {
 }
 
 public protocol NetworkEventObserving: Sendable {
-    func handle(_ event: NetworkEvent)
+    func handle(_ event: NetworkEvent) async
 }
 
 public struct NoOpNetworkEventObserver: NetworkEventObserving {
     public init() {}
 
-    public func handle(_ event: NetworkEvent) {
+    public func handle(_ event: NetworkEvent) async {
         _ = event
     }
 }
@@ -53,7 +53,7 @@ public struct NoOpNetworkEventObserver: NetworkEventObserving {
 public struct OSLogNetworkEventObserver: NetworkEventObserving {
     public init() {}
 
-    public func handle(_ event: NetworkEvent) {
+    public func handle(_ event: NetworkEvent) async {
         #if DEBUG
         switch event {
         case .requestStart(let requestID, let method, let url, let retryIndex):

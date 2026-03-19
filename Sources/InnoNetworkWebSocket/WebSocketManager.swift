@@ -19,20 +19,16 @@ public struct WebSocketEventSubscription: Hashable, Sendable {
     public var id: UUID { listenerID }
 }
 
-private enum WebSocketInternalError: Error {
+enum WebSocketInternalError: Error {
     case pingTimeout
-}
-
-private enum ReconnectAction {
-    case retry
-    case terminal
-    case exceeded
 }
 
 private let webSocketManagerLogger = Logger(
     subsystem: "com.innosquad.innonetwork",
     category: "websocket-manager"
 )
+
+private let closeHandshakeTimeout: Duration = .seconds(3)
 
 
 public final class WebSocketManager: NSObject, Sendable {
@@ -42,7 +38,39 @@ public final class WebSocketManager: NSObject, Sendable {
     private let session: URLSession
     private let delegate: WebSocketSessionDelegate
 
-    private let storage = WebSocketStorage()
+    private let runtimeRegistry = WebSocketRuntimeRegistry()
+    private let eventHub: TaskEventHub<WebSocketEvent>
+
+    private var receiveLoop: WebSocketReceiveLoop {
+        WebSocketReceiveLoop(
+            runtimeRegistry: runtimeRegistry,
+            eventHub: eventHub
+        )
+    }
+
+    private var connectionCoordinator: WebSocketConnectionCoordinator {
+        WebSocketConnectionCoordinator(
+            configuration: configuration,
+            session: session,
+            runtimeRegistry: runtimeRegistry,
+            receiveLoop: receiveLoop
+        )
+    }
+
+    private var reconnectCoordinator: WebSocketReconnectCoordinator {
+        WebSocketReconnectCoordinator(
+            configuration: configuration,
+            runtimeRegistry: runtimeRegistry
+        )
+    }
+
+    private var heartbeatCoordinator: WebSocketHeartbeatCoordinator {
+        WebSocketHeartbeatCoordinator(
+            configuration: configuration,
+            runtimeRegistry: runtimeRegistry,
+            eventHub: eventHub
+        )
+    }
 
     public init(configuration: WebSocketConfiguration = .default) {
         self.configuration = configuration
@@ -51,6 +79,11 @@ public final class WebSocketManager: NSObject, Sendable {
         self.delegate = WebSocketSessionDelegate(
             callbacks: callbacks,
             backgroundCompletionStore: backgroundCompletionStore
+        )
+        self.eventHub = TaskEventHub(
+            policy: configuration.eventDeliveryPolicy,
+            metricsReporter: configuration.eventMetricsReporter,
+            hubKind: .webSocketTask
         )
 
         let sessionConfig = configuration.makeURLSessionConfiguration()
@@ -73,8 +106,12 @@ public final class WebSocketManager: NSObject, Sendable {
                     reason: reason
                 )
             },
-            onError: { [weak self] taskIdentifier, error in
-                self?.handleSessionError(taskIdentifier: taskIdentifier, error: error)
+            onError: { [weak self] taskIdentifier, error, statusCode in
+                self?.handleSessionError(
+                    taskIdentifier: taskIdentifier,
+                    error: error,
+                    statusCode: statusCode
+                )
             }
         )
     }
@@ -85,7 +122,7 @@ public final class WebSocketManager: NSObject, Sendable {
     ///   subprotocol (`nil` when the server does not negotiate one).
     /// - Note: The handler is invoked from an internal async context, not the main actor.
     public func setOnConnectedHandler(_ callback: (@Sendable (WebSocketTask, String?) async -> Void)?) async {
-        await storage.setOnConnected(callback)
+        await runtimeRegistry.setOnConnected(callback)
     }
 
     /// Sets a callback that runs when a socket disconnects.
@@ -94,7 +131,7 @@ public final class WebSocketManager: NSObject, Sendable {
     ///   disconnect error detail.
     /// - Note: The handler is invoked after task state is transitioned to `.disconnected`.
     public func setOnDisconnectedHandler(_ callback: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?) async {
-        await storage.setOnDisconnected(callback)
+        await runtimeRegistry.setOnDisconnected(callback)
     }
 
     /// Sets a callback that runs when binary message data is received.
@@ -102,7 +139,7 @@ public final class WebSocketManager: NSObject, Sendable {
     /// - Parameter callback: Optional async handler receiving the source task and message payload.
     /// - Note: The handler is invoked from an internal async context, not the main actor.
     public func setOnMessageHandler(_ callback: (@Sendable (WebSocketTask, Data) async -> Void)?) async {
-        await storage.setOnMessage(callback)
+        await runtimeRegistry.setOnMessage(callback)
     }
 
     /// Sets a callback that runs when a text message is received.
@@ -110,7 +147,7 @@ public final class WebSocketManager: NSObject, Sendable {
     /// - Parameter callback: Optional async handler receiving the source task and UTF-8 string.
     /// - Note: The handler is invoked from an internal async context, not the main actor.
     public func setOnStringHandler(_ callback: (@Sendable (WebSocketTask, String) async -> Void)?) async {
-        await storage.setOnString(callback)
+        await runtimeRegistry.setOnString(callback)
     }
 
     /// Sets a callback that runs when an operational WebSocket error occurs.
@@ -118,13 +155,13 @@ public final class WebSocketManager: NSObject, Sendable {
     /// - Parameter callback: Optional async handler receiving the task and mapped `WebSocketError`.
     /// - Note: The handler is invoked from an internal async context, not the main actor.
     public func setOnErrorHandler(_ callback: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?) async {
-        await storage.setOnError(callback)
+        await runtimeRegistry.setOnError(callback)
     }
 
     @discardableResult
     public func connect(url: URL, subprotocols: [String]? = nil) async -> WebSocketTask {
         let task = WebSocketTask(url: url, subprotocols: subprotocols)
-        await storage.add(task)
+        await runtimeRegistry.add(task)
         await startConnection(task)
         return task
     }
@@ -139,32 +176,33 @@ public final class WebSocketManager: NSObject, Sendable {
         }
 
         await task.setAutoReconnectEnabled(false)
-        await storage.cancelHeartbeatTask(for: task.id)
+        await runtimeRegistry.cancelHeartbeatTask(for: task.id)
+        await runtimeRegistry.cancelReconnectTask(for: task.id)
+        await runtimeRegistry.cancelMessageListenerTask(for: task.id)
         await task.updateState(.disconnecting)
         let disconnectError: WebSocketError? = makeManualDisconnectError(closeCode: closeCode)
+        await task.beginManualDisconnect(error: disconnectError)
 
-        if let urlTask = await storage.urlTask(for: task.id) {
+        if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
             urlTask.cancel(with: closeCode, reason: nil)
+            let closeTimeoutTask = Task { [weak self] in
+                do {
+                    try await Task.sleep(for: closeHandshakeTimeout)
+                } catch {
+                    return
+                }
+                await self?.handleCloseHandshakeTimeout(taskID: task.id, closeCode: closeCode)
+            }
+            await runtimeRegistry.setCloseHandshakeTask(closeTimeoutTask, for: task.id)
         } else {
-            await task.updateState(.disconnected)
-            await task.setCloseCode(closeCode)
-            await storage.onDisconnected?(task, disconnectError)
-            await storage.emitEvent(.disconnected(disconnectError), for: task.id)
-            await storage.removeTaskAndListeners(taskId: task.id)
-            await storage.remove(task)
+            _ = await task.completeManualDisconnect()
+            await finalizeDisconnect(task: task, closeCode: closeCode, error: disconnectError)
             return
         }
-
-        await task.updateState(.disconnected)
-        await task.setCloseCode(closeCode)
-        await storage.onDisconnected?(task, disconnectError)
-        await storage.emitEvent(.disconnected(disconnectError), for: task.id)
-        await storage.removeTaskAndListeners(taskId: task.id)
-        await storage.remove(task)
     }
 
     public func disconnectAll(closeCode: URLSessionWebSocketTask.CloseCode = .normalClosure) async {
-        for task in await storage.allTasks() {
+        for task in await runtimeRegistry.allTasks() {
             await disconnect(task, closeCode: closeCode)
         }
     }
@@ -178,7 +216,7 @@ public final class WebSocketManager: NSObject, Sendable {
     }
 
     public func send(_ task: WebSocketTask, message: Data) async throws {
-        guard let urlTask = await storage.urlTask(for: task.id) else {
+        guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
             throw WebSocketError.disconnected(nil)
         }
 
@@ -186,7 +224,7 @@ public final class WebSocketManager: NSObject, Sendable {
     }
 
     public func send(_ task: WebSocketTask, string: String) async throws {
-        guard let urlTask = await storage.urlTask(for: task.id) else {
+        guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
             throw WebSocketError.disconnected(nil)
         }
 
@@ -194,24 +232,24 @@ public final class WebSocketManager: NSObject, Sendable {
     }
 
     public func ping(_ task: WebSocketTask) async throws {
-        guard let urlTask = await storage.urlTask(for: task.id) else {
+        guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
             throw WebSocketError.disconnected(nil)
         }
-        try await sendPing(urlTask, timeout: configuration.pongTimeout)
-        await storage.emitEvent(.pong, for: task.id)
+        try await heartbeatCoordinator.sendPing(urlTask, timeout: configuration.pongTimeout)
+        await eventHub.publish(.pong, for: task.id)
     }
 
     public func task(withId id: String) async -> WebSocketTask? {
-        await storage.task(withId: id)
+        await runtimeRegistry.task(withId: id)
     }
 
     public func allTasks() async -> [WebSocketTask] {
-        await storage.allTasks()
+        await runtimeRegistry.allTasks()
     }
 
     public func activeTasks() async -> [WebSocketTask] {
         var result: [WebSocketTask] = []
-        for task in await storage.allTasks() {
+        for task in await runtimeRegistry.allTasks() {
             let state = await task.state
             if state == .connected || state == .connecting || state == .reconnecting {
                 result.append(task)
@@ -221,11 +259,11 @@ public final class WebSocketManager: NSObject, Sendable {
     }
 
     func runtimeTaskIdentifier(for task: WebSocketTask) async -> Int? {
-        await storage.taskIdentifier(for: task.id)
+        await runtimeRegistry.taskIdentifier(for: task.id)
     }
 
     func listenerCount(for task: WebSocketTask) async -> Int {
-        await storage.eventListenerCount(for: task.id)
+        await eventHub.listenerCount(taskID: task.id)
     }
 
     /// Adds an event listener for a socket task.
@@ -237,9 +275,9 @@ public final class WebSocketManager: NSObject, Sendable {
     /// - Note: Listener callbacks are invoked from an internal async context, not the main actor.
     public func addEventListener(
         for task: WebSocketTask,
-        listener: @escaping @Sendable (WebSocketEvent) -> Void
+        listener: @escaping @Sendable (WebSocketEvent) async -> Void
     ) async -> WebSocketEventSubscription {
-        let listenerID = await storage.addEventListener(taskId: task.id, listener: listener)
+        let listenerID = await eventHub.addListener(taskID: task.id, listener: listener)
         return WebSocketEventSubscription(taskId: task.id, listenerID: listenerID)
     }
 
@@ -247,7 +285,7 @@ public final class WebSocketManager: NSObject, Sendable {
     ///
     /// - Parameter subscription: Token returned by `addEventListener(for:listener:)`.
     public func removeEventListener(_ subscription: WebSocketEventSubscription) async {
-        await storage.removeEventListener(taskId: subscription.taskId, listenerID: subscription.listenerID)
+        await eventHub.removeListener(taskID: subscription.taskId, listenerID: subscription.listenerID)
     }
 
     /// Creates an `AsyncStream` of WebSocket events for a task.
@@ -256,22 +294,11 @@ public final class WebSocketManager: NSObject, Sendable {
     /// - Returns: Event stream that remains active until iteration stops or terminal cleanup occurs.
     /// - Note: Listener registration completes before this method returns, so no initial events are lost.
     public func events(for task: WebSocketTask) async -> AsyncStream<WebSocketEvent> {
-        let taskId = task.id
-        let storage = self.storage
-        let stream = AsyncStream<WebSocketEvent>.makeStream()
-        let listenerID = await storage.addEventListener(taskId: taskId) { event in
-            stream.continuation.yield(event)
-        }
-        stream.continuation.onTermination = { @Sendable _ in
-            Task {
-                await storage.removeEventListener(taskId: taskId, listenerID: listenerID)
-            }
-        }
-        return stream.stream
+        await eventHub.stream(for: task.id)
     }
 
     public func receive(_ task: WebSocketTask) async throws -> WebSocketEvent {
-        guard let urlTask = await storage.urlTask(for: task.id) else {
+        guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
             throw WebSocketError.disconnected(nil)
         }
 
@@ -290,97 +317,18 @@ public final class WebSocketManager: NSObject, Sendable {
     private func startConnection(_ task: WebSocketTask) async {
         await task.setAutoReconnectEnabled(true)
         await task.updateState(.connecting)
-        await storage.cancelHeartbeatTask(for: task.id)
-
-        var request = URLRequest(url: task.url)
-        request.timeoutInterval = configuration.connectionTimeout
-
-        for (key, value) in configuration.requestHeaders {
-            request.setValue(value, forHTTPHeaderField: key)
-        }
-
-        if let subprotocols = task.subprotocols, !subprotocols.isEmpty {
-            let protocolHeader = "Sec-WebSocket-Protocol"
-            if !Self.request(request, containsHeaderNamed: protocolHeader) {
-                request.setValue(subprotocols.joined(separator: ", "), forHTTPHeaderField: protocolHeader)
-            }
-        }
-        let urlTask = session.webSocketTask(with: request)
-
-        await storage.setMapping(webSocketTask: task, for: urlTask.taskIdentifier)
-        await storage.setURLTask(urlTask, for: task.id)
-
-        urlTask.resume()
-        await listenForMessages(task: task, urlTask: urlTask)
-    }
-
-    private func listenForMessages(task: WebSocketTask, urlTask: URLSessionWebSocketTask) async {
-        let listenerTask = Task {
-            do {
-                while true {
-                    try Task.checkCancellation()
-                    let message = try await urlTask.receive()
-
-                    switch message {
-                    case .string(let string):
-                        await storage.onString?(task, string)
-                        await storage.emitEvent(.string(string), for: task.id)
-                    case .data(let data):
-                        await storage.onMessage?(task, data)
-                        await storage.emitEvent(.message(data), for: task.id)
-                    @unknown default:
-                        break
-                    }
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                handleError(taskIdentifier: urlTask.taskIdentifier, error: error)
-            }
-        }
-        await storage.setMessageListenerTask(listenerTask, for: task.id)
-    }
-
-    private func sendPing(_ urlTask: URLSessionWebSocketTask) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            urlTask.sendPing { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            }
-        }
-    }
-
-    private func sendPing(
-        _ urlTask: URLSessionWebSocketTask,
-        timeout: TimeInterval
-    ) async throws {
-        guard timeout > 0 else {
-            try await sendPing(urlTask)
-            return
-        }
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask { [self] in
-                try await self.sendPing(urlTask)
-            }
-            group.addTask {
-                try await Task.sleep(for: .seconds(timeout))
-                throw WebSocketInternalError.pingTimeout
-            }
-            _ = try await group.next()
-            group.cancelAll()
+        await connectionCoordinator.startConnection(task) { [weak self] taskIdentifier, error in
+            self?.handleError(taskIdentifier: taskIdentifier, error: error)
         }
     }
 
     func handleConnected(taskIdentifier: Int, protocolName: String?) {
         Task {
-            guard let task = await storage.webSocketTask(for: taskIdentifier) else { return }
+            guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
             let state = await task.state
             let autoReconnectEnabled = await task.autoReconnectEnabled
             if state == .disconnecting || state == .disconnected || !autoReconnectEnabled {
-                await storage.detachRuntime(taskIdentifier: taskIdentifier)
+                await runtimeRegistry.removeTaskRuntime(taskId: task.id)
                 return
             }
 
@@ -388,68 +336,111 @@ public final class WebSocketManager: NSObject, Sendable {
             await task.setAutoReconnectEnabled(true)
             await task.setError(nil)
             await task.updateState(.connected)
-            await startHeartbeat(for: task)
-            await storage.onConnected?(task, protocolName)
-            await storage.emitEvent(.connected(protocolName), for: task.id)
+            await heartbeatCoordinator.startHeartbeat(for: task) { [weak self] taskIdentifier in
+                await self?.handleMappedError(taskIdentifier: taskIdentifier, error: .pingTimeout)
+            }
+            await runtimeRegistry.onConnected?(task, protocolName)
+            await eventHub.publish(.connected(protocolName), for: task.id)
         }
     }
 
     func handleDisconnected(taskIdentifier: Int, closeCode: URLSessionWebSocketTask.CloseCode, reason: String?) {
         Task {
-            guard let task = await storage.webSocketTask(for: taskIdentifier) else { return }
+            guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
             let previousState = await task.state
-            if previousState == .disconnecting || previousState == .disconnected {
-                // Manual disconnect already emitted terminal events and cleanup.
-                // Ignore delegate callbacks arriving during cancellation to avoid duplicates.
-                await storage.detachRuntime(taskIdentifier: taskIdentifier)
+            if await task.awaitingCloseHandshake {
+                let manualError = await task.completeManualDisconnect()
+                await runtimeRegistry.cancelCloseHandshakeTask(for: task.id)
+                await finalizeDisconnect(task: task, closeCode: closeCode, error: manualError)
                 return
             }
 
-            let error = makeDisconnectedError(closeCode: closeCode, reason: reason)
+            if previousState == .disconnecting || previousState == .disconnected {
+                return
+            }
+
+            let disposition = WebSocketCloseDisposition.classifyPeerClose(
+                closeCode: closeCode,
+                reason: reason
+            )
+            let error = makeDisconnectedError(closeDisposition: disposition)
             await task.updateState(.disconnected)
             await task.setCloseCode(closeCode)
             await task.setError(error)
-            await storage.cancelHeartbeatTask(for: task.id)
-            await storage.onDisconnected?(task, error)
-            await storage.emitEvent(.disconnected(error), for: task.id)
+            await runtimeRegistry.cancelHeartbeatTask(for: task.id)
+            await runtimeRegistry.onDisconnected?(task, error)
+            await eventHub.publish(.disconnected(error), for: task.id)
 
-            let reconnectAction = await reconnectAction(task: task, previousState: previousState)
+            let reconnectAction = await reconnectCoordinator.reconnectAction(
+                task: task,
+                closeDisposition: disposition,
+                previousState: previousState
+            )
             switch reconnectAction {
             case .retry:
-                await storage.detachRuntime(taskIdentifier: taskIdentifier)
-                await attemptReconnect(task: task)
+                await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+                await reconnectCoordinator.attemptReconnect(task: task) { [weak self] task in
+                    await self?.startReconnecting(task)
+                }
                 return
             case .exceeded:
                 await task.updateState(.failed)
                 await task.setError(.maxReconnectAttemptsExceeded)
-                await storage.onError?(task, .maxReconnectAttemptsExceeded)
-                await storage.emitEvent(.error(.maxReconnectAttemptsExceeded), for: task.id)
+                await runtimeRegistry.onError?(task, .maxReconnectAttemptsExceeded)
+                await eventHub.publish(.error(.maxReconnectAttemptsExceeded), for: task.id)
             case .terminal:
                 break
             }
 
-            await storage.removeTaskAndListeners(taskId: task.id)
-            await storage.remove(task)
+            await removeTask(task)
         }
     }
 
     func handleError(taskIdentifier: Int, error: Error) {
         let wsError = mapWebSocketError(error)
-        if case .cancelled = wsError {
-            return
+        Task {
+            if case .cancelled = wsError,
+               let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
+               await task.isClientInitiatedCloseFlow()
+            {
+                return
+            }
+            if case .cancelled = wsError {
+                return
+            }
+            await handleMappedError(taskIdentifier: taskIdentifier, error: wsError)
         }
-        handleMappedError(taskIdentifier: taskIdentifier, error: wsError)
     }
 
-    func handleSessionError(taskIdentifier: Int, error: SendableUnderlyingError) {
-        guard !isCancelledTransportError(error) else { return }
-        let wsError: WebSocketError
-        if isTimeoutTransportError(error) {
-            wsError = .pingTimeout
-        } else {
-            wsError = .connectionFailed(error)
+    func handleSessionError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int? = nil) {
+        Task {
+            if isCancelledTransportError(error),
+               let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
+               await task.isClientInitiatedCloseFlow()
+            {
+                return
+            }
+
+            guard !isCancelledTransportError(error) else { return }
+            guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
+
+            let state = await task.state
+            if state == .connecting || state == .reconnecting {
+                let disposition = WebSocketCloseDisposition.classifyHandshake(
+                    statusCode: statusCode,
+                    error: error
+                )
+                await handleFailure(
+                    task: task,
+                    closeDisposition: disposition,
+                    previousState: state
+                )
+                return
+            }
+
+            let wsError: WebSocketError = isTimeoutTransportError(error) ? .pingTimeout : .connectionFailed(error)
+            await handleFailure(task: task, closeDisposition: .transportFailure(wsError))
         }
-        handleMappedError(taskIdentifier: taskIdentifier, error: wsError)
     }
 
     private func mapWebSocketError(_ error: Error) -> WebSocketError {
@@ -486,56 +477,157 @@ public final class WebSocketManager: NSObject, Sendable {
         error.domain == NSURLErrorDomain && error.code == URLError.timedOut.rawValue
     }
 
-    private func handleMappedError(taskIdentifier: Int, error: WebSocketError) {
-        Task {
-            guard let task = await storage.webSocketTask(for: taskIdentifier) else { return }
+    private func handleMappedError(taskIdentifier: Int, error: WebSocketError) async {
+        guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
+        await handleFailure(task: task, closeDisposition: .transportFailure(error))
+    }
 
-            let reconnectAction = await reconnectAction(task: task)
-            switch reconnectAction {
-            case .retry:
-                await task.updateState(.reconnecting)
-                await task.setError(error)
-                await storage.cancelHeartbeatTask(for: task.id)
-                await storage.onError?(task, error)
-                await storage.emitEvent(.error(error), for: task.id)
-                await storage.detachRuntime(taskIdentifier: taskIdentifier)
-                await attemptReconnect(task: task)
-                return
-            case .terminal:
-                let finalError = error
-                await task.updateState(.failed)
-                await task.setError(finalError)
-                await storage.cancelHeartbeatTask(for: task.id)
-                await storage.onError?(task, finalError)
-                await storage.emitEvent(.error(finalError), for: task.id)
-            case .exceeded:
-                let finalError: WebSocketError = .maxReconnectAttemptsExceeded
-                await task.updateState(.failed)
-                await task.setError(finalError)
-                await storage.cancelHeartbeatTask(for: task.id)
-                await storage.onError?(task, finalError)
-                await storage.emitEvent(.error(finalError), for: task.id)
+    private func handleFailure(
+        task: WebSocketTask,
+        closeDisposition: WebSocketCloseDisposition,
+        previousState: WebSocketState? = nil
+    ) async {
+        let finalError = makeFailureError(closeDisposition: closeDisposition)
+        let reconnectAction = await reconnectCoordinator.reconnectAction(
+            task: task,
+            closeDisposition: closeDisposition,
+            previousState: previousState
+        )
+        switch reconnectAction {
+        case .retry:
+            await task.updateState(.reconnecting)
+            await task.setError(finalError)
+            await runtimeRegistry.cancelHeartbeatTask(for: task.id)
+            await runtimeRegistry.onError?(task, finalError)
+            await eventHub.publish(.error(finalError), for: task.id)
+            await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+            await reconnectCoordinator.attemptReconnect(task: task) { [weak self] task in
+                await self?.startReconnecting(task)
             }
+            return
+        case .terminal:
+            await task.updateState(.failed)
+            await task.setError(finalError)
+            await runtimeRegistry.cancelHeartbeatTask(for: task.id)
+            await runtimeRegistry.onError?(task, finalError)
+            await eventHub.publish(.error(finalError), for: task.id)
+        case .exceeded:
+            let finalError: WebSocketError = .maxReconnectAttemptsExceeded
+            await task.updateState(.failed)
+            await task.setError(finalError)
+            await runtimeRegistry.cancelHeartbeatTask(for: task.id)
+            await runtimeRegistry.onError?(task, finalError)
+            await eventHub.publish(.error(finalError), for: task.id)
+        }
 
-            await storage.removeTaskAndListeners(taskId: task.id)
-            await storage.remove(task)
+        await removeTask(task)
+    }
+
+    private func startReconnecting(_ task: WebSocketTask) async {
+        await task.updateState(.reconnecting)
+        await startConnection(task)
+    }
+
+    private func finalizeDisconnect(
+        task: WebSocketTask,
+        closeCode: URLSessionWebSocketTask.CloseCode,
+        error: WebSocketError?
+    ) async {
+        await task.updateState(.disconnected)
+        await task.setCloseCode(closeCode)
+        await task.setError(error)
+        await runtimeRegistry.onDisconnected?(task, error)
+        await eventHub.publish(.disconnected(error), for: task.id)
+        await removeTask(task)
+    }
+
+    private func removeTask(_ task: WebSocketTask) async {
+        await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+        await eventHub.finish(taskID: task.id)
+        await runtimeRegistry.remove(task)
+    }
+
+    private func makeDisconnectedError(closeDisposition: WebSocketCloseDisposition) -> WebSocketError {
+        switch closeDisposition {
+        case .manual(let closeCode):
+            return makeManualDisconnectError(closeCode: closeCode)
+        case .peerNormal(let closeCode, let reason),
+             .peerRetryable(let closeCode, let reason),
+             .peerTerminal(let closeCode, let reason):
+            guard let reason, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .disconnected(nil)
+            }
+            return .disconnected(
+                SendableUnderlyingError(
+                    domain: "InnoNetworkWebSocket.CloseReason",
+                    code: Int(closeCode.rawValue),
+                    message: reason
+                )
+            )
+        case .handshakeTimeout(let closeCode):
+            return .disconnected(
+                SendableUnderlyingError(
+                    domain: "InnoNetworkWebSocket.HandshakeTimeout",
+                    code: Int(closeCode.rawValue),
+                    message: "WebSocket close handshake timed out."
+                )
+            )
+        case .handshakeUnauthorized,
+             .handshakeForbidden,
+             .handshakeServerUnavailable,
+             .handshakeTransientNetwork,
+             .handshakeTerminalHTTP:
+            return makeFailureError(closeDisposition: closeDisposition)
+        case .transportFailure(let error):
+            return error
         }
     }
 
-    private func makeDisconnectedError(
-        closeCode: URLSessionWebSocketTask.CloseCode,
-        reason: String?
-    ) -> WebSocketError {
-        guard let reason, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return .disconnected(nil)
-        }
-        return .disconnected(
-            SendableUnderlyingError(
-                domain: "InnoNetworkWebSocket.CloseReason",
-                code: Int(closeCode.rawValue),
-                message: reason
+    private func makeFailureError(closeDisposition: WebSocketCloseDisposition) -> WebSocketError {
+        switch closeDisposition {
+        case .manual,
+             .peerNormal,
+             .peerRetryable,
+             .peerTerminal,
+             .handshakeTimeout:
+            return makeDisconnectedError(closeDisposition: closeDisposition)
+        case .handshakeUnauthorized(let statusCode):
+            return .connectionFailed(
+                SendableUnderlyingError(
+                    domain: "InnoNetworkWebSocket.Handshake",
+                    code: statusCode,
+                    message: "WebSocket handshake failed with unauthorized response."
+                )
             )
-        )
+        case .handshakeForbidden(let statusCode):
+            return .connectionFailed(
+                SendableUnderlyingError(
+                    domain: "InnoNetworkWebSocket.Handshake",
+                    code: statusCode,
+                    message: "WebSocket handshake failed with forbidden response."
+                )
+            )
+        case .handshakeServerUnavailable(let statusCode):
+            return .connectionFailed(
+                SendableUnderlyingError(
+                    domain: "InnoNetworkWebSocket.Handshake",
+                    code: statusCode,
+                    message: "WebSocket handshake failed with retryable server response."
+                )
+            )
+        case .handshakeTransientNetwork(let error):
+            return .connectionFailed(error)
+        case .handshakeTerminalHTTP(let statusCode):
+            return .connectionFailed(
+                SendableUnderlyingError(
+                    domain: "InnoNetworkWebSocket.Handshake",
+                    code: statusCode,
+                    message: "WebSocket handshake failed with terminal HTTP response."
+                )
+            )
+        case .transportFailure(let error):
+            return error
+        }
     }
 
     private func makeManualDisconnectError(closeCode: URLSessionWebSocketTask.CloseCode) -> WebSocketError {
@@ -548,91 +640,22 @@ public final class WebSocketManager: NSObject, Sendable {
         )
     }
 
-    private func reconnectAction(
-        task: WebSocketTask,
-        previousState: WebSocketState? = nil
-    ) async -> ReconnectAction {
-        if let previousState, previousState == .disconnecting {
-            return .terminal
+    private func handleCloseHandshakeTimeout(
+        taskID: String,
+        closeCode: URLSessionWebSocketTask.CloseCode
+    ) async {
+        guard let task = await runtimeRegistry.task(withId: taskID) else { return }
+        guard await task.awaitingCloseHandshake else { return }
+
+        await runtimeRegistry.clearCloseHandshakeTask(for: taskID)
+        if let urlTask = await runtimeRegistry.urlTask(for: taskID) {
+            urlTask.cancel()
         }
-
-        guard await task.autoReconnectEnabled else {
-            return .terminal
-        }
-
-        let reconnectCount = await task.incrementReconnectCount()
-        if Self.shouldRetryReconnect(after: reconnectCount, maxReconnectAttempts: configuration.maxReconnectAttempts) {
-            return .retry
-        }
-        return .exceeded
-    }
-
-    private func attemptReconnect(task: WebSocketTask) async {
-        let reconnectCount = await task.reconnectCount
-        let baseDelay = configuration.reconnectDelay * pow(2, Double(reconnectCount - 1))
-        let jitter = abs(baseDelay * configuration.reconnectJitterRatio)
-        let delay = max(0.0, baseDelay + Double.random(in: (-jitter)...(jitter)))
-
-        do {
-            try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-        } catch is CancellationError {
-            return
-        } catch {
-            return
-        }
-
-        guard await task.autoReconnectEnabled else { return }
-        let state = await task.state
-        if Self.shouldReconnect(currentState: state, autoReconnectEnabled: true) {
-            await task.updateState(.reconnecting)
-            await startConnection(task)
-        }
-    }
-
-    private func startHeartbeat(for task: WebSocketTask) async {
-        await storage.cancelHeartbeatTask(for: task.id)
-        guard configuration.heartbeatInterval > 0 else { return }
-
-        let heartbeatTask = Task { [weak self] in
-            guard let self else { return }
-            var missedPongs = 0
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(for: .seconds(configuration.heartbeatInterval))
-                } catch is CancellationError {
-                    break
-                } catch {
-                    break
-                }
-                if Task.isCancelled { break }
-
-                let state = await task.state
-                if state != .connected { break }
-
-                guard let urlTask = await storage.urlTask(for: task.id) else { break }
-
-                do {
-                    try await sendPing(urlTask, timeout: configuration.pongTimeout)
-                    missedPongs = 0
-                    await storage.emitEvent(.pong, for: task.id)
-                } catch {
-                    missedPongs += 1
-                    if missedPongs >= configuration.maxMissedPongs {
-                        Task.detached { [weak self] in
-                            self?.handleError(taskIdentifier: urlTask.taskIdentifier, error: WebSocketInternalError.pingTimeout)
-                        }
-                        break
-                    }
-                }
-            }
-        }
-        await storage.setHeartbeatTask(heartbeatTask, for: task.id)
-    }
-
-    private static func request(_ request: URLRequest, containsHeaderNamed name: String) -> Bool {
-        request.allHTTPHeaderFields?.keys.contains(where: {
-            $0.caseInsensitiveCompare(name) == .orderedSame
-        }) ?? false
+        let manualError = await task.completeManualDisconnect()
+        let finalError = manualError ?? makeDisconnectedError(
+            closeDisposition: .handshakeTimeout(closeCode)
+        )
+        await finalizeDisconnect(task: task, closeCode: closeCode, error: finalError)
     }
 
     static func shouldReconnect(currentState: WebSocketState, autoReconnectEnabled: Bool) -> Bool {
@@ -654,167 +677,5 @@ public final class WebSocketManager: NSObject, Sendable {
         // `identifier` is accepted for API compatibility and intentionally completed immediately.
         webSocketManagerLogger.debug("Ignoring background completion identifier for WebSocket runtime: \(identifier, privacy: .public)")
         completion()
-    }
-}
-
-
-private actor WebSocketStorage {
-    private var tasks: [String: WebSocketTask] = [:]
-    private var identifierToTask: [Int: WebSocketTask] = [:]
-    private var taskIdToIdentifier: [String: Int] = [:]
-    private var taskIdToURLTask: [String: URLSessionWebSocketTask] = [:]
-    private var heartbeatTasks: [String: Task<Void, Never>] = [:]
-    private var messageListenerTasks: [String: Task<Void, Never>] = [:]
-    private var eventListeners: [String: [UUID: @Sendable (WebSocketEvent) -> Void]] = [:]
-
-    private var _onConnected: (@Sendable (WebSocketTask, String?) async -> Void)?
-    private var _onDisconnected: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?
-    private var _onMessage: (@Sendable (WebSocketTask, Data) async -> Void)?
-    private var _onString: (@Sendable (WebSocketTask, String) async -> Void)?
-    private var _onError: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?
-
-    var onConnected: (@Sendable (WebSocketTask, String?) async -> Void)? { _onConnected }
-    var onDisconnected: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)? { _onDisconnected }
-    var onMessage: (@Sendable (WebSocketTask, Data) async -> Void)? { _onMessage }
-    var onString: (@Sendable (WebSocketTask, String) async -> Void)? { _onString }
-    var onError: (@Sendable (WebSocketTask, WebSocketError) async -> Void)? { _onError }
-
-    func setOnConnected(_ callback: (@Sendable (WebSocketTask, String?) async -> Void)?) {
-        _onConnected = callback
-    }
-
-    func setOnDisconnected(_ callback: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?) {
-        _onDisconnected = callback
-    }
-
-    func setOnMessage(_ callback: (@Sendable (WebSocketTask, Data) async -> Void)?) {
-        _onMessage = callback
-    }
-
-    func setOnString(_ callback: (@Sendable (WebSocketTask, String) async -> Void)?) {
-        _onString = callback
-    }
-
-    func setOnError(_ callback: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?) {
-        _onError = callback
-    }
-
-    func addEventListener(taskId: String, listener: @escaping @Sendable (WebSocketEvent) -> Void) -> UUID {
-        let listenerID = UUID()
-        var listeners = eventListeners[taskId] ?? [:]
-        listeners[listenerID] = listener
-        eventListeners[taskId] = listeners
-        return listenerID
-    }
-
-    func removeEventListener(taskId: String, listenerID: UUID) {
-        guard var listeners = eventListeners[taskId] else { return }
-        listeners.removeValue(forKey: listenerID)
-        if listeners.isEmpty {
-            eventListeners.removeValue(forKey: taskId)
-        } else {
-            eventListeners[taskId] = listeners
-        }
-    }
-
-    func emitEvent(_ event: WebSocketEvent, for taskId: String) {
-        guard let listeners = eventListeners[taskId] else { return }
-        for listener in listeners.values {
-            listener(event)
-        }
-    }
-
-    func add(_ task: WebSocketTask) {
-        tasks[task.id] = task
-    }
-
-    func remove(_ task: WebSocketTask) {
-        tasks.removeValue(forKey: task.id)
-    }
-
-    func task(withId id: String) -> WebSocketTask? {
-        tasks[id]
-    }
-
-    func allTasks() -> [WebSocketTask] {
-        Array(tasks.values)
-    }
-
-    func setMapping(webSocketTask: WebSocketTask, for identifier: Int) {
-        identifierToTask[identifier] = webSocketTask
-        taskIdToIdentifier[webSocketTask.id] = identifier
-    }
-
-    func setURLTask(_ urlTask: URLSessionWebSocketTask, for taskId: String) {
-        taskIdToURLTask[taskId] = urlTask
-    }
-
-    func webSocketTask(for identifier: Int) -> WebSocketTask? {
-        identifierToTask[identifier]
-    }
-
-    func urlTask(for taskId: String) -> URLSessionWebSocketTask? {
-        taskIdToURLTask[taskId]
-    }
-
-    func taskIdentifier(for taskId: String) -> Int? {
-        taskIdToIdentifier[taskId]
-    }
-
-    func eventListenerCount(for taskId: String) -> Int {
-        eventListeners[taskId]?.count ?? 0
-    }
-
-    func detachRuntime(taskIdentifier: Int) {
-        guard let task = identifierToTask.removeValue(forKey: taskIdentifier) else { return }
-        taskIdToIdentifier.removeValue(forKey: task.id)
-    }
-
-    func removeTaskRuntime(taskId: String) async {
-        taskIdToURLTask.removeValue(forKey: taskId)
-        if let identifier = taskIdToIdentifier.removeValue(forKey: taskId) {
-            identifierToTask.removeValue(forKey: identifier)
-        } else {
-            identifierToTask = identifierToTask.filter { entry in
-                let isTarget = entry.value.id == taskId
-                if isTarget {
-                    taskIdToIdentifier.removeValue(forKey: taskId)
-                }
-                return !isTarget
-            }
-        }
-        await cancelHeartbeatTask(for: taskId)
-        await cancelMessageListenerTask(for: taskId)
-    }
-
-    func removeTaskAndListeners(taskId: String) async {
-        await removeTaskRuntime(taskId: taskId)
-        eventListeners.removeValue(forKey: taskId)
-    }
-
-    func setHeartbeatTask(_ task: Task<Void, Never>, for taskId: String) async {
-        if let previousTask = heartbeatTasks[taskId] {
-            previousTask.cancel()
-            await previousTask.value
-        }
-        heartbeatTasks[taskId] = task
-    }
-
-    func cancelHeartbeatTask(for taskId: String) async {
-        guard let heartbeatTask = heartbeatTasks.removeValue(forKey: taskId) else { return }
-        heartbeatTask.cancel()
-        await heartbeatTask.value
-    }
-
-    func setMessageListenerTask(_ task: Task<Void, Never>, for taskId: String) async {
-        if let previousTask = messageListenerTasks[taskId] {
-            previousTask.cancel()
-        }
-        messageListenerTasks[taskId] = task
-    }
-
-    func cancelMessageListenerTask(for taskId: String) async {
-        guard let listenerTask = messageListenerTasks.removeValue(forKey: taskId) else { return }
-        listenerTask.cancel()
     }
 }
