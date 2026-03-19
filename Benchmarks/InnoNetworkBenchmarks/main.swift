@@ -100,9 +100,8 @@ private actor BenchmarkCounter {
     }
 }
 
-@main
-struct InnoNetworkBenchmarks {
-    static func main() async throws {
+private enum InnoNetworkBenchmarks {
+    static func runMain() async throws {
         let options = BenchmarkOptions.parse(arguments: Array(CommandLine.arguments.dropFirst()))
         let results = try await runBenchmarks(options: options)
         let report = BenchmarkReport(
@@ -398,6 +397,8 @@ struct InnoNetworkBenchmarks {
         return directory
     }
 }
+
+try await InnoNetworkBenchmarks.runMain()
 
 private struct SmallPayload: Encodable, Sendable {
     let userID: Int
