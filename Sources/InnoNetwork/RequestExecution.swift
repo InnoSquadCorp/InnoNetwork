@@ -1,24 +1,51 @@
 import Foundation
-import SwiftProtobuf
 
-
-package enum RequestPayload: Sendable {
+/// Encoded request payload values returned by ``SingleRequestExecutable/makePayload()``.
+///
+/// Implementers should choose the case that matches the transport policy expected by
+/// ``DefaultNetworkClient``.
+/// - none: No request body or query items should be attached to the outgoing request.
+/// - data: A fully encoded HTTP body, such as JSON, form-url-encoded bytes, multipart data, or another transport-specific payload.
+/// - queryItems: Encoded query parameters to append to the request URL.
+@_spi(ProtobufSupport) public enum RequestPayload: Sendable {
     case none
     case data(Data)
     case queryItems([URLQueryItem])
 }
 
-package protocol SingleRequestExecutable: Sendable {
+/// SPI contract implemented by packages that plug custom request serialization into `InnoNetwork`.
+///
+/// Implementers are responsible for exposing request metadata, producing a transport-ready payload,
+/// and decoding the final ``Response`` into `APIResponse`.
+@_spi(ProtobufSupport) public protocol SingleRequestExecutable: Sendable {
     associatedtype APIResponse: Sendable
 
+    /// Logger attached to the request lifecycle.
     var logger: NetworkLogger { get }
+    /// Request interceptors applied before the transport executes.
     var requestInterceptors: [RequestInterceptor] { get }
+    /// Response interceptors applied after the transport completes.
     var responseInterceptors: [ResponseInterceptor] { get }
+    /// HTTP method used for the outgoing request.
     var method: HTTPMethod { get }
+    /// Path component appended to the configured base URL.
     var path: String { get }
+    /// HTTP headers attached to the outgoing request.
     var headers: HTTPHeaders { get }
 
+    /// Produces the encoded payload for the request.
+    ///
+    /// - Returns: A ``RequestPayload`` that matches the expected request transport semantics.
+    /// - Throws: Any serialization error encountered while preparing the payload. Implementers should throw
+    ///   a consumer-facing `NetworkError` when request configuration is invalid.
     func makePayload() throws -> RequestPayload
+    /// Decodes transport output into the typed response value.
+    ///
+    /// - Parameters:
+    ///   - data: Raw response body returned by the transport.
+    ///   - response: Metadata describing the completed HTTP response.
+    /// - Returns: The fully decoded `APIResponse` value.
+    /// - Throws: Any decoding or validation error produced while interpreting the response body.
     func decode(data: Data, response: Response) throws -> APIResponse
 }
 
@@ -45,8 +72,6 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
             return .data(try encoder.encode(parameters))
         case .formURLEncoded:
             return .data(try encodeForm(parameters))
-        case .protobuf:
-            return .none
         }
     }
 
@@ -99,42 +124,6 @@ package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: S
 
     package func makePayload() throws -> RequestPayload {
         .data(base.multipartFormData.encode())
-    }
-
-    package func decode(data: Data, response: Response) throws -> Base.APIResponse {
-        try base.transportPolicy.responseDecoder.decode(data: data, response: response)
-    }
-}
-
-package struct ProtobufSingleRequestExecutable<Base: ProtobufAPIDefinition>: SingleRequestExecutable {
-    let base: Base
-
-    package var logger: NetworkLogger { base.logger }
-    package var requestInterceptors: [RequestInterceptor] { base.requestInterceptors }
-    package var responseInterceptors: [ResponseInterceptor] { base.responseInterceptors }
-    package var method: HTTPMethod { base.method }
-    package var path: String { base.path }
-    package var headers: HTTPHeaders { base.headers }
-
-    package func makePayload() throws -> RequestPayload {
-        if case .get = method {
-            if base.parameters != nil {
-                throw NetworkError.invalidRequestConfiguration(
-                    "GET requests with protobuf parameters are not supported. " +
-                    "Protobuf messages cannot be serialized to URL query parameters. " +
-                    "Use POST/PUT methods for requests with protobuf body, or set parameters to nil for GET requests."
-                )
-            }
-            return .none
-        }
-
-        guard let parameters = base.parameters else { return .none }
-        switch base.transportPolicy.requestEncoding {
-        case .protobuf:
-            return .data(try parameters.serializedData())
-        case .none, .query, .json, .formURLEncoded:
-            return .data(try parameters.serializedData())
-        }
     }
 
     package func decode(data: Data, response: Response) throws -> Base.APIResponse {

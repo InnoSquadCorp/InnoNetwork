@@ -76,7 +76,6 @@ require_line "## Internal/Operational" "$api_stability"
 expected_stable=(
 '`APIDefinition`'
 '`MultipartAPIDefinition`'
-'`ProtobufAPIDefinition`'
 '`DefaultNetworkClient`'
 '`NetworkConfiguration.safeDefaults(baseURL:)`'
 '`NetworkConfiguration.advanced(baseURL:_:)`'
@@ -125,10 +124,6 @@ for symbol in "${expected_stable[@]}"; do
     '`MultipartAPIDefinition`')
       pattern='public protocol MultipartAPIDefinition'
       target="$repo_root/Sources/InnoNetwork/APIDefinition.swift"
-      ;;
-    '`ProtobufAPIDefinition`')
-      pattern='public protocol ProtobufAPIDefinition'
-      target="$repo_root/Sources/InnoNetwork/ProtobufAPIDefinition.swift"
       ;;
     '`DefaultNetworkClient`')
       pattern='public actor DefaultNetworkClient'

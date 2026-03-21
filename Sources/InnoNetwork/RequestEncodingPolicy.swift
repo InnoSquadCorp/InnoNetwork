@@ -6,5 +6,4 @@ package enum RequestEncodingPolicy: Sendable {
     case query(URLQueryEncoder, rootKey: String?)
     case json(JSONEncoder)
     case formURLEncoded(URLQueryEncoder, rootKey: String?)
-    case protobuf
 }

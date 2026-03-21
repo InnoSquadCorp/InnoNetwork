@@ -14,7 +14,7 @@ The package is built around Swift Concurrency, explicit transport policies, and 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.0")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.1")
 ]
 ```
 
@@ -114,6 +114,19 @@ for await event in await WebSocketManager.shared.events(for: task) {
 
 The package intentionally targets current Apple platform releases. That lets the codebase rely on modern Swift Concurrency semantics, stricter Sendable checking, and the latest URLSession and platform APIs without compatibility shims.
 
+## Protocol Buffers
+
+Protocol Buffers support moved to the separate `InnoNetworkProtobuf` package. Consumers that need protobuf request and response modeling must add `InnoNetworkProtobuf` alongside `InnoNetwork` in the same package manifest.
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.1"),
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetworkProtobuf.git", branch: "main")
+]
+```
+
+`InnoNetworkProtobuf` is being prepared for its first tagged release. Until that tag exists, follow the `main` branch of `InnoNetworkProtobuf` together with `InnoNetwork` 3.x.
+
 ## Configuration
 
 The recommended entry point is `safeDefaults`. Use `advanced` only when you need explicit operational tuning.
@@ -206,7 +219,7 @@ Benchmark governance, baseline policy, and CI posture are documented in [Benchma
 - API Stability: [API_STABILITY.md](API_STABILITY.md)
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
-- Latest Release Notes: [docs/releases/3.0.0.md](docs/releases/3.0.0.md)
+- Latest Release Notes: [docs/releases/3.0.1.md](docs/releases/3.0.1.md)
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 
 ## Support

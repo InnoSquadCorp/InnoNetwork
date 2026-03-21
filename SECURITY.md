@@ -15,8 +15,8 @@ Include:
 
 ## Supported Versions
 
-- Before `3.0.0`, only the default branch is considered supported.
-- After `3.0.0`, the latest `3.x` release line is supported for security fixes on a best-effort basis.
+- Before `3.0.1`, only the default branch is considered supported.
+- After `3.0.1`, the latest `3.x` release line is supported for security fixes on a best-effort basis.
 
 ## Disclosure
 

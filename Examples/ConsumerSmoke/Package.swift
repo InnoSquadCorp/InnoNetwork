@@ -12,7 +12,7 @@ let package = Package(
         .visionOS(.v2)
     ],
     dependencies: [
-        .package(path: "../..")
+        .package(name: "InnoNetwork", path: "../..")
     ],
     targets: [
         .executableTarget(

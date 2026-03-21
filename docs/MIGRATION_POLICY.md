@@ -13,3 +13,8 @@
 
 - Internal details are not migration-contract items.
 - Changes to persistence file format, telemetry payloads, or reconnect taxonomy internals do not require public migration docs unless they affect documented behavior.
+
+## Planned Major Changes
+
+- The next major release moves Protocol Buffers support into the separate `InnoNetworkProtobuf` package.
+- Consumers that rely on protobuf endpoints will keep using `DefaultNetworkClient`, but must add a second package dependency and import `InnoNetworkProtobuf`.
