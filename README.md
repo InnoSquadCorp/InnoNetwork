@@ -14,7 +14,7 @@ The package is built around Swift Concurrency, explicit transport policies, and 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.0")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.1")
 ]
 ```
 
@@ -120,7 +120,7 @@ Protocol Buffers support moved to the separate `InnoNetworkProtobuf` package. Co
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.0"),
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.1"),
     .package(url: "https://github.com/InnoSquadCorp/InnoNetworkProtobuf.git", branch: "main")
 ]
 ```
@@ -219,7 +219,7 @@ Benchmark governance, baseline policy, and CI posture are documented in [Benchma
 - API Stability: [API_STABILITY.md](API_STABILITY.md)
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
-- Latest Release Notes: [docs/releases/3.0.0.md](docs/releases/3.0.0.md)
+- Latest Release Notes: [docs/releases/3.0.1.md](docs/releases/3.0.1.md)
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 
 ## Support

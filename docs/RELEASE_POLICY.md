@@ -2,7 +2,7 @@
 
 ## Versioning
 
-- Public releases follow semantic versioning from `3.0.0`.
+- Public releases follow semantic versioning from `3.0.1`.
 - Stable API must not break in patch or minor releases.
 - Breaking changes require a major version bump and migration guidance.
 
@@ -10,7 +10,7 @@
 
 1. Update `CHANGELOG.md`
 2. Confirm `docs/releases/<version>.md`
-3. Push an annotated tag such as `3.0.0`
+3. Push an annotated tag such as `3.0.1`
 4. Let the `Release` workflow run:
    - `swift test`
    - docs contract sync

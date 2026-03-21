@@ -85,7 +85,7 @@ Add InnoNetwork to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquad/InnoNetwork.git", from: "3.0.0")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.1")
 ]
 ```
 
