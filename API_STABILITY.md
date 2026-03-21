@@ -6,7 +6,6 @@ This document defines the compatibility contract for the public OSS release of I
 
 - `APIDefinition`
 - `MultipartAPIDefinition`
-- `ProtobufAPIDefinition`
 - `DefaultNetworkClient`
 - `NetworkConfiguration.safeDefaults(baseURL:)`
 - `NetworkConfiguration.advanced(baseURL:_:)`
@@ -24,7 +23,6 @@ This document defines the compatibility contract for the public OSS release of I
 ## Provisionally Stable
 
 - `default` aliases on configuration types
-- `InnoNetworkProtobuf` product composition and import shape
 - benchmark runner CLI flags and JSON summary presentation details
 - troubleshooting guidance and examples in README/DocC
 
@@ -33,6 +31,7 @@ This document defines the compatibility contract for the public OSS release of I
 - event pipeline metric payload and aggregation format
 - append-log persistence format (`checkpoint.json`, `events.log`)
 - reconnect taxonomy internal types and close disposition rules
+- `InnoNetworkProtobuf` package composition and protobuf adapter surface
 - package/internal request/response policy layers
 - benchmark baseline contents and update cadence
 

@@ -35,7 +35,7 @@ public actor DefaultNetworkClient: NetworkClient {
     }
 
     /// Generic retry wrapper that handles retry logic for any request type
-    package func performTypedRequest<D: SingleRequestExecutable>(_ apiDefinition: D) async throws -> D.APIResponse {
+    @_spi(ProtobufSupport) public func performTypedRequest<D: SingleRequestExecutable>(_ apiDefinition: D) async throws -> D.APIResponse {
         let requestID = UUID()
         let retryCoordinator = RetryCoordinator(eventHub: eventHub)
         return try await retryCoordinator.execute(

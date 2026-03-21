@@ -10,6 +10,10 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No unreleased entries yet.
 
+### Changed
+
+- Protocol Buffers support is being prepared to move into the separate `InnoNetworkProtobuf` package in the next major release.
+
 ## [3.0.0]
 
 ### Added

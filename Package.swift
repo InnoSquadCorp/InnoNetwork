@@ -17,10 +17,6 @@ let package = Package(
             targets: ["InnoNetwork"]
         ),
         .library(
-            name: "InnoNetworkProtobuf",
-            targets: ["InnoNetworkProtobuf"]
-        ),
-        .library(
             name: "InnoNetworkDownload",
             targets: ["InnoNetworkDownload"]
         ),
@@ -29,21 +25,11 @@ let package = Package(
             targets: ["InnoNetworkWebSocket"]
         ),
     ],
-    dependencies: [
-        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.35.0")
-    ],
+    dependencies: [],
     targets: [
         .target(
             name: "InnoNetwork",
             path: "Sources/InnoNetwork"
-        ),
-        .target(
-            name: "InnoNetworkProtobuf",
-            dependencies: [
-                "InnoNetwork",
-                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
-            ],
-            path: "Sources/InnoNetworkProtobuf"
         ),
         .target(
             name: "InnoNetworkDownload",
@@ -75,11 +61,7 @@ let package = Package(
         ),
         .testTarget(
             name: "InnoNetworkTests",
-            dependencies: [
-                "InnoNetwork",
-                "InnoNetworkProtobuf",
-                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
-            ],
+            dependencies: ["InnoNetwork"],
             path: "Tests/InnoNetworkTests"
         ),
         .testTarget(

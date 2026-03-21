@@ -19,7 +19,6 @@ let package = Package(
             name: "ConsumerSmoke",
             dependencies: [
                 .product(name: "InnoNetwork", package: "InnoNetwork"),
-                .product(name: "InnoNetworkProtobuf", package: "InnoNetwork"),
                 .product(name: "InnoNetworkDownload", package: "InnoNetwork"),
                 .product(name: "InnoNetworkWebSocket", package: "InnoNetwork"),
             ]

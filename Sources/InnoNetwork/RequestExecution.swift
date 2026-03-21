@@ -1,13 +1,13 @@
 import Foundation
 
 
-package enum RequestPayload: Sendable {
+@_spi(ProtobufSupport) public enum RequestPayload: Sendable {
     case none
     case data(Data)
     case queryItems([URLQueryItem])
 }
 
-package protocol SingleRequestExecutable: Sendable {
+@_spi(ProtobufSupport) public protocol SingleRequestExecutable: Sendable {
     associatedtype APIResponse: Sendable
 
     var logger: NetworkLogger { get }
@@ -44,8 +44,6 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
             return .data(try encoder.encode(parameters))
         case .formURLEncoded:
             return .data(try encodeForm(parameters))
-        case .protobuf:
-            return .none
         }
     }
 
