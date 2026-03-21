@@ -12,13 +12,14 @@ let package = Package(
         .visionOS(.v2)
     ],
     dependencies: [
-        .package(path: "../..")
+        .package(name: "InnoNetwork", path: "../..")
     ],
     targets: [
         .executableTarget(
             name: "ConsumerSmoke",
             dependencies: [
                 .product(name: "InnoNetwork", package: "InnoNetwork"),
+                .product(name: "InnoNetworkProtobuf", package: "InnoNetwork"),
                 .product(name: "InnoNetworkDownload", package: "InnoNetwork"),
                 .product(name: "InnoNetworkWebSocket", package: "InnoNetwork"),
             ]

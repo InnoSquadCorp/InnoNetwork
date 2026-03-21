@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetwork
 import SwiftProtobuf
 
 
@@ -33,11 +34,6 @@ import SwiftProtobuf
 /// - **Content Type**: All protobuf requests use `application/x-protobuf` content type.
 /// - **Empty Responses**: For endpoints that return no data (204 No Content), use
 ///   `ProtobufEmptyResponse` as the `APIResponse` type.
-///
-/// ## Associated Types
-///
-/// - `Parameter`: The protobuf message type for request body (must conform to `SwiftProtobuf.Message`)
-/// - `APIResponse`: The protobuf message type for response body (must conform to `SwiftProtobuf.Message`)
 public protocol ProtobufAPIDefinition: Sendable {
     associatedtype Parameter: SwiftProtobuf.Message & Sendable
     associatedtype APIResponse: SwiftProtobuf.Message & Sendable

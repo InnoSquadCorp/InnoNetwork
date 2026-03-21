@@ -24,6 +24,7 @@ This document defines the compatibility contract for the public OSS release of I
 ## Provisionally Stable
 
 - `default` aliases on configuration types
+- `InnoNetworkProtobuf` product composition and import shape
 - benchmark runner CLI flags and JSON summary presentation details
 - troubleshooting guidance and examples in README/DocC
 
