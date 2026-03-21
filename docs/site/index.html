@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>InnoNetwork Documentation</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0b1020;
+      --bg-soft: #121a31;
+      --card: rgba(255, 255, 255, 0.08);
+      --card-border: rgba(255, 255, 255, 0.14);
+      --text: #f4f7ff;
+      --text-soft: #d4dcf4;
+      --accent: #7dd3fc;
+      --accent-strong: #38bdf8;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+      --radius: 22px;
+      --max-width: 1160px;
+      font-family: "SF Pro Display", "SF Pro Text", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(56, 189, 248, 0.22), transparent 34%),
+        radial-gradient(circle at top right, rgba(244, 114, 182, 0.18), transparent 28%),
+        linear-gradient(180deg, #111933 0%, #0b1020 48%, #070b15 100%);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .shell {
+      width: min(var(--max-width), calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 64px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 40px;
+      border: 1px solid var(--card-border);
+      border-radius: calc(var(--radius) + 6px);
+      background:
+        linear-gradient(135deg, rgba(17, 26, 49, 0.92), rgba(10, 15, 29, 0.88)),
+        linear-gradient(180deg, rgba(125, 211, 252, 0.1), transparent);
+      box-shadow: var(--shadow);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -100px -140px auto;
+      width: 320px;
+      height: 320px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(125, 211, 252, 0.22), transparent 70%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 18px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(125, 211, 252, 0.12);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(36px, 6vw, 64px);
+      line-height: 0.98;
+      letter-spacing: -0.04em;
+    }
+
+    .hero p {
+      max-width: 760px;
+      margin: 20px 0 0;
+      color: var(--text-soft);
+      font-size: 18px;
+      line-height: 1.6;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 28px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 0 18px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-weight: 600;
+      transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+    }
+
+    .button-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      color: #06111c;
+    }
+
+    .button-secondary {
+      border-color: var(--card-border);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-top: 28px;
+    }
+
+    .metric {
+      padding: 16px 18px;
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(10px);
+    }
+
+    .metric strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 24px;
+      letter-spacing: -0.03em;
+    }
+
+    .section {
+      margin-top: 28px;
+    }
+
+    .section h2 {
+      margin: 0 0 14px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      padding: 22px;
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      background: var(--card);
+      backdrop-filter: blur(14px);
+      box-shadow: var(--shadow);
+    }
+
+    .card h3 {
+      margin: 0 0 12px;
+      font-size: 26px;
+      letter-spacing: -0.03em;
+    }
+
+    .card p {
+      margin: 0 0 18px;
+      color: var(--text-soft);
+      line-height: 1.65;
+    }
+
+    .card ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--text-soft);
+      line-height: 1.7;
+    }
+
+    .link-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 38px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid var(--card-border);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .grid-two {
+      display: grid;
+      grid-template-columns: 1.25fr 0.95fr;
+      gap: 16px;
+    }
+
+    .list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .list-item {
+      padding: 16px 18px;
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .list-item strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 16px;
+    }
+
+    .footer {
+      margin-top: 30px;
+      color: rgba(212, 220, 244, 0.72);
+      font-size: 14px;
+    }
+
+    @media (max-width: 900px) {
+      .shell {
+        width: min(var(--max-width), calc(100% - 20px));
+      }
+
+      .hero {
+        padding: 28px 22px;
+      }
+
+      .grid-two {
+        grid-template-columns: 1fr;
+      }
+
+      .card h3 {
+        font-size: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="eyebrow">Swift Networking SDK</div>
+      <h1>InnoNetwork Documentation</h1>
+      <p>
+        Type-safe request execution, durable downloads, and reconnect-aware realtime flows for
+        current Apple platforms. The documentation site is organized by product so teams can start
+        from the module they actually need.
+      </p>
+      <div class="hero-actions">
+        <a class="button button-primary" href="./InnoNetwork/documentation/innonetwork/gettingstarted">Get Started</a>
+        <a class="button button-secondary" href="https://github.com/InnoSquadCorp/InnoNetwork">View Repository</a>
+        <a class="button button-secondary" href="https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/3.0.0">Release 3.0.0</a>
+      </div>
+      <div class="metrics">
+        <div class="metric">
+          <strong>3 Products</strong>
+          <span>Core requests, downloads, and WebSocket flows.</span>
+        </div>
+        <div class="metric">
+          <strong>Swift 6.2+</strong>
+          <span>Built for current Apple platforms and modern concurrency.</span>
+        </div>
+        <div class="metric">
+          <strong>API Stability</strong>
+          <span>Public stability policy and release process documented in-repo.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Products</h2>
+      <div class="cards">
+        <article class="card">
+          <h3>InnoNetwork</h3>
+          <p>
+            Core request and response execution with explicit transport policy, retry handling,
+            trust evaluation, and observability hooks.
+          </p>
+          <ul>
+            <li>Type-safe <code>APIDefinition</code> modeling</li>
+            <li>JSON, form-url-encoded, multipart, and protobuf request paths</li>
+            <li>Safe defaults and advanced tuning surfaces</li>
+          </ul>
+          <div class="link-row">
+            <a class="pill" href="./InnoNetwork/documentation/innonetwork">Module Docs</a>
+            <a class="pill" href="./InnoNetwork/documentation/innonetwork/gettingstarted">Quick Start</a>
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>InnoNetworkDownload</h3>
+          <p>
+            Durable download lifecycle management with append-log persistence, background session
+            support, retry coordination, and stream or listener delivery.
+          </p>
+          <ul>
+            <li>Pause, resume, retry, and restoration paths</li>
+            <li>Foreground and background download orchestration</li>
+            <li>Operational tuning through <code>safeDefaults</code> and advanced configuration</li>
+          </ul>
+          <div class="link-row">
+            <a class="pill" href="./InnoNetworkDownload/documentation/innonetworkdownload">Module Docs</a>
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>InnoNetworkWebSocket</h3>
+          <p>
+            Reconnect-aware WebSocket management with handshake taxonomy, heartbeat handling, and
+            listener retention across reconnect attempts.
+          </p>
+          <ul>
+            <li>Reconnect suppression by close outcome</li>
+            <li>AsyncStream and listener-based event delivery</li>
+            <li>Manual disconnect semantics and heartbeat monitoring</li>
+          </ul>
+          <div class="link-row">
+            <a class="pill" href="./InnoNetworkWebSocket/documentation/innonetworkwebsocket">Module Docs</a>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section grid-two">
+      <article class="card">
+        <h2>Quick Links</h2>
+        <div class="list">
+          <a class="list-item" href="https://github.com/InnoSquadCorp/InnoNetwork/blob/main/README.md">
+            <strong>Repository README</strong>
+            Installation, platform matrix, troubleshooting, and recommended entry points.
+          </a>
+          <a class="list-item" href="https://github.com/InnoSquadCorp/InnoNetwork/blob/main/API_STABILITY.md">
+            <strong>API Stability</strong>
+            Stable, provisional, and internal contract boundaries for the 3.x line.
+          </a>
+          <a class="list-item" href="https://github.com/InnoSquadCorp/InnoNetwork/blob/main/Benchmarks/README.md">
+            <strong>Benchmark Governance</strong>
+            Baseline handling, diff-only policy, and benchmark runner expectations.
+          </a>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Using 3.x</h2>
+        <div class="list">
+          <div class="list-item">
+            <strong>Safe Defaults First</strong>
+            New integrations should start from <code>safeDefaults</code> and opt into advanced
+            tuning only for operational requirements.
+          </div>
+          <div class="list-item">
+            <strong>Latest Platform Baseline</strong>
+            The package intentionally targets current Apple releases to avoid compatibility shims
+            and to rely on strict concurrency semantics.
+          </div>
+          <div class="list-item">
+            <strong>Operational Visibility Included</strong>
+            Event delivery, download persistence, and reconnect behavior are built to be measurable
+            and explainable in production.
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <p class="footer">
+      InnoNetwork 3.x documentation. For support, issues, and release notes, use the repository
+      links above.
+    </p>
+  </div>
+</body>
+</html>
