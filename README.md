@@ -116,7 +116,16 @@ The package intentionally targets current Apple platform releases. That lets the
 
 ## Protocol Buffers
 
-Protocol Buffers support moved to the separate `InnoNetworkProtobuf` package. If a client needs protobuf request and response modeling, add `InnoNetworkProtobuf` alongside `InnoNetwork` in the consuming package.
+Protocol Buffers support moved to the separate `InnoNetworkProtobuf` package. Consumers that need protobuf request and response modeling must add `InnoNetworkProtobuf` alongside `InnoNetwork` in the same package manifest.
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.0"),
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetworkProtobuf.git", branch: "main")
+]
+```
+
+`InnoNetworkProtobuf` is being prepared for its first tagged release. Until that tag exists, follow the `main` branch of `InnoNetworkProtobuf` together with `InnoNetwork` 3.x.
 
 ## Configuration
 

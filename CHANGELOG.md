@@ -13,6 +13,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 ### Changed
 
 - Protocol Buffers support is being prepared to move into the separate `InnoNetworkProtobuf` package in the next major release.
+- Consumers that need protobuf support should plan to add `InnoNetworkProtobuf` alongside `InnoNetwork`; until the first protobuf-package tag exists, integrations should follow `InnoNetworkProtobuf` `main`.
 
 ## [3.0.0]
 
