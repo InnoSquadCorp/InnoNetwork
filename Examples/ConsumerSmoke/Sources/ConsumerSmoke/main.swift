@@ -1,5 +1,6 @@
 import Foundation
 import InnoNetwork
+import InnoNetworkProtobuf
 import InnoNetworkDownload
 import InnoNetworkWebSocket
 
@@ -24,6 +25,7 @@ let client = DefaultNetworkClient(
 )
 _ = client
 _ = ConsumerRequest()
+_ = ProtobufEmptyResponse.self
 _ = DownloadConfiguration.safeDefaults(sessionIdentifier: "com.example.consumer.downloads")
 _ = WebSocketConfiguration.safeDefaults()
 

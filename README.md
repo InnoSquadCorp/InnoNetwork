@@ -1,8 +1,9 @@
 # InnoNetwork
 
-InnoNetwork is a Swift package for type-safe networking on Apple platforms. It provides three public products:
+InnoNetwork is a Swift package for type-safe networking on Apple platforms. It provides four public products:
 
 - `InnoNetwork` for request/response APIs
+- `InnoNetworkProtobuf` for Protocol Buffers support when a client needs protobuf request and response modeling
 - `InnoNetworkDownload` for download lifecycle management
 - `InnoNetworkWebSocket` for connection-oriented realtime flows
 
@@ -16,6 +17,13 @@ The package is built around Swift Concurrency, explicit transport policies, and 
 dependencies: [
     .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.0")
 ]
+```
+
+If you use protobuf endpoints, add the optional protobuf product to your target dependencies alongside `InnoNetwork`.
+
+```swift
+.product(name: "InnoNetwork", package: "InnoNetwork"),
+.product(name: "InnoNetworkProtobuf", package: "InnoNetwork")
 ```
 
 ### Core Request
@@ -88,6 +96,12 @@ for await event in await WebSocketManager.shared.events(for: task) {
 - JSON, form-url-encoded, and multipart request support
 - retry coordination and interceptor boundaries
 - trust policy support and request lifecycle observability
+
+### `InnoNetworkProtobuf`
+
+- optional protobuf support layered on top of `InnoNetwork`
+- `ProtobufAPIDefinition` and `ProtobufEmptyResponse`
+- protobuf request encoding and response decoding through `DefaultNetworkClient.protobufRequest(_:)`
 
 ### `InnoNetworkDownload`
 

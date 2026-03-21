@@ -17,6 +17,10 @@ let package = Package(
             targets: ["InnoNetwork"]
         ),
         .library(
+            name: "InnoNetworkProtobuf",
+            targets: ["InnoNetworkProtobuf"]
+        ),
+        .library(
             name: "InnoNetworkDownload",
             targets: ["InnoNetworkDownload"]
         ),
@@ -31,10 +35,15 @@ let package = Package(
     targets: [
         .target(
             name: "InnoNetwork",
+            path: "Sources/InnoNetwork"
+        ),
+        .target(
+            name: "InnoNetworkProtobuf",
             dependencies: [
+                "InnoNetwork",
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ],
-            path: "Sources/InnoNetwork"
+            path: "Sources/InnoNetworkProtobuf"
         ),
         .target(
             name: "InnoNetworkDownload",
@@ -66,7 +75,11 @@ let package = Package(
         ),
         .testTarget(
             name: "InnoNetworkTests",
-            dependencies: ["InnoNetwork"],
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkProtobuf",
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+            ],
             path: "Tests/InnoNetworkTests"
         ),
         .testTarget(

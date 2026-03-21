@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import SwiftProtobuf
 @testable import InnoNetwork
+import InnoNetworkProtobuf
 
 
 // Test protobuf messages

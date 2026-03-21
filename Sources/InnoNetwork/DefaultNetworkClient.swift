@@ -1,11 +1,9 @@
 import Foundation
-import SwiftProtobuf
 
 
 public protocol NetworkClient: Sendable {
     func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse
     func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse
-    func protobufRequest<T: ProtobufAPIDefinition>(_ request: T) async throws -> T.APIResponse
 }
 
 
@@ -29,22 +27,15 @@ public actor DefaultNetworkClient: NetworkClient {
     }
 
     public func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
-        try await performTypedRequest(APISingleRequestExecutable(base: request), configuration: configuration)
+        try await performTypedRequest(APISingleRequestExecutable(base: request))
     }
     
     public func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse {
-        try await performTypedRequest(MultipartSingleRequestExecutable(base: request), configuration: configuration)
-    }
-
-    public func protobufRequest<T: ProtobufAPIDefinition>(_ request: T) async throws -> T.APIResponse {
-        try await performTypedRequest(ProtobufSingleRequestExecutable(base: request), configuration: configuration)
+        try await performTypedRequest(MultipartSingleRequestExecutable(base: request))
     }
 
     /// Generic retry wrapper that handles retry logic for any request type
-    private func performTypedRequest<D: SingleRequestExecutable>(
-        _ apiDefinition: D,
-        configuration: NetworkConfiguration
-    ) async throws -> D.APIResponse {
+    package func performTypedRequest<D: SingleRequestExecutable>(_ apiDefinition: D) async throws -> D.APIResponse {
         let requestID = UUID()
         let retryCoordinator = RetryCoordinator(eventHub: eventHub)
         return try await retryCoordinator.execute(

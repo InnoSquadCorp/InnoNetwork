@@ -128,7 +128,7 @@ for symbol in "${expected_stable[@]}"; do
       ;;
     '`ProtobufAPIDefinition`')
       pattern='public protocol ProtobufAPIDefinition'
-      target="$repo_root/Sources/InnoNetwork/ProtobufAPIDefinition.swift"
+      target="$repo_root/Sources/InnoNetworkProtobuf/ProtobufAPIDefinition.swift"
       ;;
     '`DefaultNetworkClient`')
       pattern='public actor DefaultNetworkClient'
