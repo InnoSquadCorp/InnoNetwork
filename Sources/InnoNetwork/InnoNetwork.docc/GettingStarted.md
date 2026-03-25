@@ -41,6 +41,21 @@ let user = try await client.request(GetUser())
 print(user.name)
 ```
 
+## When to use `perform`
+
+Stay on ``NetworkClient/request(_:)`` for normal typed requests and
+``NetworkClient/upload(_:)`` for multipart uploads.
+
+Reach for ``NetworkClient/perform(_:)`` only when you are building a higher-level
+networking layer that needs to:
+
+- adapt its own request contract onto `InnoNetwork`
+- keep custom serialization and decoding logic outside `APIDefinition`
+- reuse `InnoNetwork` request building, retry coordination, trust handling, and observability
+
+In other words, `perform` is the public low-level execution hook. It is not the
+recommended default for application call sites.
+
 ## When to use advanced configuration
 
 Stay on ``NetworkConfiguration/safeDefaults(baseURL:)`` unless you need to change one of these:
@@ -51,4 +66,3 @@ Stay on ``NetworkConfiguration/safeDefaults(baseURL:)`` unless you need to chang
 - metrics or observability reporters
 
 For those cases, switch to ``NetworkConfiguration/advanced(baseURL:_:)`` and keep the tuning local to the integration that actually needs it.
-

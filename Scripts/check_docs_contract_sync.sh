@@ -77,6 +77,8 @@ expected_stable=(
 '`APIDefinition`'
 '`MultipartAPIDefinition`'
 '`DefaultNetworkClient`'
+'`NetworkClient.request(_:)`'
+'`NetworkClient.upload(_:)`'
 '`NetworkConfiguration.safeDefaults(baseURL:)`'
 '`NetworkConfiguration.advanced(baseURL:_:)`'
 '`DownloadConfiguration.safeDefaults()`'
@@ -127,6 +129,14 @@ for symbol in "${expected_stable[@]}"; do
       ;;
     '`DefaultNetworkClient`')
       pattern='public actor DefaultNetworkClient'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`NetworkClient.request(_:)`')
+      pattern='func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`NetworkClient.upload(_:)`')
+      pattern='func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkConfiguration.safeDefaults(baseURL:)`')

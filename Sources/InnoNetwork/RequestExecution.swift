@@ -7,17 +7,23 @@ import Foundation
 /// - none: No request body or query items should be attached to the outgoing request.
 /// - data: A fully encoded HTTP body, such as JSON, form-url-encoded bytes, multipart data, or another transport-specific payload.
 /// - queryItems: Encoded query parameters to append to the request URL.
-@_spi(ProtobufSupport) public enum RequestPayload: Sendable {
+public enum RequestPayload: Sendable {
     case none
     case data(Data)
     case queryItems([URLQueryItem])
 }
 
-/// SPI contract implemented by packages that plug custom request serialization into `InnoNetwork`.
+/// Low-level request execution contract implemented by packages that plug custom
+/// serialization and decoding into `InnoNetwork`.
 ///
 /// Implementers are responsible for exposing request metadata, producing a transport-ready payload,
 /// and decoding the final ``Response`` into `APIResponse`.
-@_spi(ProtobufSupport) public protocol SingleRequestExecutable: Sendable {
+///
+/// Most consumers should continue using ``APIDefinition`` and
+/// ``DefaultNetworkClient/request(_:)``. Reach for this protocol only when you are
+/// building a higher-level policy layer that needs to adapt its own request contract
+/// onto `InnoNetwork`'s execution engine via ``NetworkClient/perform(_:)``.
+public protocol SingleRequestExecutable: Sendable {
     associatedtype APIResponse: Sendable
 
     /// Logger attached to the request lifecycle.
