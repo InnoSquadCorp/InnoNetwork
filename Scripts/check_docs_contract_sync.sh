@@ -148,6 +148,27 @@ validate_protocol_symbol() {
   fi
 }
 
+validate_default_aliases() {
+  require_contains 'public static let `default` = safeDefaults()' "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+  require_contains 'public static let `default` = safeDefaults()' "$repo_root/Sources/InnoNetworkWebSocket/WebSocketConfiguration.swift"
+}
+
+validate_benchmark_docs() {
+  require_contains 'swift run InnoNetworkBenchmarks --quick' "$readme"
+  require_contains 'swift run InnoNetworkBenchmarks --json-path /tmp/innonetwork-bench.json' "$readme"
+  require_contains 'JSON summary' "$repo_root/Benchmarks/README.md"
+  require_contains '"results"' "$repo_root/Benchmarks/README.md"
+}
+
+validate_troubleshooting_and_examples_docs() {
+  require_contains 'Examples: [Examples/README.md](Examples/README.md)' "$readme"
+  require_contains 'API Stability: [API_STABILITY.md](API_STABILITY.md)' "$readme"
+  require_contains '### 1. [BasicRequest](./BasicRequest)' "$repo_root/Examples/README.md"
+  require_contains '### 2. [ErrorHandling](./ErrorHandling)' "$repo_root/Examples/README.md"
+  require_contains '### 3. [CustomHeaders](./CustomHeaders)' "$repo_root/Examples/README.md"
+  require_contains '### 4. [RealWorldAPI](./RealWorldAPI)' "$repo_root/Examples/README.md"
+}
+
 documented_provisionally=()
 while IFS= read -r line; do
   documented_provisionally+=("$line")
@@ -284,7 +305,16 @@ for symbol in "${expected_provisionally[@]}"; do
       pattern='public enum RequestPayload'
       target="$repo_root/Sources/InnoNetwork/RequestExecution.swift"
       ;;
-    '`default` aliases on configuration types'|'benchmark runner CLI flags and JSON summary presentation details'|'troubleshooting guidance and examples in README/DocC')
+    '`default` aliases on configuration types')
+      validate_default_aliases
+      continue
+      ;;
+    'benchmark runner CLI flags and JSON summary presentation details')
+      validate_benchmark_docs
+      continue
+      ;;
+    'troubleshooting guidance and examples in README/DocC')
+      validate_troubleshooting_and_examples_docs
       continue
       ;;
     *)
