@@ -14,7 +14,7 @@ The package is built around Swift Concurrency, explicit transport policies, and 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.1")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.1.0")
 ]
 ```
 
@@ -45,6 +45,27 @@ let client = DefaultNetworkClient(
 
 let user = try await client.request(GetUser())
 print(user)
+```
+
+### When to use `perform`
+
+`request` and `upload` remain the default public entry points for application code.
+`LowLevelNetworkClient` exposes the lower-level typed execution API for
+framework authors and policy layers that want to adapt their own request
+contract onto `InnoNetwork`.
+
+- Use `request` for normal `APIDefinition` requests.
+- Use `upload` for `MultipartAPIDefinition` requests.
+- Use `perform(_:)` only when you explicitly want the typed request path through
+  the lower-level execution pipeline.
+- Use `perform(executable:)` when you need a custom `SingleRequestExecutable`
+  that controls serialization and decoding while still delegating retry, trust,
+  and observability to `InnoNetwork`.
+
+```swift
+let profile = try await client.request(GetProfile())
+
+let adapted = try await client.perform(executable: MyCustomExecutable())
 ```
 
 ### Download
@@ -120,7 +141,7 @@ Protocol Buffers support moved to the separate `InnoNetworkProtobuf` package. Co
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.1"),
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.1.0"),
     .package(url: "https://github.com/InnoSquadCorp/InnoNetworkProtobuf.git", branch: "main")
 ]
 ```
@@ -202,6 +223,11 @@ The 3.x line follows semantic versioning.
 
 `safeDefaults` is the recommended public path. `default` aliases remain available for compatibility, but new examples and new integrations should prefer `safeDefaults`.
 
+`request` and `upload` are the recommended request execution APIs for most
+integrations. `DefaultNetworkClient` also conforms to `LowLevelNetworkClient`,
+which provides `perform(_:)` for typed request definitions and
+`perform(executable:)` for higher networking layers.
+
 ## Benchmarks
 
 The repository includes a dedicated benchmark runner for quick local comparisons.
@@ -219,7 +245,7 @@ Benchmark governance, baseline policy, and CI posture are documented in [Benchma
 - API Stability: [API_STABILITY.md](API_STABILITY.md)
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
-- Latest Release Notes: [docs/releases/3.0.1.md](docs/releases/3.0.1.md)
+- Latest Release Notes: [docs/releases/3.1.0.md](docs/releases/3.1.0.md)
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 
 ## Support

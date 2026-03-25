@@ -12,8 +12,25 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ### Changed
 
-- Protocol Buffers support is being prepared to move into the separate `InnoNetworkProtobuf` package in the next major release.
-- Consumers that need protobuf support should plan to add `InnoNetworkProtobuf` alongside `InnoNetwork`; until the first protobuf-package tag exists, integrations should follow `InnoNetworkProtobuf` `main`.
+- No unreleased entries yet.
+
+## [3.1.0]
+
+### Added
+
+- Public typed execution entry points via `LowLevelNetworkClient.perform(_:)` and `LowLevelNetworkClient.perform(executable:)`
+- Public `SingleRequestExecutable` contract for higher networking and policy layers
+- Public `RequestPayload` contract used by `SingleRequestExecutable.makePayload()`
+- README, DocC, and API stability guidance that defines `request` and `upload` as the default integration APIs and `perform(executable:)` as the supported low-level extension point
+
+### Changed
+
+- `DefaultNetworkClient.request(_:)` and `DefaultNetworkClient.upload(_:)` now delegate through the same public low-level execution path used by `perform`
+- API stability policy now treats `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`, `SingleRequestExecutable`, and `RequestPayload` as provisionally stable extension points for the `3.x` line
+
+### Fixed
+
+- Higher-level networking layers no longer need SPI imports to plug custom request serialization into `InnoNetwork`
 
 ## [3.0.1]
 

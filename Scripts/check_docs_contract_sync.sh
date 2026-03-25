@@ -77,6 +77,8 @@ expected_stable=(
 '`APIDefinition`'
 '`MultipartAPIDefinition`'
 '`DefaultNetworkClient`'
+'`NetworkClient.request(_:)`'
+'`NetworkClient.upload(_:)`'
 '`NetworkConfiguration.safeDefaults(baseURL:)`'
 '`NetworkConfiguration.advanced(baseURL:_:)`'
 '`DownloadConfiguration.safeDefaults()`'
@@ -115,6 +117,82 @@ documented_sorted="$(printf '%s\n' "${documented_stable[@]:-}" | sort)"
   fail "Stable symbol list in API_STABILITY.md does not match expected allowlist"
 }
 
+expected_provisionally=(
+'`LowLevelNetworkClient`'
+'`LowLevelNetworkClient.perform(_:)`'
+'`LowLevelNetworkClient.perform(executable:)`'
+'`SingleRequestExecutable`'
+'`RequestPayload`'
+'`default` aliases on configuration types'
+'benchmark runner CLI flags and JSON summary presentation details'
+'troubleshooting guidance and examples in README/DocC'
+)
+
+validate_protocol_symbol() {
+  local protocol_name="$1"
+  local target="$2"
+  local pattern="$3"
+
+  if has_rg; then
+    awk -v protocol_name="$protocol_name" '
+      $0 ~ "^public protocol " protocol_name ": Sendable \\{$" { in_protocol = 1; next }
+      in_protocol && /^\}$/ { exit }
+      in_protocol { print }
+    ' "$target" | rg -q "$pattern" || fail "symbol matching $pattern is not present in $protocol_name protocol"
+  else
+    awk -v protocol_name="$protocol_name" '
+      $0 ~ "^public protocol " protocol_name ": Sendable \\{$" { in_protocol = 1; next }
+      in_protocol && /^\}$/ { exit }
+      in_protocol { print }
+    ' "$target" | grep -Eq "$pattern" || fail "symbol matching $pattern is not present in $protocol_name protocol"
+  fi
+}
+
+validate_default_aliases() {
+  require_contains 'public static let `default` = safeDefaults()' "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+  require_contains 'public static let `default` = safeDefaults()' "$repo_root/Sources/InnoNetworkWebSocket/WebSocketConfiguration.swift"
+}
+
+validate_benchmark_docs() {
+  require_contains 'swift run InnoNetworkBenchmarks --quick' "$readme"
+  require_contains 'swift run InnoNetworkBenchmarks --json-path /tmp/innonetwork-bench.json' "$readme"
+  require_contains 'JSON summary' "$repo_root/Benchmarks/README.md"
+  require_contains '"results"' "$repo_root/Benchmarks/README.md"
+}
+
+validate_troubleshooting_and_examples_docs() {
+  require_contains 'Examples: [Examples/README.md](Examples/README.md)' "$readme"
+  require_contains 'API Stability: [API_STABILITY.md](API_STABILITY.md)' "$readme"
+  require_contains '### 1. [BasicRequest](./BasicRequest)' "$repo_root/Examples/README.md"
+  require_contains '### 2. [ErrorHandling](./ErrorHandling)' "$repo_root/Examples/README.md"
+  require_contains '### 3. [CustomHeaders](./CustomHeaders)' "$repo_root/Examples/README.md"
+  require_contains '### 4. [RealWorldAPI](./RealWorldAPI)' "$repo_root/Examples/README.md"
+}
+
+documented_provisionally=()
+while IFS= read -r line; do
+  documented_provisionally+=("$line")
+done < <(
+  awk '
+    /^## Provisionally Stable$/ { in_section = 1; next }
+    /^## / { if (in_section) exit }
+    in_section && /^- / {
+      sub(/^- /, "")
+      print
+    }
+  ' "$api_stability"
+)
+
+expected_provisionally_sorted="$(printf '%s\n' "${expected_provisionally[@]}" | sort)"
+documented_provisionally_sorted="$(printf '%s\n' "${documented_provisionally[@]:-}" | sort)"
+[[ "$expected_provisionally_sorted" == "$documented_provisionally_sorted" ]] || {
+  echo "Expected Provisionally Stable symbols:" >&2
+  printf '%s\n' "${expected_provisionally[@]}" >&2
+  echo "Documented Provisionally Stable symbols:" >&2
+  printf '%s\n' "${documented_provisionally[@]:-}" >&2
+  fail "Provisionally Stable symbol list in API_STABILITY.md does not match expected allowlist"
+}
+
 for symbol in "${expected_stable[@]}"; do
   case "$symbol" in
     '`APIDefinition`')
@@ -127,6 +205,14 @@ for symbol in "${expected_stable[@]}"; do
       ;;
     '`DefaultNetworkClient`')
       pattern='public actor DefaultNetworkClient'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`NetworkClient.request(_:)`')
+      pattern='^    func request<T: APIDefinition>\(_ request: T\) async throws -> T\.APIResponse$'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`NetworkClient.upload(_:)`')
+      pattern='^    func upload<T: MultipartAPIDefinition>\(_ request: T\) async throws -> T\.APIResponse$'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkConfiguration.safeDefaults(baseURL:)`')
@@ -183,9 +269,71 @@ for symbol in "${expected_stable[@]}"; do
   esac
 
   if has_rg; then
-    rg -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
+    if [[ "$symbol" == '`NetworkClient.request(_:)`' || "$symbol" == '`NetworkClient.upload(_:)`' ]]; then
+      validate_protocol_symbol "NetworkClient" "$target" "$pattern"
+    else
+      rg -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
+    fi
   else
-    grep -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
+    if [[ "$symbol" == '`NetworkClient.request(_:)`' || "$symbol" == '`NetworkClient.upload(_:)`' ]]; then
+      validate_protocol_symbol "NetworkClient" "$target" "$pattern"
+    else
+      grep -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
+    fi
+  fi
+done
+
+for symbol in "${expected_provisionally[@]}"; do
+  case "$symbol" in
+    '`LowLevelNetworkClient`')
+      pattern='public protocol LowLevelNetworkClient'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`LowLevelNetworkClient.perform(_:)`')
+      pattern='^    func perform<T: APIDefinition>\(_ request: T\) async throws -> T\.APIResponse$'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`LowLevelNetworkClient.perform(executable:)`')
+      pattern='^    func perform<D: SingleRequestExecutable>\(executable: D\) async throws -> D\.APIResponse$'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`SingleRequestExecutable`')
+      pattern='public protocol SingleRequestExecutable'
+      target="$repo_root/Sources/InnoNetwork/RequestExecution.swift"
+      ;;
+    '`RequestPayload`')
+      pattern='public enum RequestPayload'
+      target="$repo_root/Sources/InnoNetwork/RequestExecution.swift"
+      ;;
+    '`default` aliases on configuration types')
+      validate_default_aliases
+      continue
+      ;;
+    'benchmark runner CLI flags and JSON summary presentation details')
+      validate_benchmark_docs
+      continue
+      ;;
+    'troubleshooting guidance and examples in README/DocC')
+      validate_troubleshooting_and_examples_docs
+      continue
+      ;;
+    *)
+      fail "unknown provisionally stable symbol mapping: $symbol"
+      ;;
+  esac
+
+  if has_rg; then
+    if [[ "$symbol" == '`LowLevelNetworkClient.perform(_:)`' || "$symbol" == '`LowLevelNetworkClient.perform(executable:)`' ]]; then
+      validate_protocol_symbol "LowLevelNetworkClient" "$target" "$pattern"
+    else
+      rg -Fq "$pattern" "$target" || fail "provisionally stable symbol $symbol is not present in production sources"
+    fi
+  else
+    if [[ "$symbol" == '`LowLevelNetworkClient.perform(_:)`' || "$symbol" == '`LowLevelNetworkClient.perform(executable:)`' ]]; then
+      validate_protocol_symbol "LowLevelNetworkClient" "$target" "$pattern"
+    else
+      grep -Fq "$pattern" "$target" || fail "provisionally stable symbol $symbol is not present in production sources"
+    fi
   fi
 done
 
