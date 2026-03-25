@@ -24,8 +24,9 @@ This document defines the compatibility contract for the public OSS release of I
 
 ## Provisionally Stable
 
-- `NetworkClient.perform(_:)`
-- `NetworkClient.perform(executable:)`
+- `LowLevelNetworkClient`
+- `LowLevelNetworkClient.perform(_:)`
+- `LowLevelNetworkClient.perform(executable:)`
 - `SingleRequestExecutable`
 - `RequestPayload`
 - `default` aliases on configuration types
@@ -46,9 +47,9 @@ This document defines the compatibility contract for the public OSS release of I
 - Stable items follow semantic versioning for the 3.x line.
 - `default` aliases are convenience entry points and should be treated as `safeDefaults` aliases.
 - Advanced builders are public and supported, but operational tuning values are not guaranteed to stay numerically identical across releases.
-- `perform(_:)`, `perform(executable:)`, `SingleRequestExecutable`, and
-  `RequestPayload` are public extension points for higher networking layers. They
-  are expected to remain available across 3.x, but their exact low-level
-  affordances may evolve with minor releases.
+- `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`,
+  `SingleRequestExecutable`, and `RequestPayload` are public extension points
+  for higher networking layers. They are expected to remain available across
+  3.x, but their exact low-level affordances may evolve with minor releases.
 - Persistence and telemetry formats are not external storage contracts.
 - Internal/Operational items may change in minor releases without separate deprecation windows.

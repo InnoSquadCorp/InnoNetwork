@@ -46,16 +46,17 @@ print(user.name)
 Stay on ``NetworkClient/request(_:)`` for normal typed requests and
 ``NetworkClient/upload(_:)`` for multipart uploads.
 
-Reach for ``NetworkClient/perform(executable:)`` when you are building a
+Reach for ``LowLevelNetworkClient/perform(executable:)`` when you are building a
 higher-level networking layer that needs to:
 
 - adapt its own request contract onto `InnoNetwork`
 - keep custom serialization and decoding logic outside `APIDefinition`
 - reuse `InnoNetwork` request building, retry coordination, trust handling, and observability
 
-In other words, `perform(executable:)` is the public low-level execution hook.
-`perform(_:)` remains available for typed request definitions, but neither
-variant is the recommended default for normal application call sites.
+In other words, `perform(executable:)` is the public low-level execution hook on
+`LowLevelNetworkClient`. `perform(_:)` remains available for typed request
+definitions, but neither variant is the recommended default for normal
+application call sites.
 
 ## When to use advanced configuration
 

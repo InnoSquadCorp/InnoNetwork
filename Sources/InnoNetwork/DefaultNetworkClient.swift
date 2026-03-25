@@ -20,11 +20,20 @@ public protocol NetworkClient: Sendable {
     /// - Throws: A ``NetworkError`` or another execution error produced while building,
     ///   sending, validating, or decoding the multipart request.
     func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse
+}
+
+/// Low-level typed execution contract for framework authors and policy layers.
+///
+/// Application integrations should continue to depend on ``NetworkClient`` and use
+/// ``NetworkClient/request(_:)`` or ``NetworkClient/upload(_:)``. Reach for this
+/// protocol only when you need direct access to the execution pipeline.
+public protocol LowLevelNetworkClient: Sendable {
     /// Executes a standard typed request through the low-level execution pipeline.
     ///
     /// `perform(_:)` is primarily intended for framework authors and policy layers
     /// that need to adapt richer request contracts into `InnoNetwork` without using
-    /// SPI imports. Application integrations should normally prefer ``request(_:)``.
+    /// SPI imports. Application integrations should normally prefer
+    /// ``NetworkClient/request(_:)``.
     ///
     /// - Parameter request: The typed request definition to execute through the
     ///   low-level pipeline.
@@ -47,7 +56,7 @@ public protocol NetworkClient: Sendable {
 }
 
 
-public actor DefaultNetworkClient: NetworkClient {
+public actor DefaultNetworkClient: NetworkClient, LowLevelNetworkClient {
     private let configuration: NetworkConfiguration
     private let session: URLSessionProtocol
     private let requestBuilder = RequestBuilder()

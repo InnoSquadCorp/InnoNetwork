@@ -22,7 +22,7 @@ public enum RequestPayload: Sendable {
 /// Most consumers should continue using ``APIDefinition`` and
 /// ``DefaultNetworkClient/request(_:)``. Reach for this protocol only when you are
 /// building a higher-level policy layer that needs to adapt its own request contract
-/// onto `InnoNetwork`'s execution engine via ``NetworkClient/perform(_:)``.
+/// onto `InnoNetwork`'s execution engine via ``LowLevelNetworkClient/perform(_:)``.
 public protocol SingleRequestExecutable: Sendable {
     associatedtype APIResponse: Sendable
 

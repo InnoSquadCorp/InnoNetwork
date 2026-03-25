@@ -18,7 +18,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ### Added
 
-- Public typed execution entry points via `NetworkClient.perform(_:)` and `NetworkClient.perform(executable:)`
+- Public typed execution entry points via `LowLevelNetworkClient.perform(_:)` and `LowLevelNetworkClient.perform(executable:)`
 - Public `SingleRequestExecutable` contract for higher networking and policy layers
 - Public `RequestPayload` contract used by `SingleRequestExecutable.makePayload()`
 - README, DocC, and API stability guidance that defines `request` and `upload` as the default integration APIs and `perform(executable:)` as the supported low-level extension point
@@ -26,7 +26,7 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 ### Changed
 
 - `DefaultNetworkClient.request(_:)` and `DefaultNetworkClient.upload(_:)` now delegate through the same public low-level execution path used by `perform`
-- API stability policy now treats `perform(_:)`, `perform(executable:)`, `SingleRequestExecutable`, and `RequestPayload` as provisionally stable extension points for the `3.x` line
+- API stability policy now treats `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`, `SingleRequestExecutable`, and `RequestPayload` as provisionally stable extension points for the `3.x` line
 
 ### Fixed
 

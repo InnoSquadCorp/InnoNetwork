@@ -50,9 +50,9 @@ print(user)
 ### When to use `perform`
 
 `request` and `upload` remain the default public entry points for application code.
-`perform(executable:)` is the lower-level typed execution API for framework
-authors and policy layers that want to adapt their own request contract onto
-`InnoNetwork`.
+`LowLevelNetworkClient` exposes the lower-level typed execution API for
+framework authors and policy layers that want to adapt their own request
+contract onto `InnoNetwork`.
 
 - Use `request` for normal `APIDefinition` requests.
 - Use `upload` for `MultipartAPIDefinition` requests.
@@ -224,9 +224,9 @@ The 3.x line follows semantic versioning.
 `safeDefaults` is the recommended public path. `default` aliases remain available for compatibility, but new examples and new integrations should prefer `safeDefaults`.
 
 `request` and `upload` are the recommended request execution APIs for most
-integrations. `perform(_:)` remains available for typed request definitions, and
-`perform(executable:)` is the low-level typed execution entry point for higher
-networking layers.
+integrations. `DefaultNetworkClient` also conforms to `LowLevelNetworkClient`,
+which provides `perform(_:)` for typed request definitions and
+`perform(executable:)` for higher networking layers.
 
 ## Benchmarks
 

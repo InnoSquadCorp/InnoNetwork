@@ -118,14 +118,35 @@ documented_sorted="$(printf '%s\n' "${documented_stable[@]:-}" | sort)"
 }
 
 expected_provisionally=(
-'`NetworkClient.perform(_:)`'
-'`NetworkClient.perform(executable:)`'
+'`LowLevelNetworkClient`'
+'`LowLevelNetworkClient.perform(_:)`'
+'`LowLevelNetworkClient.perform(executable:)`'
 '`SingleRequestExecutable`'
 '`RequestPayload`'
 '`default` aliases on configuration types'
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
 )
+
+validate_protocol_symbol() {
+  local protocol_name="$1"
+  local target="$2"
+  local pattern="$3"
+
+  if has_rg; then
+    awk -v protocol_name="$protocol_name" '
+      $0 ~ "^public protocol " protocol_name ": Sendable \\{$" { in_protocol = 1; next }
+      in_protocol && /^\}$/ { exit }
+      in_protocol { print }
+    ' "$target" | rg -q "$pattern" || fail "symbol matching $pattern is not present in $protocol_name protocol"
+  else
+    awk -v protocol_name="$protocol_name" '
+      $0 ~ "^public protocol " protocol_name ": Sendable \\{$" { in_protocol = 1; next }
+      in_protocol && /^\}$/ { exit }
+      in_protocol { print }
+    ' "$target" | grep -Eq "$pattern" || fail "symbol matching $pattern is not present in $protocol_name protocol"
+  fi
+}
 
 documented_provisionally=()
 while IFS= read -r line; do
@@ -228,23 +249,60 @@ for symbol in "${expected_stable[@]}"; do
 
   if has_rg; then
     if [[ "$symbol" == '`NetworkClient.request(_:)`' || "$symbol" == '`NetworkClient.upload(_:)`' ]]; then
-      awk '
-        /^public protocol NetworkClient: Sendable \{$/ { in_protocol = 1; next }
-        in_protocol && /^\}$/ { exit }
-        in_protocol { print }
-      ' "$target" | rg -q "$pattern" || fail "stable symbol $symbol is not present in NetworkClient protocol"
+      validate_protocol_symbol "NetworkClient" "$target" "$pattern"
     else
       rg -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
     fi
   else
     if [[ "$symbol" == '`NetworkClient.request(_:)`' || "$symbol" == '`NetworkClient.upload(_:)`' ]]; then
-      awk '
-        /^public protocol NetworkClient: Sendable \{$/ { in_protocol = 1; next }
-        in_protocol && /^\}$/ { exit }
-        in_protocol { print }
-      ' "$target" | grep -Eq "$pattern" || fail "stable symbol $symbol is not present in NetworkClient protocol"
+      validate_protocol_symbol "NetworkClient" "$target" "$pattern"
     else
       grep -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
+    fi
+  fi
+done
+
+for symbol in "${expected_provisionally[@]}"; do
+  case "$symbol" in
+    '`LowLevelNetworkClient`')
+      pattern='public protocol LowLevelNetworkClient'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`LowLevelNetworkClient.perform(_:)`')
+      pattern='^    func perform<T: APIDefinition>\(_ request: T\) async throws -> T\.APIResponse$'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`LowLevelNetworkClient.perform(executable:)`')
+      pattern='^    func perform<D: SingleRequestExecutable>\(executable: D\) async throws -> D\.APIResponse$'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`SingleRequestExecutable`')
+      pattern='public protocol SingleRequestExecutable'
+      target="$repo_root/Sources/InnoNetwork/RequestExecution.swift"
+      ;;
+    '`RequestPayload`')
+      pattern='public enum RequestPayload'
+      target="$repo_root/Sources/InnoNetwork/RequestExecution.swift"
+      ;;
+    '`default` aliases on configuration types'|'benchmark runner CLI flags and JSON summary presentation details'|'troubleshooting guidance and examples in README/DocC')
+      continue
+      ;;
+    *)
+      fail "unknown provisionally stable symbol mapping: $symbol"
+      ;;
+  esac
+
+  if has_rg; then
+    if [[ "$symbol" == '`LowLevelNetworkClient.perform(_:)`' || "$symbol" == '`LowLevelNetworkClient.perform(executable:)`' ]]; then
+      validate_protocol_symbol "LowLevelNetworkClient" "$target" "$pattern"
+    else
+      rg -Fq "$pattern" "$target" || fail "provisionally stable symbol $symbol is not present in production sources"
+    fi
+  else
+    if [[ "$symbol" == '`LowLevelNetworkClient.perform(_:)`' || "$symbol" == '`LowLevelNetworkClient.perform(executable:)`' ]]; then
+      validate_protocol_symbol "LowLevelNetworkClient" "$target" "$pattern"
+    else
+      grep -Fq "$pattern" "$target" || fail "provisionally stable symbol $symbol is not present in production sources"
     fi
   fi
 done
