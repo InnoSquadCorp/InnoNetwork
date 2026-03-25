@@ -50,20 +50,22 @@ print(user)
 ### When to use `perform`
 
 `request` and `upload` remain the default public entry points for application code.
-`perform` is the lower-level typed execution API for framework authors and policy
-layers that want to adapt their own request contract onto `InnoNetwork`.
+`perform(executable:)` is the lower-level typed execution API for framework
+authors and policy layers that want to adapt their own request contract onto
+`InnoNetwork`.
 
 - Use `request` for normal `APIDefinition` requests.
 - Use `upload` for `MultipartAPIDefinition` requests.
-- Use `perform` only when you need to execute either:
-  - a standard `APIDefinition` through the lower-level pipeline, or
-  - a custom `SingleRequestExecutable` that controls serialization and decoding
-    while still delegating retry, trust, and observability to `InnoNetwork`.
+- Use `perform(_:)` only when you explicitly want the typed request path through
+  the lower-level execution pipeline.
+- Use `perform(executable:)` when you need a custom `SingleRequestExecutable`
+  that controls serialization and decoding while still delegating retry, trust,
+  and observability to `InnoNetwork`.
 
 ```swift
 let profile = try await client.request(GetProfile())
 
-let adapted = try await client.perform(MyCustomExecutable())
+let adapted = try await client.perform(executable: MyCustomExecutable())
 ```
 
 ### Download
@@ -222,8 +224,9 @@ The 3.x line follows semantic versioning.
 `safeDefaults` is the recommended public path. `default` aliases remain available for compatibility, but new examples and new integrations should prefer `safeDefaults`.
 
 `request` and `upload` are the recommended request execution APIs for most
-integrations. `perform` is public and supported as the low-level typed execution
-entry point for higher networking layers.
+integrations. `perform(_:)` remains available for typed request definitions, and
+`perform(executable:)` is the low-level typed execution entry point for higher
+networking layers.
 
 ## Benchmarks
 

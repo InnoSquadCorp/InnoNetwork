@@ -117,6 +117,40 @@ documented_sorted="$(printf '%s\n' "${documented_stable[@]:-}" | sort)"
   fail "Stable symbol list in API_STABILITY.md does not match expected allowlist"
 }
 
+expected_provisionally=(
+'`NetworkClient.perform(_:)`'
+'`NetworkClient.perform(executable:)`'
+'`SingleRequestExecutable`'
+'`RequestPayload`'
+'`default` aliases on configuration types'
+'benchmark runner CLI flags and JSON summary presentation details'
+'troubleshooting guidance and examples in README/DocC'
+)
+
+documented_provisionally=()
+while IFS= read -r line; do
+  documented_provisionally+=("$line")
+done < <(
+  awk '
+    /^## Provisionally Stable$/ { in_section = 1; next }
+    /^## / { if (in_section) exit }
+    in_section && /^- / {
+      sub(/^- /, "")
+      print
+    }
+  ' "$api_stability"
+)
+
+expected_provisionally_sorted="$(printf '%s\n' "${expected_provisionally[@]}" | sort)"
+documented_provisionally_sorted="$(printf '%s\n' "${documented_provisionally[@]:-}" | sort)"
+[[ "$expected_provisionally_sorted" == "$documented_provisionally_sorted" ]] || {
+  echo "Expected Provisionally Stable symbols:" >&2
+  printf '%s\n' "${expected_provisionally[@]}" >&2
+  echo "Documented Provisionally Stable symbols:" >&2
+  printf '%s\n' "${documented_provisionally[@]:-}" >&2
+  fail "Provisionally Stable symbol list in API_STABILITY.md does not match expected allowlist"
+}
+
 for symbol in "${expected_stable[@]}"; do
   case "$symbol" in
     '`APIDefinition`')
@@ -132,11 +166,11 @@ for symbol in "${expected_stable[@]}"; do
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.request(_:)`')
-      pattern='func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse'
+      pattern='^    func request<T: APIDefinition>\(_ request: T\) async throws -> T\.APIResponse$'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.upload(_:)`')
-      pattern='func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse'
+      pattern='^    func upload<T: MultipartAPIDefinition>\(_ request: T\) async throws -> T\.APIResponse$'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkConfiguration.safeDefaults(baseURL:)`')
@@ -193,9 +227,25 @@ for symbol in "${expected_stable[@]}"; do
   esac
 
   if has_rg; then
-    rg -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
+    if [[ "$symbol" == '`NetworkClient.request(_:)`' || "$symbol" == '`NetworkClient.upload(_:)`' ]]; then
+      awk '
+        /^public protocol NetworkClient: Sendable \{$/ { in_protocol = 1; next }
+        in_protocol && /^\}$/ { exit }
+        in_protocol { print }
+      ' "$target" | rg -q "$pattern" || fail "stable symbol $symbol is not present in NetworkClient protocol"
+    else
+      rg -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
+    fi
   else
-    grep -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
+    if [[ "$symbol" == '`NetworkClient.request(_:)`' || "$symbol" == '`NetworkClient.upload(_:)`' ]]; then
+      awk '
+        /^public protocol NetworkClient: Sendable \{$/ { in_protocol = 1; next }
+        in_protocol && /^\}$/ { exit }
+        in_protocol { print }
+      ' "$target" | grep -Eq "$pattern" || fail "stable symbol $symbol is not present in NetworkClient protocol"
+    else
+      grep -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
+    fi
   fi
 done
 

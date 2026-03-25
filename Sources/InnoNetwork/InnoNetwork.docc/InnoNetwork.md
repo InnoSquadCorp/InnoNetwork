@@ -10,7 +10,7 @@ Use this module when you need:
 
 - typed request definitions with ``APIDefinition``
 - a single async request entry point through ``DefaultNetworkClient``
-- a public low-level typed execution hook through ``NetworkClient/perform(_:)``
+- a public low-level typed execution hook through ``NetworkClient/perform(executable:)``
 - request encoding choices that stay explicit
 - trust policy, retry policy, and observability that can be tuned when production needs it
 
