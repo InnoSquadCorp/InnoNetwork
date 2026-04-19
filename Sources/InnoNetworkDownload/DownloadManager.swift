@@ -267,6 +267,12 @@ public final class DownloadManager: NSObject, Sendable {
         await runtimeRegistry.taskIdentifier(for: task.id)
     }
 
+    func cancelRuntimeURLTask(for task: DownloadTask) async {
+        if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
+            urlTask.cancel()
+        }
+    }
+
     func listenerCount(for task: DownloadTask) async -> Int {
         await eventHub.listenerCount(taskID: task.id)
     }
