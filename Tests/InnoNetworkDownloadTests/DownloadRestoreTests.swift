@@ -28,6 +28,7 @@ struct DownloadRestoreTests {
         let baseDirectoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("InnoNetworkDownloadTests", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: baseDirectoryURL) }
 
         let persistence = DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,

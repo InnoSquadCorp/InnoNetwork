@@ -4,8 +4,9 @@ import Foundation
 
 /// Deterministic `NetworkMonitoring` double for retry tests.
 ///
-/// `stubbedSnapshot` controls what `currentSnapshot()` returns; `nextChangeSnapshot`
-/// and `changeDelay` control what `waitForChange(from:timeout:)` returns.
+/// `currentSnapshot` controls what `currentSnapshot()` returns; use
+/// `setNextChangeSnapshot(_:)` to control what `waitForChange(from:timeout:)`
+/// returns, and `changeDelay` to control how long that change is delayed.
 actor MockNetworkMonitor: NetworkMonitoring {
     private var _currentSnapshot: NetworkSnapshot?
     private var _nextChangeSnapshot: NetworkSnapshot?
@@ -78,6 +79,23 @@ func waitForTaskState(
         try? await Task.sleep(nanoseconds: 10_000_000)
     }
     return false
+}
+
+
+/// Cancels the live runtime URLSession task, then injects a synthetic completion.
+func injectSyntheticCompletion(
+    manager: DownloadManager,
+    task: DownloadTask,
+    taskIdentifier: Int,
+    location: URL?,
+    error: SendableUnderlyingError?
+) async {
+    await manager.cancelRuntimeURLTask(for: task)
+    manager.handleCompletion(
+        taskIdentifier: taskIdentifier,
+        location: location,
+        error: error
+    )
 }
 
 

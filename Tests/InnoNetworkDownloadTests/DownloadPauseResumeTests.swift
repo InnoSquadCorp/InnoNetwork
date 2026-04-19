@@ -74,7 +74,11 @@ struct DownloadPauseResumeTests {
         )
 
         let firstIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
-        await task.updateState(.paused)
+        #expect(await waitForTaskState(task, timeout: 2.0) { $0 == .downloading })
+
+        await manager.pause(task)
+
+        #expect(await waitForTaskState(task, timeout: 2.0) { $0 == .paused })
         await task.setResumeData(nil)
 
         await manager.resume(task)

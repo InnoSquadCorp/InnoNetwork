@@ -32,7 +32,9 @@ struct DownloadRetryTests {
             ))
             excluded.insert(identifier)
             lastIdentifier = identifier
-            manager.handleCompletion(
+            await injectSyntheticCompletion(
+                manager: manager,
+                task: task,
                 taskIdentifier: identifier,
                 location: nil,
                 error: SendableUnderlyingError(
@@ -70,7 +72,9 @@ struct DownloadRetryTests {
             timeout: 2.0
         ))
 
-        manager.handleCompletion(
+        await injectSyntheticCompletion(
+            manager: manager,
+            task: task,
             taskIdentifier: identifier,
             location: nil,
             error: SendableUnderlyingError(
@@ -119,7 +123,9 @@ struct DownloadRetryTests {
             timeout: 2.0
         ))
 
-        manager.handleCompletion(
+        await injectSyntheticCompletion(
+            manager: manager,
+            task: task,
             taskIdentifier: firstIdentifier,
             location: nil,
             error: SendableUnderlyingError(
@@ -176,7 +182,9 @@ struct DownloadRetryTests {
                 timeout: 3.0
             ))
             excluded.insert(identifier)
-            manager.handleCompletion(
+            await injectSyntheticCompletion(
+                manager: manager,
+                task: task,
                 taskIdentifier: identifier,
                 location: nil,
                 error: SendableUnderlyingError(
