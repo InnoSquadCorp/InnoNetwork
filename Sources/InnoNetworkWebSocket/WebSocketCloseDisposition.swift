@@ -27,14 +27,37 @@ package enum WebSocketCloseDisposition: Sendable, Equatable {
         closeCode: URLSessionWebSocketTask.CloseCode,
         reason: String?
     ) -> WebSocketCloseDisposition {
-        switch Int(closeCode.rawValue) {
-        case 1000:
+        classifyPeerClose(WebSocketCloseCode(closeCode), reason: reason)
+    }
+
+    /// Typed overload that classifies using the package-internal
+    /// `WebSocketCloseCode` enum. Preserves the existing associated-value shape
+    /// (Apple's `URLSessionWebSocketTask.CloseCode`) so downstream error
+    /// serialization stays unchanged.
+    static func classifyPeerClose(
+        _ code: WebSocketCloseCode,
+        reason: String?
+    ) -> WebSocketCloseDisposition {
+        let closeCode = code.urlSessionCloseCode
+        switch code {
+        case .normalClosure:
             return .peerNormal(closeCode, reason)
-        case 1001, 1006, 1011, 1012, 1013, 1015:
+        case .goingAway,
+             .abnormalClosure,
+             .internalServerError,
+             .serviceRestart,
+             .tryAgainLater,
+             .badGateway,
+             .tlsHandshakeFailure:
             return .peerRetryable(closeCode, reason)
-        case 1003, 1007, 1008, 1009:
-            return .peerTerminal(closeCode, reason)
-        default:
+        case .unsupportedData,
+             .invalidFramePayloadData,
+             .policyViolation,
+             .messageTooBig,
+             .mandatoryExtensionMissing,
+             .protocolError,
+             .noStatusReceived,
+             .custom:
             return .peerTerminal(closeCode, reason)
         }
     }

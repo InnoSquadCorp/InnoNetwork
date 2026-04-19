@@ -5,7 +5,7 @@ package actor DownloadRuntimeRegistry {
     private var tasks: [String: DownloadTask] = [:]
     private var identifierToTask: [Int: DownloadTask] = [:]
     private var taskIdToIdentifier: [String: Int] = [:]
-    private var taskIdToURLTask: [String: URLSessionDownloadTask] = [:]
+    private var taskIdToURLTask: [String: any DownloadURLTask] = [:]
 
     private var _onProgress: (@Sendable (DownloadTask, DownloadProgress) async -> Void)?
     private var _onStateChanged: (@Sendable (DownloadTask, DownloadState) async -> Void)?
@@ -56,7 +56,7 @@ package actor DownloadRuntimeRegistry {
         taskIdToIdentifier[downloadTask.id] = identifier
     }
 
-    package func setURLTask(_ urlTask: URLSessionDownloadTask, for taskId: String) {
+    package func setURLTask(_ urlTask: any DownloadURLTask, for taskId: String) {
         taskIdToURLTask[taskId] = urlTask
     }
 
@@ -64,7 +64,7 @@ package actor DownloadRuntimeRegistry {
         identifierToTask[identifier]
     }
 
-    package func urlTask(for taskId: String) -> URLSessionDownloadTask? {
+    package func urlTask(for taskId: String) -> (any DownloadURLTask)? {
         taskIdToURLTask[taskId]
     }
 

@@ -3,13 +3,13 @@ import InnoNetwork
 
 
 package struct DownloadTransferCoordinator {
-    let session: URLSession
+    let session: any DownloadURLSession
     let runtimeRegistry: DownloadRuntimeRegistry
     let persistence: DownloadTaskPersistence
     let eventHub: TaskEventHub<DownloadEvent>
 
     package init(
-        session: URLSession,
+        session: any DownloadURLSession,
         runtimeRegistry: DownloadRuntimeRegistry,
         persistence: DownloadTaskPersistence,
         eventHub: TaskEventHub<DownloadEvent>
@@ -26,7 +26,7 @@ package struct DownloadTransferCoordinator {
         await eventHub.publish(.stateChanged(.waiting), for: task.id)
         await persistence.upsert(id: task.id, url: task.url, destinationURL: task.destinationURL)
 
-        let urlTask = session.downloadTask(with: task.url)
+        let urlTask = session.makeDownloadTask(with: task.url)
         await register(urlTask: urlTask, for: task)
 
         await task.updateState(.downloading)
@@ -35,7 +35,7 @@ package struct DownloadTransferCoordinator {
         urlTask.resume()
     }
 
-    package func register(urlTask: URLSessionDownloadTask, for task: DownloadTask) async {
+    package func register(urlTask: any DownloadURLTask, for task: DownloadTask) async {
         urlTask.taskDescription = task.id
         await runtimeRegistry.setMapping(downloadTask: task, for: urlTask.taskIdentifier)
         await runtimeRegistry.setURLTask(urlTask, for: task.id)

@@ -3,13 +3,13 @@ import Foundation
 
 package struct WebSocketConnectionCoordinator {
     let configuration: WebSocketConfiguration
-    let session: URLSession
+    let session: any WebSocketURLSession
     let runtimeRegistry: WebSocketRuntimeRegistry
     let receiveLoop: WebSocketReceiveLoop
 
     package init(
         configuration: WebSocketConfiguration,
-        session: URLSession,
+        session: any WebSocketURLSession,
         runtimeRegistry: WebSocketRuntimeRegistry,
         receiveLoop: WebSocketReceiveLoop
     ) {
@@ -39,7 +39,7 @@ package struct WebSocketConnectionCoordinator {
             }
         }
 
-        let urlTask = session.webSocketTask(with: request)
+        let urlTask = session.makeWebSocketTask(with: request)
         await runtimeRegistry.setMapping(webSocketTask: task, for: urlTask.taskIdentifier)
         await runtimeRegistry.setURLTask(urlTask, for: task.id)
 

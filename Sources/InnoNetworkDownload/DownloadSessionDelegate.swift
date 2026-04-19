@@ -3,11 +3,11 @@ import InnoNetwork
 import os
 
 
-final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate {
+package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate {
     private let callbacks: DownloadSessionDelegateCallbacks
     private let backgroundCompletionStore: BackgroundCompletionStore
 
-    init(
+    package init(
         callbacks: DownloadSessionDelegateCallbacks,
         backgroundCompletionStore: BackgroundCompletionStore
     ) {
@@ -15,8 +15,8 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate {
         self.backgroundCompletionStore = backgroundCompletionStore
         super.init()
     }
-    
-    func urlSession(
+
+    package func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
         didWriteData bytesWritten: Int64,
@@ -30,8 +30,8 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate {
             totalBytesExpectedToWrite: totalBytesExpectedToWrite
         )
     }
-    
-    func urlSession(
+
+    package func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
@@ -42,8 +42,8 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate {
             error: nil
         )
     }
-    
-    func urlSession(
+
+    package func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
         didCompleteWithError error: Error?
@@ -56,8 +56,8 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate {
             )
         }
     }
-    
-    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+
+    package func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         Task {
             guard let completion = await backgroundCompletionStore.take() else { return }
             await MainActor.run {
@@ -68,9 +68,9 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate {
 }
 
 
-final class DownloadSessionDelegateCallbacks: Sendable {
-    typealias ProgressHandler = @Sendable (Int, Int64, Int64, Int64) -> Void
-    typealias CompletionHandler = @Sendable (Int, URL?, SendableUnderlyingError?) -> Void
+package final class DownloadSessionDelegateCallbacks: Sendable {
+    package typealias ProgressHandler = @Sendable (Int, Int64, Int64, Int64) -> Void
+    package typealias CompletionHandler = @Sendable (Int, URL?, SendableUnderlyingError?) -> Void
 
     private struct Handlers {
         var progress: ProgressHandler?
@@ -79,7 +79,9 @@ final class DownloadSessionDelegateCallbacks: Sendable {
 
     private let handlersLock = OSAllocatedUnfairLock<Handlers>(initialState: .init())
 
-    func setHandlers(
+    package init() {}
+
+    package func setHandlers(
         onProgress: @escaping ProgressHandler,
         onCompletion: @escaping CompletionHandler
     ) {
@@ -89,7 +91,7 @@ final class DownloadSessionDelegateCallbacks: Sendable {
         }
     }
 
-    func handleProgress(
+    package func handleProgress(
         taskIdentifier: Int,
         bytesWritten: Int64,
         totalBytesWritten: Int64,
@@ -103,7 +105,7 @@ final class DownloadSessionDelegateCallbacks: Sendable {
         )
     }
 
-    func handleCompletion(
+    package func handleCompletion(
         taskIdentifier: Int,
         location: URL?,
         error: SendableUnderlyingError?
@@ -113,14 +115,16 @@ final class DownloadSessionDelegateCallbacks: Sendable {
 }
 
 
-actor BackgroundCompletionStore {
+package actor BackgroundCompletionStore {
     private var completion: (@Sendable () -> Void)?
 
-    func set(_ completion: @escaping @Sendable () -> Void) {
+    package init() {}
+
+    package func set(_ completion: @escaping @Sendable () -> Void) {
         self.completion = completion
     }
 
-    func take() -> (@Sendable () -> Void)? {
+    package func take() -> (@Sendable () -> Void)? {
         let stored = completion
         completion = nil
         return stored

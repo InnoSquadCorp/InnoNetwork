@@ -5,7 +5,7 @@ package actor WebSocketRuntimeRegistry {
     private var tasks: [String: WebSocketTask] = [:]
     private var identifierToTask: [Int: WebSocketTask] = [:]
     private var taskIdToIdentifier: [String: Int] = [:]
-    private var taskIdToURLTask: [String: URLSessionWebSocketTask] = [:]
+    private var taskIdToURLTask: [String: any WebSocketURLTask] = [:]
     private var heartbeatTasks: [String: Task<Void, Never>] = [:]
     private var messageListenerTasks: [String: Task<Void, Never>] = [:]
     private var reconnectTasks: [String: Task<Void, Never>] = [:]
@@ -66,7 +66,7 @@ package actor WebSocketRuntimeRegistry {
         taskIdToIdentifier[webSocketTask.id] = identifier
     }
 
-    package func setURLTask(_ urlTask: URLSessionWebSocketTask, for taskId: String) {
+    package func setURLTask(_ urlTask: any WebSocketURLTask, for taskId: String) {
         taskIdToURLTask[taskId] = urlTask
     }
 
@@ -74,7 +74,7 @@ package actor WebSocketRuntimeRegistry {
         identifierToTask[identifier]
     }
 
-    package func urlTask(for taskId: String) -> URLSessionWebSocketTask? {
+    package func urlTask(for taskId: String) -> (any WebSocketURLTask)? {
         taskIdToURLTask[taskId]
     }
 
