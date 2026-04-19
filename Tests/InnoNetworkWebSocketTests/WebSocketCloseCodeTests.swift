@@ -168,4 +168,26 @@ struct WebSocketCloseDispositionClassificationTests {
             #expect(viaStdlib == viaTyped, "Mismatch for \(stdlibCode)")
         }
     }
+
+    @Test(
+        "Stdlib CloseCode overload preserves raw value for custom peer close codes",
+        arguments: [Int(2500), 3000, 4000, 4999]
+    )
+    func stdlibOverloadPreservesCustomRawValue(rawValue: Int) {
+        let closeCode = URLSessionWebSocketTask.CloseCode(rawValue: rawValue)
+        #expect(closeCode != nil)
+
+        let disposition = WebSocketCloseDisposition.classifyPeerClose(
+            closeCode: closeCode ?? .invalid,
+            reason: "custom"
+        )
+
+        switch disposition {
+        case .peerTerminal(let returnedCode, let reason):
+            #expect(returnedCode.rawValue == rawValue)
+            #expect(reason == "custom")
+        default:
+            Issue.record("Expected .peerTerminal for custom raw value \(rawValue), got \(disposition)")
+        }
+    }
 }

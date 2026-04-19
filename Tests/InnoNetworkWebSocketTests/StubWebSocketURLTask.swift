@@ -24,6 +24,8 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
     }
 
     private let stateLock = OSAllocatedUnfairLock<State>(initialState: State())
+    private let beforeReceiveCancellationCheckHook =
+        OSAllocatedUnfairLock<(@Sendable () async -> Void)?>(initialState: nil)
 
     init(taskIdentifier: Int = Int.random(in: 1...1_000_000)) {
         self.taskIdentifier = taskIdentifier
@@ -47,12 +49,17 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
             return nil
         }
         if let readyResult {
-            return try readyResult.get()
+            let message = try readyResult.get()
+            if let hook = beforeReceiveCancellationCheckHook.withLock({ $0 }) {
+                await hook()
+            }
+            try Task.checkCancellation()
+            return message
         }
 
         let continuationID = UUID()
         let stateLock = self.stateLock
-        return try await withTaskCancellationHandler {
+        let message = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let alreadyCancelled: Bool = stateLock.withLock { state in
                     if Task.isCancelled { return true }
@@ -74,6 +81,11 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
             }
             waiter?.resume(throwing: CancellationError())
         }
+        if let hook = beforeReceiveCancellationCheckHook.withLock({ $0 }) {
+            await hook()
+        }
+        try Task.checkCancellation()
+        return message
     }
 
     func sendPing(pongReceiveHandler: @escaping @Sendable (Error?) -> Void) {
@@ -129,6 +141,10 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
         handler?(error)
     }
 
+    func setBeforeReceiveCancellationCheckHook(_ hook: (@Sendable () async -> Void)?) {
+        beforeReceiveCancellationCheckHook.withLock { $0 = hook }
+    }
+
     // MARK: Observations
 
     var sentMessages: [URLSessionWebSocketTask.Message] {
@@ -147,6 +163,10 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
 
     var hasPendingPong: Bool {
         stateLock.withLock { $0.pendingPong != nil }
+    }
+
+    var pendingReceiveCount: Int {
+        stateLock.withLock { $0.pendingReceiveContinuations.count }
     }
 }
 

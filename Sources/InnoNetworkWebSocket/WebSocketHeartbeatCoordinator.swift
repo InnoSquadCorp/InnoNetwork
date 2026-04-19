@@ -1,44 +1,37 @@
 import Foundation
-import os
 
 
 /// Tracks the single in-flight `CheckedContinuation` for `sendPing`. The state
 /// transitions `idle → registered → (resumed | cancelled)`, with `cancelled`
 /// reachable from either `idle` (cancel-before-register) or `registered`
 /// (cancel-during-wait). Every path resumes the continuation exactly once.
-private final class PingContinuationState: @unchecked Sendable {
+private actor PingContinuationGate {
     enum RegisterAction { case registered, cancelled }
-
-    private struct State {
-        var continuation: CheckedContinuation<Void, Error>?
-        var cancelled: Bool = false
-    }
-
-    private let lock = OSAllocatedUnfairLock<State>(initialState: State())
+    
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var cancelled = false
 
     func register(_ continuation: CheckedContinuation<Void, Error>) -> RegisterAction {
-        lock.withLock { state in
-            if state.cancelled { return .cancelled }
-            state.continuation = continuation
-            return .registered
+        if cancelled { return .cancelled }
+        self.continuation = continuation
+        return .registered
+    }
+
+    func resume(with error: Error?) {
+        guard let continuation else { return }
+        self.continuation = nil
+        if let error {
+            continuation.resume(throwing: error)
+        } else {
+            continuation.resume()
         }
     }
 
-    func takeContinuation() -> CheckedContinuation<Void, Error>? {
-        lock.withLock { state in
-            let c = state.continuation
-            state.continuation = nil
-            return c
-        }
-    }
-
-    func cancel() -> CheckedContinuation<Void, Error>? {
-        lock.withLock { state in
-            state.cancelled = true
-            let c = state.continuation
-            state.continuation = nil
-            return c
-        }
+    func cancel() {
+        cancelled = true
+        guard let continuation else { return }
+        self.continuation = nil
+        continuation.resume(throwing: CancellationError())
     }
 }
 
@@ -108,27 +101,27 @@ package struct WebSocketHeartbeatCoordinator {
         // the underlying task is torn down (e.g. `sendPing(_:timeout:)` cancels
         // this subtask after a pingTimeout). Without a cancellation handler
         // the continuation leaks and the enclosing task group deadlocks.
-        let state = PingContinuationState()
+        let gate = PingContinuationGate()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                let action = state.register(continuation)
-                switch action {
-                case .cancelled:
-                    continuation.resume(throwing: CancellationError())
-                case .registered:
-                    urlTask.sendPing { error in
-                        guard let resume = state.takeContinuation() else { return }
-                        if let error {
-                            resume.resume(throwing: error)
-                        } else {
-                            resume.resume()
+                Task {
+                    let action = await gate.register(continuation)
+                    switch action {
+                    case .cancelled:
+                        continuation.resume(throwing: CancellationError())
+                    case .registered:
+                        urlTask.sendPing { error in
+                            Task {
+                                await gate.resume(with: error)
+                            }
                         }
                     }
                 }
             }
+            try Task.checkCancellation()
         } onCancel: {
-            if let resume = state.cancel() {
-                resume.resume(throwing: CancellationError())
+            Task {
+                await gate.cancel()
             }
         }
     }

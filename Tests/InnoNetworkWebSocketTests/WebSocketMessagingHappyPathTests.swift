@@ -120,6 +120,103 @@ struct WebSocketMessagingHappyPathTests {
         await harness.manager.removeEventListener(subscription)
         await harness.tearDown(task: task)
     }
+
+    @Test("Immediate scripted receive still throws CancellationError when cancelled before returning")
+    func immediateScriptedReceiveHonorsCancellation() async throws {
+        let stubTask = StubWebSocketURLTask()
+        let gate = AsyncGate()
+        stubTask.setBeforeReceiveCancellationCheckHook {
+            await gate.arriveAndWait()
+        }
+        stubTask.scriptReceive(.success(.string("ready")))
+
+        let receiveTask = Task {
+            try await stubTask.receive()
+        }
+
+        #expect(await waitForGateArrival(gate, timeout: 1.0))
+        receiveTask.cancel()
+        await gate.release()
+
+        do {
+            _ = try await receiveTask.value
+            Issue.record("Expected CancellationError from immediate scripted receive")
+        } catch is CancellationError {
+        } catch {
+            Issue.record("Expected CancellationError, got \(error)")
+        }
+    }
+
+    @Test("Continuation-backed receive still throws CancellationError when cancelled after resuming")
+    func resumedReceiveHonorsCancellation() async throws {
+        let stubTask = StubWebSocketURLTask()
+        let gate = AsyncGate()
+        stubTask.setBeforeReceiveCancellationCheckHook {
+            await gate.arriveAndWait()
+        }
+
+        let receiveTask = Task {
+            try await stubTask.receive()
+        }
+
+        #expect(await waitForPendingReceive(stubTask, timeout: 1.0))
+        stubTask.scriptReceive(.success(.string("resumed")))
+        #expect(await waitForGateArrival(gate, timeout: 1.0))
+
+        receiveTask.cancel()
+        await gate.release()
+
+        do {
+            _ = try await receiveTask.value
+            Issue.record("Expected CancellationError from resumed receive")
+        } catch is CancellationError {
+        } catch {
+            Issue.record("Expected CancellationError, got \(error)")
+        }
+    }
+}
+
+private actor AsyncGate {
+    private var arrived = false
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func arriveAndWait() async {
+        arrived = true
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+        }
+    }
+
+    func hasArrived() -> Bool {
+        arrived
+    }
+
+    func release() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+}
+
+private func waitForGateArrival(_ gate: AsyncGate, timeout: TimeInterval) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await gate.hasArrived() {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+    }
+    return await gate.hasArrived()
+}
+
+private func waitForPendingReceive(_ stubTask: StubWebSocketURLTask, timeout: TimeInterval) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if stubTask.pendingReceiveCount > 0 {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+    }
+    return stubTask.pendingReceiveCount > 0
 }
 
 
