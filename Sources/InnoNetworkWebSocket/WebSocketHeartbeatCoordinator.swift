@@ -119,6 +119,9 @@ package struct WebSocketHeartbeatCoordinator {
                     missedPongs = 0
                     await eventHub.publish(.pong, for: task.id)
                 } catch {
+                    if isPingTimeout(error) {
+                        await eventHub.publish(.error(.pingTimeout), for: task.id)
+                    }
                     missedPongs += 1
                     if missedPongs >= configuration.maxMissedPongs {
                         await onPingTimeout(urlTask.taskIdentifier)
@@ -183,5 +186,19 @@ package struct WebSocketHeartbeatCoordinator {
             _ = try await group.next()
             group.cancelAll()
         }
+    }
+
+    private func isPingTimeout(_ error: Error) -> Bool {
+        if let internalError = error as? WebSocketInternalError,
+           case .pingTimeout = internalError {
+            return true
+        }
+
+        if let urlError = error as? URLError,
+           urlError.code == .timedOut {
+            return true
+        }
+
+        return false
     }
 }

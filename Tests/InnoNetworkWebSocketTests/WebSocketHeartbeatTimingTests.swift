@@ -156,7 +156,9 @@ struct WebSocketHeartbeatTimingTests {
 
         harness.clock.advance(by: .seconds(2))
         // Loop catches pingTimeout and starts the next interval sleep.
+        #expect(await harness.waitForPingTimeoutErrorCount(atLeast: 1))
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 2))
+        #expect(timeoutBox.withLock { $0 } == nil)
 
         // Cycle 2: same, and missedPongs should reach maxMissedPongs → callback.
         baseline = harness.clock.enqueuedCount
@@ -165,6 +167,7 @@ struct WebSocketHeartbeatTimingTests {
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 1))
 
         harness.clock.advance(by: .seconds(2))
+        #expect(await harness.waitForPingTimeoutErrorCount(atLeast: 2))
 
         let invoked = await waitFor(timeout: 1.0) {
             timeoutBox.withLock { $0 } != nil
@@ -194,6 +197,7 @@ struct WebSocketHeartbeatTimingTests {
         #expect(await harness.waitForStubPingCount(atLeast: 1))
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 1))
         harness.clock.advance(by: .seconds(2))
+        #expect(await harness.waitForPingTimeoutErrorCount(atLeast: 1))
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 2))
 
         // Cycle 2 (successful): pong resets missedPongs to 0.
@@ -211,6 +215,7 @@ struct WebSocketHeartbeatTimingTests {
         #expect(await harness.waitForStubPingCount(atLeast: 3))
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 1))
         harness.clock.advance(by: .seconds(2))
+        #expect(await harness.waitForPingTimeoutErrorCount(atLeast: 2))
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 2))
 
         // Give the loop a brief moment to react; the timeout callback should
@@ -435,6 +440,17 @@ final class HeartbeatTestHarness: Sendable {
         return defaultRecorder.pingCount >= count
     }
 
+    /// Waits until the heartbeat loop has published at least `count`
+    /// `.error(.pingTimeout)` events on `defaultRecorder`.
+    func waitForPingTimeoutErrorCount(atLeast count: Int, timeout: TimeInterval = 1.0) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if defaultRecorder.pingTimeoutErrorCount >= count { return true }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        return defaultRecorder.pingTimeoutErrorCount >= count
+    }
+
     /// Attaches an additional event listener. The default recorder remains
     /// active; this is useful when a test wants an isolated recorder with
     /// its own history.
@@ -476,6 +492,17 @@ final class HeartbeatEventRecorder: Sendable {
         events.withLock { list in
             list.reduce(0) { acc, event in
                 if case .ping = event { return acc + 1 }
+                return acc
+            }
+        }
+    }
+
+    /// Count of `.error(.pingTimeout)` events observed since the recorder
+    /// started listening.
+    var pingTimeoutErrorCount: Int {
+        events.withLock { list in
+            list.reduce(0) { acc, event in
+                if case .error(.pingTimeout) = event { return acc + 1 }
                 return acc
             }
         }

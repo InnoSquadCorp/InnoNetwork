@@ -264,8 +264,17 @@ public final class WebSocketManager: NSObject, Sendable {
             throw WebSocketError.disconnected(nil)
         }
         await eventHub.publish(.ping, for: task.id)
-        try await heartbeatCoordinator.sendPing(urlTask, timeout: configuration.pongTimeout)
-        await eventHub.publish(.pong, for: task.id)
+        do {
+            try await heartbeatCoordinator.sendPing(urlTask, timeout: configuration.pongTimeout)
+            await eventHub.publish(.pong, for: task.id)
+        } catch {
+            let wsError = mapWebSocketError(error)
+            if case .pingTimeout = wsError {
+                await eventHub.publish(.error(wsError), for: task.id)
+                throw wsError
+            }
+            throw error
+        }
     }
 
     public func task(withId id: String) async -> WebSocketTask? {
