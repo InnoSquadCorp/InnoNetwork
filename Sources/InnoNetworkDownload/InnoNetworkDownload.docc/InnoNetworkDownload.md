@@ -15,6 +15,8 @@ Use this module when you need:
 
 The shared manager is intentionally easy to start with, but custom managers remain available when you need an explicit ``DownloadConfiguration``.
 
+Download task events flow through the shared event hub. Tune buffering, overflow behavior, and metrics integration via ``DownloadConfiguration/eventDeliveryPolicy`` — see <doc:EventDeliveryPolicy> in the core module for a full guide.
+
 ## Topics
 
 ### Essentials

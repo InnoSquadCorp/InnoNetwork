@@ -16,6 +16,8 @@ Use this module when you need:
 
 Reconnect decisions are driven by handshake and close outcomes, so the public manager can distinguish retryable failures from terminal ones without forcing application code to rebuild that policy every time. When UX needs to branch on the reason (for example showing a "retrying…" banner only for ``WebSocketCloseDisposition/peerRetryable(_:_:)``), consumers read ``WebSocketTask/closeDisposition`` after the task reaches `.disconnected` / `.failed`.
 
+Event delivery for socket tasks flows through the shared event hub. Tune buffering, overflow behavior, and metrics integration via ``WebSocketConfiguration/eventDeliveryPolicy`` — see <doc:EventDeliveryPolicy> in the core module for a full guide.
+
 ### Measuring heartbeat RTT
 
 Every ping emission carries a ``WebSocketPingContext``. Pair its ``WebSocketPingContext/dispatchedAt`` with a ``ContinuousClock`` reading at pong receipt to compute round-trip time without client-side bookkeeping.
