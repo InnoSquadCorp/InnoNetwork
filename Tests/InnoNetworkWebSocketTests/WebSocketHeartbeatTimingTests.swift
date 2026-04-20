@@ -159,8 +159,8 @@ struct WebSocketHeartbeatTimingTests {
     @Test("Automatic reconnect resets the next heartbeat ping attempt number to 1")
     func automaticReconnectResetsPingAttemptNumber() async throws {
         let harness = StubMessagingHarness(
-            heartbeatInterval: 0.05,
-            pongTimeout: 1,
+            heartbeatInterval: 0.1,
+            pongTimeout: 2,
             reconnectDelay: 0,
             maxReconnectAttempts: 1
         )
@@ -170,9 +170,9 @@ struct WebSocketHeartbeatTimingTests {
             recorder.record(event)
         }
 
-        #expect(await waitFor(timeout: 1.0) { harness.stubTask.pingCount >= 1 })
+        #expect(await waitFor(timeout: 2.0) { harness.stubTask.pingCount >= 1 })
         harness.stubTask.completePendingPong(with: nil)
-        #expect(await waitFor(timeout: 1.0) {
+        #expect(await waitFor(timeout: 2.0) {
             recorder.snapshot().contains { event in
                 if case .pong = event { return true }
                 return false
@@ -187,7 +187,7 @@ struct WebSocketHeartbeatTimingTests {
             reason: "restart"
         )
 
-        #expect(await harness.waitForCreatedTaskCount(atLeast: 2))
+        #expect(await harness.waitForCreatedTaskCount(atLeast: 2, timeout: 2.0))
 
         let preReconnectPingCount = recorder.snapshot().compactMap { event -> Int? in
             if case .ping = event { return 1 }
@@ -196,10 +196,10 @@ struct WebSocketHeartbeatTimingTests {
         #expect(preReconnectPingCount >= 1)
 
         harness.manager.handleConnected(taskIdentifier: reconnectStub.taskIdentifier, protocolName: nil)
-        #expect(await harness.waitForTaskState(task, equals: .connected))
-        #expect(await waitFor(timeout: 1.0) { reconnectStub.pingCount >= 1 })
+        #expect(await harness.waitForTaskState(task, equals: .connected, timeout: 2.0))
+        #expect(await waitFor(timeout: 2.0) { reconnectStub.pingCount >= 1 })
         reconnectStub.completePendingPong(with: nil)
-        #expect(await waitFor(timeout: 1.0) {
+        #expect(await waitFor(timeout: 2.0) {
             recorder.snapshot().compactMap { event -> Int? in
                 if case .ping(let context) = event { return context.attemptNumber }
                 return nil

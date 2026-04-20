@@ -141,6 +141,56 @@ struct WebSocketMessagingHappyPathTests {
         await harness.tearDown(task: task)
     }
 
+    @Test("Manual ping transport failure publishes a paired error event and rethrows the mapped error")
+    func manualPingTransportFailurePublishesPairedErrorEvent() async throws {
+        let harness = StubMessagingHarness(pongTimeout: 1)
+        let task = try await harness.connectAndReady()
+        let recorder = WebSocketEventCollector()
+
+        let subscription = await harness.manager.addEventListener(for: task) { event in
+            recorder.record(event)
+        }
+
+        let transportError = URLError(.badServerResponse)
+        let expectedError = WebSocketError.connectionFailed(SendableUnderlyingError(transportError))
+
+        let pingTask = Task {
+            try await harness.manager.ping(task)
+        }
+
+        #expect(await waitFor(timeout: 1.0) { harness.stubTask.hasPendingPong })
+        harness.stubTask.completePendingPong(with: transportError)
+
+        do {
+            try await pingTask.value
+            Issue.record("Expected mapped connection failure from manual ping")
+        } catch let error as WebSocketError {
+            #expect(error == expectedError)
+        } catch {
+            Issue.record("Expected WebSocketError, got \(error)")
+        }
+
+        #expect(await recorder.waitForCount(2, timeout: 1.0))
+        let snapshot = recorder.snapshot()
+        #expect(snapshot.count == 2)
+        if snapshot.count == 2 {
+            if case .ping = snapshot[0] {} else {
+                Issue.record("expected first event to be .ping")
+            }
+            if case .error(let error) = snapshot[1] {
+                #expect(error == expectedError)
+            } else {
+                Issue.record("expected second event to be .error(connectionFailed)")
+            }
+        }
+
+        #expect(await task.state == .connected)
+        #expect(await task.error == nil)
+
+        await harness.manager.removeEventListener(subscription)
+        await harness.tearDown(task: task)
+    }
+
     @Test("Multiple scripted receives are delivered in order")
     func receiveLoopDeliversMultiplePayloadsInOrder() async throws {
         let harness = StubMessagingHarness()
@@ -242,6 +292,20 @@ private actor AsyncGate {
         releaseContinuation?.resume()
         releaseContinuation = nil
     }
+}
+
+private func waitFor(
+    timeout: TimeInterval,
+    _ condition: @Sendable () -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+    }
+    return condition()
 }
 
 private func waitForGateArrival(_ gate: AsyncGate, timeout: TimeInterval) async -> Bool {

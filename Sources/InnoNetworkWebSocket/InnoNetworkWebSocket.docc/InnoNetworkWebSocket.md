@@ -40,6 +40,17 @@ for await event in await manager.events(for: task) {
 }
 ```
 
+`ContinuousClock.now - started` produces `Duration`. Pass that value through
+if your metrics layer already stores `Duration`, or convert to seconds first
+when you still expose a `TimeInterval`-based API:
+
+```swift
+let elapsed = ContinuousClock.now - started
+let seconds = Double(elapsed.components.seconds) +
+    Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000
+metrics.recordPingRTT(seconds)
+```
+
 ## Topics
 
 ### Essentials

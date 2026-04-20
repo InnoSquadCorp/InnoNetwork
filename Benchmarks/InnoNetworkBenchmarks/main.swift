@@ -75,50 +75,52 @@ private struct BenchmarkOptions: Sendable {
         var maxRegressionPercent = 0.0
 
         var iterator = arguments.makeIterator()
+        func requiredValue(
+            code: Int,
+            description: String
+        ) throws -> String {
+            guard let value = iterator.next(), !value.hasPrefix("-") else {
+                throw NSError(
+                    domain: "InnoNetworkBenchmarks",
+                    code: code,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: description
+                    ]
+                )
+            }
+            return value
+        }
+
         while let argument = iterator.next() {
             switch argument {
             case "--quick":
                 quick = true
             case "--json-path":
-                guard let path = iterator.next() else {
-                    throw NSError(
-                        domain: "InnoNetworkBenchmarks",
-                        code: 3,
-                        userInfo: [
-                            NSLocalizedDescriptionKey:
-                                "Missing path after --json-path."
-                        ]
-                    )
-                }
+                let path = try requiredValue(
+                    code: 3,
+                    description: "Missing path after --json-path."
+                )
                 jsonOutputPath = path
             case "--baseline":
-                guard let override = iterator.next() else {
-                    throw NSError(
-                        domain: "InnoNetworkBenchmarks",
-                        code: 4,
-                        userInfo: [
-                            NSLocalizedDescriptionKey:
-                                "Missing path after --baseline."
-                        ]
-                    )
-                }
+                let override = try requiredValue(
+                    code: 4,
+                    description: "Missing path after --baseline."
+                )
                 baselinePath = override
             case "--enforce-baseline":
                 enforceBaseline = true
             case "--guard-benchmark":
-                guard let rawIdentifier = iterator.next() else {
-                    throw NSError(
-                        domain: "InnoNetworkBenchmarks",
-                        code: 5,
-                        userInfo: [
-                            NSLocalizedDescriptionKey:
-                                "Missing benchmark identifier after --guard-benchmark."
-                        ]
-                    )
-                }
+                let rawIdentifier = try requiredValue(
+                    code: 5,
+                    description: "Missing benchmark identifier after --guard-benchmark."
+                )
                 guardBenchmarks.insert(try BenchmarkIdentifier.parse(rawIdentifier))
             case "--max-regression-percent":
-                guard let rawPercent = iterator.next(), let percent = Double(rawPercent), percent >= 0 else {
+                let rawPercent = try requiredValue(
+                    code: 6,
+                    description: "Missing or invalid numeric value after --max-regression-percent."
+                )
+                guard let percent = Double(rawPercent), percent >= 0 else {
                     throw NSError(
                         domain: "InnoNetworkBenchmarks",
                         code: 6,
@@ -130,7 +132,14 @@ private struct BenchmarkOptions: Sendable {
                 }
                 maxRegressionPercent = percent
             default:
-                break
+                throw NSError(
+                    domain: "InnoNetworkBenchmarks",
+                    code: 13,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Unknown benchmark option '\(argument)'."
+                    ]
+                )
             }
         }
 
@@ -237,7 +246,7 @@ private enum InnoNetworkBenchmarks {
         let encoderIterations = options.quick ? 2_000 : 20_000
         let eventIterations = options.quick ? 400 : 4_000
         let persistenceIterations = options.quick ? 300 : 3_000
-        let reconnectIterations = options.quick ? 20_000 : 20_000
+        let reconnectIterations = 20_000
 
         results.append(try await measure(name: "query-encoder-small", group: "encoding", iterations: encoderIterations) {
             let encoder = URLQueryEncoder(keyEncodingStrategy: URLQueryKeyEncodingStrategy.convertToSnakeCase)

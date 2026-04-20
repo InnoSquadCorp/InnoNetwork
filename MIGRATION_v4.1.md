@@ -70,7 +70,20 @@ captures:
      default:
          break
      }
- }
+}
+```
+
+`ContinuousClock.now - started` now returns `Duration`. If your metrics API
+already accepts `Duration`, you can pass that value through directly as shown
+above.
+
+If you still record RTT as `TimeInterval`, convert the duration explicitly:
+
+```swift
+let elapsed = ContinuousClock.now - started
+let seconds = Double(elapsed.components.seconds) +
+    Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000
+metrics.recordPingRTT(seconds)
 ```
 
 `WebSocketPingContext.attemptNumber` starts at 1 on each connection and

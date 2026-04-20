@@ -30,7 +30,7 @@ struct WebSocketCloseDispositionObservationTests {
             reason: nil
         )
 
-        let disposition = await waitForCloseDisposition(task: task, timeout: 2.0)
+        let disposition = await waitForCloseDisposition(task: task, timeout: .seconds(2))
         guard case .manual(let code) = disposition else {
             Issue.record("expected .manual, got \(String(describing: disposition))")
             return
@@ -46,7 +46,7 @@ struct WebSocketCloseDispositionObservationTests {
 
         await harness.manager.disconnect(task, closeCode: .goingAway)
 
-        let disposition = await waitForCloseDisposition(task: task, timeout: 5.0)
+        let disposition = await waitForCloseDisposition(task: task, timeout: .seconds(5))
         guard case .handshakeTimeout(let code) = disposition else {
             Issue.record("expected .handshakeTimeout, got \(String(describing: disposition))")
             return
@@ -76,7 +76,7 @@ struct WebSocketCloseDispositionObservationTests {
             reason: "restart"
         )
 
-        let disposition = await waitForCloseDisposition(task: task, timeout: 2.0)
+        let disposition = await waitForCloseDisposition(task: task, timeout: .seconds(2))
         guard case .peerRetryable(let code, let reason) = disposition else {
             Issue.record("expected .peerRetryable, got \(String(describing: disposition))")
             return
@@ -97,7 +97,7 @@ struct WebSocketCloseDispositionObservationTests {
             reason: "policy"
         )
 
-        let disposition = await waitForCloseDisposition(task: task, timeout: 2.0)
+        let disposition = await waitForCloseDisposition(task: task, timeout: .seconds(2))
         guard case .peerTerminal(let code, _) = disposition else {
             Issue.record("expected .peerTerminal, got \(String(describing: disposition))")
             return
@@ -117,7 +117,7 @@ struct WebSocketCloseDispositionObservationTests {
             reason: "app-specific"
         )
 
-        let disposition = await waitForCloseDisposition(task: task, timeout: 2.0)
+        let disposition = await waitForCloseDisposition(task: task, timeout: .seconds(2))
         guard case .peerTerminal(let code, _) = disposition else {
             Issue.record("expected .peerTerminal, got \(String(describing: disposition))")
             return
@@ -146,14 +146,14 @@ struct WebSocketCloseDispositionObservationTests {
 /// Waits for `task.closeDisposition` to become non-nil.
 private func waitForCloseDisposition(
     task: WebSocketTask,
-    timeout: TimeInterval
+    timeout: Duration
 ) async -> WebSocketCloseDisposition? {
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline {
+    let deadline = ContinuousClock.now.advanced(by: timeout)
+    while ContinuousClock.now < deadline {
         if let disposition = await task.closeDisposition {
             return disposition
         }
-        try? await Task.sleep(nanoseconds: 10_000_000)
+        try? await Task.sleep(for: .milliseconds(10))
     }
     return await task.closeDisposition
 }

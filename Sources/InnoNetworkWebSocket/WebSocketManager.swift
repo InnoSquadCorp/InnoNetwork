@@ -9,8 +9,13 @@ public enum WebSocketEvent: Sendable {
     case message(Data)
     case string(String)
     /// Emitted just before a ping frame is issued, from either the heartbeat
-    /// loop or ``WebSocketManager/ping(_:)``. Always paired with a subsequent
-    /// `.pong` on success or `.error(.pingTimeout)` on timeout.
+    /// loop or ``WebSocketManager/ping(_:)``.
+    ///
+    /// A successful ping is followed by `.pong`. Public
+    /// ``WebSocketManager/ping(_:)`` failures publish a paired `.error(_:)`
+    /// before throwing. Heartbeat timeouts publish `.error(.pingTimeout)`,
+    /// while non-timeout transport failures surface through the surrounding
+    /// disconnect / error lifecycle.
     ///
     /// The associated ``WebSocketPingContext`` carries the attempt number
     /// within the current connection plus a dispatch timestamp, letting
@@ -28,8 +33,7 @@ public enum WebSocketEvent: Sendable {
 ///   1 for the first ping of a given connection (heartbeat or public
 ///   ``WebSocketManager/ping(_:)``) and resets to 0 when a new connection
 ///   becomes ready or the task is manually reset. Use it to correlate
-///   `.ping(_:)` with the paired `.pong` or `.error(.pingTimeout)` that
-///   follow.
+///   `.ping(_:)` with the paired `.pong` or `.error(_:)` that follow.
 /// - ``dispatchedAt`` is captured with `ContinuousClock.now` immediately
 ///   before the `.ping` event is published. Consumers typically pair it with
 ///   a `ContinuousClock.now` snapshot at `.pong` receipt to compute RTT.
@@ -313,11 +317,8 @@ public final class WebSocketManager: NSObject, Sendable {
             await eventHub.publish(.pong, for: task.id)
         } catch {
             let wsError = mapWebSocketError(error)
-            if case .pingTimeout = wsError {
-                await eventHub.publish(.error(wsError), for: task.id)
-                throw wsError
-            }
-            throw error
+            await eventHub.publish(.error(wsError), for: task.id)
+            throw wsError
         }
     }
 
