@@ -12,6 +12,7 @@ public struct WebSocketConfiguration: Sendable {
                 maxMissedPongs: 1,
                 reconnectDelay: 1.0,
                 reconnectJitterRatio: 0.2,
+                maxReconnectDelay: 60,
                 maxReconnectAttempts: 5,
                 allowsCellularAccess: true,
                 sessionIdentifier: "com.innonetwork.websocket",
@@ -30,6 +31,7 @@ public struct WebSocketConfiguration: Sendable {
                 maxMissedPongs: 2,
                 reconnectDelay: 0.5,
                 reconnectJitterRatio: 0.1,
+                maxReconnectDelay: 30,
                 maxReconnectAttempts: 8,
                 allowsCellularAccess: true,
                 sessionIdentifier: "com.innonetwork.websocket",
@@ -65,6 +67,16 @@ public struct WebSocketConfiguration: Sendable {
     /// Jitter ratio applied to reconnect delay (`0.0...1.0`).
     /// Values outside the range are clamped.
     public let reconnectJitterRatio: Double
+    /// Upper bound in seconds on the exponential-backoff reconnect delay
+    /// after jitter is applied. The raw delay for attempt `n` is
+    /// `reconnectDelay * 2^(n-1) + jitter`; this property caps it so the
+    /// backoff does not grow without bound across high reconnect counts.
+    ///
+    /// - `> 0`: cap enabled (default 60s).
+    /// - `<= 0`: cap **disabled** — pre-4.2 unbounded behavior is preserved.
+    ///
+    /// Negative values are clamped to `0` (cap disabled).
+    public let maxReconnectDelay: TimeInterval
     /// Number of reconnect retries after the initial connection attempt.
     /// Total connection attempts are `1 + maxReconnectAttempts`.
     public let maxReconnectAttempts: Int
@@ -86,6 +98,7 @@ public struct WebSocketConfiguration: Sendable {
         public var maxMissedPongs: Int
         public var reconnectDelay: TimeInterval
         public var reconnectJitterRatio: Double
+        public var maxReconnectDelay: TimeInterval
         public var maxReconnectAttempts: Int
         public var allowsCellularAccess: Bool
         public var sessionIdentifier: String
@@ -101,6 +114,7 @@ public struct WebSocketConfiguration: Sendable {
             self.maxMissedPongs = preset.maxMissedPongs
             self.reconnectDelay = preset.reconnectDelay
             self.reconnectJitterRatio = preset.reconnectJitterRatio
+            self.maxReconnectDelay = preset.maxReconnectDelay
             self.maxReconnectAttempts = preset.maxReconnectAttempts
             self.allowsCellularAccess = preset.allowsCellularAccess
             self.sessionIdentifier = preset.sessionIdentifier
@@ -118,6 +132,7 @@ public struct WebSocketConfiguration: Sendable {
                 maxMissedPongs: maxMissedPongs,
                 reconnectDelay: reconnectDelay,
                 reconnectJitterRatio: reconnectJitterRatio,
+                maxReconnectDelay: maxReconnectDelay,
                 maxReconnectAttempts: maxReconnectAttempts,
                 allowsCellularAccess: allowsCellularAccess,
                 sessionIdentifier: sessionIdentifier,
@@ -146,6 +161,7 @@ public struct WebSocketConfiguration: Sendable {
         maxMissedPongs: Int = 1,
         reconnectDelay: TimeInterval = 1.0,
         reconnectJitterRatio: Double = 0.2,
+        maxReconnectDelay: TimeInterval = 60,
         maxReconnectAttempts: Int = 5,
         allowsCellularAccess: Bool = true,
         sessionIdentifier: String = "com.innonetwork.websocket",
@@ -160,6 +176,7 @@ public struct WebSocketConfiguration: Sendable {
         self.maxMissedPongs = max(1, maxMissedPongs)
         self.reconnectDelay = max(0, reconnectDelay)
         self.reconnectJitterRatio = min(1.0, max(0.0, reconnectJitterRatio))
+        self.maxReconnectDelay = max(0, maxReconnectDelay)
         self.maxReconnectAttempts = max(0, maxReconnectAttempts)
         self.allowsCellularAccess = allowsCellularAccess
         self.sessionIdentifier = sessionIdentifier

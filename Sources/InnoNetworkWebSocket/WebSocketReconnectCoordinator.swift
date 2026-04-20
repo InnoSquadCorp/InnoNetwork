@@ -65,7 +65,13 @@ package struct WebSocketReconnectCoordinator {
             let reconnectCount = await task.reconnectCount
             let baseDelay = configuration.reconnectDelay * pow(2, Double(reconnectCount - 1))
             let jitter = abs(baseDelay * configuration.reconnectJitterRatio)
-            let delay = max(0.0, baseDelay + Double.random(in: (-jitter)...(jitter)))
+            let unclamped = max(0.0, baseDelay + Double.random(in: (-jitter)...(jitter)))
+            // `maxReconnectDelay <= 0` disables the cap (pre-4.2 unbounded
+            // behavior). Otherwise clamp after jitter so the randomized
+            // delay never exceeds the configured ceiling.
+            let delay: TimeInterval = configuration.maxReconnectDelay > 0
+                ? min(unclamped, configuration.maxReconnectDelay)
+                : unclamped
 
             do {
                 try await clock.sleep(for: .seconds(delay))

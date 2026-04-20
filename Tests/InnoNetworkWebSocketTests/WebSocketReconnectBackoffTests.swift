@@ -298,6 +298,86 @@ struct WebSocketReconnectBackoffTests {
         try? await Task.sleep(nanoseconds: 50_000_000)
         #expect(startCalled.withLock { $0 } == false)
     }
+
+    @Test("Exponential backoff is capped at maxReconnectDelay")
+    func reconnectBackoffCapsAtMaxReconnectDelay() async {
+        let clock = TestClock()
+        let registry = WebSocketRuntimeRegistry()
+        let coordinator = WebSocketReconnectCoordinator(
+            configuration: WebSocketConfiguration(
+                reconnectDelay: 1.0,
+                reconnectJitterRatio: 0,
+                maxReconnectDelay: 5.0,
+                maxReconnectAttempts: 20
+            ),
+            runtimeRegistry: registry,
+            clock: clock
+        )
+        // reconnectCount=10 would produce 2^9 = 512s without the cap.
+        // With the cap active at 5s, advancing 5.001s must dispatch.
+        let task = WebSocketTask(url: URL(string: "wss://example.invalid/cap")!)
+        await task.updateState(.disconnected)
+        for _ in 0..<10 {
+            _ = await task.incrementReconnectCount()
+        }
+
+        let startCalled = OSAllocatedUnfairLock<Bool>(initialState: false)
+        await coordinator.attemptReconnect(task: task) { _ in
+            startCalled.withLock { $0 = true }
+        }
+
+        #expect(await clock.waitForWaiters(count: 1))
+        clock.advance(by: .milliseconds(5_001))
+
+        let dispatched = await waitFor(timeout: 1.0) {
+            startCalled.withLock { $0 }
+        }
+        #expect(dispatched, "cap did not fire — start was not dispatched after advance(5.001s)")
+        await registry.cancelReconnectTask(for: task.id)
+    }
+
+    @Test("maxReconnectDelay <= 0 disables the cap (unbounded backoff preserved)")
+    func maxReconnectDelayZeroDisablesCap() async {
+        let clock = TestClock()
+        let registry = WebSocketRuntimeRegistry()
+        let coordinator = WebSocketReconnectCoordinator(
+            configuration: WebSocketConfiguration(
+                reconnectDelay: 2.0,
+                reconnectJitterRatio: 0,
+                maxReconnectDelay: 0,
+                maxReconnectAttempts: 20
+            ),
+            runtimeRegistry: registry,
+            clock: clock
+        )
+        // reconnectCount=3 → 2 * 2^2 = 8s total; no cap active, so 5s
+        // advance must leave the waiter pending.
+        let task = WebSocketTask(url: URL(string: "wss://example.invalid/uncapped")!)
+        await task.updateState(.disconnected)
+        for _ in 0..<3 {
+            _ = await task.incrementReconnectCount()
+        }
+
+        let startCalled = OSAllocatedUnfairLock<Bool>(initialState: false)
+        await coordinator.attemptReconnect(task: task) { _ in
+            startCalled.withLock { $0 = true }
+        }
+
+        #expect(await clock.waitForWaiters(count: 1))
+        clock.advance(by: .seconds(5))
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        #expect(
+            startCalled.withLock { $0 } == false,
+            "cap should be disabled at maxReconnectDelay=0 — start fired too early"
+        )
+
+        clock.advance(by: .seconds(4))
+        let dispatched = await waitFor(timeout: 1.0) {
+            startCalled.withLock { $0 }
+        }
+        #expect(dispatched)
+        await registry.cancelReconnectTask(for: task.id)
+    }
 }
 
 

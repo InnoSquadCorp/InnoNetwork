@@ -19,8 +19,21 @@ struct WebSocketConfigurationTests {
         #expect(config.maxMissedPongs == 1)
         #expect(config.reconnectDelay == 1.0)
         #expect(config.reconnectJitterRatio == 0.2)
+        #expect(config.maxReconnectDelay == 60)
         #expect(config.maxReconnectAttempts == 5)
         #expect(config.allowsCellularAccess == true)
+    }
+
+    @Test("maxReconnectDelay default is 60 seconds")
+    func maxReconnectDelayDefaultIsSixty() {
+        #expect(WebSocketConfiguration.default.maxReconnectDelay == 60)
+        #expect(WebSocketConfiguration.safeDefaults().maxReconnectDelay == 60)
+    }
+
+    @Test("Negative maxReconnectDelay clamps to zero (cap disabled)")
+    func negativeMaxReconnectDelayClampsToZero() {
+        let config = WebSocketConfiguration(maxReconnectDelay: -5)
+        #expect(config.maxReconnectDelay == 0)
     }
 
     @Test("safeDefaults matches default configuration")
