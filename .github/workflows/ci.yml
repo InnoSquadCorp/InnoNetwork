@@ -43,12 +43,14 @@ jobs:
       - name: Resolve dependencies
         run: xcrun swift package resolve
 
-      - name: Build (strict concurrency)
+      - name: Build (Swift 6 language mode)
         run: |
           set -eo pipefail
           echo "🔨 Building InnoNetwork..."
           xcrun swift --version
-          xcrun swift build -Xswiftc -strict-concurrency=complete
+          # Swift 6 language mode is enabled per-target in Package.swift, so
+          # strict concurrency is always in effect without an explicit flag.
+          xcrun swift build
           echo "✅ Build completed successfully!"
 
       - name: Test

@@ -1,12 +1,31 @@
 import Foundation
 
 
-/// Package-internal WebSocket close code taxonomy that covers the full RFC 6455
-/// range plus application-defined custom codes. Used by the close-disposition
-/// classifier so retry/terminal decisions can switch over type-safe cases
-/// instead of raw integers. Public API continues to expose
-/// `URLSessionWebSocketTask.CloseCode` to preserve the existing contract.
-package enum WebSocketCloseCode: Sendable, Hashable {
+/// Public WebSocket close code taxonomy that covers the full RFC 6455 range
+/// plus application-defined custom codes.
+///
+/// This enum is the library's canonical close-code representation. It is used
+/// by ``WebSocketTask/closeCode``, ``WebSocketManager/disconnect(_:closeCode:)``,
+/// ``WebSocketManager/disconnectAll(closeCode:)`` and the internal
+/// close-disposition classifier, so retry vs. terminal reasoning lives behind
+/// typed cases rather than raw integers.
+///
+/// Why not use Foundation's `URLSessionWebSocketTask.CloseCode` directly?
+/// Apple's enum omits `1012` (service restart) and `1013` (try again later),
+/// which are retryable per RFC 6455. Library-defined codes in the 3000–4999
+/// range also cannot be expressed there. `WebSocketCloseCode` preserves both.
+///
+/// Consumers can pattern-match on every case, including `.custom(UInt16)` for
+/// application-level codes:
+///
+/// ```swift
+/// switch task.closeCode {
+/// case .serviceRestart, .tryAgainLater: retryWithBackoff()
+/// case .custom(4001):                    handleAppSpecificClose()
+/// default:                               break
+/// }
+/// ```
+public enum WebSocketCloseCode: Sendable, Hashable {
     case normalClosure              // 1000
     case goingAway                  // 1001
     case protocolError              // 1002
@@ -26,7 +45,7 @@ package enum WebSocketCloseCode: Sendable, Hashable {
     /// Any value outside of the standard 1000-1015 range falls here.
     case custom(UInt16)
 
-    package var rawValue: UInt16 {
+    public var rawValue: UInt16 {
         switch self {
         case .normalClosure:             return 1000
         case .goingAway:                 return 1001
@@ -47,7 +66,7 @@ package enum WebSocketCloseCode: Sendable, Hashable {
         }
     }
 
-    package init(rawValue: UInt16) {
+    public init(rawValue: UInt16) {
         switch rawValue {
         case 1000: self = .normalClosure
         case 1001: self = .goingAway
@@ -68,13 +87,18 @@ package enum WebSocketCloseCode: Sendable, Hashable {
         }
     }
 
+    /// Bridges from Apple's `URLSessionWebSocketTask.CloseCode`. Used at the
+    /// Foundation boundary (SessionDelegate) to convert incoming close codes
+    /// into the library's canonical type. Not intended for consumer code —
+    /// the public API already accepts/emits `WebSocketCloseCode` directly.
     package init(_ code: URLSessionWebSocketTask.CloseCode) {
         self.init(rawValue: UInt16(truncatingIfNeeded: code.rawValue))
     }
 
     /// Returns the matching `URLSessionWebSocketTask.CloseCode` when one
-    /// exists; otherwise falls back to `.invalid` (used for associated-value
-    /// propagation into public API surfaces that demand an Apple enum).
+    /// exists; otherwise falls back to `.invalid`. Package-scoped because it
+    /// is only useful at the Foundation boundary where URLSession demands its
+    /// own enum.
     package var urlSessionCloseCode: URLSessionWebSocketTask.CloseCode {
         URLSessionWebSocketTask.CloseCode(rawValue: Int(rawValue)) ?? .invalid
     }

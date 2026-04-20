@@ -2,16 +2,16 @@ import Foundation
 
 
 package enum WebSocketCloseDisposition: Sendable, Equatable {
-    case manual(URLSessionWebSocketTask.CloseCode)
-    case peerNormal(URLSessionWebSocketTask.CloseCode, String?)
-    case peerRetryable(URLSessionWebSocketTask.CloseCode, String?)
-    case peerTerminal(URLSessionWebSocketTask.CloseCode, String?)
+    case manual(WebSocketCloseCode)
+    case peerNormal(WebSocketCloseCode, String?)
+    case peerRetryable(WebSocketCloseCode, String?)
+    case peerTerminal(WebSocketCloseCode, String?)
     case handshakeUnauthorized(Int)
     case handshakeForbidden(Int)
     case handshakeServerUnavailable(Int)
     case handshakeTransientNetwork(SendableUnderlyingError)
     case handshakeTerminalHTTP(Int)
-    case handshakeTimeout(URLSessionWebSocketTask.CloseCode)
+    case handshakeTimeout(WebSocketCloseCode)
     case transportFailure(WebSocketError)
 
     var shouldReconnect: Bool {
@@ -23,25 +23,16 @@ package enum WebSocketCloseDisposition: Sendable, Equatable {
         }
     }
 
-    static func classifyPeerClose(
-        closeCode: URLSessionWebSocketTask.CloseCode,
-        reason: String?
-    ) -> WebSocketCloseDisposition {
-        classifyPeerClose(WebSocketCloseCode(closeCode), reason: reason)
-    }
-
-    /// Typed overload that classifies using the package-internal
-    /// `WebSocketCloseCode` enum. Preserves the existing associated-value shape
-    /// (Apple's `URLSessionWebSocketTask.CloseCode`) so downstream error
-    /// serialization stays unchanged.
+    /// Classifies a peer-initiated close using the library's typed close-code
+    /// enum. This is the sole public entry point — the legacy
+    /// `URLSessionWebSocketTask.CloseCode`-based overload was removed in 4.0.
     static func classifyPeerClose(
         _ code: WebSocketCloseCode,
         reason: String?
     ) -> WebSocketCloseDisposition {
-        let closeCode = code.urlSessionCloseCode
         switch code {
         case .normalClosure:
-            return .peerNormal(closeCode, reason)
+            return .peerNormal(code, reason)
         case .goingAway,
              .abnormalClosure,
              .internalServerError,
@@ -49,7 +40,7 @@ package enum WebSocketCloseDisposition: Sendable, Equatable {
              .tryAgainLater,
              .badGateway,
              .tlsHandshakeFailure:
-            return .peerRetryable(closeCode, reason)
+            return .peerRetryable(code, reason)
         case .unsupportedData,
              .invalidFramePayloadData,
              .policyViolation,
@@ -58,7 +49,7 @@ package enum WebSocketCloseDisposition: Sendable, Equatable {
              .protocolError,
              .noStatusReceived,
              .custom:
-            return .peerTerminal(closeCode, reason)
+            return .peerTerminal(code, reason)
         }
     }
 
