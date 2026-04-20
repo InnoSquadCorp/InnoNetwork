@@ -53,6 +53,19 @@ let package = Package(
             path: "Sources/InnoNetworkWebSocket",
             swiftSettings: strictSettings
         ),
+        // Package-internal test helpers. Intentionally NOT exposed as a
+        // `.library(...)` product so external consumers never see these
+        // symbols. Imported only from the three test targets below.
+        .target(
+            name: "InnoNetworkTestSupport",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkDownload",
+                "InnoNetworkWebSocket",
+            ],
+            path: "Sources/InnoNetworkTestSupport",
+            swiftSettings: strictSettings
+        ),
         .executableTarget(
             name: "InnoNetworkBenchmarks",
             dependencies: [
@@ -75,19 +88,19 @@ let package = Package(
         ),
         .testTarget(
             name: "InnoNetworkTests",
-            dependencies: ["InnoNetwork"],
+            dependencies: ["InnoNetwork", "InnoNetworkTestSupport"],
             path: "Tests/InnoNetworkTests",
             swiftSettings: strictSettings
         ),
         .testTarget(
             name: "InnoNetworkDownloadTests",
-            dependencies: ["InnoNetworkDownload"],
+            dependencies: ["InnoNetworkDownload", "InnoNetworkTestSupport"],
             path: "Tests/InnoNetworkDownloadTests",
             swiftSettings: strictSettings
         ),
         .testTarget(
             name: "InnoNetworkWebSocketTests",
-            dependencies: ["InnoNetworkWebSocket"],
+            dependencies: ["InnoNetworkWebSocket", "InnoNetworkTestSupport"],
             path: "Tests/InnoNetworkWebSocketTests",
             swiftSettings: strictSettings
         ),

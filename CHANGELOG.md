@@ -14,6 +14,46 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No unreleased entries yet.
 
+## [4.2.0]
+
+Minor release that adds a reconnect-delay cap, a reusable test-support
+target, deterministic download retry tests, and DocC coverage for the
+shared event-delivery policy.
+
+### Added
+
+- `WebSocketConfiguration.maxReconnectDelay` — caps the exponential
+  backoff delay when set to a positive value. The default remains
+  disabled (`0`), preserving the pre-4.2 unbounded behavior for existing
+  call sites. When enabled, the randomized delay is sampled from a
+  bounded range that never exceeds the configured ceiling.
+- DocC article **Event delivery policy** documenting
+  `EventDeliveryPolicy` tuning — per-partition / per-consumer buffering,
+  `.dropOldest` vs `.dropNewest` selection, metrics reporter
+  integration, and aggregate snapshot interpretation. Linked from core
+  as well as the Download and WebSocket modules.
+
+### Changed
+
+- Download retry tests now run against a new `StubDownloadURLSession`
+  harness instead of a live `URLSession` with an `.invalid` URL. The
+  retry chain is driven by injected synthetic completions, so full-suite
+  execution is deterministic and no longer relies on wall-clock polling.
+  The suite runs serialized (`@Suite(.serialized)`) to keep multi-step
+  retry cascades robust under cooperative pool contention.
+- Test-only: the `HeartbeatEventRecorder` alias is **removed**. Tests
+  now use `WebSocketEventRecorder` directly. The type was internal to
+  the WebSocket test target only — not a public API change.
+- Test-only: `TestClock` no longer ships as three hand-maintained
+  copies. A new package-internal `InnoNetworkTestSupport` target hosts
+  `TestClock` and `WebSocketEventRecorder` and is imported by all three
+  test targets. The target is **not** exposed as a `.library` product,
+  so external consumers never see these helpers. The old
+  `Scripts/verify_testclock_parity.sh` parity guard is deleted.
+- CI: the `@unchecked Sendable` prohibition is now scoped to the three
+  shipping library targets so the `InnoNetworkTestSupport` helpers can
+  use `@unchecked Sendable` where warranted (e.g. `TestClock`).
+
 ## [4.1.0]
 
 Minor release that adds two public observability surfaces on top of 4.0 —

@@ -63,16 +63,26 @@ jobs:
       - name: Enforce no unchecked sendable in production sources
         run: |
           set -eo pipefail
+          # Scope the check to the three shipping library targets so the
+          # package-internal `InnoNetworkTestSupport` target (test helpers
+          # like TestClock that legitimately use `@unchecked Sendable`) is
+          # excluded. No product-library depends on InnoNetworkTestSupport,
+          # so external consumers never see those symbols.
+          production_paths=(
+            Sources/InnoNetwork
+            Sources/InnoNetworkDownload
+            Sources/InnoNetworkWebSocket
+          )
           temp_matches="$(mktemp)"
 
           if command -v rg > /dev/null 2>&1; then
-            rg -n "@unchecked Sendable" Sources > "$temp_matches" || true
+            rg -n "@unchecked Sendable" "${production_paths[@]}" > "$temp_matches" || true
           else
-            grep -R -n "@unchecked Sendable" Sources > "$temp_matches" || true
+            grep -R -n "@unchecked Sendable" "${production_paths[@]}" > "$temp_matches" || true
           fi
 
           if [[ -s "$temp_matches" ]]; then
-            echo "Found @unchecked Sendable usage in Sources:"
+            echo "Found @unchecked Sendable usage in production sources:"
             cat "$temp_matches"
             exit 1
           fi

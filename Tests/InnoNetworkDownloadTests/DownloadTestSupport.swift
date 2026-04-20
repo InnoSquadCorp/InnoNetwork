@@ -55,6 +55,9 @@ func waitForRuntimeTaskIdentifier(
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
         if let identifier = await manager.runtimeTaskIdentifier(for: task) {
+            // Stub download task identifiers are monotonic, so a different
+            // identifier means the retry path really did register a fresh
+            // runtime task.
             if previousIdentifier == nil || identifier != previousIdentifier {
                 return identifier
             }

@@ -1,6 +1,7 @@
 import Foundation
 import os
 import Testing
+import InnoNetworkTestSupport
 @testable import InnoNetwork
 @testable import InnoNetworkWebSocket
 
@@ -487,7 +488,7 @@ final class HeartbeatTestHarness: Sendable {
     /// Default recorder attached during `startHeartbeat`. Every heartbeat
     /// event (including `.pong`) flows through it; tests use `pongCount` to
     /// sequence multi-cycle scenarios.
-    let defaultRecorder: HeartbeatEventRecorder
+    let defaultRecorder: WebSocketEventRecorder
     private let coordinator: WebSocketHeartbeatCoordinator
 
     init(
@@ -513,7 +514,7 @@ final class HeartbeatTestHarness: Sendable {
             metricsReporter: configuration.eventMetricsReporter,
             hubKind: .webSocketTask
         )
-        self.defaultRecorder = HeartbeatEventRecorder()
+        self.defaultRecorder = WebSocketEventRecorder()
         self.coordinator = WebSocketHeartbeatCoordinator(
             configuration: configuration,
             runtimeRegistry: runtimeRegistry,
@@ -589,8 +590,8 @@ final class HeartbeatTestHarness: Sendable {
     /// Attaches an additional event listener. The default recorder remains
     /// active; this is useful when a test wants an isolated recorder with
     /// its own history.
-    func attachListener() async -> HeartbeatEventRecorder {
-        let recorder = HeartbeatEventRecorder()
+    func attachListener() async -> WebSocketEventRecorder {
+        let recorder = WebSocketEventRecorder()
         _ = await eventHub.addListener(taskID: task.id) { event in
             recorder.record(event)
         }
@@ -599,8 +600,8 @@ final class HeartbeatTestHarness: Sendable {
 }
 
 
-// `HeartbeatEventRecorder` (now `WebSocketEventRecorder`) moved to
+// `WebSocketEventRecorder` (now `WebSocketEventRecorder`) moved to
 // `WebSocketTestSupport.swift` so Reconnect/ReceiveLoop/Messaging suites can
 // reuse the same snapshot + counter helpers. A `typealias
-// HeartbeatEventRecorder = WebSocketEventRecorder` is kept there for
+// WebSocketEventRecorder = WebSocketEventRecorder` is kept there for
 // back-compat.

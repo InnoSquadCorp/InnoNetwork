@@ -1,40 +1,53 @@
 import Foundation
+import os
 import Testing
+@testable import InnoNetwork
 @testable import InnoNetworkDownload
 
 
-@Suite("Download Retry Tests")
+/// Retry behavior verified through the `StubDownloadURLSession` harness.
+/// The previous `.invalid` URL + real URLSession race is gone; each retry
+/// consumes one pre-queued `StubDownloadURLTask` and completions are
+/// injected via the package-level delegate callback directly.
+/// `.serialized` because each test drives a 3-attempt retry chain through
+/// async `handleCompletion` → `failureCoordinator.handleError` →
+/// `transferCoordinator.startDownload` cascades. When the full suite runs
+/// these in parallel with the rest of the Download tests, cooperative pool
+/// contention can push the multi-step chains past the assertion timeouts.
+/// Serializing within this suite alone keeps parallelism across other
+/// suites while eliminating the inter-test races.
+@Suite("Download Retry Tests", .serialized)
 struct DownloadRetryTests {
 
     @Test("Retry chain stops at maxRetryCount with terminal failed state")
     func retryChainStopsAtMaxRetryCount() async throws {
-        let config = DownloadConfiguration(
+        let harness = try StubDownloadHarness(
             maxRetryCount: 2,
             maxTotalRetries: 5,
             retryDelay: 0,
-            sessionIdentifier: makeDownloadTestSessionIdentifier("retry-chain")
+            label: "retry-chain"
         )
-        let manager = try DownloadManager(configuration: config)
+        // Each failure round creates a new URL task, so pre-queue enough
+        // stubs to cover every attempt (initial + maxRetryCount retries).
+        for _ in 0..<2 {
+            harness.stubSession.enqueue(StubDownloadURLTask())
+        }
 
-        let task = await manager.download(
-            url: URL(string: "https://example.invalid/file.zip")!,
-            to: URL(fileURLWithPath: "/tmp/\(UUID().uuidString).zip")
-        )
+        let task = await harness.startDownload()
 
-        var excluded: Set<Int> = []
+        // Drive `maxRetryCount + 1` failures (initial attempt + retries)
+        // and wait for a fresh runtime identifier after each injected
+        // failure.
         var lastIdentifier: Int?
-        for _ in 0..<(config.maxRetryCount + 1) {
-            let identifier = try #require(await waitForRuntimeIdentifier(
-                manager: manager,
+        for _ in 0..<3 {
+            let identifier = try #require(await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
                 task: task,
-                excluding: excluded,
-                timeout: 3.0
+                excluding: lastIdentifier,
+                timeout: 5.0
             ))
-            excluded.insert(identifier)
             lastIdentifier = identifier
-            await injectSyntheticCompletion(
-                manager: manager,
-                task: task,
+            harness.injectCompletion(
                 taskIdentifier: identifier,
                 location: nil,
                 error: SendableUnderlyingError(
@@ -45,36 +58,28 @@ struct DownloadRetryTests {
             )
         }
 
-        _ = lastIdentifier
-        #expect(await waitForTaskState(task, timeout: 3.0) { $0 == .failed })
-        #expect(await task.retryCount >= config.maxRetryCount)
+        #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .failed })
+        #expect(await task.retryCount >= 2)
     }
 
     @Test("Cancelled transport error does not trigger retry")
     func cancelledTransportErrorSkipsRetry() async throws {
-        let config = DownloadConfiguration(
+        let harness = try StubDownloadHarness(
             maxRetryCount: 3,
             maxTotalRetries: 3,
             retryDelay: 0,
-            sessionIdentifier: makeDownloadTestSessionIdentifier("retry-cancelled")
+            label: "retry-cancelled"
         )
-        let manager = try DownloadManager(configuration: config)
+        let task = await harness.startDownload()
 
-        let task = await manager.download(
-            url: URL(string: "https://example.invalid/file.zip")!,
-            to: URL(fileURLWithPath: "/tmp/\(UUID().uuidString).zip")
-        )
-
-        let identifier = try #require(await waitForRuntimeIdentifier(
-            manager: manager,
+        let identifier = try #require(await waitForRuntimeTaskIdentifier(
+            manager: harness.manager,
             task: task,
-            excluding: [],
+            excluding: nil,
             timeout: 2.0
         ))
 
-        await injectSyntheticCompletion(
-            manager: manager,
-            task: task,
+        harness.injectCompletion(
             taskIdentifier: identifier,
             location: nil,
             error: SendableUnderlyingError(
@@ -84,11 +89,15 @@ struct DownloadRetryTests {
             )
         )
 
-        try? await Task.sleep(nanoseconds: 300_000_000)
+        // Give the failure coordinator a short window to (not) react. The
+        // cancelled-transport path short-circuits before retry scheduling,
+        // so no new runtime task is created.
+        try? await Task.sleep(nanoseconds: 50_000_000)
         #expect(await task.retryCount == 0)
         #expect(await task.state != .failed)
+        #expect(harness.stubSession.createdTasks.count == 1)
 
-        await manager.cancel(task)
+        await harness.manager.cancel(task)
     }
 
     @Test("Network change resets retry count when waitsForNetworkChanges is enabled")
@@ -100,32 +109,26 @@ struct DownloadRetryTests {
             nextChangeSnapshot: changedSnapshot
         )
 
-        let config = DownloadConfiguration(
+        let harness = try StubDownloadHarness(
             maxRetryCount: 5,
             maxTotalRetries: 10,
             retryDelay: 0,
-            sessionIdentifier: makeDownloadTestSessionIdentifier("retry-netchange"),
             networkMonitor: monitor,
             waitsForNetworkChanges: true,
-            networkChangeTimeout: 0.5
+            networkChangeTimeout: 0.5,
+            label: "retry-netchange"
         )
-        let manager = try DownloadManager(configuration: config)
+        harness.stubSession.enqueue(StubDownloadURLTask()) // retry stub
+        let task = await harness.startDownload()
 
-        let task = await manager.download(
-            url: URL(string: "https://example.invalid/file.zip")!,
-            to: URL(fileURLWithPath: "/tmp/\(UUID().uuidString).zip")
-        )
-
-        let firstIdentifier = try #require(await waitForRuntimeIdentifier(
-            manager: manager,
+        let firstIdentifier = try #require(await waitForRuntimeTaskIdentifier(
+            manager: harness.manager,
             task: task,
-            excluding: [],
+            excluding: nil,
             timeout: 2.0
         ))
 
-        await injectSyntheticCompletion(
-            manager: manager,
-            task: task,
+        harness.injectCompletion(
             taskIdentifier: firstIdentifier,
             location: nil,
             error: SendableUnderlyingError(
@@ -135,17 +138,17 @@ struct DownloadRetryTests {
             )
         )
 
-        _ = try #require(await waitForRuntimeIdentifier(
-            manager: manager,
+        _ = try #require(await waitForRuntimeTaskIdentifier(
+            manager: harness.manager,
             task: task,
-            excluding: [firstIdentifier],
-            timeout: 3.0
+            excluding: firstIdentifier,
+            timeout: 2.0
         ))
         #expect(await monitor.waitForChangeCallCount >= 1)
         #expect(await task.retryCount == 0)
         #expect(await task.totalRetryCount >= 1)
 
-        await manager.cancel(task)
+        await harness.manager.cancel(task)
     }
 
     @Test("maxTotalRetries cap enforces terminal failure even after network resets")
@@ -157,34 +160,33 @@ struct DownloadRetryTests {
             nextChangeSnapshot: changedSnapshot
         )
 
-        let config = DownloadConfiguration(
+        let harness = try StubDownloadHarness(
             maxRetryCount: 10,
             maxTotalRetries: 2,
             retryDelay: 0,
-            sessionIdentifier: makeDownloadTestSessionIdentifier("retry-total-cap"),
             networkMonitor: monitor,
             waitsForNetworkChanges: true,
-            networkChangeTimeout: 0.5
+            networkChangeTimeout: 0.5,
+            label: "retry-total-cap"
         )
-        let manager = try DownloadManager(configuration: config)
+        // Pre-queue `maxTotalRetries` additional stubs; after the cap is hit
+        // the manager must transition to `.failed` instead of asking for one
+        // more download task.
+        for _ in 0..<2 {
+            harness.stubSession.enqueue(StubDownloadURLTask())
+        }
+        let task = await harness.startDownload()
 
-        let task = await manager.download(
-            url: URL(string: "https://example.invalid/file.zip")!,
-            to: URL(fileURLWithPath: "/tmp/\(UUID().uuidString).zip")
-        )
-
-        var excluded: Set<Int> = []
-        for _ in 0..<(config.maxTotalRetries + 1) {
-            let identifier = try #require(await waitForRuntimeIdentifier(
-                manager: manager,
+        var lastIdentifier: Int?
+        for _ in 0..<3 {
+            let identifier = try #require(await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
                 task: task,
-                excluding: excluded,
-                timeout: 3.0
+                excluding: lastIdentifier,
+                timeout: 5.0
             ))
-            excluded.insert(identifier)
-            await injectSyntheticCompletion(
-                manager: manager,
-                task: task,
+            lastIdentifier = identifier
+            harness.injectCompletion(
                 taskIdentifier: identifier,
                 location: nil,
                 error: SendableUnderlyingError(
@@ -195,24 +197,7 @@ struct DownloadRetryTests {
             )
         }
 
-        #expect(await waitForTaskState(task, timeout: 3.0) { $0 == .failed })
-        #expect(await task.totalRetryCount >= config.maxTotalRetries)
-    }
-
-    private func waitForRuntimeIdentifier(
-        manager: DownloadManager,
-        task: DownloadTask,
-        excluding: Set<Int>,
-        timeout: TimeInterval
-    ) async -> Int? {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if let identifier = await manager.runtimeTaskIdentifier(for: task),
-               !excluding.contains(identifier) {
-                return identifier
-            }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-        return nil
+        #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .failed })
+        #expect(await task.totalRetryCount >= 2)
     }
 }

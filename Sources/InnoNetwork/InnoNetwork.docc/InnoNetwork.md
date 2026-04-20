@@ -40,3 +40,11 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``HTTPMethod``
 - ``ContentType``
 - ``NetworkError``
+
+### Event Pipeline
+
+- <doc:EventDeliveryPolicy>
+- ``EventDeliveryPolicy``
+- ``EventPipelineOverflowPolicy``
+- ``EventPipelineMetricsReporting``
+- ``EventPipelineAggregateSnapshotMetric``
