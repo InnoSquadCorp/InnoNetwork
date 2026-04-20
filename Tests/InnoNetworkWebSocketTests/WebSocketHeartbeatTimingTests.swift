@@ -198,6 +198,51 @@ struct WebSocketHeartbeatTimingTests {
         #expect(drained)
         #expect(harness.stubTask.pingCount == 0)
     }
+
+    @Test("Timed out heartbeat does not dispatch a stale ping after pre-dispatch cancellation")
+    func timedOutHeartbeatDoesNotDispatchStalePing() async throws {
+        let dispatchGate = BlockingPingDispatchGate()
+        let harness = HeartbeatTestHarness(
+            heartbeatInterval: 4,
+            pongTimeout: 1,
+            maxMissedPongs: 1,
+            beforeSendPingDispatch: {
+                dispatchGate.wait()
+            }
+        )
+
+        let timeoutBox = OSAllocatedUnfairLock<Int?>(initialState: nil)
+        await harness.startHeartbeat(onPingTimeout: { taskIdentifier in
+            timeoutBox.withLock { $0 = taskIdentifier }
+        })
+
+        #expect(await harness.clock.waitForWaiters(count: 1))
+
+        let baseline = harness.clock.enqueuedCount
+        harness.clock.advance(by: .seconds(4))
+
+        let reachedDispatchGate = await waitFor(timeout: 1.0) {
+            dispatchGate.hasArrived
+        }
+        #expect(reachedDispatchGate)
+        #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 1))
+
+        harness.clock.advance(by: .seconds(1))
+        dispatchGate.release()
+
+        let stalePingSuppressed = await waitFor(timeout: 1.0) {
+            harness.stubTask.pingCount == 0 && !harness.stubTask.hasPendingPong
+        }
+        #expect(stalePingSuppressed)
+
+        let timedOut = await waitFor(timeout: 1.0) {
+            timeoutBox.withLock { $0 } != nil
+        }
+        #expect(timedOut)
+        #expect(timeoutBox.withLock { $0 } == harness.stubTask.taskIdentifier)
+
+        await harness.stopHeartbeat()
+    }
 }
 
 
@@ -214,6 +259,28 @@ private func waitFor(
         try? await Task.sleep(nanoseconds: 5_000_000)
     }
     return condition()
+}
+
+
+/// Blocks the coordinator right before it would dispatch a ping, allowing
+/// tests to cancel the enclosing task while the continuation is already
+/// registered but the socket has not yet seen the ping.
+final class BlockingPingDispatchGate: @unchecked Sendable {
+    private let arrivedLock = OSAllocatedUnfairLock<Bool>(initialState: false)
+    private let semaphore = DispatchSemaphore(value: 0)
+
+    func wait() {
+        arrivedLock.withLock { $0 = true }
+        semaphore.wait()
+    }
+
+    func release() {
+        semaphore.signal()
+    }
+
+    var hasArrived: Bool {
+        arrivedLock.withLock { $0 }
+    }
 }
 
 
@@ -235,7 +302,8 @@ final class HeartbeatTestHarness: Sendable {
     init(
         heartbeatInterval: TimeInterval,
         pongTimeout: TimeInterval,
-        maxMissedPongs: Int
+        maxMissedPongs: Int,
+        beforeSendPingDispatch: (@Sendable () -> Void)? = nil
     ) {
         let url = URL(string: "ws://stub.invalid/hb")!
         self.task = WebSocketTask(url: url)
@@ -259,7 +327,8 @@ final class HeartbeatTestHarness: Sendable {
             configuration: configuration,
             runtimeRegistry: runtimeRegistry,
             eventHub: eventHub,
-            clock: clock
+            clock: clock,
+            beforeSendPingDispatch: beforeSendPingDispatch
         )
     }
 
