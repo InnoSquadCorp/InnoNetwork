@@ -9,11 +9,48 @@ public enum WebSocketEvent: Sendable {
     case message(Data)
     case string(String)
     /// Emitted just before a ping frame is issued, from either the heartbeat
-    /// loop or `WebSocketManager.ping(_:)`. Always paired with a subsequent
+    /// loop or ``WebSocketManager/ping(_:)``. Always paired with a subsequent
     /// `.pong` on success or `.error(.pingTimeout)` on timeout.
-    case ping
+    ///
+    /// The associated ``WebSocketPingContext`` carries the attempt number
+    /// within the current connection plus a dispatch timestamp, letting
+    /// consumers compute per-cycle RTT without maintaining their own
+    /// bookkeeping.
+    case ping(WebSocketPingContext)
     case pong
     case error(WebSocketError)
+}
+
+
+/// Metadata that accompanies every ``WebSocketEvent/ping(_:)`` emission.
+///
+/// - ``attemptNumber`` is a monotonically increasing counter that starts at
+///   1 for the first ping of a given connection (heartbeat or public
+///   ``WebSocketManager/ping(_:)``) and resets to 0 when a new connection
+///   becomes ready or the task is manually reset. Use it to correlate
+///   `.ping(_:)` with the paired `.pong` or `.error(.pingTimeout)` that
+///   follow.
+/// - ``dispatchedAt`` is captured with `ContinuousClock.now` immediately
+///   before the `.ping` event is published. Consumers typically pair it with
+///   a `ContinuousClock.now` snapshot at `.pong` receipt to compute RTT.
+///
+/// This struct is designed to gain fields in minor releases without breaking
+/// existing consumers — the public initializer is package-scoped so the
+/// library controls construction.
+public struct WebSocketPingContext: Sendable, Hashable {
+    /// Sequence number of this ping attempt within the current connection.
+    /// 1-indexed; resets when a new connection becomes ready or on task reset.
+    public let attemptNumber: Int
+
+    /// `ContinuousClock.now` snapshot at the moment `.ping(_:)` is
+    /// published, captured immediately before the actual ping frame is
+    /// dispatched.
+    public let dispatchedAt: ContinuousClock.Instant
+
+    package init(attemptNumber: Int, dispatchedAt: ContinuousClock.Instant) {
+        self.attemptNumber = attemptNumber
+        self.dispatchedAt = dispatchedAt
+    }
 }
 
 public struct WebSocketEventSubscription: Hashable, Sendable {
@@ -224,7 +261,12 @@ public final class WebSocketManager: NSObject, Sendable {
             await runtimeRegistry.setCloseHandshakeTask(closeTimeoutTask, for: task.id)
         } else {
             _ = await task.completeManualDisconnect()
-            await finalizeDisconnect(task: task, closeCode: closeCode, error: disconnectError)
+            await finalizeDisconnect(
+                task: task,
+                closeCode: closeCode,
+                disposition: .manual(closeCode),
+                error: disconnectError
+            )
             return
         }
     }
@@ -263,7 +305,9 @@ public final class WebSocketManager: NSObject, Sendable {
         guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
             throw WebSocketError.disconnected(nil)
         }
-        await eventHub.publish(.ping, for: task.id)
+        let attempt = await task.incrementPingCounter()
+        let context = WebSocketPingContext(attemptNumber: attempt, dispatchedAt: .now)
+        await eventHub.publish(.ping(context), for: task.id)
         do {
             try await heartbeatCoordinator.sendPing(urlTask, timeout: configuration.pongTimeout)
             await eventHub.publish(.pong, for: task.id)
@@ -371,6 +415,7 @@ public final class WebSocketManager: NSObject, Sendable {
             }
 
             await task.resetReconnectCount()
+            await task.resetPingCounter()
             await task.setAutoReconnectEnabled(true)
             await task.setError(nil)
             await task.updateState(.connected)
@@ -389,7 +434,12 @@ public final class WebSocketManager: NSObject, Sendable {
             if await task.awaitingCloseHandshake {
                 let manualError = await task.completeManualDisconnect()
                 await runtimeRegistry.cancelCloseHandshakeTask(for: task.id)
-                await finalizeDisconnect(task: task, closeCode: closeCode, error: manualError)
+                await finalizeDisconnect(
+                    task: task,
+                    closeCode: closeCode,
+                    disposition: .manual(closeCode),
+                    error: manualError
+                )
                 return
             }
 
@@ -404,6 +454,7 @@ public final class WebSocketManager: NSObject, Sendable {
             let error = makeDisconnectedError(closeDisposition: disposition)
             await task.updateState(.disconnected)
             await task.setCloseCode(closeCode)
+            await task.setCloseDisposition(disposition)
             await task.setError(error)
             await runtimeRegistry.cancelHeartbeatTask(for: task.id)
             await runtimeRegistry.onDisconnected?(task, error)
@@ -531,6 +582,10 @@ public final class WebSocketManager: NSObject, Sendable {
             closeDisposition: closeDisposition,
             previousState: previousState
         )
+        // Record the classified disposition for consumer observation before
+        // transitioning state, regardless of the reconnect decision.
+        await task.setCloseDisposition(closeDisposition)
+
         switch reconnectAction {
         case .retry:
             await task.updateState(.reconnecting)
@@ -569,10 +624,12 @@ public final class WebSocketManager: NSObject, Sendable {
     private func finalizeDisconnect(
         task: WebSocketTask,
         closeCode: WebSocketCloseCode,
+        disposition: WebSocketCloseDisposition,
         error: WebSocketError?
     ) async {
         await task.updateState(.disconnected)
         await task.setCloseCode(closeCode)
+        await task.setCloseDisposition(disposition)
         await task.setError(error)
         await runtimeRegistry.onDisconnected?(task, error)
         await eventHub.publish(.disconnected(error), for: task.id)
@@ -686,14 +743,20 @@ public final class WebSocketManager: NSObject, Sendable {
         guard await task.awaitingCloseHandshake else { return }
 
         await runtimeRegistry.clearCloseHandshakeTask(for: taskID)
+        await task.clearManualDisconnectState()
         if let urlTask = await runtimeRegistry.urlTask(for: taskID) {
             urlTask.cancel()
         }
-        let manualError = await task.completeManualDisconnect()
-        let finalError = manualError ?? makeDisconnectedError(
+        let disposition: WebSocketCloseDisposition = .handshakeTimeout(closeCode)
+        let finalError = makeDisconnectedError(
             closeDisposition: .handshakeTimeout(closeCode)
         )
-        await finalizeDisconnect(task: task, closeCode: closeCode, error: finalError)
+        await finalizeDisconnect(
+            task: task,
+            closeCode: closeCode,
+            disposition: disposition,
+            error: finalError
+        )
     }
 
     static func shouldReconnect(currentState: WebSocketState, autoReconnectEnabled: Bool) -> Bool {

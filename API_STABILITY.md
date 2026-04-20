@@ -1,6 +1,6 @@
 # API Stability
 
-This document defines the compatibility contract for the public OSS release of InnoNetwork 3.x.
+This document defines the compatibility contract for the public OSS release of InnoNetwork 4.x.
 
 ## Stable
 
@@ -21,6 +21,9 @@ This document defines the compatibility contract for the public OSS release of I
 - `AnyResponseDecoder`
 - `URLQueryEncoder`
 - `EventDeliveryPolicy`
+- `WebSocketCloseCode`
+- `WebSocketCloseDisposition`
+- `WebSocketPingContext`
 
 ## Provisionally Stable
 

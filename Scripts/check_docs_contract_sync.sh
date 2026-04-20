@@ -91,6 +91,9 @@ expected_stable=(
 '`AnyResponseDecoder`'
 '`URLQueryEncoder`'
 '`EventDeliveryPolicy`'
+'`WebSocketCloseCode`'
+'`WebSocketCloseDisposition`'
+'`WebSocketPingContext`'
 )
 
 documented_stable=()
@@ -262,6 +265,18 @@ for symbol in "${expected_stable[@]}"; do
     '`EventDeliveryPolicy`')
       pattern='public struct EventDeliveryPolicy'
       target="$repo_root/Sources/InnoNetwork/EventPipeline.swift"
+      ;;
+    '`WebSocketCloseCode`')
+      pattern='public enum WebSocketCloseCode'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseCode.swift"
+      ;;
+    '`WebSocketCloseDisposition`')
+      pattern='public enum WebSocketCloseDisposition'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseDisposition.swift"
+      ;;
+    '`WebSocketPingContext`')
+      pattern='public struct WebSocketPingContext'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
       ;;
     *)
       fail "unknown stable symbol mapping: $symbol"
