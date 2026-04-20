@@ -1,24 +1,13 @@
 import Foundation
 import os
-@testable import InnoNetwork
+import InnoNetwork
 
 
-// MARK: - Parity note
-//
-// This file is intentionally **duplicated** across three test targets:
-// `InnoNetworkTests`, `InnoNetworkDownloadTests`, and
-// `InnoNetworkWebSocketTests`. SwiftPM does not have a first-class way to
-// share source between `testTarget` modules without promoting the code to a
-// non-test target, and we did not want to introduce a public test-support
-// product just to share a clock stub. When editing this file, apply the same
-// edit to the other two copies. `Scripts/verify_testclock_parity.sh`
-// enforces byte-for-byte parity in CI.
-
-
-/// Virtual-time clock used by deterministic timing tests. Production code
-/// receives an `any InnoNetworkClock`; production paths use `SystemClock`,
-/// and tests inject this implementation to drive timing deterministically via
-/// `advance(by:)` instead of wall-clock sleeps.
+/// Virtual-time clock used by deterministic timing tests across all three
+/// test targets. Production code receives an `any InnoNetworkClock`;
+/// production paths use `SystemClock`, and tests inject this implementation
+/// to drive timing deterministically via `advance(by:)` instead of
+/// wall-clock sleeps.
 ///
 /// Implementation notes:
 /// - State is held behind an `OSAllocatedUnfairLock` so that enqueue,
@@ -31,7 +20,7 @@ import os
 /// - `sleep(for:)` also performs `Task.checkCancellation()` after resuming so
 ///   a waiter that was fired in a tight race with cancellation still surfaces
 ///   as `CancellationError` to the caller.
-final class TestClock: InnoNetworkClock, @unchecked Sendable {
+package final class TestClock: InnoNetworkClock, @unchecked Sendable {
 
     private struct Waiter {
         let id: UUID
@@ -52,9 +41,9 @@ final class TestClock: InnoNetworkClock, @unchecked Sendable {
 
     private let stateLock = OSAllocatedUnfairLock<State>(initialState: State())
 
-    init() {}
+    package init() {}
 
-    func sleep(for duration: Duration) async throws {
+    package func sleep(for duration: Duration) async throws {
         let id = UUID()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -90,7 +79,7 @@ final class TestClock: InnoNetworkClock, @unchecked Sendable {
 
     /// Advances virtual time and resumes every waiter whose deadline has now
     /// elapsed, in deadline order.
-    func advance(by duration: Duration) {
+    package func advance(by duration: Duration) {
         let ready: [Waiter] = stateLock.withLock { state in
             state.virtualNow += duration
             let fired = state.waiters.filter { $0.deadline <= state.virtualNow }
@@ -104,20 +93,20 @@ final class TestClock: InnoNetworkClock, @unchecked Sendable {
 
     /// Outstanding waiter count. Useful for gating `advance` on the coordinator
     /// having actually registered its sleep.
-    var waiterCount: Int {
+    package var waiterCount: Int {
         stateLock.withLock { $0.waiters.count }
     }
 
     /// Monotone counter of total sleeps enqueued since the clock was created.
     /// Strictly increases; tests snapshot it before advancing a cycle and wait
     /// for it to reach a target before proceeding.
-    var enqueuedCount: Int {
+    package var enqueuedCount: Int {
         stateLock.withLock { $0.enqueuedCount }
     }
 
     /// Awaits until `enqueuedCount` reaches at least `target` or the timeout
     /// elapses. Returns `true` if the target was reached.
-    func waitForEnqueuedCount(atLeast target: Int, timeout: TimeInterval = 1.0) async -> Bool {
+    package func waitForEnqueuedCount(atLeast target: Int, timeout: TimeInterval = 1.0) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while stateLock.withLock({ $0.enqueuedCount }) < target {
             if Date() >= deadline { return false }
@@ -128,7 +117,7 @@ final class TestClock: InnoNetworkClock, @unchecked Sendable {
 
     /// Awaits until at least `count` waiters are registered or `timeout`
     /// elapses. Returns `true` if the target was reached.
-    func waitForWaiters(count: Int, timeout: TimeInterval = 1.0) async -> Bool {
+    package func waitForWaiters(count: Int, timeout: TimeInterval = 1.0) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while stateLock.withLock({ $0.waiters.count }) < count {
             if Date() >= deadline { return false }

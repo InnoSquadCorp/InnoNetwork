@@ -1,6 +1,7 @@
 import Foundation
 import os
 import Testing
+import InnoNetworkTestSupport
 @testable import InnoNetwork
 @testable import InnoNetworkWebSocket
 
