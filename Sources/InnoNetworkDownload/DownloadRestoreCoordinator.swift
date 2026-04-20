@@ -3,14 +3,14 @@ import Foundation
 
 package struct DownloadRestoreCoordinator {
     let configuration: DownloadConfiguration
-    let session: URLSession
+    let session: any DownloadURLSession
     let runtimeRegistry: DownloadRuntimeRegistry
     let persistence: DownloadTaskPersistence
     let transferCoordinator: DownloadTransferCoordinator
 
     package init(
         configuration: DownloadConfiguration,
-        session: URLSession,
+        session: any DownloadURLSession,
         runtimeRegistry: DownloadRuntimeRegistry,
         persistence: DownloadTaskPersistence,
         transferCoordinator: DownloadTransferCoordinator
@@ -23,7 +23,7 @@ package struct DownloadRestoreCoordinator {
     }
 
     package func restorePendingDownloads() async {
-        let downloadTasks = await fetchDownloadTasks()
+        let downloadTasks = await session.allDownloadTasks()
         var restoredTaskIDs = Set<String>()
 
         for urlTask in downloadTasks {
@@ -55,15 +55,7 @@ package struct DownloadRestoreCoordinator {
         }
     }
 
-    private func fetchDownloadTasks() async -> [URLSessionDownloadTask] {
-        await withCheckedContinuation { continuation in
-            session.getTasksWithCompletionHandler { _, _, downloadTasks in
-                continuation.resume(returning: downloadTasks)
-            }
-        }
-    }
-
-    private func restoreTrackedTask(for urlTask: URLSessionDownloadTask) async -> DownloadTask? {
+    private func restoreTrackedTask(for urlTask: any DownloadURLTask) async -> DownloadTask? {
         let taskID: String
 
         if let description = urlTask.taskDescription, !description.isEmpty {

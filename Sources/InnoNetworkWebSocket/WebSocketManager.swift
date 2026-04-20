@@ -35,7 +35,7 @@ public final class WebSocketManager: NSObject, Sendable {
     public static let shared = WebSocketManager()
 
     private let configuration: WebSocketConfiguration
-    private let session: URLSession
+    private let session: any WebSocketURLSession
     private let delegate: WebSocketSessionDelegate
 
     private let runtimeRegistry = WebSocketRuntimeRegistry()
@@ -72,26 +72,46 @@ public final class WebSocketManager: NSObject, Sendable {
         )
     }
 
-    public init(configuration: WebSocketConfiguration = .default) {
-        self.configuration = configuration
+    public convenience init(configuration: WebSocketConfiguration = .default) {
         let callbacks = WebSocketSessionDelegateCallbacks()
         let backgroundCompletionStore = BackgroundCompletionStore()
-        self.delegate = WebSocketSessionDelegate(
+        let delegate = WebSocketSessionDelegate(
             callbacks: callbacks,
             backgroundCompletionStore: backgroundCompletionStore
         )
+
+        let sessionConfig = configuration.makeURLSessionConfiguration()
+        let urlSession = URLSession(
+            configuration: sessionConfig,
+            delegate: delegate,
+            delegateQueue: nil
+        )
+
+        self.init(
+            configuration: configuration,
+            urlSession: urlSession,
+            delegate: delegate,
+            callbacks: callbacks
+        )
+    }
+
+    /// Package-level designated initializer allowing tests to inject a
+    /// `WebSocketURLSession` stub alongside a delegate that wires error/close
+    /// callbacks.
+    package init(
+        configuration: WebSocketConfiguration,
+        urlSession: any WebSocketURLSession,
+        delegate: WebSocketSessionDelegate,
+        callbacks: WebSocketSessionDelegateCallbacks
+    ) {
+        self.configuration = configuration
+        self.delegate = delegate
         self.eventHub = TaskEventHub(
             policy: configuration.eventDeliveryPolicy,
             metricsReporter: configuration.eventMetricsReporter,
             hubKind: .webSocketTask
         )
-
-        let sessionConfig = configuration.makeURLSessionConfiguration()
-        self.session = URLSession(
-            configuration: sessionConfig,
-            delegate: delegate,
-            delegateQueue: nil
-        )
+        self.session = urlSession
 
         super.init()
 

@@ -10,13 +10,16 @@ package enum WebSocketReconnectAction: Equatable {
 package struct WebSocketReconnectCoordinator {
     let configuration: WebSocketConfiguration
     let runtimeRegistry: WebSocketRuntimeRegistry
+    let clock: any InnoNetworkClock
 
     package init(
         configuration: WebSocketConfiguration,
-        runtimeRegistry: WebSocketRuntimeRegistry
+        runtimeRegistry: WebSocketRuntimeRegistry,
+        clock: any InnoNetworkClock = SystemClock()
     ) {
         self.configuration = configuration
         self.runtimeRegistry = runtimeRegistry
+        self.clock = clock
     }
 
     package func reconnectAction(
@@ -65,7 +68,7 @@ package struct WebSocketReconnectCoordinator {
             let delay = max(0.0, baseDelay + Double.random(in: (-jitter)...(jitter)))
 
             do {
-                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                try await clock.sleep(for: .seconds(delay))
             } catch is CancellationError {
                 return
             } catch {

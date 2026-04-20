@@ -16,7 +16,7 @@ package struct WebSocketReceiveLoop {
 
     package func start(
         task: WebSocketTask,
-        urlTask: URLSessionWebSocketTask,
+        urlTask: any WebSocketURLTask,
         onError: @escaping @Sendable (Int, Error) -> Void
     ) async {
         await runtimeRegistry.createMessageListenerTask(for: task.id) {

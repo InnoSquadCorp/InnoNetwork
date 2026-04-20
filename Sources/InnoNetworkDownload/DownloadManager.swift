@@ -42,7 +42,7 @@ public final class DownloadManager: NSObject, Sendable {
     private static let activeSessionIdentifiers = OSAllocatedUnfairLock(initialState: Set<String>())
 
     private let configuration: DownloadConfiguration
-    private let session: URLSession
+    private let session: any DownloadURLSession
     private let delegate: DownloadSessionDelegate
     private let backgroundCompletionStore: BackgroundCompletionStore
     private let persistence: DownloadTaskPersistence
@@ -86,18 +86,47 @@ public final class DownloadManager: NSObject, Sendable {
         )
     }
 
-    package init(
+    package convenience init(
         configuration: DownloadConfiguration = .default,
         persistence: DownloadTaskPersistence
     ) throws {
-        try Self.registerSessionIdentifier(configuration.sessionIdentifier)
-        self.configuration = configuration
         let callbacks = DownloadSessionDelegateCallbacks()
         let backgroundCompletionStore = BackgroundCompletionStore()
-        self.delegate = DownloadSessionDelegate(
+        let delegate = DownloadSessionDelegate(
             callbacks: callbacks,
             backgroundCompletionStore: backgroundCompletionStore
         )
+
+        let sessionConfig = configuration.makeURLSessionConfiguration()
+        let urlSession = URLSession(
+            configuration: sessionConfig,
+            delegate: delegate,
+            delegateQueue: nil
+        )
+
+        try self.init(
+            configuration: configuration,
+            persistence: persistence,
+            urlSession: urlSession,
+            delegate: delegate,
+            callbacks: callbacks,
+            backgroundCompletionStore: backgroundCompletionStore
+        )
+    }
+
+    /// Package-level designated initializer allowing tests to inject a
+    /// `DownloadURLSession` stub.
+    package init(
+        configuration: DownloadConfiguration,
+        persistence: DownloadTaskPersistence,
+        urlSession: any DownloadURLSession,
+        delegate: DownloadSessionDelegate,
+        callbacks: DownloadSessionDelegateCallbacks,
+        backgroundCompletionStore: BackgroundCompletionStore
+    ) throws {
+        try Self.registerSessionIdentifier(configuration.sessionIdentifier)
+        self.configuration = configuration
+        self.delegate = delegate
         self.backgroundCompletionStore = backgroundCompletionStore
         self.persistence = persistence
         self.eventHub = TaskEventHub(
@@ -105,13 +134,7 @@ public final class DownloadManager: NSObject, Sendable {
             metricsReporter: configuration.eventMetricsReporter,
             hubKind: .downloadTask
         )
-
-        let sessionConfig = configuration.makeURLSessionConfiguration()
-        self.session = URLSession(
-            configuration: sessionConfig,
-            delegate: delegate,
-            delegateQueue: nil
-        )
+        self.session = urlSession
 
         super.init()
 
@@ -198,7 +221,7 @@ public final class DownloadManager: NSObject, Sendable {
 
         if let resumeData = await task.resumeData {
             await persistence.upsert(id: task.id, url: task.url, destinationURL: task.destinationURL)
-            let urlTask = session.downloadTask(withResumeData: resumeData)
+            let urlTask = session.makeDownloadTask(withResumeData: resumeData)
             await transferCoordinator.register(urlTask: urlTask, for: task)
             await task.updateState(.downloading)
             await task.setResumeData(nil)
