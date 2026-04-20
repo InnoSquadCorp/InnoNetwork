@@ -36,9 +36,13 @@ package final class WebSocketSessionDelegate: NSObject, URLSessionWebSocketDeleg
     ) {
         _ = session
         let reasonString = reason.flatMap { String(data: $0, encoding: .utf8) }
+        // Convert Apple's close-code enum to the library's `WebSocketCloseCode`
+        // at the Foundation boundary. All downstream code works with the
+        // canonical type so retryable variants (1012/1013) and custom (3xxx/4xxx)
+        // codes survive the trip without losing information.
         callbacks.handleDisconnected(
             taskIdentifier: webSocketTask.taskIdentifier,
-            closeCode: closeCode,
+            closeCode: WebSocketCloseCode(closeCode),
             reason: reasonString
         )
     }
@@ -71,7 +75,7 @@ package final class WebSocketSessionDelegate: NSObject, URLSessionWebSocketDeleg
 
 package final class WebSocketSessionDelegateCallbacks: Sendable {
     package typealias ConnectedHandler = @Sendable (Int, String?) -> Void
-    package typealias DisconnectedHandler = @Sendable (Int, URLSessionWebSocketTask.CloseCode, String?) -> Void
+    package typealias DisconnectedHandler = @Sendable (Int, WebSocketCloseCode, String?) -> Void
     package typealias ErrorHandler = @Sendable (Int, SendableUnderlyingError, Int?) -> Void
 
     private let connectedHandlerLock = OSAllocatedUnfairLock<ConnectedHandler?>(initialState: nil)
@@ -94,7 +98,7 @@ package final class WebSocketSessionDelegateCallbacks: Sendable {
         connectedHandlerLock.withLock { $0 }?(taskIdentifier, protocolName)
     }
 
-    package func handleDisconnected(taskIdentifier: Int, closeCode: URLSessionWebSocketTask.CloseCode, reason: String?) {
+    package func handleDisconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?) {
         disconnectedHandlerLock.withLock { $0 }?(taskIdentifier, closeCode, reason)
     }
 

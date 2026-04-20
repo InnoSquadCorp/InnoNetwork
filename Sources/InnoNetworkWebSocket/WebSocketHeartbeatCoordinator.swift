@@ -113,6 +113,7 @@ package struct WebSocketHeartbeatCoordinator {
 
                 guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else { break }
 
+                await eventHub.publish(.ping, for: task.id)
                 do {
                     try await sendPing(urlTask, timeout: configuration.pongTimeout)
                     missedPongs = 0
@@ -120,8 +121,16 @@ package struct WebSocketHeartbeatCoordinator {
                 } catch {
                     missedPongs += 1
                     if missedPongs >= configuration.maxMissedPongs {
-                        await onPingTimeout(urlTask.taskIdentifier)
+                        // Hand terminal timeout handling off to a fresh task so
+                        // manager-side cleanup can cancel this heartbeat task
+                        // without awaiting on its own completion.
+                        Task {
+                            await onPingTimeout(urlTask.taskIdentifier)
+                        }
                         break
+                    }
+                    if isPingTimeout(error) {
+                        await eventHub.publish(.error(.pingTimeout), for: task.id)
                     }
                 }
             }
@@ -182,5 +191,19 @@ package struct WebSocketHeartbeatCoordinator {
             _ = try await group.next()
             group.cancelAll()
         }
+    }
+
+    private func isPingTimeout(_ error: Error) -> Bool {
+        if let internalError = error as? WebSocketInternalError,
+           case .pingTimeout = internalError {
+            return true
+        }
+
+        if let urlError = error as? URLError,
+           urlError.code == .timedOut {
+            return true
+        }
+
+        return false
     }
 }

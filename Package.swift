@@ -2,6 +2,15 @@
 
 import PackageDescription
 
+/// Swift 6 language mode is enabled for every target so strict concurrency
+/// checking is a permanent part of the build contract (no opt-in flag
+/// required). CI no longer passes `-strict-concurrency=complete` explicitly —
+/// this setting carries the same semantics and stays enforced for consumers
+/// that build from source.
+let strictSettings: [SwiftSetting] = [
+    .swiftLanguageMode(.v6),
+]
+
 let package = Package(
     name: "InnoNetwork",
     platforms: [
@@ -29,17 +38,20 @@ let package = Package(
     targets: [
         .target(
             name: "InnoNetwork",
-            path: "Sources/InnoNetwork"
+            path: "Sources/InnoNetwork",
+            swiftSettings: strictSettings
         ),
         .target(
             name: "InnoNetworkDownload",
             dependencies: ["InnoNetwork"],
-            path: "Sources/InnoNetworkDownload"
+            path: "Sources/InnoNetworkDownload",
+            swiftSettings: strictSettings
         ),
         .target(
             name: "InnoNetworkWebSocket",
             dependencies: ["InnoNetwork"],
-            path: "Sources/InnoNetworkWebSocket"
+            path: "Sources/InnoNetworkWebSocket",
+            swiftSettings: strictSettings
         ),
         .executableTarget(
             name: "InnoNetworkBenchmarks",
@@ -48,7 +60,8 @@ let package = Package(
                 "InnoNetworkDownload",
                 "InnoNetworkWebSocket",
             ],
-            path: "Benchmarks/InnoNetworkBenchmarks"
+            path: "Benchmarks/InnoNetworkBenchmarks",
+            swiftSettings: strictSettings
         ),
         .executableTarget(
             name: "InnoNetworkDocSmoke",
@@ -57,22 +70,26 @@ let package = Package(
                 "InnoNetworkDownload",
                 "InnoNetworkWebSocket",
             ],
-            path: "SmokeTests/InnoNetworkDocSmoke"
+            path: "SmokeTests/InnoNetworkDocSmoke",
+            swiftSettings: strictSettings
         ),
         .testTarget(
             name: "InnoNetworkTests",
             dependencies: ["InnoNetwork"],
-            path: "Tests/InnoNetworkTests"
+            path: "Tests/InnoNetworkTests",
+            swiftSettings: strictSettings
         ),
         .testTarget(
             name: "InnoNetworkDownloadTests",
             dependencies: ["InnoNetworkDownload"],
-            path: "Tests/InnoNetworkDownloadTests"
+            path: "Tests/InnoNetworkDownloadTests",
+            swiftSettings: strictSettings
         ),
         .testTarget(
             name: "InnoNetworkWebSocketTests",
             dependencies: ["InnoNetworkWebSocket"],
-            path: "Tests/InnoNetworkWebSocketTests"
+            path: "Tests/InnoNetworkWebSocketTests",
+            swiftSettings: strictSettings
         ),
     ]
 )

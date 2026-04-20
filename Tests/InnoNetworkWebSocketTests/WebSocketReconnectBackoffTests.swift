@@ -94,7 +94,7 @@ struct WebSocketReconnectBackoffTests {
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
 
         let terminalDisposition = WebSocketCloseDisposition.classifyPeerClose(
-            closeCode: .policyViolation,
+            .policyViolation,
             reason: nil
         )
         let action = await coordinator.reconnectAction(
@@ -118,7 +118,7 @@ struct WebSocketReconnectBackoffTests {
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
 
         let retryableDisposition = WebSocketCloseDisposition.classifyPeerClose(
-            closeCode: .goingAway,
+            .goingAway,
             reason: nil
         )
         let action = await coordinator.reconnectAction(

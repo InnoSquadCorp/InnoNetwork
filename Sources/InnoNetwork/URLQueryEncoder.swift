@@ -1,7 +1,8 @@
 import Foundation
+import os
 
 
-public struct URLQueryEncoder: @unchecked Sendable {
+public struct URLQueryEncoder: Sendable {
     public enum EncodingError: Error, Sendable {
         case unsupportedTopLevelValue
     }
@@ -90,7 +91,7 @@ private enum QueryValue: Sendable {
     case null
 }
 
-private final class QueryValueBox: @unchecked Sendable {
+private final class QueryValueBox {
     enum Storage {
         case unset
         case object([String: QueryValueBox])
@@ -221,27 +222,21 @@ private struct SnakeCaseKeyProbe: Encodable {
     }
 }
 
-private final class SnakeCaseKeyTransformCache: @unchecked Sendable {
+private final class SnakeCaseKeyTransformCache: Sendable {
     static let shared = SnakeCaseKeyTransformCache()
 
-    private let lock = NSLock()
-    private var cache: [String: String] = [:]
+    private let cache = OSAllocatedUnfairLock<[String: String]>(initialState: [:])
 
     private init() {}
 
     func transform(_ key: String) -> String {
-        lock.lock()
-        if let cached = cache[key] {
-            lock.unlock()
+        if let cached = cache.withLock({ $0[key] }) {
             return cached
         }
-        lock.unlock()
 
         let transformed = (try? computeTransform(for: key)) ?? key
 
-        lock.lock()
-        cache[key] = transformed
-        lock.unlock()
+        cache.withLock { $0[key] = transformed }
         return transformed
     }
 
@@ -254,7 +249,7 @@ private final class SnakeCaseKeyTransformCache: @unchecked Sendable {
     }
 }
 
-private final class _URLQueryValueEncoder: Encoder, @unchecked Sendable {
+private final class _URLQueryValueEncoder: Encoder {
     let options: _URLQueryEncodingOptions
     var codingPath: [CodingKey]
     var userInfo: [CodingUserInfoKey: Any] = [:]

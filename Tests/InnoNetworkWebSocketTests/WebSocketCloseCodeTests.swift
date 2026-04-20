@@ -145,10 +145,11 @@ struct WebSocketCloseDispositionClassificationTests {
         }
     }
 
-    @Test("Stdlib CloseCode overload matches typed enum results")
-    func stdlibOverloadMatchesTypedEnum() {
-        // All stdlib-expressible cases must produce the same disposition shape
-        // whichever overload the caller uses.
+    @Test("Foundation-bridged close codes classify identically to the typed enum")
+    func foundationBridgeMatchesTypedEnum() {
+        // Every stdlib-expressible case should classify the same way when it
+        // arrives via the SessionDelegate Foundation boundary (which converts
+        // to `WebSocketCloseCode` via `init(_ URLSessionWebSocketTask.CloseCode)`).
         let cases: [URLSessionWebSocketTask.CloseCode] = [
             .normalClosure, .goingAway, .protocolError, .unsupportedData,
             .noStatusReceived, .abnormalClosure, .invalidFramePayloadData,
@@ -157,28 +158,25 @@ struct WebSocketCloseDispositionClassificationTests {
         ]
 
         for stdlibCode in cases {
-            let viaStdlib = WebSocketCloseDisposition.classifyPeerClose(
-                closeCode: stdlibCode,
-                reason: "r"
-            )
-            let viaTyped = WebSocketCloseDisposition.classifyPeerClose(
+            let viaBridge = WebSocketCloseDisposition.classifyPeerClose(
                 WebSocketCloseCode(stdlibCode),
                 reason: "r"
             )
-            #expect(viaStdlib == viaTyped, "Mismatch for \(stdlibCode)")
+            let viaDirect = WebSocketCloseDisposition.classifyPeerClose(
+                WebSocketCloseCode(rawValue: UInt16(stdlibCode.rawValue)),
+                reason: "r"
+            )
+            #expect(viaBridge == viaDirect, "Mismatch for \(stdlibCode)")
         }
     }
 
     @Test(
-        "Stdlib CloseCode overload preserves raw value for custom peer close codes",
-        arguments: [Int(2500), 3000, 4000, 4999]
+        "Custom raw values survive classification as .peerTerminal without truncation",
+        arguments: [UInt16(2500), 3000, 4000, 4999]
     )
-    func stdlibOverloadPreservesCustomRawValue(rawValue: Int) {
-        let closeCode = URLSessionWebSocketTask.CloseCode(rawValue: rawValue)
-        #expect(closeCode != nil)
-
+    func customRawValuePreservesInClassification(rawValue: UInt16) {
         let disposition = WebSocketCloseDisposition.classifyPeerClose(
-            closeCode: closeCode ?? .invalid,
+            .custom(rawValue),
             reason: "custom"
         )
 
@@ -187,7 +185,7 @@ struct WebSocketCloseDispositionClassificationTests {
             #expect(returnedCode.rawValue == rawValue)
             #expect(reason == "custom")
         default:
-            Issue.record("Expected .peerTerminal for custom raw value \(rawValue), got \(disposition)")
+            Issue.record("Expected .peerTerminal for custom(\(rawValue)), got \(disposition)")
         }
     }
 }

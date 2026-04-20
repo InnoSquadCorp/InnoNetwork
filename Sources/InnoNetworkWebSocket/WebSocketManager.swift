@@ -8,6 +8,10 @@ public enum WebSocketEvent: Sendable {
     case disconnected(WebSocketError?)
     case message(Data)
     case string(String)
+    /// Emitted just before a ping frame is issued, from either the heartbeat
+    /// loop or `WebSocketManager.ping(_:)`. Always paired with a subsequent
+    /// `.pong` on success or `.error(.pingTimeout)` on timeout.
+    case ping
     case pong
     case error(WebSocketError)
 }
@@ -186,7 +190,7 @@ public final class WebSocketManager: NSObject, Sendable {
         return task
     }
 
-    public func disconnect(_ task: WebSocketTask, closeCode: URLSessionWebSocketTask.CloseCode = .normalClosure) async {
+    public func disconnect(_ task: WebSocketTask, closeCode: WebSocketCloseCode = .normalClosure) async {
         let state = await task.state
         switch state {
         case .connected, .connecting, .reconnecting:
@@ -204,7 +208,9 @@ public final class WebSocketManager: NSObject, Sendable {
         await task.beginManualDisconnect(error: disconnectError)
 
         if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
-            urlTask.cancel(with: closeCode, reason: nil)
+            // URLSession demands its own close-code enum at the cancel() call,
+            // so convert at the Foundation boundary.
+            urlTask.cancel(with: closeCode.urlSessionCloseCode, reason: nil)
             let closeTimeoutTask = Task { [weak self] in
                 do {
                     try await Task.sleep(for: closeHandshakeTimeout)
@@ -223,7 +229,7 @@ public final class WebSocketManager: NSObject, Sendable {
         }
     }
 
-    public func disconnectAll(closeCode: URLSessionWebSocketTask.CloseCode = .normalClosure) async {
+    public func disconnectAll(closeCode: WebSocketCloseCode = .normalClosure) async {
         for task in await runtimeRegistry.allTasks() {
             await disconnect(task, closeCode: closeCode)
         }
@@ -257,8 +263,18 @@ public final class WebSocketManager: NSObject, Sendable {
         guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
             throw WebSocketError.disconnected(nil)
         }
-        try await heartbeatCoordinator.sendPing(urlTask, timeout: configuration.pongTimeout)
-        await eventHub.publish(.pong, for: task.id)
+        await eventHub.publish(.ping, for: task.id)
+        do {
+            try await heartbeatCoordinator.sendPing(urlTask, timeout: configuration.pongTimeout)
+            await eventHub.publish(.pong, for: task.id)
+        } catch {
+            let wsError = mapWebSocketError(error)
+            if case .pingTimeout = wsError {
+                await eventHub.publish(.error(wsError), for: task.id)
+                throw wsError
+            }
+            throw error
+        }
     }
 
     public func task(withId id: String) async -> WebSocketTask? {
@@ -366,7 +382,7 @@ public final class WebSocketManager: NSObject, Sendable {
         }
     }
 
-    func handleDisconnected(taskIdentifier: Int, closeCode: URLSessionWebSocketTask.CloseCode, reason: String?) {
+    func handleDisconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?) {
         Task {
             guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
             let previousState = await task.state
@@ -382,7 +398,7 @@ public final class WebSocketManager: NSObject, Sendable {
             }
 
             let disposition = WebSocketCloseDisposition.classifyPeerClose(
-                closeCode: closeCode,
+                closeCode,
                 reason: reason
             )
             let error = makeDisconnectedError(closeDisposition: disposition)
@@ -552,7 +568,7 @@ public final class WebSocketManager: NSObject, Sendable {
 
     private func finalizeDisconnect(
         task: WebSocketTask,
-        closeCode: URLSessionWebSocketTask.CloseCode,
+        closeCode: WebSocketCloseCode,
         error: WebSocketError?
     ) async {
         await task.updateState(.disconnected)
@@ -652,7 +668,7 @@ public final class WebSocketManager: NSObject, Sendable {
         }
     }
 
-    private func makeManualDisconnectError(closeCode: URLSessionWebSocketTask.CloseCode) -> WebSocketError {
+    private func makeManualDisconnectError(closeCode: WebSocketCloseCode) -> WebSocketError {
         .disconnected(
             SendableUnderlyingError(
                 domain: "InnoNetworkWebSocket.ManualDisconnect",
@@ -664,7 +680,7 @@ public final class WebSocketManager: NSObject, Sendable {
 
     private func handleCloseHandshakeTimeout(
         taskID: String,
-        closeCode: URLSessionWebSocketTask.CloseCode
+        closeCode: WebSocketCloseCode
     ) async {
         guard let task = await runtimeRegistry.task(withId: taskID) else { return }
         guard await task.awaitingCloseHandshake else { return }

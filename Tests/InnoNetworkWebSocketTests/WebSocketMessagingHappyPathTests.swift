@@ -94,6 +94,53 @@ struct WebSocketMessagingHappyPathTests {
         await harness.tearDown(task: task)
     }
 
+    @Test("Manual ping timeout publishes an error event without failing the task")
+    func manualPingTimeoutPublishesErrorEventWithoutFailingTask() async throws {
+        let harness = StubMessagingHarness(pongTimeout: 0.05)
+        let task = try await harness.connectAndReady()
+        let recorder = WebSocketEventCollector()
+        let errorHandlerCallCount = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+        let subscription = await harness.manager.addEventListener(for: task) { event in
+            recorder.record(event)
+        }
+        await harness.manager.setOnErrorHandler { _, error in
+            if case .pingTimeout = error {
+                errorHandlerCallCount.withLock { $0 += 1 }
+            }
+        }
+
+        do {
+            try await harness.manager.ping(task)
+            Issue.record("Expected WebSocketError.pingTimeout from manual ping")
+        } catch let error as WebSocketError {
+            #expect(error == .pingTimeout)
+        } catch {
+            Issue.record("Expected WebSocketError.pingTimeout, got \(error)")
+        }
+
+        #expect(await recorder.waitForCount(2, timeout: 1.0))
+        let snapshot = recorder.snapshot()
+        #expect(snapshot.count == 2)
+        if snapshot.count == 2 {
+            if case .ping = snapshot[0] {} else {
+                Issue.record("expected first event to be .ping")
+            }
+            if case .error(.pingTimeout) = snapshot[1] {} else {
+                Issue.record("expected second event to be .error(.pingTimeout)")
+            }
+        }
+
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(await task.state == .connected)
+        #expect(await task.error == nil)
+        #expect(errorHandlerCallCount.withLock { $0 } == 0)
+
+        await harness.manager.removeEventListener(subscription)
+        await harness.manager.setOnErrorHandler(nil)
+        await harness.tearDown(task: task)
+    }
+
     @Test("Multiple scripted receives are delivered in order")
     func receiveLoopDeliversMultiplePayloadsInOrder() async throws {
         let harness = StubMessagingHarness()
@@ -230,7 +277,7 @@ final class StubMessagingHarness: Sendable {
     private let callbacks: WebSocketSessionDelegateCallbacks
     private let sessionIdentifier: String
 
-    init() {
+    init(pongTimeout: TimeInterval = 10) {
         let identifier = "test.websocket.stub.\(UUID().uuidString)"
         let stubSession = StubWebSocketURLSession()
         let stubTask = StubWebSocketURLTask()
@@ -250,6 +297,7 @@ final class StubMessagingHarness: Sendable {
         self.manager = WebSocketManager(
             configuration: WebSocketConfiguration(
                 heartbeatInterval: 0,
+                pongTimeout: pongTimeout,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
                 sessionIdentifier: identifier

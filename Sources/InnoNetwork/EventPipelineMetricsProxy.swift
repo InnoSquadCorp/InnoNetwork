@@ -1,7 +1,7 @@
 import Foundation
 
 
-package final class EventPipelineMetricsReporterProxy: @unchecked Sendable, EventPipelineMetricsReporting {
+package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMetricsReporting {
     private let inputContinuation: AsyncStream<EventPipelineMetric>.Continuation
     private let outputContinuation: AsyncStream<EventPipelineMetric>.Continuation
     private let aggregator: EventPipelineMetricsAggregator

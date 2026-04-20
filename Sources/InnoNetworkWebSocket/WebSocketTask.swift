@@ -9,7 +9,7 @@ public actor WebSocketTask: Identifiable {
     private var _state: WebSocketState = .idle
     private var _reconnectCount: Int = 0
     private var _error: WebSocketError?
-    private var _closeCode: URLSessionWebSocketTask.CloseCode?
+    private var _closeCode: WebSocketCloseCode?
     private var _autoReconnectEnabled: Bool = true
     private var _pendingManualDisconnectError: WebSocketError?
     private var _awaitingCloseHandshake = false
@@ -17,7 +17,7 @@ public actor WebSocketTask: Identifiable {
     public var state: WebSocketState { _state }
     public var reconnectCount: Int { _reconnectCount }
     public var error: WebSocketError? { _error }
-    public var closeCode: URLSessionWebSocketTask.CloseCode? { _closeCode }
+    public var closeCode: WebSocketCloseCode? { _closeCode }
     public var autoReconnectEnabled: Bool { _autoReconnectEnabled }
     public var awaitingCloseHandshake: Bool { _awaitingCloseHandshake }
 
@@ -40,7 +40,7 @@ public actor WebSocketTask: Identifiable {
         _error = error
     }
 
-    func setCloseCode(_ closeCode: URLSessionWebSocketTask.CloseCode?) {
+    func setCloseCode(_ closeCode: WebSocketCloseCode?) {
         _closeCode = closeCode
     }
 

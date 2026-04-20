@@ -1,6 +1,0 @@
-Sources/InnoNetwork/EventPipelineMetricsProxy.swift:package final class EventPipelineMetricsReporterProxy: @unchecked Sendable, EventPipelineMetricsReporting {
-Sources/InnoNetwork/URLQueryEncoder.swift:private final class QueryValueBox: @unchecked Sendable {
-Sources/InnoNetwork/URLQueryEncoder.swift:private final class SnakeCaseKeyTransformCache: @unchecked Sendable {
-Sources/InnoNetwork/URLQueryEncoder.swift:private final class _URLQueryValueEncoder: Encoder, @unchecked Sendable {
-Sources/InnoNetwork/URLQueryEncoder.swift:public struct URLQueryEncoder: @unchecked Sendable {
-Sources/InnoNetwork/URLQueryKeyEncodingStrategy.swift:public struct URLQueryCustomKeyTransform: @unchecked Sendable {

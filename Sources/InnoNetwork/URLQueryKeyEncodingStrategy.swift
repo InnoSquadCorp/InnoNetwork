@@ -1,10 +1,10 @@
 import Foundation
 
 
-public struct URLQueryCustomKeyTransform: @unchecked Sendable {
-    let transform: ([CodingKey]) -> String
+public struct URLQueryCustomKeyTransform: Sendable {
+    let transform: @Sendable ([CodingKey]) -> String
 
-    public init(_ transform: @escaping ([CodingKey]) -> String) {
+    public init(_ transform: @escaping @Sendable ([CodingKey]) -> String) {
         self.transform = transform
     }
 }

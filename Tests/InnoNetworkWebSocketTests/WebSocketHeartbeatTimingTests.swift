@@ -81,10 +81,54 @@ struct WebSocketHeartbeatTimingTests {
         let baseline = harness.clock.enqueuedCount
         harness.clock.advance(by: .seconds(8))
         #expect(await harness.waitForStubPingCount(atLeast: 1))
+        #expect(await harness.waitForPingEventCount(atLeast: 1))
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 1))
 
         harness.stubTask.completePendingPong(with: nil)
         #expect(await harness.waitForPongCount(atLeast: 1))
+
+        await harness.stopHeartbeat()
+    }
+
+    @Test(".ping event is published before the paired .pong event")
+    func pingPublishedBeforePong() async throws {
+        let harness = HeartbeatTestHarness(
+            heartbeatInterval: 6,
+            pongTimeout: 1,
+            maxMissedPongs: 3
+        )
+        await harness.startHeartbeat()
+
+        #expect(await harness.clock.waitForWaiters(count: 1))
+        let baseline = harness.clock.enqueuedCount
+        harness.clock.advance(by: .seconds(6))
+
+        #expect(await harness.waitForStubPingCount(atLeast: 1))
+        #expect(await harness.waitForPingEventCount(atLeast: 1))
+        #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 1))
+
+        harness.stubTask.completePendingPong(with: nil)
+        #expect(await harness.waitForPongCount(atLeast: 1))
+
+        // The single-cycle snapshot must contain exactly one .ping followed by
+        // one .pong, in that order. This locks in the "attempt → success"
+        // observability contract documented on `WebSocketEvent.ping`.
+        let snapshot = harness.defaultRecorder.snapshot()
+        let relevantIndices = snapshot.enumerated().compactMap { offset, event -> Int? in
+            switch event {
+            case .ping, .pong: return offset
+            default: return nil
+            }
+        }
+        #expect(relevantIndices.count == 2)
+        if relevantIndices.count == 2 {
+            if case .ping = snapshot[relevantIndices[0]] {} else {
+                Issue.record("expected first of the ping/pong pair to be .ping")
+            }
+            if case .pong = snapshot[relevantIndices[1]] {} else {
+                Issue.record("expected second of the ping/pong pair to be .pong")
+            }
+        }
 
         await harness.stopHeartbeat()
     }
@@ -112,7 +156,9 @@ struct WebSocketHeartbeatTimingTests {
 
         harness.clock.advance(by: .seconds(2))
         // Loop catches pingTimeout and starts the next interval sleep.
+        #expect(await harness.waitForPingTimeoutErrorCount(atLeast: 1))
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 2))
+        #expect(timeoutBox.withLock { $0 } == nil)
 
         // Cycle 2: same, and missedPongs should reach maxMissedPongs → callback.
         baseline = harness.clock.enqueuedCount
@@ -127,6 +173,8 @@ struct WebSocketHeartbeatTimingTests {
         }
         #expect(invoked)
         #expect(timeoutBox.withLock { $0 } == harness.stubTask.taskIdentifier)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(harness.defaultRecorder.pingTimeoutErrorCount == 1)
     }
 
     @Test("Successful pong resets the missed pong counter")
@@ -150,6 +198,7 @@ struct WebSocketHeartbeatTimingTests {
         #expect(await harness.waitForStubPingCount(atLeast: 1))
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 1))
         harness.clock.advance(by: .seconds(2))
+        #expect(await harness.waitForPingTimeoutErrorCount(atLeast: 1))
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 2))
 
         // Cycle 2 (successful): pong resets missedPongs to 0.
@@ -167,6 +216,7 @@ struct WebSocketHeartbeatTimingTests {
         #expect(await harness.waitForStubPingCount(atLeast: 3))
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 1))
         harness.clock.advance(by: .seconds(2))
+        #expect(await harness.waitForPingTimeoutErrorCount(atLeast: 2))
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 2))
 
         // Give the loop a brief moment to react; the timeout callback should
@@ -380,6 +430,28 @@ final class HeartbeatTestHarness: Sendable {
         return defaultRecorder.pongCount >= count
     }
 
+    /// Waits until the heartbeat loop has published at least `count` `.ping`
+    /// events on `defaultRecorder`.
+    func waitForPingEventCount(atLeast count: Int, timeout: TimeInterval = 1.0) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if defaultRecorder.pingCount >= count { return true }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        return defaultRecorder.pingCount >= count
+    }
+
+    /// Waits until the heartbeat loop has published at least `count`
+    /// `.error(.pingTimeout)` events on `defaultRecorder`.
+    func waitForPingTimeoutErrorCount(atLeast count: Int, timeout: TimeInterval = 1.0) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if defaultRecorder.pingTimeoutErrorCount >= count { return true }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        return defaultRecorder.pingTimeoutErrorCount >= count
+    }
+
     /// Attaches an additional event listener. The default recorder remains
     /// active; this is useful when a test wants an isolated recorder with
     /// its own history.
@@ -409,6 +481,29 @@ final class HeartbeatEventRecorder: Sendable {
         events.withLock { list in
             list.reduce(0) { acc, event in
                 if case .pong = event { return acc + 1 }
+                return acc
+            }
+        }
+    }
+
+    /// Count of `.ping` events observed since the recorder started listening.
+    /// Paired with `pongCount` so tests can assert the `.ping → .pong` cadence
+    /// emitted by the heartbeat loop / public `ping(_:)`.
+    var pingCount: Int {
+        events.withLock { list in
+            list.reduce(0) { acc, event in
+                if case .ping = event { return acc + 1 }
+                return acc
+            }
+        }
+    }
+
+    /// Count of `.error(.pingTimeout)` events observed since the recorder
+    /// started listening.
+    var pingTimeoutErrorCount: Int {
+        events.withLock { list in
+            list.reduce(0) { acc, event in
+                if case .error(.pingTimeout) = event { return acc + 1 }
                 return acc
             }
         }
