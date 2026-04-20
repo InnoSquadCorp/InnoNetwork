@@ -4,10 +4,12 @@
 
 ## Covered Benchmarks
 
-- `encoding/query-encoder-*`
-- `events/task-event-*`
-- `persistence/append-log-*`
-- `websocket/websocket-reconnect-decision`
+- `encoding/query-encoder-*` — `URLQueryEncoder` hot path (snake-case 변환 포함).
+- `events/task-event-*` — `TaskEventHub` fan-out / slow listener isolation.
+- `persistence/append-log-*` — Download persistence append/replay/compaction.
+- `websocket/websocket-reconnect-decision` — `WebSocketReconnectCoordinator.reconnectAction` 분기 비용.
+- `websocket/websocket-close-disposition-classify` — `WebSocketCloseDisposition.classifyPeerClose` 분류기 비용 (4.1+).
+- `websocket/websocket-ping-context-alloc` — `WebSocketPingContext` 생성 + `ContinuousClock.now` 읽기 비용 (4.1+, heartbeat 루프 핫패스).
 
 ## Output Schema
 

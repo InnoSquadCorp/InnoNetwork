@@ -67,7 +67,7 @@ public enum WebSocketCloseDisposition: Sendable, Equatable {
     /// enum. Package-scoped: the classification policy is library-owned.
     /// Consumers observe the result via
     /// ``WebSocketTask/closeDisposition``.
-    static func classifyPeerClose(
+    package static func classifyPeerClose(
         _ code: WebSocketCloseCode,
         reason: String?
     ) -> WebSocketCloseDisposition {
@@ -94,7 +94,7 @@ public enum WebSocketCloseDisposition: Sendable, Equatable {
         }
     }
 
-    static func classifyHandshake(
+    package static func classifyHandshake(
         statusCode: Int?,
         error: SendableUnderlyingError
     ) -> WebSocketCloseDisposition {

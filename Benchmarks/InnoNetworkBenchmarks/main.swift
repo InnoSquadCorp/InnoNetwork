@@ -163,6 +163,8 @@ private enum InnoNetworkBenchmarks {
         results.append(try await benchmarkPersistenceReplay(iterations: persistenceIterations))
         results.append(try await benchmarkPersistenceCompaction(iterations: max(1_050, persistenceIterations)))
         results.append(try await benchmarkReconnectDecision(iterations: reconnectIterations))
+        results.append(try await benchmarkCloseDispositionClassify(iterations: reconnectIterations))
+        results.append(try await benchmarkPingContextAlloc(iterations: reconnectIterations))
 
         return results
     }
@@ -322,6 +324,43 @@ private enum InnoNetworkBenchmarks {
                     closeDisposition: .handshakeServerUnavailable(503),
                     previousState: .connecting
                 )
+            }
+        }
+    }
+
+    /// Measures the cost of the package-internal close-code classifier,
+    /// which runs on every disconnect. Exercises the three branches
+    /// (normal / retryable / terminal) so any one of them regressing shows
+    /// up here.
+    private static func benchmarkCloseDispositionClassify(iterations: Int) async throws -> BenchmarkResult {
+        try await measure(name: "websocket-close-disposition-classify", group: "websocket", iterations: iterations) {
+            let codes: [WebSocketCloseCode] = [
+                .normalClosure,
+                .serviceRestart,
+                .tryAgainLater,
+                .policyViolation,
+                .custom(4001),
+            ]
+            for index in 0..<iterations {
+                let code = codes[index % codes.count]
+                _ = WebSocketCloseDisposition.classifyPeerClose(code, reason: nil)
+            }
+        }
+    }
+
+    /// Measures the cost of allocating a `WebSocketPingContext` — dominated
+    /// by the `ContinuousClock.now` read. Heartbeat loops emit this on every
+    /// cycle so it is a natural regression-guard target.
+    private static func benchmarkPingContextAlloc(iterations: Int) async throws -> BenchmarkResult {
+        try await measure(name: "websocket-ping-context-alloc", group: "websocket", iterations: iterations) {
+            var attempt = 0
+            for _ in 0..<iterations {
+                attempt &+= 1
+                let context = WebSocketPingContext(
+                    attemptNumber: attempt,
+                    dispatchedAt: .now
+                )
+                _ = context.attemptNumber
             }
         }
     }

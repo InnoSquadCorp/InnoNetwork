@@ -1,68 +1,82 @@
 {
-  "generatedAt": "2026-03-19T05:35:45Z",
+  "generatedAt": "2026-04-20T09:14:02Z",
   "results": [
     {
-      "elapsedSeconds": 0.024379875,
+      "elapsedSeconds": 0.204595125,
       "group": "encoding",
-      "iterations": 2000,
+      "iterations": 20000,
       "name": "query-encoder-small",
-      "operationsPerSecond": 82034.8750762668
+      "operationsPerSecond": 97754.03983843702
     },
     {
-      "elapsedSeconds": 0.21811125,
+      "elapsedSeconds": 2.074430542,
       "group": "encoding",
-      "iterations": 2000,
+      "iterations": 20000,
       "name": "query-encoder-large",
-      "operationsPerSecond": 9169.632469668575
+      "operationsPerSecond": 9641.200124597857
     },
     {
-      "elapsedSeconds": 0.002173542,
+      "elapsedSeconds": 0.0298235,
       "group": "events",
-      "iterations": 400,
+      "iterations": 4000,
       "name": "task-event-fanout-single",
-      "operationsPerSecond": 184031.41048114092
+      "operationsPerSecond": 134122.42023907322
     },
     {
-      "elapsedSeconds": 0.007972042,
+      "elapsedSeconds": 0.395753875,
       "group": "events",
-      "iterations": 400,
+      "iterations": 4000,
       "name": "task-event-fanout-many",
-      "operationsPerSecond": 50175.350305480075
+      "operationsPerSecond": 10107.292063785857
     },
     {
-      "elapsedSeconds": 0.005419417,
+      "elapsedSeconds": 0.063684166,
       "group": "events",
-      "iterations": 400,
+      "iterations": 4000,
       "name": "task-event-slow-isolation",
-      "operationsPerSecond": 73808.67720642276
+      "operationsPerSecond": 62809.96127043573
     },
     {
-      "elapsedSeconds": 1.095837542,
+      "elapsedSeconds": 37.094379834,
       "group": "persistence",
-      "iterations": 300,
+      "iterations": 3000,
       "name": "append-log-write",
-      "operationsPerSecond": 273.7632071378697
+      "operationsPerSecond": 80.8747851675972
     },
     {
-      "elapsedSeconds": 0.005765917,
+      "elapsedSeconds": 0.336148834,
       "group": "persistence",
-      "iterations": 300,
+      "iterations": 3000,
       "name": "append-log-replay",
-      "operationsPerSecond": 52029.88527236865
+      "operationsPerSecond": 8924.618194570325
     },
     {
-      "elapsedSeconds": 10.857802875,
+      "elapsedSeconds": 37.726591167,
       "group": "persistence",
-      "iterations": 1050,
+      "iterations": 3000,
       "name": "append-log-compaction",
-      "operationsPerSecond": 96.70464753210948
+      "operationsPerSecond": 79.51950884510721
     },
     {
-      "elapsedSeconds": 0.001487291,
+      "elapsedSeconds": 0.010984917,
       "group": "websocket",
-      "iterations": 2000,
+      "iterations": 20000,
       "name": "websocket-reconnect-decision",
-      "operationsPerSecond": 1344726.7548852242
+      "operationsPerSecond": 1820678.2991623878
+    },
+    {
+      "elapsedSeconds": 0.002397708,
+      "group": "websocket",
+      "iterations": 20000,
+      "name": "websocket-close-disposition-classify",
+      "operationsPerSecond": 8341299.274140136
+    },
+    {
+      "elapsedSeconds": 0.001981041,
+      "group": "websocket",
+      "iterations": 20000,
+      "name": "websocket-ping-context-alloc",
+      "operationsPerSecond": 10095702.20909108
     }
   ],
   "version": 1
