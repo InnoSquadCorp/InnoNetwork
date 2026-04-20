@@ -8,6 +8,10 @@ public enum WebSocketEvent: Sendable {
     case disconnected(WebSocketError?)
     case message(Data)
     case string(String)
+    /// Emitted just before a ping frame is issued, from either the heartbeat
+    /// loop or `WebSocketManager.ping(_:)`. Always paired with a subsequent
+    /// `.pong` on success or `.error(.pingTimeout)` on timeout.
+    case ping
     case pong
     case error(WebSocketError)
 }
@@ -257,6 +261,7 @@ public final class WebSocketManager: NSObject, Sendable {
         guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
             throw WebSocketError.disconnected(nil)
         }
+        await eventHub.publish(.ping, for: task.id)
         try await heartbeatCoordinator.sendPing(urlTask, timeout: configuration.pongTimeout)
         await eventHub.publish(.pong, for: task.id)
     }

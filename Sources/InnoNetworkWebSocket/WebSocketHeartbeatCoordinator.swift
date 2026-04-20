@@ -113,6 +113,7 @@ package struct WebSocketHeartbeatCoordinator {
 
                 guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else { break }
 
+                await eventHub.publish(.ping, for: task.id)
                 do {
                     try await sendPing(urlTask, timeout: configuration.pongTimeout)
                     missedPongs = 0
