@@ -465,59 +465,8 @@ final class HeartbeatTestHarness: Sendable {
 }
 
 
-/// Collects events published via `TaskEventHub.addListener` for assertions.
-final class HeartbeatEventRecorder: Sendable {
-    private let events = OSAllocatedUnfairLock<[WebSocketEvent]>(initialState: [])
-
-    func record(_ event: WebSocketEvent) {
-        events.withLock { $0.append(event) }
-    }
-
-    func snapshot() -> [WebSocketEvent] {
-        events.withLock { $0 }
-    }
-
-    var pongCount: Int {
-        events.withLock { list in
-            list.reduce(0) { acc, event in
-                if case .pong = event { return acc + 1 }
-                return acc
-            }
-        }
-    }
-
-    /// Count of `.ping` events observed since the recorder started listening.
-    /// Paired with `pongCount` so tests can assert the `.ping → .pong` cadence
-    /// emitted by the heartbeat loop / public `ping(_:)`.
-    var pingCount: Int {
-        events.withLock { list in
-            list.reduce(0) { acc, event in
-                if case .ping = event { return acc + 1 }
-                return acc
-            }
-        }
-    }
-
-    /// Count of `.error(.pingTimeout)` events observed since the recorder
-    /// started listening.
-    var pingTimeoutErrorCount: Int {
-        events.withLock { list in
-            list.reduce(0) { acc, event in
-                if case .error(.pingTimeout) = event { return acc + 1 }
-                return acc
-            }
-        }
-    }
-
-    func waitForEvent(
-        timeout: TimeInterval,
-        matching predicate: @Sendable (WebSocketEvent) -> Bool
-    ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if events.withLock({ $0.contains(where: predicate) }) { return true }
-            try? await Task.sleep(nanoseconds: 5_000_000)
-        }
-        return events.withLock { $0.contains(where: predicate) }
-    }
-}
+// `HeartbeatEventRecorder` (now `WebSocketEventRecorder`) moved to
+// `WebSocketTestSupport.swift` so Reconnect/ReceiveLoop/Messaging suites can
+// reuse the same snapshot + counter helpers. A `typealias
+// HeartbeatEventRecorder = WebSocketEventRecorder` is kept there for
+// back-compat.

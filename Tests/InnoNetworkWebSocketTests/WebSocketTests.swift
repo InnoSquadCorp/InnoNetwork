@@ -414,21 +414,7 @@ struct WebSocketManagerTests {
 }
 
 
-private final class WebSocketEventRecorder: Sendable {
-    private let events = OSAllocatedUnfairLock<[WebSocketEvent]>(initialState: [])
-
-    func record(_ event: WebSocketEvent) {
-        events.withLock { values in
-            values.append(event)
-        }
-    }
-
-    func snapshot() -> [WebSocketEvent] {
-        events.withLock { values in
-            values
-        }
-    }
-}
+// `WebSocketEventRecorder` is provided by `WebSocketTestSupport.swift`.
 
 
 @Suite("WebSocket Listener Lifecycle Tests")
