@@ -11,15 +11,20 @@ package struct WebSocketReconnectCoordinator {
     let configuration: WebSocketConfiguration
     let runtimeRegistry: WebSocketRuntimeRegistry
     let clock: any InnoNetworkClock
+    let randomOffset: @Sendable (ClosedRange<Double>) -> Double
 
     package init(
         configuration: WebSocketConfiguration,
         runtimeRegistry: WebSocketRuntimeRegistry,
-        clock: any InnoNetworkClock = SystemClock()
+        clock: any InnoNetworkClock = SystemClock(),
+        randomOffset: @escaping @Sendable (ClosedRange<Double>) -> Double = { range in
+            Double.random(in: range)
+        }
     ) {
         self.configuration = configuration
         self.runtimeRegistry = runtimeRegistry
         self.clock = clock
+        self.randomOffset = randomOffset
     }
 
     package func reconnectAction(
@@ -63,15 +68,7 @@ package struct WebSocketReconnectCoordinator {
     ) async {
         let reconnectTask = Task {
             let reconnectCount = await task.reconnectCount
-            let baseDelay = configuration.reconnectDelay * pow(2, Double(reconnectCount - 1))
-            let jitter = abs(baseDelay * configuration.reconnectJitterRatio)
-            let unclamped = max(0.0, baseDelay + Double.random(in: (-jitter)...(jitter)))
-            // `maxReconnectDelay <= 0` disables the cap (pre-4.2 unbounded
-            // behavior). Otherwise clamp after jitter so the randomized
-            // delay never exceeds the configured ceiling.
-            let delay: TimeInterval = configuration.maxReconnectDelay > 0
-                ? min(unclamped, configuration.maxReconnectDelay)
-                : unclamped
+            let delay = reconnectDelay(forAttempt: reconnectCount)
 
             do {
                 try await clock.sleep(for: .seconds(delay))
@@ -98,6 +95,21 @@ package struct WebSocketReconnectCoordinator {
         }
 
         await runtimeRegistry.setReconnectTask(reconnectTask, for: task.id)
+    }
+
+    private func reconnectDelay(forAttempt reconnectCount: Int) -> TimeInterval {
+        let baseDelay = configuration.reconnectDelay * pow(2, Double(reconnectCount - 1))
+
+        guard configuration.maxReconnectDelay > 0 else {
+            let jitter = abs(baseDelay * configuration.reconnectJitterRatio)
+            return max(0.0, baseDelay + randomOffset((-jitter)...(jitter)))
+        }
+
+        let cappedBase = min(baseDelay, configuration.maxReconnectDelay)
+        let jitter = abs(cappedBase * configuration.reconnectJitterRatio)
+        let lowerBound = max(0.0, cappedBase - jitter)
+        let upperBound = min(configuration.maxReconnectDelay, cappedBase + jitter)
+        return randomOffset(lowerBound...upperBound)
     }
 
     private static func shouldReconnect(currentState: WebSocketState, autoReconnectEnabled: Bool) -> Bool {

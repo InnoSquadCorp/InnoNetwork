@@ -35,9 +35,9 @@ struct DownloadRetryTests {
 
         let task = await harness.startDownload()
 
-        // Drive `maxRetryCount + 1` failures (initial attempt + retries).
-        // Track the *most recent* identifier, not the max seen — the
-        // stub's taskIdentifier is random so `sorted().last` would lie.
+        // Drive `maxRetryCount + 1` failures (initial attempt + retries)
+        // and wait for a fresh runtime identifier after each injected
+        // failure.
         var lastIdentifier: Int?
         for _ in 0..<3 {
             let identifier = try #require(await waitForRuntimeTaskIdentifier(

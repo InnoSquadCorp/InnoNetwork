@@ -2,13 +2,25 @@ import Foundation
 import os
 @testable import InnoNetworkDownload
 
+private let stubDownloadTaskIdentifierSeed = OSAllocatedUnfairLock<Int>(initialState: 1)
+
+private func nextStubDownloadTaskIdentifier() -> Int {
+    stubDownloadTaskIdentifierSeed.withLock { identifier in
+        let next = identifier
+        identifier += 1
+        return next
+    }
+}
+
 
 /// Test-only stub conforming to `DownloadURLTask` that records calls and
 /// lets the test drive scripted outcomes without touching `URLSession`.
 ///
 /// Mirrors the WebSocket-side `StubWebSocketURLTask` pattern: all state is
 /// guarded by `OSAllocatedUnfairLock`, so multiple coordinators can poke
-/// the stub from background tasks safely.
+/// the stub from background tasks safely. The default `taskIdentifier`
+/// source is monotonic so retry tests can deterministically wait for a
+/// fresh runtime task on each retry cycle.
 final class StubDownloadURLTask: DownloadURLTask, @unchecked Sendable {
 
     let taskIdentifier: Int
@@ -27,7 +39,7 @@ final class StubDownloadURLTask: DownloadURLTask, @unchecked Sendable {
     private let stateLock: OSAllocatedUnfairLock<State>
 
     init(
-        taskIdentifier: Int = Int.random(in: 1...1_000_000),
+        taskIdentifier: Int = nextStubDownloadTaskIdentifier(),
         request: URLRequest? = nil,
         initialState: URLSessionTask.State = .suspended
     ) {

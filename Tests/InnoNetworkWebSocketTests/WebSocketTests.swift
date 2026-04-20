@@ -19,20 +19,26 @@ struct WebSocketConfigurationTests {
         #expect(config.maxMissedPongs == 1)
         #expect(config.reconnectDelay == 1.0)
         #expect(config.reconnectJitterRatio == 0.2)
-        #expect(config.maxReconnectDelay == 60)
+        #expect(config.maxReconnectDelay == 0)
         #expect(config.maxReconnectAttempts == 5)
         #expect(config.allowsCellularAccess == true)
     }
 
-    @Test("maxReconnectDelay default is 60 seconds")
-    func maxReconnectDelayDefaultIsSixty() {
-        #expect(WebSocketConfiguration.default.maxReconnectDelay == 60)
-        #expect(WebSocketConfiguration.safeDefaults().maxReconnectDelay == 60)
+    @Test("maxReconnectDelay is opt-in by default")
+    func maxReconnectDelayDefaultIsDisabled() {
+        #expect(WebSocketConfiguration.default.maxReconnectDelay == 0)
+        #expect(WebSocketConfiguration.safeDefaults().maxReconnectDelay == 0)
     }
 
     @Test("Negative maxReconnectDelay clamps to zero (cap disabled)")
     func negativeMaxReconnectDelayClampsToZero() {
         let config = WebSocketConfiguration(maxReconnectDelay: -5)
+        #expect(config.maxReconnectDelay == 0)
+    }
+
+    @Test("advanced builder starts with cap disabled")
+    func advancedBuilderDefaultsToDisabledCap() {
+        let config = WebSocketConfiguration.advanced { _ in }
         #expect(config.maxReconnectDelay == 0)
     }
 
@@ -70,6 +76,7 @@ struct WebSocketConfigurationTests {
             maxMissedPongs: 2,
             reconnectDelay: 2.0,
             reconnectJitterRatio: 0.1,
+            maxReconnectDelay: 12.0,
             maxReconnectAttempts: 10,
             allowsCellularAccess: false,
             requestHeaders: ["Authorization": "Bearer token"]
@@ -82,6 +89,7 @@ struct WebSocketConfigurationTests {
         #expect(config.maxMissedPongs == 2)
         #expect(config.reconnectDelay == 2.0)
         #expect(config.reconnectJitterRatio == 0.1)
+        #expect(config.maxReconnectDelay == 12.0)
         #expect(config.maxReconnectAttempts == 10)
         #expect(config.allowsCellularAccess == false)
         #expect(config.requestHeaders["Authorization"] == "Bearer token")
@@ -113,6 +121,7 @@ struct WebSocketConfigurationTests {
             maxMissedPongs: -2,
             reconnectDelay: -1,
             reconnectJitterRatio: -0.5,
+            maxReconnectDelay: -5,
             maxReconnectAttempts: -4
         )
 
@@ -123,6 +132,7 @@ struct WebSocketConfigurationTests {
         #expect(config.maxMissedPongs == 1)
         #expect(config.reconnectDelay == 0)
         #expect(config.reconnectJitterRatio == 0)
+        #expect(config.maxReconnectDelay == 0)
         #expect(config.maxReconnectAttempts == 0)
     }
 }

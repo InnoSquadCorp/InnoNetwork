@@ -23,9 +23,10 @@ shared event-delivery policy.
 ### Added
 
 - `WebSocketConfiguration.maxReconnectDelay` — caps the exponential
-  backoff delay (default `60s`). Set `<= 0` to disable the cap and
-  preserve the pre-4.2 unbounded behavior. The cap is applied after
-  jitter, so the randomized delay never exceeds the configured ceiling.
+  backoff delay when set to a positive value. The default remains
+  disabled (`0`), preserving the pre-4.2 unbounded behavior for existing
+  call sites. When enabled, the randomized delay is sampled from a
+  bounded range that never exceeds the configured ceiling.
 - DocC article **Event delivery policy** documenting
   `EventDeliveryPolicy` tuning — per-partition / per-consumer buffering,
   `.dropOldest` vs `.dropNewest` selection, metrics reporter

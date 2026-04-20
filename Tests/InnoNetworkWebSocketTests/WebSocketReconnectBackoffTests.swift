@@ -336,6 +336,49 @@ struct WebSocketReconnectBackoffTests {
         await registry.cancelReconnectTask(for: task.id)
     }
 
+    @Test("Capped backoff keeps jitter within the cap range")
+    func cappedBackoffRetainsBoundedJitter() async {
+        let clock = TestClock()
+        let registry = WebSocketRuntimeRegistry()
+        let coordinator = WebSocketReconnectCoordinator(
+            configuration: WebSocketConfiguration(
+                reconnectDelay: 1.0,
+                reconnectJitterRatio: 0.2,
+                maxReconnectDelay: 5.0,
+                maxReconnectAttempts: 20
+            ),
+            runtimeRegistry: registry,
+            clock: clock,
+            randomOffset: { range in
+                #expect(range.lowerBound == 4.0)
+                #expect(range.upperBound == 5.0)
+                return range.lowerBound
+            }
+        )
+        let task = WebSocketTask(url: URL(string: "wss://example.invalid/cap-jitter")!)
+        for _ in 0..<10 {
+            _ = await task.incrementReconnectCount()
+        }
+        await task.updateState(.disconnected)
+
+        let startCalled = OSAllocatedUnfairLock<Bool>(initialState: false)
+        await coordinator.attemptReconnect(task: task) { _ in
+            startCalled.withLock { $0 = true }
+        }
+
+        #expect(await clock.waitForWaiters(count: 1))
+        clock.advance(by: .seconds(3.95))
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        #expect(startCalled.withLock { $0 } == false)
+
+        clock.advance(by: .seconds(0.05))
+        let dispatched = await waitFor(timeout: 1.0) {
+            startCalled.withLock { $0 }
+        }
+        #expect(dispatched, "capped jitter lower bound should dispatch at 4.0s")
+        await registry.cancelReconnectTask(for: task.id)
+    }
+
     @Test("maxReconnectDelay <= 0 disables the cap (unbounded backoff preserved)")
     func maxReconnectDelayZeroDisablesCap() async {
         let clock = TestClock()
