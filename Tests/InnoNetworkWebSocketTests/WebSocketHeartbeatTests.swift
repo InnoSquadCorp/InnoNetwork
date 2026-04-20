@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import InnoNetworkWebSocket
 
@@ -99,5 +100,87 @@ struct WebSocketHeartbeatTests {
         manager.handleDisconnected(taskIdentifier: identifier, closeCode: .normalClosure, reason: nil)
 
         #expect(await waitForWebSocketTaskRemoval(manager: manager, task: task))
+    }
+
+    @Test("Final heartbeat timeout emits a single timeout error event for the cycle")
+    func finalHeartbeatTimeoutEmitsSingleErrorEvent() async throws {
+        let stubSession = StubWebSocketURLSession()
+        let stubTask = StubWebSocketURLTask()
+        stubSession.enqueue(stubTask)
+
+        let callbacks = WebSocketSessionDelegateCallbacks()
+        let delegate = WebSocketSessionDelegate(
+            callbacks: callbacks,
+            backgroundCompletionStore: BackgroundCompletionStore()
+        )
+        let manager = WebSocketManager(
+            configuration: WebSocketConfiguration(
+                heartbeatInterval: 0.05,
+                pongTimeout: 0.05,
+                maxMissedPongs: 2,
+                reconnectDelay: 0,
+                maxReconnectAttempts: 1,
+                sessionIdentifier: makeWebSocketTestSessionIdentifier("heartbeat-final-timeout")
+            ),
+            urlSession: stubSession,
+            delegate: delegate,
+            callbacks: callbacks
+        )
+
+        let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        let events = OSAllocatedUnfairLock<[WebSocketEvent]>(initialState: [])
+        let subscription = await manager.addEventListener(for: task) { event in
+            events.withLock { $0.append(event) }
+        }
+
+        manager.handleConnected(taskIdentifier: stubTask.taskIdentifier, protocolName: nil)
+        #expect(await waitForWebSocketState(task) { $0 == .connected })
+
+        // Keep the manager on the terminal path so the final timeout still
+        // emits `.error(.pingTimeout)` but does not start a reconnect chain.
+        await task.setAutoReconnectEnabled(false)
+
+        let secondPingObserved = await waitFor(timeout: 2.0) {
+            stubTask.pingCount >= 2
+        }
+        #expect(secondPingObserved)
+
+        let secondTimeoutErrorObserved = await waitFor(timeout: 2.0) {
+            events.withLock { snapshot in
+                snapshot.reduce(0) { count, event in
+                    if case .error(.pingTimeout) = event { return count + 1 }
+                    return count
+                } >= 2
+            }
+        }
+        #expect(secondTimeoutErrorObserved)
+
+        // Give the terminal failure path a brief moment to finish publishing.
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let snapshot = events.withLock { $0 }
+        let pingCount = snapshot.reduce(0) { count, event in
+            if case .ping = event { return count + 1 }
+            return count
+        }
+        let pingTimeoutErrorCount = snapshot.reduce(0) { count, event in
+            if case .error(.pingTimeout) = event { return count + 1 }
+            return count
+        }
+
+        #expect(pingCount == 2)
+        #expect(pingTimeoutErrorCount == 2)
+
+        await manager.removeEventListener(subscription)
+    }
+
+    @Sendable
+    private func waitFor(timeout: TimeInterval, _ condition: @Sendable () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        return condition()
     }
 }

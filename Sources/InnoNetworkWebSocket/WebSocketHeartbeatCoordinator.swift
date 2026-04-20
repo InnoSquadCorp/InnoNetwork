@@ -119,13 +119,18 @@ package struct WebSocketHeartbeatCoordinator {
                     missedPongs = 0
                     await eventHub.publish(.pong, for: task.id)
                 } catch {
-                    if isPingTimeout(error) {
-                        await eventHub.publish(.error(.pingTimeout), for: task.id)
-                    }
                     missedPongs += 1
                     if missedPongs >= configuration.maxMissedPongs {
-                        await onPingTimeout(urlTask.taskIdentifier)
+                        // Hand terminal timeout handling off to a fresh task so
+                        // manager-side cleanup can cancel this heartbeat task
+                        // without awaiting on its own completion.
+                        Task {
+                            await onPingTimeout(urlTask.taskIdentifier)
+                        }
                         break
+                    }
+                    if isPingTimeout(error) {
+                        await eventHub.publish(.error(.pingTimeout), for: task.id)
                     }
                 }
             }

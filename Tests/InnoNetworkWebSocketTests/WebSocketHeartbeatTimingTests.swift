@@ -167,13 +167,14 @@ struct WebSocketHeartbeatTimingTests {
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 1))
 
         harness.clock.advance(by: .seconds(2))
-        #expect(await harness.waitForPingTimeoutErrorCount(atLeast: 2))
 
         let invoked = await waitFor(timeout: 1.0) {
             timeoutBox.withLock { $0 } != nil
         }
         #expect(invoked)
         #expect(timeoutBox.withLock { $0 } == harness.stubTask.taskIdentifier)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(harness.defaultRecorder.pingTimeoutErrorCount == 1)
     }
 
     @Test("Successful pong resets the missed pong counter")

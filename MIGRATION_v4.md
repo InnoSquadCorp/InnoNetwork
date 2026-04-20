@@ -84,13 +84,16 @@ classifier overload
 
 `WebSocketCloseDisposition.classifyPeerClose(closeCode:reason:)` was
 package-internal in `3.x` and is no longer present. The sole entry point is
-`classifyPeerClose(_:reason:)` taking `WebSocketCloseCode`. This is not a
-public surface, but integrators who depended on the symbol via `@testable`
-imports need to convert at the call site:
+`classifyPeerClose(_:reason:)` taking `WebSocketCloseCode`. This remains an
+in-package symbol, so external consumers are unaffected. If package targets or
+tests previously called the overload, convert at the call site:
 
 ```diff
 - WebSocketCloseDisposition.classifyPeerClose(closeCode: stdlibCode, reason: nil)
-+ WebSocketCloseDisposition.classifyPeerClose(WebSocketCloseCode(stdlibCode), reason: nil)
++ WebSocketCloseDisposition.classifyPeerClose(
++     WebSocketCloseCode(rawValue: UInt16(stdlibCode.rawValue)),
++     reason: nil
++ )
 ```
 
 ### 1.6 SessionDelegate adapter boundary
@@ -209,7 +212,7 @@ After bumping InnoNetwork to `4.0`:
 1. `swift build` (or your IDE build) — fix any exhaustive-switch warning on
    `WebSocketEvent` by adding a `.ping` branch.
 2. Search for `URLSessionWebSocketTask.CloseCode` in your code:
-   ```
+   ```bash
    rg -n "URLSessionWebSocketTask\\.CloseCode"
    ```
    Outside of Foundation-delegate implementations, each remaining usage is a
