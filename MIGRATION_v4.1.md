@@ -74,9 +74,9 @@ captures:
 ```
 
 `WebSocketPingContext.attemptNumber` starts at 1 on each connection and
-resets to 0 on `task.reset()`, so it also serves as a stable correlation ID
-between the `.ping(_:)` and the following `.pong` / `.error(.pingTimeout)`
-events from the same cycle.
+resets whenever a new connection becomes ready (or `task.reset()` is called),
+so it also serves as a stable correlation ID between the `.ping(_:)` and the
+following `.pong` / `.error(.pingTimeout)` events from the same cycle.
 
 ---
 

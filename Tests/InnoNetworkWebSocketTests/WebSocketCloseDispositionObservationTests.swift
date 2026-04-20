@@ -7,9 +7,9 @@ import Testing
 
 /// Observation tests for the 4.1 public `WebSocketTask.closeDisposition`
 /// getter. Confirms that the manager records the classified disposition on
-/// every close path (manual disconnect, peer close, transport failure) so
-/// consumers branching on retry/terminal semantics can rely on the value
-/// after the task reaches `.disconnected` / `.failed`.
+/// every close path (manual disconnect, close-handshake timeout, peer close,
+/// transport failure) so consumers branching on retry/terminal semantics can
+/// rely on the value after the task reaches `.disconnected` / `.failed`.
 ///
 /// Uses `StubMessagingHarness` so real URLSession activity doesn't race the
 /// test's scripted close code and drive disposition into `.transportFailure`.
@@ -37,6 +37,32 @@ struct WebSocketCloseDispositionObservationTests {
         }
         #expect(code == .goingAway)
         #expect(disposition?.shouldReconnect == false)
+    }
+
+    @Test("Manual disconnect timeout records .handshakeTimeout disposition")
+    func manualDisconnectTimeoutRecordsDisposition() async throws {
+        let harness = StubMessagingHarness()
+        let task = try await harness.connectAndReady()
+
+        await harness.manager.disconnect(task, closeCode: .goingAway)
+
+        let disposition = await waitForCloseDisposition(task: task, timeout: 5.0)
+        guard case .handshakeTimeout(let code) = disposition else {
+            Issue.record("expected .handshakeTimeout, got \(String(describing: disposition))")
+            return
+        }
+        #expect(code == .goingAway)
+        #expect(disposition?.shouldReconnect == false)
+        #expect(await task.state == .disconnected)
+
+        let taskError = await task.error
+        guard case .disconnected(let underlyingError?)? = taskError else {
+            Issue.record("expected timeout-flavored disconnected error, got \(String(describing: taskError))")
+            return
+        }
+        #expect(underlyingError.domain == "InnoNetworkWebSocket.HandshakeTimeout")
+        #expect(underlyingError.code == Int(WebSocketCloseCode.goingAway.rawValue))
+        #expect(underlyingError.message == "WebSocket close handshake timed out.")
     }
 
     @Test("Peer close with retryable code records .peerRetryable disposition")

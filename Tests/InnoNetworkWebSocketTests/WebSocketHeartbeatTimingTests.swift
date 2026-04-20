@@ -156,6 +156,74 @@ struct WebSocketHeartbeatTimingTests {
         await harness.stopHeartbeat()
     }
 
+    @Test("Automatic reconnect resets the next heartbeat ping attempt number to 1")
+    func automaticReconnectResetsPingAttemptNumber() async throws {
+        let harness = StubMessagingHarness(
+            heartbeatInterval: 0.05,
+            pongTimeout: 1,
+            reconnectDelay: 0,
+            maxReconnectAttempts: 1
+        )
+        let task = try await harness.connectAndReady()
+        let recorder = WebSocketEventCollector()
+        let subscription = await harness.manager.addEventListener(for: task) { event in
+            recorder.record(event)
+        }
+
+        #expect(await waitFor(timeout: 1.0) { harness.stubTask.pingCount >= 1 })
+        harness.stubTask.completePendingPong(with: nil)
+        #expect(await waitFor(timeout: 1.0) {
+            recorder.snapshot().contains { event in
+                if case .pong = event { return true }
+                return false
+            }
+        })
+
+        let reconnectStub = StubWebSocketURLTask()
+        harness.stubSession.enqueue(reconnectStub)
+        harness.manager.handleDisconnected(
+            taskIdentifier: harness.stubTaskIdentifier,
+            closeCode: .serviceRestart,
+            reason: "restart"
+        )
+
+        #expect(await harness.waitForCreatedTaskCount(atLeast: 2))
+
+        let preReconnectPingCount = recorder.snapshot().compactMap { event -> Int? in
+            if case .ping = event { return 1 }
+            return nil
+        }.count
+        #expect(preReconnectPingCount >= 1)
+
+        harness.manager.handleConnected(taskIdentifier: reconnectStub.taskIdentifier, protocolName: nil)
+        #expect(await harness.waitForTaskState(task, equals: .connected))
+        #expect(await waitFor(timeout: 1.0) { reconnectStub.pingCount >= 1 })
+        reconnectStub.completePendingPong(with: nil)
+        #expect(await waitFor(timeout: 1.0) {
+            recorder.snapshot().compactMap { event -> Int? in
+                if case .ping(let context) = event { return context.attemptNumber }
+                return nil
+            }.count > preReconnectPingCount
+        })
+
+        let attemptNumbers = recorder.snapshot().compactMap { event -> Int? in
+            if case .ping(let context) = event { return context.attemptNumber }
+            return nil
+        }
+        #expect(attemptNumbers.count > preReconnectPingCount)
+        if attemptNumbers.count > preReconnectPingCount {
+            #expect(attemptNumbers[preReconnectPingCount] == 1)
+        }
+
+        await harness.manager.removeEventListener(subscription)
+        await harness.manager.disconnect(task)
+        harness.manager.handleDisconnected(
+            taskIdentifier: reconnectStub.taskIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+    }
+
     @Test(".ping event is published before the paired .pong event")
     func pingPublishedBeforePong() async throws {
         let harness = HeartbeatTestHarness(

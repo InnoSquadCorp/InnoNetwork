@@ -60,12 +60,16 @@ public actor WebSocketTask: Identifiable {
     }
 
     /// Returns the next monotonic ping sequence number for this task's
-    /// current connection. Reset to 0 on `reset()` (i.e. each reconnect
-    /// cycle) so consumers can tell heartbeat attempts within a single
-    /// connection apart.
+    /// current connection. Reset to 0 whenever a new connection becomes
+    /// ready (and on `reset()`) so consumers can tell heartbeat attempts
+    /// within a single connection apart.
     func incrementPingCounter() -> Int {
         _pingCounter += 1
         return _pingCounter
+    }
+
+    func resetPingCounter() {
+        _pingCounter = 0
     }
 
     func setAutoReconnectEnabled(_ enabled: Bool) {
@@ -82,6 +86,11 @@ public actor WebSocketTask: Identifiable {
         _pendingManualDisconnectError = nil
         _awaitingCloseHandshake = false
         return error
+    }
+
+    func clearManualDisconnectState() {
+        _pendingManualDisconnectError = nil
+        _awaitingCloseHandshake = false
     }
 
     func isClientInitiatedCloseFlow() -> Bool {

@@ -277,7 +277,12 @@ final class StubMessagingHarness: Sendable {
     private let callbacks: WebSocketSessionDelegateCallbacks
     private let sessionIdentifier: String
 
-    init(pongTimeout: TimeInterval = 10) {
+    init(
+        heartbeatInterval: TimeInterval = 0,
+        pongTimeout: TimeInterval = 10,
+        reconnectDelay: TimeInterval = 0,
+        maxReconnectAttempts: Int = 0
+    ) {
         let identifier = "test.websocket.stub.\(UUID().uuidString)"
         let stubSession = StubWebSocketURLSession()
         let stubTask = StubWebSocketURLTask()
@@ -296,10 +301,10 @@ final class StubMessagingHarness: Sendable {
         self.callbacks = callbacks
         self.manager = WebSocketManager(
             configuration: WebSocketConfiguration(
-                heartbeatInterval: 0,
+                heartbeatInterval: heartbeatInterval,
                 pongTimeout: pongTimeout,
-                reconnectDelay: 0,
-                maxReconnectAttempts: 0,
+                reconnectDelay: reconnectDelay,
+                maxReconnectAttempts: maxReconnectAttempts,
                 sessionIdentifier: identifier
             ),
             urlSession: stubSession,
@@ -352,6 +357,35 @@ final class StubMessagingHarness: Sendable {
 
     func tearDown(task: WebSocketTask) async {
         await manager.disconnect(task)
+    }
+
+    func waitForTaskState(
+        _ task: WebSocketTask,
+        equals expected: WebSocketState,
+        timeout: TimeInterval = 1.0
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await task.state == expected {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return await task.state == expected
+    }
+
+    func waitForCreatedTaskCount(
+        atLeast count: Int,
+        timeout: TimeInterval = 1.0
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if stubSession.createdTasks.count >= count {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return stubSession.createdTasks.count >= count
     }
 }
 

@@ -26,9 +26,10 @@ public enum WebSocketEvent: Sendable {
 ///
 /// - ``attemptNumber`` is a monotonically increasing counter that starts at
 ///   1 for the first ping of a given connection (heartbeat or public
-///   ``WebSocketManager/ping(_:)``) and resets to 0 when the task reconnects
-///   or is manually reset. Use it to correlate `.ping(_:)` with the paired
-///   `.pong` or `.error(.pingTimeout)` that follow.
+///   ``WebSocketManager/ping(_:)``) and resets to 0 when a new connection
+///   becomes ready or the task is manually reset. Use it to correlate
+///   `.ping(_:)` with the paired `.pong` or `.error(.pingTimeout)` that
+///   follow.
 /// - ``dispatchedAt`` is captured with `ContinuousClock.now` immediately
 ///   before the `.ping` event is published. Consumers typically pair it with
 ///   a `ContinuousClock.now` snapshot at `.pong` receipt to compute RTT.
@@ -38,7 +39,7 @@ public enum WebSocketEvent: Sendable {
 /// library controls construction.
 public struct WebSocketPingContext: Sendable, Hashable {
     /// Sequence number of this ping attempt within the current connection.
-    /// 1-indexed; resets on reconnect / task reset.
+    /// 1-indexed; resets when a new connection becomes ready or on task reset.
     public let attemptNumber: Int
 
     /// `ContinuousClock.now` snapshot at the moment `.ping(_:)` is
@@ -414,6 +415,7 @@ public final class WebSocketManager: NSObject, Sendable {
             }
 
             await task.resetReconnectCount()
+            await task.resetPingCounter()
             await task.setAutoReconnectEnabled(true)
             await task.setError(nil)
             await task.updateState(.connected)
@@ -741,14 +743,12 @@ public final class WebSocketManager: NSObject, Sendable {
         guard await task.awaitingCloseHandshake else { return }
 
         await runtimeRegistry.clearCloseHandshakeTask(for: taskID)
+        await task.clearManualDisconnectState()
         if let urlTask = await runtimeRegistry.urlTask(for: taskID) {
             urlTask.cancel()
         }
-        let manualError = await task.completeManualDisconnect()
-        let disposition: WebSocketCloseDisposition = manualError == nil
-            ? .handshakeTimeout(closeCode)
-            : .manual(closeCode)
-        let finalError = manualError ?? makeDisconnectedError(
+        let disposition: WebSocketCloseDisposition = .handshakeTimeout(closeCode)
+        let finalError = makeDisconnectedError(
             closeDisposition: .handshakeTimeout(closeCode)
         )
         await finalizeDisconnect(
