@@ -191,3 +191,113 @@ struct WebSocketCloseDispositionClassificationTests {
         }
     }
 }
+
+
+@Suite("WebSocket Handshake Disposition Classification Tests")
+struct WebSocketHandshakeDispositionClassificationTests {
+
+    @Test(
+        "Handshake HTTP auth failures map to terminal dispositions",
+        arguments: [
+            (401, "unauthorized"),
+            (403, "forbidden"),
+        ]
+    )
+    func handshakeAuthIsTerminal(_ args: (Int, String)) {
+        let (statusCode, _) = args
+        let disposition = WebSocketCloseDisposition.classifyHandshake(
+            statusCode: statusCode,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.userAuthenticationRequired.rawValue,
+                message: "auth"
+            )
+        )
+        #expect(!disposition.shouldReconnect)
+    }
+
+    @Test(
+        "Handshake server unavailable codes are retryable",
+        arguments: [429, 500, 502, 503, 504, 599]
+    )
+    func handshakeServerUnavailableIsRetryable(_ statusCode: Int) {
+        let disposition = WebSocketCloseDisposition.classifyHandshake(
+            statusCode: statusCode,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.badServerResponse.rawValue,
+                message: "server"
+            )
+        )
+        if case .handshakeServerUnavailable = disposition {
+            #expect(disposition.shouldReconnect)
+        } else {
+            Issue.record("Expected handshakeServerUnavailable for \(statusCode)")
+        }
+    }
+
+    @Test(
+        "Handshake terminal HTTP codes do not reconnect",
+        arguments: [400, 404, 410, 422]
+    )
+    func handshakeTerminalHTTPIsTerminal(_ statusCode: Int) {
+        let disposition = WebSocketCloseDisposition.classifyHandshake(
+            statusCode: statusCode,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.badServerResponse.rawValue,
+                message: "\(statusCode)"
+            )
+        )
+        if case .handshakeTerminalHTTP = disposition {
+            #expect(!disposition.shouldReconnect)
+        } else {
+            Issue.record("Expected handshakeTerminalHTTP for \(statusCode)")
+        }
+    }
+
+    @Test(
+        "Transient network errors classify as handshakeTransientNetwork",
+        arguments: [
+            URLError.timedOut,
+            URLError.notConnectedToInternet,
+            URLError.networkConnectionLost,
+            URLError.cannotFindHost,
+            URLError.cannotConnectToHost,
+            URLError.dnsLookupFailed,
+            URLError.secureConnectionFailed,
+        ]
+    )
+    func transientNetworkErrorsClassifyAsRetryable(_ code: URLError.Code) {
+        let disposition = WebSocketCloseDisposition.classifyHandshake(
+            statusCode: nil,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: code.rawValue,
+                message: "transient"
+            )
+        )
+        if case .handshakeTransientNetwork = disposition {
+            #expect(disposition.shouldReconnect)
+        } else {
+            Issue.record("Expected handshakeTransientNetwork for code \(code.rawValue)")
+        }
+    }
+
+    @Test("Non-URL-domain error without status code maps to transportFailure")
+    func nonURLDomainErrorIsTransportFailure() {
+        let disposition = WebSocketCloseDisposition.classifyHandshake(
+            statusCode: nil,
+            error: SendableUnderlyingError(
+                domain: "UnknownDomain",
+                code: 42,
+                message: "weird"
+            )
+        )
+        if case .transportFailure = disposition {
+            #expect(disposition.shouldReconnect)
+        } else {
+            Issue.record("Expected transportFailure for non-URL domain error")
+        }
+    }
+}

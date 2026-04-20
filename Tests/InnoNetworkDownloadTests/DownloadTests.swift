@@ -623,7 +623,9 @@ struct DownloadListenerLifecycleTests {
             }
 
             let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
-            manager.handleCompletion(
+            await injectSyntheticCompletion(
+                manager: manager,
+                task: task,
                 taskIdentifier: firstTaskIdentifier,
                 location: nil,
                 error: SendableUnderlyingError(
@@ -646,7 +648,9 @@ struct DownloadListenerLifecycleTests {
             let temporaryLocation = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-download-temp.data")
             defer { try? FileManager.default.removeItem(at: temporaryLocation) }
             try Data("payload".utf8).write(to: temporaryLocation)
-            manager.handleCompletion(
+            await injectSyntheticCompletion(
+                manager: manager,
+                task: task,
                 taskIdentifier: retriedTaskIdentifier,
                 location: temporaryLocation,
                 error: nil
@@ -695,7 +699,9 @@ struct DownloadListenerLifecycleTests {
             }
 
             let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
-            manager.handleCompletion(
+            await injectSyntheticCompletion(
+                manager: manager,
+                task: task,
                 taskIdentifier: taskIdentifier,
                 location: nil,
                 error: SendableUnderlyingError(
