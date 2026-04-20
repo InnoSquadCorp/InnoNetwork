@@ -201,13 +201,13 @@ struct WebSocketHeartbeatTimingTests {
 
     @Test("Timed out heartbeat does not dispatch a stale ping after pre-dispatch cancellation")
     func timedOutHeartbeatDoesNotDispatchStalePing() async throws {
-        let dispatchGate = BlockingPingDispatchGate()
+        let dispatchGate = AsyncDispatchGate()
         let harness = HeartbeatTestHarness(
             heartbeatInterval: 4,
             pongTimeout: 1,
             maxMissedPongs: 1,
             beforeSendPingDispatch: {
-                dispatchGate.wait()
+                await dispatchGate.arriveAndWait()
             }
         )
 
@@ -222,7 +222,7 @@ struct WebSocketHeartbeatTimingTests {
         harness.clock.advance(by: .seconds(4))
 
         let reachedDispatchGate = await waitFor(timeout: 1.0) {
-            dispatchGate.hasArrived
+            dispatchGate.hasArrivedSync
         }
         #expect(reachedDispatchGate)
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 1))
@@ -265,20 +265,27 @@ private func waitFor(
 /// Blocks the coordinator right before it would dispatch a ping, allowing
 /// tests to cancel the enclosing task while the continuation is already
 /// registered but the socket has not yet seen the ping.
-final class BlockingPingDispatchGate: @unchecked Sendable {
+final class AsyncDispatchGate: @unchecked Sendable {
     private let arrivedLock = OSAllocatedUnfairLock<Bool>(initialState: false)
-    private let semaphore = DispatchSemaphore(value: 0)
+    private let continuationLock = OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>(initialState: nil)
 
-    func wait() {
+    func arriveAndWait() async {
         arrivedLock.withLock { $0 = true }
-        semaphore.wait()
+        await withCheckedContinuation { continuation in
+            continuationLock.withLock { $0 = continuation }
+        }
     }
 
     func release() {
-        semaphore.signal()
+        let continuation = continuationLock.withLock { state -> CheckedContinuation<Void, Never>? in
+            let current = state
+            state = nil
+            return current
+        }
+        continuation?.resume()
     }
 
-    var hasArrived: Bool {
+    var hasArrivedSync: Bool {
         arrivedLock.withLock { $0 }
     }
 }
@@ -303,7 +310,7 @@ final class HeartbeatTestHarness: Sendable {
         heartbeatInterval: TimeInterval,
         pongTimeout: TimeInterval,
         maxMissedPongs: Int,
-        beforeSendPingDispatch: (@Sendable () -> Void)? = nil
+        beforeSendPingDispatch: (@Sendable () async -> Void)? = nil
     ) {
         let url = URL(string: "ws://stub.invalid/hb")!
         self.task = WebSocketTask(url: url)

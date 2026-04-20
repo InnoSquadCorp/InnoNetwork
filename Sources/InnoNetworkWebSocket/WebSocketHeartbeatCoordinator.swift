@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 
 /// Tracks the single in-flight `CheckedContinuation` for `sendPing` and folds
@@ -7,7 +6,7 @@ import os
 /// state transitions `idle → waiting → dispatched|cancelled|completed`, so a
 /// timeout/cancel that lands after registration but before dispatch can still
 /// suppress the outbound ping.
-private final class PingContinuationGate: @unchecked Sendable {
+private actor PingContinuationGate {
     enum RegisterAction {
         case dispatched
         case cancelledBeforeRegistration
@@ -21,46 +20,32 @@ private final class PingContinuationGate: @unchecked Sendable {
         case completed
     }
 
-    private let stateLock = OSAllocatedUnfairLock<State>(initialState: .idle)
+    private var state: State = .idle
 
     func registerAndDispatch(
         _ continuation: CheckedContinuation<Void, Error>,
-        beforeDispatch: (@Sendable () -> Void)? = nil,
+        beforeDispatch: (@Sendable () async -> Void)? = nil,
         dispatch: () -> Void
-    ) -> RegisterAction {
-        let canPrepareDispatch = stateLock.withLock { state in
-            switch state {
-            case .idle:
-                state = .waiting(continuation)
-                return true
-            case .cancelled, .completed, .waiting:
-                return false
-            }
+    ) async -> RegisterAction {
+        switch state {
+        case .idle:
+            state = .waiting(continuation)
+        case .cancelled, .completed, .waiting:
+            return .cancelledBeforeRegistration
         }
 
-        guard canPrepareDispatch else { return .cancelledBeforeRegistration }
-
-        beforeDispatch?()
-
-        let canDispatch = stateLock.withLock { state in
-            if case .waiting = state {
-                return true
-            }
-            return false
+        if let beforeDispatch {
+            await beforeDispatch()
         }
 
-        guard canDispatch else { return .cancelledAfterRegistration }
+        guard case .waiting = state else { return .cancelledAfterRegistration }
         dispatch()
         return .dispatched
     }
 
     func resume(with error: Error?) {
-        let continuation = stateLock.withLock { state -> CheckedContinuation<Void, Error>? in
-            guard case .waiting(let continuation) = state else { return nil }
-            state = .completed
-            return continuation
-        }
-        guard let continuation else { return }
+        guard case .waiting(let continuation) = state else { return }
+        state = .completed
         if let error {
             continuation.resume(throwing: error)
         } else {
@@ -69,19 +54,15 @@ private final class PingContinuationGate: @unchecked Sendable {
     }
 
     func cancel() {
-        let continuation = stateLock.withLock { state -> CheckedContinuation<Void, Error>? in
-            switch state {
-            case .idle:
-                state = .cancelled
-                return nil
-            case .waiting(let continuation):
-                state = .cancelled
-                return continuation
-            case .cancelled, .completed:
-                return nil
-            }
+        switch state {
+        case .idle:
+            state = .cancelled
+        case .waiting(let continuation):
+            state = .cancelled
+            continuation.resume(throwing: CancellationError())
+        case .cancelled, .completed:
+            return
         }
-        continuation?.resume(throwing: CancellationError())
     }
 }
 
@@ -91,14 +72,14 @@ package struct WebSocketHeartbeatCoordinator {
     let runtimeRegistry: WebSocketRuntimeRegistry
     let eventHub: TaskEventHub<WebSocketEvent>
     let clock: any InnoNetworkClock
-    let beforeSendPingDispatch: (@Sendable () -> Void)?
+    let beforeSendPingDispatch: (@Sendable () async -> Void)?
 
     package init(
         configuration: WebSocketConfiguration,
         runtimeRegistry: WebSocketRuntimeRegistry,
         eventHub: TaskEventHub<WebSocketEvent>,
         clock: any InnoNetworkClock = SystemClock(),
-        beforeSendPingDispatch: (@Sendable () -> Void)? = nil
+        beforeSendPingDispatch: (@Sendable () async -> Void)? = nil
     ) {
         self.configuration = configuration
         self.runtimeRegistry = runtimeRegistry
@@ -157,21 +138,27 @@ package struct WebSocketHeartbeatCoordinator {
         let gate = PingContinuationGate()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                let action = gate.registerAndDispatch(
-                    continuation,
-                    beforeDispatch: beforeSendPingDispatch
-                ) {
-                    urlTask.sendPing { error in
-                        gate.resume(with: error)
+                Task {
+                    let action = await gate.registerAndDispatch(
+                        continuation,
+                        beforeDispatch: beforeSendPingDispatch
+                    ) {
+                        urlTask.sendPing { error in
+                            Task {
+                                await gate.resume(with: error)
+                            }
+                        }
                     }
-                }
-                if case .cancelledBeforeRegistration = action {
-                    continuation.resume(throwing: CancellationError())
+                    if case .cancelledBeforeRegistration = action {
+                        continuation.resume(throwing: CancellationError())
+                    }
                 }
             }
             try Task.checkCancellation()
         } onCancel: {
-            gate.cancel()
+            Task {
+                await gate.cancel()
+            }
         }
     }
 
