@@ -1,6 +1,6 @@
 # API Stability
 
-This document defines the compatibility contract for the public OSS release of InnoNetwork 3.x.
+This document defines the compatibility contract for the public OSS release of InnoNetwork 4.x.
 
 ## Stable
 
@@ -21,6 +21,9 @@ This document defines the compatibility contract for the public OSS release of I
 - `AnyResponseDecoder`
 - `URLQueryEncoder`
 - `EventDeliveryPolicy`
+- `WebSocketCloseCode`
+- `WebSocketCloseDisposition`
+- `WebSocketPingContext`
 
 ## Provisionally Stable
 
@@ -44,12 +47,14 @@ This document defines the compatibility contract for the public OSS release of I
 
 ## Notes
 
-- Stable items follow semantic versioning for the 3.x line.
+- Stable items follow semantic versioning for the 4.x line.
 - `default` aliases are convenience entry points and should be treated as `safeDefaults` aliases.
 - Advanced builders are public and supported, but operational tuning values are not guaranteed to stay numerically identical across releases.
 - `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`,
   `SingleRequestExecutable`, and `RequestPayload` are public extension points
   for higher networking layers. They are expected to remain available across
-  3.x, but their exact low-level affordances may evolve with minor releases.
+  4.x, but their exact low-level affordances may evolve with minor releases.
 - Persistence and telemetry formats are not external storage contracts.
+- Benchmark guard thresholds, guarded benchmark selection, and baseline
+  contents are operational policy rather than public compatibility surface.
 - Internal/Operational items may change in minor releases without separate deprecation windows.

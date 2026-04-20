@@ -21,14 +21,46 @@ private struct BenchmarkReport: Codable, Sendable {
 private struct BenchmarkIdentifier: Hashable, Sendable {
     let group: String
     let name: String
+
+    var displayName: String { "\(group)/\(name)" }
+
+    static func parse(_ rawValue: String) throws -> BenchmarkIdentifier {
+        let components = rawValue.split(separator: "/", maxSplits: 1).map(String.init)
+        guard components.count == 2, !components[0].isEmpty, !components[1].isEmpty else {
+            throw NSError(
+                domain: "InnoNetworkBenchmarks",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Invalid benchmark identifier '\(rawValue)'. Use the format group/name."
+                ]
+            )
+        }
+        return BenchmarkIdentifier(group: components[0], name: components[1])
+    }
+}
+
+private struct BaselineComparison: Sendable {
+    let identifier: BenchmarkIdentifier
+    let deltaPercent: Double
+    let isGuarded: Bool
+}
+
+private struct BenchmarkGuardFailure: Sendable {
+    let identifier: BenchmarkIdentifier
+    let deltaPercent: Double
+    let maxRegressionPercent: Double
 }
 
 private struct BenchmarkOptions: Sendable {
     let quick: Bool
     let jsonOutputPath: String?
     let baselinePath: String
+    let enforceBaseline: Bool
+    let guardBenchmarks: Set<BenchmarkIdentifier>
+    let maxRegressionPercent: Double
 
-    static func parse(arguments: [String]) -> BenchmarkOptions {
+    static func parse(arguments: [String]) throws -> BenchmarkOptions {
         let defaultBaseline = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -38,27 +70,86 @@ private struct BenchmarkOptions: Sendable {
         var quick = false
         var jsonOutputPath: String?
         var baselinePath = defaultBaseline
+        var enforceBaseline = false
+        var guardBenchmarks: Set<BenchmarkIdentifier> = []
+        var maxRegressionPercent = 0.0
 
         var iterator = arguments.makeIterator()
+        func requiredValue(
+            code: Int,
+            description: String
+        ) throws -> String {
+            guard let value = iterator.next(), !value.hasPrefix("-") else {
+                throw NSError(
+                    domain: "InnoNetworkBenchmarks",
+                    code: code,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: description
+                    ]
+                )
+            }
+            return value
+        }
+
         while let argument = iterator.next() {
             switch argument {
             case "--quick":
                 quick = true
             case "--json-path":
-                jsonOutputPath = iterator.next()
+                let path = try requiredValue(
+                    code: 3,
+                    description: "Missing path after --json-path."
+                )
+                jsonOutputPath = path
             case "--baseline":
-                if let override = iterator.next() {
-                    baselinePath = override
+                let override = try requiredValue(
+                    code: 4,
+                    description: "Missing path after --baseline."
+                )
+                baselinePath = override
+            case "--enforce-baseline":
+                enforceBaseline = true
+            case "--guard-benchmark":
+                let rawIdentifier = try requiredValue(
+                    code: 5,
+                    description: "Missing benchmark identifier after --guard-benchmark."
+                )
+                guardBenchmarks.insert(try BenchmarkIdentifier.parse(rawIdentifier))
+            case "--max-regression-percent":
+                let rawPercent = try requiredValue(
+                    code: 6,
+                    description: "Missing or invalid numeric value after --max-regression-percent."
+                )
+                guard let percent = Double(rawPercent), percent >= 0 else {
+                    throw NSError(
+                        domain: "InnoNetworkBenchmarks",
+                        code: 6,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Missing or invalid numeric value after --max-regression-percent."
+                        ]
+                    )
                 }
+                maxRegressionPercent = percent
             default:
-                break
+                throw NSError(
+                    domain: "InnoNetworkBenchmarks",
+                    code: 13,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Unknown benchmark option '\(argument)'."
+                    ]
+                )
             }
         }
 
         return BenchmarkOptions(
             quick: quick,
             jsonOutputPath: jsonOutputPath,
-            baselinePath: baselinePath
+            baselinePath: baselinePath,
+            enforceBaseline: enforceBaseline,
+            guardBenchmarks: guardBenchmarks,
+            maxRegressionPercent: maxRegressionPercent
         )
     }
 }
@@ -102,7 +193,7 @@ private actor BenchmarkCounter {
 
 private enum InnoNetworkBenchmarks {
     static func runMain() async throws {
-        let options = BenchmarkOptions.parse(arguments: Array(CommandLine.arguments.dropFirst()))
+        let options = try BenchmarkOptions.parse(arguments: Array(CommandLine.arguments.dropFirst()))
         let results = try await runBenchmarks(options: options)
         let report = BenchmarkReport(
             version: 1,
@@ -119,8 +210,6 @@ private enum InnoNetworkBenchmarks {
             )
         }
 
-        printBaselineDiff(report: report, baselinePath: options.baselinePath)
-
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let jsonData = try encoder.encode(report)
@@ -131,6 +220,25 @@ private enum InnoNetworkBenchmarks {
         if let jsonString = String(data: jsonData, encoding: .utf8) {
             print(jsonString)
         }
+
+        let guardFailures = try printBaselineDiff(report: report, options: options)
+        if !guardFailures.isEmpty {
+            let failureSummary = guardFailures
+                .map { failure in
+                    "\(failure.identifier.displayName) regressed by " +
+                    "\(String(format: "%.2f", abs(failure.deltaPercent)))% " +
+                    "(limit \(String(format: "%.2f", failure.maxRegressionPercent))%)"
+                }
+                .joined(separator: "; ")
+            throw NSError(
+                domain: "InnoNetworkBenchmarks",
+                code: 7,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Baseline regression guard failed: \(failureSummary)"
+                ]
+            )
+        }
     }
 
     private static func runBenchmarks(options: BenchmarkOptions) async throws -> [BenchmarkResult] {
@@ -138,7 +246,7 @@ private enum InnoNetworkBenchmarks {
         let encoderIterations = options.quick ? 2_000 : 20_000
         let eventIterations = options.quick ? 400 : 4_000
         let persistenceIterations = options.quick ? 300 : 3_000
-        let reconnectIterations = options.quick ? 2_000 : 20_000
+        let reconnectIterations = 20_000
 
         results.append(try await measure(name: "query-encoder-small", group: "encoding", iterations: encoderIterations) {
             let encoder = URLQueryEncoder(keyEncodingStrategy: URLQueryKeyEncodingStrategy.convertToSnakeCase)
@@ -163,6 +271,8 @@ private enum InnoNetworkBenchmarks {
         results.append(try await benchmarkPersistenceReplay(iterations: persistenceIterations))
         results.append(try await benchmarkPersistenceCompaction(iterations: max(1_050, persistenceIterations)))
         results.append(try await benchmarkReconnectDecision(iterations: reconnectIterations))
+        results.append(try await benchmarkCloseDispositionClassify(iterations: reconnectIterations))
+        results.append(try await benchmarkPingContextAlloc(iterations: reconnectIterations))
 
         return results
     }
@@ -326,47 +436,197 @@ private enum InnoNetworkBenchmarks {
         }
     }
 
-    private static func printBaselineDiff(report: BenchmarkReport, baselinePath: String) {
-        let baselineURL = URL(fileURLWithPath: baselinePath)
+    /// Measures the cost of the package-internal close-code classifier,
+    /// which runs on every disconnect. Exercises the three branches
+    /// (normal / retryable / terminal) so any one of them regressing shows
+    /// up here.
+    private static func benchmarkCloseDispositionClassify(iterations: Int) async throws -> BenchmarkResult {
+        try await measure(name: "websocket-close-disposition-classify", group: "websocket", iterations: iterations) {
+            let codes: [WebSocketCloseCode] = [
+                .normalClosure,
+                .serviceRestart,
+                .tryAgainLater,
+                .policyViolation,
+                .custom(4001),
+            ]
+            for index in 0..<iterations {
+                let code = codes[index % codes.count]
+                _ = WebSocketCloseDisposition.classifyPeerClose(code, reason: nil)
+            }
+        }
+    }
+
+    /// Measures the cost of allocating a `WebSocketPingContext` — dominated
+    /// by the `ContinuousClock.now` read. Heartbeat loops emit this on every
+    /// cycle so it is a natural regression-guard target.
+    private static func benchmarkPingContextAlloc(iterations: Int) async throws -> BenchmarkResult {
+        try await measure(name: "websocket-ping-context-alloc", group: "websocket", iterations: iterations) {
+            var attempt = 0
+            for _ in 0..<iterations {
+                attempt &+= 1
+                let context = WebSocketPingContext(
+                    attemptNumber: attempt,
+                    dispatchedAt: .now
+                )
+                _ = context.attemptNumber
+            }
+        }
+    }
+
+    private static func printBaselineDiff(
+        report: BenchmarkReport,
+        options: BenchmarkOptions
+    ) throws -> [BenchmarkGuardFailure] {
+        let baselineURL = URL(fileURLWithPath: options.baselinePath)
 
         guard FileManager.default.fileExists(atPath: baselineURL.path) else {
-            print("No baseline loaded from \(baselinePath) (file not found)")
-            return
+            if options.enforceBaseline {
+                throw NSError(
+                    domain: "InnoNetworkBenchmarks",
+                    code: 8,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "No baseline loaded from \(options.baselinePath) (file not found)"
+                    ]
+                )
+            }
+            print("No baseline loaded from \(options.baselinePath) (file not found)")
+            return []
         }
 
         let data: Data
         do {
             data = try Data(contentsOf: baselineURL)
         } catch {
-            print("No baseline loaded from \(baselinePath) (read failed: \(error.localizedDescription))")
-            return
+            if options.enforceBaseline {
+                throw NSError(
+                    domain: "InnoNetworkBenchmarks",
+                    code: 9,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "No baseline loaded from \(options.baselinePath) " +
+                            "(read failed: \(error.localizedDescription))"
+                    ]
+                )
+            }
+            print("No baseline loaded from \(options.baselinePath) (read failed: \(error.localizedDescription))")
+            return []
         }
 
         let baseline: BenchmarkReport
         do {
             baseline = try JSONDecoder().decode(BenchmarkReport.self, from: data)
         } catch {
-            print("No baseline loaded from \(baselinePath) (schema mismatch: \(error.localizedDescription))")
-            return
+            if options.enforceBaseline {
+                throw NSError(
+                    domain: "InnoNetworkBenchmarks",
+                    code: 10,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "No baseline loaded from \(options.baselinePath) " +
+                            "(schema mismatch: \(error.localizedDescription))"
+                    ]
+                )
+            }
+            print("No baseline loaded from \(options.baselinePath) (schema mismatch: \(error.localizedDescription))")
+            return []
         }
 
         let baselineMap: [BenchmarkIdentifier: BenchmarkResult]
         do {
             baselineMap = try makeBenchmarkMap(from: baseline.results)
         } catch {
-            print("No baseline loaded from \(baselinePath) (\(error.localizedDescription))")
-            return
+            if options.enforceBaseline {
+                throw error
+            }
+            print("No baseline loaded from \(options.baselinePath) (\(error.localizedDescription))")
+            return []
         }
+
+        let currentMap = try makeBenchmarkMap(from: report.results)
         print("Baseline diff:")
+        let guardedIdentifiers: Set<BenchmarkIdentifier>
+        if options.enforceBaseline {
+            guardedIdentifiers = options.guardBenchmarks.isEmpty
+                ? Set(currentMap.keys)
+                : options.guardBenchmarks
+        } else {
+            guardedIdentifiers = options.guardBenchmarks
+        }
+        var comparisons: [BaselineComparison] = []
         for result in report.results {
             let identifier = BenchmarkIdentifier(group: result.group, name: result.name)
             guard let baseline = baselineMap[identifier] else {
+                if options.enforceBaseline, guardedIdentifiers.contains(identifier) {
+                    throw NSError(
+                        domain: "InnoNetworkBenchmarks",
+                        code: 11,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Missing baseline entry for guarded benchmark \(identifier.displayName)."
+                        ]
+                    )
+                }
                 print("- \(result.group)/\(result.name): no baseline entry")
                 continue
             }
             let delta = ((result.operationsPerSecond - baseline.operationsPerSecond) / max(baseline.operationsPerSecond, 0.000_001)) * 100.0
-            print("- \(result.group)/\(result.name): \(String(format: "%+.2f", delta))% vs baseline")
+            let isGuarded = guardedIdentifiers.contains(identifier)
+            let guardLabel = isGuarded ? " [guard]" : ""
+            print("- \(identifier.displayName): \(String(format: "%+.2f", delta))% vs baseline\(guardLabel)")
+            comparisons.append(
+                BaselineComparison(
+                    identifier: identifier,
+                    deltaPercent: delta,
+                    isGuarded: isGuarded
+                )
+            )
         }
+
+        let missingGuardedBenchmarks = guardedIdentifiers.subtracting(Set(comparisons.map(\.identifier))).filter {
+            currentMap[$0] == nil || baselineMap[$0] == nil
+        }
+        if options.enforceBaseline, !missingGuardedBenchmarks.isEmpty {
+            let missingNames = missingGuardedBenchmarks
+                .map(\.displayName)
+                .sorted()
+                .joined(separator: ", ")
+            throw NSError(
+                domain: "InnoNetworkBenchmarks",
+                code: 12,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Guarded benchmark missing from current run or baseline: \(missingNames)"
+                ]
+            )
+        }
+
+        guard options.enforceBaseline else { return [] }
+
+        let failures = comparisons.compactMap { comparison -> BenchmarkGuardFailure? in
+            guard comparison.isGuarded else { return nil }
+            guard comparison.deltaPercent < 0 else { return nil }
+            let regression = abs(comparison.deltaPercent)
+            guard regression > options.maxRegressionPercent else { return nil }
+            return BenchmarkGuardFailure(
+                identifier: comparison.identifier,
+                deltaPercent: comparison.deltaPercent,
+                maxRegressionPercent: options.maxRegressionPercent
+            )
+        }
+
+        if !failures.isEmpty {
+            print("Baseline guard failures:")
+            for failure in failures {
+                print(
+                    "- \(failure.identifier.displayName): " +
+                    "\(String(format: "%+.2f", failure.deltaPercent))% vs baseline " +
+                    "(limit \(String(format: "%.2f", failure.maxRegressionPercent))%)"
+                )
+            }
+        }
+
+        return failures
     }
 
     private static func makeBenchmarkMap(

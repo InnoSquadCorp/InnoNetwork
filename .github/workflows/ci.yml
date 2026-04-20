@@ -150,5 +150,20 @@ jobs:
       - name: Resolve dependencies
         run: xcrun swift package resolve
 
-      - name: Build benchmark target
-        run: xcrun swift build --target InnoNetworkBenchmarks
+      - name: Run benchmark smoke guard
+        run: |
+          mkdir -p .build/benchmarks
+          xcrun swift run InnoNetworkBenchmarks \
+            --quick \
+            --json-path .build/benchmarks/results.json \
+            --enforce-baseline \
+            --guard-benchmark websocket/websocket-close-disposition-classify \
+            --guard-benchmark websocket/websocket-ping-context-alloc \
+            --max-regression-percent 50
+
+      - name: Upload benchmark smoke artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: innonetwork-benchmark-smoke
+          path: .build/benchmarks/results.json

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on Keep a Changelog and the project follows Semantic Versioning for the public 3.x line.
+The format is based on Keep a Changelog and the project follows Semantic Versioning for the public 4.x line.
 
 ## [Unreleased]
 
@@ -13,6 +13,37 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 ### Changed
 
 - No unreleased entries yet.
+
+## [4.1.0]
+
+Minor release that adds two public observability surfaces on top of 4.0 —
+both are additive. See [`MIGRATION_v4.1.md`](MIGRATION_v4.1.md) for call-site
+guidance on the `WebSocketEvent.ping` associated-value change.
+
+### Added
+
+- `WebSocketCloseDisposition` is now a public enum. Consumers can observe
+  the library's close classification via the new
+  `WebSocketTask.closeDisposition` property and branch their own UX on
+  `peerRetryable` / `peerTerminal` / `handshakeTimeout` / etc. without
+  re-implementing the mapping. The classifier factories
+  (`classifyPeerClose`, `classifyHandshake`) stay package-scoped — the
+  policy is still library-owned.
+- `WebSocketPingContext` carries `attemptNumber` (monotonic within the
+  current connection) and `dispatchedAt` (`ContinuousClock.Instant`) so
+  consumers can compute per-cycle round-trip time by pairing each
+  `.ping(_:)` event with its matching `.pong`.
+
+### Changed
+
+- **BREAKING (minor)**: `WebSocketEvent.ping` now carries a
+  `WebSocketPingContext` associated value. The case name is unchanged;
+  exhaustive switches must update `case .ping:` to `case .ping(_):` (or
+  pattern-bind the context). Pattern matches that already used
+  `if case .ping = event` keep compiling untouched.
+- Consumer smoke now compiles against the 4.0/4.1 WebSocket public surface,
+  and benchmark automation runs websocket quick benchmarks in CI with a
+  coarse PR smoke threshold plus a stricter scheduled/manual regression gate.
 
 ## [4.0.0]
 

@@ -141,6 +141,56 @@ struct WebSocketMessagingHappyPathTests {
         await harness.tearDown(task: task)
     }
 
+    @Test("Manual ping transport failure publishes a paired error event and rethrows the mapped error")
+    func manualPingTransportFailurePublishesPairedErrorEvent() async throws {
+        let harness = StubMessagingHarness(pongTimeout: 1)
+        let task = try await harness.connectAndReady()
+        let recorder = WebSocketEventCollector()
+
+        let subscription = await harness.manager.addEventListener(for: task) { event in
+            recorder.record(event)
+        }
+
+        let transportError = URLError(.badServerResponse)
+        let expectedError = WebSocketError.connectionFailed(SendableUnderlyingError(transportError))
+
+        let pingTask = Task {
+            try await harness.manager.ping(task)
+        }
+
+        #expect(await waitFor(timeout: 1.0) { harness.stubTask.hasPendingPong })
+        harness.stubTask.completePendingPong(with: transportError)
+
+        do {
+            try await pingTask.value
+            Issue.record("Expected mapped connection failure from manual ping")
+        } catch let error as WebSocketError {
+            #expect(error == expectedError)
+        } catch {
+            Issue.record("Expected WebSocketError, got \(error)")
+        }
+
+        #expect(await recorder.waitForCount(2, timeout: 1.0))
+        let snapshot = recorder.snapshot()
+        #expect(snapshot.count == 2)
+        if snapshot.count == 2 {
+            if case .ping = snapshot[0] {} else {
+                Issue.record("expected first event to be .ping")
+            }
+            if case .error(let error) = snapshot[1] {
+                #expect(error == expectedError)
+            } else {
+                Issue.record("expected second event to be .error(connectionFailed)")
+            }
+        }
+
+        #expect(await task.state == .connected)
+        #expect(await task.error == nil)
+
+        await harness.manager.removeEventListener(subscription)
+        await harness.tearDown(task: task)
+    }
+
     @Test("Multiple scripted receives are delivered in order")
     func receiveLoopDeliversMultiplePayloadsInOrder() async throws {
         let harness = StubMessagingHarness()
@@ -244,6 +294,20 @@ private actor AsyncGate {
     }
 }
 
+private func waitFor(
+    timeout: TimeInterval,
+    _ condition: @Sendable () -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+    }
+    return condition()
+}
+
 private func waitForGateArrival(_ gate: AsyncGate, timeout: TimeInterval) async -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
@@ -277,7 +341,12 @@ final class StubMessagingHarness: Sendable {
     private let callbacks: WebSocketSessionDelegateCallbacks
     private let sessionIdentifier: String
 
-    init(pongTimeout: TimeInterval = 10) {
+    init(
+        heartbeatInterval: TimeInterval = 0,
+        pongTimeout: TimeInterval = 10,
+        reconnectDelay: TimeInterval = 0,
+        maxReconnectAttempts: Int = 0
+    ) {
         let identifier = "test.websocket.stub.\(UUID().uuidString)"
         let stubSession = StubWebSocketURLSession()
         let stubTask = StubWebSocketURLTask()
@@ -296,10 +365,10 @@ final class StubMessagingHarness: Sendable {
         self.callbacks = callbacks
         self.manager = WebSocketManager(
             configuration: WebSocketConfiguration(
-                heartbeatInterval: 0,
+                heartbeatInterval: heartbeatInterval,
                 pongTimeout: pongTimeout,
-                reconnectDelay: 0,
-                maxReconnectAttempts: 0,
+                reconnectDelay: reconnectDelay,
+                maxReconnectAttempts: maxReconnectAttempts,
                 sessionIdentifier: identifier
             ),
             urlSession: stubSession,
@@ -352,6 +421,35 @@ final class StubMessagingHarness: Sendable {
 
     func tearDown(task: WebSocketTask) async {
         await manager.disconnect(task)
+    }
+
+    func waitForTaskState(
+        _ task: WebSocketTask,
+        equals expected: WebSocketState,
+        timeout: TimeInterval = 1.0
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await task.state == expected {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return await task.state == expected
+    }
+
+    func waitForCreatedTaskCount(
+        atLeast count: Int,
+        timeout: TimeInterval = 1.0
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if stubSession.createdTasks.count >= count {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return stubSession.createdTasks.count >= count
     }
 }
 
