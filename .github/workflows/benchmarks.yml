@@ -41,12 +41,19 @@ jobs:
       - name: Resolve dependencies
         run: xcrun swift package resolve
 
-      - name: Run quick benchmarks
+      - name: Run guarded quick benchmarks
         run: |
           mkdir -p .build/benchmarks
-          xcrun swift run InnoNetworkBenchmarks --quick --json-path .build/benchmarks/results.json
+          xcrun swift run InnoNetworkBenchmarks \
+            --quick \
+            --json-path .build/benchmarks/results.json \
+            --enforce-baseline \
+            --guard-benchmark websocket/websocket-close-disposition-classify \
+            --guard-benchmark websocket/websocket-ping-context-alloc \
+            --max-regression-percent 20
 
       - name: Upload benchmark artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: innonetwork-benchmarks

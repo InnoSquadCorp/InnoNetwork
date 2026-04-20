@@ -65,18 +65,18 @@
       "operationsPerSecond": 1820678.2991623878
     },
     {
-      "elapsedSeconds": 0.002397708,
+      "elapsedSeconds": 0.003235584,
       "group": "websocket",
       "iterations": 20000,
       "name": "websocket-close-disposition-classify",
-      "operationsPerSecond": 8341299.274140136
+      "operationsPerSecond": 6181264.34053327
     },
     {
-      "elapsedSeconds": 0.001981041,
+      "elapsedSeconds": 0.003892625,
       "group": "websocket",
       "iterations": 20000,
       "name": "websocket-ping-context-alloc",
-      "operationsPerSecond": 10095702.20909108
+      "operationsPerSecond": 5137921.068687582
     }
   ],
   "version": 1

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on Keep a Changelog and the project follows Semantic Versioning for the public 3.x line.
+The format is based on Keep a Changelog and the project follows Semantic Versioning for the public 4.x line.
 
 ## [Unreleased]
 
@@ -41,6 +41,9 @@ guidance on the `WebSocketEvent.ping` associated-value change.
   exhaustive switches must update `case .ping:` to `case .ping(_):` (or
   pattern-bind the context). Pattern matches that already used
   `if case .ping = event` keep compiling untouched.
+- Consumer smoke now compiles against the 4.0/4.1 WebSocket public surface,
+  and benchmark automation runs websocket quick benchmarks in CI with a
+  coarse PR smoke threshold plus a stricter scheduled/manual regression gate.
 
 ## [4.0.0]
 
