@@ -3,9 +3,14 @@ import Foundation
 
 package struct RetryCoordinator {
     private let eventHub: NetworkEventHub
+    private let clock: any InnoNetworkClock
 
-    package init(eventHub: NetworkEventHub) {
+    package init(
+        eventHub: NetworkEventHub,
+        clock: any InnoNetworkClock = SystemClock()
+    ) {
         self.eventHub = eventHub
+        self.clock = clock
     }
 
     package func execute<Response>(
@@ -68,7 +73,7 @@ package struct RetryCoordinator {
                 }
 
                 if delay > 0 {
-                    try await Task.sleep(for: .seconds(delay))
+                    try await clock.sleep(for: .seconds(delay))
                 }
                 retryIndex = nextRetryIndex
             } catch {

@@ -1,7 +1,7 @@
 import Foundation
 import os
 @testable import InnoNetwork
-@testable import InnoNetworkWebSocket
+@testable import InnoNetworkDownload
 
 
 // MARK: - Parity note

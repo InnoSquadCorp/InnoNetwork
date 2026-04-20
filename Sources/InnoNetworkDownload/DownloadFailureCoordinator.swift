@@ -6,17 +6,20 @@ package struct DownloadFailureCoordinator {
     let runtimeRegistry: DownloadRuntimeRegistry
     let persistence: DownloadTaskPersistence
     let eventHub: TaskEventHub<DownloadEvent>
+    let clock: any InnoNetworkClock
 
     package init(
         configuration: DownloadConfiguration,
         runtimeRegistry: DownloadRuntimeRegistry,
         persistence: DownloadTaskPersistence,
-        eventHub: TaskEventHub<DownloadEvent>
+        eventHub: TaskEventHub<DownloadEvent>,
+        clock: any InnoNetworkClock = SystemClock()
     ) {
         self.configuration = configuration
         self.runtimeRegistry = runtimeRegistry
         self.persistence = persistence
         self.eventHub = eventHub
+        self.clock = clock
     }
 
     package func handleError(
@@ -49,7 +52,9 @@ package struct DownloadFailureCoordinator {
             }
         }
 
-        try? await Task.sleep(nanoseconds: UInt64(configuration.retryDelay * 1_000_000_000))
+        if configuration.retryDelay > 0 {
+            try? await clock.sleep(for: .seconds(configuration.retryDelay))
+        }
         let state = await task.state
         if state != .cancelled {
             await restart(task)
