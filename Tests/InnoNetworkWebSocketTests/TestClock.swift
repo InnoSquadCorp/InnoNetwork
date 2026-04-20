@@ -1,12 +1,25 @@
 import Foundation
 import os
+@testable import InnoNetwork
 @testable import InnoNetworkWebSocket
 
 
-/// Virtual-time clock used by the heartbeat/reconnect timing tests. The
-/// production code receives an `any InnoNetworkClock`; production paths use
-/// `SystemClock`, and tests inject this implementation to drive timing
-/// deterministically via `advance(by:)` instead of wall-clock sleeps.
+// MARK: - Parity note
+//
+// This file is intentionally **duplicated** across three test targets:
+// `InnoNetworkTests`, `InnoNetworkDownloadTests`, and
+// `InnoNetworkWebSocketTests`. SwiftPM does not have a first-class way to
+// share source between `testTarget` modules without promoting the code to a
+// non-test target, and we did not want to introduce a public test-support
+// product just to share a clock stub. When editing this file, apply the same
+// edit to the other two copies. `Scripts/verify_testclock_parity.sh`
+// enforces byte-for-byte parity in CI.
+
+
+/// Virtual-time clock used by deterministic timing tests. Production code
+/// receives an `any InnoNetworkClock`; production paths use `SystemClock`,
+/// and tests inject this implementation to drive timing deterministically via
+/// `advance(by:)` instead of wall-clock sleeps.
 ///
 /// Implementation notes:
 /// - State is held behind an `OSAllocatedUnfairLock` so that enqueue,
@@ -15,8 +28,7 @@ import os
 ///   that has not yet landed when the test calls `advance` — that race would
 ///   let a cancelled waiter wake up with success and let the `try await
 ///   clock.sleep(for:)` call return normally after its enclosing task was
-///   cancelled, which in turn produces spurious `WebSocketInternalError.pingTimeout`
-///   errors in `WebSocketHeartbeatCoordinator.sendPing(_:timeout:)`.
+///   cancelled.
 /// - `sleep(for:)` also performs `Task.checkCancellation()` after resuming so
 ///   a waiter that was fired in a tight race with cancellation still surfaces
 ///   as `CancellationError` to the caller.
