@@ -52,13 +52,33 @@ package struct DownloadFailureCoordinator {
             }
         }
 
-        if configuration.retryDelay > 0 {
-            try? await clock.sleep(for: .seconds(configuration.retryDelay))
+        let delay = computeRetryDelay(retryCount: await task.retryCount)
+        if delay > 0 {
+            try? await clock.sleep(for: .seconds(delay))
         }
         let state = await task.state
         if state != .cancelled {
             await restart(task)
         }
+    }
+
+    /// Computes the sleep interval before the next restart. When
+    /// `configuration.exponentialBackoff` is disabled the configured
+    /// fixed `retryDelay` is returned directly (pre-4.3 behavior). When
+    /// enabled the delay grows as `retryDelay * 2^(retryCount - 1)` with
+    /// jitter applied and clamped to `maxRetryDelay` if the cap is active.
+    private func computeRetryDelay(retryCount: Int) -> TimeInterval {
+        guard configuration.exponentialBackoff else {
+            return configuration.retryDelay
+        }
+        let exponent = Double(max(retryCount - 1, 0))
+        let base = configuration.retryDelay * pow(2.0, exponent)
+        let jitter = abs(base * configuration.retryJitterRatio)
+        let unclamped = max(0.0, base + Double.random(in: (-jitter)...(jitter)))
+        if configuration.maxRetryDelay > 0 {
+            return min(unclamped, configuration.maxRetryDelay)
+        }
+        return unclamped
     }
 
     package func markTaskFailed(_ task: DownloadTask) async {
