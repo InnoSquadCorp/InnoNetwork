@@ -5,9 +5,9 @@ import InnoNetworkDownload
 
 // MARK: - CLI argument / env parsing
 
-/// Default test asset. Small public file; override via CLI arg if
-/// unreachable.
-private let defaultURLString = "https://speed.hetzner.de/100KB.bin"
+/// Default test asset. Public HTTPS fixture verified on 2026-04-21;
+/// override via CLI arg if unavailable.
+private let defaultURLString = "https://proof.ovh.net/files/1Mb.dat"
 
 let arguments = CommandLine.arguments
 let environment = ProcessInfo.processInfo.environment
@@ -112,3 +112,8 @@ for await event in await manager.events(for: task) {
         break
     }
 }
+
+FileHandle.standardError.write(
+    Data("✗ download event stream closed unexpectedly before completion\n".utf8)
+)
+exit(1)

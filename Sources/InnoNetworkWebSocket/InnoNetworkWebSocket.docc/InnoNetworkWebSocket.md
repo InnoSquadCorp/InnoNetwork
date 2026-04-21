@@ -45,10 +45,11 @@ await manager.setOnPongHandler { _, context in
 }
 ```
 
-Both paths receive identical `attemptNumber` / `roundTrip` values. Pattern
-matches over `WebSocketEvent` that previously used `case .pong:` must now
-bind or discard the associated value — see `MIGRATION_v5.md` for the one
-syntax change.
+Both paths receive identical `attemptNumber` / `roundTrip` values. In
+Swift pattern-matching positions, `case .pong:` remains valid when you do
+not need the payload. The source-breaking change is code that constructs
+or refers to `.pong` as a value, which must now account for the
+associated `WebSocketPongContext` — see `MIGRATION_v5.md` for examples.
 
 `roundTrip` is measured as `ContinuousClock.now - pingContext.dispatchedAt`
 just before the paired `.pong(_:)` event is published — it reflects the

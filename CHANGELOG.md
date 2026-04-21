@@ -28,10 +28,11 @@ diff and a tour of the new samples.
 - `WebSocketEvent.pong` is now `case pong(WebSocketPongContext)`. The
   payload mirrors the 4.1 `.ping(WebSocketPingContext)` shape and carries
   the same `attemptNumber` + `roundTrip: Duration` values delivered to
-  `setOnPongHandler(_:)`. Exhaustive switches over `WebSocketEvent` must
-  bind or ignore the associated value (`case .pong(let ctx)` or
-  `case .pong(_)`). Existing patterns that did not bind the payload
-  (`if case .pong = event { ... }`) continue to compile unchanged.
+  `setOnPongHandler(_:)`. Pattern matches can still ignore the payload
+  when it is not needed (`case .pong:` / `if case .pong = event { ... }`).
+  The source-breaking impact is code that constructs `.pong` as a value,
+  stores or forwards it, or binds the context to consume the new RTT
+  metadata.
 
 ### Added
 
@@ -52,8 +53,9 @@ diff and a tour of the new samples.
 - `SmokeTests/InnoNetworkDownloadSmoke` — integration smoke exercising
   the real URLSession-backed `DownloadManager.pause` / `resume` path
   end-to-end. Gated behind `INNONETWORK_RUN_INTEGRATION=1`; the offline
-  default prints a skip message and exits 0 so the target can ship in
-  CI without requiring network access.
+  default prints a skip message and exits 0, while live runs require an
+  explicit HTTPS URL so manual verification is not tied to a brittle
+  default fixture.
 - `.github/workflows/tsan.yml` — nightly (+ `workflow_dispatch`) CI job
   that runs the full test suite under ThreadSanitizer on macOS 15.
   Catches races inside URLSession internals and across actor

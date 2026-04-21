@@ -20,12 +20,10 @@ import InnoNetworkDownload
 //
 // Exit code 0 on success, 1 on failure, 0 when skipped (no env flag).
 
-private let defaultURLString = "https://speed.hetzner.de/10MB.bin"
-
 private let environment = ProcessInfo.processInfo.environment
 private let runIntegration = environment["INNONETWORK_RUN_INTEGRATION"] == "1"
 private let arguments = CommandLine.arguments
-private let urlString: String = arguments.count > 1 ? arguments[1] : defaultURLString
+private let urlString: String? = arguments.count > 1 ? arguments[1] : nil
 
 private let destinationURL: URL = {
     let temp = FileManager.default.temporaryDirectory
@@ -40,13 +38,24 @@ private let destinationURL: URL = {
 guard runIntegration else {
     let note = """
     InnoNetworkDownloadSmoke skipped (INNONETWORK_RUN_INTEGRATION != 1).
-    Set the flag to actually exercise the pause/resume path:
+    Set the flag and provide an explicit HTTPS URL to exercise the
+    pause/resume path:
 
-        INNONETWORK_RUN_INTEGRATION=1 swift run InnoNetworkDownloadSmoke
+        INNONETWORK_RUN_INTEGRATION=1 swift run InnoNetworkDownloadSmoke \\
+            https://example.com/large-file.bin
 
     """
     FileHandle.standardOutput.write(Data(note.utf8))
     exit(0)
+}
+
+guard let urlString else {
+    FileHandle.standardError.write(
+        Data(
+            "Usage: INNONETWORK_RUN_INTEGRATION=1 swift run InnoNetworkDownloadSmoke [https://host/path]\n".utf8
+        )
+    )
+    exit(2)
 }
 
 guard let url = URL(string: urlString), url.scheme?.hasPrefix("http") == true else {

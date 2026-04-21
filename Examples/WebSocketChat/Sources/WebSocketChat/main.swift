@@ -50,8 +50,60 @@ guard runIntegration else {
 
 // MARK: - Live chat loop
 
+private enum ChatTermination: Sendable {
+    case userEOF
+    case remoteDisconnect(WebSocketError?)
+    case terminalFailure(WebSocketError)
+    case sendFailure(String)
+    case stdinFailure(String)
+    case eventStreamEnded
+}
+
+private actor ChatShutdown {
+    private var termination: ChatTermination?
+    private var continuation: CheckedContinuation<ChatTermination, Never>?
+
+    func finish(_ termination: ChatTermination) {
+        guard self.termination == nil else { return }
+        self.termination = termination
+        continuation?.resume(returning: termination)
+        continuation = nil
+    }
+
+    func wait() async -> ChatTermination {
+        if let termination {
+            return termination
+        }
+
+        return await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+}
+
+@Sendable
+private func writeStandardError(_ message: String) {
+    FileHandle.standardError.write(Data(message.utf8))
+}
+
+let safeDefaults = WebSocketConfiguration.safeDefaults()
 let manager = WebSocketManager(
-    configuration: .safeDefaults()
+    configuration: WebSocketConfiguration(
+        maxConnectionsPerHost: safeDefaults.maxConnectionsPerHost,
+        connectionTimeout: safeDefaults.connectionTimeout,
+        heartbeatInterval: safeDefaults.heartbeatInterval,
+        pongTimeout: safeDefaults.pongTimeout,
+        maxMissedPongs: safeDefaults.maxMissedPongs,
+        reconnectDelay: safeDefaults.reconnectDelay,
+        reconnectJitterRatio: safeDefaults.reconnectJitterRatio,
+        maxReconnectDelay: safeDefaults.maxReconnectDelay,
+        maxReconnectAttempts: 0,
+        allowsCellularAccess: safeDefaults.allowsCellularAccess,
+        sessionIdentifier: safeDefaults.sessionIdentifier,
+        requestHeaders: safeDefaults.requestHeaders,
+        eventDeliveryPolicy: safeDefaults.eventDeliveryPolicy,
+        eventMetricsReporter: safeDefaults.eventMetricsReporter
+    )
 )
 
 // RTT observability via the 5.0 `setOnPongHandler(_:)` callback.
@@ -67,26 +119,23 @@ await manager.setOnPongHandler { _, context in
 }
 
 await manager.setOnErrorHandler { _, error in
-    FileHandle.standardError.write(
-        Data("⚠️  error: \(error)\n".utf8)
-    )
+    writeStandardError("⚠️  error: \(error)\n")
 }
 
 let task = await manager.connect(url: url)
+private let shutdown = ChatShutdown()
 
-// Stream incoming events in a dedicated task. Prints text/binary messages
-// and exits the program on disconnect.
+print("Type messages and press Enter. Ctrl-D to disconnect.")
+
+// Event processing stays on one task; terminal disconnects are reported
+// back to the main flow so the sample can exit instead of hanging on stdin.
 let eventTask = Task {
     for await event in await manager.events(for: task) {
         switch event {
         case .connected(let subprotocol):
             print("✓ connected subprotocol=\(subprotocol ?? "<none>")")
         case .disconnected(let error):
-            if let error {
-                print("✗ disconnected: \(error)")
-            } else {
-                print("✗ disconnected")
-            }
+            await shutdown.finish(.remoteDisconnect(error))
             return
         case .message(let data):
             print("← \(data.count) bytes")
@@ -100,23 +149,95 @@ let eventTask = Task {
             _ = context
         case .error(let wsError):
             print("⚠︎ event-stream error: \(wsError)")
+            if await task.state == .failed {
+                await shutdown.finish(.terminalFailure(wsError))
+                return
+            }
         @unknown default:
             break
         }
     }
+
+    await shutdown.finish(.eventStreamEnded)
 }
 
-// Read stdin line-by-line and forward each line as a string frame.
-print("Type messages and press Enter. Ctrl-D to disconnect.")
-while let line = readLine(strippingNewline: true) {
+// Read stdin asynchronously so the main flow can still terminate on remote
+// disconnects or terminal failures while input is idle.
+let stdinTask = Task {
+    var pendingLine = Data()
+
     do {
-        try await manager.send(task, string: line)
-        print("→ \(line)")
+        for try await byte in FileHandle.standardInput.bytes {
+            switch byte {
+            case 0x0A:
+                guard let line = String(data: pendingLine, encoding: .utf8) else {
+                    await shutdown.finish(.stdinFailure("stdin contained non-UTF8 data"))
+                    return
+                }
+                do {
+                    try await manager.send(task, string: line)
+                } catch {
+                    await shutdown.finish(.sendFailure(String(describing: error)))
+                    return
+                }
+                print("→ \(line)")
+                pendingLine.removeAll(keepingCapacity: true)
+            case 0x0D:
+                continue
+            default:
+                pendingLine.append(contentsOf: [byte])
+            }
+        }
+
+        if !pendingLine.isEmpty {
+            guard let line = String(data: pendingLine, encoding: .utf8) else {
+                await shutdown.finish(.stdinFailure("stdin contained non-UTF8 data"))
+                return
+            }
+            do {
+                try await manager.send(task, string: line)
+            } catch {
+                await shutdown.finish(.sendFailure(String(describing: error)))
+                return
+            }
+            print("→ \(line)")
+        }
+
+        await shutdown.finish(.userEOF)
+    } catch is CancellationError {
+        return
     } catch {
-        print("⚠︎ send failed: \(error)")
-        break
+        await shutdown.finish(.stdinFailure(String(describing: error)))
     }
 }
 
-await manager.disconnect(task, closeCode: .normalClosure)
-await eventTask.value
+private let termination = await shutdown.wait()
+eventTask.cancel()
+stdinTask.cancel()
+
+switch termination {
+case .userEOF:
+    await manager.disconnect(task, closeCode: .normalClosure)
+    exit(0)
+case .remoteDisconnect(let error):
+    if let error {
+        print("✗ disconnected: \(error)")
+    } else {
+        print("✗ disconnected")
+    }
+    exit(1)
+case .terminalFailure(let error):
+    writeStandardError("✗ terminal failure: \(error)\n")
+    exit(1)
+case .sendFailure(let message):
+    writeStandardError("⚠︎ send failed: \(message)\n")
+    await manager.disconnect(task, closeCode: .normalClosure)
+    exit(1)
+case .stdinFailure(let message):
+    writeStandardError("⚠︎ stdin error: \(message)\n")
+    await manager.disconnect(task, closeCode: .normalClosure)
+    exit(1)
+case .eventStreamEnded:
+    writeStandardError("✗ event stream closed unexpectedly\n")
+    exit(1)
+}

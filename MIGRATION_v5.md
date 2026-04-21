@@ -40,10 +40,24 @@ context for a given pong — the library computes `roundTrip` once
 (`ContinuousClock.now - pingContext.dispatchedAt`) just before publish,
 then delivers that value to both surfaces.
 
-### 1.2 Switch update
+### 1.2 Pattern matching and value construction
 
-**Exhaustive switches** over `WebSocketEvent` must bind or ignore the
-new associated value:
+In Swift pattern-matching positions, non-binding matches remain valid:
+
+```swift
+// Still valid in 5.0
+if case .pong = event { pongCount += 1 }
+
+switch event {
+case .pong:
+    metrics.recordHeartbeatSuccess()
+default:
+    break
+}
+```
+
+Update the branch to bind the context only when you want the new
+precomputed RTT metadata:
 
 ```diff
  switch event {
@@ -59,11 +73,12 @@ new associated value:
  }
 ```
 
-**Non-binding patterns** continue to compile unchanged:
+The source-breaking surface is code that constructs, stores, or forwards
+`.pong` as a value, or refers to the case constructor directly. Those
+sites must now account for `WebSocketPongContext`:
 
 ```swift
-// Still valid in 5.0
-if case .pong = event { pongCount += 1 }
+let makePongEvent: (WebSocketPongContext) -> WebSocketEvent = WebSocketEvent.pong
 ```
 
 ### 1.3 Picking a surface
@@ -141,10 +156,13 @@ progress event, verifies `resumeData` is non-nil, resumes, and asserts
 the completed file exists with a non-zero size:
 
 ```bash
-INNONETWORK_RUN_INTEGRATION=1 swift run InnoNetworkDownloadSmoke
+INNONETWORK_RUN_INTEGRATION=1 swift run InnoNetworkDownloadSmoke \
+    https://example.com/large-file.bin
 ```
 
-Without the env flag, the binary prints a skip message and exits 0.
+Without the env flag, the binary prints a skip message and exits 0. Live
+runs require an explicit HTTPS URL so manual verification is not tied to
+a brittle default fixture.
 
 ---
 

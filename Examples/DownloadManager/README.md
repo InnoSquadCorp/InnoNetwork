@@ -15,7 +15,7 @@ The sample gates real network I/O behind an environment variable so
 # Build only (no network call)
 swift build
 
-# Run against the default endpoint (speed.hetzner.de/100KB.bin):
+# Run against the default endpoint (proof.ovh.net/files/1Mb.dat):
 INNONETWORK_RUN_INTEGRATION=1 swift run DownloadManagerSample
 
 # Override the URL and destination:
@@ -25,8 +25,9 @@ INNONETWORK_RUN_INTEGRATION=1 swift run DownloadManagerSample \
 
 Progress is printed per integer percentage to keep log volume
 reasonable. The sample `exit(0)`s on `.completed`, `exit(1)`s on
-`.failed`, `exit(2)`s on argument parse errors, and `exit(0)`s (with a
-guidance note) when `INNONETWORK_RUN_INTEGRATION` is unset.
+`.failed` or unexpected event-stream closure, `exit(2)`s on argument
+parse errors, and `exit(0)`s (with a guidance note) when
+`INNONETWORK_RUN_INTEGRATION` is unset.
 
 ## Configuration
 
@@ -44,5 +45,5 @@ See `MIGRATION_v4.3.md` §2 for the semantics of each flag and
 
 ## Troubleshooting
 
-If the default endpoint times out, any public HTTPS URL works as a
-substitute — e.g. `https://httpbin.org/bytes/102400`.
+If the default endpoint is unreachable, any public HTTPS URL works as a
+substitute — e.g. `https://proof.ovh.net/files/1Mb.dat`.

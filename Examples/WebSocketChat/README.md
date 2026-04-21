@@ -25,12 +25,16 @@ INNONETWORK_RUN_INTEGRATION=1 swift run WebSocketChat wss://my.server/ws
 Type messages and press Enter to send each line as a WebSocket text
 frame. The default endpoint echoes every frame back, so you should see
 `→ hello` on send and `← hello` on receive. Press `Ctrl-D` to close the
-session cleanly (`.normalClosure`).
+session cleanly (`.normalClosure`). Remote disconnects, handshake
+failures, and terminal send failures exit non-zero instead of leaving
+the sample blocked on stdin.
 
 ## Configuration
 
 - `safeDefaults` — conservative heartbeat / reconnect tuning for
-  interactive clients.
+  interactive clients. This sample keeps that baseline but forces
+  `maxReconnectAttempts = 0` so terminal connection failures exit
+  promptly instead of retrying in the background.
 - RTT is surfaced via `setOnPongHandler(_:)`. The same
   `WebSocketPongContext` is also delivered on the `.pong(_:)` event
   stream — pick whichever fits your codebase.
