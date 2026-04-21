@@ -100,6 +100,7 @@ struct WebSocketMessagingHappyPathTests {
         let task = try await harness.connectAndReady()
         let recorder = WebSocketEventCollector()
         let errorHandlerCallCount = OSAllocatedUnfairLock<Int>(initialState: 0)
+        let pongHandlerCallCount = OSAllocatedUnfairLock<Int>(initialState: 0)
 
         let subscription = await harness.manager.addEventListener(for: task) { event in
             recorder.record(event)
@@ -108,6 +109,9 @@ struct WebSocketMessagingHappyPathTests {
             if case .pingTimeout = error {
                 errorHandlerCallCount.withLock { $0 += 1 }
             }
+        }
+        await harness.manager.setOnPongHandler { _, _ in
+            pongHandlerCallCount.withLock { $0 += 1 }
         }
 
         do {
@@ -135,9 +139,64 @@ struct WebSocketMessagingHappyPathTests {
         #expect(await task.state == .connected)
         #expect(await task.error == nil)
         #expect(errorHandlerCallCount.withLock { $0 } == 0)
+        #expect(pongHandlerCallCount.withLock { $0 } == 0)
 
         await harness.manager.removeEventListener(subscription)
         await harness.manager.setOnErrorHandler(nil)
+        await harness.manager.setOnPongHandler(nil)
+        await harness.tearDown(task: task)
+    }
+
+    @Test("Manual ping success calls onPong with RTT before publishing .pong")
+    func manualPingSuccessCallsOnPongBeforePublishingPongEvent() async throws {
+        let harness = StubMessagingHarness(pongTimeout: 1)
+        let task = try await harness.connectAndReady()
+        let recorder = WebSocketEventCollector()
+        let order = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let pongContext = OSAllocatedUnfairLock<WebSocketPongContext?>(initialState: nil)
+
+        let subscription = await harness.manager.addEventListener(for: task) { event in
+            recorder.record(event)
+            if case .pong = event {
+                order.withLock { $0.append("event") }
+            }
+        }
+        await harness.manager.setOnPongHandler { callbackTask, context in
+            #expect(callbackTask.id == task.id)
+            pongContext.withLock { $0 = context }
+            order.withLock { $0.append("handler") }
+        }
+
+        let pingTask = Task {
+            try await harness.manager.ping(task)
+        }
+
+        #expect(await waitFor(timeout: 1.0) { harness.stubTask.hasPendingPong })
+        harness.stubTask.completePendingPong(with: nil)
+        try await pingTask.value
+
+        #expect(await recorder.waitForCount(2, timeout: 1.0))
+        let snapshot = recorder.snapshot()
+        #expect(snapshot.count == 2)
+        if snapshot.count == 2 {
+            if case .ping = snapshot[0] {} else {
+                Issue.record("expected first event to be .ping")
+            }
+            if case .pong = snapshot[1] {} else {
+                Issue.record("expected second event to be .pong")
+            }
+        }
+
+        let receivedContext = pongContext.withLock { $0 }
+        #expect(receivedContext != nil)
+        if let receivedContext {
+            #expect(receivedContext.attemptNumber == 1)
+            #expect(receivedContext.roundTrip >= .zero)
+        }
+        #expect(order.withLock { $0 } == ["handler", "event"])
+
+        await harness.manager.setOnPongHandler(nil)
+        await harness.manager.removeEventListener(subscription)
         await harness.tearDown(task: task)
     }
 
@@ -146,9 +205,13 @@ struct WebSocketMessagingHappyPathTests {
         let harness = StubMessagingHarness(pongTimeout: 1)
         let task = try await harness.connectAndReady()
         let recorder = WebSocketEventCollector()
+        let pongHandlerCallCount = OSAllocatedUnfairLock<Int>(initialState: 0)
 
         let subscription = await harness.manager.addEventListener(for: task) { event in
             recorder.record(event)
+        }
+        await harness.manager.setOnPongHandler { _, _ in
+            pongHandlerCallCount.withLock { $0 += 1 }
         }
 
         let transportError = URLError(.badServerResponse)
@@ -186,7 +249,9 @@ struct WebSocketMessagingHappyPathTests {
 
         #expect(await task.state == .connected)
         #expect(await task.error == nil)
+        #expect(pongHandlerCallCount.withLock { $0 } == 0)
 
+        await harness.manager.setOnPongHandler(nil)
         await harness.manager.removeEventListener(subscription)
         await harness.tearDown(task: task)
     }

@@ -11,6 +11,9 @@ import os
 /// - `stubSession` / `stubTask` expose the first task returned by
 ///   `makeDownloadTask(with:)`. Tests that expect multiple retries pre-queue
 ///   additional stubs via `stubSession.enqueue(_:)`.
+/// - `persistence` is exposed so restore-path tests can inspect records
+///   after the restore coordinator runs; pre-seeded records are supplied
+///   via `prepopulatedRecords:` on init.
 /// - `injectCompletion(...)` simulates the URLSession delegate's completion
 ///   callback and also cancels the live stub runtime task, mirroring the
 ///   prior `injectSyntheticCompletion` behavior.
@@ -19,6 +22,7 @@ final class StubDownloadHarness: Sendable {
     let stubSession: StubDownloadURLSession
     let stubTask: StubDownloadURLTask
     let stubTaskIdentifier: Int
+    let persistence: DownloadTaskPersistence
 
     private let callbacks: DownloadSessionDelegateCallbacks
     private let backgroundCompletionStore: BackgroundCompletionStore
@@ -31,14 +35,28 @@ final class StubDownloadHarness: Sendable {
         networkMonitor: (any NetworkMonitoring)? = nil,
         waitsForNetworkChanges: Bool = false,
         networkChangeTimeout: TimeInterval? = 0.5,
-        label: String = "stub"
+        label: String = "stub",
+        prepopulatedRecords: [DownloadTaskPersistence.Record] = [],
+        prequeuedStubs: [StubDownloadURLTask] = [],
+        preinstalledStubs: [StubDownloadURLTask] = []
     ) throws {
         let identifier = "test.download.\(label).\(UUID().uuidString)"
         self.sessionIdentifier = identifier
 
         let stubSession = StubDownloadURLSession()
+        // Preinstall must happen *before* the manager's restore task runs
+        // (which happens on init). Do it before manager construction.
+        for stub in preinstalledStubs {
+            stubSession.preinstall(stub)
+        }
+        // Default stub is enqueued first so it is consumed by the initial
+        // `makeDownloadTask(with:)` call. Prequeued stubs are served in
+        // order for subsequent calls (retry / resume).
         let stubTask = StubDownloadURLTask()
         stubSession.enqueue(stubTask)
+        for stub in prequeuedStubs {
+            stubSession.enqueue(stub)
+        }
         self.stubSession = stubSession
         self.stubTask = stubTask
         self.stubTaskIdentifier = stubTask.taskIdentifier
@@ -53,8 +71,9 @@ final class StubDownloadHarness: Sendable {
         self.backgroundCompletionStore = backgroundCompletionStore
 
         let persistence = DownloadTaskPersistence(
-            store: InMemoryDownloadTaskStore()
+            store: InMemoryDownloadTaskStore(seed: prepopulatedRecords)
         )
+        self.persistence = persistence
         let config = DownloadConfiguration(
             maxRetryCount: maxRetryCount,
             maxTotalRetries: maxTotalRetries ?? (maxRetryCount + 3),
@@ -99,42 +118,5 @@ final class StubDownloadHarness: Sendable {
             location: location,
             error: error
         )
-    }
-}
-
-
-/// Minimal in-memory `DownloadTaskStore` so the stub harness does not touch
-/// disk via `AppendLogDownloadTaskStore`. Mirrors the testonly store in
-/// `DownloadRetryTimingTests` but lives in the shared harness file.
-private actor InMemoryDownloadTaskStore: DownloadTaskStore {
-    private var records: [String: DownloadTaskPersistence.Record] = [:]
-
-    func upsert(id: String, url: URL, destinationURL: URL) async {
-        records[id] = DownloadTaskPersistence.Record(
-            id: id,
-            url: url,
-            destinationURL: destinationURL
-        )
-    }
-
-    func remove(id: String) async {
-        records.removeValue(forKey: id)
-    }
-
-    func record(forID id: String) async -> DownloadTaskPersistence.Record? {
-        records[id]
-    }
-
-    func allRecords() async -> [DownloadTaskPersistence.Record] {
-        Array(records.values)
-    }
-
-    func id(forURL url: URL?) async -> String? {
-        guard let url else { return nil }
-        return records.values.first(where: { $0.url == url })?.id
-    }
-
-    func prune(keeping ids: Set<String>) async {
-        records = records.filter { ids.contains($0.key) }
     }
 }

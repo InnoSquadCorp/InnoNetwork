@@ -92,8 +92,7 @@ _ = WebSocketConfiguration.safeDefaults()
     _ = disposition?.shouldReconnect
 }
 
-/// 4.1: `WebSocketEvent.ping` carries a `WebSocketPingContext`. Consumers
-/// pair it with the matching `.pong` to compute RTT.
+/// 4.1 / 4.3: `.ping` carries context and `.pong` remains source-compatible.
 @Sendable private func smokeEventObservation(_ event: WebSocketEvent) {
     switch event {
     case .connected(let subprotocol):
@@ -116,8 +115,20 @@ _ = WebSocketConfiguration.safeDefaults()
     }
 }
 
+/// 4.3: consumers can opt into pong RTT metadata via `setOnPongHandler(_:)`
+/// without changing existing `.pong` switch statements.
+@Sendable private func smokePongHandler(_ manager: WebSocketManager) async {
+    await manager.setOnPongHandler { task, context in
+        _ = task.id
+        _ = context.attemptNumber
+        _ = context.roundTrip
+    }
+    await manager.setOnPongHandler(nil)
+}
+
 _ = smokeCloseCodeSwitch
 _ = smokeCloseDisposition
 _ = smokeEventObservation
+_ = smokePongHandler
 
 print("ConsumerSmoke OK")

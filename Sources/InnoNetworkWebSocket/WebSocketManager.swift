@@ -22,6 +22,11 @@ public enum WebSocketEvent: Sendable {
     /// consumers compute per-cycle RTT without maintaining their own
     /// bookkeeping.
     case ping(WebSocketPingContext)
+    /// Emitted when a ping frame's paired pong is received.
+    ///
+    /// Consumers that want attempt-number / round-trip metadata can register
+    /// ``WebSocketManager/setOnPongHandler(_:)``; the handler receives a
+    /// ``WebSocketPongContext`` immediately before this event is published.
     case pong
     case error(WebSocketError)
 }
@@ -54,6 +59,41 @@ public struct WebSocketPingContext: Sendable, Hashable {
     package init(attemptNumber: Int, dispatchedAt: ContinuousClock.Instant) {
         self.attemptNumber = attemptNumber
         self.dispatchedAt = dispatchedAt
+    }
+}
+
+
+/// Metadata delivered to ``WebSocketManager/setOnPongHandler(_:)`` for each
+/// successful pong observation.
+///
+/// - ``attemptNumber`` matches the ``WebSocketPingContext/attemptNumber``
+///   of the paired ping, so consumers can correlate ping/pong pairs
+///   without bookkeeping a timestamp map keyed on the ping dispatch time.
+/// - ``roundTrip`` is the library-computed duration between the
+///   `.ping(_:)` event emission and the pong handler callback. It is measured
+///   as `ContinuousClock.now - pingContext.dispatchedAt` just before the
+///   `.pong` event is published, so it includes the library's own ping-send +
+///   pong-handler dispatch but excludes consumer-side scheduler jitter.
+///   Heartbeat scheduling still uses the injected `InnoNetworkClock`; RTT
+///   measurement always uses wall-clock `ContinuousClock`.
+///
+/// This struct is designed to gain fields in minor releases without
+/// breaking existing consumers — the public initializer is package-scoped
+/// so the library controls construction.
+public struct WebSocketPongContext: Sendable, Hashable {
+    /// Sequence number of the paired ping attempt. Matches the
+    /// `.ping(_:)` event's ``WebSocketPingContext/attemptNumber``.
+    public let attemptNumber: Int
+
+    /// Elapsed time between the paired `.ping(_:)` dispatch and this
+    /// pong-handler callback, computed as
+    /// `ContinuousClock.now - pingContext.dispatchedAt`. This value is not
+    /// derived from the injected heartbeat scheduling clock.
+    public let roundTrip: Duration
+
+    package init(attemptNumber: Int, roundTrip: Duration) {
+        self.attemptNumber = attemptNumber
+        self.roundTrip = roundTrip
     }
 }
 
@@ -223,6 +263,17 @@ public final class WebSocketManager: NSObject, Sendable {
         await runtimeRegistry.setOnError(callback)
     }
 
+    /// Sets a callback that runs when a ping's paired pong is observed.
+    ///
+    /// - Parameter callback: Optional async handler receiving the task and a
+    ///   ``WebSocketPongContext`` carrying the ping attempt number and
+    ///   library-computed round-trip duration.
+    /// - Note: The handler is invoked from an internal async context, not the main actor.
+    /// - Note: On success, the handler runs immediately before the paired `.pong` event is published.
+    public func setOnPongHandler(_ callback: (@Sendable (WebSocketTask, WebSocketPongContext) async -> Void)?) async {
+        await runtimeRegistry.setOnPong(callback)
+    }
+
     @discardableResult
     public func connect(url: URL, subprotocols: [String]? = nil) async -> WebSocketTask {
         let task = WebSocketTask(url: url, subprotocols: subprotocols)
@@ -314,7 +365,11 @@ public final class WebSocketManager: NSObject, Sendable {
         await eventHub.publish(.ping(context), for: task.id)
         do {
             try await heartbeatCoordinator.sendPing(urlTask, timeout: configuration.pongTimeout)
-            await eventHub.publish(.pong, for: task.id)
+            let pongContext = WebSocketPongContext(
+                attemptNumber: context.attemptNumber,
+                roundTrip: ContinuousClock.now - context.dispatchedAt
+            )
+            await publishPong(task: task, context: pongContext)
         } catch {
             let wsError = mapWebSocketError(error)
             await eventHub.publish(.error(wsError), for: task.id)
@@ -403,6 +458,11 @@ public final class WebSocketManager: NSObject, Sendable {
         await connectionCoordinator.startConnection(task) { [weak self] taskIdentifier, error in
             self?.handleError(taskIdentifier: taskIdentifier, error: error)
         }
+    }
+
+    private func publishPong(task: WebSocketTask, context: WebSocketPongContext) async {
+        await runtimeRegistry.onPong?(task, context)
+        await eventHub.publish(.pong, for: task.id)
     }
 
     func handleConnected(taskIdentifier: Int, protocolName: String?) {

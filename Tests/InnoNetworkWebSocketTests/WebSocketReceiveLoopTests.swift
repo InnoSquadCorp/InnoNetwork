@@ -126,6 +126,138 @@ struct WebSocketReceiveLoopTests {
 
         await registry.cancelMessageListenerTask(for: task.id)
     }
+
+    @Test("Receive loop burst-delivers pre-queued messages in scripted order")
+    func receiveLoopBurstDeliversMessagesInOrder() async throws {
+        let registry = WebSocketRuntimeRegistry()
+        let eventHub = TaskEventHub<WebSocketEvent>(
+            policy: .default,
+            metricsReporter: nil,
+            hubKind: .webSocketTask
+        )
+        let task = WebSocketTask(url: URL(string: "wss://example.invalid/burst")!)
+        await registry.add(task)
+        let stub = StubWebSocketURLTask()
+        await registry.setURLTask(stub, for: task.id)
+
+        let recorder = WebSocketEventRecorder()
+        _ = await eventHub.addListener(taskID: task.id) { event in
+            recorder.record(event)
+        }
+
+        let loop = WebSocketReceiveLoop(runtimeRegistry: registry, eventHub: eventHub)
+        await loop.start(task: task, urlTask: stub) { _, _ in }
+
+        // Script 5 messages upfront. The loop should drain all of them
+        // through successive `receive()` calls, and each should publish
+        // in the same order they were queued.
+        let payloads: [URLSessionWebSocketTask.Message] = [
+            .string("one"),
+            .data(Data([0x01])),
+            .string("three"),
+            .data(Data([0x04, 0x05])),
+            .string("five"),
+        ]
+        for payload in payloads {
+            stub.scriptReceive(.success(payload))
+        }
+
+        // Wait until all 5 observable events (mix of .string/.message) have
+        // landed in the recorder.
+        let delivered = await waitFor(timeout: 1.0) {
+            let snapshot = recorder.snapshot()
+            let count = snapshot.reduce(into: 0) { acc, event in
+                switch event {
+                case .string, .message: acc += 1
+                default: break
+                }
+            }
+            return count == payloads.count
+        }
+        #expect(delivered)
+
+        // Verify the sequence order-for-order.
+        let observed = recorder.snapshot().compactMap { event -> URLSessionWebSocketTask.Message? in
+            switch event {
+            case .string(let text): return .string(text)
+            case .message(let data): return .data(data)
+            default: return nil
+            }
+        }
+        #expect(observed.count == payloads.count)
+        for (expected, actual) in zip(payloads, observed) {
+            switch (expected, actual) {
+            case (.string(let l), .string(let r)):
+                #expect(l == r)
+            case (.data(let l), .data(let r)):
+                #expect(l == r)
+            default:
+                Issue.record("type mismatch at position — expected \(expected), got \(actual)")
+            }
+        }
+
+        await registry.cancelMessageListenerTask(for: task.id)
+    }
+
+    @Test("Swapping the registry's URL task mid-receive does not redirect an in-flight loop")
+    func receiveLoopContinuesOnRegistryURLTaskSwap() async throws {
+        // Contract: `WebSocketReceiveLoop.start(task:urlTask:onError:)`
+        // captures `urlTask` at call time. Swapping
+        // `runtimeRegistry.setURLTask(newStub, for: taskID)` does not
+        // redirect an already-running loop — the original loop continues
+        // to drain the original stub. This locks in the "one loop per
+        // urlTask" lifecycle.
+        let registry = WebSocketRuntimeRegistry()
+        let eventHub = TaskEventHub<WebSocketEvent>(
+            policy: .default,
+            metricsReporter: nil,
+            hubKind: .webSocketTask
+        )
+        let task = WebSocketTask(url: URL(string: "wss://example.invalid/swap")!)
+        await registry.add(task)
+        let originalStub = StubWebSocketURLTask()
+        await registry.setURLTask(originalStub, for: task.id)
+
+        let recorder = WebSocketEventRecorder()
+        _ = await eventHub.addListener(taskID: task.id) { event in
+            recorder.record(event)
+        }
+
+        let loop = WebSocketReceiveLoop(runtimeRegistry: registry, eventHub: eventHub)
+        await loop.start(task: task, urlTask: originalStub) { _, _ in }
+
+        // Wait for the loop to block inside `originalStub.receive()`.
+        #expect(await waitFor(timeout: 1.0) { originalStub.pendingReceiveCount == 1 })
+
+        // Swap the registry's URL task entry. The running loop should NOT
+        // start polling `replacementStub` — it still holds a reference to
+        // `originalStub`.
+        let replacementStub = StubWebSocketURLTask()
+        await registry.setURLTask(replacementStub, for: task.id)
+
+        // Delivery through `originalStub` still publishes.
+        originalStub.scriptReceive(.success(.string("from-original")))
+        let originalDelivered = await recorder.waitForEvent(timeout: 1.0) { event in
+            if case .string(let s) = event, s == "from-original" { return true }
+            return false
+        }
+        #expect(originalDelivered)
+
+        // `replacementStub` never had a receiver attached — its pending
+        // receive count should stay at zero while the loop runs against
+        // the original.
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        #expect(replacementStub.pendingReceiveCount == 0)
+
+        await registry.cancelMessageListenerTask(for: task.id)
+    }
+
+    // NOTE: `@unknown default` inside the receive loop's message switch is
+    // not directly testable — `URLSessionWebSocketTask.Message` is a
+    // Foundation enum and Swift does not allow external code to construct
+    // values outside the declared cases. The branch exists for forward
+    // compatibility should Foundation add a new case; the tests above
+    // cover the two current cases (`.string`, `.data`) comprehensively.
 }
 
 

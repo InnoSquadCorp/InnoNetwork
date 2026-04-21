@@ -31,6 +31,16 @@ package final class WebSocketEventRecorder: Sendable {
         }
     }
 
+    /// All observed `.ping` contexts in order.
+    package var pingContexts: [WebSocketPingContext] {
+        events.withLock { list in
+            list.compactMap { event in
+                if case .ping(let context) = event { return context }
+                return nil
+            }
+        }
+    }
+
     /// Count of `.ping` events observed since the recorder started listening.
     /// Paired with `pongCount` so tests can assert the `.ping → .pong` cadence
     /// emitted by the heartbeat loop / public `ping(_:)`.

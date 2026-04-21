@@ -118,6 +118,12 @@ final class StubDownloadURLSession: DownloadURLSession, @unchecked Sendable {
     private struct State {
         var queuedTasks: [StubDownloadURLTask] = []
         var createdTasks: [StubDownloadURLTask] = []
+        /// Tasks that the session reports through `allDownloadTasks()`
+        /// without them having been handed out via `makeDownloadTask`.
+        /// Mirrors the real-world restore scenario where `URLSession`
+        /// surfaces tasks that survived across app launches. Tests set
+        /// this via `preinstall(_:)` to exercise the restore coordinator.
+        var preinstalledTasks: [StubDownloadURLTask] = []
         var lastURL: URL?
         var lastResumeData: Data?
         var didFinishTasksAndInvalidate = false
@@ -132,6 +138,14 @@ final class StubDownloadURLSession: DownloadURLSession, @unchecked Sendable {
     /// `makeDownloadTask(with:)` or `makeDownloadTask(withResumeData:)`.
     func enqueue(_ task: StubDownloadURLTask) {
         stateLock.withLock { $0.queuedTasks.append(task) }
+    }
+
+    /// Marks a stub task as "already live" from the session's point of
+    /// view so `allDownloadTasks()` includes it. Simulates the restore
+    /// scenario where `URLSession.getAllDownloadTasks()` reports tasks
+    /// that survived across app launches.
+    func preinstall(_ task: StubDownloadURLTask) {
+        stateLock.withLock { $0.preinstalledTasks.append(task) }
     }
 
     func makeDownloadTask(with url: URL) -> any DownloadURLTask {
@@ -164,7 +178,8 @@ final class StubDownloadURLSession: DownloadURLSession, @unchecked Sendable {
 
     func allDownloadTasks() async -> [any DownloadURLTask] {
         stateLock.withLock { state in
-            state.createdTasks.map { $0 as any DownloadURLTask }
+            let all = state.preinstalledTasks + state.createdTasks
+            return all.map { $0 as any DownloadURLTask }
         }
     }
 

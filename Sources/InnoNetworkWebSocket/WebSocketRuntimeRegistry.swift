@@ -16,12 +16,14 @@ package actor WebSocketRuntimeRegistry {
     private var _onMessage: (@Sendable (WebSocketTask, Data) async -> Void)?
     private var _onString: (@Sendable (WebSocketTask, String) async -> Void)?
     private var _onError: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?
+    private var _onPong: (@Sendable (WebSocketTask, WebSocketPongContext) async -> Void)?
 
     package var onConnected: (@Sendable (WebSocketTask, String?) async -> Void)? { _onConnected }
     package var onDisconnected: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)? { _onDisconnected }
     package var onMessage: (@Sendable (WebSocketTask, Data) async -> Void)? { _onMessage }
     package var onString: (@Sendable (WebSocketTask, String) async -> Void)? { _onString }
     package var onError: (@Sendable (WebSocketTask, WebSocketError) async -> Void)? { _onError }
+    package var onPong: (@Sendable (WebSocketTask, WebSocketPongContext) async -> Void)? { _onPong }
 
     package init() {}
 
@@ -43,6 +45,10 @@ package actor WebSocketRuntimeRegistry {
 
     package func setOnError(_ callback: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?) {
         _onError = callback
+    }
+
+    package func setOnPong(_ callback: (@Sendable (WebSocketTask, WebSocketPongContext) async -> Void)?) {
+        _onPong = callback
     }
 
     package func add(_ task: WebSocketTask) {

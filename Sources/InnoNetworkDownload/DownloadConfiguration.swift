@@ -13,6 +13,9 @@ public struct DownloadConfiguration: Sendable {
                 maxRetryCount: 3,
                 maxTotalRetries: 3,
                 retryDelay: 1.0,
+                exponentialBackoff: false,
+                retryJitterRatio: 0.2,
+                maxRetryDelay: 60,
                 timeoutForRequest: 30,
                 timeoutForResource: 60 * 60 * 24,
                 allowsCellularAccess: true,
@@ -31,6 +34,9 @@ public struct DownloadConfiguration: Sendable {
                 maxRetryCount: 5,
                 maxTotalRetries: 8,
                 retryDelay: 0.5,
+                exponentialBackoff: false,
+                retryJitterRatio: 0.2,
+                maxRetryDelay: 30,
                 timeoutForRequest: 60,
                 timeoutForResource: 60 * 60 * 24,
                 allowsCellularAccess: true,
@@ -52,7 +58,28 @@ public struct DownloadConfiguration: Sendable {
     public let maxRetryCount: Int
     /// Maximum total retry count even if the counter is reset due to network changes.
     public let maxTotalRetries: Int
+    /// Base retry delay in seconds before jitter / exponential backoff is applied.
     public let retryDelay: TimeInterval
+    /// When `true`, each retry grows its base delay as
+    /// `retryDelay * 2^(retryCount - 1)` and then samples the final wait from
+    /// `base ± (base * retryJitterRatio)`, clamped to ``maxRetryDelay`` when
+    /// the user-facing cap is enabled. Default is `false` so 4.x retains the
+    /// fixed-delay behavior that earlier releases shipped.
+    public let exponentialBackoff: Bool
+    /// Jitter ratio applied symmetrically around the exponential-backoff base
+    /// delay (`0.0...1.0`). Only consulted when ``exponentialBackoff`` is
+    /// enabled. Values outside the range are clamped.
+    public let retryJitterRatio: Double
+    /// Upper bound in seconds on the exponential-backoff retry delay after
+    /// symmetric jitter is applied.
+    ///
+    /// - `> 0`: cap enabled (default `60s`).
+    /// - `<= 0`: cap **disabled** — the backoff grows until it reaches the
+    ///   runtime's maximum representable sleep duration.
+    ///
+    /// Only consulted when ``exponentialBackoff`` is enabled. Negative values
+    /// clamp to `0` (cap disabled).
+    public let maxRetryDelay: TimeInterval
     public let timeoutForRequest: TimeInterval
     public let timeoutForResource: TimeInterval
     public let allowsCellularAccess: Bool
@@ -82,6 +109,12 @@ public struct DownloadConfiguration: Sendable {
         public var maxTotalRetries: Int
         /// Base retry delay in seconds. Defaults to `0.5` in the advanced preset.
         public var retryDelay: TimeInterval
+        /// Enables exponential backoff for retries. Defaults to `false`.
+        public var exponentialBackoff: Bool
+        /// Jitter ratio applied symmetrically around the exponential backoff base delay (`0.0...1.0`). Defaults to `0.2`.
+        public var retryJitterRatio: Double
+        /// Upper bound on the exponential-backoff retry delay. `<= 0` disables the user-facing cap and falls back to the runtime-safe maximum delay. Defaults to `30` in the advanced preset.
+        public var maxRetryDelay: TimeInterval
         /// Request timeout in seconds. Defaults to `60` in the advanced preset.
         public var timeoutForRequest: TimeInterval
         /// Resource timeout in seconds. Defaults to `24h` in both presets.
@@ -108,6 +141,9 @@ public struct DownloadConfiguration: Sendable {
             self.maxRetryCount = preset.maxRetryCount
             self.maxTotalRetries = preset.maxTotalRetries
             self.retryDelay = preset.retryDelay
+            self.exponentialBackoff = preset.exponentialBackoff
+            self.retryJitterRatio = preset.retryJitterRatio
+            self.maxRetryDelay = preset.maxRetryDelay
             self.timeoutForRequest = preset.timeoutForRequest
             self.timeoutForResource = preset.timeoutForResource
             self.allowsCellularAccess = preset.allowsCellularAccess
@@ -125,6 +161,9 @@ public struct DownloadConfiguration: Sendable {
                 maxRetryCount: maxRetryCount,
                 maxTotalRetries: maxTotalRetries,
                 retryDelay: retryDelay,
+                exponentialBackoff: exponentialBackoff,
+                retryJitterRatio: retryJitterRatio,
+                maxRetryDelay: maxRetryDelay,
                 timeoutForRequest: timeoutForRequest,
                 timeoutForResource: timeoutForResource,
                 allowsCellularAccess: allowsCellularAccess,
@@ -182,6 +221,9 @@ public struct DownloadConfiguration: Sendable {
         maxRetryCount: Int = 3,
         maxTotalRetries: Int = 3,
         retryDelay: TimeInterval = 1.0,
+        exponentialBackoff: Bool = false,
+        retryJitterRatio: Double = 0.2,
+        maxRetryDelay: TimeInterval = 60,
         timeoutForRequest: TimeInterval = 30,
         timeoutForResource: TimeInterval = 60 * 60 * 24,
         allowsCellularAccess: Bool = true,
@@ -196,6 +238,9 @@ public struct DownloadConfiguration: Sendable {
         self.maxRetryCount = max(0, maxRetryCount)
         self.maxTotalRetries = max(0, maxTotalRetries)
         self.retryDelay = max(0, retryDelay)
+        self.exponentialBackoff = exponentialBackoff
+        self.retryJitterRatio = min(1.0, max(0.0, retryJitterRatio))
+        self.maxRetryDelay = max(0, maxRetryDelay)
         self.timeoutForRequest = max(0, timeoutForRequest)
         self.timeoutForResource = max(0, timeoutForResource)
         self.allowsCellularAccess = allowsCellularAccess
