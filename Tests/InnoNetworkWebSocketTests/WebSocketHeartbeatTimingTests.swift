@@ -157,6 +157,40 @@ struct WebSocketHeartbeatTimingTests {
         await harness.stopHeartbeat()
     }
 
+    @Test("Event stream .pong(_:) delivers the same WebSocketPongContext as setOnPongHandler callback")
+    func pongEventStreamAndCallbackReceiveIdenticalContext() async throws {
+        // Locks in the 5.0 contract: the `.pong(_:)` event case and the
+        // `setOnPongHandler(_:)` callback both carry the same context value
+        // at the same logical point in the heartbeat cycle. Consumers can
+        // choose either path and see matching `attemptNumber` / `roundTrip`.
+        let harness = HeartbeatTestHarness(
+            heartbeatInterval: 3,
+            pongTimeout: 1,
+            maxMissedPongs: 3
+        )
+        await harness.startHeartbeat()
+        #expect(await harness.clock.waitForWaiters(count: 1))
+
+        harness.clock.advance(by: .seconds(3))
+        #expect(await harness.waitForPingEventCount(atLeast: 1))
+        harness.stubTask.completePendingPong(with: nil)
+        #expect(await harness.waitForPongCount(atLeast: 1))
+        #expect(await harness.waitForPongContextCount(atLeast: 1))
+
+        let eventStreamContexts = harness.defaultRecorder.pongContexts
+        let callbackContexts = harness.pongContextsSnapshot
+        #expect(eventStreamContexts.count == 1)
+        #expect(callbackContexts.count == 1)
+
+        if let fromEvent = eventStreamContexts.first,
+           let fromCallback = callbackContexts.first {
+            #expect(fromEvent.attemptNumber == fromCallback.attemptNumber)
+            #expect(fromEvent.roundTrip == fromCallback.roundTrip)
+        }
+
+        await harness.stopHeartbeat()
+    }
+
     @Test("Pong context matches the paired ping's attemptNumber and carries a positive roundTrip")
     func pongContextMatchesPingAndCarriesPositiveRoundTrip() async throws {
         let harness = HeartbeatTestHarness(

@@ -25,7 +25,7 @@ package final class WebSocketEventRecorder: Sendable {
     package var pongCount: Int {
         events.withLock { list in
             list.reduce(0) { acc, event in
-                if case .pong = event { return acc + 1 }
+                if case .pong(_) = event { return acc + 1 }
                 return acc
             }
         }
@@ -36,6 +36,19 @@ package final class WebSocketEventRecorder: Sendable {
         events.withLock { list in
             list.compactMap { event in
                 if case .ping(let context) = event { return context }
+                return nil
+            }
+        }
+    }
+
+    /// All observed `.pong` contexts in order. Tests pair this with
+    /// ``pingContexts`` or with a harness-captured `setOnPongHandler`
+    /// snapshot to assert that the event-stream and callback paths
+    /// deliver identical `WebSocketPongContext` values.
+    package var pongContexts: [WebSocketPongContext] {
+        events.withLock { list in
+            list.compactMap { event in
+                if case .pong(let context) = event { return context }
                 return nil
             }
         }

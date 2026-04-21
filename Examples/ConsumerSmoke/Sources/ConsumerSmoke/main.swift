@@ -106,8 +106,13 @@ _ = WebSocketConfiguration.safeDefaults()
     case .ping(let context):
         _ = context.attemptNumber
         _ = context.dispatchedAt
-    case .pong:
-        break
+    case .pong(let context):
+        // 5.0: `.pong` now carries the same `WebSocketPongContext` that
+        // `setOnPongHandler(_:)` delivers. Consumers that switched
+        // exhaustively on `.pong` must bind or discard the associated
+        // value (pre-5.0 `case .pong:` → `case .pong(_):`).
+        _ = context.attemptNumber
+        _ = context.roundTrip
     case .error(let wsError):
         _ = wsError
     @unknown default:

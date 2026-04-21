@@ -20,41 +20,38 @@ Event delivery for socket tasks flows through the shared event hub. Tune bufferi
 
 ### Measuring heartbeat RTT
 
-As of 4.3, ``WebSocketManager/setOnPongHandler(_:)`` delivers a
-``WebSocketPongContext`` with the library-computed `roundTrip: Duration`, so
-there is no need to thread a timestamp through your event handler.
+As of 5.0, ``WebSocketEvent/pong(_:)`` carries a
+``WebSocketPongContext`` directly, and
+``WebSocketManager/setOnPongHandler(_:)`` delivers the **same context value**
+at the same logical point. Pick whichever surface your architecture already
+consumes:
 
 ```swift
-await manager.setOnPongHandler { _, context in
-    metrics.recordPingRTT(context.roundTrip)
-}
-```
-
-``WebSocketPongContext/attemptNumber`` matches the
-``WebSocketPingContext/attemptNumber`` of the paired ping, so consumers that
-still observe the event stream can correlate both surfaces without changing
-their existing `case .pong:` handling:
-
-```swift
-await manager.setOnPongHandler { _, context in
-    metrics.recordPingRTT(context.roundTrip)
-    metrics.correlate(attempt: context.attemptNumber)
-}
-
+// Event stream
 for await event in await manager.events(for: task) {
     switch event {
-    case .ping(let context):
-        metrics.markPingAttempt(context.attemptNumber, dispatchedAt: context.dispatchedAt)
-    case .pong:
-        break
+    case .pong(let context):
+        metrics.recordPingRTT(context.roundTrip)
+        metrics.correlate(attempt: context.attemptNumber)
     default:
         break
     }
 }
+
+// Or callback convenience
+await manager.setOnPongHandler { _, context in
+    metrics.recordPingRTT(context.roundTrip)
+    metrics.correlate(attempt: context.attemptNumber)
+}
 ```
 
+Both paths receive identical `attemptNumber` / `roundTrip` values. Pattern
+matches over `WebSocketEvent` that previously used `case .pong:` must now
+bind or discard the associated value — see `MIGRATION_v5.md` for the one
+syntax change.
+
 `roundTrip` is measured as `ContinuousClock.now - pingContext.dispatchedAt`
-just before the paired `.pong` event is published — it reflects the
+just before the paired `.pong(_:)` event is published — it reflects the
 library-observed span from `.ping(_:)` emission to successful pong handling
 (excluding consumer-side scheduler jitter). Heartbeat cadence and timeout
 control still use the injected ``InnoNetwork/InnoNetworkClock``; only the RTT

@@ -24,10 +24,14 @@ public enum WebSocketEvent: Sendable {
     case ping(WebSocketPingContext)
     /// Emitted when a ping frame's paired pong is received.
     ///
-    /// Consumers that want attempt-number / round-trip metadata can register
-    /// ``WebSocketManager/setOnPongHandler(_:)``; the handler receives a
-    /// ``WebSocketPongContext`` immediately before this event is published.
-    case pong
+    /// The associated ``WebSocketPongContext`` carries the matching
+    /// ``WebSocketPingContext/attemptNumber`` and the library-computed
+    /// `roundTrip: Duration`. Consumers can observe this either through the
+    /// event stream (pattern-bind the context) or through the convenience
+    /// callback ``WebSocketManager/setOnPongHandler(_:)``; **both paths
+    /// receive the same `WebSocketPongContext` value** at the same logical
+    /// point in the heartbeat / public-ping cycle.
+    case pong(WebSocketPongContext)
     case error(WebSocketError)
 }
 
@@ -462,7 +466,7 @@ public final class WebSocketManager: NSObject, Sendable {
 
     private func publishPong(task: WebSocketTask, context: WebSocketPongContext) async {
         await runtimeRegistry.onPong?(task, context)
-        await eventHub.publish(.pong, for: task.id)
+        await eventHub.publish(.pong(context), for: task.id)
     }
 
     func handleConnected(taskIdentifier: Int, protocolName: String?) {
