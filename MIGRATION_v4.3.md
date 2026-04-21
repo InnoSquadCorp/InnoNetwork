@@ -69,6 +69,13 @@ default:
 }
 ```
 
+> **Forward pointer (5.0).** `WebSocketEvent.pong` gains a
+> `WebSocketPongContext` payload in 5.0 — the same value that
+> `setOnPongHandler(_:)` already delivers in 4.3. Exhaustive switches
+> need to bind or ignore the associated value (`case .pong(let ctx)`
+> or `case .pong(_)`). See
+> [`MIGRATION_v5.md`](MIGRATION_v5.md) for the full diff.
+
 ---
 
 ## 2. Opt-in exponential backoff for Download retries

@@ -14,6 +14,51 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 - No unreleased entries yet.
 
+## [5.0.0]
+
+Major release that completes the pong RTT observability surface started in
+4.3 and ships runnable integration samples for the WebSocket / Download
+surfaces. The only breaking change is the previously-deferred
+`WebSocketEvent.pong` payload addition — every other entry is additive.
+See [`MIGRATION_v5.md`](MIGRATION_v5.md) for the `.pong(_:)` switch-update
+diff and a tour of the new samples.
+
+### Breaking
+
+- `WebSocketEvent.pong` is now `case pong(WebSocketPongContext)`. The
+  payload mirrors the 4.1 `.ping(WebSocketPingContext)` shape and carries
+  the same `attemptNumber` + `roundTrip: Duration` values delivered to
+  `setOnPongHandler(_:)`. Exhaustive switches over `WebSocketEvent` must
+  bind or ignore the associated value (`case .pong(let ctx)` or
+  `case .pong(_)`). Existing patterns that did not bind the payload
+  (`if case .pong = event { ... }`) continue to compile unchanged.
+
+### Added
+
+- `Examples/WebSocketChat` — runnable CLI sample that connects to a
+  public echo server, streams stdin lines as WebSocket messages, and
+  exercises the `.pong(_:)` event stream *and* `setOnPongHandler(_:)`
+  callback in parallel. Gated behind `INNONETWORK_RUN_INTEGRATION=1` so
+  `swift build` stays offline-safe.
+- `Examples/DownloadManager` — runnable CLI that drives a real HTTPS
+  download through `DownloadManager`, showcasing the 4.3
+  `exponentialBackoff` / `retryJitterRatio` / `maxRetryDelay` surface
+  and per-percent progress logging. Same env-gated execution model.
+- `Examples/EventPolicyObserver` — reference implementations of
+  `EventPipelineMetricsReporting` backed by `os.Logger`, `OSSignposter`
+  (Points of Interest), and a `CompositeMetricsReporter` fan-out helper.
+  No external dependencies; a swift-metrics bridge recipe is included in
+  the README as a comment-only snippet.
+- `SmokeTests/InnoNetworkDownloadSmoke` — integration smoke exercising
+  the real URLSession-backed `DownloadManager.pause` / `resume` path
+  end-to-end. Gated behind `INNONETWORK_RUN_INTEGRATION=1`; the offline
+  default prints a skip message and exits 0 so the target can ship in
+  CI without requiring network access.
+- `.github/workflows/tsan.yml` — nightly (+ `workflow_dispatch`) CI job
+  that runs the full test suite under ThreadSanitizer on macOS 15.
+  Catches races inside URLSession internals and across actor
+  boundaries that static strict-concurrency analysis cannot prove safe.
+
 ## [4.3.0]
 
 Minor release that promotes round-trip time to a first-class observability
