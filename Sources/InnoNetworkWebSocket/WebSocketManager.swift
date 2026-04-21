@@ -74,6 +74,8 @@ public struct WebSocketPingContext: Sendable, Hashable {
 ///   as `ContinuousClock.now - pingContext.dispatchedAt` just before the
 ///   `.pong` event is published, so it includes the library's own ping-send +
 ///   pong-handler dispatch but excludes consumer-side scheduler jitter.
+///   Heartbeat scheduling still uses the injected `InnoNetworkClock`; RTT
+///   measurement always uses wall-clock `ContinuousClock`.
 ///
 /// This struct is designed to gain fields in minor releases without
 /// breaking existing consumers — the public initializer is package-scoped
@@ -85,7 +87,8 @@ public struct WebSocketPongContext: Sendable, Hashable {
 
     /// Elapsed time between the paired `.ping(_:)` dispatch and this
     /// pong-handler callback, computed as
-    /// `ContinuousClock.now - pingContext.dispatchedAt`.
+    /// `ContinuousClock.now - pingContext.dispatchedAt`. This value is not
+    /// derived from the injected heartbeat scheduling clock.
     public let roundTrip: Duration
 
     package init(attemptNumber: Int, roundTrip: Duration) {

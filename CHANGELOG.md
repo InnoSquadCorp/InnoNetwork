@@ -36,8 +36,9 @@ optional pong RTT adoption guidance.
 - `DownloadConfiguration.exponentialBackoff` (default `false`),
   `retryJitterRatio` (default `0.2`), and `maxRetryDelay` (default
   `60s`, `<= 0` disables the user-facing cap). Opt-in so 4.x retains
-  the existing fixed-delay retry behavior; enabling flips retries to
-  `retryDelay * 2^(retryCount - 1) + jitter`, clamped to
+  the existing fixed-delay retry behavior; enabling computes a
+  `retryDelay * 2^(retryCount - 1)` base delay and samples the final
+  wait from `base ± (base * retryJitterRatio)`, clamped to
   `maxRetryDelay` when active and always bounded to a runtime-safe
   maximum sleep duration.
 - Swift 6.2+ language-mode audit note at

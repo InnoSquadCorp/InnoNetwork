@@ -32,21 +32,33 @@ await manager.setOnPongHandler { _, context in
 
 ``WebSocketPongContext/attemptNumber`` matches the
 ``WebSocketPingContext/attemptNumber`` of the paired ping, so consumers that
-want to correlate ping → pong explicitly can still do so:
+still observe the event stream can correlate both surfaces without changing
+their existing `case .pong:` handling:
 
 ```swift
-case .ping(let context):
-    openSpans[context.attemptNumber] = context.dispatchedAt
 await manager.setOnPongHandler { _, context in
-    openSpans[context.attemptNumber] = nil
     metrics.recordPingRTT(context.roundTrip)
+    metrics.correlate(attempt: context.attemptNumber)
+}
+
+for await event in await manager.events(for: task) {
+    switch event {
+    case .ping(let context):
+        metrics.markPingAttempt(context.attemptNumber, dispatchedAt: context.dispatchedAt)
+    case .pong:
+        break
+    default:
+        break
+    }
 }
 ```
 
 `roundTrip` is measured as `ContinuousClock.now - pingContext.dispatchedAt`
 just before the paired `.pong` event is published — it reflects the
 library-observed span from `.ping(_:)` emission to successful pong handling
-(excluding consumer-side scheduler jitter).
+(excluding consumer-side scheduler jitter). Heartbeat cadence and timeout
+control still use the injected ``InnoNetwork/InnoNetworkClock``; only the RTT
+measurement itself is wall-clock `ContinuousClock` time.
 
 ## Topics
 

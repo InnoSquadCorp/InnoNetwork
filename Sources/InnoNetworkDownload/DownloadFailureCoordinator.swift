@@ -56,8 +56,15 @@ package struct DownloadFailureCoordinator {
 
         let delay = computeRetryDelay(retryCount: await task.retryCount)
         if delay > 0 {
-            try? await clock.sleep(for: .seconds(delay))
+            do {
+                try await clock.sleep(for: .seconds(delay))
+            } catch is CancellationError {
+                return
+            } catch {
+                return
+            }
         }
+        if Task.isCancelled { return }
         let state = await task.state
         if state != .cancelled {
             await restart(task)
@@ -67,8 +74,10 @@ package struct DownloadFailureCoordinator {
     /// Computes the sleep interval before the next restart. When
     /// `configuration.exponentialBackoff` is disabled the configured
     /// fixed `retryDelay` is returned directly (pre-4.3 behavior). When
-    /// enabled the delay grows as `retryDelay * 2^(retryCount - 1)` with
-    /// jitter applied and clamped to `maxRetryDelay` if the cap is active.
+    /// enabled the base delay grows as `retryDelay * 2^(retryCount - 1)`,
+    /// then the returned delay is sampled from `base ± jitter`, clamped to
+    /// `[0, effectiveCap]`. "Uncapped" configurations are still bounded to
+    /// the runtime's maximum representable sleep duration.
     private func computeRetryDelay(retryCount: Int) -> TimeInterval {
         let maximumSupportedDelay = Self.maximumSupportedDelay
         let fixedDelay = clampDelay(configuration.retryDelay, upperBound: maximumSupportedDelay)

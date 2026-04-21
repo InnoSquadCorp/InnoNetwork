@@ -133,6 +133,44 @@ struct DownloadRetryTimingTests {
         #expect(restartCounter.withLock { $0 } == 0)
     }
 
+    @Test("Cancelling the retry task while sleeping suppresses restart")
+    func cancelledRetryTaskDoesNotRestart() async throws {
+        let clock = TestClock()
+        let configuration = DownloadConfiguration(
+            maxRetryCount: 3,
+            maxTotalRetries: 3,
+            retryDelay: 1.0,
+            sessionIdentifier: "test.retry-task-cancel.\(UUID().uuidString)"
+        )
+        let (coordinator, task) = await makeCoordinator(
+            configuration: configuration,
+            clock: clock
+        )
+
+        let restartCounter = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+        let handleTask = Task {
+            await coordinator.handleError(
+                task: task,
+                error: SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: URLError.networkConnectionLost.rawValue,
+                    message: "cancelled while sleeping"
+                ),
+                restart: { _ in
+                    restartCounter.withLock { $0 += 1 }
+                }
+            )
+        }
+
+        #expect(await clock.waitForWaiters(count: 1))
+        handleTask.cancel()
+
+        await handleTask.value
+        #expect(clock.waiterCount == 0)
+        #expect(restartCounter.withLock { $0 } == 0)
+    }
+
     @Test("Exponential backoff disabled (default) reuses the fixed retryDelay on every cycle")
     func exponentialBackoffDisabledUsesFixedDelay() async throws {
         let clock = TestClock()

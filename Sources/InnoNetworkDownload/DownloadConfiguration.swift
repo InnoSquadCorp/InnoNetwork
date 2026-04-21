@@ -60,16 +60,18 @@ public struct DownloadConfiguration: Sendable {
     public let maxTotalRetries: Int
     /// Base retry delay in seconds before jitter / exponential backoff is applied.
     public let retryDelay: TimeInterval
-    /// When `true`, each retry waits `retryDelay * 2^(retryCount - 1) + jitter`
-    /// capped at ``maxRetryDelay``. Default is `false` so 4.x retains the
+    /// When `true`, each retry grows its base delay as
+    /// `retryDelay * 2^(retryCount - 1)` and then samples the final wait from
+    /// `base ± (base * retryJitterRatio)`, clamped to ``maxRetryDelay`` when
+    /// the user-facing cap is enabled. Default is `false` so 4.x retains the
     /// fixed-delay behavior that earlier releases shipped.
     public let exponentialBackoff: Bool
-    /// Jitter ratio applied to the exponential backoff (`0.0...1.0`). Only
-    /// consulted when ``exponentialBackoff`` is enabled. Values outside the
-    /// range are clamped.
+    /// Jitter ratio applied symmetrically around the exponential-backoff base
+    /// delay (`0.0...1.0`). Only consulted when ``exponentialBackoff`` is
+    /// enabled. Values outside the range are clamped.
     public let retryJitterRatio: Double
     /// Upper bound in seconds on the exponential-backoff retry delay after
-    /// jitter is applied.
+    /// symmetric jitter is applied.
     ///
     /// - `> 0`: cap enabled (default `60s`).
     /// - `<= 0`: cap **disabled** — the backoff grows until it reaches the
@@ -109,7 +111,7 @@ public struct DownloadConfiguration: Sendable {
         public var retryDelay: TimeInterval
         /// Enables exponential backoff for retries. Defaults to `false`.
         public var exponentialBackoff: Bool
-        /// Jitter ratio applied to the exponential backoff (`0.0...1.0`). Defaults to `0.2`.
+        /// Jitter ratio applied symmetrically around the exponential backoff base delay (`0.0...1.0`). Defaults to `0.2`.
         public var retryJitterRatio: Double
         /// Upper bound on the exponential-backoff retry delay. `<= 0` disables the user-facing cap and falls back to the runtime-safe maximum delay. Defaults to `30` in the advanced preset.
         public var maxRetryDelay: TimeInterval
