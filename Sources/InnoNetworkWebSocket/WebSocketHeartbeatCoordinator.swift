@@ -126,7 +126,8 @@ package struct WebSocketHeartbeatCoordinator {
                         attemptNumber: pingContext.attemptNumber,
                         roundTrip: ContinuousClock.now - pingContext.dispatchedAt
                     )
-                    await eventHub.publish(.pong(pongContext), for: task.id)
+                    await runtimeRegistry.onPong?(task, pongContext)
+                    await eventHub.publish(.pong, for: task.id)
                 } catch {
                     missedPongs += 1
                     if missedPongs >= configuration.maxMissedPongs {

@@ -39,6 +39,10 @@ public actor DownloadTask: Identifiable {
         return _retryCount
     }
 
+    func setRetryCount(_ retryCount: Int) {
+        _retryCount = max(0, retryCount)
+    }
+
     func incrementTotalRetryCount() -> Int {
         _totalRetryCount += 1
         return _totalRetryCount

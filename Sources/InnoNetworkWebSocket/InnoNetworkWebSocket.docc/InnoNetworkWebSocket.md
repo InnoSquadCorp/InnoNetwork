@@ -9,7 +9,7 @@ Connection-oriented realtime flows with reconnect-aware lifecycle handling, hear
 Use this module when you need:
 
 - reconnect-aware connection management
-- heartbeat and pong timeout handling, surfaced as paired ``WebSocketEvent/ping(_:)``/``WebSocketEvent/pong`` events with attempt-number and dispatch-time context
+- heartbeat and pong timeout handling, surfaced as paired ``WebSocketEvent/ping(_:)``/``WebSocketEvent/pong`` events plus optional pong RTT callbacks
 - observable close classification via ``WebSocketTask/closeDisposition``
 - listener retention across reconnect attempts
 - manual disconnect semantics that stay visible to the caller
@@ -20,20 +20,13 @@ Event delivery for socket tasks flows through the shared event hub. Tune bufferi
 
 ### Measuring heartbeat RTT
 
-As of 4.3, every `.pong(_:)` event carries a ``WebSocketPongContext`` with
-the library-computed `roundTrip: Duration`, so there is no need to thread a
-timestamp through your event handler.
+As of 4.3, ``WebSocketManager/setOnPongHandler(_:)`` delivers a
+``WebSocketPongContext`` with the library-computed `roundTrip: Duration`, so
+there is no need to thread a timestamp through your event handler.
 
 ```swift
-for await event in await manager.events(for: task) {
-    switch event {
-    case .pong(let context):
-        metrics.recordPingRTT(context.roundTrip)
-    case .error(.pingTimeout):
-        metrics.recordPingTimeout()
-    default:
-        break
-    }
+await manager.setOnPongHandler { _, context in
+    metrics.recordPingRTT(context.roundTrip)
 }
 ```
 
@@ -44,15 +37,16 @@ want to correlate ping → pong explicitly can still do so:
 ```swift
 case .ping(let context):
     openSpans[context.attemptNumber] = context.dispatchedAt
-case .pong(let context):
+await manager.setOnPongHandler { _, context in
     openSpans[context.attemptNumber] = nil
     metrics.recordPingRTT(context.roundTrip)
+}
 ```
 
 `roundTrip` is measured as `ContinuousClock.now - pingContext.dispatchedAt`
-at `.pong(_:)` publish time — it reflects the library-observed span from
-`.ping(_:)` emission to `.pong(_:)` emission (excluding consumer-side
-scheduler jitter).
+just before the paired `.pong` event is published — it reflects the
+library-observed span from `.ping(_:)` emission to successful pong handling
+(excluding consumer-side scheduler jitter).
 
 ## Topics
 

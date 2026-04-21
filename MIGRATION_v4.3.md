@@ -1,49 +1,18 @@
 # InnoNetwork v4.3 Migration Guide
 
-This document summarizes call-site changes between `4.2` and `4.3`.
+This document summarizes observable behavior and optional adoption notes
+between `4.2` and `4.3`.
 
-`4.3` is a minor release. The only breaking change is additive on an
-existing enum case: `WebSocketEvent.pong` gains a `WebSocketPongContext`
-associated value. Everything else is strictly opt-in or test-only.
+`4.3` is a source-compatible minor release. Existing `WebSocketEvent`
+switches remain valid; the new pong RTT surface is additive.
 
 Minimum toolchain unchanged: Swift 6.2 / Xcode 26.
 
 ---
 
-## 1. `WebSocketEvent.pong` associated value
+## 1. Optional pong RTT observation
 
-### 1.1 Exhaustive switches
-
-```diff
- switch event {
- case .connected:                       break
- case .disconnected:                    break
- case .message:                         break
- case .string:                          break
- case .ping:                            break
-- case .pong:
-+ case .pong(_):
-     break
- case .error:                           break
- }
-```
-
-Bind the context if you want the attempt number or library-computed RTT:
-
-```swift
-case .pong(let context):
-    metrics.recordPingRTT(context.roundTrip)
-    metrics.correlate(attempt: context.attemptNumber)
-```
-
-Partial pattern matches that did not bind a value keep compiling
-unchanged:
-
-```swift
-if case .pong = event { /* still valid in 4.3 */ }
-```
-
-### 1.2 Using `WebSocketPongContext` for RTT
+### 1.1 `setOnPongHandler(_:)`
 
 Prior to 4.3, consumers typically held the `.ping` dispatch timestamp
 themselves:
@@ -70,24 +39,35 @@ The library now delivers RTT directly:
 
 ```swift
 // 4.3
-for await event in await manager.events(for: task) {
-    switch event {
-    case .pong(let context):
-        metrics.recordPingRTT(context.roundTrip)
-    case .error(.pingTimeout):
-        metrics.recordPingTimeout()
-    default:
-        break
-    }
+await manager.setOnPongHandler { _, context in
+    metrics.recordPingRTT(context.roundTrip)
+    metrics.correlate(attempt: context.attemptNumber)
 }
 ```
 
 `WebSocketPongContext.attemptNumber` matches the
 `WebSocketPingContext.attemptNumber` of the paired ping. The library
 computes `roundTrip` as
-`ContinuousClock.now - pingContext.dispatchedAt` at the moment the
-`.pong(_:)` event is published, so it captures library-internal
+`ContinuousClock.now - pingContext.dispatchedAt` just before the paired
+`.pong` event is published, so it captures library-internal
 dispatch but excludes consumer-side scheduler jitter.
+
+### 1.2 Existing `.pong` event handling
+
+No call-site update is required for existing event listeners:
+
+```swift
+switch event {
+case .ping(let context):
+    pendingPingAt = context.dispatchedAt
+case .pong:
+    if let started = pendingPingAt {
+        metrics.recordPingRTT(ContinuousClock.now - started)
+    }
+default:
+    break
+}
+```
 
 ---
 
@@ -97,7 +77,9 @@ dispatch but excludes consumer-side scheduler jitter.
 
 - `exponentialBackoff: Bool` (default `false`)
 - `retryJitterRatio: Double` (default `0.2`, `0.0...1.0` clamped)
-- `maxRetryDelay: TimeInterval` (default `60s`, `<= 0` disables the cap)
+- `maxRetryDelay: TimeInterval` (default `60s`, `<= 0` disables the
+  user-facing cap and falls back to the runtime's maximum safe sleep
+  duration)
 
 **No behavior change on upgrade** unless you explicitly enable
 `exponentialBackoff`. The existing fixed `retryDelay` path is preserved.
@@ -115,7 +97,8 @@ let configuration = DownloadConfiguration.advanced {
 
 With the above settings, retries observe delays close to `1s`, `2s`,
 `4s`, `8s`, ... capped at `60s`. Set `maxRetryDelay` to `0` (or any
-negative value) to disable the cap and let the backoff grow unbounded.
+negative value) to remove the user-facing cap; internally the delay is
+still clamped to the largest runtime-safe sleep duration.
 
 ### 2.2 Leaving default behavior
 
@@ -143,10 +126,8 @@ difference.
 
 After bumping InnoNetwork to `4.3`:
 
-1. `swift build` — the compiler points at any exhaustive `switch` on
-   `WebSocketEvent` that still has `case .pong:`. Apply §1.1.
-2. Grep for `case .pong` in your codebase to find unannotated patterns.
-3. Consider migrating your RTT instrumentation to
-   `.pong(let context) { context.roundTrip }` per §1.2.
-4. If you want Download retries to apply exponential backoff, opt in per
+1. `swift build` — no `.pong` event migration should be required for 4.3.
+2. If you want library-computed RTT metadata, adopt
+   `setOnPongHandler(_:)` per §1.1.
+3. If you want Download retries to apply exponential backoff, opt in per
    §2.1 and run your retry-sensitive test suites.

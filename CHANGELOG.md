@@ -19,24 +19,27 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 Minor release that promotes round-trip time to a first-class observability
 surface, adds opt-in exponential backoff to the Download module, and
 completes the stub-based deterministic test migration for
-`DownloadManager`. See [`MIGRATION_v4.3.md`](MIGRATION_v4.3.md) for the
-one call-site change consumers may need (exhaustive `switch` on
-`WebSocketEvent.pong`).
+`DownloadManager`. See [`MIGRATION_v4.3.md`](MIGRATION_v4.3.md) for
+optional pong RTT adoption guidance.
 
 ### Added
 
 - `WebSocketPongContext` carries `attemptNumber` (matches the paired
   `WebSocketPingContext.attemptNumber`) and `roundTrip: Duration`
   (computed by the library as
-  `ContinuousClock.now - pingContext.dispatchedAt` at pong publish
-  time). Consumers no longer need to thread a ping-start timestamp
-  through their own event handler to compute RTT.
+  `ContinuousClock.now - pingContext.dispatchedAt` just before `.pong`
+  publish time).
+- `WebSocketManager.setOnPongHandler(_:)` delivers
+  `WebSocketPongContext` for successful pongs without changing existing
+  `.pong` event handling. Consumers can adopt library-computed RTT
+  incrementally while keeping `case .pong:` switches source-compatible.
 - `DownloadConfiguration.exponentialBackoff` (default `false`),
   `retryJitterRatio` (default `0.2`), and `maxRetryDelay` (default
-  `60s`, `<= 0` disables the cap). Opt-in so 4.x retains the existing
-  fixed-delay retry behavior; enabling flips retries to
-  `retryDelay * 2^(retryCount - 1) + jitter`, clamped to `maxRetryDelay`
-  when active.
+  `60s`, `<= 0` disables the user-facing cap). Opt-in so 4.x retains
+  the existing fixed-delay retry behavior; enabling flips retries to
+  `retryDelay * 2^(retryCount - 1) + jitter`, clamped to
+  `maxRetryDelay` when active and always bounded to a runtime-safe
+  maximum sleep duration.
 - Swift 6.2+ language-mode audit note at
   [`docs/SwiftLanguageMode.md`](docs/SwiftLanguageMode.md) — records
   which features (`InlineArray`, `Span`, `@concurrent`, task-local
@@ -45,12 +48,6 @@ one call-site change consumers may need (exhaustive `switch` on
 
 ### Changed
 
-- **BREAKING (minor)**: `WebSocketEvent.pong` now carries a
-  `WebSocketPongContext` associated value. Partial pattern matches
-  (`if case .pong = event`) keep compiling untouched; exhaustive
-  `switch` statements must update `case .pong:` → `case .pong(_):` (or
-  bind the context: `case .pong(let context):`). Mirrors the 4.1 change
-  for `.ping(_:)`.
 - Download pause/resume/restore tests migrated to the
   `StubDownloadURLSession` harness introduced in 4.2. Real-URLSession
   integration races and wall-clock polling are gone from these suites.

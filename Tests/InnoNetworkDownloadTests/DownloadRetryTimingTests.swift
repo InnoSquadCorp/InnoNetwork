@@ -318,6 +318,83 @@ struct DownloadRetryTimingTests {
         await handleTask.value
         #expect(restarted.withLock { $0 })
     }
+
+    @Test("Huge retry counts stay finite when maxRetryDelay caps the backoff")
+    func hugeRetryCountRemainsFiniteWhenCapped() async throws {
+        let clock = TestClock()
+        let configuration = DownloadConfiguration(
+            maxRetryCount: Int.max,
+            maxTotalRetries: Int.max,
+            retryDelay: 1.0,
+            exponentialBackoff: true,
+            retryJitterRatio: 0.0,
+            maxRetryDelay: 5.0,
+            sessionIdentifier: "test.retry-huge-capped.\(UUID().uuidString)"
+        )
+        let (coordinator, task) = await makeCoordinator(
+            configuration: configuration,
+            clock: clock
+        )
+
+        await task.setRetryCount(Int.max - 2)
+
+        let restarted = OSAllocatedUnfairLock<Bool>(initialState: false)
+        let handleTask = Task {
+            await coordinator.handleError(
+                task: task,
+                error: SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: URLError.networkConnectionLost.rawValue,
+                    message: "huge-capped"
+                ),
+                restart: { _ in
+                    restarted.withLock { $0 = true }
+                }
+            )
+        }
+
+        #expect(await clock.waitForWaiters(count: 1))
+        clock.advance(by: .seconds(5.001))
+        await handleTask.value
+        #expect(restarted.withLock { $0 })
+    }
+
+    @Test("Huge retry counts still enqueue a finite wait when the user-facing cap is disabled")
+    func hugeRetryCountWithoutUserCapStillEnqueuesFiniteWait() async throws {
+        let clock = TestClock()
+        let configuration = DownloadConfiguration(
+            maxRetryCount: Int.max,
+            maxTotalRetries: Int.max,
+            retryDelay: 1.0,
+            exponentialBackoff: true,
+            retryJitterRatio: 0.0,
+            maxRetryDelay: 0,
+            sessionIdentifier: "test.retry-huge-uncapped.\(UUID().uuidString)"
+        )
+        let (coordinator, task) = await makeCoordinator(
+            configuration: configuration,
+            clock: clock
+        )
+
+        await task.setRetryCount(Int.max - 2)
+
+        let handleTask = Task {
+            await coordinator.handleError(
+                task: task,
+                error: SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: URLError.networkConnectionLost.rawValue,
+                    message: "huge-uncapped"
+                ),
+                restart: { _ in }
+            )
+        }
+
+        #expect(await clock.waitForWaiters(count: 1))
+        await task.updateState(.cancelled)
+        handleTask.cancel()
+        await handleTask.value
+    }
 }
 
 

@@ -72,7 +72,8 @@ public struct DownloadConfiguration: Sendable {
     /// jitter is applied.
     ///
     /// - `> 0`: cap enabled (default `60s`).
-    /// - `<= 0`: cap **disabled** — the backoff is unbounded.
+    /// - `<= 0`: cap **disabled** — the backoff grows until it reaches the
+    ///   runtime's maximum representable sleep duration.
     ///
     /// Only consulted when ``exponentialBackoff`` is enabled. Negative values
     /// clamp to `0` (cap disabled).
@@ -110,7 +111,7 @@ public struct DownloadConfiguration: Sendable {
         public var exponentialBackoff: Bool
         /// Jitter ratio applied to the exponential backoff (`0.0...1.0`). Defaults to `0.2`.
         public var retryJitterRatio: Double
-        /// Upper bound on the exponential-backoff retry delay. `<= 0` disables the cap. Defaults to `30` in the advanced preset.
+        /// Upper bound on the exponential-backoff retry delay. `<= 0` disables the user-facing cap and falls back to the runtime-safe maximum delay. Defaults to `30` in the advanced preset.
         public var maxRetryDelay: TimeInterval
         /// Request timeout in seconds. Defaults to `60` in the advanced preset.
         public var timeoutForRequest: TimeInterval

@@ -174,9 +174,10 @@ struct WebSocketHeartbeatTimingTests {
 
         harness.stubTask.completePendingPong(with: nil)
         #expect(await harness.waitForPongCount(atLeast: 1))
+        #expect(await harness.waitForPongContextCount(atLeast: 1))
 
         let pings = harness.defaultRecorder.pingContexts
-        let pongs = harness.defaultRecorder.pongContexts
+        let pongs = harness.pongContextsSnapshot
         #expect(pings.count == 1)
         #expect(pongs.count == 1)
 
@@ -329,6 +330,7 @@ struct WebSocketHeartbeatTimingTests {
         #expect(await harness.waitForPingTimeoutErrorCount(atLeast: 1))
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 2))
         #expect(timeoutBox.withLock { $0 } == nil)
+        #expect(harness.pongContextsSnapshot.isEmpty)
 
         // Cycle 2: same, and missedPongs should reach maxMissedPongs → callback.
         baseline = harness.clock.enqueuedCount
@@ -524,6 +526,7 @@ final class HeartbeatTestHarness: Sendable {
     /// event (including `.pong`) flows through it; tests use `pongCount` to
     /// sequence multi-cycle scenarios.
     let defaultRecorder: WebSocketEventRecorder
+    private let pongContexts = OSAllocatedUnfairLock<[WebSocketPongContext]>(initialState: [])
     private let coordinator: WebSocketHeartbeatCoordinator
 
     init(
@@ -571,6 +574,10 @@ final class HeartbeatTestHarness: Sendable {
         _ = await eventHub.addListener(taskID: task.id) { event in
             recorder.record(event)
         }
+        let pongContexts = self.pongContexts
+        await runtimeRegistry.setOnPong { _, context in
+            pongContexts.withLock { $0.append(context) }
+        }
         await coordinator.startHeartbeat(for: task) { identifier in
             onPingTimeout(identifier)
         }
@@ -598,6 +605,19 @@ final class HeartbeatTestHarness: Sendable {
             try? await Task.sleep(nanoseconds: 5_000_000)
         }
         return defaultRecorder.pongCount >= count
+    }
+
+    func waitForPongContextCount(atLeast count: Int, timeout: TimeInterval = 1.0) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if pongContexts.withLock({ $0.count }) >= count { return true }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        return pongContexts.withLock { $0.count } >= count
+    }
+
+    var pongContextsSnapshot: [WebSocketPongContext] {
+        pongContexts.withLock { $0 }
     }
 
     /// Waits until the heartbeat loop has published at least `count` `.ping`
