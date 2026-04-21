@@ -20,38 +20,39 @@ Event delivery for socket tasks flows through the shared event hub. Tune bufferi
 
 ### Measuring heartbeat RTT
 
-Every ping emission carries a ``WebSocketPingContext``. Pair its ``WebSocketPingContext/dispatchedAt`` with a ``ContinuousClock`` reading at pong receipt to compute round-trip time without client-side bookkeeping.
+As of 4.3, every `.pong(_:)` event carries a ``WebSocketPongContext`` with
+the library-computed `roundTrip: Duration`, so there is no need to thread a
+timestamp through your event handler.
 
 ```swift
-var pendingPingAt: ContinuousClock.Instant?
 for await event in await manager.events(for: task) {
     switch event {
-    case .ping(let context):
-        pendingPingAt = context.dispatchedAt
-    case .pong:
-        if let started = pendingPingAt {
-            metrics.recordPingRTT(ContinuousClock.now - started)
-            pendingPingAt = nil
-        }
+    case .pong(let context):
+        metrics.recordPingRTT(context.roundTrip)
     case .error(.pingTimeout):
         metrics.recordPingTimeout()
-        pendingPingAt = nil
     default:
         break
     }
 }
 ```
 
-`ContinuousClock.now - started` produces `Duration`. Pass that value through
-if your metrics layer already stores `Duration`, or convert to seconds first
-when you still expose a `TimeInterval`-based API:
+``WebSocketPongContext/attemptNumber`` matches the
+``WebSocketPingContext/attemptNumber`` of the paired ping, so consumers that
+want to correlate ping → pong explicitly can still do so:
 
 ```swift
-let elapsed = ContinuousClock.now - started
-let seconds = Double(elapsed.components.seconds) +
-    Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000
-metrics.recordPingRTT(seconds)
+case .ping(let context):
+    openSpans[context.attemptNumber] = context.dispatchedAt
+case .pong(let context):
+    openSpans[context.attemptNumber] = nil
+    metrics.recordPingRTT(context.roundTrip)
 ```
+
+`roundTrip` is measured as `ContinuousClock.now - pingContext.dispatchedAt`
+at `.pong(_:)` publish time — it reflects the library-observed span from
+`.ping(_:)` emission to `.pong(_:)` emission (excluding consumer-side
+scheduler jitter).
 
 ## Topics
 
@@ -66,6 +67,7 @@ metrics.recordPingRTT(seconds)
 
 - ``WebSocketEvent``
 - ``WebSocketPingContext``
+- ``WebSocketPongContext``
 - ``WebSocketCloseCode``
 - ``WebSocketCloseDisposition``
 

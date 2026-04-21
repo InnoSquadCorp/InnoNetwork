@@ -24,6 +24,7 @@ This document defines the compatibility contract for the public OSS release of I
 - `WebSocketCloseCode`
 - `WebSocketCloseDisposition`
 - `WebSocketPingContext`
+- `WebSocketPongContext`
 
 ## Provisionally Stable
 

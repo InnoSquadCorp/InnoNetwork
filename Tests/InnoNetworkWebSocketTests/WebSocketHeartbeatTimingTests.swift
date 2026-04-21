@@ -157,6 +157,41 @@ struct WebSocketHeartbeatTimingTests {
         await harness.stopHeartbeat()
     }
 
+    @Test("Pong context matches the paired ping's attemptNumber and carries a positive roundTrip")
+    func pongContextMatchesPingAndCarriesPositiveRoundTrip() async throws {
+        let harness = HeartbeatTestHarness(
+            heartbeatInterval: 5,
+            pongTimeout: 1,
+            maxMissedPongs: 3
+        )
+        await harness.startHeartbeat()
+        #expect(await harness.clock.waitForWaiters(count: 1))
+
+        let baseline = harness.clock.enqueuedCount
+        harness.clock.advance(by: .seconds(5))
+        #expect(await harness.waitForPingEventCount(atLeast: 1))
+        #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 1))
+
+        harness.stubTask.completePendingPong(with: nil)
+        #expect(await harness.waitForPongCount(atLeast: 1))
+
+        let pings = harness.defaultRecorder.pingContexts
+        let pongs = harness.defaultRecorder.pongContexts
+        #expect(pings.count == 1)
+        #expect(pongs.count == 1)
+
+        if let ping = pings.first, let pong = pongs.first {
+            #expect(ping.attemptNumber == pong.attemptNumber)
+            // The library computes roundTrip as
+            // `ContinuousClock.now(at pong publish) - ping.dispatchedAt`,
+            // so the value must be >= 0. Upper bound is intentionally
+            // loose (real wall-clock time elapses during test setup).
+            #expect(pong.roundTrip >= .zero)
+        }
+
+        await harness.stopHeartbeat()
+    }
+
     @Test("Automatic reconnect resets the next heartbeat ping attempt number to 1")
     func automaticReconnectResetsPingAttemptNumber() async throws {
         let harness = StubMessagingHarness(

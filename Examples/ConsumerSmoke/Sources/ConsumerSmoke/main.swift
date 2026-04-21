@@ -107,8 +107,12 @@ _ = WebSocketConfiguration.safeDefaults()
     case .ping(let context):
         _ = context.attemptNumber
         _ = context.dispatchedAt
-    case .pong:
-        break
+    case .pong(let context):
+        // 4.3: `.pong` now carries a `WebSocketPongContext` with the
+        // library-computed round-trip duration so consumers do not need
+        // to maintain their own ping/pong timestamp bookkeeping.
+        _ = context.attemptNumber
+        _ = context.roundTrip
     case .error(let wsError):
         _ = wsError
     @unknown default:

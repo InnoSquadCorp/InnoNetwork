@@ -94,6 +94,7 @@ expected_stable=(
 '`WebSocketCloseCode`'
 '`WebSocketCloseDisposition`'
 '`WebSocketPingContext`'
+'`WebSocketPongContext`'
 )
 
 documented_stable=()
@@ -273,6 +274,10 @@ for symbol in "${expected_stable[@]}"; do
     '`WebSocketCloseDisposition`')
       pattern='public enum WebSocketCloseDisposition'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseDisposition.swift"
+      ;;
+    '`WebSocketPongContext`')
+      pattern='public struct WebSocketPongContext'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
       ;;
     '`WebSocketPingContext`')
       pattern='public struct WebSocketPingContext'

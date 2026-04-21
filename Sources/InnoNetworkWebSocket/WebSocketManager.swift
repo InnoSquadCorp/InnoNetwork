@@ -22,7 +22,18 @@ public enum WebSocketEvent: Sendable {
     /// consumers compute per-cycle RTT without maintaining their own
     /// bookkeeping.
     case ping(WebSocketPingContext)
-    case pong
+    /// Emitted when a ping frame's paired pong is received.
+    ///
+    /// The associated ``WebSocketPongContext`` carries the matching
+    /// ``WebSocketPingContext/attemptNumber`` (so consumers can correlate
+    /// ping/pong pairs) plus the library-computed `roundTrip: Duration`.
+    /// `roundTrip` is measured as `ContinuousClock.now - pingContext.dispatchedAt`
+    /// at event-publish time, i.e. it reflects the elapsed time between the
+    /// `.ping(_:)` emission and the `.pong(_:)` emission (not the raw frame
+    /// transmission). For most observability use cases this is what you
+    /// want; it includes library-internal dispatch but excludes scheduler
+    /// jitter on the consumer side.
+    case pong(WebSocketPongContext)
     case error(WebSocketError)
 }
 
@@ -54,6 +65,37 @@ public struct WebSocketPingContext: Sendable, Hashable {
     package init(attemptNumber: Int, dispatchedAt: ContinuousClock.Instant) {
         self.attemptNumber = attemptNumber
         self.dispatchedAt = dispatchedAt
+    }
+}
+
+
+/// Metadata that accompanies every ``WebSocketEvent/pong(_:)`` emission.
+///
+/// - ``attemptNumber`` matches the ``WebSocketPingContext/attemptNumber``
+///   of the paired ping, so consumers can correlate ping/pong pairs
+///   without bookkeeping a timestamp map keyed on the ping dispatch time.
+/// - ``roundTrip`` is the library-computed duration between the
+///   `.ping(_:)` event emission and the `.pong(_:)` event emission. It is
+///   measured as `ContinuousClock.now - pingContext.dispatchedAt` at
+///   publish time, so it includes the library's own ping-send +
+///   pong-handler dispatch but excludes consumer-side scheduler jitter.
+///
+/// This struct is designed to gain fields in minor releases without
+/// breaking existing consumers — the public initializer is package-scoped
+/// so the library controls construction.
+public struct WebSocketPongContext: Sendable, Hashable {
+    /// Sequence number of the paired ping attempt. Matches the
+    /// `.ping(_:)` event's ``WebSocketPingContext/attemptNumber``.
+    public let attemptNumber: Int
+
+    /// Elapsed time between the paired `.ping(_:)` dispatch and this
+    /// `.pong(_:)` emission, computed as
+    /// `ContinuousClock.now - pingContext.dispatchedAt`.
+    public let roundTrip: Duration
+
+    package init(attemptNumber: Int, roundTrip: Duration) {
+        self.attemptNumber = attemptNumber
+        self.roundTrip = roundTrip
     }
 }
 
@@ -314,7 +356,11 @@ public final class WebSocketManager: NSObject, Sendable {
         await eventHub.publish(.ping(context), for: task.id)
         do {
             try await heartbeatCoordinator.sendPing(urlTask, timeout: configuration.pongTimeout)
-            await eventHub.publish(.pong, for: task.id)
+            let pongContext = WebSocketPongContext(
+                attemptNumber: context.attemptNumber,
+                roundTrip: ContinuousClock.now - context.dispatchedAt
+            )
+            await eventHub.publish(.pong(pongContext), for: task.id)
         } catch {
             let wsError = mapWebSocketError(error)
             await eventHub.publish(.error(wsError), for: task.id)
