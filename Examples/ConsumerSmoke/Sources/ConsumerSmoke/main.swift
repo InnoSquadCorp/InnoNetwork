@@ -106,8 +106,13 @@ _ = WebSocketConfiguration.safeDefaults()
     case .ping(let context):
         _ = context.attemptNumber
         _ = context.dispatchedAt
-    case .pong:
-        break
+    case .pong(let context):
+        // 5.0: `.pong` now carries the same `WebSocketPongContext` that
+        // `setOnPongHandler(_:)` delivers. Bind the payload when you want
+        // the RTT metadata; non-binding patterns like `case .pong:` still
+        // compile when the payload is not needed.
+        _ = context.attemptNumber
+        _ = context.roundTrip
     case .error(let wsError):
         _ = wsError
     @unknown default:

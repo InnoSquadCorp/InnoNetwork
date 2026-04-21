@@ -1,0 +1,51 @@
+name: TSAN Nightly
+
+# ThreadSanitizer catches data races that strict-concurrency static analysis
+# can miss — most commonly inside third-party C/Obj-C code (URLSession
+# internals) and across actor boundaries that the compiler treats as safe
+# because of manual `@unchecked Sendable` or legacy bridging.
+#
+# The full test suite is expensive under TSAN (typically 5–10× slower), so
+# we run it nightly rather than per-PR. Manual trigger stays available via
+# `workflow_dispatch` for ad-hoc verification of concurrency-heavy changes.
+
+on:
+  schedule:
+    # 18:00 UTC ≈ 03:00 KST — cheap-runner hours.
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: tsan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tsan:
+    name: Tests under ThreadSanitizer
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Run tests under ThreadSanitizer
+        env:
+          # Surface warnings as hard failures so flaky races are caught.
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: |
+          set -eo pipefail
+          xcrun swift test \
+            -Xswiftc -sanitize=thread \
+            --parallel

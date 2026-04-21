@@ -69,6 +69,14 @@ default:
 }
 ```
 
+> **Forward pointer (5.0).** `WebSocketEvent.pong` gains a
+> `WebSocketPongContext` payload in 5.0 — the same value that
+> `setOnPongHandler(_:)` already delivers in 4.3. Pattern matches like
+> `case .pong:` remain valid; code that constructs or forwards `.pong`
+> as a value, or binds the payload to consume RTT metadata, must account
+> for `WebSocketPongContext`. See
+> [`MIGRATION_v5.md`](MIGRATION_v5.md) for the full diff.
+
 ---
 
 ## 2. Opt-in exponential backoff for Download retries

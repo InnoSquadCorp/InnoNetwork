@@ -41,6 +41,19 @@ package final class WebSocketEventRecorder: Sendable {
         }
     }
 
+    /// All observed `.pong` contexts in order. Tests pair this with
+    /// ``pingContexts`` or with a harness-captured `setOnPongHandler`
+    /// snapshot to assert that the event-stream and callback paths
+    /// deliver identical `WebSocketPongContext` values.
+    package var pongContexts: [WebSocketPongContext] {
+        events.withLock { list in
+            list.compactMap { event in
+                if case .pong(let context) = event { return context }
+                return nil
+            }
+        }
+    }
+
     /// Count of `.ping` events observed since the recorder started listening.
     /// Paired with `pongCount` so tests can assert the `.ping → .pong` cadence
     /// emitted by the heartbeat loop / public `ping(_:)`.
