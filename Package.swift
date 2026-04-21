@@ -86,6 +86,15 @@ let package = Package(
             path: "SmokeTests/InnoNetworkDocSmoke",
             swiftSettings: strictSettings
         ),
+        .executableTarget(
+            name: "InnoNetworkDownloadSmoke",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkDownload",
+            ],
+            path: "SmokeTests/InnoNetworkDownloadSmoke",
+            swiftSettings: strictSettings
+        ),
         .testTarget(
             name: "InnoNetworkTests",
             dependencies: ["InnoNetwork", "InnoNetworkTestSupport"],
