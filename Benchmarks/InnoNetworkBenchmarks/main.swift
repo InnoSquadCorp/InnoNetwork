@@ -247,6 +247,12 @@ private enum InnoNetworkBenchmarks {
         let eventIterations = options.quick ? 400 : 4_000
         let persistenceIterations = options.quick ? 300 : 3_000
         let reconnectIterations = 20_000
+        // The guarded websocket microbenchmarks were finishing in just a few
+        // milliseconds in `--quick` mode, which made CI regressions overly
+        // sensitive to runner scheduling noise. Keep the coarse smoke gate fast,
+        // but run these two long enough that a brief preemption does not look
+        // like a >50% regression.
+        let websocketGuardIterations = options.quick ? 500_000 : 2_000_000
 
         results.append(try await measure(name: "query-encoder-small", group: "encoding", iterations: encoderIterations) {
             let encoder = URLQueryEncoder(keyEncodingStrategy: URLQueryKeyEncodingStrategy.convertToSnakeCase)
@@ -271,8 +277,8 @@ private enum InnoNetworkBenchmarks {
         results.append(try await benchmarkPersistenceReplay(iterations: persistenceIterations))
         results.append(try await benchmarkPersistenceCompaction(iterations: max(1_050, persistenceIterations)))
         results.append(try await benchmarkReconnectDecision(iterations: reconnectIterations))
-        results.append(try await benchmarkCloseDispositionClassify(iterations: reconnectIterations))
-        results.append(try await benchmarkPingContextAlloc(iterations: reconnectIterations))
+        results.append(try await benchmarkCloseDispositionClassify(iterations: websocketGuardIterations))
+        results.append(try await benchmarkPingContextAlloc(iterations: websocketGuardIterations))
 
         return results
     }
