@@ -16,6 +16,8 @@ let logger = LoggerMetricsReporter()
 let signpost = SignPostMetricsReporter()
 let composite = CompositeMetricsReporter([logger, signpost])
 
+// Compile-time wiring sample only; real code passes this into a manager.
+// let webSocketManager = WebSocketManager(configuration: webSocketConfig)
 let webSocketConfig = WebSocketConfiguration.advanced {
     $0.eventDeliveryPolicy = EventDeliveryPolicy(
         maxBufferedEventsPerPartition: 1024,
@@ -25,6 +27,8 @@ let webSocketConfig = WebSocketConfiguration.advanced {
     $0.eventMetricsReporter = composite
 }
 
+// Compile-time wiring sample only; real code passes this into a manager.
+// let downloadManager = try DownloadManager(configuration: downloadConfig)
 let downloadConfig = DownloadConfiguration.advanced {
     $0.eventMetricsReporter = logger
 }

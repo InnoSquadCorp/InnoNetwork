@@ -58,8 +58,8 @@ guard let urlString else {
     exit(2)
 }
 
-guard let url = URL(string: urlString), url.scheme?.hasPrefix("http") == true else {
-    FileHandle.standardError.write(Data("Invalid URL: \(urlString)\n".utf8))
+guard let url = URL(string: urlString), url.scheme?.lowercased() == "https" else {
+    FileHandle.standardError.write(Data("Invalid HTTPS URL: \(urlString)\n".utf8))
     exit(1)
 }
 

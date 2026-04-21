@@ -23,5 +23,6 @@ let package = Package(
             ],
             path: "Sources/DownloadManager"
         )
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

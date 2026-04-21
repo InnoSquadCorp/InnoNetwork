@@ -9,7 +9,7 @@ Connection-oriented realtime flows with reconnect-aware lifecycle handling, hear
 Use this module when you need:
 
 - reconnect-aware connection management
-- heartbeat and pong timeout handling, surfaced as paired ``WebSocketEvent/ping(_:)``/``WebSocketEvent/pong`` events plus optional pong RTT callbacks
+- heartbeat and pong timeout handling, surfaced as paired ``WebSocketEvent/ping(_:)``/``WebSocketEvent/pong(_:)`` events plus optional pong RTT callbacks
 - observable close classification via ``WebSocketTask/closeDisposition``
 - listener retention across reconnect attempts
 - manual disconnect semantics that stay visible to the caller

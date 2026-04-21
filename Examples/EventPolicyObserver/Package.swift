@@ -23,5 +23,6 @@ let package = Package(
                 .product(name: "InnoNetworkWebSocket", package: "InnoNetwork"),
             ]
         )
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

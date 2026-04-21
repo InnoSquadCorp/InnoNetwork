@@ -25,7 +25,11 @@ let destinationURL: URL = {
     return temp.appendingPathComponent("sample-\(UUID().uuidString).bin")
 }()
 
-guard let url = URL(string: rawURLString), url.scheme?.hasPrefix("http") == true else {
+guard
+    let url = URL(string: rawURLString),
+    let scheme = url.scheme?.lowercased(),
+    scheme == "http" || scheme == "https"
+else {
     FileHandle.standardError.write(Data("Usage: DownloadManagerSample [https://host/path] [destination.bin]\n".utf8))
     exit(2)
 }

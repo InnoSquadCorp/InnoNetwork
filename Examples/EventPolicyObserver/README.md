@@ -62,7 +62,7 @@ public struct SwiftMetricsBridge: EventPipelineMetricsReporting {
             dropCounter.increment(by: state.droppedEventCount)
         case .consumerState(let state) where state.droppedEventCount > 0:
             dropCounter.increment(by: state.droppedEventCount)
-        case .aggregateSnapshot, .consumerDeliveryLatency, .partitionState, .consumerState:
+        case .aggregateSnapshot, .partitionState, .consumerState:
             break
         }
     }

@@ -25,7 +25,7 @@ package final class WebSocketEventRecorder: Sendable {
     package var pongCount: Int {
         events.withLock { list in
             list.reduce(0) { acc, event in
-                if case .pong(_) = event { return acc + 1 }
+                if case .pong = event { return acc + 1 }
                 return acc
             }
         }

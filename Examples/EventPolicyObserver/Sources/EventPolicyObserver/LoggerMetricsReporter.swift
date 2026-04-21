@@ -22,12 +22,15 @@ import InnoNetwork
 public struct LoggerMetricsReporter: EventPipelineMetricsReporting {
 
     private let logger: Logger
+    private let slowDeliveryThreshold: TimeInterval
 
     public init(
         subsystem: String = "com.example.event-policy",
-        category: String = "metrics"
+        category: String = "metrics",
+        slowDeliveryThreshold: TimeInterval = 0.25
     ) {
         self.logger = Logger(subsystem: subsystem, category: category)
+        self.slowDeliveryThreshold = slowDeliveryThreshold
     }
 
     public func report(_ metric: EventPipelineMetric) {
@@ -47,7 +50,7 @@ public struct LoggerMetricsReporter: EventPipelineMetricsReporting {
         case .consumerDeliveryLatency(let latency):
             // Only log noticeably slow deliveries; routine latency rows are
             // too chatty for a default reporter.
-            if latency.latency >= 0.25 {
+            if latency.latency >= slowDeliveryThreshold {
                 logger.notice(
                     "slow delivery \(latency.partitionID, privacy: .public)/\(latency.consumerID, privacy: .public) latency=\(latency.latency)s"
                 )

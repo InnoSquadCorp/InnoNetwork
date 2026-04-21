@@ -143,10 +143,10 @@ let eventTask = Task {
             print("← \(text)")
         case .ping(let context):
             print("→ ping attempt=\(context.attemptNumber)")
-        case .pong(let context):
-            // Event-stream path — duplicates the callback above for
-            // demonstration. In production code you would pick one surface.
-            _ = context
+        case .pong:
+            // RTT logging lives in `setOnPongHandler(_:)` above; keep the
+            // event-stream branch non-binding to show payload-agnostic matching.
+            break
         case .error(let wsError):
             print("⚠︎ event-stream error: \(wsError)")
             if await task.state == .failed {
