@@ -21,6 +21,7 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 ### Essentials
 
 - <doc:GettingStarted>
+- <doc:GeneratedClientRecipe>
 - ``DefaultNetworkClient``
 - ``NetworkClient``
 - ``LowLevelNetworkClient``

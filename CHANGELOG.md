@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on Keep a Changelog and the project follows Semantic Versioning for the public 4.x line.
+The format is based on Keep a Changelog and the project follows Semantic Versioning for the public 5.x line.
 
 ## [Unreleased]
 
@@ -231,7 +231,7 @@ diff.
 ### Changed
 
 - `DefaultNetworkClient.request(_:)` and `DefaultNetworkClient.upload(_:)` now delegate through the same public low-level execution path used by `perform`
-- API stability policy now treats `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`, `SingleRequestExecutable`, and `RequestPayload` as provisionally stable extension points for the `3.x` line
+- API stability policy now treats `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`, `SingleRequestExecutable`, and `RequestPayload` as stable extension points for higher-level integrations
 
 ### Fixed
 
