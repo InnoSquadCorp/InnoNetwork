@@ -178,6 +178,258 @@ struct EventHubTests {
             return state.partitionID == "task-overflow" ? state : nil
         }
         #expect(consumerMetrics.contains(where: { $0.droppedEventCount > 0 }))
+        #expect(consumerMetrics.allSatisfy { !$0.consumerID.hasPrefix("stream-") })
+    }
+
+    @Test("TaskEventHub reports AsyncStream overflow metrics and aggregate snapshots")
+    func taskEventHubReportsStreamOverflowMetrics() async throws {
+        let recorder = EventPipelineMetricRecorder()
+        let hub = TaskEventHub<Int>(
+            policy: EventDeliveryPolicy(
+                maxBufferedEventsPerPartition: 8,
+                maxBufferedEventsPerConsumer: 1,
+                overflowPolicy: .dropOldest
+            ),
+            metricsReporter: recorder,
+            metricsSnapshotInterval: .milliseconds(50)
+        )
+        let stream = await hub.stream(for: "stream-overflow")
+        var iterator = stream.makeAsyncIterator()
+
+        await hub.publish(1, for: "stream-overflow")
+        await hub.publish(2, for: "stream-overflow")
+        await hub.publish(3, for: "stream-overflow")
+
+        let consumerMetrics = try await waitForConsumerMetrics(
+            recorder: recorder,
+            partitionID: "stream-overflow",
+            minimumCount: 3,
+            minimumDroppedEventCount: 2
+        )
+        let streamMetrics = consumerMetrics.filter { $0.consumerID.hasPrefix("stream-") }
+        #expect(!streamMetrics.isEmpty)
+        #expect(Set(streamMetrics.map(\.droppedEventCount)).isSuperset(of: [1, 2]))
+        #expect(streamMetrics.contains(where: { $0.queueDepth == 1 }))
+
+        let snapshots = try await waitForAggregateSnapshots(
+            recorder: recorder,
+            hubKind: .genericTask,
+            minimumCount: 1
+        )
+        let hasExpectedOverflowSnapshot = snapshots.contains { snapshot in
+            snapshot.totalDroppedEventCount >= 2 &&
+            snapshot.overflowEventCount >= 2 &&
+            snapshot.totalDroppedMetricCount == 0 &&
+            snapshot.metricsOverflowCount == 0
+        }
+        #expect(hasExpectedOverflowSnapshot)
+
+        let bufferedValue = try #require(await iterator.next())
+        #expect(bufferedValue == 3)
+
+        await hub.finish(taskID: "stream-overflow")
+    }
+
+    @Test("TaskEventHub AsyncStream buffering honors the per-consumer cap")
+    func taskEventHubStreamUsesPerConsumerBufferCap() async throws {
+        let recorder = EventPipelineMetricRecorder()
+        let hub = TaskEventHub<Int>(
+            policy: EventDeliveryPolicy(
+                maxBufferedEventsPerPartition: 4,
+                maxBufferedEventsPerConsumer: 1,
+                overflowPolicy: .dropOldest
+            ),
+            metricsReporter: recorder
+        )
+        let stream = await hub.stream(for: "stream-cap")
+        var iterator = stream.makeAsyncIterator()
+
+        await hub.publish(1, for: "stream-cap")
+        await hub.publish(2, for: "stream-cap")
+        await hub.publish(3, for: "stream-cap")
+
+        let consumerMetrics = try await waitForConsumerMetrics(
+            recorder: recorder,
+            partitionID: "stream-cap",
+            minimumCount: 3,
+            minimumDroppedEventCount: 2
+        )
+        let streamMetrics = consumerMetrics.filter { $0.consumerID.hasPrefix("stream-") }
+        #expect(streamMetrics.contains(where: { $0.queueDepth == 1 }))
+
+        let bufferedValue = try #require(await iterator.next())
+        #expect(bufferedValue == 3)
+
+        await hub.finish(taskID: "stream-cap")
+    }
+
+    @Test("TaskEventHub reconciles AsyncStream consumer metrics between publishes")
+    func taskEventHubReconcilesStreamConsumerMetrics() async throws {
+        let recorder = EventPipelineMetricRecorder()
+        let hub = TaskEventHub<Int>(
+            policy: EventDeliveryPolicy(
+                maxBufferedEventsPerPartition: 8,
+                maxBufferedEventsPerConsumer: 2,
+                overflowPolicy: .dropOldest
+            ),
+            metricsReporter: recorder,
+            metricsSnapshotInterval: .milliseconds(100)
+        )
+        let stream = await hub.stream(for: "stream-reconcile")
+        _ = stream
+
+        await hub.publish(1, for: "stream-reconcile")
+        await hub.publish(2, for: "stream-reconcile")
+
+        let initialMetrics = try await waitForConsumerMetrics(
+            recorder: recorder,
+            partitionID: "stream-reconcile",
+            minimumCount: 1
+        )
+        let initialMetric = try #require(
+            initialMetrics.last(where: { $0.consumerID.hasPrefix("stream-") && $0.queueDepth >= 1 })
+        )
+        let initialOldestAge = try #require(initialMetric.oldestQueuedEventAge)
+
+        try await Task.sleep(for: .milliseconds(1_200))
+
+        let reconciledBaselineMetrics = try await waitForConsumerMetrics(
+            recorder: recorder,
+            partitionID: "stream-reconcile",
+            minimumCount: 2
+        )
+        let reconciledBaselineMetric = try #require(
+            reconciledBaselineMetrics.last(where: { $0.consumerID == initialMetric.consumerID && $0.queueDepth == 2 })
+        )
+        let reconciledBaselineOldestAge = try #require(reconciledBaselineMetric.oldestQueuedEventAge)
+        #expect(reconciledBaselineOldestAge > initialOldestAge)
+
+        try await Task.sleep(for: .milliseconds(1_200))
+
+        let latestMetrics = try await waitForConsumerMetrics(
+            recorder: recorder,
+            partitionID: "stream-reconcile",
+            minimumCount: 3
+        )
+        let latestMetric = try #require(
+            latestMetrics.last(where: { $0.consumerID == initialMetric.consumerID })
+        )
+        let latestOldestAge = try #require(latestMetric.oldestQueuedEventAge)
+        #expect(latestMetric.queueDepth == reconciledBaselineMetric.queueDepth)
+        #expect(latestMetric.droppedEventCount == reconciledBaselineMetric.droppedEventCount)
+        #expect(latestOldestAge > reconciledBaselineOldestAge)
+
+        let snapshots = try await waitForAggregateSnapshots(
+            recorder: recorder,
+            hubKind: .genericTask,
+            minimumCount: 2
+        )
+        #expect(snapshots.contains(where: {
+            $0.activeConsumerCount >= 1 && $0.maxQueueDepth >= 2
+        }))
+
+        await hub.finish(taskID: "stream-reconcile")
+    }
+
+    @Test("TaskEventHub stops idle stream reconciliation and restarts on a new stream")
+    func taskEventHubStopsAndRestartsStreamReconciliation() async throws {
+        let recorder = EventPipelineMetricRecorder()
+        let hub = TaskEventHub<Int>(
+            metricsReporter: recorder,
+            metricsSnapshotInterval: .milliseconds(100)
+        )
+
+        let firstConsumerID: String
+        do {
+            let firstStream = await hub.stream(for: "stream-lifecycle")
+            let firstConsumerTask = Task {
+                var iterator = firstStream.makeAsyncIterator()
+                while await iterator.next() != nil {}
+            }
+
+            let firstMetrics = try await waitForConsumerMetrics(
+                recorder: recorder,
+                partitionID: "stream-lifecycle",
+                minimumCount: 1
+            )
+            firstConsumerID = try #require(firstMetrics.last?.consumerID)
+
+            firstConsumerTask.cancel()
+            _ = await firstConsumerTask.result
+        }
+
+        try await Task.sleep(for: .milliseconds(250))
+
+        let metricsAfterShutdown = recorder.snapshot().compactMap { metric -> EventPipelineConsumerStateMetric? in
+            guard case .consumerState(let state) = metric else { return nil }
+            return state.partitionID == "stream-lifecycle" ? state : nil
+        }
+        let idleBaselineCount = metricsAfterShutdown.count
+
+        try await Task.sleep(for: .milliseconds(250))
+
+        let metricsWhileIdle = recorder.snapshot().compactMap { metric -> EventPipelineConsumerStateMetric? in
+            guard case .consumerState(let state) = metric else { return nil }
+            return state.partitionID == "stream-lifecycle" ? state : nil
+        }
+        #expect(metricsWhileIdle.count == idleBaselineCount)
+
+        do {
+            let secondStream = await hub.stream(for: "stream-lifecycle")
+            let secondConsumerTask = Task {
+                var iterator = secondStream.makeAsyncIterator()
+                while await iterator.next() != nil {}
+            }
+
+            let resumedMetrics = try await waitForConsumerMetrics(
+                recorder: recorder,
+                partitionID: "stream-lifecycle",
+                minimumCount: idleBaselineCount + 1
+            )
+            #expect(
+                resumedMetrics.contains(where: {
+                    $0.consumerID != firstConsumerID && $0.consumerID.hasPrefix("stream-")
+                })
+            )
+
+            secondConsumerTask.cancel()
+            _ = await secondConsumerTask.result
+        }
+
+        await hub.finish(taskID: "stream-lifecycle")
+    }
+
+    @Test("TaskEventHub listener consumer metrics remain listener-scoped")
+    func taskEventHubListenerMetricsRemainListenerScoped() async throws {
+        let recorder = EventPipelineMetricRecorder()
+        let hub = TaskEventHub<Int>(
+            policy: EventDeliveryPolicy(
+                maxBufferedEventsPerPartition: 8,
+                maxBufferedEventsPerConsumer: 1,
+                overflowPolicy: .dropOldest
+            ),
+            metricsReporter: recorder
+        )
+
+        let listenerID = await hub.addListener(taskID: "listener-regression") { value in
+            try? await Task.sleep(for: .milliseconds(100))
+            _ = value
+        }
+
+        await hub.publish(1, for: "listener-regression")
+        await hub.publish(2, for: "listener-regression")
+        await hub.publish(3, for: "listener-regression")
+
+        let consumerMetrics = try await waitForConsumerMetrics(
+            recorder: recorder,
+            partitionID: "listener-regression",
+            minimumCount: 2,
+            minimumDroppedEventCount: 1
+        )
+        #expect(consumerMetrics.contains(where: {
+            $0.consumerID == listenerID.uuidString && $0.droppedEventCount > 0
+        }))
+        #expect(consumerMetrics.allSatisfy { !$0.consumerID.hasPrefix("stream-") })
     }
 
     @Test("TaskEventHub reports consumer latency metrics")
@@ -250,6 +502,26 @@ struct EventHubTests {
         #expect(!snapshots.isEmpty)
         #expect(snapshots.contains(where: { $0.activePartitionCount >= 1 }))
         #expect(snapshots.contains(where: { $0.activeConsumerCount >= 1 }))
+        #expect(snapshots.contains(where: {
+            $0.totalDroppedMetricCount == 0 && $0.metricsOverflowCount == 0
+        }))
+    }
+
+    @Test("Aggregate snapshot metric keeps the legacy initializer source-compatible")
+    func aggregateSnapshotMetricKeepsLegacyInitializerSourceCompatibility() {
+        let snapshot = EventPipelineAggregateSnapshotMetric(
+            hubKind: .genericTask,
+            activePartitionCount: 2,
+            activeConsumerCount: 3,
+            totalDroppedEventCount: 5,
+            maxQueueDepth: 7,
+            p50DeliveryLatency: 0.1,
+            p95DeliveryLatency: 0.2,
+            overflowEventCount: 11
+        )
+
+        #expect(snapshot.totalDroppedMetricCount == 0)
+        #expect(snapshot.metricsOverflowCount == 0)
     }
 
     @Test("Slow metrics reporters do not block listener delivery")
@@ -269,6 +541,64 @@ struct EventHubTests {
         await hub.publish(1, for: "metrics-fast")
         let values = try await waitForValues(store: store, expectedCount: 1)
         #expect(values == [1])
+    }
+
+    @Test("Metrics proxy carries reporter-side overflow across snapshot windows without polluting event overflow counts")
+    func metricsProxyTracksReporterSideOverflow() async throws {
+        let recorder = EventPipelineMetricRecorder()
+        let slowReporter = SlowEventPipelineMetricReporter(
+            downstream: recorder,
+            delayMicroseconds: 80_000
+        )
+        let proxy = EventPipelineMetricsReporterProxy(
+            hubKind: .genericTask,
+            reporter: slowReporter,
+            snapshotInterval: .milliseconds(40),
+            queueCapacity: 8
+        )
+        defer { proxy.shutdown() }
+
+        let start = Date()
+        let floodTask = Task {
+            let deadline = Date().addingTimeInterval(0.35)
+            var index = 0
+            while Date() < deadline {
+                proxy.report(
+                    .consumerDeliveryLatency(
+                        EventPipelineConsumerDeliveryLatencyMetric(
+                            partitionID: "proxy-overflow",
+                            consumerID: "consumer-\(index)",
+                            latency: 0.5
+                        )
+                    )
+                )
+                index += 1
+            }
+        }
+        _ = await floodTask.result
+        let reportElapsed = Date().timeIntervalSince(start)
+        #expect(reportElapsed < 1.0)
+
+        let snapshots = try await waitForAggregateSnapshots(
+            recorder: recorder,
+            hubKind: .genericTask,
+            minimumCount: 3
+        )
+        #expect(zip(snapshots, snapshots.dropFirst()).allSatisfy {
+            $1.totalDroppedMetricCount >= $0.totalDroppedMetricCount
+        })
+        #expect(snapshots.contains(where: { $0.totalDroppedMetricCount > 0 }))
+        #expect(snapshots.dropFirst().contains(where: { $0.metricsOverflowCount > 0 }))
+        #expect(snapshots.allSatisfy {
+            $0.totalDroppedEventCount == 0 && $0.overflowEventCount == 0
+        })
+
+        let latencyMetrics = recorder.snapshot().compactMap { metric -> EventPipelineConsumerDeliveryLatencyMetric? in
+            guard case .consumerDeliveryLatency(let latency) = metric else { return nil }
+            return latency.partitionID == "proxy-overflow" ? latency : nil
+        }
+        #expect(!latencyMetrics.isEmpty)
+        #expect(latencyMetrics.count < 64)
     }
 
     @Test("Low-latency consumer metrics are sampled")
@@ -347,6 +677,30 @@ private func waitForLatencyMetrics(
     return recorder.snapshot().compactMap { metric -> EventPipelineConsumerDeliveryLatencyMetric? in
         guard case .consumerDeliveryLatency(let latency) = metric else { return nil }
         return latency.partitionID == partitionID ? latency : nil
+    }
+}
+
+private func waitForConsumerMetrics(
+    recorder: EventPipelineMetricRecorder,
+    partitionID: String,
+    minimumCount: Int,
+    minimumDroppedEventCount: Int = 0
+) async throws -> [EventPipelineConsumerStateMetric] {
+    for _ in 0..<50 {
+        let metrics = recorder.snapshot().compactMap { metric -> EventPipelineConsumerStateMetric? in
+            guard case .consumerState(let state) = metric else { return nil }
+            return state.partitionID == partitionID ? state : nil
+        }
+        let maxDroppedEventCount = metrics.map(\.droppedEventCount).max() ?? 0
+        if metrics.count >= minimumCount, maxDroppedEventCount >= minimumDroppedEventCount {
+            return metrics
+        }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+
+    return recorder.snapshot().compactMap { metric -> EventPipelineConsumerStateMetric? in
+        guard case .consumerState(let state) = metric else { return nil }
+        return state.partitionID == partitionID ? state : nil
     }
 }
 

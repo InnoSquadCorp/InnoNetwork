@@ -95,29 +95,35 @@ public struct EventPipelineAggregateSnapshotMetric: Sendable {
     public let activePartitionCount: Int
     public let activeConsumerCount: Int
     public let totalDroppedEventCount: Int
+    public let totalDroppedMetricCount: Int
     public let maxQueueDepth: Int
     public let p50DeliveryLatency: TimeInterval?
     public let p95DeliveryLatency: TimeInterval?
     public let overflowEventCount: Int
+    public let metricsOverflowCount: Int
 
     public init(
         hubKind: EventPipelineHubKind,
         activePartitionCount: Int,
         activeConsumerCount: Int,
         totalDroppedEventCount: Int,
+        totalDroppedMetricCount: Int = 0,
         maxQueueDepth: Int,
         p50DeliveryLatency: TimeInterval?,
         p95DeliveryLatency: TimeInterval?,
-        overflowEventCount: Int
+        overflowEventCount: Int,
+        metricsOverflowCount: Int = 0
     ) {
         self.hubKind = hubKind
         self.activePartitionCount = activePartitionCount
         self.activeConsumerCount = activeConsumerCount
         self.totalDroppedEventCount = totalDroppedEventCount
+        self.totalDroppedMetricCount = totalDroppedMetricCount
         self.maxQueueDepth = maxQueueDepth
         self.p50DeliveryLatency = p50DeliveryLatency
         self.p95DeliveryLatency = p95DeliveryLatency
         self.overflowEventCount = overflowEventCount
+        self.metricsOverflowCount = metricsOverflowCount
     }
 }
 
