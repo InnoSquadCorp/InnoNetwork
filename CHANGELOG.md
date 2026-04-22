@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on Keep a Changelog and the project follows Semantic Versioning for the public 5.x line.
+The format is based on Keep a Changelog and the project follows Semantic Versioning for the latest 5.x line.
 
 ## [Unreleased]
 

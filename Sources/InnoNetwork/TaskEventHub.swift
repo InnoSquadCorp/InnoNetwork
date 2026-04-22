@@ -49,6 +49,26 @@ package actor TaskEventHub<Event: Sendable> {
             queuedEventDates.first.map { Date.now.timeIntervalSince($0) }
         }
 
+        func makeMetric(partitionID: String) -> EventPipelineConsumerStateMetric {
+            EventPipelineConsumerStateMetric(
+                partitionID: partitionID,
+                consumerID: consumerID,
+                queueDepth: queueDepth,
+                droppedEventCount: droppedEventCount,
+                oldestQueuedEventAge: oldestQueuedEventAge
+            )
+        }
+
+        func makeTerminalMetric(partitionID: String) -> EventPipelineConsumerStateMetric {
+            EventPipelineConsumerStateMetric(
+                partitionID: partitionID,
+                consumerID: consumerID,
+                queueDepth: 0,
+                droppedEventCount: droppedEventCount,
+                oldestQueuedEventAge: nil
+            )
+        }
+
         private mutating func reconcileQueueDepth(actualDepth: Int) {
             while queuedEventDates.count > actualDepth {
                 _ = queuedEventDates.popFirst()
@@ -169,9 +189,15 @@ package actor TaskEventHub<Event: Sendable> {
 
     private func removeContinuation(taskID: String, continuationID: UUID) async {
         guard var partition = partitions[taskID] else { return }
-        partition.streamConsumers.removeValue(forKey: continuationID)
+        let removedConsumer = removeStreamConsumer(
+            continuationID: continuationID,
+            from: &partition
+        )
         partitions[taskID] = partition
-        updateStreamMetricsReconciliationTaskState()
+        if let removedConsumer {
+            await reportStreamConsumerRemoval(for: taskID, consumer: removedConsumer)
+            updateStreamMetricsReconciliationTaskState()
+        }
         await cleanupPartitionIfPossible(taskID: taskID)
     }
 
@@ -187,12 +213,18 @@ package actor TaskEventHub<Event: Sendable> {
     private func drain(taskID: String) async {
         while let pendingEvent = popNextEvent(taskID: taskID) {
             guard var partition = partitions[taskID] else { break }
+            var removedConsumers: [StreamConsumerState] = []
 
             for (consumerID, var streamConsumer) in partition.streamConsumers {
                 let result = streamConsumer.continuation.yield(pendingEvent.event)
                 switch result {
                 case .terminated:
-                    partition.streamConsumers.removeValue(forKey: consumerID)
+                    if let removedConsumer = removeStreamConsumer(
+                        continuationID: consumerID,
+                        from: &partition
+                    ) {
+                        removedConsumers.append(removedConsumer)
+                    }
                 default:
                     streamConsumer.recordYieldResult(
                         result,
@@ -205,7 +237,12 @@ package actor TaskEventHub<Event: Sendable> {
             }
 
             partitions[taskID] = partition
-            updateStreamMetricsReconciliationTaskState()
+            if !removedConsumers.isEmpty {
+                for removedConsumer in removedConsumers {
+                    await reportStreamConsumerRemoval(for: taskID, consumer: removedConsumer)
+                }
+                updateStreamMetricsReconciliationTaskState()
+            }
             let listeners = Array(partition.listeners.values)
             for listener in listeners {
                 await listener.enqueue(pendingEvent.event, enqueuedAt: pendingEvent.enqueuedAt)
@@ -237,6 +274,10 @@ package actor TaskEventHub<Event: Sendable> {
         guard partition.isClosed, !partition.isDraining, partition.queue.isEmpty else { return }
 
         partitions.removeValue(forKey: taskID)
+
+        for consumer in partition.streamConsumers.values {
+            await reportStreamConsumerRemoval(for: taskID, consumer: consumer)
+        }
         updateStreamMetricsReconciliationTaskState()
 
         for consumer in partition.streamConsumers.values {
@@ -262,17 +303,22 @@ package actor TaskEventHub<Event: Sendable> {
     }
 
     private func reportStreamConsumerMetric(for taskID: String, consumer: StreamConsumerState) {
-        metricsReporter?.report(
-            .consumerState(
-                EventPipelineConsumerStateMetric(
-                    partitionID: taskID,
-                    consumerID: consumer.consumerID,
-                    queueDepth: consumer.queueDepth,
-                    droppedEventCount: consumer.droppedEventCount,
-                    oldestQueuedEventAge: consumer.oldestQueuedEventAge
-                )
+        metricsReporter?.report(.consumerState(consumer.makeMetric(partitionID: taskID)))
+    }
+
+    private func reportStreamConsumerRemoval(for taskID: String, consumer: StreamConsumerState) async {
+        if let metricsProxy {
+            await metricsProxy.reportTerminalConsumerState(
+                consumer.makeTerminalMetric(partitionID: taskID)
             )
-        )
+        }
+    }
+
+    private func removeStreamConsumer(
+        continuationID: UUID,
+        from partition: inout PartitionState
+    ) -> StreamConsumerState? {
+        return partition.streamConsumers.removeValue(forKey: continuationID)
     }
 
     private func updateStreamMetricsReconciliationTaskState() {
@@ -310,8 +356,7 @@ package actor TaskEventHub<Event: Sendable> {
 
     private func reconcileStreamConsumerMetrics() {
         guard metricsReporter != nil, hasActiveStreamConsumers else {
-            streamMetricsReconciliationTask?.cancel()
-            streamMetricsReconciliationTask = nil
+            updateStreamMetricsReconciliationTaskState()
             return
         }
 

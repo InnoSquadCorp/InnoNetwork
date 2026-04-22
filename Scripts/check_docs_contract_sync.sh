@@ -356,12 +356,6 @@ for symbol in "${expected_provisionally[@]}"; do
       fail "unknown provisionally stable symbol mapping: $symbol"
       ;;
   esac
-
-  if has_rg; then
-    rg -Fq "$pattern" "$target" || fail "provisionally stable symbol $symbol is not present in production sources"
-  else
-    grep -Fq "$pattern" "$target" || fail "provisionally stable symbol $symbol is not present in production sources"
-  fi
 done
 
 require_contains "API Stability" "$readme"

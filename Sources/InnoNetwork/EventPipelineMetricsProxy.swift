@@ -7,6 +7,7 @@ package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMe
 
     private let inputContinuation: AsyncStream<EventPipelineMetric>.Continuation
     private let outputContinuation: AsyncStream<EventPipelineMetric>.Continuation
+    private let emitToOutput: @Sendable (EventPipelineMetric) -> AsyncStream<EventPipelineMetric>.Continuation.YieldResult
     private let aggregator: EventPipelineMetricsAggregator
     private let dropTracker: EventPipelineMetricsDropTracker
     private let ingestTask: Task<Void, Never>
@@ -77,6 +78,7 @@ package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMe
 
         self.inputContinuation = input.continuation
         self.outputContinuation = output.continuation
+        self.emitToOutput = emitToOutput
         self.aggregator = aggregator
         self.dropTracker = dropTracker
         self.ingestTask = ingestTask
@@ -92,6 +94,13 @@ package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMe
         let result = inputContinuation.yield(metric)
         if case .dropped = result {
             dropTracker.recordInputOverflow()
+        }
+    }
+
+    package func reportTerminalConsumerState(_ state: EventPipelineConsumerStateMetric) async {
+        let emittedMetrics = await aggregator.recordAndEvictTerminalConsumerState(state)
+        for emittedMetric in emittedMetrics {
+            _ = emitToOutput(emittedMetric)
         }
     }
 
@@ -157,6 +166,7 @@ private actor EventPipelineMetricsAggregator {
     private var consumerStates: [String: TimedValue<EventPipelineConsumerStateMetric>] = [:]
     private var lastPartitionStateEmissionAt: [String: Date] = [:]
     private var lastConsumerStateEmissionAt: [String: Date] = [:]
+    private var evictedConsumerKeys: [String: Date] = [:]
     private var latencyValues: [TimeInterval] = []
     private var lowLatencyEmissionCounter: UInt64 = 0
     private var totalDroppedEventCount = 0
@@ -186,6 +196,7 @@ private actor EventPipelineMetricsAggregator {
     ) -> EventPipelineAggregateSnapshotMetric {
         let activeWindow: TimeInterval = 60
 
+        pruneEvictedConsumerKeys(now: now, activeWindow: activeWindow)
         partitionStates = partitionStates.filter {
             now.timeIntervalSince($0.value.recordedAt) <= activeWindow
         }
@@ -210,6 +221,19 @@ private actor EventPipelineMetricsAggregator {
         )
         latencyValues.removeAll(keepingCapacity: true)
         return snapshot
+    }
+
+    func recordAndEvictTerminalConsumerState(
+        _ state: EventPipelineConsumerStateMetric,
+        now: Date = .now
+    ) -> [EventPipelineMetric] {
+        let key = consumerStateKey(partitionID: state.partitionID, consumerID: state.consumerID)
+        evictedConsumerKeys.removeValue(forKey: key)
+        let emittedMetrics = ingestConsumerState(state, now: now, forceEmit: true)
+        consumerStates.removeValue(forKey: key)
+        lastConsumerStateEmissionAt.removeValue(forKey: key)
+        evictedConsumerKeys[key] = now
+        return emittedMetrics
     }
 
     private func ingestPartitionState(
@@ -237,9 +261,13 @@ private actor EventPipelineMetricsAggregator {
 
     private func ingestConsumerState(
         _ state: EventPipelineConsumerStateMetric,
-        now: Date
+        now: Date,
+        forceEmit: Bool = false
     ) -> [EventPipelineMetric] {
         let key = consumerStateKey(partitionID: state.partitionID, consumerID: state.consumerID)
+        guard forceEmit || evictedConsumerKeys[key] == nil else {
+            return []
+        }
         let previousDropped = consumerStates[key]?.value.droppedEventCount ?? 0
         consumerStates[key] = TimedValue(value: state, recordedAt: now)
 
@@ -252,7 +280,7 @@ private actor EventPipelineMetricsAggregator {
         }
 
         let lastEmission = lastConsumerStateEmissionAt[key]
-        guard shouldEmitStateMetric(lastEmissionAt: lastEmission, now: now) else {
+        guard forceEmit || shouldEmitStateMetric(lastEmissionAt: lastEmission, now: now) else {
             return []
         }
         lastConsumerStateEmissionAt[key] = now
@@ -281,6 +309,12 @@ private actor EventPipelineMetricsAggregator {
 
     private func consumerStateKey(partitionID: String, consumerID: String) -> String {
         "\(partitionID)::\(consumerID)"
+    }
+
+    private func pruneEvictedConsumerKeys(now: Date, activeWindow: TimeInterval) {
+        evictedConsumerKeys = evictedConsumerKeys.filter {
+            now.timeIntervalSince($0.value) <= activeWindow
+        }
     }
 
     private func percentile(_ percentile: Double, values: [TimeInterval]) -> TimeInterval? {

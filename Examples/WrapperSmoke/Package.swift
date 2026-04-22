@@ -21,5 +21,6 @@ let package = Package(
                 .product(name: "InnoNetwork", package: "InnoNetwork"),
             ]
         )
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )
