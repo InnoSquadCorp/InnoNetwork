@@ -230,6 +230,54 @@ struct EventHubTests {
         await hub.finish(taskID: "stream-overflow")
     }
 
+    @Test("Aggregate event overflow count resets after each snapshot")
+    func aggregateEventOverflowCountResetsAfterSnapshot() async throws {
+        let recorder = EventPipelineMetricRecorder()
+        let hub = TaskEventHub<Int>(
+            policy: EventDeliveryPolicy(
+                maxBufferedEventsPerPartition: 8,
+                maxBufferedEventsPerConsumer: 1,
+                overflowPolicy: .dropOldest
+            ),
+            metricsReporter: recorder,
+            metricsSnapshotInterval: .milliseconds(30)
+        )
+        let stream = await hub.stream(for: "stream-windowed-overflow")
+        _ = stream
+
+        await hub.publish(1, for: "stream-windowed-overflow")
+        await hub.publish(2, for: "stream-windowed-overflow")
+        await hub.publish(3, for: "stream-windowed-overflow")
+
+        let overflowSnapshot = try #require(
+            await waitForAggregateSnapshot(
+                recorder: recorder,
+                hubKind: .genericTask,
+                predicate: {
+                    $0.totalDroppedEventCount >= 2 && $0.overflowEventCount >= 2
+                }
+            )
+        )
+
+        let baselineSnapshotCount = recorder.snapshot().compactMap { metric -> EventPipelineAggregateSnapshotMetric? in
+            guard case .aggregateSnapshot(let snapshot) = metric else { return nil }
+            return snapshot.hubKind == .genericTask ? snapshot : nil
+        }.count
+
+        let subsequentSnapshots = try await waitForAdditionalAggregateSnapshots(
+            recorder: recorder,
+            hubKind: .genericTask,
+            existingCount: baselineSnapshotCount,
+            additionalCount: 1
+        )
+        let nextSnapshot = try #require(subsequentSnapshots.first)
+
+        #expect(nextSnapshot.totalDroppedEventCount == overflowSnapshot.totalDroppedEventCount)
+        #expect(nextSnapshot.overflowEventCount == 0)
+
+        await hub.finish(taskID: "stream-windowed-overflow")
+    }
+
     @Test("TaskEventHub AsyncStream buffering honors the per-consumer cap")
     func taskEventHubStreamUsesPerConsumerBufferCap() async throws {
         let recorder = EventPipelineMetricRecorder()

@@ -8,11 +8,24 @@ The format is based on Keep a Changelog and the project follows Semantic Version
 
 ### Added
 
-- No unreleased entries yet.
+- `Examples/WrapperSmoke` and `Examples/GeneratedClientRecipe` compile-only
+  packages that protect wrapper and generated-client integration contracts.
+- Generated client integration guide covering `APIDefinition` and
+  `SingleRequestExecutable` adaptation paths.
 
 ### Changed
 
-- No unreleased entries yet.
+- `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`,
+  `SingleRequestExecutable`, and `RequestPayload` are now stable extension
+  points for the 5.x line.
+- Event pipeline aggregate metrics now expose reporter-proxy overflow health
+  separately from event-delivery overflow.
+
+### Fixed
+
+- Aggregate event-overflow snapshots now reset their windowed
+  `overflowEventCount` after each snapshot while preserving cumulative
+  `totalDroppedEventCount`.
 
 ## [5.0.0]
 
@@ -231,7 +244,7 @@ diff.
 ### Changed
 
 - `DefaultNetworkClient.request(_:)` and `DefaultNetworkClient.upload(_:)` now delegate through the same public low-level execution path used by `perform`
-- API stability policy now treats `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`, `SingleRequestExecutable`, and `RequestPayload` as stable extension points for higher-level integrations
+- API stability policy now treats `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`, `SingleRequestExecutable`, and `RequestPayload` as provisionally stable extension points for the `3.x` line
 
 ### Fixed
 

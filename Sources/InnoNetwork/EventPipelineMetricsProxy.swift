@@ -219,6 +219,7 @@ private actor EventPipelineMetricsAggregator {
             overflowEventCount: overflowEventCount,
             metricsOverflowCount: metricsOverflowCount
         )
+        overflowEventCount = 0
         latencyValues.removeAll(keepingCapacity: true)
         return snapshot
     }
