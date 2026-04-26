@@ -41,22 +41,15 @@ let user = try await client.request(GetUser())
 print(user.name)
 ```
 
-## When to use `perform`
+## Request execution contract
 
 Stay on ``NetworkClient/request(_:)`` for normal typed requests and
 ``NetworkClient/upload(_:)`` for multipart uploads.
 
-Reach for ``LowLevelNetworkClient/perform(executable:)`` when you are building a
-higher-level networking layer that needs to:
-
-- adapt its own request contract onto `InnoNetwork`
-- keep custom serialization and decoding logic outside `APIDefinition`
-- reuse `InnoNetwork` request building, retry coordination, trust handling, and observability
-
-In other words, `perform(executable:)` is the public low-level execution hook on
-`LowLevelNetworkClient`. `perform(_:)` remains available for typed request
-definitions, but neither variant is the recommended default for normal
-application call sites.
+Lower-level request execution hooks may appear in the source tree while the
+package is being prepared, but they are not part of the 4.0.0 stable public
+contract. Treat them as future integration candidates unless your wrapper owns
+the source pin and migration budget.
 
 ## When to use advanced configuration
 

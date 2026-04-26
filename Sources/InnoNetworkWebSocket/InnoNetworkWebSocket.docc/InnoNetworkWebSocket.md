@@ -9,54 +9,42 @@ Connection-oriented realtime flows with reconnect-aware lifecycle handling, hear
 Use this module when you need:
 
 - reconnect-aware connection management
-- heartbeat and pong timeout handling, surfaced as paired ``WebSocketEvent/ping(_:)``/``WebSocketEvent/pong(_:)`` events plus optional pong RTT callbacks
-- observable close classification via ``WebSocketTask/closeDisposition``
+- heartbeat and pong timeout handling, surfaced as paired `.ping` / `.pong` /
+  `.error(.pingTimeout)` events
+- typed close-code handling via ``WebSocketCloseCode``
 - listener retention across reconnect attempts
 - manual disconnect semantics that stay visible to the caller
 
-Reconnect decisions are driven by handshake and close outcomes, so the public manager can distinguish retryable failures from terminal ones without forcing application code to rebuild that policy every time. When UX needs to branch on the reason (for example showing a "retrying…" banner only for ``WebSocketCloseDisposition/peerRetryable(_:_:)``), consumers read ``WebSocketTask/closeDisposition`` after the task reaches `.disconnected` / `.failed`.
+Reconnect decisions are driven by handshake and close outcomes, so the public manager can distinguish retryable failures from terminal ones without forcing application code to rebuild that policy every time.
 
 Event delivery for socket tasks flows through the shared event hub. Tune buffering, overflow behavior, and metrics integration via ``WebSocketConfiguration/eventDeliveryPolicy`` — see <doc:EventDeliveryPolicy> in the core module for a full guide.
 
-### Measuring heartbeat RTT
+### Observing heartbeat attempts
 
-As of 5.0, ``WebSocketEvent/pong(_:)`` carries a
-``WebSocketPongContext`` directly, and
-``WebSocketManager/setOnPongHandler(_:)`` delivers the **same context value**
-at the same logical point. Pick whichever surface your architecture already
-consumes:
+The 4.0.0 public contract emits a `.ping` event before each heartbeat or manual
+ping attempt. Pair it with `.pong` and `.error(.pingTimeout)` to track heartbeat
+success, timeout, and approximate round-trip timing in application code.
 
 ```swift
-// Event stream
+var pendingPingAt: Date?
+
 for await event in await manager.events(for: task) {
     switch event {
-    case .pong(let context):
-        metrics.recordPingRTT(context.roundTrip)
-        metrics.correlate(attempt: context.attemptNumber)
+    case .ping:
+        pendingPingAt = .now
+    case .pong:
+        if let started = pendingPingAt {
+            metrics.recordPingRTT(.now.timeIntervalSince(started))
+        }
+        pendingPingAt = nil
+    case .error(.pingTimeout):
+        metrics.recordPingTimeout()
+        pendingPingAt = nil
     default:
         break
     }
 }
-
-// Or callback convenience
-await manager.setOnPongHandler { _, context in
-    metrics.recordPingRTT(context.roundTrip)
-    metrics.correlate(attempt: context.attemptNumber)
-}
 ```
-
-Both paths receive identical `attemptNumber` / `roundTrip` values. In
-Swift pattern-matching positions, `case .pong:` remains valid when you do
-not need the payload. The source-breaking change is code that constructs
-or refers to `.pong` as a value, which must now account for the
-associated `WebSocketPongContext` — see `MIGRATION_v5.md` for examples.
-
-`roundTrip` is measured as `ContinuousClock.now - pingContext.dispatchedAt`
-just before the paired `.pong(_:)` event is published — it reflects the
-library-observed span from `.ping(_:)` emission to successful pong handling
-(excluding consumer-side scheduler jitter). Heartbeat cadence and timeout
-control still use the injected ``InnoNetwork/InnoNetworkClock``; only the RTT
-measurement itself is wall-clock `ContinuousClock` time.
 
 ## Topics
 
@@ -70,10 +58,7 @@ measurement itself is wall-clock `ContinuousClock` time.
 ### Events and observability
 
 - ``WebSocketEvent``
-- ``WebSocketPingContext``
-- ``WebSocketPongContext``
 - ``WebSocketCloseCode``
-- ``WebSocketCloseDisposition``
 
 ### Realtime Flows
 

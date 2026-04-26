@@ -14,9 +14,13 @@ The package is built around Swift Concurrency, explicit transport policies, and 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.1.0")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0")
 ]
 ```
+
+`4.0.0` is the next public release line and has not been tagged yet. Until the
+tag is published, pin a branch or revision from this repository for pre-release
+validation.
 
 ### Core Request
 
@@ -45,30 +49,6 @@ let client = DefaultNetworkClient(
 
 let user = try await client.request(GetUser())
 print(user)
-```
-
-### When to use `perform`
-
-`request` and `upload` remain the default public entry points for application code.
-`LowLevelNetworkClient` exposes the lower-level typed execution API for
-framework authors and policy layers that want to adapt their own request
-contract onto `InnoNetwork`.
-
-- Use `request` for normal `APIDefinition` requests.
-- Use `upload` for `MultipartAPIDefinition` requests.
-- Use `perform(_:)` only when you explicitly want the typed request path through
-  the lower-level execution pipeline.
-- Use `perform(executable:)` when you need a custom `SingleRequestExecutable`
-  that controls serialization and decoding while still delegating retry, trust,
-  and observability to `InnoNetwork`.
-- See the tool-agnostic [Generated Client Recipe](Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md)
-  and [Examples/GeneratedClientRecipe](Examples/GeneratedClientRecipe/README.md)
-  when generated SDK contracts need to map onto either path.
-
-```swift
-let profile = try await client.request(GetProfile())
-
-let adapted = try await client.perform(executable: MyCustomExecutable())
 ```
 
 ### Download
@@ -144,12 +124,14 @@ Protocol Buffers support moved to the separate `InnoNetworkProtobuf` package. Co
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.1.0"),
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0"),
     .package(url: "https://github.com/InnoSquadCorp/InnoNetworkProtobuf.git", branch: "main")
 ]
 ```
 
-`InnoNetworkProtobuf` is being prepared for its first tagged release. Until that tag exists, follow the `main` branch of `InnoNetworkProtobuf` together with `InnoNetwork` 3.x.
+`InnoNetworkProtobuf` is being prepared for its first tagged release. Until
+that tag exists, follow the `main` branch of `InnoNetworkProtobuf` together
+with the upcoming InnoNetwork 4.0.0 line.
 
 ## Configuration
 
@@ -218,7 +200,7 @@ For operational tuning, see [Examples](Examples/README.md) and [API Stability](A
 
 ## Stability
 
-The 3.x line follows semantic versioning.
+The upcoming 4.0.0 line follows semantic versioning from its first public tag.
 
 - Stable public API: [API_STABILITY.md](API_STABILITY.md)
 - Release rules and compatibility policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
@@ -226,10 +208,9 @@ The 3.x line follows semantic versioning.
 
 `safeDefaults` is the recommended public path. `default` aliases remain available for compatibility, but new examples and new integrations should prefer `safeDefaults`.
 
-`request` and `upload` are the recommended request execution APIs for most
-integrations. `DefaultNetworkClient` also conforms to `LowLevelNetworkClient`,
-which provides `perform(_:)` for typed request definitions and
-`perform(executable:)` for higher networking layers.
+`request` and `upload` are the recommended request execution APIs for 4.0.0
+integrations. Lower-level extension points that exist in the source tree are
+not part of the 4.0.0 stable public contract.
 
 ## Benchmarks
 
@@ -245,11 +226,10 @@ Benchmark governance, baseline policy, and CI posture are documented in [Benchma
 ## Documentation
 
 - Examples: [Examples/README.md](Examples/README.md)
-- Generated client guide: [Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md](Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md)
 - API Stability: [API_STABILITY.md](API_STABILITY.md)
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
-- Latest Release Notes: [docs/releases/3.1.0.md](docs/releases/3.1.0.md)
+- Upcoming Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 
 ## Support

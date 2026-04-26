@@ -31,16 +31,16 @@ _ = DownloadConfiguration.safeDefaults(sessionIdentifier: "com.example.consumer.
 _ = WebSocketConfiguration.safeDefaults()
 
 
-// MARK: - WebSocket 4.0 / 4.1 public API smoke
+// MARK: - WebSocket public API smoke
 //
 // These helpers never execute at runtime (they are unused). Their job is to
-// fail compilation if the 4.0/4.1 public API surface regresses — exhaustive
+// fail compilation if the public API surface regresses — exhaustive
 // switches, pattern matches, and associated-value shapes are all checked at
 // build time. Keeping these in consumer-smoke catches accidental breaking
 // changes that the library's own tests would miss because they use
 // `@testable import`.
 
-/// 4.0: `WebSocketCloseCode` covers the full RFC 6455 space plus `.custom(_)`.
+/// `WebSocketCloseCode` covers the full RFC 6455 space plus `.custom(_)`.
 /// Consumers can switch exhaustively on the common retryable subset.
 @Sendable private func smokeCloseCodeSwitch(_ code: WebSocketCloseCode?) {
     switch code {
@@ -59,9 +59,8 @@ _ = WebSocketConfiguration.safeDefaults()
     }
 }
 
-/// 4.1: `WebSocketCloseDisposition` is the library's classified reason for
-/// the most recent close. Consumers can branch UX on retryable vs. terminal
-/// dispositions without re-implementing the mapping.
+/// Future candidate: classified close dispositions can branch UX on retryable
+/// vs. terminal outcomes without re-implementing the mapping.
 @Sendable private func smokeCloseDisposition(_ disposition: WebSocketCloseDisposition?) {
     switch disposition {
     case .manual(let code):
@@ -92,7 +91,8 @@ _ = WebSocketConfiguration.safeDefaults()
     _ = disposition?.shouldReconnect
 }
 
-/// 4.1 / 4.3: `.ping` carries context and `.pong` remains source-compatible.
+/// Future candidate: `.ping` and `.pong` context payloads expose heartbeat
+/// attempt and RTT metadata while preserving non-binding switch patterns.
 @Sendable private func smokeEventObservation(_ event: WebSocketEvent) {
     switch event {
     case .connected(let subprotocol):
@@ -107,10 +107,6 @@ _ = WebSocketConfiguration.safeDefaults()
         _ = context.attemptNumber
         _ = context.dispatchedAt
     case .pong(let context):
-        // 5.0: `.pong` now carries the same `WebSocketPongContext` that
-        // `setOnPongHandler(_:)` delivers. Bind the payload when you want
-        // the RTT metadata; non-binding patterns like `case .pong:` still
-        // compile when the payload is not needed.
         _ = context.attemptNumber
         _ = context.roundTrip
     case .error(let wsError):
@@ -120,8 +116,8 @@ _ = WebSocketConfiguration.safeDefaults()
     }
 }
 
-/// 4.3: consumers can opt into pong RTT metadata via `setOnPongHandler(_:)`
-/// without changing existing `.pong` switch statements.
+/// Future candidate: consumers can opt into pong RTT metadata via
+/// `setOnPongHandler(_:)`.
 @Sendable private func smokePongHandler(_ manager: WebSocketManager) async {
     await manager.setOnPongHandler { task, context in
         _ = task.id

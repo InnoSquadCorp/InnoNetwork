@@ -3,11 +3,15 @@
 Compile-only sample package that shows two generator-friendly integration paths
 onto `InnoNetwork`.
 
+This sample includes future-candidate wrapper shapes. The `APIDefinition` path
+matches the 4.0.0 stable public contract; the low-level execution path does
+not.
+
 ## What it demonstrates
 
 - generated REST-style contracts adapted onto `APIDefinition`
-- generator-owned request contracts adapted onto `SingleRequestExecutable`
-- `any NetworkClient` and `any LowLevelNetworkClient` dependency injection
+- generator-owned request contracts adapted onto future-candidate execution hooks
+- `any NetworkClient` injection for stable request paths
 - stored `HTTPMethod` properties inside `Sendable` generated models
 
 ## Why it exists
@@ -31,6 +35,7 @@ xcrun swift build
 Then mirror the pattern that matches your generated surface:
 
 1. Map simple generated operations onto `APIDefinition`.
-2. Map richer generator-owned contracts onto `SingleRequestExecutable`.
-3. Inject `any NetworkClient` or `any LowLevelNetworkClient` into the wrapper
-   layer instead of depending directly on `DefaultNetworkClient`.
+2. Inject `any NetworkClient` into the wrapper layer instead of depending
+   directly on `DefaultNetworkClient`.
+3. Treat richer generator-owned execution hooks as roadmap material until they
+   are explicitly promoted.

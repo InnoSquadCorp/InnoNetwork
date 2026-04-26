@@ -360,7 +360,7 @@ extension HTTPHeader {
     ///
     /// See the [User-Agent header documentation](https://tools.ietf.org/html/rfc7231#section-5.5.3).
     ///
-    /// Example: `iOS Example/1.0 (org.alamofire.iOS-Example; build:1; iOS 13.0.0) Alamofire/5.0.0`
+    /// Example: `iOS Example/1.0 (org.alamofire.iOS-Example; build:1; iOS 13.0.0) Alamofire/5`
     public static let defaultUserAgent: HTTPHeader = {
         let info = Bundle.main.infoDictionary
         let executable = (info?["CFBundleExecutable"] as? String) ??

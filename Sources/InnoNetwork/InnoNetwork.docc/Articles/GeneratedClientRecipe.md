@@ -3,6 +3,10 @@
 Adapt generated SDKs onto `InnoNetwork` without binding the repository to a
 specific OpenAPI or RPC generator.
 
+> Important: this article tracks a future integration candidate. The
+> ``APIDefinition`` path is compatible with the 4.0.0 stable contract, but the
+> low-level execution path is not part of the 4.0.0 stability promise.
+
 ## Choose the integration path
 
 Use ``APIDefinition`` when generated operations already fit the library's
@@ -12,7 +16,7 @@ default transport model:
 - responses are `Decodable`
 - query / body encoding can follow the built-in request policy
 
-Use ``SingleRequestExecutable`` with
+Future wrapper work may use ``SingleRequestExecutable`` with
 ``LowLevelNetworkClient/perform(executable:)`` when the generated surface wants
 to stay independent from ``APIDefinition`` or needs richer transport control:
 
@@ -50,7 +54,7 @@ Stay on ``NetworkClient/request(_:)`` for this shape. It keeps the generated
 type lightweight while reusing `InnoNetwork`'s default encoding, retry, trust,
 and observability behavior.
 
-## Path 2: Generated operation to `SingleRequestExecutable`
+## Future candidate: Generated operation to `SingleRequestExecutable`
 
 ```swift
 import Foundation
@@ -89,17 +93,18 @@ struct GeneratedExecutable<Operation: GeneratedExecutableContract>: SingleReques
 }
 ```
 
-Call this path through ``LowLevelNetworkClient/perform(executable:)`` when the
-generator owns request construction or decoding logic and you only want
-`InnoNetwork` to provide execution, retry, trust, and observability.
+Call this path only when you intentionally pin current source and accept that
+the low-level API can change before it is promoted into the stable contract.
 
 ## Repository sample
 
 The repository includes `Examples/GeneratedClientRecipe`, a compile-only sample
-that demonstrates both patterns:
+that demonstrates both the stable request path and the future-candidate wrapper
+path:
 
 - a generated REST-style operation adapted onto ``APIDefinition``
 - a richer generated operation adapted onto ``SingleRequestExecutable``
 
-Use that package as the starting point for internal SDK wrappers or
-generator-owned client layers.
+Use the `APIDefinition` portion as the 4.0.0 guidance. Treat the richer wrapper
+portion as roadmap material until the low-level execution hook is explicitly
+promoted.

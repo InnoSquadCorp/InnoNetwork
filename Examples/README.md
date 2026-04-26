@@ -74,18 +74,6 @@ Real-world scenarios you'll encounter in actual application development.
 
 ---
 
-### 5. [GeneratedClientRecipe](./GeneratedClientRecipe)
-
-Tool-agnostic recipe for adapting generated SDK contracts onto `InnoNetwork`.
-
-**Covers:**
-- generated REST-style operations mapped onto `APIDefinition`
-- richer generator-owned request contracts mapped onto `SingleRequestExecutable`
-- `any NetworkClient` and `any LowLevelNetworkClient` injection boundaries
-- compile-time validation without hitting a live network
-
-**Best for:** Internal SDK wrappers, OpenAPI-generated clients, code-generated network layers
-
 ## Compile-Time Integration Smokes
 
 ### [ConsumerSmoke](./ConsumerSmoke)
@@ -96,7 +84,8 @@ three shipping products.
 ### [WrapperSmoke](./WrapperSmoke)
 
 Compile-only package that protects wrapper-style integrations built on
-`LowLevelNetworkClient.perform(executable:)`.
+future-candidate low-level execution hooks. These source shapes are not part of
+the 4.0.0 stable public contract.
 
 ## Getting Started
 
@@ -111,9 +100,12 @@ Add InnoNetwork to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "3.0.1")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0")
 ]
 ```
+
+`4.0.0` is the upcoming public release line. Until the tag exists, pin a branch
+or revision from this repository for local validation.
 
 ### Running the Examples
 

@@ -10,7 +10,6 @@ Use this module when you need:
 
 - typed request definitions with ``APIDefinition``
 - a single async request entry point through ``DefaultNetworkClient``
-- a public low-level typed execution hook through ``LowLevelNetworkClient/perform(executable:)``
 - request encoding choices that stay explicit
 - trust policy, retry policy, and observability that can be tuned when production needs it
 
@@ -21,14 +20,10 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 ### Essentials
 
 - <doc:GettingStarted>
-- <doc:GeneratedClientRecipe>
 - ``DefaultNetworkClient``
 - ``NetworkClient``
-- ``LowLevelNetworkClient``
 - ``APIDefinition``
 - ``MultipartAPIDefinition``
-- ``SingleRequestExecutable``
-- ``ProtobufAPIDefinition``
 
 ### Configuration
 
