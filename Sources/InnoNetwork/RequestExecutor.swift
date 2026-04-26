@@ -20,7 +20,15 @@ package struct RequestExecutor {
         try Task.checkCancellation()
 
         do {
-            var request = try requestBuilder.build(executable, configuration: configuration)
+            let built = try requestBuilder.build(executable, configuration: configuration)
+            var request = built.request
+            // The fileURL upload path lands in a follow-up commit; until then,
+            // surface a clear error rather than silently dropping the body.
+            if case .file = built.bodySource {
+                throw NetworkError.invalidRequestConfiguration(
+                    "RequestPayload.fileURL is reserved for the upload(for:fromFile:) wiring; the executor support lands in the multipart streaming commit."
+                )
+            }
             await notifyRequestStart(request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             // Onion model: session-level interceptors run first (outer), then

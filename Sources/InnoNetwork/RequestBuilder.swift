@@ -1,16 +1,43 @@
 import Foundation
 
 
+/// Result of ``RequestBuilder/build(_:configuration:)``.
+///
+/// Combines the prepared ``URLRequest`` with metadata that tells the
+/// ``RequestExecutor`` how to deliver the body. The body source is needed
+/// because ``RequestPayload/fileURL(_:contentType:)`` requests must be
+/// dispatched via `URLSession.upload(for:fromFile:)` rather than the
+/// in-memory `data(for:)` path.
+package struct BuiltRequest: Sendable {
+    package var request: URLRequest
+    package var bodySource: BodySource
+
+    package init(request: URLRequest, bodySource: BodySource) {
+        self.request = request
+        self.bodySource = bodySource
+    }
+}
+
+package enum BodySource: Sendable {
+    /// Request body is either absent or already attached to `URLRequest.httpBody`.
+    case inline
+    /// Request body must be streamed from disk via `upload(for:fromFile:)`.
+    case file(URL)
+}
+
+
 package struct RequestBuilder {
     package init() {}
 
     package func build<D: SingleRequestExecutable>(
         _ executable: D,
         configuration: NetworkConfiguration
-    ) throws -> URLRequest {
+    ) throws -> BuiltRequest {
         let payload = try executable.makePayload()
         var targetURL = configuration.baseURL.appendingPathComponent(executable.path)
         var httpBody: Data?
+        var fileBody: URL?
+        var contentTypeOverride: String?
 
         switch payload {
         case .none:
@@ -19,15 +46,24 @@ package struct RequestBuilder {
             httpBody = data
         case .queryItems(let queryItems):
             targetURL.append(queryItems: queryItems)
+        case .fileURL(let url, let contentType):
+            fileBody = url
+            contentTypeOverride = contentType
         }
 
         var request = URLRequest(url: targetURL)
         request.httpMethod = executable.method.rawValue
         request.allHTTPHeaderFields = executable.headers.dictionary
+        if let contentTypeOverride {
+            request.setValue(contentTypeOverride, forHTTPHeaderField: "Content-Type")
+        }
         request.cachePolicy = configuration.cachePolicy
         request.timeoutInterval = configuration.timeout
         request.httpBody = httpBody
-        return request
+        return BuiltRequest(
+            request: request,
+            bodySource: fileBody.map(BodySource.file) ?? .inline
+        )
     }
 }
 

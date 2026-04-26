@@ -7,10 +7,15 @@ import Foundation
 /// - none: No request body or query items should be attached to the outgoing request.
 /// - data: A fully encoded HTTP body, such as JSON, form-url-encoded bytes, multipart data, or another transport-specific payload.
 /// - queryItems: Encoded query parameters to append to the request URL.
+/// - fileURL: A file on disk to be streamed via `URLSession.upload(for:fromFile:)`.
+///   Used for large multipart uploads that would otherwise exhaust memory if
+///   loaded into a `Data`. The associated `contentType` is set as the
+///   request's `Content-Type` header.
 public enum RequestPayload: Sendable {
     case none
     case data(Data)
     case queryItems([URLQueryItem])
+    case fileURL(URL, contentType: String)
 }
 
 /// Low-level request execution contract implemented by packages that plug custom
