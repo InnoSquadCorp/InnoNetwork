@@ -200,7 +200,24 @@ enum TrustEvaluator {
         return [hashValue, "sha256/\(hashValue)"]
     }
 
-    private static func algorithmIdentifierData(
+    /// Returns the SPKI `AlgorithmIdentifier` DER bytes for the supplied
+    /// public-key parameters, or `nil` when the algorithm cannot be matched.
+    ///
+    /// Currently recognized algorithms:
+    /// - **RSA** (`kSecAttrKeyTypeRSA`): rsaEncryption, OID 1.2.840.113549.1.1.1 with NULL params.
+    /// - **EC NIST curves** (`kSecAttrKeyTypeEC` / `kSecAttrKeyTypeECSECPrimeRandom`):
+    ///   id-ecPublicKey + named curve OID for P-256, P-384, P-521 (size-bucketed).
+    /// - **Ed25519**: id-Ed25519, OID 1.3.101.112 per RFC 8410. Matched by
+    ///   keyType string (`"ed25519"` case-insensitive, or the raw OID
+    ///   `"1.3.101.112"`) because Security.framework does not currently expose
+    ///   a public `kSecAttrKeyTypeEd25519` constant — once Apple ships one, the
+    ///   string match keeps working unchanged.
+    ///
+    /// When `nil` is returned, the caller still computes a fallback hash from
+    /// the raw public key bytes via ``pinHashes(for:)``. That covers
+    /// alternate algorithms (RSA-PSS, post-quantum, etc.) at the cost of
+    /// requiring consumers to register pins computed from the same raw bytes.
+    static func algorithmIdentifierData(
         keyType: String,
         keySizeInBits: Int
     ) -> Data? {
@@ -225,6 +242,14 @@ enum TrustEvaluator {
                 return Data([0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23])
             }
         default:
+            // RFC 8410 — Ed25519 is matched by keyType string until Security.framework
+            // exposes a public constant. The OID string fallback covers Apple SDKs that
+            // surface the algorithm via its OID rather than a name.
+            let lower = keyType.lowercased()
+            if lower == "ed25519" || keyType == "1.3.101.112" {
+                // id-Ed25519 OID (1.3.101.112), no params
+                return Data([0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70])
+            }
             return nil
         }
     }
