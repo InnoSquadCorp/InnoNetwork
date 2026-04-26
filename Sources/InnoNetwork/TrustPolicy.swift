@@ -180,6 +180,20 @@ enum TrustEvaluator {
         return derSequence(algorithmIdentifier + subjectPublicKey)
     }
 
+    /// Computes the SHA-256 pin set for the given bytes in both common
+    /// representations.
+    ///
+    /// Two strings are returned per input so consumers can register pins in
+    /// whichever representation their tooling produces:
+    ///
+    /// - The bare base64 digest (e.g. Apple's `Network.framework` examples
+    ///   and many security audit reports).
+    /// - The `sha256/`-prefixed digest (e.g. Mozilla `pin-sha256` directives,
+    ///   Chromium HSTS preload entries, and most "openssl + sed" recipes).
+    ///
+    /// Matching against ``PublicKeyPinningPolicy/pinsByHost`` is performed as
+    /// a set intersection, so registering either representation is sufficient
+    /// for a successful pin check.
     private static func pinHashes(for bytes: Data) -> Set<String> {
         let digest = SHA256.hash(data: bytes)
         let hashValue = Data(digest).base64EncodedString()
