@@ -136,6 +136,9 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
             return true
         case .underlying(let error, _):
             return !NetworkError.isCancellation(error)
+        case .timeout:
+            // Request and connection timeouts are typically transient.
+            return true
         case .cancelled:
             return false
         default:

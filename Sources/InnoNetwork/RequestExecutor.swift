@@ -183,6 +183,17 @@ package struct RequestExecutor {
             return .cancelled
         }
 
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut:
+                return .timeout(reason: .requestTimeout)
+            case .cannotConnectToHost, .cannotFindHost:
+                return .timeout(reason: .connectionTimeout)
+            default:
+                break
+            }
+        }
+
         return .underlying(SendableUnderlyingError(error), nil)
     }
 }

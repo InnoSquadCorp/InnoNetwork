@@ -8,6 +8,24 @@
 import Foundation
 
 
+/// Specific timeout that produced a ``NetworkError/timeout(reason:)``.
+///
+/// Distinguishing between request, resource, and connection timeouts lets
+/// the UI surface targeted retry copy ("the request is taking longer than
+/// expected" vs. "we couldn't reach the server") instead of a generic
+/// transport failure.
+public enum TimeoutReason: Sendable, Equatable {
+    /// `URLError.timedOut` produced by the request timeoutInterval.
+    case requestTimeout
+    /// `URLError.timedOut` produced by the resource timeoutInterval (for
+    /// long-running uploads or background sessions).
+    case resourceTimeout
+    /// Connection establishment timed out (for example, a captive portal
+    /// blocking the TCP handshake).
+    case connectionTimeout
+}
+
+
 public enum NetworkError: Error, Sendable {
     case invalidBaseURL(String)
     /// Indicates an invalid request configuration
@@ -26,6 +44,8 @@ public enum NetworkError: Error, Sendable {
 
     case undefined
     case cancelled
+    /// The request did not complete within its configured timeout window.
+    case timeout(reason: TimeoutReason)
 }
 
 
@@ -67,6 +87,15 @@ extension NetworkError: LocalizedError {
             return "Undefined Error"
         case .cancelled:
             return "Request was cancelled"
+        case .timeout(let reason):
+            switch reason {
+            case .requestTimeout:
+                return "The request timed out before the server responded."
+            case .resourceTimeout:
+                return "The resource transfer timed out."
+            case .connectionTimeout:
+                return "The connection to the server timed out."
+            }
         }
     }
 }
@@ -85,6 +114,7 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .undefined: return nil
         case .cancelled: return nil
+        case .timeout: return nil
         }
     }
 
@@ -101,6 +131,7 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .undefined: return nil
         case .cancelled: return nil
+        case .timeout: return nil
         }
     }
 }
