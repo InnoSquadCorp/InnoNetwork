@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 
 public struct MultipartFormData: Sendable {
@@ -70,37 +71,13 @@ public struct MultipartFormData: Sendable {
         "multipart/form-data; boundary=\(boundary)"
     }
     
-    private static func mimeType(for pathExtension: String) -> String {
-        switch pathExtension.lowercased() {
-        case "jpg", "jpeg":
-            return "image/jpeg"
-        case "png":
-            return "image/png"
-        case "gif":
-            return "image/gif"
-        case "heic":
-            return "image/heic"
-        case "pdf":
-            return "application/pdf"
-        case "json":
-            return "application/json"
-        case "txt":
-            return "text/plain"
-        case "html":
-            return "text/html"
-        case "mp4":
-            return "video/mp4"
-        case "mov":
-            return "video/quicktime"
-        case "mp3":
-            return "audio/mpeg"
-        case "wav":
-            return "audio/wav"
-        case "zip":
-            return "application/zip"
-        default:
-            return "application/octet-stream"
-        }
+    static func mimeType(for pathExtension: String) -> String {
+        // UTType is available on every platform InnoNetwork ships against
+        // (iOS 18+, macOS 15+, tvOS 18+, watchOS 11+, visionOS 2+), so it
+        // can replace the hand-curated extension table without an
+        // availability shim. The fallback matches the previous default of
+        // application/octet-stream for unknown extensions.
+        UTType(filenameExtension: pathExtension)?.preferredMIMEType ?? "application/octet-stream"
     }
 }
 
