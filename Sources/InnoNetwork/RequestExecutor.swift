@@ -65,7 +65,7 @@ package struct RequestExecutor {
                 networkResponse = try await interceptor.adapt(networkResponse, request: request)
             }
 
-            guard (200..<300).contains(httpResponse.statusCode) else {
+            guard configuration.acceptableStatusCodes.contains(httpResponse.statusCode) else {
                 throw NetworkError.statusCode(networkResponse)
             }
 

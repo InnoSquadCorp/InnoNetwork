@@ -2,6 +2,10 @@ import Foundation
 
 
 public struct NetworkConfiguration: Sendable {
+    /// The default range of HTTP status codes treated as successful responses.
+    /// `2xx` per RFC 9110 §15.3.
+    public static let defaultAcceptableStatusCodes: Set<Int> = Set(200..<300)
+
     package enum Presets {
         static func safeDefaults(baseURL: URL) -> NetworkConfiguration {
             NetworkConfiguration(
@@ -14,7 +18,8 @@ public struct NetworkConfiguration: Sendable {
                 trustPolicy: .systemDefault,
                 eventObservers: [],
                 eventDeliveryPolicy: .default,
-                eventMetricsReporter: nil
+                eventMetricsReporter: nil,
+                acceptableStatusCodes: NetworkConfiguration.defaultAcceptableStatusCodes
             )
         }
 
@@ -33,7 +38,8 @@ public struct NetworkConfiguration: Sendable {
                     maxBufferedEventsPerConsumer: 512,
                     overflowPolicy: .dropOldest
                 ),
-                eventMetricsReporter: nil
+                eventMetricsReporter: nil,
+                acceptableStatusCodes: NetworkConfiguration.defaultAcceptableStatusCodes
             )
         }
     }
@@ -48,6 +54,12 @@ public struct NetworkConfiguration: Sendable {
     public let eventObservers: [any NetworkEventObserving]
     public let eventDeliveryPolicy: EventDeliveryPolicy
     public let eventMetricsReporter: (any EventPipelineMetricsReporting)?
+    /// HTTP status codes that the request executor treats as successful.
+    /// Responses with a status code outside this set throw
+    /// ``NetworkError/statusCode(_:)``. Defaults to ``defaultAcceptableStatusCodes``
+    /// (`200..<300`); override to allow values like `304` or `205` to flow
+    /// through to consumer code without error mapping.
+    public let acceptableStatusCodes: Set<Int>
 
     public struct AdvancedBuilder: Sendable {
         public var baseURL: URL
@@ -60,6 +72,7 @@ public struct NetworkConfiguration: Sendable {
         public var eventObservers: [any NetworkEventObserving]
         public var eventDeliveryPolicy: EventDeliveryPolicy
         public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
+        public var acceptableStatusCodes: Set<Int>
 
         fileprivate init(preset: NetworkConfiguration) {
             self.baseURL = preset.baseURL
@@ -72,6 +85,7 @@ public struct NetworkConfiguration: Sendable {
             self.eventObservers = preset.eventObservers
             self.eventDeliveryPolicy = preset.eventDeliveryPolicy
             self.eventMetricsReporter = preset.eventMetricsReporter
+            self.acceptableStatusCodes = preset.acceptableStatusCodes
         }
 
         fileprivate func build() -> NetworkConfiguration {
@@ -85,7 +99,8 @@ public struct NetworkConfiguration: Sendable {
                 trustPolicy: trustPolicy,
                 eventObservers: eventObservers,
                 eventDeliveryPolicy: eventDeliveryPolicy,
-                eventMetricsReporter: eventMetricsReporter
+                eventMetricsReporter: eventMetricsReporter,
+                acceptableStatusCodes: acceptableStatusCodes
             )
         }
     }
@@ -113,7 +128,8 @@ public struct NetworkConfiguration: Sendable {
         trustPolicy: TrustPolicy = .systemDefault,
         eventObservers: [any NetworkEventObserving] = [],
         eventDeliveryPolicy: EventDeliveryPolicy = .default,
-        eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil
+        eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
+        acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes
     ) {
         self.baseURL = baseURL
         self.timeout = timeout
@@ -125,5 +141,6 @@ public struct NetworkConfiguration: Sendable {
         self.eventObservers = eventObservers
         self.eventDeliveryPolicy = eventDeliveryPolicy
         self.eventMetricsReporter = eventMetricsReporter
+        self.acceptableStatusCodes = acceptableStatusCodes
     }
 }
