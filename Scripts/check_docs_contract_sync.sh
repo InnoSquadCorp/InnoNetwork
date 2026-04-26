@@ -15,10 +15,16 @@ required_meta_docs=(
   "$repo_root/docs/RELEASE_POLICY.md"
   "$repo_root/docs/MIGRATION_POLICY.md"
 )
+required_feature_docs=(
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryPolicy.md"
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md"
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/InnoNetwork.md"
+)
 example_docs=(
   "$repo_root/Examples/BasicRequest/README.md"
   "$repo_root/Examples/CustomHeaders/README.md"
   "$repo_root/Examples/ErrorHandling/README.md"
+  "$repo_root/Examples/GeneratedClientRecipe/README.md"
   "$repo_root/Examples/RealWorldAPI/README.md"
   "$repo_root/Examples/README.md"
 )
@@ -91,6 +97,11 @@ expected_stable=(
 '`AnyResponseDecoder`'
 '`URLQueryEncoder`'
 '`EventDeliveryPolicy`'
+'`LowLevelNetworkClient`'
+'`LowLevelNetworkClient.perform(_:)`'
+'`LowLevelNetworkClient.perform(executable:)`'
+'`SingleRequestExecutable`'
+'`RequestPayload`'
 '`WebSocketCloseCode`'
 '`WebSocketCloseDisposition`'
 '`WebSocketPingContext`'
@@ -122,11 +133,6 @@ documented_sorted="$(printf '%s\n' "${documented_stable[@]:-}" | sort)"
 }
 
 expected_provisionally=(
-'`LowLevelNetworkClient`'
-'`LowLevelNetworkClient.perform(_:)`'
-'`LowLevelNetworkClient.perform(executable:)`'
-'`SingleRequestExecutable`'
-'`RequestPayload`'
 '`default` aliases on configuration types'
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
@@ -166,11 +172,16 @@ validate_benchmark_docs() {
 
 validate_troubleshooting_and_examples_docs() {
   require_contains 'Examples: [Examples/README.md](Examples/README.md)' "$readme"
+  require_contains 'Generated client guide: [Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md](Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md)' "$readme"
   require_contains 'API Stability: [API_STABILITY.md](API_STABILITY.md)' "$readme"
   require_contains '### 1. [BasicRequest](./BasicRequest)' "$repo_root/Examples/README.md"
   require_contains '### 2. [ErrorHandling](./ErrorHandling)' "$repo_root/Examples/README.md"
   require_contains '### 3. [CustomHeaders](./CustomHeaders)' "$repo_root/Examples/README.md"
   require_contains '### 4. [RealWorldAPI](./RealWorldAPI)' "$repo_root/Examples/README.md"
+  require_contains '### 5. [GeneratedClientRecipe](./GeneratedClientRecipe)' "$repo_root/Examples/README.md"
+  require_contains '### [ConsumerSmoke](./ConsumerSmoke)' "$repo_root/Examples/README.md"
+  require_contains '### [WrapperSmoke](./WrapperSmoke)' "$repo_root/Examples/README.md"
+  require_contains '<doc:GeneratedClientRecipe>' "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/InnoNetwork.md"
 }
 
 documented_provisionally=()
@@ -267,6 +278,26 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public struct EventDeliveryPolicy'
       target="$repo_root/Sources/InnoNetwork/EventPipeline.swift"
       ;;
+    '`LowLevelNetworkClient`')
+      pattern='public protocol LowLevelNetworkClient'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`LowLevelNetworkClient.perform(_:)`')
+      pattern='^    func perform<T: APIDefinition>\(_ request: T\) async throws -> T\.APIResponse$'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`LowLevelNetworkClient.perform(executable:)`')
+      pattern='^    func perform<D: SingleRequestExecutable>\(executable: D\) async throws -> D\.APIResponse$'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`SingleRequestExecutable`')
+      pattern='public protocol SingleRequestExecutable'
+      target="$repo_root/Sources/InnoNetwork/RequestExecution.swift"
+      ;;
+    '`RequestPayload`')
+      pattern='public enum RequestPayload'
+      target="$repo_root/Sources/InnoNetwork/RequestExecution.swift"
+      ;;
     '`WebSocketCloseCode`')
       pattern='public enum WebSocketCloseCode'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseCode.swift"
@@ -291,12 +322,16 @@ for symbol in "${expected_stable[@]}"; do
   if has_rg; then
     if [[ "$symbol" == '`NetworkClient.request(_:)`' || "$symbol" == '`NetworkClient.upload(_:)`' ]]; then
       validate_protocol_symbol "NetworkClient" "$target" "$pattern"
+    elif [[ "$symbol" == '`LowLevelNetworkClient.perform(_:)`' || "$symbol" == '`LowLevelNetworkClient.perform(executable:)`' ]]; then
+      validate_protocol_symbol "LowLevelNetworkClient" "$target" "$pattern"
     else
       rg -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
     fi
   else
     if [[ "$symbol" == '`NetworkClient.request(_:)`' || "$symbol" == '`NetworkClient.upload(_:)`' ]]; then
       validate_protocol_symbol "NetworkClient" "$target" "$pattern"
+    elif [[ "$symbol" == '`LowLevelNetworkClient.perform(_:)`' || "$symbol" == '`LowLevelNetworkClient.perform(executable:)`' ]]; then
+      validate_protocol_symbol "LowLevelNetworkClient" "$target" "$pattern"
     else
       grep -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
     fi
@@ -305,26 +340,6 @@ done
 
 for symbol in "${expected_provisionally[@]}"; do
   case "$symbol" in
-    '`LowLevelNetworkClient`')
-      pattern='public protocol LowLevelNetworkClient'
-      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
-      ;;
-    '`LowLevelNetworkClient.perform(_:)`')
-      pattern='^    func perform<T: APIDefinition>\(_ request: T\) async throws -> T\.APIResponse$'
-      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
-      ;;
-    '`LowLevelNetworkClient.perform(executable:)`')
-      pattern='^    func perform<D: SingleRequestExecutable>\(executable: D\) async throws -> D\.APIResponse$'
-      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
-      ;;
-    '`SingleRequestExecutable`')
-      pattern='public protocol SingleRequestExecutable'
-      target="$repo_root/Sources/InnoNetwork/RequestExecution.swift"
-      ;;
-    '`RequestPayload`')
-      pattern='public enum RequestPayload'
-      target="$repo_root/Sources/InnoNetwork/RequestExecution.swift"
-      ;;
     '`default` aliases on configuration types')
       validate_default_aliases
       continue
@@ -341,20 +356,6 @@ for symbol in "${expected_provisionally[@]}"; do
       fail "unknown provisionally stable symbol mapping: $symbol"
       ;;
   esac
-
-  if has_rg; then
-    if [[ "$symbol" == '`LowLevelNetworkClient.perform(_:)`' || "$symbol" == '`LowLevelNetworkClient.perform(executable:)`' ]]; then
-      validate_protocol_symbol "LowLevelNetworkClient" "$target" "$pattern"
-    else
-      rg -Fq "$pattern" "$target" || fail "provisionally stable symbol $symbol is not present in production sources"
-    fi
-  else
-    if [[ "$symbol" == '`LowLevelNetworkClient.perform(_:)`' || "$symbol" == '`LowLevelNetworkClient.perform(executable:)`' ]]; then
-      validate_protocol_symbol "LowLevelNetworkClient" "$target" "$pattern"
-    else
-      grep -Fq "$pattern" "$target" || fail "provisionally stable symbol $symbol is not present in production sources"
-    fi
-  fi
 done
 
 require_contains "API Stability" "$readme"
@@ -368,7 +369,12 @@ for doc in "${required_meta_docs[@]}"; do
   [[ -f "$doc" ]] || fail "required OSS document is missing: $doc"
 done
 
+for doc in "${required_feature_docs[@]}"; do
+  [[ -f "$doc" ]] || fail "required feature documentation file is missing: $doc"
+done
+
 for doc in "${example_docs[@]}"; do
+  [[ -f "$doc" ]] || fail "example documentation file is missing: $doc"
   require_contains "safeDefaults" "$doc"
 done
 

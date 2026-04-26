@@ -72,6 +72,32 @@ Real-world scenarios you'll encounter in actual application development.
 
 **Best for:** Learning complete application workflows, building full-featured apps
 
+---
+
+### 5. [GeneratedClientRecipe](./GeneratedClientRecipe)
+
+Tool-agnostic recipe for adapting generated SDK contracts onto `InnoNetwork`.
+
+**Covers:**
+- generated REST-style operations mapped onto `APIDefinition`
+- richer generator-owned request contracts mapped onto `SingleRequestExecutable`
+- `any NetworkClient` and `any LowLevelNetworkClient` injection boundaries
+- compile-time validation without hitting a live network
+
+**Best for:** Internal SDK wrappers, OpenAPI-generated clients, code-generated network layers
+
+## Compile-Time Integration Smokes
+
+### [ConsumerSmoke](./ConsumerSmoke)
+
+Compile-only package that protects public consumer-facing API shapes across the
+three shipping products.
+
+### [WrapperSmoke](./WrapperSmoke)
+
+Compile-only package that protects wrapper-style integrations built on
+`LowLevelNetworkClient.perform(executable:)`.
+
 ## Getting Started
 
 ### Prerequisites

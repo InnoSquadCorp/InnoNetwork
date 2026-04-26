@@ -139,6 +139,14 @@ jobs:
         working-directory: Examples/ConsumerSmoke
         run: xcrun swift build
 
+      - name: Build wrapper smoke package
+        working-directory: Examples/WrapperSmoke
+        run: xcrun swift build
+
+      - name: Build generated client recipe package
+        working-directory: Examples/GeneratedClientRecipe
+        run: xcrun swift build
+
   benchmark-smoke:
     name: Benchmark Smoke
     runs-on: macos-15

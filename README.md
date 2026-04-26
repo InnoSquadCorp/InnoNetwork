@@ -61,6 +61,9 @@ contract onto `InnoNetwork`.
 - Use `perform(executable:)` when you need a custom `SingleRequestExecutable`
   that controls serialization and decoding while still delegating retry, trust,
   and observability to `InnoNetwork`.
+- See the tool-agnostic [Generated Client Recipe](Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md)
+  and [Examples/GeneratedClientRecipe](Examples/GeneratedClientRecipe/README.md)
+  when generated SDK contracts need to map onto either path.
 
 ```swift
 let profile = try await client.request(GetProfile())
@@ -242,6 +245,7 @@ Benchmark governance, baseline policy, and CI posture are documented in [Benchma
 ## Documentation
 
 - Examples: [Examples/README.md](Examples/README.md)
+- Generated client guide: [Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md](Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md)
 - API Stability: [API_STABILITY.md](API_STABILITY.md)
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)

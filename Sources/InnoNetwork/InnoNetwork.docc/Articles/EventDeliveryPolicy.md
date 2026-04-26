@@ -12,8 +12,8 @@ that hub handles back-pressure:
 
 - per-partition buffering — one partition per logical task
 - overflow behavior when a partition fills up
-- per-consumer (listener) buffering so one slow listener cannot starve
-  the others
+- per-consumer buffering so one slow listener or `AsyncStream`
+  subscriber cannot starve the others
 
 The default configuration (``EventDeliveryPolicy/default``) targets common
 client workloads — a few dozen concurrent tasks, each with a few listeners,
@@ -45,8 +45,9 @@ reaches a listener. Two common adjustments:
   ``EventPipelineOverflowPolicy/dropOldest`` so the newest state always
   reaches the UI.
 
-`maxBufferedEventsPerConsumer` behaves identically but per listener — it is
-the knob that protects the hub when a single listener falls behind.
+`maxBufferedEventsPerConsumer` behaves identically per consumer — listener
+chains and `AsyncStream` subscribers both use that ceiling to isolate slow
+consumers from the rest of the partition.
 
 ## Overflow: `.dropOldest` vs `.dropNewest`
 
@@ -76,12 +77,18 @@ the policy behaves under real load. The hub emits four metric types:
 
 - ``EventPipelinePartitionStateMetric`` — per-partition queue depth and
   running drop counter
-- ``EventPipelineConsumerStateMetric`` — per-listener queue depth
+- ``EventPipelineConsumerStateMetric`` — per-consumer queue depth for listener
+  chains and `AsyncStream` subscribers
 - ``EventPipelineConsumerDeliveryLatencyMetric`` — observed enqueue→handle
   latency (samples)
 - ``EventPipelineAggregateSnapshotMetric`` — periodic rollup:
   active partition/consumer counts, max queue depth, p50/p95 latency,
-  total and windowed drop counts
+  event-drop totals, and metrics-proxy health
+
+For `AsyncStream` subscribers, ``EventPipelineConsumerStateMetric`` queue depth
+is a best-effort last known buffered depth. `AsyncStream` does not expose
+dequeue callbacks, so the hub refreshes stream consumer ages on snapshot
+cadence while retaining the last observed depth.
 
 A minimal reporter skeleton:
 
@@ -96,7 +103,9 @@ struct LoggingMetricsReporter: EventPipelineMetricsReporting {
         case .aggregateSnapshot(let snapshot):
             logger.info(
                 "queue-depth max=\(snapshot.maxQueueDepth) " +
-                "latency p95=\(snapshot.p95DeliveryLatency ?? 0)"
+                "latency p95=\(snapshot.p95DeliveryLatency ?? 0) " +
+                "eventDrops=\(snapshot.overflowEventCount) " +
+                "metricDrops=\(snapshot.metricsOverflowCount)"
             )
         default:
             break
@@ -121,11 +130,13 @@ let config = WebSocketConfiguration.advanced {
 | Field | What it tells you |
 |---|---|
 | `activePartitionCount` | Tasks currently publishing — should track your app's concurrent workload. |
-| `activeConsumerCount` | Total listener count across all partitions. Sudden drops hint at a consumer crash or early cancellation. |
+| `activeConsumerCount` | Total listener and `AsyncStream` subscriber count across all partitions. Sudden drops hint at a consumer crash or early cancellation. |
 | `maxQueueDepth` | Deepest partition queue at the snapshot moment. Sustained highs near `maxBufferedEventsPerPartition` indicate the ceiling is too low. |
 | `totalDroppedEventCount` | Monotonically increasing drop total. Delta between snapshots is the drop rate. |
 | `overflowEventCount` | Windowed count, resets per snapshot. Use this to alert instead of the running total. |
-| `p50DeliveryLatency` / `p95DeliveryLatency` | Consumer-side latency (enqueue → handler entry). p95 > 250 ms usually means a listener is blocking. |
+| `totalDroppedMetricCount` | Monotonically increasing drop total inside the metrics reporter proxy. Separate from event delivery loss. |
+| `metricsOverflowCount` | Windowed metrics-proxy overflow count. Rising values usually mean the reporter is too slow for the current event volume. |
+| `p50DeliveryLatency` / `p95DeliveryLatency` | Consumer-side latency (enqueue → handler entry). p95 > 250 ms usually means a consumer is blocking. |
 
 ## Default quick reference
 

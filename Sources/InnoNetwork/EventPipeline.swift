@@ -91,33 +91,49 @@ public struct EventPipelineConsumerDeliveryLatencyMetric: Sendable {
 }
 
 public struct EventPipelineAggregateSnapshotMetric: Sendable {
+    /// Hub family represented by this aggregate snapshot.
     public let hubKind: EventPipelineHubKind
+    /// Number of partitions with state observed in the current active window.
     public let activePartitionCount: Int
+    /// Number of listener or stream consumers with state observed in the current active window.
     public let activeConsumerCount: Int
+    /// Cumulative count of dropped event-delivery records observed by the proxy.
     public let totalDroppedEventCount: Int
+    /// Cumulative count of metrics dropped by the reporter proxy itself.
+    public let totalDroppedMetricCount: Int
+    /// Deepest partition or consumer queue depth seen at snapshot time.
     public let maxQueueDepth: Int
+    /// Median enqueue-to-consumer delivery latency captured in the current snapshot window.
     public let p50DeliveryLatency: TimeInterval?
+    /// 95th percentile enqueue-to-consumer delivery latency captured in the current snapshot window.
     public let p95DeliveryLatency: TimeInterval?
+    /// Count of event-delivery drops observed since the previous aggregate snapshot.
     public let overflowEventCount: Int
+    /// Count of reporter-proxy input or output overflows observed since the previous aggregate snapshot.
+    public let metricsOverflowCount: Int
 
     public init(
         hubKind: EventPipelineHubKind,
         activePartitionCount: Int,
         activeConsumerCount: Int,
         totalDroppedEventCount: Int,
+        totalDroppedMetricCount: Int = 0,
         maxQueueDepth: Int,
         p50DeliveryLatency: TimeInterval?,
         p95DeliveryLatency: TimeInterval?,
-        overflowEventCount: Int
+        overflowEventCount: Int,
+        metricsOverflowCount: Int = 0
     ) {
         self.hubKind = hubKind
         self.activePartitionCount = activePartitionCount
         self.activeConsumerCount = activeConsumerCount
         self.totalDroppedEventCount = totalDroppedEventCount
+        self.totalDroppedMetricCount = totalDroppedMetricCount
         self.maxQueueDepth = maxQueueDepth
         self.p50DeliveryLatency = p50DeliveryLatency
         self.p95DeliveryLatency = p95DeliveryLatency
         self.overflowEventCount = overflowEventCount
+        self.metricsOverflowCount = metricsOverflowCount
     }
 }
 
