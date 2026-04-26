@@ -35,7 +35,14 @@ package struct RetryCoordinator {
                 try Task.checkCancellation()
                 return try await operation(retryIndex, requestID)
             } catch let error as NetworkError {
-                guard let policy = retryPolicy, policy.shouldRetry(error: error, retryIndex: retryIndex) else {
+                guard let policy = retryPolicy else { throw error }
+                let decision = policy.shouldRetry(
+                    error: error,
+                    retryIndex: retryIndex,
+                    request: error.underlyingRequest,
+                    response: error.underlyingHTTPResponse
+                )
+                if case .noRetry = decision {
                     throw error
                 }
                 guard totalRetries < policy.maxTotalRetries else {
@@ -43,7 +50,21 @@ package struct RetryCoordinator {
                 }
 
                 let currentRetryIndex = retryIndex
-                let delay = policy.retryDelay(for: currentRetryIndex)
+                let computedDelay = policy.retryDelay(for: currentRetryIndex)
+                // Honor server hint when present, but never less than the
+                // computed jittered delay and never more than 4× that — an
+                // adversarial server cannot stall the client indefinitely.
+                let delay: TimeInterval
+                switch decision {
+                case .noRetry:
+                    // Unreachable: handled above; keeps the switch exhaustive.
+                    throw error
+                case .retry:
+                    delay = computedDelay
+                case .retryAfter(let serverHint):
+                    let upperBound = max(computedDelay, policy.retryDelay) * 4
+                    delay = min(max(serverHint, computedDelay), upperBound)
+                }
                 await eventHub.publish(
                     .retryScheduled(
                         requestID: requestID,
