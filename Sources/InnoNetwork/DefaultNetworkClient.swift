@@ -56,7 +56,17 @@ public protocol LowLevelNetworkClient: Sendable {
 }
 
 
-public actor DefaultNetworkClient: NetworkClient, LowLevelNetworkClient {
+/// The default ``NetworkClient`` implementation.
+///
+/// Despite its `async throws` API surface, `DefaultNetworkClient` is an
+/// **immutable value object**: every stored property is a `let` binding, and
+/// all mutation lives behind the `eventHub` actor, the URL session, and the
+/// retry coordinator structs. The type therefore conforms to `Sendable`
+/// without crossing an actor isolation boundary on every call — concurrent
+/// `request(_:)` invocations execute in parallel as soon as they reach
+/// ``URLSessionProtocol/data(for:context:)``, the same as in the previous
+/// `actor` form (which already released isolation on every `await`).
+public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, Sendable {
     private let configuration: NetworkConfiguration
     private let session: URLSessionProtocol
     private let requestBuilder = RequestBuilder()
