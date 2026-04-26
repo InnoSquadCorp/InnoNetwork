@@ -157,4 +157,59 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         return oldSnapshot.interfaceTypes != newSnapshot.interfaceTypes
             || oldSnapshot.status != newSnapshot.status
     }
+
+    /// Contextual retry decision that honors `Retry-After` on `429` and
+    /// `503` responses per RFC 9110 §10.2.3 (delta-seconds form) and
+    /// RFC 9110 §5.6.7 (HTTP-date form).
+    ///
+    /// Falls back to ``shouldRetry(error:retryIndex:)`` for every case
+    /// where no `Retry-After` header is present or the value cannot be
+    /// parsed; the coordinator then picks the policy's own jittered delay.
+    public func shouldRetry(
+        error: NetworkError,
+        retryIndex: Int,
+        request: URLRequest?,
+        response: HTTPURLResponse?
+    ) -> RetryDecision {
+        guard shouldRetry(error: error, retryIndex: retryIndex) else { return .noRetry }
+        guard let response,
+              response.statusCode == 429 || response.statusCode == 503,
+              let header = response.value(forHTTPHeaderField: "Retry-After")
+        else {
+            return .retry
+        }
+        if let seconds = Self.parseRetryAfter(header) {
+            return .retryAfter(seconds)
+        }
+        return .retry
+    }
+
+    /// Parses an RFC 9110 `Retry-After` header value into a non-negative
+    /// `TimeInterval`. Returns `nil` for malformed input or HTTP-dates in
+    /// the past so the coordinator falls back to the computed backoff.
+    static func parseRetryAfter(_ value: String, now: Date = Date()) -> TimeInterval? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let seconds = Int(trimmed), seconds >= 0 {
+            return TimeInterval(seconds)
+        }
+        // Try the canonical RFC 1123 `IMF-fixdate` form first; that is the
+        // only form servers are required to use, but accept the looser
+        // RFC 850 / asctime variants RFC 9110 keeps for backwards compat.
+        let formats = [
+            "EEE, dd MMM yyyy HH:mm:ss zzz",      // IMF-fixdate
+            "EEEE, dd-MMM-yy HH:mm:ss zzz",       // RFC 850
+            "EEE MMM d HH:mm:ss yyyy",             // asctime
+        ]
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(abbreviation: "GMT")
+        for format in formats {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: trimmed) {
+                let delta = date.timeIntervalSince(now)
+                return delta > 0 ? delta : nil
+            }
+        }
+        return nil
+    }
 }
