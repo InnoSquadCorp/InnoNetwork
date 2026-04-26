@@ -12,12 +12,29 @@ import os
 public protocol URLSessionProtocol: Sendable {
     func data(for request: URLRequest) async throws -> (Data, URLResponse)
     func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse)
+    /// Begins a streaming byte transfer for the given request and returns
+    /// the associated `URLSession.AsyncBytes` plus the response metadata.
+    ///
+    /// Implementations that do not support streaming (typed test stubs,
+    /// the instant in-memory benchmark mock, and so on) can leave the
+    /// default extension in place — it throws
+    /// ``NetworkError/invalidRequestConfiguration(_:)`` so streaming-aware
+    /// callers see a clear error instead of a confusing fallback to a
+    /// buffered response.
+    func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (URLSession.AsyncBytes, URLResponse)
 }
 
 public extension URLSessionProtocol {
     func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
         _ = context
         return try await data(for: request)
+    }
+
+    func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (URLSession.AsyncBytes, URLResponse) {
+        _ = (request, context)
+        throw NetworkError.invalidRequestConfiguration(
+            "Streaming bytes are not supported by this URLSessionProtocol implementation."
+        )
     }
 }
 
@@ -30,6 +47,22 @@ extension URLSession: URLSessionProtocol {
         let delegate = RequestTaskDelegate(request: request, context: context)
         do {
             return try await data(for: request, delegate: delegate)
+        } catch {
+            if let trustFailureReason = delegate.trustFailureReason {
+                throw TrustEvaluationError.failed(trustFailureReason, error)
+            }
+            throw error
+        }
+    }
+
+    public func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (URLSession.AsyncBytes, URLResponse) {
+        if context.metricsReporter == nil, context.trustPolicy.isSystemDefault {
+            return try await bytes(for: request, delegate: nil)
+        }
+
+        let delegate = RequestTaskDelegate(request: request, context: context)
+        do {
+            return try await bytes(for: request, delegate: delegate)
         } catch {
             if let trustFailureReason = delegate.trustFailureReason {
                 throw TrustEvaluationError.failed(trustFailureReason, error)
