@@ -27,6 +27,15 @@ package struct WebSocketReconnectCoordinator {
         self.randomOffset = randomOffset
     }
 
+    /// Increments the task's reconnect counter and returns the resulting
+    /// action.
+    ///
+    /// The counter is bumped **before** the cap check, so the rejected
+    /// attempt that produces `.exceeded` is itself counted. Consumers that
+    /// observe ``WebSocketTask/reconnectCount`` during the failure
+    /// transition may briefly see `maxReconnectAttempts + 1`. That overshoot
+    /// is intentional — it represents "we tried, and even this attempt was
+    /// over the limit" rather than "we stopped before trying."
     package func reconnectAction(
         task: WebSocketTask,
         previousState: WebSocketState? = nil

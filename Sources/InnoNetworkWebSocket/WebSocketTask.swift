@@ -17,6 +17,15 @@ public actor WebSocketTask: Identifiable {
     private var _awaitingCloseHandshake = false
 
     public var state: WebSocketState { _state }
+    /// Total number of reconnect attempts the library has dispatched for this
+    /// task, including the attempt currently in flight.
+    ///
+    /// The counter is incremented **before** the library checks
+    /// `maxReconnectAttempts`, so observers polling this value during the
+    /// transition into `.failed` may briefly see `maxReconnectAttempts + 1`
+    /// — that single overshoot represents the rejected attempt that triggered
+    /// the `.exceeded` decision. The counter resets to `0` whenever a
+    /// connection becomes ready or `reset()` is called.
     public var reconnectCount: Int { _reconnectCount }
     public var error: WebSocketError? { _error }
     public var closeCode: WebSocketCloseCode? { _closeCode }
