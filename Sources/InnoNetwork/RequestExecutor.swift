@@ -23,6 +23,13 @@ package struct RequestExecutor {
             var request = try requestBuilder.build(executable, configuration: configuration)
             await notifyRequestStart(request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
+            // Onion model: session-level interceptors run first (outer), then
+            // per-request interceptors (inner). Cross-cutting concerns
+            // declared on NetworkConfiguration apply to every endpoint;
+            // per-APIDefinition interceptors layer on top.
+            for interceptor in configuration.requestInterceptors {
+                request = try await interceptor.adapt(request)
+            }
             for interceptor in executable.requestInterceptors {
                 request = try await interceptor.adapt(request)
             }
@@ -61,7 +68,14 @@ package struct RequestExecutor {
                 response: httpResponse
             )
 
+            // Onion unwinds inner→outer: per-request interceptors first,
+            // session-level interceptors last. A session-level response
+            // interceptor sees the same response a session-only setup would
+            // produce because per-endpoint adapters have already finished.
             for interceptor in executable.responseInterceptors {
+                networkResponse = try await interceptor.adapt(networkResponse, request: request)
+            }
+            for interceptor in configuration.responseInterceptors {
                 networkResponse = try await interceptor.adapt(networkResponse, request: request)
             }
 

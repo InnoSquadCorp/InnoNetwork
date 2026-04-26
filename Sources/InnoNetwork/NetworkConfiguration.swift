@@ -19,7 +19,9 @@ public struct NetworkConfiguration: Sendable {
                 eventObservers: [],
                 eventDeliveryPolicy: .default,
                 eventMetricsReporter: nil,
-                acceptableStatusCodes: NetworkConfiguration.defaultAcceptableStatusCodes
+                acceptableStatusCodes: NetworkConfiguration.defaultAcceptableStatusCodes,
+                requestInterceptors: [],
+                responseInterceptors: []
             )
         }
 
@@ -39,7 +41,9 @@ public struct NetworkConfiguration: Sendable {
                     overflowPolicy: .dropOldest
                 ),
                 eventMetricsReporter: nil,
-                acceptableStatusCodes: NetworkConfiguration.defaultAcceptableStatusCodes
+                acceptableStatusCodes: NetworkConfiguration.defaultAcceptableStatusCodes,
+                requestInterceptors: [],
+                responseInterceptors: []
             )
         }
     }
@@ -60,6 +64,19 @@ public struct NetworkConfiguration: Sendable {
     /// (`200..<300`); override to allow values like `304` or `205` to flow
     /// through to consumer code without error mapping.
     public let acceptableStatusCodes: Set<Int>
+    /// Request interceptors applied to **every** request dispatched through
+    /// this client, before any per-``APIDefinition`` interceptors. Use this
+    /// slot for cross-cutting concerns (Bearer auth, distributed-tracing
+    /// headers, request IDs) so each ``APIDefinition`` does not have to
+    /// re-declare them.
+    public let requestInterceptors: [RequestInterceptor]
+    /// Response interceptors applied to **every** response, after any
+    /// per-``APIDefinition`` interceptors. The order is intentionally an
+    /// onion: the request chain runs outer→inner (config first), and the
+    /// response chain unwinds inner→outer (config last) so a session-level
+    /// interceptor can observe the same response shape its peer would have
+    /// produced under a per-endpoint setup.
+    public let responseInterceptors: [ResponseInterceptor]
 
     public struct AdvancedBuilder: Sendable {
         public var baseURL: URL
@@ -73,6 +90,8 @@ public struct NetworkConfiguration: Sendable {
         public var eventDeliveryPolicy: EventDeliveryPolicy
         public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
         public var acceptableStatusCodes: Set<Int>
+        public var requestInterceptors: [RequestInterceptor]
+        public var responseInterceptors: [ResponseInterceptor]
 
         fileprivate init(preset: NetworkConfiguration) {
             self.baseURL = preset.baseURL
@@ -86,6 +105,8 @@ public struct NetworkConfiguration: Sendable {
             self.eventDeliveryPolicy = preset.eventDeliveryPolicy
             self.eventMetricsReporter = preset.eventMetricsReporter
             self.acceptableStatusCodes = preset.acceptableStatusCodes
+            self.requestInterceptors = preset.requestInterceptors
+            self.responseInterceptors = preset.responseInterceptors
         }
 
         fileprivate func build() -> NetworkConfiguration {
@@ -100,7 +121,9 @@ public struct NetworkConfiguration: Sendable {
                 eventObservers: eventObservers,
                 eventDeliveryPolicy: eventDeliveryPolicy,
                 eventMetricsReporter: eventMetricsReporter,
-                acceptableStatusCodes: acceptableStatusCodes
+                acceptableStatusCodes: acceptableStatusCodes,
+                requestInterceptors: requestInterceptors,
+                responseInterceptors: responseInterceptors
             )
         }
     }
@@ -129,7 +152,9 @@ public struct NetworkConfiguration: Sendable {
         eventObservers: [any NetworkEventObserving] = [],
         eventDeliveryPolicy: EventDeliveryPolicy = .default,
         eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
-        acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes
+        acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes,
+        requestInterceptors: [RequestInterceptor] = [],
+        responseInterceptors: [ResponseInterceptor] = []
     ) {
         self.baseURL = baseURL
         self.timeout = timeout
@@ -142,5 +167,7 @@ public struct NetworkConfiguration: Sendable {
         self.eventDeliveryPolicy = eventDeliveryPolicy
         self.eventMetricsReporter = eventMetricsReporter
         self.acceptableStatusCodes = acceptableStatusCodes
+        self.requestInterceptors = requestInterceptors
+        self.responseInterceptors = responseInterceptors
     }
 }
