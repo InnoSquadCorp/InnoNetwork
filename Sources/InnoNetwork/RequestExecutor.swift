@@ -86,7 +86,7 @@ package struct RequestExecutor {
                 networkResponse = try await interceptor.adapt(networkResponse, request: request)
             }
 
-            guard configuration.acceptableStatusCodes.contains(httpResponse.statusCode) else {
+            guard configuration.acceptableStatusCodes.contains(networkResponse.statusCode) else {
                 throw NetworkError.statusCode(networkResponse)
             }
 
@@ -94,24 +94,20 @@ package struct RequestExecutor {
             await eventHub.publish(
                 .requestFinished(
                     requestID: requestID,
-                    statusCode: httpResponse.statusCode,
-                    byteCount: data.count
+                    statusCode: networkResponse.statusCode,
+                    byteCount: networkResponse.data.count
                 ),
                 requestID: requestID,
                 observers: configuration.eventObservers
             )
 
-            return try executable.decode(data: data, response: networkResponse)
+            return try executable.decode(data: networkResponse.data, response: networkResponse)
         } catch let error as NetworkError {
             executable.logger.log(error: error)
             await notifyFailure(error, requestID: requestID, configuration: configuration)
             throw error
-        } catch where NetworkError.isCancellation(error) {
-            executable.logger.log(error: .cancelled)
-            await notifyFailure(.cancelled, requestID: requestID, configuration: configuration)
-            throw NetworkError.cancelled
         } catch {
-            let networkError = toNetworkError(error)
+            let networkError = NetworkError.mapTransportError(error)
             executable.logger.log(error: networkError)
             await notifyFailure(networkError, requestID: requestID, configuration: configuration)
             throw networkError
@@ -171,29 +167,4 @@ package struct RequestExecutor {
         )
     }
 
-    private func toNetworkError(_ error: Error) -> NetworkError {
-        if let trustEvaluationError = error as? TrustEvaluationError {
-            switch trustEvaluationError {
-            case .failed(let reason, _):
-                return .trustEvaluationFailed(reason)
-            }
-        }
-
-        if NetworkError.isCancellation(error) {
-            return .cancelled
-        }
-
-        if let urlError = error as? URLError {
-            switch urlError.code {
-            case .timedOut:
-                return .timeout(reason: .requestTimeout)
-            case .cannotConnectToHost, .cannotFindHost:
-                return .timeout(reason: .connectionTimeout)
-            default:
-                break
-            }
-        }
-
-        return .underlying(SendableUnderlyingError(error), nil)
-    }
 }

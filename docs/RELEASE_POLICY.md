@@ -2,7 +2,7 @@
 
 ## Versioning
 
-- Public releases follow semantic versioning from the upcoming `4.0.0` line.
+- Public releases follow semantic versioning since `3.0.0`.
 - Stable API must not break in patch or minor releases.
 - Breaking changes require a major version bump and migration guidance.
 

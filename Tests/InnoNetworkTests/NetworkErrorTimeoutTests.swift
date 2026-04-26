@@ -67,6 +67,28 @@ struct NetworkErrorTimeoutTests {
         }
     }
 
+    @Test("URLError.cannotFindHost remains an underlying transport error")
+    func urlErrorCannotFindHostStaysUnderlying() async throws {
+        let mockSession = MockURLSession()
+        mockSession.mockError = URLError(.cannotFindHost)
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+        do {
+            _ = try await client.request(TimingOutAPIRequest())
+            Issue.record("Expected underlying DNS error")
+        } catch let error as NetworkError {
+            switch error {
+            case .underlying(let underlying, nil):
+                #expect(underlying.domain == NSURLErrorDomain)
+                #expect(underlying.code == URLError.Code.cannotFindHost.rawValue)
+            default:
+                Issue.record("Expected NetworkError.underlying for cannotFindHost, got \(error)")
+            }
+        }
+    }
+
     @Test("ExponentialBackoffRetryPolicy retries on .timeout")
     func policyRetriesOnTimeout() {
         let policy = ExponentialBackoffRetryPolicy(maxRetries: 2)

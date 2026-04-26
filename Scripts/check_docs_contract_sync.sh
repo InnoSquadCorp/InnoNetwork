@@ -208,7 +208,7 @@ for symbol in "${expected_stable[@]}"; do
       target="$repo_root/Sources/InnoNetwork/APIDefinition.swift"
       ;;
     '`DefaultNetworkClient`')
-      pattern='public actor DefaultNetworkClient'
+      pattern='public final class DefaultNetworkClient'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.request(_:)`')

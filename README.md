@@ -14,13 +14,13 @@ The package is built around Swift Concurrency, explicit transport policies, and 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", branch: "release/v4.0")
 ]
 ```
 
 `4.0.0` is the next public release line and has not been tagged yet. Until the
-tag is published, pin a branch or revision from this repository for pre-release
-validation.
+tag is published, pin `release/v4.0` or a revision from this repository for
+pre-release validation.
 
 ### Core Request
 
@@ -124,7 +124,7 @@ Protocol Buffers support moved to the separate `InnoNetworkProtobuf` package. Co
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0"),
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", branch: "release/v4.0"),
     .package(url: "https://github.com/InnoSquadCorp/InnoNetworkProtobuf.git", branch: "main")
 ]
 ```
@@ -200,7 +200,7 @@ For operational tuning, see [Examples](Examples/README.md) and [API Stability](A
 
 ## Stability
 
-The upcoming 4.0.0 line follows semantic versioning from its first public tag.
+Public releases follow semantic versioning; `4.0.0` is the next major line.
 
 - Stable public API: [API_STABILITY.md](API_STABILITY.md)
 - Release rules and compatibility policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)

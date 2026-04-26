@@ -30,9 +30,9 @@ var pendingPingAt: Date?
 
 for await event in await manager.events(for: task) {
     switch event {
-    case .ping:
+    case .ping(_):
         pendingPingAt = .now
-    case .pong:
+    case .pong(_):
         if let started = pendingPingAt {
             metrics.recordPingRTT(.now.timeIntervalSince(started))
         }

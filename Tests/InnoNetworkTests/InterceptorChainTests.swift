@@ -41,6 +41,24 @@ private struct ResponseStampingInterceptor: ResponseInterceptor {
 }
 
 
+private struct ResponseRewritingInterceptor: ResponseInterceptor {
+    let statusCode: Int
+    let response: StampedTraceResponse
+
+    func adapt(_ urlResponse: Response, request: URLRequest) async throws -> Response {
+        guard let httpResponse = urlResponse.response else {
+            throw NetworkError.invalidRequestConfiguration("Missing HTTPURLResponse for response rewrite.")
+        }
+        return Response(
+            statusCode: statusCode,
+            data: try JSONEncoder().encode(response),
+            request: urlResponse.request,
+            response: httpResponse
+        )
+    }
+}
+
+
 private struct StampedTraceRequest: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = StampedTraceResponse
@@ -144,6 +162,58 @@ struct InterceptorChainTests {
         _ = try await client.request(request)
 
         #expect(recorder.snapshot == ["req:endpoint-only", "res:endpoint-only"])
+    }
+
+    @Test("Response interceptor status rewrite controls success validation")
+    func responseInterceptorStatusRewriteControlsSuccessValidation() async throws {
+        let mockSession = MockURLSession()
+        mockSession.setMockResponse(statusCode: 500, data: Data("server failed".utf8))
+
+        let configuration = NetworkConfiguration(
+            baseURL: URL(string: "https://api.example.com/v1")!,
+            responseInterceptors: [
+                ResponseRewritingInterceptor(
+                    statusCode: 200,
+                    response: StampedTraceResponse(ok: true)
+                )
+            ]
+        )
+        let client = DefaultNetworkClient(configuration: configuration, session: mockSession)
+
+        let response = try await client.request(
+            StampedTraceRequest(
+                endpointRequestInterceptors: [],
+                endpointResponseInterceptors: []
+            )
+        )
+
+        #expect(response == StampedTraceResponse(ok: true))
+    }
+
+    @Test("Response interceptor body rewrite feeds the final decoder")
+    func responseInterceptorBodyRewriteFeedsDecoder() async throws {
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(StampedTraceResponse(ok: false))
+
+        let configuration = NetworkConfiguration(
+            baseURL: URL(string: "https://api.example.com/v1")!,
+            responseInterceptors: [
+                ResponseRewritingInterceptor(
+                    statusCode: 200,
+                    response: StampedTraceResponse(ok: true)
+                )
+            ]
+        )
+        let client = DefaultNetworkClient(configuration: configuration, session: mockSession)
+
+        let response = try await client.request(
+            StampedTraceRequest(
+                endpointRequestInterceptors: [],
+                endpointResponseInterceptors: []
+            )
+        )
+
+        #expect(response == StampedTraceResponse(ok: true))
     }
 
     @Test("AdvancedBuilder exposes interceptor slots for tuning")

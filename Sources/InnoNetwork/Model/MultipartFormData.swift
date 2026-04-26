@@ -65,22 +65,27 @@ public struct MultipartFormData: Sendable {
     /// Use this for small bodies where memory pressure is not a concern.
     /// For large file uploads, prefer ``writeEncodedData(to:)`` so the
     /// body is streamed chunk-by-chunk to disk and uploaded via
-    /// `URLSession.upload(for:fromFile:)`.
+    /// `URLSession.upload(for:fromFile:)`. File parts that cannot be read
+    /// are skipped entirely; use ``writeEncodedData(to:)`` when read
+    /// failures must be surfaced to the caller.
     public func encode() -> Data {
         var body = Data()
         let boundaryPrefix = "--\(boundary)\r\n"
 
         for part in parts {
-            body.append(Data(boundaryPrefix.utf8))
-            body.append(part.headerData())
+            let partData: Data
             switch part.source {
             case .data(let data):
-                body.append(data)
+                partData = data
             case .file(let url):
-                if let fileData = try? Data(contentsOf: url) {
-                    body.append(fileData)
+                guard let fileData = try? Data(contentsOf: url) else {
+                    continue
                 }
+                partData = fileData
             }
+            body.append(Data(boundaryPrefix.utf8))
+            body.append(part.headerData())
+            body.append(partData)
             body.append(Data("\r\n".utf8))
         }
 

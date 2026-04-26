@@ -55,9 +55,13 @@ struct MultipartStreamingTests {
 
         // Delete the source before encoding — the async appendFile path
         // should have stored only the URL, not a Data copy. encode() will
-        // therefore observe the missing file and skip the body, but
+        // therefore observe the missing file and skip the entire part, but
         // writeEncodedData should surface the read failure as a thrown error.
         try FileManager.default.removeItem(at: sourceURL)
+
+        let encoded = String(data: formData.encode(), encoding: .utf8) ?? ""
+        #expect(encoded == "--defer-boundary--\r\n")
+        #expect(!encoded.contains("name=\"file\""))
 
         let outURL = FileManager.default.temporaryDirectory.appendingPathComponent("multipart-defer-out-\(UUID().uuidString).bin")
         defer { try? FileManager.default.removeItem(at: outURL) }

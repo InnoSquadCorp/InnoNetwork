@@ -5,10 +5,10 @@ import Foundation
 ///
 /// - `noRetry`: do not retry; surface the error to the caller.
 /// - `retry`: retry using the policy's `retryDelay(for:)` value.
-/// - `retryAfter(seconds)`: retry, but wait at least the specified
+/// - `retryAfter(seconds)`: retry, preferring the specified
 ///   number of seconds (e.g. honoring a server's `Retry-After` header).
-///   The retry coordinator clamps this against the policy's own delay
-///   ceiling so an adversarial server cannot stall a client indefinitely.
+///   The retry coordinator clamps this against the policy's delay ceiling,
+///   so the actual wait may be shorter than the supplied value.
 public enum RetryDecision: Sendable, Equatable {
     case noRetry
     case retry

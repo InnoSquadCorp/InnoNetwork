@@ -165,4 +165,34 @@ extension NetworkError {
         }
         return false
     }
+
+    static func mapTransportError(_ error: Error) -> NetworkError {
+        if let networkError = error as? NetworkError {
+            return networkError
+        }
+
+        if let trustEvaluationError = error as? TrustEvaluationError {
+            switch trustEvaluationError {
+            case .failed(let reason, _):
+                return .trustEvaluationFailed(reason)
+            }
+        }
+
+        if isCancellation(error) {
+            return .cancelled
+        }
+
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut:
+                return .timeout(reason: .requestTimeout)
+            case .cannotConnectToHost:
+                return .timeout(reason: .connectionTimeout)
+            default:
+                break
+            }
+        }
+
+        return .underlying(SendableUnderlyingError(error), nil)
+    }
 }

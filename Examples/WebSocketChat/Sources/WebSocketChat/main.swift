@@ -143,7 +143,7 @@ let eventTask = Task {
             print("← \(text)")
         case .ping(let context):
             print("→ ping attempt=\(context.attemptNumber)")
-        case .pong:
+        case .pong(_):
             // RTT logging lives in `setOnPongHandler(_:)` above; keep the
             // event-stream branch non-binding to show payload-agnostic matching.
             break

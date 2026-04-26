@@ -105,29 +105,17 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
             let configuration = self.configuration
             let session = self.session
             let eventHub = self.eventHub
+            let startGate = TaskStartGate()
 
             let work = Task<Void, Never> {
+                await startGate.wait()
                 do {
+                    try Task.checkCancellation()
                     var urlRequest = URLRequest(url: configuration.baseURL.appendingPathComponent(request.path))
                     urlRequest.httpMethod = request.method.rawValue
                     urlRequest.allHTTPHeaderFields = request.headers.dictionary
                     urlRequest.cachePolicy = configuration.cachePolicy
                     urlRequest.timeoutInterval = configuration.timeout
-
-                    for interceptor in configuration.requestInterceptors {
-                        urlRequest = try await interceptor.adapt(urlRequest)
-                    }
-                    for interceptor in request.requestInterceptors {
-                        urlRequest = try await interceptor.adapt(urlRequest)
-                    }
-
-                    let context = NetworkRequestContext(
-                        requestID: requestID,
-                        retryIndex: 0,
-                        metricsReporter: configuration.metricsReporter,
-                        trustPolicy: configuration.trustPolicy,
-                        eventObservers: configuration.eventObservers
-                    )
 
                     await eventHub.publish(
                         .requestStart(
@@ -140,19 +128,56 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                         observers: configuration.eventObservers
                     )
 
+                    for interceptor in configuration.requestInterceptors {
+                        urlRequest = try await interceptor.adapt(urlRequest)
+                    }
+                    for interceptor in request.requestInterceptors {
+                        urlRequest = try await interceptor.adapt(urlRequest)
+                    }
+                    await eventHub.publish(
+                        .requestAdapted(
+                            requestID: requestID,
+                            method: urlRequest.httpMethod ?? "UNKNOWN",
+                            url: urlRequest.url?.absoluteString ?? "",
+                            retryIndex: 0
+                        ),
+                        requestID: requestID,
+                        observers: configuration.eventObservers
+                    )
+
+                    let context = NetworkRequestContext(
+                        requestID: requestID,
+                        retryIndex: 0,
+                        metricsReporter: configuration.metricsReporter,
+                        trustPolicy: configuration.trustPolicy,
+                        eventObservers: configuration.eventObservers
+                    )
                     let (bytes, response) = try await session.bytes(for: urlRequest, context: context)
                     guard let httpResponse = response as? HTTPURLResponse else {
                         throw NetworkError.nonHTTPResponse(response)
                     }
-                    guard configuration.acceptableStatusCodes.contains(httpResponse.statusCode) else {
-                        throw NetworkError.statusCode(
-                            Response(
-                                statusCode: httpResponse.statusCode,
-                                data: Data(),
-                                request: urlRequest,
-                                response: httpResponse
-                            )
-                        )
+                    await eventHub.publish(
+                        .responseReceived(
+                            requestID: requestID,
+                            statusCode: httpResponse.statusCode,
+                            byteCount: 0
+                        ),
+                        requestID: requestID,
+                        observers: configuration.eventObservers
+                    )
+
+                    var networkResponse = Response(
+                        statusCode: httpResponse.statusCode,
+                        data: Data(),
+                        request: urlRequest,
+                        response: httpResponse
+                    )
+                    for interceptor in configuration.responseInterceptors {
+                        networkResponse = try await interceptor.adapt(networkResponse, request: urlRequest)
+                    }
+
+                    guard configuration.acceptableStatusCodes.contains(networkResponse.statusCode) else {
+                        throw NetworkError.statusCode(networkResponse)
                     }
 
                     for try await line in bytes.lines {
@@ -161,30 +186,41 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                             continuation.yield(output)
                         }
                     }
+                    await eventHub.publish(
+                        .requestFinished(
+                            requestID: requestID,
+                            statusCode: networkResponse.statusCode,
+                            byteCount: networkResponse.data.count
+                        ),
+                        requestID: requestID,
+                        observers: configuration.eventObservers
+                    )
                     await eventHub.finish(requestID: requestID)
-                    await inFlight.deregister(id: requestID)
+                    inFlight.deregister(id: requestID)
                     continuation.finish()
                 } catch {
+                    let networkError = NetworkError.mapTransportError(error)
+                    let nsError = networkError as NSError
+                    await eventHub.publish(
+                        .requestFailed(
+                            requestID: requestID,
+                            errorCode: nsError.code,
+                            message: networkError.localizedDescription
+                        ),
+                        requestID: requestID,
+                        observers: configuration.eventObservers
+                    )
                     await eventHub.finish(requestID: requestID)
-                    await inFlight.deregister(id: requestID)
-                    if NetworkError.isCancellation(error) {
-                        continuation.finish(throwing: NetworkError.cancelled)
-                    } else if let networkError = error as? NetworkError {
-                        continuation.finish(throwing: networkError)
-                    } else {
-                        continuation.finish(throwing: NetworkError.underlying(SendableUnderlyingError(error), nil))
-                    }
+                    inFlight.deregister(id: requestID)
+                    continuation.finish(throwing: networkError)
                 }
             }
-
-            // Register out-of-band; if cancelAll fires before this completes,
-            // the next loop iteration's Task.checkCancellation() still triggers
-            // because the Task inherits cancellation when we call work.cancel().
-            Task { await inFlight.register(id: requestID, cancelHandler: { work.cancel() }) }
 
             continuation.onTermination = { _ in
                 work.cancel()
             }
+            inFlight.register(id: requestID, cancelHandler: { work.cancel() })
+            startGate.open()
         }
     }
 
@@ -199,7 +235,7 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
     /// the client can be drained without waiting for individual `Task`
     /// references to be tracked by the call site.
     public func cancelAll() async {
-        await inFlight.cancelAll()
+        inFlight.cancelAll()
     }
 
     public func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
@@ -257,7 +293,7 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                 )
             }
         }
-        await inFlight.register(id: requestID, cancelHandler: { work.cancel() })
+        inFlight.register(id: requestID, cancelHandler: { work.cancel() })
 
         do {
             let result = try await withTaskCancellationHandler {
@@ -265,10 +301,10 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
             } onCancel: {
                 work.cancel()
             }
-            await inFlight.deregister(id: requestID)
+            inFlight.deregister(id: requestID)
             return result
         } catch {
-            await inFlight.deregister(id: requestID)
+            inFlight.deregister(id: requestID)
             throw error
         }
     }
