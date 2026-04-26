@@ -71,6 +71,7 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
     private let session: URLSessionProtocol
     private let requestBuilder = RequestBuilder()
     private let eventHub: NetworkEventHub
+    private let inFlight = InFlightRegistry()
 
     public init(
         configuration: NetworkConfiguration,
@@ -83,6 +84,20 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
             metricsReporter: configuration.eventMetricsReporter,
             hubKind: .networkRequest
         )
+    }
+
+    /// Cancels every request currently dispatched through this client.
+    ///
+    /// Each in-flight request is interrupted at its next cooperative
+    /// cancellation checkpoint and surfaces ``NetworkError/cancelled`` to its
+    /// caller. Requests that have already produced a result before cancellation
+    /// reaches them complete normally.
+    ///
+    /// Typical use is during sign-out, screen disposal, or auth invalidation:
+    /// the client can be drained without waiting for individual `Task`
+    /// references to be tracked by the call site.
+    public func cancelAll() async {
+        await inFlight.cancelAll()
     }
 
     public func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
@@ -120,20 +135,39 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
     ///   sending, validating, or decoding the executable request.
     public func perform<D: SingleRequestExecutable>(executable: D) async throws -> D.APIResponse {
         let requestID = UUID()
-        let retryCoordinator = RetryCoordinator(eventHub: eventHub)
-        return try await retryCoordinator.execute(
-            retryPolicy: configuration.retryPolicy,
-            networkMonitor: configuration.networkMonitor,
-            requestID: requestID,
-            eventObservers: configuration.eventObservers
-        ) { retryIndex, requestID in
-            try await RequestExecutor(session: session, eventHub: eventHub).execute(
-                executable,
-                configuration: configuration,
-                requestBuilder: requestBuilder,
-                retryIndex: retryIndex,
-                requestID: requestID
-            )
+        // Wrap the work in an unstructured Task so cancelAll() can reach it
+        // without the call site having to track individual Task handles.
+        // Outer-task cancellation is forwarded via withTaskCancellationHandler.
+        let work = Task<D.APIResponse, Error> { [eventHub, configuration, session, requestBuilder] in
+            let retryCoordinator = RetryCoordinator(eventHub: eventHub)
+            return try await retryCoordinator.execute(
+                retryPolicy: configuration.retryPolicy,
+                networkMonitor: configuration.networkMonitor,
+                requestID: requestID,
+                eventObservers: configuration.eventObservers
+            ) { retryIndex, requestID in
+                try await RequestExecutor(session: session, eventHub: eventHub).execute(
+                    executable,
+                    configuration: configuration,
+                    requestBuilder: requestBuilder,
+                    retryIndex: retryIndex,
+                    requestID: requestID
+                )
+            }
+        }
+        await inFlight.register(id: requestID, cancelHandler: { work.cancel() })
+
+        do {
+            let result = try await withTaskCancellationHandler {
+                try await work.value
+            } onCancel: {
+                work.cancel()
+            }
+            await inFlight.deregister(id: requestID)
+            return result
+        } catch {
+            await inFlight.deregister(id: requestID)
+            throw error
         }
     }
 }
