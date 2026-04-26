@@ -6,7 +6,7 @@ public struct MultipartFormData: Sendable {
     public let boundary: String
     private var parts: [Part]
     
-    public init(boundary: String = UUID().uuidString) {
+    public init(boundary: String = "InnoNetwork.boundary.\(UUID().uuidString)") {
         self.boundary = boundary
         self.parts = []
     }

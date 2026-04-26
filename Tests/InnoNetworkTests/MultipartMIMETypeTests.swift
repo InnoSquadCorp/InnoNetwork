@@ -60,4 +60,12 @@ struct MultipartMIMETypeTests {
         // implementation detail we accept.
         #expect(actual != "application/octet-stream", "extension '\(ext)' fell back unexpectedly: \(actual)")
     }
+
+    @Test("Default boundary carries the library marker for debuggability")
+    func defaultBoundaryIsPrefixed() {
+        let formData = MultipartFormData()
+        #expect(formData.boundary.hasPrefix("InnoNetwork.boundary."))
+        // Suffix is a UUID, so the length after the marker is fixed.
+        #expect(formData.boundary.count == "InnoNetwork.boundary.".count + 36)
+    }
 }
