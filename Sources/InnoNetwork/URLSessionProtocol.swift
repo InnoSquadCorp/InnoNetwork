@@ -22,6 +22,15 @@ public protocol URLSessionProtocol: Sendable {
     /// callers see a clear error instead of a confusing fallback to a
     /// buffered response.
     func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (URLSession.AsyncBytes, URLResponse)
+    /// Uploads the contents of `fileURL` for the given request without
+    /// loading the file into memory. Used by ``RequestPayload/fileURL(_:contentType:)``
+    /// payloads (typically multipart bodies spooled with
+    /// ``MultipartFormData/writeEncodedData(to:)``).
+    ///
+    /// The default extension throws
+    /// ``NetworkError/invalidRequestConfiguration(_:)`` so non-streaming
+    /// stubs do not need to provide an upload path.
+    func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (Data, URLResponse)
 }
 
 public extension URLSessionProtocol {
@@ -34,6 +43,13 @@ public extension URLSessionProtocol {
         _ = (request, context)
         throw NetworkError.invalidRequestConfiguration(
             "Streaming bytes are not supported by this URLSessionProtocol implementation."
+        )
+    }
+
+    func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
+        _ = (request, fileURL, context)
+        throw NetworkError.invalidRequestConfiguration(
+            "File-based upload is not supported by this URLSessionProtocol implementation."
         )
     }
 }
@@ -63,6 +79,22 @@ extension URLSession: URLSessionProtocol {
         let delegate = RequestTaskDelegate(request: request, context: context)
         do {
             return try await bytes(for: request, delegate: delegate)
+        } catch {
+            if let trustFailureReason = delegate.trustFailureReason {
+                throw TrustEvaluationError.failed(trustFailureReason, error)
+            }
+            throw error
+        }
+    }
+
+    public func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
+        if context.metricsReporter == nil, context.trustPolicy.isSystemDefault {
+            return try await upload(for: request, fromFile: fileURL)
+        }
+
+        let delegate = RequestTaskDelegate(request: request, context: context)
+        do {
+            return try await upload(for: request, fromFile: fileURL, delegate: delegate)
         } catch {
             if let trustFailureReason = delegate.trustFailureReason {
                 throw TrustEvaluationError.failed(trustFailureReason, error)
