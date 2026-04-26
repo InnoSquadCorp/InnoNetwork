@@ -49,9 +49,14 @@ public struct NetworkLoggingOptions: Sendable {
 
 public struct DefaultNetworkLogger: NetworkLogger {
     private let options: NetworkLoggingOptions
+    private let cookieStorage: HTTPCookieStorage
 
-    public init(options: NetworkLoggingOptions = .secureDefault) {
+    public init(
+        options: NetworkLoggingOptions = .secureDefault,
+        cookieStorage: HTTPCookieStorage = .shared
+    ) {
         self.options = options
+        self.cookieStorage = cookieStorage
     }
 
     public func log(request: URLRequest) {
@@ -64,7 +69,7 @@ public struct DefaultNetworkLogger: NetworkLogger {
         if let headers = request.allHTTPHeaderFields, !headers.isEmpty {
             log.append("header: \(sanitize(headers: headers))\n")
         }
-        if options.includeCookies, let cookies = HTTPCookieStorage.shared.cookies {
+        if options.includeCookies, let cookies = cookieStorage.cookies {
             log.append("cookies: \(sanitize(cookies: cookies))\n")
         }
         if options.includeRequestBody,

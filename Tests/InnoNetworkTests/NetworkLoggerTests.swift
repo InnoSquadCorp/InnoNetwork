@@ -44,4 +44,37 @@ struct NetworkLoggerTests {
         #expect(sanitizedCookies.contains("session=<redacted>"))
         #expect(!sanitizedCookies.contains("sensitive"))
     }
+
+    @Test("Logger accepts a non-shared cookie storage at init")
+    func loggerHonorsInjectedCookieStorage() throws {
+        // Use a uniquely-named storage so the test cannot accidentally read
+        // or pollute HTTPCookieStorage.shared, which other tests or the
+        // host process may rely on.
+        let storage = HTTPCookieStorage.sharedCookieStorage(
+            forGroupContainerIdentifier: "InnoNetworkLoggerTests.\(UUID().uuidString)"
+        )
+        let cookie = try #require(
+            HTTPCookie(properties: [
+                .name: "isolated",
+                .value: "scoped",
+                .domain: "example.com",
+                .path: "/"
+            ])
+        )
+        storage.setCookie(cookie)
+
+        // Constructor accepts the injected storage and redacts the value.
+        // The sanitized format is `name=<redacted>` so we look for the name
+        // from the injected storage rather than the raw value.
+        let logger = DefaultNetworkLogger(
+            options: NetworkLoggingOptions(includeCookies: true, redactSensitiveData: true),
+            cookieStorage: storage
+        )
+        let sanitized = logger.sanitize(cookies: storage.cookies ?? [])
+        #expect(sanitized.contains("isolated=<redacted>"))
+
+        // Verify the shared singleton was not polluted by the injected setCookie.
+        let sharedCookies = HTTPCookieStorage.shared.cookies ?? []
+        #expect(!sharedCookies.contains(where: { $0.name == "isolated" }))
+    }
 }
