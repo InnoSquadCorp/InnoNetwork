@@ -279,6 +279,8 @@ private enum InnoNetworkBenchmarks {
         results.append(try await benchmarkReconnectDecision(iterations: reconnectIterations))
         results.append(try await benchmarkCloseDispositionClassify(iterations: websocketGuardIterations))
         results.append(try await benchmarkPingContextAlloc(iterations: websocketGuardIterations))
+        let clientIterations = options.quick ? 2_000 : 20_000
+        results.append(try await benchmarkConcurrentClientThroughput(iterations: clientIterations))
 
         return results
     }
@@ -475,6 +477,34 @@ private enum InnoNetworkBenchmarks {
                     dispatchedAt: .now
                 )
                 _ = context.attemptNumber
+            }
+        }
+    }
+
+    /// Measures end-to-end throughput of `DefaultNetworkClient.request(_:)`
+    /// using an in-memory URL session that returns a fixed JSON payload.
+    /// Captures the dispatch + retry-coordinator + event-hub + decode path
+    /// without any network or kernel I/O, so regressions in the actor /
+    /// class isolation model surface here before they show up in production.
+    private static func benchmarkConcurrentClientThroughput(iterations: Int) async throws -> BenchmarkResult {
+        try await measure(name: "concurrent-50-requests", group: "client", iterations: iterations) {
+            let session = InstantMockSession.shared
+            let client = DefaultNetworkClient(
+                configuration: NetworkConfiguration.safeDefaults(
+                    baseURL: URL(string: "https://benchmark.invalid")!
+                ),
+                session: session
+            )
+            let parallelism = 50
+            let batches = max(1, iterations / parallelism)
+            for _ in 0..<batches {
+                await withTaskGroup(of: Void.self) { group in
+                    for _ in 0..<parallelism {
+                        group.addTask {
+                            _ = try? await client.request(BenchmarkUserRequest())
+                        }
+                    }
+                }
             }
         }
     }
@@ -676,6 +706,43 @@ private struct SmallPayload: Encodable, Sendable {
         includeDrafts: true,
         tags: ["swift", "network", "benchmark"]
     )
+}
+
+private struct BenchmarkUser: Codable, Sendable {
+    let id: Int
+    let name: String
+}
+
+private struct BenchmarkUserRequest: APIDefinition {
+    typealias Parameter = EmptyParameter
+    typealias APIResponse = BenchmarkUser
+
+    var method: HTTPMethod { .get }
+    var path: String { "/users/1" }
+}
+
+/// `URLSessionProtocol` stub that returns a fixed JSON payload immediately,
+/// without any kernel I/O. Used by the throughput benchmark to isolate the
+/// dispatch / retry / event-hub / decode path from actual networking.
+private final class InstantMockSession: URLSessionProtocol, @unchecked Sendable {
+    static let shared = InstantMockSession()
+
+    private let payload: Data
+    private let response: HTTPURLResponse
+
+    init() {
+        self.payload = Data(#"{"id":1,"name":"benchmark"}"#.utf8)
+        self.response = HTTPURLResponse(
+            url: URL(string: "https://benchmark.invalid/users/1")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        (payload, response)
+    }
 }
 
 private struct LargePayload: Encodable, Sendable {
