@@ -173,9 +173,7 @@ struct RetryOncePolicy: RetryPolicy {
     func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
         guard retryIndex < maxRetries else { return false }
         switch error {
-        case .underlying:
-            return true
-        case .nonHTTPResponse:
+        case .underlying, .nonHTTPResponse, .timeout:
             return true
         default:
             return false
