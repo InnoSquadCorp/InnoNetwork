@@ -86,6 +86,108 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
         )
     }
 
+    /// Begins a long-lived streaming request and returns an
+    /// `AsyncThrowingStream` of decoded line payloads.
+    ///
+    /// Streaming requests bypass the configured ``RetryPolicy`` because a
+    /// half-consumed stream cannot be replayed transparently. Outer-task
+    /// cancellation propagates to the underlying transport via
+    /// `AsyncThrowingStream.Continuation.onTermination`, and ``cancelAll()``
+    /// reaches stream tasks the same way it reaches request tasks.
+    ///
+    /// - Parameter request: The streaming endpoint to subscribe to.
+    /// - Returns: An `AsyncThrowingStream<T.Output, Error>` whose values are
+    ///   the non-nil results of ``StreamingAPIDefinition/decode(line:)``.
+    public func stream<T: StreamingAPIDefinition>(_ request: T) -> AsyncThrowingStream<T.Output, Error> {
+        AsyncThrowingStream { continuation in
+            let requestID = UUID()
+            let inFlight = self.inFlight
+            let configuration = self.configuration
+            let session = self.session
+            let eventHub = self.eventHub
+
+            let work = Task<Void, Never> {
+                do {
+                    var urlRequest = URLRequest(url: configuration.baseURL.appendingPathComponent(request.path))
+                    urlRequest.httpMethod = request.method.rawValue
+                    urlRequest.allHTTPHeaderFields = request.headers.dictionary
+                    urlRequest.cachePolicy = configuration.cachePolicy
+                    urlRequest.timeoutInterval = configuration.timeout
+
+                    for interceptor in configuration.requestInterceptors {
+                        urlRequest = try await interceptor.adapt(urlRequest)
+                    }
+                    for interceptor in request.requestInterceptors {
+                        urlRequest = try await interceptor.adapt(urlRequest)
+                    }
+
+                    let context = NetworkRequestContext(
+                        requestID: requestID,
+                        retryIndex: 0,
+                        metricsReporter: configuration.metricsReporter,
+                        trustPolicy: configuration.trustPolicy,
+                        eventObservers: configuration.eventObservers
+                    )
+
+                    await eventHub.publish(
+                        .requestStart(
+                            requestID: requestID,
+                            method: urlRequest.httpMethod ?? "UNKNOWN",
+                            url: urlRequest.url?.absoluteString ?? "",
+                            retryIndex: 0
+                        ),
+                        requestID: requestID,
+                        observers: configuration.eventObservers
+                    )
+
+                    let (bytes, response) = try await session.bytes(for: urlRequest, context: context)
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        throw NetworkError.nonHTTPResponse(response)
+                    }
+                    guard configuration.acceptableStatusCodes.contains(httpResponse.statusCode) else {
+                        throw NetworkError.statusCode(
+                            Response(
+                                statusCode: httpResponse.statusCode,
+                                data: Data(),
+                                request: urlRequest,
+                                response: httpResponse
+                            )
+                        )
+                    }
+
+                    for try await line in bytes.lines {
+                        try Task.checkCancellation()
+                        if let output = try request.decode(line: line) {
+                            continuation.yield(output)
+                        }
+                    }
+                    await eventHub.finish(requestID: requestID)
+                    await inFlight.deregister(id: requestID)
+                    continuation.finish()
+                } catch {
+                    await eventHub.finish(requestID: requestID)
+                    await inFlight.deregister(id: requestID)
+                    if NetworkError.isCancellation(error) {
+                        continuation.finish(throwing: NetworkError.cancelled)
+                    } else if let networkError = error as? NetworkError {
+                        continuation.finish(throwing: networkError)
+                    } else {
+                        continuation.finish(throwing: NetworkError.underlying(SendableUnderlyingError(error), nil))
+                    }
+                }
+            }
+
+            // Register out-of-band; if cancelAll fires before this completes,
+            // the next loop iteration's Task.checkCancellation() still triggers
+            // because the Task inherits cancellation when we call work.cancel().
+            Task { await inFlight.register(id: requestID, cancelHandler: { work.cancel() }) }
+
+            continuation.onTermination = { _ in
+                work.cancel()
+            }
+        }
+    }
+
     /// Cancels every request currently dispatched through this client.
     ///
     /// Each in-flight request is interrupted at its next cooperative
