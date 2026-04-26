@@ -86,13 +86,16 @@ public actor NetworkMonitor: NetworkMonitoring {
     private var current: NetworkSnapshot?
     private var continuations: [UUID: AsyncStream<NetworkSnapshot>.Continuation] = [:]
     private var isMonitoring = false
+    private var pathConsumerTask: Task<Void, Never>?
 
     public init() {
         monitor = NWPathMonitor()
         queue = DispatchQueue(label: "com.innonetwork.networkmonitor")
-        monitor.pathUpdateHandler = { [weak self] path in
-            Task { await self?.update(with: path) }
-        }
+    }
+
+    deinit {
+        pathConsumerTask?.cancel()
+        monitor.cancel()
     }
 
     public func currentSnapshot() async -> NetworkSnapshot? {
@@ -146,6 +149,30 @@ public actor NetworkMonitor: NetworkMonitoring {
     private func startMonitoringIfNeeded() {
         guard !isMonitoring else { return }
         isMonitoring = true
+
+        // Channelize NWPath callbacks through an AsyncStream so updates run
+        // serially inside the actor instead of spawning a fresh Task per
+        // emission. Under network flapping (elevators, transit, captive
+        // portals) the previous design could pile up unbounded Tasks; this
+        // back-pressured loop processes paths in arrival order. The buffer
+        // is bounded so an unresponsive consumer cannot keep stale paths
+        // alive indefinitely.
+        let pathStream = AsyncStream<NWPath>(bufferingPolicy: .bufferingNewest(64)) { continuation in
+            monitor.pathUpdateHandler = { path in
+                continuation.yield(path)
+            }
+            continuation.onTermination = { [monitor] _ in
+                monitor.pathUpdateHandler = nil
+            }
+        }
+
+        pathConsumerTask = Task { [weak self] in
+            for await path in pathStream {
+                guard let self else { return }
+                await self.update(with: path)
+            }
+        }
+
         monitor.start(queue: queue)
     }
 
