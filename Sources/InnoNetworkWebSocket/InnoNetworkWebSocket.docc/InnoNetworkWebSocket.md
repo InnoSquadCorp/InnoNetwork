@@ -59,9 +59,11 @@ for await event in await manager.events(for: task) {
 
 - ``WebSocketEvent``
 - ``WebSocketCloseCode``
+- <doc:CloseCodes>
 
 ### Realtime Flows
 
+- <doc:Reconnect>
 - ``WebSocketManager``
 - ``WebSocketConfiguration``
 - ``WebSocketTask``
