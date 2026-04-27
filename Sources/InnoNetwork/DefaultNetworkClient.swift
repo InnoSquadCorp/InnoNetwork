@@ -184,7 +184,8 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                         networkResponse = try await interceptor.adapt(networkResponse, request: urlRequest)
                     }
 
-                    guard configuration.acceptableStatusCodes.contains(networkResponse.statusCode) else {
+                    let acceptable = request.acceptableStatusCodes ?? configuration.acceptableStatusCodes
+                    guard acceptable.contains(networkResponse.statusCode) else {
                         throw NetworkError.statusCode(networkResponse)
                     }
 

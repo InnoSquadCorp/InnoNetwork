@@ -86,7 +86,11 @@ package struct RequestExecutor {
                 networkResponse = try await interceptor.adapt(networkResponse, request: request)
             }
 
-            guard configuration.acceptableStatusCodes.contains(networkResponse.statusCode) else {
+            // Per-endpoint override wins over the session-wide configuration
+            // when present. Lets one definition treat e.g. 304 as success
+            // without changing the default for the rest of the client.
+            let acceptable = executable.acceptableStatusCodes ?? configuration.acceptableStatusCodes
+            guard acceptable.contains(networkResponse.statusCode) else {
                 throw NetworkError.statusCode(networkResponse)
             }
 

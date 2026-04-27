@@ -25,6 +25,11 @@ public protocol StreamingAPIDefinition: Sendable {
     var headers: HTTPHeaders { get }
     var requestInterceptors: [RequestInterceptor] { get }
 
+    /// Per-endpoint override for the set of acceptable HTTP status codes used
+    /// when validating the streaming response handshake. When `nil`, falls
+    /// back to ``NetworkConfiguration/acceptableStatusCodes``.
+    var acceptableStatusCodes: Set<Int>? { get }
+
     /// Decode a single line (without trailing newline) into an `Output`,
     /// or return `nil` to skip it.
     ///
@@ -38,4 +43,5 @@ public protocol StreamingAPIDefinition: Sendable {
 public extension StreamingAPIDefinition {
     var headers: HTTPHeaders { HTTPHeaders() }
     var requestInterceptors: [RequestInterceptor] { [] }
+    var acceptableStatusCodes: Set<Int>? { nil }
 }

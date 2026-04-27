@@ -26,6 +26,16 @@ public protocol APIDefinition: Sendable {
     var logger: NetworkLogger { get }
     var requestInterceptors: [RequestInterceptor] { get }
     var responseInterceptors: [ResponseInterceptor] { get }
+
+    /// Per-endpoint override for the set of acceptable HTTP status codes.
+    ///
+    /// When `nil`, the executor falls back to
+    /// ``NetworkConfiguration/acceptableStatusCodes``. Set this on a specific
+    /// endpoint when it should accept (or reject) status codes that the
+    /// session-wide default does not — for example, an endpoint that treats
+    /// `304 Not Modified` as success while every other endpoint treats it as
+    /// failure.
+    var acceptableStatusCodes: Set<Int>? { get }
 }
 
 
@@ -44,6 +54,11 @@ public protocol MultipartAPIDefinition: Sendable {
     var logger: NetworkLogger { get }
     var requestInterceptors: [RequestInterceptor] { get }
     var responseInterceptors: [ResponseInterceptor] { get }
+
+    /// Per-endpoint override for the set of acceptable HTTP status codes.
+    ///
+    /// See ``APIDefinition/acceptableStatusCodes`` for semantics.
+    var acceptableStatusCodes: Set<Int>? { get }
 }
 
 extension APIDefinition {
@@ -110,6 +125,8 @@ public extension MultipartAPIDefinition {
     var requestInterceptors: [RequestInterceptor] { [] }
 
     var responseInterceptors: [ResponseInterceptor] { [] }
+
+    var acceptableStatusCodes: Set<Int>? { nil }
 }
 
 extension APIDefinition where Parameter == EmptyParameter {
@@ -139,6 +156,8 @@ public extension APIDefinition {
     var requestInterceptors: [RequestInterceptor] { [] }
 
     var responseInterceptors: [ResponseInterceptor] { [] }
+
+    var acceptableStatusCodes: Set<Int>? { nil }
 }
 
 extension APIDefinition where APIResponse: HTTPEmptyResponseDecodable {
