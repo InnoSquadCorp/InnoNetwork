@@ -339,6 +339,7 @@ public final class WebSocketManager: NSObject, Sendable {
     public func retry(_ task: WebSocketTask) async {
         let state = await task.state
         guard state == .failed || state == .disconnected else { return }
+        await runtimeRegistry.add(task)
         await task.setAutoReconnectEnabled(true)
         await task.reset()
         await startConnection(task)

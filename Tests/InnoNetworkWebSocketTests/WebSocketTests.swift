@@ -264,6 +264,32 @@ struct WebSocketManagerTests {
         #expect(activeTasks.isEmpty)
     }
 
+    @Test("Retry re-registers terminal tasks in manager registry")
+    func retryReRegistersTerminalTaskInRegistry() async throws {
+        let harness = StubMessagingHarness(
+            heartbeatInterval: 0,
+            reconnectDelay: 0,
+            maxReconnectAttempts: 0
+        )
+        let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
+        await task.updateState(.failed)
+
+        await harness.manager.retry(task)
+
+        let registeredTask = try #require(await harness.manager.task(withId: task.id))
+        #expect(registeredTask.id == task.id)
+        #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
+        #expect((await harness.manager.activeTasks()).contains { $0.id == task.id })
+
+        await harness.manager.disconnect(task)
+        harness.manager.handleDisconnected(
+            taskIdentifier: harness.stubTaskIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
+    }
+
     @Test("Reconnect decision allows disconnected and failed states only when enabled")
     func reconnectDecision() {
         #expect(WebSocketManager.shouldReconnect(currentState: .failed, autoReconnectEnabled: true))
