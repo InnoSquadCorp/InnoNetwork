@@ -1,4 +1,4 @@
-import Foundation
+@preconcurrency import Foundation
 import OSLog
 
 
@@ -47,7 +47,7 @@ public struct NetworkLoggingOptions: Sendable {
     )
 }
 
-public struct DefaultNetworkLogger: NetworkLogger, @unchecked Sendable {
+public struct DefaultNetworkLogger: NetworkLogger {
     private let options: NetworkLoggingOptions
     private let cookieStorage: HTTPCookieStorage
 
