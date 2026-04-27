@@ -71,6 +71,11 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
     package var headers: HTTPHeaders { base.headers }
 
     package func makePayload() throws -> RequestPayload {
+        if base.contentType == .multipartFormData {
+            throw NetworkError.invalidRequestConfiguration(
+                "Use MultipartAPIDefinition for multipart/form-data requests."
+            )
+        }
         guard let parameters = base.parameters else { return .none }
         let transportPolicy = base.transportPolicy
 

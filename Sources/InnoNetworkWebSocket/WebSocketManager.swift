@@ -339,6 +339,7 @@ public final class WebSocketManager: NSObject, Sendable {
     public func retry(_ task: WebSocketTask) async {
         let state = await task.state
         guard state == .failed || state == .disconnected else { return }
+        await runtimeRegistry.add(task)
         await task.setAutoReconnectEnabled(true)
         await task.reset()
         await startConnection(task)
@@ -457,6 +458,7 @@ public final class WebSocketManager: NSObject, Sendable {
     }
 
     private func startConnection(_ task: WebSocketTask) async {
+        await task.advanceConnectionGeneration()
         await task.setAutoReconnectEnabled(true)
         await task.updateState(.connecting)
         await connectionCoordinator.startConnection(task) { [weak self] taskIdentifier, error in
@@ -521,9 +523,10 @@ public final class WebSocketManager: NSObject, Sendable {
             await task.setCloseCode(closeCode)
             await task.setCloseDisposition(disposition)
             await task.setError(error)
-            await runtimeRegistry.cancelHeartbeatTask(for: task.id)
+            let terminalGeneration = await prepareTerminalRuntimeCleanup(for: task)
             await runtimeRegistry.onDisconnected?(task, error)
-            await eventHub.publish(.disconnected(error), for: task.id)
+            await eventHub.publishAndWaitForDelivery(.disconnected(error), for: task.id)
+            guard await isCurrentConnection(task, generation: terminalGeneration) else { return }
 
             let reconnectAction = await reconnectCoordinator.reconnectAction(
                 task: task,
@@ -532,7 +535,6 @@ public final class WebSocketManager: NSObject, Sendable {
             )
             switch reconnectAction {
             case .retry:
-                await runtimeRegistry.removeTaskRuntime(taskId: task.id)
                 await reconnectCoordinator.attemptReconnect(task: task) { [weak self] task in
                     await self?.startReconnecting(task)
                 }
@@ -541,12 +543,12 @@ public final class WebSocketManager: NSObject, Sendable {
                 await task.updateState(.failed)
                 await task.setError(.maxReconnectAttemptsExceeded)
                 await runtimeRegistry.onError?(task, .maxReconnectAttemptsExceeded)
-                await eventHub.publish(.error(.maxReconnectAttemptsExceeded), for: task.id)
+                await eventHub.publishAndWaitForDelivery(.error(.maxReconnectAttemptsExceeded), for: task.id)
             case .terminal:
                 break
             }
 
-            await removeTask(task)
+            await finishTerminalTaskIfCurrent(task, generation: terminalGeneration)
         }
     }
 
@@ -655,10 +657,12 @@ public final class WebSocketManager: NSObject, Sendable {
         case .retry:
             await task.updateState(.reconnecting)
             await task.setError(finalError)
-            await runtimeRegistry.cancelHeartbeatTask(for: task.id)
+            let reconnectGeneration = await prepareTerminalRuntimeCleanup(for: task)
             await runtimeRegistry.onError?(task, finalError)
-            await eventHub.publish(.error(finalError), for: task.id)
-            await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+            await eventHub.publishAndWaitForDelivery(.error(finalError), for: task.id)
+            guard await isCurrentConnection(task, generation: reconnectGeneration),
+                  await task.state == .reconnecting
+            else { return }
             await reconnectCoordinator.attemptReconnect(task: task) { [weak self] task in
                 await self?.startReconnecting(task)
             }
@@ -666,19 +670,19 @@ public final class WebSocketManager: NSObject, Sendable {
         case .terminal:
             await task.updateState(.failed)
             await task.setError(finalError)
-            await runtimeRegistry.cancelHeartbeatTask(for: task.id)
+            let terminalGeneration = await prepareTerminalRuntimeCleanup(for: task)
             await runtimeRegistry.onError?(task, finalError)
-            await eventHub.publish(.error(finalError), for: task.id)
+            await eventHub.publishAndWaitForDelivery(.error(finalError), for: task.id)
+            await finishTerminalTaskIfCurrent(task, generation: terminalGeneration)
         case .exceeded:
             let finalError: WebSocketError = .maxReconnectAttemptsExceeded
             await task.updateState(.failed)
             await task.setError(finalError)
-            await runtimeRegistry.cancelHeartbeatTask(for: task.id)
+            let terminalGeneration = await prepareTerminalRuntimeCleanup(for: task)
             await runtimeRegistry.onError?(task, finalError)
-            await eventHub.publish(.error(finalError), for: task.id)
+            await eventHub.publishAndWaitForDelivery(.error(finalError), for: task.id)
+            await finishTerminalTaskIfCurrent(task, generation: terminalGeneration)
         }
-
-        await removeTask(task)
     }
 
     private func startReconnecting(_ task: WebSocketTask) async {
@@ -696,15 +700,32 @@ public final class WebSocketManager: NSObject, Sendable {
         await task.setCloseCode(closeCode)
         await task.setCloseDisposition(disposition)
         await task.setError(error)
+        let terminalGeneration = await prepareTerminalRuntimeCleanup(for: task)
         await runtimeRegistry.onDisconnected?(task, error)
-        await eventHub.publish(.disconnected(error), for: task.id)
-        await removeTask(task)
+        await eventHub.publishAndWaitForDelivery(.disconnected(error), for: task.id)
+        await finishTerminalTaskIfCurrent(task, generation: terminalGeneration)
     }
 
-    private func removeTask(_ task: WebSocketTask) async {
+    private func prepareTerminalRuntimeCleanup(for task: WebSocketTask) async -> Int {
+        let generation = await task.connectionGeneration
         await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+        return generation
+    }
+
+    private func finishTerminalTaskIfCurrent(_ task: WebSocketTask, generation: Int) async {
+        guard await isCurrentTerminalTask(task, generation: generation) else { return }
         await eventHub.finish(taskID: task.id)
+        guard await isCurrentTerminalTask(task, generation: generation) else { return }
         await runtimeRegistry.remove(task)
+    }
+
+    private func isCurrentTerminalTask(_ task: WebSocketTask, generation: Int) async -> Bool {
+        guard await isCurrentConnection(task, generation: generation) else { return false }
+        return await task.state.isTerminal
+    }
+
+    private func isCurrentConnection(_ task: WebSocketTask, generation: Int) async -> Bool {
+        await task.connectionGeneration == generation
     }
 
     private func makeDisconnectedError(closeDisposition: WebSocketCloseDisposition) -> WebSocketError {

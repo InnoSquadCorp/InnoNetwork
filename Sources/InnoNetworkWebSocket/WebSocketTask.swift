@@ -15,6 +15,7 @@ public actor WebSocketTask: Identifiable {
     private var _autoReconnectEnabled: Bool = true
     private var _pendingManualDisconnectError: WebSocketError?
     private var _awaitingCloseHandshake = false
+    private var _connectionGeneration = 0
 
     public var state: WebSocketState { _state }
     /// Total number of reconnect attempts the library has dispatched for this
@@ -36,6 +37,7 @@ public actor WebSocketTask: Identifiable {
     public var closeDisposition: WebSocketCloseDisposition? { _closeDisposition }
     public var autoReconnectEnabled: Bool { _autoReconnectEnabled }
     public var awaitingCloseHandshake: Bool { _awaitingCloseHandshake }
+    package var connectionGeneration: Int { _connectionGeneration }
 
     public init(url: URL, subprotocols: [String]? = nil, id: String = UUID().uuidString) {
         self.id = id
@@ -45,6 +47,12 @@ public actor WebSocketTask: Identifiable {
 
     func updateState(_ newState: WebSocketState) {
         _state = newState
+    }
+
+    @discardableResult
+    package func advanceConnectionGeneration() -> Int {
+        _connectionGeneration += 1
+        return _connectionGeneration
     }
 
     func incrementReconnectCount() -> Int {
