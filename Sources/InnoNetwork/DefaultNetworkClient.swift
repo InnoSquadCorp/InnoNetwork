@@ -260,13 +260,14 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                         continuation.finish()
                         return
                     } catch {
-                        let networkError = NetworkError.mapTransportError(error)
-                        let nsError = networkError as NSError
+                        let mapped = NetworkError.mapTransportError(error)
+                        let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
+                        let nsError = surfaced as NSError
                         await eventHub.publish(
                             .requestFailed(
                                 requestID: requestID,
                                 errorCode: nsError.code,
-                                message: networkError.localizedDescription
+                                message: surfaced.localizedDescription
                             ),
                             requestID: requestID,
                             observers: configuration.eventObservers
@@ -277,7 +278,8 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                         // recent transport-level error rather than the synthetic
                         // mapping above (which is identical here, but keeps
                         // the lastError variable load-bearing for clarity).
-                        continuation.finish(throwing: lastError ?? networkError)
+                        let priorRedacted = lastError.map { configuration.captureFailurePayload ? $0 : $0.redactingFailurePayload() }
+                        continuation.finish(throwing: priorRedacted ?? surfaced)
                         return
                     }
                 }

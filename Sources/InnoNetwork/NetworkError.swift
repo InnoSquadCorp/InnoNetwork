@@ -161,6 +161,38 @@ extension NetworkError: CustomNSError {
     }
 }
 
+// MARK: - Redaction
+
+public extension NetworkError {
+    /// Returns a copy of the error with any attached failure payload
+    /// (`Response.data`) zeroed out. Status code, request, and headers are
+    /// preserved so callers can still classify the failure. Used by the
+    /// request executor when ``NetworkConfiguration/captureFailurePayload``
+    /// is disabled (the default), so PII in failure bodies cannot leak into
+    /// logs, crash reports, or analytics through the error chain.
+    func redactingFailurePayload() -> NetworkError {
+        switch self {
+        case .objectMapping(let underlying, let response):
+            return .objectMapping(underlying, response.redactingData())
+        case .jsonMapping(let response):
+            return .jsonMapping(response.redactingData())
+        case .statusCode(let response):
+            return .statusCode(response.redactingData())
+        case .underlying(let err, let response?):
+            return .underlying(err, response.redactingData())
+        case .invalidBaseURL,
+             .invalidRequestConfiguration,
+             .nonHTTPResponse,
+             .underlying(_, nil),
+             .trustEvaluationFailed,
+             .undefined,
+             .cancelled,
+             .timeout:
+            return self
+        }
+    }
+}
+
 // MARK: - Cancellation Check
 
 extension NetworkError {

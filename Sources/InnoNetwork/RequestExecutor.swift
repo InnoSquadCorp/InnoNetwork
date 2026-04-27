@@ -107,14 +107,16 @@ package struct RequestExecutor {
 
             return try executable.decode(data: networkResponse.data, response: networkResponse)
         } catch let error as NetworkError {
-            executable.logger.log(error: error)
-            await notifyFailure(error, requestID: requestID, configuration: configuration)
-            throw error
+            let surfaced = configuration.captureFailurePayload ? error : error.redactingFailurePayload()
+            executable.logger.log(error: surfaced)
+            await notifyFailure(surfaced, requestID: requestID, configuration: configuration)
+            throw surfaced
         } catch {
-            let networkError = NetworkError.mapTransportError(error)
-            executable.logger.log(error: networkError)
-            await notifyFailure(networkError, requestID: requestID, configuration: configuration)
-            throw networkError
+            let mapped = NetworkError.mapTransportError(error)
+            let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
+            executable.logger.log(error: surfaced)
+            await notifyFailure(surfaced, requestID: requestID, configuration: configuration)
+            throw surfaced
         }
     }
 

@@ -230,9 +230,15 @@ struct DownloadManagerTests {
     
     @Test("Manager can be created with custom configuration")
     func customManager() async throws {
-        let config = DownloadConfiguration(maxConnectionsPerHost: 5)
+        // Use a unique session identifier so this test does not race against
+        // any sibling test (or DownloadManager.shared) that may have already
+        // claimed the default identifier in the same process.
+        let config = DownloadConfiguration(
+            maxConnectionsPerHost: 5,
+            sessionIdentifier: "test.custom-manager.\(UUID().uuidString)"
+        )
         let manager = try DownloadManager(configuration: config)
-        
+
         #expect((await manager.allTasks()).isEmpty)
     }
     

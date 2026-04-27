@@ -42,4 +42,19 @@ public struct Response: CustomDebugStringConvertible, Equatable, Sendable {
             && lhs.data == rhs.data
             && lhs.response == rhs.response
     }
+
+    /// Returns a copy of the response with `data` zeroed out, used by the
+    /// failure-payload redaction path so callers cannot accidentally observe
+    /// the raw response body when ``NetworkConfiguration/captureFailurePayload``
+    /// is disabled. Status code, request, and HTTPURLResponse metadata are
+    /// preserved.
+    public func redactingData() -> Response {
+        guard let response else { return self }
+        return Response(
+            statusCode: statusCode,
+            data: Data(),
+            request: request,
+            response: response
+        )
+    }
 }
