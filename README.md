@@ -212,6 +212,13 @@ Public releases follow semantic versioning; `4.0.0` is the next major line.
 integrations. Lower-level extension points that exist in the source tree are
 not part of the 4.0.0 stable public contract.
 
+For long-lived line-delimited transports (Server-Sent Events, NDJSON, log
+streams), use `DefaultNetworkClient.stream(_:)` together with a
+`StreamingAPIDefinition`. To cancel every in-flight request and stream
+(for example, on logout or backgrounding), call
+`DefaultNetworkClient.cancelAll()`. See
+[docs/releases/4.0.0.md](docs/releases/4.0.0.md) for full release details.
+
 ## Benchmarks
 
 The repository includes a dedicated benchmark runner for quick local comparisons.

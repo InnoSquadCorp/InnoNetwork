@@ -92,6 +92,9 @@ expected_stable=(
 '`WebSocketConfiguration.advanced(_:)`'
 '`DownloadManager`'
 '`WebSocketManager`'
+'`WebSocketEvent.ping`'
+'`WebSocketEvent.pong`'
+'`WebSocketEvent.error(.pingTimeout)`'
 '`TrustPolicy`'
 '`AnyResponseDecoder`'
 '`URLQueryEncoder`'
@@ -249,6 +252,18 @@ for symbol in "${expected_stable[@]}"; do
       ;;
     '`WebSocketManager`')
       pattern='public final class WebSocketManager'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      ;;
+    '`WebSocketEvent.ping`')
+      pattern='case ping(WebSocketPingContext)'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      ;;
+    '`WebSocketEvent.pong`')
+      pattern='case pong(WebSocketPongContext)'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      ;;
+    '`WebSocketEvent.error(.pingTimeout)`')
+      pattern='case error(WebSocketError)'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
       ;;
     '`TrustPolicy`')

@@ -95,6 +95,14 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
     /// `AsyncThrowingStream.Continuation.onTermination`, and ``cancelAll()``
     /// reaches stream tasks the same way it reaches request tasks.
     ///
+    /// Response interceptors on ``NetworkConfiguration`` receive only the
+    /// response metadata for streaming requests. Their ``Response/data`` is
+    /// empty because stream contents are decoded line-by-line after headers
+    /// arrive; body-inspecting interceptors should stay on non-streaming
+    /// ``request(_:)``/``upload(_:)`` paths. Per-endpoint response
+    /// interceptors are not part of ``StreamingAPIDefinition`` and therefore
+    /// are not run for streams.
+    ///
     /// - Parameter request: The streaming endpoint to subscribe to.
     /// - Returns: An `AsyncThrowingStream<T.Output, Error>` whose values are
     ///   the non-nil results of ``StreamingAPIDefinition/decode(line:)``.
@@ -180,8 +188,10 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                         throw NetworkError.statusCode(networkResponse)
                     }
 
+                    var streamedByteCount = 0
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
+                        streamedByteCount += line.utf8.count
                         if let output = try request.decode(line: line) {
                             continuation.yield(output)
                         }
@@ -190,7 +200,7 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                         .requestFinished(
                             requestID: requestID,
                             statusCode: networkResponse.statusCode,
-                            byteCount: networkResponse.data.count
+                            byteCount: streamedByteCount
                         ),
                         requestID: requestID,
                         observers: configuration.eventObservers
@@ -273,10 +283,12 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
     ///   sending, validating, or decoding the executable request.
     public func perform<D: SingleRequestExecutable>(executable: D) async throws -> D.APIResponse {
         let requestID = UUID()
+        let startGate = TaskStartGate()
         // Wrap the work in an unstructured Task so cancelAll() can reach it
         // without the call site having to track individual Task handles.
         // Outer-task cancellation is forwarded via withTaskCancellationHandler.
         let work = Task<D.APIResponse, Error> { [eventHub, configuration, session, requestBuilder] in
+            await startGate.wait()
             let retryCoordinator = RetryCoordinator(eventHub: eventHub)
             return try await retryCoordinator.execute(
                 retryPolicy: configuration.retryPolicy,
@@ -294,6 +306,7 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
             }
         }
         inFlight.register(id: requestID, cancelHandler: { work.cancel() })
+        startGate.open()
 
         do {
             let result = try await withTaskCancellationHandler {

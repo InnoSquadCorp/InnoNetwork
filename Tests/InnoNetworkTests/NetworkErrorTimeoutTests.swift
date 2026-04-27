@@ -38,8 +38,9 @@ struct NetworkErrorTimeoutTests {
             Issue.record("Expected timeout error")
         } catch let error as NetworkError {
             switch error {
-            case .timeout(.requestTimeout):
-                break
+            case .timeout(.requestTimeout, let underlying):
+                #expect(underlying?.domain == NSURLErrorDomain)
+                #expect(underlying?.code == URLError.Code.timedOut.rawValue)
             default:
                 Issue.record("Expected NetworkError.timeout(.requestTimeout), got \(error)")
             }
@@ -59,8 +60,9 @@ struct NetworkErrorTimeoutTests {
             Issue.record("Expected connection timeout")
         } catch let error as NetworkError {
             switch error {
-            case .timeout(.connectionTimeout):
-                break
+            case .timeout(.connectionTimeout, let underlying):
+                #expect(underlying?.domain == NSURLErrorDomain)
+                #expect(underlying?.code == URLError.Code.cannotConnectToHost.rawValue)
             default:
                 Issue.record("Expected NetworkError.timeout(.connectionTimeout), got \(error)")
             }
@@ -103,14 +105,19 @@ struct NetworkErrorTimeoutTests {
         let connection = NetworkError.timeout(reason: .connectionTimeout)
         let resource = NetworkError.timeout(reason: .resourceTimeout)
 
-        #expect(request.errorDescription?.contains("request") == true)
-        #expect(connection.errorDescription?.contains("connection") == true)
-        #expect(resource.errorDescription?.contains("resource") == true)
+        let descriptions = [
+            request.errorDescription,
+            connection.errorDescription,
+            resource.errorDescription,
+        ].compactMap { $0 }
+        #expect(descriptions.count == 3)
+        #expect(Set(descriptions).count == 3, "Each reason must produce a distinct description: \(descriptions)")
     }
 
     @Test("response and underlyingError are nil for .timeout")
     func responseAccessorsNilForTimeout() {
         let error = NetworkError.timeout(reason: .requestTimeout)
         #expect(error.response == nil)
+        #expect(error.underlyingError == nil)
     }
 }

@@ -37,6 +37,16 @@ struct RetryAfterParsingTests {
         #expect(ExponentialBackoffRetryPolicy.parseRetryAfter(header, now: now) == nil)
     }
 
+    @Test("Asctime HTTP-date variants parse")
+    func asctimeVariantsParse() {
+        let now = Date(timeIntervalSince1970: 0)
+        let doubleSpaceDay = ExponentialBackoffRetryPolicy.parseRetryAfter("Sun Nov  6 08:49:37 1994", now: now)
+        let zeroPaddedDay = ExponentialBackoffRetryPolicy.parseRetryAfter("Sun Nov 06 08:49:37 1994", now: now)
+        #expect(doubleSpaceDay != nil)
+        #expect(zeroPaddedDay != nil)
+        #expect(doubleSpaceDay == zeroPaddedDay)
+    }
+
     @Test("Contextual shouldRetry returns .retryAfter on 429 with Retry-After: 3")
     func retryAfterRoutesThroughContextualOverload() throws {
         let policy = ExponentialBackoffRetryPolicy(maxRetries: 5, retryDelay: 1)

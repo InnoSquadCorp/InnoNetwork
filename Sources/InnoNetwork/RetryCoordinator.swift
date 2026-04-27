@@ -52,8 +52,8 @@ package struct RetryCoordinator {
                 let currentRetryIndex = retryIndex
                 let computedDelay = policy.retryDelay(for: currentRetryIndex)
                 // Honor server hint when present, but never less than the
-                // computed jittered delay and never more than 4× that — an
-                // adversarial server cannot stall the client indefinitely.
+                // computed jittered delay. Policies may also provide an
+                // absolute Retry-After ceiling to avoid unbounded waits.
                 let delay: TimeInterval
                 switch decision {
                 case .noRetry:
@@ -62,8 +62,12 @@ package struct RetryCoordinator {
                 case .retry:
                     delay = computedDelay
                 case .retryAfter(let serverHint):
-                    let upperBound = max(computedDelay, policy.retryDelay) * 4
-                    delay = min(max(serverHint, computedDelay), upperBound)
+                    let hintedDelay = max(serverHint, computedDelay)
+                    if let maxRetryAfterDelay = policy.maxRetryAfterDelay {
+                        delay = min(hintedDelay, max(maxRetryAfterDelay, computedDelay))
+                    } else {
+                        delay = hintedDelay
+                    }
                 }
                 await eventHub.publish(
                     .retryScheduled(

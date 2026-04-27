@@ -7,9 +7,10 @@ private struct LegacyBoolPolicy: RetryPolicy {
     let maxRetries = 1
     let maxTotalRetries = 1
     let retryDelay: TimeInterval = 0
+    let result: Bool
 
     func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
-        true
+        result
     }
 }
 
@@ -51,14 +52,20 @@ struct RetryDecisionTests {
 
     @Test("Legacy boolean shouldRetry maps true → .retry and false → .noRetry by default")
     func legacyBoolMapsThroughDefault() {
-        let policy = LegacyBoolPolicy()
-        let decision = policy.shouldRetry(
+        let retryDecision = LegacyBoolPolicy(result: true).shouldRetry(
             error: .undefined,
             retryIndex: 0,
             request: nil,
             response: nil
         )
-        #expect(decision == .retry)
+        let noRetryDecision = LegacyBoolPolicy(result: false).shouldRetry(
+            error: .undefined,
+            retryIndex: 0,
+            request: nil,
+            response: nil
+        )
+        #expect(retryDecision == .retry)
+        #expect(noRetryDecision == .noRetry)
     }
 
     @Test("Contextual override is preferred over the legacy boolean overload")

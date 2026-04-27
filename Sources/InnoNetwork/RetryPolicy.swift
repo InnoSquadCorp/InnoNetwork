@@ -7,8 +7,9 @@ import Foundation
 /// - `retry`: retry using the policy's `retryDelay(for:)` value.
 /// - `retryAfter(seconds)`: retry, preferring the specified
 ///   number of seconds (e.g. honoring a server's `Retry-After` header).
-///   The retry coordinator clamps this against the policy's delay ceiling,
-///   so the actual wait may be shorter than the supplied value.
+///   The retry coordinator never sleeps less than the policy's computed
+///   `retryDelay(for:)` value, and clamps the server hint to
+///   ``RetryPolicy/maxRetryAfterDelay`` when the policy provides one.
 public enum RetryDecision: Sendable, Equatable {
     case noRetry
     case retry
@@ -21,6 +22,13 @@ public protocol RetryPolicy: Sendable {
     /// Maximum total retry count, even if retry count is reset due to network changes.
     var maxTotalRetries: Int { get }
     var retryDelay: TimeInterval { get }
+    /// Optional absolute ceiling for `Retry-After` waits.
+    ///
+    /// When `nil`, the coordinator honors server hints after applying the
+    /// policy's computed retry delay floor. When non-`nil`, the coordinator
+    /// caps server hints at this value but will not reduce the wait below
+    /// `retryDelay(for:)`.
+    var maxRetryAfterDelay: TimeInterval? { get }
     /// Returns the delay (in seconds) for the given retry index.
     /// `retryIndex` is 0-based and represents actual retry executions.
     func retryDelay(for retryIndex: Int) -> TimeInterval
@@ -50,6 +58,7 @@ public protocol RetryPolicy: Sendable {
 
 public extension RetryPolicy {
     var maxTotalRetries: Int { maxRetries }
+    var maxRetryAfterDelay: TimeInterval? { nil }
     var waitsForNetworkChanges: Bool { false }
     var networkChangeTimeout: TimeInterval? { nil }
     func shouldResetAttempts(afterNetworkChangeFrom oldSnapshot: NetworkSnapshot?, to newSnapshot: NetworkSnapshot?) -> Bool {
@@ -94,6 +103,7 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
     public let maxRetries: Int
     public let maxTotalRetries: Int
     public let retryDelay: TimeInterval
+    public let maxRetryAfterDelay: TimeInterval?
     public let maxDelay: TimeInterval
     public let jitterRatio: Double
     public let waitsForNetworkChanges: Bool
@@ -103,6 +113,8 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
     ///   - maxRetries: Maximum number of retries.
     ///   - maxTotalRetries: Maximum total retry count even if the counter is reset.
     ///   - retryDelay: Base retry delay in seconds.
+    ///   - maxRetryAfterDelay: Maximum delay honored from a `Retry-After`
+    ///     header. Pass `nil` to honor server hints without an absolute cap.
     ///   - maxDelay: Maximum delay for exponential backoff in seconds.
     ///   - jitterRatio: Jitter ratio applied to the delay (e.g., 0.2 means ±20%). Must be non-negative; negative jitter results are clamped to 0.
     ///   - waitsForNetworkChanges: Whether to wait for network changes before retrying.
@@ -111,6 +123,7 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         maxRetries: Int = 3,
         maxTotalRetries: Int? = nil,
         retryDelay: TimeInterval = 1.0,
+        maxRetryAfterDelay: TimeInterval? = 60.0,
         maxDelay: TimeInterval = 30.0,
         jitterRatio: Double = 0.2,
         waitsForNetworkChanges: Bool = false,
@@ -119,6 +132,7 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         self.maxRetries = maxRetries
         self.maxTotalRetries = maxTotalRetries ?? maxRetries
         self.retryDelay = retryDelay
+        self.maxRetryAfterDelay = maxRetryAfterDelay.map { max(0, $0) }
         self.maxDelay = maxDelay
         self.jitterRatio = jitterRatio
         self.waitsForNetworkChanges = waitsForNetworkChanges
@@ -206,11 +220,17 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(abbreviation: "GMT")
-        for format in formats {
-            formatter.dateFormat = format
-            if let date = formatter.date(from: trimmed) {
-                let delta = date.timeIntervalSince(now)
-                return delta > 0 ? delta : nil
+        let normalizedWhitespace = trimmed
+            .split(whereSeparator: { $0 == " " || $0 == "\t" })
+            .joined(separator: " ")
+        let candidates = normalizedWhitespace == trimmed ? [trimmed] : [trimmed, normalizedWhitespace]
+        for candidate in candidates {
+            for format in formats {
+                formatter.dateFormat = format
+                if let date = formatter.date(from: candidate) {
+                    let delta = date.timeIntervalSince(now)
+                    return delta > 0 ? delta : nil
+                }
             }
         }
         return nil

@@ -217,7 +217,7 @@ enum TrustEvaluator {
     /// the raw public key bytes via ``pinHashes(for:)``. That covers
     /// alternate algorithms (RSA-PSS, post-quantum, etc.) at the cost of
     /// requiring consumers to register pins computed from the same raw bytes.
-    static func algorithmIdentifierData(
+    private static func algorithmIdentifierData(
         keyType: String,
         keySizeInBits: Int
     ) -> Data? {

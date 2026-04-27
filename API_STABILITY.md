@@ -18,6 +18,9 @@ This document defines the compatibility contract for the upcoming InnoNetwork
 - `WebSocketConfiguration.advanced(_:)`
 - `DownloadManager`
 - `WebSocketManager`
+- `WebSocketEvent.ping`
+- `WebSocketEvent.pong`
+- `WebSocketEvent.error(.pingTimeout)`
 - `TrustPolicy`
 - `AnyResponseDecoder`
 - `URLQueryEncoder`

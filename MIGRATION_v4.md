@@ -15,16 +15,19 @@ production-readiness pass on the request pipeline:
 3. **K — `WebSocketEvent.ping`** is emitted at the start of every heartbeat
    attempt, completing the `.ping → .pong`/`.error(.pingTimeout)` observability
    pair.
-4. **L — `NetworkError.timeout(reason:)`** is a new exhaustive case so
-   transport timeouts can be branched on without unwrapping NSError.
+4. **L — `NetworkError.timeout(reason:underlying:)`** is a new exhaustive case so
+   transport timeouts can be branched on while preserving the original
+   transport error for diagnostics.
 5. **M — `RequestPayload.fileURL(_:contentType:)`** lets multi-hundred-MB
    bodies stream from disk via `URLSession.upload(for:fromFile:)`.
 6. **N — `DefaultNetworkClient` is now a `final class`** (was `actor`) so
    concurrent requests dispatch without an actor-hop. The public API
    surface is byte-for-byte unchanged.
 
-Items L–N are source-breaking on exhaustive switches; everything else
-in this release is additive.
+Items L and M are source-breaking on exhaustive switches; item N is
+source-breaking only for call sites that relied on `DefaultNetworkClient`
+being an actor (for example, crossing actor boundaries). Everything else in
+this release is additive.
 
 Minimum toolchain remains Swift 6.2 / Xcode 26.
 
@@ -160,8 +163,8 @@ public enum WebSocketEvent: Sendable {
     case disconnected(WebSocketError?)
     case message(Data)
     case string(String)
-    case ping       // NEW in 4.0
-    case pong
+    case ping(WebSocketPingContext)       // NEW in 4.0
+    case pong(WebSocketPongContext)
     case error(WebSocketError)
 }
 ```
@@ -182,9 +185,9 @@ point you at the missing case:
  case .disconnected: // ...
  case .message:      // ...
  case .string:       // ...
-+case .ping:
++case .ping(_):
 +    break
- case .pong:         // ...
+ case .pong(_):      // ...
  case .error:        // ...
  }
 ```
@@ -198,9 +201,9 @@ and round-trip latency on the client:
 var pendingPingAt: Date?
 for await event in await manager.events(for: task) {
     switch event {
-    case .ping:
+    case .ping(_):
         pendingPingAt = .now
-    case .pong:
+    case .pong(_):
         if let started = pendingPingAt {
             metrics.recordPingRTT(.now.timeIntervalSince(started))
             pendingPingAt = nil
@@ -216,7 +219,7 @@ for await event in await manager.events(for: task) {
 
 ---
 
-## 4. `NetworkError.timeout(reason:)` (Item L)
+## 4. `NetworkError.timeout(reason:underlying:)` (Item L)
 
 ```diff
  public enum NetworkError: Error, Sendable {
@@ -225,7 +228,7 @@ for await event in await manager.events(for: task) {
      ...
      case undefined
      case cancelled
-+    case timeout(reason: TimeoutReason)
++    case timeout(reason: TimeoutReason, underlying: SendableUnderlyingError? = nil)
  }
 
 +public enum TimeoutReason: Sendable, Equatable {
@@ -235,27 +238,32 @@ for await event in await manager.events(for: task) {
 +}
 ```
 
-`URLError.timedOut`, `URLError.cannotConnectToHost`, and
-`URLError.cannotFindHost` previously folded into `.underlying`. The new
-case routes them to a first-class branch:
+`URLError.timedOut` and `URLError.cannotConnectToHost` previously folded into
+`.underlying`. The new case routes them to a first-class branch while keeping
+the original `URLError` in `underlying`. `URLError.cannotFindHost` remains
+`.underlying` because DNS resolution failure is not a timeout.
 
 ```diff
  switch error {
  case .statusCode(let response): ...
  case .underlying(let error, _): ...
-+case .timeout(.requestTimeout):
++case .timeout(.requestTimeout, _):
 +    showSlowNetworkBanner()
-+case .timeout(.connectionTimeout):
++case .timeout(.connectionTimeout, _):
 +    showOfflineBanner()
-+case .timeout(.resourceTimeout):
++case .timeout(.resourceTimeout, _):
 +    showSlowNetworkBanner()
  default: ...
  }
 ```
 
-`ExponentialBackoffRetryPolicy` retries `.timeout(_)` by default, so
-existing retry behavior is unchanged — the case is purely an
-observability and UX improvement.
+`ExponentialBackoffRetryPolicy` retries `.timeout(_, _)` by default, so
+existing retry behavior is unchanged. The `underlying` payload is there for
+operational diagnostics, including `NSError` domain/code inspection through
+``NetworkError/underlyingError`` and `NSError.userInfo[NSUnderlyingErrorKey]`.
+The library does not currently map Foundation errors to `.resourceTimeout`
+because `URLError.timedOut` does not expose whether request or resource timeout
+expiration fired.
 
 ---
 
@@ -305,6 +313,13 @@ memory) but the async overload combined with `writeEncodedData(to:)`
 is the path forward. The synchronous overload is scheduled for removal
 in `5.0`.
 
+When callers use in-memory ``MultipartFormData/encode()``, unreadable file
+parts are skipped and logged as warnings. Use
+``MultipartFormData/writeEncodedData(to:)`` when file read failures must throw.
+That method performs synchronous disk I/O and can leave a partial temporary
+file on failure, so call it from a background context and remove the temp file
+with `defer` when surfacing errors.
+
 ---
 
 ## 6. `DefaultNetworkClient` is a `final class` (Item N)
@@ -336,6 +351,7 @@ contextual overload returning ``RetryDecision``:
 ```swift
 public protocol RetryPolicy: Sendable {
     // unchanged...
+    var maxRetryAfterDelay: TimeInterval? { get }
     func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool
     // NEW:
     func shouldRetry(
@@ -378,9 +394,10 @@ struct IdempotentOnlyRetryPolicy: RetryPolicy {
 
 `ExponentialBackoffRetryPolicy` already implements the contextual
 overload to honor `Retry-After` on `429` and `503` responses
-(delta-seconds and HTTP-date). The retry coordinator clamps the
-returned wait between the policy's own jittered delay and 4× that
-delay to defend against adversarial servers.
+(delta-seconds and HTTP-date). The retry coordinator never waits less than the
+policy's computed jittered delay. If `maxRetryAfterDelay` is non-`nil`, server
+hints are capped at that value; pass `nil` to honor server hints without an
+absolute cap.
 
 The legacy boolean overload is scheduled for removal in `5.0`.
 
@@ -431,7 +448,7 @@ After bumping InnoNetwork to `4.0`:
    `.serviceRestart` / `.tryAgainLater` / `.custom(_)` arms as
    appropriate for your retry policy.
 4. Search for callers that branched on `URLError.timedOut` inside a
-   `NetworkError.underlying` arm — the new `.timeout(reason:)` case is
+   `NetworkError.underlying` arm — the new `.timeout(reason:underlying:)` case is
    the cleaner branch.
 5. If you implement `RetryPolicy`, consider overriding the contextual
    overload to honor `Retry-After` and per-method rules.

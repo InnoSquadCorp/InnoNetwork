@@ -239,6 +239,11 @@ struct StreamingAPIDefinitionTests {
         #expect(values == ["one", "two"])
         let events = await waitForStreamingEvents(store: store, minimumCount: 4)
         #expect(events.map(streamingEventName) == ["start", "adapted", "response", "finished"])
+        let finishedByteCounts = events.compactMap { event -> Int? in
+            if case .requestFinished(_, _, let byteCount) = event { return byteCount }
+            return nil
+        }
+        #expect(finishedByteCounts == ["one".utf8.count + "two".utf8.count])
     }
 
     @Test("stream() response interceptor status rewrite controls validation")
@@ -278,8 +283,9 @@ struct StreamingAPIDefinitionTests {
             Issue.record("Expected stream timeout error")
         } catch let error as NetworkError {
             switch error {
-            case .timeout(.requestTimeout):
-                break
+            case .timeout(.requestTimeout, let underlying):
+                #expect(underlying?.domain == NSURLErrorDomain)
+                #expect(underlying?.code == URLError.Code.timedOut.rawValue)
             default:
                 Issue.record("Expected NetworkError.timeout(.requestTimeout), got \(error)")
             }
@@ -300,8 +306,9 @@ struct StreamingAPIDefinitionTests {
             Issue.record("Expected stream connection timeout error")
         } catch let error as NetworkError {
             switch error {
-            case .timeout(.connectionTimeout):
-                break
+            case .timeout(.connectionTimeout, let underlying):
+                #expect(underlying?.domain == NSURLErrorDomain)
+                #expect(underlying?.code == URLError.Code.cannotConnectToHost.rawValue)
             default:
                 Issue.record("Expected NetworkError.timeout(.connectionTimeout), got \(error)")
             }

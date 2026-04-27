@@ -2,6 +2,36 @@ import Foundation
 import Network
 
 
+private final class PathMonitorStorage: @unchecked Sendable {
+    private let monitor: NWPathMonitor
+    private let queue: DispatchQueue
+
+    init() {
+        self.monitor = NWPathMonitor()
+        self.queue = DispatchQueue(label: "com.innonetwork.networkmonitor")
+    }
+
+    func makePathStream() -> AsyncStream<NWPath> {
+        AsyncStream(bufferingPolicy: .bufferingNewest(64)) { [monitor] continuation in
+            monitor.pathUpdateHandler = { path in
+                continuation.yield(path)
+            }
+            continuation.onTermination = { _ in
+                monitor.pathUpdateHandler = nil
+            }
+        }
+    }
+
+    func start() {
+        monitor.start(queue: queue)
+    }
+
+    func cancel() {
+        monitor.cancel()
+    }
+}
+
+
 /// The type of network interface used for connectivity.
 public enum NetworkInterfaceType: String, Sendable {
     /// Wi-Fi connection.
@@ -81,21 +111,19 @@ public protocol NetworkMonitoring: Sendable {
 public actor NetworkMonitor: NetworkMonitoring {
     public static let shared = NetworkMonitor()
 
-    private let monitor: NWPathMonitor
-    private let queue: DispatchQueue
+    private let pathMonitor: PathMonitorStorage
     private var current: NetworkSnapshot?
     private var continuations: [UUID: AsyncStream<NetworkSnapshot>.Continuation] = [:]
     private var isMonitoring = false
     private var pathConsumerTask: Task<Void, Never>?
 
     public init() {
-        monitor = NWPathMonitor()
-        queue = DispatchQueue(label: "com.innonetwork.networkmonitor")
+        pathMonitor = PathMonitorStorage()
     }
 
     deinit {
         pathConsumerTask?.cancel()
-        monitor.cancel()
+        pathMonitor.cancel()
     }
 
     public func currentSnapshot() async -> NetworkSnapshot? {
@@ -157,14 +185,7 @@ public actor NetworkMonitor: NetworkMonitoring {
         // back-pressured loop processes paths in arrival order. The buffer
         // is bounded so an unresponsive consumer cannot keep stale paths
         // alive indefinitely.
-        let pathStream = AsyncStream<NWPath>(bufferingPolicy: .bufferingNewest(64)) { continuation in
-            monitor.pathUpdateHandler = { path in
-                continuation.yield(path)
-            }
-            continuation.onTermination = { [monitor] _ in
-                monitor.pathUpdateHandler = nil
-            }
-        }
+        let pathStream = pathMonitor.makePathStream()
 
         pathConsumerTask = Task { [weak self] in
             for await path in pathStream {
@@ -173,7 +194,7 @@ public actor NetworkMonitor: NetworkMonitoring {
             }
         }
 
-        monitor.start(queue: queue)
+        pathMonitor.start()
     }
 
     private func removeContinuation(_ id: UUID) {

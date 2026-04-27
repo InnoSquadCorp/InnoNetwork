@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import UniformTypeIdentifiers
 
 
@@ -66,8 +67,9 @@ public struct MultipartFormData: Sendable {
     /// For large file uploads, prefer ``writeEncodedData(to:)`` so the
     /// body is streamed chunk-by-chunk to disk and uploaded via
     /// `URLSession.upload(for:fromFile:)`. File parts that cannot be read
-    /// are skipped entirely; use ``writeEncodedData(to:)`` when read
-    /// failures must be surfaced to the caller.
+    /// are skipped entirely and logged as warnings; use
+    /// ``writeEncodedData(to:)`` when read failures must be surfaced to the
+    /// caller.
     public func encode() -> Data {
         var body = Data()
         let boundaryPrefix = "--\(boundary)\r\n"
@@ -78,10 +80,12 @@ public struct MultipartFormData: Sendable {
             case .data(let data):
                 partData = data
             case .file(let url):
-                guard let fileData = try? Data(contentsOf: url) else {
+                do {
+                    partData = try Data(contentsOf: url)
+                } catch {
+                    Logger.API.warning("multipart_encode_skipped_file boundary=\(boundary, privacy: .public) name=\(part.name, privacy: .public) file=\(url.lastPathComponent, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
                     continue
                 }
-                partData = fileData
             }
             body.append(Data(boundaryPrefix.utf8))
             body.append(part.headerData())
@@ -96,6 +100,14 @@ public struct MultipartFormData: Sendable {
     /// Streams the encoded multipart body to a file on disk, reading file
     /// parts in 64 KiB chunks so peak memory stays bounded regardless of
     /// the source file's size.
+    ///
+    /// This method performs synchronous disk I/O and may block its caller for
+    /// large bodies. Invoke it from a background context rather than from
+    /// `MainActor` or latency-sensitive structured tasks.
+    ///
+    /// If a write fails, the destination may be left partially written.
+    /// Callers should remove the temporary file before retrying or surfacing
+    /// the failure, typically with `defer { try? FileManager.default.removeItem(at: fileURL) }`.
     ///
     /// - Parameter fileURL: Destination URL. Any existing file at this
     ///   location is overwritten. The caller is responsible for placing the

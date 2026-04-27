@@ -124,6 +124,22 @@ Hook this onto the session and pair it with a ``RetryPolicy`` that
 returns ``RetryDecision/retry`` for `401` once. The call site sees a
 single successful response with no awareness of the refresh.
 
+## Streaming responses
+
+``DefaultNetworkClient/stream(_:)`` runs session-level
+``NetworkConfiguration/requestInterceptors`` before opening the stream and
+session-level ``NetworkConfiguration/responseInterceptors`` once the HTTP
+headers arrive. The response passed to those response interceptors contains
+status and header metadata only; ``Response/data`` is empty because the stream
+body is decoded line-by-line afterward.
+
+Do not use body-inspecting response interceptors for streaming payloads such as
+SSE or NDJSON frames. Keep JSON error mapping, token-refresh bodies, and other
+buffered-response concerns on ``DefaultNetworkClient/request(_:)`` or
+``DefaultNetworkClient/upload(_:)``. Streaming endpoints also do not have
+per-endpoint response interceptors; only configuration-level response
+interceptors run for streams.
+
 ## Choosing where to put an interceptor
 
 | Concern                        | Recommended slot                |

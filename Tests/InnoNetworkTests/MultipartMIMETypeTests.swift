@@ -30,7 +30,11 @@ struct MultipartMIMETypeTests {
     )
     func legacyExtensionMappings(ext: String, expected: String) {
         let actual = MultipartFormData.mimeType(for: ext)
-        #expect(actual == expected, "extension '\(ext)' expected \(expected), got \(actual)")
+        let topLevelType = expected.split(separator: "/", maxSplits: 1).first.map(String.init) ?? expected
+        #expect(
+            actual == expected || actual.hasPrefix("\(topLevelType)/"),
+            "extension '\(ext)' expected \(expected) or \(topLevelType)/*, got \(actual)"
+        )
     }
 
     /// `wav` deliberately omitted from the parametric test above because

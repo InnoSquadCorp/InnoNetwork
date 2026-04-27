@@ -8,7 +8,7 @@
 import Foundation
 
 
-/// Specific timeout that produced a ``NetworkError/timeout(reason:)``.
+/// Specific timeout that produced a ``NetworkError/timeout(reason:underlying:)``.
 ///
 /// Distinguishing between request, resource, and connection timeouts lets
 /// the UI surface targeted retry copy ("the request is taking longer than
@@ -17,8 +17,11 @@ import Foundation
 public enum TimeoutReason: Sendable, Equatable {
     /// `URLError.timedOut` produced by the request timeoutInterval.
     case requestTimeout
-    /// `URLError.timedOut` produced by the resource timeoutInterval (for
-    /// long-running uploads or background sessions).
+    /// Resource-level timeout reported by a caller or higher-level transport.
+    ///
+    /// The core `URLError` mapper does not currently produce this case because
+    /// Foundation reports both request and resource timeout expiration as
+    /// `URLError.timedOut` without exposing which timeout interval fired.
     case resourceTimeout
     /// Connection establishment timed out (for example, a captive portal
     /// blocking the TCP handshake).
@@ -45,7 +48,12 @@ public enum NetworkError: Error, Sendable {
     case undefined
     case cancelled
     /// The request did not complete within its configured timeout window.
-    case timeout(reason: TimeoutReason)
+    ///
+    /// `underlying` preserves the original transport error when the timeout is
+    /// produced by the built-in mapper, so diagnostics can still inspect the
+    /// `URLError` domain, code, and user info through ``underlyingError`` or
+    /// `NSError.userInfo[NSUnderlyingErrorKey]`.
+    case timeout(reason: TimeoutReason, underlying: SendableUnderlyingError? = nil)
 }
 
 
@@ -87,7 +95,7 @@ extension NetworkError: LocalizedError {
             return "Undefined Error"
         case .cancelled:
             return "Request was cancelled"
-        case .timeout(let reason):
+        case .timeout(let reason, _):
             switch reason {
             case .requestTimeout:
                 return "The request timed out before the server responded."
@@ -131,7 +139,7 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .undefined: return nil
         case .cancelled: return nil
-        case .timeout: return nil
+        case .timeout(_, let underlying): return underlying
         }
     }
 }
@@ -185,9 +193,9 @@ extension NetworkError {
         if let urlError = error as? URLError {
             switch urlError.code {
             case .timedOut:
-                return .timeout(reason: .requestTimeout)
+                return .timeout(reason: .requestTimeout, underlying: SendableUnderlyingError(urlError))
             case .cannotConnectToHost:
-                return .timeout(reason: .connectionTimeout)
+                return .timeout(reason: .connectionTimeout, underlying: SendableUnderlyingError(urlError))
             default:
                 break
             }

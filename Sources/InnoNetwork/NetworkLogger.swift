@@ -47,7 +47,7 @@ public struct NetworkLoggingOptions: Sendable {
     )
 }
 
-public struct DefaultNetworkLogger: NetworkLogger {
+public struct DefaultNetworkLogger: NetworkLogger, @unchecked Sendable {
     private let options: NetworkLoggingOptions
     private let cookieStorage: HTTPCookieStorage
 
