@@ -1,6 +1,7 @@
 import Foundation
 import InnoNetwork
 import os
+import OSLog
 
 
 public enum DownloadEvent: Sendable {
@@ -32,13 +33,75 @@ extension DownloadManagerError: LocalizedError {
 
 
 public final class DownloadManager: NSObject, Sendable {
+    /// Shared `DownloadManager` for apps that need a single download domain.
+    ///
+    /// Initialized lazily with ``DownloadConfiguration/default``. If the
+    /// default session identifier is already claimed by another
+    /// `DownloadManager` in the same process, the shared instance falls back
+    /// to a process-unique identifier (logged via OSLog `.fault`) and an
+    /// `assertionFailure` is raised in DEBUG builds so the misuse is caught
+    /// during development. Production callers that need explicit failure
+    /// handling should construct managers via ``make(configuration:)`` instead
+    /// of relying on `shared`.
     public static let shared: DownloadManager = {
         do {
             return try DownloadManager(configuration: .default)
+        } catch DownloadManagerError.duplicateSessionIdentifier(let claimedIdentifier) {
+            let fallbackIdentifier = "\(claimedIdentifier).fallback.\(UUID().uuidString)"
+            let fallbackConfig = DownloadConfiguration.safeDefaults(
+                sessionIdentifier: fallbackIdentifier
+            )
+            let logger = Logger(subsystem: "innosquad.network.download", category: "DownloadManager")
+            logger.fault("""
+                DownloadManager.shared could not bind session identifier \
+                \(claimedIdentifier, privacy: .public): another DownloadManager already \
+                owns it. Falling back to \(fallbackIdentifier, privacy: .public). Use \
+                DownloadManager.make(configuration:) to construct managers with explicit \
+                session identifiers.
+                """)
+            assertionFailure("""
+                DownloadManager.shared bound a fallback session identifier '\(fallbackIdentifier)'. \
+                Use DownloadManager.make(configuration:) and pass an explicit identifier instead \
+                of relying on `.shared` when multiple managers coexist.
+                """)
+            do {
+                return try DownloadManager(configuration: fallbackConfig)
+            } catch {
+                // Even the fallback failed — extremely unlikely because the
+                // fallback identifier is freshly UUID-prefixed. Crash so the
+                // problem surfaces rather than silently returning a broken
+                // singleton.
+                fatalError("DownloadManager.shared cannot initialize with fallback identifier: \(error.localizedDescription)")
+            }
         } catch {
-            fatalError("Failed to initialize DownloadManager.shared: \(error.localizedDescription)")
+            // Any other initialization failure is structural (e.g., persistence
+            // directory inaccessible) and not something a fallback identifier
+            // would fix. Surface it.
+            fatalError("DownloadManager.shared cannot initialize with .default configuration: \(error.localizedDescription)")
         }
     }()
+
+    /// Recommended throwing factory for constructing a `DownloadManager`.
+    ///
+    /// Equivalent to ``init(configuration:)``, but discoverable via type-level
+    /// autocomplete and consistent with the `make(...)` style used elsewhere
+    /// in the package (e.g., `URLQueryEncoder`, observability builders). Use
+    /// this when you need explicit failure handling instead of relying on
+    /// ``shared``'s fallback behavior.
+    ///
+    /// - Parameter configuration: The configuration to bind. Pass
+    ///   ``DownloadConfiguration/safeDefaults(sessionIdentifier:)`` with a
+    ///   unique identifier when multiple managers must coexist in the same
+    ///   process.
+    /// - Returns: A new `DownloadManager` ready to receive download requests.
+    /// - Throws: ``DownloadManagerError/duplicateSessionIdentifier(_:)`` if
+    ///   another manager has already claimed the same session identifier.
+    public static func make(
+        configuration: DownloadConfiguration = .default
+    ) throws -> DownloadManager {
+        try DownloadManager(configuration: configuration)
+    }
+
     private static let activeSessionIdentifiers = OSAllocatedUnfairLock(initialState: Set<String>())
 
     private let configuration: DownloadConfiguration
