@@ -51,8 +51,8 @@ public enum NetworkError: Error, Sendable {
     ///
     /// `underlying` preserves the original transport error when the timeout is
     /// produced by the built-in mapper, so diagnostics can still inspect the
-    /// `URLError` domain, code, and user info through ``underlyingError`` or
-    /// `NSError.userInfo[NSUnderlyingErrorKey]`.
+    /// associated value directly or use `NSError.userInfo[NSUnderlyingErrorKey]`
+    /// after bridging.
     case timeout(reason: TimeoutReason, underlying: SendableUnderlyingError? = nil)
 }
 

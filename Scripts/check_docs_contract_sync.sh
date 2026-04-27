@@ -95,6 +95,8 @@ expected_stable=(
 '`WebSocketEvent.ping`'
 '`WebSocketEvent.pong`'
 '`WebSocketEvent.error(.pingTimeout)`'
+'`WebSocketPingContext`'
+'`WebSocketPongContext`'
 '`TrustPolicy`'
 '`AnyResponseDecoder`'
 '`URLQueryEncoder`'
@@ -264,6 +266,14 @@ for symbol in "${expected_stable[@]}"; do
       ;;
     '`WebSocketEvent.error(.pingTimeout)`')
       pattern='case error(WebSocketError)'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      ;;
+    '`WebSocketPingContext`')
+      pattern='public struct WebSocketPingContext'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      ;;
+    '`WebSocketPongContext`')
+      pattern='public struct WebSocketPongContext'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
       ;;
     '`TrustPolicy`')

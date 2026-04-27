@@ -21,6 +21,8 @@ This document defines the compatibility contract for the upcoming InnoNetwork
 - `WebSocketEvent.ping`
 - `WebSocketEvent.pong`
 - `WebSocketEvent.error(.pingTimeout)`
+- `WebSocketPingContext`
+- `WebSocketPongContext`
 - `TrustPolicy`
 - `AnyResponseDecoder`
 - `URLQueryEncoder`
@@ -50,10 +52,12 @@ This document defines the compatibility contract for the upcoming InnoNetwork
 - `default` aliases are convenience entry points and should be treated as `safeDefaults` aliases.
 - Advanced builders are public and supported, but operational tuning values are not guaranteed to stay numerically identical across releases.
 - `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`,
-  `SingleRequestExecutable`, `RequestPayload`, `WebSocketCloseDisposition`,
-  `WebSocketPingContext`, and `WebSocketPongContext` may appear in source while
-  the package is being prepared, but they are not part of the 4.0.0 stable API
-  promise.
+  `SingleRequestExecutable`, `RequestPayload`, and
+  `WebSocketCloseDisposition` may appear in source while the package is being
+  prepared, but they are not part of the 4.0.0 stable API promise.
+- `WebSocketPingContext` and `WebSocketPongContext` public fields are stable
+  because they are payloads of stable heartbeat events; their package-scoped
+  initializers are construction details owned by the library.
 - Persistence and telemetry formats are not external storage contracts.
 - Benchmark guard thresholds, guarded benchmark selection, and baseline
   contents are operational policy rather than public compatibility surface.

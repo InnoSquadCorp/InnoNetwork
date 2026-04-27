@@ -259,8 +259,15 @@ the original `URLError` in `underlying`. `URLError.cannotFindHost` remains
 
 `ExponentialBackoffRetryPolicy` retries `.timeout(_, _)` by default, so
 existing retry behavior is unchanged. The `underlying` payload is there for
-operational diagnostics, including `NSError` domain/code inspection through
-``NetworkError/underlyingError`` and `NSError.userInfo[NSUnderlyingErrorKey]`.
+operational diagnostics; inspect it directly when pattern matching:
+
+```swift
+case .timeout(let reason, let underlying):
+    logger.info("timeout reason=\(reason) domain=\(underlying?.domain ?? "none") code=\(underlying?.code ?? 0)")
+```
+
+When bridged to `NSError`, the same payload is available through
+`NSError.userInfo[NSUnderlyingErrorKey]`.
 The library does not currently map Foundation errors to `.resourceTimeout`
 because `URLError.timedOut` does not expose whether request or resource timeout
 expiration fired.
