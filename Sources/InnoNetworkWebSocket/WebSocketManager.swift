@@ -479,7 +479,13 @@ public final class WebSocketManager: NSObject, Sendable {
                 return
             }
 
-            await task.resetReconnectCount()
+            // Re-entering `.connected` from `.reconnecting` means a reconnect
+            // attempt landed. Bump the cumulative successful counter before
+            // resetting the per-cycle attempted counter.
+            if state == .reconnecting {
+                await task.incrementSuccessfulReconnectCount()
+            }
+            await task.resetAttemptedReconnectCount()
             await task.resetPingCounter()
             await task.setAutoReconnectEnabled(true)
             await task.setError(nil)
