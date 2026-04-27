@@ -32,6 +32,40 @@ extension DownloadManagerError: LocalizedError {
 }
 
 
+/// Manager for the download lifecycle.
+///
+/// ## Isolation contract
+///
+/// `DownloadManager` is a `Sendable` class today (not an `actor`) because the
+/// public API existed before strict concurrency was finalized and the type
+/// already serves as a `URLSessionDownloadDelegate` host. Mutable state is
+/// distributed across three boundaries instead of one actor:
+///
+/// 1. **Foundation delegate queue** — `DownloadSessionDelegate` runs on
+///    URLSession's internal serial queue. The delegate translates URL session
+///    callbacks into closures stored under
+///    ``DownloadSessionDelegateCallbacks`` (an `OSAllocatedUnfairLock`-backed
+///    container). The manager's `handleProgress(...)` / `handleCompletion(...)`
+///    fileprivate methods are the published call targets, captured weakly.
+///    Those methods only schedule async work via `Task { ... }`; they do not
+///    touch any mutable state synchronously.
+/// 2. **`DownloadRuntimeRegistry`** — actor that owns the live mapping
+///    between `DownloadTask`, `URLSessionDownloadTask`, and runtime
+///    callbacks. Every read/write is awaited.
+/// 3. **`DownloadTaskPersistence`** — actor that owns the on-disk task log.
+///    All mutations go through it.
+///
+/// The manager itself stores only `let` properties (configuration, the
+/// session, the delegate, the persistence, the event hub, the runtime
+/// registry, the background-completion store, and the restore barrier).
+/// It has no mutable instance state outside those isolated containers, which
+/// is why the `Sendable` conformance is honest. A future refactor toward a
+/// `public actor` would internalize the same boundaries — see
+/// [docs/ROADMAP.md](../../docs/ROADMAP.md) for status.
+///
+/// **Reading order** for review: scan `// MARK: - Delegate boundary` for the
+/// callbacks that cross the URL session delegate queue, and
+/// `// MARK: - Runtime` for the methods that mutate registry state.
 public final class DownloadManager: NSObject, Sendable {
     /// Shared `DownloadManager` for apps that need a single download domain.
     ///
@@ -201,6 +235,14 @@ public final class DownloadManager: NSObject, Sendable {
 
         super.init()
 
+        // MARK: - Delegate boundary
+        // The two closures below are invoked from the URL session's internal
+        // delegate queue (Foundation-managed). They MUST NOT touch mutable
+        // manager state synchronously; the body of each handleXxx hop into a
+        // detached Task that awaits actor-isolated coordinators
+        // (DownloadRuntimeRegistry / DownloadTaskPersistence). The `[weak self]`
+        // capture protects against races where the manager is dropped while a
+        // late delegate callback is in flight (e.g. background restoration).
         callbacks.setHandlers(
             onProgress: { [weak self] taskIdentifier, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite in
                 self?.handleProgress(
