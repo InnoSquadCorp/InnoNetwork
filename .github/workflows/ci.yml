@@ -53,12 +53,56 @@ jobs:
           xcrun swift build
           echo "✅ Build completed successfully!"
 
-      - name: Test
+      - name: Test (with code coverage)
         run: |
           set -eo pipefail
-          echo "🧪 Running tests..."
-          xcrun swift test
+          echo "🧪 Running tests with --enable-code-coverage..."
+          xcrun swift test --parallel --enable-code-coverage
           echo "✅ Tests completed successfully!"
+
+      - name: Generate coverage report
+        run: |
+          set -eo pipefail
+          # Resolve the most recent .xctest binary and merged profdata under
+          # the SwiftPM build root. The exact path is platform/version-
+          # dependent so we discover it dynamically.
+          xctest_bundle="$(find .build -name '*.xctest' -type d | head -n 1)"
+          profdata="$(find .build -name 'default.profdata' -type f | head -n 1)"
+
+          if [[ -z "$xctest_bundle" || -z "$profdata" ]]; then
+            echo "::warning::Coverage artifacts not found; skipping report."
+            exit 0
+          fi
+
+          binary="$xctest_bundle/Contents/MacOS/$(basename "$xctest_bundle" .xctest)"
+          mkdir -p .build/coverage
+          xcrun llvm-cov report \
+            --instr-profile="$profdata" \
+            --use-color=false \
+            --ignore-filename-regex='(^|/)(\.build|Tests|SmokeTests|Examples|Benchmarks)/' \
+            "$binary" | tee .build/coverage/summary.txt
+
+          xcrun llvm-cov export \
+            --instr-profile="$profdata" \
+            --format=lcov \
+            --ignore-filename-regex='(^|/)(\.build|Tests|SmokeTests|Examples|Benchmarks)/' \
+            "$binary" > .build/coverage/coverage.lcov
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: innonetwork-coverage
+          path: .build/coverage/
+
+      - name: Upload coverage to Codecov
+        if: env.CODECOV_TOKEN != ''
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        uses: codecov/codecov-action@v4
+        with:
+          files: .build/coverage/coverage.lcov
+          fail_ci_if_error: false
 
       - name: Enforce no unchecked sendable in production sources
         run: |
@@ -171,13 +215,17 @@ jobs:
       - name: Run benchmark smoke guard
         run: |
           mkdir -p .build/benchmarks
+          # Tightened from 50% → 10% as part of v4.1 risk-mitigation. The
+          # guarded benchmarks are stable enough on macos-15 runners that 10%
+          # catches genuine regressions without false-positive churn.
+          # Increase only with a documented benchmark redesign.
           xcrun swift run InnoNetworkBenchmarks \
             --quick \
             --json-path .build/benchmarks/results.json \
             --enforce-baseline \
             --guard-benchmark websocket/websocket-close-disposition-classify \
             --guard-benchmark websocket/websocket-ping-context-alloc \
-            --max-regression-percent 50
+            --max-regression-percent 10
 
       - name: Upload benchmark smoke artifact
         if: always()
