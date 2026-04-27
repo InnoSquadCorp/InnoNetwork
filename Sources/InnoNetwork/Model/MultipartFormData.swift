@@ -153,6 +153,37 @@ public struct MultipartFormData: Sendable {
         "multipart/form-data; boundary=\(boundary)"
     }
 
+    /// Estimated encoded size in bytes, used by the executor to decide whether
+    /// to keep the body in memory or stream it to disk.
+    ///
+    /// For data parts the size is exact. For file parts the size is read from
+    /// `FileManager` attributes — so it is exact unless the file is missing,
+    /// in which case the estimator treats the part as zero bytes (the encoder
+    /// will skip the part later, matching ``encode()``'s behavior). The
+    /// per-part headers and boundary frame are accounted for so the result
+    /// is a tight upper bound rather than a partial sum.
+    public var estimatedEncodedSize: Int64 {
+        let boundaryLine = "--\(boundary)\r\n".utf8.count
+        let trailingBoundary = "--\(boundary)--\r\n".utf8.count
+        let crlf = "\r\n".utf8.count
+
+        var total: Int64 = Int64(trailingBoundary)
+        for part in parts {
+            total += Int64(boundaryLine)
+            total += Int64(part.headerData().count)
+            switch part.source {
+            case .data(let data):
+                total += Int64(data.count)
+            case .file(let url):
+                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+                let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+                total += size
+            }
+            total += Int64(crlf)
+        }
+        return total
+    }
+
     static func mimeType(for pathExtension: String) -> String {
         // UTType is available on every platform InnoNetwork ships against
         // (iOS 18+, macOS 15+, tvOS 18+, watchOS 11+, visionOS 2+), so it

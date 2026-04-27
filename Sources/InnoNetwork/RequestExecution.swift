@@ -147,7 +147,25 @@ package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: S
     package var acceptableStatusCodes: Set<Int>? { base.acceptableStatusCodes }
 
     package func makePayload() throws -> RequestPayload {
-        .data(base.multipartFormData.encode())
+        let formData = base.multipartFormData
+        switch base.uploadStrategy {
+        case .inMemory:
+            return .data(formData.encode())
+        case .alwaysStream:
+            return try Self.streamPayload(formData: formData)
+        case .streamingThreshold(let bytes):
+            if formData.estimatedEncodedSize > bytes {
+                return try Self.streamPayload(formData: formData)
+            }
+            return .data(formData.encode())
+        }
+    }
+
+    private static func streamPayload(formData: MultipartFormData) throws -> RequestPayload {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let tempFile = tempDirectory.appendingPathComponent("innonetwork.multipart.\(UUID().uuidString)")
+        try formData.writeEncodedData(to: tempFile)
+        return .fileURL(tempFile, contentType: formData.contentTypeHeader)
     }
 
     package func decode(data: Data, response: Response) throws -> Base.APIResponse {
