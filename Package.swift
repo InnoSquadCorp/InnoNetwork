@@ -113,5 +113,22 @@ let package = Package(
             path: "Tests/InnoNetworkWebSocketTests",
             swiftSettings: strictSettings
         ),
+        // Live-endpoint smoke tests. Builds unconditionally so the test
+        // target stays in package resolution, but every test guards on the
+        // INNO_LIVE environment variable so a default `swift test` run is
+        // a fast no-op. Run with `INNO_LIVE=1 swift test --filter InnoNetworkLiveTests`
+        // — typically wired into a nightly GitHub Actions schedule rather
+        // than the per-PR CI to keep builds deterministic.
+        .testTarget(
+            name: "InnoNetworkLiveTests",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkDownload",
+                "InnoNetworkWebSocket",
+                "InnoNetworkTestSupport",
+            ],
+            path: "Tests/InnoNetworkLiveTests",
+            swiftSettings: strictSettings
+        ),
     ]
 )

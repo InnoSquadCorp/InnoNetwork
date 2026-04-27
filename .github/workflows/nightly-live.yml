@@ -1,0 +1,43 @@
+name: Nightly Live Smoke
+
+on:
+  schedule:
+    # 18:00 UTC daily (≈ 03:00 KST). Live endpoints are best-effort; failures
+    # surface as a workflow run notification but do not block PRs.
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-live-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-smoke:
+    name: Live endpoint smoke
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Show toolchain versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Run live-endpoint tests
+        env:
+          INNO_LIVE: '1'
+        run: |
+          set -eo pipefail
+          xcrun swift test \
+            --filter InnoNetworkLiveTests \
+            --parallel
