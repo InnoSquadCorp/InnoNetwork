@@ -502,6 +502,11 @@ struct WebSocketManagerTests {
             if let subscription = subscriptionBox.withLock({ $0 }) {
                 await harness.manager.removeEventListener(subscription)
             }
+            do {
+                try await Task.sleep(for: .milliseconds(10))
+            } catch {
+                return
+            }
             await harness.manager.retry(task)
         }
         subscriptionBox.withLock { $0 = subscription }
@@ -553,6 +558,11 @@ struct WebSocketManagerTests {
             guard shouldRetry else { return }
             if let subscription = subscriptionBox.withLock({ $0 }) {
                 await harness.manager.removeEventListener(subscription)
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(10))
+            } catch {
+                return
             }
             await harness.manager.retry(task)
         }

@@ -80,6 +80,8 @@ private actor DeliveryGate {
     private var started = false
     private var released = false
     private var returned = false
+    private var continuedAfterCancellationAwareAwait = false
+    private var cancelled = false
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
     private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
 
@@ -115,6 +117,22 @@ private actor DeliveryGate {
 
     func hasReturned() -> Bool {
         returned
+    }
+
+    func markContinuedAfterCancellationAwareAwait() {
+        continuedAfterCancellationAwareAwait = true
+    }
+
+    func didContinueAfterCancellationAwareAwait() -> Bool {
+        continuedAfterCancellationAwareAwait
+    }
+
+    func markCancelled() {
+        cancelled = true
+    }
+
+    func wasCancelled() -> Bool {
+        cancelled
     }
 }
 
@@ -233,6 +251,13 @@ struct EventHubTests {
             if let listenerID = await listenerIDBox.value() {
                 await hub.removeListener(taskID: "self-remove", listenerID: listenerID)
             }
+            do {
+                try await Task.sleep(for: .milliseconds(10))
+            } catch {
+                await gate.markCancelled()
+                return
+            }
+            await gate.markContinuedAfterCancellationAwareAwait()
         }
         await listenerIDBox.set(listenerID)
 
@@ -246,6 +271,8 @@ struct EventHubTests {
             await gate.hasReturned()
         }
         #expect(completed)
+        #expect(await gate.didContinueAfterCancellationAwareAwait())
+        #expect(await gate.wasCancelled() == false)
         #expect(await hub.listenerCount(taskID: "self-remove") == 0)
 
         if completed {

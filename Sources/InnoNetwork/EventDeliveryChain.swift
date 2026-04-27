@@ -97,9 +97,8 @@ package actor EventDeliveryChain<Event: Sendable> {
         while let queuedEvent = queue.popFirst() {
             queuedEvent.completion?.resume()
         }
-        guard let drainTask else { return }
-        self.drainTask = nil
-        drainTask.cancel()
+        // `finish()` can be called by the active handler while self-removing;
+        // leave the drain task alive so in-flight delivery is not cancelled.
     }
 
     private func startDrainIfNeeded() {
