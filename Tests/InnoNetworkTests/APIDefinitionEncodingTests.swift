@@ -85,6 +85,17 @@ private struct CustomFormEncodingRequest: APIDefinition {
     }
 }
 
+private struct MisconfiguredMultipartRequest: APIDefinition {
+    typealias Parameter = EncodingPayload
+    typealias APIResponse = EmptyResponse
+
+    let parameters: EncodingPayload?
+
+    var method: HTTPMethod { .post }
+    var path: String { "/encoding/misconfigured-multipart" }
+    var contentType: ContentType { .multipartFormData }
+}
+
 private struct TopLevelArrayQueryRequest: APIDefinition {
     typealias Parameter = [String]
     typealias APIResponse = EmptyResponse
@@ -208,6 +219,28 @@ struct APIDefinitionEncodingTests {
         let bodyString = try #require(String(data: body, encoding: .utf8))
         #expect(bodyString.contains("user_name=Alice"))
         #expect(bodyString.contains("created_at=2024-12-17"))
+    }
+
+    @Test("Multipart content type on APIDefinition throws invalid request configuration")
+    func multipartContentTypeOnAPIDefinitionThrowsInvalidRequestConfiguration() async {
+        let mockSession = MockURLSession()
+        let client = DefaultNetworkClient(configuration: configuration, session: mockSession)
+
+        do {
+            let _: EmptyResponse = try await client.request(
+                MisconfiguredMultipartRequest(parameters: payload)
+            )
+            Issue.record("Expected invalidRequestConfiguration for multipart APIDefinition")
+        } catch let error as NetworkError {
+            guard case .invalidRequestConfiguration(let message) = error else {
+                Issue.record("Expected invalidRequestConfiguration, got \(error)")
+                return
+            }
+            #expect(message.contains("MultipartAPIDefinition"))
+            #expect(mockSession.capturedRequest == nil)
+        } catch {
+            Issue.record("Expected NetworkError, got \(error)")
+        }
     }
 
     @Test("Empty responses use protocol-based factory without force casts")
