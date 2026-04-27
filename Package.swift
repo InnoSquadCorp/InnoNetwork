@@ -11,6 +11,12 @@ let strictSettings: [SwiftSetting] = [
     .swiftLanguageMode(.v6),
 ]
 
+// Platform policy: InnoNetwork is intentionally Apple-only. The library
+// depends on URLSession, OSAllocatedUnfairLock, OSLog, Network.framework,
+// and UniformTypeIdentifiers, none of which match Apple-platform behaviour
+// on Linux. See `docs/PlatformSupport.md` for the rationale and for
+// guidance on sharing models with Linux server code (e.g. Vapor).
+
 let package = Package(
     name: "InnoNetwork",
     platforms: [

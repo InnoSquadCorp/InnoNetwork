@@ -327,6 +327,7 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - DocC API Reference: https://innosquadcorp.github.io/InnoNetwork/
 - Examples: [Examples/README.md](Examples/README.md)
 - API Stability: [API_STABILITY.md](API_STABILITY.md)
+- Platform Support: [docs/PlatformSupport.md](docs/PlatformSupport.md)
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
 - DocC Deployment: [docs/DocC_Deployment.md](docs/DocC_Deployment.md)
