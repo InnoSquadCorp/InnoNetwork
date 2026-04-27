@@ -249,7 +249,7 @@ for symbol in "${expected_stable[@]}"; do
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketConfiguration.swift"
       ;;
     '`DownloadManager`')
-      pattern='public final class DownloadManager'
+      pattern='public actor DownloadManager'
       target="$repo_root/Sources/InnoNetworkDownload/DownloadManager.swift"
       ;;
     '`WebSocketManager`')

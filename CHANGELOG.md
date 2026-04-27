@@ -91,16 +91,28 @@ keep current behaviour. See
 
 - `WebSocketTask.reconnectCount` — use `attemptedReconnectCount` instead.
 
-### Deferred
+### Concurrency
 
-- `DownloadManager` actor refactor (R6) and async append-log persistence
-  with explicit fsync policy (R7) are tracked in
-  [`docs/ROADMAP.md`](docs/ROADMAP.md). The 4.1 line documents the
-  isolation contract on the existing `final class : NSObject, Sendable`
-  shape; the structural change lands in a follow-up PR.
+- `DownloadManager` is now a `public actor`. NSObject inheritance and
+  `super.init()` are gone; the URL-session delegate callbacks dispatch
+  into the actor through `Task { [weak self] in await self?.handle...(_:) }`.
+  Public API surface is unchanged because every public method was already
+  `async`. `handleBackgroundSessionCompletion(_:completion:)` is
+  `nonisolated` so the synchronous Foundation entry point keeps working.
+- `DownloadConfiguration.persistenceFsyncPolicy: PersistenceFsyncPolicy`
+  picks one of `.always`, `.onCheckpoint` (default), `.never` for the
+  append-log durability barrier. The store calls `Darwin.fsync(_:)` on
+  event appends (only `.always`) and on checkpoint writes (every policy
+  except `.never`). See
+  [`Sources/InnoNetworkDownload/InnoNetworkDownload.docc/Articles/Persistence.md`](Sources/InnoNetworkDownload/InnoNetworkDownload.docc/Articles/Persistence.md).
+
+### Deferred to v5
+
 - WebSocket `permessage-deflate` extension (RFC 7692) — requires a
   transport substitution because `URLSessionWebSocketTask` does not
-  expose deflate negotiation. Tracked separately for v5.
+  expose deflate negotiation. The two paths (`InnoNetworkWebSocketNIO`
+  product on swift-nio vs `Network.framework` direct implementation)
+  are tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## [4.0.0] - Unreleased
 
