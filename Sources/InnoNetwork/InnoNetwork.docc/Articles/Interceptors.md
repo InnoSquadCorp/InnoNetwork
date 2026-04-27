@@ -29,7 +29,7 @@ IDs — belong on the session. Endpoint-specific overrides — a one-off
 
 Both kinds of interceptor run, but in different directions:
 
-```
+```text
 Request:  configuration → APIDefinition → URLSession.data
 Response: URLSession.data → APIDefinition → configuration
 ```

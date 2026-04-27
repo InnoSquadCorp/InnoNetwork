@@ -83,7 +83,7 @@ public struct MultipartFormData: Sendable {
                 do {
                     partData = try Data(contentsOf: url)
                 } catch {
-                    Logger.API.warning("multipart_encode_skipped_file boundary=\(boundary, privacy: .public) name=\(part.name, privacy: .public) file=\(url.lastPathComponent, privacy: .public) error=\(error.localizedDescription, privacy: .private)")
+                    Logger.API.warning("multipart_encode_skipped_file boundary=\(boundary, privacy: .public) name=\(part.name, privacy: .private(mask: .hash)) file=\(url.lastPathComponent, privacy: .private(mask: .hash)) error=\(error.localizedDescription, privacy: .private)")
                     continue
                 }
             }
