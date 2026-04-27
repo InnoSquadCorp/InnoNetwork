@@ -76,6 +76,20 @@ for await event in await manager.events(for: task) {
 }
 ```
 
+#### Destination filename policy
+
+`download(url:toDirectory:fileName:)` resolves the destination as:
+
+- If `fileName:` is provided, it is used verbatim under `directory`.
+- Otherwise the URL's last path component (`url.lastPathComponent`) is used.
+- The library does **not** rename on collision — if a file already exists at the resolved
+  path, the download will overwrite it once it completes. Pass an explicit `fileName:` (for
+  example, prefixed with the task UUID) when concurrent or repeated downloads to the same
+  directory must coexist.
+
+For absolute control over the destination path, use `download(url:to:)` instead and
+construct the target URL yourself.
+
 ### WebSocket
 
 ```swift
@@ -316,6 +330,8 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
 - DocC Deployment: [docs/DocC_Deployment.md](docs/DocC_Deployment.md)
+- Query Encoding Reference: [docs/QueryEncoding.md](docs/QueryEncoding.md)
+- WebSocket Lifecycle: [docs/WebSocketLifecycle.md](docs/WebSocketLifecycle.md)
 - Upcoming Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 - 한국어 문서: [docs/ko/README.md](docs/ko/README.md)
