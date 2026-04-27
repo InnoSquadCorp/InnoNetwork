@@ -118,6 +118,18 @@ private actor DeliveryGate {
     }
 }
 
+private actor ListenerIDBox {
+    private var listenerID: UUID?
+
+    func set(_ listenerID: UUID) {
+        self.listenerID = listenerID
+    }
+
+    func value() -> UUID? {
+        listenerID
+    }
+}
+
 
 @Suite("Event Hub Tests", .serialized)
 struct EventHubTests {
@@ -208,6 +220,39 @@ struct EventHubTests {
         _ = await finishTask.result
 
         #expect(await gate.hasReturned())
+    }
+
+    @Test("TaskEventHub publishAndWaitForDelivery completes when listener removes itself")
+    func taskEventHubPublishAndWaitForDeliveryCompletesWhenListenerRemovesItself() async {
+        let hub = TaskEventHub<Int>()
+        let listenerIDBox = ListenerIDBox()
+        let gate = DeliveryGate()
+
+        let listenerID = await hub.addListener(taskID: "self-remove") { _ in
+            await gate.markStarted()
+            if let listenerID = await listenerIDBox.value() {
+                await hub.removeListener(taskID: "self-remove", listenerID: listenerID)
+            }
+        }
+        await listenerIDBox.set(listenerID)
+
+        let publishTask = Task {
+            await hub.publishAndWaitForDelivery(1, for: "self-remove")
+            await gate.markReturned()
+        }
+
+        await gate.waitUntilStarted()
+        let completed = await waitForEventHubCondition(timeout: 1.0) {
+            await gate.hasReturned()
+        }
+        #expect(completed)
+        #expect(await hub.listenerCount(taskID: "self-remove") == 0)
+
+        if completed {
+            _ = await publishTask.result
+        } else {
+            publishTask.cancel()
+        }
     }
 
     @Test("NetworkEventHub isolates slow observers across requests")
@@ -1220,6 +1265,21 @@ private func waitForValues(
     }
 
     return await store.snapshot()
+}
+
+private func waitForEventHubCondition(
+    timeout: TimeInterval,
+    _ condition: () async -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await condition() {
+            return true
+        }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+
+    return await condition()
 }
 
 private func waitForNetworkEvents(

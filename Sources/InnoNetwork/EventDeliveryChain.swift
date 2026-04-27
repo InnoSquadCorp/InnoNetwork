@@ -100,7 +100,6 @@ package actor EventDeliveryChain<Event: Sendable> {
         guard let drainTask else { return }
         self.drainTask = nil
         drainTask.cancel()
-        await drainTask.value
     }
 
     private func startDrainIfNeeded() {
