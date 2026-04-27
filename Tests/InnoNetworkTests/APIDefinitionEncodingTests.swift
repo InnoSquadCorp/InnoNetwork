@@ -283,19 +283,57 @@ struct APIDefinitionEncodingTests {
     func snakeCaseQueryKeyStrategyMatchesFoundation() throws {
         let encoder = URLQueryEncoder(keyEncodingStrategy: URLQueryKeyEncodingStrategy.convertToSnakeCase)
         let keys = [
+            // Common camelCase
             "userID",
+            "userId",
+            "myProperty",
+            "testCase",
+            "isActive",
+
+            // Acronym handling (run of uppercase)
             "URLValue",
-            "_privateValue",
-            "value2Test",
             "HTMLURLValue",
-            "a",
+            "myURLProperty",
+            "getHTTPS",
+            "JSONData",
+            "useNSLogger",
+
+            // Numbers in keys
+            "value2Test",
+            "version2API",
+            "iOS18Build",
+            "OAuth2Token",
+
+            // Underscores at boundaries
+            "_privateValue",
             "endsWith_",
+            "_",
+            "__doubleLeading",
+            "trailing__",
+
+            // Single character / very short
+            "a",
+            "A",
+            "aB",
+            "AB",
+
+            // Already snake-case-ish
+            "already_snake",
+            "mixed_camelCase",
+
+            // Trailing capital
+            "valueX",
+            "endsWithCapitalAB",
+
+            // Numbers and capitals interleaved
+            "ID123Value",
+            "version1OfAPI",
         ]
 
         for key in keys {
             let expected = try foundationSnakeCaseKey(for: key)
             let actual = try #require(encoder.encode([key: "value"]).first?.name)
-            #expect(actual == expected)
+            #expect(actual == expected, "snake_case mismatch for key: \(key) — expected=\(expected) actual=\(actual)")
         }
     }
 

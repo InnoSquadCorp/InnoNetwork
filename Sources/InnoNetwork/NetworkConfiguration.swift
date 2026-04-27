@@ -2,6 +2,10 @@ import Foundation
 
 
 public struct NetworkConfiguration: Sendable {
+    /// The default range of HTTP status codes treated as successful responses.
+    /// `2xx` per RFC 9110 §15.3.
+    public static let defaultAcceptableStatusCodes: Set<Int> = Set(200..<300)
+
     package enum Presets {
         static func safeDefaults(baseURL: URL) -> NetworkConfiguration {
             NetworkConfiguration(
@@ -14,7 +18,10 @@ public struct NetworkConfiguration: Sendable {
                 trustPolicy: .systemDefault,
                 eventObservers: [],
                 eventDeliveryPolicy: .default,
-                eventMetricsReporter: nil
+                eventMetricsReporter: nil,
+                acceptableStatusCodes: NetworkConfiguration.defaultAcceptableStatusCodes,
+                requestInterceptors: [],
+                responseInterceptors: []
             )
         }
 
@@ -33,7 +40,10 @@ public struct NetworkConfiguration: Sendable {
                     maxBufferedEventsPerConsumer: 512,
                     overflowPolicy: .dropOldest
                 ),
-                eventMetricsReporter: nil
+                eventMetricsReporter: nil,
+                acceptableStatusCodes: NetworkConfiguration.defaultAcceptableStatusCodes,
+                requestInterceptors: [],
+                responseInterceptors: []
             )
         }
     }
@@ -48,6 +58,25 @@ public struct NetworkConfiguration: Sendable {
     public let eventObservers: [any NetworkEventObserving]
     public let eventDeliveryPolicy: EventDeliveryPolicy
     public let eventMetricsReporter: (any EventPipelineMetricsReporting)?
+    /// HTTP status codes that the request executor treats as successful.
+    /// Responses with a status code outside this set throw
+    /// ``NetworkError/statusCode(_:)``. Defaults to ``defaultAcceptableStatusCodes``
+    /// (`200..<300`); override to allow values like `304` or `205` to flow
+    /// through to consumer code without error mapping.
+    public let acceptableStatusCodes: Set<Int>
+    /// Request interceptors applied to **every** request dispatched through
+    /// this client, before any per-``APIDefinition`` interceptors. Use this
+    /// slot for cross-cutting concerns (Bearer auth, distributed-tracing
+    /// headers, request IDs) so each ``APIDefinition`` does not have to
+    /// re-declare them.
+    public let requestInterceptors: [RequestInterceptor]
+    /// Response interceptors applied to **every** response, after any
+    /// per-``APIDefinition`` interceptors. The order is intentionally an
+    /// onion: the request chain runs outer→inner (config first), and the
+    /// response chain unwinds inner→outer (config last) so a session-level
+    /// interceptor can observe the same response shape its peer would have
+    /// produced under a per-endpoint setup.
+    public let responseInterceptors: [ResponseInterceptor]
 
     public struct AdvancedBuilder: Sendable {
         public var baseURL: URL
@@ -60,6 +89,9 @@ public struct NetworkConfiguration: Sendable {
         public var eventObservers: [any NetworkEventObserving]
         public var eventDeliveryPolicy: EventDeliveryPolicy
         public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
+        public var acceptableStatusCodes: Set<Int>
+        public var requestInterceptors: [RequestInterceptor]
+        public var responseInterceptors: [ResponseInterceptor]
 
         fileprivate init(preset: NetworkConfiguration) {
             self.baseURL = preset.baseURL
@@ -72,6 +104,9 @@ public struct NetworkConfiguration: Sendable {
             self.eventObservers = preset.eventObservers
             self.eventDeliveryPolicy = preset.eventDeliveryPolicy
             self.eventMetricsReporter = preset.eventMetricsReporter
+            self.acceptableStatusCodes = preset.acceptableStatusCodes
+            self.requestInterceptors = preset.requestInterceptors
+            self.responseInterceptors = preset.responseInterceptors
         }
 
         fileprivate func build() -> NetworkConfiguration {
@@ -85,7 +120,10 @@ public struct NetworkConfiguration: Sendable {
                 trustPolicy: trustPolicy,
                 eventObservers: eventObservers,
                 eventDeliveryPolicy: eventDeliveryPolicy,
-                eventMetricsReporter: eventMetricsReporter
+                eventMetricsReporter: eventMetricsReporter,
+                acceptableStatusCodes: acceptableStatusCodes,
+                requestInterceptors: requestInterceptors,
+                responseInterceptors: responseInterceptors
             )
         }
     }
@@ -113,7 +151,10 @@ public struct NetworkConfiguration: Sendable {
         trustPolicy: TrustPolicy = .systemDefault,
         eventObservers: [any NetworkEventObserving] = [],
         eventDeliveryPolicy: EventDeliveryPolicy = .default,
-        eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil
+        eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
+        acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes,
+        requestInterceptors: [RequestInterceptor] = [],
+        responseInterceptors: [ResponseInterceptor] = []
     ) {
         self.baseURL = baseURL
         self.timeout = timeout
@@ -125,5 +166,8 @@ public struct NetworkConfiguration: Sendable {
         self.eventObservers = eventObservers
         self.eventDeliveryPolicy = eventDeliveryPolicy
         self.eventMetricsReporter = eventMetricsReporter
+        self.acceptableStatusCodes = acceptableStatusCodes
+        self.requestInterceptors = requestInterceptors
+        self.responseInterceptors = responseInterceptors
     }
 }

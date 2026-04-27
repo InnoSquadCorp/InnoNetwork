@@ -1,6 +1,7 @@
 # API Stability
 
-This document defines the compatibility contract for the public OSS release of InnoNetwork 5.x.
+This document defines the compatibility contract for the upcoming InnoNetwork
+4.0.0 public release.
 
 ## Stable
 
@@ -17,19 +18,16 @@ This document defines the compatibility contract for the public OSS release of I
 - `WebSocketConfiguration.advanced(_:)`
 - `DownloadManager`
 - `WebSocketManager`
+- `WebSocketEvent.ping`
+- `WebSocketEvent.pong`
+- `WebSocketEvent.error(.pingTimeout)`
+- `WebSocketPingContext`
+- `WebSocketPongContext`
 - `TrustPolicy`
 - `AnyResponseDecoder`
 - `URLQueryEncoder`
 - `EventDeliveryPolicy`
-- `LowLevelNetworkClient`
-- `LowLevelNetworkClient.perform(_:)`
-- `LowLevelNetworkClient.perform(executable:)`
-- `SingleRequestExecutable`
-- `RequestPayload`
 - `WebSocketCloseCode`
-- `WebSocketCloseDisposition`
-- `WebSocketPingContext`
-- `WebSocketPongContext`
 
 ## Provisionally Stable
 
@@ -45,15 +43,21 @@ This document defines the compatibility contract for the public OSS release of I
 - `InnoNetworkProtobuf` package composition and protobuf adapter surface
 - package/internal request/response policy layers
 - benchmark baseline contents and update cadence
+- lower-level execution hooks that are present in source but not part of the
+  4.0.0 stable public contract
 
 ## Notes
 
-- Stable items follow semantic versioning for the 5.x line.
+- Stable items follow semantic versioning for the 4.0.0 line once it is tagged.
 - `default` aliases are convenience entry points and should be treated as `safeDefaults` aliases.
 - Advanced builders are public and supported, but operational tuning values are not guaranteed to stay numerically identical across releases.
 - `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`,
-  `SingleRequestExecutable`, and `RequestPayload` are stable public extension
-  points for higher networking layers and first-party adapters.
+  `SingleRequestExecutable`, `RequestPayload`, and
+  `WebSocketCloseDisposition` may appear in source while the package is being
+  prepared, but they are not part of the 4.0.0 stable API promise.
+- `WebSocketPingContext` and `WebSocketPongContext` public fields are stable
+  because they are payloads of stable heartbeat events; their package-scoped
+  initializers are construction details owned by the library.
 - Persistence and telemetry formats are not external storage contracts.
 - Benchmark guard thresholds, guarded benchmark selection, and baseline
   contents are operational policy rather than public compatibility surface.

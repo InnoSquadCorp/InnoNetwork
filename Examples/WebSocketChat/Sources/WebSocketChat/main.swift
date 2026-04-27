@@ -106,9 +106,9 @@ let manager = WebSocketManager(
     )
 )
 
-// RTT observability via the 5.0 `setOnPongHandler(_:)` callback.
-// The same context is also available on the `.pong(_:)` event stream;
-// we pick the callback here to keep the stdin loop simple.
+// RTT observability via the current source callback. Treat richer pong context
+// payloads as future-candidate API until they are promoted in the stability
+// contract.
 await manager.setOnPongHandler { _, context in
     let totalSeconds = Double(context.roundTrip.components.seconds) +
         Double(context.roundTrip.components.attoseconds) / 1_000_000_000_000_000_000
@@ -143,7 +143,7 @@ let eventTask = Task {
             print("← \(text)")
         case .ping(let context):
             print("→ ping attempt=\(context.attemptNumber)")
-        case .pong:
+        case .pong(_):
             // RTT logging lives in `setOnPongHandler(_:)` above; keep the
             // event-stream branch non-binding to show payload-agnostic matching.
             break

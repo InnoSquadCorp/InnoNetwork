@@ -56,11 +56,22 @@ public protocol LowLevelNetworkClient: Sendable {
 }
 
 
-public actor DefaultNetworkClient: NetworkClient, LowLevelNetworkClient {
+/// The default ``NetworkClient`` implementation.
+///
+/// Despite its `async throws` API surface, `DefaultNetworkClient` is an
+/// **immutable value object**: every stored property is a `let` binding, and
+/// all mutation lives behind the `eventHub` actor, the URL session, and the
+/// retry coordinator structs. The type therefore conforms to `Sendable`
+/// without crossing an actor isolation boundary on every call — concurrent
+/// `request(_:)` invocations execute in parallel as soon as they reach
+/// ``URLSessionProtocol/data(for:context:)``, the same as in the previous
+/// `actor` form (which already released isolation on every `await`).
+public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, Sendable {
     private let configuration: NetworkConfiguration
     private let session: URLSessionProtocol
     private let requestBuilder = RequestBuilder()
     private let eventHub: NetworkEventHub
+    private let inFlight = InFlightRegistry()
 
     public init(
         configuration: NetworkConfiguration,
@@ -73,6 +84,168 @@ public actor DefaultNetworkClient: NetworkClient, LowLevelNetworkClient {
             metricsReporter: configuration.eventMetricsReporter,
             hubKind: .networkRequest
         )
+    }
+
+    /// Begins a long-lived streaming request and returns an
+    /// `AsyncThrowingStream` of decoded line payloads.
+    ///
+    /// Streaming requests bypass the configured ``RetryPolicy`` because a
+    /// half-consumed stream cannot be replayed transparently. Outer-task
+    /// cancellation propagates to the underlying transport via
+    /// `AsyncThrowingStream.Continuation.onTermination`, and ``cancelAll()``
+    /// reaches stream tasks the same way it reaches request tasks.
+    ///
+    /// Response interceptors on ``NetworkConfiguration`` receive only the
+    /// response metadata for streaming requests. Their ``Response/data`` is
+    /// empty because stream contents are decoded line-by-line after headers
+    /// arrive; body-inspecting interceptors should stay on non-streaming
+    /// ``request(_:)``/``upload(_:)`` paths. Per-endpoint response
+    /// interceptors are not part of ``StreamingAPIDefinition`` and therefore
+    /// are not run for streams.
+    ///
+    /// - Parameter request: The streaming endpoint to subscribe to.
+    /// - Returns: An `AsyncThrowingStream<T.Output, Error>` whose values are
+    ///   the non-nil results of ``StreamingAPIDefinition/decode(line:)``.
+    public func stream<T: StreamingAPIDefinition>(_ request: T) -> AsyncThrowingStream<T.Output, Error> {
+        AsyncThrowingStream { continuation in
+            let requestID = UUID()
+            let inFlight = self.inFlight
+            let configuration = self.configuration
+            let session = self.session
+            let eventHub = self.eventHub
+            let startGate = TaskStartGate()
+
+            let work = Task<Void, Never> {
+                await startGate.wait()
+                do {
+                    try Task.checkCancellation()
+                    var urlRequest = URLRequest(url: configuration.baseURL.appendingPathComponent(request.path))
+                    urlRequest.httpMethod = request.method.rawValue
+                    urlRequest.allHTTPHeaderFields = request.headers.dictionary
+                    urlRequest.cachePolicy = configuration.cachePolicy
+                    urlRequest.timeoutInterval = configuration.timeout
+
+                    await eventHub.publish(
+                        .requestStart(
+                            requestID: requestID,
+                            method: urlRequest.httpMethod ?? "UNKNOWN",
+                            url: urlRequest.url?.absoluteString ?? "",
+                            retryIndex: 0
+                        ),
+                        requestID: requestID,
+                        observers: configuration.eventObservers
+                    )
+
+                    for interceptor in configuration.requestInterceptors {
+                        urlRequest = try await interceptor.adapt(urlRequest)
+                    }
+                    for interceptor in request.requestInterceptors {
+                        urlRequest = try await interceptor.adapt(urlRequest)
+                    }
+                    await eventHub.publish(
+                        .requestAdapted(
+                            requestID: requestID,
+                            method: urlRequest.httpMethod ?? "UNKNOWN",
+                            url: urlRequest.url?.absoluteString ?? "",
+                            retryIndex: 0
+                        ),
+                        requestID: requestID,
+                        observers: configuration.eventObservers
+                    )
+
+                    let context = NetworkRequestContext(
+                        requestID: requestID,
+                        retryIndex: 0,
+                        metricsReporter: configuration.metricsReporter,
+                        trustPolicy: configuration.trustPolicy,
+                        eventObservers: configuration.eventObservers
+                    )
+                    let (bytes, response) = try await session.bytes(for: urlRequest, context: context)
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        throw NetworkError.nonHTTPResponse(response)
+                    }
+                    await eventHub.publish(
+                        .responseReceived(
+                            requestID: requestID,
+                            statusCode: httpResponse.statusCode,
+                            byteCount: 0
+                        ),
+                        requestID: requestID,
+                        observers: configuration.eventObservers
+                    )
+
+                    var networkResponse = Response(
+                        statusCode: httpResponse.statusCode,
+                        data: Data(),
+                        request: urlRequest,
+                        response: httpResponse
+                    )
+                    for interceptor in configuration.responseInterceptors {
+                        networkResponse = try await interceptor.adapt(networkResponse, request: urlRequest)
+                    }
+
+                    guard configuration.acceptableStatusCodes.contains(networkResponse.statusCode) else {
+                        throw NetworkError.statusCode(networkResponse)
+                    }
+
+                    var streamedByteCount = 0
+                    for try await line in bytes.lines {
+                        try Task.checkCancellation()
+                        streamedByteCount += line.utf8.count
+                        if let output = try request.decode(line: line) {
+                            continuation.yield(output)
+                        }
+                    }
+                    await eventHub.publish(
+                        .requestFinished(
+                            requestID: requestID,
+                            statusCode: networkResponse.statusCode,
+                            byteCount: streamedByteCount
+                        ),
+                        requestID: requestID,
+                        observers: configuration.eventObservers
+                    )
+                    await eventHub.finish(requestID: requestID)
+                    inFlight.deregister(id: requestID)
+                    continuation.finish()
+                } catch {
+                    let networkError = NetworkError.mapTransportError(error)
+                    let nsError = networkError as NSError
+                    await eventHub.publish(
+                        .requestFailed(
+                            requestID: requestID,
+                            errorCode: nsError.code,
+                            message: networkError.localizedDescription
+                        ),
+                        requestID: requestID,
+                        observers: configuration.eventObservers
+                    )
+                    await eventHub.finish(requestID: requestID)
+                    inFlight.deregister(id: requestID)
+                    continuation.finish(throwing: networkError)
+                }
+            }
+
+            continuation.onTermination = { _ in
+                work.cancel()
+            }
+            inFlight.register(id: requestID, cancelHandler: { work.cancel() })
+            startGate.open()
+        }
+    }
+
+    /// Cancels every request currently dispatched through this client.
+    ///
+    /// Each in-flight request is interrupted at its next cooperative
+    /// cancellation checkpoint and surfaces ``NetworkError/cancelled`` to its
+    /// caller. Requests that have already produced a result before cancellation
+    /// reaches them complete normally.
+    ///
+    /// Typical use is during sign-out, screen disposal, or auth invalidation:
+    /// the client can be drained without waiting for individual `Task`
+    /// references to be tracked by the call site.
+    public func cancelAll() async {
+        inFlight.cancelAll()
     }
 
     public func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
@@ -110,20 +283,42 @@ public actor DefaultNetworkClient: NetworkClient, LowLevelNetworkClient {
     ///   sending, validating, or decoding the executable request.
     public func perform<D: SingleRequestExecutable>(executable: D) async throws -> D.APIResponse {
         let requestID = UUID()
-        let retryCoordinator = RetryCoordinator(eventHub: eventHub)
-        return try await retryCoordinator.execute(
-            retryPolicy: configuration.retryPolicy,
-            networkMonitor: configuration.networkMonitor,
-            requestID: requestID,
-            eventObservers: configuration.eventObservers
-        ) { retryIndex, requestID in
-            try await RequestExecutor(session: session, eventHub: eventHub).execute(
-                executable,
-                configuration: configuration,
-                requestBuilder: requestBuilder,
-                retryIndex: retryIndex,
-                requestID: requestID
-            )
+        let startGate = TaskStartGate()
+        // Wrap the work in an unstructured Task so cancelAll() can reach it
+        // without the call site having to track individual Task handles.
+        // Outer-task cancellation is forwarded via withTaskCancellationHandler.
+        let work = Task<D.APIResponse, Error> { [eventHub, configuration, session, requestBuilder] in
+            await startGate.wait()
+            let retryCoordinator = RetryCoordinator(eventHub: eventHub)
+            return try await retryCoordinator.execute(
+                retryPolicy: configuration.retryPolicy,
+                networkMonitor: configuration.networkMonitor,
+                requestID: requestID,
+                eventObservers: configuration.eventObservers
+            ) { retryIndex, requestID in
+                try await RequestExecutor(session: session, eventHub: eventHub).execute(
+                    executable,
+                    configuration: configuration,
+                    requestBuilder: requestBuilder,
+                    retryIndex: retryIndex,
+                    requestID: requestID
+                )
+            }
+        }
+        inFlight.register(id: requestID, cancelHandler: { work.cancel() })
+        startGate.open()
+
+        do {
+            let result = try await withTaskCancellationHandler {
+                try await work.value
+            } onCancel: {
+                work.cancel()
+            }
+            inFlight.deregister(id: requestID)
+            return result
+        } catch {
+            inFlight.deregister(id: requestID)
+            throw error
         }
     }
 }

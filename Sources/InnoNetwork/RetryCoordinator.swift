@@ -35,7 +35,14 @@ package struct RetryCoordinator {
                 try Task.checkCancellation()
                 return try await operation(retryIndex, requestID)
             } catch let error as NetworkError {
-                guard let policy = retryPolicy, policy.shouldRetry(error: error, retryIndex: retryIndex) else {
+                guard let policy = retryPolicy else { throw error }
+                let decision = policy.shouldRetry(
+                    error: error,
+                    retryIndex: retryIndex,
+                    request: error.underlyingRequest,
+                    response: error.underlyingHTTPResponse
+                )
+                if case .noRetry = decision {
                     throw error
                 }
                 guard totalRetries < policy.maxTotalRetries else {
@@ -43,7 +50,25 @@ package struct RetryCoordinator {
                 }
 
                 let currentRetryIndex = retryIndex
-                let delay = policy.retryDelay(for: currentRetryIndex)
+                let computedDelay = policy.retryDelay(for: currentRetryIndex)
+                // Honor server hint when present, but never less than the
+                // computed jittered delay. Policies may also provide an
+                // absolute Retry-After ceiling to avoid unbounded waits.
+                let delay: TimeInterval
+                switch decision {
+                case .noRetry:
+                    // Unreachable: handled above; keeps the switch exhaustive.
+                    throw error
+                case .retry:
+                    delay = computedDelay
+                case .retryAfter(let serverHint):
+                    let hintedDelay = max(serverHint, computedDelay)
+                    if let maxRetryAfterDelay = policy.maxRetryAfterDelay {
+                        delay = min(hintedDelay, max(maxRetryAfterDelay, computedDelay))
+                    } else {
+                        delay = hintedDelay
+                    }
+                }
                 await eventHub.publish(
                     .retryScheduled(
                         requestID: requestID,

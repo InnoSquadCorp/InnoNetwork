@@ -58,10 +58,14 @@ package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMe
                 )
                 let result = emitToOutput(.aggregateSnapshot(snapshot))
                 switch result {
-                case .enqueued, .dropped:
-                    // Any overflow caused by emitting the aggregate snapshot itself
-                    // belongs to the next window because the current one has already
-                    // been consumed atomically above.
+                case .enqueued:
+                    continue
+                case .dropped:
+                    // The reporter queue was already overflowing while publishing
+                    // this snapshot. Carry the windowed overflow forward so that
+                    // lossy reporter backpressure cannot erase the only snapshot
+                    // that made the window non-zero.
+                    dropTracker.carryForwardWindowOverflow(snapshot.metricsOverflowCount)
                     continue
                 case .terminated:
                     return
@@ -124,6 +128,7 @@ private final class EventPipelineMetricsDropTracker: Sendable {
         var totalDroppedOutputMetricCount = 0
         var windowDroppedInputMetricCount = 0
         var windowDroppedOutputMetricCount = 0
+        var carriedWindowDroppedMetricCount = 0
     }
 
     private let state = OSAllocatedUnfairLock<State>(initialState: .init())
@@ -142,14 +147,24 @@ private final class EventPipelineMetricsDropTracker: Sendable {
         }
     }
 
+    func carryForwardWindowOverflow(_ count: Int) {
+        guard count > 0 else { return }
+        state.withLock {
+            $0.carriedWindowDroppedMetricCount += count
+        }
+    }
+
     func consumeSnapshot() -> EventPipelineMetricsDropSnapshot {
         state.withLock {
             let snapshot = EventPipelineMetricsDropSnapshot(
                 totalDroppedMetricCount: $0.totalDroppedInputMetricCount + $0.totalDroppedOutputMetricCount,
-                metricsOverflowCount: $0.windowDroppedInputMetricCount + $0.windowDroppedOutputMetricCount
+                metricsOverflowCount: $0.windowDroppedInputMetricCount
+                    + $0.windowDroppedOutputMetricCount
+                    + $0.carriedWindowDroppedMetricCount
             )
             $0.windowDroppedInputMetricCount = 0
             $0.windowDroppedOutputMetricCount = 0
+            $0.carriedWindowDroppedMetricCount = 0
             return snapshot
         }
     }

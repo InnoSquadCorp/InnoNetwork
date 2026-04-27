@@ -1,10 +1,10 @@
 # DownloadManagerSample
 
 Minimal CLI sample that fetches a remote file through
-`InnoNetworkDownload`. Exercises the 4.3 opt-in exponential-backoff
-surface (`exponentialBackoff`, `retryJitterRatio`, `maxRetryDelay`) plus
-the `events(for:)` AsyncStream for progress / state / completion /
-failure reporting.
+`InnoNetworkDownload`. Exercises the current exponential-backoff source
+surface (`exponentialBackoff`, `retryJitterRatio`, `maxRetryDelay`) plus the
+`events(for:)` AsyncStream for progress / state / completion / failure
+reporting.
 
 ## Running
 
@@ -40,8 +40,9 @@ enabled:
 - `retryJitterRatio = 0.2`
 - `maxRetryDelay = 60` — cap in seconds (set to `<= 0` to disable)
 
-See `MIGRATION_v4.3.md` §2 for the semantics of each flag and
-`EventDeliveryPolicy.md` for event-buffer tuning guidance.
+See `EventDeliveryPolicy.md` for event-buffer tuning guidance. Treat
+exponential-backoff tuning knobs as future-candidate API until they are
+explicitly promoted in the stability contract.
 
 ## Troubleshooting
 

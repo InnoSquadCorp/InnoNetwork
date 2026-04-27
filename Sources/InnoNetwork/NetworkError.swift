@@ -8,6 +8,27 @@
 import Foundation
 
 
+/// Specific timeout that produced a ``NetworkError/timeout(reason:underlying:)``.
+///
+/// Distinguishing between request, resource, and connection timeouts lets
+/// the UI surface targeted retry copy ("the request is taking longer than
+/// expected" vs. "we couldn't reach the server") instead of a generic
+/// transport failure.
+public enum TimeoutReason: Sendable, Equatable {
+    /// `URLError.timedOut` produced by the request timeoutInterval.
+    case requestTimeout
+    /// Resource-level timeout reported by a caller or higher-level transport.
+    ///
+    /// The core `URLError` mapper does not currently produce this case because
+    /// Foundation reports both request and resource timeout expiration as
+    /// `URLError.timedOut` without exposing which timeout interval fired.
+    case resourceTimeout
+    /// Connection establishment timed out (for example, a captive portal
+    /// blocking the TCP handshake).
+    case connectionTimeout
+}
+
+
 public enum NetworkError: Error, Sendable {
     case invalidBaseURL(String)
     /// Indicates an invalid request configuration
@@ -26,6 +47,13 @@ public enum NetworkError: Error, Sendable {
 
     case undefined
     case cancelled
+    /// The request did not complete within its configured timeout window.
+    ///
+    /// `underlying` preserves the original transport error when the timeout is
+    /// produced by the built-in mapper, so diagnostics can still inspect the
+    /// associated value directly or use `NSError.userInfo[NSUnderlyingErrorKey]`
+    /// after bridging.
+    case timeout(reason: TimeoutReason, underlying: SendableUnderlyingError? = nil)
 }
 
 
@@ -67,6 +95,15 @@ extension NetworkError: LocalizedError {
             return "Undefined Error"
         case .cancelled:
             return "Request was cancelled"
+        case .timeout(let reason, _):
+            switch reason {
+            case .requestTimeout:
+                return "The request timed out before the server responded."
+            case .resourceTimeout:
+                return "The resource transfer timed out."
+            case .connectionTimeout:
+                return "The connection to the server timed out."
+            }
         }
     }
 }
@@ -85,6 +122,7 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .undefined: return nil
         case .cancelled: return nil
+        case .timeout: return nil
         }
     }
 
@@ -101,6 +139,7 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .undefined: return nil
         case .cancelled: return nil
+        case .timeout(_, let underlying): return underlying
         }
     }
 }
@@ -133,5 +172,35 @@ extension NetworkError {
             return true
         }
         return false
+    }
+
+    static func mapTransportError(_ error: Error) -> NetworkError {
+        if let networkError = error as? NetworkError {
+            return networkError
+        }
+
+        if let trustEvaluationError = error as? TrustEvaluationError {
+            switch trustEvaluationError {
+            case .failed(let reason, _):
+                return .trustEvaluationFailed(reason)
+            }
+        }
+
+        if isCancellation(error) {
+            return .cancelled
+        }
+
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut:
+                return .timeout(reason: .requestTimeout, underlying: SendableUnderlyingError(urlError))
+            case .cannotConnectToHost:
+                return .timeout(reason: .connectionTimeout, underlying: SendableUnderlyingError(urlError))
+            default:
+                break
+            }
+        }
+
+        return .underlying(SendableUnderlyingError(error), nil)
     }
 }

@@ -1,8 +1,8 @@
 # Swift 6.2+ language-mode audit
 
 This note records which Swift 6.2+ language-mode features were reviewed for
-InnoNetwork, and which of them resulted in concrete code changes in
-`4.3.0`.
+InnoNetwork while preparing the upcoming `4.0.0` release, and which of them
+resulted in concrete code changes.
 
 The evaluation criterion is deliberately strict: a feature is only
 adopted when there is a **benchmarked win** or an unambiguous readability
@@ -10,9 +10,9 @@ improvement that does not trade off safety. Investigations that stayed
 speculative are recorded here as follow-ups — they can be revisited when
 a benchmark or a real-world report shows they would pay for themselves.
 
-As of `4.3.0`, **no production source was modified by this audit.** The
-package continues to ship on `swiftLanguageMode(.v6)` with the same
-concurrency posture it had in `4.2.0`.
+As of the `4.0.0` documentation alignment, **no production source was modified
+by this audit.** The package continues to ship on `swiftLanguageMode(.v6)` with
+the strict concurrency posture expected for the upcoming public release.
 
 ## Reviewed areas
 
@@ -63,7 +63,7 @@ correlation without threading extra arguments through public APIs. This
 is closest in value to the remaining Tier 3 Observer / Tracer work, but
 that feature still needs an RFC to settle the public contract first.
 
-**Deferred.** Tracked as Tier 3 (Observer hook) in the post-4.x roadmap.
+**Deferred.** Tracked as a future observer / tracer candidate in the roadmap.
 
 ### Other
 
@@ -74,7 +74,7 @@ that feature still needs an RFC to settle the public contract first.
 - Parameter packs: no variadic-generic consumer API changes in-flight.
 - Typed throws on public APIs: would be a breaking signature change;
   considered only when a specific throwing surface has a clearly small
-  error set. None spotted in 4.3 scope.
+  error set. None spotted for the 4.0.0 contract.
 
 ## Process note
 

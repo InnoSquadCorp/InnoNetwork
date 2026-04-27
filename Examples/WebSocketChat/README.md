@@ -1,8 +1,8 @@
 # WebSocketChat
 
 Minimal CLI sample that opens a WebSocket connection, prints server-sent
-frames, and forwards stdin lines as string frames. Exercises the 5.0
-`WebSocketManager` surface end-to-end: `safeDefaults`, `connect(url:)`,
+frames, and forwards stdin lines as string frames. Exercises the current
+`WebSocketManager` source surface end-to-end: `safeDefaults`, `connect(url:)`,
 `events(for:)` stream consumption, `send(_:string:)`,
 `setOnPongHandler(_:)` RTT observability, and `disconnect(_:closeCode:)`.
 
@@ -35,9 +35,9 @@ the sample blocked on stdin.
   interactive clients. This sample keeps that baseline but forces
   `maxReconnectAttempts = 0` so terminal connection failures exit
   promptly instead of retrying in the background.
-- RTT is surfaced via `setOnPongHandler(_:)`. The same
-  `WebSocketPongContext` is also delivered on the `.pong(_:)` event
-  stream — pick whichever fits your codebase.
+- RTT is surfaced via `setOnPongHandler(_:)` in the current source. The 4.0.0
+  stable contract guarantees heartbeat event observability; richer pong context
+  payloads should be treated as future-candidate API until promoted.
 
 If the default echo endpoint is unreachable, pass any other `ws(s)://`
 URL as the first argument.

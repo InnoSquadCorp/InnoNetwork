@@ -61,7 +61,7 @@ guard runIntegration else {
 
 // MARK: - Live download
 
-// Showcases the 4.3 `exponentialBackoff` surface alongside the existing
+// Showcases future-candidate exponential backoff tuning alongside the existing
 // event-stream consumption pattern.
 let configuration = DownloadConfiguration.advanced(
     sessionIdentifier: "com.innonetwork.sample.download.\(UUID().uuidString)"

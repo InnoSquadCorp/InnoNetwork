@@ -20,9 +20,17 @@ package struct RequestExecutor {
         try Task.checkCancellation()
 
         do {
-            var request = try requestBuilder.build(executable, configuration: configuration)
+            let built = try requestBuilder.build(executable, configuration: configuration)
+            var request = built.request
             await notifyRequestStart(request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
+            // Onion model: session-level interceptors run first (outer), then
+            // per-request interceptors (inner). Cross-cutting concerns
+            // declared on NetworkConfiguration apply to every endpoint;
+            // per-APIDefinition interceptors layer on top.
+            for interceptor in configuration.requestInterceptors {
+                request = try await interceptor.adapt(request)
+            }
             for interceptor in executable.requestInterceptors {
                 request = try await interceptor.adapt(request)
             }
@@ -37,7 +45,13 @@ package struct RequestExecutor {
                 trustPolicy: configuration.trustPolicy,
                 eventObservers: configuration.eventObservers
             )
-            let (data, response) = try await session.data(for: request, context: context)
+            let (data, response): (Data, URLResponse)
+            switch built.bodySource {
+            case .inline:
+                (data, response) = try await session.data(for: request, context: context)
+            case .file(let fileURL):
+                (data, response) = try await session.upload(for: request, fromFile: fileURL, context: context)
+            }
 
             try Task.checkCancellation()
 
@@ -61,11 +75,18 @@ package struct RequestExecutor {
                 response: httpResponse
             )
 
+            // Onion unwinds inner→outer: per-request interceptors first,
+            // session-level interceptors last. A session-level response
+            // interceptor sees the same response a session-only setup would
+            // produce because per-endpoint adapters have already finished.
             for interceptor in executable.responseInterceptors {
                 networkResponse = try await interceptor.adapt(networkResponse, request: request)
             }
+            for interceptor in configuration.responseInterceptors {
+                networkResponse = try await interceptor.adapt(networkResponse, request: request)
+            }
 
-            guard (200..<300).contains(httpResponse.statusCode) else {
+            guard configuration.acceptableStatusCodes.contains(networkResponse.statusCode) else {
                 throw NetworkError.statusCode(networkResponse)
             }
 
@@ -73,24 +94,20 @@ package struct RequestExecutor {
             await eventHub.publish(
                 .requestFinished(
                     requestID: requestID,
-                    statusCode: httpResponse.statusCode,
-                    byteCount: data.count
+                    statusCode: networkResponse.statusCode,
+                    byteCount: networkResponse.data.count
                 ),
                 requestID: requestID,
                 observers: configuration.eventObservers
             )
 
-            return try executable.decode(data: data, response: networkResponse)
+            return try executable.decode(data: networkResponse.data, response: networkResponse)
         } catch let error as NetworkError {
             executable.logger.log(error: error)
             await notifyFailure(error, requestID: requestID, configuration: configuration)
             throw error
-        } catch where NetworkError.isCancellation(error) {
-            executable.logger.log(error: .cancelled)
-            await notifyFailure(.cancelled, requestID: requestID, configuration: configuration)
-            throw NetworkError.cancelled
         } catch {
-            let networkError = toNetworkError(error)
+            let networkError = NetworkError.mapTransportError(error)
             executable.logger.log(error: networkError)
             await notifyFailure(networkError, requestID: requestID, configuration: configuration)
             throw networkError
@@ -150,18 +167,4 @@ package struct RequestExecutor {
         )
     }
 
-    private func toNetworkError(_ error: Error) -> NetworkError {
-        if let trustEvaluationError = error as? TrustEvaluationError {
-            switch trustEvaluationError {
-            case .failed(let reason, _):
-                return .trustEvaluationFailed(reason)
-            }
-        }
-
-        if NetworkError.isCancellation(error) {
-            return .cancelled
-        }
-
-        return .underlying(SendableUnderlyingError(error), nil)
-    }
 }

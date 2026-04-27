@@ -25,7 +25,7 @@ private struct TrustObservabilityRetryPolicy: RetryPolicy {
     func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
         guard retryIndex < maxRetries else { return false }
         switch error {
-        case .underlying, .nonHTTPResponse:
+        case .underlying, .nonHTTPResponse, .timeout:
             return true
         default:
             return false
@@ -355,6 +355,41 @@ struct TrustAndObservabilityTests {
             publicKeyData: keyData,
             keyType: "com.innonetwork.unsupported",
             keySizeInBits: 0
+        )
+        #expect(unsupported == nil)
+    }
+
+    @Test(
+        "SPKI helper recognizes Ed25519 by name and by OID",
+        arguments: ["ed25519", "Ed25519", "ED25519", "1.3.101.112"]
+    )
+    func spkiEncodingHelperSupportsEd25519(keyType: String) {
+        // Ed25519 public keys are always 32 bytes per RFC 8032; use a fixed
+        // test vector so the SPKI bytes are deterministic.
+        let publicKey = Data(repeating: 0x00, count: 32)
+        let spki = TrustEvaluator.spkiData(
+            publicKeyData: publicKey,
+            keyType: keyType,
+            keySizeInBits: 256
+        )
+
+        // Expected DER from RFC 8410 §4 example: 12 prefix bytes + 32 key bytes.
+        let expected: [UInt8] = [
+            0x30, 0x2a,             // outer SEQUENCE, 42 content bytes
+            0x30, 0x05,             // AlgorithmIdentifier SEQUENCE, 5 content bytes
+            0x06, 0x03, 0x2b, 0x65, 0x70,  // OID 1.3.101.112 (id-Ed25519)
+            0x03, 0x21, 0x00,       // BIT STRING, 33 bytes (0 unused + 32 key)
+        ] + Array(repeating: UInt8(0x00), count: 32)
+        #expect(spki == Data(expected))
+    }
+
+    @Test("SPKI helper still returns nil for unknown algorithm strings")
+    func spkiEncodingHelperRejectsUnknownAlgorithm() {
+        let publicKey = Data(repeating: 0x00, count: 32)
+        let unsupported = TrustEvaluator.spkiData(
+            publicKeyData: publicKey,
+            keyType: "rsa-pss-pq-future-curve",
+            keySizeInBits: 2048
         )
         #expect(unsupported == nil)
     }

@@ -14,17 +14,16 @@ required_meta_docs=(
   "$repo_root/CHANGELOG.md"
   "$repo_root/docs/RELEASE_POLICY.md"
   "$repo_root/docs/MIGRATION_POLICY.md"
+  "$repo_root/docs/releases/4.0.0.md"
 )
 required_feature_docs=(
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryPolicy.md"
-  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md"
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/InnoNetwork.md"
 )
 example_docs=(
   "$repo_root/Examples/BasicRequest/README.md"
   "$repo_root/Examples/CustomHeaders/README.md"
   "$repo_root/Examples/ErrorHandling/README.md"
-  "$repo_root/Examples/GeneratedClientRecipe/README.md"
   "$repo_root/Examples/RealWorldAPI/README.md"
   "$repo_root/Examples/README.md"
 )
@@ -93,19 +92,16 @@ expected_stable=(
 '`WebSocketConfiguration.advanced(_:)`'
 '`DownloadManager`'
 '`WebSocketManager`'
+'`WebSocketEvent.ping`'
+'`WebSocketEvent.pong`'
+'`WebSocketEvent.error(.pingTimeout)`'
+'`WebSocketPingContext`'
+'`WebSocketPongContext`'
 '`TrustPolicy`'
 '`AnyResponseDecoder`'
 '`URLQueryEncoder`'
 '`EventDeliveryPolicy`'
-'`LowLevelNetworkClient`'
-'`LowLevelNetworkClient.perform(_:)`'
-'`LowLevelNetworkClient.perform(executable:)`'
-'`SingleRequestExecutable`'
-'`RequestPayload`'
 '`WebSocketCloseCode`'
-'`WebSocketCloseDisposition`'
-'`WebSocketPingContext`'
-'`WebSocketPongContext`'
 )
 
 documented_stable=()
@@ -172,16 +168,14 @@ validate_benchmark_docs() {
 
 validate_troubleshooting_and_examples_docs() {
   require_contains 'Examples: [Examples/README.md](Examples/README.md)' "$readme"
-  require_contains 'Generated client guide: [Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md](Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md)' "$readme"
   require_contains 'API Stability: [API_STABILITY.md](API_STABILITY.md)' "$readme"
+  require_contains 'Upcoming Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)' "$readme"
   require_contains '### 1. [BasicRequest](./BasicRequest)' "$repo_root/Examples/README.md"
   require_contains '### 2. [ErrorHandling](./ErrorHandling)' "$repo_root/Examples/README.md"
   require_contains '### 3. [CustomHeaders](./CustomHeaders)' "$repo_root/Examples/README.md"
   require_contains '### 4. [RealWorldAPI](./RealWorldAPI)' "$repo_root/Examples/README.md"
-  require_contains '### 5. [GeneratedClientRecipe](./GeneratedClientRecipe)' "$repo_root/Examples/README.md"
   require_contains '### [ConsumerSmoke](./ConsumerSmoke)' "$repo_root/Examples/README.md"
   require_contains '### [WrapperSmoke](./WrapperSmoke)' "$repo_root/Examples/README.md"
-  require_contains '<doc:GeneratedClientRecipe>' "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/InnoNetwork.md"
 }
 
 documented_provisionally=()
@@ -219,7 +213,7 @@ for symbol in "${expected_stable[@]}"; do
       target="$repo_root/Sources/InnoNetwork/APIDefinition.swift"
       ;;
     '`DefaultNetworkClient`')
-      pattern='public actor DefaultNetworkClient'
+      pattern='public final class DefaultNetworkClient'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.request(_:)`')
@@ -262,6 +256,26 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public final class WebSocketManager'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
       ;;
+    '`WebSocketEvent.ping`')
+      pattern='case ping(WebSocketPingContext)'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      ;;
+    '`WebSocketEvent.pong`')
+      pattern='case pong(WebSocketPongContext)'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      ;;
+    '`WebSocketEvent.error(.pingTimeout)`')
+      pattern='case error(WebSocketError)'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      ;;
+    '`WebSocketPingContext`')
+      pattern='public struct WebSocketPingContext'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      ;;
+    '`WebSocketPongContext`')
+      pattern='public struct WebSocketPongContext'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      ;;
     '`TrustPolicy`')
       pattern='public enum TrustPolicy'
       target="$repo_root/Sources/InnoNetwork/TrustPolicy.swift"
@@ -278,41 +292,9 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public struct EventDeliveryPolicy'
       target="$repo_root/Sources/InnoNetwork/EventPipeline.swift"
       ;;
-    '`LowLevelNetworkClient`')
-      pattern='public protocol LowLevelNetworkClient'
-      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
-      ;;
-    '`LowLevelNetworkClient.perform(_:)`')
-      pattern='^    func perform<T: APIDefinition>\(_ request: T\) async throws -> T\.APIResponse$'
-      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
-      ;;
-    '`LowLevelNetworkClient.perform(executable:)`')
-      pattern='^    func perform<D: SingleRequestExecutable>\(executable: D\) async throws -> D\.APIResponse$'
-      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
-      ;;
-    '`SingleRequestExecutable`')
-      pattern='public protocol SingleRequestExecutable'
-      target="$repo_root/Sources/InnoNetwork/RequestExecution.swift"
-      ;;
-    '`RequestPayload`')
-      pattern='public enum RequestPayload'
-      target="$repo_root/Sources/InnoNetwork/RequestExecution.swift"
-      ;;
     '`WebSocketCloseCode`')
       pattern='public enum WebSocketCloseCode'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseCode.swift"
-      ;;
-    '`WebSocketCloseDisposition`')
-      pattern='public enum WebSocketCloseDisposition'
-      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseDisposition.swift"
-      ;;
-    '`WebSocketPongContext`')
-      pattern='public struct WebSocketPongContext'
-      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
-      ;;
-    '`WebSocketPingContext`')
-      pattern='public struct WebSocketPingContext'
-      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
       ;;
     *)
       fail "unknown stable symbol mapping: $symbol"
@@ -322,16 +304,12 @@ for symbol in "${expected_stable[@]}"; do
   if has_rg; then
     if [[ "$symbol" == '`NetworkClient.request(_:)`' || "$symbol" == '`NetworkClient.upload(_:)`' ]]; then
       validate_protocol_symbol "NetworkClient" "$target" "$pattern"
-    elif [[ "$symbol" == '`LowLevelNetworkClient.perform(_:)`' || "$symbol" == '`LowLevelNetworkClient.perform(executable:)`' ]]; then
-      validate_protocol_symbol "LowLevelNetworkClient" "$target" "$pattern"
     else
       rg -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
     fi
   else
     if [[ "$symbol" == '`NetworkClient.request(_:)`' || "$symbol" == '`NetworkClient.upload(_:)`' ]]; then
       validate_protocol_symbol "NetworkClient" "$target" "$pattern"
-    elif [[ "$symbol" == '`LowLevelNetworkClient.perform(_:)`' || "$symbol" == '`LowLevelNetworkClient.perform(executable:)`' ]]; then
-      validate_protocol_symbol "LowLevelNetworkClient" "$target" "$pattern"
     else
       grep -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
     fi

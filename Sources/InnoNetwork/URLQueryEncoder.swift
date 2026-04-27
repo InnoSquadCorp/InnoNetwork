@@ -213,15 +213,6 @@ private struct _URLQueryEncodingOptions: Sendable {
     }
 }
 
-private struct SnakeCaseKeyProbe: Encodable {
-    let key: String
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: AnyCodingKey.self)
-        try container.encode(true, forKey: AnyCodingKey(key))
-    }
-}
-
 private final class SnakeCaseKeyTransformCache: Sendable {
     static let shared = SnakeCaseKeyTransformCache()
 
@@ -234,18 +225,66 @@ private final class SnakeCaseKeyTransformCache: Sendable {
             return cached
         }
 
-        let transformed = (try? computeTransform(for: key)) ?? key
+        let transformed = Self.convertToSnakeCase(key)
 
         cache.withLock { $0[key] = transformed }
         return transformed
     }
 
-    private func computeTransform(for key: String) throws -> String {
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        let data = try encoder.encode(SnakeCaseKeyProbe(key: key))
-        let object = try JSONSerialization.jsonObject(with: data) as? [String: Bool]
-        return object?.keys.first ?? key
+    /// Converts `camelCase` keys to `snake_case` using the same word-splitting
+    /// rules as Foundation's `JSONEncoder.KeyEncodingStrategy.convertToSnakeCase`.
+    ///
+    /// The algorithm walks the string detecting transitions between lowercase
+    /// and uppercase characters, treating runs of consecutive uppercase as a
+    /// single word that ends one character before the next lowercase letter
+    /// (so `myURLProperty` becomes `my_url_property`, not `my_u_r_l_property`).
+    /// Empty strings, leading/trailing underscores, and non-alphabetic content
+    /// are preserved as-is.
+    ///
+    /// This mirrors Foundation's behavior closely enough that consumers
+    /// migrating from `JSONEncoder.keyEncodingStrategy = .convertToSnakeCase`
+    /// see the same wire-format keys; the parity is verified by the test
+    /// target's `APIDefinitionEncodingTests` snake-case suite.
+    static func convertToSnakeCase(_ stringKey: String) -> String {
+        guard !stringKey.isEmpty else { return stringKey }
+
+        var words: [Range<String.Index>] = []
+        var wordStart = stringKey.startIndex
+        var searchRange = stringKey.index(after: wordStart)..<stringKey.endIndex
+
+        while let upperCaseRange = stringKey.rangeOfCharacter(
+            from: .uppercaseLetters,
+            options: [],
+            range: searchRange
+        ) {
+            let untilUpperCase = wordStart..<upperCaseRange.lowerBound
+            words.append(untilUpperCase)
+
+            searchRange = upperCaseRange.lowerBound..<searchRange.upperBound
+            guard let lowerCaseRange = stringKey.rangeOfCharacter(
+                from: .lowercaseLetters,
+                options: [],
+                range: searchRange
+            ) else {
+                wordStart = searchRange.lowerBound
+                break
+            }
+
+            let nextCharacterAfterCapital = stringKey.index(after: upperCaseRange.lowerBound)
+            if lowerCaseRange.lowerBound == nextCharacterAfterCapital {
+                wordStart = upperCaseRange.lowerBound
+            } else {
+                let beforeLowerIndex = stringKey.index(before: lowerCaseRange.lowerBound)
+                words.append(upperCaseRange.lowerBound..<beforeLowerIndex)
+                wordStart = beforeLowerIndex
+            }
+            searchRange = lowerCaseRange.upperBound..<searchRange.upperBound
+        }
+        words.append(wordStart..<searchRange.upperBound)
+
+        return words
+            .map { stringKey[$0].lowercased() }
+            .joined(separator: "_")
     }
 }
 

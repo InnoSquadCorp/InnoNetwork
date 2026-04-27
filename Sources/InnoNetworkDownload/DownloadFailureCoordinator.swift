@@ -73,7 +73,7 @@ package struct DownloadFailureCoordinator {
 
     /// Computes the sleep interval before the next restart. When
     /// `configuration.exponentialBackoff` is disabled the configured
-    /// fixed `retryDelay` is returned directly (pre-4.3 behavior). When
+    /// fixed `retryDelay` is returned directly. When
     /// enabled the base delay grows as `retryDelay * 2^(retryCount - 1)`,
     /// then the returned delay is sampled from `base ± jitter`, clamped to
     /// `[0, effectiveCap]`. "Uncapped" configurations are still bounded to

@@ -8,6 +8,15 @@
 - configuration API 장기 정리: advanced surface 축소와 권장 public path 단순화
 - `@unchecked Sendable` 제거 로드맵: 현재 승인된 6개 예외(`EventPipelineMetricsReporterProxy`, `URLQueryEncoder`, `QueryValueBox`, `SnakeCaseKeyTransformCache`, `_URLQueryValueEncoder`, `URLQueryCustomKeyTransform`)를 단계적으로 제거하고, 필요 시 public API와 내부 동시성 모델을 재설계
 
+## Post-4.0 Candidates
+
+- Low-level execution hooks for generated clients and wrapper frameworks.
+- Public close-disposition observation for WebSocket lifecycle UX.
+- Ping/pong context payloads with library-computed round-trip timing.
+- Download retry backoff tuning with jitter and explicit caps.
+- Runnable WebSocket / Download / event-policy observer samples.
+- ThreadSanitizer and stricter benchmark regression gates.
+
 ## Public DSL Candidate
 
 - 현재 `RequestEncodingPolicy`, `ResponseDecodingStrategy`, `TransportPolicy`는 내부 설계 축으로 유지합니다.
