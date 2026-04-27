@@ -525,7 +525,7 @@ public final class WebSocketManager: NSObject, Sendable {
             await task.setError(error)
             let terminalGeneration = await prepareTerminalRuntimeCleanup(for: task)
             await runtimeRegistry.onDisconnected?(task, error)
-            await eventHub.publish(.disconnected(error), for: task.id)
+            await eventHub.publishAndWaitForDelivery(.disconnected(error), for: task.id)
             guard await isCurrentConnection(task, generation: terminalGeneration) else { return }
 
             let reconnectAction = await reconnectCoordinator.reconnectAction(
@@ -543,7 +543,7 @@ public final class WebSocketManager: NSObject, Sendable {
                 await task.updateState(.failed)
                 await task.setError(.maxReconnectAttemptsExceeded)
                 await runtimeRegistry.onError?(task, .maxReconnectAttemptsExceeded)
-                await eventHub.publish(.error(.maxReconnectAttemptsExceeded), for: task.id)
+                await eventHub.publishAndWaitForDelivery(.error(.maxReconnectAttemptsExceeded), for: task.id)
             case .terminal:
                 break
             }
@@ -659,7 +659,7 @@ public final class WebSocketManager: NSObject, Sendable {
             await task.setError(finalError)
             let reconnectGeneration = await prepareTerminalRuntimeCleanup(for: task)
             await runtimeRegistry.onError?(task, finalError)
-            await eventHub.publish(.error(finalError), for: task.id)
+            await eventHub.publishAndWaitForDelivery(.error(finalError), for: task.id)
             guard await isCurrentConnection(task, generation: reconnectGeneration),
                   await task.state == .reconnecting
             else { return }
@@ -672,7 +672,7 @@ public final class WebSocketManager: NSObject, Sendable {
             await task.setError(finalError)
             let terminalGeneration = await prepareTerminalRuntimeCleanup(for: task)
             await runtimeRegistry.onError?(task, finalError)
-            await eventHub.publish(.error(finalError), for: task.id)
+            await eventHub.publishAndWaitForDelivery(.error(finalError), for: task.id)
             await finishTerminalTaskIfCurrent(task, generation: terminalGeneration)
         case .exceeded:
             let finalError: WebSocketError = .maxReconnectAttemptsExceeded
@@ -680,7 +680,7 @@ public final class WebSocketManager: NSObject, Sendable {
             await task.setError(finalError)
             let terminalGeneration = await prepareTerminalRuntimeCleanup(for: task)
             await runtimeRegistry.onError?(task, finalError)
-            await eventHub.publish(.error(finalError), for: task.id)
+            await eventHub.publishAndWaitForDelivery(.error(finalError), for: task.id)
             await finishTerminalTaskIfCurrent(task, generation: terminalGeneration)
         }
     }
@@ -702,7 +702,7 @@ public final class WebSocketManager: NSObject, Sendable {
         await task.setError(error)
         let terminalGeneration = await prepareTerminalRuntimeCleanup(for: task)
         await runtimeRegistry.onDisconnected?(task, error)
-        await eventHub.publish(.disconnected(error), for: task.id)
+        await eventHub.publishAndWaitForDelivery(.disconnected(error), for: task.id)
         await finishTerminalTaskIfCurrent(task, generation: terminalGeneration)
     }
 

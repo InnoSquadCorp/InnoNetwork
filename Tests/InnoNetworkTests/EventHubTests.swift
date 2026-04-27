@@ -76,6 +76,48 @@ private final class SlowObserver: NetworkEventObserving, Sendable {
     }
 }
 
+private actor DeliveryGate {
+    private var started = false
+    private var released = false
+    private var returned = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func markStarted() {
+        started = true
+        startWaiters.forEach { $0.resume() }
+        startWaiters.removeAll()
+    }
+
+    func waitUntilStarted() async {
+        if started { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func waitForRelease() async {
+        if released { return }
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        released = true
+        releaseWaiters.forEach { $0.resume() }
+        releaseWaiters.removeAll()
+    }
+
+    func markReturned() {
+        returned = true
+    }
+
+    func hasReturned() -> Bool {
+        returned
+    }
+}
+
 
 @Suite("Event Hub Tests", .serialized)
 struct EventHubTests {
@@ -116,6 +158,56 @@ struct EventHubTests {
 
         let fastValues = try await waitForValues(store: fastStore, expectedCount: 1)
         #expect(fastValues == [2])
+    }
+
+    @Test("TaskEventHub publishAndWaitForDelivery waits for listener completion")
+    func taskEventHubPublishAndWaitForDeliveryWaitsForListenerCompletion() async {
+        let hub = TaskEventHub<Int>()
+        let gate = DeliveryGate()
+
+        _ = await hub.addListener(taskID: "wait") { _ in
+            await gate.markStarted()
+            await gate.waitForRelease()
+        }
+
+        let publishTask = Task {
+            await hub.publishAndWaitForDelivery(1, for: "wait")
+            await gate.markReturned()
+        }
+
+        await gate.waitUntilStarted()
+        #expect(await gate.hasReturned() == false)
+
+        await gate.release()
+        _ = await publishTask.result
+        #expect(await gate.hasReturned())
+    }
+
+    @Test("TaskEventHub publishAndWaitForDelivery completes when finish races delivery")
+    func taskEventHubPublishAndWaitForDeliveryCompletesWhenFinishRacesDelivery() async {
+        let hub = TaskEventHub<Int>()
+        let gate = DeliveryGate()
+
+        _ = await hub.addListener(taskID: "finish-race") { _ in
+            await gate.markStarted()
+            await gate.waitForRelease()
+        }
+
+        let publishTask = Task {
+            await hub.publishAndWaitForDelivery(1, for: "finish-race")
+            await gate.markReturned()
+        }
+
+        await gate.waitUntilStarted()
+        let finishTask = Task {
+            await hub.finish(taskID: "finish-race")
+        }
+
+        await gate.release()
+        _ = await publishTask.result
+        _ = await finishTask.result
+
+        #expect(await gate.hasReturned())
     }
 
     @Test("NetworkEventHub isolates slow observers across requests")
