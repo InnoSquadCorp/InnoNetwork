@@ -23,12 +23,14 @@ package actor DownloadTaskPersistence {
     package init(
         sessionIdentifier: String,
         fileManager: FileManager = .default,
-        baseDirectoryURL: URL? = nil
+        baseDirectoryURL: URL? = nil,
+        fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy = .onCheckpoint
     ) {
         _ = fileManager
         self.store = AppendLogDownloadTaskStore(
             sessionIdentifier: sessionIdentifier,
-            baseDirectoryURL: baseDirectoryURL
+            baseDirectoryURL: baseDirectoryURL,
+            fsyncPolicy: fsyncPolicy
         )
     }
 
@@ -94,11 +96,13 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     private let checkpointURL: URL
     private let logURL: URL
     private let lockURL: URL
+    private let fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy
     private var state: StoreState
 
     package init(
         sessionIdentifier: String,
-        baseDirectoryURL: URL? = nil
+        baseDirectoryURL: URL? = nil,
+        fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy = .onCheckpoint
     ) {
         let fileManager = FileManager.default
         let baseDirectory = baseDirectoryURL ?? Self.defaultBaseDirectory(fileManager: fileManager)
@@ -131,6 +135,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         self.checkpointURL = checkpointURL
         self.logURL = logURL
         self.lockURL = lockURL
+        self.fsyncPolicy = fsyncPolicy
         self.state = initialState
     }
 
@@ -204,6 +209,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     }
 
     private func mutate(_ transform: (inout StoreState) -> [Event]) async {
+        let fsyncPolicy = self.fsyncPolicy
         do {
             let updatedState = try Self.withDirectoryLock(lockURL: lockURL, fileManager: fileManager) {
                 var diskState = try Self.loadState(
@@ -216,13 +222,23 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
                 let events = transform(&diskState)
                 guard !events.isEmpty else { return diskState }
 
-                try Self.append(events: events, to: logURL, fileManager: fileManager)
+                try Self.append(
+                    events: events,
+                    to: logURL,
+                    fileManager: fileManager,
+                    fsyncPolicy: fsyncPolicy
+                )
                 diskState.logEventCount += events.count
                 diskState.logSize = Self.fileSize(at: logURL, fileManager: fileManager)
                 diskState.nextSequence += Int64(events.count)
 
                 if Self.shouldCompact(state: diskState) {
-                    try Self.writeCheckpoint(records: diskState.records, to: checkpointURL, fileManager: fileManager)
+                    try Self.writeCheckpoint(
+                        records: diskState.records,
+                        to: checkpointURL,
+                        fileManager: fileManager,
+                        fsyncPolicy: fsyncPolicy
+                    )
                     try Self.resetLog(at: logURL, fileManager: fileManager)
                     diskState.logEventCount = 0
                     diskState.tombstoneCount = 0
@@ -344,14 +360,28 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         }
 
         if validPrefixEvents.count != lines.count {
-            try writeCheckpoint(records: records, to: checkpointURL, fileManager: fileManager)
+            // Recovery path: a partial / corrupt suffix of the log forced us
+            // to rewrite the checkpoint. fsync defensively so the recovery
+            // does not have to be redone if the process crashes again before
+            // the OS flushes.
+            try writeCheckpoint(
+                records: records,
+                to: checkpointURL,
+                fileManager: fileManager,
+                fsyncPolicy: .onCheckpoint
+            )
             try resetLog(at: logURL, fileManager: fileManager)
         }
 
         return (records, nextSequence, logEventCount, tombstoneCount)
     }
 
-    private static func append(events: [Event], to logURL: URL, fileManager: FileManager) throws {
+    private static func append(
+        events: [Event],
+        to logURL: URL,
+        fileManager: FileManager,
+        fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy
+    ) throws {
         if !fileManager.fileExists(atPath: logURL.path()) {
             try Data().write(to: logURL)
         }
@@ -366,24 +396,54 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             handle.write(data)
             handle.write(Data([0x0A]))
         }
+
+        // .always policy forces buffered writes through to stable storage on
+        // every event. .onCheckpoint and .never skip the cost — the next
+        // checkpoint or the OS flush is responsible for durability.
+        if fsyncPolicy == .always {
+            _ = Darwin.fsync(handle.fileDescriptor)
+        }
     }
 
     private static func writeCheckpoint(
         records: [String: DownloadTaskPersistence.Record],
         to checkpointURL: URL,
-        fileManager: FileManager
+        fileManager: FileManager,
+        fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy
     ) throws {
         let envelope = Envelope(version: 1, records: records)
         let data = try JSONEncoder().encode(envelope)
-        try writeAtomically(data: data, to: checkpointURL, fileManager: fileManager)
+        try writeAtomically(
+            data: data,
+            to: checkpointURL,
+            fileManager: fileManager,
+            fsyncBeforeRename: fsyncPolicy != .never
+        )
     }
 
-    private static func writeAtomically(data: Data, to fileURL: URL, fileManager: FileManager) throws {
+    private static func writeAtomically(
+        data: Data,
+        to fileURL: URL,
+        fileManager: FileManager,
+        fsyncBeforeRename: Bool = false
+    ) throws {
         let tempURL = fileURL
             .deletingPathExtension()
             .appendingPathExtension("tmp-\(UUID().uuidString)")
 
         try data.write(to: tempURL, options: .atomic)
+
+        // For checkpoint writes (.always or .onCheckpoint), fsync the temp
+        // file before the atomic rename so the rename observes a fully
+        // committed payload. The empty resetLog path skips the fsync — the
+        // log truncation does not need durability beyond what the rename
+        // provides.
+        if fsyncBeforeRename {
+            if let handle = try? FileHandle(forReadingFrom: tempURL) {
+                _ = Darwin.fsync(handle.fileDescriptor)
+                try? handle.close()
+            }
+        }
 
         if fileManager.fileExists(atPath: fileURL.path()) {
             _ = try fileManager.replaceItemAt(fileURL, withItemAt: tempURL)

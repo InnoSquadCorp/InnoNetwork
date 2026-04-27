@@ -74,17 +74,32 @@ task state when the OS reclaims space. `tmp/` is never appropriate.
 ## Tuning fsync semantics
 
 `DownloadConfiguration.persistenceFsyncPolicy` controls how aggressively the store calls
-`fsync(_:)`. Tradeoffs:
+`Darwin.fsync(_:)` on the events log and on checkpoint writes. The default is
+``DownloadConfiguration/PersistenceFsyncPolicy/onCheckpoint``.
 
-- ``DownloadConfiguration/PersistenceFsyncPolicy/always`` — fsync every event. Maximum
-  durability, highest IO cost. Recommended only for high-value transfers (paid content,
-  legal documents).
-- ``DownloadConfiguration/PersistenceFsyncPolicy/onCheckpoint`` — fsync at compaction.
-  Safe default. The most we lose on crash is the events written since the last checkpoint
-  (typically seconds of progress).
-- ``DownloadConfiguration/PersistenceFsyncPolicy/never`` — rely on the OS to flush. Crash
-  may lose a few minutes of progress. Use for transient transfers where re-download is
-  cheap.
+| Policy | Event append | Checkpoint write | Loss on crash |
+|--------|-------------|------------------|---------------|
+| ``DownloadConfiguration/PersistenceFsyncPolicy/always`` | fsync after every event | fsync before atomic rename | ~0 events |
+| ``DownloadConfiguration/PersistenceFsyncPolicy/onCheckpoint`` (default) | no fsync | fsync before atomic rename | events since the last checkpoint |
+| ``DownloadConfiguration/PersistenceFsyncPolicy/never`` | no fsync | no fsync | up to a few minutes of OS-cached writes |
+
+`fsync(_:)` is expensive on busy or low-power volumes — it forces the host's IO scheduler
+to flush dirty pages to stable storage before returning. `.always` is the right choice for
+paid content, legal documents, or anywhere a missed event would be a user-visible support
+ticket. `.onCheckpoint` is the right default for consumer apps: typical writes are cheap
+and the recovery on crash falls back to the last durable checkpoint plus the partial log
+suffix replayed on startup.
+
+Switching policy is a configuration knob — the on-disk format is identical and you can
+upgrade or downgrade between runs without migration:
+
+```swift
+let configuration = DownloadConfiguration.advanced(
+    sessionIdentifier: "com.example.app.downloads"
+) { builder in
+    builder.persistenceFsyncPolicy = .always   // or .onCheckpoint, or .never
+}
+```
 
 ## Replacing the store
 

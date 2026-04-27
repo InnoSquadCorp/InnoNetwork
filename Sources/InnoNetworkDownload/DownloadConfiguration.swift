@@ -96,6 +96,37 @@ public struct DownloadConfiguration: Sendable {
     public let eventDeliveryPolicy: EventDeliveryPolicy
     /// Optional reporter that receives raw and aggregate event pipeline metrics.
     public let eventMetricsReporter: (any EventPipelineMetricsReporting)?
+    /// Controls how aggressively the append-log persistence calls `fsync(_:)`
+    /// on the events log and checkpoint files. See
+    /// ``PersistenceFsyncPolicy`` for the trade-offs. Defaults to
+    /// ``PersistenceFsyncPolicy/onCheckpoint``.
+    public let persistenceFsyncPolicy: PersistenceFsyncPolicy
+
+    /// Durability policy for the append-log persistence layer.
+    ///
+    /// `fsync(_:)` forces an in-flight write through the OS page cache to
+    /// stable storage. The cost is real (latency spike when the underlying
+    /// volume is busy), so the library exposes the trade-off rather than
+    /// burning a default into the persistence layer.
+    public enum PersistenceFsyncPolicy: Sendable, Equatable {
+        /// Call `fsync(_:)` after every event append and after every
+        /// checkpoint write. Maximum durability, highest IO cost.
+        /// Recommended only for high-value transfers where a crash that
+        /// loses the most recent event is unacceptable.
+        case always
+
+        /// Call `fsync(_:)` only on checkpoint writes (compaction). The
+        /// most recent few events between checkpoints may be lost on a
+        /// hard crash, but typical writes do not pay the fsync cost. This
+        /// is the safe default for most consumer apps.
+        case onCheckpoint
+
+        /// Never call `fsync(_:)`. Rely on the OS to flush dirty pages on
+        /// its own cadence. A crash may lose the last few minutes of
+        /// progress; recovery falls back to the most recent durable
+        /// checkpoint. Use only when re-download is cheap.
+        case never
+    }
 
     /// Mutable builder seeded from the advanced tuning preset.
     ///
@@ -135,6 +166,8 @@ public struct DownloadConfiguration: Sendable {
         public var eventDeliveryPolicy: EventDeliveryPolicy
         /// Optional reporter that receives raw and aggregate event pipeline metrics.
         public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
+        /// `fsync(_:)` policy for the append-log persistence layer.
+        public var persistenceFsyncPolicy: PersistenceFsyncPolicy
 
         fileprivate init(preset: DownloadConfiguration) {
             self.maxConnectionsPerHost = preset.maxConnectionsPerHost
@@ -153,6 +186,7 @@ public struct DownloadConfiguration: Sendable {
             self.networkChangeTimeout = preset.networkChangeTimeout
             self.eventDeliveryPolicy = preset.eventDeliveryPolicy
             self.eventMetricsReporter = preset.eventMetricsReporter
+            self.persistenceFsyncPolicy = preset.persistenceFsyncPolicy
         }
 
         fileprivate func build() -> DownloadConfiguration {
@@ -172,7 +206,8 @@ public struct DownloadConfiguration: Sendable {
                 waitsForNetworkChanges: waitsForNetworkChanges,
                 networkChangeTimeout: networkChangeTimeout,
                 eventDeliveryPolicy: eventDeliveryPolicy,
-                eventMetricsReporter: eventMetricsReporter
+                eventMetricsReporter: eventMetricsReporter,
+                persistenceFsyncPolicy: persistenceFsyncPolicy
             )
         }
     }
@@ -232,7 +267,8 @@ public struct DownloadConfiguration: Sendable {
         waitsForNetworkChanges: Bool = false,
         networkChangeTimeout: TimeInterval? = 10.0,
         eventDeliveryPolicy: EventDeliveryPolicy = .default,
-        eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil
+        eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
+        persistenceFsyncPolicy: PersistenceFsyncPolicy = .onCheckpoint
     ) {
         self.maxConnectionsPerHost = max(1, maxConnectionsPerHost)
         self.maxRetryCount = max(0, maxRetryCount)
@@ -250,6 +286,7 @@ public struct DownloadConfiguration: Sendable {
         self.networkChangeTimeout = networkChangeTimeout.map { max(0, $0) }
         self.eventDeliveryPolicy = eventDeliveryPolicy
         self.eventMetricsReporter = eventMetricsReporter
+        self.persistenceFsyncPolicy = persistenceFsyncPolicy
     }
     
     public static let `default` = safeDefaults()

@@ -168,7 +168,10 @@ public actor DownloadManager {
     public init(configuration: DownloadConfiguration = .default) throws {
         try self.init(
             configuration: configuration,
-            persistence: DownloadTaskPersistence(sessionIdentifier: configuration.sessionIdentifier)
+            persistence: DownloadTaskPersistence(
+                sessionIdentifier: configuration.sessionIdentifier,
+                fsyncPolicy: configuration.persistenceFsyncPolicy
+            )
         )
     }
 
