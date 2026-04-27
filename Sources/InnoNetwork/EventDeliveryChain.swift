@@ -1,22 +1,23 @@
 import Foundation
+import os
 
 
 package actor EventDeliveryChain<Event: Sendable> {
     package typealias Handler = @Sendable (Event) async -> Void
 
-    private final class DeliveryCompletion: @unchecked Sendable {
-        private let lock = NSLock()
-        private var continuation: CheckedContinuation<Void, Never>?
+    private final class DeliveryCompletion: Sendable {
+        private let continuation: OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>
 
         init(_ continuation: CheckedContinuation<Void, Never>) {
-            self.continuation = continuation
+            self.continuation = OSAllocatedUnfairLock(initialState: continuation)
         }
 
         func resume() {
-            lock.lock()
-            let continuation = continuation
-            self.continuation = nil
-            lock.unlock()
+            let continuation = continuation.withLock { state in
+                let continuation = state
+                state = nil
+                return continuation
+            }
 
             continuation?.resume()
         }
