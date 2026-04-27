@@ -1,5 +1,10 @@
 # InnoNetwork
 
+[![DocC](https://img.shields.io/badge/docs-DocC-blue)](https://innosquadcorp.github.io/InnoNetwork/)
+[![Swift](https://img.shields.io/badge/Swift-6.2-orange)](https://swift.org)
+[![Platforms](https://img.shields.io/badge/platforms-iOS%2018%20%7C%20macOS%2015%20%7C%20tvOS%2018%20%7C%20watchOS%2011%20%7C%20visionOS%202-lightgrey)](#platform-matrix)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 InnoNetwork is a Swift package for type-safe networking on Apple platforms. It provides three public products:
 
 - `InnoNetwork` for request/response APIs
@@ -7,6 +12,9 @@ InnoNetwork is a Swift package for type-safe networking on Apple platforms. It p
 - `InnoNetworkWebSocket` for connection-oriented realtime flows
 
 The package is built around Swift Concurrency, explicit transport policies, and operational visibility that can scale from app prototypes to production clients.
+
+> 📚 **API Reference (DocC):** https://innosquadcorp.github.io/InnoNetwork/
+> 🇰🇷 **한국어 문서:** [docs/ko/README.md](docs/ko/README.md)
 
 ## Quick Start
 
@@ -230,14 +238,87 @@ swift run InnoNetworkBenchmarks --json-path /tmp/innonetwork-bench.json
 
 Benchmark governance, baseline policy, and CI posture are documented in [Benchmarks/README.md](Benchmarks/README.md).
 
+## Production Checklist
+
+Operational items to verify before shipping a client built on InnoNetwork.
+
+### Trust & Transport Security
+
+- **TLS pinning rotation.** When using `TrustPolicy.publicKeyPinning(...)`, ship at least two
+  pins (current + next) and document the rotation cadence so the app keeps validating after
+  certificate replacement. Consider feature-gated rollback to `.systemDefault` for emergency
+  recovery.
+- **App Transport Security (ATS).** The default `safeDefaults` configuration assumes ATS is
+  enabled. Avoid `NSAllowsArbitraryLoads` in production `Info.plist`. If a non-HTTPS host is
+  unavoidable, scope an `NSExceptionDomains` entry to that host only.
+- **Custom trust evaluation.** A `TrustEvaluating` implementation runs before request bodies are
+  ever decoded, so any thrown error becomes `NetworkError.trustEvaluationFailed`. Surface the
+  failure to a user-facing recovery path; do not auto-retry on trust failure.
+
+### Background Operation
+
+- **Background download Info.plist.** Background sessions require declaring
+  `UIBackgroundModes` with `fetch` (and `processing` if you use long-running tasks).
+- **Session identifier uniqueness.** Each `DownloadConfiguration.sessionIdentifier` must be
+  globally unique within the app process. Reuse causes Foundation to merge tasks; the library
+  asserts in DEBUG and emits an OSLog `.fault` in RELEASE.
+- **Background completion handler.** Wire the system-provided completion handler (delivered to
+  `application(_:handleEventsForBackgroundURLSession:completionHandler:)`) into
+  `DownloadManager` so the OS releases the app suspension promptly.
+
+### Observability & Privacy
+
+- **Redaction defaults.** `NetworkLogger` and `OSLogNetworkEventObserver` mark URLs, headers,
+  and request bodies as `.private` by default. Do not flip them to `.public` outside of
+  controlled diagnostic builds.
+- **Failure payload capture.** `NetworkError.objectMapping(payloadSnippet:)` is `nil` unless you
+  opt in via `NetworkConfiguration.captureFailurePayload = true`. Keep that flag off in release
+  configurations to avoid storing PII inside crash logs or analytics.
+- **Event observer attachment.** Attach observers (`NetworkEventObserving`) at app start and
+  detach on logout / account switch. Observers receive every request event, including ones
+  triggered after a user-initiated cancellation.
+
+### Resilience
+
+- **Cancel-on-logout.** Call `DefaultNetworkClient.cancelAll()` when the user logs out,
+  switches accounts, or backgrounds. Streaming requests (SSE/NDJSON) only stop when their
+  parent task is cancelled.
+- **Retry budget.** `ExponentialBackoffRetryPolicy.maxTotalRetries` is the absolute cap that
+  network-monitor recovery does not reset. Budget per user session, not per request.
+- **WebSocket reconnect cap.** `maxReconnectAttempts` limits successive automatic attempts.
+  After exhaustion, surface the failure to the UI rather than reconnect on every app
+  foreground.
+
+### Push & Lifecycle Refresh
+
+- **Background fetch friendly.** Streaming or websocket products expect explicit
+  `disconnect()` calls before app suspension. Implement `applicationDidEnterBackground`
+  cleanup; the OS will not gracefully close sockets on your behalf.
+- **Token refresh.** Encode authentication refresh inside a `RequestInterceptor` and gate the
+  refresh through a single in-flight `Task` (otherwise concurrent retries can stampede the
+  refresh endpoint).
+
+### Pre-flight Test Plan
+
+| Area | Smoke check |
+|------|-------------|
+| Trust | Hit a host pinned to a wrong certificate and verify `NetworkError.trustEvaluationFailed`. |
+| Retry | Stub a `503 Retry-After: 30` response and confirm the policy honours the header. |
+| Background download | Kill the app mid-download, relaunch, and verify `DownloadRestoreCoordinator` resumes. |
+| WebSocket reconnect | Drop the network for >10s, restore, and verify only the configured number of attempts ran. |
+| Cancel-all | Trigger `cancelAll()` while a stream and an upload are in flight; both must terminate with `.cancelled`. |
+
 ## Documentation
 
+- DocC API Reference: https://innosquadcorp.github.io/InnoNetwork/
 - Examples: [Examples/README.md](Examples/README.md)
 - API Stability: [API_STABILITY.md](API_STABILITY.md)
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
+- DocC Deployment: [docs/DocC_Deployment.md](docs/DocC_Deployment.md)
 - Upcoming Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
+- 한국어 문서: [docs/ko/README.md](docs/ko/README.md)
 
 ## Support
 
