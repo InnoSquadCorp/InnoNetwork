@@ -73,8 +73,10 @@ keep current behaviour. See
   `HTTPURLResponse` are preserved.
 - CI: `swift test` runs with `--enable-code-coverage`; coverage is uploaded
   as an artifact and forwarded to Codecov when `CODECOV_TOKEN` is present.
-  The benchmark smoke guard tightens `--max-regression-percent` from 50 →
-  10 on the guarded WebSocket benchmarks.
+  The benchmark smoke guard threshold remains at 50% pending a baseline
+  refresh against the v4.1 build (the existing baseline pre-dates the
+  WebSocket send-queue work and would false-positive at 10%). The
+  tightening to 10% is tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 - The release workflow generates a CycloneDX 1.5 SBOM and signs both the
   SBOM and the benchmark snapshot with sigstore cosign before attaching
   them to the GitHub Release.
