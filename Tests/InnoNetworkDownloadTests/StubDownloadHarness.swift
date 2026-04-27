@@ -112,8 +112,8 @@ final class StubDownloadHarness: Sendable {
         taskIdentifier: Int,
         location: URL? = nil,
         error: SendableUnderlyingError? = nil
-    ) {
-        manager.handleCompletion(
+    ) async {
+        await manager.handleCompletion(
             taskIdentifier: taskIdentifier,
             location: location,
             error: error

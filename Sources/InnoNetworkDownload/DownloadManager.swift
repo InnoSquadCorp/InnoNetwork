@@ -36,37 +36,26 @@ extension DownloadManagerError: LocalizedError {
 ///
 /// ## Isolation contract
 ///
-/// `DownloadManager` is a `Sendable` class today (not an `actor`) because the
-/// public API existed before strict concurrency was finalized and the type
-/// already serves as a `URLSessionDownloadDelegate` host. Mutable state is
-/// distributed across three boundaries instead of one actor:
+/// `DownloadManager` is a `public actor`. All mutable state lives inside the
+/// actor's isolation, plus three actor-typed collaborators:
 ///
-/// 1. **Foundation delegate queue** — `DownloadSessionDelegate` runs on
-///    URLSession's internal serial queue. The delegate translates URL session
-///    callbacks into closures stored under
-///    ``DownloadSessionDelegateCallbacks`` (an `OSAllocatedUnfairLock`-backed
-///    container). The manager's `handleProgress(...)` / `handleCompletion(...)`
-///    fileprivate methods are the published call targets, captured weakly.
-///    Those methods only schedule async work via `Task { ... }`; they do not
-///    touch any mutable state synchronously.
-/// 2. **`DownloadRuntimeRegistry`** — actor that owns the live mapping
+/// 1. **`DownloadRuntimeRegistry`** — actor that owns the live mapping
 ///    between `DownloadTask`, `URLSessionDownloadTask`, and runtime
-///    callbacks. Every read/write is awaited.
-/// 3. **`DownloadTaskPersistence`** — actor that owns the on-disk task log.
-///    All mutations go through it.
+///    callbacks.
+/// 2. **`DownloadTaskPersistence`** — actor that owns the on-disk task log.
+/// 3. **`BackgroundCompletionStore`** — actor that holds the system-supplied
+///    background completion handler.
 ///
-/// The manager itself stores only `let` properties (configuration, the
-/// session, the delegate, the persistence, the event hub, the runtime
-/// registry, the background-completion store, and the restore barrier).
-/// It has no mutable instance state outside those isolated containers, which
-/// is why the `Sendable` conformance is honest. A future refactor toward a
-/// `public actor` would internalize the same boundaries — see
-/// [docs/ROADMAP.md](../../docs/ROADMAP.md) for status.
+/// Foundation-driven delegate callbacks (URL session's serial queue) cross
+/// into the actor through unstructured Tasks: each closure inside
+/// `DownloadSessionDelegateCallbacks` schedules `Task { [weak self] in await
+/// self?.handleX(...) }` so synchronous delegate dispatch never touches
+/// actor-isolated state directly.
 ///
-/// **Reading order** for review: scan `// MARK: - Delegate boundary` for the
-/// callbacks that cross the URL session delegate queue, and
-/// `// MARK: - Runtime` for the methods that mutate registry state.
-public final class DownloadManager: NSObject, Sendable {
+/// `handleBackgroundSessionCompletion(_:completion:)` is `nonisolated` so
+/// `application(_:handleEventsForBackgroundURLSession:completionHandler:)`
+/// (a synchronous Foundation entry point) can call it without `await`.
+public actor DownloadManager {
     /// Shared `DownloadManager` for apps that need a single download domain.
     ///
     /// Initialized lazily with ``DownloadConfiguration/default``. If the
@@ -176,14 +165,14 @@ public final class DownloadManager: NSObject, Sendable {
         )
     }
 
-    public convenience init(configuration: DownloadConfiguration = .default) throws {
+    public init(configuration: DownloadConfiguration = .default) throws {
         try self.init(
             configuration: configuration,
             persistence: DownloadTaskPersistence(sessionIdentifier: configuration.sessionIdentifier)
         )
     }
 
-    package convenience init(
+    package init(
         configuration: DownloadConfiguration = .default,
         persistence: DownloadTaskPersistence
     ) throws {
@@ -233,35 +222,39 @@ public final class DownloadManager: NSObject, Sendable {
         )
         self.session = urlSession
 
-        super.init()
-
-        // MARK: - Delegate boundary
-        // The two closures below are invoked from the URL session's internal
-        // delegate queue (Foundation-managed). They MUST NOT touch mutable
-        // manager state synchronously; the body of each handleXxx hop into a
-        // detached Task that awaits actor-isolated coordinators
-        // (DownloadRuntimeRegistry / DownloadTaskPersistence). The `[weak self]`
-        // capture protects against races where the manager is dropped while a
-        // late delegate callback is in flight (e.g. background restoration).
+        // Delegate boundary: URL session's serial delegate queue invokes the
+        // closures below synchronously. Each closure hops into an unstructured
+        // Task so the actor-isolated handleX methods are awaited rather than
+        // called inline (which would violate isolation). [weak self] keeps a
+        // late callback after the manager is dropped from segfaulting.
         callbacks.setHandlers(
             onProgress: { [weak self] taskIdentifier, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite in
-                self?.handleProgress(
-                    taskIdentifier: taskIdentifier,
-                    bytesWritten: bytesWritten,
-                    totalBytesWritten: totalBytesWritten,
-                    totalBytesExpectedToWrite: totalBytesExpectedToWrite
-                )
+                Task { [weak self] in
+                    await self?.handleProgress(
+                        taskIdentifier: taskIdentifier,
+                        bytesWritten: bytesWritten,
+                        totalBytesWritten: totalBytesWritten,
+                        totalBytesExpectedToWrite: totalBytesExpectedToWrite
+                    )
+                }
             },
             onCompletion: { [weak self] taskIdentifier, location, error in
-                self?.handleCompletion(
-                    taskIdentifier: taskIdentifier,
-                    location: location,
-                    error: error
-                )
+                Task { [weak self] in
+                    await self?.handleCompletion(
+                        taskIdentifier: taskIdentifier,
+                        location: location,
+                        error: error
+                    )
+                }
             }
         )
 
-        Task { [self] in
+        // Restoration runs on a detached Task so the actor init returns
+        // immediately. waitForRestore() gates every public entry point on the
+        // restoreBarrier, so callers that issue downloads before restoration
+        // completes block until the barrier opens.
+        Task { [weak self] in
+            guard let self else { return }
             await self.restoreCoordinator.restorePendingDownloads()
             await self.restoreBarrier.complete()
         }
@@ -431,69 +424,70 @@ public final class DownloadManager: NSObject, Sendable {
         }
     }
 
-    func handleProgress(taskIdentifier: Int, bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        Task {
-            guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else { return }
+    func handleProgress(taskIdentifier: Int, bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) async {
+        guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else { return }
 
-            let progress = DownloadProgress(
-                bytesWritten: bytesWritten,
-                totalBytesWritten: totalBytesWritten,
-                totalBytesExpectedToWrite: totalBytesExpectedToWrite
-            )
-            await task.updateProgress(progress)
-            await runtimeRegistry.onProgress?(task, progress)
-            await eventHub.publish(.progress(progress), for: task.id)
-        }
+        let progress = DownloadProgress(
+            bytesWritten: bytesWritten,
+            totalBytesWritten: totalBytesWritten,
+            totalBytesExpectedToWrite: totalBytesExpectedToWrite
+        )
+        await task.updateProgress(progress)
+        await runtimeRegistry.onProgress?(task, progress)
+        await eventHub.publish(.progress(progress), for: task.id)
     }
 
-    func handleCompletion(taskIdentifier: Int, location: URL?, error: SendableUnderlyingError?) {
-        Task {
-            guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else { return }
+    func handleCompletion(taskIdentifier: Int, location: URL?, error: SendableUnderlyingError?) async {
+        guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else { return }
 
-            if let error {
-                await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
-                await failureCoordinator.handleError(task: task, error: error) { [transferCoordinator] task in
-                    await transferCoordinator.startDownload(task)
-                }
-                return
+        if let error {
+            await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
+            await failureCoordinator.handleError(task: task, error: error) { [transferCoordinator] task in
+                await transferCoordinator.startDownload(task)
             }
+            return
+        }
 
-            guard let location else {
-                await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
-                await failureCoordinator.handleError(
-                    task: task,
-                    error: SendableUnderlyingError(
-                        domain: "InnoNetworkDownload",
-                        code: -1,
-                        message: "Download completed without temporary file location."
-                    )
-                ) { [transferCoordinator] task in
-                    await transferCoordinator.startDownload(task)
-                }
-                return
+        guard let location else {
+            await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
+            await failureCoordinator.handleError(
+                task: task,
+                error: SendableUnderlyingError(
+                    domain: "InnoNetworkDownload",
+                    code: -1,
+                    message: "Download completed without temporary file location."
+                )
+            ) { [transferCoordinator] task in
+                await transferCoordinator.startDownload(task)
             }
+            return
+        }
 
-            do {
-                try await transferCoordinator.completeDownload(task: task, temporaryLocation: location)
-            } catch {
-                await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
-                await failureCoordinator.handleError(
-                    task: task,
-                    error: SendableUnderlyingError(error)
-                ) { [transferCoordinator] task in
-                    await transferCoordinator.startDownload(task)
-                }
+        do {
+            try await transferCoordinator.completeDownload(task: task, temporaryLocation: location)
+        } catch {
+            await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
+            await failureCoordinator.handleError(
+                task: task,
+                error: SendableUnderlyingError(error)
+            ) { [transferCoordinator] task in
+                await transferCoordinator.startDownload(task)
             }
         }
     }
 
-    public func handleBackgroundSessionCompletion(_ identifier: String, completion: @escaping @Sendable () -> Void) {
+    /// Wired into the host app's
+    /// `application(_:handleEventsForBackgroundURLSession:completionHandler:)`
+    /// entry point. That method is synchronous, so this entry point is
+    /// `nonisolated` to avoid forcing callers to await.
+    public nonisolated func handleBackgroundSessionCompletion(_ identifier: String, completion: @escaping @Sendable () -> Void) {
         guard identifier == configuration.sessionIdentifier else {
             completion()
             return
         }
+        let store = backgroundCompletionStore
         Task {
-            await backgroundCompletionStore.set(completion)
+            await store.set(completion)
         }
     }
 
