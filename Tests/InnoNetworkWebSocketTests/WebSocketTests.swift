@@ -290,6 +290,99 @@ struct WebSocketManagerTests {
         #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
     }
 
+    @Test("Retry from onError callback survives terminal cleanup")
+    func retryFromOnErrorCallbackSurvivesTerminalCleanup() async throws {
+        let harness = StubMessagingHarness(
+            heartbeatInterval: 0,
+            reconnectDelay: 0,
+            maxReconnectAttempts: 0
+        )
+        let task = try await harness.connectAndReady()
+        let retryURLTask = StubWebSocketURLTask()
+        harness.stubSession.enqueue(retryURLTask)
+        let didRetry = OSAllocatedUnfairLock(initialState: false)
+
+        await harness.manager.setOnErrorHandler { callbackTask, _ in
+            let shouldRetry = didRetry.withLock { alreadyRetried in
+                guard !alreadyRetried else { return false }
+                alreadyRetried = true
+                return true
+            }
+            guard shouldRetry, callbackTask.id == task.id else { return }
+            await harness.manager.retry(callbackTask)
+        }
+
+        harness.manager.handleError(
+            taskIdentifier: harness.stubTaskIdentifier,
+            error: URLError(.cannotConnectToHost)
+        )
+
+        let retryIdentifier = try #require(await waitForWebSocketRuntimeTaskIdentifier(
+            manager: harness.manager,
+            task: task,
+            excluding: [harness.stubTaskIdentifier]
+        ))
+        #expect(retryIdentifier == retryURLTask.taskIdentifier)
+        #expect(await harness.manager.task(withId: task.id) != nil)
+        #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
+        #expect((await harness.manager.activeTasks()).contains { $0.id == task.id })
+
+        await harness.manager.disconnect(task)
+        harness.manager.handleDisconnected(
+            taskIdentifier: retryIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
+    }
+
+    @Test("Retry from onDisconnected callback survives terminal cleanup")
+    func retryFromOnDisconnectedCallbackSurvivesTerminalCleanup() async throws {
+        let harness = StubMessagingHarness(
+            heartbeatInterval: 0,
+            reconnectDelay: 0,
+            maxReconnectAttempts: 0
+        )
+        let task = try await harness.connectAndReady()
+        let retryURLTask = StubWebSocketURLTask()
+        harness.stubSession.enqueue(retryURLTask)
+        let didRetry = OSAllocatedUnfairLock(initialState: false)
+
+        await harness.manager.setOnDisconnectedHandler { callbackTask, _ in
+            let shouldRetry = didRetry.withLock { alreadyRetried in
+                guard !alreadyRetried else { return false }
+                alreadyRetried = true
+                return true
+            }
+            guard shouldRetry, callbackTask.id == task.id else { return }
+            await harness.manager.retry(callbackTask)
+        }
+
+        harness.manager.handleDisconnected(
+            taskIdentifier: harness.stubTaskIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+
+        let retryIdentifier = try #require(await waitForWebSocketRuntimeTaskIdentifier(
+            manager: harness.manager,
+            task: task,
+            excluding: [harness.stubTaskIdentifier]
+        ))
+        #expect(retryIdentifier == retryURLTask.taskIdentifier)
+        #expect(await harness.manager.task(withId: task.id) != nil)
+        #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
+        #expect((await harness.manager.activeTasks()).contains { $0.id == task.id })
+
+        await harness.manager.disconnect(task)
+        harness.manager.handleDisconnected(
+            taskIdentifier: retryIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
+    }
+
     @Test("Reconnect decision allows disconnected and failed states only when enabled")
     func reconnectDecision() {
         #expect(WebSocketManager.shouldReconnect(currentState: .failed, autoReconnectEnabled: true))
