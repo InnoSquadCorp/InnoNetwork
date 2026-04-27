@@ -1,6 +1,22 @@
 import Foundation
 
 
+/// Policy applied when a per-task send is dispatched while the task already
+/// has ``WebSocketConfiguration/sendQueueLimit`` operations in flight.
+public enum WebSocketSendOverflowPolicy: Sendable, Equatable {
+    /// The send fails with ``WebSocketError/sendQueueOverflow``. The caller
+    /// keeps the message and decides whether to retry, drop, or surface to
+    /// the user.
+    case fail
+
+    /// The send is dropped silently (well — observably; an
+    /// `WebSocketEvent.sendDropped` event is published) without throwing.
+    /// Use this for fire-and-forget telemetry where back-pressure is
+    /// acceptable but blocking the caller is not.
+    case dropNewest
+}
+
+
 public struct WebSocketConfiguration: Sendable {
     package enum Presets {
         static func safeDefaults() -> WebSocketConfiguration {
@@ -18,7 +34,9 @@ public struct WebSocketConfiguration: Sendable {
                 sessionIdentifier: "com.innonetwork.websocket",
                 requestHeaders: [:],
                 eventDeliveryPolicy: .default,
-                eventMetricsReporter: nil
+                eventMetricsReporter: nil,
+                sendQueueLimit: 256,
+                sendQueueOverflowPolicy: .fail
             )
         }
 
@@ -41,7 +59,9 @@ public struct WebSocketConfiguration: Sendable {
                     maxBufferedEventsPerConsumer: 512,
                     overflowPolicy: .dropOldest
                 ),
-                eventMetricsReporter: nil
+                eventMetricsReporter: nil,
+                sendQueueLimit: 512,
+                sendQueueOverflowPolicy: .fail
             )
         }
     }
@@ -89,6 +109,16 @@ public struct WebSocketConfiguration: Sendable {
     public let eventDeliveryPolicy: EventDeliveryPolicy
     public let eventMetricsReporter: (any EventPipelineMetricsReporting)?
 
+    /// Maximum number of concurrent `send(_:message:)` / `send(_:string:)`
+    /// operations allowed per task. Operations beyond this limit are
+    /// rejected or dropped per ``sendQueueOverflowPolicy``.
+    /// Values lower than `1` are clamped to `1`. Default is `256`.
+    public let sendQueueLimit: Int
+
+    /// Behaviour when ``sendQueueLimit`` is exceeded for a task. Default is
+    /// ``WebSocketSendOverflowPolicy/fail``.
+    public let sendQueueOverflowPolicy: WebSocketSendOverflowPolicy
+
     public struct AdvancedBuilder: Sendable {
         public var maxConnectionsPerHost: Int
         public var connectionTimeout: TimeInterval
@@ -104,6 +134,8 @@ public struct WebSocketConfiguration: Sendable {
         public var requestHeaders: [String: String]
         public var eventDeliveryPolicy: EventDeliveryPolicy
         public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
+        public var sendQueueLimit: Int
+        public var sendQueueOverflowPolicy: WebSocketSendOverflowPolicy
 
         fileprivate init(preset: WebSocketConfiguration) {
             self.maxConnectionsPerHost = preset.maxConnectionsPerHost
@@ -120,6 +152,8 @@ public struct WebSocketConfiguration: Sendable {
             self.requestHeaders = preset.requestHeaders
             self.eventDeliveryPolicy = preset.eventDeliveryPolicy
             self.eventMetricsReporter = preset.eventMetricsReporter
+            self.sendQueueLimit = preset.sendQueueLimit
+            self.sendQueueOverflowPolicy = preset.sendQueueOverflowPolicy
         }
 
         fileprivate func build() -> WebSocketConfiguration {
@@ -137,7 +171,9 @@ public struct WebSocketConfiguration: Sendable {
                 sessionIdentifier: sessionIdentifier,
                 requestHeaders: requestHeaders,
                 eventDeliveryPolicy: eventDeliveryPolicy,
-                eventMetricsReporter: eventMetricsReporter
+                eventMetricsReporter: eventMetricsReporter,
+                sendQueueLimit: sendQueueLimit,
+                sendQueueOverflowPolicy: sendQueueOverflowPolicy
             )
         }
     }
@@ -166,7 +202,9 @@ public struct WebSocketConfiguration: Sendable {
         sessionIdentifier: String = "com.innonetwork.websocket",
         requestHeaders: [String: String] = [:],
         eventDeliveryPolicy: EventDeliveryPolicy = .default,
-        eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil
+        eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
+        sendQueueLimit: Int = 256,
+        sendQueueOverflowPolicy: WebSocketSendOverflowPolicy = .fail
     ) {
         self.maxConnectionsPerHost = max(1, maxConnectionsPerHost)
         self.connectionTimeout = max(0, connectionTimeout)
@@ -182,6 +220,8 @@ public struct WebSocketConfiguration: Sendable {
         self.requestHeaders = requestHeaders
         self.eventDeliveryPolicy = eventDeliveryPolicy
         self.eventMetricsReporter = eventMetricsReporter
+        self.sendQueueLimit = max(1, sendQueueLimit)
+        self.sendQueueOverflowPolicy = sendQueueOverflowPolicy
     }
 
     public static let `default` = safeDefaults()

@@ -60,6 +60,7 @@ public enum WebSocketError: Error, Sendable, Equatable {
     case pingTimeout
     case maxReconnectAttemptsExceeded
     case cancelled
+    case sendQueueOverflow(limit: Int)
     case unknown
 }
 
@@ -82,6 +83,8 @@ extension WebSocketError: LocalizedError {
             return "Maximum reconnect attempts exceeded"
         case .cancelled:
             return "WebSocket connection was cancelled"
+        case .sendQueueOverflow(let limit):
+            return "WebSocket send queue is full (\(limit) in-flight operations)"
         case .unknown:
             return "Unknown WebSocket error occurred"
         }

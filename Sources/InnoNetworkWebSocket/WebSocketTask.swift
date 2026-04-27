@@ -10,6 +10,7 @@ public actor WebSocketTask: Identifiable {
     private var _attemptedReconnectCount: Int = 0
     private var _successfulReconnectCount: Int = 0
     private var _pingCounter: Int = 0
+    private var _inFlightSends: Int = 0
     private var _error: WebSocketError?
     private var _closeCode: WebSocketCloseCode?
     private var _closeDisposition: WebSocketCloseDisposition?
@@ -41,6 +42,11 @@ public actor WebSocketTask: Identifiable {
     /// Deprecated alias for ``attemptedReconnectCount``.
     @available(*, deprecated, renamed: "attemptedReconnectCount")
     public var reconnectCount: Int { _attemptedReconnectCount }
+
+    /// Number of `send(_:message:)` / `send(_:string:)` operations currently
+    /// awaiting completion on this task. Used by the manager's send-queue
+    /// guard to enforce ``WebSocketConfiguration/sendQueueLimit``.
+    public var inFlightSendCount: Int { _inFlightSends }
     public var error: WebSocketError? { _error }
     public var closeCode: WebSocketCloseCode? { _closeCode }
     /// Library-classified reason for the most recent close, observable after
@@ -86,6 +92,22 @@ public actor WebSocketTask: Identifiable {
         _attemptedReconnectCount = 0
     }
 
+    /// Atomically reserves a send slot if one is available. Returns true if
+    /// the slot was reserved (caller must pair with ``releaseSendSlot()``);
+    /// returns false if the queue is at `limit`.
+    func tryReserveSendSlot(limit: Int) -> Bool {
+        guard _inFlightSends < limit else { return false }
+        _inFlightSends += 1
+        return true
+    }
+
+    /// Releases a send slot previously reserved by ``tryReserveSendSlot(limit:)``.
+    func releaseSendSlot() {
+        if _inFlightSends > 0 {
+            _inFlightSends -= 1
+        }
+    }
+
     /// Returns the next monotonic ping sequence number for this task's
     /// current connection. Reset to 0 whenever a new connection becomes
     /// ready (and on `reset()`) so consumers can tell heartbeat attempts
@@ -129,6 +151,7 @@ public actor WebSocketTask: Identifiable {
         _attemptedReconnectCount = 0
         _successfulReconnectCount = 0
         _pingCounter = 0
+        _inFlightSends = 0
         _error = nil
         _closeCode = nil
         _closeDisposition = nil
