@@ -12,6 +12,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Lint (swift-format)
+    runs-on: macos-15
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Show swift-format version
+        run: xcrun swift-format --version
+
+      - name: Run swift-format lint
+        run: bash Scripts/format.sh --lint
+
   build-and-test:
     name: Build and Test (SwiftPM)
     runs-on: macos-15
