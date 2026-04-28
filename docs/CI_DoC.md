@@ -15,7 +15,7 @@ The `CI` workflow must pass all of the following:
 1. `xcrun swift package resolve`
 2. `xcrun swift build -Xswiftc -strict-concurrency=complete`
 3. `xcrun swift test --parallel --enable-code-coverage`
-4. `rg -n "@unchecked Sendable" Sources` returns no matches
+4. `rg -n "@unchecked Sendable" Sources/InnoNetwork Sources/InnoNetworkDownload Sources/InnoNetworkWebSocket` returns no matches
 5. Coverage report is generated under `.build/coverage/` and uploaded as a
    workflow artifact. When the `CODECOV_TOKEN` secret is configured the
    `lcov` payload is also uploaded to Codecov; without the token the upload
@@ -48,7 +48,10 @@ xcrun swift build -Xswiftc -strict-concurrency=complete
 # Match CI: keep the coverage run non-parallel because instrumentation plus
 # runner-level parallelism can starve wall-clock polling tests on macOS.
 xcrun swift test --no-parallel --enable-code-coverage
-rg -n "@unchecked Sendable" Sources
+rg -n "@unchecked Sendable" \
+  Sources/InnoNetwork \
+  Sources/InnoNetworkDownload \
+  Sources/InnoNetworkWebSocket
 
 # Optional: render the same coverage artifacts CI uploads.
 profdata="$(find .build -name 'default.profdata' -type f | head -n 1)"

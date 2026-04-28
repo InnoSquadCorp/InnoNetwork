@@ -150,7 +150,7 @@ interceptors run for streams.
 | Debug response logging         | Session                         |
 | One-off `X-Idempotency-Key`    | ``APIDefinition``               |
 | Endpoint-specific body shaping | ``APIDefinition``               |
-| Test fakes / preview overrides | ``APIDefinition``               |
+| Test fakes / preview overrides | `InnoNetworkTestSupport.StubNetworkClient` |
 | Refresh-token coordination     | Session (response) + retry policy |
 
 When in doubt, prefer the session: it removes boilerplate and makes the
