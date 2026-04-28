@@ -34,6 +34,8 @@ This document defines the compatibility contract for the upcoming InnoNetwork
 - `default` aliases on configuration types
 - benchmark runner CLI flags and JSON summary presentation details
 - troubleshooting guidance and examples in README/DocC
+- `InnoNetworkTestSupport` library product and its `public` symbols
+  (currently `WebSocketEventRecorder`)
 
 ## Internal/Operational
 
