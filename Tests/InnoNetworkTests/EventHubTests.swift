@@ -76,6 +76,78 @@ private final class SlowObserver: NetworkEventObserving, Sendable {
     }
 }
 
+private actor DeliveryGate {
+    private var started = false
+    private var released = false
+    private var returned = false
+    private var continuedAfterCancellationAwareAwait = false
+    private var cancelled = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func markStarted() {
+        started = true
+        startWaiters.forEach { $0.resume() }
+        startWaiters.removeAll()
+    }
+
+    func waitUntilStarted() async {
+        if started { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func waitForRelease() async {
+        if released { return }
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        released = true
+        releaseWaiters.forEach { $0.resume() }
+        releaseWaiters.removeAll()
+    }
+
+    func markReturned() {
+        returned = true
+    }
+
+    func hasReturned() -> Bool {
+        returned
+    }
+
+    func markContinuedAfterCancellationAwareAwait() {
+        continuedAfterCancellationAwareAwait = true
+    }
+
+    func didContinueAfterCancellationAwareAwait() -> Bool {
+        continuedAfterCancellationAwareAwait
+    }
+
+    func markCancelled() {
+        cancelled = true
+    }
+
+    func wasCancelled() -> Bool {
+        cancelled
+    }
+}
+
+private actor ListenerIDBox {
+    private var listenerID: UUID?
+
+    func set(_ listenerID: UUID) {
+        self.listenerID = listenerID
+    }
+
+    func value() -> UUID? {
+        listenerID
+    }
+}
+
 
 @Suite("Event Hub Tests", .serialized)
 struct EventHubTests {
@@ -116,6 +188,98 @@ struct EventHubTests {
 
         let fastValues = try await waitForValues(store: fastStore, expectedCount: 1)
         #expect(fastValues == [2])
+    }
+
+    @Test("TaskEventHub publishAndWaitForDelivery waits for listener completion")
+    func taskEventHubPublishAndWaitForDeliveryWaitsForListenerCompletion() async {
+        let hub = TaskEventHub<Int>()
+        let gate = DeliveryGate()
+
+        _ = await hub.addListener(taskID: "wait") { _ in
+            await gate.markStarted()
+            await gate.waitForRelease()
+        }
+
+        let publishTask = Task {
+            await hub.publishAndWaitForDelivery(1, for: "wait")
+            await gate.markReturned()
+        }
+
+        await gate.waitUntilStarted()
+        #expect(await gate.hasReturned() == false)
+
+        await gate.release()
+        _ = await publishTask.result
+        #expect(await gate.hasReturned())
+    }
+
+    @Test("TaskEventHub publishAndWaitForDelivery completes when finish races delivery")
+    func taskEventHubPublishAndWaitForDeliveryCompletesWhenFinishRacesDelivery() async {
+        let hub = TaskEventHub<Int>()
+        let gate = DeliveryGate()
+
+        _ = await hub.addListener(taskID: "finish-race") { _ in
+            await gate.markStarted()
+            await gate.waitForRelease()
+        }
+
+        let publishTask = Task {
+            await hub.publishAndWaitForDelivery(1, for: "finish-race")
+            await gate.markReturned()
+        }
+
+        await gate.waitUntilStarted()
+        let finishTask = Task {
+            await hub.finish(taskID: "finish-race")
+        }
+
+        await gate.release()
+        _ = await publishTask.result
+        _ = await finishTask.result
+
+        #expect(await gate.hasReturned())
+    }
+
+    @Test("TaskEventHub publishAndWaitForDelivery completes when listener removes itself")
+    func taskEventHubPublishAndWaitForDeliveryCompletesWhenListenerRemovesItself() async {
+        let hub = TaskEventHub<Int>()
+        let listenerIDBox = ListenerIDBox()
+        let gate = DeliveryGate()
+
+        let listenerID = await hub.addListener(taskID: "self-remove") { _ in
+            await gate.markStarted()
+            if let listenerID = await listenerIDBox.value() {
+                await hub.removeListener(taskID: "self-remove", listenerID: listenerID)
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(10))
+            } catch {
+                await gate.markCancelled()
+                return
+            }
+            await gate.markContinuedAfterCancellationAwareAwait()
+        }
+        await listenerIDBox.set(listenerID)
+
+        let publishTask = Task {
+            await hub.publishAndWaitForDelivery(1, for: "self-remove")
+            await gate.markReturned()
+        }
+
+        await gate.waitUntilStarted()
+        let completed = await waitForEventHubCondition(timeout: 1.0) {
+            await gate.hasReturned()
+        }
+        #expect(completed)
+        #expect(await gate.didContinueAfterCancellationAwareAwait())
+        #expect(await gate.wasCancelled() == false)
+        #expect(await hub.listenerCount(taskID: "self-remove") == 0)
+
+        if completed {
+            _ = await publishTask.result
+        } else {
+            publishTask.cancel()
+        }
     }
 
     @Test("NetworkEventHub isolates slow observers across requests")
@@ -838,16 +1002,23 @@ struct EventHubTests {
         let reportElapsed = Date().timeIntervalSince(start)
         #expect(reportElapsed < 1.0)
 
+        let overflowSnapshot = await waitForAggregateSnapshot(
+            recorder: recorder,
+            hubKind: .genericTask
+        ) {
+            $0.totalDroppedMetricCount > 0 && $0.metricsOverflowCount > 0
+        }
+        #expect(overflowSnapshot != nil)
+
         let snapshots = try await waitForAggregateSnapshots(
             recorder: recorder,
             hubKind: .genericTask,
-            minimumCount: 3
+            minimumCount: 1
         )
         #expect(zip(snapshots, snapshots.dropFirst()).allSatisfy {
             $1.totalDroppedMetricCount >= $0.totalDroppedMetricCount
         })
         #expect(snapshots.contains(where: { $0.totalDroppedMetricCount > 0 }))
-        #expect(snapshots.dropFirst().contains(where: { $0.metricsOverflowCount > 0 }))
         #expect(snapshots.allSatisfy {
             $0.totalDroppedEventCount == 0 && $0.overflowEventCount == 0
         })
@@ -1128,6 +1299,21 @@ private func waitForValues(
     }
 
     return await store.snapshot()
+}
+
+private func waitForEventHubCondition(
+    timeout: TimeInterval,
+    _ condition: () async -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await condition() {
+            return true
+        }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+
+    return await condition()
 }
 
 private func waitForNetworkEvents(

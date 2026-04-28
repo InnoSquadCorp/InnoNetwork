@@ -56,6 +56,8 @@ extension DownloadManagerError: LocalizedError {
 /// `application(_:handleEventsForBackgroundURLSession:completionHandler:)`
 /// (a synchronous Foundation entry point) can call it without `await`.
 public actor DownloadManager {
+    private static let logger = Logger(subsystem: "innosquad.network.download", category: "DownloadManager")
+
     /// Shared `DownloadManager` for apps that need a single download domain.
     ///
     /// Initialized lazily with ``DownloadConfiguration/default``. If the
@@ -74,8 +76,7 @@ public actor DownloadManager {
             let fallbackConfig = DownloadConfiguration.safeDefaults(
                 sessionIdentifier: fallbackIdentifier
             )
-            let logger = Logger(subsystem: "innosquad.network.download", category: "DownloadManager")
-            logger.fault("""
+            DownloadManager.logger.fault("""
                 DownloadManager.shared could not bind session identifier \
                 \(claimedIdentifier, privacy: .public): another DownloadManager already \
                 owns it. Falling back to \(fallbackIdentifier, privacy: .public). Use \
@@ -321,7 +322,12 @@ public actor DownloadManager {
         guard await task.state == .paused else { return }
 
         if let resumeData = await task.resumeData {
-            await persistence.upsert(id: task.id, url: task.url, destinationURL: task.destinationURL)
+            do {
+                try await persistence.upsert(id: task.id, url: task.url, destinationURL: task.destinationURL)
+            } catch {
+                await transferCoordinator.markTaskFailedForPersistence(task, error: error)
+                return
+            }
             let urlTask = session.makeDownloadTask(withResumeData: resumeData)
             await transferCoordinator.register(urlTask: urlTask, for: task)
             await task.updateState(.downloading)
@@ -348,7 +354,11 @@ public actor DownloadManager {
         await runtimeRegistry.removeTaskRuntime(taskId: task.id)
         await eventHub.finish(taskID: task.id)
         await runtimeRegistry.remove(task)
-        await persistence.remove(id: task.id)
+        do {
+            try await persistence.remove(id: task.id)
+        } catch {
+            Self.logger.fault("Failed to remove cancelled task \(task.id, privacy: .public) from persistence: \(String(describing: error), privacy: .public)")
+        }
     }
 
     public func cancelAll() async {

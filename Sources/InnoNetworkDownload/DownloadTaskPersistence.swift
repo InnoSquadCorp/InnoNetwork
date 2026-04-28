@@ -3,12 +3,12 @@ import Foundation
 
 
 package protocol DownloadTaskStore: Actor {
-    func upsert(id: String, url: URL, destinationURL: URL) async
-    func remove(id: String) async
+    func upsert(id: String, url: URL, destinationURL: URL) async throws
+    func remove(id: String) async throws
     func record(forID id: String) async -> DownloadTaskPersistence.Record?
     func allRecords() async -> [DownloadTaskPersistence.Record]
     func id(forURL url: URL?) async -> String?
-    func prune(keeping ids: Set<String>) async
+    func prune(keeping ids: Set<String>) async throws
 }
 
 package actor DownloadTaskPersistence {
@@ -24,13 +24,15 @@ package actor DownloadTaskPersistence {
         sessionIdentifier: String,
         fileManager: FileManager = .default,
         baseDirectoryURL: URL? = nil,
-        fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy = .onCheckpoint
+        fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy = .onCheckpoint,
+        fsync: @escaping @Sendable (Int32) -> Int32 = Darwin.fsync
     ) {
         _ = fileManager
         self.store = AppendLogDownloadTaskStore(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL,
-            fsyncPolicy: fsyncPolicy
+            fsyncPolicy: fsyncPolicy,
+            fsync: fsync
         )
     }
 
@@ -38,12 +40,12 @@ package actor DownloadTaskPersistence {
         self.store = store
     }
 
-    package func upsert(id: String, url: URL, destinationURL: URL) async {
-        await store.upsert(id: id, url: url, destinationURL: destinationURL)
+    package func upsert(id: String, url: URL, destinationURL: URL) async throws {
+        try await store.upsert(id: id, url: url, destinationURL: destinationURL)
     }
 
-    package func remove(id: String) async {
-        await store.remove(id: id)
+    package func remove(id: String) async throws {
+        try await store.remove(id: id)
     }
 
     package func record(forID id: String) async -> Record? {
@@ -58,8 +60,8 @@ package actor DownloadTaskPersistence {
         await store.id(forURL: url)
     }
 
-    package func prune(keeping ids: Set<String>) async {
-        await store.prune(keeping: ids)
+    package func prune(keeping ids: Set<String>) async throws {
+        try await store.prune(keeping: ids)
     }
 }
 
@@ -97,12 +99,14 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     private let logURL: URL
     private let lockURL: URL
     private let fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy
+    private let fsync: @Sendable (Int32) -> Int32
     private var state: StoreState
 
     package init(
         sessionIdentifier: String,
         baseDirectoryURL: URL? = nil,
-        fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy = .onCheckpoint
+        fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy = .onCheckpoint,
+        fsync: @escaping @Sendable (Int32) -> Int32 = Darwin.fsync
     ) {
         let fileManager = FileManager.default
         let baseDirectory = baseDirectoryURL ?? Self.defaultBaseDirectory(fileManager: fileManager)
@@ -136,11 +140,12 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         self.logURL = logURL
         self.lockURL = lockURL
         self.fsyncPolicy = fsyncPolicy
+        self.fsync = fsync
         self.state = initialState
     }
 
-    package func upsert(id: String, url: URL, destinationURL: URL) async {
-        await mutate {
+    package func upsert(id: String, url: URL, destinationURL: URL) async throws {
+        try await mutate {
             $0.records[id] = DownloadTaskPersistence.Record(id: id, url: url, destinationURL: destinationURL)
             return Event(
                 sequence: $0.nextSequence,
@@ -153,9 +158,9 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         }
     }
 
-    package func remove(id: String) async {
+    package func remove(id: String) async throws {
         guard state.records[id] != nil else { return }
-        await mutate {
+        try await mutate {
             $0.records.removeValue(forKey: id)
             $0.tombstoneCount += 1
             return Event(
@@ -182,11 +187,11 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         return state.records.first(where: { $0.value.url == url })?.key
     }
 
-    package func prune(keeping ids: Set<String>) async {
+    package func prune(keeping ids: Set<String>) async throws {
         let staleIDs = state.records.keys.filter { !ids.contains($0) }
         guard !staleIDs.isEmpty else { return }
 
-        await mutate { state in
+        try await mutate { state in
             for staleID in staleIDs {
                 state.records.removeValue(forKey: staleID)
             }
@@ -204,53 +209,52 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         }
     }
 
-    private func mutate(_ transform: (inout StoreState) -> Event) async {
-        await mutate { state in [transform(&state)] }
+    private func mutate(_ transform: (inout StoreState) -> Event) async throws {
+        try await mutate { state in [transform(&state)] }
     }
 
-    private func mutate(_ transform: (inout StoreState) -> [Event]) async {
+    private func mutate(_ transform: (inout StoreState) -> [Event]) async throws {
         let fsyncPolicy = self.fsyncPolicy
-        do {
-            let updatedState = try Self.withDirectoryLock(lockURL: lockURL, fileManager: fileManager) {
-                var diskState = try Self.loadState(
-                    directoryURL: directoryURL,
-                    checkpointURL: checkpointURL,
-                    logURL: logURL,
-                    fileManager: fileManager
-                )
+        let fsync = self.fsync
+        let updatedState = try Self.withDirectoryLock(lockURL: lockURL, fileManager: fileManager) {
+            var diskState = try Self.loadState(
+                directoryURL: directoryURL,
+                checkpointURL: checkpointURL,
+                logURL: logURL,
+                fileManager: fileManager
+            )
 
-                let events = transform(&diskState)
-                guard !events.isEmpty else { return diskState }
+            let events = transform(&diskState)
+            guard !events.isEmpty else { return diskState }
 
-                try Self.append(
-                    events: events,
-                    to: logURL,
+            try Self.append(
+                events: events,
+                to: logURL,
+                fileManager: fileManager,
+                fsyncPolicy: fsyncPolicy,
+                fsync: fsync
+            )
+            diskState.logEventCount += events.count
+            diskState.logSize = Self.fileSize(at: logURL, fileManager: fileManager)
+            diskState.nextSequence += Int64(events.count)
+
+            if Self.shouldCompact(state: diskState) {
+                try Self.writeCheckpoint(
+                    records: diskState.records,
+                    to: checkpointURL,
                     fileManager: fileManager,
-                    fsyncPolicy: fsyncPolicy
+                    fsyncPolicy: fsyncPolicy,
+                    fsync: fsync
                 )
-                diskState.logEventCount += events.count
-                diskState.logSize = Self.fileSize(at: logURL, fileManager: fileManager)
-                diskState.nextSequence += Int64(events.count)
-
-                if Self.shouldCompact(state: diskState) {
-                    try Self.writeCheckpoint(
-                        records: diskState.records,
-                        to: checkpointURL,
-                        fileManager: fileManager,
-                        fsyncPolicy: fsyncPolicy
-                    )
-                    try Self.resetLog(at: logURL, fileManager: fileManager)
-                    diskState.logEventCount = 0
-                    diskState.tombstoneCount = 0
-                    diskState.logSize = 0
-                }
-
-                return diskState
+                try Self.resetLog(at: logURL, fileManager: fileManager)
+                diskState.logEventCount = 0
+                diskState.tombstoneCount = 0
+                diskState.logSize = 0
             }
-            state = updatedState
-        } catch {
-            // Keep the last durable state authoritative for the process.
+
+            return diskState
         }
+        state = updatedState
     }
 
     private static func defaultBaseDirectory(fileManager: FileManager) -> URL {
@@ -368,7 +372,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
                 records: records,
                 to: checkpointURL,
                 fileManager: fileManager,
-                fsyncPolicy: .onCheckpoint
+                fsyncPolicy: .onCheckpoint,
+                fsync: Darwin.fsync
             )
             try resetLog(at: logURL, fileManager: fileManager)
         }
@@ -380,7 +385,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         events: [Event],
         to logURL: URL,
         fileManager: FileManager,
-        fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy
+        fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy,
+        fsync: @Sendable (Int32) -> Int32
     ) throws {
         if !fileManager.fileExists(atPath: logURL.path()) {
             try Data().write(to: logURL)
@@ -401,7 +407,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         // every event. .onCheckpoint and .never skip the cost — the next
         // checkpoint or the OS flush is responsible for durability.
         if fsyncPolicy == .always {
-            _ = Darwin.fsync(handle.fileDescriptor)
+            try fsyncFileDescriptor(handle.fileDescriptor, fsync: fsync)
         }
     }
 
@@ -409,7 +415,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         records: [String: DownloadTaskPersistence.Record],
         to checkpointURL: URL,
         fileManager: FileManager,
-        fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy
+        fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy,
+        fsync: @escaping @Sendable (Int32) -> Int32
     ) throws {
         let envelope = Envelope(version: 1, records: records)
         let data = try JSONEncoder().encode(envelope)
@@ -417,7 +424,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             data: data,
             to: checkpointURL,
             fileManager: fileManager,
-            fsyncBeforeRename: fsyncPolicy != .never
+            fsyncBeforeRename: fsyncPolicy != .never,
+            fsync: fsync
         )
     }
 
@@ -425,7 +433,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         data: Data,
         to fileURL: URL,
         fileManager: FileManager,
-        fsyncBeforeRename: Bool = false
+        fsyncBeforeRename: Bool = false,
+        fsync: @escaping @Sendable (Int32) -> Int32 = Darwin.fsync
     ) throws {
         let tempURL = fileURL
             .deletingPathExtension()
@@ -439,10 +448,9 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         // log truncation does not need durability beyond what the rename
         // provides.
         if fsyncBeforeRename {
-            if let handle = try? FileHandle(forReadingFrom: tempURL) {
-                _ = Darwin.fsync(handle.fileDescriptor)
-                try? handle.close()
-            }
+            let handle = try FileHandle(forReadingFrom: tempURL)
+            defer { try? handle.close() }
+            try fsyncFileDescriptor(handle.fileDescriptor, fsync: fsync)
         }
 
         if fileManager.fileExists(atPath: fileURL.path()) {
@@ -455,6 +463,16 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     private static func resetLog(at logURL: URL, fileManager: FileManager) throws {
         let emptyData = Data()
         try writeAtomically(data: emptyData, to: logURL, fileManager: fileManager)
+    }
+
+    private static func fsyncFileDescriptor(
+        _ fileDescriptor: Int32,
+        fsync: @Sendable (Int32) -> Int32
+    ) throws {
+        guard fsync(fileDescriptor) == 0 else {
+            let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+            throw POSIXError(code)
+        }
     }
 
     private static func shouldCompact(state: StoreState) -> Bool {

@@ -22,7 +22,7 @@ package enum BodySource: Sendable {
     /// Request body is either absent or already attached to `URLRequest.httpBody`.
     case inline
     /// Request body must be streamed from disk via `upload(for:fromFile:)`.
-    case file(URL)
+    case file(URL, cleanupAfterUse: Bool)
 }
 
 
@@ -36,7 +36,7 @@ package struct RequestBuilder {
         let payload = try executable.makePayload()
         var targetURL = configuration.baseURL.appendingPathComponent(executable.path)
         var httpBody: Data?
-        var fileBody: URL?
+        var bodySource = BodySource.inline
         var contentTypeOverride: String?
 
         switch payload {
@@ -47,7 +47,10 @@ package struct RequestBuilder {
         case .queryItems(let queryItems):
             targetURL.append(queryItems: queryItems)
         case .fileURL(let url, let contentType):
-            fileBody = url
+            bodySource = .file(url, cleanupAfterUse: false)
+            contentTypeOverride = contentType
+        case .temporaryFileURL(let url, let contentType):
+            bodySource = .file(url, cleanupAfterUse: true)
             contentTypeOverride = contentType
         }
 
@@ -60,10 +63,6 @@ package struct RequestBuilder {
         request.cachePolicy = configuration.cachePolicy
         request.timeoutInterval = configuration.timeout
         request.httpBody = httpBody
-        return BuiltRequest(
-            request: request,
-            bodySource: fileBody.map(BodySource.file) ?? .inline
-        )
+        return BuiltRequest(request: request, bodySource: bodySource)
     }
 }
-

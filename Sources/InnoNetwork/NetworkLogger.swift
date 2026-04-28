@@ -61,7 +61,7 @@ public struct DefaultNetworkLogger: NetworkLogger {
 
     public func log(request: URLRequest) {
         #if DEBUG
-        let url: String = request.url?.absoluteString ?? ""
+        let url: String = sanitize(url: request.url, nilFallback: "")
         let method: String = request.httpMethod ?? "unknown method"
 
         var log: String = "🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀"
@@ -89,7 +89,7 @@ public struct DefaultNetworkLogger: NetworkLogger {
     public func log(response: Response, isError: Bool) {
         #if DEBUG
         let request = response.request
-        let url: String = request?.url?.absoluteString ?? "nil"
+        let url: String = sanitize(url: request?.url, nilFallback: "nil")
         let statusCode: Int = response.statusCode
 
         var log: String = isError ? "💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣" : "💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌"
@@ -151,6 +151,22 @@ public struct DefaultNetworkLogger: NetworkLogger {
     func sanitize(body: String) -> String {
         guard options.redactSensitiveData else { return body }
         return "<redacted>"
+    }
+
+    func sanitize(url: URL?, nilFallback: String = "") -> String {
+        guard let url else { return nilFallback }
+        guard options.redactSensitiveData else { return url.absoluteString }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url.absoluteString
+        }
+
+        if let queryItems = components.queryItems, !queryItems.isEmpty {
+            components.queryItems = queryItems.map {
+                URLQueryItem(name: $0.name, value: $0.value == nil ? nil : "<redacted>")
+            }
+        }
+
+        return components.string ?? url.absoluteString
     }
 }
 

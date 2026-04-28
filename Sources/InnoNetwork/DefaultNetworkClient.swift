@@ -123,7 +123,6 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                 let resumeDelay = resumePolicy.retryDelay
                 var lastSeenEventID: String? = nil
                 var resumeAttempts = 0
-                var lastError: NetworkError?
 
                 attempts: while true {
                     do {
@@ -207,21 +206,27 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
 
                         var streamedByteCount = 0
                         var streamError: Error?
-                        do {
-                            for try await line in bytes.lines {
-                                try Task.checkCancellation()
-                                streamedByteCount += line.utf8.count
-                                if let output = try request.decode(line: line) {
-                                    continuation.yield(output)
-                                    if let id = request.eventID(from: output) {
-                                        lastSeenEventID = id
-                                    }
+                        var iterator = bytes.lines.makeAsyncIterator()
+                        while true {
+                            let line: String?
+                            do {
+                                line = try await iterator.next()
+                            } catch is CancellationError {
+                                throw NetworkError.cancelled
+                            } catch {
+                                streamError = error
+                                break
+                            }
+
+                            guard let line else { break }
+                            try Task.checkCancellation()
+                            streamedByteCount += line.utf8.count
+                            if let output = try request.decode(line: line) {
+                                continuation.yield(output)
+                                if let id = request.eventID(from: output) {
+                                    lastSeenEventID = id
                                 }
                             }
-                        } catch is CancellationError {
-                            throw NetworkError.cancelled
-                        } catch {
-                            streamError = error
                         }
 
                         if let streamError {
@@ -235,7 +240,6 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                                 && lastSeenEventID != nil
                             if canResume {
                                 resumeAttempts += 1
-                                lastError = NetworkError.mapTransportError(streamError)
                                 if resumeDelay > 0 {
                                     try? await Task.sleep(nanoseconds: UInt64(resumeDelay * 1_000_000_000))
                                 }
@@ -274,12 +278,7 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                         )
                         await eventHub.finish(requestID: requestID)
                         inFlight.deregister(id: requestID)
-                        // If we exhausted resume attempts, surface the most
-                        // recent transport-level error rather than the synthetic
-                        // mapping above (which is identical here, but keeps
-                        // the lastError variable load-bearing for clarity).
-                        let priorRedacted = lastError.map { configuration.captureFailurePayload ? $0 : $0.redactingFailurePayload() }
-                        continuation.finish(throwing: priorRedacted ?? surfaced)
+                        continuation.finish(throwing: surfaced)
                         return
                     }
                 }

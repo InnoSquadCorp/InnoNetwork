@@ -1,12 +1,32 @@
 import Foundation
+import os
 
 
 package actor TaskEventHub<Event: Sendable> {
     package typealias Listener = @Sendable (Event) async -> Void
 
+    private final class DeliveryCompletion: Sendable {
+        private let continuation: OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>
+
+        init(_ continuation: CheckedContinuation<Void, Never>) {
+            self.continuation = OSAllocatedUnfairLock(initialState: continuation)
+        }
+
+        func resume() {
+            let continuation = continuation.withLock { state in
+                let continuation = state
+                state = nil
+                return continuation
+            }
+
+            continuation?.resume()
+        }
+    }
+
     private struct PendingEvent: Sendable {
         let event: Event
         let enqueuedAt: Date
+        let completion: DeliveryCompletion?
     }
 
     private struct StreamConsumerState {
@@ -161,20 +181,38 @@ package actor TaskEventHub<Event: Sendable> {
     }
 
     package func publish(_ event: Event, for taskID: String) {
+        enqueue(event, for: taskID, completion: nil)
+    }
+
+    package func publishAndWaitForDelivery(_ event: Event, for taskID: String) async {
+        await withCheckedContinuation { continuation in
+            enqueue(
+                event,
+                for: taskID,
+                completion: DeliveryCompletion(continuation)
+            )
+        }
+    }
+
+    private func enqueue(_ event: Event, for taskID: String, completion: DeliveryCompletion?) {
         var partition = partitions[taskID] ?? PartitionState()
-        guard !partition.isClosed else { return }
+        guard !partition.isClosed else {
+            completion?.resume()
+            return
+        }
         if partition.queue.count >= policy.maxBufferedEventsPerPartition {
             partition.droppedEventCount += 1
             switch policy.overflowPolicy {
             case .dropOldest:
-                _ = partition.queue.popFirst()
+                partition.queue.popFirst()?.completion?.resume()
             case .dropNewest:
                 partitions[taskID] = partition
                 reportPartitionMetric(for: taskID, partition: partition)
+                completion?.resume()
                 return
             }
         }
-        partition.queue.append(PendingEvent(event: event, enqueuedAt: .now))
+        partition.queue.append(PendingEvent(event: event, enqueuedAt: .now, completion: completion))
         partitions[taskID] = partition
         reportPartitionMetric(for: taskID, partition: partition)
         startDrainIfNeeded(taskID: taskID)
@@ -212,7 +250,10 @@ package actor TaskEventHub<Event: Sendable> {
 
     private func drain(taskID: String) async {
         while let pendingEvent = popNextEvent(taskID: taskID) {
-            guard var partition = partitions[taskID] else { break }
+            guard var partition = partitions[taskID] else {
+                pendingEvent.completion?.resume()
+                break
+            }
             var removedConsumers: [StreamConsumerState] = []
 
             for (consumerID, var streamConsumer) in partition.streamConsumers {
@@ -244,8 +285,17 @@ package actor TaskEventHub<Event: Sendable> {
                 updateStreamMetricsReconciliationTaskState()
             }
             let listeners = Array(partition.listeners.values)
-            for listener in listeners {
-                await listener.enqueue(pendingEvent.event, enqueuedAt: pendingEvent.enqueuedAt)
+            if pendingEvent.completion == nil {
+                for listener in listeners {
+                    await listener.enqueue(pendingEvent.event, enqueuedAt: pendingEvent.enqueuedAt)
+                }
+            } else {
+                await deliverAndWait(
+                    event: pendingEvent.event,
+                    enqueuedAt: pendingEvent.enqueuedAt,
+                    to: listeners
+                )
+                pendingEvent.completion?.resume()
             }
         }
 
@@ -259,6 +309,24 @@ package actor TaskEventHub<Event: Sendable> {
         }
 
         await cleanupPartitionIfPossible(taskID: taskID)
+    }
+
+    private func deliverAndWait(
+        event: Event,
+        enqueuedAt: Date,
+        to listeners: [EventDeliveryChain<Event>]
+    ) async {
+        guard !listeners.isEmpty else { return }
+
+        await withTaskGroup(of: Void.self) { group in
+            for listener in listeners {
+                group.addTask {
+                    await listener.enqueueAndWaitForDelivery(event, enqueuedAt: enqueuedAt)
+                }
+            }
+
+            await group.waitForAll()
+        }
     }
 
     private func popNextEvent(taskID: String) -> PendingEvent? {

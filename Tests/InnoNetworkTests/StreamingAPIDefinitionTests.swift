@@ -52,7 +52,6 @@ private final class DelayedFailingBytesSession: URLSessionProtocol, Sendable {
 private final class SequencedStreamingURLProtocol: URLProtocol {
     enum Step: Sendable {
         case success(statusCode: Int, data: Data)
-        case partialThenFail(statusCode: Int, prefix: Data, error: NSError)
     }
 
     nonisolated(unsafe) private static var queue: [String: [Step]] = [:]
@@ -106,22 +105,6 @@ private final class SequencedStreamingURLProtocol: URLProtocol {
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)
-        case .partialThenFail(let code, let prefix, let error):
-            guard let response = HTTPURLResponse(url: url, statusCode: code, httpVersion: nil, headerFields: nil) else {
-                client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
-                return
-            }
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            // Deliver partial bytes, give the AsyncBytes line iterator a
-            // moment to surface the buffered lines, then synthesize a
-            // transport failure on top. Without the delay, URLSession may
-            // drop the buffered bytes when the error arrives synchronously.
-            client?.urlProtocol(self, didLoad: prefix)
-            let weakClient = client
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                guard let self else { return }
-                weakClient?.urlProtocol(self, didFailWithError: error)
-            }
         case .none:
             client?.urlProtocol(self, didFailWithError: URLError(.unknown))
         }
@@ -152,6 +135,35 @@ private struct ResumableStream: StreamingAPIDefinition {
         guard !line.isEmpty else { return nil }
         let parts = line.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
         guard parts.count == 2 else { return nil }
+        return ResumableEvent(id: String(parts[0]), payload: String(parts[1]))
+    }
+
+    func eventID(from output: ResumableEvent) -> String? {
+        output.id
+    }
+}
+
+
+private struct ResumableDecodeError: LocalizedError {
+    let line: String
+
+    var errorDescription: String? {
+        "Malformed resumable stream line: \(line)"
+    }
+}
+
+
+private struct ThrowingResumableStream: StreamingAPIDefinition {
+    typealias Output = ResumableEvent
+
+    var method: HTTPMethod { .get }
+    var path: String { "/sse" }
+    var resumePolicy: StreamingResumePolicy { .lastEventID(maxAttempts: 2, retryDelay: 0) }
+
+    func decode(line: String) throws -> ResumableEvent? {
+        guard !line.isEmpty else { return nil }
+        let parts = line.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { throw ResumableDecodeError(line: line) }
         return ResumableEvent(id: String(parts[0]), payload: String(parts[1]))
     }
 
@@ -544,6 +556,43 @@ struct StreamingAPIDefinitionTests {
             ResumableEvent(id: "2", payload: "beta"),
         ])
 
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(captured.count == 1)
+        #expect(captured.first?.value(forHTTPHeaderField: "Last-Event-ID") == nil)
+    }
+
+    @Test("stream() does not resume Last-Event-ID after decode errors")
+    func resumePolicyDoesNotResumeAfterDecodeError() async throws {
+        let baseURL = uniqueStreamingBaseURL()
+        let definition = ThrowingResumableStream()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+
+        SequencedStreamingURLProtocol.enqueue(url: streamURL, steps: [
+            .success(statusCode: 200, data: Data("1|alpha\nmalformed\n".utf8)),
+            .success(statusCode: 200, data: Data("2|beta\n".utf8)),
+        ])
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(baseURL: baseURL, timeout: 5, captureFailurePayload: true),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var collected: [ResumableEvent] = []
+        do {
+            for try await event in client.stream(definition) {
+                collected.append(event)
+            }
+            Issue.record("Expected decode error to surface")
+        } catch let error as NetworkError {
+            switch error {
+            case .underlying(let underlying, nil):
+                #expect(underlying.message.contains("Malformed resumable stream line"))
+            default:
+                Issue.record("Expected NetworkError.underlying decode error, got \(error)")
+            }
+        }
+
+        #expect(collected == [ResumableEvent(id: "1", payload: "alpha")])
         let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
         #expect(captured.count == 1)
         #expect(captured.first?.value(forHTTPHeaderField: "Last-Event-ID") == nil)

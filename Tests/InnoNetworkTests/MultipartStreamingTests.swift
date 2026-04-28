@@ -173,17 +173,17 @@ struct MultipartUploadStrategyTests {
         }
     }
 
-    @Test(".alwaysStream produces RequestPayload.fileURL pointing at a writable temp file")
+    @Test(".alwaysStream produces RequestPayload.temporaryFileURL pointing at a writable temp file")
     func alwaysStreamProducesFileURL() throws {
         let executable = MultipartSingleRequestExecutable(base: AlwaysStreamUpload(multipartFormData: Self.makeFormData()))
         let payload = try executable.makePayload()
         switch payload {
-        case .fileURL(let url, let contentType):
+        case .temporaryFileURL(let url, let contentType):
             #expect(FileManager.default.fileExists(atPath: url.path))
             #expect(contentType.hasPrefix("multipart/form-data; boundary="))
             try? FileManager.default.removeItem(at: url)
         default:
-            Issue.record("Expected .fileURL for .alwaysStream strategy, got \(payload)")
+            Issue.record("Expected .temporaryFileURL for .alwaysStream strategy, got \(payload)")
         }
     }
 
@@ -202,7 +202,7 @@ struct MultipartUploadStrategyTests {
         }
     }
 
-    @Test(".streamingThreshold switches to .fileURL when body exceeds the threshold")
+    @Test(".streamingThreshold switches to .temporaryFileURL when body exceeds the threshold")
     func thresholdAboveStreamsToDisk() throws {
         let executable = MultipartSingleRequestExecutable(
             base: ThresholdUpload(
@@ -212,11 +212,11 @@ struct MultipartUploadStrategyTests {
         )
         let payload = try executable.makePayload()
         switch payload {
-        case .fileURL(let url, _):
+        case .temporaryFileURL(let url, _):
             #expect(FileManager.default.fileExists(atPath: url.path))
             try? FileManager.default.removeItem(at: url)
         default:
-            Issue.record("Expected .fileURL above threshold, got \(payload)")
+            Issue.record("Expected .temporaryFileURL above threshold, got \(payload)")
         }
     }
 }

@@ -1,7 +1,10 @@
 import Foundation
+import OSLog
 
 
 package struct DownloadRestoreCoordinator {
+    private static let logger = Logger(subsystem: "innosquad.network.download", category: "Persistence")
+
     let configuration: DownloadConfiguration
     let session: any DownloadURLSession
     let runtimeRegistry: DownloadRuntimeRegistry
@@ -51,7 +54,11 @@ package struct DownloadRestoreCoordinator {
 
         let persistedTasks = await persistence.allRecords()
         for record in persistedTasks where !restoredTaskIDs.contains(record.id) {
-            await persistence.remove(id: record.id)
+            do {
+                try await persistence.remove(id: record.id)
+            } catch {
+                Self.logger.fault("Failed to prune orphaned task \(record.id, privacy: .public) from persistence: \(String(describing: error), privacy: .public)")
+            }
         }
     }
 

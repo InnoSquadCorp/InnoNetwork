@@ -111,7 +111,7 @@ extension APIDefinition {
             case .formUrlEncoded:
                 return .formURLEncoded(queryEncoder, rootKey: queryRootKey)
             case .multipartFormData:
-                preconditionFailure("Use MultipartAPIDefinition for multipart/form-data requests")
+                return .none
             default:
                 return .json(requestEncoder)
             }

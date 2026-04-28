@@ -17,7 +17,7 @@ to the user, or escalate to crash reporting.
 | ``NetworkError/invalidRequestConfiguration(_:)`` | Request shape and policy mismatch. | Fix the API definition; never retry. |
 | ``NetworkError/jsonMapping(_:)`` | Request body could not be encoded. | Programmer error; do not retry. |
 | ``NetworkError/statusCode(_:)`` | Server returned a non-acceptable status. | Branch on `.response.statusCode`; let `RetryPolicy` decide retries. |
-| ``NetworkError/objectMapping(underlying:payloadSnippet:)`` | Response body did not match the declared type. | Surface to the user; consider feature flagging the endpoint. |
+| ``NetworkError/objectMapping(_:_:)`` | Response body did not match the declared type. | Surface to the user; consider feature flagging the endpoint. |
 | ``NetworkError/nonHTTPResponse`` | Got a non-`HTTPURLResponse` (rare; usually misconfigured `URLSession`). | Treat as transport bug. |
 | ``NetworkError/underlying(_:)`` | Foundation/URLSession error not classified above. | Inspect `SendableUnderlyingError.code` for deeper triage. |
 | ``NetworkError/trustEvaluationFailed(_:)`` | TLS pinning or custom trust evaluator rejected the chain. | Surface to the user; do not auto-retry. |
@@ -62,13 +62,11 @@ strings. Two screens away from the call site, this stays robust to library chang
 
 ## Failure payload capture
 
-`NetworkError.objectMapping(underlying:payloadSnippet:)` carries the raw response snippet
-**only** when the consumer opts in via `NetworkConfiguration.captureFailurePayload = true`.
-Off by default to avoid leaking PII into crash reports. Turn it on for debug builds and
-internal QA configurations; keep it off in production.
-
-When enabled, the snippet is truncated to a configurable byte limit and is annotated with
-`.private` privacy attributes when emitted through `OSLogNetworkEventObserver`.
+`NetworkError.objectMapping(_, response)` carries the `Response` for the failed decode.
+By default, `response.data` is redacted to empty data before the error is surfaced.
+The original response body is preserved **only** when the consumer opts in via
+`NetworkConfiguration.captureFailurePayload = true`. Keep that flag off in production
+to avoid leaking PII into crash reports, analytics, or logs.
 
 ## Cancellation is not a failure
 

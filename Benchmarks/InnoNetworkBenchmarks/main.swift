@@ -373,7 +373,7 @@ private enum InnoNetworkBenchmarks {
                 baseDirectoryURL: directory
             )
             for index in 0..<iterations {
-                await persistence.upsert(
+                try await persistence.upsert(
                     id: "task-\(index)",
                     url: URL(string: "https://example.com/\(index)")!,
                     destinationURL: directory.appendingPathComponent("file-\(index)")
@@ -388,7 +388,7 @@ private enum InnoNetworkBenchmarks {
 
         let seed = DownloadTaskPersistence(sessionIdentifier: "bench.replay", baseDirectoryURL: directory)
         for index in 0..<iterations {
-            await seed.upsert(
+            try await seed.upsert(
                 id: "task-\(index)",
                 url: URL(string: "https://example.com/\(index)")!,
                 destinationURL: directory.appendingPathComponent("file-\(index)")
@@ -413,7 +413,7 @@ private enum InnoNetworkBenchmarks {
                 baseDirectoryURL: directory
             )
             for index in 0..<iterations {
-                await persistence.upsert(
+                try await persistence.upsert(
                     id: "task-\(index)",
                     url: URL(string: "https://example.com/\(index)")!,
                     destinationURL: directory.appendingPathComponent("file-\(index)")

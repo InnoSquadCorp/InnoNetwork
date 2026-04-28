@@ -22,6 +22,17 @@ package struct RequestExecutor {
         do {
             let built = try requestBuilder.build(executable, configuration: configuration)
             var request = built.request
+            let cleanupFileURL: URL?
+            if case .file(let fileURL, cleanupAfterUse: true) = built.bodySource {
+                cleanupFileURL = fileURL
+            } else {
+                cleanupFileURL = nil
+            }
+            defer {
+                if let cleanupFileURL {
+                    try? FileManager.default.removeItem(at: cleanupFileURL)
+                }
+            }
             await notifyRequestStart(request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             // Onion model: session-level interceptors run first (outer), then
@@ -49,7 +60,7 @@ package struct RequestExecutor {
             switch built.bodySource {
             case .inline:
                 (data, response) = try await session.data(for: request, context: context)
-            case .file(let fileURL):
+            case .file(let fileURL, _):
                 (data, response) = try await session.upload(for: request, fromFile: fileURL, context: context)
             }
 

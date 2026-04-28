@@ -19,7 +19,7 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         }
     }
 
-    func upsert(id: String, url: URL, destinationURL: URL) async {
+    func upsert(id: String, url: URL, destinationURL: URL) async throws {
         records[id] = DownloadTaskPersistence.Record(
             id: id,
             url: url,
@@ -27,7 +27,7 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         )
     }
 
-    func remove(id: String) async {
+    func remove(id: String) async throws {
         records.removeValue(forKey: id)
     }
 
@@ -44,7 +44,7 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         return records.values.first(where: { $0.url == url })?.id
     }
 
-    func prune(keeping ids: Set<String>) async {
+    func prune(keeping ids: Set<String>) async throws {
         records = records.filter { ids.contains($0.key) }
     }
 }

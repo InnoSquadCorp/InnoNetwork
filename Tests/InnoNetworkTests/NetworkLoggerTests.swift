@@ -28,6 +28,29 @@ struct NetworkLoggerTests {
         #expect(verboseLogger.sanitize(body: "{\"token\":\"abc\"}") == "{\"token\":\"abc\"}")
     }
 
+    @Test("Secure default redacts URL query values")
+    func secureDefaultRedactsURLQueryValues() throws {
+        let logger = DefaultNetworkLogger()
+        let url = try #require(URL(string: "https://example.com/search?token=secret&email=a@example.com&flag"))
+
+        let sanitized = logger.sanitize(url: url)
+        let queryItems = try #require(URLComponents(string: sanitized)?.queryItems)
+
+        #expect(queryItems.contains { $0.name == "token" && $0.value == "<redacted>" })
+        #expect(queryItems.contains { $0.name == "email" && $0.value == "<redacted>" })
+        #expect(queryItems.contains { $0.name == "flag" && $0.value == nil })
+        #expect(!sanitized.contains("secret"))
+        #expect(!sanitized.contains("a@example.com"))
+    }
+
+    @Test("Verbose mode keeps URL query values")
+    func verboseModeKeepsURLQueryValues() throws {
+        let logger = DefaultNetworkLogger(options: .verbose)
+        let url = try #require(URL(string: "https://example.com/search?token=secret&email=a@example.com"))
+
+        #expect(logger.sanitize(url: url) == url.absoluteString)
+    }
+
     @Test("Cookie values are redacted by default")
     func cookiesAreRedacted() throws {
         let logger = DefaultNetworkLogger()

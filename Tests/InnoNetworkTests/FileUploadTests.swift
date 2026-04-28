@@ -86,6 +86,29 @@ private struct UploadFromFileExecutable: SingleRequestExecutable {
 }
 
 
+private struct TemporaryUploadFromFileExecutable: SingleRequestExecutable {
+    typealias APIResponse = EchoResponse
+
+    let fileURL: URL
+    let contentType: String
+
+    var logger: NetworkLogger { NoOpNetworkLogger() }
+    var requestInterceptors: [RequestInterceptor] { [] }
+    var responseInterceptors: [ResponseInterceptor] { [] }
+    var method: HTTPMethod { .post }
+    var path: String { "/upload" }
+    var headers: HTTPHeaders { HTTPHeaders() }
+
+    func makePayload() throws -> RequestPayload {
+        .temporaryFileURL(fileURL, contentType: contentType)
+    }
+
+    func decode(data: Data, response: Response) throws -> EchoResponse {
+        EchoResponse(byteCount: data.count)
+    }
+}
+
+
 private struct EchoResponse: Sendable, Equatable {
     let byteCount: Int
 }
@@ -121,8 +144,59 @@ struct FileUploadTests {
         let captured = try #require(session.capturedFileBytes)
         let expected = try Data(contentsOf: payloadURL)
         #expect(captured == expected)
+        #expect(FileManager.default.fileExists(atPath: payloadURL.path))
         // Content-Type was overridden by the .fileURL contentType.
         #expect(session.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == formData.contentTypeHeader)
+    }
+
+    @Test("RequestPayload.temporaryFileURL is deleted after successful upload")
+    func temporaryUploadFileIsDeletedAfterSuccess() async throws {
+        let payloadURL = FileManager.default.temporaryDirectory.appendingPathComponent("upload-temp-success-\(UUID().uuidString).bin")
+        let payload = Data("temporary upload body".utf8)
+        try payload.write(to: payloadURL)
+        defer { try? FileManager.default.removeItem(at: payloadURL) }
+
+        let session = FileAwareMockSession()
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: session
+        )
+        let executable = TemporaryUploadFromFileExecutable(
+            fileURL: payloadURL,
+            contentType: "application/octet-stream"
+        )
+
+        _ = try await client.perform(executable: executable)
+
+        #expect(session.capturedFileURL == payloadURL)
+        #expect(session.capturedFileBytes == payload)
+        #expect(!FileManager.default.fileExists(atPath: payloadURL.path))
+    }
+
+    @Test("RequestPayload.temporaryFileURL is deleted after failed upload")
+    func temporaryUploadFileIsDeletedAfterFailure() async throws {
+        let payloadURL = FileManager.default.temporaryDirectory.appendingPathComponent("upload-temp-failure-\(UUID().uuidString).bin")
+        let payload = Data("temporary upload body".utf8)
+        try payload.write(to: payloadURL)
+        defer { try? FileManager.default.removeItem(at: payloadURL) }
+
+        let session = FileAwareMockSession(statusCode: 500, responseData: Data("server error".utf8))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: session
+        )
+        let executable = TemporaryUploadFromFileExecutable(
+            fileURL: payloadURL,
+            contentType: "application/octet-stream"
+        )
+
+        await #expect(throws: NetworkError.self) {
+            _ = try await client.perform(executable: executable)
+        }
+
+        #expect(session.capturedFileURL == payloadURL)
+        #expect(session.capturedFileBytes == payload)
+        #expect(!FileManager.default.fileExists(atPath: payloadURL.path))
     }
 
     @Test("Upload via in-memory MockURLSession surfaces a clear unsupported error")

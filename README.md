@@ -285,8 +285,9 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - **Redaction defaults.** `NetworkLogger` and `OSLogNetworkEventObserver` mark URLs, headers,
   and request bodies as `.private` by default. Do not flip them to `.public` outside of
   controlled diagnostic builds.
-- **Failure payload capture.** `NetworkError.objectMapping(payloadSnippet:)` is `nil` unless you
-  opt in via `NetworkConfiguration.captureFailurePayload = true`. Keep that flag off in release
+- **Failure payload capture.** `NetworkError.objectMapping(_, response)` carries a `Response`;
+  by default that `response.data` is redacted to empty data unless you opt in via
+  `NetworkConfiguration.captureFailurePayload = true`. Keep that flag off in release
   configurations to avoid storing PII inside crash logs or analytics.
 - **Event observer attachment.** Attach observers (`NetworkEventObserving`) at app start and
   detach on logout / account switch. Observers receive every request event, including ones

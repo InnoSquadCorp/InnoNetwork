@@ -392,11 +392,11 @@ struct DownloadTaskPersistenceTests {
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
-        await persistence.prune(keeping: [])
+        try? await persistence.prune(keeping: [])
     }
 
     @Test("Persisted tasks can be restored after actor recreation")
-    func persistenceRoundTrip() async {
+    func persistenceRoundTrip() async throws {
         let sessionIdentifier = "test.persistence.\(UUID().uuidString)"
         let baseDirectoryURL = makeBaseDirectoryURL()
         await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
@@ -409,7 +409,7 @@ struct DownloadTaskPersistenceTests {
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
-        await writer.upsert(id: taskID, url: url, destinationURL: destinationURL)
+        try await writer.upsert(id: taskID, url: url, destinationURL: destinationURL)
 
         let reader = DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
@@ -424,7 +424,7 @@ struct DownloadTaskPersistenceTests {
     }
 
     @Test("Prune removes stale task records")
-    func pruneRemovesStaleRecords() async {
+    func pruneRemovesStaleRecords() async throws {
         let sessionIdentifier = "test.persistence.prune.\(UUID().uuidString)"
         let baseDirectoryURL = makeBaseDirectoryURL()
         await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
@@ -440,10 +440,10 @@ struct DownloadTaskPersistenceTests {
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
-        await persistence.upsert(id: keptID, url: keptURL, destinationURL: keptDestination)
-        await persistence.upsert(id: removedID, url: removedURL, destinationURL: removedDestination)
+        try await persistence.upsert(id: keptID, url: keptURL, destinationURL: keptDestination)
+        try await persistence.upsert(id: removedID, url: removedURL, destinationURL: removedDestination)
 
-        await persistence.prune(keeping: [keptID])
+        try await persistence.prune(keeping: [keptID])
 
         #expect(await persistence.record(forID: keptID) != nil)
         #expect(await persistence.record(forID: removedID) == nil)
@@ -451,7 +451,7 @@ struct DownloadTaskPersistenceTests {
     }
 
     @Test("restore metadata remains keyed by task id even when URLs are duplicated")
-    func restoreMetadataIsTaskIDBased() async {
+    func restoreMetadataIsTaskIDBased() async throws {
         let sessionIdentifier = "test.persistence.duplicate-url.\(UUID().uuidString)"
         let baseDirectoryURL = makeBaseDirectoryURL()
         await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
@@ -464,8 +464,8 @@ struct DownloadTaskPersistenceTests {
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
-        await persistence.upsert(id: "task-1", url: sharedURL, destinationURL: firstDestination)
-        await persistence.upsert(id: "task-2", url: sharedURL, destinationURL: secondDestination)
+        try await persistence.upsert(id: "task-1", url: sharedURL, destinationURL: firstDestination)
+        try await persistence.upsert(id: "task-2", url: sharedURL, destinationURL: secondDestination)
 
         #expect(await persistence.record(forID: "task-1")?.destinationURL == firstDestination)
         #expect(await persistence.record(forID: "task-2")?.destinationURL == secondDestination)
@@ -494,7 +494,7 @@ struct DownloadTaskPersistenceTests {
     }
 
     @Test("Append log preserves concurrent updates across store instances")
-    func appendLogPreservesConcurrentUpdates() async {
+    func appendLogPreservesConcurrentUpdates() async throws {
         let sessionIdentifier = "test.persistence.concurrent.\(UUID().uuidString)"
         let baseDirectoryURL = makeBaseDirectoryURL()
         await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
@@ -518,7 +518,7 @@ struct DownloadTaskPersistenceTests {
             url: URL(string: "https://example.com/b.zip")!,
             destinationURL: URL(fileURLWithPath: "/tmp/b-\(UUID().uuidString).zip")
         )
-        _ = await (writeA, writeB)
+        _ = try await (writeA, writeB)
 
         let reader = DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
@@ -538,7 +538,7 @@ struct DownloadTaskPersistenceTests {
         )
 
         for index in 0..<1_000 {
-            await persistence.upsert(
+            try await persistence.upsert(
                 id: "task-\(index)",
                 url: URL(string: "https://example.com/\(index).zip")!,
                 destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-\(index).zip")
@@ -562,7 +562,7 @@ struct DownloadTaskPersistenceTests {
             baseDirectoryURL: baseDirectoryURL
         )
         let destinationURL = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-valid.zip")
-        await writer.upsert(
+        try await writer.upsert(
             id: "task-valid",
             url: URL(string: "https://example.com/valid.zip")!,
             destinationURL: destinationURL
