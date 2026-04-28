@@ -21,12 +21,10 @@ The `CI` workflow must pass all of the following:
    `lcov` payload is also uploaded to Codecov; without the token the upload
    step is skipped (the artifact alone is enough for manual review).
 6. The benchmark smoke guard runs `swift run InnoNetworkBenchmarks --quick`
-   with `--enforce-baseline --max-regression-percent 50`. A regression
-   beyond 50% on the guarded benchmarks fails the workflow. The 4.1 epic
-   plans to tighten this to 10% once the baseline at
-   `Benchmarks/Baselines/default.json` is regenerated against the v4.1
-   build on macos-15 (the existing baseline pre-dates the WebSocket send-
-   queue work and would false-positive at 10%).
+   with `--enforce-baseline --max-regression-percent 20`. A regression
+   beyond 20% on the guarded benchmarks fails the PR workflow. The
+   scheduled/manual benchmark workflow uses the same guarded benchmarks with
+   a stricter 10% threshold.
 
 ## Pass/Fail Policy
 
@@ -82,5 +80,5 @@ xcrun swift run InnoNetworkBenchmarks --quick \
   --enforce-baseline \
   --guard-benchmark websocket/websocket-close-disposition-classify \
   --guard-benchmark websocket/websocket-ping-context-alloc \
-  --max-regression-percent 50
+  --max-regression-percent 20
 ```
