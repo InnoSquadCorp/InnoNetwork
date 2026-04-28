@@ -1,7 +1,6 @@
 import Foundation
 import os
 
-
 package actor EventDeliveryChain<Event: Sendable> {
     package typealias Handler = @Sendable (Event) async -> Void
 

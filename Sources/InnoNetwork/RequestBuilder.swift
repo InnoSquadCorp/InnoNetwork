@@ -1,6 +1,5 @@
 import Foundation
 
-
 /// Result of ``RequestBuilder/build(_:configuration:)``.
 ///
 /// Combines the prepared ``URLRequest`` with metadata that tells the

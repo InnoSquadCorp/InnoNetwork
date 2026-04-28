@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 private struct LineCounterStream: StreamingAPIDefinition {
     typealias Output = String
@@ -27,7 +27,9 @@ private final class ThrowingBytesSession: URLSessionProtocol, Sendable {
         throw error
     }
 
-    func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (URLSession.AsyncBytes, URLResponse) {
+    func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
+        URLSession.AsyncBytes, URLResponse
+    ) {
         throw error
     }
 }
@@ -38,7 +40,9 @@ private final class DelayedFailingBytesSession: URLSessionProtocol, Sendable {
         throw URLError(.badServerResponse)
     }
 
-    func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (URLSession.AsyncBytes, URLResponse) {
+    func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
+        URLSession.AsyncBytes, URLResponse
+    ) {
         try await Task.sleep(for: .milliseconds(200))
         throw URLError(.badServerResponse)
     }
@@ -57,18 +61,21 @@ private final class SequencedStreamingURLProtocol: URLProtocol {
     private static let lock = NSLock()
 
     static func enqueue(url: URL, steps: [Step]) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         queue[url.absoluteString] = steps
         captured[url.absoluteString] = []
     }
 
     static func capturedRequests(for url: URL) -> [URLRequest] {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         return captured[url.absoluteString] ?? []
     }
 
     static func reset() {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         queue.removeAll()
         captured.removeAll()
     }
@@ -209,7 +216,8 @@ private final class StreamingURLProtocol: URLProtocol {
 
         switch Self.dequeue(url: url) {
         case .success(let statusCode, let data):
-            guard let response = HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: nil, headerFields: nil) else {
+            guard let response = HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: nil, headerFields: nil)
+            else {
                 client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
                 return
             }
@@ -520,12 +528,12 @@ struct StreamingAPIDefinitionTests {
     func resumePolicyEquatable() {
         #expect(
             StreamingResumePolicy.lastEventID(maxAttempts: 3, retryDelay: 1)
-            == StreamingResumePolicy.lastEventID(maxAttempts: 3, retryDelay: 1)
+                == StreamingResumePolicy.lastEventID(maxAttempts: 3, retryDelay: 1)
         )
         #expect(StreamingResumePolicy.disabled == .disabled)
         #expect(
             StreamingResumePolicy.disabled
-            != StreamingResumePolicy.lastEventID(maxAttempts: 1, retryDelay: 1)
+                != StreamingResumePolicy.lastEventID(maxAttempts: 1, retryDelay: 1)
         )
     }
 
@@ -535,9 +543,11 @@ struct StreamingAPIDefinitionTests {
         let definition = ResumableStream(resumePolicy: .lastEventID(maxAttempts: 2, retryDelay: 0))
         let streamURL = baseURL.appendingPathComponent(definition.path)
 
-        SequencedStreamingURLProtocol.enqueue(url: streamURL, steps: [
-            .success(statusCode: 200, data: Data("1|alpha\n2|beta\n".utf8)),
-        ])
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 200, data: Data("1|alpha\n2|beta\n".utf8))
+            ])
 
         let client = DefaultNetworkClient(
             configuration: NetworkConfiguration(baseURL: baseURL, timeout: 5),
@@ -549,10 +559,11 @@ struct StreamingAPIDefinitionTests {
             collected.append(event)
         }
 
-        #expect(collected == [
-            ResumableEvent(id: "1", payload: "alpha"),
-            ResumableEvent(id: "2", payload: "beta"),
-        ])
+        #expect(
+            collected == [
+                ResumableEvent(id: "1", payload: "alpha"),
+                ResumableEvent(id: "2", payload: "beta"),
+            ])
 
         let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
         #expect(captured.count == 1)
@@ -580,10 +591,12 @@ struct StreamingAPIDefinitionTests {
         let definition = ThrowingResumableStream()
         let streamURL = baseURL.appendingPathComponent(definition.path)
 
-        SequencedStreamingURLProtocol.enqueue(url: streamURL, steps: [
-            .success(statusCode: 200, data: Data("1|alpha\nmalformed\n".utf8)),
-            .success(statusCode: 200, data: Data("2|beta\n".utf8)),
-        ])
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 200, data: Data("1|alpha\nmalformed\n".utf8)),
+                .success(statusCode: 200, data: Data("2|beta\n".utf8)),
+            ])
 
         let client = DefaultNetworkClient(
             configuration: NetworkConfiguration(baseURL: baseURL, timeout: 5, captureFailurePayload: true),
@@ -617,13 +630,15 @@ struct StreamingAPIDefinitionTests {
         let definition = ResumableStream(resumePolicy: .lastEventID(maxAttempts: 2, retryDelay: 0))
         let streamURL = baseURL.appendingPathComponent(definition.path)
 
-        SequencedStreamingURLProtocol.enqueue(url: streamURL, steps: [
-            // 500 fails the acceptable-status guard before any bytes are
-            // consumed. Resume is reserved for mid-stream transport faults,
-            // not server-driven handshake decisions.
-            .success(statusCode: 500, data: Data()),
-            .success(statusCode: 200, data: Data("1|alpha\n".utf8)),
-        ])
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                // 500 fails the acceptable-status guard before any bytes are
+                // consumed. Resume is reserved for mid-stream transport faults,
+                // not server-driven handshake decisions.
+                .success(statusCode: 500, data: Data()),
+                .success(statusCode: 200, data: Data("1|alpha\n".utf8)),
+            ])
 
         let client = DefaultNetworkClient(
             configuration: NetworkConfiguration(baseURL: baseURL, timeout: 5),

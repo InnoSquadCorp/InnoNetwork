@@ -1,6 +1,6 @@
 import Foundation
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 func makeTestNetworkConfiguration(
     baseURL: String,

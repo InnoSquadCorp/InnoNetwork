@@ -1,8 +1,8 @@
 import Foundation
-import os
 import Testing
-@testable import InnoNetwork
+import os
 
+@testable import InnoNetwork
 
 private final class TraceRecorder: @unchecked Sendable {
     private let lock = OSAllocatedUnfairLock<[String]>(initialState: [])

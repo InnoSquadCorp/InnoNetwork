@@ -2,7 +2,6 @@ import Foundation
 import InnoNetwork
 import InnoNetworkDownload
 
-
 // MARK: - CLI argument / env parsing
 
 /// Default test asset. Public HTTPS fixture verified on 2026-04-21;
@@ -39,21 +38,21 @@ else {
 
 guard runIntegration else {
     let note = """
-    DownloadManagerSample
-    ---------------------
-    Source URL        : \(url.absoluteString)
-    Destination       : \(destinationURL.path)
-    Exponential backoff: enabled (retryDelay=1s, maxRetryDelay=60s)
+        DownloadManagerSample
+        ---------------------
+        Source URL        : \(url.absoluteString)
+        Destination       : \(destinationURL.path)
+        Exponential backoff: enabled (retryDelay=1s, maxRetryDelay=60s)
 
-    Set INNONETWORK_RUN_INTEGRATION=1 to actually download. Example:
+        Set INNONETWORK_RUN_INTEGRATION=1 to actually download. Example:
 
-        INNONETWORK_RUN_INTEGRATION=1 swift run DownloadManagerSample
-        INNONETWORK_RUN_INTEGRATION=1 swift run DownloadManagerSample \\
-            https://example.com/file.zip /tmp/out.zip
+            INNONETWORK_RUN_INTEGRATION=1 swift run DownloadManagerSample
+            INNONETWORK_RUN_INTEGRATION=1 swift run DownloadManagerSample \\
+                https://example.com/file.zip /tmp/out.zip
 
-    Leaving the env var unset is expected in CI — the sample exits 0 here.
+        Leaving the env var unset is expected in CI — the sample exits 0 here.
 
-    """
+        """
     FileHandle.standardOutput.write(Data(note.utf8))
     exit(0)
 }
@@ -95,12 +94,13 @@ for await event in await manager.events(for: task) {
         let percent = progress.percentCompleted
         if percent != lastReportedPercent {
             lastReportedPercent = percent
-            print(String(
-                format: "   %3d%%  (%lld / %lld bytes)",
-                percent,
-                progress.totalBytesWritten,
-                progress.totalBytesExpectedToWrite
-            ))
+            print(
+                String(
+                    format: "   %3d%%  (%lld / %lld bytes)",
+                    percent,
+                    progress.totalBytesWritten,
+                    progress.totalBytesExpectedToWrite
+                ))
         }
     case .stateChanged(let state):
         print("   state → \(state)")

@@ -1,6 +1,5 @@
 import Foundation
 
-
 /// Policy applied when a per-task send is dispatched while the task already
 /// has ``WebSocketConfiguration/sendQueueLimit`` operations in flight.
 public enum WebSocketSendOverflowPolicy: Sendable, Equatable {

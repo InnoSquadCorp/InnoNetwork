@@ -1,9 +1,9 @@
 import Foundation
-import os
-import Testing
 import InnoNetworkTestSupport
-@testable import InnoNetwork
+import Testing
+import os
 
+@testable import InnoNetwork
 
 @Suite("RetryCoordinator Timing Tests")
 struct RetryCoordinatorTimingTests {
@@ -163,17 +163,18 @@ struct RetryCoordinatorTimingTests {
                 return count
             }
             if attempt == 1 {
-                throw NetworkError.statusCode(Response(
-                    statusCode: 429,
-                    data: Data(),
-                    request: URLRequest(url: URL(string: "https://example.com")!),
-                    response: HTTPURLResponse(
-                        url: URL(string: "https://example.com")!,
+                throw NetworkError.statusCode(
+                    Response(
                         statusCode: 429,
-                        httpVersion: nil,
-                        headerFields: nil
-                    )!
-                ))
+                        data: Data(),
+                        request: URLRequest(url: URL(string: "https://example.com")!),
+                        response: HTTPURLResponse(
+                            url: URL(string: "https://example.com")!,
+                            statusCode: 429,
+                            httpVersion: nil,
+                            headerFields: nil
+                        )!
+                    ))
             }
             return 9
         }

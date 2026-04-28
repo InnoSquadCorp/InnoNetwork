@@ -1,6 +1,5 @@
 import Foundation
 
-
 package struct FIFOBuffer<Element> {
     private var storage: [Element?] = []
     private var headIndex = 0

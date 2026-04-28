@@ -1,7 +1,6 @@
 import Foundation
 import InnoNetwork
 
-
 private struct GeneratedUser: Decodable, Sendable {
     let id: Int
     let name: String
@@ -39,7 +38,7 @@ private enum GeneratedSDK {
         let path: String = "/v1/reports"
         let headers: HTTPHeaders = [
             .accept("application/json"),
-            .contentType("application/json")
+            .contentType("application/json"),
         ]
         let body: CreateReportBody
     }

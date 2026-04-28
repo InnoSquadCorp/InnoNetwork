@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetworkWebSocket
 
+@testable import InnoNetworkWebSocket
 
 @Suite("WebSocket Send Queue Tests")
 struct WebSocketSendQueueTests {

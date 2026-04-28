@@ -1,7 +1,6 @@
 import Foundation
 import InnoNetwork
 
-
 public enum DownloadState: String, Sendable {
     case idle
     case waiting
@@ -55,16 +54,16 @@ public struct DownloadProgress: Sendable {
     public let bytesWritten: Int64
     public let totalBytesWritten: Int64
     public let totalBytesExpectedToWrite: Int64
-    
+
     public var fractionCompleted: Double {
         guard totalBytesExpectedToWrite > 0 else { return 0 }
         return Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
     }
-    
+
     public var percentCompleted: Int {
         Int(fractionCompleted * 100)
     }
-    
+
     public static let zero = DownloadProgress(
         bytesWritten: 0,
         totalBytesWritten: 0,

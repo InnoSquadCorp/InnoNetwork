@@ -1,6 +1,5 @@
 import Foundation
 
-
 /// Package-internal clock abstraction used by coordinators that schedule
 /// time-based work (heartbeat cadence, reconnect backoff). Production code
 /// uses `SystemClock`; tests can substitute a virtual-time implementation so

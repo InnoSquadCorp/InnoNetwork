@@ -1,6 +1,5 @@
 import Foundation
 
-
 package actor DownloadRuntimeRegistry {
     private var tasks: [String: DownloadTask] = [:]
     private var identifierToTask: [Int: DownloadTask] = [:]

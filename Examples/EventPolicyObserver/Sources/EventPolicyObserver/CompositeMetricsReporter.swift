@@ -1,7 +1,6 @@
 import Foundation
 import InnoNetwork
 
-
 /// Forwards every metric to each wrapped reporter in order. Useful for
 /// wiring both `LoggerMetricsReporter` (for log aggregation) and
 /// `SignPostMetricsReporter` (for Instruments) without swapping

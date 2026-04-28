@@ -1,7 +1,6 @@
 import Foundation
 import os
 
-
 /// Tracks the cancel handlers for requests currently dispatched through a
 /// ``DefaultNetworkClient``.
 ///

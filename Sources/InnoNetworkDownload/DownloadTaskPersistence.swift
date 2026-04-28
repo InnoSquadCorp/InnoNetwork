@@ -1,7 +1,6 @@
 import Darwin
 import Foundation
 
-
 package protocol DownloadTaskStore: Actor {
     func upsert(id: String, url: URL, destinationURL: URL) async throws
     func remove(id: String) async throws
@@ -110,7 +109,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     ) {
         let fileManager = FileManager.default
         let baseDirectory = baseDirectoryURL ?? Self.defaultBaseDirectory(fileManager: fileManager)
-        let directoryURL = baseDirectory
+        let directoryURL =
+            baseDirectory
             .appendingPathComponent("InnoNetworkDownload", isDirectory: true)
             .appendingPathComponent(sessionIdentifier, isDirectory: true)
         let checkpointURL = directoryURL.appendingPathComponent("checkpoint.json", isDirectory: false)
@@ -317,7 +317,9 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         onto initialRecords: [String: DownloadTaskPersistence.Record],
         checkpointURL: URL,
         fileManager: FileManager
-    ) throws -> (records: [String: DownloadTaskPersistence.Record], nextSequence: Int64, logEventCount: Int, tombstoneCount: Int) {
+    ) throws -> (
+        records: [String: DownloadTaskPersistence.Record], nextSequence: Int64, logEventCount: Int, tombstoneCount: Int
+    ) {
         var records = initialRecords
         var nextSequence: Int64 = 0
         var logEventCount = 0
@@ -437,7 +439,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         fsyncBeforeRename: Bool = false,
         fsync: @escaping @Sendable (Int32) -> Int32 = Darwin.fsync
     ) throws {
-        let tempURL = fileURL
+        let tempURL =
+            fileURL
             .deletingPathExtension()
             .appendingPathExtension("tmp-\(UUID().uuidString)")
 

@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetworkDownload
 
+@testable import InnoNetworkDownload
 
 @Suite("Download Manager Init Tests")
 struct DownloadManagerInitTests {

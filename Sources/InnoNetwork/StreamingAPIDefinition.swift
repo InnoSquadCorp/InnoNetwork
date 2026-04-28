@@ -1,6 +1,5 @@
 import Foundation
 
-
 /// Resume policy for a ``StreamingAPIDefinition``.
 ///
 /// Streaming requests bypass the configured ``RetryPolicy`` because a partial

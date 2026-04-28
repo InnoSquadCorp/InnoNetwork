@@ -1,9 +1,9 @@
 import Foundation
-import os
 import Testing
+import os
+
 @testable import InnoNetwork
 @testable import InnoNetworkWebSocket
-
 
 /// Observation tests for the 4.1 public `WebSocketTask.closeDisposition`
 /// getter. Confirms that the manager records the classified disposition on

@@ -1,6 +1,5 @@
 import Foundation
 
-
 package enum RequestEncodingPolicy: Sendable {
     case none
     case query(URLQueryEncoder, rootKey: String?)

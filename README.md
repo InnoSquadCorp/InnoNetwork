@@ -1,7 +1,10 @@
 # InnoNetwork
 
+[![CI](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/InnoSquadCorp/InnoNetwork/branch/main/graph/badge.svg)](https://codecov.io/gh/InnoSquadCorp/InnoNetwork)
 [![DocC](https://img.shields.io/badge/docs-DocC-blue)](https://innosquadcorp.github.io/InnoNetwork/)
 [![Swift](https://img.shields.io/badge/Swift-6.2-orange)](https://swift.org)
+[![SwiftPM](https://img.shields.io/badge/SwiftPM-compatible-brightgreen)](https://swift.org/package-manager)
 [![Platforms](https://img.shields.io/badge/platforms-iOS%2018%20%7C%20macOS%2015%20%7C%20tvOS%2018%20%7C%20watchOS%2011%20%7C%20visionOS%202-lightgrey)](#platform-matrix)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -12,6 +15,8 @@ InnoNetwork is a Swift package for type-safe networking on Apple platforms. It p
 - `InnoNetworkWebSocket` for connection-oriented realtime flows
 
 The package is built around Swift Concurrency, explicit transport policies, and operational visibility that can scale from app prototypes to production clients.
+
+> ⚠️ **Apple platforms only by design.** InnoNetwork builds on URLSession, `OSAllocatedUnfairLock`, OSLog, and Network.framework, none of which match Apple-platform behaviour on Linux. Linux/server-side Swift is **not** a supported target. See [docs/PlatformSupport.md](docs/PlatformSupport.md) for the rationale and for guidance on sharing models with Linux server code (e.g. Vapor).
 
 > 📚 **API Reference (DocC):** https://innosquadcorp.github.io/InnoNetwork/
 > 🇰🇷 **한국어 문서:** [docs/ko/README.md](docs/ko/README.md)

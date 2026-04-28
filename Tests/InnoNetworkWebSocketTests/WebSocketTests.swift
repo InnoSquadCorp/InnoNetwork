@@ -1,9 +1,9 @@
 import Foundation
-import os
-import Testing
 import InnoNetworkTestSupport
-@testable import InnoNetworkWebSocket
+import Testing
+import os
 
+@testable import InnoNetworkWebSocket
 
 @Suite("WebSocket Configuration Tests")
 struct WebSocketConfigurationTests {
@@ -317,11 +317,12 @@ struct WebSocketManagerTests {
             error: URLError(.cannotConnectToHost)
         )
 
-        let retryIdentifier = try #require(await waitForWebSocketRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task,
-            excluding: [harness.stubTaskIdentifier]
-        ))
+        let retryIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: [harness.stubTaskIdentifier]
+            ))
         #expect(retryIdentifier == retryURLTask.taskIdentifier)
         #expect(await harness.manager.task(withId: task.id) != nil)
         #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
@@ -364,11 +365,12 @@ struct WebSocketManagerTests {
             reason: nil
         )
 
-        let retryIdentifier = try #require(await waitForWebSocketRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task,
-            excluding: [harness.stubTaskIdentifier]
-        ))
+        let retryIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: [harness.stubTaskIdentifier]
+            ))
         #expect(retryIdentifier == retryURLTask.taskIdentifier)
         #expect(await harness.manager.task(withId: task.id) != nil)
         #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
@@ -411,11 +413,12 @@ struct WebSocketManagerTests {
             error: URLError(.cannotConnectToHost)
         )
 
-        let retryIdentifier = try #require(await waitForWebSocketRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task,
-            excluding: [harness.stubTaskIdentifier]
-        ))
+        let retryIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: [harness.stubTaskIdentifier]
+            ))
         #expect(retryIdentifier == retryURLTask.taskIdentifier)
         #expect(await harness.manager.task(withId: task.id) != nil)
         #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
@@ -459,11 +462,12 @@ struct WebSocketManagerTests {
             reason: nil
         )
 
-        let retryIdentifier = try #require(await waitForWebSocketRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task,
-            excluding: [harness.stubTaskIdentifier]
-        ))
+        let retryIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: [harness.stubTaskIdentifier]
+            ))
         #expect(retryIdentifier == retryURLTask.taskIdentifier)
         #expect(await harness.manager.task(withId: task.id) != nil)
         #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
@@ -516,11 +520,12 @@ struct WebSocketManagerTests {
             error: URLError(.cannotConnectToHost)
         )
 
-        let retryIdentifier = try #require(await waitForWebSocketRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task,
-            excluding: [harness.stubTaskIdentifier]
-        ))
+        let retryIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: [harness.stubTaskIdentifier]
+            ))
         #expect(retryIdentifier == retryURLTask.taskIdentifier)
         #expect(await harness.manager.task(withId: task.id) != nil)
         #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
@@ -574,11 +579,12 @@ struct WebSocketManagerTests {
             reason: nil
         )
 
-        let retryIdentifier = try #require(await waitForWebSocketRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task,
-            excluding: [harness.stubTaskIdentifier]
-        ))
+        let retryIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: [harness.stubTaskIdentifier]
+            ))
         #expect(retryIdentifier == retryURLTask.taskIdentifier)
         #expect(await harness.manager.task(withId: task.id) != nil)
         #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
@@ -606,25 +612,33 @@ struct WebSocketManagerTests {
 
     @Test("Handshake classification maps HTTP auth and retryable responses")
     func handshakeClassification() {
-        #expect(WebSocketCloseDisposition.classifyHandshake(
-            statusCode: 401,
-            error: SendableUnderlyingError(domain: NSURLErrorDomain, code: URLError.userAuthenticationRequired.rawValue, message: "401")
-        ) == .handshakeUnauthorized(401))
+        #expect(
+            WebSocketCloseDisposition.classifyHandshake(
+                statusCode: 401,
+                error: SendableUnderlyingError(
+                    domain: NSURLErrorDomain, code: URLError.userAuthenticationRequired.rawValue, message: "401")
+            ) == .handshakeUnauthorized(401))
 
-        #expect(WebSocketCloseDisposition.classifyHandshake(
-            statusCode: 403,
-            error: SendableUnderlyingError(domain: NSURLErrorDomain, code: URLError.noPermissionsToReadFile.rawValue, message: "403")
-        ) == .handshakeForbidden(403))
+        #expect(
+            WebSocketCloseDisposition.classifyHandshake(
+                statusCode: 403,
+                error: SendableUnderlyingError(
+                    domain: NSURLErrorDomain, code: URLError.noPermissionsToReadFile.rawValue, message: "403")
+            ) == .handshakeForbidden(403))
 
-        #expect(WebSocketCloseDisposition.classifyHandshake(
-            statusCode: 503,
-            error: SendableUnderlyingError(domain: NSURLErrorDomain, code: URLError.badServerResponse.rawValue, message: "503")
-        ) == .handshakeServerUnavailable(503))
+        #expect(
+            WebSocketCloseDisposition.classifyHandshake(
+                statusCode: 503,
+                error: SendableUnderlyingError(
+                    domain: NSURLErrorDomain, code: URLError.badServerResponse.rawValue, message: "503")
+            ) == .handshakeServerUnavailable(503))
 
-        #expect(WebSocketCloseDisposition.classifyHandshake(
-            statusCode: 422,
-            error: SendableUnderlyingError(domain: NSURLErrorDomain, code: URLError.badServerResponse.rawValue, message: "422")
-        ) == .handshakeTerminalHTTP(422))
+        #expect(
+            WebSocketCloseDisposition.classifyHandshake(
+                statusCode: 422,
+                error: SendableUnderlyingError(
+                    domain: NSURLErrorDomain, code: URLError.badServerResponse.rawValue, message: "422")
+            ) == .handshakeTerminalHTTP(422))
     }
 
     @Test("Handshake classification treats transient network errors as retryable")
@@ -813,12 +827,13 @@ struct WebSocketListenerLifecycleTests {
         )
         manager.handleError(taskIdentifier: thirdTaskIdentifier, error: URLError(.cannotConnectToHost))
 
-        #expect(await waitForTaskError(task: task, timeout: 5.0) { error in
-            if case .maxReconnectAttemptsExceeded = error {
-                return true
-            }
-            return false
-        })
+        #expect(
+            await waitForTaskError(task: task, timeout: 5.0) { error in
+                if case .maxReconnectAttemptsExceeded = error {
+                    return true
+                }
+                return false
+            })
         #expect(await task.attemptedReconnectCount >= 3)
         #expect(await waitForListenerCleanup(manager: manager, task: task))
 

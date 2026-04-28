@@ -1,10 +1,10 @@
 import Foundation
-import os
-import Testing
 import InnoNetworkTestSupport
+import Testing
+import os
+
 @testable import InnoNetwork
 @testable import InnoNetworkWebSocket
-
 
 @Suite("WebSocket Reconnect Backoff Tests")
 struct WebSocketReconnectBackoffTests {

@@ -1,7 +1,6 @@
 import Foundation
 import OSLog
 
-
 public enum NetworkEvent: Sendable {
     case requestStart(
         requestID: UUID,
@@ -60,17 +59,28 @@ public struct OSLogNetworkEventObserver: NetworkEventObserving {
         #if DEBUG
         switch event {
         case .requestStart(let requestID, let method, let url, let retryIndex):
-            Logger.API.debug("request_start id=\(requestID.uuidString, privacy: .public) method=\(method, privacy: .public) url=\(url, privacy: .private) retryIndex=\(retryIndex)")
+            Logger.API.debug(
+                "request_start id=\(requestID.uuidString, privacy: .public) method=\(method, privacy: .public) url=\(url, privacy: .private) retryIndex=\(retryIndex)"
+            )
         case .requestAdapted(let requestID, let method, let url, let retryIndex):
-            Logger.API.debug("request_adapted id=\(requestID.uuidString, privacy: .public) method=\(method, privacy: .public) url=\(url, privacy: .private) retryIndex=\(retryIndex)")
+            Logger.API.debug(
+                "request_adapted id=\(requestID.uuidString, privacy: .public) method=\(method, privacy: .public) url=\(url, privacy: .private) retryIndex=\(retryIndex)"
+            )
         case .responseReceived(let requestID, let statusCode, let byteCount):
-            Logger.API.debug("response_received id=\(requestID.uuidString, privacy: .public) status=\(statusCode) bytes=\(byteCount)")
+            Logger.API.debug(
+                "response_received id=\(requestID.uuidString, privacy: .public) status=\(statusCode) bytes=\(byteCount)"
+            )
         case .retryScheduled(let requestID, let retryIndex, let delay, let reason):
-            Logger.API.info("retry_scheduled id=\(requestID.uuidString, privacy: .public) retryIndex=\(retryIndex) delay=\(delay, privacy: .public)s reason=\(reason, privacy: .private)")
+            Logger.API.info(
+                "retry_scheduled id=\(requestID.uuidString, privacy: .public) retryIndex=\(retryIndex) delay=\(delay, privacy: .public)s reason=\(reason, privacy: .private)"
+            )
         case .requestFinished(let requestID, let statusCode, let byteCount):
-            Logger.API.info("request_finished id=\(requestID.uuidString, privacy: .public) status=\(statusCode) bytes=\(byteCount)")
+            Logger.API.info(
+                "request_finished id=\(requestID.uuidString, privacy: .public) status=\(statusCode) bytes=\(byteCount)")
         case .requestFailed(let requestID, let errorCode, let message):
-            Logger.API.error("request_failed id=\(requestID.uuidString, privacy: .public) code=\(errorCode) message=\(message, privacy: .private)")
+            Logger.API.error(
+                "request_failed id=\(requestID.uuidString, privacy: .public) code=\(errorCode) message=\(message, privacy: .private)"
+            )
         }
         #endif
     }

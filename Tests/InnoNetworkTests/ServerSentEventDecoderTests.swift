@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 @Suite("Server-Sent Event Decoder Tests")
 struct ServerSentEventDecoderTests {

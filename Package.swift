@@ -39,6 +39,17 @@ let package = Package(
             name: "InnoNetworkWebSocket",
             targets: ["InnoNetworkWebSocket"]
         ),
+        // Test helpers that consumers can pull into *their* test targets to
+        // assert on InnoNetwork integrations (currently
+        // ``WebSocketEventRecorder``). Most internals remain `package`-scoped
+        // so they only stay visible to the package's own test targets; only
+        // the explicitly `public` symbols cross the library boundary.
+        // Promoted to a public product in PR-1; see API_STABILITY.md for the
+        // contract scope (Provisionally Stable).
+        .library(
+            name: "InnoNetworkTestSupport",
+            targets: ["InnoNetworkTestSupport"]
+        ),
     ],
     dependencies: [],
     targets: [
@@ -59,9 +70,12 @@ let package = Package(
             path: "Sources/InnoNetworkWebSocket",
             swiftSettings: strictSettings
         ),
-        // Package-internal test helpers. Intentionally NOT exposed as a
-        // `.library(...)` product so external consumers never see these
-        // symbols. Imported only from the three test targets below.
+        // Test helpers. Public symbols here form a Provisionally Stable
+        // contract; the library is intended for *consumer* test targets and
+        // should not be linked into production binaries. Internal helpers
+        // (TestClock, anything depending on `package`-scope abstractions like
+        // ``InnoNetworkClock``) remain `package`-visible for now and stay
+        // available to this package's own test targets.
         .target(
             name: "InnoNetworkTestSupport",
             dependencies: [

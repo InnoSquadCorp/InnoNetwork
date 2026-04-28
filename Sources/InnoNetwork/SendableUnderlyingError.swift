@@ -1,6 +1,5 @@
 import Foundation
 
-
 public struct SendableUnderlyingError: Error, Sendable, Equatable, CustomStringConvertible {
     public let domain: String
     public let code: Int

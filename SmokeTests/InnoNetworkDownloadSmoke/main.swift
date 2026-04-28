@@ -2,7 +2,6 @@ import Foundation
 import InnoNetwork
 import InnoNetworkDownload
 
-
 // MARK: - InnoNetworkDownloadSmoke
 //
 // Integration smoke that exercises the real URLSession-backed
@@ -37,14 +36,14 @@ private let destinationURL: URL = {
 
 guard runIntegration else {
     let note = """
-    InnoNetworkDownloadSmoke skipped (INNONETWORK_RUN_INTEGRATION != 1).
-    Set the flag and provide an explicit HTTPS URL to exercise the
-    pause/resume path:
+        InnoNetworkDownloadSmoke skipped (INNONETWORK_RUN_INTEGRATION != 1).
+        Set the flag and provide an explicit HTTPS URL to exercise the
+        pause/resume path:
 
-        INNONETWORK_RUN_INTEGRATION=1 swift run InnoNetworkDownloadSmoke \\
-            https://example.com/large-file.bin
+            INNONETWORK_RUN_INTEGRATION=1 swift run InnoNetworkDownloadSmoke \\
+                https://example.com/large-file.bin
 
-    """
+        """
     FileHandle.standardOutput.write(Data(note.utf8))
     exit(0)
 }
@@ -99,7 +98,7 @@ for await event in events {
         if !sawProgressBeforePause {
             sawProgressBeforePause = true
             print("   first progress: \(progress.totalBytesWritten) bytes — scheduling pause")
-            try? await Task.sleep(nanoseconds: 100_000_000) // ~100ms
+            try? await Task.sleep(nanoseconds: 100_000_000)  // ~100ms
             await manager.pause(task)
         }
     case .stateChanged(let state):

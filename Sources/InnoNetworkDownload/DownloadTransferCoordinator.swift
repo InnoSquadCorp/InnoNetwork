@@ -2,7 +2,6 @@ import Foundation
 import InnoNetwork
 import OSLog
 
-
 package struct DownloadTransferCoordinator {
     private static let logger = Logger(subsystem: "innosquad.network.download", category: "Persistence")
 
@@ -71,7 +70,9 @@ package struct DownloadTransferCoordinator {
         do {
             try await persistence.remove(id: task.id)
         } catch {
-            Self.logger.fault("Failed to remove completed task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))")
+            Self.logger.fault(
+                "Failed to remove completed task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))"
+            )
             return
         }
         await runtimeRegistry.removeTaskRuntime(taskId: task.id)

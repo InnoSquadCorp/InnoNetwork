@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetworkDownload
 
+@testable import InnoNetworkDownload
 
 /// Pause / resume lifecycle verified through `StubDownloadURLSession`.
 /// Each test drives state transitions by injecting synthetic delegate
@@ -45,11 +45,12 @@ struct DownloadPauseResumeTests {
 
         let task = await harness.startDownload()
 
-        _ = try #require(await waitForRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task,
-            timeout: 5.0
-        ))
+        _ = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                timeout: 5.0
+            ))
         #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .downloading })
 
         await harness.manager.pause(task)
@@ -71,11 +72,12 @@ struct DownloadPauseResumeTests {
         harness.stubTask.scriptCancelResumeData(resumeData)
 
         let task = await harness.startDownload()
-        _ = try #require(await waitForRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task,
-            timeout: 5.0
-        ))
+        _ = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                timeout: 5.0
+            ))
         #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .downloading })
 
         await harness.manager.pause(task)
@@ -84,9 +86,10 @@ struct DownloadPauseResumeTests {
         await harness.manager.resume(task)
 
         #expect(harness.stubSession.lastResumeData == resumeData)
-        #expect(await waitForTaskState(task, timeout: 5.0) {
-            $0 == .downloading || $0 == .waiting
-        })
+        #expect(
+            await waitForTaskState(task, timeout: 5.0) {
+                $0 == .downloading || $0 == .waiting
+            })
         let secondIdentifier = await harness.manager.runtimeTaskIdentifier(for: task)
         #expect(secondIdentifier == resumedStub.taskIdentifier)
         await harness.manager.cancel(task)
@@ -102,11 +105,12 @@ struct DownloadPauseResumeTests {
         harness.stubTask.scriptCancelResumeData(nil)
 
         let task = await harness.startDownload()
-        _ = try #require(await waitForRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task,
-            timeout: 5.0
-        ))
+        _ = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                timeout: 5.0
+            ))
         #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .downloading })
 
         await harness.manager.pause(task)
@@ -116,9 +120,10 @@ struct DownloadPauseResumeTests {
         await harness.manager.resume(task)
 
         #expect(harness.stubSession.lastResumeData == nil)
-        #expect(await waitForTaskState(task, timeout: 5.0) {
-            $0 == .downloading || $0 == .waiting
-        })
+        #expect(
+            await waitForTaskState(task, timeout: 5.0) {
+                $0 == .downloading || $0 == .waiting
+            })
         let secondIdentifier = await harness.manager.runtimeTaskIdentifier(for: task)
         #expect(secondIdentifier == freshStub.taskIdentifier)
         await harness.manager.cancel(task)
@@ -130,11 +135,12 @@ struct DownloadPauseResumeTests {
         harness.stubTask.scriptCancelResumeData(Data("cancel-after-pause".utf8))
 
         let task = await harness.startDownload()
-        _ = try #require(await waitForRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task,
-            timeout: 5.0
-        ))
+        _ = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                timeout: 5.0
+            ))
         #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .downloading })
 
         await harness.manager.pause(task)

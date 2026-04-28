@@ -1,6 +1,5 @@
 import Foundation
 
-
 package struct RequestExecutor {
     private let session: URLSessionProtocol
     private let eventHub: NetworkEventHub
@@ -33,7 +32,8 @@ package struct RequestExecutor {
                     try? FileManager.default.removeItem(at: cleanupFileURL)
                 }
             }
-            await notifyRequestStart(request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
+            await notifyRequestStart(
+                request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             // Onion model: session-level interceptors run first (outer), then
             // per-request interceptors (inner). Cross-cutting concerns
@@ -45,7 +45,8 @@ package struct RequestExecutor {
             for interceptor in executable.requestInterceptors {
                 request = try await interceptor.adapt(request)
             }
-            await notifyRequestAdapted(request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
+            await notifyRequestAdapted(
+                request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             executable.logger.log(request: request)
 

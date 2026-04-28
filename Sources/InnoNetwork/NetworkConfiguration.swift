@@ -1,6 +1,5 @@
 import Foundation
 
-
 public struct NetworkConfiguration: Sendable {
     /// The default range of HTTP status codes treated as successful responses.
     /// `2xx` per RFC 9110 §15.3.

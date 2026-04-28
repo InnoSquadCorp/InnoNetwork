@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 @Suite("Network Logger Tests")
 struct NetworkLoggerTests {
@@ -11,7 +11,7 @@ struct NetworkLoggerTests {
         let sanitizedHeaders = logger.sanitize(headers: [
             "Authorization": "Bearer token",
             "X-API-Key": "secret-key",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         ])
 
         #expect(sanitizedHeaders["Authorization"] == "<redacted>")
@@ -59,7 +59,7 @@ struct NetworkLoggerTests {
                 .name: "session",
                 .value: "sensitive",
                 .domain: "example.com",
-                .path: "/"
+                .path: "/",
             ])
         )
 
@@ -81,7 +81,7 @@ struct NetworkLoggerTests {
                 .name: "isolated",
                 .value: "scoped",
                 .domain: "example.com",
-                .path: "/"
+                .path: "/",
             ])
         )
         storage.setCookie(cookie)

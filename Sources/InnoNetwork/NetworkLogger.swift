@@ -1,7 +1,6 @@
 @preconcurrency import Foundation
 import OSLog
 
-
 public protocol NetworkLogger: Sendable {
     func log(request: URLRequest)
     func log(response: Response, isError: Bool)
@@ -25,7 +24,7 @@ public struct NetworkLoggingOptions: Sendable {
             "cookie",
             "set-cookie",
             "x-api-key",
-            "proxy-authorization"
+            "proxy-authorization",
         ]
     ) {
         self.includeRequestBody = includeRequestBody
@@ -73,8 +72,8 @@ public struct DefaultNetworkLogger: NetworkLogger {
             log.append("cookies: \(sanitize(cookies: cookies))\n")
         }
         if options.includeRequestBody,
-           let body = request.httpBody,
-           let bodyString = String(bytes: body, encoding: .utf8)
+            let body = request.httpBody,
+            let bodyString = String(bytes: body, encoding: .utf8)
         {
             log.append("\(sanitize(body: bodyString))\n")
         } else if request.httpBody != nil {
@@ -100,7 +99,7 @@ public struct DefaultNetworkLogger: NetworkLogger {
             }
         }
         if options.includeResponseBody,
-           let responseBody = String(bytes: response.data, encoding: .utf8)
+            let responseBody = String(bytes: response.data, encoding: .utf8)
         {
             log.append("\(sanitize(body: responseBody))\n")
         } else if !response.data.isEmpty {
@@ -143,7 +142,8 @@ public struct DefaultNetworkLogger: NetworkLogger {
         guard options.redactSensitiveData else {
             return cookies.map(\.description).joined(separator: "; ")
         }
-        return cookies
+        return
+            cookies
             .map { "\($0.name)=<redacted>" }
             .joined(separator: "; ")
     }

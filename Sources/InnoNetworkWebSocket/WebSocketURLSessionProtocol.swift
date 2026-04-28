@@ -1,6 +1,5 @@
 import Foundation
 
-
 /// Protocol abstraction over `URLSessionWebSocketTask` used internally by the
 /// WebSocket runtime. The production conformance is `URLSessionWebSocketTask`
 /// itself; tests can inject a stub implementation.

@@ -1,5 +1,6 @@
 import Foundation
 import os
+
 @testable import InnoNetworkDownload
 
 private let stubDownloadTaskIdentifierSeed = OSAllocatedUnfairLock<Int>(initialState: 1)

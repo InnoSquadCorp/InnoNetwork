@@ -1,6 +1,5 @@
 import Foundation
 
-
 package struct TransportPolicy<Output: Sendable>: Sendable {
     package let requestEncoding: RequestEncodingPolicy
     package let responseDecoding: ResponseDecodingStrategy<Output>

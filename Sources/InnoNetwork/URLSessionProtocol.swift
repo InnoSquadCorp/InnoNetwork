@@ -8,7 +8,6 @@
 import Foundation
 import os
 
-
 public protocol URLSessionProtocol: Sendable {
     func data(for request: URLRequest) async throws -> (Data, URLResponse)
     func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse)
@@ -21,7 +20,9 @@ public protocol URLSessionProtocol: Sendable {
     /// ``NetworkError/invalidRequestConfiguration(_:)`` so streaming-aware
     /// callers see a clear error instead of a confusing fallback to a
     /// buffered response.
-    func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (URLSession.AsyncBytes, URLResponse)
+    func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
+        URLSession.AsyncBytes, URLResponse
+    )
     /// Uploads the contents of `fileURL` for the given request without
     /// loading the file into memory. Used by ``RequestPayload/fileURL(_:contentType:)``
     /// payloads (typically multipart bodies spooled with
@@ -30,7 +31,9 @@ public protocol URLSessionProtocol: Sendable {
     /// The default extension throws
     /// ``NetworkError/invalidRequestConfiguration(_:)`` so non-streaming
     /// stubs do not need to provide an upload path.
-    func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (Data, URLResponse)
+    func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (
+        Data, URLResponse
+    )
 }
 
 public extension URLSessionProtocol {
@@ -39,14 +42,18 @@ public extension URLSessionProtocol {
         return try await data(for: request)
     }
 
-    func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (URLSession.AsyncBytes, URLResponse) {
+    func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
+        URLSession.AsyncBytes, URLResponse
+    ) {
         _ = (request, context)
         throw NetworkError.invalidRequestConfiguration(
             "Streaming bytes are not supported by this URLSessionProtocol implementation."
         )
     }
 
-    func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
+    func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (
+        Data, URLResponse
+    ) {
         _ = (request, fileURL, context)
         throw NetworkError.invalidRequestConfiguration(
             "File-based upload is not supported by this URLSessionProtocol implementation."
@@ -71,7 +78,9 @@ extension URLSession: URLSessionProtocol {
         }
     }
 
-    public func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (URLSession.AsyncBytes, URLResponse) {
+    public func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
+        URLSession.AsyncBytes, URLResponse
+    ) {
         if context.metricsReporter == nil, context.trustPolicy.isSystemDefault {
             return try await bytes(for: request, delegate: nil)
         }
@@ -87,7 +96,9 @@ extension URLSession: URLSessionProtocol {
         }
     }
 
-    public func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
+    public func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (
+        Data, URLResponse
+    ) {
         if context.metricsReporter == nil, context.trustPolicy.isSystemDefault {
             return try await upload(for: request, fromFile: fileURL)
         }

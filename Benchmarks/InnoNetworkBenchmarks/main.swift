@@ -3,7 +3,6 @@ import InnoNetwork
 import InnoNetworkDownload
 import InnoNetworkWebSocket
 
-
 private struct BenchmarkResult: Codable, Sendable {
     let name: String
     let group: String
@@ -204,9 +203,8 @@ private enum InnoNetworkBenchmarks {
         print("InnoNetwork Benchmarks")
         for result in results {
             print(
-                "- \(result.group)/\(result.name): " +
-                "\(String(format: "%.2f", result.operationsPerSecond)) ops/s " +
-                "(\(String(format: "%.4f", result.elapsedSeconds))s, n=\(result.iterations))"
+                "- \(result.group)/\(result.name): " + "\(String(format: "%.2f", result.operationsPerSecond)) ops/s "
+                    + "(\(String(format: "%.4f", result.elapsedSeconds))s, n=\(result.iterations))"
             )
         }
 
@@ -223,11 +221,12 @@ private enum InnoNetworkBenchmarks {
 
         let guardFailures = try printBaselineDiff(report: report, options: options)
         if !guardFailures.isEmpty {
-            let failureSummary = guardFailures
+            let failureSummary =
+                guardFailures
                 .map { failure in
-                    "\(failure.identifier.displayName) regressed by " +
-                    "\(String(format: "%.2f", abs(failure.deltaPercent)))% " +
-                    "(limit \(String(format: "%.2f", failure.maxRegressionPercent))%)"
+                    "\(failure.identifier.displayName) regressed by "
+                        + "\(String(format: "%.2f", abs(failure.deltaPercent)))% "
+                        + "(limit \(String(format: "%.2f", failure.maxRegressionPercent))%)"
                 }
                 .joined(separator: "; ")
             throw NSError(
@@ -254,24 +253,30 @@ private enum InnoNetworkBenchmarks {
         // like a >50% regression.
         let websocketGuardIterations = options.quick ? 500_000 : 2_000_000
 
-        results.append(try await measure(name: "query-encoder-small", group: "encoding", iterations: encoderIterations) {
-            let encoder = URLQueryEncoder(keyEncodingStrategy: URLQueryKeyEncodingStrategy.convertToSnakeCase)
-            let payload = SmallPayload.sample
-            for _ in 0..<encoderIterations {
-                _ = try encoder.encode(payload)
-            }
-        })
+        results.append(
+            try await measure(name: "query-encoder-small", group: "encoding", iterations: encoderIterations) {
+                let encoder = URLQueryEncoder(keyEncodingStrategy: URLQueryKeyEncodingStrategy.convertToSnakeCase)
+                let payload = SmallPayload.sample
+                for _ in 0..<encoderIterations {
+                    _ = try encoder.encode(payload)
+                }
+            })
 
-        results.append(try await measure(name: "query-encoder-large", group: "encoding", iterations: encoderIterations) {
-            let encoder = URLQueryEncoder(keyEncodingStrategy: URLQueryKeyEncodingStrategy.convertToSnakeCase)
-            let payload = LargePayload.sample
-            for _ in 0..<encoderIterations {
-                _ = try encoder.encode(payload)
-            }
-        })
+        results.append(
+            try await measure(name: "query-encoder-large", group: "encoding", iterations: encoderIterations) {
+                let encoder = URLQueryEncoder(keyEncodingStrategy: URLQueryKeyEncodingStrategy.convertToSnakeCase)
+                let payload = LargePayload.sample
+                for _ in 0..<encoderIterations {
+                    _ = try encoder.encode(payload)
+                }
+            })
 
-        results.append(try await benchmarkTaskEventHubFanOut(iterations: eventIterations, listeners: 1, name: "task-event-fanout-single"))
-        results.append(try await benchmarkTaskEventHubFanOut(iterations: eventIterations, listeners: 8, name: "task-event-fanout-many"))
+        results.append(
+            try await benchmarkTaskEventHubFanOut(
+                iterations: eventIterations, listeners: 1, name: "task-event-fanout-single"))
+        results.append(
+            try await benchmarkTaskEventHubFanOut(
+                iterations: eventIterations, listeners: 8, name: "task-event-fanout-many"))
         results.append(try await benchmarkTaskEventHubSlowIsolation(iterations: eventIterations))
         results.append(try await benchmarkPersistenceAppend(iterations: persistenceIterations))
         results.append(try await benchmarkPersistenceReplay(iterations: persistenceIterations))
@@ -540,8 +545,8 @@ private enum InnoNetworkBenchmarks {
                     code: 9,
                     userInfo: [
                         NSLocalizedDescriptionKey:
-                            "No baseline loaded from \(options.baselinePath) " +
-                            "(read failed: \(error.localizedDescription))"
+                            "No baseline loaded from \(options.baselinePath) "
+                            + "(read failed: \(error.localizedDescription))"
                     ]
                 )
             }
@@ -559,8 +564,8 @@ private enum InnoNetworkBenchmarks {
                     code: 10,
                     userInfo: [
                         NSLocalizedDescriptionKey:
-                            "No baseline loaded from \(options.baselinePath) " +
-                            "(schema mismatch: \(error.localizedDescription))"
+                            "No baseline loaded from \(options.baselinePath) "
+                            + "(schema mismatch: \(error.localizedDescription))"
                     ]
                 )
             }
@@ -583,7 +588,8 @@ private enum InnoNetworkBenchmarks {
         print("Baseline diff:")
         let guardedIdentifiers: Set<BenchmarkIdentifier>
         if options.enforceBaseline {
-            guardedIdentifiers = options.guardBenchmarks.isEmpty
+            guardedIdentifiers =
+                options.guardBenchmarks.isEmpty
                 ? Set(currentMap.keys)
                 : options.guardBenchmarks
         } else {
@@ -606,7 +612,9 @@ private enum InnoNetworkBenchmarks {
                 print("- \(result.group)/\(result.name): no baseline entry")
                 continue
             }
-            let delta = ((result.operationsPerSecond - baseline.operationsPerSecond) / max(baseline.operationsPerSecond, 0.000_001)) * 100.0
+            let delta =
+                ((result.operationsPerSecond - baseline.operationsPerSecond)
+                    / max(baseline.operationsPerSecond, 0.000_001)) * 100.0
             let isGuarded = guardedIdentifiers.contains(identifier)
             let guardLabel = isGuarded ? " [guard]" : ""
             print("- \(identifier.displayName): \(String(format: "%+.2f", delta))% vs baseline\(guardLabel)")
@@ -623,7 +631,8 @@ private enum InnoNetworkBenchmarks {
             currentMap[$0] == nil || baselineMap[$0] == nil
         }
         if options.enforceBaseline, !missingGuardedBenchmarks.isEmpty {
-            let missingNames = missingGuardedBenchmarks
+            let missingNames =
+                missingGuardedBenchmarks
                 .map(\.displayName)
                 .sorted()
                 .joined(separator: ", ")
@@ -655,9 +664,9 @@ private enum InnoNetworkBenchmarks {
             print("Baseline guard failures:")
             for failure in failures {
                 print(
-                    "- \(failure.identifier.displayName): " +
-                    "\(String(format: "%+.2f", failure.deltaPercent))% vs baseline " +
-                    "(limit \(String(format: "%.2f", failure.maxRegressionPercent))%)"
+                    "- \(failure.identifier.displayName): "
+                        + "\(String(format: "%+.2f", failure.deltaPercent))% vs baseline "
+                        + "(limit \(String(format: "%.2f", failure.maxRegressionPercent))%)"
                 )
             }
         }
@@ -677,8 +686,8 @@ private enum InnoNetworkBenchmarks {
                     code: 1,
                     userInfo: [
                         NSLocalizedDescriptionKey:
-                            "Duplicate benchmark identifier found for \(result.group)/\(result.name). " +
-                            "Benchmark names must be unique within a group."
+                            "Duplicate benchmark identifier found for \(result.group)/\(result.name). "
+                            + "Benchmark names must be unique within a group."
                     ]
                 )
             }

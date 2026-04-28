@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 @Suite("NetworkError Redaction Tests")
 struct NetworkErrorRedactionTests {
@@ -123,7 +123,7 @@ struct NetworkErrorRedactionTests {
         let redactedTwice = redactedOnce.redactingFailurePayload()
 
         switch (redactedOnce, redactedTwice) {
-        case let (.statusCode(r1), .statusCode(r2)):
+        case (.statusCode(let r1), .statusCode(let r2)):
             #expect(r1.data.isEmpty)
             #expect(r2.data.isEmpty)
             #expect(r1.statusCode == r2.statusCode)

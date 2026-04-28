@@ -1,8 +1,8 @@
 import Foundation
-import os
 import Testing
-@testable import InnoNetwork
+import os
 
+@testable import InnoNetwork
 
 /// MockURLSession-equivalent that *also* honors `upload(for:fromFile:)` so
 /// the tests below can verify the executor reaches the streaming-upload
@@ -19,13 +19,14 @@ private final class FileAwareMockSession: URLSessionProtocol, Sendable {
     private let lock: OSAllocatedUnfairLock<State>
 
     init(statusCode: Int = 200, responseData: Data = Data("{}".utf8)) {
-        self.lock = OSAllocatedUnfairLock(initialState: State(
-            responseData: responseData,
-            statusCode: statusCode,
-            capturedFileURL: nil,
-            capturedFileBytes: nil,
-            capturedRequest: nil
-        ))
+        self.lock = OSAllocatedUnfairLock(
+            initialState: State(
+                responseData: responseData,
+                statusCode: statusCode,
+                capturedFileURL: nil,
+                capturedFileBytes: nil,
+                capturedRequest: nil
+            ))
     }
 
     var capturedFileURL: URL? { lock.withLock { $0.capturedFileURL } }
@@ -37,15 +38,20 @@ private final class FileAwareMockSession: URLSessionProtocol, Sendable {
             state.capturedRequest = request
             return (state.responseData, state.statusCode)
         }
-        return (snapshot.0, HTTPURLResponse(
-            url: request.url ?? URL(string: "https://example.com")!,
-            statusCode: snapshot.1,
-            httpVersion: nil,
-            headerFields: nil
-        )!)
+        return (
+            snapshot.0,
+            HTTPURLResponse(
+                url: request.url ?? URL(string: "https://example.com")!,
+                statusCode: snapshot.1,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+        )
     }
 
-    func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
+    func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (
+        Data, URLResponse
+    ) {
         let bytes = try Data(contentsOf: fileURL)
         let snapshot = lock.withLock { state -> (Data, Int) in
             state.capturedRequest = request
@@ -53,12 +59,15 @@ private final class FileAwareMockSession: URLSessionProtocol, Sendable {
             state.capturedFileBytes = bytes
             return (state.responseData, state.statusCode)
         }
-        return (snapshot.0, HTTPURLResponse(
-            url: request.url ?? URL(string: "https://example.com")!,
-            statusCode: snapshot.1,
-            httpVersion: nil,
-            headerFields: nil
-        )!)
+        return (
+            snapshot.0,
+            HTTPURLResponse(
+                url: request.url ?? URL(string: "https://example.com")!,
+                statusCode: snapshot.1,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+        )
     }
 }
 
@@ -113,10 +122,13 @@ struct FileUploadTests {
     @Test("RequestPayload.fileURL routes through URLSessionProtocol.upload(for:fromFile:)")
     func fileUploadRoutesThroughUploadPath() async throws {
         // Spool a multipart body to a temp file.
-        let payloadURL = FileManager.default.temporaryDirectory.appendingPathComponent("upload-payload-\(UUID().uuidString).bin")
+        let payloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "upload-payload-\(UUID().uuidString).bin")
         defer { try? FileManager.default.removeItem(at: payloadURL) }
         var formData = MultipartFormData(boundary: "upload-test-boundary")
-        formData.append(Data(repeating: 0x42, count: 1024), name: "blob", fileName: "blob.bin", mimeType: "application/octet-stream")
+        formData.append(
+            Data(repeating: 0x42, count: 1024), name: "blob", fileName: "blob.bin", mimeType: "application/octet-stream"
+        )
         try formData.writeEncodedData(to: payloadURL)
 
         let session = FileAwareMockSession()
@@ -145,7 +157,8 @@ struct FileUploadTests {
 
     @Test("RequestPayload.temporaryFileURL is deleted after successful upload")
     func temporaryUploadFileIsDeletedAfterSuccess() async throws {
-        let payloadURL = FileManager.default.temporaryDirectory.appendingPathComponent("upload-temp-success-\(UUID().uuidString).bin")
+        let payloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "upload-temp-success-\(UUID().uuidString).bin")
         let payload = Data("temporary upload body".utf8)
         try payload.write(to: payloadURL)
         defer { try? FileManager.default.removeItem(at: payloadURL) }
@@ -170,7 +183,8 @@ struct FileUploadTests {
 
     @Test("RequestPayload.temporaryFileURL is deleted after failed upload")
     func temporaryUploadFileIsDeletedAfterFailure() async throws {
-        let payloadURL = FileManager.default.temporaryDirectory.appendingPathComponent("upload-temp-failure-\(UUID().uuidString).bin")
+        let payloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "upload-temp-failure-\(UUID().uuidString).bin")
         let payload = Data("temporary upload body".utf8)
         try payload.write(to: payloadURL)
         defer { try? FileManager.default.removeItem(at: payloadURL) }
@@ -206,7 +220,8 @@ struct FileUploadTests {
 
     @Test("Upload via in-memory MockURLSession surfaces a clear unsupported error")
     func uploadOnNonUploadingSessionThrows() async throws {
-        let payloadURL = FileManager.default.temporaryDirectory.appendingPathComponent("upload-noop-\(UUID().uuidString).bin")
+        let payloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "upload-noop-\(UUID().uuidString).bin")
         try Data("payload".utf8).write(to: payloadURL)
         defer { try? FileManager.default.removeItem(at: payloadURL) }
 

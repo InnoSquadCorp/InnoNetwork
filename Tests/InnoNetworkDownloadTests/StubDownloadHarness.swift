@@ -1,8 +1,8 @@
 import Foundation
 import os
+
 @testable import InnoNetwork
 @testable import InnoNetworkDownload
-
 
 /// Wires a `DownloadManager` against a stub `URLSession` and an in-memory
 /// persistence store so retry / pause-resume / restore tests can drive

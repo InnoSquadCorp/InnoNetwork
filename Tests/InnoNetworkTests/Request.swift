@@ -8,9 +8,8 @@
 import Foundation
 import Testing
 import XCTest
+
 @testable import InnoNetwork
-
-
 
 @Suite
 struct Request {
