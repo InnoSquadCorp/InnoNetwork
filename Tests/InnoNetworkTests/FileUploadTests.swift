@@ -1,8 +1,9 @@
 import Foundation
+@_spi(GeneratedClientSupport) import InnoNetwork
 import Testing
 import os
 
-@_spi(GeneratedClientSupport) @testable import InnoNetwork
+@testable import InnoNetwork
 
 /// MockURLSession-equivalent that *also* honors `upload(for:fromFile:)` so
 /// the tests below can verify the executor reaches the streaming-upload
