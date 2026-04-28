@@ -35,11 +35,24 @@ struct WebSocketReceiveLoopTests {
             }
         }
 
-        // Scripted error causes receive() to throw; loop should invoke onError
-        // exactly once.
+        // `loop.start(...)` registers the listener as an unstructured `Task`.
+        // Under heavy parallel load (full-suite runs on macOS Actions runners,
+        // TSAN, etc.), the scheduler can defer its first hop past a tight
+        // 1-second polling window — at that point neither `receive()` nor the
+        // ensuing `onError` dispatch has happened, and the test fails
+        // deterministically. Wait until the listener has actually suspended
+        // inside `urlTask.receive()` before scripting the error so the rest
+        // of the assertions run with a known starting state.
+        let suspended = await waitFor(timeout: 2.0) {
+            stub.pendingReceiveCount == 1
+        }
+        #expect(suspended)
+
+        // Scripted error causes the suspended receive() to resume with a
+        // throw; loop should invoke onError exactly once.
         stub.scriptReceive(.failure(URLError(.networkConnectionLost)))
 
-        let fired = await waitFor(timeout: 1.0) {
+        let fired = await waitFor(timeout: 2.0) {
             receivedError.withLock { $0 } != nil
         }
         #expect(fired)
