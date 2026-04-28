@@ -147,7 +147,7 @@ struct WebSocketTaskTests {
         let task = WebSocketTask(url: url)
 
         #expect(await task.state == .idle)
-        #expect(await task.reconnectCount == 0)
+        #expect(await task.attemptedReconnectCount == 0)
         #expect(await task.error == nil)
         #expect(await task.closeCode == nil)
     }
@@ -178,10 +178,10 @@ struct WebSocketTaskTests {
         let url = URL(string: "wss://echo.websocket.org")!
         let task = WebSocketTask(url: url)
 
-        let count1 = await task.incrementReconnectCount()
+        let count1 = await task.incrementAttemptedReconnectCount()
         #expect(count1 == 1)
 
-        let count2 = await task.incrementReconnectCount()
+        let count2 = await task.incrementAttemptedReconnectCount()
         #expect(count2 == 2)
     }
 
@@ -192,12 +192,12 @@ struct WebSocketTaskTests {
 
         await task.updateState(.failed)
         await task.setError(.maxReconnectAttemptsExceeded)
-        _ = await task.incrementReconnectCount()
+        _ = await task.incrementAttemptedReconnectCount()
 
         await task.reset()
 
         #expect(await task.state == .idle)
-        #expect(await task.reconnectCount == 0)
+        #expect(await task.attemptedReconnectCount == 0)
         #expect(await task.error == nil)
     }
 }
@@ -819,7 +819,7 @@ struct WebSocketListenerLifecycleTests {
             }
             return false
         })
-        #expect(await task.reconnectCount >= 3)
+        #expect(await task.attemptedReconnectCount >= 3)
         #expect(await waitForListenerCleanup(manager: manager, task: task))
 
         let maxExceededEvent = await waitForEvent(recorder: recorder, timeout: 1.0) { event in

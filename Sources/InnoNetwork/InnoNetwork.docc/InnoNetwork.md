@@ -29,6 +29,7 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 
 - ``NetworkConfiguration``
 - ``TrustPolicy``
+- <doc:TrustPolicies>
 - ``NetworkObservability``
 
 ### Request and Response Behavior
@@ -36,6 +37,13 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``HTTPMethod``
 - ``ContentType``
 - ``NetworkError``
+- <doc:ErrorClassification>
+
+### Resilience
+
+- ``RetryPolicy``
+- ``ExponentialBackoffRetryPolicy``
+- <doc:RetryDecisions>
 
 ### Event Pipeline
 

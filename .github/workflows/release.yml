@@ -70,12 +70,18 @@ jobs:
             -destination 'generic/platform=macOS' \
             -derivedDataPath .build/DocC
 
+      - name: Generate SBOM (CycloneDX 1.5)
+        env:
+          SBOM_VERSION: ${{ github.ref_name }}
+        run: bash Scripts/generate-sbom.sh .build/release-artifacts/sbom.cdx.json
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
           path: |
             .build/release-artifacts/benchmarks.json
+            .build/release-artifacts/sbom.cdx.json
 
   publish-release:
     name: Publish Release
@@ -83,6 +89,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Required for sigstore keyless signing (OIDC token).
+      id-token: write
 
     steps:
       - name: Checkout
@@ -93,6 +101,31 @@ jobs:
         with:
           name: release-artifacts
           path: .release-artifacts
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.4.1'
+
+      - name: Sign release artifacts (sigstore keyless)
+        # Produces a `<artifact>.sig` (signature) and `<artifact>.crt` (Fulcio
+        # certificate) next to each artifact. Verifiable with
+        # `cosign verify-blob --certificate=<crt> --signature=<sig>` plus the
+        # OIDC issuer / identity flags published in SECURITY.md.
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+        run: |
+          set -euo pipefail
+          for artifact in .release-artifacts/benchmarks.json .release-artifacts/sbom.cdx.json; do
+            if [[ ! -f "$artifact" ]]; then
+              echo "Missing release artifact: $artifact" >&2
+              exit 1
+            fi
+            cosign sign-blob --yes \
+              --output-signature="${artifact}.sig" \
+              --output-certificate="${artifact}.crt" \
+              "$artifact"
+          done
 
       - name: Prepare release notes
         id: notes
@@ -121,4 +154,10 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: InnoNetwork ${{ steps.notes.outputs.version }}
           body_path: ${{ steps.notes.outputs.notes_path }}
-          files: .release-artifacts/benchmarks.json
+          files: |
+            .release-artifacts/benchmarks.json
+            .release-artifacts/benchmarks.json.sig
+            .release-artifacts/benchmarks.json.crt
+            .release-artifacts/sbom.cdx.json
+            .release-artifacts/sbom.cdx.json.sig
+            .release-artifacts/sbom.cdx.json.crt

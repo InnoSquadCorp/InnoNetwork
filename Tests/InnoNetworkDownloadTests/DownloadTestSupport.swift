@@ -94,7 +94,7 @@ func injectSyntheticCompletion(
     error: SendableUnderlyingError?
 ) async {
     await manager.cancelRuntimeURLTask(for: task)
-    manager.handleCompletion(
+    await manager.handleCompletion(
         taskIdentifier: taskIdentifier,
         location: location,
         error: error

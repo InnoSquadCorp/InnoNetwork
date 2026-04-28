@@ -7,8 +7,10 @@ public actor WebSocketTask: Identifiable {
     public let subprotocols: [String]?
 
     private var _state: WebSocketState = .idle
-    private var _reconnectCount: Int = 0
+    private var _attemptedReconnectCount: Int = 0
+    private var _successfulReconnectCount: Int = 0
     private var _pingCounter: Int = 0
+    private var _inFlightSends: Int = 0
     private var _error: WebSocketError?
     private var _closeCode: WebSocketCloseCode?
     private var _closeDisposition: WebSocketCloseDisposition?
@@ -18,16 +20,34 @@ public actor WebSocketTask: Identifiable {
     private var _connectionGeneration = 0
 
     public var state: WebSocketState { _state }
-    /// Total number of reconnect attempts the library has dispatched for this
-    /// task, including the attempt currently in flight.
+
+    /// Reconnect attempts dispatched since the most recent successful
+    /// connection (or task start). Includes the attempt currently in flight.
     ///
     /// The counter is incremented **before** the library checks
     /// `maxReconnectAttempts`, so observers polling this value during the
     /// transition into `.failed` may briefly see `maxReconnectAttempts + 1`
     /// — that single overshoot represents the rejected attempt that triggered
     /// the `.exceeded` decision. The counter resets to `0` whenever a
-    /// connection becomes ready or `reset()` is called.
-    public var reconnectCount: Int { _reconnectCount }
+    /// connection becomes ready or `reset()` is called. Use this for "did we
+    /// even try recently?" alarms.
+    public var attemptedReconnectCount: Int { _attemptedReconnectCount }
+
+    /// Cumulative number of reconnect attempts that successfully re-entered
+    /// the `.connected` state for the lifetime of this task. Unlike
+    /// ``attemptedReconnectCount`` this counter is **not** reset on each
+    /// successful connection — it only resets when ``reset()`` is invoked.
+    /// Use this for SLO dashboards that need "how flaky was this socket?".
+    public var successfulReconnectCount: Int { _successfulReconnectCount }
+
+    /// Deprecated alias for ``attemptedReconnectCount``.
+    @available(*, deprecated, renamed: "attemptedReconnectCount")
+    public var reconnectCount: Int { _attemptedReconnectCount }
+
+    /// Number of `send(_:message:)` / `send(_:string:)` operations currently
+    /// awaiting completion on this task. Used by the manager's send-queue
+    /// guard to enforce ``WebSocketConfiguration/sendQueueLimit``.
+    public var inFlightSendCount: Int { _inFlightSends }
     public var error: WebSocketError? { _error }
     public var closeCode: WebSocketCloseCode? { _closeCode }
     /// Library-classified reason for the most recent close, observable after
@@ -55,9 +75,13 @@ public actor WebSocketTask: Identifiable {
         return _connectionGeneration
     }
 
-    func incrementReconnectCount() -> Int {
-        _reconnectCount += 1
-        return _reconnectCount
+    func incrementAttemptedReconnectCount() -> Int {
+        _attemptedReconnectCount += 1
+        return _attemptedReconnectCount
+    }
+
+    func incrementSuccessfulReconnectCount() {
+        _successfulReconnectCount += 1
     }
 
     func setError(_ error: WebSocketError?) {
@@ -72,8 +96,24 @@ public actor WebSocketTask: Identifiable {
         _closeDisposition = disposition
     }
 
-    func resetReconnectCount() {
-        _reconnectCount = 0
+    func resetAttemptedReconnectCount() {
+        _attemptedReconnectCount = 0
+    }
+
+    /// Atomically reserves a send slot if one is available. Returns true if
+    /// the slot was reserved (caller must pair with ``releaseSendSlot()``);
+    /// returns false if the queue is at `limit`.
+    func tryReserveSendSlot(limit: Int) -> Bool {
+        guard _inFlightSends < limit else { return false }
+        _inFlightSends += 1
+        return true
+    }
+
+    /// Releases a send slot previously reserved by ``tryReserveSendSlot(limit:)``.
+    func releaseSendSlot() {
+        if _inFlightSends > 0 {
+            _inFlightSends -= 1
+        }
     }
 
     /// Returns the next monotonic ping sequence number for this task's
@@ -116,8 +156,10 @@ public actor WebSocketTask: Identifiable {
 
     func reset() {
         _state = .idle
-        _reconnectCount = 0
+        _attemptedReconnectCount = 0
+        _successfulReconnectCount = 0
         _pingCounter = 0
+        _inFlightSends = 0
         _error = nil
         _closeCode = nil
         _closeDisposition = nil

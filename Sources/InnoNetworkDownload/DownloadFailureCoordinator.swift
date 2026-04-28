@@ -1,8 +1,10 @@
 import Foundation
+import OSLog
 
 
 package struct DownloadFailureCoordinator {
     private static let maximumSupportedDelay: TimeInterval = Double(Int64.max)
+    private static let logger = Logger(subsystem: "innosquad.network.download", category: "Persistence")
 
     let configuration: DownloadConfiguration
     let runtimeRegistry: DownloadRuntimeRegistry
@@ -148,10 +150,15 @@ package struct DownloadFailureCoordinator {
         await runtimeRegistry.onFailed?(task, .maxRetriesExceeded)
         await eventHub.publish(.stateChanged(.failed), for: task.id)
         await eventHub.publish(.failed(.maxRetriesExceeded), for: task.id)
+        do {
+            try await persistence.remove(id: task.id)
+        } catch {
+            Self.logger.fault("Failed to remove failed task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))")
+            return
+        }
         await runtimeRegistry.removeTaskRuntime(taskId: task.id)
         await eventHub.finish(taskID: task.id)
         await runtimeRegistry.remove(task)
-        await persistence.remove(id: task.id)
     }
 
     private func isCancelledTransportError(_ error: SendableUnderlyingError) -> Bool {

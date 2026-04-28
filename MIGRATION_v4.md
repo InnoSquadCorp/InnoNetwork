@@ -1,6 +1,10 @@
 # InnoNetwork v4 Migration Guide
 
 This document summarizes breaking changes from the `3.x` line to `4.0`.
+For the additive 4.0 → 4.1 changes — plus two notable shifts (failure-
+payload redaction by default, and `DownloadManager` becoming a
+`public actor`) — see
+[`docs/releases/4.1.0.md`](docs/releases/4.1.0.md).
 
 `4.0` bundles the long-planned WebSocket / Swift 6 work with a
 production-readiness pass on the request pipeline:

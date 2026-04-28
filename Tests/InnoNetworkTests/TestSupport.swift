@@ -11,7 +11,8 @@ func makeTestNetworkConfiguration(
     metricsReporter: (any NetworkMetricsReporting)? = nil,
     trustPolicy: TrustPolicy = .systemDefault,
     eventObservers: [any NetworkEventObserving] = [],
-    acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes
+    acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes,
+    captureFailurePayload: Bool = false
 ) -> NetworkConfiguration {
     NetworkConfiguration(
         baseURL: URL(string: baseURL)!,
@@ -22,6 +23,7 @@ func makeTestNetworkConfiguration(
         metricsReporter: metricsReporter,
         trustPolicy: trustPolicy,
         eventObservers: eventObservers,
-        acceptableStatusCodes: acceptableStatusCodes
+        acceptableStatusCodes: acceptableStatusCodes,
+        captureFailurePayload: captureFailurePayload
     )
 }

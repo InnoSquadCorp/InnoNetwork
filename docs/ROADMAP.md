@@ -7,6 +7,8 @@
 - benchmark governance 확장: threshold 도입, trend tracking, PR comment 자동화
 - configuration API 장기 정리: advanced surface 축소와 권장 public path 단순화
 - `@unchecked Sendable` 제거 로드맵: 현재 승인된 6개 예외(`EventPipelineMetricsReporterProxy`, `URLQueryEncoder`, `QueryValueBox`, `SnakeCaseKeyTransformCache`, `_URLQueryValueEncoder`, `URLQueryCustomKeyTransform`)를 단계적으로 제거하고, 필요 시 public API와 내부 동시성 모델을 재설계
+- 벤치마크 baseline refresh: `Benchmarks/Baselines/default.json` 은 v4.1 작업 (특히 `WebSocketTask` send-slot 도입, `DownloadManager` actor 전환, `persistenceFsyncPolicy` 도입) 이전에 기록되어 현재 CI 의 `--max-regression-percent` 를 50% 이하로 좁히면 false-positive 가 발생. v4.1 출시 시점에 macos-15 runner 에서 baseline 을 재생성하고 threshold 를 10% 로 점진 조임.
+- WebSocket `permessage-deflate` (RFC 7692): `URLSessionWebSocketTask` 가 deflate 협상을 노출하지 않아 transport substitution 필요. 선택지: (a) `InnoNetworkWebSocketNIO` 새 product (swift-nio 의존), (b) `Network.framework` 직접 구현. v5 라인에서 선택 결정.
 
 ## Post-4.0 Candidates
 

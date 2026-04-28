@@ -47,7 +47,7 @@ struct DownloadRetryTests {
                 timeout: 5.0
             ))
             lastIdentifier = identifier
-            harness.injectCompletion(
+            await harness.injectCompletion(
                 taskIdentifier: identifier,
                 location: nil,
                 error: SendableUnderlyingError(
@@ -79,7 +79,7 @@ struct DownloadRetryTests {
             timeout: 2.0
         ))
 
-        harness.injectCompletion(
+        await harness.injectCompletion(
             taskIdentifier: identifier,
             location: nil,
             error: SendableUnderlyingError(
@@ -128,7 +128,7 @@ struct DownloadRetryTests {
             timeout: 2.0
         ))
 
-        harness.injectCompletion(
+        await harness.injectCompletion(
             taskIdentifier: firstIdentifier,
             location: nil,
             error: SendableUnderlyingError(
@@ -186,7 +186,7 @@ struct DownloadRetryTests {
                 timeout: 5.0
             ))
             lastIdentifier = identifier
-            harness.injectCompletion(
+            await harness.injectCompletion(
                 taskIdentifier: identifier,
                 location: nil,
                 error: SendableUnderlyingError(

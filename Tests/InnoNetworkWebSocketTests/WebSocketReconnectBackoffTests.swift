@@ -23,7 +23,7 @@ struct WebSocketReconnectBackoffTests {
 
         let action = await coordinator.reconnectAction(task: task)
         #expect(action == .retry)
-        #expect(await task.reconnectCount == 1)
+        #expect(await task.attemptedReconnectCount == 1)
     }
 
     @Test("reconnectAction returns .exceeded past maxReconnectAttempts")
@@ -43,7 +43,62 @@ struct WebSocketReconnectBackoffTests {
             lastAction = await coordinator.reconnectAction(task: task)
         }
         #expect(lastAction == .exceeded)
-        #expect(await task.reconnectCount == 3)
+        // attemptedReconnectCount overshoots the cap by one (the rejected
+        // attempt that produced .exceeded).
+        #expect(await task.attemptedReconnectCount == 3)
+        // successfulReconnectCount stays at 0 — none of those attempts ever
+        // re-entered the .connected state.
+        #expect(await task.successfulReconnectCount == 0)
+    }
+
+    @Test("incrementSuccessfulReconnectCount accumulates across cycles without reset")
+    func successfulCounterIsCumulative() async {
+        let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
+
+        // Simulate three successful reconnect cycles, each preceded by a few
+        // attempts. Per-cycle attempted counter resets; the cumulative
+        // successful counter does not.
+        for cycle in 1...3 {
+            for _ in 0..<2 { _ = await task.incrementAttemptedReconnectCount() }
+            await task.incrementSuccessfulReconnectCount()
+            await task.resetAttemptedReconnectCount()
+
+            #expect(await task.attemptedReconnectCount == 0)
+            #expect(await task.successfulReconnectCount == cycle)
+        }
+    }
+
+    @Test("Deprecated reconnectCount alias still reads attemptedReconnectCount")
+    func deprecatedAliasMirrorsAttempted() async {
+        let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
+        _ = await task.incrementAttemptedReconnectCount()
+        _ = await task.incrementAttemptedReconnectCount()
+
+        // The deprecated property must keep reading the current attempted
+        // counter so existing callers compile and behave the same.
+        #expect(await task.attemptedReconnectCount == 2)
+        // swift-format: ignore
+        let legacy = await { @Sendable () async -> Int in
+            // Reading inside an async context to centralise the deprecation
+            // warning — only one site needs to suppress the diagnostic when
+            // we eventually remove the alias.
+            await task.reconnectCount
+        }()
+        #expect(legacy == 2)
+    }
+
+    @Test("reset() clears both counters")
+    func resetClearsBothCounters() async {
+        let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
+        _ = await task.incrementAttemptedReconnectCount()
+        _ = await task.incrementAttemptedReconnectCount()
+        await task.incrementSuccessfulReconnectCount()
+        #expect(await task.attemptedReconnectCount == 2)
+        #expect(await task.successfulReconnectCount == 1)
+
+        await task.reset()
+        #expect(await task.attemptedReconnectCount == 0)
+        #expect(await task.successfulReconnectCount == 0)
     }
 
     @Test("reconnectAction returns .terminal when autoReconnect disabled")
@@ -61,7 +116,7 @@ struct WebSocketReconnectBackoffTests {
 
         let action = await coordinator.reconnectAction(task: task)
         #expect(action == .terminal)
-        #expect(await task.reconnectCount == 0)
+        #expect(await task.attemptedReconnectCount == 0)
     }
 
     @Test("reconnectAction returns .terminal when previousState is .disconnecting")
@@ -81,7 +136,7 @@ struct WebSocketReconnectBackoffTests {
             previousState: .disconnecting
         )
         #expect(action == .terminal)
-        #expect(await task.reconnectCount == 0)
+        #expect(await task.attemptedReconnectCount == 0)
     }
 
     @Test("reconnectAction with non-retryable disposition returns .terminal")
@@ -105,7 +160,7 @@ struct WebSocketReconnectBackoffTests {
             closeDisposition: terminalDisposition
         )
         #expect(action == .terminal)
-        #expect(await task.reconnectCount == 0)
+        #expect(await task.attemptedReconnectCount == 0)
     }
 
     @Test("reconnectAction with retryable disposition consumes budget")
@@ -129,7 +184,7 @@ struct WebSocketReconnectBackoffTests {
             closeDisposition: retryableDisposition
         )
         #expect(action == .retry)
-        #expect(await task.reconnectCount == 1)
+        #expect(await task.attemptedReconnectCount == 1)
     }
 
     @Test("attemptReconnect with zero delay schedules immediate reconnect")
@@ -145,7 +200,7 @@ struct WebSocketReconnectBackoffTests {
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
         await task.updateState(.disconnected)
-        _ = await task.incrementReconnectCount()
+        _ = await task.incrementAttemptedReconnectCount()
 
         await withCheckedContinuation { continuation in
             Task {
@@ -160,15 +215,15 @@ struct WebSocketReconnectBackoffTests {
         await registry.cancelReconnectTask(for: task.id)
     }
 
-    @Test("Task.resetReconnectCount clears prior reconnect tally")
+    @Test("Task.resetAttemptedReconnectCount clears prior reconnect tally")
     func taskResetReconnectCountClearsTally() async {
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
-        _ = await task.incrementReconnectCount()
-        _ = await task.incrementReconnectCount()
-        #expect(await task.reconnectCount == 2)
+        _ = await task.incrementAttemptedReconnectCount()
+        _ = await task.incrementAttemptedReconnectCount()
+        #expect(await task.attemptedReconnectCount == 2)
 
-        await task.resetReconnectCount()
-        #expect(await task.reconnectCount == 0)
+        await task.resetAttemptedReconnectCount()
+        #expect(await task.attemptedReconnectCount == 0)
     }
 
     @Test("attemptReconnect suspends on the injected clock before dispatching startConnection")
@@ -186,7 +241,7 @@ struct WebSocketReconnectBackoffTests {
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
         await task.updateState(.disconnected)
-        _ = await task.incrementReconnectCount()
+        _ = await task.incrementAttemptedReconnectCount()
 
         let startCalled = OSAllocatedUnfairLock<Bool>(initialState: false)
         await coordinator.attemptReconnect(task: task) { _ in
@@ -232,7 +287,7 @@ struct WebSocketReconnectBackoffTests {
             )
             await task.updateState(.disconnected)
             for _ in 0..<(index + 1) {
-                _ = await task.incrementReconnectCount()
+                _ = await task.incrementAttemptedReconnectCount()
             }
 
             let startCalled = OSAllocatedUnfairLock<Bool>(initialState: false)
@@ -282,7 +337,7 @@ struct WebSocketReconnectBackoffTests {
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/cancel")!)
         await task.updateState(.disconnected)
-        _ = await task.incrementReconnectCount()
+        _ = await task.incrementAttemptedReconnectCount()
 
         let startCalled = OSAllocatedUnfairLock<Bool>(initialState: false)
         await coordinator.attemptReconnect(task: task) { _ in
@@ -318,7 +373,7 @@ struct WebSocketReconnectBackoffTests {
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/cap")!)
         await task.updateState(.disconnected)
         for _ in 0..<10 {
-            _ = await task.incrementReconnectCount()
+            _ = await task.incrementAttemptedReconnectCount()
         }
 
         let startCalled = OSAllocatedUnfairLock<Bool>(initialState: false)
@@ -357,7 +412,7 @@ struct WebSocketReconnectBackoffTests {
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/cap-jitter")!)
         for _ in 0..<10 {
-            _ = await task.incrementReconnectCount()
+            _ = await task.incrementAttemptedReconnectCount()
         }
         await task.updateState(.disconnected)
 
@@ -398,7 +453,7 @@ struct WebSocketReconnectBackoffTests {
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/uncapped")!)
         await task.updateState(.disconnected)
         for _ in 0..<3 {
-            _ = await task.incrementReconnectCount()
+            _ = await task.incrementAttemptedReconnectCount()
         }
 
         let startCalled = OSAllocatedUnfairLock<Bool>(initialState: false)

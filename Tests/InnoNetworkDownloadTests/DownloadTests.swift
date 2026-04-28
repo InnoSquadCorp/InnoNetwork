@@ -230,62 +230,66 @@ struct DownloadManagerTests {
     
     @Test("Manager can be created with custom configuration")
     func customManager() async throws {
-        let config = DownloadConfiguration(maxConnectionsPerHost: 5)
+        // Use a unique session identifier so this test does not race against
+        // any sibling test (or DownloadManager.shared) that may have already
+        // claimed the default identifier in the same process.
+        let config = DownloadConfiguration(
+            maxConnectionsPerHost: 5,
+            sessionIdentifier: "test.custom-manager.\(UUID().uuidString)"
+        )
         let manager = try DownloadManager(configuration: config)
-        
+
         #expect((await manager.allTasks()).isEmpty)
     }
     
     @Test("Download task is created and tracked")
     func downloadCreation() async throws {
-        let config = DownloadConfiguration(sessionIdentifier: "test.download.\(UUID().uuidString)")
-        let manager = try DownloadManager(configuration: config)
+        let harness = try StubDownloadHarness(label: "manager-download")
         
         let url = URL(string: "https://example.com/file.zip")!
         let destination = URL(fileURLWithPath: "/tmp/test-file.zip")
         
-        let task = await manager.download(url: url, to: destination)
+        let task = await harness.startDownload(url: url, destinationURL: destination)
         
         #expect(task.url == url)
         #expect(task.destinationURL == destination)
-        #expect((await manager.allTasks()).contains(task))
+        #expect((await harness.manager.allTasks()).contains(task))
         
-        await manager.cancel(task)
+        await harness.manager.cancel(task)
     }
     
     @Test("Task can be cancelled")
     func cancelTask() async throws {
-        let config = DownloadConfiguration(sessionIdentifier: "test.cancel.\(UUID().uuidString)")
-        let manager = try DownloadManager(configuration: config)
+        let harness = try StubDownloadHarness(label: "manager-cancel")
         
         let url = URL(string: "https://example.com/file.zip")!
         let destination = URL(fileURLWithPath: "/tmp/test-file.zip")
         
-        let task = await manager.download(url: url, to: destination)
-        await manager.cancel(task)
+        let task = await harness.startDownload(url: url, destinationURL: destination)
+        await harness.manager.cancel(task)
         
         #expect(await task.state == .cancelled)
-        #expect((await manager.allTasks()).isEmpty)
+        #expect(await waitForTaskCount(manager: harness.manager, expectedCount: 0))
     }
     
     @Test("All tasks can be cancelled")
     func cancelAllTasks() async throws {
-        let config = DownloadConfiguration(sessionIdentifier: "test.cancelall.\(UUID().uuidString)")
-        let manager = try DownloadManager(configuration: config)
+        let harness = try StubDownloadHarness(label: "manager-cancelall")
+        harness.stubSession.enqueue(StubDownloadURLTask())
         
         let url1 = URL(string: "https://example.com/file1.zip")!
         let url2 = URL(string: "https://example.com/file2.zip")!
         let dest1 = URL(fileURLWithPath: "/tmp/test-file1.zip")
         let dest2 = URL(fileURLWithPath: "/tmp/test-file2.zip")
         
-        _ = await manager.download(url: url1, to: dest1)
-        _ = await manager.download(url: url2, to: dest2)
+        _ = await harness.startDownload(url: url1, destinationURL: dest1)
+        _ = await harness.startDownload(url: url2, destinationURL: dest2)
         
-        #expect((await manager.allTasks()).count == 2)
+        #expect((await harness.manager.allTasks()).count == 2)
         
-        await manager.cancelAll()
+        await harness.manager.cancelAll()
         
-        #expect((await manager.allTasks()).isEmpty)
+        #expect(await waitForTaskCount(manager: harness.manager, expectedCount: 0))
     }
 
     @Test("Duplicate session identifiers surface a recoverable initialization error")
@@ -304,6 +308,17 @@ struct DownloadManagerTests {
                 )
             }
         )
+    }
+
+    private func waitForTaskCount(manager: DownloadManager, expectedCount: Int) async -> Bool {
+        let deadline = Date().addingTimeInterval(2.0)
+        while Date() < deadline {
+            if await manager.allTasks().count == expectedCount {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
     }
 }
 
@@ -365,6 +380,7 @@ struct DownloadCallbackTests {
         }
         return false
     }
+
 }
 
 @Suite("Download Task Persistence Tests")
@@ -381,19 +397,19 @@ struct DownloadTaskPersistenceTests {
             .appendingPathComponent(sessionIdentifier, isDirectory: true)
     }
 
-    private func clearPersistence(sessionIdentifier: String, baseDirectoryURL: URL) async {
+    private func clearPersistence(sessionIdentifier: String, baseDirectoryURL: URL) async throws {
         let persistence = DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
-        await persistence.prune(keeping: [])
+        try await persistence.prune(keeping: [])
     }
 
     @Test("Persisted tasks can be restored after actor recreation")
-    func persistenceRoundTrip() async {
+    func persistenceRoundTrip() async throws {
         let sessionIdentifier = "test.persistence.\(UUID().uuidString)"
         let baseDirectoryURL = makeBaseDirectoryURL()
-        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+        try await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
 
         let taskID = "task-\(UUID().uuidString)"
         let url = URL(string: "https://example.com/file.zip")!
@@ -403,7 +419,7 @@ struct DownloadTaskPersistenceTests {
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
-        await writer.upsert(id: taskID, url: url, destinationURL: destinationURL)
+        try await writer.upsert(id: taskID, url: url, destinationURL: destinationURL)
 
         let reader = DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
@@ -414,14 +430,14 @@ struct DownloadTaskPersistenceTests {
         #expect(restored?.id == taskID)
         #expect(restored?.url == url)
         #expect(restored?.destinationURL == destinationURL)
-        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+        try await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
     }
 
     @Test("Prune removes stale task records")
-    func pruneRemovesStaleRecords() async {
+    func pruneRemovesStaleRecords() async throws {
         let sessionIdentifier = "test.persistence.prune.\(UUID().uuidString)"
         let baseDirectoryURL = makeBaseDirectoryURL()
-        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+        try await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
 
         let keptID = "task-kept"
         let removedID = "task-removed"
@@ -434,21 +450,60 @@ struct DownloadTaskPersistenceTests {
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
-        await persistence.upsert(id: keptID, url: keptURL, destinationURL: keptDestination)
-        await persistence.upsert(id: removedID, url: removedURL, destinationURL: removedDestination)
+        try await persistence.upsert(id: keptID, url: keptURL, destinationURL: keptDestination)
+        try await persistence.upsert(id: removedID, url: removedURL, destinationURL: removedDestination)
 
-        await persistence.prune(keeping: [keptID])
+        try await persistence.prune(keeping: [keptID])
 
         #expect(await persistence.record(forID: keptID) != nil)
         #expect(await persistence.record(forID: removedID) == nil)
-        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+        try await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+    }
+
+    @Test("Append log prune uses locked disk state from other store instances")
+    func appendLogPruneSeesRecordsWrittenByOtherInstances() async throws {
+        let sessionIdentifier = "test.persistence.prune-cross-instance.\(UUID().uuidString)"
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        try await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+
+        let keptID = "task-kept"
+        let staleID = "task-stale"
+        let firstStore = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        let secondStore = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+
+        try await firstStore.upsert(
+            id: keptID,
+            url: URL(string: "https://example.com/kept.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-kept.zip")
+        )
+        try await secondStore.upsert(
+            id: staleID,
+            url: URL(string: "https://example.com/stale.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-stale.zip")
+        )
+
+        try await firstStore.prune(keeping: [keptID])
+
+        let reader = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        #expect(await reader.record(forID: keptID) != nil)
+        #expect(await reader.record(forID: staleID) == nil)
+        try await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
     }
 
     @Test("restore metadata remains keyed by task id even when URLs are duplicated")
-    func restoreMetadataIsTaskIDBased() async {
+    func restoreMetadataIsTaskIDBased() async throws {
         let sessionIdentifier = "test.persistence.duplicate-url.\(UUID().uuidString)"
         let baseDirectoryURL = makeBaseDirectoryURL()
-        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+        try await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
 
         let sharedURL = URL(string: "https://example.com/shared.zip")!
         let firstDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-first.zip")
@@ -458,12 +513,12 @@ struct DownloadTaskPersistenceTests {
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
-        await persistence.upsert(id: "task-1", url: sharedURL, destinationURL: firstDestination)
-        await persistence.upsert(id: "task-2", url: sharedURL, destinationURL: secondDestination)
+        try await persistence.upsert(id: "task-1", url: sharedURL, destinationURL: firstDestination)
+        try await persistence.upsert(id: "task-2", url: sharedURL, destinationURL: secondDestination)
 
         #expect(await persistence.record(forID: "task-1")?.destinationURL == firstDestination)
         #expect(await persistence.record(forID: "task-2")?.destinationURL == secondDestination)
-        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+        try await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
     }
 
     @Test("Corrupted persistence file is quarantined and store restarts cleanly")
@@ -488,10 +543,10 @@ struct DownloadTaskPersistenceTests {
     }
 
     @Test("Append log preserves concurrent updates across store instances")
-    func appendLogPreservesConcurrentUpdates() async {
+    func appendLogPreservesConcurrentUpdates() async throws {
         let sessionIdentifier = "test.persistence.concurrent.\(UUID().uuidString)"
         let baseDirectoryURL = makeBaseDirectoryURL()
-        await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+        try await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
 
         let firstStore = DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
@@ -512,7 +567,7 @@ struct DownloadTaskPersistenceTests {
             url: URL(string: "https://example.com/b.zip")!,
             destinationURL: URL(fileURLWithPath: "/tmp/b-\(UUID().uuidString).zip")
         )
-        _ = await (writeA, writeB)
+        _ = try await (writeA, writeB)
 
         let reader = DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
@@ -532,7 +587,7 @@ struct DownloadTaskPersistenceTests {
         )
 
         for index in 0..<1_000 {
-            await persistence.upsert(
+            try await persistence.upsert(
                 id: "task-\(index)",
                 url: URL(string: "https://example.com/\(index).zip")!,
                 destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-\(index).zip")
@@ -556,7 +611,7 @@ struct DownloadTaskPersistenceTests {
             baseDirectoryURL: baseDirectoryURL
         )
         let destinationURL = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-valid.zip")
-        await writer.upsert(
+        try await writer.upsert(
             id: "task-valid",
             url: URL(string: "https://example.com/valid.zip")!,
             destinationURL: destinationURL
@@ -591,6 +646,178 @@ private actor DownloadEventRecorder {
 
     func snapshot() -> [DownloadEvent] {
         events
+    }
+}
+
+
+@Suite("Download Delegate Ordering Tests")
+struct DownloadDelegateOrderingTests {
+    @Test("Delegate progress is processed before completion when callbacks arrive in order")
+    func delegateProgressPrecedesCompletion() async throws {
+        let harness = try StubDownloadHarness(label: "delegate-order")
+        let task = await harness.startDownload()
+        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(
+            manager: harness.manager,
+            task: task
+        ))
+        let recorder = DownloadEventRecorder()
+        _ = await harness.manager.addEventListener(for: task) { event in
+            await recorder.record(event)
+        }
+
+        let temporaryLocation = FileManager.default.temporaryDirectory
+            .appendingPathComponent("download-delegate-order-\(UUID().uuidString).data")
+        try Data("payload".utf8).write(to: temporaryLocation)
+        defer {
+            try? FileManager.default.removeItem(at: temporaryLocation)
+            try? FileManager.default.removeItem(at: task.destinationURL)
+        }
+
+        harness.injectDelegateProgress(
+            taskIdentifier: taskIdentifier,
+            bytesWritten: 7,
+            totalBytesWritten: 7,
+            totalBytesExpectedToWrite: 14
+        )
+        harness.injectDelegateCompletion(taskIdentifier: taskIdentifier, location: temporaryLocation)
+
+        let completedReceived = await waitForEvent(recorder: recorder) { event in
+            if case .completed = event { return true }
+            return false
+        }
+        #expect(completedReceived)
+
+        let events = await recorder.snapshot()
+        let progressIndex = events.firstIndex { event in
+            if case .progress(let progress) = event {
+                return progress.totalBytesWritten == 7
+            }
+            return false
+        }
+        let completionIndex = events.firstIndex { event in
+            if case .completed = event { return true }
+            return false
+        }
+
+        #expect(progressIndex != nil)
+        #expect(completionIndex != nil)
+        if let progressIndex, let completionIndex {
+            #expect(progressIndex < completionIndex)
+        }
+    }
+
+    private func waitForEvent(
+        recorder: DownloadEventRecorder,
+        timeout: TimeInterval = 2.0,
+        predicate: @escaping @Sendable (DownloadEvent) -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let events = await recorder.snapshot()
+            if events.contains(where: predicate) {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
+    }
+}
+
+
+@Suite("Download Background Completion Tests")
+struct DownloadBackgroundCompletionTests {
+    @Test("Background completion runs when session finishes before the app registers completion")
+    func backgroundCompletionRunsAfterFinishBeforeSetRace() async throws {
+        let harness = try StubDownloadHarness(label: "background-completion-race")
+        await harness.markBackgroundEventsFinished()
+
+        await confirmation("background completion called") { confirm in
+            harness.handleBackgroundSessionCompletion {
+                confirm()
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+}
+
+
+@Suite("Download Persistence Cleanup Tests")
+struct DownloadPersistenceCleanupTests {
+    @Test("Completed task remains registered when persistence removal fails")
+    func completedTaskRemainsRegisteredWhenPersistenceRemovalFails() async throws {
+        let harness = try StubDownloadHarness(label: "completion-remove-failure")
+        let task = await harness.startDownload()
+        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(
+            manager: harness.manager,
+            task: task
+        ))
+
+        let temporaryLocation = FileManager.default.temporaryDirectory
+            .appendingPathComponent("download-remove-failure-\(UUID().uuidString).data")
+        try Data("payload".utf8).write(to: temporaryLocation)
+        defer {
+            try? FileManager.default.removeItem(at: temporaryLocation)
+            try? FileManager.default.removeItem(at: task.destinationURL)
+        }
+
+        await harness.store.setRemoveFailure(true)
+        await harness.injectCompletion(taskIdentifier: taskIdentifier, location: temporaryLocation)
+
+        #expect(await task.state == .completed)
+        #expect(await harness.manager.task(withId: task.id) != nil)
+        #expect(await harness.persistence.record(forID: task.id) != nil)
+
+        await harness.store.setRemoveFailure(false)
+        await harness.manager.cancel(task)
+    }
+
+    @Test("Cancelled task remains registered when persistence removal fails")
+    func cancelledTaskRemainsRegisteredWhenPersistenceRemovalFails() async throws {
+        let harness = try StubDownloadHarness(label: "cancel-remove-failure")
+        let task = await harness.startDownload()
+
+        await harness.store.setRemoveFailure(true)
+        await harness.manager.cancel(task)
+
+        #expect(await task.state == .cancelled)
+        #expect(await harness.manager.task(withId: task.id) != nil)
+        #expect(await harness.persistence.record(forID: task.id) != nil)
+
+        await harness.store.setRemoveFailure(false)
+        await harness.manager.cancel(task)
+        #expect(await harness.manager.task(withId: task.id) == nil)
+    }
+
+    @Test("Failed task remains registered when persistence removal fails")
+    func failedTaskRemainsRegisteredWhenPersistenceRemovalFails() async throws {
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 0,
+            maxTotalRetries: 0,
+            label: "failed-remove-failure"
+        )
+        let task = await harness.startDownload()
+        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(
+            manager: harness.manager,
+            task: task
+        ))
+
+        await harness.store.setRemoveFailure(true)
+        await harness.injectCompletion(
+            taskIdentifier: taskIdentifier,
+            location: nil,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.networkConnectionLost.rawValue,
+                message: "network lost"
+            )
+        )
+
+        #expect(await task.state == .failed)
+        #expect(await harness.manager.task(withId: task.id) != nil)
+        #expect(await harness.persistence.record(forID: task.id) != nil)
+
+        await harness.store.setRemoveFailure(false)
+        await harness.manager.cancel(task)
     }
 }
 

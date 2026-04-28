@@ -1,8 +1,11 @@
 import Foundation
 import InnoNetwork
+import OSLog
 
 
 package struct DownloadTransferCoordinator {
+    private static let logger = Logger(subsystem: "innosquad.network.download", category: "Persistence")
+
     let session: any DownloadURLSession
     let runtimeRegistry: DownloadRuntimeRegistry
     let persistence: DownloadTaskPersistence
@@ -24,7 +27,12 @@ package struct DownloadTransferCoordinator {
         await task.updateState(.waiting)
         await runtimeRegistry.onStateChanged?(task, .waiting)
         await eventHub.publish(.stateChanged(.waiting), for: task.id)
-        await persistence.upsert(id: task.id, url: task.url, destinationURL: task.destinationURL)
+        do {
+            try await persistence.upsert(id: task.id, url: task.url, destinationURL: task.destinationURL)
+        } catch {
+            await markTaskFailedForPersistence(task, error: error)
+            return
+        }
 
         let urlTask = session.makeDownloadTask(with: task.url)
         await register(urlTask: urlTask, for: task)
@@ -60,9 +68,27 @@ package struct DownloadTransferCoordinator {
         await runtimeRegistry.onCompleted?(task, task.destinationURL)
         await eventHub.publish(.stateChanged(.completed), for: task.id)
         await eventHub.publish(.completed(task.destinationURL), for: task.id)
+        do {
+            try await persistence.remove(id: task.id)
+        } catch {
+            Self.logger.fault("Failed to remove completed task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))")
+            return
+        }
         await runtimeRegistry.removeTaskRuntime(taskId: task.id)
         await eventHub.finish(taskID: task.id)
         await runtimeRegistry.remove(task)
-        await persistence.remove(id: task.id)
+    }
+
+    package func markTaskFailedForPersistence(_ task: DownloadTask, error: Error) async {
+        let downloadError = DownloadError.fileSystemError(SendableUnderlyingError(error))
+        await task.updateState(.failed)
+        await task.setError(downloadError)
+        await runtimeRegistry.onStateChanged?(task, .failed)
+        await runtimeRegistry.onFailed?(task, downloadError)
+        await eventHub.publish(.stateChanged(.failed), for: task.id)
+        await eventHub.publish(.failed(downloadError), for: task.id)
+        await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+        await eventHub.finish(taskID: task.id)
+        await runtimeRegistry.remove(task)
     }
 }

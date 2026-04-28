@@ -10,12 +10,15 @@ import Foundation
 /// - fileURL: A file on disk to be streamed via `URLSession.upload(for:fromFile:)`.
 ///   Used for large multipart uploads that would otherwise exhaust memory if
 ///   loaded into a `Data`. The associated `contentType` is set as the
-///   request's `Content-Type` header.
+///   request's `Content-Type` header. The caller owns the file lifecycle.
+/// - temporaryFileURL: A file created by InnoNetwork for this one request.
+///   The executor removes it after upload completion, failure, or cancellation.
 public enum RequestPayload: Sendable {
     case none
     case data(Data)
     case queryItems([URLQueryItem])
     case fileURL(URL, contentType: String)
+    case temporaryFileURL(URL, contentType: String)
 }
 
 /// Low-level request execution contract implemented by packages that plug custom
@@ -44,6 +47,11 @@ public protocol SingleRequestExecutable: Sendable {
     /// HTTP headers attached to the outgoing request.
     var headers: HTTPHeaders { get }
 
+    /// Optional override for the set of acceptable HTTP status codes on this
+    /// request. When `nil`, the executor falls back to
+    /// ``NetworkConfiguration/acceptableStatusCodes``.
+    var acceptableStatusCodes: Set<Int>? { get }
+
     /// Produces the encoded payload for the request.
     ///
     /// - Returns: A ``RequestPayload`` that matches the expected request transport semantics.
@@ -60,6 +68,12 @@ public protocol SingleRequestExecutable: Sendable {
     func decode(data: Data, response: Response) throws -> APIResponse
 }
 
+public extension SingleRequestExecutable {
+    /// Default override is `nil`, meaning the session-wide
+    /// ``NetworkConfiguration/acceptableStatusCodes`` applies.
+    var acceptableStatusCodes: Set<Int>? { nil }
+}
+
 package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExecutable {
     let base: Base
 
@@ -69,6 +83,7 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
     package var method: HTTPMethod { base.method }
     package var path: String { base.path }
     package var headers: HTTPHeaders { base.headers }
+    package var acceptableStatusCodes: Set<Int>? { base.acceptableStatusCodes }
 
     package func makePayload() throws -> RequestPayload {
         if base.contentType == .multipartFormData {
@@ -137,9 +152,28 @@ package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: S
     package var method: HTTPMethod { base.method }
     package var path: String { base.path }
     package var headers: HTTPHeaders { base.headers }
+    package var acceptableStatusCodes: Set<Int>? { base.acceptableStatusCodes }
 
     package func makePayload() throws -> RequestPayload {
-        .data(base.multipartFormData.encode())
+        let formData = base.multipartFormData
+        switch base.uploadStrategy {
+        case .inMemory:
+            return .data(formData.encode())
+        case .alwaysStream:
+            return try Self.streamPayload(formData: formData)
+        case .streamingThreshold(let bytes):
+            if formData.estimatedEncodedSize > bytes {
+                return try Self.streamPayload(formData: formData)
+            }
+            return .data(formData.encode())
+        }
+    }
+
+    private static func streamPayload(formData: MultipartFormData) throws -> RequestPayload {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let tempFile = tempDirectory.appendingPathComponent("innonetwork.multipart.\(UUID().uuidString)")
+        try formData.writeEncodedData(to: tempFile)
+        return .temporaryFileURL(tempFile, contentType: formData.contentTypeHeader)
     }
 
     package func decode(data: Data, response: Response) throws -> Base.APIResponse {

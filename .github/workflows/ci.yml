@@ -53,12 +53,64 @@ jobs:
           xcrun swift build
           echo "✅ Build completed successfully!"
 
-      - name: Test
+      - name: Test (with code coverage)
         run: |
           set -eo pipefail
-          echo "🧪 Running tests..."
-          xcrun swift test
+          echo "🧪 Running tests with --enable-code-coverage..."
+          # Coverage instrumentation makes the macOS Actions runner much more
+          # scheduler-sensitive; keep this run non-parallel so wall-clock
+          # polling tests do not starve under runner load.
+          xcrun swift test --no-parallel --enable-code-coverage
           echo "✅ Tests completed successfully!"
+
+      - name: Generate coverage report
+        run: |
+          set -eo pipefail
+          # Resolve all .xctest binaries and the merged profdata under the
+          # SwiftPM build root. The exact paths are platform/version-dependent
+          # so we discover them dynamically.
+          profdata="$(find .build -name 'default.profdata' -type f | head -n 1)"
+          llvm_cov_objects=()
+          while IFS= read -r -d '' xctest_bundle; do
+            binary="$xctest_bundle/Contents/MacOS/$(basename "$xctest_bundle" .xctest)"
+            if [[ -x "$binary" ]]; then
+              llvm_cov_objects+=(--object "$binary")
+            fi
+          done < <(find .build -name '*.xctest' -type d -print0)
+
+          if [[ -z "$profdata" || ${#llvm_cov_objects[@]} -eq 0 ]]; then
+            echo "::warning::Coverage artifacts not found; skipping report."
+            exit 0
+          fi
+
+          mkdir -p .build/coverage
+          xcrun llvm-cov report \
+            --instr-profile="$profdata" \
+            --use-color=false \
+            --ignore-filename-regex='(^|/)(\.build|Tests|SmokeTests|Examples|Benchmarks)/' \
+            "${llvm_cov_objects[@]}" | tee .build/coverage/summary.txt
+
+          xcrun llvm-cov export \
+            --instr-profile="$profdata" \
+            --format=lcov \
+            --ignore-filename-regex='(^|/)(\.build|Tests|SmokeTests|Examples|Benchmarks)/' \
+            "${llvm_cov_objects[@]}" > .build/coverage/coverage.lcov
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: innonetwork-coverage
+          path: .build/coverage/
+
+      - name: Upload coverage to Codecov
+        if: env.CODECOV_TOKEN != ''
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        uses: codecov/codecov-action@v4
+        with:
+          files: .build/coverage/coverage.lcov
+          fail_ci_if_error: false
 
       - name: Enforce no unchecked sendable in production sources
         run: |
@@ -171,6 +223,12 @@ jobs:
       - name: Run benchmark smoke guard
         run: |
           mkdir -p .build/benchmarks
+          # Threshold stays at 50% for now — the v4.1 risk-mitigation work
+          # touches the WebSocket send path (C10 send-queue), so the
+          # guarded benchmarks need a fresh baseline before any tighter
+          # threshold can land. ROADMAP tracks the planned tightening
+          # (target: 10%) once Benchmarks/Baselines/default.json is
+          # regenerated against the v4.1 build on macos-15.
           xcrun swift run InnoNetworkBenchmarks \
             --quick \
             --json-path .build/benchmarks/results.json \

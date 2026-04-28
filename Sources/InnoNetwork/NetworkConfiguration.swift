@@ -78,6 +78,17 @@ public struct NetworkConfiguration: Sendable {
     /// produced under a per-endpoint setup.
     public let responseInterceptors: [ResponseInterceptor]
 
+    /// When `false` (default), response bodies attached to ``NetworkError``
+    /// cases (`objectMapping`, `jsonMapping`, `statusCode`, and `underlying`
+    /// when present) are zeroed out before the error is logged or surfaced
+    /// to consumers, so PII in failure payloads cannot accidentally leak
+    /// into crash logs, analytics, or error reporting. Status code, headers,
+    /// and the original `URLRequest` are preserved.
+    ///
+    /// Set this to `true` only in diagnostic configurations where capturing
+    /// the failing response body is worth the privacy trade-off.
+    public let captureFailurePayload: Bool
+
     public struct AdvancedBuilder: Sendable {
         public var baseURL: URL
         public var timeout: TimeInterval
@@ -92,6 +103,7 @@ public struct NetworkConfiguration: Sendable {
         public var acceptableStatusCodes: Set<Int>
         public var requestInterceptors: [RequestInterceptor]
         public var responseInterceptors: [ResponseInterceptor]
+        public var captureFailurePayload: Bool
 
         fileprivate init(preset: NetworkConfiguration) {
             self.baseURL = preset.baseURL
@@ -107,6 +119,7 @@ public struct NetworkConfiguration: Sendable {
             self.acceptableStatusCodes = preset.acceptableStatusCodes
             self.requestInterceptors = preset.requestInterceptors
             self.responseInterceptors = preset.responseInterceptors
+            self.captureFailurePayload = preset.captureFailurePayload
         }
 
         fileprivate func build() -> NetworkConfiguration {
@@ -123,7 +136,8 @@ public struct NetworkConfiguration: Sendable {
                 eventMetricsReporter: eventMetricsReporter,
                 acceptableStatusCodes: acceptableStatusCodes,
                 requestInterceptors: requestInterceptors,
-                responseInterceptors: responseInterceptors
+                responseInterceptors: responseInterceptors,
+                captureFailurePayload: captureFailurePayload
             )
         }
     }
@@ -154,7 +168,8 @@ public struct NetworkConfiguration: Sendable {
         eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
         acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes,
         requestInterceptors: [RequestInterceptor] = [],
-        responseInterceptors: [ResponseInterceptor] = []
+        responseInterceptors: [ResponseInterceptor] = [],
+        captureFailurePayload: Bool = false
     ) {
         self.baseURL = baseURL
         self.timeout = timeout
@@ -169,5 +184,6 @@ public struct NetworkConfiguration: Sendable {
         self.acceptableStatusCodes = acceptableStatusCodes
         self.requestInterceptors = requestInterceptors
         self.responseInterceptors = responseInterceptors
+        self.captureFailurePayload = captureFailurePayload
     }
 }

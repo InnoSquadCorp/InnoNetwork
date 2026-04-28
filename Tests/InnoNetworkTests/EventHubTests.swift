@@ -1002,16 +1002,24 @@ struct EventHubTests {
         let reportElapsed = Date().timeIntervalSince(start)
         #expect(reportElapsed < 1.0)
 
+        let overflowSnapshot = await waitForAggregateSnapshot(
+            recorder: recorder,
+            hubKind: .genericTask
+        ) {
+            $0.totalDroppedMetricCount > 0 && $0.metricsOverflowCount > 0
+        }
+        #expect(overflowSnapshot != nil)
+
         let snapshots = try await waitForAggregateSnapshots(
             recorder: recorder,
             hubKind: .genericTask,
-            minimumCount: 3
+            minimumCount: 2
         )
+        #expect(snapshots.count >= 2)
         #expect(zip(snapshots, snapshots.dropFirst()).allSatisfy {
             $1.totalDroppedMetricCount >= $0.totalDroppedMetricCount
         })
         #expect(snapshots.contains(where: { $0.totalDroppedMetricCount > 0 }))
-        #expect(snapshots.dropFirst().contains(where: { $0.metricsOverflowCount > 0 }))
         #expect(snapshots.allSatisfy {
             $0.totalDroppedEventCount == 0 && $0.overflowEventCount == 0
         })

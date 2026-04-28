@@ -27,12 +27,12 @@ package struct WebSocketReconnectCoordinator {
         self.randomOffset = randomOffset
     }
 
-    /// Increments the task's reconnect counter and returns the resulting
-    /// action.
+    /// Increments the task's attempted-reconnect counter and returns the
+    /// resulting action.
     ///
     /// The counter is bumped **before** the cap check, so the rejected
     /// attempt that produces `.exceeded` is itself counted. Consumers that
-    /// observe ``WebSocketTask/reconnectCount`` during the failure
+    /// observe ``WebSocketTask/attemptedReconnectCount`` during the failure
     /// transition may briefly see `maxReconnectAttempts + 1`. That overshoot
     /// is intentional — it represents "we tried, and even this attempt was
     /// over the limit" rather than "we stopped before trying."
@@ -48,7 +48,7 @@ package struct WebSocketReconnectCoordinator {
             return .terminal
         }
 
-        let reconnectCount = await task.incrementReconnectCount()
+        let reconnectCount = await task.incrementAttemptedReconnectCount()
         if reconnectCount <= configuration.maxReconnectAttempts {
             return .retry
         }
@@ -76,7 +76,7 @@ package struct WebSocketReconnectCoordinator {
         startConnection: @escaping @Sendable (WebSocketTask) async -> Void
     ) async {
         let reconnectTask = Task {
-            let reconnectCount = await task.reconnectCount
+            let reconnectCount = await task.attemptedReconnectCount
             let delay = reconnectDelay(forAttempt: reconnectCount)
 
             do {

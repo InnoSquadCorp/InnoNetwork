@@ -33,6 +33,13 @@ public enum WebSocketEvent: Sendable {
     /// point in the heartbeat / public-ping cycle.
     case pong(WebSocketPongContext)
     case error(WebSocketError)
+    /// Emitted when a `send(_:message:)` / `send(_:string:)` call is dropped
+    /// because the per-task in-flight count is at
+    /// ``WebSocketConfiguration/sendQueueLimit`` and the configured
+    /// ``WebSocketSendOverflowPolicy`` is ``WebSocketSendOverflowPolicy/dropNewest``.
+    /// Drops do not throw; observers can use this event to surface back-
+    /// pressure or report telemetry.
+    case sendDropped(limit: Int)
 }
 
 
@@ -127,7 +134,7 @@ public final class WebSocketManager: NSObject, Sendable {
     private let session: any WebSocketURLSession
     private let delegate: WebSocketSessionDelegate
 
-    private let runtimeRegistry = WebSocketRuntimeRegistry()
+    package let runtimeRegistry = WebSocketRuntimeRegistry()
     private let eventHub: TaskEventHub<WebSocketEvent>
 
     private var receiveLoop: WebSocketReceiveLoop {
@@ -346,19 +353,47 @@ public final class WebSocketManager: NSObject, Sendable {
     }
 
     public func send(_ task: WebSocketTask, message: Data) async throws {
-        guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
-            throw WebSocketError.disconnected(nil)
+        try await sendGuarded(task: task) { urlTask in
+            try await urlTask.send(.data(message))
         }
-
-        try await urlTask.send(.data(message))
     }
 
     public func send(_ task: WebSocketTask, string: String) async throws {
+        try await sendGuarded(task: task) { urlTask in
+            try await urlTask.send(.string(string))
+        }
+    }
+
+    /// Reserves a send slot under ``WebSocketConfiguration/sendQueueLimit``,
+    /// dispatches the body, and releases the slot. Honours the configured
+    /// ``WebSocketSendOverflowPolicy`` when the limit is exhausted.
+    private func sendGuarded(
+        task: WebSocketTask,
+        _ body: @Sendable (any WebSocketURLTask) async throws -> Void
+    ) async throws {
         guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
             throw WebSocketError.disconnected(nil)
         }
 
-        try await urlTask.send(.string(string))
+        let limit = configuration.sendQueueLimit
+        let reserved = await task.tryReserveSendSlot(limit: limit)
+        guard reserved else {
+            switch configuration.sendQueueOverflowPolicy {
+            case .fail:
+                throw WebSocketError.sendQueueOverflow(limit: limit)
+            case .dropNewest:
+                await eventHub.publish(.sendDropped(limit: limit), for: task.id)
+                return
+            }
+        }
+
+        do {
+            try await body(urlTask)
+            await task.releaseSendSlot()
+        } catch {
+            await task.releaseSendSlot()
+            throw error
+        }
     }
 
     public func ping(_ task: WebSocketTask) async throws {
@@ -481,7 +516,13 @@ public final class WebSocketManager: NSObject, Sendable {
                 return
             }
 
-            await task.resetReconnectCount()
+            // Re-entering `.connected` from `.reconnecting` means a reconnect
+            // attempt landed. Bump the cumulative successful counter before
+            // resetting the per-cycle attempted counter.
+            if state == .reconnecting {
+                await task.incrementSuccessfulReconnectCount()
+            }
+            await task.resetAttemptedReconnectCount()
             await task.resetPingCounter()
             await task.setAutoReconnectEnabled(true)
             await task.setError(nil)

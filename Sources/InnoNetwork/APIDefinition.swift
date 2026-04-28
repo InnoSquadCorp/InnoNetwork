@@ -26,6 +26,39 @@ public protocol APIDefinition: Sendable {
     var logger: NetworkLogger { get }
     var requestInterceptors: [RequestInterceptor] { get }
     var responseInterceptors: [ResponseInterceptor] { get }
+
+    /// Per-endpoint override for the set of acceptable HTTP status codes.
+    ///
+    /// When `nil`, the executor falls back to
+    /// ``NetworkConfiguration/acceptableStatusCodes``. Set this on a specific
+    /// endpoint when it should accept (or reject) status codes that the
+    /// session-wide default does not — for example, an endpoint that treats
+    /// `304 Not Modified` as success while every other endpoint treats it as
+    /// failure.
+    var acceptableStatusCodes: Set<Int>? { get }
+}
+
+
+/// Strategy for delivering a multipart body to the URL session.
+///
+/// The default is ``inMemory`` for backward compatibility. Endpoints that
+/// upload large attachments should switch to ``streamingThreshold(bytes:)``
+/// or ``alwaysStream`` to bound peak memory.
+public enum MultipartUploadStrategy: Sendable, Equatable {
+    /// Always encode the multipart body into a single in-memory `Data` and
+    /// attach it to the request. Cheap for small payloads; risks jetsam on
+    /// large media.
+    case inMemory
+
+    /// Encode in memory when the estimated body size is at or below `bytes`,
+    /// otherwise stream the body to a temp file and upload via
+    /// `URLSession.upload(for:fromFile:)`. Use this when the same endpoint
+    /// receives both small and large payloads.
+    case streamingThreshold(bytes: Int64)
+
+    /// Always stream the body to a temp file before uploading. Ensures peak
+    /// memory stays bounded regardless of body size.
+    case alwaysStream
 }
 
 
@@ -44,6 +77,18 @@ public protocol MultipartAPIDefinition: Sendable {
     var logger: NetworkLogger { get }
     var requestInterceptors: [RequestInterceptor] { get }
     var responseInterceptors: [ResponseInterceptor] { get }
+
+    /// Per-endpoint override for the set of acceptable HTTP status codes.
+    ///
+    /// See ``APIDefinition/acceptableStatusCodes`` for semantics.
+    var acceptableStatusCodes: Set<Int>? { get }
+
+    /// Strategy that decides whether the multipart body is encoded in memory
+    /// or streamed to a temp file. Default is ``MultipartUploadStrategy/inMemory``
+    /// so existing endpoints keep current behavior; large-attachment endpoints
+    /// should opt in to ``MultipartUploadStrategy/streamingThreshold(bytes:)``
+    /// or ``MultipartUploadStrategy/alwaysStream``.
+    var uploadStrategy: MultipartUploadStrategy { get }
 }
 
 extension APIDefinition {
@@ -110,6 +155,10 @@ public extension MultipartAPIDefinition {
     var requestInterceptors: [RequestInterceptor] { [] }
 
     var responseInterceptors: [ResponseInterceptor] { [] }
+
+    var acceptableStatusCodes: Set<Int>? { nil }
+
+    var uploadStrategy: MultipartUploadStrategy { .inMemory }
 }
 
 extension APIDefinition where Parameter == EmptyParameter {
@@ -139,6 +188,8 @@ public extension APIDefinition {
     var requestInterceptors: [RequestInterceptor] { [] }
 
     var responseInterceptors: [ResponseInterceptor] { [] }
+
+    var acceptableStatusCodes: Set<Int>? { nil }
 }
 
 extension APIDefinition where APIResponse: HTTPEmptyResponseDecodable {

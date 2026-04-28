@@ -22,6 +22,17 @@ package struct RequestExecutor {
         do {
             let built = try requestBuilder.build(executable, configuration: configuration)
             var request = built.request
+            let cleanupFileURL: URL?
+            if case .file(let fileURL, cleanupAfterUse: true) = built.bodySource {
+                cleanupFileURL = fileURL
+            } else {
+                cleanupFileURL = nil
+            }
+            defer {
+                if let cleanupFileURL {
+                    try? FileManager.default.removeItem(at: cleanupFileURL)
+                }
+            }
             await notifyRequestStart(request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
             // Onion model: session-level interceptors run first (outer), then
@@ -49,7 +60,7 @@ package struct RequestExecutor {
             switch built.bodySource {
             case .inline:
                 (data, response) = try await session.data(for: request, context: context)
-            case .file(let fileURL):
+            case .file(let fileURL, _):
                 (data, response) = try await session.upload(for: request, fromFile: fileURL, context: context)
             }
 
@@ -86,7 +97,11 @@ package struct RequestExecutor {
                 networkResponse = try await interceptor.adapt(networkResponse, request: request)
             }
 
-            guard configuration.acceptableStatusCodes.contains(networkResponse.statusCode) else {
+            // Per-endpoint override wins over the session-wide configuration
+            // when present. Lets one definition treat e.g. 304 as success
+            // without changing the default for the rest of the client.
+            let acceptable = executable.acceptableStatusCodes ?? configuration.acceptableStatusCodes
+            guard acceptable.contains(networkResponse.statusCode) else {
                 throw NetworkError.statusCode(networkResponse)
             }
 
@@ -103,14 +118,16 @@ package struct RequestExecutor {
 
             return try executable.decode(data: networkResponse.data, response: networkResponse)
         } catch let error as NetworkError {
-            executable.logger.log(error: error)
-            await notifyFailure(error, requestID: requestID, configuration: configuration)
-            throw error
+            let surfaced = configuration.captureFailurePayload ? error : error.redactingFailurePayload()
+            executable.logger.log(error: surfaced)
+            await notifyFailure(surfaced, requestID: requestID, configuration: configuration)
+            throw surfaced
         } catch {
-            let networkError = NetworkError.mapTransportError(error)
-            executable.logger.log(error: networkError)
-            await notifyFailure(networkError, requestID: requestID, configuration: configuration)
-            throw networkError
+            let mapped = NetworkError.mapTransportError(error)
+            let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
+            executable.logger.log(error: surfaced)
+            await notifyFailure(surfaced, requestID: requestID, configuration: configuration)
+            throw surfaced
         }
     }
 

@@ -23,6 +23,7 @@ final class StubDownloadHarness: Sendable {
     let stubTask: StubDownloadURLTask
     let stubTaskIdentifier: Int
     let persistence: DownloadTaskPersistence
+    let store: InMemoryDownloadTaskStore
 
     private let callbacks: DownloadSessionDelegateCallbacks
     private let backgroundCompletionStore: BackgroundCompletionStore
@@ -70,9 +71,9 @@ final class StubDownloadHarness: Sendable {
         self.callbacks = callbacks
         self.backgroundCompletionStore = backgroundCompletionStore
 
-        let persistence = DownloadTaskPersistence(
-            store: InMemoryDownloadTaskStore(seed: prepopulatedRecords)
-        )
+        let store = InMemoryDownloadTaskStore(seed: prepopulatedRecords)
+        self.store = store
+        let persistence = DownloadTaskPersistence(store: store)
         self.persistence = persistence
         let config = DownloadConfiguration(
             maxRetryCount: maxRetryCount,
@@ -97,26 +98,61 @@ final class StubDownloadHarness: Sendable {
     /// Starts a new download and returns the created `DownloadTask`. Callers
     /// can then await `waitForRuntimeTaskIdentifier` to sync with the stub's
     /// registered taskIdentifier.
-    func startDownload(url: URL = URL(string: "https://example.invalid/file.zip")!) async -> DownloadTask {
+    func startDownload(
+        url: URL = URL(string: "https://example.invalid/file.zip")!,
+        destinationURL: URL = URL(fileURLWithPath: "/tmp/\(UUID().uuidString).zip")
+    ) async -> DownloadTask {
         await manager.download(
             url: url,
-            to: URL(fileURLWithPath: "/tmp/\(UUID().uuidString).zip")
+            to: destinationURL
         )
     }
 
-    /// Injects a synthetic completion for the given task identifier. Matches
-    /// the old `injectSyntheticCompletion` helper but drives it through the
-    /// package-level callbacks so both success (`location`) and failure
-    /// (`error`) paths flow through the same delegate wiring.
+    /// Injects a synthetic completion directly into the actor for tests that
+    /// need to await the terminal handling before asserting.
     func injectCompletion(
         taskIdentifier: Int,
         location: URL? = nil,
         error: SendableUnderlyingError? = nil
-    ) {
-        manager.handleCompletion(
+    ) async {
+        await manager.handleCompletion(
             taskIdentifier: taskIdentifier,
             location: location,
             error: error
         )
+    }
+
+    func injectDelegateProgress(
+        taskIdentifier: Int,
+        bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        callbacks.handleProgress(
+            taskIdentifier: taskIdentifier,
+            bytesWritten: bytesWritten,
+            totalBytesWritten: totalBytesWritten,
+            totalBytesExpectedToWrite: totalBytesExpectedToWrite
+        )
+    }
+
+    func injectDelegateCompletion(
+        taskIdentifier: Int,
+        location: URL? = nil,
+        error: SendableUnderlyingError? = nil
+    ) {
+        callbacks.handleCompletion(
+            taskIdentifier: taskIdentifier,
+            location: location,
+            error: error
+        )
+    }
+
+    func markBackgroundEventsFinished() async {
+        _ = await backgroundCompletionStore.take()
+    }
+
+    func handleBackgroundSessionCompletion(_ completion: @escaping @Sendable () -> Void) {
+        manager.handleBackgroundSessionCompletion(sessionIdentifier, completion: completion)
     }
 }

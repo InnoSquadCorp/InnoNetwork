@@ -1,6 +1,7 @@
 import Foundation
 import InnoNetwork
 import os
+import OSLog
 
 
 public enum DownloadEvent: Sendable {
@@ -31,14 +32,99 @@ extension DownloadManagerError: LocalizedError {
 }
 
 
-public final class DownloadManager: NSObject, Sendable {
+/// Manager for the download lifecycle.
+///
+/// ## Isolation contract
+///
+/// `DownloadManager` is a `public actor`. All mutable state lives inside the
+/// actor's isolation, plus three actor-typed collaborators:
+///
+/// 1. **`DownloadRuntimeRegistry`** — actor that owns the live mapping
+///    between `DownloadTask`, `URLSessionDownloadTask`, and runtime
+///    callbacks.
+/// 2. **`DownloadTaskPersistence`** — actor that owns the on-disk task log.
+/// 3. **`BackgroundCompletionStore`** — actor that holds the system-supplied
+///    background completion handler.
+///
+/// Foundation-driven delegate callbacks (URL session's serial queue) cross
+/// into the actor through a single delegate-event stream. The synchronous
+/// callbacks only enqueue immutable events, and one consumer task drains them
+/// into the actor so progress/completion ordering follows delegate order.
+///
+/// `handleBackgroundSessionCompletion(_:completion:)` is `nonisolated` so
+/// `application(_:handleEventsForBackgroundURLSession:completionHandler:)`
+/// (a synchronous Foundation entry point) can call it without `await`.
+public actor DownloadManager {
+    private static let logger = Logger(subsystem: "innosquad.network.download", category: "DownloadManager")
+
+    /// Shared `DownloadManager` for apps that need a single download domain.
+    ///
+    /// Initialized lazily with ``DownloadConfiguration/default``. If the
+    /// default session identifier is already claimed by another
+    /// `DownloadManager` in the same process, the shared instance falls back
+    /// to a process-unique identifier (logged via OSLog `.fault`) and an
+    /// `assertionFailure` is raised in DEBUG builds so the misuse is caught
+    /// during development. Production callers that need explicit failure
+    /// handling should construct managers via ``make(configuration:)`` instead
+    /// of relying on `shared`.
     public static let shared: DownloadManager = {
         do {
             return try DownloadManager(configuration: .default)
+        } catch DownloadManagerError.duplicateSessionIdentifier(let claimedIdentifier) {
+            let fallbackIdentifier = "\(claimedIdentifier).fallback.\(UUID().uuidString)"
+            let fallbackConfig = DownloadConfiguration.safeDefaults(
+                sessionIdentifier: fallbackIdentifier
+            )
+            DownloadManager.logger.fault("""
+                DownloadManager.shared could not bind session identifier \
+                \(claimedIdentifier, privacy: .public): another DownloadManager already \
+                owns it. Falling back to \(fallbackIdentifier, privacy: .public). Use \
+                DownloadManager.make(configuration:) to construct managers with explicit \
+                session identifiers.
+                """)
+            assertionFailure("""
+                DownloadManager.shared bound a fallback session identifier '\(fallbackIdentifier)'. \
+                Use DownloadManager.make(configuration:) and pass an explicit identifier instead \
+                of relying on `.shared` when multiple managers coexist.
+                """)
+            do {
+                return try DownloadManager(configuration: fallbackConfig)
+            } catch {
+                // Even the fallback failed — extremely unlikely because the
+                // fallback identifier is freshly UUID-prefixed. Crash so the
+                // problem surfaces rather than silently returning a broken
+                // singleton.
+                fatalError("DownloadManager.shared cannot initialize with fallback identifier: \(error.localizedDescription)")
+            }
         } catch {
-            fatalError("Failed to initialize DownloadManager.shared: \(error.localizedDescription)")
+            // Any other initialization failure is structural (e.g., persistence
+            // directory inaccessible) and not something a fallback identifier
+            // would fix. Surface it.
+            fatalError("DownloadManager.shared cannot initialize with .default configuration: \(error.localizedDescription)")
         }
     }()
+
+    /// Recommended throwing factory for constructing a `DownloadManager`.
+    ///
+    /// Equivalent to ``init(configuration:)``, but discoverable via type-level
+    /// autocomplete and consistent with the `make(...)` style used elsewhere
+    /// in the package (e.g., `URLQueryEncoder`, observability builders). Use
+    /// this when you need explicit failure handling instead of relying on
+    /// ``shared``'s fallback behavior.
+    ///
+    /// - Parameter configuration: The configuration to bind. Pass
+    ///   ``DownloadConfiguration/safeDefaults(sessionIdentifier:)`` with a
+    ///   unique identifier when multiple managers must coexist in the same
+    ///   process.
+    /// - Returns: A new `DownloadManager` ready to receive download requests.
+    /// - Throws: ``DownloadManagerError/duplicateSessionIdentifier(_:)`` if
+    ///   another manager has already claimed the same session identifier.
+    public static func make(
+        configuration: DownloadConfiguration = .default
+    ) throws -> DownloadManager {
+        try DownloadManager(configuration: configuration)
+    }
+
     private static let activeSessionIdentifiers = OSAllocatedUnfairLock(initialState: Set<String>())
 
     private let configuration: DownloadConfiguration
@@ -50,6 +136,22 @@ public final class DownloadManager: NSObject, Sendable {
     private let runtimeRegistry = DownloadRuntimeRegistry()
     private let restoreBarrier = RestoreBarrier()
     private let eventHub: TaskEventHub<DownloadEvent>
+    private let delegateEvents: AsyncStream<DelegateEvent>
+    private let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
+
+    private enum DelegateEvent: Sendable {
+        case progress(
+            taskIdentifier: Int,
+            bytesWritten: Int64,
+            totalBytesWritten: Int64,
+            totalBytesExpectedToWrite: Int64
+        )
+        case completion(
+            taskIdentifier: Int,
+            location: URL?,
+            error: SendableUnderlyingError?
+        )
+    }
 
     private var transferCoordinator: DownloadTransferCoordinator {
         DownloadTransferCoordinator(
@@ -79,14 +181,29 @@ public final class DownloadManager: NSObject, Sendable {
         )
     }
 
-    public convenience init(configuration: DownloadConfiguration = .default) throws {
+    /// Creates a download manager bound to `configuration.sessionIdentifier`.
+    ///
+    /// Each manager owns an actor-isolated runtime registry, append-log
+    /// persistence store, event hub, and background `URLSession`. The session
+    /// identifier must be unique within the process; use
+    /// ``make(configuration:)`` when callers want the duplicate-identifier
+    /// error surfaced through a factory-style API.
+    ///
+    /// - Parameter configuration: Session, retry, event, and persistence
+    ///   settings for this download domain.
+    /// - Throws: ``DownloadManagerError/duplicateSessionIdentifier(_:)`` if
+    ///   another live manager has already claimed the same session identifier.
+    public init(configuration: DownloadConfiguration = .default) throws {
         try self.init(
             configuration: configuration,
-            persistence: DownloadTaskPersistence(sessionIdentifier: configuration.sessionIdentifier)
+            persistence: DownloadTaskPersistence(
+                sessionIdentifier: configuration.sessionIdentifier,
+                fsyncPolicy: configuration.persistenceFsyncPolicy
+            )
         )
     }
 
-    package convenience init(
+    package init(
         configuration: DownloadConfiguration = .default,
         persistence: DownloadTaskPersistence
     ) throws {
@@ -124,6 +241,7 @@ public final class DownloadManager: NSObject, Sendable {
         callbacks: DownloadSessionDelegateCallbacks,
         backgroundCompletionStore: BackgroundCompletionStore
     ) throws {
+        let (delegateEvents, delegateEventContinuation) = AsyncStream<DelegateEvent>.makeStream()
         try Self.registerSessionIdentifier(configuration.sessionIdentifier)
         self.configuration = configuration
         self.delegate = delegate
@@ -135,28 +253,43 @@ public final class DownloadManager: NSObject, Sendable {
             hubKind: .downloadTask
         )
         self.session = urlSession
+        self.delegateEvents = delegateEvents
+        self.delegateEventContinuation = delegateEventContinuation
 
-        super.init()
-
+        // Delegate boundary: URL session's serial delegate queue invokes the
+        // closures below synchronously. They enqueue value events into one
+        // stream, and the single consumer task below awaits actor-isolated
+        // handling in FIFO order.
         callbacks.setHandlers(
-            onProgress: { [weak self] taskIdentifier, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite in
-                self?.handleProgress(
+            onProgress: { [delegateEventContinuation] taskIdentifier, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite in
+                delegateEventContinuation.yield(.progress(
                     taskIdentifier: taskIdentifier,
                     bytesWritten: bytesWritten,
                     totalBytesWritten: totalBytesWritten,
                     totalBytesExpectedToWrite: totalBytesExpectedToWrite
-                )
+                ))
             },
-            onCompletion: { [weak self] taskIdentifier, location, error in
-                self?.handleCompletion(
+            onCompletion: { [delegateEventContinuation] taskIdentifier, location, error in
+                delegateEventContinuation.yield(.completion(
                     taskIdentifier: taskIdentifier,
                     location: location,
                     error: error
-                )
+                ))
             }
         )
+        Task { [weak self, delegateEvents] in
+            for await event in delegateEvents {
+                if Task.isCancelled { break }
+                await self?.handleDelegateEvent(event)
+            }
+        }
 
-        Task { [self] in
+        // Restoration runs on a detached Task so the actor init returns
+        // immediately. waitForRestore() gates every public entry point on the
+        // restoreBarrier, so callers that issue downloads before restoration
+        // completes block until the barrier opens.
+        Task { [weak self] in
+            guard let self else { return }
             await self.restoreCoordinator.restorePendingDownloads()
             await self.restoreBarrier.complete()
         }
@@ -220,7 +353,12 @@ public final class DownloadManager: NSObject, Sendable {
         guard await task.state == .paused else { return }
 
         if let resumeData = await task.resumeData {
-            await persistence.upsert(id: task.id, url: task.url, destinationURL: task.destinationURL)
+            do {
+                try await persistence.upsert(id: task.id, url: task.url, destinationURL: task.destinationURL)
+            } catch {
+                await transferCoordinator.markTaskFailedForPersistence(task, error: error)
+                return
+            }
             let urlTask = session.makeDownloadTask(withResumeData: resumeData)
             await transferCoordinator.register(urlTask: urlTask, for: task)
             await task.updateState(.downloading)
@@ -244,10 +382,15 @@ public final class DownloadManager: NSObject, Sendable {
             urlTask.cancel()
         }
 
+        do {
+            try await persistence.remove(id: task.id)
+        } catch {
+            Self.logger.fault("Failed to remove cancelled task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))")
+            return
+        }
         await runtimeRegistry.removeTaskRuntime(taskId: task.id)
         await eventHub.finish(taskID: task.id)
         await runtimeRegistry.remove(task)
-        await persistence.remove(id: task.id)
     }
 
     public func cancelAll() async {
@@ -326,73 +469,92 @@ public final class DownloadManager: NSObject, Sendable {
         }
     }
 
-    func handleProgress(taskIdentifier: Int, bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        Task {
-            guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else { return }
+    func handleProgress(taskIdentifier: Int, bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) async {
+        guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else { return }
 
-            let progress = DownloadProgress(
+        let progress = DownloadProgress(
+            bytesWritten: bytesWritten,
+            totalBytesWritten: totalBytesWritten,
+            totalBytesExpectedToWrite: totalBytesExpectedToWrite
+        )
+        await task.updateProgress(progress)
+        await runtimeRegistry.onProgress?(task, progress)
+        await eventHub.publish(.progress(progress), for: task.id)
+    }
+
+    private func handleDelegateEvent(_ event: DelegateEvent) async {
+        switch event {
+        case let .progress(taskIdentifier, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite):
+            await handleProgress(
+                taskIdentifier: taskIdentifier,
                 bytesWritten: bytesWritten,
                 totalBytesWritten: totalBytesWritten,
                 totalBytesExpectedToWrite: totalBytesExpectedToWrite
             )
-            await task.updateProgress(progress)
-            await runtimeRegistry.onProgress?(task, progress)
-            await eventHub.publish(.progress(progress), for: task.id)
+        case let .completion(taskIdentifier, location, error):
+            await handleCompletion(taskIdentifier: taskIdentifier, location: location, error: error)
         }
     }
 
-    func handleCompletion(taskIdentifier: Int, location: URL?, error: SendableUnderlyingError?) {
-        Task {
-            guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else { return }
+    func handleCompletion(taskIdentifier: Int, location: URL?, error: SendableUnderlyingError?) async {
+        guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else { return }
 
-            if let error {
-                await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
-                await failureCoordinator.handleError(task: task, error: error) { [transferCoordinator] task in
-                    await transferCoordinator.startDownload(task)
-                }
-                return
+        if let error {
+            await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
+            await failureCoordinator.handleError(task: task, error: error) { [transferCoordinator] task in
+                await transferCoordinator.startDownload(task)
             }
+            return
+        }
 
-            guard let location else {
-                await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
-                await failureCoordinator.handleError(
-                    task: task,
-                    error: SendableUnderlyingError(
-                        domain: "InnoNetworkDownload",
-                        code: -1,
-                        message: "Download completed without temporary file location."
-                    )
-                ) { [transferCoordinator] task in
-                    await transferCoordinator.startDownload(task)
-                }
-                return
+        guard let location else {
+            await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
+            await failureCoordinator.handleError(
+                task: task,
+                error: SendableUnderlyingError(
+                    domain: "InnoNetworkDownload",
+                    code: -1,
+                    message: "Download completed without temporary file location."
+                )
+            ) { [transferCoordinator] task in
+                await transferCoordinator.startDownload(task)
             }
+            return
+        }
 
-            do {
-                try await transferCoordinator.completeDownload(task: task, temporaryLocation: location)
-            } catch {
-                await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
-                await failureCoordinator.handleError(
-                    task: task,
-                    error: SendableUnderlyingError(error)
-                ) { [transferCoordinator] task in
-                    await transferCoordinator.startDownload(task)
-                }
+        do {
+            try await transferCoordinator.completeDownload(task: task, temporaryLocation: location)
+        } catch {
+            await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
+            await failureCoordinator.handleError(
+                task: task,
+                error: SendableUnderlyingError(error)
+            ) { [transferCoordinator] task in
+                await transferCoordinator.startDownload(task)
             }
         }
     }
 
-    public func handleBackgroundSessionCompletion(_ identifier: String, completion: @escaping @Sendable () -> Void) {
+    /// Wired into the host app's
+    /// `application(_:handleEventsForBackgroundURLSession:completionHandler:)`
+    /// entry point. That method is synchronous, so this entry point is
+    /// `nonisolated` to avoid forcing callers to await.
+    public nonisolated func handleBackgroundSessionCompletion(_ identifier: String, completion: @escaping @Sendable () -> Void) {
         guard identifier == configuration.sessionIdentifier else {
             completion()
             return
         }
+        let store = backgroundCompletionStore
         Task {
-            await backgroundCompletionStore.set(completion)
+            guard let completionToRun = await store.set(completion) else { return }
+            await MainActor.run {
+                completionToRun()
+            }
         }
     }
 
     deinit {
+        delegateEventContinuation.finish()
         Self.unregisterSessionIdentifier(configuration.sessionIdentifier)
     }
 

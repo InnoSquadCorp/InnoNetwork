@@ -8,7 +8,7 @@ public struct MultipartFormData: Sendable {
     private var parts: [Part]
 
     public init(boundary: String = "InnoNetwork.boundary.\(UUID().uuidString)") {
-        self.boundary = boundary
+        self.boundary = Self.sanitizedBoundary(boundary) ?? "InnoNetwork.boundary.\(UUID().uuidString)"
         self.parts = []
     }
 
@@ -153,6 +153,42 @@ public struct MultipartFormData: Sendable {
         "multipart/form-data; boundary=\(boundary)"
     }
 
+    /// Estimated encoded size in bytes, used by the executor to decide whether
+    /// to keep the body in memory or stream it to disk.
+    ///
+    /// For data parts the size is exact. For file parts the size is read from
+    /// `FileManager` attributes. If metadata lookup fails, the estimator uses a
+    /// conservative sentinel so the executor prefers the streaming upload path
+    /// instead of underestimating an unreadable or unexpectedly large file.
+    /// The per-part headers and boundary frame are accounted for so the result
+    /// is a tight upper bound when all file metadata is available.
+    public var estimatedEncodedSize: Int64 {
+        let boundaryLine = "--\(boundary)\r\n".utf8.count
+        let trailingBoundary = "--\(boundary)--\r\n".utf8.count
+        let crlf = "\r\n".utf8.count
+
+        var total: Int64 = Int64(trailingBoundary)
+        func add(_ value: Int64) {
+            let added = total.addingReportingOverflow(value)
+            total = added.overflow ? Int64.max : added.partialValue
+        }
+
+        for part in parts {
+            add(Int64(boundaryLine))
+            add(Int64(part.headerData().count))
+            switch part.source {
+            case .data(let data):
+                add(Int64(data.count))
+            case .file(let url):
+                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+                let size = (attributes?[.size] as? NSNumber)?.int64Value ?? Int64.max / 4
+                add(size)
+            }
+            add(Int64(crlf))
+        }
+        return total
+    }
+
     static func mimeType(for pathExtension: String) -> String {
         // UTType is available on every platform InnoNetwork ships against
         // (iOS 18+, macOS 15+, tvOS 18+, watchOS 11+, visionOS 2+), so it
@@ -160,6 +196,35 @@ public struct MultipartFormData: Sendable {
         // availability shim. The fallback matches the previous default of
         // application/octet-stream for unknown extensions.
         UTType(filenameExtension: pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+    }
+
+    private static func sanitizedBoundary(_ boundary: String) -> String? {
+        var sanitized = ""
+        sanitized.reserveCapacity(min(boundary.count, 70))
+        var containsAllowedScalar = false
+
+        for scalar in boundary.unicodeScalars {
+            guard sanitized.count < 70 else { break }
+            if isAllowedBoundaryScalar(scalar) {
+                sanitized.unicodeScalars.append(scalar)
+                containsAllowedScalar = true
+            } else if sanitized.last != "-" {
+                sanitized.append("-")
+            }
+        }
+
+        return containsAllowedScalar ? sanitized : nil
+    }
+
+    private static func isAllowedBoundaryScalar(_ scalar: UnicodeScalar) -> Bool {
+        switch scalar.value {
+        case 0x30...0x39, 0x41...0x5A, 0x61...0x7A:
+            return true
+        case 0x27, 0x28, 0x29, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x3A, 0x3D, 0x3F, 0x5F:
+            return true
+        default:
+            return false
+        }
     }
 }
 
@@ -172,17 +237,66 @@ extension MultipartFormData {
         let mimeType: String?
 
         func headerData() -> Data {
-            var disposition = "Content-Disposition: form-data; name=\"\(name)\""
+            var disposition = "Content-Disposition: form-data; name=\"\(Self.escapedHeaderParameter(name))\""
             if let fileName {
-                disposition += "; filename=\"\(fileName)\""
+                disposition += "; filename=\"\(Self.escapedHeaderParameter(fileName))\""
             }
             disposition += "\r\n"
             var data = Data(disposition.utf8)
             if let mimeType {
-                data.append(Data("Content-Type: \(mimeType)\r\n".utf8))
+                data.append(Data("Content-Type: \(Self.escapedHeaderValue(mimeType))\r\n".utf8))
             }
             data.append(Data("\r\n".utf8))
             return data
+        }
+
+        private static func escapedHeaderParameter(_ value: String) -> String {
+            var escaped = ""
+            escaped.reserveCapacity(value.utf8.count)
+
+            for scalar in value.unicodeScalars {
+                switch scalar.value {
+                case 0x22:
+                    escaped += "%22"
+                case 0x5C:
+                    escaped += "%5C"
+                case 0x0A:
+                    escaped += "%0A"
+                case 0x0D:
+                    escaped += "%0D"
+                case 0x00...0x1F, 0x7F:
+                    escaped += percentEscape(scalar.value)
+                default:
+                    escaped.unicodeScalars.append(scalar)
+                }
+            }
+
+            return escaped
+        }
+
+        private static func escapedHeaderValue(_ value: String) -> String {
+            var escaped = ""
+            escaped.reserveCapacity(value.utf8.count)
+
+            for scalar in value.unicodeScalars {
+                switch scalar.value {
+                case 0x0A:
+                    escaped += "%0A"
+                case 0x0D:
+                    escaped += "%0D"
+                case 0x00...0x1F, 0x7F:
+                    escaped += percentEscape(scalar.value)
+                default:
+                    escaped.unicodeScalars.append(scalar)
+                }
+            }
+
+            return escaped
+        }
+
+        private static func percentEscape(_ value: UInt32) -> String {
+            let hex = String(value, radix: 16, uppercase: true)
+            return "%" + String(repeating: "0", count: max(0, 2 - hex.count)) + hex
         }
     }
 
