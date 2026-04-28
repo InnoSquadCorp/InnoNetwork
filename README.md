@@ -64,6 +64,23 @@ let user = try await client.request(GetUser())
 print(user)
 ```
 
+For simple endpoints that only need method, path, query/body parameters,
+headers, content type, and response decoding, use the builder-style
+`Endpoint` API. Keep a dedicated `APIDefinition` type when an endpoint owns
+interceptors, custom encoders/decoders, multipart uploads, or streaming.
+
+```swift
+let user = try await client.request(
+    Endpoint.get("/users/1").decoding(User.self)
+)
+
+let users = try await client.request(
+    Endpoint.get("/users")
+        .query(["limit": 20])
+        .decoding([User].self)
+)
+```
+
 ### Download
 
 ```swift
