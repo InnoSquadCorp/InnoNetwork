@@ -775,6 +775,8 @@ public final class WebSocketManager: NSObject, Sendable {
             return makeManualDisconnectError(closeCode: closeCode)
         case .peerNormal(let closeCode, let reason),
             .peerRetryable(let closeCode, let reason),
+            .peerProtocolFailure(let closeCode, let reason),
+            .peerApplicationFailure(let closeCode, let reason),
             .peerTerminal(let closeCode, let reason):
             guard let reason, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return .disconnected(nil)
@@ -810,6 +812,8 @@ public final class WebSocketManager: NSObject, Sendable {
         case .manual,
             .peerNormal,
             .peerRetryable,
+            .peerProtocolFailure,
+            .peerApplicationFailure,
             .peerTerminal,
             .handshakeTimeout:
             return makeDisconnectedError(closeDisposition: closeDisposition)

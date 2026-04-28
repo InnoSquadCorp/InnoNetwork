@@ -91,6 +91,7 @@ expected_stable=(
 '`DownloadConfiguration.advanced(_:)`'
 '`WebSocketConfiguration.safeDefaults()`'
 '`WebSocketConfiguration.advanced(_:)`'
+'`WebSocketHandshakeRequestAdapter`'
 '`DownloadManager`'
 '`WebSocketManager`'
 '`WebSocketEvent.ping`'
@@ -218,6 +219,7 @@ expected_shipping_public_declarations=(
   WebSocketError
   WebSocketEvent
   WebSocketEventSubscription
+  WebSocketHandshakeRequestAdapter
   WebSocketManager
   WebSocketPingContext
   WebSocketPongContext
@@ -467,6 +469,10 @@ for symbol in "${expected_stable[@]}"; do
       ;;
     '`WebSocketConfiguration.advanced(_:)`')
       pattern='public static func advanced('
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketConfiguration.swift"
+      ;;
+    '`WebSocketHandshakeRequestAdapter`')
+      pattern='public struct WebSocketHandshakeRequestAdapter'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketConfiguration.swift"
       ;;
     '`DownloadManager`')

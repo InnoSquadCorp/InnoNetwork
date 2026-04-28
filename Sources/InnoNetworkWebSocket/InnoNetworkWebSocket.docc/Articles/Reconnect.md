@@ -21,21 +21,35 @@ and how long to wait before the next attempt. The decision is informed by:
   from automatically (e.g., HTTP `401`, protocol error).
 - ``WebSocketReconnectAction/exceeded`` — stop. We already used the per-connection budget.
 
-Override or extend the policy through `WebSocketConfiguration.AdvancedBuilder` if you have
-application-specific retryable codes:
+The built-in policy is intentionally narrow: application-defined custom close
+codes classify as ``WebSocketCloseDisposition/peerApplicationFailure(_:_:)`` and
+do not auto-reconnect. Observe ``WebSocketTask/closeDisposition`` and call
+``WebSocketManager/retry(_:)`` when your app owns a retryable custom code.
+
+```swift
+let task = await manager.connect(url: socketURL)
+for await event in await manager.events(for: task) {
+    guard case .disconnected = event else { continue }
+    guard case .peerApplicationFailure(.custom(4001), _) = await task.closeDisposition else {
+        continue
+    }
+    await refreshApplicationState()
+    await manager.retry(task)
+}
+```
+
+Use handshake adapters when reconnect attempts need fresh auth headers:
 
 ```swift
 let configuration = WebSocketConfiguration.advanced { builder in
-    builder.maxReconnectAttempts = 5
-    builder.reconnectDelay = .seconds(1)
-    builder.maxReconnectDelay = .seconds(30)
-    builder.reconnectJitterRatio = 0.2
-    builder.shouldReconnect = { disposition in
-        switch disposition {
-        case .custom(let code) where code == 4001: return true  // app-defined "service paused"
-        default: return disposition.shouldReconnect
+    builder.handshakeRequestAdapters = [
+        WebSocketHandshakeRequestAdapter { request in
+            var request = request
+            request.setValue("Bearer \(await tokenStore.currentAccessToken())",
+                             forHTTPHeaderField: "Authorization")
+            return request
         }
-    }
+    ]
 }
 ```
 
@@ -74,12 +88,13 @@ Disable auto-reconnect when:
   coordinator).
 - The app is being backgrounded without push wakeups configured. Reconnects in the
   background can drain battery and never deliver messages anyway.
-- Authentication has failed (``WebSocketCloseDisposition/handshakeUnauthorized``). Refresh
-  the token, then reconnect explicitly.
+- Authentication has failed (``WebSocketCloseDisposition/handshakeUnauthorized``).
+  Refresh the token, then reconnect explicitly or configure
+  ``WebSocketHandshakeRequestAdapter`` so the next attempt builds fresh headers.
 
 ```swift
 let configuration = WebSocketConfiguration.advanced { builder in
-    builder.autoReconnect = false  // app drives reconnect manually
+    builder.maxReconnectAttempts = 0  // app drives reconnect manually
 }
 ```
 

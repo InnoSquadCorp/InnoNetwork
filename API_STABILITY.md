@@ -16,6 +16,7 @@ This document defines the compatibility contract for the upcoming InnoNetwork
 - `DownloadConfiguration.advanced(_:)`
 - `WebSocketConfiguration.safeDefaults()`
 - `WebSocketConfiguration.advanced(_:)`
+- `WebSocketHandshakeRequestAdapter`
 - `DownloadManager`
 - `WebSocketManager`
 - `WebSocketEvent.ping`
@@ -82,8 +83,9 @@ targets and requires every declaration below to stay classified here before the
 
 - `WebSocketCloseCode`, `WebSocketCloseDisposition`, `WebSocketConfiguration`,
   `WebSocketError`, `WebSocketEvent`, `WebSocketEventSubscription`,
-  `WebSocketManager`, `WebSocketPingContext`, `WebSocketPongContext`,
-  `WebSocketSendOverflowPolicy`, `WebSocketState`, and `WebSocketTask`.
+  `WebSocketHandshakeRequestAdapter`, `WebSocketManager`,
+  `WebSocketPingContext`, `WebSocketPongContext`, `WebSocketSendOverflowPolicy`,
+  `WebSocketState`, and `WebSocketTask`.
 
 ### SPI
 

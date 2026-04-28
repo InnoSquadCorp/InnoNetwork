@@ -54,15 +54,16 @@ The mapping is:
 | `.manual` | Caller invoked `disconnect(_:closeCode:)` | `disconnected` |
 | `.peerNormal` | RFC 6455 `1000` (normal closure) | `disconnected` |
 | `.peerRetryable` | `1001`, `1006`, `1011`, `1012`, `1013`, `1014`, `1015` | `reconnecting` |
-| `.peerTerminal` | `1003`, `1007`, `1008`, `1009`, `1010` (protocol/policy) | `failed` |
-| `.handshakeRetryable` | HTTP `429` / `5xx` on upgrade | `reconnecting` |
-| `.handshakeTerminal` | HTTP `401` / `403` / `404` on upgrade | `failed` |
+| `.peerProtocolFailure` | `1002`, `1003`, `1005`, `1007`, `1008`, `1009`, `1010` (protocol/policy) | `failed` |
+| `.peerApplicationFailure` | custom application close codes (`3000`-`4999`) | `failed` |
+| `.handshakeServerUnavailable` | HTTP `429` / `5xx` on upgrade | `reconnecting` |
+| `.handshakeTerminalHTTP` | non-auth terminal HTTP `4xx` on upgrade | `failed` |
 | `.handshakeUnauthorized` | HTTP `401` specifically | `failed` (caller should refresh auth before reconnecting manually) |
 | `.transportFailure` | NSURLError transient (timeout, DNS, network lost) | `reconnecting` |
 
-Custom close codes (3000–4999) default to **terminal**. If your app uses an application-
-defined retryable code, classify it explicitly via `WebSocketConfiguration` rather than
-relying on the default.
+Custom close codes (3000-4999) default to **terminal application failures**. If
+your app treats one as retryable, observe ``WebSocketTask/closeDisposition`` and
+drive an explicit reconnect from your own policy.
 
 ## Auto-reconnect invariants
 
