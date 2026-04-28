@@ -1,6 +1,5 @@
 import Foundation
 
-
 /// Controls how `DefaultNetworkClient` resolves a stubbed response declared on
 /// an ``APIDefinition``.
 ///

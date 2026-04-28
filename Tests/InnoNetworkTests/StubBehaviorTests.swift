@@ -3,7 +3,6 @@ import Testing
 
 @testable import InnoNetwork
 
-
 private struct StubProfile: Decodable, Sendable, Equatable {
     let id: Int
     let name: String
