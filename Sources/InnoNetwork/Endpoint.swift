@@ -54,8 +54,14 @@ public struct Endpoint<Response: Decodable & Sendable>: APIDefinition {
         self.path = path
         self.parameters = parameters
         self.contentType = contentType
-        self.headers = headers
+        self.headers = Self.headers(headers, applying: contentType)
         self.acceptableStatusCodes = acceptableStatusCodes
+    }
+
+    private static func headers(_ headers: HTTPHeaders, applying contentType: ContentType) -> HTTPHeaders {
+        var updatedHeaders = headers
+        updatedHeaders.update(.contentType("\(contentType.rawValue); charset=UTF-8"))
+        return updatedHeaders
     }
 }
 

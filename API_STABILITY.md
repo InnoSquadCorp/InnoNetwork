@@ -36,6 +36,7 @@ This document defines the compatibility contract for the upcoming InnoNetwork
 - troubleshooting guidance and examples in README/DocC
 - `InnoNetworkTestSupport` library product and its `public` symbols
   (currently `WebSocketEventRecorder`)
+- `Endpoint`, `AnyEncodable`, `StubBehavior`, `NetworkContext`, `CorrelationIDInterceptor`, and `APIDefinition` stubbing hooks
 
 ## Internal/Operational
 

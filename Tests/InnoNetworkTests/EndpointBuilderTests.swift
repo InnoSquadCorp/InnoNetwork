@@ -72,4 +72,70 @@ struct EndpointBuilderTests {
 
         #expect(endpoint.contentType == .textPlain)
     }
+
+    @Test
+    func postBodyRequestCarriesJSONContentTypeHeader() async throws {
+        struct CreatePost: Encodable, Sendable {
+            let title: String
+        }
+        struct CreatedPost: Codable, Sendable {
+            let ok: Bool
+        }
+
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(CreatedPost(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+
+        let endpoint = Endpoint.post("/posts")
+            .body(CreatePost(title: "hello"))
+            .decoding(CreatedPost.self)
+
+        _ = try await client.request(endpoint)
+
+        let contentType = try #require(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type"))
+        #expect(contentType.contains("application/json"))
+    }
+
+    @Test
+    func contentTypeBuilderIsReflectedInRequestHeader() async throws {
+        struct Login: Encodable, Sendable {
+            let username: String
+        }
+        struct LoginResponse: Codable, Sendable {
+            let ok: Bool
+        }
+
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(LoginResponse(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+
+        let endpoint = Endpoint.post("/login")
+            .contentType(.formUrlEncoded)
+            .body(Login(username: "test"))
+            .decoding(LoginResponse.self)
+
+        _ = try await client.request(endpoint)
+
+        let contentType = try #require(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type"))
+        #expect(contentType.contains("application/x-www-form-urlencoded"))
+    }
+
+    @Test
+    func headersBuilderReappliesEndpointContentType() {
+        var headers = HTTPHeaders.default
+        headers.add(name: "Content-Type", value: "text/plain")
+        headers.add(name: "X-Custom", value: "kept")
+
+        let endpoint = Endpoint.post("/posts")
+            .headers(headers)
+
+        #expect(endpoint.headers.value(for: "Content-Type") == "application/json; charset=UTF-8")
+        #expect(endpoint.headers.value(for: "X-Custom") == "kept")
+    }
 }

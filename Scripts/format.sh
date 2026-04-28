@@ -31,7 +31,10 @@ if [[ "${1:-}" == "--lint" ]]; then
     mode="lint"
 fi
 
-mapfile -t SWIFT_FILES < <(
+SWIFT_FILES=()
+while IFS= read -r file; do
+    SWIFT_FILES+=("$file")
+done < <(
     find "${TARGETS[@]}" -type f -name '*.swift' \
         | grep -Ev "$EXCLUDE_PATTERN" \
         | sort
