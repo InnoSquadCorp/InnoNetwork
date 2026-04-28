@@ -132,6 +132,7 @@ expected_provisionally=(
 '`default` aliases on configuration types'
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
+'`InnoNetworkTestSupport` library product and its `public` symbols'
 )
 
 validate_protocol_symbol() {
@@ -164,6 +165,13 @@ validate_benchmark_docs() {
   require_contains 'swift run InnoNetworkBenchmarks --json-path /tmp/innonetwork-bench.json' "$readme"
   require_contains 'JSON summary' "$repo_root/Benchmarks/README.md"
   require_contains '"results"' "$repo_root/Benchmarks/README.md"
+}
+
+validate_test_support_product() {
+  require_contains 'name: "InnoNetworkTestSupport"' "$repo_root/Package.swift"
+  require_contains 'targets: ["InnoNetworkTestSupport"]' "$repo_root/Package.swift"
+  require_contains 'public final class WebSocketEventRecorder' \
+    "$repo_root/Sources/InnoNetworkTestSupport/WebSocketEventRecorder.swift"
 }
 
 validate_troubleshooting_and_examples_docs() {
@@ -328,6 +336,10 @@ for symbol in "${expected_provisionally[@]}"; do
       ;;
     'troubleshooting guidance and examples in README/DocC')
       validate_troubleshooting_and_examples_docs
+      continue
+      ;;
+    '`InnoNetworkTestSupport` library product and its `public` symbols')
+      validate_test_support_product
       continue
       ;;
     *)
