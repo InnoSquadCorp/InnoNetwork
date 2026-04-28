@@ -21,6 +21,47 @@ struct MultipartStreamingTests {
         #expect(onDisk == inMemory)
     }
 
+    @Test("Multipart header parameters escape quotes and CRLF")
+    func headerParametersEscapeUnsafeCharacters() throws {
+        var formData = MultipartFormData(boundary: "escape-boundary")
+        formData.append(
+            Data("payload".utf8),
+            name: "field\"\r\nInjected-Header: yes\\",
+            fileName: "avatar\"\r\nInjected-File: yes\\.png",
+            mimeType: "text/plain\r\nInjected-Mime: yes"
+        )
+
+        let encoded = try #require(String(data: formData.encode(), encoding: .utf8))
+        #expect(encoded.contains(#"name="field%22%0D%0AInjected-Header: yes%5C""#))
+        #expect(encoded.contains(#"filename="avatar%22%0D%0AInjected-File: yes%5C.png""#))
+        #expect(encoded.contains("Content-Type: text/plain%0D%0AInjected-Mime: yes"))
+        #expect(!encoded.contains("\r\nInjected-Header: yes"))
+        #expect(!encoded.contains("\r\nInjected-File: yes"))
+        #expect(!encoded.contains("\r\nInjected-Mime: yes"))
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("multipart-escape-\(UUID().uuidString).bin")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try formData.writeEncodedData(to: url)
+
+        let onDisk = try #require(String(data: try Data(contentsOf: url), encoding: .utf8))
+        #expect(onDisk == encoded)
+    }
+
+    @Test("Custom multipart boundary is sanitized before headers and delimiters")
+    func customBoundarySanitizesUnsafeCharacters() throws {
+        var formData = MultipartFormData(boundary: "safe\r\nInjected: yes")
+        formData.append("value", name: "field")
+
+        #expect(!formData.boundary.contains("\r"))
+        #expect(!formData.boundary.contains("\n"))
+        #expect(formData.boundary.count <= 70)
+        #expect(!formData.contentTypeHeader.contains("\r\nInjected"))
+
+        let encoded = try #require(String(data: formData.encode(), encoding: .utf8))
+        #expect(encoded.contains("--\(formData.boundary)\r\n"))
+        #expect(!encoded.contains("\r\nInjected"))
+    }
+
     @Test("writeEncodedData streams a file part without loading it whole")
     func writeStreamsFileParts() async throws {
         let sourceURL = FileManager.default.temporaryDirectory.appendingPathComponent("multipart-source-\(UUID().uuidString).bin")
