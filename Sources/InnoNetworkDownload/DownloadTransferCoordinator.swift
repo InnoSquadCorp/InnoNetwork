@@ -56,10 +56,20 @@ package struct DownloadTransferCoordinator {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         }
 
+        let stagedURL = directory.appendingPathComponent(
+            ".\(task.destinationURL.lastPathComponent).innonetwork.\(UUID().uuidString).tmp"
+        )
+        defer {
+            if fileManager.fileExists(atPath: stagedURL.path) {
+                try? fileManager.removeItem(at: stagedURL)
+            }
+        }
+
+        try fileManager.moveItem(at: temporaryLocation, to: stagedURL)
         if fileManager.fileExists(atPath: task.destinationURL.path) {
-            _ = try fileManager.replaceItemAt(task.destinationURL, withItemAt: temporaryLocation)
+            _ = try fileManager.replaceItemAt(task.destinationURL, withItemAt: stagedURL)
         } else {
-            try fileManager.moveItem(at: temporaryLocation, to: task.destinationURL)
+            try fileManager.moveItem(at: stagedURL, to: task.destinationURL)
         }
 
         await task.updateState(.completed)
