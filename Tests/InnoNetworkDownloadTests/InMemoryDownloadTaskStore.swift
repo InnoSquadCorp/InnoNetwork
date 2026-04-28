@@ -12,11 +12,16 @@ import Foundation
 /// and hand it to the harness / manager without ad-hoc duplicates.
 actor InMemoryDownloadTaskStore: DownloadTaskStore {
     private var records: [String: DownloadTaskPersistence.Record] = [:]
+    private var shouldFailRemove = false
 
     init(seed: [DownloadTaskPersistence.Record] = []) {
         for record in seed {
             records[record.id] = record
         }
+    }
+
+    func setRemoveFailure(_ shouldFail: Bool) {
+        shouldFailRemove = shouldFail
     }
 
     func upsert(id: String, url: URL, destinationURL: URL) async throws {
@@ -28,6 +33,9 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
     }
 
     func remove(id: String) async throws {
+        if shouldFailRemove {
+            throw InMemoryDownloadTaskStoreError.removeFailed(id)
+        }
         records.removeValue(forKey: id)
     }
 
@@ -47,4 +55,9 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
     func prune(keeping ids: Set<String>) async throws {
         records = records.filter { ids.contains($0.key) }
     }
+}
+
+
+enum InMemoryDownloadTaskStoreError: Error, Equatable {
+    case removeFailed(String)
 }

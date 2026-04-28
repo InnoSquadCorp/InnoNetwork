@@ -190,8 +190,17 @@ struct FileUploadTests {
             contentType: "application/octet-stream"
         )
 
-        await #expect(throws: NetworkError.self) {
+        do {
             _ = try await client.perform(executable: executable)
+            Issue.record("Expected NetworkError.statusCode(500)")
+        } catch let error as NetworkError {
+            guard case .statusCode(let response) = error else {
+                Issue.record("Expected NetworkError.statusCode(500), got \(error)")
+                return
+            }
+            #expect(response.statusCode == 500)
+        } catch {
+            Issue.record("Expected NetworkError.statusCode(500), got \(error)")
         }
 
         #expect(session.capturedFileURL == payloadURL)
@@ -215,8 +224,17 @@ struct FileUploadTests {
             contentType: "application/octet-stream"
         )
 
-        await #expect(throws: NetworkError.self) {
+        do {
             _ = try await client.perform(executable: executable)
+            Issue.record("Expected NetworkError.invalidRequestConfiguration")
+        } catch let error as NetworkError {
+            guard case .invalidRequestConfiguration(let message) = error else {
+                Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
+                return
+            }
+            #expect(message.contains("File-based upload is not supported"))
+        } catch {
+            Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
         }
     }
 }

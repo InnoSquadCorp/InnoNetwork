@@ -1013,8 +1013,9 @@ struct EventHubTests {
         let snapshots = try await waitForAggregateSnapshots(
             recorder: recorder,
             hubKind: .genericTask,
-            minimumCount: 1
+            minimumCount: 2
         )
+        #expect(snapshots.count >= 2)
         #expect(zip(snapshots, snapshots.dropFirst()).allSatisfy {
             $1.totalDroppedMetricCount >= $0.totalDroppedMetricCount
         })

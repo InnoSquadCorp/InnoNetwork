@@ -22,38 +22,56 @@ timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 revision="$(git rev-parse HEAD 2>/dev/null || echo "unknown")"
 swift_version="$(xcrun swift --version | head -n 1)"
 
-cat > "$OUTPUT" <<JSON
-{
-  "bomFormat": "CycloneDX",
-  "specVersion": "1.5",
-  "serialNumber": "$serial",
-  "version": 1,
-  "metadata": {
-    "timestamp": "$timestamp",
-    "tools": {
-      "components": [
-        {
-          "type": "application",
-          "name": "Scripts/generate-sbom.sh",
-          "version": "1.0.0"
-        }
-      ]
+OUTPUT="$OUTPUT" \
+SERIAL="$serial" \
+TIMESTAMP="$timestamp" \
+NAME="$name" \
+VERSION="$version" \
+REVISION="$revision" \
+SWIFT_VERSION="$swift_version" \
+python3 - <<'PY'
+import json
+import os
+
+output = os.environ["OUTPUT"]
+name = os.environ["NAME"]
+version = os.environ["VERSION"]
+
+document = {
+    "bomFormat": "CycloneDX",
+    "specVersion": "1.5",
+    "serialNumber": os.environ["SERIAL"],
+    "version": 1,
+    "metadata": {
+        "timestamp": os.environ["TIMESTAMP"],
+        "tools": {
+            "components": [
+                {
+                    "type": "application",
+                    "name": "Scripts/generate-sbom.sh",
+                    "version": "1.0.0",
+                }
+            ]
+        },
+        "component": {
+            "type": "library",
+            "bom-ref": f"pkg:swift/{name}@{version}",
+            "name": name,
+            "version": version,
+            "scope": "required",
+            "purl": f"pkg:swift/{name}@{version}",
+            "properties": [
+                {"name": "swift:revision", "value": os.environ["REVISION"]},
+                {"name": "swift:toolchain", "value": os.environ["SWIFT_VERSION"]},
+            ],
+        },
     },
-    "component": {
-      "type": "library",
-      "bom-ref": "pkg:swift/${name}@${version}",
-      "name": "$name",
-      "version": "$version",
-      "scope": "required",
-      "purl": "pkg:swift/${name}@${version}",
-      "properties": [
-        { "name": "swift:revision", "value": "$revision" },
-        { "name": "swift:toolchain", "value": "$swift_version" }
-      ]
-    }
-  },
-  "components": []
+    "components": [],
 }
-JSON
+
+with open(output, "w", encoding="utf-8") as file:
+    json.dump(document, file, indent=2)
+    file.write("\n")
+PY
 
 echo "Generated $OUTPUT (revision $revision, version $version)"

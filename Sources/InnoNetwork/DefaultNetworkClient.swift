@@ -241,7 +241,7 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                             if canResume {
                                 resumeAttempts += 1
                                 if resumeDelay > 0 {
-                                    try? await Task.sleep(nanoseconds: UInt64(resumeDelay * 1_000_000_000))
+                                    try? await Task.sleep(for: .seconds(resumeDelay))
                                 }
                                 try Task.checkCancellation()
                                 continue attempts

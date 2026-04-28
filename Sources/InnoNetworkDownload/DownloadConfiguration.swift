@@ -109,8 +109,8 @@ public struct DownloadConfiguration: Sendable {
     /// volume is busy), so the library exposes the trade-off rather than
     /// burning a default into the persistence layer.
     public enum PersistenceFsyncPolicy: Sendable, Equatable {
-        /// Call `fsync(_:)` after every event append and after every
-        /// checkpoint write. Maximum durability, highest IO cost.
+        /// Call `fsync(_:)` after every append-log mutation batch and after
+        /// every checkpoint write. Maximum durability, highest IO cost.
         /// Recommended only for high-value transfers where a crash that
         /// loses the most recent event is unacceptable.
         case always

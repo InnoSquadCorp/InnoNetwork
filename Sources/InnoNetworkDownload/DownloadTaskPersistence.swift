@@ -403,9 +403,10 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             handle.write(Data([0x0A]))
         }
 
-        // .always policy forces buffered writes through to stable storage on
-        // every event. .onCheckpoint and .never skip the cost — the next
-        // checkpoint or the OS flush is responsible for durability.
+        // .always policy forces buffered writes through to stable storage
+        // after each append-log mutation batch. .onCheckpoint and .never skip
+        // the cost — the next checkpoint or the OS flush is responsible for
+        // durability.
         if fsyncPolicy == .always {
             try fsyncFileDescriptor(handle.fileDescriptor, fsync: fsync)
         }

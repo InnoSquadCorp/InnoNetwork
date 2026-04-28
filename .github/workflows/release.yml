@@ -117,12 +117,14 @@ jobs:
         run: |
           set -euo pipefail
           for artifact in .release-artifacts/benchmarks.json .release-artifacts/sbom.cdx.json; do
-            if [[ -f "$artifact" ]]; then
-              cosign sign-blob --yes \
-                --output-signature="${artifact}.sig" \
-                --output-certificate="${artifact}.crt" \
-                "$artifact"
+            if [[ ! -f "$artifact" ]]; then
+              echo "Missing release artifact: $artifact" >&2
+              exit 1
             fi
+            cosign sign-blob --yes \
+              --output-signature="${artifact}.sig" \
+              --output-certificate="${artifact}.crt" \
+              "$artifact"
           done
 
       - name: Prepare release notes

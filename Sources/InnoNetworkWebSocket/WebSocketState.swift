@@ -60,6 +60,8 @@ public enum WebSocketError: Error, Sendable, Equatable {
     case pingTimeout
     case maxReconnectAttemptsExceeded
     case cancelled
+    /// The outbound queue reached `sendQueueLimit` while the overflow policy
+    /// was configured to fail the send operation.
     case sendQueueOverflow(limit: Int)
     case unknown
 }

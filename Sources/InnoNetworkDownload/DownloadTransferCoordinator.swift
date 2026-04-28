@@ -68,14 +68,15 @@ package struct DownloadTransferCoordinator {
         await runtimeRegistry.onCompleted?(task, task.destinationURL)
         await eventHub.publish(.stateChanged(.completed), for: task.id)
         await eventHub.publish(.completed(task.destinationURL), for: task.id)
-        await runtimeRegistry.removeTaskRuntime(taskId: task.id)
-        await eventHub.finish(taskID: task.id)
-        await runtimeRegistry.remove(task)
         do {
             try await persistence.remove(id: task.id)
         } catch {
-            Self.logger.fault("Failed to remove completed task \(task.id, privacy: .public) from persistence: \(String(describing: error), privacy: .public)")
+            Self.logger.fault("Failed to remove completed task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))")
+            return
         }
+        await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+        await eventHub.finish(taskID: task.id)
+        await runtimeRegistry.remove(task)
     }
 
     package func markTaskFailedForPersistence(_ task: DownloadTask, error: Error) async {

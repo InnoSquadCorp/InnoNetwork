@@ -7,10 +7,10 @@ Versioning for the upcoming 4.0.0 public release line.
 
 ## [4.1.0] - Unreleased
 
-The 4.1 line is a risk-mitigation epic on top of 4.0. It is purely additive
-on the public API surface — no breaking changes, no deprecations of stable
-4.0 APIs. New surfaces ship with conservative defaults so existing call sites
-keep current behaviour. See
+The 4.1 line is a risk-mitigation epic on top of 4.0. It is additive on the
+public API surface — no breaking changes, with one compatibility deprecation
+alias (`WebSocketTask.reconnectCount`). New surfaces ship with conservative
+defaults so existing call sites keep current behaviour. See
 [`docs/releases/4.1.0.md`](docs/releases/4.1.0.md) for a one-page summary.
 
 ### Added
@@ -94,15 +94,15 @@ keep current behaviour. See
 ### Concurrency
 
 - `DownloadManager` is now a `public actor`. NSObject inheritance and
-  `super.init()` are gone; the URL-session delegate callbacks dispatch
-  into the actor through `Task { [weak self] in await self?.handle...(_:) }`.
+  `super.init()` are gone; URL-session delegate callbacks enqueue into one
+  delegate-event stream that a single consumer drains into the actor.
   Public API surface is unchanged because every public method was already
   `async`. `handleBackgroundSessionCompletion(_:completion:)` is
   `nonisolated` so the synchronous Foundation entry point keeps working.
 - `DownloadConfiguration.persistenceFsyncPolicy: PersistenceFsyncPolicy`
   picks one of `.always`, `.onCheckpoint` (default), `.never` for the
-  append-log durability barrier. The store calls `Darwin.fsync(_:)` on
-  event appends (only `.always`) and on checkpoint writes (every policy
+  append-log durability barrier. The store calls `Darwin.fsync(_:)` after
+  append-log mutation batches (only `.always`) and checkpoint writes (every policy
   except `.never`). See
   [`Sources/InnoNetworkDownload/InnoNetworkDownload.docc/Articles/Persistence.md`](Sources/InnoNetworkDownload/InnoNetworkDownload.docc/Articles/Persistence.md).
 

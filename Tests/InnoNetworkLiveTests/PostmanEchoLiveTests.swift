@@ -17,10 +17,17 @@ struct PostmanEchoLiveTests {
                 sessionIdentifier: "test.live.postman.\(UUID().uuidString)"
             )
         )
-        defer {
-            Task { await manager.disconnectAll() }
-        }
 
+        do {
+            try await runWebSocketEchoScenario(manager: manager)
+        } catch {
+            await manager.disconnectAll()
+            throw error
+        }
+        await manager.disconnectAll()
+    }
+
+    private func runWebSocketEchoScenario(manager: WebSocketManager) async throws {
         let url = try #require(URL(string: "wss://ws.postman-echo.com/raw"))
         let task = await manager.connect(url: url)
 

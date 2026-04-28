@@ -57,7 +57,7 @@ package struct DownloadRestoreCoordinator {
             do {
                 try await persistence.remove(id: record.id)
             } catch {
-                Self.logger.fault("Failed to prune orphaned task \(record.id, privacy: .public) from persistence: \(String(describing: error), privacy: .public)")
+                Self.logger.fault("Failed to prune orphaned task \(record.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))")
             }
         }
     }

@@ -51,13 +51,18 @@ xcrun swift test --parallel --enable-code-coverage
 rg -n "@unchecked Sendable" Sources
 
 # Optional: render the same coverage summary CI uploads.
-xctest_bundle="$(find .build -name '*.xctest' -type d | head -n 1)"
 profdata="$(find .build -name 'default.profdata' -type f | head -n 1)"
-binary="$xctest_bundle/Contents/MacOS/$(basename "$xctest_bundle" .xctest)"
+llvm_cov_objects=()
+while IFS= read -r -d '' xctest_bundle; do
+  binary="$xctest_bundle/Contents/MacOS/$(basename "$xctest_bundle" .xctest)"
+  if [[ -x "$binary" ]]; then
+    llvm_cov_objects+=(--object "$binary")
+  fi
+done < <(find .build -name '*.xctest' -type d -print0)
 xcrun llvm-cov report \
   --instr-profile="$profdata" \
   --ignore-filename-regex='(^|/)(\.build|Tests|SmokeTests|Examples|Benchmarks)/' \
-  "$binary"
+  "${llvm_cov_objects[@]}"
 
 # Optional: replay the benchmark smoke guard locally.
 xcrun swift run InnoNetworkBenchmarks --quick \

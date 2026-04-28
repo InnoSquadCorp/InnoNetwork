@@ -34,16 +34,17 @@ let configuration = DownloadConfiguration.advanced(
 
 ## Info.plist
 
-Background downloads require the app to declare `UIBackgroundModes`:
+`URLSession` background downloads do not require `UIBackgroundModes` by themselves. Declare
+background modes only for the wake-up mechanism your app owns outside the transfer:
 
 ```xml
 <key>UIBackgroundModes</key>
 <array>
-    <string>fetch</string>
+    <string>remote-notification</string>
 </array>
 ```
 
-If the download is also expected to be triggered by a push notification, add `remote-notification`.
+Add `remote-notification` only when a push notification is expected to trigger the download.
 
 ## Wiring the system completion handler
 

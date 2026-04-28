@@ -157,29 +157,34 @@ public struct MultipartFormData: Sendable {
     /// to keep the body in memory or stream it to disk.
     ///
     /// For data parts the size is exact. For file parts the size is read from
-    /// `FileManager` attributes — so it is exact unless the file is missing,
-    /// in which case the estimator treats the part as zero bytes (the encoder
-    /// will skip the part later, matching ``encode()``'s behavior). The
-    /// per-part headers and boundary frame are accounted for so the result
-    /// is a tight upper bound rather than a partial sum.
+    /// `FileManager` attributes. If metadata lookup fails, the estimator uses a
+    /// conservative sentinel so the executor prefers the streaming upload path
+    /// instead of underestimating an unreadable or unexpectedly large file.
+    /// The per-part headers and boundary frame are accounted for so the result
+    /// is a tight upper bound when all file metadata is available.
     public var estimatedEncodedSize: Int64 {
         let boundaryLine = "--\(boundary)\r\n".utf8.count
         let trailingBoundary = "--\(boundary)--\r\n".utf8.count
         let crlf = "\r\n".utf8.count
 
         var total: Int64 = Int64(trailingBoundary)
+        func add(_ value: Int64) {
+            let added = total.addingReportingOverflow(value)
+            total = added.overflow ? Int64.max : added.partialValue
+        }
+
         for part in parts {
-            total += Int64(boundaryLine)
-            total += Int64(part.headerData().count)
+            add(Int64(boundaryLine))
+            add(Int64(part.headerData().count))
             switch part.source {
             case .data(let data):
-                total += Int64(data.count)
+                add(Int64(data.count))
             case .file(let url):
                 let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-                let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
-                total += size
+                let size = (attributes?[.size] as? NSNumber)?.int64Value ?? Int64.max / 4
+                add(size)
             }
-            total += Int64(crlf)
+            add(Int64(crlf))
         }
         return total
     }

@@ -47,10 +47,9 @@ extension DownloadManagerError: LocalizedError {
 ///    background completion handler.
 ///
 /// Foundation-driven delegate callbacks (URL session's serial queue) cross
-/// into the actor through unstructured Tasks: each closure inside
-/// `DownloadSessionDelegateCallbacks` schedules `Task { [weak self] in await
-/// self?.handleX(...) }` so synchronous delegate dispatch never touches
-/// actor-isolated state directly.
+/// into the actor through a single delegate-event stream. The synchronous
+/// callbacks only enqueue immutable events, and one consumer task drains them
+/// into the actor so progress/completion ordering follows delegate order.
 ///
 /// `handleBackgroundSessionCompletion(_:completion:)` is `nonisolated` so
 /// `application(_:handleEventsForBackgroundURLSession:completionHandler:)`
@@ -137,6 +136,22 @@ public actor DownloadManager {
     private let runtimeRegistry = DownloadRuntimeRegistry()
     private let restoreBarrier = RestoreBarrier()
     private let eventHub: TaskEventHub<DownloadEvent>
+    private let delegateEvents: AsyncStream<DelegateEvent>
+    private let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
+
+    private enum DelegateEvent: Sendable {
+        case progress(
+            taskIdentifier: Int,
+            bytesWritten: Int64,
+            totalBytesWritten: Int64,
+            totalBytesExpectedToWrite: Int64
+        )
+        case completion(
+            taskIdentifier: Int,
+            location: URL?,
+            error: SendableUnderlyingError?
+        )
+    }
 
     private var transferCoordinator: DownloadTransferCoordinator {
         DownloadTransferCoordinator(
@@ -166,6 +181,18 @@ public actor DownloadManager {
         )
     }
 
+    /// Creates a download manager bound to `configuration.sessionIdentifier`.
+    ///
+    /// Each manager owns an actor-isolated runtime registry, append-log
+    /// persistence store, event hub, and background `URLSession`. The session
+    /// identifier must be unique within the process; use
+    /// ``make(configuration:)`` when callers want the duplicate-identifier
+    /// error surfaced through a factory-style API.
+    ///
+    /// - Parameter configuration: Session, retry, event, and persistence
+    ///   settings for this download domain.
+    /// - Throws: ``DownloadManagerError/duplicateSessionIdentifier(_:)`` if
+    ///   another live manager has already claimed the same session identifier.
     public init(configuration: DownloadConfiguration = .default) throws {
         try self.init(
             configuration: configuration,
@@ -214,6 +241,7 @@ public actor DownloadManager {
         callbacks: DownloadSessionDelegateCallbacks,
         backgroundCompletionStore: BackgroundCompletionStore
     ) throws {
+        let (delegateEvents, delegateEventContinuation) = AsyncStream<DelegateEvent>.makeStream()
         try Self.registerSessionIdentifier(configuration.sessionIdentifier)
         self.configuration = configuration
         self.delegate = delegate
@@ -225,33 +253,36 @@ public actor DownloadManager {
             hubKind: .downloadTask
         )
         self.session = urlSession
+        self.delegateEvents = delegateEvents
+        self.delegateEventContinuation = delegateEventContinuation
 
         // Delegate boundary: URL session's serial delegate queue invokes the
-        // closures below synchronously. Each closure hops into an unstructured
-        // Task so the actor-isolated handleX methods are awaited rather than
-        // called inline (which would violate isolation). [weak self] keeps a
-        // late callback after the manager is dropped from segfaulting.
+        // closures below synchronously. They enqueue value events into one
+        // stream, and the single consumer task below awaits actor-isolated
+        // handling in FIFO order.
         callbacks.setHandlers(
-            onProgress: { [weak self] taskIdentifier, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite in
-                Task { [weak self] in
-                    await self?.handleProgress(
-                        taskIdentifier: taskIdentifier,
-                        bytesWritten: bytesWritten,
-                        totalBytesWritten: totalBytesWritten,
-                        totalBytesExpectedToWrite: totalBytesExpectedToWrite
-                    )
-                }
+            onProgress: { [delegateEventContinuation] taskIdentifier, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite in
+                delegateEventContinuation.yield(.progress(
+                    taskIdentifier: taskIdentifier,
+                    bytesWritten: bytesWritten,
+                    totalBytesWritten: totalBytesWritten,
+                    totalBytesExpectedToWrite: totalBytesExpectedToWrite
+                ))
             },
-            onCompletion: { [weak self] taskIdentifier, location, error in
-                Task { [weak self] in
-                    await self?.handleCompletion(
-                        taskIdentifier: taskIdentifier,
-                        location: location,
-                        error: error
-                    )
-                }
+            onCompletion: { [delegateEventContinuation] taskIdentifier, location, error in
+                delegateEventContinuation.yield(.completion(
+                    taskIdentifier: taskIdentifier,
+                    location: location,
+                    error: error
+                ))
             }
         )
+        Task { [weak self, delegateEvents] in
+            for await event in delegateEvents {
+                if Task.isCancelled { break }
+                await self?.handleDelegateEvent(event)
+            }
+        }
 
         // Restoration runs on a detached Task so the actor init returns
         // immediately. waitForRestore() gates every public entry point on the
@@ -351,14 +382,15 @@ public actor DownloadManager {
             urlTask.cancel()
         }
 
-        await runtimeRegistry.removeTaskRuntime(taskId: task.id)
-        await eventHub.finish(taskID: task.id)
-        await runtimeRegistry.remove(task)
         do {
             try await persistence.remove(id: task.id)
         } catch {
-            Self.logger.fault("Failed to remove cancelled task \(task.id, privacy: .public) from persistence: \(String(describing: error), privacy: .public)")
+            Self.logger.fault("Failed to remove cancelled task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))")
+            return
         }
+        await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+        await eventHub.finish(taskID: task.id)
+        await runtimeRegistry.remove(task)
     }
 
     public func cancelAll() async {
@@ -450,6 +482,20 @@ public actor DownloadManager {
         await eventHub.publish(.progress(progress), for: task.id)
     }
 
+    private func handleDelegateEvent(_ event: DelegateEvent) async {
+        switch event {
+        case let .progress(taskIdentifier, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite):
+            await handleProgress(
+                taskIdentifier: taskIdentifier,
+                bytesWritten: bytesWritten,
+                totalBytesWritten: totalBytesWritten,
+                totalBytesExpectedToWrite: totalBytesExpectedToWrite
+            )
+        case let .completion(taskIdentifier, location, error):
+            await handleCompletion(taskIdentifier: taskIdentifier, location: location, error: error)
+        }
+    }
+
     func handleCompletion(taskIdentifier: Int, location: URL?, error: SendableUnderlyingError?) async {
         guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else { return }
 
@@ -505,6 +551,7 @@ public actor DownloadManager {
     }
 
     deinit {
+        delegateEventContinuation.finish()
         Self.unregisterSessionIdentifier(configuration.sessionIdentifier)
     }
 

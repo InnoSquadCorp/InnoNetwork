@@ -63,30 +63,35 @@ jobs:
       - name: Generate coverage report
         run: |
           set -eo pipefail
-          # Resolve the most recent .xctest binary and merged profdata under
-          # the SwiftPM build root. The exact path is platform/version-
-          # dependent so we discover it dynamically.
-          xctest_bundle="$(find .build -name '*.xctest' -type d | head -n 1)"
+          # Resolve all .xctest binaries and the merged profdata under the
+          # SwiftPM build root. The exact paths are platform/version-dependent
+          # so we discover them dynamically.
           profdata="$(find .build -name 'default.profdata' -type f | head -n 1)"
+          llvm_cov_objects=()
+          while IFS= read -r -d '' xctest_bundle; do
+            binary="$xctest_bundle/Contents/MacOS/$(basename "$xctest_bundle" .xctest)"
+            if [[ -x "$binary" ]]; then
+              llvm_cov_objects+=(--object "$binary")
+            fi
+          done < <(find .build -name '*.xctest' -type d -print0)
 
-          if [[ -z "$xctest_bundle" || -z "$profdata" ]]; then
+          if [[ -z "$profdata" || ${#llvm_cov_objects[@]} -eq 0 ]]; then
             echo "::warning::Coverage artifacts not found; skipping report."
             exit 0
           fi
 
-          binary="$xctest_bundle/Contents/MacOS/$(basename "$xctest_bundle" .xctest)"
           mkdir -p .build/coverage
           xcrun llvm-cov report \
             --instr-profile="$profdata" \
             --use-color=false \
             --ignore-filename-regex='(^|/)(\.build|Tests|SmokeTests|Examples|Benchmarks)/' \
-            "$binary" | tee .build/coverage/summary.txt
+            "${llvm_cov_objects[@]}" | tee .build/coverage/summary.txt
 
           xcrun llvm-cov export \
             --instr-profile="$profdata" \
             --format=lcov \
             --ignore-filename-regex='(^|/)(\.build|Tests|SmokeTests|Examples|Benchmarks)/' \
-            "$binary" > .build/coverage/coverage.lcov
+            "${llvm_cov_objects[@]}" > .build/coverage/coverage.lcov
 
       - name: Upload coverage artifact
         if: always()

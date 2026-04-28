@@ -16,7 +16,7 @@ a custom `DownloadTaskStore` if your application has a different persistence mod
 
 Each persisted session lives under `persistenceDirectory/<sessionIdentifier>/`:
 
-```
+```text
 <sessionIdentifier>/
 ├── checkpoint.json   # most recent compact snapshot
 └── events.log        # JSON Lines append log of incremental changes
@@ -79,7 +79,7 @@ task state when the OS reclaims space. `tmp/` is never appropriate.
 
 | Policy | Event append | Checkpoint write | Loss on crash |
 |--------|-------------|------------------|---------------|
-| ``DownloadConfiguration/PersistenceFsyncPolicy/always`` | fsync after every event | fsync before atomic rename | ~0 events |
+| ``DownloadConfiguration/PersistenceFsyncPolicy/always`` | fsync after every mutation batch | fsync before atomic rename | ~0 events in the batch |
 | ``DownloadConfiguration/PersistenceFsyncPolicy/onCheckpoint`` (default) | no fsync | fsync before atomic rename | events since the last checkpoint |
 | ``DownloadConfiguration/PersistenceFsyncPolicy/never`` | no fsync | no fsync | up to a few minutes of OS-cached writes |
 

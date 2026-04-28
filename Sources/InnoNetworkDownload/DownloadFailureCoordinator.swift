@@ -150,14 +150,15 @@ package struct DownloadFailureCoordinator {
         await runtimeRegistry.onFailed?(task, .maxRetriesExceeded)
         await eventHub.publish(.stateChanged(.failed), for: task.id)
         await eventHub.publish(.failed(.maxRetriesExceeded), for: task.id)
-        await runtimeRegistry.removeTaskRuntime(taskId: task.id)
-        await eventHub.finish(taskID: task.id)
-        await runtimeRegistry.remove(task)
         do {
             try await persistence.remove(id: task.id)
         } catch {
-            Self.logger.fault("Failed to remove failed task \(task.id, privacy: .public) from persistence: \(String(describing: error), privacy: .public)")
+            Self.logger.fault("Failed to remove failed task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))")
+            return
         }
+        await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+        await eventHub.finish(taskID: task.id)
+        await runtimeRegistry.remove(task)
     }
 
     private func isCancelledTransportError(_ error: SendableUnderlyingError) -> Bool {
