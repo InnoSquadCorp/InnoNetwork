@@ -396,7 +396,10 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     /// - Returns: The decoded `APIResponse` produced by the executable.
     /// - Throws: A ``NetworkError`` or another execution error produced while building,
     ///   sending, validating, or decoding the executable request.
-    @_spi(GeneratedClientSupport) public func perform<D: SingleRequestExecutable>(executable: D) async throws -> D.APIResponse {
+    @_spi(GeneratedClientSupport)
+    public func perform<D: SingleRequestExecutable>(
+        executable: D
+    ) async throws -> D.APIResponse {
         let requestID = UUID()
         let startGate = TaskStartGate()
         // Wrap the work in an unstructured Task so cancelAll() can reach it
