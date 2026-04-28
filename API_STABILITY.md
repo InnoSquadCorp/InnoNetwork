@@ -37,6 +37,7 @@ This document defines the compatibility contract for the upcoming InnoNetwork
 - `InnoNetworkTestSupport` library product and its `public` symbols
   (currently `WebSocketEventRecorder`)
 - `Endpoint`, `AnyEncodable`, `StubBehavior`, `NetworkContext`, `CorrelationIDInterceptor`, and `APIDefinition` stubbing hooks
+- `LowLevelNetworkClient`, `SingleRequestExecutable`, `RequestPayload`, and `DefaultNetworkClient.perform` execution hooks
 
 ## Internal/Operational
 
@@ -56,8 +57,8 @@ This document defines the compatibility contract for the upcoming InnoNetwork
 - Advanced builders are public and supported, but operational tuning values are not guaranteed to stay numerically identical across releases.
 - `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`,
   `SingleRequestExecutable`, `RequestPayload`, and
-  `WebSocketCloseDisposition` may appear in source while the package is being
-  prepared, but they are not part of the 4.0.0 stable API promise.
+  `WebSocketCloseDisposition` are provisionally stable while the package is
+  being prepared, but they are not part of the 4.0.0 stable API promise.
 - `WebSocketPingContext` and `WebSocketPongContext` public fields are stable
   because they are payloads of stable heartbeat events; their package-scoped
   initializers are construction details owned by the library.

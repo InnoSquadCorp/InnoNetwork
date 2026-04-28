@@ -134,6 +134,7 @@ expected_provisionally=(
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
 '`Endpoint`, `AnyEncodable`, `StubBehavior`, `NetworkContext`, `CorrelationIDInterceptor`, and `APIDefinition` stubbing hooks'
+'`LowLevelNetworkClient`, `SingleRequestExecutable`, `RequestPayload`, and `DefaultNetworkClient.perform` execution hooks'
 )
 
 validate_protocol_symbol() {
@@ -186,10 +187,31 @@ validate_oss_readiness_public_api() {
     "$repo_root/Sources/InnoNetwork/APIDefinition.swift"
   require_contains 'var sampleBehavior: StubBehavior { get }' \
     "$repo_root/Sources/InnoNetwork/APIDefinition.swift"
+  require_contains 'var sampleResponse: APIResponse? { nil }' \
+    "$repo_root/Sources/InnoNetwork/APIDefinition.swift"
+  require_contains 'var sampleBehavior: StubBehavior { .never }' \
+    "$repo_root/Sources/InnoNetwork/APIDefinition.swift"
   require_contains 'public struct NetworkContext: Sendable' \
     "$repo_root/Sources/InnoNetwork/NetworkContext.swift"
   require_contains 'public struct CorrelationIDInterceptor: RequestInterceptor' \
     "$repo_root/Sources/InnoNetwork/CorrelationIDInterceptor.swift"
+}
+
+validate_low_level_execution_public_api() {
+  require_contains 'public protocol LowLevelNetworkClient: Sendable' \
+    "$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+  require_contains 'func perform<T: APIDefinition>(_ request: T) async throws -> T.APIResponse' \
+    "$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+  require_contains 'func perform<D: SingleRequestExecutable>(executable: D) async throws -> D.APIResponse' \
+    "$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+  require_contains 'public protocol SingleRequestExecutable: Sendable' \
+    "$repo_root/Sources/InnoNetwork/RequestExecution.swift"
+  require_contains 'public enum RequestPayload: Sendable' \
+    "$repo_root/Sources/InnoNetwork/RequestExecution.swift"
+  require_contains 'case fileURL(URL, contentType: String)' \
+    "$repo_root/Sources/InnoNetwork/RequestExecution.swift"
+  require_contains 'case temporaryFileURL(URL, contentType: String)' \
+    "$repo_root/Sources/InnoNetwork/RequestExecution.swift"
 }
 
 validate_troubleshooting_and_examples_docs() {
@@ -362,6 +384,10 @@ for symbol in "${expected_provisionally[@]}"; do
       ;;
     '`Endpoint`, `AnyEncodable`, `StubBehavior`, `NetworkContext`, `CorrelationIDInterceptor`, and `APIDefinition` stubbing hooks')
       validate_oss_readiness_public_api
+      continue
+      ;;
+    '`LowLevelNetworkClient`, `SingleRequestExecutable`, `RequestPayload`, and `DefaultNetworkClient.perform` execution hooks')
+      validate_low_level_execution_public_api
       continue
       ;;
     *)

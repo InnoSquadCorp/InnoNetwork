@@ -158,12 +158,9 @@ struct WebSocketReceiveLoopTests {
             recorder.record(event)
         }
 
-        let loop = WebSocketReceiveLoop(runtimeRegistry: registry, eventHub: eventHub)
-        await loop.start(task: task, urlTask: stub) { _, _ in }
-
-        // Script 5 messages upfront. The loop should drain all of them
-        // through successive `receive()` calls, and each should publish
-        // in the same order they were queued.
+        // Script 5 messages before starting the loop. The loop should drain
+        // all of them through successive `receive()` calls, and each should
+        // publish in the same order they were queued.
         let payloads: [URLSessionWebSocketTask.Message] = [
             .string("one"),
             .data(Data([0x01])),
@@ -174,6 +171,9 @@ struct WebSocketReceiveLoopTests {
         for payload in payloads {
             stub.scriptReceive(.success(payload))
         }
+
+        let loop = WebSocketReceiveLoop(runtimeRegistry: registry, eventHub: eventHub)
+        await loop.start(task: task, urlTask: stub) { _, _ in }
 
         // Wait until all 5 observable events (mix of .string/.message) have
         // landed in the recorder.

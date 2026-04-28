@@ -747,6 +747,37 @@ struct DownloadBackgroundCompletionTests {
 
 @Suite("Download Persistence Cleanup Tests")
 struct DownloadPersistenceCleanupTests {
+    @Test("Existing destination is preserved when replacement temp file is missing")
+    func existingDestinationIsPreservedWhenReplacementFails() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("innonetwork-download-replace-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: directory) }
+
+        let destination = directory.appendingPathComponent("existing.zip")
+        try Data("existing-payload".utf8).write(to: destination)
+        let missingTemporaryLocation = directory.appendingPathComponent("missing-temp.data")
+
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 0,
+            maxTotalRetries: 0,
+            label: "completion-replace-failure"
+        )
+        let task = await harness.startDownload(destinationURL: destination)
+        let taskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task
+            ))
+
+        await harness.injectCompletion(taskIdentifier: taskIdentifier, location: missingTemporaryLocation)
+
+        #expect(await task.state == .failed)
+        let preservedData = try Data(contentsOf: destination)
+        #expect(String(data: preservedData, encoding: .utf8) == "existing-payload")
+    }
+
     @Test("Completed task remains registered when persistence removal fails")
     func completedTaskRemainsRegisteredWhenPersistenceRemovalFails() async throws {
         let harness = try StubDownloadHarness(label: "completion-remove-failure")
