@@ -58,9 +58,9 @@ jobs:
           set -eo pipefail
           echo "🧪 Running tests with --enable-code-coverage..."
           # Coverage instrumentation makes the macOS Actions runner much more
-          # scheduler-sensitive; keep the coverage run single-worker so wall-clock
+          # scheduler-sensitive; keep this run non-parallel so wall-clock
           # polling tests do not starve under runner load.
-          xcrun swift test --parallel --num-workers 1 --enable-code-coverage
+          xcrun swift test --no-parallel --enable-code-coverage
           echo "✅ Tests completed successfully!"
 
       - name: Generate coverage report

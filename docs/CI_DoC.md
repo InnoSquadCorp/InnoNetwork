@@ -47,9 +47,9 @@ Run the same commands locally:
 sudo xcode-select -s /Applications/Xcode_26.0.1.app
 xcrun swift package resolve
 xcrun swift build -Xswiftc -strict-concurrency=complete
-# Match CI: keep the coverage run single-worker because instrumentation plus
+# Match CI: keep the coverage run non-parallel because instrumentation plus
 # runner-level parallelism can starve wall-clock polling tests on macOS.
-xcrun swift test --parallel --num-workers 1 --enable-code-coverage
+xcrun swift test --no-parallel --enable-code-coverage
 rg -n "@unchecked Sendable" Sources
 
 # Optional: render the same coverage artifacts CI uploads.
