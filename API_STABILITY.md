@@ -35,8 +35,8 @@ This document defines the compatibility contract for the upcoming InnoNetwork
 - benchmark runner CLI flags and JSON summary presentation details
 - troubleshooting guidance and examples in README/DocC
 - `InnoNetworkTestSupport` library product and its `public` symbols
-  (currently `WebSocketEventRecorder`, `StubBehavior`, `StubNetworkClient`,
-  and `StubRequestKey`)
+  (currently `MockURLSession`, `WebSocketEventRecorder`, `StubBehavior`,
+  `StubNetworkClient`, and `StubRequestKey`)
 - `Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 
 ## Public Declaration Ledger
@@ -93,7 +93,7 @@ targets and requires every declaration below to stay classified here before the
 
 ### InnoNetworkTestSupport
 
-- `StubBehavior`, `StubNetworkClient`, `StubRequestKey`, and
+- `MockURLSession`, `StubBehavior`, `StubNetworkClient`, `StubRequestKey`, and
   `WebSocketEventRecorder`.
 
 ## Internal/Operational

@@ -233,6 +233,7 @@ expected_spi_public_declarations=(
 )
 
 expected_test_support_public_declarations=(
+  MockURLSession
   StubBehavior
   StubNetworkClient
   StubRequestKey
@@ -282,6 +283,8 @@ validate_test_support_product() {
     "$repo_root/Sources/InnoNetworkTestSupport/StubNetworkClient.swift"
   require_contains 'public final class StubNetworkClient' \
     "$repo_root/Sources/InnoNetworkTestSupport/StubNetworkClient.swift"
+  require_contains 'public final class MockURLSession' \
+    "$repo_root/Sources/InnoNetworkTestSupport/MockURLSession.swift"
 }
 
 collect_public_declarations() {
