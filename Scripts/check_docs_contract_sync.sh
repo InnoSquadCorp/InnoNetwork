@@ -134,7 +134,106 @@ expected_provisionally=(
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
 '`Endpoint`, `AnyEncodable`, `StubBehavior`, `NetworkContext`, `CorrelationIDInterceptor`, and `APIDefinition` stubbing hooks'
-'`LowLevelNetworkClient`, `SingleRequestExecutable`, `RequestPayload`, and `DefaultNetworkClient.perform` execution hooks'
+)
+
+expected_shipping_public_declarations=(
+  APIDefinition
+  AnyEncodable
+  AnyResponseDecoder
+  ContentType
+  CorrelationIDInterceptor
+  DefaultNetworkClient
+  DefaultNetworkLogger
+  DownloadConfiguration
+  DownloadError
+  DownloadEvent
+  DownloadEventSubscription
+  DownloadManager
+  DownloadManagerError
+  DownloadProgress
+  DownloadState
+  DownloadTask
+  EmptyParameter
+  EmptyResponse
+  Endpoint
+  EventDeliveryPolicy
+  EventPipelineAggregateSnapshotMetric
+  EventPipelineConsumerDeliveryLatencyMetric
+  EventPipelineConsumerStateMetric
+  EventPipelineHubKind
+  EventPipelineMetric
+  EventPipelineMetricsReporting
+  EventPipelineOverflowPolicy
+  EventPipelinePartitionStateMetric
+  ExponentialBackoffRetryPolicy
+  HTTPEmptyResponseDecodable
+  HTTPHeader
+  HTTPHeaders
+  HTTPMethod
+  MultipartAPIDefinition
+  MultipartFormData
+  MultipartUploadStrategy
+  NetworkClient
+  NetworkConfiguration
+  NetworkContext
+  NetworkError
+  NetworkEvent
+  NetworkEventObserving
+  NetworkInterfaceType
+  NetworkLoggingOptions
+  NetworkLogger
+  NetworkMetricsReporting
+  NetworkMonitor
+  NetworkMonitoring
+  NetworkReachabilityStatus
+  NetworkRequestContext
+  NetworkSnapshot
+  NoOpEventPipelineMetricsReporter
+  NoOpNetworkEventObserver
+  NoOpNetworkLogger
+  OSLogNetworkEventObserver
+  PublicKeyPinningPolicy
+  RequestInterceptor
+  Response
+  ResponseInterceptor
+  RetryDecision
+  RetryPolicy
+  SendableUnderlyingError
+  ServerSentEvent
+  ServerSentEventDecoder
+  StreamingAPIDefinition
+  StreamingResumePolicy
+  StubBehavior
+  TimeoutReason
+  TrustEvaluating
+  TrustFailureReason
+  TrustPolicy
+  URLQueryCustomKeyTransform
+  URLQueryEncoder
+  URLQueryKeyEncodingStrategy
+  URLSessionProtocol
+  WebSocketCloseCode
+  WebSocketCloseDisposition
+  WebSocketConfiguration
+  WebSocketError
+  WebSocketEvent
+  WebSocketEventSubscription
+  WebSocketManager
+  WebSocketPingContext
+  WebSocketPongContext
+  WebSocketSendOverflowPolicy
+  WebSocketState
+  WebSocketTask
+)
+
+expected_spi_public_declarations=(
+  LowLevelNetworkClient
+  RequestPayload
+  SingleRequestExecutable
+)
+
+expected_test_support_public_declarations=(
+  WebSocketEventRecorder
 )
 
 validate_protocol_symbol() {
@@ -176,6 +275,95 @@ validate_test_support_product() {
     "$repo_root/Sources/InnoNetworkTestSupport/WebSocketEventRecorder.swift"
 }
 
+collect_public_declarations() {
+  local include_spi="$1"
+  shift
+  find "$@" -type f -name '*.swift' | sort | while IFS= read -r file; do
+    awk -v include_spi="$include_spi" '
+      function emit(line) {
+        if (line ~ /^public final class /) {
+          sub(/^public final class /, "", line)
+        } else if (line ~ /^public (protocol|struct|enum|class|actor) /) {
+          sub(/^public (protocol|struct|enum|class|actor) /, "", line)
+        } else {
+          return
+        }
+        sub(/[<:({ ].*/, "", line)
+        print line
+      }
+
+      /^@_spi\([^)]*\) public / {
+        if (include_spi == "yes") {
+          line = $0
+          sub(/^@_spi\([^)]*\) /, "", line)
+          emit(line)
+        }
+        next
+      }
+
+      /^public / {
+        if (include_spi == "no") {
+          emit($0)
+        }
+      }
+    ' "$file"
+  done | sort -u
+}
+
+validate_public_declaration_set() {
+  local label="$1"
+  local actual="$2"
+  shift 2
+  local expected
+  expected="$(printf '%s\n' "$@" | sort -u)"
+
+  [[ "$expected" == "$actual" ]] || {
+    echo "Expected $label public declarations:" >&2
+    printf '%s\n' "$expected" >&2
+    echo "Actual $label public declarations:" >&2
+    printf '%s\n' "$actual" >&2
+    fail "$label public declaration set drifted; update API_STABILITY.md and check_docs_contract_sync.sh"
+  }
+}
+
+validate_public_surface_ledger() {
+  local shipping_actual
+  shipping_actual="$(
+    collect_public_declarations no \
+      "$repo_root/Sources/InnoNetwork" \
+      "$repo_root/Sources/InnoNetworkDownload" \
+      "$repo_root/Sources/InnoNetworkWebSocket"
+  )"
+  validate_public_declaration_set \
+    "shipping" \
+    "$shipping_actual" \
+    "${expected_shipping_public_declarations[@]}"
+
+  local spi_actual
+  spi_actual="$(
+    collect_public_declarations yes \
+      "$repo_root/Sources/InnoNetwork" \
+      "$repo_root/Sources/InnoNetworkDownload" \
+      "$repo_root/Sources/InnoNetworkWebSocket"
+  )"
+  validate_public_declaration_set \
+    "SPI" \
+    "$spi_actual" \
+    "${expected_spi_public_declarations[@]}"
+
+  local test_support_actual
+  test_support_actual="$(collect_public_declarations no "$repo_root/Sources/InnoNetworkTestSupport")"
+  validate_public_declaration_set \
+    "TestSupport" \
+    "$test_support_actual" \
+    "${expected_test_support_public_declarations[@]}"
+
+  for declaration in "${expected_shipping_public_declarations[@]}" "${expected_spi_public_declarations[@]}" \
+    "${expected_test_support_public_declarations[@]}"; do
+    require_contains "\`$declaration\`" "$api_stability"
+  done
+}
+
 validate_oss_readiness_public_api() {
   require_contains 'public struct Endpoint<Response: Decodable & Sendable>: APIDefinition' \
     "$repo_root/Sources/InnoNetwork/Endpoint.swift"
@@ -195,23 +383,6 @@ validate_oss_readiness_public_api() {
     "$repo_root/Sources/InnoNetwork/NetworkContext.swift"
   require_contains 'public struct CorrelationIDInterceptor: RequestInterceptor' \
     "$repo_root/Sources/InnoNetwork/CorrelationIDInterceptor.swift"
-}
-
-validate_low_level_execution_public_api() {
-  require_contains 'public protocol LowLevelNetworkClient: Sendable' \
-    "$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
-  require_contains 'func perform<T: APIDefinition>(_ request: T) async throws -> T.APIResponse' \
-    "$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
-  require_contains 'func perform<D: SingleRequestExecutable>(executable: D) async throws -> D.APIResponse' \
-    "$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
-  require_contains 'public protocol SingleRequestExecutable: Sendable' \
-    "$repo_root/Sources/InnoNetwork/RequestExecution.swift"
-  require_contains 'public enum RequestPayload: Sendable' \
-    "$repo_root/Sources/InnoNetwork/RequestExecution.swift"
-  require_contains 'case fileURL(URL, contentType: String)' \
-    "$repo_root/Sources/InnoNetwork/RequestExecution.swift"
-  require_contains 'case temporaryFileURL(URL, contentType: String)' \
-    "$repo_root/Sources/InnoNetwork/RequestExecution.swift"
 }
 
 validate_troubleshooting_and_examples_docs() {
@@ -386,15 +557,13 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_oss_readiness_public_api
       continue
       ;;
-    '`LowLevelNetworkClient`, `SingleRequestExecutable`, `RequestPayload`, and `DefaultNetworkClient.perform` execution hooks')
-      validate_low_level_execution_public_api
-      continue
-      ;;
     *)
       fail "unknown provisionally stable symbol mapping: $symbol"
       ;;
   esac
 done
+
+validate_public_surface_ledger
 
 require_contains "API Stability" "$readme"
 require_contains ".safeDefaults(" "$readme"

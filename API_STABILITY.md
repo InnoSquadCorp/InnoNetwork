@@ -37,7 +37,62 @@ This document defines the compatibility contract for the upcoming InnoNetwork
 - `InnoNetworkTestSupport` library product and its `public` symbols
   (currently `WebSocketEventRecorder`)
 - `Endpoint`, `AnyEncodable`, `StubBehavior`, `NetworkContext`, `CorrelationIDInterceptor`, and `APIDefinition` stubbing hooks
-- `LowLevelNetworkClient`, `SingleRequestExecutable`, `RequestPayload`, and `DefaultNetworkClient.perform` execution hooks
+
+## Public Declaration Ledger
+
+The docs-contract gate extracts top-level `public` declarations from shipping
+targets and requires every declaration below to stay classified here before the
+4.0.0 tag.
+
+### InnoNetwork
+
+- `APIDefinition`, `AnyEncodable`, `AnyResponseDecoder`, `ContentType`,
+  `CorrelationIDInterceptor`, `DefaultNetworkClient`, `DefaultNetworkLogger`,
+  `EmptyParameter`, `EmptyResponse`, `Endpoint`, `HTTPEmptyResponseDecodable`,
+  `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`, `MultipartAPIDefinition`,
+  `MultipartFormData`, `MultipartUploadStrategy`, `NetworkClient`,
+  `NetworkConfiguration`, `NetworkContext`, `NetworkError`, `NetworkEvent`,
+  `NetworkEventObserving`, `NetworkInterfaceType`, `NetworkLoggingOptions`,
+  `NetworkLogger`, `NetworkMetricsReporting`, `NetworkMonitor`,
+  `NetworkMonitoring`, `NetworkReachabilityStatus`, `NetworkRequestContext`,
+  `NetworkSnapshot`, `NoOpNetworkEventObserver`, `NoOpNetworkLogger`,
+  `OSLogNetworkEventObserver`, `PublicKeyPinningPolicy`, `RequestInterceptor`,
+  `Response`, `ResponseInterceptor`, `RetryDecision`, `RetryPolicy`,
+  `SendableUnderlyingError`, `ServerSentEvent`, `ServerSentEventDecoder`,
+  `StreamingAPIDefinition`, `StreamingResumePolicy`, `StubBehavior`,
+  `TimeoutReason`, `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
+  `URLQueryCustomKeyTransform`, `URLQueryEncoder`, `URLQueryKeyEncodingStrategy`,
+  and `URLSessionProtocol`.
+- Event-pipeline observability declarations: `EventDeliveryPolicy`,
+  `EventPipelineAggregateSnapshotMetric`,
+  `EventPipelineConsumerDeliveryLatencyMetric`,
+  `EventPipelineConsumerStateMetric`, `EventPipelineHubKind`,
+  `EventPipelineMetric`, `EventPipelineMetricsReporting`,
+  `EventPipelineOverflowPolicy`, `EventPipelinePartitionStateMetric`,
+  `ExponentialBackoffRetryPolicy`, and `NoOpEventPipelineMetricsReporter`.
+
+### InnoNetworkDownload
+
+- `DownloadConfiguration`, `DownloadError`, `DownloadEvent`,
+  `DownloadEventSubscription`, `DownloadManager`, `DownloadManagerError`,
+  `DownloadProgress`, `DownloadState`, and `DownloadTask`.
+
+### InnoNetworkWebSocket
+
+- `WebSocketCloseCode`, `WebSocketCloseDisposition`, `WebSocketConfiguration`,
+  `WebSocketError`, `WebSocketEvent`, `WebSocketEventSubscription`,
+  `WebSocketManager`, `WebSocketPingContext`, `WebSocketPongContext`,
+  `WebSocketSendOverflowPolicy`, `WebSocketState`, and `WebSocketTask`.
+
+### SPI
+
+- `LowLevelNetworkClient`, `RequestPayload`, and `SingleRequestExecutable` are
+  public only through `@_spi(GeneratedClientSupport)` and remain outside the
+  default SwiftPM import contract.
+
+### InnoNetworkTestSupport
+
+- `WebSocketEventRecorder`.
 
 ## Internal/Operational
 
@@ -57,8 +112,8 @@ This document defines the compatibility contract for the upcoming InnoNetwork
 - Advanced builders are public and supported, but operational tuning values are not guaranteed to stay numerically identical across releases.
 - `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`,
   `SingleRequestExecutable`, `RequestPayload`, and
-  `WebSocketCloseDisposition` are provisionally stable while the package is
-  being prepared, but they are not part of the 4.0.0 stable API promise.
+  `WebSocketCloseDisposition` may appear in source while the package is being
+  prepared, but they are not part of the 4.0.0 stable API promise.
 - `WebSocketPingContext` and `WebSocketPongContext` public fields are stable
   because they are payloads of stable heartbeat events; their package-scoped
   initializers are construction details owned by the library.
