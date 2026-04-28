@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetworkDownload
 
+@testable import InnoNetworkDownload
 
 /// Restore-coordinator behavior verified through `StubDownloadURLSession`
 /// + an in-memory `InMemoryDownloadTaskStore`. Replaces the previous real

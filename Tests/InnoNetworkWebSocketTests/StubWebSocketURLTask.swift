@@ -1,7 +1,7 @@
 import Foundation
 import os
-@testable import InnoNetworkWebSocket
 
+@testable import InnoNetworkWebSocket
 
 /// Test-only stub conforming to `WebSocketURLTask` that records calls and lets
 /// the test drive scripted outcomes for `receive()` / `sendPing`.
@@ -42,7 +42,8 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
     }
 
     func receive() async throws -> URLSessionWebSocketTask.Message {
-        let readyResult: Result<URLSessionWebSocketTask.Message, Error>? = stateLock.withLock { state -> Result<URLSessionWebSocketTask.Message, Error>? in
+        let readyResult: Result<URLSessionWebSocketTask.Message, Error>? = stateLock.withLock {
+            state -> Result<URLSessionWebSocketTask.Message, Error>? in
             if !state.scriptedReceives.isEmpty {
                 return state.scriptedReceives.removeFirst()
             }

@@ -1,13 +1,13 @@
 import Foundation
 import os
 
-
 package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMetricsReporting {
     package static let queueCapacity = 1_024
 
     private let inputContinuation: AsyncStream<EventPipelineMetric>.Continuation
     private let outputContinuation: AsyncStream<EventPipelineMetric>.Continuation
-    private let emitToOutput: @Sendable (EventPipelineMetric) -> AsyncStream<EventPipelineMetric>.Continuation.YieldResult
+    private let emitToOutput:
+        @Sendable (EventPipelineMetric) -> AsyncStream<EventPipelineMetric>.Continuation.YieldResult
     private let aggregator: EventPipelineMetricsAggregator
     private let dropTracker: EventPipelineMetricsDropTracker
     private let ingestTask: Task<Void, Never>
@@ -29,13 +29,14 @@ package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMe
         )
         let aggregator = EventPipelineMetricsAggregator(hubKind: hubKind)
         let dropTracker = EventPipelineMetricsDropTracker()
-        let emitToOutput: @Sendable (EventPipelineMetric) -> AsyncStream<EventPipelineMetric>.Continuation.YieldResult = { metric in
-            let result = output.continuation.yield(metric)
-            if case .dropped = result {
-                dropTracker.recordOutputOverflow()
+        let emitToOutput: @Sendable (EventPipelineMetric) -> AsyncStream<EventPipelineMetric>.Continuation.YieldResult =
+            { metric in
+                let result = output.continuation.yield(metric)
+                if case .dropped = result {
+                    dropTracker.recordOutputOverflow()
+                }
+                return result
             }
-            return result
-        }
         let ingestTask = Task {
             for await metric in input.stream {
                 let emittedMetrics = await aggregator.ingest(metric)

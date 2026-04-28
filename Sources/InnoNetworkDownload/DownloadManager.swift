@@ -1,8 +1,7 @@
 import Foundation
 import InnoNetwork
-import os
 import OSLog
-
+import os
 
 public enum DownloadEvent: Sendable {
     case progress(DownloadProgress)
@@ -26,7 +25,8 @@ extension DownloadManagerError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .duplicateSessionIdentifier(let identifier):
-            return "DownloadManager sessionIdentifier '\(identifier)' is already in use. Use a unique sessionIdentifier for multiple managers."
+            return
+                "DownloadManager sessionIdentifier '\(identifier)' is already in use. Use a unique sessionIdentifier for multiple managers."
         }
     }
 }
@@ -75,14 +75,16 @@ public actor DownloadManager {
             let fallbackConfig = DownloadConfiguration.safeDefaults(
                 sessionIdentifier: fallbackIdentifier
             )
-            DownloadManager.logger.fault("""
+            DownloadManager.logger.fault(
+                """
                 DownloadManager.shared could not bind session identifier \
                 \(claimedIdentifier, privacy: .public): another DownloadManager already \
                 owns it. Falling back to \(fallbackIdentifier, privacy: .public). Use \
                 DownloadManager.make(configuration:) to construct managers with explicit \
                 session identifiers.
                 """)
-            assertionFailure("""
+            assertionFailure(
+                """
                 DownloadManager.shared bound a fallback session identifier '\(fallbackIdentifier)'. \
                 Use DownloadManager.make(configuration:) and pass an explicit identifier instead \
                 of relying on `.shared` when multiple managers coexist.
@@ -94,13 +96,15 @@ public actor DownloadManager {
                 // fallback identifier is freshly UUID-prefixed. Crash so the
                 // problem surfaces rather than silently returning a broken
                 // singleton.
-                fatalError("DownloadManager.shared cannot initialize with fallback identifier: \(error.localizedDescription)")
+                fatalError(
+                    "DownloadManager.shared cannot initialize with fallback identifier: \(error.localizedDescription)")
             }
         } catch {
             // Any other initialization failure is structural (e.g., persistence
             // directory inaccessible) and not something a fallback identifier
             // would fix. Surface it.
-            fatalError("DownloadManager.shared cannot initialize with .default configuration: \(error.localizedDescription)")
+            fatalError(
+                "DownloadManager.shared cannot initialize with .default configuration: \(error.localizedDescription)")
         }
     }()
 
@@ -261,20 +265,24 @@ public actor DownloadManager {
         // stream, and the single consumer task below awaits actor-isolated
         // handling in FIFO order.
         callbacks.setHandlers(
-            onProgress: { [delegateEventContinuation] taskIdentifier, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite in
-                delegateEventContinuation.yield(.progress(
-                    taskIdentifier: taskIdentifier,
-                    bytesWritten: bytesWritten,
-                    totalBytesWritten: totalBytesWritten,
-                    totalBytesExpectedToWrite: totalBytesExpectedToWrite
-                ))
+            onProgress: {
+                [delegateEventContinuation] taskIdentifier, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite
+                in
+                delegateEventContinuation.yield(
+                    .progress(
+                        taskIdentifier: taskIdentifier,
+                        bytesWritten: bytesWritten,
+                        totalBytesWritten: totalBytesWritten,
+                        totalBytesExpectedToWrite: totalBytesExpectedToWrite
+                    ))
             },
             onCompletion: { [delegateEventContinuation] taskIdentifier, location, error in
-                delegateEventContinuation.yield(.completion(
-                    taskIdentifier: taskIdentifier,
-                    location: location,
-                    error: error
-                ))
+                delegateEventContinuation.yield(
+                    .completion(
+                        taskIdentifier: taskIdentifier,
+                        location: location,
+                        error: error
+                    ))
             }
         )
         Task { [weak self, delegateEvents] in
@@ -385,7 +393,9 @@ public actor DownloadManager {
         do {
             try await persistence.remove(id: task.id)
         } catch {
-            Self.logger.fault("Failed to remove cancelled task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))")
+            Self.logger.fault(
+                "Failed to remove cancelled task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))"
+            )
             return
         }
         await runtimeRegistry.removeTaskRuntime(taskId: task.id)
@@ -469,7 +479,9 @@ public actor DownloadManager {
         }
     }
 
-    func handleProgress(taskIdentifier: Int, bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) async {
+    func handleProgress(
+        taskIdentifier: Int, bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
+    ) async {
         guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else { return }
 
         let progress = DownloadProgress(
@@ -484,14 +496,14 @@ public actor DownloadManager {
 
     private func handleDelegateEvent(_ event: DelegateEvent) async {
         switch event {
-        case let .progress(taskIdentifier, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite):
+        case .progress(let taskIdentifier, let bytesWritten, let totalBytesWritten, let totalBytesExpectedToWrite):
             await handleProgress(
                 taskIdentifier: taskIdentifier,
                 bytesWritten: bytesWritten,
                 totalBytesWritten: totalBytesWritten,
                 totalBytesExpectedToWrite: totalBytesExpectedToWrite
             )
-        case let .completion(taskIdentifier, location, error):
+        case .completion(let taskIdentifier, let location, let error):
             await handleCompletion(taskIdentifier: taskIdentifier, location: location, error: error)
         }
     }
@@ -539,7 +551,9 @@ public actor DownloadManager {
     /// `application(_:handleEventsForBackgroundURLSession:completionHandler:)`
     /// entry point. That method is synchronous, so this entry point is
     /// `nonisolated` to avoid forcing callers to await.
-    public nonisolated func handleBackgroundSessionCompletion(_ identifier: String, completion: @escaping @Sendable () -> Void) {
+    public nonisolated func handleBackgroundSessionCompletion(
+        _ identifier: String, completion: @escaping @Sendable () -> Void
+    ) {
         guard identifier == configuration.sessionIdentifier else {
             completion()
             return

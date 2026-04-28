@@ -1,6 +1,5 @@
 import Foundation
 
-
 /// Describes a request/response endpoint executed by `DefaultNetworkClient`.
 public protocol APIDefinition: Sendable {
     associatedtype Parameter: Encodable & Sendable

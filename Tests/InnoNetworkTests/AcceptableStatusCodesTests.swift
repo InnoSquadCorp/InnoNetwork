@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 @Suite("Acceptable Status Codes Tests")
 struct AcceptableStatusCodesTests {
@@ -121,7 +121,9 @@ struct AcceptableStatusCodesTests {
 
         var acceptableStatusCodes: Set<Int>? { [201] }
 
-        static func emptyResponseValue() -> EndpointRejectsEverythingButCreated { EndpointRejectsEverythingButCreated() }
+        static func emptyResponseValue() -> EndpointRejectsEverythingButCreated {
+            EndpointRejectsEverythingButCreated()
+        }
     }
 
     @Test("Per-endpoint override broadens acceptable codes without touching session defaults")

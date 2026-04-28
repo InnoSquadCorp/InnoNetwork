@@ -1,10 +1,10 @@
 import Foundation
-import os
-import Testing
 import InnoNetworkTestSupport
+import Testing
+import os
+
 @testable import InnoNetwork
 @testable import InnoNetworkDownload
-
 
 /// Deterministic timing tests for `DownloadFailureCoordinator`. Drives the
 /// coordinator directly (no URLSession / no DownloadManager) so the retry

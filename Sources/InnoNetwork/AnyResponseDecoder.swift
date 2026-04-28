@@ -1,6 +1,5 @@
 import Foundation
 
-
 public struct AnyResponseDecoder<Output: Sendable>: Sendable {
     private let decodeClosure: @Sendable (Data, Response) throws -> Output
 
@@ -21,8 +20,9 @@ extension AnyResponseDecoder where Output: Decodable & Sendable {
         case .jsonAllowingEmpty(let decoder) where Output.self is any HTTPEmptyResponseDecodable.Type:
             self = .init { data, response in
                 if data.isEmpty || response.statusCode == 204,
-                   let emptyType = Output.self as? any HTTPEmptyResponseDecodable.Type,
-                   let emptyValue = emptyType.emptyResponseValue() as? Output {
+                    let emptyType = Output.self as? any HTTPEmptyResponseDecodable.Type,
+                    let emptyValue = emptyType.emptyResponseValue() as? Output
+                {
                     return emptyValue
                 }
 

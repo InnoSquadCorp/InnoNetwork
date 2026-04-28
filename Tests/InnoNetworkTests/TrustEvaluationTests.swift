@@ -1,8 +1,8 @@
 import Foundation
 import Security
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 @Suite("Trust Evaluation Tests")
 struct TrustEvaluationTests {
@@ -12,7 +12,7 @@ struct TrustEvaluationTests {
         let policy = PublicKeyPinningPolicy(
             pinsByHost: [
                 "api.example.com": ["sha256/primary-pin"],
-                "example.com": ["sha256/backup-pin"]
+                "example.com": ["sha256/backup-pin"],
             ],
             includesSubdomains: true
         )
@@ -74,7 +74,8 @@ struct TrustEvaluationTests {
         case .performDefaultHandling:
             #expect(Bool(true))
         default:
-            Issue.record("Expected custom evaluator acceptance to continue with default handling when trust is unavailable.")
+            Issue.record(
+                "Expected custom evaluator acceptance to continue with default handling when trust is unavailable.")
         }
     }
 
@@ -121,12 +122,13 @@ struct TrustEvaluationTests {
         )
 
         // Expected DER from RFC 8410 §4 example: 12 prefix bytes + 32 key bytes.
-        let expected: [UInt8] = [
-            0x30, 0x2a,             // outer SEQUENCE, 42 content bytes
-            0x30, 0x05,             // AlgorithmIdentifier SEQUENCE, 5 content bytes
-            0x06, 0x03, 0x2b, 0x65, 0x70,  // OID 1.3.101.112 (id-Ed25519)
-            0x03, 0x21, 0x00,       // BIT STRING, 33 bytes (0 unused + 32 key)
-        ] + Array(repeating: UInt8(0x00), count: 32)
+        let expected: [UInt8] =
+            [
+                0x30, 0x2a,  // outer SEQUENCE, 42 content bytes
+                0x30, 0x05,  // AlgorithmIdentifier SEQUENCE, 5 content bytes
+                0x06, 0x03, 0x2b, 0x65, 0x70,  // OID 1.3.101.112 (id-Ed25519)
+                0x03, 0x21, 0x00,  // BIT STRING, 33 bytes (0 unused + 32 key)
+            ] + Array(repeating: UInt8(0x00), count: 32)
         #expect(spki == Data(expected))
     }
 

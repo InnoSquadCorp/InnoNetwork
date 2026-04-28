@@ -1,6 +1,5 @@
 import Foundation
 
-
 /// Tracks the single in-flight `CheckedContinuation` for `sendPing` and folds
 /// continuation registration plus ping dispatch into one critical section. The
 /// state transitions `idle → waiting → dispatched|cancelled|completed`, so a
@@ -205,12 +204,14 @@ package struct WebSocketHeartbeatCoordinator {
 
     private func isPingTimeout(_ error: Error) -> Bool {
         if let internalError = error as? WebSocketInternalError,
-           case .pingTimeout = internalError {
+            case .pingTimeout = internalError
+        {
             return true
         }
 
         if let urlError = error as? URLError,
-           urlError.code == .timedOut {
+            urlError.code == .timedOut
+        {
             return true
         }
 

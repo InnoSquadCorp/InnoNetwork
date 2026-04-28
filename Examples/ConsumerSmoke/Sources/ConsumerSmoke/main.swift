@@ -3,7 +3,6 @@ import InnoNetwork
 import InnoNetworkDownload
 import InnoNetworkWebSocket
 
-
 private struct ConsumerUser: Decodable, Sendable {
     let id: Int
     let name: String
@@ -51,10 +50,10 @@ _ = WebSocketConfiguration.safeDefaults()
         // Application-defined close codes in the 3000–4999 range.
         break
     case .normalClosure, .goingAway, .protocolError, .unsupportedData,
-         .noStatusReceived, .abnormalClosure, .invalidFramePayloadData,
-         .policyViolation, .messageTooBig, .mandatoryExtensionMissing,
-         .internalServerError, .badGateway, .tlsHandshakeFailure,
-         .custom, .none:
+        .noStatusReceived, .abnormalClosure, .invalidFramePayloadData,
+        .policyViolation, .messageTooBig, .mandatoryExtensionMissing,
+        .internalServerError, .badGateway, .tlsHandshakeFailure,
+        .custom, .none:
         break
     }
 }
@@ -66,14 +65,14 @@ _ = WebSocketConfiguration.safeDefaults()
     case .manual(let code):
         _ = code
     case .peerNormal(let code, let reason),
-         .peerRetryable(let code, let reason),
-         .peerTerminal(let code, let reason):
+        .peerRetryable(let code, let reason),
+        .peerTerminal(let code, let reason):
         _ = code
         _ = reason
     case .handshakeUnauthorized(let status),
-         .handshakeForbidden(let status),
-         .handshakeServerUnavailable(let status),
-         .handshakeTerminalHTTP(let status):
+        .handshakeForbidden(let status),
+        .handshakeServerUnavailable(let status),
+        .handshakeTerminalHTTP(let status):
         _ = status
     case .handshakeTransientNetwork(let error):
         _ = error

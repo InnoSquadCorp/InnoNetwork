@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 private struct EncodingPayload: Encodable, Sendable {
     let userName: String

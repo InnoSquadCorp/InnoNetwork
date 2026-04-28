@@ -1,7 +1,6 @@
 import Foundation
 import InnoNetwork
 
-
 /// Configures download transport behavior, retry policy, and event delivery.
 public struct DownloadConfiguration: Sendable {
     private static let defaultSessionIdentifier = "com.innonetwork.download"
@@ -288,9 +287,9 @@ public struct DownloadConfiguration: Sendable {
         self.eventMetricsReporter = eventMetricsReporter
         self.persistenceFsyncPolicy = persistenceFsyncPolicy
     }
-    
+
     public static let `default` = safeDefaults()
-    
+
     func makeURLSessionConfiguration() -> URLSessionConfiguration {
         let config = URLSessionConfiguration.background(withIdentifier: sessionIdentifier)
         config.isDiscretionary = false

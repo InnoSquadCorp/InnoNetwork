@@ -3,7 +3,6 @@ import InnoNetwork
 import InnoNetworkDownload
 import InnoNetworkWebSocket
 
-
 private struct SmokeUser: Decodable, Sendable {
     let id: Int
     let name: String

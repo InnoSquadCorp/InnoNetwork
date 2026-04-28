@@ -1,8 +1,8 @@
 import Foundation
-import os
 import Testing
-@testable import InnoNetwork
+import os
 
+@testable import InnoNetwork
 
 /// `URLSessionProtocol` stub that suspends each request indefinitely until
 /// it is cooperatively cancelled. Used to exercise
@@ -25,12 +25,15 @@ private final class HangingURLSession: URLSessionProtocol, Sendable {
         // Sleep for a long time; cooperative cancellation will throw
         // CancellationError before the deadline.
         try await Task.sleep(for: .seconds(60))
-        return (Data(), HTTPURLResponse(
-            url: request.url!,
-            statusCode: 200,
-            httpVersion: nil,
-            headerFields: nil
-        )!)
+        return (
+            Data(),
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+        )
     }
 }
 
@@ -97,8 +100,8 @@ struct CancelAllTests {
             configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
             session: session
         )
-        await client.cancelAll() // Should complete without crashing.
-        await client.cancelAll() // Idempotent.
+        await client.cancelAll()  // Should complete without crashing.
+        await client.cancelAll()  // Idempotent.
     }
 
     @Test("Subsequent requests after cancelAll execute normally")
@@ -111,7 +114,7 @@ struct CancelAllTests {
             session: session
         )
 
-        await client.cancelAll() // Drain (currently empty).
+        await client.cancelAll()  // Drain (currently empty).
         // A new request after cancelAll must succeed — the registry must
         // not retain stale state.
         _ = try await client.request(EmptyEcho())

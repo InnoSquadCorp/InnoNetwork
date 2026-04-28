@@ -2,7 +2,6 @@ import Foundation
 import InnoNetwork
 import OSLog
 
-
 public enum WebSocketEvent: Sendable {
     case connected(String?)
     case disconnected(WebSocketError?)
@@ -246,7 +245,8 @@ public final class WebSocketManager: NSObject, Sendable {
     /// - Parameter callback: Optional async handler receiving the disconnected task and optional
     ///   disconnect error detail.
     /// - Note: The handler is invoked after task state is transitioned to `.disconnected`.
-    public func setOnDisconnectedHandler(_ callback: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?) async {
+    public func setOnDisconnectedHandler(_ callback: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?) async
+    {
         await runtimeRegistry.setOnDisconnected(callback)
     }
 
@@ -597,8 +597,8 @@ public final class WebSocketManager: NSObject, Sendable {
         let wsError = mapWebSocketError(error)
         Task {
             if case .cancelled = wsError,
-               let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
-               await task.isClientInitiatedCloseFlow()
+                let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
+                await task.isClientInitiatedCloseFlow()
             {
                 return
             }
@@ -612,8 +612,8 @@ public final class WebSocketManager: NSObject, Sendable {
     func handleSessionError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int? = nil) {
         Task {
             if isCancelledTransportError(error),
-               let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
-               await task.isClientInitiatedCloseFlow()
+                let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
+                await task.isClientInitiatedCloseFlow()
             {
                 return
             }
@@ -702,7 +702,7 @@ public final class WebSocketManager: NSObject, Sendable {
             await runtimeRegistry.onError?(task, finalError)
             await eventHub.publishAndWaitForDelivery(.error(finalError), for: task.id)
             guard await isCurrentConnection(task, generation: reconnectGeneration),
-                  await task.state == .reconnecting
+                await task.state == .reconnecting
             else { return }
             await reconnectCoordinator.attemptReconnect(task: task) { [weak self] task in
                 await self?.startReconnecting(task)
@@ -774,8 +774,8 @@ public final class WebSocketManager: NSObject, Sendable {
         case .manual(let closeCode):
             return makeManualDisconnectError(closeCode: closeCode)
         case .peerNormal(let closeCode, let reason),
-             .peerRetryable(let closeCode, let reason),
-             .peerTerminal(let closeCode, let reason):
+            .peerRetryable(let closeCode, let reason),
+            .peerTerminal(let closeCode, let reason):
             guard let reason, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 return .disconnected(nil)
             }
@@ -795,10 +795,10 @@ public final class WebSocketManager: NSObject, Sendable {
                 )
             )
         case .handshakeUnauthorized,
-             .handshakeForbidden,
-             .handshakeServerUnavailable,
-             .handshakeTransientNetwork,
-             .handshakeTerminalHTTP:
+            .handshakeForbidden,
+            .handshakeServerUnavailable,
+            .handshakeTransientNetwork,
+            .handshakeTerminalHTTP:
             return makeFailureError(closeDisposition: closeDisposition)
         case .transportFailure(let error):
             return error
@@ -808,10 +808,10 @@ public final class WebSocketManager: NSObject, Sendable {
     private func makeFailureError(closeDisposition: WebSocketCloseDisposition) -> WebSocketError {
         switch closeDisposition {
         case .manual,
-             .peerNormal,
-             .peerRetryable,
-             .peerTerminal,
-             .handshakeTimeout:
+            .peerNormal,
+            .peerRetryable,
+            .peerTerminal,
+            .handshakeTimeout:
             return makeDisconnectedError(closeDisposition: closeDisposition)
         case .handshakeUnauthorized(let statusCode):
             return .connectionFailed(
@@ -903,7 +903,8 @@ public final class WebSocketManager: NSObject, Sendable {
     public func handleBackgroundSessionCompletion(_ identifier: String, completion: @escaping @Sendable () -> Void) {
         // WebSocketManager does not own background URLSession processing.
         // `identifier` is accepted for API compatibility and intentionally completed immediately.
-        webSocketManagerLogger.debug("Ignoring background completion identifier for WebSocket runtime: \(identifier, privacy: .public)")
+        webSocketManagerLogger.debug(
+            "Ignoring background completion identifier for WebSocket runtime: \(identifier, privacy: .public)")
         completion()
     }
 }

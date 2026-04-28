@@ -1,6 +1,5 @@
 import Foundation
 
-
 public protocol NetworkClient: Sendable {
     /// Executes a standard typed request modeled with ``APIDefinition``.
     ///
@@ -334,7 +333,7 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
     public func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
         try await perform(request)
     }
-    
+
     public func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse {
         try await perform(executable: MultipartSingleRequestExecutable(base: request))
     }

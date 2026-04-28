@@ -1,6 +1,5 @@
 import Foundation
 
-
 package actor WebSocketRuntimeRegistry {
     private var tasks: [String: WebSocketTask] = [:]
     private var identifierToTask: [Int: WebSocketTask] = [:]

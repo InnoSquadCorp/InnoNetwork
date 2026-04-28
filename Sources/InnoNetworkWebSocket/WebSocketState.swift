@@ -1,7 +1,6 @@
 import Foundation
 import InnoNetwork
 
-
 public enum WebSocketState: String, Sendable {
     case idle
     case connecting

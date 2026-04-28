@@ -1,8 +1,8 @@
 import Foundation
-import os
 import Testing
-@testable import InnoNetworkWebSocket
+import os
 
+@testable import InnoNetworkWebSocket
 
 @Suite("WebSocket Messaging Happy Path Tests")
 struct WebSocketMessagingHappyPathTests {
@@ -127,10 +127,12 @@ struct WebSocketMessagingHappyPathTests {
         let snapshot = recorder.snapshot()
         #expect(snapshot.count == 2)
         if snapshot.count == 2 {
-            if case .ping = snapshot[0] {} else {
+            if case .ping = snapshot[0] {
+            } else {
                 Issue.record("expected first event to be .ping")
             }
-            if case .error(.pingTimeout) = snapshot[1] {} else {
+            if case .error(.pingTimeout) = snapshot[1] {
+            } else {
                 Issue.record("expected second event to be .error(.pingTimeout)")
             }
         }
@@ -179,10 +181,12 @@ struct WebSocketMessagingHappyPathTests {
         let snapshot = recorder.snapshot()
         #expect(snapshot.count == 2)
         if snapshot.count == 2 {
-            if case .ping = snapshot[0] {} else {
+            if case .ping = snapshot[0] {
+            } else {
                 Issue.record("expected first event to be .ping")
             }
-            if case .pong = snapshot[1] {} else {
+            if case .pong = snapshot[1] {
+            } else {
                 Issue.record("expected second event to be .pong")
             }
         }
@@ -237,7 +241,8 @@ struct WebSocketMessagingHappyPathTests {
         let snapshot = recorder.snapshot()
         #expect(snapshot.count == 2)
         if snapshot.count == 2 {
-            if case .ping = snapshot[0] {} else {
+            if case .ping = snapshot[0] {
+            } else {
                 Issue.record("expected first event to be .ping")
             }
             if case .error(let error) = snapshot[1] {

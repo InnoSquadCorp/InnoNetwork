@@ -1,6 +1,5 @@
 import Foundation
 
-
 public actor WebSocketTask: Identifiable {
     public nonisolated let id: String
     public nonisolated let url: URL

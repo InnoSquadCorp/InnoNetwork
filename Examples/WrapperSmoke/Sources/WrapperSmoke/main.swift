@@ -1,7 +1,6 @@
 import Foundation
 import InnoNetwork
 
-
 private struct WrappedUser: Decodable, Sendable {
     let id: Int
     let name: String

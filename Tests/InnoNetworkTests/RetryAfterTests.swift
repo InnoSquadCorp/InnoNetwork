@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 @Suite("Retry-After Parsing Tests")
 struct RetryAfterParsingTests {
@@ -51,12 +51,13 @@ struct RetryAfterParsingTests {
     func retryAfterRoutesThroughContextualOverload() throws {
         let policy = ExponentialBackoffRetryPolicy(maxRetries: 5, retryDelay: 1)
         let url = URL(string: "https://example.com")!
-        let response = try #require(HTTPURLResponse(
-            url: url,
-            statusCode: 429,
-            httpVersion: nil,
-            headerFields: ["Retry-After": "3"]
-        ))
+        let response = try #require(
+            HTTPURLResponse(
+                url: url,
+                statusCode: 429,
+                httpVersion: nil,
+                headerFields: ["Retry-After": "3"]
+            ))
         let networkResponse = Response(
             statusCode: 429,
             data: Data(),
@@ -76,12 +77,13 @@ struct RetryAfterParsingTests {
     func missingRetryAfterFallsBack() throws {
         let policy = ExponentialBackoffRetryPolicy(maxRetries: 5, retryDelay: 1)
         let url = URL(string: "https://example.com")!
-        let response = try #require(HTTPURLResponse(
-            url: url,
-            statusCode: 503,
-            httpVersion: nil,
-            headerFields: nil
-        ))
+        let response = try #require(
+            HTTPURLResponse(
+                url: url,
+                statusCode: 503,
+                httpVersion: nil,
+                headerFields: nil
+            ))
         let networkResponse = Response(
             statusCode: 503,
             data: Data(),
@@ -101,12 +103,13 @@ struct RetryAfterParsingTests {
     func capStopsRetry() throws {
         let policy = ExponentialBackoffRetryPolicy(maxRetries: 1, retryDelay: 1)
         let url = URL(string: "https://example.com")!
-        let response = try #require(HTTPURLResponse(
-            url: url,
-            statusCode: 429,
-            httpVersion: nil,
-            headerFields: ["Retry-After": "10"]
-        ))
+        let response = try #require(
+            HTTPURLResponse(
+                url: url,
+                statusCode: 429,
+                httpVersion: nil,
+                headerFields: ["Retry-After": "10"]
+            ))
         let networkResponse = Response(
             statusCode: 429,
             data: Data(),

@@ -1,6 +1,5 @@
 import Foundation
 
-
 /// Protocol abstraction over `URLSessionDownloadTask` used internally by the
 /// download runtime. The production conformance is `URLSessionDownloadTask`
 /// itself; tests can inject a stub implementation.

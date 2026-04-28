@@ -1,7 +1,7 @@
 import Foundation
 import os
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 private struct MockURLSessionState {
     var mockData: Data
@@ -55,7 +55,7 @@ final class MockURLSession: URLSessionProtocol, Sendable {
         }
         return (snapshot.0, snapshot.1)
     }
-    
+
     func setMockResponse(statusCode: Int, data: Data = Data()) {
         stateLock.withLock { state in
             state.mockData = data
@@ -67,7 +67,7 @@ final class MockURLSession: URLSessionProtocol, Sendable {
             )!
         }
     }
-    
+
     func setMockJSON<T: Encodable>(_ value: T, statusCode: Int = 200) throws {
         let encoded = try JSONEncoder().encode(value)
         stateLock.withLock { state in

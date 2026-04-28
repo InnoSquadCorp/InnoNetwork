@@ -1,15 +1,15 @@
 import Foundation
 import Testing
-@testable import InnoNetworkDownload
 
+@testable import InnoNetworkDownload
 
 @Suite("Download Configuration Tests")
 struct DownloadConfigurationTests {
-    
+
     @Test("Default configuration has expected values")
     func defaultConfiguration() {
         let config = DownloadConfiguration.default
-        
+
         #expect(config.maxConnectionsPerHost == 3)
         #expect(config.maxRetryCount == 3)
         #expect(config.maxTotalRetries == 3)
@@ -40,7 +40,7 @@ struct DownloadConfigurationTests {
         #expect(config.waitsForNetworkChanges == true)
         #expect(config.networkChangeTimeout == 30)
     }
-    
+
     @Test("Custom configuration is applied correctly")
     func customConfiguration() {
         let config = DownloadConfiguration(
@@ -50,14 +50,14 @@ struct DownloadConfigurationTests {
             retryDelay: 2.0,
             allowsCellularAccess: false
         )
-        
+
         #expect(config.maxConnectionsPerHost == 5)
         #expect(config.maxRetryCount == 5)
         #expect(config.maxTotalRetries == 8)
         #expect(config.retryDelay == 2.0)
         #expect(config.allowsCellularAccess == false)
     }
-    
+
     @Test("URLSessionConfiguration is created correctly")
     func urlSessionConfiguration() {
         let config = DownloadConfiguration(
@@ -65,9 +65,9 @@ struct DownloadConfigurationTests {
             allowsCellularAccess: false,
             sessionIdentifier: "test.session"
         )
-        
+
         let sessionConfig = config.makeURLSessionConfiguration()
-        
+
         #expect(sessionConfig.identifier == "test.session")
         #expect(sessionConfig.allowsCellularAccess == false)
         #expect(sessionConfig.httpMaximumConnectionsPerHost == 4)
@@ -96,64 +96,64 @@ struct DownloadConfigurationTests {
 
 @Suite("Download Task Tests")
 struct DownloadTaskTests {
-    
+
     @Test("Task is created with correct initial state")
     func initialState() async {
         let url = URL(string: "https://example.com/file.zip")!
         let destination = URL(fileURLWithPath: "/tmp/file.zip")
         let task = DownloadTask(url: url, destinationURL: destination)
-        
+
         #expect(await task.state == .idle)
         #expect(await task.progress.fractionCompleted == 0)
         #expect(await task.retryCount == 0)
         #expect(await task.totalRetryCount == 0)
         #expect(await task.error == nil)
     }
-    
+
     @Test("Task state can be updated")
     func stateUpdate() async {
         let url = URL(string: "https://example.com/file.zip")!
         let destination = URL(fileURLWithPath: "/tmp/file.zip")
         let task = DownloadTask(url: url, destinationURL: destination)
-        
+
         await task.updateState(.downloading)
         #expect(await task.state == .downloading)
-        
+
         await task.updateState(.paused)
         #expect(await task.state == .paused)
     }
-    
+
     @Test("Task progress is updated correctly")
     func progressUpdate() async {
         let url = URL(string: "https://example.com/file.zip")!
         let destination = URL(fileURLWithPath: "/tmp/file.zip")
         let task = DownloadTask(url: url, destinationURL: destination)
-        
+
         let progress = DownloadProgress(
             bytesWritten: 1024,
             totalBytesWritten: 5120,
             totalBytesExpectedToWrite: 10240
         )
         await task.updateProgress(progress)
-        
+
         #expect(await task.progress.totalBytesWritten == 5120)
         #expect(await task.progress.fractionCompleted == 0.5)
         #expect(await task.progress.percentCompleted == 50)
     }
-    
+
     @Test("Task can be reset")
     func taskReset() async {
         let url = URL(string: "https://example.com/file.zip")!
         let destination = URL(fileURLWithPath: "/tmp/file.zip")
         let task = DownloadTask(url: url, destinationURL: destination)
-        
+
         await task.updateState(.failed)
         await task.setError(.maxRetriesExceeded)
         _ = await task.incrementRetryCount()
         _ = await task.incrementTotalRetryCount()
-        
+
         await task.reset()
-        
+
         #expect(await task.state == .idle)
         #expect(await task.retryCount == 0)
         #expect(await task.totalRetryCount == 0)
@@ -176,7 +176,7 @@ struct DownloadTaskTests {
 
 @Suite("Download Progress Tests")
 struct DownloadProgressTests {
-    
+
     @Test("Fraction completed is calculated correctly")
     func fractionCompleted() {
         let progress = DownloadProgress(
@@ -184,10 +184,10 @@ struct DownloadProgressTests {
             totalBytesWritten: 500,
             totalBytesExpectedToWrite: 1000
         )
-        
+
         #expect(progress.fractionCompleted == 0.5)
     }
-    
+
     @Test("Percent completed is calculated correctly")
     func percentCompleted() {
         let progress = DownloadProgress(
@@ -195,10 +195,10 @@ struct DownloadProgressTests {
             totalBytesWritten: 750,
             totalBytesExpectedToWrite: 1000
         )
-        
+
         #expect(progress.percentCompleted == 75)
     }
-    
+
     @Test("Zero expected bytes returns zero progress")
     func zeroExpected() {
         let progress = DownloadProgress(
@@ -206,7 +206,7 @@ struct DownloadProgressTests {
             totalBytesWritten: 0,
             totalBytesExpectedToWrite: 0
         )
-        
+
         #expect(progress.fractionCompleted == 0)
         #expect(progress.percentCompleted == 0)
     }
@@ -215,7 +215,7 @@ struct DownloadProgressTests {
 
 @Suite("Download Error Tests")
 struct DownloadErrorTests {
-    
+
     @Test("Error descriptions are meaningful")
     func errorDescriptions() {
         #expect(DownloadError.cancelled.errorDescription?.contains("cancelled") == true)
@@ -227,7 +227,7 @@ struct DownloadErrorTests {
 
 @Suite("Download Manager Tests")
 struct DownloadManagerTests {
-    
+
     @Test("Manager can be created with custom configuration")
     func customManager() async throws {
         // Use a unique session identifier so this test does not race against
@@ -241,54 +241,54 @@ struct DownloadManagerTests {
 
         #expect((await manager.allTasks()).isEmpty)
     }
-    
+
     @Test("Download task is created and tracked")
     func downloadCreation() async throws {
         let harness = try StubDownloadHarness(label: "manager-download")
-        
+
         let url = URL(string: "https://example.com/file.zip")!
         let destination = URL(fileURLWithPath: "/tmp/test-file.zip")
-        
+
         let task = await harness.startDownload(url: url, destinationURL: destination)
-        
+
         #expect(task.url == url)
         #expect(task.destinationURL == destination)
         #expect((await harness.manager.allTasks()).contains(task))
-        
+
         await harness.manager.cancel(task)
     }
-    
+
     @Test("Task can be cancelled")
     func cancelTask() async throws {
         let harness = try StubDownloadHarness(label: "manager-cancel")
-        
+
         let url = URL(string: "https://example.com/file.zip")!
         let destination = URL(fileURLWithPath: "/tmp/test-file.zip")
-        
+
         let task = await harness.startDownload(url: url, destinationURL: destination)
         await harness.manager.cancel(task)
-        
+
         #expect(await task.state == .cancelled)
         #expect(await waitForTaskCount(manager: harness.manager, expectedCount: 0))
     }
-    
+
     @Test("All tasks can be cancelled")
     func cancelAllTasks() async throws {
         let harness = try StubDownloadHarness(label: "manager-cancelall")
         harness.stubSession.enqueue(StubDownloadURLTask())
-        
+
         let url1 = URL(string: "https://example.com/file1.zip")!
         let url2 = URL(string: "https://example.com/file2.zip")!
         let dest1 = URL(fileURLWithPath: "/tmp/test-file1.zip")
         let dest2 = URL(fileURLWithPath: "/tmp/test-file2.zip")
-        
+
         _ = await harness.startDownload(url: url1, destinationURL: dest1)
         _ = await harness.startDownload(url: url2, destinationURL: dest2)
-        
+
         #expect((await harness.manager.allTasks()).count == 2)
-        
+
         await harness.manager.cancelAll()
-        
+
         #expect(await waitForTaskCount(manager: harness.manager, expectedCount: 0))
     }
 
@@ -525,7 +525,8 @@ struct DownloadTaskPersistenceTests {
     func corruptedStoreIsQuarantined() async throws {
         let sessionIdentifier = "test.persistence.corrupted.\(UUID().uuidString)"
         let baseDirectoryURL = makeBaseDirectoryURL()
-        let storeDirectory = sessionDirectoryURL(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+        let storeDirectory = sessionDirectoryURL(
+            sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
         try FileManager.default.createDirectory(at: storeDirectory, withIntermediateDirectories: true)
         let checkpointURL = storeDirectory.appendingPathComponent("checkpoint.json")
         try Data("not-json".utf8).write(to: checkpointURL)
@@ -594,7 +595,8 @@ struct DownloadTaskPersistenceTests {
             )
         }
 
-        let storeDirectory = sessionDirectoryURL(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+        let storeDirectory = sessionDirectoryURL(
+            sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
         let checkpointURL = storeDirectory.appendingPathComponent("checkpoint.json")
         let logURL = storeDirectory.appendingPathComponent("events.log")
         #expect(FileManager.default.fileExists(atPath: checkpointURL.path))
@@ -617,7 +619,8 @@ struct DownloadTaskPersistenceTests {
             destinationURL: destinationURL
         )
 
-        let storeDirectory = sessionDirectoryURL(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+        let storeDirectory = sessionDirectoryURL(
+            sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
         let logURL = storeDirectory.appendingPathComponent("events.log")
         let handle = try FileHandle(forWritingTo: logURL)
         try handle.seekToEnd()
@@ -656,10 +659,11 @@ struct DownloadDelegateOrderingTests {
     func delegateProgressPrecedesCompletion() async throws {
         let harness = try StubDownloadHarness(label: "delegate-order")
         let task = await harness.startDownload()
-        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task
-        ))
+        let taskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task
+            ))
         let recorder = DownloadEventRecorder()
         _ = await harness.manager.addEventListener(for: task) { event in
             await recorder.record(event)
@@ -747,10 +751,11 @@ struct DownloadPersistenceCleanupTests {
     func completedTaskRemainsRegisteredWhenPersistenceRemovalFails() async throws {
         let harness = try StubDownloadHarness(label: "completion-remove-failure")
         let task = await harness.startDownload()
-        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task
-        ))
+        let taskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task
+            ))
 
         let temporaryLocation = FileManager.default.temporaryDirectory
             .appendingPathComponent("download-remove-failure-\(UUID().uuidString).data")
@@ -796,10 +801,11 @@ struct DownloadPersistenceCleanupTests {
             label: "failed-remove-failure"
         )
         let task = await harness.startDownload()
-        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task
-        ))
+        let taskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task
+            ))
 
         await harness.store.setRemoveFailure(true)
         await harness.injectCompletion(

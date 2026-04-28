@@ -1,7 +1,6 @@
 import Foundation
 import InnoNetwork
 
-
 package struct WebSocketReceiveLoop {
     let runtimeRegistry: WebSocketRuntimeRegistry
     let eventHub: TaskEventHub<WebSocketEvent>

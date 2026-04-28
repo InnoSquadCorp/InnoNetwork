@@ -1,10 +1,10 @@
 import Foundation
-import os
-import Testing
 import InnoNetworkTestSupport
+import Testing
+import os
+
 @testable import InnoNetwork
 @testable import InnoNetworkWebSocket
-
 
 /// Focused tests for `WebSocketReceiveLoop`'s error and cancellation paths.
 /// Happy-path delivery is covered by `WebSocketMessagingHappyPathTests`; this

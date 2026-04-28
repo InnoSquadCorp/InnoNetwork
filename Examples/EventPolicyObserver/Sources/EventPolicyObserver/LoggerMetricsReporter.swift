@@ -1,7 +1,6 @@
 import Foundation
-import os
 import InnoNetwork
-
+import os
 
 /// Reference implementation of `EventPipelineMetricsReporting` backed by
 /// `os.Logger`. Routes every metric kind onto a single subsystem/category

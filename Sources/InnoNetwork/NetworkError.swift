@@ -7,7 +7,6 @@
 
 import Foundation
 
-
 /// Specific timeout that produced a ``NetworkError/timeout(reason:underlying:)``.
 ///
 /// Distinguishing between request, resource, and connection timeouts lets
@@ -181,13 +180,13 @@ public extension NetworkError {
         case .underlying(let err, let response?):
             return .underlying(err, response.redactingData())
         case .invalidBaseURL,
-             .invalidRequestConfiguration,
-             .nonHTTPResponse,
-             .underlying(_, nil),
-             .trustEvaluationFailed,
-             .undefined,
-             .cancelled,
-             .timeout:
+            .invalidRequestConfiguration,
+            .nonHTTPResponse,
+            .underlying(_, nil),
+            .trustEvaluationFailed,
+            .undefined,
+            .cancelled,
+            .timeout:
             return self
         }
     }

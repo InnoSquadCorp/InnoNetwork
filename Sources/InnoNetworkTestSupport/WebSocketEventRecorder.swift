@@ -1,7 +1,6 @@
 import Foundation
-import os
 import InnoNetworkWebSocket
-
+import os
 
 /// Collects `WebSocketEvent` values published through `TaskEventHub` for
 /// assertion in multi-cycle timing / reconnect / receive / messaging tests.

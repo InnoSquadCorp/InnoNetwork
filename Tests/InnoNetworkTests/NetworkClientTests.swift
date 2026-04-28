@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 struct GetProfile: APIDefinition {
     typealias Parameter = EmptyParameter

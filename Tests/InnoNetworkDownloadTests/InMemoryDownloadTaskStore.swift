@@ -1,6 +1,6 @@
 import Foundation
-@testable import InnoNetworkDownload
 
+@testable import InnoNetworkDownload
 
 /// In-memory `DownloadTaskStore` used by the Download test suites so the
 /// stub harness does not touch disk via `AppendLogDownloadTaskStore`.

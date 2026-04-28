@@ -1,7 +1,6 @@
 import Foundation
 import os
 
-
 package actor TaskEventHub<Event: Sendable> {
     package typealias Listener = @Sendable (Event) async -> Void
 

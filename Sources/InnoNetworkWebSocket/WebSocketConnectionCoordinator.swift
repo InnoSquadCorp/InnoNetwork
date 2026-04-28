@@ -1,6 +1,5 @@
 import Foundation
 
-
 package struct WebSocketConnectionCoordinator {
     let configuration: WebSocketConfiguration
     let session: any WebSocketURLSession

@@ -1,7 +1,6 @@
 import Foundation
-import os
 import InnoNetwork
-
+import os
 
 /// Virtual-time clock used by deterministic timing tests across all three
 /// test targets. Production code receives an `any InnoNetworkClock`;

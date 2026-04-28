@@ -1,7 +1,6 @@
 import Foundation
 import OSLog
 
-
 package struct DownloadFailureCoordinator {
     private static let maximumSupportedDelay: TimeInterval = Double(Int64.max)
     private static let logger = Logger(subsystem: "innosquad.network.download", category: "Persistence")
@@ -37,7 +36,7 @@ package struct DownloadFailureCoordinator {
         let totalRetryCount = await task.totalRetryCount
         let retryCount = await task.retryCount
         guard totalRetryCount < configuration.maxTotalRetries,
-              retryCount < configuration.maxRetryCount
+            retryCount < configuration.maxRetryCount
         else {
             await markTaskFailed(task)
             return
@@ -100,11 +99,13 @@ package struct DownloadFailureCoordinator {
         }
 
         let base: TimeInterval
-        if fixedDelay >= effectiveCap || baseDelayWouldOverflowCap(
-            initialDelay: fixedDelay,
-            retryCount: retryCount,
-            cap: effectiveCap
-        ) {
+        if fixedDelay >= effectiveCap
+            || baseDelayWouldOverflowCap(
+                initialDelay: fixedDelay,
+                retryCount: retryCount,
+                cap: effectiveCap
+            )
+        {
             base = effectiveCap
         } else {
             let exponent = Double(max(retryCount - 1, 0))
@@ -153,7 +154,9 @@ package struct DownloadFailureCoordinator {
         do {
             try await persistence.remove(id: task.id)
         } catch {
-            Self.logger.fault("Failed to remove failed task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))")
+            Self.logger.fault(
+                "Failed to remove failed task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))"
+            )
             return
         }
         await runtimeRegistry.removeTaskRuntime(taskId: task.id)

@@ -1,8 +1,8 @@
 import Foundation
-import os
 import Testing
-@testable import InnoNetworkWebSocket
+import os
 
+@testable import InnoNetworkWebSocket
 
 @Suite("WebSocket Heartbeat Tests")
 struct WebSocketHeartbeatTests {

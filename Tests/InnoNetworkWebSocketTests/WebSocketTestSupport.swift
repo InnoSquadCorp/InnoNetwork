@@ -1,6 +1,6 @@
 import Foundation
-@testable import InnoNetworkWebSocket
 
+@testable import InnoNetworkWebSocket
 
 /// Produces a unique sessionIdentifier for a WebSocket test.
 func makeWebSocketTestSessionIdentifier(_ label: String) -> String {
@@ -58,5 +58,3 @@ func waitForWebSocketTaskRemoval(
     }
     return false
 }
-
-

@@ -1,7 +1,6 @@
 import Foundation
-import os.signpost
 import InnoNetwork
-
+import os.signpost
 
 /// Reference implementation of `EventPipelineMetricsReporting` that emits
 /// OSLog SignPost events so Instruments' *Points of Interest* track shows

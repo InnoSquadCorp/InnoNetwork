@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 @Suite("Multipart Streaming Tests")
 struct MultipartStreamingTests {
@@ -10,10 +10,12 @@ struct MultipartStreamingTests {
     func writeMatchesEncodeForDataParts() throws {
         var formData = MultipartFormData(boundary: "fixed-boundary")
         formData.append("alice", name: "user")
-        formData.append(Data("payload-bytes".utf8), name: "blob", fileName: "blob.bin", mimeType: "application/octet-stream")
+        formData.append(
+            Data("payload-bytes".utf8), name: "blob", fileName: "blob.bin", mimeType: "application/octet-stream")
 
         let inMemory = formData.encode()
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("multipart-stream-\(UUID().uuidString).bin")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "multipart-stream-\(UUID().uuidString).bin")
         defer { try? FileManager.default.removeItem(at: url) }
         try formData.writeEncodedData(to: url)
 
@@ -39,7 +41,8 @@ struct MultipartStreamingTests {
         #expect(!encoded.contains("\r\nInjected-File: yes"))
         #expect(!encoded.contains("\r\nInjected-Mime: yes"))
 
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("multipart-escape-\(UUID().uuidString).bin")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "multipart-escape-\(UUID().uuidString).bin")
         defer { try? FileManager.default.removeItem(at: url) }
         try formData.writeEncodedData(to: url)
 
@@ -64,7 +67,8 @@ struct MultipartStreamingTests {
 
     @Test("writeEncodedData streams a file part without loading it whole")
     func writeStreamsFileParts() async throws {
-        let sourceURL = FileManager.default.temporaryDirectory.appendingPathComponent("multipart-source-\(UUID().uuidString).bin")
+        let sourceURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "multipart-source-\(UUID().uuidString).bin")
         defer { try? FileManager.default.removeItem(at: sourceURL) }
         // Write a 256 KiB file so the streaming path runs through multiple
         // 64 KiB chunks; the assertion just compares byte-for-byte equality.
@@ -74,7 +78,8 @@ struct MultipartStreamingTests {
         var formData = MultipartFormData(boundary: "stream-boundary")
         try await formData.appendFile(at: sourceURL, name: "file", mimeType: "application/octet-stream")
 
-        let outURL = FileManager.default.temporaryDirectory.appendingPathComponent("multipart-out-\(UUID().uuidString).bin")
+        let outURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "multipart-out-\(UUID().uuidString).bin")
         defer { try? FileManager.default.removeItem(at: outURL) }
         try formData.writeEncodedData(to: outURL)
 
@@ -88,7 +93,8 @@ struct MultipartStreamingTests {
 
     @Test("Async appendFile does not read the source file at append time")
     func asyncAppendFileDefersRead() async throws {
-        let sourceURL = FileManager.default.temporaryDirectory.appendingPathComponent("multipart-defer-\(UUID().uuidString).bin")
+        let sourceURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "multipart-defer-\(UUID().uuidString).bin")
         try Data("hello".utf8).write(to: sourceURL)
 
         var formData = MultipartFormData(boundary: "defer-boundary")
@@ -104,7 +110,8 @@ struct MultipartStreamingTests {
         #expect(encoded == "--defer-boundary--\r\n")
         #expect(!encoded.contains("name=\"file\""))
 
-        let outURL = FileManager.default.temporaryDirectory.appendingPathComponent("multipart-defer-out-\(UUID().uuidString).bin")
+        let outURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "multipart-defer-out-\(UUID().uuidString).bin")
         defer { try? FileManager.default.removeItem(at: outURL) }
         #expect(throws: (any Error).self) {
             try formData.writeEncodedData(to: outURL)
@@ -136,7 +143,9 @@ struct MultipartStreamingTests {
     func estimatedSizeMatchesEncodeForDataParts() {
         var formData = MultipartFormData(boundary: "size-boundary")
         formData.append("Alice", name: "user")
-        formData.append(Data(repeating: 0xAB, count: 1024), name: "blob", fileName: "blob.bin", mimeType: "application/octet-stream")
+        formData.append(
+            Data(repeating: 0xAB, count: 1024), name: "blob", fileName: "blob.bin", mimeType: "application/octet-stream"
+        )
 
         // estimatedEncodedSize should not be expensive (no bytes are read from
         // the data source twice) but must match the actual encoded length.
@@ -216,7 +225,8 @@ struct MultipartUploadStrategyTests {
 
     @Test(".alwaysStream produces RequestPayload.temporaryFileURL pointing at a writable temp file")
     func alwaysStreamProducesFileURL() throws {
-        let executable = MultipartSingleRequestExecutable(base: AlwaysStreamUpload(multipartFormData: Self.makeFormData()))
+        let executable = MultipartSingleRequestExecutable(
+            base: AlwaysStreamUpload(multipartFormData: Self.makeFormData()))
         let payload = try executable.makePayload()
         switch payload {
         case .temporaryFileURL(let url, let contentType):

@@ -7,7 +7,6 @@
 
 import Foundation
 
-
 public struct Response: CustomDebugStringConvertible, Equatable, Sendable {
 
     /// The status code of the response.

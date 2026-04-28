@@ -272,18 +272,20 @@ actor RealWorldAPIExample {
         print("\n=== Scenario 4: Create & Update Post ===")
         do {
             // Create new post
-            let newPost = try await client.request(CreatePost(
-                title: "My New Post",
-                body: "This is a sample post content"
-            ))
+            let newPost = try await client.request(
+                CreatePost(
+                    title: "My New Post",
+                    body: "This is a sample post content"
+                ))
             print("✅ Created post #\(newPost.id)")
 
             // Update the post
-            let updatedPost = try await client.request(UpdatePost(
-                id: 1,
-                title: "Updated: \(newPost.title)",
-                body: "Updated body content"
-            ))
+            let updatedPost = try await client.request(
+                UpdatePost(
+                    id: 1,
+                    title: "Updated: \(newPost.title)",
+                    body: "Updated body content"
+                ))
             print("✅ Updated post: \(updatedPost.title)")
         } catch {
             print("❌ Error: \(error)")
@@ -296,10 +298,11 @@ actor RealWorldAPIExample {
         do {
             // CREATE: Add new post
             print("1. Creating post...")
-            let createdPost = try await client.request(CreatePost(
-                title: "CRUD Test Post",
-                body: "Testing CRUD operations"
-            ))
+            let createdPost = try await client.request(
+                CreatePost(
+                    title: "CRUD Test Post",
+                    body: "Testing CRUD operations"
+                ))
             print("   ✅ Created post #\(createdPost.id)")
 
             // READ: Fetch the post
@@ -309,11 +312,12 @@ actor RealWorldAPIExample {
 
             // UPDATE: Modify the post
             print("3. Updating post...")
-            let updatedPost = try await client.request(UpdatePost(
-                id: 1,
-                title: "[UPDATED] \(fetchedPost.title)",
-                body: "Content has been updated"
-            ))
+            let updatedPost = try await client.request(
+                UpdatePost(
+                    id: 1,
+                    title: "[UPDATED] \(fetchedPost.title)",
+                    body: "Content has been updated"
+                ))
             print("   ✅ Updated: \(updatedPost.title)")
 
             // DELETE: Remove the post
