@@ -133,7 +133,7 @@ expected_provisionally=(
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
-'`Endpoint`, `AnyEncodable`, `StubBehavior`, `NetworkContext`, `CorrelationIDInterceptor`, and `APIDefinition` stubbing hooks'
+'`Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
 )
 
 expected_shipping_public_declarations=(
@@ -203,7 +203,6 @@ expected_shipping_public_declarations=(
   ServerSentEventDecoder
   StreamingAPIDefinition
   StreamingResumePolicy
-  StubBehavior
   TimeoutReason
   TrustEvaluating
   TrustFailureReason
@@ -233,6 +232,9 @@ expected_spi_public_declarations=(
 )
 
 expected_test_support_public_declarations=(
+  StubBehavior
+  StubNetworkClient
+  StubRequestKey
   WebSocketEventRecorder
 )
 
@@ -273,6 +275,12 @@ validate_test_support_product() {
   require_contains 'targets: ["InnoNetworkTestSupport"]' "$repo_root/Package.swift"
   require_contains 'public final class WebSocketEventRecorder' \
     "$repo_root/Sources/InnoNetworkTestSupport/WebSocketEventRecorder.swift"
+  require_contains 'public enum StubBehavior: Sendable, Equatable' \
+    "$repo_root/Sources/InnoNetworkTestSupport/StubNetworkClient.swift"
+  require_contains 'public struct StubRequestKey: Hashable, Sendable' \
+    "$repo_root/Sources/InnoNetworkTestSupport/StubNetworkClient.swift"
+  require_contains 'public final class StubNetworkClient' \
+    "$repo_root/Sources/InnoNetworkTestSupport/StubNetworkClient.swift"
 }
 
 collect_public_declarations() {
@@ -369,16 +377,6 @@ validate_oss_readiness_public_api() {
     "$repo_root/Sources/InnoNetwork/Endpoint.swift"
   require_contains 'public struct AnyEncodable: Encodable, Sendable' \
     "$repo_root/Sources/InnoNetwork/AnyEncodable.swift"
-  require_contains 'public enum StubBehavior: Sendable, Equatable' \
-    "$repo_root/Sources/InnoNetwork/StubBehavior.swift"
-  require_contains 'var sampleResponse: APIResponse? { get }' \
-    "$repo_root/Sources/InnoNetwork/APIDefinition.swift"
-  require_contains 'var sampleBehavior: StubBehavior { get }' \
-    "$repo_root/Sources/InnoNetwork/APIDefinition.swift"
-  require_contains 'var sampleResponse: APIResponse? { nil }' \
-    "$repo_root/Sources/InnoNetwork/APIDefinition.swift"
-  require_contains 'var sampleBehavior: StubBehavior { .never }' \
-    "$repo_root/Sources/InnoNetwork/APIDefinition.swift"
   require_contains 'public struct NetworkContext: Sendable' \
     "$repo_root/Sources/InnoNetwork/NetworkContext.swift"
   require_contains 'public struct CorrelationIDInterceptor: RequestInterceptor' \
@@ -553,7 +551,7 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_test_support_product
       continue
       ;;
-    '`Endpoint`, `AnyEncodable`, `StubBehavior`, `NetworkContext`, `CorrelationIDInterceptor`, and `APIDefinition` stubbing hooks')
+    '`Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
       validate_oss_readiness_public_api
       continue
       ;;

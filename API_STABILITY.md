@@ -35,8 +35,9 @@ This document defines the compatibility contract for the upcoming InnoNetwork
 - benchmark runner CLI flags and JSON summary presentation details
 - troubleshooting guidance and examples in README/DocC
 - `InnoNetworkTestSupport` library product and its `public` symbols
-  (currently `WebSocketEventRecorder`)
-- `Endpoint`, `AnyEncodable`, `StubBehavior`, `NetworkContext`, `CorrelationIDInterceptor`, and `APIDefinition` stubbing hooks
+  (currently `WebSocketEventRecorder`, `StubBehavior`, `StubNetworkClient`,
+  and `StubRequestKey`)
+- `Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 
 ## Public Declaration Ledger
 
@@ -59,8 +60,8 @@ targets and requires every declaration below to stay classified here before the
   `OSLogNetworkEventObserver`, `PublicKeyPinningPolicy`, `RequestInterceptor`,
   `Response`, `ResponseInterceptor`, `RetryDecision`, `RetryPolicy`,
   `SendableUnderlyingError`, `ServerSentEvent`, `ServerSentEventDecoder`,
-  `StreamingAPIDefinition`, `StreamingResumePolicy`, `StubBehavior`,
-  `TimeoutReason`, `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
+  `StreamingAPIDefinition`, `StreamingResumePolicy`, `TimeoutReason`,
+  `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
   `URLQueryCustomKeyTransform`, `URLQueryEncoder`, `URLQueryKeyEncodingStrategy`,
   and `URLSessionProtocol`.
 - Event-pipeline observability declarations: `EventDeliveryPolicy`,
@@ -92,7 +93,8 @@ targets and requires every declaration below to stay classified here before the
 
 ### InnoNetworkTestSupport
 
-- `WebSocketEventRecorder`.
+- `StubBehavior`, `StubNetworkClient`, `StubRequestKey`, and
+  `WebSocketEventRecorder`.
 
 ## Internal/Operational
 
