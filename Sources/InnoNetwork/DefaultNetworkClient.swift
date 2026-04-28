@@ -331,7 +331,36 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
     }
 
     public func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
-        try await perform(request)
+        if let stub = try await Self.resolveStubResponse(for: request) {
+            return stub
+        }
+        return try await perform(request)
+    }
+
+    /// Returns the configured ``APIDefinition/sampleResponse`` for the given
+    /// request when its ``APIDefinition/sampleBehavior`` opts in, applying any
+    /// configured delay before resolution.
+    ///
+    /// Returns `nil` when the request is not stubbed, in which case the caller
+    /// proceeds with the real transport pipeline. Stubbing intentionally
+    /// bypasses interceptors, retry policy, observability, and trust
+    /// evaluation; treat it as a developer/preview tool, not a production
+    /// short-circuit.
+    private static func resolveStubResponse<T: APIDefinition>(
+        for request: T
+    ) async throws -> T.APIResponse? {
+        guard let stub = request.sampleResponse else { return nil }
+        switch request.sampleBehavior {
+        case .never:
+            return nil
+        case .immediate:
+            return stub
+        case .delayed(let seconds):
+            if seconds > 0 {
+                try await Task.sleep(for: .seconds(seconds))
+            }
+            return stub
+        }
     }
 
     public func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse {
