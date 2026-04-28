@@ -117,16 +117,26 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
 
 package actor BackgroundCompletionStore {
     private var completion: (@Sendable () -> Void)?
+    private var didFinishEvents = false
 
     package init() {}
 
-    package func set(_ completion: @escaping @Sendable () -> Void) {
+    package func set(_ completion: @escaping @Sendable () -> Void) -> (@Sendable () -> Void)? {
+        if didFinishEvents {
+            didFinishEvents = false
+            return completion
+        }
         self.completion = completion
+        return nil
     }
 
     package func take() -> (@Sendable () -> Void)? {
-        let stored = completion
+        guard let stored = completion else {
+            didFinishEvents = true
+            return nil
+        }
         completion = nil
+        didFinishEvents = false
         return stored
     }
 }

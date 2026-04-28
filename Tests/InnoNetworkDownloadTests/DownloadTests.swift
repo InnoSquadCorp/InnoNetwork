@@ -460,6 +460,45 @@ struct DownloadTaskPersistenceTests {
         try await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
     }
 
+    @Test("Append log prune uses locked disk state from other store instances")
+    func appendLogPruneSeesRecordsWrittenByOtherInstances() async throws {
+        let sessionIdentifier = "test.persistence.prune-cross-instance.\(UUID().uuidString)"
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        try await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+
+        let keptID = "task-kept"
+        let staleID = "task-stale"
+        let firstStore = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        let secondStore = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+
+        try await firstStore.upsert(
+            id: keptID,
+            url: URL(string: "https://example.com/kept.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-kept.zip")
+        )
+        try await secondStore.upsert(
+            id: staleID,
+            url: URL(string: "https://example.com/stale.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-stale.zip")
+        )
+
+        try await firstStore.prune(keeping: [keptID])
+
+        let reader = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        #expect(await reader.record(forID: keptID) != nil)
+        #expect(await reader.record(forID: staleID) == nil)
+        try await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
+    }
+
     @Test("restore metadata remains keyed by task id even when URLs are duplicated")
     func restoreMetadataIsTaskIDBased() async throws {
         let sessionIdentifier = "test.persistence.duplicate-url.\(UUID().uuidString)"
@@ -681,6 +720,23 @@ struct DownloadDelegateOrderingTests {
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
         return false
+    }
+}
+
+
+@Suite("Download Background Completion Tests")
+struct DownloadBackgroundCompletionTests {
+    @Test("Background completion runs when session finishes before the app registers completion")
+    func backgroundCompletionRunsAfterFinishBeforeSetRace() async throws {
+        let harness = try StubDownloadHarness(label: "background-completion-race")
+        await harness.markBackgroundEventsFinished()
+
+        await confirmation("background completion called") { confirm in
+            harness.handleBackgroundSessionCompletion {
+                confirm()
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
     }
 }
 

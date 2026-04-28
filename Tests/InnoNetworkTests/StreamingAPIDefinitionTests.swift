@@ -45,10 +45,8 @@ private final class DelayedFailingBytesSession: URLSessionProtocol, Sendable {
 }
 
 
-/// URLProtocol that delivers a scripted sequence of steps for the same URL,
-/// supporting both clean success and "partial bytes then transport error"
-/// shapes. Used by the resume-policy tests to simulate a mid-stream
-/// disconnect followed by a clean reconnect.
+/// URLProtocol that delivers a scripted sequence of clean responses for the
+/// same URL. Used by resume-policy tests that only need handshake success/failure.
 private final class SequencedStreamingURLProtocol: URLProtocol {
     enum Step: Sendable {
         case success(statusCode: Int, data: Data)
@@ -559,6 +557,21 @@ struct StreamingAPIDefinitionTests {
         let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
         #expect(captured.count == 1)
         #expect(captured.first?.value(forHTTPHeaderField: "Last-Event-ID") == nil)
+    }
+
+    @Test("Streaming resume state does not reuse a stale Last-Event-ID after an attempt sees no new cursor")
+    func resumePolicyRequiresCurrentAttemptCursor() async throws {
+        var state = StreamingResumeState()
+
+        state.beginAttempt()
+        state.observe(eventID: "1")
+        #expect(state.lastSeenEventID == "1")
+        #expect(state.canResume(maxAttempts: 2, completedResumeAttempts: 0))
+
+        state.beginAttempt()
+        state.observe(eventID: nil)
+        #expect(state.lastSeenEventID == "1")
+        #expect(!state.canResume(maxAttempts: 2, completedResumeAttempts: 1))
     }
 
     @Test("stream() does not resume Last-Event-ID after decode errors")

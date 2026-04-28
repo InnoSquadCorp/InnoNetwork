@@ -546,7 +546,10 @@ public actor DownloadManager {
         }
         let store = backgroundCompletionStore
         Task {
-            await store.set(completion)
+            guard let completionToRun = await store.set(completion) else { return }
+            await MainActor.run {
+                completionToRun()
+            }
         }
     }
 

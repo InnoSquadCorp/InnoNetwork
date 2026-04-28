@@ -188,10 +188,10 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     }
 
     package func prune(keeping ids: Set<String>) async throws {
-        let staleIDs = state.records.keys.filter { !ids.contains($0) }
-        guard !staleIDs.isEmpty else { return }
-
         try await mutate { state in
+            let staleIDs = state.records.keys.filter { !ids.contains($0) }
+            guard !staleIDs.isEmpty else { return [] }
+
             for staleID in staleIDs {
                 state.records.removeValue(forKey: staleID)
             }
@@ -459,6 +459,10 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         } else {
             try fileManager.moveItem(at: tempURL, to: fileURL)
         }
+
+        if fsyncBeforeRename {
+            try fsyncParentDirectory(of: fileURL, fsync: fsync)
+        }
     }
 
     private static func resetLog(at logURL: URL, fileManager: FileManager) throws {
@@ -474,6 +478,20 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             let code = POSIXErrorCode(rawValue: errno) ?? .EIO
             throw POSIXError(code)
         }
+    }
+
+    private static func fsyncParentDirectory(
+        of fileURL: URL,
+        fsync: @Sendable (Int32) -> Int32
+    ) throws {
+        let directoryURL = fileURL.deletingLastPathComponent()
+        let descriptor = open(directoryURL.path, O_RDONLY)
+        guard descriptor >= 0 else {
+            let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+            throw POSIXError(code)
+        }
+        defer { close(descriptor) }
+        try fsyncFileDescriptor(descriptor, fsync: fsync)
     }
 
     private static func shouldCompact(state: StoreState) -> Bool {

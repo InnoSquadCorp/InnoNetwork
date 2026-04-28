@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
 # Emits a CycloneDX 1.5 SBOM (JSON) describing the InnoNetwork package and
-# its SwiftPM build inputs. The package currently has zero external
-# dependencies, so the document is intentionally compact — it is still
-# useful for supply-chain auditing and sigstore attestation.
+# its SwiftPM build inputs. Components are derived from the SwiftPM manifest
+# rather than hardcoded, so added external dependencies appear in release
+# attestations.
 #
 # Output is written to the path supplied as the first argument, defaulting
 # to .build/release-artifacts/sbom.cdx.json.
@@ -23,6 +23,7 @@ revision="$(git rev-parse HEAD 2>/dev/null || echo "unknown")"
 swift_version="$(xcrun swift --version | head -n 1)"
 
 OUTPUT="$OUTPUT" \
+PACKAGE_JSON="$package_json" \
 SERIAL="$serial" \
 TIMESTAMP="$timestamp" \
 NAME="$name" \
@@ -32,10 +33,99 @@ SWIFT_VERSION="$swift_version" \
 python3 - <<'PY'
 import json
 import os
+import posixpath
+import sys
 
 output = os.environ["OUTPUT"]
 name = os.environ["NAME"]
 version = os.environ["VERSION"]
+package = json.loads(os.environ["PACKAGE_JSON"])
+
+
+def dependency_name(dependency):
+    name = dependency.get("identity") or dependency.get("name")
+    if name:
+        return str(name)
+
+    source = dependency.get("url") or dependency.get("path")
+    if not source:
+        return None
+
+    trimmed = str(source).rstrip("/")
+    basename = posixpath.basename(trimmed)
+    if basename.endswith(".git"):
+        basename = basename[:-4]
+    return basename or trimmed
+
+
+def dependency_version(requirement):
+    if isinstance(requirement, str):
+        return requirement
+    if not isinstance(requirement, dict):
+        return None
+
+    exact = requirement.get("exact")
+    if isinstance(exact, str):
+        return exact
+    if isinstance(exact, list) and exact:
+        return str(exact[0])
+
+    revision = requirement.get("revision")
+    if isinstance(revision, str):
+        return revision
+
+    branch = requirement.get("branch")
+    if isinstance(branch, str):
+        return branch
+
+    return None
+
+
+def dependency_component(dependency):
+    if not isinstance(dependency, dict):
+        return None
+
+    dep_name = dependency_name(dependency)
+    if not dep_name:
+        return None
+
+    requirement = dependency.get("requirement")
+    version = dependency_version(requirement)
+    purl = f"pkg:swift/{dep_name}"
+    if version:
+        purl = f"{purl}@{version}"
+
+    properties = []
+    for key in ("identity", "url", "path"):
+        value = dependency.get(key)
+        if value:
+            properties.append({"name": f"swift:{key}", "value": str(value)})
+    if requirement:
+        if isinstance(requirement, str):
+            requirement_value = requirement
+        else:
+            requirement_value = json.dumps(requirement, sort_keys=True, separators=(",", ":"))
+        properties.append({"name": "swift:requirement", "value": requirement_value})
+
+    component = {
+        "type": "library",
+        "bom-ref": purl,
+        "name": dep_name,
+        "scope": "required",
+        "purl": purl,
+    }
+    if version:
+        component["version"] = version
+    if properties:
+        component["properties"] = properties
+    return component
+
+
+dependencies = package.get("dependencies") or []
+components = [component for component in (dependency_component(dependency) for dependency in dependencies) if component]
+if dependencies and not components:
+    print("SBOM generation found SwiftPM dependencies but could not populate CycloneDX components.", file=sys.stderr)
+    sys.exit(1)
 
 document = {
     "bomFormat": "CycloneDX",
@@ -66,7 +156,7 @@ document = {
             ],
         },
     },
-    "components": [],
+    "components": components,
 }
 
 with open(output, "w", encoding="utf-8") as file:

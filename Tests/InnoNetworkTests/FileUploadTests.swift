@@ -63,34 +63,27 @@ private final class FileAwareMockSession: URLSessionProtocol, Sendable {
 }
 
 
-private struct UploadFromFileExecutable: SingleRequestExecutable {
-    typealias APIResponse = EchoResponse
+private enum FileUploadPayloadStrategy: Sendable {
+    case file
+    case temporaryFile
 
-    let fileURL: URL
-    let contentType: String
-
-    var logger: NetworkLogger { NoOpNetworkLogger() }
-    var requestInterceptors: [RequestInterceptor] { [] }
-    var responseInterceptors: [ResponseInterceptor] { [] }
-    var method: HTTPMethod { .post }
-    var path: String { "/upload" }
-    var headers: HTTPHeaders { HTTPHeaders() }
-
-    func makePayload() throws -> RequestPayload {
-        .fileURL(fileURL, contentType: contentType)
-    }
-
-    func decode(data: Data, response: Response) throws -> EchoResponse {
-        EchoResponse(byteCount: data.count)
+    func makePayload(fileURL: URL, contentType: String) -> RequestPayload {
+        switch self {
+        case .file:
+            return .fileURL(fileURL, contentType: contentType)
+        case .temporaryFile:
+            return .temporaryFileURL(fileURL, contentType: contentType)
+        }
     }
 }
 
 
-private struct TemporaryUploadFromFileExecutable: SingleRequestExecutable {
+private struct FileUploadTestExecutable: SingleRequestExecutable {
     typealias APIResponse = EchoResponse
 
     let fileURL: URL
     let contentType: String
+    let payloadStrategy: FileUploadPayloadStrategy
 
     var logger: NetworkLogger { NoOpNetworkLogger() }
     var requestInterceptors: [RequestInterceptor] { [] }
@@ -100,7 +93,7 @@ private struct TemporaryUploadFromFileExecutable: SingleRequestExecutable {
     var headers: HTTPHeaders { HTTPHeaders() }
 
     func makePayload() throws -> RequestPayload {
-        .temporaryFileURL(fileURL, contentType: contentType)
+        payloadStrategy.makePayload(fileURL: fileURL, contentType: contentType)
     }
 
     func decode(data: Data, response: Response) throws -> EchoResponse {
@@ -132,9 +125,10 @@ struct FileUploadTests {
             session: session
         )
 
-        let executable = UploadFromFileExecutable(
+        let executable = FileUploadTestExecutable(
             fileURL: payloadURL,
-            contentType: formData.contentTypeHeader
+            contentType: formData.contentTypeHeader,
+            payloadStrategy: .file
         )
         _ = try await client.perform(executable: executable)
 
@@ -161,9 +155,10 @@ struct FileUploadTests {
             configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
             session: session
         )
-        let executable = TemporaryUploadFromFileExecutable(
+        let executable = FileUploadTestExecutable(
             fileURL: payloadURL,
-            contentType: "application/octet-stream"
+            contentType: "application/octet-stream",
+            payloadStrategy: .temporaryFile
         )
 
         _ = try await client.perform(executable: executable)
@@ -185,9 +180,10 @@ struct FileUploadTests {
             configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
             session: session
         )
-        let executable = TemporaryUploadFromFileExecutable(
+        let executable = FileUploadTestExecutable(
             fileURL: payloadURL,
-            contentType: "application/octet-stream"
+            contentType: "application/octet-stream",
+            payloadStrategy: .temporaryFile
         )
 
         do {
@@ -219,9 +215,10 @@ struct FileUploadTests {
             configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
             session: session
         )
-        let executable = UploadFromFileExecutable(
+        let executable = FileUploadTestExecutable(
             fileURL: payloadURL,
-            contentType: "application/octet-stream"
+            contentType: "application/octet-stream",
+            payloadStrategy: .file
         )
 
         do {

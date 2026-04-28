@@ -56,6 +56,31 @@ public protocol LowLevelNetworkClient: Sendable {
 }
 
 
+package struct StreamingResumeState: Sendable {
+    package private(set) var lastSeenEventID: String?
+    private var perAttemptSeenNewCursor = false
+
+    package init() {}
+
+    package mutating func beginAttempt() {
+        perAttemptSeenNewCursor = false
+    }
+
+    package mutating func observe(eventID: String?) {
+        guard let eventID else { return }
+        lastSeenEventID = eventID
+        perAttemptSeenNewCursor = true
+    }
+
+    package func canResume(maxAttempts: Int, completedResumeAttempts: Int) -> Bool {
+        maxAttempts > 0
+            && completedResumeAttempts < maxAttempts
+            && lastSeenEventID != nil
+            && perAttemptSeenNewCursor
+    }
+}
+
+
 /// The default ``NetworkClient`` implementation.
 ///
 /// Despite its `async throws` API surface, `DefaultNetworkClient` is an
@@ -121,18 +146,19 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                 let resumePolicy = request.resumePolicy
                 let resumeBudget = resumePolicy.maxAttempts
                 let resumeDelay = resumePolicy.retryDelay
-                var lastSeenEventID: String? = nil
+                var resumeState = StreamingResumeState()
                 var resumeAttempts = 0
 
                 attempts: while true {
                     do {
                         try Task.checkCancellation()
+                        resumeState.beginAttempt()
                         var urlRequest = URLRequest(url: configuration.baseURL.appendingPathComponent(request.path))
                         urlRequest.httpMethod = request.method.rawValue
                         urlRequest.allHTTPHeaderFields = request.headers.dictionary
                         urlRequest.cachePolicy = configuration.cachePolicy
                         urlRequest.timeoutInterval = configuration.timeout
-                        if let lastSeenEventID {
+                        if let lastSeenEventID = resumeState.lastSeenEventID {
                             urlRequest.setValue(lastSeenEventID, forHTTPHeaderField: "Last-Event-ID")
                         }
 
@@ -223,9 +249,7 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                             streamedByteCount += line.utf8.count
                             if let output = try request.decode(line: line) {
                                 continuation.yield(output)
-                                if let id = request.eventID(from: output) {
-                                    lastSeenEventID = id
-                                }
+                                resumeState.observe(eventID: request.eventID(from: output))
                             }
                         }
 
@@ -235,9 +259,10 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
                             // - attempt budget remains
                             // - we have an event id to send (server cannot
                             //   resume from "nothing")
-                            let canResume = resumeBudget > 0
-                                && resumeAttempts < resumeBudget
-                                && lastSeenEventID != nil
+                            let canResume = resumeState.canResume(
+                                maxAttempts: resumeBudget,
+                                completedResumeAttempts: resumeAttempts
+                            )
                             if canResume {
                                 resumeAttempts += 1
                                 if resumeDelay > 0 {

@@ -52,6 +52,7 @@ struct PostmanEchoLiveTests {
                 }
             }
         }
+        defer { consumer.cancel() }
 
         try await manager.send(task, string: payload)
 
@@ -61,7 +62,6 @@ struct PostmanEchoLiveTests {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
 
-        consumer.cancel()
         let echoed = await collector.value
         #expect(echoed == payload, "Postman echo did not return the payload within 10s")
     }

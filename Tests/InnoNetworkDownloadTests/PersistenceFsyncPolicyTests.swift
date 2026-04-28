@@ -1,6 +1,7 @@
 import Foundation
 import Darwin
 import InnoNetwork
+import os
 import Testing
 @testable import InnoNetworkDownload
 
@@ -13,6 +14,35 @@ private func failFsyncWithEIO(_: Int32) -> Int32 {
 
 private enum PersistenceTestError: Error {
     case upsertFailed
+}
+
+
+private final class FsyncCallRecorder: @unchecked Sendable {
+    private struct State {
+        var fileCount = 0
+        var directoryCount = 0
+    }
+
+    private let lock = OSAllocatedUnfairLock<State>(initialState: .init())
+
+    func record(_ fileDescriptor: Int32) -> Int32 {
+        var metadata = stat()
+        if fstat(fileDescriptor, &metadata) == 0 {
+            let isDirectory = metadata.st_mode & S_IFMT == S_IFDIR
+            lock.withLock { state in
+                if isDirectory {
+                    state.directoryCount += 1
+                } else {
+                    state.fileCount += 1
+                }
+            }
+        }
+        return 0
+    }
+
+    var directoryCount: Int {
+        lock.withLock { $0.directoryCount }
+    }
 }
 
 
@@ -162,6 +192,32 @@ struct PersistenceFsyncPolicyTests {
         } catch {
             Issue.record("Expected POSIXError.EIO, got \(error)")
         }
+    }
+
+    @Test(".onCheckpoint policy fsyncs parent directory after checkpoint rename")
+    func onCheckpointPolicyFsyncsParentDirectoryAfterCheckpointRename() async throws {
+        let baseDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("inno-fsync-checkpoint-dir-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+
+        let recorder = FsyncCallRecorder()
+        let persistence = DownloadTaskPersistence(
+            sessionIdentifier: "test.fsync.checkpoint.dir.\(UUID().uuidString)",
+            baseDirectoryURL: baseDirectory,
+            fsyncPolicy: .onCheckpoint,
+            fsync: recorder.record
+        )
+
+        let url = URL(string: "https://example.invalid/file.zip")!
+        for index in 0..<1_000 {
+            try await persistence.upsert(
+                id: "task-\(index)",
+                url: url,
+                destinationURL: baseDirectory.appendingPathComponent("file-\(index).zip")
+            )
+        }
+
+        #expect(recorder.directoryCount >= 1)
     }
 
     @Test("Download start fails without creating URLSession task when persistence upsert fails")

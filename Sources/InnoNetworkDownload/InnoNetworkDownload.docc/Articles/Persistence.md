@@ -9,8 +9,9 @@ Task persistence is durable enough to recover from process termination, app upgr
 unexpected restarts. The store uses an append-log + checkpoint hybrid that keeps writes
 cheap on the hot path while bounding restoration cost.
 
-The default implementation lives in `AppendLogDownloadTaskStore`. You can replace it with
-a custom `DownloadTaskStore` if your application has a different persistence model.
+The default implementation lives in `AppendLogDownloadTaskStore`. Applications tune it
+through configuration-level choices such as the persistence directory, session identifier,
+and fsync policy. The storage protocol is package-internal and not a public extension point.
 
 ## On-disk layout
 
@@ -26,7 +27,7 @@ Each line of `events.log` is a self-describing event:
 
 ```json
 {"sequence":127,"timestamp":1714214830.123,"kind":"upsert","taskID":"…","url":"…","destinationURL":"…"}
-{"sequence":128,"timestamp":1714214831.456,"kind":"tombstone","taskID":"…"}
+{"sequence":128,"timestamp":1714214831.456,"kind":"remove","taskID":"…"}
 ```
 
 Restoration reads `checkpoint.json` first, then replays events with sequence numbers
@@ -48,7 +49,7 @@ log and replays from the older checkpoint.
 
 A read failure during restoration (truncated JSON, wrong sequence ordering, file system
 fault) does not block startup. The store renames the corrupt file to
-`events.log.corrupt-<timestamp>` and continues with whatever is recoverable, then writes a
+`events.corrupted-<timestamp>.log` and continues with whatever is recoverable, then writes a
 fresh checkpoint. The corrupt copy stays on disk until the operator removes it, so support
 can inspect it after the fact.
 
@@ -101,20 +102,20 @@ let configuration = DownloadConfiguration.advanced(
 }
 ```
 
-## Replacing the store
+## Public configuration points
 
-Implement `DownloadTaskStore` and pass it through ``DownloadConfiguration``:
+The persistence store itself is package-internal. Applications customize its behavior
+through public configuration:
 
-```swift
-struct CoreDataDownloadTaskStore: DownloadTaskStore {
-    func upsert(id: UUID, url: URL, destinationURL: URL) async throws { /* ... */ }
-    func tombstone(id: UUID) async throws { /* ... */ }
-    func loadAll() async throws -> [PersistedDownloadTask] { /* ... */ }
-}
-```
+- Use a stable, app-unique ``DownloadConfiguration/sessionIdentifier`` for each background
+  session.
+- Choose ``DownloadConfiguration/persistenceDirectory`` when the default Application Support
+  location is not appropriate.
+- Tune durability with ``DownloadConfiguration/persistenceFsyncPolicy``.
 
-The library uses the protocol's narrow surface. The default implementation's checkpoint
-file format is internal; do not depend on it from a custom store.
+The checkpoint and append-log file formats are internal implementation details. Do not parse
+or mutate them from application code; use ``DownloadManager`` APIs to observe and control
+download state.
 
 ## Related
 

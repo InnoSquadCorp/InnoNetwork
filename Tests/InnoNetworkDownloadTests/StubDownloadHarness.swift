@@ -147,4 +147,12 @@ final class StubDownloadHarness: Sendable {
             error: error
         )
     }
+
+    func markBackgroundEventsFinished() async {
+        _ = await backgroundCompletionStore.take()
+    }
+
+    func handleBackgroundSessionCompletion(_ completion: @escaping @Sendable () -> Void) {
+        manager.handleBackgroundSessionCompletion(sessionIdentifier, completion: completion)
+    }
 }

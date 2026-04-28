@@ -50,7 +50,7 @@ xcrun swift build -Xswiftc -strict-concurrency=complete
 xcrun swift test --parallel --enable-code-coverage
 rg -n "@unchecked Sendable" Sources
 
-# Optional: render the same coverage summary CI uploads.
+# Optional: render the same coverage artifacts CI uploads.
 profdata="$(find .build -name 'default.profdata' -type f | head -n 1)"
 llvm_cov_objects=()
 while IFS= read -r -d '' xctest_bundle; do
@@ -59,10 +59,21 @@ while IFS= read -r -d '' xctest_bundle; do
     llvm_cov_objects+=(--object "$binary")
   fi
 done < <(find .build -name '*.xctest' -type d -print0)
+if [[ -z "$profdata" || ${#llvm_cov_objects[@]} -eq 0 ]]; then
+  echo "Coverage artifacts not found; skipping report."
+  exit 0
+fi
+mkdir -p .build/coverage
 xcrun llvm-cov report \
   --instr-profile="$profdata" \
+  --use-color=false \
   --ignore-filename-regex='(^|/)(\.build|Tests|SmokeTests|Examples|Benchmarks)/' \
-  "${llvm_cov_objects[@]}"
+  "${llvm_cov_objects[@]}" | tee .build/coverage/summary.txt
+xcrun llvm-cov export \
+  --instr-profile="$profdata" \
+  --format=lcov \
+  --ignore-filename-regex='(^|/)(\.build|Tests|SmokeTests|Examples|Benchmarks)/' \
+  "${llvm_cov_objects[@]}" > .build/coverage/coverage.lcov
 
 # Optional: replay the benchmark smoke guard locally.
 xcrun swift run InnoNetworkBenchmarks --quick \
