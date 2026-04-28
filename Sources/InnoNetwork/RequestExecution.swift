@@ -13,7 +13,7 @@ import Foundation
 ///   request's `Content-Type` header. The caller owns the file lifecycle.
 /// - temporaryFileURL: A file created by InnoNetwork for this one request.
 ///   The executor removes it after upload completion, failure, or cancellation.
-public enum RequestPayload: Sendable {
+@_spi(GeneratedClientSupport) public enum RequestPayload: Sendable {
     case none
     case data(Data)
     case queryItems([URLQueryItem])
@@ -31,7 +31,7 @@ public enum RequestPayload: Sendable {
 /// ``DefaultNetworkClient/request(_:)``. Reach for this protocol only when you are
 /// building a higher-level policy layer that needs to adapt its own request contract
 /// onto `InnoNetwork`'s execution engine via ``LowLevelNetworkClient/perform(_:)``.
-public protocol SingleRequestExecutable: Sendable {
+@_spi(GeneratedClientSupport) public protocol SingleRequestExecutable: Sendable {
     associatedtype APIResponse: Sendable
 
     /// Logger attached to the request lifecycle.
@@ -68,7 +68,7 @@ public protocol SingleRequestExecutable: Sendable {
     func decode(data: Data, response: Response) throws -> APIResponse
 }
 
-public extension SingleRequestExecutable {
+@_spi(GeneratedClientSupport) public extension SingleRequestExecutable {
     /// Default override is `nil`, meaning the session-wide
     /// ``NetworkConfiguration/acceptableStatusCodes`` applies.
     var acceptableStatusCodes: Set<Int>? { nil }

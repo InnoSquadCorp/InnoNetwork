@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import InnoNetwork
+@_spi(GeneratedClientSupport) @testable import InnoNetwork
 
 @Suite("Multipart Streaming Tests")
 struct MultipartStreamingTests {
