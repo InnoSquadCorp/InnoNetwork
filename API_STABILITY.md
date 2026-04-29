@@ -1,8 +1,8 @@
 # API Stability
 
-This document defines the compatibility contract for the upcoming InnoNetwork
-4.0.0 public release. The latest published public release remains `3.0.1`;
-this contract applies once the 4.0.0 tag is cut.
+This document defines the compatibility contract for the InnoNetwork 4.x
+release line. `4.0.0` is the latest public release and the baseline for this
+contract.
 
 ## Stable
 
@@ -43,27 +43,34 @@ this contract applies once the 4.0.0 tag is cut.
   `StubNetworkClient`, and `StubRequestKey`)
 - `Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `WebSocketCloseDisposition` observation surface
+- `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces
+- `MultipartResponseDecoder` buffered multipart response parsing surface
+- `InnoNetworkCodegen` optional macro product and macro declarations
 
 ## Public Declaration Ledger
 
 The docs-contract gate extracts top-level `public` declarations from shipping
-targets and requires every declaration below to stay classified here before the
-4.0.0 tag.
+targets and requires every declaration below to stay classified here for the
+4.x release line.
 
 ### InnoNetwork
 
-- `APIDefinition`, `AnyEncodable`, `AnyResponseDecoder`, `ContentType`,
+- `APIDefinition`, `AnyEncodable`, `AnyResponseDecoder`, `CachedResponse`,
+  `CircuitBreakerOpenError`, `CircuitBreakerPolicy`, `ContentType`,
   `CorrelationIDInterceptor`, `DefaultNetworkClient`, `DefaultNetworkLogger`,
   `EmptyParameter`, `EmptyResponse`, `Endpoint`, `HTTPEmptyResponseDecodable`,
-  `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`, `MultipartAPIDefinition`,
-  `MultipartFormData`, `MultipartUploadStrategy`, `NetworkClient`,
+  `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`, `InMemoryResponseCache`,
+  `MultipartAPIDefinition`, `MultipartFormData`, `MultipartPart`,
+  `MultipartResponseDecoder`, `MultipartUploadStrategy`, `NetworkClient`,
   `NetworkConfiguration`, `NetworkContext`, `NetworkError`, `NetworkEvent`,
   `NetworkEventObserving`, `NetworkInterfaceType`, `NetworkLoggingOptions`,
   `NetworkLogger`, `NetworkMetricsReporting`, `NetworkMonitor`,
   `NetworkMonitoring`, `NetworkReachabilityStatus`, `NetworkRequestContext`,
   `NetworkSnapshot`, `NoOpNetworkEventObserver`, `NoOpNetworkLogger`,
-  `OSLogNetworkEventObserver`, `PublicKeyPinningPolicy`, `RequestInterceptor`,
-  `Response`, `ResponseInterceptor`, `RetryDecision`, `RetryPolicy`,
+  `OSLogNetworkEventObserver`, `PublicKeyPinningPolicy`, `RefreshTokenPolicy`,
+  `RequestCoalescingPolicy`, `RequestInterceptor`, `Response`,
+  `ResponseCache`, `ResponseCacheKey`, `ResponseCachePolicy`,
+  `ResponseInterceptor`, `RetryDecision`, `RetryPolicy`,
   `SendableUnderlyingError`, `ServerSentEvent`, `ServerSentEventDecoder`,
   `StreamingAPIDefinition`, `StreamingResumePolicy`, `TimeoutReason`,
   `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
@@ -91,6 +98,11 @@ targets and requires every declaration below to stay classified here before the
   `WebSocketPingContext`, `WebSocketPongContext`, `WebSocketSendOverflowPolicy`,
   `WebSocketState`, and `WebSocketTask`.
 
+### InnoNetworkCodegen
+
+- `APIDefinition(method:path:)` attached macro.
+- `endpoint(_:_:as:)` freestanding expression macro.
+
 ### SPI
 
 - `LowLevelNetworkClient`, `RequestPayload`, and `SingleRequestExecutable` are
@@ -109,6 +121,8 @@ targets and requires every declaration below to stay classified here before the
 - reconnect taxonomy internal types and close disposition rules
 - `InnoNetworkProtobuf` package composition and protobuf adapter surface
 - package/internal request/response policy layers
+- package/internal request execution pipeline stages that power auth refresh,
+  coalescing, response cache, and circuit breaker features
 - benchmark baseline contents and update cadence
 - lower-level execution hooks that are present in source but not part of the
   4.0.0 stable public contract
@@ -131,6 +145,11 @@ targets and requires every declaration below to stay classified here before the
 - `WebSocketPingContext` and `WebSocketPongContext` public fields are stable
   because they are payloads of stable heartbeat events; their package-scoped
   initializers are construction details owned by the library.
+- Resilience policies are opt-in and provisionally stable. They expose
+  built-in knobs only; the generic execution pipeline remains package/internal
+  and may evolve without deprecation.
+- `InnoNetworkCodegen` is an optional compile-time product. Importing only
+  `InnoNetwork` does not put `swift-syntax` on the core runtime path.
 - Persistence and telemetry formats are not external storage contracts.
 - Benchmark guard thresholds, guarded benchmark selection, and baseline
   contents are operational policy rather than public compatibility surface.

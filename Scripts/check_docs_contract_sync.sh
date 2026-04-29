@@ -12,6 +12,7 @@ required_meta_docs=(
   "$repo_root/SECURITY.md"
   "$repo_root/SUPPORT.md"
   "$repo_root/CHANGELOG.md"
+  "$repo_root/MIGRATION_v4.md"
   "$repo_root/docs/RELEASE_POLICY.md"
   "$repo_root/docs/MIGRATION_POLICY.md"
   "$repo_root/docs/releases/4.0.0.md"
@@ -19,6 +20,9 @@ required_meta_docs=(
 required_feature_docs=(
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryPolicy.md"
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/OpenAPIGeneratorAdapter.md"
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/AuthRefresh.md"
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/UsingMacros.md"
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/InnoNetwork.md"
 )
 example_docs=(
@@ -139,12 +143,18 @@ expected_provisionally=(
 '`InnoNetworkTestSupport` library product and its `public` symbols'
 '`Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
 '`WebSocketCloseDisposition` observation surface'
+'`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces'
+'`MultipartResponseDecoder` buffered multipart response parsing surface'
+'`InnoNetworkCodegen` optional macro product and macro declarations'
 )
 
 expected_shipping_public_declarations=(
   APIDefinition
   AnyEncodable
   AnyResponseDecoder
+  CachedResponse
+  CircuitBreakerOpenError
+  CircuitBreakerPolicy
   ContentType
   CorrelationIDInterceptor
   DefaultNetworkClient
@@ -175,8 +185,11 @@ expected_shipping_public_declarations=(
   HTTPHeader
   HTTPHeaders
   HTTPMethod
+  InMemoryResponseCache
   MultipartAPIDefinition
   MultipartFormData
+  MultipartPart
+  MultipartResponseDecoder
   MultipartUploadStrategy
   NetworkClient
   NetworkConfiguration
@@ -198,8 +211,13 @@ expected_shipping_public_declarations=(
   NoOpNetworkLogger
   OSLogNetworkEventObserver
   PublicKeyPinningPolicy
+  RefreshTokenPolicy
+  RequestCoalescingPolicy
   RequestInterceptor
   Response
+  ResponseCache
+  ResponseCacheKey
+  ResponseCachePolicy
   ResponseInterceptor
   RetryDecision
   RetryPolicy
@@ -290,6 +308,49 @@ validate_test_support_product() {
     "$repo_root/Sources/InnoNetworkTestSupport/StubNetworkClient.swift"
   require_contains 'public final class MockURLSession' \
     "$repo_root/Sources/InnoNetworkTestSupport/MockURLSession.swift"
+}
+
+validate_resilience_public_api() {
+  require_contains 'public struct RefreshTokenPolicy' \
+    "$repo_root/Sources/InnoNetwork/Auth/RefreshTokenPolicy.swift"
+  require_contains 'public struct RequestCoalescingPolicy' \
+    "$repo_root/Sources/InnoNetwork/RequestCoalescing/RequestCoalescingPolicy.swift"
+  require_contains 'public enum ResponseCachePolicy' \
+    "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
+  require_contains 'public protocol ResponseCache' \
+    "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
+  require_contains 'public actor InMemoryResponseCache' \
+    "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
+  require_contains 'public struct CircuitBreakerPolicy' \
+    "$repo_root/Sources/InnoNetwork/CircuitBreaker/CircuitBreakerPolicy.swift"
+  require_contains 'public struct CircuitBreakerOpenError' \
+    "$repo_root/Sources/InnoNetwork/CircuitBreaker/CircuitBreakerPolicy.swift"
+  require_contains 'refreshTokenPolicy: RefreshTokenPolicy? = nil' \
+    "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+  require_contains 'requestCoalescingPolicy: RequestCoalescingPolicy = .disabled' \
+    "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+  require_contains 'responseCachePolicy: ResponseCachePolicy = .disabled' \
+    "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+  require_contains 'circuitBreakerPolicy: CircuitBreakerPolicy? = nil' \
+    "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+}
+
+validate_multipart_response_api() {
+  require_contains 'public struct MultipartPart' \
+    "$repo_root/Sources/InnoNetwork/Multipart/MultipartResponseDecoder.swift"
+  require_contains 'public struct MultipartResponseDecoder' \
+    "$repo_root/Sources/InnoNetwork/Multipart/MultipartResponseDecoder.swift"
+}
+
+validate_codegen_product() {
+  require_contains 'name: "InnoNetworkCodegen"' "$repo_root/Package.swift"
+  require_contains 'targets: ["InnoNetworkCodegen"]' "$repo_root/Package.swift"
+  require_contains 'name: "InnoNetworkMacros"' "$repo_root/Package.swift"
+  require_contains 'https://github.com/swiftlang/swift-syntax.git' "$repo_root/Package.swift"
+  require_contains 'public macro APIDefinition' "$repo_root/Sources/InnoNetworkCodegen/Macros.swift"
+  require_contains 'public macro endpoint' "$repo_root/Sources/InnoNetworkCodegen/Macros.swift"
+  require_contains '`APIDefinition(method:path:)`' "$api_stability"
+  require_contains '`endpoint(_:_:as:)`' "$api_stability"
 }
 
 collect_public_declarations() {
@@ -395,7 +456,7 @@ validate_oss_readiness_public_api() {
 validate_troubleshooting_and_examples_docs() {
   require_contains 'Examples: [Examples/README.md](Examples/README.md)' "$readme"
   require_contains 'API Stability: [API_STABILITY.md](API_STABILITY.md)' "$readme"
-  require_contains 'Upcoming Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)' "$readme"
+  require_contains 'Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)' "$readme"
   require_contains '### 1. [BasicRequest](./BasicRequest)' "$repo_root/Examples/README.md"
   require_contains '### 2. [ErrorHandling](./ErrorHandling)' "$repo_root/Examples/README.md"
   require_contains '### 3. [CustomHeaders](./CustomHeaders)' "$repo_root/Examples/README.md"
@@ -581,6 +642,18 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseDisposition.swift"
       continue
       ;;
+    '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces')
+      validate_resilience_public_api
+      continue
+      ;;
+    '`MultipartResponseDecoder` buffered multipart response parsing surface')
+      validate_multipart_response_api
+      continue
+      ;;
+    '`InnoNetworkCodegen` optional macro product and macro declarations')
+      validate_codegen_product
+      continue
+      ;;
     *)
       fail "unknown provisionally stable symbol mapping: $symbol"
       ;;
@@ -619,11 +692,18 @@ forbidden_pattern '4\.1\.0|4\.1 line|Pre-4\.1|4\.1 behaviour|v4\.1|docs/releases
   "$readme" \
   "$repo_root/CHANGELOG.md" \
   "$repo_root/MIGRATION_v4.md" \
+  "$repo_root/docs/releases/4.0.0.md" \
   "$repo_root/SECURITY.md" \
   "$repo_root/Benchmarks/README.md" \
   "$repo_root/docs" \
   "$repo_root/Sources" \
   "$repo_root/Tests"
+forbidden_pattern '4\.2\.0|4\.2 line|pre-v4\.2|v4\.2|docs/releases/4\.2\.0' \
+  "$api_stability" \
+  "$readme" \
+  "$repo_root/CHANGELOG.md" \
+  "$repo_root/MIGRATION_v4.md" \
+  "$repo_root/docs"
 forbidden_pattern 'public func receive\(_ task: WebSocketTask\)' \
   "$repo_root/Sources/InnoNetworkWebSocket"
 forbidden_pattern 'manager\.receive\(' \
