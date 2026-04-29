@@ -1,13 +1,12 @@
 # InnoNetwork v4 Migration Guide
 
-This document summarizes breaking changes from the `3.x` line to `4.0`.
-For the additive 4.0 → 4.1 changes — plus two notable shifts (failure-
-payload redaction by default, and `DownloadManager` becoming a
-`public actor`) — see
-[`docs/releases/4.1.0.md`](docs/releases/4.1.0.md).
+This document summarizes breaking changes from the `3.x` line to `4.0.0`.
+`4.0.0` has not been tagged yet; the latest published public release remains
+`3.0.1`.
 
-`4.0` bundles the long-planned WebSocket / Swift 6 work with a
-production-readiness pass on the request pipeline:
+`4.0.0` bundles the long-planned WebSocket / Swift 6 work with a
+production-readiness pass on the request, download, streaming, and trust
+pipelines:
 
 1. **I — `WebSocketCloseCode` is promoted to `public`** and becomes the
    canonical close-code type on all public WebSocket APIs. Apple's
@@ -27,11 +26,15 @@ production-readiness pass on the request pipeline:
 6. **N — `DefaultNetworkClient` is now a `final class`** (was `actor`) so
    concurrent requests dispatch without an actor-hop. The public API
    surface is byte-for-byte unchanged.
+7. **O — `WebSocketManager.receive(_:)` is removed** before the first 4.x tag
+   so the manager's internal receive loop is the single consumer of the
+   underlying `URLSessionWebSocketTask`.
 
 Items L and M are source-breaking on exhaustive switches; item N is
 source-breaking only for call sites that relied on `DefaultNetworkClient`
-being an actor (for example, crossing actor boundaries). Everything else in
-this release is additive.
+being an actor (for example, crossing actor boundaries). Item O is
+source-breaking only for pre-release 4.0 adopters who called direct receive.
+Everything else in this release is additive.
 
 Minimum toolchain remains Swift 6.2 / Xcode 26.
 
@@ -414,9 +417,34 @@ The legacy boolean overload is scheduled for removal in `5.0`.
 
 ---
 
-## 8. Additive (no migration needed)
+## 8. Removed `WebSocketManager.receive(_:)` (Item O)
 
-These features ship in `4.0` but require no changes to existing code:
+`WebSocketManager` always starts an internal receive loop when a socket
+connects. The pre-release public `receive(_:)` method could also call
+`URLSessionWebSocketTask.receive()` directly, which meant external consumers
+could race the manager loop or steal frames from callbacks and event streams.
+
+The direct method is removed before the 4.0.0 tag. Replace any pre-release
+callers with the managed event delivery APIs:
+
+```diff
+- let event = try await manager.receive(task)
+- handle(event)
++ for await event in await manager.events(for: task) {
++     handle(event)
++ }
+```
+
+For callback-oriented integrations, use
+`addEventListener(for:listener:)`, `setOnMessageHandler(_:)`, or
+`setOnStringHandler(_:)`. Those paths are fed by the single internal receive
+loop and keep reconnect/event ordering owned by the manager.
+
+---
+
+## 9. Additive (no migration needed)
+
+These features ship in `4.0.0` but require no changes to existing code:
 
 - **Session-level interceptors**:
   ``NetworkConfiguration/requestInterceptors`` and
@@ -439,12 +467,16 @@ These features ship in `4.0` but require no changes to existing code:
 - **UTType-backed multipart MIME**: 13 legacy mappings preserved;
   modern formats (`webp`, `avif`, `heif`, `m4a`, `webm`) now resolve
   through UTType.
+- **Pinning host matching strategy**:
+  ``PublicKeyPinningPolicy/HostMatchingStrategy`` defaults to the existing
+  exact + parent-domain union behavior. Security-sensitive clients can opt
+  into `.mostSpecificHost` to keep parent and subdomain pins isolated.
 
 ---
 
-## 9. Verification checklist
+## 10. Verification checklist
 
-After bumping InnoNetwork to `4.0`:
+After bumping InnoNetwork to `4.0.0`:
 
 1. `swift build` (or your IDE build) — fix any exhaustive-switch
    warnings on `WebSocketEvent`, `NetworkError`, and `RequestPayload`
@@ -468,7 +500,13 @@ After bumping InnoNetwork to `4.0`:
    requirements default to throwing
    `NetworkError.invalidRequestConfiguration` — no change needed unless
    your tests now exercise streaming.
-7. Run your test suite — pattern matches that compiled against the
+7. Search for pre-release direct WebSocket receive calls:
+   ```bash
+   rg -n "manager\\.receive\\("
+   ```
+   Replace them with `events(for:)`, `addEventListener(for:listener:)`, or
+   callbacks.
+8. Run your test suite — pattern matches that compiled against the
    `WebSocketCloseCode` change still work, but any tests asserting raw
    values through `URLSessionWebSocketTask.CloseCode.rawValue` should
    now go through `WebSocketCloseCode.rawValue` (which is `UInt16`,

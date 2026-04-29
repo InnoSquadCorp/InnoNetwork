@@ -5,19 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and the project follows Semantic
 Versioning for the upcoming 4.0.0 public release line.
 
-## [4.1.0] - Unreleased
+## [4.0.0] - Unreleased
 
-The 4.1 line is a risk-mitigation epic on top of 4.0. It is additive on the
-public API surface — no breaking changes, with one compatibility deprecation
-alias (`WebSocketTask.reconnectCount`). New surfaces ship with conservative
-defaults so existing call sites keep current behaviour. See
-[`docs/releases/4.1.0.md`](docs/releases/4.1.0.md) for a one-page summary.
+This unreleased line folds the Swift 6 / WebSocket work and the
+production-readiness pass into one 4.0.0 tag. The latest published public
+release remains 3.0.1; consumers should pin `release/v4.0` or a revision until
+the 4.0.0 tag is cut. See [`docs/releases/4.0.0.md`](docs/releases/4.0.0.md)
+for the one-page release summary and [`MIGRATION_v4.md`](MIGRATION_v4.md) for
+call-site changes.
 
 ### Added
 
 - `APIDefinition`, `MultipartAPIDefinition`, and `StreamingAPIDefinition`
   expose `acceptableStatusCodes: Set<Int>?` for per-endpoint overrides of
   the session-wide default.
+- `WebSocketCloseCode` is now public and usable for pattern matching across
+  the full RFC 6455 range (1000-1015) plus library/application
+  `.custom(UInt16)` codes (3000-4999). The previously absent
+  `.serviceRestart` (1012) and `.tryAgainLater` (1013) cases are first-class
+  values.
+- `WebSocketEvent.ping` is emitted immediately before every heartbeat or public
+  `ping(_:)` attempt, pairing with the existing `.pong` /
+  `.error(.pingTimeout)` completion events to give callers a full
+  "attempt -> outcome" timeline.
 - `WebSocketTask` exposes `attemptedReconnectCount` and
   `successfulReconnectCount`. The legacy `reconnectCount` property is
   available as a deprecated alias of `attemptedReconnectCount` for source
@@ -45,6 +55,10 @@ defaults so existing call sites keep current behaviour. See
   `WebSocketError.sendQueueOverflow(limit:)` and
   `WebSocketEvent.sendDropped(limit:)` surface back-pressure outcomes.
   `WebSocketTask.inFlightSendCount` reports the live counter.
+- `PublicKeyPinningPolicy.HostMatchingStrategy` lets security operators choose
+  host pin matching semantics. The default `.unionAllMatches` preserves the
+  existing exact + parent-domain union, while `.mostSpecificHost` uses only
+  the exact host's pins or the longest matching parent domain.
 - DocC catalogs ship with onboarding articles for retry decisions, error
   classification, trust policies, background downloads, persistence,
   WebSocket close codes, and reconnect behaviour. The rendered site lives
@@ -64,6 +78,18 @@ defaults so existing call sites keep current behaviour. See
 
 ### Changed
 
+- **BREAKING**: `WebSocketManager.disconnect(_:closeCode:)` and
+  `WebSocketManager.disconnectAll(closeCode:)` now take `WebSocketCloseCode`
+  instead of `URLSessionWebSocketTask.CloseCode`. The default value
+  (`.normalClosure`) is unchanged, so call sites that only used defaults keep
+  compiling after rebuild.
+- **BREAKING**: `WebSocketTask.closeCode` returns `WebSocketCloseCode?`
+  instead of `URLSessionWebSocketTask.CloseCode?`. Pattern matches on
+  Apple-provided cases (`.normalClosure`, `.goingAway`, etc.) keep working
+  because the enum uses the same case names.
+- Swift 6 language mode (`swiftLanguageMode(.v6)`) is enabled on every target.
+  The package compiles under Swift 6.2+ toolchains; CI no longer needs the
+  explicit `-strict-concurrency=complete` flag.
 - `RequestExecutor` and `DefaultNetworkClient.stream(_:)` now apply
   `NetworkError.redactingFailurePayload()` to errors before logging or
   surfacing them, unless the caller opts in via
@@ -71,12 +97,10 @@ defaults so existing call sites keep current behaviour. See
   callers that inspected `Response.data` on an error: that field is now
   empty by default. Status code, request URL, headers, and the
   `HTTPURLResponse` are preserved.
-- CI: `swift test` runs with `--enable-code-coverage`; coverage is uploaded
-  as an artifact and forwarded to Codecov when `CODECOV_TOKEN` is present.
-  The benchmark smoke guard threshold remains at 50% pending a baseline
-  refresh against the v4.1 build (the existing baseline pre-dates the
-  WebSocket send-queue work and would false-positive at 10%). The
-  tightening to 10% is tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+- CI: coverage tests run with `swift test --no-parallel
+  --enable-code-coverage`; coverage is uploaded as an artifact and forwarded
+  to Codecov when `CODECOV_TOKEN` is present. The PR benchmark smoke guard
+  uses a 20% threshold, while scheduled/manual benchmark workflows use 10%.
 - The release workflow generates a CycloneDX 1.5 SBOM and signs both the
   SBOM and the benchmark snapshot with sigstore cosign before attaching
   them to the GitHub Release.
@@ -90,6 +114,14 @@ defaults so existing call sites keep current behaviour. See
 ### Deprecated
 
 - `WebSocketTask.reconnectCount` — use `attemptedReconnectCount` instead.
+
+### Removed
+
+- **BREAKING**: `WebSocketManager.receive(_:)` has been removed before the
+  4.0.0 tag. The manager always owns the underlying `URLSessionWebSocketTask`
+  receive loop, so consumers should observe frames through
+  `events(for:)`, `addEventListener(for:listener:)`, or the message/string
+  callbacks instead of racing the internal receive loop.
 
 ### Concurrency
 
@@ -110,43 +142,13 @@ defaults so existing call sites keep current behaviour. See
 
 - WebSocket `permessage-deflate` extension (RFC 7692) — requires a
   transport substitution because `URLSessionWebSocketTask` does not
-  expose deflate negotiation. The two paths (`InnoNetworkWebSocketNIO`
-  product on swift-nio vs `Network.framework` direct implementation)
-  are tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
-
-## [4.0.0] - Unreleased
-
-This release raises the Swift language baseline, tightens the WebSocket API
-around a typed close-code enum, and adds a matching `.ping` observability
-event. See [`MIGRATION_v4.md`](MIGRATION_v4.md) for a step-by-step call-site
-diff.
-
-### Added
-
-- `WebSocketCloseCode` is now public and usable for pattern matching across
-  the full RFC 6455 range (1000-1015) plus library/application
-  `.custom(UInt16)` codes (3000-4999). The previously absent
-  `.serviceRestart` (1012) and `.tryAgainLater` (1013) cases are first-class
-  values.
-- `WebSocketEvent.ping` is emitted immediately before every heartbeat or public
-  `ping(_:)` attempt, pairing with the existing `.pong` /
-  `.error(.pingTimeout)` completion events to give callers a full
-  "attempt -> outcome" timeline.
-
-### Changed
-
-- **BREAKING**: `WebSocketManager.disconnect(_:closeCode:)` and
-  `WebSocketManager.disconnectAll(closeCode:)` now take `WebSocketCloseCode`
-  instead of `URLSessionWebSocketTask.CloseCode`. The default value
-  (`.normalClosure`) is unchanged, so call sites that only used defaults keep
-  compiling after rebuild.
-- **BREAKING**: `WebSocketTask.closeCode` returns `WebSocketCloseCode?`
-  instead of `URLSessionWebSocketTask.CloseCode?`. Pattern matches on
-  Apple-provided cases (`.normalClosure`, `.goingAway`, etc.) keep working
-  because the enum uses the same case names.
-- Swift 6 language mode (`swiftLanguageMode(.v6)`) is enabled on every target.
-  The package compiles under Swift 6.2+ toolchains; CI no longer needs the
-  explicit `-strict-concurrency=complete` flag.
+  expose deflate negotiation. The v5 candidate is an optional
+  `InnoNetworkWebSocketNIO` product on swift-nio so the URLSession-based
+  4.0.0 product stays stable.
+- OpenAPI Generator integration stays recipe-first for 4.0.0. The stable path
+  is the `APIDefinition` wrapper documented in DocC; generated-client SPI
+  hooks remain outside the default stable contract. A separate adapter
+  package/product is tracked as a 4.x+ roadmap candidate.
 
 ### Fixed
 

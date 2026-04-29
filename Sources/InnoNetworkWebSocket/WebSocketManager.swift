@@ -475,23 +475,6 @@ public final class WebSocketManager: NSObject, Sendable {
         await eventHub.stream(for: task.id)
     }
 
-    public func receive(_ task: WebSocketTask) async throws -> WebSocketEvent {
-        guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
-            throw WebSocketError.disconnected(nil)
-        }
-
-        let message = try await urlTask.receive()
-
-        switch message {
-        case .string(let string):
-            return .string(string)
-        case .data(let data):
-            return .message(data)
-        @unknown default:
-            return .message(Data())
-        }
-    }
-
     private func startConnection(_ task: WebSocketTask) async {
         await task.advanceConnectionGeneration()
         await task.setAutoReconnectEnabled(true)

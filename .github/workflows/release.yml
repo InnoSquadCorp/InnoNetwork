@@ -61,7 +61,7 @@ jobs:
           xcrun swift run InnoNetworkBenchmarks --quick --json-path .build/release-artifacts/benchmarks.json
 
       - name: Run tests
-        run: xcrun swift test
+        run: xcrun swift test --no-parallel --enable-code-coverage
 
       - name: Build DocC archives
         run: |

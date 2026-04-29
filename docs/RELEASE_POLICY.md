@@ -12,7 +12,7 @@
 2. Confirm `docs/releases/<version>.md`
 3. Push an annotated tag such as `4.0.0`
 4. Let the `Release` workflow run:
-   - `swift test`
+   - `swift test --no-parallel --enable-code-coverage`
    - docs contract sync
    - doc smoke build/run
    - consumer smoke build

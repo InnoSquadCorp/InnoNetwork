@@ -17,35 +17,98 @@ public protocol TrustEvaluating: Sendable {
 }
 
 public struct PublicKeyPinningPolicy: Sendable {
+    /// Controls how pin sets are selected when exact and parent-domain pins
+    /// both match a host.
+    public enum HostMatchingStrategy: Sendable, Equatable {
+        /// Preserve the existing behavior by unioning every exact and
+        /// parent-domain match.
+        case unionAllMatches
+
+        /// Prefer the exact host's pins. If no exact host is configured, use
+        /// only the longest matching parent-domain entry.
+        case mostSpecificHost
+    }
+
     public let pinsByHost: [String: Set<String>]
     public let includesSubdomains: Bool
     public let allowDefaultEvaluationForUnpinnedHosts: Bool
+    public let hostMatchingStrategy: HostMatchingStrategy
 
     public init(
         pinsByHost: [String: Set<String>],
         includesSubdomains: Bool = true,
-        allowDefaultEvaluationForUnpinnedHosts: Bool = true
+        allowDefaultEvaluationForUnpinnedHosts: Bool = true,
+        hostMatchingStrategy: HostMatchingStrategy = .unionAllMatches
     ) {
         self.pinsByHost = pinsByHost
         self.includesSubdomains = includesSubdomains
         self.allowDefaultEvaluationForUnpinnedHosts = allowDefaultEvaluationForUnpinnedHosts
+        self.hostMatchingStrategy = hostMatchingStrategy
     }
 
     func pins(forHost host: String) -> Set<String>? {
         let normalizedHost = host.lowercased()
-        var matches: [Set<String>] = []
+        switch hostMatchingStrategy {
+        case .unionAllMatches:
+            return unionPins(for: normalizedHost)
+        case .mostSpecificHost:
+            return mostSpecificPins(for: normalizedHost)
+        }
+    }
+
+    private func unionPins(for normalizedHost: String) -> Set<String>? {
+        let matches = matchingPinSets(for: normalizedHost)
+            .map { $0.pins }
+
+        guard !matches.isEmpty else { return nil }
+        return matches.reduce(into: Set<String>()) { partialResult, next in
+            partialResult.formUnion(next)
+        }
+    }
+
+    private func mostSpecificPins(for normalizedHost: String) -> Set<String>? {
+        let matches = matchingPinSets(for: normalizedHost)
+        let exactMatches = matches
+            .filter { $0.isExact }
+            .map { $0.pins }
+        if !exactMatches.isEmpty {
+            return union(exactMatches)
+        }
+
+        guard includesSubdomains else { return nil }
+
+        let parentMatches = matches
+            .filter { !$0.isExact }
+        guard let longestMatchLength = parentMatches.map({ $0.host.count }).max() else {
+            return nil
+        }
+
+        return union(
+            parentMatches
+                .filter { $0.host.count == longestMatchLength }
+                .map { $0.pins }
+        )
+    }
+
+    private func matchingPinSets(
+        for normalizedHost: String
+    ) -> [(host: String, pins: Set<String>, isExact: Bool)] {
+        var matches: [(host: String, pins: Set<String>, isExact: Bool)] = []
         for (configuredHost, configuredPins) in pinsByHost {
             let normalizedConfiguredHost = configuredHost.lowercased()
             if normalizedHost == normalizedConfiguredHost {
-                matches.append(configuredPins)
+                matches.append((normalizedConfiguredHost, configuredPins, true))
                 continue
             }
             if includesSubdomains, normalizedHost.hasSuffix(".\(normalizedConfiguredHost)") {
-                matches.append(configuredPins)
+                matches.append((normalizedConfiguredHost, configuredPins, false))
             }
         }
 
-        guard !matches.isEmpty else { return nil }
+        return matches
+    }
+
+    private func union(_ matches: [Set<String>]) -> Set<String> {
         return matches.reduce(into: Set<String>()) { partialResult, next in
             partialResult.formUnion(next)
         }

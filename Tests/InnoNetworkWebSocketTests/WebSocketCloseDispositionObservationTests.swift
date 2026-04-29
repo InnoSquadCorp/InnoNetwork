@@ -5,7 +5,7 @@ import os
 @testable import InnoNetwork
 @testable import InnoNetworkWebSocket
 
-/// Observation tests for the 4.1 public `WebSocketTask.closeDisposition`
+/// Observation tests for the 4.0.0 public `WebSocketTask.closeDisposition`
 /// getter. Confirms that the manager records the classified disposition on
 /// every close path (manual disconnect, close-handshake timeout, peer close,
 /// transport failure) so consumers branching on retry/terminal semantics can

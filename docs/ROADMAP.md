@@ -8,11 +8,14 @@
 - configuration API 장기 정리: advanced surface 축소와 권장 public path 단순화
 - `@unchecked Sendable` 회귀 방지: production source는 CI에서 금지하고, 테스트 전용 helper의 예외는 TestSupport/test target 안에만 둔다.
 - 벤치마크 trend tracking: `Benchmarks/Baselines/default.json` 은 macos-15 기준으로 갱신되었고, PR smoke는 20%, scheduled/manual workflow는 10% threshold를 사용한다. 다음 단계는 PR comment 자동화와 장기 trend 저장소다.
-- WebSocket `permessage-deflate` (RFC 7692): `URLSessionWebSocketTask` 가 deflate 협상을 노출하지 않아 transport substitution 필요. 선택지: (a) `InnoNetworkWebSocketNIO` 새 product (swift-nio 의존), (b) `Network.framework` 직접 구현. v5 라인에서 선택 결정.
+- WebSocket `permessage-deflate` (RFC 7692): `URLSessionWebSocketTask` 가 deflate 협상을 노출하지 않아 transport substitution 필요. v5 후보는 optional `InnoNetworkWebSocketNIO` product (swift-nio 의존) 방향으로 둔다. 기존 URLSession 기반 4.0.0 product 안정성을 흔들지 않기 위해 `Network.framework` 직접 구현은 보조 조사 경로로 유지한다.
 
 ## Post-4.0 Candidates
 
 - Low-level execution hooks for generated clients and wrapper frameworks.
+- Dedicated OpenAPI Generator adapter package/product. 4.0.0 은
+  `APIDefinition` wrapper recipe 를 공식 경로로 두고, SPI hook 은 stable
+  contract 밖에 둔다.
 - Public close-disposition observation for WebSocket lifecycle UX.
 - Ping/pong context payloads with library-computed round-trip timing.
 - Download retry backoff tuning with jitter and explicit caps.

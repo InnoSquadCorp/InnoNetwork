@@ -57,23 +57,6 @@ struct WebSocketMessagingTests {
         }
     }
 
-    @Test("receive on disconnected task throws .disconnected")
-    func receiveOnDisconnectedThrows() async {
-        let manager = WebSocketManager(
-            configuration: WebSocketConfiguration(
-                heartbeatInterval: 0,
-                reconnectDelay: 0,
-                maxReconnectAttempts: 0,
-                sessionIdentifier: makeWebSocketTestSessionIdentifier("receive-disconnected")
-            )
-        )
-        let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
-
-        await #expect(throws: WebSocketError.self) {
-            _ = try await manager.receive(task)
-        }
-    }
-
     @Test("send after manager removes task runtime throws .disconnected")
     func sendAfterRuntimeRemovedThrows() async throws {
         let manager = WebSocketManager(

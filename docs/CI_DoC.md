@@ -13,8 +13,8 @@ This document defines the minimum completion criteria (DoC) for pull requests in
 The `CI` workflow must pass all of the following:
 
 1. `xcrun swift package resolve`
-2. `xcrun swift build -Xswiftc -strict-concurrency=complete`
-3. `xcrun swift test --parallel --enable-code-coverage`
+2. `xcrun swift build`
+3. `xcrun swift test --no-parallel --enable-code-coverage`
 4. `rg -n "@unchecked Sendable" Sources/InnoNetwork Sources/InnoNetworkDownload Sources/InnoNetworkWebSocket` returns no matches
 5. Coverage report is generated under `.build/coverage/` and uploaded as a
    workflow artifact. When the `CODECOV_TOKEN` secret is configured the
@@ -44,7 +44,7 @@ Run the same commands locally:
 ```bash
 sudo xcode-select -s /Applications/Xcode_26.0.1.app
 xcrun swift package resolve
-xcrun swift build -Xswiftc -strict-concurrency=complete
+xcrun swift build
 # Match CI: keep the coverage run non-parallel because instrumentation plus
 # runner-level parallelism can starve wall-clock polling tests on macOS.
 xcrun swift test --no-parallel --enable-code-coverage

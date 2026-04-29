@@ -100,6 +100,8 @@ expected_stable=(
 '`WebSocketPingContext`'
 '`WebSocketPongContext`'
 '`TrustPolicy`'
+'`PublicKeyPinningPolicy`'
+'`PublicKeyPinningPolicy.HostMatchingStrategy`'
 '`AnyResponseDecoder`'
 '`URLQueryEncoder`'
 '`EventDeliveryPolicy`'
@@ -508,6 +510,14 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public enum TrustPolicy'
       target="$repo_root/Sources/InnoNetwork/TrustPolicy.swift"
       ;;
+    '`PublicKeyPinningPolicy`')
+      pattern='public struct PublicKeyPinningPolicy'
+      target="$repo_root/Sources/InnoNetwork/TrustPolicy.swift"
+      ;;
+    '`PublicKeyPinningPolicy.HostMatchingStrategy`')
+      pattern='public enum HostMatchingStrategy: Sendable, Equatable'
+      target="$repo_root/Sources/InnoNetwork/TrustPolicy.swift"
+      ;;
     '`AnyResponseDecoder`')
       pattern='public struct AnyResponseDecoder'
       target="$repo_root/Sources/InnoNetwork/AnyResponseDecoder.swift"
@@ -604,5 +614,23 @@ forbidden_pattern 'let configuration = NetworkConfiguration\(' "$readme" "${exam
 forbidden_pattern 'let client = DefaultNetworkClient\(\s*configuration:\s*\.default' "$readme" "${example_docs[@]}"
 forbidden_pattern 'addText|addFile' "$readme" "${example_docs[@]}"
 forbidden_pattern 'from:\s*"1\.0\.0"' "$readme" "${example_docs[@]}"
+forbidden_pattern '4\.1\.0|4\.1 line|Pre-4\.1|4\.1 behaviour|v4\.1|docs/releases/4\.1\.0' \
+  "$api_stability" \
+  "$readme" \
+  "$repo_root/CHANGELOG.md" \
+  "$repo_root/MIGRATION_v4.md" \
+  "$repo_root/SECURITY.md" \
+  "$repo_root/Benchmarks/README.md" \
+  "$repo_root/docs" \
+  "$repo_root/Sources" \
+  "$repo_root/Tests"
+forbidden_pattern 'public func receive\(_ task: WebSocketTask\)' \
+  "$repo_root/Sources/InnoNetworkWebSocket"
+forbidden_pattern 'manager\.receive\(' \
+  "$repo_root/README.md" \
+  "$repo_root/CHANGELOG.md" \
+  "$repo_root/docs" \
+  "$repo_root/Sources" \
+  "$repo_root/Tests"
 
 echo "docs-contract-sync: OK"

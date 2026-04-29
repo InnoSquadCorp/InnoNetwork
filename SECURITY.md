@@ -35,7 +35,7 @@ To verify a downloaded artifact:
 # Pre-requisites:
 brew install cosign
 
-# Replace <version> with the release tag (e.g. 4.1.0).
+# Replace <version> with the release tag (e.g. 4.0.0).
 version="<version>"
 artifact="benchmarks.json"   # or sbom.cdx.json
 

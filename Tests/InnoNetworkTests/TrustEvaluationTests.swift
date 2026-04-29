@@ -7,8 +7,8 @@ import Testing
 @Suite("Trust Evaluation Tests")
 struct TrustEvaluationTests {
 
-    @Test("Public key pinning policy matches subdomains and exact hosts")
-    func pinningPolicyHostMatching() {
+    @Test("Public key pinning policy unions subdomains and exact hosts by default")
+    func pinningPolicyUnionHostMatching() {
         let policy = PublicKeyPinningPolicy(
             pinsByHost: [
                 "api.example.com": ["sha256/primary-pin"],
@@ -24,6 +24,44 @@ struct TrustEvaluationTests {
         #expect(subdomainPins == Set(["sha256/primary-pin", "sha256/backup-pin"]))
 
         #expect(policy.pins(forHost: "unrelated.domain") == nil)
+    }
+
+    @Test("Public key pinning policy can prefer the most specific host")
+    func pinningPolicyMostSpecificHostMatching() {
+        let policy = PublicKeyPinningPolicy(
+            pinsByHost: [
+                "api.example.com": ["sha256/api-pin"],
+                "example.com": ["sha256/root-pin"],
+                "internal.example.com": ["sha256/internal-pin"],
+            ],
+            includesSubdomains: true,
+            hostMatchingStrategy: .mostSpecificHost
+        )
+
+        let exactHostPins = policy.pins(forHost: "api.example.com")
+        #expect(exactHostPins == Set(["sha256/api-pin"]))
+
+        let nestedHostPins = policy.pins(forHost: "mobile.internal.example.com")
+        #expect(nestedHostPins == Set(["sha256/internal-pin"]))
+
+        let rootSubdomainPins = policy.pins(forHost: "cdn.example.com")
+        #expect(rootSubdomainPins == Set(["sha256/root-pin"]))
+
+        #expect(policy.pins(forHost: "unrelated.domain") == nil)
+    }
+
+    @Test("Most-specific pinning still ignores parent domains when subdomains are disabled")
+    func pinningPolicyMostSpecificHonorsSubdomainSetting() {
+        let policy = PublicKeyPinningPolicy(
+            pinsByHost: [
+                "example.com": ["sha256/root-pin"],
+            ],
+            includesSubdomains: false,
+            hostMatchingStrategy: .mostSpecificHost
+        )
+
+        #expect(policy.pins(forHost: "example.com") == Set(["sha256/root-pin"]))
+        #expect(policy.pins(forHost: "api.example.com") == nil)
     }
 
     @Test("Public key pinning rejects unsupported authentication method")

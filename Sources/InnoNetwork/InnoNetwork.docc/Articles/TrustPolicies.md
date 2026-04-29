@@ -24,14 +24,15 @@ certificate rotation as long as you reuse the same key material.
 
 ```swift
 let pinning = PublicKeyPinningPolicy(
-    pins: [
+    pinsByHost: [
         "api.example.com": [
-            PublicKey(base64: "AAAAB3NzaC1yc2E...currentKey..."),
-            PublicKey(base64: "AAAAB3NzaC1yc2E...nextKey..."),  // pre-published rollover key
+            "sha256/AAAAB3NzaC1yc2E...currentKey...",
+            "sha256/AAAAB3NzaC1yc2E...nextKey...",  // pre-published rollover key
         ],
     ],
     includesSubdomains: false,
-    allowsHostsNotInPinning: false
+    allowDefaultEvaluationForUnpinnedHosts: false,
+    hostMatchingStrategy: .mostSpecificHost
 )
 
 let configuration = NetworkConfiguration.advanced(
@@ -57,6 +58,15 @@ operational flexibility. Pinning the leaf means rotation requires a coordinated 
 server update; pinning the intermediate means you can rotate leaf certificates without
 client updates as long as the intermediate stays the same.
 
+### Host matching
+
+The default host matching strategy, ``PublicKeyPinningPolicy/HostMatchingStrategy/unionAllMatches``,
+preserves the original behavior: if both `api.example.com` and `example.com`
+match a request host, their pin sets are unioned. Choose
+``PublicKeyPinningPolicy/HostMatchingStrategy/mostSpecificHost`` when parent
+and subdomain pins must be operationally isolated. With that strategy, exact
+host pins win; otherwise only the longest matching parent-domain pins are used.
+
 ## Custom evaluation
 
 For evaluators that need full chain inspection, time-of-day rules, or fallback to
@@ -66,21 +76,25 @@ For evaluators that need full chain inspection, time-of-day rules, or fallback t
 struct CorporateRootTrust: TrustEvaluating {
     let corporateRoot: SecCertificate
 
-    func evaluate(serverTrust: SecTrust, host: String) async throws -> Bool {
+    func evaluate(challenge: URLAuthenticationChallenge) -> Bool {
+        guard let serverTrust = challenge.protectionSpace.serverTrust else {
+            return false
+        }
+
         // Append the corporate root to the trust object before delegating to the OS.
+        let host = challenge.protectionSpace.host
         let policies = [SecPolicyCreateSSL(true, host as CFString)]
         SecTrustSetPolicies(serverTrust, policies as CFTypeRef)
         SecTrustSetAnchorCertificates(serverTrust, [corporateRoot] as CFArray)
         SecTrustSetAnchorCertificatesOnly(serverTrust, true)
 
-        var error: CFError?
-        return SecTrustEvaluateWithError(serverTrust, &error)
+        return SecTrustEvaluateWithError(serverTrust, nil)
     }
 }
 ```
 
-A throw turns into ``NetworkError/trustEvaluationFailed(_:)`` — surface it to the user and
-do not auto-retry.
+A `false` result turns into ``NetworkError/trustEvaluationFailed(_:)`` — surface it to the user
+and do not auto-retry.
 
 ## What pinning does not protect against
 

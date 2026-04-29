@@ -1,7 +1,8 @@
 # API Stability
 
 This document defines the compatibility contract for the upcoming InnoNetwork
-4.0.0 public release.
+4.0.0 public release. The latest published public release remains `3.0.1`;
+this contract applies once the 4.0.0 tag is cut.
 
 ## Stable
 
@@ -25,6 +26,8 @@ This document defines the compatibility contract for the upcoming InnoNetwork
 - `WebSocketPingContext`
 - `WebSocketPongContext`
 - `TrustPolicy`
+- `PublicKeyPinningPolicy`
+- `PublicKeyPinningPolicy.HostMatchingStrategy`
 - `AnyResponseDecoder`
 - `URLQueryEncoder`
 - `EventDeliveryPolicy`
@@ -118,6 +121,10 @@ targets and requires every declaration below to stay classified here before the
 - `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`,
   `SingleRequestExecutable`, and `RequestPayload` are SPI surfaces and are not
   part of the default SwiftPM import contract.
+- `PublicKeyPinningPolicy.HostMatchingStrategy.unionAllMatches` preserves the
+  existing host pin lookup behavior. `mostSpecificHost` is stable as an
+  opt-in stricter matching mode for operators who separate parent and
+  subdomain pins.
 - `WebSocketCloseDisposition` is provisionally stable; the observation property
   stays public, while classification policy and additional enum cases may evolve
   in minor releases.

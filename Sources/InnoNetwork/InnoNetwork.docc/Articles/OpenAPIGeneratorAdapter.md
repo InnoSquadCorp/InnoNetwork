@@ -94,3 +94,12 @@ struct OpenAPIExecutable<Operation: OpenAPIExecutableOperation>: SingleRequestEx
 The repository's `Examples/GeneratedClientRecipe` target is a compile-smoke
 sample for this SPI import shape without tying InnoNetwork to a specific
 OpenAPI generator version.
+
+## Roadmap boundary
+
+InnoNetwork 4.0.0 does not ship a dedicated Swift OpenAPI Generator adapter
+product. Keep generated clients in their own package or target, use the
+``APIDefinition`` wrapper path as the stable integration, and reserve the SPI
+hook for revision-pinned wrappers that need custom serialization. A separate
+adapter package/product remains a post-4.0.0 candidate once the public
+contract is tagged.

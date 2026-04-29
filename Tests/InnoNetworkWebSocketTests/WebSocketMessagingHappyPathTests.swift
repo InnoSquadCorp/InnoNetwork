@@ -73,6 +73,40 @@ struct WebSocketMessagingHappyPathTests {
         await harness.tearDown(task: task)
     }
 
+    @Test("Receive loop delivers strings through event streams and callbacks")
+    func receiveLoopUsesManagedStreamsAndCallbacks() async throws {
+        let harness = StubMessagingHarness()
+        let task = try await harness.connectAndReady()
+        let expected = "managed-fanout"
+        let streamDelivered = OSAllocatedUnfairLock<Bool>(initialState: false)
+        let callbackDelivered = OSAllocatedUnfairLock<Bool>(initialState: false)
+
+        let stream = await harness.manager.events(for: task)
+        let streamTask = Task {
+            for await event in stream {
+                if case .string(let text) = event, text == expected {
+                    streamDelivered.withLock { $0 = true }
+                    return
+                }
+            }
+        }
+
+        await harness.manager.setOnStringHandler { callbackTask, text in
+            if callbackTask.id == task.id, text == expected {
+                callbackDelivered.withLock { $0 = true }
+            }
+        }
+
+        harness.stubTask.scriptReceive(.success(.string(expected)))
+
+        #expect(await waitFor(timeout: 1.0) { streamDelivered.withLock { $0 } })
+        #expect(await waitFor(timeout: 1.0) { callbackDelivered.withLock { $0 } })
+
+        streamTask.cancel()
+        await harness.manager.setOnStringHandler(nil)
+        await harness.tearDown(task: task)
+    }
+
     @Test("Consecutive sends preserve ordering")
     func sendPreservesMessageOrder() async throws {
         let harness = StubMessagingHarness()

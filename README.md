@@ -31,9 +31,10 @@ dependencies: [
 ]
 ```
 
-`4.0.0` is the next public release line and has not been tagged yet. Until the
-tag is published, pin `release/v4.0` or a revision from this repository for
-pre-release validation.
+`4.0.0` is the next public release line and has not been tagged yet. The latest
+published public release remains `3.0.1`; until the 4.0.0 tag is published,
+pin `release/v4.0` or a revision from this repository for pre-release
+validation.
 
 ### Core Request
 
@@ -244,7 +245,8 @@ For operational tuning, see [Examples](Examples/README.md) and [API Stability](A
 
 ## Stability
 
-Public releases follow semantic versioning; `4.0.0` is the next major line.
+Public releases follow semantic versioning; `4.0.0` is the next major line and
+the latest published public release remains `3.0.1`.
 
 - Stable public API: [API_STABILITY.md](API_STABILITY.md)
 - Release rules and compatibility policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
@@ -284,12 +286,15 @@ Operational items to verify before shipping a client built on InnoNetwork.
   pins (current + next) and document the rotation cadence so the app keeps validating after
   certificate replacement. Consider feature-gated rollback to `.systemDefault` for emergency
   recovery.
+- **Pinning host matching.** Keep the default `.unionAllMatches` if parent-domain pins should
+  act as backup pins for subdomains. Use `.mostSpecificHost` when `example.com` and
+  `api.example.com` pins must be operated as separate trust scopes.
 - **App Transport Security (ATS).** The default `safeDefaults` configuration assumes ATS is
   enabled. Avoid `NSAllowsArbitraryLoads` in production `Info.plist`. If a non-HTTPS host is
   unavoidable, scope an `NSExceptionDomains` entry to that host only.
 - **Custom trust evaluation.** A `TrustEvaluating` implementation runs before request bodies are
-  ever decoded, so any thrown error becomes `NetworkError.trustEvaluationFailed`. Surface the
-  failure to a user-facing recovery path; do not auto-retry on trust failure.
+  ever decoded, so a rejected challenge becomes `NetworkError.trustEvaluationFailed`. Surface
+  the failure to a user-facing recovery path; do not auto-retry on trust failure.
 
 ### Background Operation
 
