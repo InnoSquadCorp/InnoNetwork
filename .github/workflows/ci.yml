@@ -260,6 +260,23 @@ jobs:
               echo "::notice::Skipping optional $runtime smoke because the runtime is not installed on this runner."
               exit 0
             fi
+
+            destination_platform="$runtime Simulator"
+            destination_listing="$(xcodebuild -scheme InnoNetwork-Package -destination "$destination" -showdestinations 2>&1 || true)"
+            if ! printf '%s\n' "$destination_listing" | awk -v platform="platform:$destination_platform" '
+              /Available destinations/ { in_available = 1; next }
+              /Ineligible destinations/ { in_available = 0 }
+              in_available && index($0, platform) { found = 1 }
+              END { exit found ? 0 : 1 }
+            '; then
+              if [[ "$required" == "true" ]]; then
+                echo "::error::Required destination $destination is not available on this runner."
+                printf '%s\n' "$destination_listing"
+                exit 1
+              fi
+              echo "::notice::Skipping optional $runtime smoke because destination $destination is not available on this runner."
+              exit 0
+            fi
           fi
 
           xcodebuild \
