@@ -88,8 +88,9 @@ Disable auto-reconnect when:
   coordinator).
 - The app is being backgrounded without push wakeups configured. Reconnects in the
   background can drain battery and never deliver messages anyway.
-- Authentication has failed (``WebSocketCloseDisposition/handshakeUnauthorized``).
-  Refresh the token, then reconnect explicitly or configure
+- Authentication or authorization has failed (``WebSocketCloseDisposition/handshakeUnauthorized``
+  or ``WebSocketCloseDisposition/handshakeForbidden``). Refresh the credential or permission,
+  then reconnect explicitly or configure
   ``WebSocketHandshakeRequestAdapter`` so the next attempt builds fresh headers.
 
 ```swift

@@ -136,6 +136,7 @@ expected_provisionally=(
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
 '`Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
+'`WebSocketCloseDisposition` observation surface'
 )
 
 expected_shipping_public_declarations=(
@@ -563,6 +564,11 @@ for symbol in "${expected_provisionally[@]}"; do
       ;;
     '`Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
       validate_oss_readiness_public_api
+      continue
+      ;;
+    '`WebSocketCloseDisposition` observation surface')
+      require_contains 'public enum WebSocketCloseDisposition: Sendable, Equatable' \
+        "$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseDisposition.swift"
       continue
       ;;
     *)

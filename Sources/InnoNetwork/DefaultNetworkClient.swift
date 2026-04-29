@@ -30,8 +30,8 @@ public protocol NetworkClient: Sendable {
     /// Executes a standard typed request through the low-level execution pipeline.
     ///
     /// `perform(_:)` is primarily intended for framework authors and policy layers
-    /// that need to adapt richer request contracts into `InnoNetwork` without using
-    /// SPI imports. Application integrations should normally prefer
+    /// that already opt into `@_spi(GeneratedClientSupport)` to adapt richer request
+    /// contracts into `InnoNetwork`. Application integrations should normally prefer
     /// ``NetworkClient/request(_:)``.
     ///
     /// - Parameter request: The typed request definition to execute through the

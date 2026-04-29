@@ -57,8 +57,9 @@ The mapping is:
 | `.peerProtocolFailure` | `1002`, `1003`, `1005`, `1007`, `1008`, `1009`, `1010` (protocol/policy) | `failed` |
 | `.peerApplicationFailure` | custom application close codes (`3000`-`4999`) | `failed` |
 | `.handshakeServerUnavailable` | HTTP `429` / `5xx` on upgrade | `reconnecting` |
-| `.handshakeTerminalHTTP` | non-auth terminal HTTP `4xx` on upgrade | `failed` |
 | `.handshakeUnauthorized` | HTTP `401` specifically | `failed` (caller should refresh auth before reconnecting manually) |
+| `.handshakeForbidden` | HTTP `403` specifically | `failed` (caller should refresh authorization before reconnecting manually) |
+| `.handshakeTerminalHTTP` | non-auth terminal HTTP `4xx` on upgrade | `failed` |
 | `.transportFailure` | NSURLError transient (timeout, DNS, network lost) | `reconnecting` |
 
 Custom close codes (3000-4999) default to **terminal application failures**. If
@@ -84,8 +85,9 @@ These invariants prevent `_autoReconnectEnabled` from racing against
    [`WebSocketTask.swift`](../Sources/InnoNetworkWebSocket/WebSocketTask.swift) for why
    the internal counter may overshoot.)
 4. **Reconnect attempts use a fresh `URLSessionWebSocketTask`.** Each attempt rebuilds the
-   request with the latest interceptors and cookies. Server-issued auth tokens that expired
-   between attempts will surface as a fresh `handshakeUnauthorized` and stop the loop.
+   request with the latest interceptors and cookies. Server-issued auth tokens or permissions
+   that expired between attempts will surface as a fresh `handshakeUnauthorized` or
+   `handshakeForbidden` and stop the loop.
 
 ## Heartbeat and ping/pong
 

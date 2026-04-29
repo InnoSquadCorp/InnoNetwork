@@ -39,6 +39,7 @@ This document defines the compatibility contract for the upcoming InnoNetwork
   (currently `MockURLSession`, `WebSocketEventRecorder`, `StubBehavior`,
   `StubNetworkClient`, and `StubRequestKey`)
 - `Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
+- `WebSocketCloseDisposition` observation surface
 
 ## Public Declaration Ledger
 
@@ -115,9 +116,11 @@ targets and requires every declaration below to stay classified here before the
 - `default` aliases are convenience entry points and should be treated as `safeDefaults` aliases.
 - Advanced builders are public and supported, but operational tuning values are not guaranteed to stay numerically identical across releases.
 - `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`,
-  `SingleRequestExecutable`, `RequestPayload`, and
-  `WebSocketCloseDisposition` may appear in source while the package is being
-  prepared, but they are not part of the 4.0.0 stable API promise.
+  `SingleRequestExecutable`, and `RequestPayload` are SPI surfaces and are not
+  part of the default SwiftPM import contract.
+- `WebSocketCloseDisposition` is provisionally stable; the observation property
+  stays public, while classification policy and additional enum cases may evolve
+  in minor releases.
 - `WebSocketPingContext` and `WebSocketPongContext` public fields are stable
   because they are payloads of stable heartbeat events; their package-scoped
   initializers are construction details owned by the library.
