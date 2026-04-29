@@ -1,6 +1,6 @@
 import Foundation
-@testable import InnoNetworkDownload
 
+@testable import InnoNetworkDownload
 
 /// Deterministic `NetworkMonitoring` double for retry tests.
 ///

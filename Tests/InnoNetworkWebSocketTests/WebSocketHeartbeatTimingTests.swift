@@ -1,10 +1,10 @@
 import Foundation
-import os
-import Testing
 import InnoNetworkTestSupport
+import Testing
+import os
+
 @testable import InnoNetwork
 @testable import InnoNetworkWebSocket
-
 
 @Suite("WebSocket Heartbeat Timing Tests")
 struct WebSocketHeartbeatTimingTests {
@@ -183,7 +183,8 @@ struct WebSocketHeartbeatTimingTests {
         #expect(callbackContexts.count == 1)
 
         if let fromEvent = eventStreamContexts.first,
-           let fromCallback = callbackContexts.first {
+            let fromCallback = callbackContexts.first
+        {
             #expect(fromEvent.attemptNumber == fromCallback.attemptNumber)
             #expect(fromEvent.roundTrip == fromCallback.roundTrip)
         }
@@ -243,12 +244,13 @@ struct WebSocketHeartbeatTimingTests {
 
         #expect(await waitFor(timeout: 2.0) { harness.stubTask.pingCount >= 1 })
         harness.stubTask.completePendingPong(with: nil)
-        #expect(await waitFor(timeout: 2.0) {
-            recorder.snapshot().contains { event in
-                if case .pong = event { return true }
-                return false
-            }
-        })
+        #expect(
+            await waitFor(timeout: 2.0) {
+                recorder.snapshot().contains { event in
+                    if case .pong = event { return true }
+                    return false
+                }
+            })
 
         let reconnectStub = StubWebSocketURLTask()
         harness.stubSession.enqueue(reconnectStub)
@@ -270,12 +272,13 @@ struct WebSocketHeartbeatTimingTests {
         #expect(await harness.waitForTaskState(task, equals: .connected, timeout: 2.0))
         #expect(await waitFor(timeout: 2.0) { reconnectStub.pingCount >= 1 })
         reconnectStub.completePendingPong(with: nil)
-        #expect(await waitFor(timeout: 2.0) {
-            recorder.snapshot().compactMap { event -> Int? in
-                if case .ping(let context) = event { return context.attemptNumber }
-                return nil
-            }.count > preReconnectPingCount
-        })
+        #expect(
+            await waitFor(timeout: 2.0) {
+                recorder.snapshot().compactMap { event -> Int? in
+                    if case .ping(let context) = event { return context.attemptNumber }
+                    return nil
+                }.count > preReconnectPingCount
+            })
 
         let attemptNumbers = recorder.snapshot().compactMap { event -> Int? in
             if case .ping(let context) = event { return context.attemptNumber }
@@ -327,10 +330,12 @@ struct WebSocketHeartbeatTimingTests {
         }
         #expect(relevantIndices.count == 2)
         if relevantIndices.count == 2 {
-            if case .ping = snapshot[relevantIndices[0]] {} else {
+            if case .ping = snapshot[relevantIndices[0]] {
+            } else {
                 Issue.record("expected first of the ping/pong pair to be .ping")
             }
-            if case .pong = snapshot[relevantIndices[1]] {} else {
+            if case .pong = snapshot[relevantIndices[1]] {
+            } else {
                 Issue.record("expected second of the ping/pong pair to be .pong")
             }
         }

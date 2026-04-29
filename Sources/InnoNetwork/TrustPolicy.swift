@@ -1,7 +1,6 @@
 import CryptoKit
 import Foundation
 
-
 public enum TrustFailureReason: Sendable, Equatable {
     case unsupportedAuthenticationMethod(String)
     case missingServerTrust
@@ -145,7 +144,7 @@ enum TrustEvaluator {
 
         for certificate in certificateChain {
             guard let key = SecCertificateCopyKey(certificate),
-                  let keyData = SecKeyCopyExternalRepresentation(key, nil) as Data?
+                let keyData = SecKeyCopyExternalRepresentation(key, nil) as Data?
             else { continue }
 
             pins.formUnion(pinHashes(for: keyData))
@@ -169,10 +168,12 @@ enum TrustEvaluator {
         keyType: String,
         keySizeInBits: Int
     ) -> Data? {
-        guard let algorithmIdentifier = algorithmIdentifierData(
-            keyType: keyType,
-            keySizeInBits: keySizeInBits
-        ) else {
+        guard
+            let algorithmIdentifier = algorithmIdentifierData(
+                keyType: keyType,
+                keySizeInBits: keySizeInBits
+            )
+        else {
             return nil
         }
 
@@ -233,13 +234,22 @@ enum TrustEvaluator {
             // id-ecPublicKey OID (1.2.840.10045.2.1) + named curve OID
             if keySizeInBits <= 256 {
                 // prime256v1 (1.2.840.10045.3.1.7)
-                return Data([0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07])
+                return Data([
+                    0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48,
+                    0xce, 0x3d, 0x03, 0x01, 0x07,
+                ])
             } else if keySizeInBits <= 384 {
                 // secp384r1 (1.3.132.0.34)
-                return Data([0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x22])
+                return Data([
+                    0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b, 0x81, 0x04,
+                    0x00, 0x22,
+                ])
             } else {
                 // secp521r1 (1.3.132.0.35)
-                return Data([0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23])
+                return Data([
+                    0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b, 0x81, 0x04,
+                    0x00, 0x23,
+                ])
             }
         default:
             // RFC 8410 — Ed25519 is matched by keyType string until Security.framework

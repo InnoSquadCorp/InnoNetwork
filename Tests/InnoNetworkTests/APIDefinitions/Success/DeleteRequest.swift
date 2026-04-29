@@ -6,6 +6,7 @@
 //
 
 import Foundation
+
 @testable import InnoNetwork
 
 struct DeleteRequest: APIDefinition {

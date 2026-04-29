@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 actor MetricsRecorder: NetworkMetricsReporting {
     private var metrics: [URLSessionTaskMetrics] = []
@@ -65,7 +65,8 @@ final class TestURLProtocol: URLProtocol {
                 client?.urlProtocol(self, didFailWithError: URLError(.badURL))
                 return
             }
-            if let httpResponse = HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: nil, headerFields: nil) {
+            if let httpResponse = HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: nil, headerFields: nil)
+            {
                 client?.urlProtocol(self, didReceive: httpResponse, cacheStoragePolicy: .notAllowed)
             }
             client?.urlProtocol(self, didLoad: data)
@@ -121,12 +122,14 @@ final class MetricsAwareMockSession: URLSessionProtocol, Sendable {
         guard let url = request.url else {
             throw URLError(.badURL)
         }
-        guard let response = HTTPURLResponse(
-            url: url,
-            statusCode: 200,
-            httpVersion: nil,
-            headerFields: nil
-        ) else {
+        guard
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )
+        else {
             throw URLError(.badServerResponse)
         }
         return (Data(#""fallback""#.utf8), response)
@@ -140,12 +143,14 @@ final class MetricsAwareMockSession: URLSessionProtocol, Sendable {
         guard let url = request.url else {
             throw URLError(.badURL)
         }
-        guard let response = HTTPURLResponse(
-            url: url,
-            statusCode: 200,
-            httpVersion: nil,
-            headerFields: nil
-        ) else {
+        guard
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )
+        else {
             throw URLError(.badServerResponse)
         }
         return (Data(#""forwarded""#.utf8), response)

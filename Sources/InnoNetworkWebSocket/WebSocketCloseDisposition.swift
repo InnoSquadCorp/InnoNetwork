@@ -1,7 +1,6 @@
 import Foundation
 import InnoNetwork
 
-
 /// Observable classification of how a WebSocket connection terminated. The
 /// library classifies every close into one of these cases so the manager can
 /// decide whether to reconnect; exposing the enum publicly lets consumers
@@ -58,7 +57,8 @@ public enum WebSocketCloseDisposition: Sendable, Equatable {
         switch self {
         case .peerRetryable, .handshakeServerUnavailable, .handshakeTransientNetwork, .transportFailure:
             return true
-        case .manual, .peerNormal, .peerTerminal, .handshakeUnauthorized, .handshakeForbidden, .handshakeTerminalHTTP, .handshakeTimeout:
+        case .manual, .peerNormal, .peerTerminal, .handshakeUnauthorized, .handshakeForbidden, .handshakeTerminalHTTP,
+            .handshakeTimeout:
             return false
         }
     }
@@ -75,21 +75,21 @@ public enum WebSocketCloseDisposition: Sendable, Equatable {
         case .normalClosure:
             return .peerNormal(code, reason)
         case .goingAway,
-             .abnormalClosure,
-             .internalServerError,
-             .serviceRestart,
-             .tryAgainLater,
-             .badGateway,
-             .tlsHandshakeFailure:
+            .abnormalClosure,
+            .internalServerError,
+            .serviceRestart,
+            .tryAgainLater,
+            .badGateway,
+            .tlsHandshakeFailure:
             return .peerRetryable(code, reason)
         case .unsupportedData,
-             .invalidFramePayloadData,
-             .policyViolation,
-             .messageTooBig,
-             .mandatoryExtensionMissing,
-             .protocolError,
-             .noStatusReceived,
-             .custom:
+            .invalidFramePayloadData,
+            .policyViolation,
+            .messageTooBig,
+            .mandatoryExtensionMissing,
+            .protocolError,
+            .noStatusReceived,
+            .custom:
             return .peerTerminal(code, reason)
         }
     }
@@ -125,16 +125,16 @@ public enum WebSocketCloseDisposition: Sendable, Equatable {
 
         switch URLError.Code(rawValue: error.code) {
         case .timedOut,
-             .notConnectedToInternet,
-             .networkConnectionLost,
-             .cannotFindHost,
-             .cannotConnectToHost,
-             .dnsLookupFailed,
-             .resourceUnavailable,
-             .internationalRoamingOff,
-             .callIsActive,
-             .dataNotAllowed,
-             .secureConnectionFailed:
+            .notConnectedToInternet,
+            .networkConnectionLost,
+            .cannotFindHost,
+            .cannotConnectToHost,
+            .dnsLookupFailed,
+            .resourceUnavailable,
+            .internationalRoamingOff,
+            .callIsActive,
+            .dataNotAllowed,
+            .secureConnectionFailed:
             return true
         default:
             return false

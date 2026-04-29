@@ -1,9 +1,9 @@
 import Foundation
-import os
 import Testing
+import os
+
 @testable import InnoNetwork
 @testable import InnoNetworkDownload
-
 
 /// Retry behavior verified through the `StubDownloadURLSession` harness.
 /// The previous `.invalid` URL + real URLSession race is gone; each retry
@@ -40,12 +40,13 @@ struct DownloadRetryTests {
         // failure.
         var lastIdentifier: Int?
         for _ in 0..<3 {
-            let identifier = try #require(await waitForRuntimeTaskIdentifier(
-                manager: harness.manager,
-                task: task,
-                excluding: lastIdentifier,
-                timeout: 5.0
-            ))
+            let identifier = try #require(
+                await waitForRuntimeTaskIdentifier(
+                    manager: harness.manager,
+                    task: task,
+                    excluding: lastIdentifier,
+                    timeout: 5.0
+                ))
             lastIdentifier = identifier
             await harness.injectCompletion(
                 taskIdentifier: identifier,
@@ -72,12 +73,13 @@ struct DownloadRetryTests {
         )
         let task = await harness.startDownload()
 
-        let identifier = try #require(await waitForRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task,
-            excluding: nil,
-            timeout: 2.0
-        ))
+        let identifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: nil,
+                timeout: 2.0
+            ))
 
         await harness.injectCompletion(
             taskIdentifier: identifier,
@@ -118,15 +120,16 @@ struct DownloadRetryTests {
             networkChangeTimeout: 0.5,
             label: "retry-netchange"
         )
-        harness.stubSession.enqueue(StubDownloadURLTask()) // retry stub
+        harness.stubSession.enqueue(StubDownloadURLTask())  // retry stub
         let task = await harness.startDownload()
 
-        let firstIdentifier = try #require(await waitForRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task,
-            excluding: nil,
-            timeout: 2.0
-        ))
+        let firstIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: nil,
+                timeout: 2.0
+            ))
 
         await harness.injectCompletion(
             taskIdentifier: firstIdentifier,
@@ -138,12 +141,13 @@ struct DownloadRetryTests {
             )
         )
 
-        _ = try #require(await waitForRuntimeTaskIdentifier(
-            manager: harness.manager,
-            task: task,
-            excluding: firstIdentifier,
-            timeout: 2.0
-        ))
+        _ = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: firstIdentifier,
+                timeout: 2.0
+            ))
         #expect(await monitor.waitForChangeCallCount >= 1)
         #expect(await task.retryCount == 0)
         #expect(await task.totalRetryCount >= 1)
@@ -179,12 +183,13 @@ struct DownloadRetryTests {
 
         var lastIdentifier: Int?
         for _ in 0..<3 {
-            let identifier = try #require(await waitForRuntimeTaskIdentifier(
-                manager: harness.manager,
-                task: task,
-                excluding: lastIdentifier,
-                timeout: 5.0
-            ))
+            let identifier = try #require(
+                await waitForRuntimeTaskIdentifier(
+                    manager: harness.manager,
+                    task: task,
+                    excluding: lastIdentifier,
+                    timeout: 5.0
+                ))
             lastIdentifier = identifier
             await harness.injectCompletion(
                 taskIdentifier: identifier,

@@ -3,7 +3,6 @@ import InnoNetwork
 import InnoNetworkDownload
 import InnoNetworkWebSocket
 
-
 // MARK: - Wiring demonstration
 //
 // This executable does not open real connections — its purpose is to
@@ -34,29 +33,29 @@ let downloadConfig = DownloadConfiguration.advanced {
 }
 
 let note = """
-EventPolicyObserver sample
---------------------------
-This sample wires three reference reporters behind the public
-`EventPipelineMetricsReporting` protocol:
+    EventPolicyObserver sample
+    --------------------------
+    This sample wires three reference reporters behind the public
+    `EventPipelineMetricsReporting` protocol:
 
-  • LoggerMetricsReporter     — os.Logger, subsystem "com.example.event-policy"
-  • SignPostMetricsReporter   — OSLog SignPost (Instruments → Points of Interest)
-  • CompositeMetricsReporter  — fan-out helper
+      • LoggerMetricsReporter     — os.Logger, subsystem "com.example.event-policy"
+      • SignPostMetricsReporter   — OSLog SignPost (Instruments → Points of Interest)
+      • CompositeMetricsReporter  — fan-out helper
 
-The WebSocket configuration above attaches the composite reporter; the
-Download configuration attaches only the Logger reporter. Both values
-are consumed by the library when you pass them into
-`WebSocketManager(configuration:)` / `DownloadManager(configuration:)`.
+    The WebSocket configuration above attaches the composite reporter; the
+    Download configuration attaches only the Logger reporter. Both values
+    are consumed by the library when you pass them into
+    `WebSocketManager(configuration:)` / `DownloadManager(configuration:)`.
 
-Run:
-  swift build                 # verify the reporters compile
-  swift run EventPolicyObserver
+    Run:
+      swift build                 # verify the reporters compile
+      swift run EventPolicyObserver
 
-For a swift-metrics bridge, see the inline comment in
-`CompositeMetricsReporter.swift` — a production implementation would
-forward `.consumerDeliveryLatency` samples into a `Metrics.Recorder`
-without introducing that dependency in this sample.
-"""
+    For a swift-metrics bridge, see the inline comment in
+    `CompositeMetricsReporter.swift` — a production implementation would
+    forward `.consumerDeliveryLatency` samples into a `Metrics.Recorder`
+    without introducing that dependency in this sample.
+    """
 
 print(note)
 

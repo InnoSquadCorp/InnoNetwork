@@ -1,6 +1,5 @@
 import Foundation
 
-
 package actor NetworkEventHub {
     private struct PendingEvent: Sendable {
         let event: NetworkEvent

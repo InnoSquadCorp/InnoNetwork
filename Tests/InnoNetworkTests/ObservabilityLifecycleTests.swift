@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 @Suite("Observability Lifecycle Tests", .serialized)
 struct ObservabilityLifecycleTests {

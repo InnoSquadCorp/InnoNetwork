@@ -332,9 +332,11 @@ extension HTTPHeaders {
     /// The default set of `HTTPHeaders` attached to every `APIDefinition`
     /// request. Includes `Accept-Encoding`, `Accept-Language`, and
     /// `User-Agent` derived from the current process.
-    public static let `default`: HTTPHeaders = [.defaultAcceptEncoding,
-                                                .defaultAcceptLanguage,
-                                                .defaultUserAgent]
+    public static let `default`: HTTPHeaders = [
+        .defaultAcceptEncoding,
+        .defaultAcceptLanguage,
+        .defaultUserAgent,
+    ]
 }
 
 extension HTTPHeader {
@@ -357,7 +359,8 @@ extension HTTPHeader {
     /// `Locale` for the user's `preferredLanguages`.
     ///
     /// See the [Accept-Language HTTP header documentation](https://tools.ietf.org/html/rfc7231#section-5.3.5).
-    public static let defaultAcceptLanguage: HTTPHeader = .acceptLanguage(Locale.preferredLanguages.prefix(6).qualityEncoded())
+    public static let defaultAcceptLanguage: HTTPHeader = .acceptLanguage(
+        Locale.preferredLanguages.prefix(6).qualityEncoded())
 
     /// The library default `User-Agent` header, derived from the running
     /// process and platform.
@@ -367,9 +370,9 @@ extension HTTPHeader {
     /// Example: `MyApp/1.0 (com.example.MyApp; build:1; iOS 18.0.0)`
     public static let defaultUserAgent: HTTPHeader = {
         let info = Bundle.main.infoDictionary
-        let executable = (info?["CFBundleExecutable"] as? String) ??
-            (ProcessInfo.processInfo.arguments.first?.split(separator: "/").last.map(String.init)) ??
-            "Unknown"
+        let executable =
+            (info?["CFBundleExecutable"] as? String)
+            ?? (ProcessInfo.processInfo.arguments.first?.split(separator: "/").last.map(String.init)) ?? "Unknown"
         let bundle = info?["CFBundleIdentifier"] as? String ?? "Unknown"
         let appVersion = info?["CFBundleShortVersionString"] as? String ?? "Unknown"
         let appBuild = info?["CFBundleVersion"] as? String ?? "Unknown"

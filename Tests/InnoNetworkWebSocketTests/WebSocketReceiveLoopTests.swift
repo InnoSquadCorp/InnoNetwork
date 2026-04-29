@@ -1,10 +1,10 @@
 import Foundation
-import os
-import Testing
 import InnoNetworkTestSupport
+import Testing
+import os
+
 @testable import InnoNetwork
 @testable import InnoNetworkWebSocket
-
 
 /// Focused tests for `WebSocketReceiveLoop`'s error and cancellation paths.
 /// Happy-path delivery is covered by `WebSocketMessagingHappyPathTests`; this
@@ -35,11 +35,24 @@ struct WebSocketReceiveLoopTests {
             }
         }
 
-        // Scripted error causes receive() to throw; loop should invoke onError
-        // exactly once.
+        // `loop.start(...)` registers the listener as an unstructured `Task`.
+        // Under heavy parallel load (full-suite runs on macOS Actions runners,
+        // TSAN, etc.), the scheduler can defer its first hop past a tight
+        // 1-second polling window — at that point neither `receive()` nor the
+        // ensuing `onError` dispatch has happened, and the test fails
+        // deterministically. Wait until the listener has actually suspended
+        // inside `urlTask.receive()` before scripting the error so the rest
+        // of the assertions run with a known starting state.
+        let suspended = await waitFor(timeout: 2.0) {
+            stub.pendingReceiveCount == 1
+        }
+        #expect(suspended)
+
+        // Scripted error causes the suspended receive() to resume with a
+        // throw; loop should invoke onError exactly once.
         stub.scriptReceive(.failure(URLError(.networkConnectionLost)))
 
-        let fired = await waitFor(timeout: 1.0) {
+        let fired = await waitFor(timeout: 2.0) {
             receivedError.withLock { $0 } != nil
         }
         #expect(fired)
@@ -145,12 +158,9 @@ struct WebSocketReceiveLoopTests {
             recorder.record(event)
         }
 
-        let loop = WebSocketReceiveLoop(runtimeRegistry: registry, eventHub: eventHub)
-        await loop.start(task: task, urlTask: stub) { _, _ in }
-
-        // Script 5 messages upfront. The loop should drain all of them
-        // through successive `receive()` calls, and each should publish
-        // in the same order they were queued.
+        // Script 5 messages before starting the loop. The loop should drain
+        // all of them through successive `receive()` calls, and each should
+        // publish in the same order they were queued.
         let payloads: [URLSessionWebSocketTask.Message] = [
             .string("one"),
             .data(Data([0x01])),
@@ -161,6 +171,9 @@ struct WebSocketReceiveLoopTests {
         for payload in payloads {
             stub.scriptReceive(.success(payload))
         }
+
+        let loop = WebSocketReceiveLoop(runtimeRegistry: registry, eventHub: eventHub)
+        await loop.start(task: task, urlTask: stub) { _, _ in }
 
         // Wait until all 5 observable events (mix of .string/.message) have
         // landed in the recorder.

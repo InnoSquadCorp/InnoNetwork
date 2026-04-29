@@ -1,6 +1,5 @@
 import Foundation
 
-
 /// Retry verdict returned by ``RetryPolicy/shouldRetry(error:retryIndex:request:response:)``.
 ///
 /// - `noRetry`: do not retry; surface the error to the caller.
@@ -53,7 +52,8 @@ public protocol RetryPolicy: Sendable {
     ) -> RetryDecision
     var waitsForNetworkChanges: Bool { get }
     var networkChangeTimeout: TimeInterval? { get }
-    func shouldResetAttempts(afterNetworkChangeFrom oldSnapshot: NetworkSnapshot?, to newSnapshot: NetworkSnapshot?) -> Bool
+    func shouldResetAttempts(afterNetworkChangeFrom oldSnapshot: NetworkSnapshot?, to newSnapshot: NetworkSnapshot?)
+        -> Bool
 }
 
 public extension RetryPolicy {
@@ -61,7 +61,9 @@ public extension RetryPolicy {
     var maxRetryAfterDelay: TimeInterval? { nil }
     var waitsForNetworkChanges: Bool { false }
     var networkChangeTimeout: TimeInterval? { nil }
-    func shouldResetAttempts(afterNetworkChangeFrom oldSnapshot: NetworkSnapshot?, to newSnapshot: NetworkSnapshot?) -> Bool {
+    func shouldResetAttempts(afterNetworkChangeFrom oldSnapshot: NetworkSnapshot?, to newSnapshot: NetworkSnapshot?)
+        -> Bool
+    {
         false
     }
 
@@ -169,7 +171,9 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         return max(0.0, base + randomOffset)
     }
 
-    public func shouldResetAttempts(afterNetworkChangeFrom oldSnapshot: NetworkSnapshot?, to newSnapshot: NetworkSnapshot?) -> Bool {
+    public func shouldResetAttempts(
+        afterNetworkChangeFrom oldSnapshot: NetworkSnapshot?, to newSnapshot: NetworkSnapshot?
+    ) -> Bool {
         guard let oldSnapshot, let newSnapshot else { return false }
         return oldSnapshot.interfaceTypes != newSnapshot.interfaceTypes
             || oldSnapshot.status != newSnapshot.status
@@ -190,8 +194,8 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
     ) -> RetryDecision {
         guard shouldRetry(error: error, retryIndex: retryIndex) else { return .noRetry }
         guard let response,
-              response.statusCode == 429 || response.statusCode == 503,
-              let header = response.value(forHTTPHeaderField: "Retry-After")
+            response.statusCode == 429 || response.statusCode == 503,
+            let header = response.value(forHTTPHeaderField: "Retry-After")
         else {
             return .retry
         }
@@ -213,14 +217,15 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         // only form servers are required to use, but accept the looser
         // RFC 850 / asctime variants RFC 9110 keeps for backwards compat.
         let formats = [
-            "EEE, dd MMM yyyy HH:mm:ss zzz",      // IMF-fixdate
-            "EEEE, dd-MMM-yy HH:mm:ss zzz",       // RFC 850
-            "EEE MMM d HH:mm:ss yyyy",             // asctime
+            "EEE, dd MMM yyyy HH:mm:ss zzz",  // IMF-fixdate
+            "EEEE, dd-MMM-yy HH:mm:ss zzz",  // RFC 850
+            "EEE MMM d HH:mm:ss yyyy",  // asctime
         ]
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(abbreviation: "GMT")
-        let normalizedWhitespace = trimmed
+        let normalizedWhitespace =
+            trimmed
             .split(whereSeparator: { $0 == " " || $0 == "\t" })
             .joined(separator: " ")
         let candidates = normalizedWhitespace == trimmed ? [trimmed] : [trimmed, normalizedWhitespace]

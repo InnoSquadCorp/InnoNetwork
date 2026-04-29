@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 /// Parametrized property-style tests for `URLQueryEncoder`. The encoder's
 /// flattening rules are documented in `docs/QueryEncoding.md`; these tests
@@ -12,11 +12,12 @@ struct URLQueryEncoderParametrizedTests {
 
     // MARK: - Scalar properties
 
-    @Test("Scalar encoding is deterministic across runs",
-          arguments: [
+    @Test(
+        "Scalar encoding is deterministic across runs",
+        arguments: [
             "alpha", "bravo", "with space", "한글", "1+1=2",
             "/path?token=abc", "", " ",
-          ])
+        ])
     func scalarEncodingIsDeterministic(value: String) throws {
         struct Wrap: Encodable { let key: String }
         let encoder = URLQueryEncoder()
@@ -26,16 +27,18 @@ struct URLQueryEncoderParametrizedTests {
         #expect(first == [URLQueryItem(name: "key", value: value)])
     }
 
-    @Test("Integer scalar encoding renders as decimal",
-          arguments: [-1_000_000, -1, 0, 1, 42, 1_000_000])
+    @Test(
+        "Integer scalar encoding renders as decimal",
+        arguments: [-1_000_000, -1, 0, 1, 42, 1_000_000])
     func integerScalarEncoding(value: Int) throws {
         struct Wrap: Encodable { let count: Int }
         let items = try URLQueryEncoder().encode(Wrap(count: value))
         #expect(items == [URLQueryItem(name: "count", value: String(value))])
     }
 
-    @Test("Boolean scalar encoding uses lowercase truthy/falsey words",
-          arguments: [true, false])
+    @Test(
+        "Boolean scalar encoding uses lowercase truthy/falsey words",
+        arguments: [true, false])
     func booleanScalarEncoding(flag: Bool) throws {
         struct Wrap: Encodable { let active: Bool }
         let items = try URLQueryEncoder().encode(Wrap(active: flag))
@@ -46,8 +49,9 @@ struct URLQueryEncoderParametrizedTests {
 
     // MARK: - Top-level requirements
 
-    @Test("Top-level scalar without rootKey throws unsupportedTopLevelValue",
-          arguments: ["alpha", "1", ""])
+    @Test(
+        "Top-level scalar without rootKey throws unsupportedTopLevelValue",
+        arguments: ["alpha", "1", ""])
     func scalarTopLevelWithoutRootThrows(_ value: String) {
         struct Wrap: Encodable {
             let value: String
@@ -62,8 +66,9 @@ struct URLQueryEncoderParametrizedTests {
         }
     }
 
-    @Test("Top-level scalar with rootKey emits a single item",
-          arguments: ["a", "b", "c"])
+    @Test(
+        "Top-level scalar with rootKey emits a single item",
+        arguments: ["a", "b", "c"])
     func scalarTopLevelWithRoot(_ value: String) throws {
         struct Wrap: Encodable {
             let value: String
@@ -101,12 +106,13 @@ struct URLQueryEncoderParametrizedTests {
 
     // MARK: - Arrays — indexed bracket invariant
 
-    @Test("Array of scalars emits indexed brackets",
-          arguments: [
+    @Test(
+        "Array of scalars emits indexed brackets",
+        arguments: [
             (["a"], "tags[0]=a"),
             (["a", "b"], "tags[0]=a&tags[1]=b"),
             (["x", "y", "z"], "tags[0]=x&tags[1]=y&tags[2]=z"),
-          ])
+        ])
     func arrayOfScalars(_ payload: ([String], String)) throws {
         struct Wrap: Encodable { let tags: [String] }
         let items = try URLQueryEncoder().encode(Wrap(tags: payload.0))
@@ -147,7 +153,10 @@ struct URLQueryEncoderParametrizedTests {
 
     @Test("Nested object keys are sorted alphabetically")
     func nestedObjectKeysAreSorted() throws {
-        struct User: Encodable { let zebra: String; let alpha: String }
+        struct User: Encodable {
+            let zebra: String
+            let alpha: String
+        }
         struct Wrap: Encodable { let user: User }
 
         let items = try URLQueryEncoder().encode(
@@ -159,14 +168,18 @@ struct URLQueryEncoderParametrizedTests {
 
     // MARK: - Roundtrip via encodeForm
 
-    @Test("encodeForm matches encode percent-encoded form for simple objects",
-          arguments: [
+    @Test(
+        "encodeForm matches encode percent-encoded form for simple objects",
+        arguments: [
             ("alice", 30),
             ("bob with space", 99),
             ("한글이름", 10),
-          ])
+        ])
     func encodeFormMatchesEncode(_ payload: (String, Int)) throws {
-        struct Wrap: Encodable { let name: String; let age: Int }
+        struct Wrap: Encodable {
+            let name: String
+            let age: Int
+        }
         let value = Wrap(name: payload.0, age: payload.1)
 
         let items = try URLQueryEncoder().encode(value)
@@ -191,11 +204,12 @@ struct URLQueryEncoderParametrizedTests {
         #expect(items.isEmpty)
     }
 
-    @Test("Mixed nil + non-nil only emits non-nil keys",
-          arguments: [
+    @Test(
+        "Mixed nil + non-nil only emits non-nil keys",
+        arguments: [
             ("alice", "alice"),
             ("", ""),
-          ])
+        ])
     func optionalMixedSkipsNil(_ payload: (String, String)) throws {
         struct Wrap: Encodable {
             let user: String?
@@ -207,11 +221,12 @@ struct URLQueryEncoderParametrizedTests {
 
     // MARK: - Edge characters
 
-    @Test("Reserved URL characters survive flattening",
-          arguments: [
+    @Test(
+        "Reserved URL characters survive flattening",
+        arguments: [
             "a&b", "a=b", "a?b", "a#b", "a/b",
             "a%20b", "100%", "/path?token=abc",
-          ])
+        ])
     func reservedCharsArePreservedInValue(_ value: String) throws {
         struct Wrap: Encodable { let payload: String }
         let items = try URLQueryEncoder().encode(Wrap(payload: value))

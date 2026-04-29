@@ -1,7 +1,6 @@
 import Foundation
-import Testing
 import InnoNetwork
-
+import Testing
 
 @Suite("HTTPBin Live Tests")
 struct HTTPBinLiveTests {

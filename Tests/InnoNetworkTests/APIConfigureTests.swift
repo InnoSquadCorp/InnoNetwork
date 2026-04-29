@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 struct BaseURLDispatchRequest: APIDefinition {
     typealias Parameter = EmptyParameter
@@ -67,6 +67,7 @@ struct BaseURLConfigurationTests {
 
         let response = try await client.request(BaseURLDispatchRequest())
         #expect(response == expectedResponse)
-        #expect(mockSession.capturedRequest?.url?.absoluteString.hasPrefix("https://api.example.com/v1/users/1") == true)
+        #expect(
+            mockSession.capturedRequest?.url?.absoluteString.hasPrefix("https://api.example.com/v1/users/1") == true)
     }
 }

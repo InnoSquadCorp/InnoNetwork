@@ -1,7 +1,6 @@
 import Foundation
 import os
 
-
 public struct URLQueryEncoder: Sendable {
     public enum EncodingError: Error, Sendable {
         case unsupportedTopLevelValue
@@ -261,11 +260,13 @@ private final class SnakeCaseKeyTransformCache: Sendable {
             words.append(untilUpperCase)
 
             searchRange = upperCaseRange.lowerBound..<searchRange.upperBound
-            guard let lowerCaseRange = stringKey.rangeOfCharacter(
-                from: .lowercaseLetters,
-                options: [],
-                range: searchRange
-            ) else {
+            guard
+                let lowerCaseRange = stringKey.rangeOfCharacter(
+                    from: .lowercaseLetters,
+                    options: [],
+                    range: searchRange
+                )
+            else {
                 wordStart = searchRange.lowerBound
                 break
             }
@@ -282,7 +283,8 @@ private final class SnakeCaseKeyTransformCache: Sendable {
         }
         words.append(wordStart..<searchRange.upperBound)
 
-        return words
+        return
+            words
             .map { stringKey[$0].lowercased() }
             .joined(separator: "_")
     }
@@ -339,7 +341,9 @@ private struct URLQueryKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingCont
         childBox(for: key).setNull()
     }
 
-    mutating func encode(_ value: Bool, forKey key: Key) throws { childBox(for: key).setScalar(value ? "true" : "false") }
+    mutating func encode(_ value: Bool, forKey key: Key) throws {
+        childBox(for: key).setScalar(value ? "true" : "false")
+    }
     mutating func encode(_ value: String, forKey key: Key) throws { childBox(for: key).setScalar(value) }
     mutating func encode(_ value: Double, forKey key: Key) throws { childBox(for: key).setScalar(String(value)) }
     mutating func encode(_ value: Float, forKey key: Key) throws { childBox(for: key).setScalar(String(value)) }
@@ -611,11 +615,12 @@ private func makeStorage(from value: QueryValue) -> QueryValueBox.Storage {
         }
         return .object(mapped)
     case .array(let array):
-        return .array(array.map { value in
-            let box = QueryValueBox()
-            box.storage = makeStorage(from: value)
-            return box
-        })
+        return .array(
+            array.map { value in
+                let box = QueryValueBox()
+                box.storage = makeStorage(from: value)
+                return box
+            })
     case .scalar(let string):
         return .scalar(string)
     case .null:

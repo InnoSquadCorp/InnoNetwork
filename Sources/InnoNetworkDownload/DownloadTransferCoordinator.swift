@@ -2,7 +2,6 @@ import Foundation
 import InnoNetwork
 import OSLog
 
-
 package struct DownloadTransferCoordinator {
     private static let logger = Logger(subsystem: "innosquad.network.download", category: "Persistence")
 
@@ -52,16 +51,16 @@ package struct DownloadTransferCoordinator {
     package func completeDownload(task: DownloadTask, temporaryLocation: URL) async throws {
         let fileManager = FileManager.default
 
-        if fileManager.fileExists(atPath: task.destinationURL.path) {
-            try fileManager.removeItem(at: task.destinationURL)
-        }
-
         let directory = task.destinationURL.deletingLastPathComponent()
         if !fileManager.fileExists(atPath: directory.path) {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         }
 
-        try fileManager.moveItem(at: temporaryLocation, to: task.destinationURL)
+        if fileManager.fileExists(atPath: task.destinationURL.path) {
+            _ = try fileManager.replaceItemAt(task.destinationURL, withItemAt: temporaryLocation)
+        } else {
+            try fileManager.moveItem(at: temporaryLocation, to: task.destinationURL)
+        }
 
         await task.updateState(.completed)
         await runtimeRegistry.onStateChanged?(task, .completed)
@@ -71,7 +70,9 @@ package struct DownloadTransferCoordinator {
         do {
             try await persistence.remove(id: task.id)
         } catch {
-            Self.logger.fault("Failed to remove completed task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))")
+            Self.logger.fault(
+                "Failed to remove completed task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))"
+            )
             return
         }
         await runtimeRegistry.removeTaskRuntime(taskId: task.id)

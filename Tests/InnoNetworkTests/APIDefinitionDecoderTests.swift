@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 private struct DecoderTestRequest: APIDefinition {
     typealias Parameter = EmptyParameter

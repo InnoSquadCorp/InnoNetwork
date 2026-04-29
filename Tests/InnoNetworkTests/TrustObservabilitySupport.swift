@@ -1,8 +1,8 @@
 import Foundation
 import Security
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 // Shared helpers split out of the original TrustAndObservabilityTests so the
 // trust-evaluation and observability suites can live in separate files

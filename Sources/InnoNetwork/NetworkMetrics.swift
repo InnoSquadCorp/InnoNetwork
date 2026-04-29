@@ -1,6 +1,5 @@
 import Foundation
 
-
 /// Reporter for collecting URLSession metrics from network requests.
 /// - Note: `report(metrics:for:response:)` may be called from URLSession delegate callbacks.
 /// - Important: Implementations should be thread-safe.

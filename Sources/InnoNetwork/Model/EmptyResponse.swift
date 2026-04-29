@@ -7,10 +7,9 @@
 
 import Foundation
 
-
 public struct EmptyResponse: HTTPEmptyResponseDecodable {
     public init() {}
-    
+
     public init(from decoder: Decoder) throws {}
 
     public static func emptyResponseValue() -> Self {

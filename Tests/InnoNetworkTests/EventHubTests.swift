@@ -1,8 +1,8 @@
 import Darwin
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 private actor IntEventStore {
     private var values: [Int] = []
@@ -381,10 +381,8 @@ struct EventHubTests {
             minimumCount: 1
         )
         let hasExpectedOverflowSnapshot = snapshots.contains { snapshot in
-            snapshot.totalDroppedEventCount >= 2 &&
-            snapshot.overflowEventCount >= 2 &&
-            snapshot.totalDroppedMetricCount == 0 &&
-            snapshot.metricsOverflowCount == 0
+            snapshot.totalDroppedEventCount >= 2 && snapshot.overflowEventCount >= 2
+                && snapshot.totalDroppedMetricCount == 0 && snapshot.metricsOverflowCount == 0
         }
         #expect(hasExpectedOverflowSnapshot)
 
@@ -536,9 +534,10 @@ struct EventHubTests {
             hubKind: .genericTask,
             minimumCount: 2
         )
-        #expect(snapshots.contains(where: {
-            $0.activeConsumerCount >= 1 && $0.maxQueueDepth >= 2
-        }))
+        #expect(
+            snapshots.contains(where: {
+                $0.activeConsumerCount >= 1 && $0.maxQueueDepth >= 2
+            }))
 
         await hub.finish(taskID: "stream-reconcile")
     }
@@ -581,9 +580,7 @@ struct EventHubTests {
                 minimumDroppedEventCount: 2
             )
             let matchingInitialMetric = initialMetrics.last(where: { metric in
-                metric.consumerID.hasPrefix("stream-") &&
-                metric.queueDepth == 1 &&
-                metric.droppedEventCount == 2
+                metric.consumerID.hasPrefix("stream-") && metric.queueDepth == 1 && metric.droppedEventCount == 2
             })
             let initialMetric = try #require(matchingInitialMetric)
             consumerID = initialMetric.consumerID
@@ -707,9 +704,7 @@ struct EventHubTests {
             minimumDroppedEventCount: 2
         )
         let matchingInitialMetric = initialMetrics.last(where: {
-            $0.consumerID.hasPrefix("stream-") &&
-            $0.queueDepth == 1 &&
-            $0.droppedEventCount == 2
+            $0.consumerID.hasPrefix("stream-") && $0.queueDepth == 1 && $0.droppedEventCount == 2
         })
         let initialMetric = try #require(matchingInitialMetric)
 
@@ -730,9 +725,7 @@ struct EventHubTests {
                 partitionID: "stream-finish-serialization",
                 consumerID: initialMetric.consumerID,
                 predicate: {
-                    $0.queueDepth == 0 &&
-                    $0.oldestQueuedEventAge == nil &&
-                    $0.droppedEventCount == 2
+                    $0.queueDepth == 0 && $0.oldestQueuedEventAge == nil && $0.droppedEventCount == 2
                 }
             )
         )
@@ -749,9 +742,10 @@ struct EventHubTests {
             additionalCount: 5
         )
         #expect(!subsequentSnapshots.isEmpty)
-        #expect(subsequentSnapshots.allSatisfy {
-            $0.activeConsumerCount == 0 && $0.maxQueueDepth == 0
-        })
+        #expect(
+            subsequentSnapshots.allSatisfy {
+                $0.activeConsumerCount == 0 && $0.maxQueueDepth == 0
+            })
     }
 
     @Test("TaskEventHub stops idle stream reconciliation and restarts on a new stream")
@@ -849,9 +843,10 @@ struct EventHubTests {
             minimumCount: 2,
             minimumDroppedEventCount: 1
         )
-        #expect(consumerMetrics.contains(where: {
-            $0.consumerID == listenerID.uuidString && $0.droppedEventCount > 0
-        }))
+        #expect(
+            consumerMetrics.contains(where: {
+                $0.consumerID == listenerID.uuidString && $0.droppedEventCount > 0
+            }))
         #expect(consumerMetrics.allSatisfy { !$0.consumerID.hasPrefix("stream-") })
     }
 
@@ -925,9 +920,10 @@ struct EventHubTests {
         #expect(!snapshots.isEmpty)
         #expect(snapshots.contains(where: { $0.activePartitionCount >= 1 }))
         #expect(snapshots.contains(where: { $0.activeConsumerCount >= 1 }))
-        #expect(snapshots.contains(where: {
-            $0.totalDroppedMetricCount == 0 && $0.metricsOverflowCount == 0
-        }))
+        #expect(
+            snapshots.contains(where: {
+                $0.totalDroppedMetricCount == 0 && $0.metricsOverflowCount == 0
+            }))
     }
 
     @Test("Aggregate snapshot metric keeps the legacy initializer source-compatible")
@@ -966,7 +962,8 @@ struct EventHubTests {
         #expect(values == [1])
     }
 
-    @Test("Metrics proxy carries reporter-side overflow across snapshot windows without polluting event overflow counts")
+    @Test(
+        "Metrics proxy carries reporter-side overflow across snapshot windows without polluting event overflow counts")
     func metricsProxyTracksReporterSideOverflow() async throws {
         let recorder = EventPipelineMetricRecorder()
         let slowReporter = SlowEventPipelineMetricReporter(
@@ -1016,13 +1013,15 @@ struct EventHubTests {
             minimumCount: 2
         )
         #expect(snapshots.count >= 2)
-        #expect(zip(snapshots, snapshots.dropFirst()).allSatisfy {
-            $1.totalDroppedMetricCount >= $0.totalDroppedMetricCount
-        })
+        #expect(
+            zip(snapshots, snapshots.dropFirst()).allSatisfy {
+                $1.totalDroppedMetricCount >= $0.totalDroppedMetricCount
+            })
         #expect(snapshots.contains(where: { $0.totalDroppedMetricCount > 0 }))
-        #expect(snapshots.allSatisfy {
-            $0.totalDroppedEventCount == 0 && $0.overflowEventCount == 0
-        })
+        #expect(
+            snapshots.allSatisfy {
+                $0.totalDroppedEventCount == 0 && $0.overflowEventCount == 0
+            })
 
         let latencyMetrics = recorder.snapshot().compactMap { metric -> EventPipelineConsumerDeliveryLatencyMetric? in
             guard case .consumerDeliveryLatency(let latency) = metric else { return nil }
@@ -1079,9 +1078,10 @@ struct EventHubTests {
             minimumCount: 10
         )
         #expect(snapshots.contains(where: { $0.activeConsumerCount == 0 && $0.maxQueueDepth == 0 }))
-        #expect(!snapshots.contains(where: {
-            $0.activeConsumerCount > 0 && $0.maxQueueDepth == 0
-        }))
+        #expect(
+            !snapshots.contains(where: {
+                $0.activeConsumerCount > 0 && $0.maxQueueDepth == 0
+            }))
     }
 
     @Test("Metrics proxy keeps subsequent snapshots cleared after awaited terminal eviction")
@@ -1132,9 +1132,7 @@ struct EventHubTests {
                 partitionID: "proxy-terminal-serialization",
                 consumerID: "stream-terminal-serialization",
                 predicate: {
-                    $0.queueDepth == 0 &&
-                    $0.oldestQueuedEventAge == nil &&
-                    $0.droppedEventCount == 7
+                    $0.queueDepth == 0 && $0.oldestQueuedEventAge == nil && $0.droppedEventCount == 7
                 }
             )
         )
@@ -1151,9 +1149,10 @@ struct EventHubTests {
             additionalCount: 5
         )
         #expect(!subsequentSnapshots.isEmpty)
-        #expect(subsequentSnapshots.allSatisfy {
-            $0.activeConsumerCount == 0 && $0.maxQueueDepth == 0
-        })
+        #expect(
+            subsequentSnapshots.allSatisfy {
+                $0.activeConsumerCount == 0 && $0.maxQueueDepth == 0
+            })
     }
 
     @Test("Metrics proxy guarantees terminal consumer eviction during input overflow")
@@ -1219,9 +1218,7 @@ struct EventHubTests {
                 partitionID: "proxy-terminal-overflow",
                 consumerID: "stream-terminal-overflow",
                 predicate: {
-                    $0.queueDepth == 0 &&
-                    $0.oldestQueuedEventAge == nil &&
-                    $0.droppedEventCount == 3
+                    $0.queueDepth == 0 && $0.oldestQueuedEventAge == nil && $0.droppedEventCount == 3
                 }
             )
         )
@@ -1231,7 +1228,8 @@ struct EventHubTests {
             guard case .consumerState(let state) = metric else { return nil }
             guard state.partitionID == "proxy-terminal-overflow" else { return nil }
             guard state.consumerID == "stream-terminal-overflow" else { return nil }
-            return state.queueDepth == 0 && state.oldestQueuedEventAge == nil && state.droppedEventCount == 3 ? state : nil
+            return state.queueDepth == 0 && state.oldestQueuedEventAge == nil && state.droppedEventCount == 3
+                ? state : nil
         }.count
         #expect(terminalMetricCount == 1)
 
@@ -1249,9 +1247,7 @@ struct EventHubTests {
                 recorder: recorder,
                 hubKind: .genericTask,
                 predicate: {
-                    $0.totalDroppedMetricCount > 0 &&
-                    $0.totalDroppedEventCount == 3 &&
-                    $0.overflowEventCount == 3
+                    $0.totalDroppedMetricCount > 0 && $0.totalDroppedEventCount == 3 && $0.overflowEventCount == 3
                 }
             )
         )

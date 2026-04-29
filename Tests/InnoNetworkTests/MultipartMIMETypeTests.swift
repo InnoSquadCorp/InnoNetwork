@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@testable import InnoNetwork
 
+@testable import InnoNetwork
 
 @Suite("Multipart MIME Type Tests")
 struct MultipartMIMETypeTests {

@@ -2,7 +2,6 @@ import Foundation
 import OSLog
 import UniformTypeIdentifiers
 
-
 public struct MultipartFormData: Sendable {
     public let boundary: String
     private var parts: [Part]
@@ -41,7 +40,11 @@ public struct MultipartFormData: Sendable {
     /// 100MB videos can trigger jetsam on iOS. Use the asynchronous variant
     /// ``appendFile(at:name:mimeType:)-async`` and pair it with
     /// ``writeEncodedData(to:)`` to stream the body to disk instead.
-    @available(*, deprecated, message: "Use the async appendFile(at:name:mimeType:) overload combined with writeEncodedData(to:) to avoid loading the file into memory.")
+    @available(
+        *, deprecated,
+        message:
+            "Use the async appendFile(at:name:mimeType:) overload combined with writeEncodedData(to:) to avoid loading the file into memory."
+    )
     public mutating func appendFile(at url: URL, name: String, mimeType: String? = nil) throws {
         let data = try Data(contentsOf: url)
         let fileName = url.lastPathComponent
@@ -83,7 +86,9 @@ public struct MultipartFormData: Sendable {
                 do {
                     partData = try Data(contentsOf: url)
                 } catch {
-                    Logger.API.warning("multipart_encode_skipped_file boundary=\(boundary, privacy: .public) name=\(part.name, privacy: .private(mask: .hash)) file=\(url.lastPathComponent, privacy: .private(mask: .hash)) error=\(error.localizedDescription, privacy: .private)")
+                    Logger.API.warning(
+                        "multipart_encode_skipped_file boundary=\(boundary, privacy: .public) name=\(part.name, privacy: .private(mask: .hash)) file=\(url.lastPathComponent, privacy: .private(mask: .hash)) error=\(error.localizedDescription, privacy: .private)"
+                    )
                     continue
                 }
             }

@@ -1,6 +1,5 @@
 import Foundation
 
-
 public struct URLQueryCustomKeyTransform: Sendable {
     let transform: @Sendable ([CodingKey]) -> String
 
@@ -21,9 +20,10 @@ public enum URLQueryKeyEncodingStrategy: Sendable {
         case .convertToSnakeCase:
             self = .convertToSnakeCase
         case .custom(let transform):
-            self = .custom(URLQueryCustomKeyTransform { codingPath in
-                transform(codingPath).stringValue
-            })
+            self = .custom(
+                URLQueryCustomKeyTransform { codingPath in
+                    transform(codingPath).stringValue
+                })
         @unknown default:
             self = .useDefaultKeys
         }

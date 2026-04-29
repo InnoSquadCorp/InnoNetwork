@@ -9,7 +9,7 @@ let package = Package(
         .macOS(.v15),
         .tvOS(.v18),
         .watchOS(.v11),
-        .visionOS(.v2)
+        .visionOS(.v2),
     ],
     dependencies: [
         .package(name: "InnoNetwork", path: "../..")

@@ -159,11 +159,12 @@ actor ErrorHandlingExample {
     func postRequest() async {
         print("\n=== Example 5: POST Request ===")
         do {
-            let newPost = try await client.request(PostWithBody(
-                title: "Error Test Post",
-                body: "Testing error handling with POST",
-                userId: 1
-            ))
+            let newPost = try await client.request(
+                PostWithBody(
+                    title: "Error Test Post",
+                    body: "Testing error handling with POST",
+                    userId: 1
+                ))
             print("✅ Success! Created post #\(newPost.id)")
         } catch let error as NetworkError {
             handleNetworkError(error)
@@ -188,7 +189,7 @@ actor ErrorHandlingExample {
         }
 
         // Cancel the task after a short delay
-        try? await Task.sleep(nanoseconds: 10_000_000) // 0.01 seconds
+        try? await Task.sleep(nanoseconds: 10_000_000)  // 0.01 seconds
         task.cancel()
     }
 

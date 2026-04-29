@@ -120,7 +120,7 @@ actor MultipleHeadersRequest: APIDefinition {
         var customHeaders = HTTPHeaders([
             "X-Custom-Header": "CustomValue",
             "X-Request-ID": UUID().uuidString,
-            "X-Client-Version": "1.0.0"
+            "X-Client-Version": "1.0.0",
         ])
 
         customHeaders.add(.authorization(bearerToken: "sample-token"))

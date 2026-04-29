@@ -2,7 +2,6 @@ import Foundation
 import InnoNetwork
 import os
 
-
 package final class WebSocketSessionDelegate: NSObject, URLSessionWebSocketDelegate {
     private let callbacks: WebSocketSessionDelegateCallbacks
     private let backgroundCompletionStore: BackgroundCompletionStore

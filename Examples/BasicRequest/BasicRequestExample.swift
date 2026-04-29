@@ -157,11 +157,12 @@ class BasicRequestExample {
     func createNewPost() async {
         print("\n=== POST: Create new post ===")
         do {
-            let newPost = try await client.request(CreatePost(
-                title: "My New Post",
-                body: "This is the content of my new post",
-                userId: 1
-            ))
+            let newPost = try await client.request(
+                CreatePost(
+                    title: "My New Post",
+                    body: "This is the content of my new post",
+                    userId: 1
+                ))
             print("Success! Created post #\(newPost.id ?? 0)")
             print("Title: \(newPost.title)")
         } catch {
@@ -172,12 +173,13 @@ class BasicRequestExample {
     func updatePost() async {
         print("\n=== PUT: Update post ===")
         do {
-            let updatedPost = try await client.request(UpdatePost(
-                id: 1,
-                title: "Updated Title",
-                body: "Updated body content",
-                userId: 1
-            ))
+            let updatedPost = try await client.request(
+                UpdatePost(
+                    id: 1,
+                    title: "Updated Title",
+                    body: "Updated body content",
+                    userId: 1
+                ))
             print("Success! Updated post #\(updatedPost.id ?? 0)")
             print("New title: \(updatedPost.title)")
         } catch {

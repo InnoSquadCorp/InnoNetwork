@@ -1,6 +1,5 @@
 import Foundation
 
-
 package enum WebSocketReconnectAction: Equatable {
     case retry
     case terminal

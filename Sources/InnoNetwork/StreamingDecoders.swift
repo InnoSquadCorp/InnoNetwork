@@ -1,7 +1,6 @@
 import Foundation
 import os
 
-
 /// A single Server-Sent Events frame as defined by the WHATWG HTML Living
 /// Standard.
 ///

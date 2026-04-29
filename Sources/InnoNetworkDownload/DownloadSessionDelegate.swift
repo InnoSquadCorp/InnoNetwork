@@ -2,7 +2,6 @@ import Foundation
 import InnoNetwork
 import os
 
-
 package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate {
     private let callbacks: DownloadSessionDelegateCallbacks
     private let backgroundCompletionStore: BackgroundCompletionStore

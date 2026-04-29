@@ -1,10 +1,10 @@
-import Foundation
 import Darwin
+import Foundation
 import InnoNetwork
-import os
 import Testing
-@testable import InnoNetworkDownload
+import os
 
+@testable import InnoNetworkDownload
 
 private func failFsyncWithEIO(_: Int32) -> Int32 {
     errno = EIO
@@ -95,12 +95,13 @@ struct PersistenceFsyncPolicyTests {
         #expect(never.persistenceFsyncPolicy == .never)
     }
 
-    @Test("All three policies persist data round-trip through the actor",
-          arguments: [
+    @Test(
+        "All three policies persist data round-trip through the actor",
+        arguments: [
             DownloadConfiguration.PersistenceFsyncPolicy.always,
             .onCheckpoint,
             .never,
-          ])
+        ])
     func policyRoundTrip(policy: DownloadConfiguration.PersistenceFsyncPolicy) async throws {
         let baseDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("inno-fsync-\(UUID().uuidString)", isDirectory: true)

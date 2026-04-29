@@ -2,7 +2,6 @@ import Foundation
 import InnoNetwork
 import InnoNetworkWebSocket
 
-
 // MARK: - CLI argument / env parsing
 
 /// Default endpoint used when no URL argument is supplied. `ws.postman-echo.com`
@@ -30,19 +29,19 @@ guard let url = URL(string: rawURLString), url.scheme == "ws" || url.scheme == "
 // network dependencies during the build.
 guard runIntegration else {
     let note = """
-    WebSocketChat sample
-    --------------------
-    Target endpoint: \(url.absoluteString)
+        WebSocketChat sample
+        --------------------
+        Target endpoint: \(url.absoluteString)
 
-    Set INNONETWORK_RUN_INTEGRATION=1 to actually connect, read stdin,
-    and echo server responses. Example:
+        Set INNONETWORK_RUN_INTEGRATION=1 to actually connect, read stdin,
+        and echo server responses. Example:
 
-        INNONETWORK_RUN_INTEGRATION=1 swift run WebSocketChat
-        INNONETWORK_RUN_INTEGRATION=1 swift run WebSocketChat wss://my.server/ws
+            INNONETWORK_RUN_INTEGRATION=1 swift run WebSocketChat
+            INNONETWORK_RUN_INTEGRATION=1 swift run WebSocketChat wss://my.server/ws
 
-    Leaving the env var unset is expected in CI — the sample exits 0 here.
+        Leaving the env var unset is expected in CI — the sample exits 0 here.
 
-    """
+        """
     FileHandle.standardOutput.write(Data(note.utf8))
     exit(0)
 }
@@ -110,8 +109,9 @@ let manager = WebSocketManager(
 // payloads as future-candidate API until they are promoted in the stability
 // contract.
 await manager.setOnPongHandler { _, context in
-    let totalSeconds = Double(context.roundTrip.components.seconds) +
-        Double(context.roundTrip.components.attoseconds) / 1_000_000_000_000_000_000
+    let totalSeconds =
+        Double(context.roundTrip.components.seconds) + Double(context.roundTrip.components.attoseconds)
+        / 1_000_000_000_000_000_000
     let millis = totalSeconds * 1_000
     FileHandle.standardOutput.write(
         Data("↔︎ pong attempt=\(context.attemptNumber) rtt=\(String(format: "%.1f", millis))ms\n".utf8)

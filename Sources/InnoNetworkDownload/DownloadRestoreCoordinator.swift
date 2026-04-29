@@ -1,7 +1,6 @@
 import Foundation
 import OSLog
 
-
 package struct DownloadRestoreCoordinator {
     private static let logger = Logger(subsystem: "innosquad.network.download", category: "Persistence")
 
@@ -57,7 +56,9 @@ package struct DownloadRestoreCoordinator {
             do {
                 try await persistence.remove(id: record.id)
             } catch {
-                Self.logger.fault("Failed to prune orphaned task \(record.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))")
+                Self.logger.fault(
+                    "Failed to prune orphaned task \(record.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))"
+                )
             }
         }
     }
@@ -68,7 +69,8 @@ package struct DownloadRestoreCoordinator {
         if let description = urlTask.taskDescription, !description.isEmpty {
             taskID = description
         } else {
-            taskID = await persistence.id(forURL: urlTask.originalRequest?.url)
+            taskID =
+                await persistence.id(forURL: urlTask.originalRequest?.url)
                 ?? UUID().uuidString
             urlTask.taskDescription = taskID
         }
