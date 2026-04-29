@@ -38,6 +38,7 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``ContentType``
 - ``NetworkError``
 - <doc:ErrorClassification>
+- <doc:OpenAPIGeneratorAdapter>
 
 ### Resilience
 

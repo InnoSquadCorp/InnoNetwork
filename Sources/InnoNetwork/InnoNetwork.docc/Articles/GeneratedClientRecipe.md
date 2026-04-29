@@ -58,7 +58,7 @@ and observability behavior.
 
 ```swift
 import Foundation
-import InnoNetwork
+@_spi(GeneratedClientSupport) import InnoNetwork
 
 protocol GeneratedExecutableContract: Sendable {
     associatedtype Output: Sendable
@@ -93,8 +93,9 @@ struct GeneratedExecutable<Operation: GeneratedExecutableContract>: SingleReques
 }
 ```
 
-Call this path only when you intentionally pin current source and accept that
-the low-level API can change before it is promoted into the stable contract.
+Call this path only from a package that intentionally opts into
+`@_spi(GeneratedClientSupport)` and pins current source. The low-level API can
+change before it is promoted into the stable contract.
 
 ## Repository sample
 

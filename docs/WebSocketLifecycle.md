@@ -54,15 +54,17 @@ The mapping is:
 | `.manual` | Caller invoked `disconnect(_:closeCode:)` | `disconnected` |
 | `.peerNormal` | RFC 6455 `1000` (normal closure) | `disconnected` |
 | `.peerRetryable` | `1001`, `1006`, `1011`, `1012`, `1013`, `1014`, `1015` | `reconnecting` |
-| `.peerTerminal` | `1003`, `1007`, `1008`, `1009`, `1010` (protocol/policy) | `failed` |
-| `.handshakeRetryable` | HTTP `429` / `5xx` on upgrade | `reconnecting` |
-| `.handshakeTerminal` | HTTP `401` / `403` / `404` on upgrade | `failed` |
+| `.peerProtocolFailure` | `1002`, `1003`, `1005`, `1007`, `1008`, `1009`, `1010` (protocol/policy) | `failed` |
+| `.peerApplicationFailure` | custom application close codes (`3000`-`4999`) | `failed` |
+| `.handshakeServerUnavailable` | HTTP `429` / `5xx` on upgrade | `reconnecting` |
 | `.handshakeUnauthorized` | HTTP `401` specifically | `failed` (caller should refresh auth before reconnecting manually) |
+| `.handshakeForbidden` | HTTP `403` specifically | `failed` (caller should refresh authorization before reconnecting manually) |
+| `.handshakeTerminalHTTP` | non-auth terminal HTTP `4xx` on upgrade | `failed` |
 | `.transportFailure` | NSURLError transient (timeout, DNS, network lost) | `reconnecting` |
 
-Custom close codes (3000–4999) default to **terminal**. If your app uses an application-
-defined retryable code, classify it explicitly via `WebSocketConfiguration` rather than
-relying on the default.
+Custom close codes (3000-4999) default to **terminal application failures**. If
+your app treats one as retryable, observe ``WebSocketTask/closeDisposition`` and
+drive an explicit reconnect from your own policy.
 
 ## Auto-reconnect invariants
 
@@ -83,8 +85,9 @@ These invariants prevent `_autoReconnectEnabled` from racing against
    [`WebSocketTask.swift`](../Sources/InnoNetworkWebSocket/WebSocketTask.swift) for why
    the internal counter may overshoot.)
 4. **Reconnect attempts use a fresh `URLSessionWebSocketTask`.** Each attempt rebuilds the
-   request with the latest interceptors and cookies. Server-issued auth tokens that expired
-   between attempts will surface as a fresh `handshakeUnauthorized` and stop the loop.
+   request with the latest interceptors and cookies. Server-issued auth tokens or permissions
+   that expired between attempts will surface as a fresh `handshakeUnauthorized` or
+   `handshakeForbidden` and stop the loop.
 
 ## Heartbeat and ping/pong
 

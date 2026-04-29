@@ -6,7 +6,9 @@ import InnoNetwork
 /// decide whether to reconnect; exposing the enum publicly lets consumers
 /// observe that same classification via ``WebSocketTask/closeDisposition``
 /// and branch their own UX on it (e.g. surface a "retrying..." state for
-/// ``WebSocketCloseDisposition/peerRetryable(_:_:)``).
+/// ``WebSocketCloseDisposition/peerRetryable(_:_:)`` or distinguish
+/// ``WebSocketCloseDisposition/peerApplicationFailure(_:_:)`` from RFC
+/// protocol failures).
 ///
 /// The *classification policy* (how a specific close code or status code
 /// maps to a case) remains library-owned — the static `classifyPeerClose`
@@ -27,8 +29,13 @@ public enum WebSocketCloseDisposition: Sendable, Equatable {
     /// Bad Gateway, 1015 TLS Handshake Failure, 1006 Abnormal Closure).
     /// Reconnect will be attempted per the configuration's backoff policy.
     case peerRetryable(WebSocketCloseCode, String?)
-    /// Peer closed with a terminal code (protocol error, policy violation,
-    /// unsupported data, etc.) or a `.custom(_)` library/application code.
+    /// Peer closed with an RFC-defined protocol or policy failure
+    /// (1002, 1003, 1005, 1007, 1008, 1009, 1010). No reconnect.
+    case peerProtocolFailure(WebSocketCloseCode, String?)
+    /// Peer closed with an application-defined custom code. No reconnect.
+    case peerApplicationFailure(WebSocketCloseCode, String?)
+    /// Peer closed with a terminal code that predates the split between RFC
+    /// protocol failures and application-defined failures.
     /// No reconnect.
     case peerTerminal(WebSocketCloseCode, String?)
     /// Handshake responded with HTTP 401. Terminal.
@@ -57,8 +64,8 @@ public enum WebSocketCloseDisposition: Sendable, Equatable {
         switch self {
         case .peerRetryable, .handshakeServerUnavailable, .handshakeTransientNetwork, .transportFailure:
             return true
-        case .manual, .peerNormal, .peerTerminal, .handshakeUnauthorized, .handshakeForbidden, .handshakeTerminalHTTP,
-            .handshakeTimeout:
+        case .manual, .peerNormal, .peerProtocolFailure, .peerApplicationFailure, .peerTerminal,
+            .handshakeUnauthorized, .handshakeForbidden, .handshakeTerminalHTTP, .handshakeTimeout:
             return false
         }
     }
@@ -88,9 +95,10 @@ public enum WebSocketCloseDisposition: Sendable, Equatable {
             .messageTooBig,
             .mandatoryExtensionMissing,
             .protocolError,
-            .noStatusReceived,
-            .custom:
-            return .peerTerminal(code, reason)
+            .noStatusReceived:
+            return .peerProtocolFailure(code, reason)
+        case .custom:
+            return .peerApplicationFailure(code, reason)
         }
     }
 
@@ -148,6 +156,10 @@ public enum WebSocketCloseDisposition: Sendable, Equatable {
         case (.peerNormal(let lc, let lr), .peerNormal(let rc, let rr)):
             return lc == rc && lr == rr
         case (.peerRetryable(let lc, let lr), .peerRetryable(let rc, let rr)):
+            return lc == rc && lr == rr
+        case (.peerProtocolFailure(let lc, let lr), .peerProtocolFailure(let rc, let rr)):
+            return lc == rc && lr == rr
+        case (.peerApplicationFailure(let lc, let lr), .peerApplicationFailure(let rc, let rr)):
             return lc == rc && lr == rr
         case (.peerTerminal(let lc, let lr), .peerTerminal(let rc, let rr)):
             return lc == rc && lr == rr

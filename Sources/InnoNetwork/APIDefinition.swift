@@ -36,24 +36,6 @@ public protocol APIDefinition: Sendable {
     /// failure.
     var acceptableStatusCodes: Set<Int>? { get }
 
-    /// Optional stub payload returned in place of executing the request.
-    ///
-    /// When non-`nil` and ``sampleBehavior`` is anything other than
-    /// ``StubBehavior/never``, ``DefaultNetworkClient/request(_:)`` short-
-    /// circuits the transport pipeline and returns this value. The default
-    /// implementation is `nil`, which preserves the historical (live)
-    /// behaviour for endpoints that do not opt into stubbing.
-    ///
-    /// Stubs are intended for SwiftUI previews, unit tests, and developer
-    /// builds; they bypass interceptors, retry policy, observability, and
-    /// trust evaluation.
-    var sampleResponse: APIResponse? { get }
-
-    /// Strategy that decides whether ``sampleResponse`` is delivered and
-    /// after what optional delay. Defaults to ``StubBehavior/never`` so
-    /// endpoints that simply expose a sample payload (for previews, etc.)
-    /// still hit the real network at runtime.
-    var sampleBehavior: StubBehavior { get }
 }
 
 
@@ -208,10 +190,6 @@ public extension APIDefinition {
     var responseInterceptors: [ResponseInterceptor] { [] }
 
     var acceptableStatusCodes: Set<Int>? { nil }
-
-    var sampleResponse: APIResponse? { nil }
-
-    var sampleBehavior: StubBehavior { .never }
 }
 
 extension APIDefinition where APIResponse: HTTPEmptyResponseDecodable {

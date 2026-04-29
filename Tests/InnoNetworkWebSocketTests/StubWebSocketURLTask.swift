@@ -180,6 +180,7 @@ final class StubWebSocketURLSession: WebSocketURLSession, @unchecked Sendable {
     private struct State {
         var queuedTasks: [StubWebSocketURLTask] = []
         var createdTasks: [StubWebSocketURLTask] = []
+        var requests: [URLRequest] = []
         var lastRequest: URLRequest?
         var didFinishTasksAndInvalidate = false
         var didInvalidateAndCancel = false
@@ -198,6 +199,7 @@ final class StubWebSocketURLSession: WebSocketURLSession, @unchecked Sendable {
     func makeWebSocketTask(with request: URLRequest) -> any WebSocketURLTask {
         stateLock.withLock { state in
             state.lastRequest = request
+            state.requests.append(request)
             let next: StubWebSocketURLTask
             if !state.queuedTasks.isEmpty {
                 next = state.queuedTasks.removeFirst()
@@ -220,5 +222,6 @@ final class StubWebSocketURLSession: WebSocketURLSession, @unchecked Sendable {
     // MARK: Observations
 
     var lastRequest: URLRequest? { stateLock.withLock { $0.lastRequest } }
+    var requests: [URLRequest] { stateLock.withLock { $0.requests } }
     var createdTasks: [StubWebSocketURLTask] { stateLock.withLock { $0.createdTasks } }
 }

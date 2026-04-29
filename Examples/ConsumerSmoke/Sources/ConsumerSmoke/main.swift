@@ -66,6 +66,8 @@ _ = WebSocketConfiguration.safeDefaults()
         _ = code
     case .peerNormal(let code, let reason),
         .peerRetryable(let code, let reason),
+        .peerProtocolFailure(let code, let reason),
+        .peerApplicationFailure(let code, let reason),
         .peerTerminal(let code, let reason):
         _ = code
         _ = reason
@@ -110,6 +112,8 @@ _ = WebSocketConfiguration.safeDefaults()
         _ = context.roundTrip
     case .error(let wsError):
         _ = wsError
+    case .sendDropped(let limit):
+        _ = limit
     @unknown default:
         break
     }

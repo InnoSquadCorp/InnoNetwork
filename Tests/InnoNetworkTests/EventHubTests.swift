@@ -1242,18 +1242,26 @@ struct EventHubTests {
         )
         #expect(clearedSnapshot.activeConsumerCount == 0)
 
-        let overflowSnapshot = try #require(
+        let eventDropSnapshot = try #require(
             await waitForAggregateSnapshot(
                 recorder: recorder,
                 hubKind: .genericTask,
                 predicate: {
-                    $0.totalDroppedMetricCount > 0 && $0.totalDroppedEventCount == 3 && $0.overflowEventCount == 3
+                    $0.totalDroppedEventCount == 3 && $0.overflowEventCount == 3
                 }
             )
         )
-        #expect(overflowSnapshot.totalDroppedMetricCount > 0)
-        #expect(overflowSnapshot.totalDroppedEventCount == 3)
-        #expect(overflowSnapshot.overflowEventCount == 3)
+        #expect(eventDropSnapshot.totalDroppedEventCount == 3)
+        #expect(eventDropSnapshot.overflowEventCount == 3)
+
+        let metricOverflowSnapshot = try #require(
+            await waitForAggregateSnapshot(
+                recorder: recorder,
+                hubKind: .genericTask,
+                predicate: { $0.totalDroppedMetricCount > 0 }
+            )
+        )
+        #expect(metricOverflowSnapshot.totalDroppedMetricCount > 0)
     }
 
     @Test("Low-latency consumer metrics are sampled")

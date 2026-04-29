@@ -40,7 +40,8 @@ let package = Package(
             targets: ["InnoNetworkWebSocket"]
         ),
         // Test helpers that consumers can pull into *their* test targets to
-        // assert on InnoNetwork integrations (currently
+        // assert on InnoNetwork integrations (for example
+        // ``MockURLSession``, ``StubNetworkClient``, and
         // ``WebSocketEventRecorder``). Most internals remain `package`-scoped
         // so they only stay visible to the package's own test targets; only
         // the explicitly `public` symbols cross the library boundary.

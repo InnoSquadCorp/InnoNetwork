@@ -1,4 +1,5 @@
 import Foundation
+@_spi(GeneratedClientSupport) import InnoNetwork
 import Testing
 import os
 

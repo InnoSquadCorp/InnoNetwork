@@ -26,12 +26,12 @@ public protocol NetworkClient: Sendable {
 /// Application integrations should continue to depend on ``NetworkClient`` and use
 /// ``NetworkClient/request(_:)`` or ``NetworkClient/upload(_:)``. Reach for this
 /// protocol only when you need direct access to the execution pipeline.
-public protocol LowLevelNetworkClient: Sendable {
+@_spi(GeneratedClientSupport) public protocol LowLevelNetworkClient: Sendable {
     /// Executes a standard typed request through the low-level execution pipeline.
     ///
     /// `perform(_:)` is primarily intended for framework authors and policy layers
-    /// that need to adapt richer request contracts into `InnoNetwork` without using
-    /// SPI imports. Application integrations should normally prefer
+    /// that already opt into `@_spi(GeneratedClientSupport)` to adapt richer request
+    /// contracts into `InnoNetwork`. Application integrations should normally prefer
     /// ``NetworkClient/request(_:)``.
     ///
     /// - Parameter request: The typed request definition to execute through the
@@ -90,7 +90,7 @@ package struct StreamingResumeState: Sendable {
 /// `request(_:)` invocations execute in parallel as soon as they reach
 /// ``URLSessionProtocol/data(for:context:)``, the same as in the previous
 /// `actor` form (which already released isolation on every `await`).
-public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, Sendable {
+public final class DefaultNetworkClient: NetworkClient, Sendable {
     private let configuration: NetworkConfiguration
     private let session: URLSessionProtocol
     private let requestBuilder = RequestBuilder()
@@ -331,40 +331,7 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
     }
 
     public func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
-        if let stub = try await Self.resolveStubResponse(for: request) {
-            return stub
-        }
         return try await perform(request)
-    }
-
-    /// Returns the configured ``APIDefinition/sampleResponse`` for the given
-    /// request when its ``APIDefinition/sampleBehavior`` opts in, applying any
-    /// configured delay before resolution.
-    ///
-    /// Returns `nil` when the request is not stubbed, in which case the caller
-    /// proceeds with the real transport pipeline. Stubbing intentionally
-    /// bypasses interceptors, retry policy, observability, and trust
-    /// evaluation; treat it as a developer/preview tool, not a production
-    /// short-circuit.
-    private static func resolveStubResponse<T: APIDefinition>(
-        for request: T
-    ) async throws -> T.APIResponse? {
-        switch request.sampleBehavior {
-        case .never:
-            return nil
-        case .immediate:
-            return request.sampleResponse
-        case .delayed(let seconds):
-            guard let stub = request.sampleResponse else { return nil }
-            if seconds > 0 {
-                do {
-                    try await Task.sleep(for: .seconds(seconds))
-                } catch is CancellationError {
-                    throw NetworkError.cancelled
-                }
-            }
-            return stub
-        }
     }
 
     public func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse {
@@ -381,7 +348,7 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
     /// - Returns: The decoded `APIResponse` produced by the request definition.
     /// - Throws: A ``NetworkError`` or another execution error produced while encoding,
     ///   sending, validating, or decoding the request.
-    public func perform<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
+    @_spi(GeneratedClientSupport) public func perform<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
         try await perform(executable: APISingleRequestExecutable(base: request))
     }
 
@@ -396,7 +363,10 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
     /// - Returns: The decoded `APIResponse` produced by the executable.
     /// - Throws: A ``NetworkError`` or another execution error produced while building,
     ///   sending, validating, or decoding the executable request.
-    public func perform<D: SingleRequestExecutable>(executable: D) async throws -> D.APIResponse {
+    @_spi(GeneratedClientSupport)
+    public func perform<D: SingleRequestExecutable>(
+        executable: D
+    ) async throws -> D.APIResponse {
         let requestID = UUID()
         let startGate = TaskStartGate()
         // Wrap the work in an unstructured Task so cancelAll() can reach it
@@ -437,3 +407,5 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
         }
     }
 }
+
+@_spi(GeneratedClientSupport) extension DefaultNetworkClient: LowLevelNetworkClient {}

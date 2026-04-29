@@ -1,83 +1,90 @@
 {
-  "generatedAt": "2026-04-20T09:14:02Z",
-  "results": [
+  "generatedAt" : "2026-04-28T22:12:07Z",
+  "results" : [
     {
-      "elapsedSeconds": 0.204595125,
-      "group": "encoding",
-      "iterations": 20000,
-      "name": "query-encoder-small",
-      "operationsPerSecond": 97754.03983843702
+      "elapsedSeconds" : 0.031351333,
+      "group" : "encoding",
+      "iterations" : 2000,
+      "name" : "query-encoder-small",
+      "operationsPerSecond" : 63793.140789260855
     },
     {
-      "elapsedSeconds": 2.074430542,
-      "group": "encoding",
-      "iterations": 20000,
-      "name": "query-encoder-large",
-      "operationsPerSecond": 9641.200124597857
+      "elapsedSeconds" : 0.284669708,
+      "group" : "encoding",
+      "iterations" : 2000,
+      "name" : "query-encoder-large",
+      "operationsPerSecond" : 7025.686062810729
     },
     {
-      "elapsedSeconds": 0.0298235,
-      "group": "events",
-      "iterations": 4000,
-      "name": "task-event-fanout-single",
-      "operationsPerSecond": 134122.42023907322
+      "elapsedSeconds" : 0.004626208,
+      "group" : "events",
+      "iterations" : 400,
+      "name" : "task-event-fanout-single",
+      "operationsPerSecond" : 86463.9030497548
     },
     {
-      "elapsedSeconds": 0.395753875,
-      "group": "events",
-      "iterations": 4000,
-      "name": "task-event-fanout-many",
-      "operationsPerSecond": 10107.292063785857
+      "elapsedSeconds" : 0.018474292,
+      "group" : "events",
+      "iterations" : 400,
+      "name" : "task-event-fanout-many",
+      "operationsPerSecond" : 21651.70930501694
     },
     {
-      "elapsedSeconds": 0.063684166,
-      "group": "events",
-      "iterations": 4000,
-      "name": "task-event-slow-isolation",
-      "operationsPerSecond": 62809.96127043573
+      "elapsedSeconds" : 0.00959,
+      "group" : "events",
+      "iterations" : 400,
+      "name" : "task-event-slow-isolation",
+      "operationsPerSecond" : 41710.11470281544
     },
     {
-      "elapsedSeconds": 37.094379834,
-      "group": "persistence",
-      "iterations": 3000,
-      "name": "append-log-write",
-      "operationsPerSecond": 80.8747851675972
+      "elapsedSeconds" : 1.218916458,
+      "group" : "persistence",
+      "iterations" : 300,
+      "name" : "append-log-write",
+      "operationsPerSecond" : 246.12023082553208
     },
     {
-      "elapsedSeconds": 0.336148834,
-      "group": "persistence",
-      "iterations": 3000,
-      "name": "append-log-replay",
-      "operationsPerSecond": 8924.618194570325
+      "elapsedSeconds" : 0.013383042,
+      "group" : "persistence",
+      "iterations" : 300,
+      "name" : "append-log-replay",
+      "operationsPerSecond" : 22416.428193231404
     },
     {
-      "elapsedSeconds": 37.726591167,
-      "group": "persistence",
-      "iterations": 3000,
-      "name": "append-log-compaction",
-      "operationsPerSecond": 79.51950884510721
+      "elapsedSeconds" : 13.150113042,
+      "group" : "persistence",
+      "iterations" : 1050,
+      "name" : "append-log-compaction",
+      "operationsPerSecond" : 79.84722235059247
     },
     {
-      "elapsedSeconds": 0.010984917,
-      "group": "websocket",
-      "iterations": 20000,
-      "name": "websocket-reconnect-decision",
-      "operationsPerSecond": 1820678.2991623878
+      "elapsedSeconds" : 0.01976675,
+      "group" : "websocket",
+      "iterations" : 20000,
+      "name" : "websocket-reconnect-decision",
+      "operationsPerSecond" : 1011800.118886514
     },
     {
-      "elapsedSeconds": 0.003235584,
-      "group": "websocket",
-      "iterations": 20000,
-      "name": "websocket-close-disposition-classify",
-      "operationsPerSecond": 6181264.34053327
+      "elapsedSeconds" : 0.084791583,
+      "group" : "websocket",
+      "iterations" : 500000,
+      "name" : "websocket-close-disposition-classify",
+      "operationsPerSecond" : 5896811.715379816
     },
     {
-      "elapsedSeconds": 0.003892625,
-      "group": "websocket",
-      "iterations": 20000,
-      "name": "websocket-ping-context-alloc",
-      "operationsPerSecond": 5137921.068687582
+      "elapsedSeconds" : 0.10124075,
+      "group" : "websocket",
+      "iterations" : 500000,
+      "name" : "websocket-ping-context-alloc",
+      "operationsPerSecond" : 4938722.796897494
+    },
+    {
+      "elapsedSeconds" : 0.052708583,
+      "group" : "client",
+      "iterations" : 2000,
+      "name" : "concurrent-50-requests",
+      "operationsPerSecond" : 37944.484297747105
     }
   ],
-  "version": 1
+  "version" : 1
 }

@@ -79,7 +79,8 @@ default:
 ```
 
 The default ``WebSocketCloseDisposition`` classification already implements the standard
-mapping; pattern-matching is what you reach for when an application-defined code needs
+mapping and separates RFC protocol/policy failures from application-defined custom
+failures. Pattern-matching is what you reach for when an application-defined code needs
 custom handling.
 
 ## Tooling

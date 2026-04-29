@@ -107,7 +107,7 @@ struct WebSocketCloseDispositionClassificationTests {
     }
 
     @Test(
-        "Terminal peer codes classify as peerTerminal",
+        "RFC terminal peer codes classify as peerProtocolFailure",
         arguments: [
             WebSocketCloseCode.unsupportedData,
             .invalidFramePayloadData,
@@ -121,15 +121,15 @@ struct WebSocketCloseDispositionClassificationTests {
     func terminalClassification(code: WebSocketCloseCode) {
         let disposition = WebSocketCloseDisposition.classifyPeerClose(code, reason: nil)
         switch disposition {
-        case .peerTerminal:
+        case .peerProtocolFailure:
             #expect(!disposition.shouldReconnect)
         default:
-            Issue.record("Expected .peerTerminal for \(code), got \(disposition)")
+            Issue.record("Expected .peerProtocolFailure for \(code), got \(disposition)")
         }
     }
 
     @Test(
-        "Custom close codes classify as peerTerminal",
+        "Custom close codes classify as peerApplicationFailure",
         arguments: [UInt16(3000), 3999, 4000, 4999, 2500]
     )
     func customCodeIsTerminal(rawValue: UInt16) {
@@ -138,10 +138,10 @@ struct WebSocketCloseDispositionClassificationTests {
             reason: nil
         )
         switch disposition {
-        case .peerTerminal:
+        case .peerApplicationFailure:
             #expect(!disposition.shouldReconnect)
         default:
-            Issue.record("Expected .peerTerminal for custom(\(rawValue)), got \(disposition)")
+            Issue.record("Expected .peerApplicationFailure for custom(\(rawValue)), got \(disposition)")
         }
     }
 
@@ -171,7 +171,7 @@ struct WebSocketCloseDispositionClassificationTests {
     }
 
     @Test(
-        "Custom raw values survive classification as .peerTerminal without truncation",
+        "Custom raw values survive classification as .peerApplicationFailure without truncation",
         arguments: [UInt16(2500), 3000, 4000, 4999]
     )
     func customRawValuePreservesInClassification(rawValue: UInt16) {
@@ -181,11 +181,11 @@ struct WebSocketCloseDispositionClassificationTests {
         )
 
         switch disposition {
-        case .peerTerminal(let returnedCode, let reason):
+        case .peerApplicationFailure(let returnedCode, let reason):
             #expect(returnedCode.rawValue == rawValue)
             #expect(reason == "custom")
         default:
-            Issue.record("Expected .peerTerminal for custom(\(rawValue)), got \(disposition)")
+            Issue.record("Expected .peerApplicationFailure for custom(\(rawValue)), got \(disposition)")
         }
     }
 }

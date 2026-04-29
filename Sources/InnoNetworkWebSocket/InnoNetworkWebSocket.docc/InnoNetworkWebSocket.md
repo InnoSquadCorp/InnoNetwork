@@ -12,6 +12,7 @@ Use this module when you need:
 - heartbeat and pong timeout handling, surfaced as paired `.ping` / `.pong` /
   `.error(.pingTimeout)` events
 - typed close-code handling via ``WebSocketCloseCode``
+- async handshake request adaptation via ``WebSocketHandshakeRequestAdapter``
 - listener retention across reconnect attempts
 - manual disconnect semantics that stay visible to the caller
 
@@ -52,6 +53,7 @@ for await event in await manager.events(for: task) {
 
 - ``WebSocketManager``
 - ``WebSocketConfiguration``
+- ``WebSocketHandshakeRequestAdapter``
 - ``WebSocketTask``
 - ``WebSocketState``
 

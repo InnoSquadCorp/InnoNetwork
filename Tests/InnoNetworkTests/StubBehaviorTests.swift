@@ -1,6 +1,6 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
-import os
 
 @testable import InnoNetwork
 
@@ -14,52 +14,14 @@ private struct StubbedProfileRequest: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = StubProfile
 
-    let stub: StubProfile?
-    let behavior: StubBehavior
-
     var method: HTTPMethod { .get }
     var path: String { "/users/1" }
-
-    var sampleResponse: StubProfile? { stub }
-    var sampleBehavior: StubBehavior { behavior }
-}
-
-
-private final class SampleResponseProbe: Sendable {
-    private let accessCount = OSAllocatedUnfairLock<Int>(initialState: 0)
-
-    func recordAccess() {
-        accessCount.withLock { $0 += 1 }
-    }
-
-    var count: Int {
-        accessCount.withLock { $0 }
-    }
-}
-
-
-private struct ProbedStubbedProfileRequest: APIDefinition {
-    typealias Parameter = EmptyParameter
-    typealias APIResponse = StubProfile
-
-    let behavior: StubBehavior
-    let probe: SampleResponseProbe
-
-    var method: HTTPMethod { .get }
-    var path: String { "/users/1" }
-
-    var sampleResponse: StubProfile? {
-        probe.recordAccess()
-        return StubProfile(id: 42, name: "Computed Stub")
-    }
-
-    var sampleBehavior: StubBehavior { behavior }
 }
 
 
 @Suite
 struct StubBehaviorTests {
-    private func makeClient() -> DefaultNetworkClient {
+    private func makeFallbackClient() -> DefaultNetworkClient {
         DefaultNetworkClient(
             configuration: makeTestNetworkConfiguration(baseURL: "https://example.invalid"),
             session: MockURLSession()
@@ -69,8 +31,9 @@ struct StubBehaviorTests {
     @Test
     func immediateBehaviorReturnsStubWithoutHittingNetwork() async throws {
         let stub = StubProfile(id: 7, name: "Stubbed User")
-        let request = StubbedProfileRequest(stub: stub, behavior: .immediate)
-        let client = makeClient()
+        let request = StubbedProfileRequest()
+        let client = StubNetworkClient()
+        client.register(stub, for: request, behavior: .immediate)
 
         let result = try await client.request(request)
 
@@ -78,14 +41,15 @@ struct StubBehaviorTests {
     }
 
     @Test
-    func neverBehaviorBypassesStubAndUsesTransport() async {
+    func neverBehaviorBypassesStubAndUsesFallbackTransport() async {
         let stub = StubProfile(id: 7, name: "Stubbed User")
-        let request = StubbedProfileRequest(stub: stub, behavior: .never)
+        let request = StubbedProfileRequest()
+        let client = StubNetworkClient(fallback: makeFallbackClient())
+        client.register(stub, for: request, behavior: .never)
         // The mock session has no canned response, so the transport path
         // will surface an error. The point of the assertion is that we did
         // *not* short-circuit to the stub: a thrown error proves the request
         // entered the live pipeline.
-        let client = makeClient()
 
         await #expect(throws: (any Error).self) {
             _ = try await client.request(request)
@@ -93,21 +57,9 @@ struct StubBehaviorTests {
     }
 
     @Test
-    func neverBehaviorDoesNotEvaluateSampleResponse() async {
-        let probe = SampleResponseProbe()
-        let request = ProbedStubbedProfileRequest(behavior: .never, probe: probe)
-        let client = makeClient()
-
-        await #expect(throws: (any Error).self) {
-            _ = try await client.request(request)
-        }
-        #expect(probe.count == 0)
-    }
-
-    @Test
-    func nilSampleResponseBypassesStubEvenWhenBehaviorIsImmediate() async {
-        let request = StubbedProfileRequest(stub: nil, behavior: .immediate)
-        let client = makeClient()
+    func missingStubThrowsConfigurationError() async {
+        let request = StubbedProfileRequest()
+        let client = StubNetworkClient()
 
         await #expect(throws: (any Error).self) {
             _ = try await client.request(request)
@@ -117,8 +69,9 @@ struct StubBehaviorTests {
     @Test
     func delayedBehaviorWaitsBeforeReturningStub() async throws {
         let stub = StubProfile(id: 99, name: "Delayed")
-        let request = StubbedProfileRequest(stub: stub, behavior: .delayed(seconds: 0.05))
-        let client = makeClient()
+        let request = StubbedProfileRequest()
+        let client = StubNetworkClient()
+        client.register(stub, for: request, behavior: .delayed(seconds: 0.05))
 
         let started = ContinuousClock.now
         let result = try await client.request(request)
@@ -133,10 +86,11 @@ struct StubBehaviorTests {
     @Test
     func delayedBehaviorMapsCancellationToNetworkCancelled() async throws {
         let stub = StubProfile(id: 100, name: "Slow")
-        let request = StubbedProfileRequest(stub: stub, behavior: .delayed(seconds: 60))
-        let client = makeClient()
+        let request = StubbedProfileRequest()
+        let client = StubNetworkClient()
+        client.register(stub, for: request, behavior: .delayed(seconds: 60))
 
-        let task = Task {
+        let task = Task<StubProfile, Error> {
             try await client.request(request)
         }
         try? await Task.sleep(for: .milliseconds(10))

@@ -50,7 +50,7 @@ jobs:
             --enforce-baseline \
             --guard-benchmark websocket/websocket-close-disposition-classify \
             --guard-benchmark websocket/websocket-ping-context-alloc \
-            --max-regression-percent 20
+            --max-regression-percent 10
 
       - name: Upload benchmark artifact
         if: always()

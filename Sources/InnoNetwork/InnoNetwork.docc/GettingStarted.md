@@ -41,6 +41,22 @@ let user = try await client.request(GetUser())
 print(user.name)
 ```
 
+## Use `Endpoint` for simple calls
+
+Use ``Endpoint`` when a request only needs method, path, query/body parameters,
+headers, content type, acceptable status codes, and response decoding:
+
+```swift
+let users = try await client.request(
+    Endpoint.get("/users")
+        .query(["limit": 20])
+        .decoding([User].self)
+)
+```
+
+Keep a dedicated ``APIDefinition`` when the endpoint owns custom
+interceptors, encoders/decoders, multipart upload behavior, or streaming.
+
 ## Request execution contract
 
 Stay on ``NetworkClient/request(_:)`` for normal typed requests and

@@ -86,8 +86,8 @@ struct WebSocketCloseDispositionObservationTests {
         #expect(disposition?.shouldReconnect == true)
     }
 
-    @Test("Peer close with terminal code records .peerTerminal disposition")
-    func peerTerminalCloseRecordsDisposition() async throws {
+    @Test("Peer close with RFC terminal code records .peerProtocolFailure disposition")
+    func peerProtocolFailureCloseRecordsDisposition() async throws {
         let harness = StubMessagingHarness()
         let task = try await harness.connectAndReady()
 
@@ -98,16 +98,16 @@ struct WebSocketCloseDispositionObservationTests {
         )
 
         let disposition = await waitForCloseDisposition(task: task, timeout: .seconds(2))
-        guard case .peerTerminal(let code, _) = disposition else {
-            Issue.record("expected .peerTerminal, got \(String(describing: disposition))")
+        guard case .peerProtocolFailure(let code, _) = disposition else {
+            Issue.record("expected .peerProtocolFailure, got \(String(describing: disposition))")
             return
         }
         #expect(code == .policyViolation)
         #expect(disposition?.shouldReconnect == false)
     }
 
-    @Test("Custom close code records .peerTerminal disposition with the custom value")
-    func customCloseCodeRecordsTerminalDisposition() async throws {
+    @Test("Custom close code records .peerApplicationFailure disposition with the custom value")
+    func customCloseCodeRecordsApplicationFailureDisposition() async throws {
         let harness = StubMessagingHarness()
         let task = try await harness.connectAndReady()
 
@@ -118,8 +118,8 @@ struct WebSocketCloseDispositionObservationTests {
         )
 
         let disposition = await waitForCloseDisposition(task: task, timeout: .seconds(2))
-        guard case .peerTerminal(let code, _) = disposition else {
-            Issue.record("expected .peerTerminal, got \(String(describing: disposition))")
+        guard case .peerApplicationFailure(let code, _) = disposition else {
+            Issue.record("expected .peerApplicationFailure, got \(String(describing: disposition))")
             return
         }
         #expect(code == .custom(4001))

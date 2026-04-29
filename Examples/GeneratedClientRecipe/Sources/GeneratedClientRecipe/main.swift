@@ -1,5 +1,5 @@
 import Foundation
-import InnoNetwork
+@_spi(GeneratedClientSupport) import InnoNetwork
 
 private struct GeneratedUser: Decodable, Sendable {
     let id: Int

@@ -23,7 +23,7 @@ import Foundation
 /// ```
 ///
 /// `Endpoint` deliberately exposes only request-shape concerns (method, path,
-/// body, headers, content-type, acceptable status codes). Cross-cutting
+/// query/body parameters, headers, content-type, acceptable status codes). Cross-cutting
 /// behaviour — interceptors, retry policy, trust evaluation — stays on
 /// ``NetworkConfiguration`` so endpoints written this way pick up the same
 /// session-wide policies as a hand-written ``APIDefinition``.
@@ -94,6 +94,20 @@ extension Endpoint where Response == EmptyResponse {
 // MARK: - Fluent modifiers (preserve Response type)
 
 extension Endpoint {
+    /// Returns a copy of this endpoint with query parameters attached. This is
+    /// intended for `GET` endpoints; non-`GET` methods still follow the normal
+    /// ``APIDefinition`` encoding rules for their method and content type.
+    public func query(_ query: some Encodable & Sendable) -> Endpoint<Response> {
+        Endpoint(
+            method: method,
+            path: path,
+            parameters: AnyEncodable(query),
+            contentType: contentType,
+            headers: headers,
+            acceptableStatusCodes: acceptableStatusCodes
+        )
+    }
+
     /// Returns a copy of this endpoint with the supplied request body. The
     /// caller's value is wrapped in an ``AnyEncodable`` so the endpoint can
     /// travel across actor boundaries while staying `Sendable`.

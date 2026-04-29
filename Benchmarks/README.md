@@ -43,6 +43,6 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
 
 ## CI Policy
 
-- PR CI는 `--quick` benchmark를 실제 실행하되, websocket guard 2개만 `50%` threshold로 막는 coarse smoke gate를 사용합니다.
-- scheduled/manual benchmark workflow는 같은 websocket guard 2개를 `20%` threshold로 검사하는 strict regression gate입니다.
+- PR CI는 `--quick` benchmark를 실제 실행하되, websocket guard 2개만 `20%` threshold로 막는 smoke gate를 사용합니다.
+- scheduled/manual benchmark workflow는 같은 websocket guard 2개를 `10%` threshold로 검사하는 strict regression gate입니다.
 - 두 workflow 모두 JSON summary artifact를 업로드해 실패 시 수치 비교를 바로 확인할 수 있게 합니다.

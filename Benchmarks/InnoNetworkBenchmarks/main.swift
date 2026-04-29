@@ -250,7 +250,7 @@ private enum InnoNetworkBenchmarks {
         // milliseconds in `--quick` mode, which made CI regressions overly
         // sensitive to runner scheduling noise. Keep the coarse smoke gate fast,
         // but run these two long enough that a brief preemption does not look
-        // like a >50% regression.
+        // like a >20% regression.
         let websocketGuardIterations = options.quick ? 500_000 : 2_000_000
 
         results.append(

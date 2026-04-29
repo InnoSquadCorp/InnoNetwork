@@ -16,6 +16,26 @@ public enum WebSocketSendOverflowPolicy: Sendable, Equatable {
 }
 
 
+/// Async hook applied to every WebSocket handshake request before the
+/// underlying `URLSessionWebSocketTask` is created.
+///
+/// Use this when a reconnect attempt must fetch fresh authentication headers
+/// or rotate per-connection metadata. Static
+/// ``WebSocketConfiguration/requestHeaders`` are applied first, then
+/// subprotocol headers, then adapters in array order.
+public struct WebSocketHandshakeRequestAdapter: Sendable {
+    private let adaptRequest: @Sendable (URLRequest) async -> URLRequest
+
+    public init(_ adaptRequest: @escaping @Sendable (URLRequest) async -> URLRequest) {
+        self.adaptRequest = adaptRequest
+    }
+
+    public func adapt(_ request: URLRequest) async -> URLRequest {
+        await adaptRequest(request)
+    }
+}
+
+
 public struct WebSocketConfiguration: Sendable {
     package enum Presets {
         static func safeDefaults() -> WebSocketConfiguration {
@@ -32,6 +52,7 @@ public struct WebSocketConfiguration: Sendable {
                 allowsCellularAccess: true,
                 sessionIdentifier: "com.innonetwork.websocket",
                 requestHeaders: [:],
+                handshakeRequestAdapters: [],
                 eventDeliveryPolicy: .default,
                 eventMetricsReporter: nil,
                 sendQueueLimit: 256,
@@ -53,6 +74,7 @@ public struct WebSocketConfiguration: Sendable {
                 allowsCellularAccess: true,
                 sessionIdentifier: "com.innonetwork.websocket",
                 requestHeaders: [:],
+                handshakeRequestAdapters: [],
                 eventDeliveryPolicy: EventDeliveryPolicy(
                     maxBufferedEventsPerPartition: 512,
                     maxBufferedEventsPerConsumer: 512,
@@ -105,6 +127,9 @@ public struct WebSocketConfiguration: Sendable {
     public let sessionIdentifier: String
     /// Additional HTTP headers sent when establishing the WebSocket handshake.
     public let requestHeaders: [String: String]
+    /// Async request adapters applied after static headers and subprotocol
+    /// negotiation headers, before creating each `URLSessionWebSocketTask`.
+    public let handshakeRequestAdapters: [WebSocketHandshakeRequestAdapter]
     public let eventDeliveryPolicy: EventDeliveryPolicy
     public let eventMetricsReporter: (any EventPipelineMetricsReporting)?
 
@@ -131,6 +156,7 @@ public struct WebSocketConfiguration: Sendable {
         public var allowsCellularAccess: Bool
         public var sessionIdentifier: String
         public var requestHeaders: [String: String]
+        public var handshakeRequestAdapters: [WebSocketHandshakeRequestAdapter]
         public var eventDeliveryPolicy: EventDeliveryPolicy
         public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
         public var sendQueueLimit: Int
@@ -149,6 +175,7 @@ public struct WebSocketConfiguration: Sendable {
             self.allowsCellularAccess = preset.allowsCellularAccess
             self.sessionIdentifier = preset.sessionIdentifier
             self.requestHeaders = preset.requestHeaders
+            self.handshakeRequestAdapters = preset.handshakeRequestAdapters
             self.eventDeliveryPolicy = preset.eventDeliveryPolicy
             self.eventMetricsReporter = preset.eventMetricsReporter
             self.sendQueueLimit = preset.sendQueueLimit
@@ -169,6 +196,7 @@ public struct WebSocketConfiguration: Sendable {
                 allowsCellularAccess: allowsCellularAccess,
                 sessionIdentifier: sessionIdentifier,
                 requestHeaders: requestHeaders,
+                handshakeRequestAdapters: handshakeRequestAdapters,
                 eventDeliveryPolicy: eventDeliveryPolicy,
                 eventMetricsReporter: eventMetricsReporter,
                 sendQueueLimit: sendQueueLimit,
@@ -200,6 +228,7 @@ public struct WebSocketConfiguration: Sendable {
         allowsCellularAccess: Bool = true,
         sessionIdentifier: String = "com.innonetwork.websocket",
         requestHeaders: [String: String] = [:],
+        handshakeRequestAdapters: [WebSocketHandshakeRequestAdapter] = [],
         eventDeliveryPolicy: EventDeliveryPolicy = .default,
         eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
         sendQueueLimit: Int = 256,
@@ -217,6 +246,7 @@ public struct WebSocketConfiguration: Sendable {
         self.allowsCellularAccess = allowsCellularAccess
         self.sessionIdentifier = sessionIdentifier
         self.requestHeaders = requestHeaders
+        self.handshakeRequestAdapters = handshakeRequestAdapters
         self.eventDeliveryPolicy = eventDeliveryPolicy
         self.eventMetricsReporter = eventMetricsReporter
         self.sendQueueLimit = max(1, sendQueueLimit)

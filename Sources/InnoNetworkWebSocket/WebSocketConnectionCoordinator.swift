@@ -38,6 +38,10 @@ package struct WebSocketConnectionCoordinator {
             }
         }
 
+        for adapter in configuration.handshakeRequestAdapters {
+            request = await adapter.adapt(request)
+        }
+
         let urlTask = session.makeWebSocketTask(with: request)
         await runtimeRegistry.setMapping(webSocketTask: task, for: urlTask.taskIdentifier)
         await runtimeRegistry.setURLTask(urlTask, for: task.id)

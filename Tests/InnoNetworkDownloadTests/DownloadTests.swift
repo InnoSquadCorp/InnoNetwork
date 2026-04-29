@@ -745,6 +745,51 @@ struct DownloadBackgroundCompletionTests {
 }
 
 
+@Suite("Download Transfer Coordinator Tests")
+struct DownloadTransferCoordinatorTests {
+    @Test("Failed replacement preserves an existing destination file")
+    func failedReplacementPreservesExistingDestination() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory.appendingPathComponent(
+            "download-replace-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: directory) }
+
+        let destination = directory.appendingPathComponent("payload.bin")
+        let existing = Data("existing payload".utf8)
+        try existing.write(to: destination)
+
+        let missingTemporaryLocation = directory.appendingPathComponent("missing-\(UUID().uuidString).tmp")
+        let runtimeRegistry = DownloadRuntimeRegistry()
+        let persistence = DownloadTaskPersistence(store: InMemoryDownloadTaskStore())
+        let configuration = DownloadConfiguration.default
+        let coordinator = DownloadTransferCoordinator(
+            session: StubDownloadURLSession(),
+            runtimeRegistry: runtimeRegistry,
+            persistence: persistence,
+            eventHub: TaskEventHub(
+                policy: configuration.eventDeliveryPolicy,
+                metricsReporter: configuration.eventMetricsReporter,
+                hubKind: .downloadTask
+            )
+        )
+        let task = DownloadTask(
+            url: URL(string: "https://example.invalid/payload.bin")!,
+            destinationURL: destination
+        )
+
+        await #expect(throws: (any Error).self) {
+            try await coordinator.completeDownload(task: task, temporaryLocation: missingTemporaryLocation)
+        }
+
+        #expect(try Data(contentsOf: destination) == existing)
+        #expect(await task.state != .completed)
+    }
+}
+
+
 @Suite("Download Persistence Cleanup Tests")
 struct DownloadPersistenceCleanupTests {
     @Test("Existing destination is preserved when replacement temp file is missing")

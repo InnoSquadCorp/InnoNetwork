@@ -95,6 +95,69 @@ struct WebSocketConfigurationTests {
         #expect(config.requestHeaders["Authorization"] == "Bearer token")
     }
 
+    @Test("Handshake adapters run for each connection request after static headers")
+    func handshakeAdaptersRunForEachConnectionRequest() async throws {
+        let tokenStore = WebSocketHandshakeTokenStore(tokens: ["first", "second"])
+        let config = WebSocketConfiguration(
+            heartbeatInterval: 0,
+            requestHeaders: ["Authorization": "Bearer stale"],
+            handshakeRequestAdapters: [
+                WebSocketHandshakeRequestAdapter { request in
+                    var adapted = request
+                    let token = await tokenStore.next()
+                    adapted.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                    adapted.setValue(
+                        request.value(forHTTPHeaderField: "Sec-WebSocket-Protocol") ?? "none",
+                        forHTTPHeaderField: "X-Observed-Subprotocol"
+                    )
+                    return adapted
+                }
+            ]
+        )
+        let stubSession = StubWebSocketURLSession()
+        let firstURLTask = StubWebSocketURLTask(taskIdentifier: 101)
+        let secondURLTask = StubWebSocketURLTask(taskIdentifier: 102)
+        stubSession.enqueue(firstURLTask)
+        stubSession.enqueue(secondURLTask)
+        let callbacks = WebSocketSessionDelegateCallbacks()
+        let delegate = WebSocketSessionDelegate(
+            callbacks: callbacks,
+            backgroundCompletionStore: BackgroundCompletionStore()
+        )
+        let manager = WebSocketManager(
+            configuration: config,
+            urlSession: stubSession,
+            delegate: delegate,
+            callbacks: callbacks
+        )
+        let url = URL(string: "wss://example.invalid/socket")!
+
+        _ = await manager.connect(url: url, subprotocols: ["graphql-ws"])
+        _ = await manager.connect(url: url)
+
+        let requests = stubSession.requests
+        let firstRequest = try #require(requests.first)
+        let secondRequest = try #require(requests.dropFirst().first)
+        #expect(firstRequest.value(forHTTPHeaderField: "Authorization") == "Bearer first")
+        #expect(secondRequest.value(forHTTPHeaderField: "Authorization") == "Bearer second")
+        #expect(firstRequest.value(forHTTPHeaderField: "Sec-WebSocket-Protocol") == "graphql-ws")
+        #expect(firstRequest.value(forHTTPHeaderField: "X-Observed-Subprotocol") == "graphql-ws")
+        #expect(secondRequest.value(forHTTPHeaderField: "X-Observed-Subprotocol") == "none")
+        #expect(firstURLTask.resumeCount == 1)
+        #expect(secondURLTask.resumeCount == 1)
+
+        manager.handleDisconnected(
+            taskIdentifier: firstURLTask.taskIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+        manager.handleDisconnected(
+            taskIdentifier: secondURLTask.taskIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+    }
+
     @Test("URLSessionConfiguration is created correctly")
     func urlSessionConfiguration() {
         let config = WebSocketConfiguration(
@@ -134,6 +197,20 @@ struct WebSocketConfigurationTests {
         #expect(config.reconnectJitterRatio == 0)
         #expect(config.maxReconnectDelay == 0)
         #expect(config.maxReconnectAttempts == 0)
+    }
+}
+
+
+private actor WebSocketHandshakeTokenStore {
+    private var tokens: [String]
+
+    init(tokens: [String]) {
+        self.tokens = tokens
+    }
+
+    func next() -> String {
+        guard !tokens.isEmpty else { return "" }
+        return tokens.removeFirst()
     }
 }
 
