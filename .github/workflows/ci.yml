@@ -199,18 +199,23 @@ jobs:
         include:
           - destination: "platform=macOS"
             runtime: "macOS"
+            sdk: "macosx"
             required: true
           - destination: "generic/platform=iOS Simulator"
             runtime: "iOS"
+            sdk: "iphonesimulator"
             required: true
           - destination: "generic/platform=tvOS Simulator"
             runtime: "tvOS"
+            sdk: "appletvsimulator"
             required: false
           - destination: "generic/platform=watchOS Simulator"
             runtime: "watchOS"
+            sdk: "watchsimulator"
             required: false
           - destination: "generic/platform=visionOS Simulator"
             runtime: "visionOS"
+            sdk: "xrsimulator"
             required: false
 
     steps:
@@ -233,10 +238,20 @@ jobs:
       - name: Build package for destination
         run: |
           runtime="${{ matrix.runtime }}"
+          sdk="${{ matrix.sdk }}"
           required="${{ matrix.required }}"
           destination="${{ matrix.destination }}"
 
           if [[ "$runtime" != "macOS" ]]; then
+            if ! xcodebuild -showsdks | awk -v sdk="$sdk" '$0 ~ "-sdk " sdk { found = 1 } END { exit found ? 0 : 1 }'; then
+              if [[ "$required" == "true" ]]; then
+                echo "::error::Required simulator SDK $sdk is not installed on this runner."
+                exit 1
+              fi
+              echo "::notice::Skipping optional $runtime smoke because simulator SDK $sdk is not installed on this runner."
+              exit 0
+            fi
+
             if ! xcrun simctl list runtimes | awk -v runtime="$runtime" '$0 ~ "^" runtime " " && $0 !~ /unavailable/ { found = 1 } END { exit found ? 0 : 1 }'; then
               if [[ "$required" == "true" ]]; then
                 echo "::error::Required simulator runtime $runtime is not installed on this runner."

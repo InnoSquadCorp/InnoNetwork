@@ -108,6 +108,57 @@ private final class SequenceURLSession: URLSessionProtocol, Sendable {
 }
 
 
+private struct CancellationFirstURLSessionState {
+    var queue: [QueuedHTTPResponse]
+    var requests: [URLRequest] = []
+    var cancelledRequestCount = 0
+}
+
+
+private final class CancellationFirstURLSession: URLSessionProtocol, Sendable {
+    private let state: OSAllocatedUnfairLock<CancellationFirstURLSessionState>
+
+    init(queue: [QueuedHTTPResponse]) {
+        self.state = OSAllocatedUnfairLock(initialState: CancellationFirstURLSessionState(queue: queue))
+    }
+
+    var requestCount: Int {
+        state.withLock { $0.requests.count }
+    }
+
+    var cancelledRequestCount: Int {
+        state.withLock { $0.cancelledRequestCount }
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        let shouldWaitForCancellation = state.withLock { state -> Bool in
+            state.requests.append(request)
+            return state.requests.count == 1
+        }
+
+        if shouldWaitForCancellation {
+            do {
+                try await Task.sleep(for: .seconds(5))
+            } catch {
+                state.withLock { state in
+                    state.cancelledRequestCount += 1
+                }
+                throw error
+            }
+            throw NetworkError.invalidRequestConfiguration("Expected the first queued request to be cancelled.")
+        }
+
+        return try state.withLock { state in
+            guard !state.queue.isEmpty else {
+                throw NetworkError.invalidRequestConfiguration("No queued response.")
+            }
+            let next = state.queue.removeFirst()
+            return (next.data, next.response)
+        }
+    }
+}
+
+
 private func queuedResponse(
     statusCode: Int,
     body: ResilienceUser? = nil,
@@ -366,12 +417,10 @@ struct ResiliencePolicyTests {
 
     @Test("All coalescing waiter cancellation cancels shared transport")
     func allCoalescingCancellationCancelsSharedTransport() async throws {
-        let session = try SequenceURLSession(
+        let session = try CancellationFirstURLSession(
             queue: [
-                queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "first")),
-                queuedResponse(statusCode: 200, body: ResilienceUser(id: 2, name: "second")),
-            ],
-            delay: .milliseconds(100)
+                queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "first"))
+            ]
         )
         let client = DefaultNetworkClient(
             configuration: makeTestNetworkConfiguration(
@@ -388,12 +437,17 @@ struct ResiliencePolicyTests {
             try await client.request(ResilienceGetRequest())
         }
 
-        try await Task.sleep(for: .milliseconds(20))
+        try await waitUntil {
+            session.requestCount == 1
+        }
         first.cancel()
         second.cancel()
 
         await expectCancelled(first)
         await expectCancelled(second)
+        try await waitUntil {
+            session.cancelledRequestCount == 1
+        }
 
         let recovered = try await client.request(ResilienceGetRequest())
 
