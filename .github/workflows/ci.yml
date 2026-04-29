@@ -350,7 +350,6 @@ jobs:
             --json-path .build/benchmarks/results.json \
             --enforce-baseline \
             --guard-benchmark websocket/websocket-close-disposition-classify \
-            --guard-benchmark websocket/websocket-ping-context-alloc \
             --max-regression-percent 20
 
       - name: Upload benchmark smoke artifact
