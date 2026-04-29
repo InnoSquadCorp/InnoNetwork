@@ -2,7 +2,18 @@ import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
+/// Implements the freestanding ``endpoint`` macro expansion.
 public struct EndpointMacro: ExpressionMacro {
+    /// Expands `#endpoint(_:_:as:)` into a fluent `Endpoint` builder expression.
+    ///
+    /// - Parameters:
+    ///   - node: Freestanding macro expansion syntax containing method, path,
+    ///     and `as:` response type arguments.
+    ///   - context: Macro expansion context used by SwiftSyntax.
+    /// - Returns: An expression equivalent to
+    ///   `Endpoint<EmptyResponse>(method:path:).decoding(Response.self)`.
+    /// - Throws: ``InnoNetworkMacroDiagnostic`` when the argument count is
+    ///   invalid or the response type argument is not labeled `as:`.
     public static func expansion(
         of node: some FreestandingMacroExpansionSyntax,
         in context: some MacroExpansionContext

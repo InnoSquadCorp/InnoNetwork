@@ -2,9 +2,16 @@ import Foundation
 
 /// One part in a decoded `multipart/*` response body.
 public struct MultipartPart: Sendable, Equatable {
+    /// Header fields parsed from the part header block.
     public let headers: [String: String]
+    /// Raw payload bytes for the part body.
     public let data: Data
 
+    /// Creates a decoded multipart part value.
+    ///
+    /// - Parameters:
+    ///   - headers: Header fields parsed from the part header block.
+    ///   - data: Raw payload bytes for the part body.
     public init(headers: [String: String], data: Data) {
         self.headers = headers
         self.data = data
@@ -13,6 +20,10 @@ public struct MultipartPart: Sendable, Equatable {
 
 
 /// Decoder for buffered `multipart/*` response bodies.
+///
+/// The decoder reads an explicit boundary override first. If no override is
+/// supplied, it extracts the `boundary` parameter from the response
+/// `Content-Type` passed to ``decode(_:contentType:)``.
 public struct MultipartResponseDecoder: Sendable {
     private let boundaryOverride: String?
 
