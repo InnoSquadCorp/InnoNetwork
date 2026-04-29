@@ -266,7 +266,7 @@ jobs:
             if ! printf '%s\n' "$destination_listing" | awk -v platform="platform:$destination_platform" '
               /Available destinations/ { in_available = 1; next }
               /Ineligible destinations/ { in_available = 0 }
-              in_available && index($0, platform) { found = 1 }
+              in_available && index($0, platform) && $0 !~ /variant:/ { found = 1 }
               END { exit found ? 0 : 1 }
             '; then
               if [[ "$required" == "true" ]]; then
