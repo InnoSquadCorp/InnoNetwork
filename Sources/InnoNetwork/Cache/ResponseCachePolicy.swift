@@ -1,0 +1,210 @@
+import Foundation
+
+/// Opt-in response caching policy for request/response APIs.
+public enum ResponseCachePolicy: Sendable, Equatable {
+    case disabled
+    case networkOnly
+    case cacheFirst(maxAge: Duration)
+    case staleWhileRevalidate(maxAge: Duration, staleWindow: Duration)
+}
+
+
+/// Stable cache key for response bodies stored by ``ResponseCache``.
+public struct ResponseCacheKey: Hashable, Sendable {
+    public let method: String
+    public let url: String
+    public let headers: [String]
+
+    public init(method: String, url: String, headers: [String: String] = [:]) {
+        self.method = method.uppercased()
+        self.url = url
+        self.headers = Self.normalizedHeaders(headers)
+    }
+
+    package init?(request: URLRequest) {
+        guard let url = request.url?.absoluteString else { return nil }
+        let excludedHeaderNames: Set<String> = [
+            "accept-encoding",
+            "accept-language",
+            "content-type",
+            "date",
+            "if-modified-since",
+            "if-none-match",
+            "user-agent",
+        ]
+        let headers =
+            (request.allHTTPHeaderFields ?? [:])
+            .filter { !excludedHeaderNames.contains($0.key.lowercased()) }
+        self.init(method: request.httpMethod ?? "GET", url: url, headers: headers)
+    }
+
+    private static func normalizedHeaders(_ headers: [String: String]) -> [String] {
+        headers
+            .map { "\($0.key.lowercased()):\($0.value)" }
+            .sorted()
+    }
+}
+
+
+/// Cached HTTP response payload and metadata.
+public struct CachedResponse: Sendable, Equatable {
+    public let data: Data
+    public let statusCode: Int
+    public let headers: [String: String]
+    public let storedAt: Date
+
+    public init(
+        data: Data,
+        statusCode: Int = 200,
+        headers: [String: String] = [:],
+        storedAt: Date = Date()
+    ) {
+        self.data = data
+        self.statusCode = statusCode
+        self.headers = headers
+        self.storedAt = storedAt
+    }
+
+    public var etag: String? {
+        headers.first { $0.key.caseInsensitiveCompare("ETag") == .orderedSame }?.value
+    }
+
+    package func response(for request: URLRequest) -> HTTPURLResponse? {
+        guard let url = request.url else { return nil }
+        return HTTPURLResponse(
+            url: url,
+            statusCode: statusCode,
+            httpVersion: nil,
+            headerFields: headers
+        )
+    }
+
+    package var byteCost: Int {
+        data.count + headers.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count }
+    }
+}
+
+
+/// Async response cache abstraction used by the built-in cache policy.
+public protocol ResponseCache: Sendable {
+    func get(_ key: ResponseCacheKey) async -> CachedResponse?
+    func set(_ key: ResponseCacheKey, _ value: CachedResponse) async
+    func invalidate(_ key: ResponseCacheKey) async
+}
+
+
+/// In-memory `ResponseCache` implementation with a simple byte cap.
+public actor InMemoryResponseCache: ResponseCache {
+    private let maxBytes: Int
+    private var storage: [ResponseCacheKey: CachedResponse] = [:]
+    private var order: [ResponseCacheKey] = []
+    private var currentBytes = 0
+
+    public init(maxBytes: Int = 5 * 1024 * 1024) {
+        self.maxBytes = max(1, maxBytes)
+    }
+
+    public func get(_ key: ResponseCacheKey) async -> CachedResponse? {
+        guard let value = storage[key] else { return nil }
+        touch(key)
+        return value
+    }
+
+    public func set(_ key: ResponseCacheKey, _ value: CachedResponse) async {
+        if let existing = storage[key] {
+            currentBytes -= existing.byteCost
+        }
+        storage[key] = value
+        currentBytes += value.byteCost
+        touch(key)
+        evictIfNeeded()
+    }
+
+    public func invalidate(_ key: ResponseCacheKey) async {
+        if let existing = storage.removeValue(forKey: key) {
+            currentBytes -= existing.byteCost
+        }
+        order.removeAll { $0 == key }
+    }
+
+    private func touch(_ key: ResponseCacheKey) {
+        order.removeAll { $0 == key }
+        order.append(key)
+    }
+
+    private func evictIfNeeded() {
+        while currentBytes > maxBytes, let first = order.first {
+            order.removeFirst()
+            if let removed = storage.removeValue(forKey: first) {
+                currentBytes -= removed.byteCost
+            }
+        }
+    }
+}
+
+
+package enum CachePreparation: Sendable {
+    case bypass
+    case returnCached(CachedResponse)
+    case revalidate(CachedResponse?)
+    case returnStaleAndRevalidate(CachedResponse)
+}
+
+
+package extension ResponseCachePolicy {
+    var isEnabled: Bool {
+        switch self {
+        case .disabled:
+            return false
+        case .networkOnly, .cacheFirst, .staleWhileRevalidate:
+            return true
+        }
+    }
+
+    var allowsConditionalRevalidation: Bool {
+        switch self {
+        case .cacheFirst, .staleWhileRevalidate:
+            return true
+        case .disabled, .networkOnly:
+            return false
+        }
+    }
+
+    func prepare(cached: CachedResponse?, now: Date = Date()) -> CachePreparation {
+        switch self {
+        case .disabled:
+            return .bypass
+        case .networkOnly:
+            return .revalidate(nil)
+        case .cacheFirst(let maxAge):
+            guard let cached else { return .revalidate(nil) }
+            return cached.age(since: now) <= maxAge.timeInterval ? .returnCached(cached) : .revalidate(cached)
+        case .staleWhileRevalidate(let maxAge, let staleWindow):
+            guard let cached else { return .revalidate(nil) }
+            let age = cached.age(since: now)
+            if age <= maxAge.timeInterval {
+                return .returnCached(cached)
+            }
+            if age <= maxAge.timeInterval + staleWindow.timeInterval {
+                return .returnStaleAndRevalidate(cached)
+            }
+            return .revalidate(cached)
+        }
+    }
+}
+
+
+private extension CachedResponse {
+    func age(since now: Date) -> TimeInterval {
+        max(0, now.timeIntervalSince(storedAt))
+    }
+}
+
+
+package extension Duration {
+    var timeInterval: TimeInterval {
+        let parts = components
+        return TimeInterval(parts.seconds)
+            + TimeInterval(parts.attoseconds) / 1_000_000_000_000_000_000
+    }
+}
