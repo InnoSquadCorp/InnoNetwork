@@ -87,6 +87,12 @@ Compile-only package that protects wrapper-style integrations built on
 future-candidate low-level execution hooks. These source shapes are not part of
 the 4.0.0 stable public contract.
 
+### [MacroUsage](./MacroUsage)
+
+Compile-only package for the optional `InnoNetworkCodegen` product. It keeps
+macro usage separate from the core consumer smoke so `InnoNetwork`-only users do
+not pull `swift-syntax`.
+
 ## Getting Started
 
 ### Prerequisites
@@ -100,12 +106,12 @@ Add InnoNetwork to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", branch: "release/v4.0")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0")
 ]
 ```
 
-`4.0.0` is the upcoming public release line. Until the tag exists, pin
-`release/v4.0` or a revision from this repository for local validation.
+`4.0.0` is the latest public release. Pin a repository revision only when
+validating unreleased changes.
 
 ### Running the Examples
 

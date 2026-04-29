@@ -8,11 +8,12 @@
 [![Platforms](https://img.shields.io/badge/platforms-iOS%2018%20%7C%20macOS%2015%20%7C%20tvOS%2018%20%7C%20watchOS%2011%20%7C%20visionOS%202-lightgrey)](#platform-matrix)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-InnoNetwork is a Swift package for type-safe networking on Apple platforms. It provides three public products:
+InnoNetwork is a Swift package for type-safe networking on Apple platforms. It provides four public products:
 
 - `InnoNetwork` for request/response APIs
 - `InnoNetworkDownload` for download lifecycle management
 - `InnoNetworkWebSocket` for connection-oriented realtime flows
+- `InnoNetworkCodegen` for optional Swift macro endpoint helpers
 
 The package is built around Swift Concurrency, explicit transport policies, and operational visibility that can scale from app prototypes to production clients.
 
@@ -27,14 +28,13 @@ The package is built around Swift Concurrency, explicit transport policies, and 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", branch: "release/v4.0")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0")
 ]
 ```
 
-`4.0.0` is the next public release line and has not been tagged yet. The latest
-published public release remains `3.0.1`; until the 4.0.0 tag is published,
-pin `release/v4.0` or a revision from this repository for pre-release
-validation.
+`4.0.0` is the latest public release. Pin `from: "4.0.0"` for normal SwiftPM
+consumption, or pin a repository revision only when validating unreleased
+changes.
 
 ### Core Request
 
@@ -135,7 +135,7 @@ for await event in await WebSocketManager.shared.events(for: task) {
 - async/await request execution
 - type-safe `APIDefinition` modeling
 - JSON, form-url-encoded, and multipart request support
-- retry coordination and interceptor boundaries
+- retry coordination, auth refresh, request coalescing, response cache, and circuit breaker policies
 - trust policy support and request lifecycle observability
 
 ### `InnoNetworkDownload`
@@ -151,6 +151,12 @@ for await event in await WebSocketManager.shared.events(for: task) {
 - reconnect policies with handshake-aware close taxonomy
 - listener retention across reconnect attempts
 - `AsyncStream` and listener-based event delivery
+
+### `InnoNetworkCodegen`
+
+- optional `@APIDefinition` and `#endpoint` macros
+- depends on `swift-syntax` only through the codegen product
+- keeps the core `InnoNetwork` runtime dependency-free for existing users
 
 ## Platform Matrix
 
@@ -169,14 +175,14 @@ Protocol Buffers support moved to the separate `InnoNetworkProtobuf` package. Co
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", branch: "release/v4.0"),
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0"),
     .package(url: "https://github.com/InnoSquadCorp/InnoNetworkProtobuf.git", branch: "main")
 ]
 ```
 
 `InnoNetworkProtobuf` is being prepared for its first tagged release. Until
 that tag exists, follow the `main` branch of `InnoNetworkProtobuf` together
-with the upcoming InnoNetwork 4.0.0 line.
+with the current InnoNetwork 4.0 release line.
 
 ## Configuration
 
@@ -204,8 +210,51 @@ let tunedNetwork = NetworkConfiguration.advanced(
     builder.timeout = 30
     builder.retryPolicy = ExponentialBackoffRetryPolicy()
     builder.trustPolicy = .systemDefault
+    builder.requestCoalescingPolicy = .getOnly
+    builder.responseCache = InMemoryResponseCache()
+    builder.responseCachePolicy = .cacheFirst(maxAge: .seconds(60))
 }
 ```
+
+Auth refresh, coalescing, caching, and circuit breaking are opt-in. The
+request execution pipeline stays internal; public configuration exposes only
+the built-in policies.
+
+```swift
+let refreshPolicy = RefreshTokenPolicy(
+    currentToken: { try await tokenStore.currentAccessToken() },
+    refreshToken: { try await authService.refreshAccessToken() }
+)
+
+let client = DefaultNetworkClient(
+    configuration: .advanced(
+        baseURL: URL(string: "https://api.example.com")!
+    ) { builder in
+        builder.refreshTokenPolicy = refreshPolicy
+        builder.circuitBreakerPolicy = CircuitBreakerPolicy(failureThreshold: 3)
+    }
+)
+```
+
+### Optional Macros
+
+Add `InnoNetworkCodegen` only when you want compile-time endpoint helpers:
+
+```swift
+import InnoNetwork
+import InnoNetworkCodegen
+
+@APIDefinition(method: .get, path: "/users/{id}")
+struct GetUser {
+    typealias APIResponse = User
+    let id: Int
+}
+
+let endpoint = #endpoint(.get, "/users/1", as: User.self)
+```
+
+See [Using Macros](Sources/InnoNetwork/InnoNetwork.docc/Articles/UsingMacros.md)
+for the supported scope.
 
 ## Error Handling
 
@@ -245,8 +294,8 @@ For operational tuning, see [Examples](Examples/README.md) and [API Stability](A
 
 ## Stability
 
-Public releases follow semantic versioning; `4.0.0` is the next major line and
-the latest published public release remains `3.0.1`.
+Public releases follow semantic versioning. `4.0.0` is the latest public
+release and the current major line.
 
 - Stable public API: [API_STABILITY.md](API_STABILITY.md)
 - Release rules and compatibility policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
@@ -327,6 +376,12 @@ Operational items to verify before shipping a client built on InnoNetwork.
   parent task is cancelled.
 - **Retry budget.** `ExponentialBackoffRetryPolicy.maxTotalRetries` is the absolute cap that
   network-monitor recovery does not reset. Budget per user session, not per request.
+- **Auth refresh.** Prefer `RefreshTokenPolicy` over response interceptors for
+  `401` refresh + replay. The policy single-flights concurrent refreshes and
+  replays each original request at most once.
+- **Cache and circuit breaker.** Enable `ResponseCachePolicy` and
+  `CircuitBreakerPolicy` per client only after deciding the cache freshness and
+  host-failure budget for that API.
 - **WebSocket reconnect cap.** `maxReconnectAttempts` limits successive automatic attempts.
   After exhaustion, surface the failure to the UI rather than reconnect on every app
   foreground.
@@ -355,13 +410,14 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - DocC API Reference: https://innosquadcorp.github.io/InnoNetwork/
 - Examples: [Examples/README.md](Examples/README.md)
 - API Stability: [API_STABILITY.md](API_STABILITY.md)
+- Client Architecture: [docs/ClientArchitecture.md](docs/ClientArchitecture.md)
 - Platform Support: [docs/PlatformSupport.md](docs/PlatformSupport.md)
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
 - DocC Deployment: [docs/DocC_Deployment.md](docs/DocC_Deployment.md)
 - Query Encoding Reference: [docs/QueryEncoding.md](docs/QueryEncoding.md)
 - WebSocket Lifecycle: [docs/WebSocketLifecycle.md](docs/WebSocketLifecycle.md)
-- Upcoming Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)
+- Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 - 한국어 문서: [docs/ko/README.md](docs/ko/README.md)
 

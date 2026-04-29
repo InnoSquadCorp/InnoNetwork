@@ -37,14 +37,26 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``HTTPMethod``
 - ``ContentType``
 - ``NetworkError``
+- ``MultipartResponseDecoder``
+- ``MultipartPart``
 - <doc:ErrorClassification>
 - <doc:OpenAPIGeneratorAdapter>
+- <doc:UsingMacros>
 
 ### Resilience
 
 - ``RetryPolicy``
 - ``ExponentialBackoffRetryPolicy``
+- ``RefreshTokenPolicy``
+- ``RequestCoalescingPolicy``
+- ``ResponseCachePolicy``
+- ``ResponseCache``
+- ``InMemoryResponseCache``
+- ``CircuitBreakerPolicy``
+- ``CircuitBreakerOpenError``
 - <doc:RetryDecisions>
+- <doc:AuthRefresh>
+- <doc:CachingStrategies>
 
 ### Event Pipeline
 
