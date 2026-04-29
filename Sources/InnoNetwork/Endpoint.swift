@@ -125,7 +125,8 @@ extension Endpoint {
 
     /// Returns a copy of this endpoint with the supplied header collection.
     /// Replaces the entire header set; pair with ``header(_:value:)`` if you
-    /// only need to add a single field.
+    /// only need to add a single field. The endpoint still reapplies its
+    /// ``contentType`` as `Content-Type`, matching ``APIDefinition`` defaults.
     public func headers(_ headers: HTTPHeaders) -> Endpoint<Response> {
         Endpoint(
             method: method,
@@ -138,8 +139,8 @@ extension Endpoint {
     }
 
     /// Returns a copy of this endpoint with the supplied content-type. The
-    /// `Content-Type` request header is set automatically by the executor
-    /// based on this value, matching ``APIDefinition`` defaults.
+    /// endpoint's `Content-Type` header is updated immediately to match this
+    /// value, mirroring ``APIDefinition`` defaults.
     public func contentType(_ contentType: ContentType) -> Endpoint<Response> {
         Endpoint(
             method: method,

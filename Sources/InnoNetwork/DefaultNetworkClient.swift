@@ -349,15 +349,19 @@ public final class DefaultNetworkClient: NetworkClient, LowLevelNetworkClient, S
     private static func resolveStubResponse<T: APIDefinition>(
         for request: T
     ) async throws -> T.APIResponse? {
-        guard let stub = request.sampleResponse else { return nil }
         switch request.sampleBehavior {
         case .never:
             return nil
         case .immediate:
-            return stub
+            return request.sampleResponse
         case .delayed(let seconds):
+            guard let stub = request.sampleResponse else { return nil }
             if seconds > 0 {
-                try await Task.sleep(for: .seconds(seconds))
+                do {
+                    try await Task.sleep(for: .seconds(seconds))
+                } catch is CancellationError {
+                    throw NetworkError.cancelled
+                }
             }
             return stub
         }
