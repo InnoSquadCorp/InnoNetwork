@@ -12,6 +12,11 @@ func makeTestNetworkConfiguration(
     trustPolicy: TrustPolicy = .systemDefault,
     eventObservers: [any NetworkEventObserving] = [],
     acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes,
+    refreshTokenPolicy: RefreshTokenPolicy? = nil,
+    requestCoalescingPolicy: RequestCoalescingPolicy = .disabled,
+    responseCachePolicy: ResponseCachePolicy = .disabled,
+    responseCache: (any ResponseCache)? = nil,
+    circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
     captureFailurePayload: Bool = false
 ) -> NetworkConfiguration {
     NetworkConfiguration(
@@ -24,6 +29,11 @@ func makeTestNetworkConfiguration(
         trustPolicy: trustPolicy,
         eventObservers: eventObservers,
         acceptableStatusCodes: acceptableStatusCodes,
+        refreshTokenPolicy: refreshTokenPolicy,
+        requestCoalescingPolicy: requestCoalescingPolicy,
+        responseCachePolicy: responseCachePolicy,
+        responseCache: responseCache,
+        circuitBreakerPolicy: circuitBreakerPolicy,
         captureFailurePayload: captureFailurePayload
     )
 }

@@ -96,6 +96,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     private let requestBuilder = RequestBuilder()
     private let eventHub: NetworkEventHub
     private let inFlight = InFlightRegistry()
+    private let executionRuntime: RequestExecutionRuntime
 
     public init(
         configuration: NetworkConfiguration,
@@ -103,6 +104,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     ) {
         self.configuration = configuration
         self.session = session
+        self.executionRuntime = RequestExecutionRuntime(configuration: configuration)
         self.eventHub = NetworkEventHub(
             policy: configuration.eventDeliveryPolicy,
             metricsReporter: configuration.eventMetricsReporter,
@@ -385,6 +387,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
                     executable,
                     configuration: configuration,
                     requestBuilder: requestBuilder,
+                    runtime: executionRuntime,
                     retryIndex: retryIndex,
                     requestID: requestID
                 )
