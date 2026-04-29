@@ -28,13 +28,13 @@ The package is built around Swift Concurrency, explicit transport policies, and 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", branch: "release/v4.0")
 ]
 ```
 
-`4.0.0` is the latest public release. Pin `from: "4.0.0"` for normal SwiftPM
-consumption, or pin a repository revision only when validating unreleased
-changes.
+`4.0.0` is the upcoming 4.x public release baseline. Until the tag exists, pin
+the `release/v4.0` branch or a specific repository revision when validating
+these unreleased changes.
 
 ### Core Request
 
@@ -175,14 +175,14 @@ Protocol Buffers support moved to the separate `InnoNetworkProtobuf` package. Co
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0"),
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", branch: "release/v4.0"),
     .package(url: "https://github.com/InnoSquadCorp/InnoNetworkProtobuf.git", branch: "main")
 ]
 ```
 
 `InnoNetworkProtobuf` is being prepared for its first tagged release. Until
 that tag exists, follow the `main` branch of `InnoNetworkProtobuf` together
-with the current InnoNetwork 4.0 release line.
+with the unreleased InnoNetwork 4.0 release branch or a pinned revision.
 
 ## Configuration
 
@@ -294,8 +294,9 @@ For operational tuning, see [Examples](Examples/README.md) and [API Stability](A
 
 ## Stability
 
-Public releases follow semantic versioning. `4.0.0` is the latest public
-release and the current major line.
+Public releases follow semantic versioning. `4.0.0` is the upcoming public
+baseline for the 4.x major line; until it is tagged, use `release/v4.0` or a
+specific revision for validation.
 
 - Stable public API: [API_STABILITY.md](API_STABILITY.md)
 - Release rules and compatibility policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)

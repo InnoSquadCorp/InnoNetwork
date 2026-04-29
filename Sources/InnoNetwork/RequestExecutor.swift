@@ -299,39 +299,61 @@ package struct RequestExecutor {
             guard let httpResponse = cached.response(for: request) else { return nil }
             return Response(statusCode: cached.statusCode, data: cached.data, request: request, response: httpResponse)
         case .returnStaleAndRevalidate(let cached):
-            Task {
-                var revalidationRequest = request
-                if let etag = cached.etag {
-                    revalidationRequest.setValue(etag, forHTTPHeaderField: "If-None-Match")
+            let revalidationID = UUID()
+            let startGate = TaskStartGate()
+            let revalidationHandle = InFlightTaskHandle()
+            runtime.inFlight.register(id: revalidationID) {
+                revalidationHandle.cancel()
+            }
+            let revalidationTask = Task {
+                await startGate.wait()
+                defer {
+                    runtime.inFlight.deregister(id: revalidationID)
                 }
-                guard
-                    let result = try? await revalidateInBackground(
+
+                do {
+                    try Task.checkCancellation()
+
+                    var revalidationRequest = request
+                    if let etag = cached.etag {
+                        revalidationRequest.setValue(etag, forHTTPHeaderField: "If-None-Match")
+                    }
+
+                    let result = try await revalidateInBackground(
                         request: revalidationRequest,
                         bodySource: bodySource,
                         configuration: configuration,
                         context: context,
                         runtime: runtime
                     )
-                else {
+                    try Task.checkCancellation()
+
+                    let response = Response(
+                        statusCode: result.response.statusCode,
+                        data: result.data,
+                        request: revalidationRequest,
+                        response: result.response
+                    )
+                    if let converted = await convertNotModifiedIfNeeded(
+                        response,
+                        cacheKey: cacheKey,
+                        request: revalidationRequest,
+                        configuration: configuration
+                    ) {
+                        try Task.checkCancellation()
+                        await storeCacheIfNeeded(converted, cacheKey: cacheKey, configuration: configuration)
+                    } else {
+                        try Task.checkCancellation()
+                        await storeCacheIfNeeded(response, cacheKey: cacheKey, configuration: configuration)
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
                     return
                 }
-                let response = Response(
-                    statusCode: result.response.statusCode,
-                    data: result.data,
-                    request: revalidationRequest,
-                    response: result.response
-                )
-                if let converted = await convertNotModifiedIfNeeded(
-                    response,
-                    cacheKey: cacheKey,
-                    request: revalidationRequest,
-                    configuration: configuration
-                ) {
-                    await storeCacheIfNeeded(converted, cacheKey: cacheKey, configuration: configuration)
-                } else {
-                    await storeCacheIfNeeded(response, cacheKey: cacheKey, configuration: configuration)
-                }
             }
+            revalidationHandle.attach(revalidationTask)
+            startGate.open()
             guard let httpResponse = cached.response(for: request) else { return nil }
             return Response(statusCode: cached.statusCode, data: cached.data, request: request, response: httpResponse)
         }

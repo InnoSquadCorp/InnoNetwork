@@ -5,13 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and the project follows Semantic
 Versioning for the 4.x public release line.
 
-## [4.0.0] - 2026-04-29
+## [4.0.0] - Unreleased
 
 This release folds the Swift 6 / WebSocket work and the production-readiness
-pass into the 4.0.0 public baseline. Consumers should pin `from: "4.0.0"` for
-normal SwiftPM usage. See [`docs/releases/4.0.0.md`](docs/releases/4.0.0.md)
-for the one-page release summary and [`MIGRATION_v4.md`](MIGRATION_v4.md) for
-call-site changes.
+pass into the upcoming 4.0.0 public baseline. Until the tag exists, consumers
+should pin `release/v4.0` or a specific repository revision for validation. See
+[`docs/releases/4.0.0.md`](docs/releases/4.0.0.md) for the one-page release
+summary and [`MIGRATION_v4.md`](MIGRATION_v4.md) for call-site changes.
 
 ### Added
 
@@ -184,5 +184,5 @@ call-site changes.
 ## Pre-4.0 history
 
 Pre-4.0 changes are preserved in git history and earlier tags. This changelog
-now focuses on the current 4.0.0 public release contract so documentation,
+now focuses on the upcoming 4.0.0 public release contract so documentation,
 migration notes, and API stability policy stay aligned.

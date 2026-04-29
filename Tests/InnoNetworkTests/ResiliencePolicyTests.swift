@@ -492,6 +492,48 @@ struct ResiliencePolicyTests {
         #expect(session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
     }
 
+    @Test("SWR background revalidation is cancelled by cancelAll")
+    func staleWhileRevalidateBackgroundTaskIsCancelledByCancelAll() async throws {
+        let cache = InMemoryResponseCache()
+        let key = ResponseCacheKey(method: "GET", url: "https://api.example.com/users/1")
+        let stale = ResilienceUser(id: 1, name: "stale")
+        let staleBody = try JSONEncoder().encode(stale)
+        await cache.set(
+            key,
+            CachedResponse(
+                data: staleBody,
+                headers: ["ETag": "v1"],
+                storedAt: Date(timeIntervalSinceNow: -5)
+            )
+        )
+        let session = try SequenceURLSession(
+            queue: [
+                queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "fresh"), headers: ["ETag": "v2"])
+            ],
+            delay: .milliseconds(200)
+        )
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                responseCachePolicy: .staleWhileRevalidate(maxAge: .seconds(1), staleWindow: .seconds(10)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let returned = try await client.request(ResilienceGetRequest())
+
+        #expect(returned == stale)
+        try await waitUntil {
+            session.requestCount == 1
+        }
+        await client.cancelAll()
+        try await Task.sleep(for: .milliseconds(250))
+        let cached = await cache.get(key)
+        let decoded = try #require(cached.flatMap { try? JSONDecoder().decode(ResilienceUser.self, from: $0.data) })
+        #expect(decoded == stale)
+    }
+
     @Test("Response cache keeps different Authorization headers separate")
     func responseCacheSeparatesAuthorizationHeaders() async throws {
         let cache = InMemoryResponseCache()

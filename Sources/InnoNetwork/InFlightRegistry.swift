@@ -42,6 +42,36 @@ package final class InFlightRegistry: Sendable {
 }
 
 
+package final class InFlightTaskHandle: Sendable {
+    private struct State {
+        var task: Task<Void, Never>?
+        var isCancelled = false
+    }
+
+    private let state = OSAllocatedUnfairLock<State>(initialState: State())
+
+    package init() {}
+
+    package func attach(_ task: Task<Void, Never>) {
+        let shouldCancel = state.withLock { state in
+            state.task = task
+            return state.isCancelled
+        }
+        if shouldCancel {
+            task.cancel()
+        }
+    }
+
+    package func cancel() {
+        let task = state.withLock { state -> Task<Void, Never>? in
+            state.isCancelled = true
+            return state.task
+        }
+        task?.cancel()
+    }
+}
+
+
 package final class TaskStartGate: Sendable {
     private struct State {
         var isOpen = false

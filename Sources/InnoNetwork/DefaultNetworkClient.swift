@@ -104,7 +104,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     ) {
         self.configuration = configuration
         self.session = session
-        self.executionRuntime = RequestExecutionRuntime(configuration: configuration)
+        self.executionRuntime = RequestExecutionRuntime(configuration: configuration, inFlight: inFlight)
         self.eventHub = NetworkEventHub(
             policy: configuration.eventDeliveryPolicy,
             metricsReporter: configuration.eventMetricsReporter,

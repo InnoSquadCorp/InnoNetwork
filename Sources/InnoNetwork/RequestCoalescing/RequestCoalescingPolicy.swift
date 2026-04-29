@@ -70,6 +70,7 @@ package struct TransportResult: Sendable {
 
 package actor RequestCoalescer {
     private struct Entry {
+        let id: UUID
         var task: Task<Void, Never>?
         var waiters: [UUID: CheckedContinuation<TransportResult, Error>]
     }
@@ -85,7 +86,7 @@ package actor RequestCoalescer {
     ) async throws -> TransportResult {
         let waiterID = UUID()
         try Task.checkCancellation()
-        return try await withTaskCancellationHandler {
+        let result = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 register(
                     key: key,
@@ -97,6 +98,8 @@ package actor RequestCoalescer {
         } onCancel: {
             Task { await self.cancelWaiter(key: key, waiterID: waiterID) }
         }
+        try Task.checkCancellation()
+        return result
     }
 
     private func register(
@@ -116,17 +119,18 @@ package actor RequestCoalescer {
             return
         }
 
-        entries[key] = Entry(task: nil, waiters: [waiterID: continuation])
+        let entryID = UUID()
+        entries[key] = Entry(id: entryID, task: nil, waiters: [waiterID: continuation])
         let task = Task.detached {
             do {
                 let result = try await operation()
-                await self.finish(key: key, result: .success(result))
+                await self.finish(key: key, entryID: entryID, result: .success(result))
             } catch {
-                await self.finish(key: key, result: .failure(error))
+                await self.finish(key: key, entryID: entryID, result: .failure(error))
             }
         }
 
-        if var entry = entries[key] {
+        if var entry = entries[key], entry.id == entryID {
             entry.task = task
             entries[key] = entry
         } else {
@@ -134,8 +138,9 @@ package actor RequestCoalescer {
         }
     }
 
-    private func finish(key: RequestDedupKey, result: Result<TransportResult, Error>) {
-        guard let entry = entries.removeValue(forKey: key) else { return }
+    private func finish(key: RequestDedupKey, entryID: UUID, result: Result<TransportResult, Error>) {
+        guard let entry = entries[key], entry.id == entryID else { return }
+        entries.removeValue(forKey: key)
         cancelledWaiters.removeValue(forKey: key)
         for continuation in entry.waiters.values {
             continuation.resume(with: result)

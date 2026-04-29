@@ -196,12 +196,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        destination:
-          - "platform=macOS"
-          - "generic/platform=iOS Simulator"
-          - "generic/platform=tvOS Simulator"
-          - "generic/platform=watchOS Simulator"
-          - "generic/platform=visionOS Simulator"
+        include:
+          - destination: "platform=macOS"
+            runtime: "macOS"
+            required: true
+          - destination: "generic/platform=iOS Simulator"
+            runtime: "iOS"
+            required: true
+          - destination: "generic/platform=tvOS Simulator"
+            runtime: "tvOS"
+            required: false
+          - destination: "generic/platform=watchOS Simulator"
+            runtime: "watchOS"
+            required: false
+          - destination: "generic/platform=visionOS Simulator"
+            runtime: "visionOS"
+            required: false
 
     steps:
       - name: Checkout
@@ -222,9 +232,24 @@ jobs:
 
       - name: Build package for destination
         run: |
+          runtime="${{ matrix.runtime }}"
+          required="${{ matrix.required }}"
+          destination="${{ matrix.destination }}"
+
+          if [[ "$runtime" != "macOS" ]]; then
+            if ! xcrun simctl list runtimes | awk -v runtime="$runtime" '$0 ~ "^" runtime " " && $0 !~ /unavailable/ { found = 1 } END { exit found ? 0 : 1 }'; then
+              if [[ "$required" == "true" ]]; then
+                echo "::error::Required simulator runtime $runtime is not installed on this runner."
+                exit 1
+              fi
+              echo "::notice::Skipping optional $runtime smoke because the runtime is not installed on this runner."
+              exit 0
+            fi
+          fi
+
           xcodebuild \
             -scheme InnoNetwork-Package \
-            -destination "${{ matrix.destination }}" \
+            -destination "$destination" \
             -skipPackagePluginValidation \
             -skipMacroValidation \
             -derivedDataPath build/apple-platform-smoke \

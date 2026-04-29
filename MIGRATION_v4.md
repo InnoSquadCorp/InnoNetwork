@@ -1,7 +1,9 @@
 # InnoNetwork v4 Migration Guide
 
 This document summarizes breaking changes from the `3.x` line to `4.0.0`.
-`4.0.0` is the latest public release and the current major-line baseline.
+`4.0.0` is the upcoming public release baseline and has not been tagged yet.
+Until that tag exists, the latest tagged public release remains `3.0.1`; use
+`release/v4.0` or a specific revision to validate the 4.x line.
 
 `4.0.0` bundles the long-planned WebSocket / Swift 6 work with a
 production-readiness pass on the request, download, streaming, and trust
@@ -487,7 +489,7 @@ These features ship in `4.0.0` but require no changes to existing code:
 
 ## 10. Verification checklist
 
-After bumping InnoNetwork to `4.0.0`:
+After validating InnoNetwork `4.0.0` from `release/v4.0` or a pinned revision:
 
 1. `swift build` (or your IDE build) — fix any exhaustive-switch
    warnings on `WebSocketEvent`, `NetworkError`, and `RequestPayload`
