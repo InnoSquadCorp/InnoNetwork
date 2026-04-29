@@ -76,6 +76,18 @@ public struct NetworkConfiguration: Sendable {
     /// interceptor can observe the same response shape its peer would have
     /// produced under a per-endpoint setup.
     public let responseInterceptors: [ResponseInterceptor]
+    /// Optional token refresh policy. When configured, the client applies the
+    /// current token before transport, refreshes once on matching auth status
+    /// codes, and replays the original request at most one time.
+    public let refreshTokenPolicy: RefreshTokenPolicy?
+    /// Optional raw-transport coalescing policy. Disabled by default.
+    public let requestCoalescingPolicy: RequestCoalescingPolicy
+    /// Optional response cache policy. Disabled by default.
+    public let responseCachePolicy: ResponseCachePolicy
+    /// Cache storage used when ``responseCachePolicy`` is enabled.
+    public let responseCache: (any ResponseCache)?
+    /// Optional per-host circuit breaker policy. Disabled by default.
+    public let circuitBreakerPolicy: CircuitBreakerPolicy?
 
     /// When `false` (default), response bodies attached to ``NetworkError``
     /// cases (`objectMapping`, `jsonMapping`, `statusCode`, and `underlying`
@@ -102,6 +114,11 @@ public struct NetworkConfiguration: Sendable {
         public var acceptableStatusCodes: Set<Int>
         public var requestInterceptors: [RequestInterceptor]
         public var responseInterceptors: [ResponseInterceptor]
+        public var refreshTokenPolicy: RefreshTokenPolicy?
+        public var requestCoalescingPolicy: RequestCoalescingPolicy
+        public var responseCachePolicy: ResponseCachePolicy
+        public var responseCache: (any ResponseCache)?
+        public var circuitBreakerPolicy: CircuitBreakerPolicy?
         public var captureFailurePayload: Bool
 
         fileprivate init(preset: NetworkConfiguration) {
@@ -118,6 +135,11 @@ public struct NetworkConfiguration: Sendable {
             self.acceptableStatusCodes = preset.acceptableStatusCodes
             self.requestInterceptors = preset.requestInterceptors
             self.responseInterceptors = preset.responseInterceptors
+            self.refreshTokenPolicy = preset.refreshTokenPolicy
+            self.requestCoalescingPolicy = preset.requestCoalescingPolicy
+            self.responseCachePolicy = preset.responseCachePolicy
+            self.responseCache = preset.responseCache
+            self.circuitBreakerPolicy = preset.circuitBreakerPolicy
             self.captureFailurePayload = preset.captureFailurePayload
         }
 
@@ -136,6 +158,11 @@ public struct NetworkConfiguration: Sendable {
                 acceptableStatusCodes: acceptableStatusCodes,
                 requestInterceptors: requestInterceptors,
                 responseInterceptors: responseInterceptors,
+                refreshTokenPolicy: refreshTokenPolicy,
+                requestCoalescingPolicy: requestCoalescingPolicy,
+                responseCachePolicy: responseCachePolicy,
+                responseCache: responseCache,
+                circuitBreakerPolicy: circuitBreakerPolicy,
                 captureFailurePayload: captureFailurePayload
             )
         }
@@ -168,6 +195,11 @@ public struct NetworkConfiguration: Sendable {
         acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes,
         requestInterceptors: [RequestInterceptor] = [],
         responseInterceptors: [ResponseInterceptor] = [],
+        refreshTokenPolicy: RefreshTokenPolicy? = nil,
+        requestCoalescingPolicy: RequestCoalescingPolicy = .disabled,
+        responseCachePolicy: ResponseCachePolicy = .disabled,
+        responseCache: (any ResponseCache)? = nil,
+        circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
         captureFailurePayload: Bool = false
     ) {
         self.baseURL = baseURL
@@ -183,6 +215,11 @@ public struct NetworkConfiguration: Sendable {
         self.acceptableStatusCodes = acceptableStatusCodes
         self.requestInterceptors = requestInterceptors
         self.responseInterceptors = responseInterceptors
+        self.refreshTokenPolicy = refreshTokenPolicy
+        self.requestCoalescingPolicy = requestCoalescingPolicy
+        self.responseCachePolicy = responseCachePolicy
+        self.responseCache = responseCache
+        self.circuitBreakerPolicy = circuitBreakerPolicy
         self.captureFailurePayload = captureFailurePayload
     }
 }
