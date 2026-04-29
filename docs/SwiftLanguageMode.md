@@ -1,7 +1,7 @@
 # Swift 6.2+ language-mode audit
 
 This note records which Swift 6.2+ language-mode features were reviewed for
-InnoNetwork while preparing the upcoming `4.0.0` release, and which of them
+InnoNetwork while preparing the `4.0.0` release, and which of them
 resulted in concrete code changes.
 
 The evaluation criterion is deliberately strict: a feature is only
@@ -12,7 +12,7 @@ a benchmark or a real-world report shows they would pay for themselves.
 
 As of the `4.0.0` documentation alignment, **no production source was modified
 by this audit.** The package continues to ship on `swiftLanguageMode(.v6)` with
-the strict concurrency posture expected for the upcoming public release.
+the strict concurrency posture expected for the current public release.
 
 ## Reviewed areas
 

@@ -1,8 +1,7 @@
 # InnoNetwork v4 Migration Guide
 
 This document summarizes breaking changes from the `3.x` line to `4.0.0`.
-`4.0.0` has not been tagged yet; the latest published public release remains
-`3.0.1`.
+`4.0.0` is the latest public release and the current major-line baseline.
 
 `4.0.0` bundles the long-planned WebSocket / Swift 6 work with a
 production-readiness pass on the request, download, streaming, and trust
@@ -26,15 +25,27 @@ pipelines:
 6. **N — `DefaultNetworkClient` is now a `final class`** (was `actor`) so
    concurrent requests dispatch without an actor-hop. The public API
    surface is byte-for-byte unchanged.
-7. **O — `WebSocketManager.receive(_:)` is removed** before the first 4.x tag
-   so the manager's internal receive loop is the single consumer of the
-   underlying `URLSessionWebSocketTask`.
+7. **O — `WebSocketManager.receive(_:)` is removed** in 4.0.0 so the manager's
+   internal receive loop is the single consumer of the underlying
+   `URLSessionWebSocketTask`.
 
 Items L and M are source-breaking on exhaustive switches; item N is
 source-breaking only for call sites that relied on `DefaultNetworkClient`
 being an actor (for example, crossing actor boundaries). Item O is
-source-breaking only for pre-release 4.0 adopters who called direct receive.
+source-breaking only for 4.0 preview adopters who called direct receive.
 Everything else in this release is additive.
+
+Additive 4.0.0 features require no source changes unless explicitly enabled:
+
+- `RefreshTokenPolicy` for current-token application, single-flight refresh,
+  and one-time replay after auth status codes such as `401`.
+- `RequestCoalescingPolicy`, `ResponseCachePolicy`, and
+  `CircuitBreakerPolicy` for built-in executor-level resilience. They default
+  to disabled/no-op behavior.
+- `MultipartResponseDecoder` for buffered `multipart/*` response bodies.
+- Optional `InnoNetworkCodegen` macros via `import InnoNetworkCodegen`.
+  Importing only `InnoNetwork` keeps `swift-syntax` out of the core runtime
+  path.
 
 Minimum toolchain remains Swift 6.2 / Xcode 26.
 
@@ -420,12 +431,12 @@ The legacy boolean overload is scheduled for removal in `5.0`.
 ## 8. Removed `WebSocketManager.receive(_:)` (Item O)
 
 `WebSocketManager` always starts an internal receive loop when a socket
-connects. The pre-release public `receive(_:)` method could also call
+connects. The preview public `receive(_:)` method could also call
 `URLSessionWebSocketTask.receive()` directly, which meant external consumers
 could race the manager loop or steal frames from callbacks and event streams.
 
-The direct method is removed before the 4.0.0 tag. Replace any pre-release
-callers with the managed event delivery APIs:
+The direct method is removed in 4.0.0. Replace any callers with the managed
+event delivery APIs:
 
 ```diff
 - let event = try await manager.receive(task)
@@ -500,7 +511,7 @@ After bumping InnoNetwork to `4.0.0`:
    requirements default to throwing
    `NetworkError.invalidRequestConfiguration` — no change needed unless
    your tests now exercise streaming.
-7. Search for pre-release direct WebSocket receive calls:
+7. Search for direct WebSocket receive calls:
    ```bash
    rg -n "manager\\.receive\\("
    ```

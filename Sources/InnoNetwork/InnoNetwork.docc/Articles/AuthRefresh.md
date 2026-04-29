@@ -37,4 +37,3 @@ The default behaviour is:
 
 Provide `refreshStatusCodes:` or `applyToken:` only when your API differs from
 standard bearer-token authentication.
-
