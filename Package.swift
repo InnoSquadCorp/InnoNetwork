@@ -1,5 +1,6 @@
 // swift-tools-version: 6.2
 
+import CompilerPluginSupport
 import PackageDescription
 
 /// Swift 6 language mode is enabled for every target so strict concurrency
@@ -51,8 +52,14 @@ let package = Package(
             name: "InnoNetworkTestSupport",
             targets: ["InnoNetworkTestSupport"]
         ),
+        .library(
+            name: "InnoNetworkCodegen",
+            targets: ["InnoNetworkCodegen"]
+        ),
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "602.0.0"),
+    ],
     targets: [
         .target(
             name: "InnoNetwork",
@@ -85,6 +92,26 @@ let package = Package(
                 "InnoNetworkWebSocket",
             ],
             path: "Sources/InnoNetworkTestSupport",
+            swiftSettings: strictSettings
+        ),
+        .target(
+            name: "InnoNetworkCodegen",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkMacros",
+            ],
+            path: "Sources/InnoNetworkCodegen",
+            swiftSettings: strictSettings
+        ),
+        .macro(
+            name: "InnoNetworkMacros",
+            dependencies: [
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+            ],
+            path: "Sources/InnoNetworkMacros",
             swiftSettings: strictSettings
         ),
         .executableTarget(
@@ -149,6 +176,17 @@ let package = Package(
                 "InnoNetworkTestSupport",
             ],
             path: "Tests/InnoNetworkLiveTests",
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "InnoNetworkMacroTests",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkCodegen",
+                "InnoNetworkMacros",
+                .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
+            ],
+            path: "Tests/InnoNetworkMacroTests",
             swiftSettings: strictSettings
         ),
     ]
