@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 package struct RequestExecutor {
     private let session: URLSessionProtocol
@@ -161,6 +162,7 @@ package struct RequestExecutor {
                 request: request,
                 configuration: configuration
             ) {
+                await storeCacheIfNeeded(converted, cacheKey: cacheKey, configuration: configuration)
                 return converted
             }
 
@@ -349,6 +351,12 @@ package struct RequestExecutor {
                 } catch is CancellationError {
                     return
                 } catch {
+                    let mapped = NetworkError.mapTransportError(error)
+                    let surfaced =
+                        configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
+                    Logger.API.error(
+                        "Background revalidation failed: \(surfaced.localizedDescription, privacy: .public)"
+                    )
                     return
                 }
             }
@@ -412,11 +420,35 @@ package struct RequestExecutor {
             let cacheKey,
             let cache = configuration.responseCache,
             let cached = await cache.get(cacheKey),
-            let httpResponse = cached.response(for: request)
+            let url = request.url,
+            let httpResponse = HTTPURLResponse(
+                url: url,
+                statusCode: cached.statusCode,
+                httpVersion: nil,
+                headerFields: mergedCachedHeaders(cached.headers, notModifiedResponse: response.response)
+            )
         else {
             return nil
         }
         return Response(statusCode: cached.statusCode, data: cached.data, request: request, response: httpResponse)
+    }
+
+    private func mergedCachedHeaders(
+        _ cachedHeaders: [String: String],
+        notModifiedResponse: HTTPURLResponse?
+    ) -> [String: String] {
+        var headers = cachedHeaders
+        guard let notModifiedResponse else { return headers }
+
+        for pair in notModifiedResponse.allHeaderFields {
+            guard let key = pair.key as? String else { continue }
+            let value = pair.value as? String ?? String(describing: pair.value)
+            if let existingKey = headers.keys.first(where: { $0.caseInsensitiveCompare(key) == .orderedSame }) {
+                headers.removeValue(forKey: existingKey)
+            }
+            headers[key] = value
+        }
+        return headers
     }
 
     private func storeCacheIfNeeded(

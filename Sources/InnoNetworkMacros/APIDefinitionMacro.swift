@@ -1,4 +1,3 @@
-import Foundation
 import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
@@ -11,12 +10,12 @@ public struct APIDefinitionMacro: ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
-        let arguments = node.arguments?.description ?? ""
-        let method = argument(named: "method", in: arguments) ?? ".get"
-        let rawPath = stringArgument(named: "path", in: arguments) ?? "/"
-        let properties = storedPropertyNames(in: declaration.description)
-        let path = interpolatedPath(rawPath, properties: properties)
-        let typeName = type.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let arguments = try argumentList(from: node)
+        let method = try requiredArgument(named: "method", in: arguments).expression.trimmedDescription
+        let pathLiteral = try stringLiteralArgument(named: "path", in: arguments)
+        let properties = storedPropertyNames(in: declaration)
+        let path = try interpolatedPath(pathLiteral, properties: properties)
+        let typeName = type.trimmedDescription
 
         return [
             try ExtensionDeclSyntax(
@@ -31,44 +30,101 @@ public struct APIDefinitionMacro: ExtensionMacro {
         ]
     }
 
-    private static func argument(named name: String, in arguments: String) -> String? {
-        let pattern = "\(name)\\s*:\\s*([^,\\)]+)"
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-            let match = regex.firstMatch(in: arguments, range: NSRange(arguments.startIndex..., in: arguments)),
-            let range = Range(match.range(at: 1), in: arguments)
-        else {
-            return nil
+    private static func argumentList(from node: AttributeSyntax) throws -> LabeledExprListSyntax {
+        guard let arguments = node.arguments?.as(LabeledExprListSyntax.self) else {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition requires labeled arguments: method and path.",
+                id: "api-definition-missing-arguments"
+            )
         }
-        return String(arguments[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return arguments
     }
 
-    private static func stringArgument(named name: String, in arguments: String) -> String? {
-        let pattern = "\(name)\\s*:\\s*\"([^\"]*)\""
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-            let match = regex.firstMatch(in: arguments, range: NSRange(arguments.startIndex..., in: arguments)),
-            let range = Range(match.range(at: 1), in: arguments)
-        else {
-            return nil
+    private static func requiredArgument(
+        named name: String,
+        in arguments: LabeledExprListSyntax
+    ) throws -> LabeledExprSyntax {
+        guard let argument = arguments.first(where: { $0.label?.text == name }) else {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition requires a \(name): argument.",
+                id: "api-definition-missing-\(name)"
+            )
         }
-        return String(arguments[range])
+        return argument
     }
 
-    private static func storedPropertyNames(in declaration: String) -> Set<String> {
-        let pattern = "\\b(?:let|var)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*:"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-        let range = NSRange(declaration.startIndex..., in: declaration)
-        return Set(
-            regex.matches(in: declaration, range: range).compactMap { match in
-                guard let range = Range(match.range(at: 1), in: declaration) else { return nil }
-                return String(declaration[range])
+    private static func stringLiteralArgument(
+        named name: String,
+        in arguments: LabeledExprListSyntax
+    ) throws -> String {
+        let argument = try requiredArgument(named: name, in: arguments)
+        guard let literal = argument.expression.as(StringLiteralExprSyntax.self) else {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition \(name): must be a static string literal.",
+                id: "api-definition-nonliteral-\(name)"
+            )
+        }
+
+        var value = ""
+        for segment in literal.segments {
+            guard let stringSegment = segment.as(StringSegmentSyntax.self) else {
+                throw InnoNetworkMacroDiagnostic(
+                    "@APIDefinition \(name): does not support string interpolation.",
+                    id: "api-definition-interpolated-\(name)"
+                )
             }
-        )
+            value += stringSegment.content.text
+        }
+        return value
     }
 
-    private static func interpolatedPath(_ path: String, properties: Set<String>) -> String {
-        var result = path
-        for property in properties {
-            result = result.replacingOccurrences(of: "{\(property)}", with: "\\(\(property))")
+    private static func storedPropertyNames(in declaration: some DeclGroupSyntax) -> Set<String> {
+        var names: Set<String> = []
+        for member in declaration.memberBlock.members {
+            guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
+            for binding in variable.bindings {
+                guard binding.accessorBlock == nil,
+                    let identifier = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text
+                else {
+                    continue
+                }
+                names.insert(identifier)
+            }
+        }
+        return names
+    }
+
+    private static func interpolatedPath(_ path: String, properties: Set<String>) throws -> String {
+        var result = ""
+        var index = path.startIndex
+        while index < path.endIndex {
+            let character = path[index]
+            if character == "{" {
+                guard let close = path[index...].firstIndex(of: "}") else {
+                    throw InnoNetworkMacroDiagnostic(
+                        "@APIDefinition path contains an unterminated placeholder.",
+                        id: "api-definition-unterminated-placeholder"
+                    )
+                }
+                let nameStart = path.index(after: index)
+                let name = String(path[nameStart..<close])
+                guard !name.isEmpty, properties.contains(name) else {
+                    throw InnoNetworkMacroDiagnostic(
+                        "@APIDefinition path placeholder {\(name)} must match a stored property.",
+                        id: "api-definition-unknown-placeholder"
+                    )
+                }
+                result += "\\(\(name))"
+                index = path.index(after: close)
+            } else if character == "}" {
+                throw InnoNetworkMacroDiagnostic(
+                    "@APIDefinition path contains an unmatched closing brace.",
+                    id: "api-definition-unmatched-placeholder"
+                )
+            } else {
+                result.append(character)
+                index = path.index(after: index)
+            }
         }
         return result
     }

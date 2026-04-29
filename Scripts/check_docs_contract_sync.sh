@@ -703,7 +703,12 @@ forbidden_pattern '4\.2\.0|4\.2 line|pre-v4\.2|v4\.2|docs/releases/4\.2\.0' \
   "$readme" \
   "$repo_root/CHANGELOG.md" \
   "$repo_root/MIGRATION_v4.md" \
-  "$repo_root/docs"
+  "$repo_root/docs/releases/4.0.0.md" \
+  "$repo_root/SECURITY.md" \
+  "$repo_root/Benchmarks/README.md" \
+  "$repo_root/docs" \
+  "$repo_root/Sources" \
+  "$repo_root/Tests"
 forbidden_pattern 'public func receive\(_ task: WebSocketTask\)' \
   "$repo_root/Sources/InnoNetworkWebSocket"
 forbidden_pattern 'manager\.receive\(' \

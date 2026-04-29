@@ -121,12 +121,12 @@ package actor RequestCoalescer {
 
         let entryID = UUID()
         entries[key] = Entry(id: entryID, task: nil, waiters: [waiterID: continuation])
-        let task = Task.detached {
+        let task = Task(priority: Task.currentPriority) { @Sendable in
             do {
                 let result = try await operation()
-                await self.finish(key: key, entryID: entryID, result: .success(result))
+                self.finish(key: key, entryID: entryID, result: .success(result))
             } catch {
-                await self.finish(key: key, entryID: entryID, result: .failure(error))
+                self.finish(key: key, entryID: entryID, result: .failure(error))
             }
         }
 

@@ -1,6 +1,5 @@
 import Foundation
 import Testing
-import os
 
 @testable import InnoNetwork
 
@@ -67,94 +66,150 @@ private struct QueuedHTTPResponse: Sendable {
 }
 
 
-private struct SequenceURLSessionState {
-    var queue: [QueuedHTTPResponse]
-    var requests: [URLRequest] = []
-    var delay: Duration
+private actor Counter {
+    private var value = 0
+
+    func increment() {
+        value += 1
+    }
+
+    var count: Int {
+        value
+    }
+}
+
+
+private actor SequenceURLSessionState {
+    private var queue: [QueuedHTTPResponse]
+    private var requests: [URLRequest] = []
+    private let delay: Duration
+
+    init(queue: [QueuedHTTPResponse], delay: Duration) {
+        self.queue = queue
+        self.delay = delay
+    }
+
+    func record(_ request: URLRequest) -> Duration {
+        requests.append(request)
+        return delay
+    }
+
+    func dequeue() throws -> (Data, URLResponse) {
+        guard !queue.isEmpty else {
+            throw NetworkError.invalidRequestConfiguration("No queued response.")
+        }
+        let next = queue.removeFirst()
+        return (next.data, next.response)
+    }
+
+    var requestCount: Int {
+        requests.count
+    }
+
+    var capturedRequests: [URLRequest] {
+        requests
+    }
 }
 
 
 private final class SequenceURLSession: URLSessionProtocol, Sendable {
-    private let state: OSAllocatedUnfairLock<SequenceURLSessionState>
+    private let state: SequenceURLSessionState
 
     init(queue: [QueuedHTTPResponse], delay: Duration = .zero) {
-        self.state = OSAllocatedUnfairLock(initialState: SequenceURLSessionState(queue: queue, delay: delay))
+        self.state = SequenceURLSessionState(queue: queue, delay: delay)
     }
 
     var requestCount: Int {
-        state.withLock { $0.requests.count }
+        get async {
+            await state.requestCount
+        }
     }
 
     var capturedRequests: [URLRequest] {
-        state.withLock { $0.requests }
+        get async {
+            await state.capturedRequests
+        }
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        let delay = state.withLock { state -> Duration in
-            state.requests.append(request)
-            return state.delay
-        }
+        let delay = await state.record(request)
         if delay > .zero {
             try await Task.sleep(for: delay)
         }
-        return try state.withLock { state in
-            guard !state.queue.isEmpty else {
-                throw NetworkError.invalidRequestConfiguration("No queued response.")
-            }
-            let next = state.queue.removeFirst()
-            return (next.data, next.response)
-        }
+        return try await state.dequeue()
     }
 }
 
 
-private struct CancellationFirstURLSessionState {
-    var queue: [QueuedHTTPResponse]
-    var requests: [URLRequest] = []
-    var cancelledRequestCount = 0
+private actor CancellationFirstURLSessionState {
+    private var queue: [QueuedHTTPResponse]
+    private var requests: [URLRequest] = []
+    private var cancellationCount = 0
+
+    init(queue: [QueuedHTTPResponse]) {
+        self.queue = queue
+    }
+
+    func recordAndShouldWaitForCancellation(_ request: URLRequest) -> Bool {
+        requests.append(request)
+        return requests.count == 1
+    }
+
+    func recordCancellation() {
+        cancellationCount += 1
+    }
+
+    func dequeue() throws -> (Data, URLResponse) {
+        guard !queue.isEmpty else {
+            throw NetworkError.invalidRequestConfiguration("No queued response.")
+        }
+        let next = queue.removeFirst()
+        return (next.data, next.response)
+    }
+
+    var requestCount: Int {
+        requests.count
+    }
+
+    var cancelledRequestCount: Int {
+        cancellationCount
+    }
 }
 
 
 private final class CancellationFirstURLSession: URLSessionProtocol, Sendable {
-    private let state: OSAllocatedUnfairLock<CancellationFirstURLSessionState>
+    private let state: CancellationFirstURLSessionState
 
     init(queue: [QueuedHTTPResponse]) {
-        self.state = OSAllocatedUnfairLock(initialState: CancellationFirstURLSessionState(queue: queue))
+        self.state = CancellationFirstURLSessionState(queue: queue)
     }
 
     var requestCount: Int {
-        state.withLock { $0.requests.count }
+        get async {
+            await state.requestCount
+        }
     }
 
     var cancelledRequestCount: Int {
-        state.withLock { $0.cancelledRequestCount }
+        get async {
+            await state.cancelledRequestCount
+        }
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        let shouldWaitForCancellation = state.withLock { state -> Bool in
-            state.requests.append(request)
-            return state.requests.count == 1
-        }
+        let shouldWaitForCancellation = await state.recordAndShouldWaitForCancellation(request)
 
         if shouldWaitForCancellation {
             do {
                 try await Task.sleep(for: .seconds(5))
             } catch {
-                state.withLock { state in
-                    state.cancelledRequestCount += 1
-                }
+                await state.recordCancellation()
                 throw error
             }
             throw NetworkError.invalidRequestConfiguration("Expected the first queued request to be cancelled.")
         }
 
-        return try state.withLock { state in
-            guard !state.queue.isEmpty else {
-                throw NetworkError.invalidRequestConfiguration("No queued response.")
-            }
-            let next = state.queue.removeFirst()
-            return (next.data, next.response)
-        }
+        return try await state.dequeue()
     }
 }
 
@@ -185,11 +240,11 @@ struct ResiliencePolicyTests {
             queuedResponse(statusCode: 401),
             queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "refreshed")),
         ])
-        let refreshCount = OSAllocatedUnfairLock(initialState: 0)
+        let refreshCount = Counter()
         let policy = RefreshTokenPolicy(
             currentToken: { "old" },
             refreshToken: {
-                refreshCount.withLock { $0 += 1 }
+                await refreshCount.increment()
                 return "new"
             }
         )
@@ -204,9 +259,9 @@ struct ResiliencePolicyTests {
         let user = try await client.request(ResilienceGetRequest())
 
         #expect(user == ResilienceUser(id: 1, name: "refreshed"))
-        #expect(refreshCount.withLock { $0 } == 1)
-        #expect(session.requestCount == 2)
-        #expect(session.capturedRequests.last?.value(forHTTPHeaderField: "Authorization") == "Bearer new")
+        #expect(await refreshCount.count == 1)
+        #expect(await session.requestCount == 2)
+        #expect(await session.capturedRequests.last?.value(forHTTPHeaderField: "Authorization") == "Bearer new")
     }
 
     @Test("Concurrent 401 responses share one refresh")
@@ -220,11 +275,11 @@ struct ResiliencePolicyTests {
             responses.append(try queuedResponse(statusCode: 200, body: body))
         }
         let session = SequenceURLSession(queue: responses)
-        let refreshCount = OSAllocatedUnfairLock(initialState: 0)
+        let refreshCount = Counter()
         let policy = RefreshTokenPolicy(
             currentToken: { "old" },
             refreshToken: {
-                refreshCount.withLock { $0 += 1 }
+                await refreshCount.increment()
                 try await Task.sleep(for: .milliseconds(50))
                 return "new"
             }
@@ -248,7 +303,50 @@ struct ResiliencePolicyTests {
             }
         }
 
-        #expect(refreshCount.withLock { $0 } == 1)
+        #expect(await refreshCount.count == 1)
+    }
+
+    @Test("Cancelled refresh waiter does not cancel shared refresh")
+    func cancelledRefreshWaiterDoesNotCancelSharedRefresh() async throws {
+        let body = ResilienceUser(id: 1, name: "ok")
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 401),
+            queuedResponse(statusCode: 401),
+            queuedResponse(statusCode: 200, body: body),
+        ])
+        let refreshCount = Counter()
+        let policy = RefreshTokenPolicy(
+            currentToken: { "old" },
+            refreshToken: {
+                await refreshCount.increment()
+                try await Task.sleep(for: .milliseconds(100))
+                return "new"
+            }
+        )
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                refreshTokenPolicy: policy
+            ),
+            session: session
+        )
+
+        let cancelled = Task {
+            try await client.request(ResilienceGetRequest())
+        }
+        try await waitUntil {
+            await refreshCount.count == 1
+        }
+        let remaining = Task {
+            try await client.request(ResilienceGetRequest())
+        }
+        cancelled.cancel()
+
+        await expectCancelled(cancelled)
+        let user = try await remaining.value
+
+        #expect(user == body)
+        #expect(await refreshCount.count == 1)
     }
 
     @Test("Refresh failure fans out to concurrent 401 waiters")
@@ -258,11 +356,11 @@ struct ResiliencePolicyTests {
             responses.append(try queuedResponse(statusCode: 401))
         }
         let session = SequenceURLSession(queue: responses)
-        let refreshCount = OSAllocatedUnfairLock(initialState: 0)
+        let refreshCount = Counter()
         let policy = RefreshTokenPolicy(
             currentToken: { "old" },
             refreshToken: {
-                refreshCount.withLock { $0 += 1 }
+                await refreshCount.increment()
                 try await Task.sleep(for: .milliseconds(50))
                 throw NetworkError.invalidRequestConfiguration("refresh failed")
             }
@@ -285,8 +383,8 @@ struct ResiliencePolicyTests {
                 for try await _ in group {}
             }
         }
-        #expect(refreshCount.withLock { $0 } == 1)
-        #expect(session.requestCount == 5)
+        #expect(await refreshCount.count == 1)
+        #expect(await session.requestCount == 5)
     }
 
     @Test("Replay stops after a second 401")
@@ -307,7 +405,7 @@ struct ResiliencePolicyTests {
         await #expect(throws: NetworkError.self) {
             try await client.request(ResilienceGetRequest())
         }
-        #expect(session.requestCount == 2)
+        #expect(await session.requestCount == 2)
     }
 
     @Test("GET coalescing shares one transport")
@@ -335,7 +433,7 @@ struct ResiliencePolicyTests {
             }
         }
 
-        #expect(session.requestCount == 1)
+        #expect(await session.requestCount == 1)
     }
 
     @Test("POST is not coalesced by getOnly policy")
@@ -355,7 +453,7 @@ struct ResiliencePolicyTests {
         _ = try await client.request(ResiliencePostRequest())
         _ = try await client.request(ResiliencePostRequest())
 
-        #expect(session.requestCount == 2)
+        #expect(await session.requestCount == 2)
     }
 
     @Test("Coalescing keeps different Authorization headers separate")
@@ -381,7 +479,7 @@ struct ResiliencePolicyTests {
 
         #expect(users.contains(ResilienceUser(id: 1, name: "one")))
         #expect(users.contains(ResilienceUser(id: 2, name: "two")))
-        #expect(session.requestCount == 2)
+        #expect(await session.requestCount == 2)
     }
 
     @Test("Partial coalescing waiter cancellation keeps remaining waiter alive")
@@ -412,7 +510,7 @@ struct ResiliencePolicyTests {
         let user = try await remaining.value
 
         #expect(user == ResilienceUser(id: 1, name: "shared"))
-        #expect(session.requestCount == 1)
+        #expect(await session.requestCount == 1)
     }
 
     @Test("All coalescing waiter cancellation cancels shared transport")
@@ -438,7 +536,7 @@ struct ResiliencePolicyTests {
         }
 
         try await waitUntil {
-            session.requestCount == 1
+            await session.requestCount == 1
         }
         first.cancel()
         second.cancel()
@@ -446,13 +544,13 @@ struct ResiliencePolicyTests {
         await expectCancelled(first)
         await expectCancelled(second)
         try await waitUntil {
-            session.cancelledRequestCount == 1
+            await session.cancelledRequestCount == 1
         }
 
         let recovered = try await client.request(ResilienceGetRequest())
 
         #expect(recovered == ResilienceUser(id: 1, name: "first"))
-        #expect(session.requestCount == 2)
+        #expect(await session.requestCount == 2)
     }
 
     @Test("Fresh cache returns without transport")
@@ -474,7 +572,7 @@ struct ResiliencePolicyTests {
         let user = try await client.request(ResilienceGetRequest())
 
         #expect(user == ResilienceUser(id: 1, name: "cached"))
-        #expect(session.requestCount == 0)
+        #expect(await session.requestCount == 0)
     }
 
     @Test("ETag 304 response uses cached body")
@@ -482,15 +580,18 @@ struct ResiliencePolicyTests {
         let cache = InMemoryResponseCache()
         let key = ResponseCacheKey(method: "GET", url: "https://api.example.com/users/1")
         let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
+        let storedAt = Date(timeIntervalSinceNow: -60)
         await cache.set(
             key,
             CachedResponse(
                 data: body,
                 headers: ["ETag": "v1"],
-                storedAt: Date(timeIntervalSinceNow: -60)
+                storedAt: storedAt
             )
         )
-        let session = try SequenceURLSession(queue: [queuedResponse(statusCode: 304)])
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 304, headers: ["ETag": "v2", "Cache-Control": "max-age=60"])
+        ])
         let client = DefaultNetworkClient(
             configuration: makeTestNetworkConfiguration(
                 baseURL: "https://api.example.com",
@@ -503,7 +604,13 @@ struct ResiliencePolicyTests {
         let user = try await client.request(ResilienceGetRequest())
 
         #expect(user == ResilienceUser(id: 1, name: "cached"))
-        #expect(session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
+        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
+        let refreshed = try #require(await cache.get(key))
+        #expect(refreshed.etag == "v2")
+        #expect(
+            refreshed.headers.first { $0.key.caseInsensitiveCompare("Cache-Control") == .orderedSame }?.value
+                == "max-age=60")
+        #expect(refreshed.storedAt > storedAt)
     }
 
     @Test("SWR returns stale data and revalidates in the background")
@@ -541,9 +648,9 @@ struct ResiliencePolicyTests {
             else {
                 return false
             }
-            return session.requestCount == 1 && decoded == fresh
+            return await session.requestCount == 1 && decoded == fresh
         }
-        #expect(session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
+        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
     }
 
     @Test("SWR background revalidation is cancelled by cancelAll")
@@ -579,7 +686,7 @@ struct ResiliencePolicyTests {
 
         #expect(returned == stale)
         try await waitUntil {
-            session.requestCount == 1
+            await session.requestCount == 1
         }
         await client.cancelAll()
         try await Task.sleep(for: .milliseconds(250))
@@ -609,7 +716,7 @@ struct ResiliencePolicyTests {
 
         #expect(first == ResilienceUser(id: 1, name: "one"))
         #expect(second == ResilienceUser(id: 2, name: "two"))
-        #expect(session.requestCount == 2)
+        #expect(await session.requestCount == 2)
     }
 
     @Test("Network-only cache policy does not substitute cached 304 bodies")
@@ -631,7 +738,7 @@ struct ResiliencePolicyTests {
         await #expect(throws: NetworkError.self) {
             try await client.request(ResilienceGetRequest())
         }
-        #expect(session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == nil)
+        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == nil)
     }
 
     @Test("Circuit breaker opens after countable failure")
@@ -655,7 +762,32 @@ struct ResiliencePolicyTests {
             try await client.request(ResilienceGetRequest())
         }
 
-        #expect(session.requestCount == 1)
+        #expect(await session.requestCount == 1)
+    }
+
+    @Test("Circuit breaker policy normalizes invalid thresholds and durations")
+    func circuitBreakerPolicyNormalizesInputs() {
+        let capped = CircuitBreakerPolicy(
+            failureThreshold: 10,
+            windowSize: 2,
+            resetAfter: .seconds(-1),
+            maxResetAfter: .seconds(-2)
+        )
+        #expect(capped.windowSize == 2)
+        #expect(capped.failureThreshold == 2)
+        #expect(capped.resetAfter == .zero)
+        #expect(capped.maxResetAfter == .zero)
+
+        let minimum = CircuitBreakerPolicy(
+            failureThreshold: 0,
+            windowSize: 0,
+            resetAfter: .seconds(5),
+            maxResetAfter: .seconds(1)
+        )
+        #expect(minimum.windowSize == 1)
+        #expect(minimum.failureThreshold == 1)
+        #expect(minimum.resetAfter == .seconds(5))
+        #expect(minimum.maxResetAfter == .seconds(5))
     }
 
     @Test("401 does not open circuit breaker")
@@ -679,7 +811,7 @@ struct ResiliencePolicyTests {
             try await client.request(ResilienceGetRequest())
         }
 
-        #expect(session.requestCount == 2)
+        #expect(await session.requestCount == 2)
     }
 
     @Test("Coalesced transport failure counts once for circuit breaker")
@@ -714,7 +846,7 @@ struct ResiliencePolicyTests {
         let recovered = try await client.request(ResilienceGetRequest())
 
         #expect(recovered == ResilienceUser(id: 1, name: "recovered"))
-        #expect(session.requestCount == 2)
+        #expect(await session.requestCount == 2)
     }
 
     private func waitUntil(
@@ -737,6 +869,7 @@ struct ResiliencePolicyTests {
             _ = try await task.value
             Issue.record("Expected request cancellation.")
         } catch NetworkError.cancelled {
+            return
         } catch {
             Issue.record("Expected NetworkError.cancelled, got \(error).")
         }

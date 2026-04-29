@@ -16,39 +16,102 @@ public struct MultipartPart: Sendable, Equatable {
 public struct MultipartResponseDecoder: Sendable {
     private let boundaryOverride: String?
 
+    /// Creates a decoder.
+    ///
+    /// - Parameter boundary: Optional boundary override. When `nil`, the
+    ///   decoder reads the `boundary` parameter from the response
+    ///   `Content-Type` header passed to ``decode(_:contentType:)``.
     public init(boundary: String? = nil) {
         self.boundaryOverride = boundary
     }
 
+    /// Decodes a buffered `multipart/*` response body into ordered parts.
+    ///
+    /// Boundary delimiters are recognized only when they appear as delimiter
+    /// lines (`--boundary` or `--boundary--`) at the start of the body or
+    /// after a line break. Matching bytes inside part payloads are preserved.
+    ///
+    /// - Parameters:
+    ///   - data: Complete multipart response body.
+    ///   - contentType: Response `Content-Type` header containing a
+    ///     `boundary` parameter, unless a boundary override was supplied.
+    /// - Returns: Decoded parts in response order.
+    /// - Throws: ``NetworkError/invalidRequestConfiguration(_:)`` when the
+    ///   boundary is missing, a part is malformed, or the closing boundary is
+    ///   absent.
     public func decode(_ data: Data, contentType: String) throws -> [MultipartPart] {
         guard let boundary = boundaryOverride ?? Self.boundary(from: contentType), !boundary.isEmpty else {
             throw NetworkError.invalidRequestConfiguration("Missing multipart boundary.")
         }
 
         let delimiter = Data("--\(boundary)".utf8)
+        guard var currentBoundary = nextBoundary(in: data, delimiter: delimiter, after: data.startIndex) else {
+            return []
+        }
+
         var parts: [MultipartPart] = []
-        var searchStart = data.startIndex
-
-        while let boundaryRange = data.range(of: delimiter, options: [], in: searchStart..<data.endIndex) {
-            var partStart = boundaryRange.upperBound
-            if data.hasPrefix(Data("--".utf8), at: partStart) {
-                break
-            }
-
-            skipLineBreak(in: data, index: &partStart)
-            guard let nextBoundary = data.range(of: delimiter, options: [], in: partStart..<data.endIndex) else {
+        while !currentBoundary.isClosing {
+            let partStart = currentBoundary.contentStart
+            guard let nextBoundary = nextBoundary(in: data, delimiter: delimiter, after: partStart) else {
                 throw NetworkError.invalidRequestConfiguration("Missing multipart closing boundary.")
             }
 
-            var partEnd = nextBoundary.lowerBound
+            var partEnd = nextBoundary.delimiterStart
             trimTrailingLineBreak(in: data, end: &partEnd)
             if partStart < partEnd {
                 parts.append(try decodePart(data[partStart..<partEnd]))
             }
-            searchStart = nextBoundary.lowerBound
+            currentBoundary = nextBoundary
         }
 
         return parts
+    }
+
+    private struct Boundary {
+        let delimiterStart: Data.Index
+        let contentStart: Data.Index
+        let isClosing: Bool
+    }
+
+    private func nextBoundary(in data: Data, delimiter: Data, after index: Data.Index) -> Boundary? {
+        var searchStart = index
+        while let range = data.range(of: delimiter, options: [], in: searchStart..<data.endIndex) {
+            defer { searchStart = range.upperBound }
+            guard isDelimiterLineStart(in: data, at: range.lowerBound),
+                let boundary = boundary(in: data, delimiterRange: range)
+            else {
+                continue
+            }
+            return boundary
+        }
+        return nil
+    }
+
+    private func isDelimiterLineStart(in data: Data, at index: Data.Index) -> Bool {
+        guard index != data.startIndex else { return true }
+        return data[data.index(before: index)] == UInt8(ascii: "\n")
+    }
+
+    private func boundary(in data: Data, delimiterRange: Range<Data.Index>) -> Boundary? {
+        var cursor = delimiterRange.upperBound
+        let isClosing = data.hasPrefix(Data("--".utf8), at: cursor)
+        if isClosing {
+            cursor = data.index(cursor, offsetBy: 2)
+        }
+
+        if data.hasPrefix(Data("\r\n".utf8), at: cursor) {
+            cursor = data.index(cursor, offsetBy: 2)
+        } else if data.hasPrefix(Data("\n".utf8), at: cursor) {
+            cursor = data.index(after: cursor)
+        } else if cursor != data.endIndex {
+            return nil
+        }
+
+        return Boundary(
+            delimiterStart: delimiterRange.lowerBound,
+            contentStart: cursor,
+            isClosing: isClosing
+        )
     }
 
     private func decodePart(_ rawPart: Data.SubSequence) throws -> MultipartPart {

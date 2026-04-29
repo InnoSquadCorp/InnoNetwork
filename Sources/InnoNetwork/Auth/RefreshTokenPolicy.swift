@@ -42,8 +42,13 @@ public struct RefreshTokenPolicy: Sendable {
 
 
 package actor RefreshTokenCoordinator {
+    private struct InFlightRefresh {
+        let id: UUID
+        let task: Task<String, Error>
+    }
+
     private let policy: RefreshTokenPolicy
-    private var inFlight: Task<String, Error>?
+    private var inFlight: InFlightRefresh?
 
     package init(policy: RefreshTokenPolicy) {
         self.policy = policy
@@ -56,6 +61,7 @@ package actor RefreshTokenCoordinator {
 
     package func refreshAndApply(to request: URLRequest) async throws -> URLRequest {
         let token = try await refreshedToken()
+        try Task.checkCancellation()
         return policy.tokenApplicator(token, request)
     }
 
@@ -65,12 +71,24 @@ package actor RefreshTokenCoordinator {
 
     private func refreshedToken() async throws -> String {
         if let inFlight {
-            return try await inFlight.value
+            return try await inFlight.task.value
         }
 
-        let task = Task { try await policy.refreshTokenProvider() }
-        inFlight = task
-        defer { inFlight = nil }
+        let refreshTokenProvider = policy.refreshTokenProvider
+        let id = UUID()
+        let task = Task.detached(priority: Task.currentPriority) {
+            try await refreshTokenProvider()
+        }
+        inFlight = InFlightRefresh(id: id, task: task)
+        Task.detached {
+            _ = await task.result
+            await self.clearInFlight(id: id)
+        }
         return try await task.value
+    }
+
+    private func clearInFlight(id: UUID) {
+        guard inFlight?.id == id else { return }
+        inFlight = nil
     }
 }

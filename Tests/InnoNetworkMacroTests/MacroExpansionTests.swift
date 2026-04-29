@@ -38,6 +38,34 @@ struct MacroExpansionTests {
         )
     }
 
+    @Test("APIDefinition macro rejects unknown path placeholders")
+    func apiDefinitionUnknownPlaceholderDiagnostic() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .get, path: "/users/{missing}")
+            public struct GetUser {
+                public let id: Int
+                public typealias APIResponse = User
+            }
+            """,
+            expandedSource:
+                """
+                public struct GetUser {
+                    public let id: Int
+                    public typealias APIResponse = User
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message: "@APIDefinition path placeholder {missing} must match a stored property.",
+                    line: 1,
+                    column: 1
+                )
+            ],
+            macros: macros
+        )
+    }
+
     @Test("endpoint macro creates Endpoint builder expression")
     func endpointExpansion() {
         assertMacroExpansion(
@@ -48,6 +76,27 @@ struct MacroExpansionTests {
                 """
                 let endpoint = Endpoint<EmptyResponse>(method: .get, path: "/users/\\(id)").decoding(User.self)
                 """,
+            macros: macros
+        )
+    }
+
+    @Test("endpoint macro requires the as label")
+    func endpointMissingAsDiagnostic() {
+        assertMacroExpansion(
+            """
+            let endpoint = #endpoint(.get, "/users", User.self)
+            """,
+            expandedSource:
+                """
+                let endpoint = #endpoint(.get, "/users", User.self)
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message: "#endpoint third argument must be labeled as:.",
+                    line: 1,
+                    column: 16
+                )
+            ],
             macros: macros
         )
     }

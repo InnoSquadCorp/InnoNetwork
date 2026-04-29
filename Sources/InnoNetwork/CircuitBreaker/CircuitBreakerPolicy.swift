@@ -13,10 +13,13 @@ public struct CircuitBreakerPolicy: Sendable, Equatable {
         resetAfter: Duration = .seconds(30),
         maxResetAfter: Duration = .seconds(300)
     ) {
-        self.failureThreshold = max(1, failureThreshold)
-        self.windowSize = max(1, windowSize)
-        self.resetAfter = resetAfter
-        self.maxResetAfter = maxResetAfter
+        let normalizedWindowSize = max(1, windowSize)
+        let normalizedResetAfter = max(.zero, resetAfter)
+
+        self.windowSize = normalizedWindowSize
+        self.failureThreshold = min(max(1, failureThreshold), normalizedWindowSize)
+        self.resetAfter = normalizedResetAfter
+        self.maxResetAfter = max(normalizedResetAfter, maxResetAfter)
     }
 }
 

@@ -48,6 +48,28 @@ struct MultipartResponseDecoderTests {
         #expect(parts[0].data == binary)
     }
 
+    @Test("Preserves boundary bytes inside part payload")
+    func preservesBoundaryBytesInsidePayload() throws {
+        let body = """
+            --boundary
+            Content-Type: text/plain
+
+            embedded --boundary bytes are not delimiters
+            --boundary--
+
+            """
+
+        let parts = try MultipartResponseDecoder().decode(
+            Data(body.utf8),
+            contentType: "multipart/mixed; boundary=boundary"
+        )
+
+        #expect(parts.count == 1)
+        #expect(
+            String(data: parts[0].data, encoding: .utf8)
+                == "embedded --boundary bytes are not delimiters")
+    }
+
     @Test("Throws when boundary is missing")
     func missingBoundaryThrows() {
         #expect(throws: NetworkError.self) {
