@@ -129,6 +129,34 @@ struct DownloadPauseResumeTests {
         await harness.manager.cancel(task)
     }
 
+    @Test("Resume with persistence failure transitions paused → failed")
+    func resumePersistenceFailureTransitionsPausedToFailed() async throws {
+        let resumedStub = StubDownloadURLTask()
+        let harness = try StubDownloadHarness(
+            label: "resume-persistence-fails",
+            prequeuedStubs: [resumedStub]
+        )
+        harness.stubTask.scriptCancelResumeData(Data("resume-persistence-fail".utf8))
+
+        let task = await harness.startDownload()
+        _ = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                timeout: 5.0
+            ))
+        #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .downloading })
+
+        await harness.manager.pause(task)
+        #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .paused })
+
+        await harness.store.setUpsertFailure(true)
+        await harness.manager.resume(task)
+
+        #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .failed })
+        await harness.store.setUpsertFailure(false)
+    }
+
     @Test("Cancel from paused state clears runtime registration")
     func cancelFromPausedClearsRuntime() async throws {
         let harness = try StubDownloadHarness(label: "cancel-paused")
