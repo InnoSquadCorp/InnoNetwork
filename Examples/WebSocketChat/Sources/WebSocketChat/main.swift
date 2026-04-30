@@ -153,6 +153,8 @@ let eventTask = Task {
                 await shutdown.finish(.terminalFailure(wsError))
                 return
             }
+        case .sendDropped(let limit):
+            print("⚠︎ send queue dropped newest message at limit=\(limit)")
         @unknown default:
             break
         }

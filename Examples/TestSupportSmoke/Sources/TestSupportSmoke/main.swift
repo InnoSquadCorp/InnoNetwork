@@ -24,7 +24,7 @@ let client = DefaultNetworkClient(
     session: session
 )
 
-let response = try await client.request(SmokeRequest())
+private let response = try await client.request(SmokeRequest())
 precondition(response.ok)
 precondition(session.capturedRequest?.url?.absoluteString == "https://api.example.com/smoke")
 
