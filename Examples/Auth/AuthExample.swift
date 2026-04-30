@@ -12,8 +12,8 @@
 //
 
 import Foundation
-import Security
 import InnoNetwork
+import Security
 
 // MARK: - 1. Keychain wrapper
 
