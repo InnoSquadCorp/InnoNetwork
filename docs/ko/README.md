@@ -99,6 +99,66 @@ for await event in await WebSocketManager.shared.events(for: task) {
 
 ---
 
+## Endpoint 정의 — `transport` 단일 진입점
+
+`APIDefinition` 은 인코딩/디코딩 형태를 단일 프로퍼티 `transport: TransportPolicy<APIResponse>`
+로 노출합니다. 기본값은 메서드에 따라 자동 선택되어 (`GET` → `.query()`, 그 외 → `.json()`)
+대부분의 endpoint 는 별도 override 없이 작동합니다. 다른 형태가 필요하면 `TransportPolicy`
+factory 를 사용하세요.
+
+```swift
+struct UpdateProfile: APIDefinition {
+    typealias Parameter = ProfileBody
+    typealias APIResponse = Profile
+
+    let parameters: ProfileBody?
+    var method: HTTPMethod { .patch }
+    var path: String { "/me" }
+
+    var transport: TransportPolicy<Profile> {
+        .json(decoder: snakeCaseDecoder)
+    }
+}
+
+// form-url-encoded 로그인
+let token = try await client.request(
+    Endpoint.post("/login")
+        .body(credentials)
+        .transport(.formURLEncoded())
+        .decoding(Token.self)
+)
+```
+
+---
+
+## 태그 기반 부분 취소
+
+`request(_:tag:)` / `upload(_:tag:)` 로 보낸 요청은 `CancellationTag` 단위로 묶여
+`cancelAll(matching:)` 를 통해 일부만 취소할 수 있습니다. 화면, 기능, 사용자 세션이
+사라질 때 다른 호출을 건드리지 않고 자기 요청만 정리할 때 사용합니다.
+
+```swift
+let feed: CancellationTag = "feed"
+
+async let posts = client.request(GetPosts(), tag: feed)
+async let banner = client.request(GetBanner(), tag: feed)
+
+await client.cancelAll(matching: feed)  // feed 태그만 취소
+```
+
+---
+
+## 응답 캐시와 Vary 헤더
+
+`ResponseCachePolicy` 는 응답의 `Vary` 헤더를 자동으로 처리합니다 (RFC 9111 §4.1).
+
+- `Vary: *` 응답은 캐시되지 않습니다.
+- `Vary: Accept-Language` 같은 명시 헤더는 저장 시점의 요청 헤더 값을 함께 캡처해
+  이후 lookup 에서 동일 값일 때만 hit 으로 인정합니다.
+- `Vary` 헤더가 없는 응답은 기존 키 정책 (Authorization 등) 만으로 저장됩니다.
+
+---
+
 ## 플랫폼 매트릭스
 
 - iOS 18.0+

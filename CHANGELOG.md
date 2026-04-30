@@ -95,9 +95,46 @@ summary.
 - Release artifacts (`benchmarks.json`, `sbom.cdx.json`) are signed with
   sigstore cosign keyless signatures. SECURITY.md describes the
   `cosign verify-blob` invocation.
+- `CancellationTag` plus `DefaultNetworkClient.request(_:tag:)`,
+  `upload(_:tag:)`, and `cancelAll(matching:)` for grouping requests so a
+  screen, feature, or user session can drop just its own subset without
+  draining the rest of the client.
+- Response cache honours the response `Vary` header (RFC 9111 §4.1).
+  `Vary: *` responses are not stored, and concrete `Vary` headers capture a
+  request-header snapshot that future lookups must match. Helpers
+  `evaluateVary(responseHeaders:request:)` and
+  `cachedResponseMatchesVary(_:request:)` are package-scoped utilities.
 
 ### Changed
 
+- `APIDefinition` collapses six transport-shape requirements (`contentType`,
+  `requestEncoder`, `queryEncoder`, `queryRootKey`, `decoder`,
+  `responseDecoder`) into a single `transport: TransportPolicy<APIResponse>`
+  entry point. The default is method-aware (`GET` → `.query()`, otherwise
+  `.json()`); `MultipartAPIDefinition` defaults to `.multipart()`.
+  `TransportPolicy`, `RequestEncodingPolicy`, and
+  `ResponseDecodingStrategy` are now public, with user-facing factories
+  (`.json`, `.query`, `.formURLEncoded`, `.multipart`, `.custom`) that
+  automatically pick empty-tolerant decoders for
+  `HTTPEmptyResponseDecodable` outputs.
+- `Endpoint` replaces `.contentType(_:)` with `.transport(_:)`. The
+  `Content-Type` header is derived from the transport's request encoding,
+  and `decoding(_:)` carries the request encoding into the new response
+  generic instead of resetting it.
+- `DefaultNetworkClient.stream(_:)` is now a thin `AsyncThrowingStream`
+  factory; the streaming pipeline (per-attempt request preparation,
+  lifecycle events, response interceptors, status validation, line
+  iteration, Last-Event-ID resume, request finished/failed publication)
+  lives on the new `StreamingExecutor`. Observable behaviour is unchanged.
+- The default request and response coders share a single canonical
+  `DateFormatter` (`defaultDateFormatter`); `defaultRequestEncoder` and
+  `defaultResponseDecoder` are exposed as cached, immutable references so
+  the `TransportPolicy` factories can use them as default parameters.
+  `JSONEncoder`/`JSONDecoder` instances are still created per call so user
+  mutation cannot leak across endpoints.
+- The `LowLevelNetworkClient` SPI requirements grow `tag: CancellationTag?`
+  parameters; default extensions keep the old call sites
+  (`perform(_:)` / `perform(executable:)`) source-compatible.
 - Swift 6 language mode (`swiftLanguageMode(.v6)`) is enabled on every target.
   The package compiles under Swift 6.2+ toolchains; CI does not need an
   explicit `-strict-concurrency=complete` flag.
@@ -120,6 +157,12 @@ summary.
 - `docs/QueryEncoding.md` formalises the `URLQueryEncoder` flattening
   rules (PHP/Rails-style bracket notation) and contrasts them with
   OpenAPI form/explode, RFC 6570, Spring, and FastAPI conventions.
+
+### Removed
+
+- `NetworkError.undefined` and `NetworkError.jsonMapping` — both cases were
+  unreachable in production code and only existed as test fixtures.
+  `.objectMapping(error, response)` covers every JSON decode failure.
 
 ### Concurrency
 

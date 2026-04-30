@@ -68,25 +68,6 @@ struct WebSocketReconnectBackoffTests {
         }
     }
 
-    @Test("Deprecated reconnectCount alias still reads attemptedReconnectCount")
-    func deprecatedAliasMirrorsAttempted() async {
-        let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
-        _ = await task.incrementAttemptedReconnectCount()
-        _ = await task.incrementAttemptedReconnectCount()
-
-        // The deprecated property must keep reading the current attempted
-        // counter so existing callers compile and behave the same.
-        #expect(await task.attemptedReconnectCount == 2)
-        // swift-format: ignore
-        let legacy = await { @Sendable () async -> Int in
-            // Reading inside an async context to centralise the deprecation
-            // warning — only one site needs to suppress the diagnostic when
-            // we eventually remove the alias.
-            await task.reconnectCount
-        }()
-        #expect(legacy == 2)
-    }
-
     @Test("reset() clears both counters")
     func resetClearsBothCounters() async {
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)

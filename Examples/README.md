@@ -214,7 +214,7 @@ struct LoginRequest: APIDefinition {
     let parameters: LoginParameter?
     var method: HTTPMethod { .post }
     var path: String { "/login" }
-    var contentType: ContentType { .formUrlEncoded }
+    var transport: TransportPolicy<AuthResponse> { .formURLEncoded() }
 
     init(email: String, password: String) {
         self.parameters = LoginParameter(email: email, password: password)

@@ -67,9 +67,9 @@ print(user)
 ```
 
 For simple endpoints that only need method, path, query/body parameters,
-headers, content type, and response decoding, use the builder-style
-`Endpoint` API. Keep a dedicated `APIDefinition` type when an endpoint owns
-interceptors, custom encoders/decoders, multipart uploads, or streaming.
+headers, transport, and response decoding, use the builder-style `Endpoint`
+API. Keep a dedicated `APIDefinition` type when an endpoint owns interceptors,
+custom transport, multipart uploads, or streaming.
 
 ```swift
 let user = try await client.request(
@@ -81,6 +81,34 @@ let users = try await client.request(
         .query(["limit": 20])
         .decoding([User].self)
 )
+
+// form-url-encoded body
+let token = try await client.request(
+    Endpoint.post("/login")
+        .body(credentials)
+        .transport(.formURLEncoded())
+        .decoding(Token.self)
+)
+```
+
+`APIDefinition` exposes one transport-shape entry point — `transport: TransportPolicy<APIResponse>`.
+The default is method-aware (`GET` → `.query()`, otherwise `.json()`), so most
+hand-written endpoints don't override it. Use the `TransportPolicy` factories
+when you need a different shape:
+
+```swift
+struct UpdateProfile: APIDefinition {
+    typealias Parameter = ProfileBody
+    typealias APIResponse = Profile
+
+    let parameters: ProfileBody?
+    var method: HTTPMethod { .patch }
+    var path: String { "/me" }
+
+    var transport: TransportPolicy<Profile> {
+        .json(decoder: snakeCaseDecoder)
+    }
+}
 ```
 
 ### Download
@@ -244,6 +272,40 @@ let client = DefaultNetworkClient(
 )
 ```
 
+### Tag-based cancellation
+
+`request(_:tag:)` and `upload(_:tag:)` register the dispatched task under a
+`CancellationTag` so a screen, feature, or user session can drop just its own
+requests when it goes away. `cancelAll()` continues to drain every in-flight
+request when no granularity is required.
+
+```swift
+let feed: CancellationTag = "feed"
+
+async let posts = client.request(GetPosts(), tag: feed)
+async let banner = client.request(GetBanner(), tag: feed)
+
+// User leaves the feed screen — only feed-tagged requests stop:
+await client.cancelAll(matching: feed)
+```
+
+Untagged requests, and requests registered with a different tag, are left
+alone by `cancelAll(matching:)`.
+
+### Response cache and Vary handling
+
+The opt-in `ResponseCachePolicy` honours the response `Vary` header
+automatically (RFC 9111 §4.1):
+
+- `Vary: *` responses are not stored — the cache cannot prove a future
+  request would match.
+- A concrete `Vary` header (for example `Vary: Accept-Language`) captures the
+  named request headers when the response is stored. The next lookup matches
+  only when those same header values are present, so two clients with
+  different `Accept-Language` values do not see each other's payloads.
+- Responses without a `Vary` header are stored as before, with the existing
+  per-identity key (Authorization, etc.).
+
 ### Optional Macros
 
 Add the separate `InnoNetworkCodegen` package only when you want compile-time
@@ -404,10 +466,10 @@ Operational items to verify before shipping a client built on InnoNetwork.
   `401` refresh + replay. The policy single-flights concurrent refreshes and
   replays each fully adapted request at most once.
 - **Cache and circuit breaker.** Enable `ResponseCachePolicy` and
-  `CircuitBreakerPolicy` per client only after deciding the cache freshness and
-  host-failure budget for that API. Cache keys include an `Authorization`
-  fingerprint and `Accept-Language`; full HTTP `Vary` processing is not
-  automatic in 4.0.
+  `CircuitBreakerPolicy` per client only after deciding the cache freshness
+  and host-failure budget for that API. Cache keys include an `Authorization`
+  fingerprint and `Accept-Language` by default; the response `Vary` header
+  further refines lookups, and `Vary: *` responses are skipped.
 - **WebSocket reconnect cap.** `maxReconnectAttempts` limits successive automatic attempts.
   After exhaustion, surface the failure to the UI rather than reconnect on every app
   foreground.
