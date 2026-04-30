@@ -78,7 +78,8 @@ public actor DownloadManager {
     @available(
         *,
         deprecated,
-        message: "Construct per-feature managers via DownloadManager.make(configuration:) so each feature can pick its own DownloadConfiguration. The shared singleton forces a single global policy."
+        message:
+            "Use DownloadManager.make(configuration:) so each feature can pick its own DownloadConfiguration; the shared singleton forces a single global policy."
     )
     public static let shared: DownloadManager = {
         do {
