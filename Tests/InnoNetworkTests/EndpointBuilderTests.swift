@@ -61,6 +61,91 @@ struct EndpointBuilderTests {
     }
 
     @Test
+    func decodingPreservesMultipartTransportDecoder() {
+        let decoder = JSONDecoder()
+
+        let endpoint: Endpoint<EndpointAck> = Endpoint.post("/upload")
+            .transport(.multipart(decoder: decoder))
+            .decoding(EndpointAck.self)
+
+        if case .none = endpoint.transport.requestEncoding {
+            // expected
+        } else {
+            Issue.record("Promoted multipart endpoint should keep .none request encoding")
+        }
+        if case .json(let promotedDecoder) = endpoint.transport.responseDecoding {
+            #expect(promotedDecoder === decoder)
+        } else {
+            Issue.record("Promoted multipart endpoint should keep the original response decoder")
+        }
+    }
+
+    @Test
+    func decodingPreservesCustomNoneTransportShape() async throws {
+        let endpoint: Endpoint<EndpointAck> = Endpoint.post("/custom")
+            .transport(.custom(encoding: .none) { _, _ in EmptyResponse() })
+            .decoding(EndpointAck.self)
+
+        if case .none = endpoint.transport.requestEncoding {
+            // expected
+        } else {
+            Issue.record("Promoted custom .none endpoint should keep .none request encoding")
+        }
+        if case .custom = endpoint.transport.responseDecoding {
+            // expected
+        } else {
+            Issue.record("Promoted custom .none endpoint should keep a custom response strategy")
+        }
+
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+
+        let response = try await client.request(endpoint)
+
+        #expect(response.ok)
+        #expect(mockSession.capturedRequest?.httpBody == nil)
+        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == nil)
+    }
+
+    @Test
+    func decodingPreservesCustomNoneTransportValidation() async throws {
+        let endpoint: Endpoint<EndpointAck> = Endpoint.post("/custom")
+            .transport(
+                .custom(encoding: .none) { _, response in
+                    guard response.response?.value(forHTTPHeaderField: "X-Promoted-Decode") == "allowed" else {
+                        throw NetworkError.invalidRequestConfiguration("custom .none transport was not preserved")
+                    }
+                    return EmptyResponse()
+                }
+            )
+            .decoding(EndpointAck.self)
+
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+
+        do {
+            _ = try await client.request(endpoint)
+            Issue.record("Expected promoted custom .none transport validation to run")
+        } catch let error as NetworkError {
+            guard case .invalidRequestConfiguration(let message) = error else {
+                Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
+                return
+            }
+            #expect(message == "custom .none transport was not preserved")
+        } catch {
+            Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
+        }
+    }
+
+    @Test
     func bodyAttachesParametersAndPreservesOtherFields() throws {
         struct CreatePost: Encodable, Sendable {
             let title: String

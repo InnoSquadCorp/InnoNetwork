@@ -208,7 +208,7 @@ extension Endpoint where Response == EmptyResponse {
             parameters: parameters,
             headers: headers,
             acceptableStatusCodes: acceptableStatusCodes,
-            transport: Self.transportCarryingEncoding(transport.requestEncoding, to: T.self)
+            transport: Self.transportCarryingEncoding(from: transport, to: T.self)
         )
     }
 
@@ -216,10 +216,10 @@ extension Endpoint where Response == EmptyResponse {
     /// ``TransportPolicy`` for the new response generic. Picked up by
     /// ``decoding(_:)``.
     private static func transportCarryingEncoding<T: Decodable & Sendable>(
-        _ encoding: RequestEncodingPolicy,
-        to type: T.Type
+        from transport: TransportPolicy<EmptyResponse>,
+        to _: T.Type
     ) -> TransportPolicy<T> {
-        switch encoding {
+        switch transport.requestEncoding {
         case .json(let encoder):
             return .json(encoder: encoder)
         case .query(let encoder, let rootKey):
@@ -227,7 +227,40 @@ extension Endpoint where Response == EmptyResponse {
         case .formURLEncoded(let encoder, let rootKey):
             return .formURLEncoded(encoder: encoder, rootKey: rootKey)
         case .none:
-            return .multipart()
+            return noneEncodingTransportCarryingResponseShape(from: transport)
+        }
+    }
+
+    private static func noneEncodingTransportCarryingResponseShape<T: Decodable & Sendable>(
+        from transport: TransportPolicy<EmptyResponse>
+    ) -> TransportPolicy<T> {
+        switch transport.responseDecoding {
+        case .json(let decoder):
+            let strategy = ResponseDecodingStrategy<T>.json(decoder)
+            return TransportPolicy<T>(
+                requestEncoding: .none,
+                responseDecoding: strategy,
+                responseDecoder: AnyResponseDecoder(strategy: strategy)
+            )
+        case .jsonAllowingEmpty(let decoder):
+            return .multipart(decoder: decoder)
+        case .custom(let decodeEmptyResponse):
+            return .custom(encoding: .none) { data, response in
+                _ = try decodeEmptyResponse(data, response)
+                return try decodePromotedJSONResponse(data: data, response: response, as: T.self)
+            }
+        }
+    }
+
+    private static func decodePromotedJSONResponse<T: Decodable & Sendable>(
+        data: Data,
+        response: InnoNetwork.Response,
+        as type: T.Type
+    ) throws -> T {
+        do {
+            return try defaultResponseDecoder.decode(type, from: data)
+        } catch {
+            throw NetworkError.objectMapping(SendableUnderlyingError(error), response)
         }
     }
 }
