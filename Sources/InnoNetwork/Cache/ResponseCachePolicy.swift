@@ -289,7 +289,8 @@ package func evaluateVary(
     guard let varyValue, !varyValue.isEmpty else {
         return .noVary
     }
-    let entries = varyValue
+    let entries =
+        varyValue
         .split(separator: ",")
         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }

@@ -81,14 +81,15 @@ struct ResponseCacheVaryTests {
             responseHeaders: ["Vary": "Accept-Language, Accept-Encoding"],
             request: request(headers: [
                 "Accept-Language": "en-US",
-                "Accept-Encoding": "gzip"
+                "Accept-Encoding": "gzip",
             ])
         )
         #expect(
-            evaluation == .vary([
-                "accept-language": "en-US",
-                "accept-encoding": "gzip"
-            ])
+            evaluation
+                == .vary([
+                    "accept-language": "en-US",
+                    "accept-encoding": "gzip",
+                ])
         )
     }
 
@@ -162,7 +163,7 @@ struct ResponseCacheVaryTests {
             data: Data(),
             varyHeaders: [
                 "accept-language": "en-US",
-                "accept-encoding": "gzip"
+                "accept-encoding": "gzip",
             ]
         )
         #expect(
@@ -170,7 +171,7 @@ struct ResponseCacheVaryTests {
                 cached,
                 request: request(headers: [
                     "Accept-Language": "en-US",
-                    "Accept-Encoding": "br"
+                    "Accept-Encoding": "br",
                 ])
             )
         )

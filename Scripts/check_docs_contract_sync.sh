@@ -14,7 +14,6 @@ required_meta_docs=(
   "$repo_root/SECURITY.md"
   "$repo_root/SUPPORT.md"
   "$repo_root/CHANGELOG.md"
-  "$repo_root/MIGRATION_v4.md"
   "$repo_root/docs/RELEASE_POLICY.md"
   "$repo_root/docs/MIGRATION_POLICY.md"
   "$repo_root/docs/releases/4.0.0.md"
@@ -720,7 +719,6 @@ forbidden_pattern 'does not pull|do not pull|not pull `swift-syntax`|has no exte
   "$api_stability" \
   "$readme" \
   "$repo_root/CHANGELOG.md" \
-  "$repo_root/MIGRATION_v4.md" \
   "$repo_root/docs/releases/4.0.0.md" \
   "$repo_root/SECURITY.md" \
   "$repo_root/docs" \
@@ -729,7 +727,6 @@ forbidden_pattern '4\.1\.0|4\.1 line|Pre-4\.1|4\.1 behaviour|v4\.1|docs/releases
   "$api_stability" \
   "$readme" \
   "$repo_root/CHANGELOG.md" \
-  "$repo_root/MIGRATION_v4.md" \
   "$repo_root/docs/releases/4.0.0.md" \
   "$repo_root/SECURITY.md" \
   "$repo_root/Benchmarks/README.md" \
@@ -740,7 +737,6 @@ forbidden_pattern '4\.2\.0|4\.2 line|pre-v4\.2|v4\.2|docs/releases/4\.2\.0' \
   "$api_stability" \
   "$readme" \
   "$repo_root/CHANGELOG.md" \
-  "$repo_root/MIGRATION_v4.md" \
   "$repo_root/docs/releases/4.0.0.md" \
   "$repo_root/SECURITY.md" \
   "$repo_root/Benchmarks/README.md" \

@@ -180,7 +180,8 @@ package struct RequestExecutor {
                 continue
             }
 
-            await storeCacheIfNeeded(networkResponse, cacheKey: cacheKey, request: request, configuration: configuration)
+            await storeCacheIfNeeded(
+                networkResponse, cacheKey: cacheKey, request: request, configuration: configuration)
             return networkResponse
         }
     }
@@ -367,10 +368,12 @@ package struct RequestExecutor {
                         configuration: configuration
                     ) {
                         try Task.checkCancellation()
-                        await storeCacheIfNeeded(converted, cacheKey: cacheKey, request: revalidationRequest, configuration: configuration)
+                        await storeCacheIfNeeded(
+                            converted, cacheKey: cacheKey, request: revalidationRequest, configuration: configuration)
                     } else {
                         try Task.checkCancellation()
-                        await storeCacheIfNeeded(response, cacheKey: cacheKey, request: revalidationRequest, configuration: configuration)
+                        await storeCacheIfNeeded(
+                            response, cacheKey: cacheKey, request: revalidationRequest, configuration: configuration)
                     }
                 } catch {
                     if NetworkError.isCancellation(error) {
@@ -500,10 +503,11 @@ package struct RequestExecutor {
         else {
             return
         }
-        let headerSnapshot = response.response?.allHeaderFields.reduce(into: [String: String]()) { result, pair in
-            guard let key = pair.key as? String, let value = pair.value as? String else { return }
-            result[key] = value
-        } ?? [:]
+        let headerSnapshot =
+            response.response?.allHeaderFields.reduce(into: [String: String]()) { result, pair in
+                guard let key = pair.key as? String, let value = pair.value as? String else { return }
+                result[key] = value
+            } ?? [:]
         let varyHeaders: [String: String?]?
         switch evaluateVary(responseHeaders: headerSnapshot, request: request) {
         case .wildcardSkipsCache:
