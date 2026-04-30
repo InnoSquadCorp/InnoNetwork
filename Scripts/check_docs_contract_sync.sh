@@ -3,15 +3,18 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+export LC_ALL=C
 
 api_stability="$repo_root/API_STABILITY.md"
 readme="$repo_root/README.md"
+public_symbols_allowlist="$repo_root/Scripts/api_public_symbols.allowlist"
 required_meta_docs=(
   "$repo_root/CONTRIBUTING.md"
   "$repo_root/CODE_OF_CONDUCT.md"
   "$repo_root/SECURITY.md"
   "$repo_root/SUPPORT.md"
   "$repo_root/CHANGELOG.md"
+  "$repo_root/MIGRATION_v4.md"
   "$repo_root/docs/RELEASE_POLICY.md"
   "$repo_root/docs/MIGRATION_POLICY.md"
   "$repo_root/docs/releases/4.0.0.md"
@@ -19,6 +22,9 @@ required_meta_docs=(
 required_feature_docs=(
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryPolicy.md"
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/OpenAPIGeneratorAdapter.md"
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/AuthRefresh.md"
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/UsingMacros.md"
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/InnoNetwork.md"
 )
 example_docs=(
@@ -139,12 +145,18 @@ expected_provisionally=(
 '`InnoNetworkTestSupport` library product and its `public` symbols'
 '`Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
 '`WebSocketCloseDisposition` observation surface'
+'`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces'
+'`MultipartResponseDecoder` buffered multipart response parsing surface'
+'`InnoNetworkCodegen` optional macro product and macro declarations'
 )
 
 expected_shipping_public_declarations=(
   APIDefinition
   AnyEncodable
   AnyResponseDecoder
+  CachedResponse
+  CircuitBreakerOpenError
+  CircuitBreakerPolicy
   ContentType
   CorrelationIDInterceptor
   DefaultNetworkClient
@@ -175,8 +187,11 @@ expected_shipping_public_declarations=(
   HTTPHeader
   HTTPHeaders
   HTTPMethod
+  InMemoryResponseCache
   MultipartAPIDefinition
   MultipartFormData
+  MultipartPart
+  MultipartResponseDecoder
   MultipartUploadStrategy
   NetworkClient
   NetworkConfiguration
@@ -198,8 +213,13 @@ expected_shipping_public_declarations=(
   NoOpNetworkLogger
   OSLogNetworkEventObserver
   PublicKeyPinningPolicy
+  RefreshTokenPolicy
+  RequestCoalescingPolicy
   RequestInterceptor
   Response
+  ResponseCache
+  ResponseCacheKey
+  ResponseCachePolicy
   ResponseInterceptor
   RetryDecision
   RetryPolicy
@@ -292,88 +312,149 @@ validate_test_support_product() {
     "$repo_root/Sources/InnoNetworkTestSupport/MockURLSession.swift"
 }
 
-collect_public_declarations() {
-  local include_spi="$1"
-  shift
-  find "$@" -type f -name '*.swift' | sort | while IFS= read -r file; do
-    awk -v include_spi="$include_spi" '
-      function emit(line) {
-        if (line ~ /^public final class /) {
-          sub(/^public final class /, "", line)
-        } else if (line ~ /^public (protocol|struct|enum|class|actor) /) {
-          sub(/^public (protocol|struct|enum|class|actor) /, "", line)
-        } else {
-          return
-        }
-        sub(/[<:({ ].*/, "", line)
-        print line
-      }
-
-      /^@_spi\([^)]*\) public / {
-        if (include_spi == "yes") {
-          line = $0
-          sub(/^@_spi\([^)]*\) /, "", line)
-          emit(line)
-        }
-        next
-      }
-
-      /^public / {
-        if (include_spi == "no") {
-          emit($0)
-        }
-      }
-    ' "$file"
-  done | sort -u
+validate_resilience_public_api() {
+  require_contains 'public struct RefreshTokenPolicy' \
+    "$repo_root/Sources/InnoNetwork/Auth/RefreshTokenPolicy.swift"
+  require_contains 'public struct RequestCoalescingPolicy' \
+    "$repo_root/Sources/InnoNetwork/RequestCoalescing/RequestCoalescingPolicy.swift"
+  require_contains 'public enum ResponseCachePolicy' \
+    "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
+  require_contains 'public protocol ResponseCache' \
+    "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
+  require_contains 'public actor InMemoryResponseCache' \
+    "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
+  require_contains 'public struct CircuitBreakerPolicy' \
+    "$repo_root/Sources/InnoNetwork/CircuitBreaker/CircuitBreakerPolicy.swift"
+  require_contains 'public struct CircuitBreakerOpenError' \
+    "$repo_root/Sources/InnoNetwork/CircuitBreaker/CircuitBreakerPolicy.swift"
+  require_contains 'refreshTokenPolicy: RefreshTokenPolicy? = nil' \
+    "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+  require_contains 'requestCoalescingPolicy: RequestCoalescingPolicy = .disabled' \
+    "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+  require_contains 'responseCachePolicy: ResponseCachePolicy = .disabled' \
+    "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+  require_contains 'circuitBreakerPolicy: CircuitBreakerPolicy? = nil' \
+    "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
 }
 
-validate_public_declaration_set() {
-  local label="$1"
-  local actual="$2"
-  shift 2
-  local expected
-  expected="$(printf '%s\n' "$@" | sort -u)"
+validate_multipart_response_api() {
+  require_contains 'public struct MultipartPart' \
+    "$repo_root/Sources/InnoNetwork/Multipart/MultipartResponseDecoder.swift"
+  require_contains 'public struct MultipartResponseDecoder' \
+    "$repo_root/Sources/InnoNetwork/Multipart/MultipartResponseDecoder.swift"
+}
 
-  [[ "$expected" == "$actual" ]] || {
-    echo "Expected $label public declarations:" >&2
-    printf '%s\n' "$expected" >&2
-    echo "Actual $label public declarations:" >&2
-    printf '%s\n' "$actual" >&2
-    fail "$label public declaration set drifted; update API_STABILITY.md and check_docs_contract_sync.sh"
-  }
+validate_codegen_product() {
+  require_contains 'name: "InnoNetworkCodegen"' "$repo_root/Package.swift"
+  require_contains 'targets: ["InnoNetworkCodegen"]' "$repo_root/Package.swift"
+  require_contains 'name: "InnoNetworkMacros"' "$repo_root/Package.swift"
+  require_contains 'https://github.com/swiftlang/swift-syntax.git' "$repo_root/Package.swift"
+  require_contains 'public macro APIDefinition' "$repo_root/Sources/InnoNetworkCodegen/Macros.swift"
+  require_contains 'public macro endpoint' "$repo_root/Sources/InnoNetworkCodegen/Macros.swift"
+  require_contains '`APIDefinition(method:path:)`' "$api_stability"
+  require_contains '`endpoint(_:_:as:)`' "$api_stability"
+}
+
+collect_public_symbols() {
+  command -v python3 > /dev/null 2>&1 || fail "python3 is required for symbol graph public surface validation"
+
+  find "$repo_root/.build" -path '*/symbolgraph/*.symbols.json' -type f -delete 2> /dev/null || true
+
+  local dump_status
+  set +e
+  swift package dump-symbol-graph \
+    --minimum-access-level public \
+    --include-spi-symbols \
+    --skip-synthesized-members > /dev/null
+  dump_status=$?
+  set -e
+
+  python3 - "$repo_root" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+repo_root = Path(sys.argv[1])
+symbolgraph_dirs = [path for path in (repo_root / ".build").glob("*/symbolgraph") if path.is_dir()]
+if not symbolgraph_dirs:
+    raise SystemExit("No Swift symbol graph directory was generated.")
+
+symbolgraph_dir = max(symbolgraph_dirs, key=lambda path: path.stat().st_mtime)
+included_modules = {
+    "InnoNetwork",
+    "InnoNetworkDownload",
+    "InnoNetworkWebSocket",
+    "InnoNetworkTestSupport",
+    "InnoNetworkCodegen",
+}
+included_kinds = {
+    "swift.actor",
+    "swift.associatedtype",
+    "swift.class",
+    "swift.enum",
+    "swift.enum.case",
+    "swift.func",
+    "swift.init",
+    "swift.macro",
+    "swift.method",
+    "swift.property",
+    "swift.protocol",
+    "swift.struct",
+    "swift.typealias",
+}
+rows = set()
+seen_modules = set()
+for path in sorted(symbolgraph_dir.glob("*.symbols.json")):
+    if "@" in path.name or path.name.startswith("InnoNetworkPackageTests"):
+        continue
+    with path.open(encoding="utf-8") as handle:
+        data = json.load(handle)
+    module = data.get("module", {}).get("name")
+    if module not in included_modules:
+        continue
+    seen_modules.add(module)
+    for symbol in data.get("symbols", []):
+        if symbol.get("accessLevel") != "public":
+            continue
+        kind = symbol.get("kind", {}).get("identifier")
+        if kind not in included_kinds:
+            continue
+        components = symbol.get("pathComponents") or []
+        if not components:
+            continue
+        rows.add(f"{module}\t{kind}\t{'.'.join(components)}")
+
+missing_modules = sorted(included_modules - seen_modules)
+if missing_modules:
+    raise SystemExit(f"Missing required symbol graphs: {', '.join(missing_modules)}")
+
+for row in sorted(rows):
+    print(row)
+PY
+
+  if [[ "$dump_status" -ne 0 ]]; then
+    echo "docs-contract-sync: swift package dump-symbol-graph exited with $dump_status after emitting required library symbol graphs; ignoring non-contract target extraction failure." >&2
+  fi
 }
 
 validate_public_surface_ledger() {
-  local shipping_actual
-  shipping_actual="$(
-    collect_public_declarations no \
-      "$repo_root/Sources/InnoNetwork" \
-      "$repo_root/Sources/InnoNetworkDownload" \
-      "$repo_root/Sources/InnoNetworkWebSocket"
-  )"
-  validate_public_declaration_set \
-    "shipping" \
-    "$shipping_actual" \
-    "${expected_shipping_public_declarations[@]}"
+  [[ -f "$public_symbols_allowlist" ]] || fail "public symbol allowlist is missing: $public_symbols_allowlist"
+  require_line $'InnoNetwork\tswift.struct\tNetworkConfiguration.AdvancedBuilder' "$public_symbols_allowlist"
+  require_line $'InnoNetwork\tswift.property\tNetworkConfiguration.AdvancedBuilder.requestInterceptors' "$public_symbols_allowlist"
 
-  local spi_actual
-  spi_actual="$(
-    collect_public_declarations yes \
-      "$repo_root/Sources/InnoNetwork" \
-      "$repo_root/Sources/InnoNetworkDownload" \
-      "$repo_root/Sources/InnoNetworkWebSocket"
-  )"
-  validate_public_declaration_set \
-    "SPI" \
-    "$spi_actual" \
-    "${expected_spi_public_declarations[@]}"
+  local expected_file
+  local actual_file
+  expected_file="$(mktemp)"
+  actual_file="$(mktemp)"
 
-  local test_support_actual
-  test_support_actual="$(collect_public_declarations no "$repo_root/Sources/InnoNetworkTestSupport")"
-  validate_public_declaration_set \
-    "TestSupport" \
-    "$test_support_actual" \
-    "${expected_test_support_public_declarations[@]}"
+  awk 'NF && $0 !~ /^#/ { print }' "$public_symbols_allowlist" | sort -u > "$expected_file"
+  collect_public_symbols > "$actual_file"
+
+  if ! diff -u "$expected_file" "$actual_file" >&2; then
+    fail "public symbol graph drifted; update Scripts/api_public_symbols.allowlist and API_STABILITY.md"
+  fi
+
+  rm -f "$expected_file" "$actual_file"
 
   for declaration in "${expected_shipping_public_declarations[@]}" "${expected_spi_public_declarations[@]}" \
     "${expected_test_support_public_declarations[@]}"; do
@@ -395,7 +476,7 @@ validate_oss_readiness_public_api() {
 validate_troubleshooting_and_examples_docs() {
   require_contains 'Examples: [Examples/README.md](Examples/README.md)' "$readme"
   require_contains 'API Stability: [API_STABILITY.md](API_STABILITY.md)' "$readme"
-  require_contains 'Upcoming Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)' "$readme"
+  require_contains 'Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)' "$readme"
   require_contains '### 1. [BasicRequest](./BasicRequest)' "$repo_root/Examples/README.md"
   require_contains '### 2. [ErrorHandling](./ErrorHandling)' "$repo_root/Examples/README.md"
   require_contains '### 3. [CustomHeaders](./CustomHeaders)' "$repo_root/Examples/README.md"
@@ -581,6 +662,18 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseDisposition.swift"
       continue
       ;;
+    '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces')
+      validate_resilience_public_api
+      continue
+      ;;
+    '`MultipartResponseDecoder` buffered multipart response parsing surface')
+      validate_multipart_response_api
+      continue
+      ;;
+    '`InnoNetworkCodegen` optional macro product and macro declarations')
+      validate_codegen_product
+      continue
+      ;;
     *)
       fail "unknown provisionally stable symbol mapping: $symbol"
       ;;
@@ -614,11 +707,33 @@ forbidden_pattern 'let configuration = NetworkConfiguration\(' "$readme" "${exam
 forbidden_pattern 'let client = DefaultNetworkClient\(\s*configuration:\s*\.default' "$readme" "${example_docs[@]}"
 forbidden_pattern 'addText|addFile' "$readme" "${example_docs[@]}"
 forbidden_pattern 'from:\s*"1\.0\.0"' "$readme" "${example_docs[@]}"
+forbidden_pattern 'Xcode 15|Xcode 16' "$readme" "${example_docs[@]}" "$repo_root/docs" "$repo_root/Sources"
+forbidden_pattern 'does not pull|do not pull|not pull `swift-syntax`|has no external dependencies|no external dependencies;' \
+  "$api_stability" \
+  "$readme" \
+  "$repo_root/CHANGELOG.md" \
+  "$repo_root/MIGRATION_v4.md" \
+  "$repo_root/docs/releases/4.0.0.md" \
+  "$repo_root/SECURITY.md" \
+  "$repo_root/docs" \
+  "$repo_root/Sources"
 forbidden_pattern '4\.1\.0|4\.1 line|Pre-4\.1|4\.1 behaviour|v4\.1|docs/releases/4\.1\.0' \
   "$api_stability" \
   "$readme" \
   "$repo_root/CHANGELOG.md" \
   "$repo_root/MIGRATION_v4.md" \
+  "$repo_root/docs/releases/4.0.0.md" \
+  "$repo_root/SECURITY.md" \
+  "$repo_root/Benchmarks/README.md" \
+  "$repo_root/docs" \
+  "$repo_root/Sources" \
+  "$repo_root/Tests"
+forbidden_pattern '4\.2\.0|4\.2 line|pre-v4\.2|v4\.2|docs/releases/4\.2\.0' \
+  "$api_stability" \
+  "$readme" \
+  "$repo_root/CHANGELOG.md" \
+  "$repo_root/MIGRATION_v4.md" \
+  "$repo_root/docs/releases/4.0.0.md" \
   "$repo_root/SECURITY.md" \
   "$repo_root/Benchmarks/README.md" \
   "$repo_root/docs" \

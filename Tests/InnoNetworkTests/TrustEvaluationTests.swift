@@ -54,7 +54,7 @@ struct TrustEvaluationTests {
     func pinningPolicyMostSpecificHonorsSubdomainSetting() {
         let policy = PublicKeyPinningPolicy(
             pinsByHost: [
-                "example.com": ["sha256/root-pin"],
+                "example.com": ["sha256/root-pin"]
             ],
             includesSubdomains: false,
             hostMatchingStrategy: .mostSpecificHost

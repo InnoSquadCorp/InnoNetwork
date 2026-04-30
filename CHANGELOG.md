@@ -3,19 +3,38 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and the project follows Semantic
-Versioning for the upcoming 4.0.0 public release line.
+Versioning for the 4.x public release line.
 
 ## [4.0.0] - Unreleased
 
-This unreleased line folds the Swift 6 / WebSocket work and the
-production-readiness pass into one 4.0.0 tag. The latest published public
-release remains 3.0.1; consumers should pin `release/v4.0` or a revision until
-the 4.0.0 tag is cut. See [`docs/releases/4.0.0.md`](docs/releases/4.0.0.md)
-for the one-page release summary and [`MIGRATION_v4.md`](MIGRATION_v4.md) for
-call-site changes.
+This release folds the Swift 6 / WebSocket work and the production-readiness
+pass into the upcoming 4.0.0 public baseline. Until the tag exists, consumers
+should pin `release/v4.0` or a specific repository revision for validation. See
+[`docs/releases/4.0.0.md`](docs/releases/4.0.0.md) for the one-page release
+summary and [`MIGRATION_v4.md`](MIGRATION_v4.md) for call-site changes.
 
 ### Added
 
+- Internal request execution pipeline stages for built-in preflight,
+  transport, post-transport, status validation, and decode handling. The
+  generic pipeline remains package/internal; no public `RequestExecutionPolicy`
+  protocol is exposed.
+- `RefreshTokenPolicy` for current-token application, single-flight refresh,
+  and one-time replay after configured auth status codes.
+- `RequestCoalescingPolicy` for raw transport fan-out among identical in-flight
+  requests.
+- `ResponseCachePolicy`, `ResponseCache`, `CachedResponse`,
+  `ResponseCacheKey`, and `InMemoryResponseCache` for opt-in GET response
+  caching, ETag revalidation, `304` substitution, and stale-while-revalidate.
+- `CircuitBreakerPolicy` and `CircuitBreakerOpenError` for per-host failure
+  budgets. Open-circuit failures use `NetworkError.underlying`; no new
+  `NetworkError` enum case was added.
+- `MultipartResponseDecoder` and `MultipartPart` for buffered multipart
+  response parsing.
+- Optional `InnoNetworkCodegen` product with `@APIDefinition` and `#endpoint`
+  macros. The core runtime targets do not link `swift-syntax`; SwiftPM may
+  still resolve package-level macro dependencies while loading the package
+  graph.
 - `APIDefinition`, `MultipartAPIDefinition`, and `StreamingAPIDefinition`
   expose `acceptableStatusCodes: Set<Int>?` for per-endpoint overrides of
   the session-wide default.
@@ -61,17 +80,21 @@ call-site changes.
   the exact host's pins or the longest matching parent domain.
 - DocC catalogs ship with onboarding articles for retry decisions, error
   classification, trust policies, background downloads, persistence,
-  WebSocket close codes, and reconnect behaviour. The rendered site lives
-  at https://innosquadcorp.github.io/InnoNetwork/.
-- New documentation: `docs/PlatformSupport.md`, `docs/QueryEncoding.md`,
-  `docs/WebSocketLifecycle.md`, `docs/ko/README.md` (Korean mirror of the
-  README), and a Production Checklist section in the README.
+  WebSocket close codes, reconnect behaviour, auth refresh,
+  caching/coalescing/circuit-breaker strategy, and macro usage. The rendered
+  site lives at https://innosquadcorp.github.io/InnoNetwork/.
+- New documentation: `docs/ClientArchitecture.md`, `docs/PlatformSupport.md`,
+  `docs/QueryEncoding.md`, `docs/WebSocketLifecycle.md`,
+  `docs/ko/README.md` (Korean mirror of the README), and a Production
+  Checklist section in the README.
 - New `InnoNetworkLiveTests` test target (gated behind `INNO_LIVE=1`) plus
   a daily `nightly-live` GitHub Actions workflow. Cases cover httpbin GET /
   POST / 503 and ws.postman-echo string echo.
 - Parametrized `URLQueryEncoderParametrizedTests` suite locks down the
   PHP/Rails-style bracket-notation invariants, sorted-key determinism,
   rootKey enforcement, and reserved-character handling.
+- CI `apple-platform-build-smoke` job covers macOS, iOS, tvOS, watchOS, and
+  visionOS build-only smoke validation.
 - Release artifacts (`benchmarks.json`, `sbom.cdx.json`) are signed with
   sigstore cosign keyless signatures. SECURITY.md describes the
   `cosign verify-blob` invocation.
@@ -117,8 +140,8 @@ call-site changes.
 
 ### Removed
 
-- **BREAKING**: `WebSocketManager.receive(_:)` has been removed before the
-  4.0.0 tag. The manager always owns the underlying `URLSessionWebSocketTask`
+- **BREAKING**: `WebSocketManager.receive(_:)` was removed for 4.0.0. The
+  manager always owns the underlying `URLSessionWebSocketTask`
   receive loop, so consumers should observe frames through
   `events(for:)`, `addEventListener(for:listener:)`, or the message/string
   callbacks instead of racing the internal receive loop.
@@ -150,6 +173,11 @@ call-site changes.
   hooks remain outside the default stable contract. A separate adapter
   package/product is tracked as a 4.x+ roadmap candidate.
 
+### Deferred
+
+- Pulse adapter example, streaming multipart decoder, and Hummingbird
+  in-process integration tests remain follow-up work.
+
 ### Fixed
 
 - All remaining `@unchecked Sendable` usages in production sources are gone.
@@ -158,5 +186,5 @@ call-site changes.
 ## Pre-4.0 history
 
 Pre-4.0 changes are preserved in git history and earlier tags. This changelog
-now focuses on the upcoming 4.0.0 public release contract so pre-release
-documentation, migration notes, and API stability policy stay aligned.
+now focuses on the upcoming 4.0.0 public release contract so documentation,
+migration notes, and API stability policy stay aligned.

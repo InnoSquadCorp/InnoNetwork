@@ -68,7 +68,8 @@ public struct PublicKeyPinningPolicy: Sendable {
 
     private func mostSpecificPins(for normalizedHost: String) -> Set<String>? {
         let matches = matchingPinSets(for: normalizedHost)
-        let exactMatches = matches
+        let exactMatches =
+            matches
             .filter { $0.isExact }
             .map { $0.pins }
         if !exactMatches.isEmpty {
@@ -77,7 +78,8 @@ public struct PublicKeyPinningPolicy: Sendable {
 
         guard includesSubdomains else { return nil }
 
-        let parentMatches = matches
+        let parentMatches =
+            matches
             .filter { !$0.isExact }
         guard let longestMatchLength = parentMatches.map({ $0.host.count }).max() else {
             return nil

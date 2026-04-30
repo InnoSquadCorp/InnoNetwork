@@ -87,12 +87,19 @@ Compile-only package that protects wrapper-style integrations built on
 future-candidate low-level execution hooks. These source shapes are not part of
 the 4.0.0 stable public contract.
 
+### [MacroUsage](./MacroUsage)
+
+Compile-only package for the optional `InnoNetworkCodegen` product. It keeps
+macro usage separate from the core consumer smoke so `InnoNetwork`-only users do
+not link `swift-syntax` into their runtime target. SwiftPM may still resolve the
+package-level macro dependency while loading the full package graph.
+
 ## Getting Started
 
 ### Prerequisites
 
 - Swift 6.2+
-- Xcode 15.0+
+- Xcode 26.0+
 
 ### Installation
 
@@ -104,8 +111,9 @@ dependencies: [
 ]
 ```
 
-`4.0.0` is the upcoming public release line. Until the tag exists, pin
-`release/v4.0` or a revision from this repository for local validation.
+`4.0.0` is the upcoming public release baseline and has not been tagged yet.
+Until the tag exists, pin `release/v4.0` or a specific repository revision when
+validating these unreleased changes.
 
 ### Running the Examples
 
@@ -293,5 +301,5 @@ MIT License - See LICENSE file for details.
 
 ## Support
 
-- GitHub Issues: https://github.com/InnoSquad/InnoNetwork/issues
+- GitHub Issues: https://github.com/InnoSquadCorp/InnoNetwork/issues
 - Documentation: See individual example READMEs

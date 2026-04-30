@@ -9,6 +9,12 @@
 - `@unchecked Sendable` 회귀 방지: production source는 CI에서 금지하고, 테스트 전용 helper의 예외는 TestSupport/test target 안에만 둔다.
 - 벤치마크 trend tracking: `Benchmarks/Baselines/default.json` 은 macos-15 기준으로 갱신되었고, PR smoke는 20%, scheduled/manual workflow는 10% threshold를 사용한다. 다음 단계는 PR comment 자동화와 장기 trend 저장소다.
 - WebSocket `permessage-deflate` (RFC 7692): `URLSessionWebSocketTask` 가 deflate 협상을 노출하지 않아 transport substitution 필요. v5 후보는 optional `InnoNetworkWebSocketNIO` product (swift-nio 의존) 방향으로 둔다. 기존 URLSession 기반 4.0.0 product 안정성을 흔들지 않기 위해 `Network.framework` 직접 구현은 보조 조사 경로로 유지한다.
+- Pulse adapter 예제: 4.0.0 범위에서는 macro/codegen과 resilience surface에 집중하고, 외부 observability dependency 예제는 별도 PR에서 평가한다.
+- streaming multipart decoder: 4.0.0의 `MultipartResponseDecoder`는 buffered parser로 제한한다. 대용량 multipart streaming은 back-pressure와 partial failure semantics를 정한 뒤 별도 설계한다.
+- Hummingbird in-process integration test: 4.0.0에서는 기본 CI 결정성을 유지하고, server-side Swift dependency가 필요한 통합 테스트는 follow-up으로 둔다.
+- response cache surface 확장: 4.0.0의 `storeCacheIfNeeded`는 `200 OK`만 저장한다. 추후 RFC 7234 cacheable status code (203/204/301/404/410 등) 확대와 서버 `Cache-Control: no-store`/`no-cache` 응답 존중을 별도 마일스톤에서 평가한다.
+- response cache `Vary` semantics: 4.0.0 기본 key는 `Authorization`과 `Accept-Language`를 포함하지만, 응답 `Vary` 헤더 기반 자동 key 확장은 별도 설계가 필요하다.
+- macro/codegen dependency isolation: 현재 SwiftPM manifest API로는 top-level `swift-syntax` package dependency 자체를 trait 조건으로 제거할 수 없어, runtime-only 소비자의 true resolution isolation은 별도 `InnoNetworkCodegen` package 분리를 우선 후보로 둔다.
 
 ## Post-4.0 Candidates
 

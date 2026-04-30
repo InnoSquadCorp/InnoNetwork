@@ -96,6 +96,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     private let requestBuilder = RequestBuilder()
     private let eventHub: NetworkEventHub
     private let inFlight = InFlightRegistry()
+    private let executionRuntime: RequestExecutionRuntime
 
     public init(
         configuration: NetworkConfiguration,
@@ -103,6 +104,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     ) {
         self.configuration = configuration
         self.session = session
+        self.executionRuntime = RequestExecutionRuntime(configuration: configuration, inFlight: inFlight)
         self.eventHub = NetworkEventHub(
             policy: configuration.eventDeliveryPolicy,
             metricsReporter: configuration.eventMetricsReporter,
@@ -135,6 +137,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
             let requestID = UUID()
             let inFlight = self.inFlight
             let configuration = self.configuration
+            let executionRuntime = self.executionRuntime
             let session = self.session
             let eventHub = self.eventHub
             let startGate = TaskStartGate()
@@ -177,6 +180,9 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
                         }
                         for interceptor in request.requestInterceptors {
                             urlRequest = try await interceptor.adapt(urlRequest)
+                        }
+                        if let refreshCoordinator = executionRuntime.refreshCoordinator {
+                            urlRequest = try await refreshCoordinator.applyCurrentToken(to: urlRequest)
                         }
                         await eventHub.publish(
                             .requestAdapted(
@@ -385,6 +391,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
                     executable,
                     configuration: configuration,
                     requestBuilder: requestBuilder,
+                    runtime: executionRuntime,
                     retryIndex: retryIndex,
                     requestID: requestID
                 )

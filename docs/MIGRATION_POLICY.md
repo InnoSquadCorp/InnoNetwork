@@ -16,7 +16,7 @@
 
 ## Planned Major Changes
 
-- The upcoming 4.0.0 release keeps Protocol Buffers support in the separate
+- The 4.0.0 release keeps Protocol Buffers support in the separate
   `InnoNetworkProtobuf` package.
 - Consumers that rely on protobuf endpoints keep using `DefaultNetworkClient`,
   but must add a second package dependency and import `InnoNetworkProtobuf`.

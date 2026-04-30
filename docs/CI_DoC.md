@@ -20,7 +20,13 @@ The `CI` workflow must pass all of the following:
    workflow artifact. When the `CODECOV_TOKEN` secret is configured the
    `lcov` payload is also uploaded to Codecov; without the token the upload
    step is skipped (the artifact alone is enough for manual review).
-6. The benchmark smoke guard runs `swift run InnoNetworkBenchmarks --quick`
+6. `apple-platform-build-smoke` runs `xcodebuild ... build` for macOS, iOS,
+   tvOS, watchOS, and visionOS destinations. Simulator destinations are
+   build-only; SwiftPM test+coverage remains the runtime test gate.
+7. Consumer smoke builds the core consumer package, wrapper smoke, generated
+   client recipe, and optional `Examples/MacroUsage` package so
+   `InnoNetworkCodegen` stays covered without changing the core-only smoke.
+8. The benchmark smoke guard runs `swift run InnoNetworkBenchmarks --quick`
    with `--enforce-baseline --max-regression-percent 20`. A regression
    beyond 20% on the guarded benchmarks fails the PR workflow. The
    scheduled/manual benchmark workflow uses the same guarded benchmarks with

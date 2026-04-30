@@ -96,33 +96,30 @@ struct CreateOrder: APIDefinition {
 `CreateOrder` adds the request-ID header on top of whatever the
 session-level chain already attached.
 
-## Refresh tokens (request → response → retry)
+## Refresh tokens
 
-A 401-driven refresh interceptor is a common combination of both
-protocols. The ``RequestInterceptor`` injects the current token; the
-``ResponseInterceptor`` watches for 401s and triggers a refresh. The
-``RetryPolicy`` then re-runs the same request so the refreshed token
-reaches the new attempt.
+Use ``RefreshTokenPolicy`` for `401`-driven refresh and replay. Keep
+``RequestInterceptor`` implementations focused on applying the current token,
+tenant headers, request IDs, or signatures:
 
 ```swift
-struct AuthRefreshResponse: ResponseInterceptor {
-    let tokenStore: any TokenStore
+let refreshPolicy = RefreshTokenPolicy(
+    currentToken: { try await tokenStore.currentAccessToken() },
+    refreshToken: { try await authService.refreshAccessToken() }
+)
 
-    func adapt(_ urlResponse: Response, request: URLRequest) async throws -> Response {
-        if urlResponse.statusCode == 401 {
-            await tokenStore.refresh()
-            // Throwing forces the call to fail and the retry policy to re-issue
-            // the request with the freshly minted token.
-            throw NetworkError.statusCode(urlResponse)
-        }
-        return urlResponse
+let client = DefaultNetworkClient(
+    configuration: .advanced(baseURL: apiBaseURL) { builder in
+        builder.requestInterceptors = [TenantHeaderInterceptor()]
+        builder.refreshTokenPolicy = refreshPolicy
     }
-}
+)
 ```
 
-Hook this onto the session and pair it with a ``RetryPolicy`` that
-returns ``RetryDecision/retry`` for `401` once. The call site sees a
-single successful response with no awareness of the refresh.
+Refresh replay starts from the request after the session-level and endpoint
+interceptor chains have run, then replaces only the authorization value through
+the refresh policy. That preserves trace, tenant, and signing headers across
+the replay attempt.
 
 ## Streaming responses
 
