@@ -32,10 +32,12 @@ public actor DownloadTask: Identifiable {
     /// ``DownloadState/canTransition(to:)``.
     ///
     /// Illegal transitions trigger an `assertionFailure` in DEBUG builds so
-    /// that bugs surface during development, and emit an OSLog `.fault` plus
-    /// continue the assignment in release builds to preserve runtime
-    /// stability. For non-progressive writes (restoring persisted state on
-    /// app launch, or test-only state injection), use ``restoreState(_:)``.
+    /// that bugs surface during development. In release builds the attempt is
+    /// logged as an OSLog `.fault` and the assignment is **rejected** — the
+    /// existing state is preserved so a misbehaving caller cannot drive the
+    /// task into an inconsistent state. For non-progressive writes (restoring
+    /// persisted state on app launch, or test-only state injection), use
+    /// ``restoreState(_:)``.
     func updateState(_ newState: DownloadState) {
         let current = _state
         if !current.canTransition(to: newState) {
@@ -43,6 +45,7 @@ public actor DownloadTask: Identifiable {
                 "Illegal DownloadState transition: \(current.rawValue, privacy: .public) -> \(newState.rawValue, privacy: .public) for task \(self.id, privacy: .public)"
             )
             assertionFailure("Illegal DownloadState transition: \(current) -> \(newState) for task \(self.id)")
+            return
         }
         _state = newState
     }
