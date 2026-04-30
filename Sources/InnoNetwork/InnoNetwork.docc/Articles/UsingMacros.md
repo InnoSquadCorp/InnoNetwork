@@ -20,7 +20,9 @@ let endpoint = #endpoint(.get, "/users/1", as: User.self)
 
 The attached ``APIDefinition(method:path:)`` macro generates the conformance,
 uses `EmptyParameter`, and interpolates stored properties that match path
-placeholders such as `{id}`.
+placeholders such as `{id}`. Placeholder values are passed through
+``EndpointPathEncoding/percentEncodedSegment(_:)`` so each value stays within a
+single path segment even when it contains spaces, slashes, or non-ASCII text.
 
 The ``endpoint(_:_:as:)`` expression macro expands to the fluent ``Endpoint``
 API:

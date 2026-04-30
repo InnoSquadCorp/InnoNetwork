@@ -324,6 +324,12 @@ automatically (RFC 9111 §4.1):
   different `Accept-Language` values do not see each other's payloads.
 - Responses without a `Vary` header are stored as before, with the existing
   per-identity key (Authorization, etc.).
+- GET responses with whole-response cacheable status codes (`200`, `203`,
+  `204`, `300`, `301`, `308`, `404`, `405`, `410`, `414`, and `501`) can be
+  stored; `206 Partial Content` is excluded.
+- `Cache-Control: no-store` invalidates the current cache key and skips writes.
+  `Cache-Control: no-cache` stores the response but forces revalidation before
+  every reuse.
 
 ### Optional Macros
 
@@ -488,7 +494,8 @@ Operational items to verify before shipping a client built on InnoNetwork.
   `CircuitBreakerPolicy` per client only after deciding the cache freshness
   and host-failure budget for that API. Cache keys include an `Authorization`
   fingerprint and `Accept-Language` by default; the response `Vary` header
-  further refines lookups, and `Vary: *` responses are skipped.
+  further refines lookups, `Vary: *` responses are skipped, and
+  `Cache-Control: no-store` / `no-cache` are honoured.
 - **WebSocket reconnect cap.** `maxReconnectAttempts` limits successive automatic attempts.
   After exhaustion, surface the failure to the UI rather than reconnect on every app
   foreground.

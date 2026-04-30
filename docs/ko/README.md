@@ -156,6 +156,10 @@ await client.cancelAll(matching: feed)  // feed 태그만 취소
 - `Vary: Accept-Language` 같은 명시 헤더는 저장 시점의 요청 헤더 값을 함께 캡처해
   이후 lookup 에서 동일 값일 때만 hit 으로 인정합니다.
 - `Vary` 헤더가 없는 응답은 기존 키 정책 (Authorization 등) 만으로 저장됩니다.
+- GET 응답 중 전체 표현을 재사용할 수 있는 cacheable status (`200`, `203`, `204`,
+  `300`, `301`, `308`, `404`, `405`, `410`, `414`, `501`) 는 저장 대상입니다.
+- `Cache-Control: no-store` 는 현재 키를 무효화하고 저장하지 않습니다.
+  `Cache-Control: no-cache` 는 저장하되 매 lookup 마다 재검증을 강제합니다.
 
 ---
 

@@ -783,4 +783,15 @@ forbidden_pattern 'manager\.receive\(' \
   "$repo_root/Sources" \
   "$repo_root/Tests"
 
+require_contains 'GET responses with RFC-cacheable whole-response status codes' \
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"
+require_contains '`Cache-Control: no-store` responses are not stored' \
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"
+require_contains 'The response `Vary` header is processed automatically' \
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"
+forbidden_pattern 'Only `200 OK` responses are persisted|does not implement full HTTP `Vary`|server `Cache-Control: no-store` are not honoured|응답 `Vary` 헤더 기반 자동 key 확장은 별도 설계가 필요하다|Cache-Control expansion' \
+  "$repo_root/README.md" \
+  "$repo_root/docs" \
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc"
+
 echo "docs-contract-sync: OK"

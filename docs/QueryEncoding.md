@@ -41,7 +41,10 @@ leading slash in the endpoint path does not reset the base path:
 
 Already percent-encoded path segments are preserved. Query values must be
 provided through `parameters` plus `URLQueryEncoder`, or through
-`Endpoint.query(_:)` for builder-style endpoints.
+`Endpoint.query(_:)` for builder-style endpoints. Raw spaces and non-ASCII
+characters in literal paths are percent-encoded before the request is sent;
+malformed percent escapes such as `%`, `%2`, or `%ZZ` are rejected with
+`NetworkError.invalidRequestConfiguration`.
 
 ## Comparison with OpenAPI / RFC 6570
 
