@@ -164,7 +164,7 @@ package struct RequestExecutor {
                 request: request,
                 configuration: configuration
             ) {
-                await storeCacheIfNeeded(converted, cacheKey: cacheKey, configuration: configuration)
+                await storeCacheIfNeeded(converted, cacheKey: cacheKey, request: request, configuration: configuration)
                 return converted
             }
 
@@ -180,7 +180,7 @@ package struct RequestExecutor {
                 continue
             }
 
-            await storeCacheIfNeeded(networkResponse, cacheKey: cacheKey, configuration: configuration)
+            await storeCacheIfNeeded(networkResponse, cacheKey: cacheKey, request: request, configuration: configuration)
             return networkResponse
         }
     }
@@ -317,7 +317,7 @@ package struct RequestExecutor {
             return nil
         }
 
-        let cached = await cache.get(cacheKey)
+        let cached = await cachedRespectingVary(cache, key: cacheKey, request: request)
         switch configuration.responseCachePolicy.prepare(cached: cached) {
         case .bypass, .revalidate:
             return nil
@@ -367,10 +367,10 @@ package struct RequestExecutor {
                         configuration: configuration
                     ) {
                         try Task.checkCancellation()
-                        await storeCacheIfNeeded(converted, cacheKey: cacheKey, configuration: configuration)
+                        await storeCacheIfNeeded(converted, cacheKey: cacheKey, request: revalidationRequest, configuration: configuration)
                     } else {
                         try Task.checkCancellation()
-                        await storeCacheIfNeeded(response, cacheKey: cacheKey, configuration: configuration)
+                        await storeCacheIfNeeded(response, cacheKey: cacheKey, request: revalidationRequest, configuration: configuration)
                     }
                 } catch {
                     if NetworkError.isCancellation(error) {
@@ -425,7 +425,7 @@ package struct RequestExecutor {
             let cache = configuration.responseCache,
             configuration.responseCachePolicy.isEnabled,
             configuration.responseCachePolicy.allowsConditionalRevalidation,
-            let cached = await cache.get(cacheKey),
+            let cached = await cachedRespectingVary(cache, key: cacheKey, request: request),
             let etag = cached.etag
         else {
             return
@@ -443,7 +443,7 @@ package struct RequestExecutor {
             configuration.responseCachePolicy.allowsConditionalRevalidation,
             let cacheKey,
             let cache = configuration.responseCache,
-            let cached = await cache.get(cacheKey),
+            let cached = await cachedRespectingVary(cache, key: cacheKey, request: request),
             let url = request.url,
             let httpResponse = HTTPURLResponse(
                 url: url,
@@ -481,9 +481,16 @@ package struct RequestExecutor {
     /// codes (203, 204, 301, 404, 410, etc.) and server `Cache-Control: no-store`
     /// are intentionally not honoured yet to keep the surface minimal—see
     /// `docs/ROADMAP.md` for the planned expansion.
+    ///
+    /// Responses carrying `Vary: *` are intentionally **not** stored, mirroring
+    /// RFC 9111 §4.1: such responses can vary on anything the server feels like
+    /// and the cache cannot prove a future request would match. Responses with a
+    /// concrete `Vary` header capture a snapshot of the named request headers so
+    /// future lookups can reject mismatching values.
     private func storeCacheIfNeeded(
         _ response: Response,
         cacheKey: ResponseCacheKey?,
+        request: URLRequest,
         configuration: NetworkConfiguration
     ) async {
         guard let cacheKey,
@@ -493,17 +500,40 @@ package struct RequestExecutor {
         else {
             return
         }
+        let headerSnapshot = response.response?.allHeaderFields.reduce(into: [String: String]()) { result, pair in
+            guard let key = pair.key as? String, let value = pair.value as? String else { return }
+            result[key] = value
+        } ?? [:]
+        let varyHeaders: [String: String?]?
+        switch evaluateVary(responseHeaders: headerSnapshot, request: request) {
+        case .wildcardSkipsCache:
+            return
+        case .noVary:
+            varyHeaders = nil
+        case .vary(let snapshot):
+            varyHeaders = snapshot
+        }
         await cache.set(
             cacheKey,
             CachedResponse(
                 data: response.data,
                 statusCode: response.statusCode,
-                headers: response.response?.allHeaderFields.reduce(into: [:]) { result, pair in
-                    guard let key = pair.key as? String, let value = pair.value as? String else { return }
-                    result[key] = value
-                } ?? [:]
+                headers: headerSnapshot,
+                varyHeaders: varyHeaders
             )
         )
+    }
+
+    /// Returns the cached entry for `key` only when its stored vary snapshot
+    /// matches `request`. Skips the result silently otherwise so the executor
+    /// falls through to a fresh transport hit.
+    private func cachedRespectingVary(
+        _ cache: any ResponseCache,
+        key: ResponseCacheKey,
+        request: URLRequest
+    ) async -> CachedResponse? {
+        guard let cached = await cache.get(key) else { return nil }
+        return cachedResponseMatchesVary(cached, request: request) ? cached : nil
     }
 
     private func notifyRequestStart(
