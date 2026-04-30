@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and the project follows Semantic
 Versioning for the 4.x release line.
 
+## [Unreleased] - 4.1.0
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## [4.0.0]
 
 InnoNetwork's first public release. The package targets Apple platforms only
