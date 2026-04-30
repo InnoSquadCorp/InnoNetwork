@@ -29,6 +29,12 @@ Versioning for the 4.x release line.
 
 ### Changed
 
+- `API_STABILITY.md` now describes the evolution boundary for each
+  Provisionally Stable surface, recommends `.upToNextMinor(from:)` for
+  consumers who want strict compile-time stability, and explicitly lists
+  `DecodingInterceptor` as provisionally stable. The README install
+  snippet uses `.upToNextMinor(from: "4.1.0")` and links the trade-off
+  with `.upToNextMajor(from:)`.
 - `RequestInterceptor` and `ResponseInterceptor` now carry DocC blocks
   that document the configuration → endpoint → refresh-token application
   order, the unwinding semantics for response adapters, and the failure

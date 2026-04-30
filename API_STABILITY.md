@@ -38,17 +38,58 @@ release line. `4.0.0` is the public baseline for this contract.
 
 ## Provisionally Stable
 
-- `default` aliases on configuration types
-- benchmark runner CLI flags and JSON summary presentation details
-- troubleshooting guidance and examples in README/DocC
+Symbols in this section are public and supported, but they may grow new
+cases, parameters, or shape during the 4.x line. Each change ships with
+release notes describing the migration path. Consumers who want strict
+compile-time stability should pin the package with
+`.upToNextMinor(from: "4.1.0")` (see "Version Pinning Guidance" below)
+and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
+
+- `default` aliases on configuration types — may add new defaults; never
+  removed within 4.x.
+- benchmark runner CLI flags and JSON summary presentation details — flag
+  names and JSON keys may evolve to reflect new metrics.
+- troubleshooting guidance and examples in README/DocC — documentation
+  evolves with the codebase; example signatures track the stable APIs they
+  illustrate.
 - `InnoNetworkTestSupport` library product and its `public` symbols
   (currently `MockURLSession`, `WebSocketEventRecorder`, `StubBehavior`,
-  `StubNetworkClient`, and `StubRequestKey`)
-- `Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
-- `WebSocketCloseDisposition` observation surface
-- `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces
-- `MultipartResponseDecoder` buffered multipart response parsing surface
-- `InnoNetworkCodegen` separate package and macro declarations
+  `StubNetworkClient`, and `StubRequestKey`) — additional helpers may be
+  added; existing symbols remain source-compatible within 4.x.
+- `Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor` —
+  builder shape may grow new chainable methods.
+- `WebSocketCloseDisposition` observation surface — additional enum cases
+  may appear as new close-code classifications are formalized.
+- `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and
+  circuit breaker policy surfaces — built-in knobs may add fields with
+  source-compatible defaults; the generic execution pipeline stays
+  package/internal.
+- `MultipartResponseDecoder` buffered multipart response parsing surface —
+  may evolve as the streaming-multipart roadmap progresses.
+- `InnoNetworkCodegen` separate package and macro declarations — macro
+  signatures may add optional arguments.
+- `DecodingInterceptor` (added 4.1) — protocol may grow new optional
+  hooks with default implementations as additional decode-boundary use
+  cases surface.
+
+## Version Pinning Guidance
+
+Apps that consume InnoNetwork via SwiftPM should pin against the latest
+4.x minor:
+
+```swift
+.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "4.1.0"))
+```
+
+`.upToNextMinor(from:)` accepts patch upgrades (4.1.0 → 4.1.1) but
+requires an explicit bump for minor upgrades (4.1.x → 4.2.0). This
+matches the stability contract: stable surfaces follow SemVer, but
+provisionally stable surfaces may add or evolve in a minor bump, so
+consumers should review the changelog for the minor before adopting.
+
+Use `.upToNextMajor(from:)` only if you exclusively call the **Stable**
+ledger and accept that provisionally stable APIs may shift under you on
+minor releases.
 
 ## Public Declaration Ledger
 

@@ -33,9 +33,17 @@ prototypes to production clients.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0")
+    // Recommended for app targets: pin to the current minor and accept
+    // patch upgrades. Provisionally stable APIs may evolve across minor
+    // bumps, so review CHANGELOG.md before adopting a new minor.
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", .upToNextMinor(from: "4.1.0"))
 ]
 ```
+
+> Use `from: "4.0.0"` (`.upToNextMajor`) only if you exclusively call
+> the **Stable** ledger in `API_STABILITY.md`. Provisionally stable
+> APIs (`Endpoint`, `WebSocketCloseDisposition`, `DecodingInterceptor`,
+> resilience policy surfaces, …) may change in any minor release.
 
 ### Core Request
 
