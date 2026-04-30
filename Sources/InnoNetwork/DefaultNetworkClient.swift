@@ -26,6 +26,13 @@ public protocol NetworkClient: Sendable {
 /// Application integrations should continue to depend on ``NetworkClient`` and use
 /// ``NetworkClient/request(_:)`` or ``NetworkClient/upload(_:)``. Reach for this
 /// protocol only when you need direct access to the execution pipeline.
+///
+/// > Important: `LowLevelNetworkClient` is exposed through
+/// > `@_spi(GeneratedClientSupport)` and is **best-effort**: it is not part of
+/// > the default SwiftPM import contract, it is not ABI-stable across releases,
+/// > and it may evolve in any minor release without a deprecation window. See
+/// > `API_STABILITY.md` and `Examples/GeneratedClientRecipe` for the supported
+/// > usage shape.
 @_spi(GeneratedClientSupport) public protocol LowLevelNetworkClient: Sendable {
     /// Executes a standard typed request through the low-level execution pipeline.
     ///

@@ -106,9 +106,27 @@ high-level compatibility classification readable for the 4.x release line.
 
 ### SPI
 
-- `LowLevelNetworkClient`, `RequestPayload`, and `SingleRequestExecutable` are
-  public only through `@_spi(GeneratedClientSupport)` and remain outside the
-  default SwiftPM import contract.
+InnoNetwork exposes a small set of execution-pipeline hooks through
+`@_spi(GeneratedClientSupport)` for generated clients (for example, OpenAPI
+adapters) that need to plug their own serialization and decoding into the
+shared retry, refresh, and observability machinery. These symbols are
+**best-effort**: they are not part of the default SwiftPM import contract,
+they are not ABI-stable across releases, and they may evolve in any minor
+release without a deprecation window. Callers must opt in with
+`@_spi(GeneratedClientSupport) import InnoNetwork`.
+
+| Symbol | Visibility | Stability |
+|---|---|---|
+| `LowLevelNetworkClient` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+| `DefaultNetworkClient.perform(_:)` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+| `DefaultNetworkClient.perform(executable:)` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+| `SingleRequestExecutable` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+| `APISingleRequestExecutable` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+| `MultipartSingleRequestExecutable` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+| `RequestPayload` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+
+See `Examples/WrapperSmoke` and `Examples/GeneratedClientRecipe` for the
+intended usage shape.
 
 ### InnoNetworkTestSupport
 
@@ -134,8 +152,11 @@ high-level compatibility classification readable for the 4.x release line.
 - `default` aliases are convenience entry points and should be treated as `safeDefaults` aliases.
 - Advanced builders are public and supported, but operational tuning values are not guaranteed to stay numerically identical across releases.
 - `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`,
-  `SingleRequestExecutable`, and `RequestPayload` are SPI surfaces and are not
-  part of the default SwiftPM import contract.
+  `SingleRequestExecutable`, `APISingleRequestExecutable`,
+  `MultipartSingleRequestExecutable`, and `RequestPayload` are SPI surfaces.
+  They are best-effort, are not part of the default SwiftPM import contract,
+  and may evolve in any minor release without a deprecation window — see the
+  SPI table under "Public Declaration Ledger" for the full list.
 - `PublicKeyPinningPolicy.HostMatchingStrategy.unionAllMatches` preserves the
   existing host pin lookup behavior. `mostSpecificHost` is stable as an
   opt-in stricter matching mode for operators who separate parent and
