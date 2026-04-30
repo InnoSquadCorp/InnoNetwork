@@ -11,6 +11,14 @@ Versioning for the 4.x release line.
 
 ### Changed
 
+- `MultipartAPIDefinition.uploadStrategy` now defaults to
+  `.streamingThreshold(bytes: 50 * 1024 * 1024)` (50 MiB) instead of
+  `.inMemory`. Small payloads still encode in memory; bodies past the
+  threshold spill to a temp file and upload via `URLSession.upload(for:fromFile:)`,
+  bounding peak memory by default. Endpoints that intentionally relied on
+  the in-memory path should now declare it explicitly:
+  `var uploadStrategy: MultipartUploadStrategy { .inMemory }`.
+
 ### Deprecated
 
 ### Fixed

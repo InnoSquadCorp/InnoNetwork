@@ -271,4 +271,29 @@ struct MultipartUploadStrategyTests {
             Issue.record("Expected .temporaryFileURL above threshold, got \(payload)")
         }
     }
+
+    private struct DefaultStrategyUpload: MultipartAPIDefinition {
+        typealias APIResponse = EmptyResponse
+        let multipartFormData: MultipartFormData
+        var method: HTTPMethod { .post }
+        var path: String { "/upload" }
+    }
+
+    @Test("Default uploadStrategy is .streamingThreshold(50 MiB)")
+    func defaultStrategyIsStreamingThreshold() {
+        let endpoint = DefaultStrategyUpload(multipartFormData: Self.makeFormData())
+        #expect(endpoint.uploadStrategy == .streamingThreshold(bytes: 50 * 1024 * 1024))
+    }
+
+    @Test("Default strategy keeps small bodies in memory")
+    func defaultStrategySmallBodyStaysInMemory() throws {
+        let executable = MultipartSingleRequestExecutable(
+            base: DefaultStrategyUpload(multipartFormData: Self.makeFormData())
+        )
+        let payload = try executable.makePayload()
+        switch payload {
+        case .data: break
+        default: Issue.record("Expected .data for small body under default threshold, got \(payload)")
+        }
+    }
 }
