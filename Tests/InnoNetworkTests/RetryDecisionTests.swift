@@ -53,13 +53,13 @@ struct RetryDecisionTests {
     @Test("Legacy boolean shouldRetry maps true → .retry and false → .noRetry by default")
     func legacyBoolMapsThroughDefault() {
         let retryDecision = LegacyBoolPolicy(result: true).shouldRetry(
-            error: .undefined,
+            error: .cancelled,
             retryIndex: 0,
             request: nil,
             response: nil
         )
         let noRetryDecision = LegacyBoolPolicy(result: false).shouldRetry(
-            error: .undefined,
+            error: .cancelled,
             retryIndex: 0,
             request: nil,
             response: nil
@@ -72,7 +72,7 @@ struct RetryDecisionTests {
     func contextualOverrideTakesPrecedence() {
         let policy = ContextualPolicy(returnedDecision: .retryAfter(5))
         let decision = policy.shouldRetry(
-            error: .undefined,
+            error: .cancelled,
             retryIndex: 0,
             request: URLRequest(url: URL(string: "https://example.com")!),
             response: nil

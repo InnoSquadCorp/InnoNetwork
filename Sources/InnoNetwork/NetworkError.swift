@@ -32,8 +32,6 @@ public enum NetworkError: Error, Sendable {
     case invalidBaseURL(String)
     /// Indicates an invalid request configuration
     case invalidRequestConfiguration(String)
-    /// Indicates a response failed to map to a JSON structure.
-    case jsonMapping(Response)
     /// Indicates a response failed with an invalid HTTP status code.
     case statusCode(Response)
     /// Indicates a response failed to map to a Decodable object.
@@ -44,7 +42,6 @@ public enum NetworkError: Error, Sendable {
     case underlying(SendableUnderlyingError, Response?)
     case trustEvaluationFailed(TrustFailureReason)
 
-    case undefined
     case cancelled
     /// The request did not complete within its configured timeout window.
     ///
@@ -63,8 +60,6 @@ extension NetworkError: LocalizedError {
             return "Invalid base URL: \(string)"
         case .invalidRequestConfiguration(let message):
             return "Invalid request configuration: \(message)"
-        case .jsonMapping:
-            return "Failed to map data to JSON."
         case .objectMapping(let error, _):
             return "Failed to map data to a Decodable object: \(error.message)"
         case .statusCode:
@@ -90,8 +85,6 @@ extension NetworkError: LocalizedError {
             case .custom(let message):
                 return message
             }
-        case .undefined:
-            return "Undefined Error"
         case .cancelled:
             return "Request was cancelled"
         case .timeout(let reason, _):
@@ -113,13 +106,11 @@ public extension NetworkError {
         switch self {
         case .invalidBaseURL: return nil
         case .invalidRequestConfiguration: return nil
-        case .jsonMapping(let response): return response
         case .objectMapping(_, let response): return response
         case .statusCode(let response): return response
         case .underlying(_, let response): return response
         case .nonHTTPResponse: return nil
         case .trustEvaluationFailed: return nil
-        case .undefined: return nil
         case .cancelled: return nil
         case .timeout: return nil
         }
@@ -130,13 +121,11 @@ public extension NetworkError {
         switch self {
         case .invalidBaseURL: return nil
         case .invalidRequestConfiguration: return nil
-        case .jsonMapping: return nil
         case .objectMapping(let error, _): return error
         case .statusCode: return nil
         case .underlying(let error, _): return error
         case .nonHTTPResponse: return nil
         case .trustEvaluationFailed: return nil
-        case .undefined: return nil
         case .cancelled: return nil
         case .timeout(_, let underlying): return underlying
         }
@@ -200,8 +189,6 @@ public extension NetworkError {
         switch self {
         case .objectMapping(let underlying, let response):
             return .objectMapping(underlying, response.redactingData())
-        case .jsonMapping(let response):
-            return .jsonMapping(response.redactingData())
         case .statusCode(let response):
             return .statusCode(response.redactingData())
         case .underlying(let err, let response?):
@@ -211,7 +198,6 @@ public extension NetworkError {
             .nonHTTPResponse,
             .underlying(_, nil),
             .trustEvaluationFailed,
-            .undefined,
             .cancelled,
             .timeout:
             return self
