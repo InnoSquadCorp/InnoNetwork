@@ -106,4 +106,111 @@ struct DecodingInterceptorTests {
         let received = try await client.request(GetEnvelope())
         #expect(received == EnvelopeBody(value: 7))
     }
+
+    private struct DoublingDidDecode: DecodingInterceptor {
+        func didDecode<APIResponse>(
+            _ value: APIResponse,
+            response: Response
+        ) async throws -> APIResponse where APIResponse: Sendable {
+            guard let envelope = value as? EnvelopeBody else { return value }
+            let doubled = EnvelopeBody(value: envelope.value * 2)
+            guard let substituted = doubled as? APIResponse else { return value }
+            return substituted
+        }
+    }
+
+    @Test("didDecode can substitute a normalized value of the same type")
+    func didDecodeSubstitution() async throws {
+        let mockSession = MockURLSession()
+        mockSession.setMockResponse(statusCode: 200, data: #"{"value":5}"#.data(using: .utf8)!)
+
+        let configuration = NetworkConfiguration(
+            baseURL: URL(string: "https://api.example.com/v1")!,
+            networkMonitor: nil,
+            decodingInterceptors: [DoublingDidDecode()]
+        )
+        let client = DefaultNetworkClient(configuration: configuration, session: mockSession)
+
+        let received = try await client.request(GetEnvelope())
+        #expect(received == EnvelopeBody(value: 10))
+    }
+
+    private struct ThrowingDidDecode: DecodingInterceptor {
+        struct Failure: Error, Equatable {}
+        func didDecode<APIResponse>(
+            _ value: APIResponse,
+            response: Response
+        ) async throws -> APIResponse where APIResponse: Sendable {
+            throw Failure()
+        }
+    }
+
+    @Test("Throwing didDecode aborts the request")
+    func throwingDidDecodeAborts() async throws {
+        let mockSession = MockURLSession()
+        mockSession.setMockResponse(statusCode: 200, data: #"{"value":1}"#.data(using: .utf8)!)
+
+        let configuration = NetworkConfiguration(
+            baseURL: URL(string: "https://api.example.com/v1")!,
+            networkMonitor: nil,
+            decodingInterceptors: [ThrowingDidDecode()]
+        )
+        let client = DefaultNetworkClient(configuration: configuration, session: mockSession)
+
+        await #expect(throws: Error.self) {
+            _ = try await client.request(GetEnvelope())
+        }
+    }
+
+    private final class OrderRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _will: [String] = []
+        private var _did: [String] = []
+
+        var willOrder: [String] { lock.withLock { _will } }
+        var didOrder: [String] { lock.withLock { _did } }
+
+        func recordWill(_ tag: String) { lock.withLock { _will.append(tag) } }
+        func recordDid(_ tag: String) { lock.withLock { _did.append(tag) } }
+    }
+
+    private struct TaggingInterceptor: DecodingInterceptor {
+        let tag: String
+        let recorder: OrderRecorder
+
+        func willDecode(data: Data, response: Response) async throws -> Data {
+            recorder.recordWill(tag)
+            return data
+        }
+
+        func didDecode<APIResponse>(
+            _ value: APIResponse,
+            response: Response
+        ) async throws -> APIResponse where APIResponse: Sendable {
+            recorder.recordDid(tag)
+            return value
+        }
+    }
+
+    @Test("Interceptor chain runs in declaration order for both hooks")
+    func chainFiresInDeclarationOrder() async throws {
+        let mockSession = MockURLSession()
+        mockSession.setMockResponse(statusCode: 200, data: #"{"value":3}"#.data(using: .utf8)!)
+
+        let recorder = OrderRecorder()
+        let configuration = NetworkConfiguration(
+            baseURL: URL(string: "https://api.example.com/v1")!,
+            networkMonitor: nil,
+            decodingInterceptors: [
+                TaggingInterceptor(tag: "A", recorder: recorder),
+                TaggingInterceptor(tag: "B", recorder: recorder),
+            ]
+        )
+        let client = DefaultNetworkClient(configuration: configuration, session: mockSession)
+
+        let received = try await client.request(GetEnvelope())
+        #expect(received == EnvelopeBody(value: 3))
+        #expect(recorder.willOrder == ["A", "B"])
+        #expect(recorder.didOrder == ["A", "B"])
+    }
 }

@@ -12,7 +12,10 @@ import Foundation
 ///    reject.
 /// 2. ``didDecode(_:response:)`` is invoked **after** the decoder
 ///    succeeds. Use it to record decode metrics, attach correlation
-///    metadata to the typed value, or substitute a normalized variant.
+///    metadata to the typed value, or return a normalized instance of
+///    the **same** `APIResponse` type. The hook cannot change the
+///    response type — the generic signature requires the returned
+///    value to match the input.
 ///
 /// Interceptors are applied in declaration order for both hooks
 /// (`configuration.decodingInterceptors[0]` runs first on the way in
