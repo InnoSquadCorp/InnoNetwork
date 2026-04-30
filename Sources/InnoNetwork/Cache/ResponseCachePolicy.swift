@@ -94,6 +94,9 @@ public struct CachedResponse: Sendable, Equatable {
     public let statusCode: Int
     public let headers: [String: String]
     public let storedAt: Date
+    /// Whether a cached entry must be revalidated before reuse even while it
+    /// is still inside the caller-provided freshness window.
+    public let requiresRevalidation: Bool
     /// Snapshot of the request headers that were present when this response
     /// was stored, restricted to the names listed in the response `Vary`
     /// header. `nil` means the response did not carry a `Vary` header (so
@@ -108,12 +111,14 @@ public struct CachedResponse: Sendable, Equatable {
         statusCode: Int = 200,
         headers: [String: String] = [:],
         storedAt: Date = Date(),
+        requiresRevalidation: Bool = false,
         varyHeaders: [String: String?]? = nil
     ) {
         self.data = data
         self.statusCode = statusCode
         self.headers = headers
         self.storedAt = storedAt
+        self.requiresRevalidation = requiresRevalidation
         self.varyHeaders = varyHeaders
     }
 
@@ -248,9 +253,11 @@ package extension ResponseCachePolicy {
             return .revalidate(nil)
         case .cacheFirst(let maxAge):
             guard let cached else { return .revalidate(nil) }
+            guard !cached.requiresRevalidation else { return .revalidate(cached) }
             return cached.age(since: now) <= maxAge.timeInterval ? .returnCached(cached) : .revalidate(cached)
         case .staleWhileRevalidate(let maxAge, let staleWindow):
             guard let cached else { return .revalidate(nil) }
+            guard !cached.requiresRevalidation else { return .revalidate(cached) }
             let age = cached.age(since: now)
             if age <= maxAge.timeInterval {
                 return .returnCached(cached)
