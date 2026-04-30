@@ -31,7 +31,7 @@ struct MacroExpansionTests {
                 extension GetUser: APIDefinition {
                     public typealias Parameter = EmptyParameter
                     public var method: HTTPMethod { .get }
-                    public var path: String { "/users/\\(id)" }
+                    public var path: String { "/users/\\(EndpointPathEncoding.percentEncodedSegment(id))" }
                 }
                 """,
             macros: macros

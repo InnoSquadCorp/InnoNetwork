@@ -404,6 +404,49 @@ struct EndpointBuilderTests {
         #expect(mockSession.capturedRequest?.url?.absoluteString == "https://api.example.com/api/v1/files/a%2Fb")
     }
 
+    @Test(
+        "Endpoint paths are safely percent-encoded without double-encoding literals",
+        arguments: [
+            ("/files/raw space", "https://api.example.com/api/v1/files/raw%20space"),
+            ("/files/caf\u{00E9}", "https://api.example.com/api/v1/files/caf%C3%A9"),
+            ("/files/%E2%9C%93", "https://api.example.com/api/v1/files/%E2%9C%93"),
+        ])
+    func endpointPathEncodingIsCrashSafe(path: String, expectedURL: String) async throws {
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/api/v1"),
+            session: mockSession
+        )
+
+        _ = try await client.request(Endpoint.get(path).decoding(EndpointAck.self))
+
+        #expect(mockSession.capturedRequest?.url?.absoluteString == expectedURL)
+    }
+
+    @Test("Dynamic path segments encode slashes and percent signs")
+    func dynamicPathSegmentsAreEncodedAsSingleSegments() {
+        #expect(
+            EndpointPathEncoding.percentEncodedSegment("a/b 100% \u{2713}")
+                == "a%2Fb%20100%25%20%E2%9C%93")
+    }
+
+    @Test(
+        "Malformed endpoint paths fail before transport",
+        arguments: ["/files/%", "/files/%2", "/files/%ZZ", "/users?name=kim", "/users#section"])
+    func malformedEndpointPathThrows(path: String) async {
+        let mockSession = MockURLSession()
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+
+        await #expect(throws: NetworkError.self) {
+            try await client.request(Endpoint.get(path))
+        }
+        #expect(mockSession.capturedRequest == nil)
+    }
+
     @Test
     func endpointPathCannotContainQueryOrFragment() async {
         let mockSession = MockURLSession()
