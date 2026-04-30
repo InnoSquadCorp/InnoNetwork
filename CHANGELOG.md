@@ -11,6 +11,12 @@ Versioning for the 4.x release line.
 
 ### Changed
 
+- `RequestInterceptor` and `ResponseInterceptor` now carry DocC blocks
+  that document the configuration → endpoint → refresh-token application
+  order, the unwinding semantics for response adapters, and the failure
+  contract (interceptor throws abort the request without invoking the
+  retry policy). No source-level changes; existing conforming types
+  continue to compile.
 - `MultipartAPIDefinition.uploadStrategy` now defaults to
   `.streamingThreshold(bytes: 50 * 1024 * 1024)` (50 MiB) instead of
   `.inMemory`. Small payloads still encode in memory; bodies past the
