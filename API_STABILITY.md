@@ -46,7 +46,7 @@ specific repository revision.
 - `WebSocketCloseDisposition` observation surface
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
-- `InnoNetworkCodegen` optional macro product and macro declarations
+- `InnoNetworkCodegen` separate package and macro declarations
 
 ## Public Declaration Ledger
 
@@ -73,7 +73,7 @@ high-level compatibility classification readable for the 4.x release line.
   `OSLogNetworkEventObserver`, `PublicKeyPinningPolicy`, `RefreshTokenPolicy`,
   `RequestCoalescingPolicy`, `RequestInterceptor`, `Response`,
   `ResponseCache`, `ResponseCacheKey`, `ResponseCachePolicy`,
-  `ResponseInterceptor`, `RetryDecision`, `RetryPolicy`,
+  `ResponseInterceptor`, `RetryDecision`, `RetryIdempotencyPolicy`, `RetryPolicy`,
   `SendableUnderlyingError`, `ServerSentEvent`, `ServerSentEventDecoder`,
   `StreamingAPIDefinition`, `StreamingResumePolicy`, `TimeoutReason`,
   `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
@@ -101,7 +101,7 @@ high-level compatibility classification readable for the 4.x release line.
   `WebSocketPingContext`, `WebSocketPongContext`, `WebSocketSendOverflowPolicy`,
   `WebSocketState`, and `WebSocketTask`.
 
-### InnoNetworkCodegen
+### InnoNetworkCodegen Package
 
 - `APIDefinition(method:path:)` attached macro.
 - `endpoint(_:_:as:)` freestanding expression macro.
@@ -151,11 +151,22 @@ high-level compatibility classification readable for the 4.x release line.
 - Resilience policies are opt-in and provisionally stable. They expose
   built-in knobs only; the generic execution pipeline remains package/internal
   and may evolve without deprecation.
-- `InnoNetworkCodegen` is an optional compile-time product. Importing only
-  `InnoNetwork` does not link `swift-syntax` into the core runtime target.
-  SwiftPM may still resolve package-level macro dependencies while loading the
-  full package graph.
+- `InnoNetworkCodegen` is a separate compile-time package under
+  `Packages/InnoNetworkCodegen`. Importing the root `InnoNetwork` package does
+  not resolve or build `swift-syntax`; macro users opt into that dependency by
+  depending on the codegen package.
 - Persistence and telemetry formats are not external storage contracts.
 - Benchmark guard thresholds, guarded benchmark selection, and baseline
   contents are operational policy rather than public compatibility surface.
 - Internal/Operational items may change in minor releases without separate deprecation windows.
+
+## Deprecation Policy
+
+- Stable public APIs require a documented replacement before deprecation.
+- Deprecations stay available for at least one minor release after the
+  replacement ships, unless a security issue forces a faster removal.
+- Provisionally stable APIs can change in minor releases, but each change must
+  be called out in release notes with a migration path or an explicit statement
+  that no source-compatible replacement exists yet.
+- Internal/Operational items can change without deprecation because they are not
+  part of the default SwiftPM import contract.

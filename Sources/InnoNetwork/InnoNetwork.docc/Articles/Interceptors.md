@@ -20,8 +20,8 @@ Each protocol has two attachment points:
   ``APIDefinition/responseInterceptors``. These run only for the specific
   endpoint that declares them.
 
-Cross-cutting concerns — Bearer auth, distributed-tracing headers, request
-IDs — belong on the session. Endpoint-specific overrides — a one-off
+Cross-cutting concerns such as tenant headers, distributed-tracing headers, and
+request IDs belong on the session. Endpoint-specific overrides — a one-off
 `X-Idempotency-Key`, a debug-build response rewriter — belong on the
 ``APIDefinition``.
 
@@ -41,17 +41,15 @@ interceptor therefore observes the same response shape it would observe
 under a session-only setup, regardless of how many endpoint interceptors
 sit between it and the transport.
 
-## Example: shared Bearer auth
+## Example: shared trace headers
 
 ```swift
-struct BearerAuth: RequestInterceptor {
-    let tokenStore: any TokenStore
+struct TraceHeaders: RequestInterceptor {
+    let traceStore: any TraceStore
 
     func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
         var request = urlRequest
-        if let token = await tokenStore.current() {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        request.setValue(await traceStore.currentTraceID(), forHTTPHeaderField: "X-Trace-ID")
         return request
     }
 }
@@ -59,12 +57,12 @@ struct BearerAuth: RequestInterceptor {
 let configuration = NetworkConfiguration.advanced(
     baseURL: URL(string: "https://api.example.com")!
 ) { builder in
-    builder.requestInterceptors = [BearerAuth(tokenStore: tokenStore)]
+    builder.requestInterceptors = [TraceHeaders(traceStore: traceStore)]
 }
 let client = DefaultNetworkClient(configuration: configuration)
 ```
 
-Every request the client dispatches now carries an `Authorization` header
+Every request the client dispatches now carries an `X-Trace-ID` header
 without each ``APIDefinition`` having to re-declare the interceptor.
 
 ## Example: endpoint-specific request ID
@@ -98,9 +96,10 @@ session-level chain already attached.
 
 ## Refresh tokens
 
-Use ``RefreshTokenPolicy`` for `401`-driven refresh and replay. Keep
-``RequestInterceptor`` implementations focused on applying the current token,
-tenant headers, request IDs, or signatures:
+Use ``RefreshTokenPolicy`` for current access-token application, `401`-driven
+refresh, and replay. Keep ``RequestInterceptor`` implementations focused on
+tenant headers, request IDs, request signatures, and other metadata that the
+refresh policy does not own:
 
 ```swift
 let refreshPolicy = RefreshTokenPolicy(
@@ -120,6 +119,10 @@ Refresh replay starts from the request after the session-level and endpoint
 interceptor chains have run, then replaces only the authorization value through
 the refresh policy. That preserves trace, tenant, and signing headers across
 the replay attempt.
+
+Header precedence is fixed as: library defaults, endpoint headers, automatic
+body `Content-Type`, request interceptors, then ``RefreshTokenPolicy``
+authorization. The last writer for a case-insensitive header name wins.
 
 ## Streaming responses
 

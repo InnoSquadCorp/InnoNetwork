@@ -51,9 +51,10 @@ because the package does not compile on Linux.
 Tagged releases produce two artifacts that consumers can verify:
 
 - `sbom.cdx.json` — CycloneDX 1.5 software bill of materials describing the
-  resolved package graph and build inputs. Core runtime targets have no
-  external library dependencies; the optional codegen/macro product records
-  SwiftPM's `swift-syntax` package when the full package graph is resolved.
+  resolved package graph and build inputs. The root runtime package resolves
+  without external dependencies. The separate `Packages/InnoNetworkCodegen`
+  package records SwiftPM's `swift-syntax` package when macro/codegen helpers
+  are built.
 - `benchmarks.json` — frozen benchmark output from the release validation
   job.
 

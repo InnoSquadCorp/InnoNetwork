@@ -23,7 +23,7 @@ to the user, or escalate to crash reporting.
 | ``NetworkError/trustEvaluationFailed(_:)`` | TLS pinning or custom trust evaluator rejected the chain. | Surface to the user; do not auto-retry. |
 | ``NetworkError/cancelled`` | `Task` cancellation or `cancelAll()`. | Honour silently — caller wanted to stop. |
 | ``NetworkError/timeout(_:)`` | Request, resource, or connection timed out. | Apply retry policy if budget allows. |
-| ``NetworkError/undefined(_:)`` | Catch-all for unmapped errors. | File a bug with the underlying error captured. |
+| ``NetworkError/undefined`` | Catch-all for unmapped errors. | File a bug with the underlying error captured. |
 
 ## Recipe: branch on classification, not raw code
 
@@ -68,11 +68,28 @@ The original response body is preserved **only** when the consumer opts in via
 `NetworkConfiguration.captureFailurePayload = true`. Keep that flag off in production
 to avoid leaking PII into crash reports, analytics, or logs.
 
+## NSError bridging
+
+`NetworkError` bridges through the stable `InnoNetwork.NetworkError` NSError
+domain. The 4.x line keeps numeric codes stable so observability pipelines can
+group failures without parsing localized strings. Underlying Foundation errors
+are preserved inside ``SendableUnderlyingError`` for `.underlying` and timeout
+cases, while status-code failures keep the structured ``Response`` metadata.
+
 ## Cancellation is not a failure
 
-`NetworkError.cancelled` is the **only** terminal outcome that is also expected. Never
-report it as an error in analytics or crash logs — it is the contract for user-initiated
-cancellation, logout cleanup, and `cancelAll()`.
+`NetworkError.cancelled` is the **only** terminal request outcome that is also
+expected. Never report it as an error in analytics or crash logs; it is the
+contract for user-initiated cancellation, logout cleanup, and `cancelAll()`.
+
+Across products, cancellation is terminal and non-retryable:
+
+- typed requests, uploads, and streams surface ``NetworkError/cancelled``
+- stale-while-revalidate background cancellation is ignored because the caller
+  already received a cached value
+- downloads transition to `DownloadState.cancelled` and publish a state event
+- websockets transition to `WebSocketState.cancelled` and emit a cancellation
+  error event where observers are still attached
 
 ## Related
 

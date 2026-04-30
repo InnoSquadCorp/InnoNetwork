@@ -290,8 +290,8 @@ extension HTTPHeader {
     /// Returns a `Content-Type` header.
     ///
     /// `APIDefinition.contentType` and `MultipartAPIDefinition` set the
-    /// `Content-Type` automatically, so manual configuration is rarely
-    /// needed for the standard request encoding paths.
+    /// `Content-Type` automatically when an encoded body is present, so manual
+    /// configuration is rarely needed for the standard request encoding paths.
     ///
     /// - Parameter value: The `Content-Type` value.
     ///

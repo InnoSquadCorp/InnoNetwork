@@ -133,7 +133,7 @@ InnoNetwork	swift.init	EventPipelineConsumerDeliveryLatencyMetric.init(partition
 InnoNetwork	swift.init	EventPipelineConsumerStateMetric.init(partitionID:consumerID:queueDepth:droppedEventCount:oldestQueuedEventAge:)
 InnoNetwork	swift.init	EventPipelineHubKind.init(rawValue:)
 InnoNetwork	swift.init	EventPipelinePartitionStateMetric.init(partitionID:queueDepth:droppedEventCount:oldestQueuedEventAge:)
-InnoNetwork	swift.init	ExponentialBackoffRetryPolicy.init(maxRetries:maxTotalRetries:retryDelay:maxRetryAfterDelay:maxDelay:jitterRatio:waitsForNetworkChanges:networkChangeTimeout:)
+InnoNetwork	swift.init	ExponentialBackoffRetryPolicy.init(maxRetries:maxTotalRetries:retryDelay:maxRetryAfterDelay:maxDelay:jitterRatio:waitsForNetworkChanges:networkChangeTimeout:idempotencyPolicy:)
 InnoNetwork	swift.init	HTTPHeader.init(name:value:)
 InnoNetwork	swift.init	HTTPHeaders.init()
 InnoNetwork	swift.init	HTTPHeaders.init(_:)
@@ -160,6 +160,7 @@ InnoNetwork	swift.init	RefreshTokenPolicy.init(refreshStatusCodes:currentToken:r
 InnoNetwork	swift.init	RequestCoalescingPolicy.init(methods:excludedHeaderNames:)
 InnoNetwork	swift.init	Response.init(statusCode:data:request:response:)
 InnoNetwork	swift.init	ResponseCacheKey.init(method:url:headers:)
+InnoNetwork	swift.init	RetryIdempotencyPolicy.init(safeMethods:idempotencyHeaderName:retriesUnsafeMethodsWithIdempotencyKey:retriesAllMethods:)
 InnoNetwork	swift.init	SendableUnderlyingError.init(_:)
 InnoNetwork	swift.init	SendableUnderlyingError.init(domain:code:message:failureReason:recoverySuggestion:)
 InnoNetwork	swift.init	ServerSentEvent.init(id:event:data:retry:)
@@ -235,6 +236,7 @@ InnoNetwork	swift.method	ResponseCache.get(_:)
 InnoNetwork	swift.method	ResponseCache.invalidate(_:)
 InnoNetwork	swift.method	ResponseCache.set(_:_:)
 InnoNetwork	swift.method	ResponseInterceptor.adapt(_:request:)
+InnoNetwork	swift.method	RetryIdempotencyPolicy.allowsRetry(for:)
 InnoNetwork	swift.method	RetryPolicy.retryDelay(for:)
 InnoNetwork	swift.method	RetryPolicy.shouldResetAttempts(afterNetworkChangeFrom:to:)
 InnoNetwork	swift.method	RetryPolicy.shouldRetry(error:retryIndex:)
@@ -311,6 +313,7 @@ InnoNetwork	swift.property	EventPipelinePartitionStateMetric.droppedEventCount
 InnoNetwork	swift.property	EventPipelinePartitionStateMetric.oldestQueuedEventAge
 InnoNetwork	swift.property	EventPipelinePartitionStateMetric.partitionID
 InnoNetwork	swift.property	EventPipelinePartitionStateMetric.queueDepth
+InnoNetwork	swift.property	ExponentialBackoffRetryPolicy.idempotencyPolicy
 InnoNetwork	swift.property	ExponentialBackoffRetryPolicy.jitterRatio
 InnoNetwork	swift.property	ExponentialBackoffRetryPolicy.maxDelay
 InnoNetwork	swift.property	ExponentialBackoffRetryPolicy.maxRetries
@@ -383,6 +386,7 @@ InnoNetwork	swift.property	NetworkConfiguration.trustPolicy
 InnoNetwork	swift.property	NetworkContext.baggage
 InnoNetwork	swift.property	NetworkContext.correlationID
 InnoNetwork	swift.property	NetworkContext.traceID
+InnoNetwork	swift.property	NetworkError.errorCode
 InnoNetwork	swift.property	NetworkError.errorDescription
 InnoNetwork	swift.property	NetworkError.errorUserInfo
 InnoNetwork	swift.property	NetworkError.response
@@ -414,6 +418,10 @@ InnoNetwork	swift.property	Response.statusCode
 InnoNetwork	swift.property	ResponseCacheKey.headers
 InnoNetwork	swift.property	ResponseCacheKey.method
 InnoNetwork	swift.property	ResponseCacheKey.url
+InnoNetwork	swift.property	RetryIdempotencyPolicy.idempotencyHeaderName
+InnoNetwork	swift.property	RetryIdempotencyPolicy.retriesAllMethods
+InnoNetwork	swift.property	RetryIdempotencyPolicy.retriesUnsafeMethodsWithIdempotencyKey
+InnoNetwork	swift.property	RetryIdempotencyPolicy.safeMethods
 InnoNetwork	swift.property	RetryPolicy.maxRetries
 InnoNetwork	swift.property	RetryPolicy.maxRetryAfterDelay
 InnoNetwork	swift.property	RetryPolicy.maxTotalRetries
@@ -431,6 +439,7 @@ InnoNetwork	swift.property	ServerSentEvent.event
 InnoNetwork	swift.property	ServerSentEvent.id
 InnoNetwork	swift.property	ServerSentEvent.retry
 InnoNetwork	swift.property	SingleRequestExecutable.acceptableStatusCodes
+InnoNetwork	swift.property	SingleRequestExecutable.bodyContentType
 InnoNetwork	swift.property	SingleRequestExecutable.headers
 InnoNetwork	swift.property	SingleRequestExecutable.logger
 InnoNetwork	swift.property	SingleRequestExecutable.method
@@ -499,14 +508,13 @@ InnoNetwork	swift.struct	RefreshTokenPolicy
 InnoNetwork	swift.struct	RequestCoalescingPolicy
 InnoNetwork	swift.struct	Response
 InnoNetwork	swift.struct	ResponseCacheKey
+InnoNetwork	swift.struct	RetryIdempotencyPolicy
 InnoNetwork	swift.struct	SendableUnderlyingError
 InnoNetwork	swift.struct	ServerSentEvent
 InnoNetwork	swift.struct	URLQueryCustomKeyTransform
 InnoNetwork	swift.struct	URLQueryEncoder
 InnoNetwork	swift.typealias	Endpoint.APIResponse
 InnoNetwork	swift.typealias	Endpoint.Parameter
-InnoNetworkCodegen	swift.macro	APIDefinition(method:path:)
-InnoNetworkCodegen	swift.macro	endpoint(_:_:as:)
 InnoNetworkDownload	swift.class	DownloadManager
 InnoNetworkDownload	swift.class	DownloadTask
 InnoNetworkDownload	swift.enum	DownloadConfiguration.PersistenceFsyncPolicy

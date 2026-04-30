@@ -147,7 +147,7 @@ expected_provisionally=(
 '`WebSocketCloseDisposition` observation surface'
 '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
-'`InnoNetworkCodegen` optional macro product and macro declarations'
+'`InnoNetworkCodegen` separate package and macro declarations'
 )
 
 expected_shipping_public_declarations=(
@@ -222,6 +222,7 @@ expected_shipping_public_declarations=(
   ResponseCachePolicy
   ResponseInterceptor
   RetryDecision
+  RetryIdempotencyPolicy
   RetryPolicy
   SendableUnderlyingError
   ServerSentEvent
@@ -345,12 +346,16 @@ validate_multipart_response_api() {
 }
 
 validate_codegen_product() {
-  require_contains 'name: "InnoNetworkCodegen"' "$repo_root/Package.swift"
-  require_contains 'targets: ["InnoNetworkCodegen"]' "$repo_root/Package.swift"
-  require_contains 'name: "InnoNetworkMacros"' "$repo_root/Package.swift"
-  require_contains 'https://github.com/swiftlang/swift-syntax.git' "$repo_root/Package.swift"
-  require_contains 'public macro APIDefinition' "$repo_root/Sources/InnoNetworkCodegen/Macros.swift"
-  require_contains 'public macro endpoint' "$repo_root/Sources/InnoNetworkCodegen/Macros.swift"
+  local codegen_package="$repo_root/Packages/InnoNetworkCodegen/Package.swift"
+  local codegen_macros="$repo_root/Packages/InnoNetworkCodegen/Sources/InnoNetworkCodegen/Macros.swift"
+  require_contains 'dependencies: []' "$repo_root/Package.swift"
+  require_contains 'name: "InnoNetworkCodegen"' "$codegen_package"
+  require_contains 'targets: ["InnoNetworkCodegen"]' "$codegen_package"
+  require_contains 'name: "InnoNetworkMacros"' "$codegen_package"
+  require_contains 'https://github.com/swiftlang/swift-syntax.git' "$codegen_package"
+  require_contains 'from: "603.0.1"' "$codegen_package"
+  require_contains 'public macro APIDefinition' "$codegen_macros"
+  require_contains 'public macro endpoint' "$codegen_macros"
   require_contains '`APIDefinition(method:path:)`' "$api_stability"
   require_contains '`endpoint(_:_:as:)`' "$api_stability"
 }
@@ -385,7 +390,6 @@ included_modules = {
     "InnoNetworkDownload",
     "InnoNetworkWebSocket",
     "InnoNetworkTestSupport",
-    "InnoNetworkCodegen",
 }
 included_kinds = {
     "swift.actor",
@@ -482,6 +486,8 @@ validate_troubleshooting_and_examples_docs() {
   require_contains '### 3. [CustomHeaders](./CustomHeaders)' "$repo_root/Examples/README.md"
   require_contains '### 4. [RealWorldAPI](./RealWorldAPI)' "$repo_root/Examples/README.md"
   require_contains '### [ConsumerSmoke](./ConsumerSmoke)' "$repo_root/Examples/README.md"
+  require_contains '### [CoreSmoke](./CoreSmoke)' "$repo_root/Examples/README.md"
+  require_contains '### [TestSupportSmoke](./TestSupportSmoke)' "$repo_root/Examples/README.md"
   require_contains '### [WrapperSmoke](./WrapperSmoke)' "$repo_root/Examples/README.md"
 }
 
@@ -670,7 +676,7 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_multipart_response_api
       continue
       ;;
-    '`InnoNetworkCodegen` optional macro product and macro declarations')
+    '`InnoNetworkCodegen` separate package and macro declarations')
       validate_codegen_product
       continue
       ;;

@@ -8,14 +8,19 @@
 [![Platforms](https://img.shields.io/badge/platforms-iOS%2018%20%7C%20macOS%2015%20%7C%20tvOS%2018%20%7C%20watchOS%2011%20%7C%20visionOS%202-lightgrey)](#platform-matrix)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-InnoNetwork is a Swift package for type-safe networking on Apple platforms. It provides four public products:
+InnoNetwork is a Swift package for type-safe networking on Apple platforms. The
+root runtime package provides four public products:
 
 - `InnoNetwork` for request/response APIs
 - `InnoNetworkDownload` for download lifecycle management
 - `InnoNetworkWebSocket` for connection-oriented realtime flows
-- `InnoNetworkCodegen` for optional Swift macro endpoint helpers
+- `InnoNetworkTestSupport` for consumer test targets
 
-The package is built around Swift Concurrency, explicit transport policies, and operational visibility that can scale from app prototypes to production clients.
+Optional Swift macro endpoint helpers live in the separate
+`Packages/InnoNetworkCodegen` package so runtime-only consumers do not resolve
+`swift-syntax`. The packages are built around Swift Concurrency, explicit
+transport policies, and operational visibility that can scale from app
+prototypes to production clients.
 
 > ⚠️ **Apple platforms only by design.** InnoNetwork builds on URLSession, `OSAllocatedUnfairLock`, OSLog, and Network.framework, none of which match Apple-platform behaviour on Linux. Linux/server-side Swift is **not** a supported target. See [docs/PlatformSupport.md](docs/PlatformSupport.md) for the rationale and for guidance on sharing models with Linux server code (e.g. Vapor).
 
@@ -152,13 +157,19 @@ for await event in await WebSocketManager.shared.events(for: task) {
 - listener retention across reconnect attempts
 - `AsyncStream` and listener-based event delivery
 
-### `InnoNetworkCodegen`
+### `InnoNetworkTestSupport`
+
+- `MockURLSession` for deterministic request capture in consumer tests
+- `StubNetworkClient` for testing app layers without touching transport
+- `WebSocketEventRecorder` for websocket integration assertions
+- intended for test targets, not production binaries
+
+### Separate `InnoNetworkCodegen` Package
 
 - optional `@APIDefinition` and `#endpoint` macros
-- links `swift-syntax` only through the codegen/macro targets
-- keeps the core `InnoNetwork` runtime target free of external library
-  dependencies, while SwiftPM may still resolve package-level macro
-  dependencies during package graph loading
+- depends on `swift-syntax` from `Packages/InnoNetworkCodegen` only
+- keeps the root `InnoNetwork` package free of external dependencies during
+  runtime-only package resolution
 
 ## Platform Matrix
 
@@ -240,7 +251,10 @@ let client = DefaultNetworkClient(
 
 ### Optional Macros
 
-Add `InnoNetworkCodegen` only when you want compile-time endpoint helpers:
+Add the separate `InnoNetworkCodegen` package only when you want compile-time
+endpoint helpers. Inside this repository, examples use a local path dependency
+to `Packages/InnoNetworkCodegen`; published consumers should depend on the
+dedicated codegen package once it is distributed independently.
 
 ```swift
 import InnoNetwork
@@ -290,7 +304,15 @@ do {
 
 - sending a top-level scalar or array query without `queryRootKey`
 - mismatching `contentType` and request payload semantics
+- putting query or fragment components directly in an endpoint `path`
 - using a malformed multipart payload
+
+Request construction follows a fixed contract: endpoint paths are appended after
+the `baseURL` path even when they start with `/`; endpoint paths must not include
+`?` or `#`; query values must flow through `parameters` and `queryEncoder`; and
+`Content-Type` is attached only for body, multipart, or file-upload payloads.
+Header precedence is library defaults, endpoint headers, automatic body
+`Content-Type`, request interceptors, then `RefreshTokenPolicy` authorization.
 
 For operational tuning, see [Examples](Examples/README.md) and [API Stability](API_STABILITY.md).
 
@@ -379,13 +401,17 @@ Operational items to verify before shipping a client built on InnoNetwork.
   parent task is cancelled.
 - **Retry budget.** `ExponentialBackoffRetryPolicy.maxTotalRetries` is the absolute cap that
   network-monitor recovery does not reset. Budget per user session, not per request.
+- **Retry idempotency.** The built-in retry policy retries `GET`/`HEAD` by
+  default. `POST`, upload, and multipart requests retry only when they carry an
+  `Idempotency-Key`, unless the client opts into `.methodAgnostic`.
 - **Auth refresh.** Prefer `RefreshTokenPolicy` over response interceptors for
   `401` refresh + replay. The policy single-flights concurrent refreshes and
   replays each fully adapted request at most once.
 - **Cache and circuit breaker.** Enable `ResponseCachePolicy` and
   `CircuitBreakerPolicy` per client only after deciding the cache freshness and
-  host-failure budget for that API. Cache keys include `Authorization` and
-  `Accept-Language`; full HTTP `Vary` processing is not automatic in 4.0.
+  host-failure budget for that API. Cache keys include an `Authorization`
+  fingerprint and `Accept-Language`; full HTTP `Vary` processing is not
+  automatic in 4.0.
 - **WebSocket reconnect cap.** `maxReconnectAttempts` limits successive automatic attempts.
   After exhaustion, surface the failure to the UI rather than reconnect on every app
   foreground.
@@ -395,10 +421,9 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - **Background fetch friendly.** Streaming or websocket products expect explicit
   `disconnect()` calls before app suspension. Implement `applicationDidEnterBackground`
   cleanup; the OS will not gracefully close sockets on your behalf.
-- **Token refresh.** Keep token application, signing, and tenant headers in
-  `RequestInterceptor`s, and configure `RefreshTokenPolicy` for `401` refresh
-  + replay. The policy owns the single-flight refresh so concurrent retries do
-  not stampede the refresh endpoint.
+- **Token refresh.** Let `RefreshTokenPolicy` apply the current access token and
+  own `401` refresh + replay. Keep request signing, tenant headers, request IDs,
+  and other non-refresh metadata in `RequestInterceptor`s.
 
 ### Pre-flight Test Plan
 
