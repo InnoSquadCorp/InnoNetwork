@@ -19,13 +19,15 @@ import Foundation
 ///
 /// ## Failure semantics
 ///
-/// Throwing from `adapt(_:)` aborts the request immediately. The thrown
-/// error is propagated to the caller as-is, except that conforming to
-/// `Error` types other than ``NetworkError`` are wrapped via
-/// ``NetworkError/underlying(_:_:)``. The retry policy is **not**
-/// consulted for adapter failures — adapter errors typically indicate
-/// programmer error or unrecoverable state (missing credentials, malformed
-/// configuration) rather than transient transport issues.
+/// Throwing from `adapt(_:)` aborts the **current attempt** immediately.
+/// The thrown error is propagated as-is, except that `Error` types other
+/// than ``NetworkError`` are wrapped via ``NetworkError/underlying(_:_:)``.
+/// Whether the request is retried is then decided by the configured
+/// ``RetryPolicy``: the executor surfaces the failure to
+/// ``RetryPolicy/shouldRetry(error:retryIndex:request:response:)`` just
+/// like a transport error, so non-transient adapter failures (missing
+/// credentials, malformed configuration) should be reported with an error
+/// the policy classifies as `.noRetry`.
 ///
 /// ## Concurrency
 ///

@@ -24,13 +24,13 @@ import Foundation
 ///
 /// ## Failure semantics
 ///
-/// Throwing from `adapt(_:request:)` aborts the request. The error is
-/// surfaced to the caller without consulting the retry policy — response
-/// adapters are not part of the retry decision because they observe an
-/// already-completed transport exchange. To trigger a retry, throw a
-/// ``NetworkError`` that the configured ``RetryPolicy`` would have
-/// retried before the response arrived (status-code-based retry policies
-/// inspect the response before this interceptor chain runs).
+/// Throwing from `adapt(_:request:)` aborts the **current attempt**.
+/// The thrown error is wrapped as a request-execution failure and
+/// surfaced to the configured ``RetryPolicy`` exactly like a transport
+/// error, so the policy still decides whether to retry. Throw a
+/// ``NetworkError`` whose classification matches the desired retry
+/// outcome (e.g. ``NetworkError/statusCode(_:)`` for a payload the policy
+/// would re-attempt, or a non-retryable category for a permanent rejection).
 ///
 /// ## Concurrency
 ///

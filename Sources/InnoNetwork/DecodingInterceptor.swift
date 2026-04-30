@@ -20,9 +20,13 @@ import Foundation
 /// Interceptors are applied in declaration order for both hooks
 /// (`configuration.decodingInterceptors[0]` runs first on the way in
 /// and first on the way out). Throwing from either hook aborts the
-/// request with the thrown error and skips any remaining interceptors;
-/// the retry policy is **not** consulted because decoding-stage
-/// failures are not retried by the executor.
+/// **current attempt** with the thrown error and skips any remaining
+/// interceptors. The error is then surfaced to the configured
+/// ``RetryPolicy`` exactly like a transport failure, so the policy
+/// still decides whether to retry the request — throw a ``NetworkError``
+/// whose classification reflects the desired retry outcome (e.g.
+/// ``NetworkError/objectMapping(_:_:)`` for a non-retryable schema
+/// mismatch).
 ///
 /// All conforming types must be `Sendable` because the executor may
 /// invoke them concurrently from multiple in-flight requests. Both
