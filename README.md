@@ -33,13 +33,9 @@ prototypes to production clients.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", branch: "release/v4.0")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0")
 ]
 ```
-
-`4.0.0` is the upcoming 4.x public release baseline. Until the tag exists, pin
-the `release/v4.0` branch or a specific repository revision when validating
-these unreleased changes.
 
 ### Core Request
 
@@ -188,14 +184,13 @@ Protocol Buffers support moved to the separate `InnoNetworkProtobuf` package. Co
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", branch: "release/v4.0"),
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0"),
     .package(url: "https://github.com/InnoSquadCorp/InnoNetworkProtobuf.git", branch: "main")
 ]
 ```
 
-`InnoNetworkProtobuf` is being prepared for its first tagged release. Until
-that tag exists, follow the `main` branch of `InnoNetworkProtobuf` together
-with the unreleased InnoNetwork 4.0 release branch or a pinned revision.
+`InnoNetworkProtobuf` is being prepared for its first tagged release; until
+then, follow its `main` branch.
 
 ## Configuration
 
@@ -318,19 +313,20 @@ For operational tuning, see [Examples](Examples/README.md) and [API Stability](A
 
 ## Stability
 
-Public releases follow semantic versioning. `4.0.0` is the upcoming public
-baseline for the 4.x major line; until it is tagged, use `release/v4.0` or a
-specific revision for validation.
+Public releases follow semantic versioning starting with `4.0.0`, the first
+public release of the 4.x line.
 
 - Stable public API: [API_STABILITY.md](API_STABILITY.md)
 - Release rules and compatibility policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration expectations: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
 
-`safeDefaults` is the recommended public path. `default` aliases remain available for compatibility, but new examples and new integrations should prefer `safeDefaults`.
+`safeDefaults` is the recommended public path. `default` aliases are available
+as `safeDefaults` aliases, but new examples and new integrations should prefer
+`safeDefaults`.
 
-`request` and `upload` are the recommended request execution APIs for 4.0.0
-integrations. Lower-level extension points that exist in the source tree are
-not part of the 4.0.0 stable public contract.
+`request` and `upload` are the recommended request execution APIs. Lower-level
+extension points that exist in the source tree are not part of the stable
+public contract.
 
 For long-lived line-delimited transports (Server-Sent Events, NDJSON, log
 streams), use `DefaultNetworkClient.stream(_:)` together with a

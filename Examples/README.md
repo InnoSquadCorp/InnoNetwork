@@ -117,13 +117,9 @@ Add InnoNetwork to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", branch: "release/v4.0")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0")
 ]
 ```
-
-`4.0.0` is the upcoming public release baseline and has not been tagged yet.
-Until the tag exists, pin `release/v4.0` or a specific repository revision when
-validating these unreleased changes.
 
 ### Running the Examples
 

@@ -1,9 +1,7 @@
 # API Stability
 
 This document defines the compatibility contract for the InnoNetwork 4.x
-release line. `4.0.0` is the upcoming public release baseline for this
-contract; until it is tagged, validate the line with `release/v4.0` or a
-specific repository revision.
+release line. `4.0.0` is the public baseline for this contract.
 
 ## Stable
 
