@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+export LC_ALL=C
 
 api_stability="$repo_root/API_STABILITY.md"
 readme="$repo_root/README.md"
