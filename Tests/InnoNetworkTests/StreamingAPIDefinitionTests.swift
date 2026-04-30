@@ -410,6 +410,40 @@ struct StreamingAPIDefinitionTests {
         #expect(values == ["accepted"])
     }
 
+    @Test("stream() applies current token from RefreshTokenPolicy")
+    func streamAppliesCurrentRefreshTokenPolicyToken() async throws {
+        let definition = LineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 200, data: Data("authorized\n".utf8))
+            ])
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                refreshTokenPolicy: RefreshTokenPolicy(
+                    currentToken: { "stream-token" },
+                    refreshToken: { "unused" }
+                )
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var values: [String] = []
+        for try await value in client.stream(definition) {
+            values.append(value)
+        }
+
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(values == ["authorized"])
+        #expect(captured.count == 1)
+        #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer stream-token")
+    }
+
     @Test("stream() maps URLError.timedOut to NetworkError.timeout(.requestTimeout)")
     func streamMapsTimedOutToRequestTimeout() async throws {
         let client = DefaultNetworkClient(

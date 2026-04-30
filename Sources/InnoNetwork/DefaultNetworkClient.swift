@@ -137,6 +137,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
             let requestID = UUID()
             let inFlight = self.inFlight
             let configuration = self.configuration
+            let executionRuntime = self.executionRuntime
             let session = self.session
             let eventHub = self.eventHub
             let startGate = TaskStartGate()
@@ -179,6 +180,9 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
                         }
                         for interceptor in request.requestInterceptors {
                             urlRequest = try await interceptor.adapt(urlRequest)
+                        }
+                        if let refreshCoordinator = executionRuntime.refreshCoordinator {
+                            urlRequest = try await refreshCoordinator.applyCurrentToken(to: urlRequest)
                         }
                         await eventHub.publish(
                             .requestAdapted(

@@ -21,7 +21,7 @@ build request
 Built-in policies occupy the preflight and post-transport slots:
 
 - `RefreshTokenPolicy` applies the current token, refreshes on configured auth
-  status codes, and replays the original request once.
+  status codes, and replays the fully adapted request once.
 - `RequestCoalescingPolicy` shares one raw `(Data, HTTPURLResponse)` result
   among identical in-flight requests.
 - `ResponseCachePolicy` can return cached GET responses, revalidate with ETag,

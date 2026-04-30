@@ -357,10 +357,16 @@ validate_codegen_product() {
 collect_public_symbols() {
   command -v python3 > /dev/null 2>&1 || fail "python3 is required for symbol graph public surface validation"
 
+  find "$repo_root/.build" -path '*/symbolgraph/*.symbols.json' -type f -delete 2> /dev/null || true
+
+  local dump_status
+  set +e
   swift package dump-symbol-graph \
     --minimum-access-level public \
     --include-spi-symbols \
     --skip-synthesized-members > /dev/null
+  dump_status=$?
+  set -e
 
   python3 - "$repo_root" <<'PY'
 import json
@@ -396,6 +402,7 @@ included_kinds = {
     "swift.typealias",
 }
 rows = set()
+seen_modules = set()
 for path in sorted(symbolgraph_dir.glob("*.symbols.json")):
     if "@" in path.name or path.name.startswith("InnoNetworkPackageTests"):
         continue
@@ -404,6 +411,7 @@ for path in sorted(symbolgraph_dir.glob("*.symbols.json")):
     module = data.get("module", {}).get("name")
     if module not in included_modules:
         continue
+    seen_modules.add(module)
     for symbol in data.get("symbols", []):
         if symbol.get("accessLevel") != "public":
             continue
@@ -415,9 +423,17 @@ for path in sorted(symbolgraph_dir.glob("*.symbols.json")):
             continue
         rows.add(f"{module}\t{kind}\t{'.'.join(components)}")
 
+missing_modules = sorted(included_modules - seen_modules)
+if missing_modules:
+    raise SystemExit(f"Missing required symbol graphs: {', '.join(missing_modules)}")
+
 for row in sorted(rows):
     print(row)
 PY
+
+  if [[ "$dump_status" -ne 0 ]]; then
+    echo "docs-contract-sync: swift package dump-symbol-graph exited with $dump_status after emitting required library symbol graphs; ignoring non-contract target extraction failure." >&2
+  fi
 }
 
 validate_public_surface_ledger() {

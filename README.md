@@ -381,7 +381,7 @@ Operational items to verify before shipping a client built on InnoNetwork.
   network-monitor recovery does not reset. Budget per user session, not per request.
 - **Auth refresh.** Prefer `RefreshTokenPolicy` over response interceptors for
   `401` refresh + replay. The policy single-flights concurrent refreshes and
-  replays each original request at most once.
+  replays each fully adapted request at most once.
 - **Cache and circuit breaker.** Enable `ResponseCachePolicy` and
   `CircuitBreakerPolicy` per client only after deciding the cache freshness and
   host-failure budget for that API. Cache keys include `Authorization` and

@@ -78,7 +78,7 @@ public struct NetworkConfiguration: Sendable {
     public let responseInterceptors: [ResponseInterceptor]
     /// Optional token refresh policy. When configured, the client applies the
     /// current token before transport, refreshes once on matching auth status
-    /// codes, and replays the original request at most one time.
+    /// codes, and replays the fully adapted request at most one time.
     public let refreshTokenPolicy: RefreshTokenPolicy?
     /// Optional raw-transport coalescing policy. Disabled by default.
     public let requestCoalescingPolicy: RequestCoalescingPolicy

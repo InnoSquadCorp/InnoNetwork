@@ -1,7 +1,7 @@
 # Auth Refresh
 
 Use ``RefreshTokenPolicy`` when a client should refresh a bearer token after an
-authentication response and replay the original request once.
+authentication response and replay the fully adapted request once.
 
 Auth refresh is part of InnoNetwork's internal execution pipeline, not a public
 generic execution-policy hook. The public surface is intentionally narrow:
