@@ -164,11 +164,7 @@ public extension APIDefinition where APIResponse: HTTPEmptyResponseDecodable {
     var transport: TransportPolicy<APIResponse> {
         switch method {
         case .get:
-            return TransportPolicy(
-                requestEncoding: .query(URLQueryEncoder(), rootKey: nil),
-                responseDecoding: .jsonAllowingEmpty(defaultResponseDecoder),
-                responseDecoder: .jsonEmptyCapable(decoder: defaultResponseDecoder)
-            )
+            return .query()
         default:
             return .jsonAllowingEmpty()
         }
@@ -177,10 +173,6 @@ public extension APIDefinition where APIResponse: HTTPEmptyResponseDecodable {
 
 public extension MultipartAPIDefinition where APIResponse: HTTPEmptyResponseDecodable {
     var transport: TransportPolicy<APIResponse> {
-        TransportPolicy(
-            requestEncoding: .none,
-            responseDecoding: .jsonAllowingEmpty(defaultResponseDecoder),
-            responseDecoder: .jsonEmptyCapable(decoder: defaultResponseDecoder)
-        )
+        .multipart()
     }
 }

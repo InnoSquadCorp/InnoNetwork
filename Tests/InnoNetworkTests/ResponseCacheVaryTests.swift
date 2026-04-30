@@ -20,7 +20,7 @@ struct ResponseCacheVaryTests {
     // MARK: - evaluateVary
 
     @Test("No Vary header → noVary")
-    func noVaryHeaderProducesNoVary() {
+    func noVaryHeaderProducesNoVary() async {
         let evaluation = evaluateVary(
             responseHeaders: ["Content-Type": "application/json"],
             request: request()
@@ -29,7 +29,7 @@ struct ResponseCacheVaryTests {
     }
 
     @Test("Empty Vary header value → noVary")
-    func emptyVaryHeaderProducesNoVary() {
+    func emptyVaryHeaderProducesNoVary() async {
         let evaluation = evaluateVary(
             responseHeaders: ["Vary": ""],
             request: request()
@@ -38,7 +38,7 @@ struct ResponseCacheVaryTests {
     }
 
     @Test("Vary: * → wildcardSkipsCache")
-    func wildcardVaryRefusesCache() {
+    func wildcardVaryRefusesCache() async {
         let evaluation = evaluateVary(
             responseHeaders: ["Vary": "*"],
             request: request(headers: ["Accept-Language": "en-US"])
@@ -47,7 +47,7 @@ struct ResponseCacheVaryTests {
     }
 
     @Test("Vary list containing * still refuses cache")
-    func mixedWildcardVaryRefusesCache() {
+    func mixedWildcardVaryRefusesCache() async {
         let evaluation = evaluateVary(
             responseHeaders: ["Vary": "Accept-Language, *"],
             request: request(headers: ["Accept-Language": "en-US"])
@@ -56,7 +56,7 @@ struct ResponseCacheVaryTests {
     }
 
     @Test("Vary: Accept-Language captures the request value snapshot")
-    func singleHeaderVaryCapturesSnapshot() {
+    func singleHeaderVaryCapturesSnapshot() async {
         let evaluation = evaluateVary(
             responseHeaders: ["Vary": "Accept-Language"],
             request: request(headers: ["Accept-Language": "en-US"])
@@ -65,7 +65,7 @@ struct ResponseCacheVaryTests {
     }
 
     @Test("Vary header values are matched case-insensitively against the request")
-    func varyHeaderLookupIsCaseInsensitive() {
+    func varyHeaderLookupIsCaseInsensitive() async {
         // URLRequest uppercases stored header names, so the snapshot lookup
         // must use case-insensitive header field semantics.
         let evaluation = evaluateVary(
@@ -76,7 +76,7 @@ struct ResponseCacheVaryTests {
     }
 
     @Test("Multi-header Vary: list captures every named header")
-    func multipleVaryHeadersAreCaptured() {
+    func multipleVaryHeadersAreCaptured() async {
         let evaluation = evaluateVary(
             responseHeaders: ["Vary": "Accept-Language, Accept-Encoding"],
             request: request(headers: [
@@ -94,7 +94,7 @@ struct ResponseCacheVaryTests {
     }
 
     @Test("Missing request header for a varied name records nil")
-    func missingRequestHeaderRecordsNil() {
+    func missingRequestHeaderRecordsNil() async {
         let evaluation = evaluateVary(
             responseHeaders: ["Vary": "Accept-Language"],
             request: request()
@@ -102,17 +102,48 @@ struct ResponseCacheVaryTests {
         #expect(evaluation == .vary(["accept-language": nil]))
     }
 
+    @Test("Sensitive Vary headers store fingerprints instead of raw values")
+    func sensitiveVaryHeadersStoreFingerprints() async throws {
+        let token = "Bearer secret-token"
+        let evaluation = evaluateVary(
+            responseHeaders: ["Vary": "Authorization"],
+            request: request(headers: ["Authorization": token])
+        )
+        guard case .vary(let snapshot) = evaluation else {
+            Issue.record("Expected Vary snapshot for Authorization")
+            return
+        }
+
+        let storedValue = try #require(snapshot["authorization"] ?? nil)
+        #expect(storedValue != token)
+        #expect(storedValue.hasPrefix("sha256:"))
+
+        let cached = CachedResponse(data: Data(), varyHeaders: snapshot)
+        #expect(
+            cachedResponseMatchesVary(
+                cached,
+                request: request(headers: ["Authorization": token])
+            )
+        )
+        #expect(
+            !cachedResponseMatchesVary(
+                cached,
+                request: request(headers: ["Authorization": "Bearer other-token"])
+            )
+        )
+    }
+
     // MARK: - cachedResponseMatchesVary
 
     @Test("nil varyHeaders always matches (no vary semantics)")
-    func nilVarySnapshotAlwaysMatches() {
+    func nilVarySnapshotAlwaysMatches() async {
         let cached = CachedResponse(data: Data(), varyHeaders: nil)
         #expect(cachedResponseMatchesVary(cached, request: request(headers: ["Accept-Language": "en-US"])))
         #expect(cachedResponseMatchesVary(cached, request: request()))
     }
 
     @Test("Matching snapshot accepts the lookup")
-    func matchingSnapshotAccepts() {
+    func matchingSnapshotAccepts() async {
         let cached = CachedResponse(
             data: Data(),
             varyHeaders: ["accept-language": "en-US"]
@@ -126,7 +157,7 @@ struct ResponseCacheVaryTests {
     }
 
     @Test("Mismatching snapshot rejects the lookup")
-    func mismatchingSnapshotRejects() {
+    func mismatchingSnapshotRejects() async {
         let cached = CachedResponse(
             data: Data(),
             varyHeaders: ["accept-language": "en-US"]
@@ -140,7 +171,7 @@ struct ResponseCacheVaryTests {
     }
 
     @Test("nil-stored value matches absence of the header on the request")
-    func nilStoredValueMatchesAbsence() {
+    func nilStoredValueMatchesAbsence() async {
         let cached = CachedResponse(
             data: Data(),
             varyHeaders: ["accept-language": nil]
@@ -158,7 +189,7 @@ struct ResponseCacheVaryTests {
     }
 
     @Test("Multi-header snapshot rejects when any single header diverges")
-    func multiHeaderSnapshotRejectsPartialMatch() {
+    func multiHeaderSnapshotRejectsPartialMatch() async {
         let cached = CachedResponse(
             data: Data(),
             varyHeaders: [

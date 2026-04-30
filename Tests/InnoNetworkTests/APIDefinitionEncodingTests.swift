@@ -168,6 +168,53 @@ private struct CustomEmptyRequest: APIDefinition {
     var path: String { "/encoding/empty" }
 }
 
+private struct MisconfiguredMultipartTransportRequest: APIDefinition {
+    typealias Parameter = EncodingPayload
+    typealias APIResponse = EmptyResponse
+
+    let parameters: EncodingPayload?
+
+    var method: HTTPMethod { .post }
+    var path: String { "/encoding/multipart-misconfigured" }
+
+    var transport: TransportPolicy<EmptyResponse> {
+        .multipart()
+    }
+}
+
+private struct MisconfiguredNoneEncodingRequest: APIDefinition {
+    typealias Parameter = EncodingPayload
+    typealias APIResponse = EmptyResponse
+
+    let parameters: EncodingPayload?
+
+    var method: HTTPMethod { .post }
+    var path: String { "/encoding/none-misconfigured" }
+
+    var transport: TransportPolicy<EmptyResponse> {
+        .custom(encoding: .none) { _, _ in EmptyResponse() }
+    }
+}
+
+
+private func expectNoneEncodingConfigurationError(
+    _ operation: () async throws -> Void
+) async {
+    do {
+        try await operation()
+        Issue.record("Expected NetworkError.invalidRequestConfiguration")
+    } catch let error as NetworkError {
+        guard case .invalidRequestConfiguration(let message) = error else {
+            Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
+            return
+        }
+        #expect(message.contains("RequestEncodingPolicy.none"))
+        #expect(message.contains("MultipartAPIDefinition"))
+    } catch {
+        Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
+    }
+}
+
 
 @Suite("Encoder Configuration Tests")
 struct APIDefinitionEncodingTests {
@@ -230,6 +277,28 @@ struct APIDefinitionEncodingTests {
 
         let response = try await client.request(CustomEmptyRequest())
         #expect(response == CustomEmptyResponse(marker: "factory"))
+    }
+
+    @Test("APIDefinition with parameters cannot use multipart transport")
+    func apiDefinitionParametersCannotUseMultipartTransport() async {
+        let mockSession = MockURLSession()
+        let client = DefaultNetworkClient(configuration: configuration, session: mockSession)
+
+        await expectNoneEncodingConfigurationError {
+            _ = try await client.request(MisconfiguredMultipartTransportRequest(parameters: payload))
+        }
+        #expect(mockSession.capturedRequest == nil)
+    }
+
+    @Test("APIDefinition with parameters cannot use none request encoding")
+    func apiDefinitionParametersCannotUseNoneEncoding() async {
+        let mockSession = MockURLSession()
+        let client = DefaultNetworkClient(configuration: configuration, session: mockSession)
+
+        await expectNoneEncodingConfigurationError {
+            _ = try await client.request(MisconfiguredNoneEncodingRequest(parameters: payload))
+        }
+        #expect(mockSession.capturedRequest == nil)
     }
 
     @Test("Top-level array query parameters require queryRootKey")

@@ -86,7 +86,11 @@ require_line "## Internal/Operational" "$api_stability"
 
 expected_stable=(
 '`APIDefinition`'
+'`CancellationTag`'
 '`MultipartAPIDefinition`'
+'`TransportPolicy`'
+'`RequestEncodingPolicy`'
+'`ResponseDecodingStrategy`'
 '`DefaultNetworkClient`'
 '`NetworkClient.request(_:)`'
 '`NetworkClient.upload(_:)`'
@@ -154,6 +158,7 @@ expected_shipping_public_declarations=(
   AnyEncodable
   AnyResponseDecoder
   CachedResponse
+  CancellationTag
   CircuitBreakerOpenError
   CircuitBreakerPolicy
   ContentType
@@ -214,11 +219,13 @@ expected_shipping_public_declarations=(
   PublicKeyPinningPolicy
   RefreshTokenPolicy
   RequestCoalescingPolicy
+  RequestEncodingPolicy
   RequestInterceptor
   Response
   ResponseCache
   ResponseCacheKey
   ResponseCachePolicy
+  ResponseDecodingStrategy
   ResponseInterceptor
   RetryDecision
   RetryIdempotencyPolicy
@@ -229,6 +236,7 @@ expected_shipping_public_declarations=(
   StreamingAPIDefinition
   StreamingResumePolicy
   TimeoutReason
+  TransportPolicy
   TrustEvaluating
   TrustFailureReason
   TrustPolicy
@@ -522,9 +530,25 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public protocol APIDefinition'
       target="$repo_root/Sources/InnoNetwork/APIDefinition.swift"
       ;;
+    '`CancellationTag`')
+      pattern='public struct CancellationTag'
+      target="$repo_root/Sources/InnoNetwork/CancellationTag.swift"
+      ;;
     '`MultipartAPIDefinition`')
       pattern='public protocol MultipartAPIDefinition'
       target="$repo_root/Sources/InnoNetwork/APIDefinition.swift"
+      ;;
+    '`TransportPolicy`')
+      pattern='public struct TransportPolicy'
+      target="$repo_root/Sources/InnoNetwork/TransportPolicy.swift"
+      ;;
+    '`RequestEncodingPolicy`')
+      pattern='public enum RequestEncodingPolicy'
+      target="$repo_root/Sources/InnoNetwork/RequestEncodingPolicy.swift"
+      ;;
+    '`ResponseDecodingStrategy`')
+      pattern='public enum ResponseDecodingStrategy'
+      target="$repo_root/Sources/InnoNetwork/ResponseDecodingStrategy.swift"
       ;;
     '`DefaultNetworkClient`')
       pattern='public final class DefaultNetworkClient'

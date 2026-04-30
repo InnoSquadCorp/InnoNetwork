@@ -64,23 +64,13 @@ public struct Endpoint<Response: Decodable & Sendable>: APIDefinition {
         self.acceptableStatusCodes = acceptableStatusCodes
         let resolvedTransport = transport ?? Self.defaultTransport(for: method)
         self.transport = resolvedTransport
-        self.headers = Self.headers(headers, applying: resolvedTransport)
+        self.headers = headers
     }
 
     private static func defaultTransport(for method: HTTPMethod) -> TransportPolicy<Response> {
         method == .get ? .query() : .json()
     }
 
-    private static func headers(
-        _ headers: HTTPHeaders,
-        applying transport: TransportPolicy<Response>
-    ) -> HTTPHeaders {
-        var updatedHeaders = headers
-        if let contentTypeHeader = transport.requestEncoding.contentTypeHeader {
-            updatedHeaders.update(.contentType(contentTypeHeader))
-        }
-        return updatedHeaders
-    }
 }
 
 
@@ -157,8 +147,8 @@ extension Endpoint {
 
     /// Returns a copy of this endpoint with the supplied header collection.
     /// Replaces the entire header set; pair with ``header(_:value:)`` if you
-    /// only need to add a single field. The endpoint reapplies the transport's
-    /// `Content-Type` header automatically.
+    /// only need to add a single field. Transport-derived `Content-Type` is
+    /// applied later during request building only when an encoded body exists.
     public func headers(_ headers: HTTPHeaders) -> Endpoint<Response> {
         Endpoint(
             method: method,
@@ -171,8 +161,8 @@ extension Endpoint {
     }
 
     /// Returns a copy of this endpoint with the supplied transport policy.
-    /// The endpoint's `Content-Type` header is updated immediately to match
-    /// the new transport's request encoding.
+    /// Transport-derived `Content-Type` is applied later during request building
+    /// only when an encoded body exists.
     public func transport(_ transport: TransportPolicy<Response>) -> Endpoint<Response> {
         Endpoint(
             method: method,
@@ -247,7 +237,8 @@ extension Endpoint where Response == EmptyResponse {
 
 extension RequestEncodingPolicy {
     /// `Content-Type` header value implied by this encoding policy, if any.
-    /// Used by ``Endpoint`` to keep the header in lockstep with the transport.
+    /// Used by the request builder to apply automatic body headers only when
+    /// an encoded request body exists.
     var contentTypeHeader: String? {
         switch self {
         case .json:

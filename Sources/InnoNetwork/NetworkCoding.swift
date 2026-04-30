@@ -1,27 +1,22 @@
 import Foundation
 
-/// Module-level cache for the canonical InnoNetwork date formatter.
+/// Canonical InnoNetwork date formatter.
 ///
-/// `DateFormatter` is the heaviest object on the default request/response
-/// coding hot path. Foundation guarantees thread-safety for read-only use, so
-/// every default encoder/decoder shares this single instance. Do not mutate
-/// the shared formatter; create a fresh `DateFormatter` if you need different
-/// configuration.
-package let defaultDateFormatter: DateFormatter = makeDefaultDateFormatter()
+/// Each access returns a freshly configured formatter so mutable Foundation
+/// formatter state cannot leak across concurrent requests or endpoints.
+package var defaultDateFormatter: DateFormatter { makeDefaultDateFormatter() }
 
 /// Canonical default `JSONEncoder` for InnoNetwork request bodies. Used as the
 /// implicit default when a ``TransportPolicy`` factory does not receive an
-/// explicit encoder. **Do not mutate this instance** — create a fresh
-/// `JSONEncoder` if you need different configuration; the cached instance is
-/// shared across the package.
-public let defaultRequestEncoder: JSONEncoder = makeDefaultRequestEncoder()
+/// explicit encoder. Each access returns a freshly configured encoder so caller
+/// mutation cannot leak across endpoints or concurrent requests.
+public var defaultRequestEncoder: JSONEncoder { makeDefaultRequestEncoder() }
 
 /// Canonical default `JSONDecoder` for InnoNetwork response bodies. Used as
 /// the implicit default when a ``TransportPolicy`` factory does not receive
-/// an explicit decoder. **Do not mutate this instance** — create a fresh
-/// `JSONDecoder` if you need different configuration; the cached instance is
-/// shared across the package.
-public let defaultResponseDecoder: JSONDecoder = makeDefaultResponseDecoder()
+/// an explicit decoder. Each access returns a freshly configured decoder so
+/// caller mutation cannot leak across endpoints or concurrent requests.
+public var defaultResponseDecoder: JSONDecoder { makeDefaultResponseDecoder() }
 
 package func makeDefaultDateFormatter() -> DateFormatter {
     let formatter = DateFormatter()

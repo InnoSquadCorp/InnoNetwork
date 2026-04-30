@@ -103,7 +103,9 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
 
         switch transport.requestEncoding {
         case .none:
-            return .none
+            throw NetworkError.invalidRequestConfiguration(
+                "Request parameters cannot be encoded with RequestEncodingPolicy.none. Use MultipartAPIDefinition for multipart bodies, or choose .json, .query, .formURLEncoded, or .custom with an explicit payload strategy."
+            )
         case .query(let encoder, let rootKey):
             return .queryItems(try encodeQueryItems(parameters, encoder: encoder, rootKey: rootKey))
         case .json(let encoder):

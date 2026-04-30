@@ -6,7 +6,11 @@ release line. `4.0.0` is the public baseline for this contract.
 ## Stable
 
 - `APIDefinition`
+- `CancellationTag`
 - `MultipartAPIDefinition`
+- `TransportPolicy`
+- `RequestEncodingPolicy`
+- `ResponseDecodingStrategy`
 - `DefaultNetworkClient`
 - `NetworkClient.request(_:)`
 - `NetworkClient.upload(_:)`
@@ -57,24 +61,25 @@ high-level compatibility classification readable for the 4.x release line.
 ### InnoNetwork
 
 - `APIDefinition`, `AnyEncodable`, `AnyResponseDecoder`, `CachedResponse`,
-  `CircuitBreakerOpenError`, `CircuitBreakerPolicy`, `ContentType`,
-  `CorrelationIDInterceptor`, `DefaultNetworkClient`, `DefaultNetworkLogger`,
-  `EmptyParameter`, `EmptyResponse`, `Endpoint`, `HTTPEmptyResponseDecodable`,
-  `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`, `InMemoryResponseCache`,
-  `MultipartAPIDefinition`, `MultipartFormData`, `MultipartPart`,
-  `MultipartResponseDecoder`, `MultipartUploadStrategy`, `NetworkClient`,
-  `NetworkConfiguration`, `NetworkContext`, `NetworkError`, `NetworkEvent`,
-  `NetworkEventObserving`, `NetworkInterfaceType`, `NetworkLoggingOptions`,
-  `NetworkLogger`, `NetworkMetricsReporting`, `NetworkMonitor`,
-  `NetworkMonitoring`, `NetworkReachabilityStatus`, `NetworkRequestContext`,
-  `NetworkSnapshot`, `NoOpNetworkEventObserver`, `NoOpNetworkLogger`,
-  `OSLogNetworkEventObserver`, `PublicKeyPinningPolicy`, `RefreshTokenPolicy`,
-  `RequestCoalescingPolicy`, `RequestInterceptor`, `Response`,
-  `ResponseCache`, `ResponseCacheKey`, `ResponseCachePolicy`,
-  `ResponseInterceptor`, `RetryDecision`, `RetryIdempotencyPolicy`, `RetryPolicy`,
+  `CancellationTag`, `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
+  `ContentType`, `CorrelationIDInterceptor`, `DefaultNetworkClient`,
+  `DefaultNetworkLogger`, `EmptyParameter`, `EmptyResponse`, `Endpoint`,
+  `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
+  `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,
+  `MultipartPart`, `MultipartResponseDecoder`, `MultipartUploadStrategy`,
+  `NetworkClient`, `NetworkConfiguration`, `NetworkContext`, `NetworkError`,
+  `NetworkEvent`, `NetworkEventObserving`, `NetworkInterfaceType`,
+  `NetworkLoggingOptions`, `NetworkLogger`, `NetworkMetricsReporting`,
+  `NetworkMonitor`, `NetworkMonitoring`, `NetworkReachabilityStatus`,
+  `NetworkRequestContext`, `NetworkSnapshot`, `NoOpNetworkEventObserver`,
+  `NoOpNetworkLogger`, `OSLogNetworkEventObserver`, `PublicKeyPinningPolicy`,
+  `RefreshTokenPolicy`, `RequestCoalescingPolicy`, `RequestEncodingPolicy`,
+  `RequestInterceptor`, `Response`, `ResponseCache`, `ResponseCacheKey`,
+  `ResponseCachePolicy`, `ResponseDecodingStrategy`, `ResponseInterceptor`,
+  `RetryDecision`, `RetryIdempotencyPolicy`, `RetryPolicy`,
   `SendableUnderlyingError`, `ServerSentEvent`, `ServerSentEventDecoder`,
   `StreamingAPIDefinition`, `StreamingResumePolicy`, `TimeoutReason`,
-  `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
+  `TransportPolicy`, `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
   `URLQueryCustomKeyTransform`, `URLQueryEncoder`, `URLQueryKeyEncodingStrategy`,
   and `URLSessionProtocol`.
 - Event-pipeline observability declarations: `EventDeliveryPolicy`,

@@ -34,6 +34,35 @@ private final class HangingSession: URLSessionProtocol, Sendable {
 }
 
 
+private actor CompletionRecorder<Key: Hashable & Sendable> {
+    private var counts: [Key: Int] = [:]
+
+    func record(_ key: Key) {
+        counts[key, default: 0] += 1
+    }
+
+    func count(for key: Key) -> Int {
+        counts[key, default: 0]
+    }
+}
+
+
+private func waitUntil(
+    timeout: TimeInterval = 2.0,
+    pollInterval: Duration = .milliseconds(20),
+    _ condition: @escaping @Sendable () async -> Bool
+) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await condition() {
+            return
+        }
+        try await Task.sleep(for: pollInterval)
+    }
+    #expect(await condition())
+}
+
+
 @Suite("Tag-based Cancellation Tests")
 struct CancellationTests {
 
@@ -55,37 +84,47 @@ struct CancellationTests {
 
         let feed: CancellationTag = "feed"
         let detail: CancellationTag = "detail"
+        let completions = CompletionRecorder<CancellationTag>()
 
         try await withThrowingTaskGroup(of: (CancellationTag, NetworkError?).self) { group in
-            group.addTask { [client] in
+            group.addTask { [client, completions] in
+                let result: (CancellationTag, NetworkError?)
                 do {
                     _ = try await client.request(LongPollRequest(), tag: feed)
-                    return (feed, nil)
+                    result = (feed, nil)
                 } catch let error as NetworkError {
-                    return (feed, error)
+                    result = (feed, error)
                 } catch {
-                    return (feed, .underlying(SendableUnderlyingError(error), nil))
+                    result = (feed, .underlying(SendableUnderlyingError(error), nil))
                 }
+                await completions.record(feed)
+                return result
             }
-            group.addTask { [client] in
+            group.addTask { [client, completions] in
+                let result: (CancellationTag, NetworkError?)
                 do {
                     _ = try await client.request(LongPollRequest(), tag: feed)
-                    return (feed, nil)
+                    result = (feed, nil)
                 } catch let error as NetworkError {
-                    return (feed, error)
+                    result = (feed, error)
                 } catch {
-                    return (feed, .underlying(SendableUnderlyingError(error), nil))
+                    result = (feed, .underlying(SendableUnderlyingError(error), nil))
                 }
+                await completions.record(feed)
+                return result
             }
-            group.addTask { [client] in
+            group.addTask { [client, completions] in
+                let result: (CancellationTag, NetworkError?)
                 do {
                     _ = try await client.request(LongPollRequest(), tag: detail)
-                    return (detail, nil)
+                    result = (detail, nil)
                 } catch let error as NetworkError {
-                    return (detail, error)
+                    result = (detail, error)
                 } catch {
-                    return (detail, .underlying(SendableUnderlyingError(error), nil))
+                    result = (detail, .underlying(SendableUnderlyingError(error), nil))
                 }
+                await completions.record(detail)
+                return result
             }
 
             // Wait until every request has actually entered the URL session.
@@ -96,10 +135,14 @@ struct CancellationTests {
             #expect(session.startedRequestCount == 3)
 
             await client.cancelAll(matching: feed)
+            try await waitUntil {
+                await completions.count(for: feed) == 2
+            }
 
             // Wait briefly so the detail task has a chance to terminate if the
             // cancellation incorrectly leaked across tags.
             try await Task.sleep(for: .milliseconds(100))
+            #expect(await completions.count(for: detail) == 0)
 
             // Tear down the surviving request so the suite finishes.
             await client.cancelAll()
@@ -125,27 +168,34 @@ struct CancellationTests {
         )
 
         let tagged: CancellationTag = "tagged"
+        let completions = CompletionRecorder<Bool>()
 
         try await withThrowingTaskGroup(of: (Bool, NetworkError?).self) { group in
-            group.addTask { [client] in
+            group.addTask { [client, completions] in
+                let result: (Bool, NetworkError?)
                 do {
                     _ = try await client.request(LongPollRequest(), tag: tagged)
-                    return (true, nil)
+                    result = (true, nil)
                 } catch let error as NetworkError {
-                    return (true, error)
+                    result = (true, error)
                 } catch {
-                    return (true, .underlying(SendableUnderlyingError(error), nil))
+                    result = (true, .underlying(SendableUnderlyingError(error), nil))
                 }
+                await completions.record(true)
+                return result
             }
-            group.addTask { [client] in
+            group.addTask { [client, completions] in
+                let result: (Bool, NetworkError?)
                 do {
                     _ = try await client.request(LongPollRequest())
-                    return (false, nil)
+                    result = (false, nil)
                 } catch let error as NetworkError {
-                    return (false, error)
+                    result = (false, error)
                 } catch {
-                    return (false, .underlying(SendableUnderlyingError(error), nil))
+                    result = (false, .underlying(SendableUnderlyingError(error), nil))
                 }
+                await completions.record(false)
+                return result
             }
 
             let waitDeadline = Date().addingTimeInterval(2.0)
@@ -155,7 +205,11 @@ struct CancellationTests {
             #expect(session.startedRequestCount == 2)
 
             await client.cancelAll(matching: tagged)
+            try await waitUntil {
+                await completions.count(for: true) == 1
+            }
             try await Task.sleep(for: .milliseconds(100))
+            #expect(await completions.count(for: false) == 0)
 
             // Untagged request still in flight — cancel everything to let the
             // task group drain.

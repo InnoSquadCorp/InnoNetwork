@@ -231,12 +231,6 @@ struct FormURLEncodedTests {
 
             var transport: TransportPolicy<MockUser> { .formURLEncoded() }
 
-            var headers: HTTPHeaders {
-                var defaultHeaders = HTTPHeaders.default
-                defaultHeaders.add(.contentType("\(ContentType.formUrlEncoded.rawValue); charset=UTF-8"))
-                return defaultHeaders
-            }
-
             init(username: String, password: String) {
                 self.parameters = LoginParam(username: username, password: password)
             }
@@ -255,7 +249,7 @@ struct FormURLEncodedTests {
 
         #expect(result == expectedUser)
         let contentType = mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") ?? ""
-        #expect(contentType.contains("x-www-form-urlencoded"))
+        #expect(contentType == "\(ContentType.formUrlEncoded.rawValue); charset=UTF-8")
 
         let bodyData = mockSession.capturedRequest?.httpBody ?? Data()
         let bodyString = String(data: bodyData, encoding: .utf8) ?? ""

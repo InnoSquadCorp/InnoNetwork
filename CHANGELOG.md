@@ -126,12 +126,10 @@ summary.
   lifecycle events, response interceptors, status validation, line
   iteration, Last-Event-ID resume, request finished/failed publication)
   lives on the new `StreamingExecutor`. Observable behaviour is unchanged.
-- The default request and response coders share a single canonical
-  `DateFormatter` (`defaultDateFormatter`); `defaultRequestEncoder` and
-  `defaultResponseDecoder` are exposed as cached, immutable references so
-  the `TransportPolicy` factories can use them as default parameters.
-  `JSONEncoder`/`JSONDecoder` instances are still created per call so user
-  mutation cannot leak across endpoints.
+- Default request and response coders use the canonical InnoNetwork date
+  format configuration, but `defaultRequestEncoder`, `defaultResponseDecoder`,
+  and `defaultDateFormatter` return fresh mutable Foundation instances on each
+  access so user mutation cannot leak across endpoints or concurrent requests.
 - The `LowLevelNetworkClient` SPI requirements grow `tag: CancellationTag?`
   parameters; default extensions keep the old call sites
   (`perform(_:)` / `perform(executable:)`) source-compatible.

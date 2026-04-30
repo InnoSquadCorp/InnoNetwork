@@ -55,15 +55,11 @@ public struct ResponseCacheKey: Hashable, Sendable {
         headers
             .map { header in
                 let name = header.key.lowercased()
-                let value = sensitiveHeaderNames.contains(name) ? fingerprint(header.value) : header.value
+                let value = HeaderValueNormalizer.normalizedValue(name: name, value: header.value)
                 return "\(name):\(value)"
             }
             .sorted()
     }
-
-    private static let sensitiveHeaderNames: Set<String> = [
-        "authorization"
-    ]
 
     private static func normalizedURLString(_ url: URL?) -> String? {
         guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
@@ -71,6 +67,17 @@ public struct ResponseCacheKey: Hashable, Sendable {
         }
         components.fragment = nil
         return components.url?.absoluteString
+    }
+}
+
+
+private enum HeaderValueNormalizer {
+    private static let sensitiveHeaderNames: Set<String> = [
+        "authorization"
+    ]
+
+    static func normalizedValue(name: String, value: String) -> String {
+        sensitiveHeaderNames.contains(name.lowercased()) ? fingerprint(value) : value
     }
 
     private static func fingerprint(_ value: String) -> String {
@@ -303,7 +310,10 @@ package func evaluateVary(
     var snapshot: [String: String?] = [:]
     for header in entries {
         let lowered = header.lowercased()
-        snapshot[lowered] = request.value(forHTTPHeaderField: header)
+        let normalizedValue = request.value(forHTTPHeaderField: header).map {
+            HeaderValueNormalizer.normalizedValue(name: lowered, value: $0)
+        }
+        snapshot.updateValue(normalizedValue, forKey: lowered)
     }
     return .vary(snapshot)
 }
@@ -316,7 +326,9 @@ package func cachedResponseMatchesVary(
         return true
     }
     for (header, storedValue) in storedVary {
-        let currentValue = request.value(forHTTPHeaderField: header)
+        let currentValue = request.value(forHTTPHeaderField: header).map {
+            HeaderValueNormalizer.normalizedValue(name: header, value: $0)
+        }
         if currentValue != storedValue {
             return false
         }

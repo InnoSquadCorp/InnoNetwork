@@ -39,10 +39,11 @@ public extension TransportPolicy where Output: Decodable {
         encoder: JSONEncoder = defaultRequestEncoder,
         decoder: JSONDecoder = defaultResponseDecoder
     ) -> Self {
-        Self(
+        let strategy = emptyAwareStrategy(decoder)
+        return Self(
             requestEncoding: .json(encoder),
-            responseDecoding: emptyAwareStrategy(decoder),
-            responseDecoder: AnyResponseDecoder(strategy: emptyAwareStrategy(decoder))
+            responseDecoding: strategy,
+            responseDecoder: AnyResponseDecoder(strategy: strategy)
         )
     }
 
@@ -53,10 +54,11 @@ public extension TransportPolicy where Output: Decodable {
         rootKey: String? = nil,
         decoder: JSONDecoder = defaultResponseDecoder
     ) -> Self {
-        Self(
+        let strategy = emptyAwareStrategy(decoder)
+        return Self(
             requestEncoding: .query(encoder, rootKey: rootKey),
-            responseDecoding: emptyAwareStrategy(decoder),
-            responseDecoder: AnyResponseDecoder(strategy: emptyAwareStrategy(decoder))
+            responseDecoding: strategy,
+            responseDecoder: AnyResponseDecoder(strategy: strategy)
         )
     }
 
@@ -66,10 +68,11 @@ public extension TransportPolicy where Output: Decodable {
         rootKey: String? = nil,
         decoder: JSONDecoder = defaultResponseDecoder
     ) -> Self {
-        Self(
+        let strategy = emptyAwareStrategy(decoder)
+        return Self(
             requestEncoding: .formURLEncoded(encoder, rootKey: rootKey),
-            responseDecoding: emptyAwareStrategy(decoder),
-            responseDecoder: AnyResponseDecoder(strategy: emptyAwareStrategy(decoder))
+            responseDecoding: strategy,
+            responseDecoder: AnyResponseDecoder(strategy: strategy)
         )
     }
 
@@ -79,10 +82,11 @@ public extension TransportPolicy where Output: Decodable {
     static func multipart(
         decoder: JSONDecoder = defaultResponseDecoder
     ) -> Self {
-        Self(
+        let strategy = emptyAwareStrategy(decoder)
+        return Self(
             requestEncoding: .none,
-            responseDecoding: emptyAwareStrategy(decoder),
-            responseDecoder: AnyResponseDecoder(strategy: emptyAwareStrategy(decoder))
+            responseDecoding: strategy,
+            responseDecoder: AnyResponseDecoder(strategy: strategy)
         )
     }
 

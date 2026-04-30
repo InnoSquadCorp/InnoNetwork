@@ -3,18 +3,28 @@ import Testing
 
 @testable import InnoNetwork
 
+private func expectCanonicalFormatterConfiguration(_ formatter: DateFormatter) {
+    let canonical = makeDefaultDateFormatter()
+    #expect(formatter.dateFormat == canonical.dateFormat)
+    #expect(formatter.locale.identifier == canonical.locale.identifier)
+    #expect(formatter.timeZone == canonical.timeZone)
+}
+
+
 @Suite("Coding Defaults Tests")
 struct CodingDefaultsTests {
 
-    @Test("defaultDateFormatter is the same instance on every access")
-    func sharedDateFormatterIdentity() {
+    @Test("defaultDateFormatter returns a fresh canonical instance on every access")
+    func defaultDateFormatterReturnsFreshCanonicalInstance() async {
         let first = defaultDateFormatter
         let second = defaultDateFormatter
-        #expect(first === second)
+        #expect(first !== second)
+        expectCanonicalFormatterConfiguration(first)
+        expectCanonicalFormatterConfiguration(second)
     }
 
-    @Test("Default request and response coders share the canonical date formatter")
-    func encoderDecoderShareCanonicalFormatter() throws {
+    @Test("Default request and response coders use fresh canonical date formatters")
+    func encoderDecoderUseFreshCanonicalFormatters() async throws {
         let encoder = makeDefaultRequestEncoder()
         let decoder = makeDefaultResponseDecoder()
         guard
@@ -24,22 +34,46 @@ struct CodingDefaultsTests {
             Issue.record("Default coders should use a formatted date strategy")
             return
         }
-        #expect(encoderFormatter === defaultDateFormatter)
-        #expect(decoderFormatter === defaultDateFormatter)
+        #expect(encoderFormatter !== decoderFormatter)
+        expectCanonicalFormatterConfiguration(encoderFormatter)
+        expectCanonicalFormatterConfiguration(decoderFormatter)
+    }
+
+    @Test("Default coder accessors return fresh mutable instances")
+    func defaultCoderAccessorsReturnFreshMutableInstances() async {
+        let firstEncoder = defaultRequestEncoder
+        firstEncoder.dateEncodingStrategy = .secondsSince1970
+        let secondEncoder = defaultRequestEncoder
+        #expect(firstEncoder !== secondEncoder)
+        if case .formatted = secondEncoder.dateEncodingStrategy {
+            // expected
+        } else {
+            Issue.record("Mutation of one defaultRequestEncoder instance should not leak to the next access")
+        }
+
+        let firstDecoder = defaultResponseDecoder
+        firstDecoder.dateDecodingStrategy = .secondsSince1970
+        let secondDecoder = defaultResponseDecoder
+        #expect(firstDecoder !== secondDecoder)
+        if case .formatted = secondDecoder.dateDecodingStrategy {
+            // expected
+        } else {
+            Issue.record("Mutation of one defaultResponseDecoder instance should not leak to the next access")
+        }
     }
 
     @Test("URLQueryEncoder default init reuses the canonical date formatter")
-    func urlQueryEncoderDefaultInitReusesFormatter() {
+    func urlQueryEncoderDefaultInitUsesCanonicalFormatter() async {
         let encoder = URLQueryEncoder()
         guard case .formatted(let formatter) = encoder.dateEncodingStrategy else {
             Issue.record("URLQueryEncoder default should use a formatted date strategy")
             return
         }
-        #expect(formatter === defaultDateFormatter)
+        expectCanonicalFormatterConfiguration(formatter)
     }
 
     @Test("Round-trip encode/decode of a Date matches the canonical format")
-    func roundTripEncodeDecodeDate() throws {
+    func roundTripEncodeDecodeDate() async throws {
         struct Body: Codable, Equatable {
             let when: Date
         }

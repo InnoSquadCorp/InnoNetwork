@@ -98,7 +98,7 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func transportBuilderUpdatesEndpointEncodingAndHeader() {
+    func transportBuilderUpdatesEndpointEncodingWithoutStoringContentTypeHeader() {
         let endpoint = Endpoint.post("/login")
             .transport(.formURLEncoded())
 
@@ -107,9 +107,7 @@ struct EndpointBuilderTests {
         } else {
             Issue.record("transport(.formURLEncoded()) should set requestEncoding to .formURLEncoded")
         }
-        #expect(
-            endpoint.headers.value(for: "Content-Type")?.contains("application/x-www-form-urlencoded") == true
-        )
+        #expect(endpoint.headers.value(for: "Content-Type") == nil)
     }
 
     @Test
@@ -155,6 +153,21 @@ struct EndpointBuilderTests {
 
         _ = try await client.request(Endpoint.get("/users/1").decoding(EndpointAck.self))
 
+        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == nil)
+    }
+
+    @Test
+    func bodylessPostDoesNotSendDefaultJSONContentType() async throws {
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+
+        _ = try await client.request(Endpoint.post("/ping").decoding(EndpointAck.self))
+
+        #expect(mockSession.capturedRequest?.httpBody == nil)
         #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == nil)
     }
 
@@ -209,6 +222,33 @@ struct EndpointBuilderTests {
 
         let contentType = try #require(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type"))
         #expect(contentType.contains("application/x-www-form-urlencoded"))
+    }
+
+    @Test
+    func switchingTransportToQueryDoesNotKeepStaleContentType() async throws {
+        struct Login: Encodable, Sendable {
+            let username: String
+        }
+
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+
+        let endpoint = Endpoint.post("/login")
+            .transport(.formURLEncoded())
+            .transport(.query())
+            .query(Login(username: "test"))
+            .decoding(EndpointAck.self)
+
+        _ = try await client.request(endpoint)
+
+        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == nil)
+        let url = try #require(mockSession.capturedRequest?.url)
+        let queryItems = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+        #expect(queryItems.contains(URLQueryItem(name: "username", value: "test")))
     }
 
     @Test
