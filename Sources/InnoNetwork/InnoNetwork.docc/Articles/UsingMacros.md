@@ -1,7 +1,10 @@
 # Using Macros
 
 `InnoNetworkCodegen` is an optional product for compile-time endpoint helpers.
-Importing only `InnoNetwork` keeps the core runtime path free of `swift-syntax`.
+Importing only `InnoNetwork` keeps the core runtime target free of
+`swift-syntax` linkage. SwiftPM may still resolve the package-level macro
+dependency while loading the package graph, so consumers with strict SBOM or
+fetch-isolation requirements should track the post-4.0 codegen package split.
 
 ```swift
 import InnoNetwork

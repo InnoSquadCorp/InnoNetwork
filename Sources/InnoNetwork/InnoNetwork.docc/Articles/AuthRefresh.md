@@ -32,9 +32,9 @@ The default behaviour is:
 - apply the current token before transport when one is available
 - refresh on `401`
 - collapse concurrent refreshes into one in-flight operation
-- replay the original request at most once, clearing the prior `Authorization`
-  header before reapplying so custom applicators that use `addValue` stay
-  idempotent
+- replay the fully adapted request at most once, preserving session and
+  endpoint interceptor headers while clearing the prior `Authorization` header
+  before reapplying so custom applicators that use `addValue` stay idempotent
 - surface refresh failures to every waiting request, while a *failed* refresh
   is not cached: the next 401 will start a fresh refresh attempt instead of
   replaying the previous failure

@@ -50,9 +50,11 @@ specific repository revision.
 
 ## Public Declaration Ledger
 
-The docs-contract gate extracts top-level `public` declarations from shipping
-targets and requires every declaration below to stay classified here for the
-4.x release line.
+The docs-contract gate extracts public symbols from Swift symbol graphs and
+compares them with `Scripts/api_public_symbols.allowlist`. That catches nested
+public types and members such as `NetworkConfiguration.AdvancedBuilder` in
+addition to top-level declarations. The grouped ledger below keeps the
+high-level compatibility classification readable for the 4.x release line.
 
 ### InnoNetwork
 
@@ -150,7 +152,9 @@ targets and requires every declaration below to stay classified here for the
   built-in knobs only; the generic execution pipeline remains package/internal
   and may evolve without deprecation.
 - `InnoNetworkCodegen` is an optional compile-time product. Importing only
-  `InnoNetwork` does not put `swift-syntax` on the core runtime path.
+  `InnoNetwork` does not link `swift-syntax` into the core runtime target.
+  SwiftPM may still resolve package-level macro dependencies while loading the
+  full package graph.
 - Persistence and telemetry formats are not external storage contracts.
 - Benchmark guard thresholds, guarded benchmark selection, and baseline
   contents are operational policy rather than public compatibility surface.

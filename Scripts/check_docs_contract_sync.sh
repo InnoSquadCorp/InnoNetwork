@@ -6,6 +6,7 @@ cd "$repo_root"
 
 api_stability="$repo_root/API_STABILITY.md"
 readme="$repo_root/README.md"
+public_symbols_allowlist="$repo_root/Scripts/api_public_symbols.allowlist"
 required_meta_docs=(
   "$repo_root/CONTRIBUTING.md"
   "$repo_root/CODE_OF_CONDUCT.md"
@@ -353,88 +354,90 @@ validate_codegen_product() {
   require_contains '`endpoint(_:_:as:)`' "$api_stability"
 }
 
-collect_public_declarations() {
-  local include_spi="$1"
-  shift
-  find "$@" -type f -name '*.swift' | sort | while IFS= read -r file; do
-    awk -v include_spi="$include_spi" '
-      function emit(line) {
-        if (line ~ /^public final class /) {
-          sub(/^public final class /, "", line)
-        } else if (line ~ /^public (protocol|struct|enum|class|actor) /) {
-          sub(/^public (protocol|struct|enum|class|actor) /, "", line)
-        } else {
-          return
-        }
-        sub(/[<:({ ].*/, "", line)
-        print line
-      }
+collect_public_symbols() {
+  command -v python3 > /dev/null 2>&1 || fail "python3 is required for symbol graph public surface validation"
 
-      /^@_spi\([^)]*\) public / {
-        if (include_spi == "yes") {
-          line = $0
-          sub(/^@_spi\([^)]*\) /, "", line)
-          emit(line)
-        }
-        next
-      }
+  swift package dump-symbol-graph \
+    --minimum-access-level public \
+    --include-spi-symbols \
+    --skip-synthesized-members > /dev/null
 
-      /^public / {
-        if (include_spi == "no") {
-          emit($0)
-        }
-      }
-    ' "$file"
-  done | sort -u
+  python3 - "$repo_root" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+repo_root = Path(sys.argv[1])
+symbolgraph_dirs = [path for path in (repo_root / ".build").glob("*/symbolgraph") if path.is_dir()]
+if not symbolgraph_dirs:
+    raise SystemExit("No Swift symbol graph directory was generated.")
+
+symbolgraph_dir = max(symbolgraph_dirs, key=lambda path: path.stat().st_mtime)
+included_modules = {
+    "InnoNetwork",
+    "InnoNetworkDownload",
+    "InnoNetworkWebSocket",
+    "InnoNetworkTestSupport",
+    "InnoNetworkCodegen",
 }
+included_kinds = {
+    "swift.actor",
+    "swift.associatedtype",
+    "swift.class",
+    "swift.enum",
+    "swift.enum.case",
+    "swift.func",
+    "swift.init",
+    "swift.macro",
+    "swift.method",
+    "swift.property",
+    "swift.protocol",
+    "swift.struct",
+    "swift.typealias",
+}
+rows = set()
+for path in sorted(symbolgraph_dir.glob("*.symbols.json")):
+    if "@" in path.name or path.name.startswith("InnoNetworkPackageTests"):
+        continue
+    with path.open(encoding="utf-8") as handle:
+        data = json.load(handle)
+    module = data.get("module", {}).get("name")
+    if module not in included_modules:
+        continue
+    for symbol in data.get("symbols", []):
+        if symbol.get("accessLevel") != "public":
+            continue
+        kind = symbol.get("kind", {}).get("identifier")
+        if kind not in included_kinds:
+            continue
+        components = symbol.get("pathComponents") or []
+        if not components:
+            continue
+        rows.add(f"{module}\t{kind}\t{'.'.join(components)}")
 
-validate_public_declaration_set() {
-  local label="$1"
-  local actual="$2"
-  shift 2
-  local expected
-  expected="$(printf '%s\n' "$@" | sort -u)"
-
-  [[ "$expected" == "$actual" ]] || {
-    echo "Expected $label public declarations:" >&2
-    printf '%s\n' "$expected" >&2
-    echo "Actual $label public declarations:" >&2
-    printf '%s\n' "$actual" >&2
-    fail "$label public declaration set drifted; update API_STABILITY.md and check_docs_contract_sync.sh"
-  }
+for row in sorted(rows):
+    print(row)
+PY
 }
 
 validate_public_surface_ledger() {
-  local shipping_actual
-  shipping_actual="$(
-    collect_public_declarations no \
-      "$repo_root/Sources/InnoNetwork" \
-      "$repo_root/Sources/InnoNetworkDownload" \
-      "$repo_root/Sources/InnoNetworkWebSocket"
-  )"
-  validate_public_declaration_set \
-    "shipping" \
-    "$shipping_actual" \
-    "${expected_shipping_public_declarations[@]}"
+  [[ -f "$public_symbols_allowlist" ]] || fail "public symbol allowlist is missing: $public_symbols_allowlist"
+  require_line $'InnoNetwork\tswift.struct\tNetworkConfiguration.AdvancedBuilder' "$public_symbols_allowlist"
+  require_line $'InnoNetwork\tswift.property\tNetworkConfiguration.AdvancedBuilder.requestInterceptors' "$public_symbols_allowlist"
 
-  local spi_actual
-  spi_actual="$(
-    collect_public_declarations yes \
-      "$repo_root/Sources/InnoNetwork" \
-      "$repo_root/Sources/InnoNetworkDownload" \
-      "$repo_root/Sources/InnoNetworkWebSocket"
-  )"
-  validate_public_declaration_set \
-    "SPI" \
-    "$spi_actual" \
-    "${expected_spi_public_declarations[@]}"
+  local expected_file
+  local actual_file
+  expected_file="$(mktemp)"
+  actual_file="$(mktemp)"
 
-  local test_support_actual
-  test_support_actual="$(collect_public_declarations no "$repo_root/Sources/InnoNetworkTestSupport")"
-  validate_public_declaration_set \
-    "TestSupport" \
-    "$test_support_actual" \
-    "${expected_test_support_public_declarations[@]}"
+  awk 'NF && $0 !~ /^#/ { print }' "$public_symbols_allowlist" | sort -u > "$expected_file"
+  collect_public_symbols > "$actual_file"
+
+  if ! diff -u "$expected_file" "$actual_file" >&2; then
+    fail "public symbol graph drifted; update Scripts/api_public_symbols.allowlist and API_STABILITY.md"
+  fi
+
+  rm -f "$expected_file" "$actual_file"
 
   for declaration in "${expected_shipping_public_declarations[@]}" "${expected_spi_public_declarations[@]}" \
     "${expected_test_support_public_declarations[@]}"; do
@@ -687,6 +690,16 @@ forbidden_pattern 'let configuration = NetworkConfiguration\(' "$readme" "${exam
 forbidden_pattern 'let client = DefaultNetworkClient\(\s*configuration:\s*\.default' "$readme" "${example_docs[@]}"
 forbidden_pattern 'addText|addFile' "$readme" "${example_docs[@]}"
 forbidden_pattern 'from:\s*"1\.0\.0"' "$readme" "${example_docs[@]}"
+forbidden_pattern 'Xcode 15|Xcode 16' "$readme" "${example_docs[@]}" "$repo_root/docs" "$repo_root/Sources"
+forbidden_pattern 'does not pull|do not pull|not pull `swift-syntax`|has no external dependencies|no external dependencies;' \
+  "$api_stability" \
+  "$readme" \
+  "$repo_root/CHANGELOG.md" \
+  "$repo_root/MIGRATION_v4.md" \
+  "$repo_root/docs/releases/4.0.0.md" \
+  "$repo_root/SECURITY.md" \
+  "$repo_root/docs" \
+  "$repo_root/Sources"
 forbidden_pattern '4\.1\.0|4\.1 line|Pre-4\.1|4\.1 behaviour|v4\.1|docs/releases/4\.1\.0' \
   "$api_stability" \
   "$readme" \

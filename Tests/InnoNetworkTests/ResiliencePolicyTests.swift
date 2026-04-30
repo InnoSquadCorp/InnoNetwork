@@ -31,6 +31,18 @@ private struct AuthorizedResilienceGetRequest: APIDefinition {
 }
 
 
+private struct InterceptedResilienceGetRequest: APIDefinition {
+    typealias Parameter = EmptyParameter
+    typealias APIResponse = ResilienceUser
+
+    let interceptors: [RequestInterceptor]
+
+    var method: HTTPMethod { .get }
+    var path: String { "/users/1" }
+    var requestInterceptors: [RequestInterceptor] { interceptors }
+}
+
+
 private struct ResiliencePostRequest: APIDefinition {
     struct Body: Encodable, Sendable {
         let name: String
@@ -45,6 +57,18 @@ private struct ResiliencePostRequest: APIDefinition {
 
     init(name: String = "Jane") {
         self.parameters = Body(name: name)
+    }
+}
+
+
+private struct HeaderSettingInterceptor: RequestInterceptor {
+    let field: String
+    let value: String
+
+    func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
+        var request = urlRequest
+        request.setValue(value, forHTTPHeaderField: field)
+        return request
     }
 }
 
@@ -232,6 +256,33 @@ private func queuedResponse(
 }
 
 
+private let cacheFixtureAcceptLanguage = "en-US"
+
+
+private func resilienceUserCacheKey() -> ResponseCacheKey {
+    ResponseCacheKey(
+        method: "GET",
+        url: "https://api.example.com/users/1",
+        headers: ["Accept-Language": cacheFixtureAcceptLanguage]
+    )
+}
+
+
+private func makeLocalizedCacheConfiguration(
+    responseCachePolicy: ResponseCachePolicy,
+    responseCache: any ResponseCache
+) -> NetworkConfiguration {
+    NetworkConfiguration(
+        baseURL: URL(string: "https://api.example.com")!,
+        requestInterceptors: [
+            HeaderSettingInterceptor(field: "Accept-Language", value: cacheFixtureAcceptLanguage)
+        ],
+        responseCachePolicy: responseCachePolicy,
+        responseCache: responseCache
+    )
+}
+
+
 @Suite("Resilience policies")
 struct ResiliencePolicyTests {
     @Test("Refresh token policy replays one 401 response")
@@ -262,6 +313,48 @@ struct ResiliencePolicyTests {
         #expect(await refreshCount.count == 1)
         #expect(await session.requestCount == 2)
         #expect(await session.capturedRequests.last?.value(forHTTPHeaderField: "Authorization") == "Bearer new")
+    }
+
+    @Test("Refresh replay preserves interceptor-adapted request state")
+    func refreshReplayPreservesAdaptedInterceptorHeaders() async throws {
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 401),
+            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "refreshed")),
+        ])
+        let policy = RefreshTokenPolicy(
+            currentToken: { "old" },
+            refreshToken: { "new" }
+        )
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: URL(string: "https://api.example.com")!,
+                requestInterceptors: [
+                    HeaderSettingInterceptor(field: "X-Tenant-ID", value: "tenant-a"),
+                    HeaderSettingInterceptor(field: "X-Trace-ID", value: "trace-123"),
+                ],
+                refreshTokenPolicy: policy
+            ),
+            session: session
+        )
+
+        let user = try await client.request(
+            InterceptedResilienceGetRequest(
+                interceptors: [
+                    HeaderSettingInterceptor(field: "X-Request-Signature", value: "signed")
+                ]
+            )
+        )
+        let capturedRequests = await session.capturedRequests
+
+        #expect(user == ResilienceUser(id: 1, name: "refreshed"))
+        #expect(capturedRequests.count == 2)
+        #expect(capturedRequests[0].value(forHTTPHeaderField: "X-Tenant-ID") == "tenant-a")
+        #expect(capturedRequests[0].value(forHTTPHeaderField: "X-Trace-ID") == "trace-123")
+        #expect(capturedRequests[0].value(forHTTPHeaderField: "X-Request-Signature") == "signed")
+        #expect(capturedRequests[1].value(forHTTPHeaderField: "X-Tenant-ID") == "tenant-a")
+        #expect(capturedRequests[1].value(forHTTPHeaderField: "X-Trace-ID") == "trace-123")
+        #expect(capturedRequests[1].value(forHTTPHeaderField: "X-Request-Signature") == "signed")
+        #expect(capturedRequests[1].value(forHTTPHeaderField: "Authorization") == "Bearer new")
     }
 
     @Test("Concurrent 401 responses share one refresh")
@@ -556,13 +649,12 @@ struct ResiliencePolicyTests {
     @Test("Fresh cache returns without transport")
     func freshCacheShortCircuitsTransport() async throws {
         let cache = InMemoryResponseCache()
-        let key = ResponseCacheKey(method: "GET", url: "https://api.example.com/users/1")
+        let key = resilienceUserCacheKey()
         let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
         await cache.set(key, CachedResponse(data: body, headers: ["ETag": "v1"]))
         let session = SequenceURLSession(queue: [])
         let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
+            configuration: makeLocalizedCacheConfiguration(
                 responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
                 responseCache: cache
             ),
@@ -578,7 +670,7 @@ struct ResiliencePolicyTests {
     @Test("ETag 304 response uses cached body")
     func etagNotModifiedUsesCachedBody() async throws {
         let cache = InMemoryResponseCache()
-        let key = ResponseCacheKey(method: "GET", url: "https://api.example.com/users/1")
+        let key = resilienceUserCacheKey()
         let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
         let storedAt = Date(timeIntervalSinceNow: -60)
         await cache.set(
@@ -593,8 +685,7 @@ struct ResiliencePolicyTests {
             queuedResponse(statusCode: 304, headers: ["ETag": "v2", "Cache-Control": "max-age=60"])
         ])
         let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
+            configuration: makeLocalizedCacheConfiguration(
                 responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
                 responseCache: cache
             ),
@@ -616,7 +707,7 @@ struct ResiliencePolicyTests {
     @Test("SWR returns stale data and revalidates in the background")
     func staleWhileRevalidateUpdatesCache() async throws {
         let cache = InMemoryResponseCache()
-        let key = ResponseCacheKey(method: "GET", url: "https://api.example.com/users/1")
+        let key = resilienceUserCacheKey()
         let staleBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale"))
         await cache.set(
             key,
@@ -631,8 +722,7 @@ struct ResiliencePolicyTests {
             queuedResponse(statusCode: 200, body: fresh, headers: ["ETag": "v2"])
         ])
         let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
+            configuration: makeLocalizedCacheConfiguration(
                 responseCachePolicy: .staleWhileRevalidate(maxAge: .seconds(1), staleWindow: .seconds(10)),
                 responseCache: cache
             ),
@@ -656,7 +746,7 @@ struct ResiliencePolicyTests {
     @Test("SWR background revalidation is cancelled by cancelAll")
     func staleWhileRevalidateBackgroundTaskIsCancelledByCancelAll() async throws {
         let cache = InMemoryResponseCache()
-        let key = ResponseCacheKey(method: "GET", url: "https://api.example.com/users/1")
+        let key = resilienceUserCacheKey()
         let stale = ResilienceUser(id: 1, name: "stale")
         let staleBody = try JSONEncoder().encode(stale)
         await cache.set(
@@ -674,8 +764,7 @@ struct ResiliencePolicyTests {
             delay: .milliseconds(200)
         )
         let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
+            configuration: makeLocalizedCacheConfiguration(
                 responseCachePolicy: .staleWhileRevalidate(maxAge: .seconds(1), staleWindow: .seconds(10)),
                 responseCache: cache
             ),
@@ -716,6 +805,38 @@ struct ResiliencePolicyTests {
 
         #expect(first == ResilienceUser(id: 1, name: "one"))
         #expect(second == ResilienceUser(id: 2, name: "two"))
+        #expect(await session.requestCount == 2)
+    }
+
+    @Test("Response cache keeps different Accept-Language headers separate")
+    func responseCacheSeparatesAcceptLanguageHeaders() async throws {
+        let cache = InMemoryResponseCache()
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "ko")),
+            queuedResponse(statusCode: 200, body: ResilienceUser(id: 2, name: "en")),
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let korean = try await client.request(
+            InterceptedResilienceGetRequest(
+                interceptors: [HeaderSettingInterceptor(field: "Accept-Language", value: "ko-KR")]
+            )
+        )
+        let english = try await client.request(
+            InterceptedResilienceGetRequest(
+                interceptors: [HeaderSettingInterceptor(field: "Accept-Language", value: "en-US")]
+            )
+        )
+
+        #expect(korean == ResilienceUser(id: 1, name: "ko"))
+        #expect(english == ResilienceUser(id: 2, name: "en"))
         #expect(await session.requestCount == 2)
     }
 

@@ -34,9 +34,10 @@ public struct ResponseCacheKey: Hashable, Sendable {
         // `Authorization` is intentionally part of the cache key so that
         // user-scoped responses are not shared across identities. Token
         // rotations therefore produce new keys and the cache acts per-identity.
+        // `Accept-Language` intentionally remains part of the key: many APIs
+        // localize representations without changing the URL.
         let excludedHeaderNames: Set<String> = [
             "accept-encoding",
-            "accept-language",
             "content-type",
             "date",
             "if-modified-since",

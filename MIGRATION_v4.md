@@ -47,7 +47,8 @@ Additive 4.0.0 features require no source changes unless explicitly enabled:
 - `MultipartResponseDecoder` for buffered `multipart/*` response bodies.
 - Optional `InnoNetworkCodegen` macros via `import InnoNetworkCodegen`.
   Importing only `InnoNetwork` keeps `swift-syntax` out of the core runtime
-  path.
+  target; SwiftPM may still resolve package-level macro dependencies while it
+  loads the package graph.
 
 Minimum toolchain remains Swift 6.2 / Xcode 26.
 

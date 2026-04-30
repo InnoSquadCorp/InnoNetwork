@@ -91,14 +91,15 @@ the 4.0.0 stable public contract.
 
 Compile-only package for the optional `InnoNetworkCodegen` product. It keeps
 macro usage separate from the core consumer smoke so `InnoNetwork`-only users do
-not pull `swift-syntax`.
+not link `swift-syntax` into their runtime target. SwiftPM may still resolve the
+package-level macro dependency while loading the full package graph.
 
 ## Getting Started
 
 ### Prerequisites
 
 - Swift 6.2+
-- Xcode 15.0+
+- Xcode 26.0+
 
 ### Installation
 

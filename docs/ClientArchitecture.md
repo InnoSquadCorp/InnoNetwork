@@ -42,7 +42,9 @@ fan-out, cache substitution, and failure classification.
 ## Optional Codegen
 
 `InnoNetworkCodegen` is a separate product. Consumers that import only
-`InnoNetwork` do not link `swift-syntax` into the runtime product. SwiftPM may
-still resolve or fetch package dependencies depending on the selected products
-and tooling. Macro usage is documented in
+`InnoNetwork` do not link `swift-syntax` into the runtime product. SwiftPM
+still declares `swift-syntax` at the package graph level for the macro target
+and may resolve or fetch it depending on the selected products and tooling.
+True resolution isolation is a post-4.0 package-splitting candidate. Macro
+usage is documented in
 [`UsingMacros.md`](../Sources/InnoNetwork/InnoNetwork.docc/Articles/UsingMacros.md).

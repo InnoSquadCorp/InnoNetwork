@@ -155,8 +155,10 @@ for await event in await WebSocketManager.shared.events(for: task) {
 ### `InnoNetworkCodegen`
 
 - optional `@APIDefinition` and `#endpoint` macros
-- depends on `swift-syntax` only through the codegen product
-- keeps the core `InnoNetwork` runtime dependency-free for existing users
+- links `swift-syntax` only through the codegen/macro targets
+- keeps the core `InnoNetwork` runtime target free of external library
+  dependencies, while SwiftPM may still resolve package-level macro
+  dependencies during package graph loading
 
 ## Platform Matrix
 
@@ -382,7 +384,8 @@ Operational items to verify before shipping a client built on InnoNetwork.
   replays each original request at most once.
 - **Cache and circuit breaker.** Enable `ResponseCachePolicy` and
   `CircuitBreakerPolicy` per client only after deciding the cache freshness and
-  host-failure budget for that API.
+  host-failure budget for that API. Cache keys include `Authorization` and
+  `Accept-Language`; full HTTP `Vary` processing is not automatic in 4.0.
 - **WebSocket reconnect cap.** `maxReconnectAttempts` limits successive automatic attempts.
   After exhaustion, surface the failure to the UI rather than reconnect on every app
   foreground.
@@ -392,9 +395,10 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - **Background fetch friendly.** Streaming or websocket products expect explicit
   `disconnect()` calls before app suspension. Implement `applicationDidEnterBackground`
   cleanup; the OS will not gracefully close sockets on your behalf.
-- **Token refresh.** Encode authentication refresh inside a `RequestInterceptor` and gate the
-  refresh through a single in-flight `Task` (otherwise concurrent retries can stampede the
-  refresh endpoint).
+- **Token refresh.** Keep token application, signing, and tenant headers in
+  `RequestInterceptor`s, and configure `RefreshTokenPolicy` for `401` refresh
+  + replay. The policy owns the single-flight refresh so concurrent retries do
+  not stampede the refresh endpoint.
 
 ### Pre-flight Test Plan
 

@@ -32,7 +32,9 @@ summary and [`MIGRATION_v4.md`](MIGRATION_v4.md) for call-site changes.
 - `MultipartResponseDecoder` and `MultipartPart` for buffered multipart
   response parsing.
 - Optional `InnoNetworkCodegen` product with `@APIDefinition` and `#endpoint`
-  macros. Existing `InnoNetwork` consumers do not pull `swift-syntax`.
+  macros. The core runtime targets do not link `swift-syntax`; SwiftPM may
+  still resolve package-level macro dependencies while loading the package
+  graph.
 - `APIDefinition`, `MultipartAPIDefinition`, and `StreamingAPIDefinition`
   expose `acceptableStatusCodes: Set<Int>?` for per-endpoint overrides of
   the session-wide default.

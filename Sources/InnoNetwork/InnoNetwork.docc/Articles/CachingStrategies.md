@@ -30,7 +30,11 @@ Only `200 OK` responses are persisted; other RFC-cacheable status codes and
 server `Cache-Control: no-store` are not honoured in 4.0 and are tracked in
 the roadmap. Cache entries are keyed by HTTP method, absolute URL, and
 representation headers that affect privacy or request identity, including
-`Authorization`, so cached responses cannot be shared across identities.
+`Authorization` and `Accept-Language`, so cached responses cannot be shared
+across identities or locale-specific representations. InnoNetwork 4.0 does not
+implement full HTTP `Vary` response-header processing; if an API varies on
+additional request headers, keep caching disabled for that endpoint until a
+custom key policy is available.
 
 Request coalescing can be enabled separately with ``RequestCoalescingPolicy``:
 

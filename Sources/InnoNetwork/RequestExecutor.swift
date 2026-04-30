@@ -118,14 +118,14 @@ package struct RequestExecutor {
     }
 
     private func executeWithPolicies(
-        request originalRequest: URLRequest,
+        request adaptedRequest: URLRequest,
         bodySource: BodySource,
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
         runtime: RequestExecutionRuntime,
         requestID: UUID
     ) async throws -> Response {
-        var request = originalRequest
+        var request = adaptedRequest
         var replayedAfterRefresh = false
 
         while true {
@@ -170,7 +170,10 @@ package struct RequestExecutor {
                 await refreshCoordinator.shouldRefresh(statusCode: networkResponse.statusCode),
                 !replayedAfterRefresh
             {
-                request = try await refreshCoordinator.refreshAndApply(to: originalRequest)
+                // Replay from the fully adapted request so session and
+                // endpoint interceptors keep their headers/signatures while
+                // the auth policy replaces only the Authorization value.
+                request = try await refreshCoordinator.refreshAndApply(to: adaptedRequest)
                 replayedAfterRefresh = true
                 continue
             }

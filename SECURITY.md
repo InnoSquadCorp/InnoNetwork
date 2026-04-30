@@ -59,7 +59,10 @@ re-uploaded copy.
 ## Supply-chain artifacts
 
 - `sbom.cdx.json` — CycloneDX 1.5 software bill of materials. The package
-  has no external dependencies; the SBOM exists for downstream auditors and
-  procurement processes that require a structured manifest.
+  core runtime targets have no external library dependencies, while the
+  optional `InnoNetworkCodegen` macro product uses SwiftPM's `swift-syntax`
+  package at build time. The SBOM records the resolved package graph and build
+  inputs for downstream auditors and procurement processes that require a
+  structured manifest.
 - `benchmarks.json` — frozen output of the release-time benchmark run
   ([Benchmarks/README.md](Benchmarks/README.md)).
