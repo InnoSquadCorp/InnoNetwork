@@ -140,7 +140,7 @@ func makeAuthenticatedConfiguration(baseURL: URL) -> NetworkConfiguration {
     let store = KeychainTokenStore(service: "com.example.app", account: "primary")
     let auth = AuthService(
         store: store,
-        refreshURL: baseURL.appendingPathComponent("/auth/refresh")
+        refreshURL: baseURL.appendingPathComponent("auth").appendingPathComponent("refresh")
     )
 
     let policy = RefreshTokenPolicy(

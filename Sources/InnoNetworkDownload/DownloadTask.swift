@@ -42,7 +42,7 @@ public actor DownloadTask: Identifiable {
         let current = _state
         if !current.canTransition(to: newState) {
             Self.logger.fault(
-                "Illegal DownloadState transition: \(current.rawValue, privacy: .public) -> \(newState.rawValue, privacy: .public) for task \(self.id, privacy: .public)"
+                "Illegal DownloadState transition: \(current.rawValue, privacy: .public) -> \(newState.rawValue, privacy: .public) for task \(self.id, privacy: .private(mask: .hash))"
             )
             assertionFailure("Illegal DownloadState transition: \(current) -> \(newState) for task \(self.id)")
             return
