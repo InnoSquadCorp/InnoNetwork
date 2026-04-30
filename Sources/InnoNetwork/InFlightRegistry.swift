@@ -11,25 +11,51 @@ import os
 /// cancellation through ``DefaultNetworkClient/cancelAll()`` rather than poke
 /// at this storage directly.
 package final class InFlightRegistry: Sendable {
-    private let cancelHandlers = OSAllocatedUnfairLock<[UUID: @Sendable () -> Void]>(initialState: [:])
+    private struct Entry: Sendable {
+        let tag: CancellationTag?
+        let cancelHandler: @Sendable () -> Void
+    }
+
+    private let entries = OSAllocatedUnfairLock<[UUID: Entry]>(initialState: [:])
 
     package init() {}
 
-    package func register(id: UUID, cancelHandler: @escaping @Sendable () -> Void) {
-        cancelHandlers.withLock { $0[id] = cancelHandler }
+    package func register(
+        id: UUID,
+        tag: CancellationTag? = nil,
+        cancelHandler: @escaping @Sendable () -> Void
+    ) {
+        entries.withLock { $0[id] = Entry(tag: tag, cancelHandler: cancelHandler) }
     }
 
     package func deregister(id: UUID) {
-        cancelHandlers.withLock { state in
+        entries.withLock { state in
             _ = state.removeValue(forKey: id)
         }
     }
 
     package func cancelAll() {
-        let handlers = cancelHandlers.withLock { state in
-            let handlers = Array(state.values)
+        let handlers = entries.withLock { state -> [@Sendable () -> Void] in
+            let collected = state.values.map { $0.cancelHandler }
             state.removeAll()
-            return handlers
+            return collected
+        }
+        for handler in handlers {
+            handler()
+        }
+    }
+
+    /// Cancel only the in-flight requests registered with the supplied tag.
+    /// Requests registered without a tag, and requests with a different tag,
+    /// are left alone. Matching entries are removed from the registry.
+    package func cancelAll(matching tag: CancellationTag) {
+        let handlers = entries.withLock { state -> [@Sendable () -> Void] in
+            let matchingKeys = state.compactMap { key, entry -> UUID? in
+                entry.tag == tag ? key : nil
+            }
+            return matchingKeys.compactMap { key -> (@Sendable () -> Void)? in
+                state.removeValue(forKey: key)?.cancelHandler
+            }
         }
         for handler in handlers {
             handler()
@@ -37,7 +63,7 @@ package final class InFlightRegistry: Sendable {
     }
 
     package var inFlightCount: Int {
-        cancelHandlers.withLock { $0.count }
+        entries.withLock { $0.count }
     }
 }
 

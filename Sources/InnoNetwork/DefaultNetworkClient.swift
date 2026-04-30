@@ -34,31 +34,53 @@ public protocol NetworkClient: Sendable {
 /// > `API_STABILITY.md` and `Examples/GeneratedClientRecipe` for the supported
 /// > usage shape.
 @_spi(GeneratedClientSupport) public protocol LowLevelNetworkClient: Sendable {
-    /// Executes a standard typed request through the low-level execution pipeline.
+    /// Executes a standard typed request through the low-level execution
+    /// pipeline.
     ///
-    /// `perform(_:)` is primarily intended for framework authors and policy layers
-    /// that already opt into `@_spi(GeneratedClientSupport)` to adapt richer request
-    /// contracts into `InnoNetwork`. Application integrations should normally prefer
-    /// ``NetworkClient/request(_:)``.
+    /// `perform(_:tag:)` is primarily intended for framework authors and
+    /// policy layers that already opt into `@_spi(GeneratedClientSupport)` to
+    /// adapt richer request contracts into `InnoNetwork`. Application
+    /// integrations should normally prefer ``NetworkClient/request(_:)``.
     ///
-    /// - Parameter request: The typed request definition to execute through the
-    ///   low-level pipeline.
+    /// - Parameters:
+    ///   - request: The typed request definition to execute through the
+    ///     low-level pipeline.
+    ///   - tag: Optional ``CancellationTag`` for grouped cancellation; pass
+    ///     `nil` when the request should not be reachable through
+    ///     ``DefaultNetworkClient/cancelAll(matching:)``.
     /// - Returns: The decoded `APIResponse` produced by the request definition.
     /// - Throws: A ``NetworkError`` or another execution error produced while encoding,
     ///   sending, validating, or decoding the request.
-    func perform<T: APIDefinition>(_ request: T) async throws -> T.APIResponse
+    func perform<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse
     /// Executes a custom request executable through the low-level execution pipeline.
     ///
     /// This overload exists for higher-level networking layers that want to control
     /// request serialization and decoding while still delegating execution, retry,
     /// and observability to `InnoNetwork`.
     ///
-    /// - Parameter executable: The custom executable that owns request metadata,
-    ///   payload creation, and response decoding.
+    /// - Parameters:
+    ///   - executable: The custom executable that owns request metadata,
+    ///     payload creation, and response decoding.
+    ///   - tag: Optional ``CancellationTag`` for grouped cancellation; pass
+    ///     `nil` when the request should not be reachable through
+    ///     ``DefaultNetworkClient/cancelAll(matching:)``.
     /// - Returns: The decoded `APIResponse` produced by the executable.
     /// - Throws: A ``NetworkError`` or another execution error produced while building,
     ///   sending, validating, or decoding the executable request.
-    func perform<D: SingleRequestExecutable>(executable: D) async throws -> D.APIResponse
+    func perform<D: SingleRequestExecutable>(executable: D, tag: CancellationTag?) async throws -> D.APIResponse
+}
+
+@_spi(GeneratedClientSupport) public extension LowLevelNetworkClient {
+    /// Convenience overload that calls ``perform(_:tag:)`` with `tag = nil`.
+    func perform<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
+        try await perform(request, tag: nil)
+    }
+
+    /// Convenience overload that calls ``perform(executable:tag:)`` with
+    /// `tag = nil`.
+    func perform<D: SingleRequestExecutable>(executable: D) async throws -> D.APIResponse {
+        try await perform(executable: executable, tag: nil)
+    }
 }
 
 
@@ -182,12 +204,42 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
         inFlight.cancelAll()
     }
 
+    /// Cancels every in-flight request that was dispatched with the supplied
+    /// ``CancellationTag``. Untagged requests, and requests with a different
+    /// tag, are left alone.
+    ///
+    /// Use this when a screen, feature, or user session goes away and the
+    /// caller wants to drop only its own requests without disturbing the rest
+    /// of the app.
+    public func cancelAll(matching tag: CancellationTag) async {
+        inFlight.cancelAll(matching: tag)
+    }
+
     public func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
-        return try await perform(request)
+        return try await perform(request, tag: nil)
+    }
+
+    /// Executes a typed request and registers it under the supplied
+    /// ``CancellationTag`` so it can later be cancelled with
+    /// ``cancelAll(matching:)``.
+    public func request<T: APIDefinition>(
+        _ request: T,
+        tag: CancellationTag?
+    ) async throws -> T.APIResponse {
+        try await perform(request, tag: tag)
     }
 
     public func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse {
-        try await perform(executable: MultipartSingleRequestExecutable(base: request))
+        try await perform(executable: MultipartSingleRequestExecutable(base: request), tag: nil)
+    }
+
+    /// Executes a multipart upload and registers it under the supplied
+    /// ``CancellationTag``.
+    public func upload<T: MultipartAPIDefinition>(
+        _ request: T,
+        tag: CancellationTag?
+    ) async throws -> T.APIResponse {
+        try await perform(executable: MultipartSingleRequestExecutable(base: request), tag: tag)
     }
 
     /// Low-level typed execution entry point for standard ``APIDefinition`` requests.
@@ -195,13 +247,19 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     /// Use this when you need to make the execution pipeline itself the dependency
     /// boundary. Most app integrations should still prefer ``request(_:)``.
     ///
-    /// - Parameter request: The typed request definition to execute through the
-    ///   low-level pipeline.
+    /// - Parameters:
+    ///   - request: The typed request definition to execute through the
+    ///     low-level pipeline.
+    ///   - tag: Optional ``CancellationTag`` so the request is reachable via
+    ///     ``cancelAll(matching:)``.
     /// - Returns: The decoded `APIResponse` produced by the request definition.
     /// - Throws: A ``NetworkError`` or another execution error produced while encoding,
     ///   sending, validating, or decoding the request.
-    @_spi(GeneratedClientSupport) public func perform<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
-        try await perform(executable: APISingleRequestExecutable(base: request))
+    @_spi(GeneratedClientSupport) public func perform<T: APIDefinition>(
+        _ request: T,
+        tag: CancellationTag? = nil
+    ) async throws -> T.APIResponse {
+        try await perform(executable: APISingleRequestExecutable(base: request), tag: tag)
     }
 
     /// Low-level typed execution entry point for custom ``SingleRequestExecutable`` values.
@@ -210,14 +268,18 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     /// serialization and decoding but still want `InnoNetwork` to own request
     /// building, retry coordination, trust handling, and observability.
     ///
-    /// - Parameter executable: The custom executable that owns request metadata,
-    ///   payload creation, and response decoding.
+    /// - Parameters:
+    ///   - executable: The custom executable that owns request metadata,
+    ///     payload creation, and response decoding.
+    ///   - tag: Optional ``CancellationTag`` so the request is reachable via
+    ///     ``cancelAll(matching:)``.
     /// - Returns: The decoded `APIResponse` produced by the executable.
     /// - Throws: A ``NetworkError`` or another execution error produced while building,
     ///   sending, validating, or decoding the executable request.
     @_spi(GeneratedClientSupport)
     public func perform<D: SingleRequestExecutable>(
-        executable: D
+        executable: D,
+        tag: CancellationTag? = nil
     ) async throws -> D.APIResponse {
         let requestID = UUID()
         let startGate = TaskStartGate()
@@ -243,7 +305,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
                 )
             }
         }
-        inFlight.register(id: requestID, cancelHandler: { work.cancel() })
+        inFlight.register(id: requestID, tag: tag, cancelHandler: { work.cancel() })
         startGate.open()
 
         do {
