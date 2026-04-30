@@ -27,6 +27,14 @@ Versioning for the 4.x release line.
 
 ### Deprecated
 
+- `DownloadManager.shared` is now soft-deprecated. The shared singleton
+  forces every feature in the process onto a single
+  `DownloadConfiguration`, which prevents per-feature retry budgets,
+  cellular policies, or storage roots. Prefer constructing per-feature
+  managers via ``DownloadManager.make(configuration:)``. The symbol
+  remains available for the entire 4.x line so existing call sites
+  continue to compile with a deprecation warning.
+
 ### Fixed
 
 - `TimeoutReason` documentation now enumerates the exact `URLError` →

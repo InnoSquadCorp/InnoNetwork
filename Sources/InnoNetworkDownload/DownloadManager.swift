@@ -67,6 +67,19 @@ public actor DownloadManager {
     /// during development. Production callers that need explicit failure
     /// handling should construct managers via ``make(configuration:)`` instead
     /// of relying on `shared`.
+    ///
+    /// > Important: `shared` is soft-deprecated. Apps that need more than one
+    /// > download policy (e.g., one manager for media with WiFi-only
+    /// > downloads, another for documents over cellular) cannot express that
+    /// > with a single global instance. Prefer constructing per-feature
+    /// > managers via ``make(configuration:)`` and storing them on the owning
+    /// > feature module. The symbol stays available for the whole 4.x line so
+    /// > existing call sites continue to compile.
+    @available(
+        *,
+        deprecated,
+        message: "Construct per-feature managers via DownloadManager.make(configuration:) so each feature can pick its own DownloadConfiguration. The shared singleton forces a single global policy."
+    )
     public static let shared: DownloadManager = {
         do {
             return try DownloadManager(configuration: .default)
