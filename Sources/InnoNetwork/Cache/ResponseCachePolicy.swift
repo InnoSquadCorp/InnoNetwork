@@ -10,7 +10,7 @@ public enum ResponseCachePolicy: Sendable, Equatable {
     /// polluting an existing cache.
     case networkOnly
     /// Serve from cache while entries are within `maxAge`. Stale entries fall
-    /// through to the network and are written back on a 200 response.
+    /// through to the network and RFC-cacheable GET responses may be written back.
     case cacheFirst(maxAge: Duration)
     /// Serve fresh entries directly. Within the `staleWindow` past `maxAge`,
     /// return the cached entry immediately and revalidate in the background.

@@ -792,9 +792,10 @@ require_contains '`Cache-Control: no-store` responses are not stored' \
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"
 require_contains 'The response `Vary` header is processed automatically' \
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"
-forbidden_pattern 'Only `200 OK` responses are persisted|does not implement full HTTP `Vary`|server `Cache-Control: no-store` are not honoured|응답 `Vary` 헤더 기반 자동 key 확장은 별도 설계가 필요하다|Cache-Control expansion' \
+forbidden_pattern 'Only `200 OK` responses are persisted|written back on a 200 response|does not implement full HTTP `Vary`|server `Cache-Control: no-store` are not honoured|응답 `Vary` 헤더 기반 자동 key 확장은 별도 설계가 필요하다|Cache-Control expansion' \
   "$repo_root/README.md" \
   "$repo_root/docs" \
+  "$repo_root/Sources/InnoNetwork" \
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc"
 
 echo "docs-contract-sync: OK"
