@@ -35,8 +35,12 @@ public enum TimeoutReason: Sendable, Equatable {
     /// mapper cannot distinguish this from ``requestTimeout`` because
     /// `URLError` does not surface which timeout interval fired.
     case resourceTimeout
-    /// Connection establishment failed (for example, an unreachable host, a
-    /// captive portal blocking the TCP handshake, or DNS resolution failure).
+    /// Connection establishment failed (for example, a captive portal
+    /// blocking the TCP handshake or the server actively refusing the
+    /// socket). Produced from `URLError.cannotConnectToHost`. Name
+    /// resolution and reachability failures (`cannotFindHost`,
+    /// `dnsLookupFailed`, `notConnectedToInternet`, …) stay as
+    /// ``NetworkError/underlying(_:_:)`` instead of mapping here.
     case connectionTimeout
 }
 
