@@ -74,18 +74,6 @@ package struct RequestExecutor {
                 requestID: requestID
             )
 
-            // Enforced after transport but before response interceptors so
-            // a too-large body cannot be observed (and possibly logged) by
-            // user-supplied response adapters before the executor rejects
-            // it. The check is opt-in via `responseBodyLimit`; nil keeps
-            // pre-4.1 behaviour.
-            if let limit = configuration.responseBodyLimit {
-                let observed = Int64(networkResponse.data.count)
-                if observed > limit {
-                    throw NetworkError.responseTooLarge(limit: limit, observed: observed)
-                }
-            }
-
             // Onion unwinds inner→outer: per-request interceptors first,
             // session-level interceptors last. A session-level response
             // interceptor sees the same response a session-only setup would
@@ -192,6 +180,7 @@ package struct RequestExecutor {
                 request: request,
                 configuration: configuration
             ) {
+                try enforceResponseBodyLimit(converted, configuration: configuration)
                 await storeCacheIfNeeded(converted, cacheKey: cacheKey, request: request, configuration: configuration)
                 return converted
             }
@@ -208,9 +197,25 @@ package struct RequestExecutor {
                 continue
             }
 
+            // Enforced before the response cache is written so an oversize
+            // body cannot poison subsequent GETs that would replay it from
+            // cache. The check is opt-in via `responseBodyLimit`; nil keeps
+            // the prior unbounded behaviour.
+            try enforceResponseBodyLimit(networkResponse, configuration: configuration)
             await storeCacheIfNeeded(
                 networkResponse, cacheKey: cacheKey, request: request, configuration: configuration)
             return networkResponse
+        }
+    }
+
+    private func enforceResponseBodyLimit(
+        _ response: Response,
+        configuration: NetworkConfiguration
+    ) throws {
+        guard let limit = configuration.responseBodyLimit else { return }
+        let observed = Int64(response.data.count)
+        if observed > limit {
+            throw NetworkError.responseTooLarge(limit: limit, observed: observed)
         }
     }
 

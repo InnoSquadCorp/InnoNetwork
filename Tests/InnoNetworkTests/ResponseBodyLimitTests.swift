@@ -81,7 +81,38 @@ struct ResponseBodyLimitTests {
         }
     }
 
-    @Test("nil limit (default) keeps pre-4.1 unbounded behaviour")
+    @Test("Oversize response is not written to the response cache")
+    func oversizeResponseDoesNotPoisonCache() async throws {
+        let payload = Data(repeating: 0xEE, count: 5 * 1_024)
+        let mockSession = MockURLSession()
+        mockSession.setMockResponse(statusCode: 200, data: payload)
+
+        let cache = InMemoryResponseCache()
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(600)),
+                responseCache: cache,
+                responseBodyLimit: 1_024
+            ),
+            session: mockSession
+        )
+
+        do {
+            _ = try await client.request(DataEcho())
+            Issue.record("Expected NetworkError.responseTooLarge")
+        } catch is NetworkError {
+            // Expected.
+        }
+
+        let request = URLRequest(url: URL(string: "https://api.example.com/v1/echo")!)
+        if let key = ResponseCacheKey(request: request) {
+            let cached = await cache.get(key)
+            #expect(cached == nil, "Oversize response must not be cached")
+        }
+    }
+
+    @Test("nil limit (default) keeps the unbounded behaviour")
     func nilLimitIsUnbounded() async throws {
         let payload = Data(repeating: 0xDD, count: 10 * 1_024 * 1_024)
         let mockSession = MockURLSession()
