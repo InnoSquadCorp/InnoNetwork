@@ -132,4 +132,65 @@ struct NetworkErrorTimeoutTests {
         #expect(cancelled.code == NSURLErrorCancelled)
         #expect(invalidRequest.code == 1002)
     }
+
+    @Test("URLError.cancelled maps to NetworkError.cancelled, not a timeout")
+    func urlErrorCancelledMapsToCancelled() async throws {
+        let mockSession = MockURLSession()
+        mockSession.mockError = URLError(.cancelled)
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+        do {
+            _ = try await client.request(TimingOutAPIRequest())
+            Issue.record("Expected cancellation")
+        } catch let error as NetworkError {
+            switch error {
+            case .cancelled: break
+            default: Issue.record("Expected NetworkError.cancelled, got \(error)")
+            }
+        }
+    }
+
+    @Test("URLError.networkConnectionLost stays underlying (mid-flight drop is not a timeout)")
+    func urlErrorNetworkConnectionLostStaysUnderlying() async throws {
+        let mockSession = MockURLSession()
+        mockSession.mockError = URLError(.networkConnectionLost)
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+        do {
+            _ = try await client.request(TimingOutAPIRequest())
+            Issue.record("Expected underlying error")
+        } catch let error as NetworkError {
+            switch error {
+            case .underlying(let underlying, nil):
+                #expect(underlying.code == URLError.Code.networkConnectionLost.rawValue)
+            default:
+                Issue.record("Expected NetworkError.underlying for networkConnectionLost, got \(error)")
+            }
+        }
+    }
+
+    @Test("URLError.notConnectedToInternet stays underlying (reachability is not a timeout)")
+    func urlErrorNotConnectedStaysUnderlying() async throws {
+        let mockSession = MockURLSession()
+        mockSession.mockError = URLError(.notConnectedToInternet)
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+        do {
+            _ = try await client.request(TimingOutAPIRequest())
+            Issue.record("Expected underlying error")
+        } catch let error as NetworkError {
+            switch error {
+            case .underlying(let underlying, nil):
+                #expect(underlying.code == URLError.Code.notConnectedToInternet.rawValue)
+            default:
+                Issue.record("Expected NetworkError.underlying for notConnectedToInternet, got \(error)")
+            }
+        }
+    }
 }

@@ -13,17 +13,30 @@ import Foundation
 /// the UI surface targeted retry copy ("the request is taking longer than
 /// expected" vs. "we couldn't reach the server") instead of a generic
 /// transport failure.
+///
+/// Mapping behaviour (see ``NetworkError/mapTransportError(_:)``):
+/// - `URLError.timedOut` → ``requestTimeout``.
+/// - `URLError.cannotConnectToHost` → ``connectionTimeout``.
+/// - Other `URLError` codes (`cannotFindHost`, `dnsLookupFailed`,
+///   `networkConnectionLost`, `notConnectedToInternet`, …) intentionally
+///   stay as ``NetworkError/underlying(_:_:)`` so callers can tell a real
+///   timeout from a name-resolution or reachability failure.
+/// - ``resourceTimeout`` is never produced by the built-in mapper because
+///   Foundation reports both request and resource timeout expiration as
+///   `URLError.timedOut` without exposing which interval fired. Higher-level
+///   transports that observe `URLSessionTaskMetrics` may construct this case
+///   directly.
 public enum TimeoutReason: Sendable, Equatable {
-    /// `URLError.timedOut` produced by the request timeoutInterval.
+    /// The request timed out before the server responded with the first byte.
+    /// Produced from `URLError.timedOut`.
     case requestTimeout
-    /// Resource-level timeout reported by a caller or higher-level transport.
-    ///
-    /// The core `URLError` mapper does not currently produce this case because
-    /// Foundation reports both request and resource timeout expiration as
-    /// `URLError.timedOut` without exposing which timeout interval fired.
+    /// The resource transfer exceeded its total time budget. Reserved for
+    /// callers that observe URLSession task metrics; the built-in transport
+    /// mapper cannot distinguish this from ``requestTimeout`` because
+    /// `URLError` does not surface which timeout interval fired.
     case resourceTimeout
-    /// Connection establishment timed out (for example, a captive portal
-    /// blocking the TCP handshake).
+    /// Connection establishment failed (for example, an unreachable host, a
+    /// captive portal blocking the TCP handshake, or DNS resolution failure).
     case connectionTimeout
 }
 
@@ -240,6 +253,12 @@ extension NetworkError {
             case .cannotConnectToHost:
                 return .timeout(reason: .connectionTimeout, underlying: SendableUnderlyingError(urlError))
             default:
+                // Other URLError codes (cannotFindHost, dnsLookupFailed,
+                // networkConnectionLost, notConnectedToInternet, …) are
+                // intentionally surfaced as `.underlying` so callers can tell
+                // a real timeout from a name-resolution or reachability
+                // failure. Adjust here only with a paired test in
+                // `NetworkErrorTimeoutTests`.
                 break
             }
         }

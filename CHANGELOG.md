@@ -23,6 +23,14 @@ Versioning for the 4.x release line.
 
 ### Fixed
 
+- `TimeoutReason` documentation now enumerates the exact `URLError` →
+  `NetworkError.timeout(reason:)` mapping (`.timedOut` →
+  `.requestTimeout`, `.cannotConnectToHost` → `.connectionTimeout`) and
+  records why other transport codes (DNS failures, reachability errors,
+  mid-flight drops) intentionally surface as `NetworkError.underlying`
+  instead of being reclassified as timeouts. Lock-down tests cover
+  `URLError.cancelled`, `.networkConnectionLost`, and
+  `.notConnectedToInternet`.
 - `DownloadTask.updateState(_:)` now validates transitions against the
   documented `DownloadState.canTransition(to:)` table. Illegal transitions
   trigger `assertionFailure` in DEBUG and an OSLog `.fault` in release while
