@@ -22,7 +22,7 @@ Each protocol has two attachment points:
 
 Cross-cutting concerns such as tenant headers, distributed-tracing headers, and
 request IDs belong on the session. Endpoint-specific overrides — a one-off
-`X-Idempotency-Key`, a debug-build response rewriter — belong on the
+`Idempotency-Key`, a debug-build response rewriter — belong on the
 ``APIDefinition``.
 
 ## Onion order
@@ -148,7 +148,7 @@ interceptors run for streams.
 | Request IDs / tracing headers  | Session                         |
 | Locale / device headers        | Session                         |
 | Debug response logging         | Session                         |
-| One-off `X-Idempotency-Key`    | ``APIDefinition``               |
+| One-off `Idempotency-Key`      | ``APIDefinition``               |
 | Endpoint-specific body shaping | ``APIDefinition``               |
 | Test fakes / preview overrides | `InnoNetworkTestSupport.StubNetworkClient` |
 | Refresh-token coordination     | Session (response) + retry policy |

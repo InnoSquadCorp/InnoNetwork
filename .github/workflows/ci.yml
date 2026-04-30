@@ -308,6 +308,7 @@ jobs:
       - name: Verify root package stays runtime-only
         run: |
           set -eo pipefail
+          mkdir -p .build
           xcrun swift package show-dependencies | tee .build/root-dependencies.txt
           if grep -q "swift-syntax" .build/root-dependencies.txt; then
             echo "::error::Root InnoNetwork package must not resolve swift-syntax; codegen lives in Packages/InnoNetworkCodegen."

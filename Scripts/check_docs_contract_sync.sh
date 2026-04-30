@@ -404,6 +404,8 @@ included_kinds = {
     "swift.property",
     "swift.protocol",
     "swift.struct",
+    "swift.type.method",
+    "swift.type.property",
     "swift.typealias",
 }
 rows = set()

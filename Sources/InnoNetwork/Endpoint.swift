@@ -17,7 +17,7 @@ import Foundation
 /// let post = try await client.request(
 ///     Endpoint.post("/posts")
 ///         .body(CreatePost(title: "Hello", body: "World"))
-///         .header("X-Idempotency-Key", value: idempotencyKey)
+///         .header("Idempotency-Key", value: idempotencyKey)
 ///         .decoding(Post.self)
 /// )
 /// ```
