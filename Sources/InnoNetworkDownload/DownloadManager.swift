@@ -381,13 +381,20 @@ public actor DownloadManager {
 
     public func cancel(_ task: DownloadTask) async {
         guard await waitForRestore() else { return }
-        await task.updateState(.cancelled)
-        await task.setError(.cancelled)
-        await runtimeRegistry.onStateChanged?(task, .cancelled)
-        await eventHub.publish(.stateChanged(.cancelled), for: task.id)
+        // Drive the state transition only when we're leaving a non-terminal
+        // state. Calling `cancel` again on an already-terminal task (for
+        // example, after the first attempt's persistence removal failed)
+        // continues into the cleanup path below so callers can drain the
+        // registry without triggering an illegal-transition assertion.
+        if !(await task.state).isTerminal {
+            await task.updateState(.cancelled)
+            await task.setError(.cancelled)
+            await runtimeRegistry.onStateChanged?(task, .cancelled)
+            await eventHub.publish(.stateChanged(.cancelled), for: task.id)
 
-        if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
-            urlTask.cancel()
+            if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
+                urlTask.cancel()
+            }
         }
 
         do {

@@ -147,7 +147,7 @@ struct DownloadTaskTests {
         let destination = URL(fileURLWithPath: "/tmp/file.zip")
         let task = DownloadTask(url: url, destinationURL: destination)
 
-        await task.updateState(.failed)
+        await task.restoreState(.failed)
         await task.setError(.maxRetriesExceeded)
         _ = await task.incrementRetryCount()
         _ = await task.incrementTotalRetryCount()
@@ -170,6 +170,18 @@ struct DownloadTaskTests {
         #expect(!DownloadState.completed.canTransition(to: .downloading))
         #expect(DownloadState.completed.isTerminal)
         #expect(!DownloadState.waiting.isTerminal)
+    }
+
+    @Test("restoreState bypasses transition validation for restore/test injection")
+    func restoreStateBypassesValidation() async {
+        let url = URL(string: "https://example.com/file.zip")!
+        let destination = URL(fileURLWithPath: "/tmp/file.zip")
+        let task = DownloadTask(url: url, destinationURL: destination)
+
+        // .idle → .paused is not a documented transition, but restoreState
+        // is the explicit escape hatch for state restoration on app launch.
+        await task.restoreState(.paused)
+        #expect(await task.state == .paused)
     }
 }
 

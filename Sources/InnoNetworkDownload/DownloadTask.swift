@@ -1,9 +1,12 @@
 import Foundation
+import OSLog
 
 public actor DownloadTask: Identifiable {
     public nonisolated let id: String
     public nonisolated let url: URL
     public nonisolated let destinationURL: URL
+
+    private static let logger = Logger(subsystem: "innosquad.network.download", category: "DownloadTask")
 
     private var _state: DownloadState = .idle
     private var _progress: DownloadProgress = .zero
@@ -25,7 +28,32 @@ public actor DownloadTask: Identifiable {
         self.destinationURL = destinationURL
     }
 
+    /// Apply a new state, enforcing the documented transition table from
+    /// ``DownloadState/canTransition(to:)``.
+    ///
+    /// Illegal transitions trigger an `assertionFailure` in DEBUG builds so
+    /// that bugs surface during development, and emit an OSLog `.fault` plus
+    /// continue the assignment in release builds to preserve runtime
+    /// stability. For non-progressive writes (restoring persisted state on
+    /// app launch, or test-only state injection), use ``restoreState(_:)``.
     func updateState(_ newState: DownloadState) {
+        let current = _state
+        if !current.canTransition(to: newState) {
+            Self.logger.fault(
+                "Illegal DownloadState transition: \(current.rawValue, privacy: .public) -> \(newState.rawValue, privacy: .public) for task \(self.id, privacy: .public)"
+            )
+            assertionFailure("Illegal DownloadState transition: \(current) -> \(newState) for task \(self.id)")
+        }
+        _state = newState
+    }
+
+    /// Assign the task state without validating the transition.
+    ///
+    /// Reserved for state restoration (rebuilding actor state from persisted
+    /// records or live `URLSession` task state on app relaunch) and for test
+    /// state injection. Production lifecycle code should use
+    /// ``updateState(_:)`` so unintended transitions are caught.
+    func restoreState(_ newState: DownloadState) {
         _state = newState
     }
 

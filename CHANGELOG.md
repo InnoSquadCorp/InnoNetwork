@@ -23,6 +23,14 @@ Versioning for the 4.x release line.
 
 ### Fixed
 
+- `DownloadTask.updateState(_:)` now validates transitions against the
+  documented `DownloadState.canTransition(to:)` table. Illegal transitions
+  trigger `assertionFailure` in DEBUG and an OSLog `.fault` in release while
+  still applying the assignment to preserve runtime stability. State
+  restoration (rebuilding actor state from persisted records or live
+  `URLSession` task state on relaunch) and test-only state injection now
+  use the new `restoreState(_:)` helper, which bypasses validation.
+
 ## [4.0.0]
 
 InnoNetwork's first public release. The package targets Apple platforms only
