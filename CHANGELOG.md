@@ -9,6 +9,14 @@ Versioning for the 4.x release line.
 
 ### Added
 
+- `DecodingInterceptor` protocol exposes a `willDecode(data:response:)`
+  hook that runs after response interceptors and before the configured
+  decoder, plus a generic `didDecode(_:response:)` hook that observes
+  the typed value before it returns to the caller. Both methods have
+  default no-op implementations so adapters only override the hook they
+  actually need (envelope unwrapping, payload sanitization, decode
+  metrics, typed-value normalization). `NetworkConfiguration.decodingInterceptors`
+  registers them at the session level.
 - `NetworkConfiguration.responseBodyLimit: Int64?` (default `nil`)
   enforces a soft upper bound on the size of buffered response bodies.
   When the configured limit is exceeded the executor short-circuits the

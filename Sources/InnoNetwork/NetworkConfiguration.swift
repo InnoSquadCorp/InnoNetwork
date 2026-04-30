@@ -76,6 +76,13 @@ public struct NetworkConfiguration: Sendable {
     /// interceptor can observe the same response shape its peer would have
     /// produced under a per-endpoint setup.
     public let responseInterceptors: [ResponseInterceptor]
+    /// Decoding interceptors applied around the response decode boundary
+    /// for **every** request. Hooks fire after all response interceptors
+    /// have settled, immediately before and after the configured decoder
+    /// runs. Use them for envelope unwrapping, payload sanitization,
+    /// decode metrics, or typed-value normalization. See
+    /// ``DecodingInterceptor`` for ordering and failure semantics.
+    public let decodingInterceptors: [DecodingInterceptor]
     /// Optional token refresh policy. When configured, the client applies the
     /// current token before transport, refreshes once on matching auth status
     /// codes, and replays the fully adapted request at most one time.
@@ -130,6 +137,7 @@ public struct NetworkConfiguration: Sendable {
         public var acceptableStatusCodes: Set<Int>
         public var requestInterceptors: [RequestInterceptor]
         public var responseInterceptors: [ResponseInterceptor]
+        public var decodingInterceptors: [DecodingInterceptor]
         public var refreshTokenPolicy: RefreshTokenPolicy?
         public var requestCoalescingPolicy: RequestCoalescingPolicy
         public var responseCachePolicy: ResponseCachePolicy
@@ -152,6 +160,7 @@ public struct NetworkConfiguration: Sendable {
             self.acceptableStatusCodes = preset.acceptableStatusCodes
             self.requestInterceptors = preset.requestInterceptors
             self.responseInterceptors = preset.responseInterceptors
+            self.decodingInterceptors = preset.decodingInterceptors
             self.refreshTokenPolicy = preset.refreshTokenPolicy
             self.requestCoalescingPolicy = preset.requestCoalescingPolicy
             self.responseCachePolicy = preset.responseCachePolicy
@@ -176,6 +185,7 @@ public struct NetworkConfiguration: Sendable {
                 acceptableStatusCodes: acceptableStatusCodes,
                 requestInterceptors: requestInterceptors,
                 responseInterceptors: responseInterceptors,
+                decodingInterceptors: decodingInterceptors,
                 refreshTokenPolicy: refreshTokenPolicy,
                 requestCoalescingPolicy: requestCoalescingPolicy,
                 responseCachePolicy: responseCachePolicy,
@@ -214,6 +224,7 @@ public struct NetworkConfiguration: Sendable {
         acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes,
         requestInterceptors: [RequestInterceptor] = [],
         responseInterceptors: [ResponseInterceptor] = [],
+        decodingInterceptors: [DecodingInterceptor] = [],
         refreshTokenPolicy: RefreshTokenPolicy? = nil,
         requestCoalescingPolicy: RequestCoalescingPolicy = .disabled,
         responseCachePolicy: ResponseCachePolicy = .disabled,
@@ -235,6 +246,7 @@ public struct NetworkConfiguration: Sendable {
         self.acceptableStatusCodes = acceptableStatusCodes
         self.requestInterceptors = requestInterceptors
         self.responseInterceptors = responseInterceptors
+        self.decodingInterceptors = decodingInterceptors
         self.refreshTokenPolicy = refreshTokenPolicy
         self.requestCoalescingPolicy = requestCoalescingPolicy
         self.responseCachePolicy = responseCachePolicy

@@ -116,7 +116,23 @@ package struct RequestExecutor {
                 observers: configuration.eventObservers
             )
 
-            return try executable.decode(data: networkResponse.data, response: networkResponse)
+            // willDecode runs after response interceptors have settled
+            // so adapters that mutate the response (envelope rewriting,
+            // header-driven sanitization) observe the same payload the
+            // decoder will see. Interceptors fire in declaration order.
+            var decodableData = networkResponse.data
+            for interceptor in configuration.decodingInterceptors {
+                decodableData = try await interceptor.willDecode(
+                    data: decodableData,
+                    response: networkResponse
+                )
+            }
+
+            var decoded = try executable.decode(data: decodableData, response: networkResponse)
+            for interceptor in configuration.decodingInterceptors {
+                decoded = try await interceptor.didDecode(decoded, response: networkResponse)
+            }
+            return decoded
         } catch let error as NetworkError {
             let surfaced = configuration.captureFailurePayload ? error : error.redactingFailurePayload()
             executable.logger.log(error: surfaced)
