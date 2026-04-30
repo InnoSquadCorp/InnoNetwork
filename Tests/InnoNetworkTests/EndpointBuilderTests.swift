@@ -221,7 +221,8 @@ struct EndpointBuilderTests {
 
         _ = try await client.request(endpoint)
 
-        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == "application/json; charset=UTF-8")
+        let contentType = mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type")
+        #expect(contentType == "application/json; charset=UTF-8")
         #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "X-Custom") == "kept")
     }
 

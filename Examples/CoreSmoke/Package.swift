@@ -18,7 +18,7 @@ let package = Package(
         .executableTarget(
             name: "CoreSmoke",
             dependencies: [
-                .product(name: "InnoNetwork", package: "InnoNetwork"),
+                .product(name: "InnoNetwork", package: "InnoNetwork")
             ]
         )
     ],
