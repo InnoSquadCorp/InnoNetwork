@@ -145,180 +145,19 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
             let inFlight = self.inFlight
             let configuration = self.configuration
             let executionRuntime = self.executionRuntime
-            let session = self.session
-            let eventHub = self.eventHub
+            let executor = StreamingExecutor(session: self.session, eventHub: self.eventHub)
             let startGate = TaskStartGate()
 
             let work = Task<Void, Never> {
                 await startGate.wait()
-
-                let resumePolicy = request.resumePolicy
-                let resumeBudget = resumePolicy.maxAttempts
-                let resumeDelay = resumePolicy.retryDelay
-                var resumeState = StreamingResumeState()
-                var resumeAttempts = 0
-
-                attempts: while true {
-                    do {
-                        try Task.checkCancellation()
-                        resumeState.beginAttempt()
-                        var urlRequest = URLRequest(url: configuration.baseURL.appendingPathComponent(request.path))
-                        urlRequest.httpMethod = request.method.rawValue
-                        urlRequest.allHTTPHeaderFields = request.headers.dictionary
-                        urlRequest.cachePolicy = configuration.cachePolicy
-                        urlRequest.timeoutInterval = configuration.timeout
-                        if let lastSeenEventID = resumeState.lastSeenEventID {
-                            urlRequest.setValue(lastSeenEventID, forHTTPHeaderField: "Last-Event-ID")
-                        }
-
-                        await eventHub.publish(
-                            .requestStart(
-                                requestID: requestID,
-                                method: urlRequest.httpMethod ?? "UNKNOWN",
-                                url: urlRequest.url?.absoluteString ?? "",
-                                retryIndex: resumeAttempts
-                            ),
-                            requestID: requestID,
-                            observers: configuration.eventObservers
-                        )
-
-                        for interceptor in configuration.requestInterceptors {
-                            urlRequest = try await interceptor.adapt(urlRequest)
-                        }
-                        for interceptor in request.requestInterceptors {
-                            urlRequest = try await interceptor.adapt(urlRequest)
-                        }
-                        if let refreshCoordinator = executionRuntime.refreshCoordinator {
-                            urlRequest = try await refreshCoordinator.applyCurrentToken(to: urlRequest)
-                        }
-                        await eventHub.publish(
-                            .requestAdapted(
-                                requestID: requestID,
-                                method: urlRequest.httpMethod ?? "UNKNOWN",
-                                url: urlRequest.url?.absoluteString ?? "",
-                                retryIndex: resumeAttempts
-                            ),
-                            requestID: requestID,
-                            observers: configuration.eventObservers
-                        )
-
-                        let context = NetworkRequestContext(
-                            requestID: requestID,
-                            retryIndex: resumeAttempts,
-                            metricsReporter: configuration.metricsReporter,
-                            trustPolicy: configuration.trustPolicy,
-                            eventObservers: configuration.eventObservers
-                        )
-                        let (bytes, response) = try await session.bytes(for: urlRequest, context: context)
-                        guard let httpResponse = response as? HTTPURLResponse else {
-                            throw NetworkError.nonHTTPResponse(response)
-                        }
-                        await eventHub.publish(
-                            .responseReceived(
-                                requestID: requestID,
-                                statusCode: httpResponse.statusCode,
-                                byteCount: 0
-                            ),
-                            requestID: requestID,
-                            observers: configuration.eventObservers
-                        )
-
-                        var networkResponse = Response(
-                            statusCode: httpResponse.statusCode,
-                            data: Data(),
-                            request: urlRequest,
-                            response: httpResponse
-                        )
-                        for interceptor in configuration.responseInterceptors {
-                            networkResponse = try await interceptor.adapt(networkResponse, request: urlRequest)
-                        }
-
-                        let acceptable = request.acceptableStatusCodes ?? configuration.acceptableStatusCodes
-                        guard acceptable.contains(networkResponse.statusCode) else {
-                            // Handshake failure: do not retry. The status is a
-                            // server-driven decision and re-sending the request
-                            // is unlikely to change it within the stream's
-                            // lifetime.
-                            throw NetworkError.statusCode(networkResponse)
-                        }
-
-                        var streamedByteCount = 0
-                        var streamError: Error?
-                        var iterator = bytes.lines.makeAsyncIterator()
-                        while true {
-                            let line: String?
-                            do {
-                                line = try await iterator.next()
-                            } catch is CancellationError {
-                                throw NetworkError.cancelled
-                            } catch {
-                                streamError = error
-                                break
-                            }
-
-                            guard let line else { break }
-                            try Task.checkCancellation()
-                            streamedByteCount += line.utf8.count
-                            if let output = try request.decode(line: line) {
-                                continuation.yield(output)
-                                resumeState.observe(eventID: request.eventID(from: output))
-                            }
-                        }
-
-                        if let streamError {
-                            // Mid-stream transport disconnect. Resume only when:
-                            // - resume policy is active
-                            // - attempt budget remains
-                            // - we have an event id to send (server cannot
-                            //   resume from "nothing")
-                            let canResume = resumeState.canResume(
-                                maxAttempts: resumeBudget,
-                                completedResumeAttempts: resumeAttempts
-                            )
-                            if canResume {
-                                resumeAttempts += 1
-                                if resumeDelay > 0 {
-                                    try? await Task.sleep(for: .seconds(resumeDelay))
-                                }
-                                try Task.checkCancellation()
-                                continue attempts
-                            }
-                            throw NetworkError.mapTransportError(streamError)
-                        }
-
-                        // Stream completed cleanly.
-                        await eventHub.publish(
-                            .requestFinished(
-                                requestID: requestID,
-                                statusCode: networkResponse.statusCode,
-                                byteCount: streamedByteCount
-                            ),
-                            requestID: requestID,
-                            observers: configuration.eventObservers
-                        )
-                        await eventHub.finish(requestID: requestID)
-                        inFlight.deregister(id: requestID)
-                        continuation.finish()
-                        return
-                    } catch {
-                        let mapped = NetworkError.mapTransportError(error)
-                        let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
-                        let nsError = surfaced as NSError
-                        await eventHub.publish(
-                            .requestFailed(
-                                requestID: requestID,
-                                errorCode: nsError.code,
-                                message: surfaced.localizedDescription
-                            ),
-                            requestID: requestID,
-                            observers: configuration.eventObservers
-                        )
-                        await eventHub.finish(requestID: requestID)
-                        inFlight.deregister(id: requestID)
-                        continuation.finish(throwing: surfaced)
-                        return
-                    }
-                }
+                await executor.run(
+                    request: request,
+                    requestID: requestID,
+                    configuration: configuration,
+                    executionRuntime: executionRuntime,
+                    inFlight: inFlight,
+                    continuation: continuation
+                )
             }
 
             continuation.onTermination = { _ in
