@@ -9,6 +9,12 @@ Versioning for the 4.x release line.
 
 ### Added
 
+- `Examples/Auth` shows how to wire `RefreshTokenPolicy` to a
+  Keychain-backed token store. The example demonstrates the closure
+  contract (`currentToken`, `refreshToken`, `applyToken`), single-flight
+  refresh, and replay after `401`. The library itself stays
+  zero-dependency — Keychain integration lives in the example, not in
+  the runtime targets.
 - `DecodingInterceptor` protocol exposes a `willDecode(data:response:)`
   hook that runs after response interceptors and before the configured
   decoder, plus a generic `didDecode(_:response:)` hook that observes
