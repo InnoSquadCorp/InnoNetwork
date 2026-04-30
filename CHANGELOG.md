@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and the project follows Semantic
 Versioning for the 4.x release line.
 
-## [Unreleased] - 4.1.0
+## [Unreleased]
 
 ### Added
 
@@ -29,9 +29,9 @@ Versioning for the 4.x release line.
   decoder and throws ``NetworkError/responseTooLarge(limit:observed:)``.
   The check runs before response interceptors so user-supplied adapters
   cannot observe a payload the executor will reject. The guard is
-  opt-in; setting it to `nil` keeps pre-4.1 behaviour. Endpoints that
-  need genuine memory-bounded handling should use the streaming surface
-  (`stream(_:)` / `bytes(for:)`).
+  opt-in; setting it to `nil` keeps the prior unbounded behaviour.
+  Endpoints that need genuine memory-bounded handling should use the
+  streaming surface (`stream(_:)` / `bytes(for:)`).
 
 ### Changed
 
@@ -39,8 +39,8 @@ Versioning for the 4.x release line.
   Provisionally Stable surface, recommends `.upToNextMinor(from:)` for
   consumers who want strict compile-time stability, and explicitly lists
   `DecodingInterceptor` as provisionally stable. The README install
-  snippet uses `.upToNextMinor(from: "4.1.0")` and links the trade-off
-  with `.upToNextMajor(from:)`.
+  snippet uses `.upToNextMinor(from:)` and links the trade-off with
+  `.upToNextMajor(from:)`.
 - `RequestInterceptor` and `ResponseInterceptor` now carry DocC blocks
   that document the configuration → endpoint → refresh-token application
   order, the unwinding semantics for response adapters, and the failure
@@ -54,6 +54,15 @@ Versioning for the 4.x release line.
   bounding peak memory by default. Endpoints that intentionally relied on
   the in-memory path should now declare it explicitly:
   `var uploadStrategy: MultipartUploadStrategy { .inMemory }`.
+
+#### Migration: `NetworkError.responseTooLarge`
+
+`NetworkError` is a `public` non-`@frozen` enum, so the new
+`responseTooLarge(limit:observed:)` case requires consumers who write
+exhaustive `switch` statements over `NetworkError` to either handle the
+new case explicitly or add `@unknown default`. Code that catches
+`NetworkError` without exhaustive pattern matching is unaffected. The
+new case carries `errorCode == 4002` for `CustomNSError` bridging.
 
 ### Deprecated
 

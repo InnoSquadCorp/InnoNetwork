@@ -36,7 +36,7 @@ dependencies: [
     // Recommended for app targets: pin to the current minor and accept
     // patch upgrades. Provisionally stable APIs may evolve across minor
     // bumps, so review CHANGELOG.md before adopting a new minor.
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", .upToNextMinor(from: "4.1.0"))
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", .upToNextMinor(from: "4.0.0"))
 ]
 ```
 
@@ -143,8 +143,8 @@ for await event in await manager.events(for: task) {
 ```
 
 > `DownloadManager.shared` still exists for back-compat, but is
-> soft-deprecated as of 4.1 — a single global manager forces every
-> feature to share one configuration. Prefer per-feature managers via
+> soft-deprecated — a single global manager forces every feature to
+> share one configuration. Prefer per-feature managers via
 > `DownloadManager.make(configuration:)`.
 
 #### Destination filename policy

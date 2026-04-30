@@ -151,6 +151,7 @@ expected_provisionally=(
 '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
 '`InnoNetworkCodegen` separate package and macro declarations'
+'`DecodingInterceptor`'
 )
 
 expected_shipping_public_declarations=(
@@ -163,6 +164,7 @@ expected_shipping_public_declarations=(
   CircuitBreakerPolicy
   ContentType
   CorrelationIDInterceptor
+  DecodingInterceptor
   DefaultNetworkClient
   DefaultNetworkLogger
   DownloadConfiguration
@@ -703,6 +705,11 @@ for symbol in "${expected_provisionally[@]}"; do
       ;;
     '`InnoNetworkCodegen` separate package and macro declarations')
       validate_codegen_product
+      continue
+      ;;
+    '`DecodingInterceptor`')
+      require_contains 'public protocol DecodingInterceptor' \
+        "$repo_root/Sources/InnoNetwork/DecodingInterceptor.swift"
       continue
       ;;
     *)
