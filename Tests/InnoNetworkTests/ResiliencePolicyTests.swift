@@ -741,6 +741,31 @@ struct ResiliencePolicyTests {
         #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == nil)
     }
 
+    @Test("Network-only cache policy does not write the response into the cache")
+    func responseCacheNetworkOnlySkipsCacheWrite() async throws {
+        let cache = InMemoryResponseCache()
+        let body = ResilienceUser(id: 1, name: "fresh")
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: body, headers: ["ETag": "v1"])
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                responseCachePolicy: .networkOnly,
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let user = try await client.request(ResilienceGetRequest())
+
+        #expect(user == body)
+        let stored = await cache.get(
+            ResponseCacheKey(method: "GET", url: "https://api.example.com/users/1")
+        )
+        #expect(stored == nil)
+    }
+
     @Test("Circuit breaker opens after countable failure")
     func circuitBreakerOpens() async throws {
         let session = try SequenceURLSession(queue: [
@@ -788,6 +813,70 @@ struct ResiliencePolicyTests {
         #expect(minimum.failureThreshold == 1)
         #expect(minimum.resetAfter == .seconds(5))
         #expect(minimum.maxResetAfter == .seconds(5))
+    }
+
+    @Test("Refresh replay clears prior Authorization header before reapplying")
+    func refreshTokenReplayClearsPreviousAuthorizationHeader() async throws {
+        let coordinator = RefreshTokenCoordinator(
+            policy: RefreshTokenPolicy(
+                currentToken: { "old" },
+                refreshToken: { "new" },
+                applyToken: { token, request in
+                    var request = request
+                    request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                    return request
+                }
+            )
+        )
+        var request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
+        request.setValue("Bearer old", forHTTPHeaderField: "Authorization")
+
+        let applied = try await coordinator.refreshAndApply(to: request)
+
+        #expect(applied.value(forHTTPHeaderField: "Authorization") == "Bearer new")
+    }
+
+    @Test("Failed refresh does not replay stale failure to subsequent callers")
+    func refreshTokenFailedRefreshDoesNotReplayStaleFailure() async throws {
+        actor RefreshScript {
+            var calls = 0
+            func next() async throws -> String {
+                calls += 1
+                if calls == 1 {
+                    throw NetworkError.invalidRequestConfiguration("first refresh fails")
+                }
+                return "fresh"
+            }
+        }
+        let script = RefreshScript()
+        let coordinator = RefreshTokenCoordinator(
+            policy: RefreshTokenPolicy(
+                currentToken: { "old" },
+                refreshToken: { try await script.next() }
+            )
+        )
+        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
+
+        await #expect(throws: NetworkError.self) {
+            _ = try await coordinator.refreshAndApply(to: request)
+        }
+        let applied = try await coordinator.refreshAndApply(to: request)
+
+        #expect(await script.calls == 2)
+        #expect(applied.value(forHTTPHeaderField: "Authorization") == "Bearer fresh")
+    }
+
+    @Test("Half-open probe cancellation releases the host")
+    func circuitBreakerHalfOpenProbeCancellationDoesNotTrap() async throws {
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1, resetAfter: .zero)
+        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
+
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+        try await registry.prepare(request: request, policy: policy)
+        await registry.recordCancellation(request: request, policy: policy)
+
+        try await registry.prepare(request: request, policy: policy)
     }
 
     @Test("401 does not open circuit breaker")

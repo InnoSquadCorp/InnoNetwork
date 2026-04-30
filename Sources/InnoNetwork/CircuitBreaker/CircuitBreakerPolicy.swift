@@ -102,6 +102,16 @@ package actor CircuitBreakerRegistry {
         }
     }
 
+    /// Releases a half-open probe slot when the probe is cancelled before it
+    /// can record success or failure. Without this the host would stay in
+    /// `halfOpen(probeInFlight: true)` and reject every subsequent request.
+    package func recordCancellation(request: URLRequest, policy: CircuitBreakerPolicy?) {
+        guard policy != nil, let host = request.url?.host else { return }
+        if case .halfOpen = states[host] {
+            states[host] = .closed([])
+        }
+    }
+
     private func recordCountableFailure(host: String, policy: CircuitBreakerPolicy) {
         let mode = states[host] ?? .closed([])
         switch mode {

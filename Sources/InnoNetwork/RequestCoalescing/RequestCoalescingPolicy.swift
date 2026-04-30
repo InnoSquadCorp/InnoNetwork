@@ -76,6 +76,12 @@ package actor RequestCoalescer {
     }
 
     private var entries: [RequestDedupKey: Entry] = [:]
+    /// Waiter IDs that were cancelled before their `register` call reached the
+    /// actor. Each entry is consumed by either `register` (matching ID arrives
+    /// and is short-circuited via `removeCancelledWaiter`) or by `finish`
+    /// (entry completion clears the whole bucket), so the dictionary cannot
+    /// retain entries indefinitely as long as `withCheckedThrowingContinuation`
+    /// is honoured—each `run` call always triggers exactly one `register`.
     private var cancelledWaiters: [RequestDedupKey: Set<UUID>] = [:]
 
     package init() {}

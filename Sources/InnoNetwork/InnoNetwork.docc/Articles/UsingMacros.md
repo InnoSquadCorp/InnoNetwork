@@ -29,6 +29,10 @@ Endpoint<EmptyResponse>(method: .get, path: "/users/1")
     .decoding(User.self)
 ```
 
+The first two arguments (`method`, `path`) must be passed positionally; only
+the response metatype is labeled `as:`. Adding `method:` or `path:` labels is
+rejected with a diagnostic so call sites stay consistent.
+
 Keep hand-written ``APIDefinition`` types for endpoints that need custom
 parameters, interceptors, multipart uploads, streaming, or non-standard
 decoding. The macro product is provisionally stable in 4.0.0.

@@ -11,8 +11,10 @@ import InnoNetwork
 ///   - method: HTTP method expression returned by the generated `method`
 ///     property.
 ///   - path: Static route template. Placeholders such as `{id}` are expanded
-///     only when they match stored properties declared directly on the
-///     annotated type.
+///     only when they match **stored** properties declared directly on the
+///     annotated type. Computed properties and members inherited from a
+///     superclass or extension are not considered. Wrap dynamic values into a
+///     stored property first if you need them in the path.
 @attached(
     extension,
     conformances: APIDefinition,

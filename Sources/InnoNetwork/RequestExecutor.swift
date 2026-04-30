@@ -247,11 +247,15 @@ package struct RequestExecutor {
             )
             return result
         } catch {
-            await runtime.circuitBreakers.recordFailure(
-                request: request,
-                policy: policy,
-                error: error
-            )
+            if NetworkError.isCancellation(error) {
+                await runtime.circuitBreakers.recordCancellation(request: request, policy: policy)
+            } else {
+                await runtime.circuitBreakers.recordFailure(
+                    request: request,
+                    policy: policy,
+                    error: error
+                )
+            }
             throw error
         }
     }
@@ -451,6 +455,12 @@ package struct RequestExecutor {
         return headers
     }
 
+    /// Stores the response in cache when the policy allows writes.
+    ///
+    /// Only `200 OK` responses are persisted in 4.0. Other RFC-cacheable status
+    /// codes (203, 204, 301, 404, 410, etc.) and server `Cache-Control: no-store`
+    /// are intentionally not honoured yet to keep the surface minimal—see
+    /// `docs/ROADMAP.md` for the planned expansion.
     private func storeCacheIfNeeded(
         _ response: Response,
         cacheKey: ResponseCacheKey?,
@@ -459,7 +469,7 @@ package struct RequestExecutor {
         guard let cacheKey,
             response.statusCode == 200,
             let cache = configuration.responseCache,
-            configuration.responseCachePolicy.isEnabled
+            configuration.responseCachePolicy.allowsCacheWrite
         else {
             return
         }

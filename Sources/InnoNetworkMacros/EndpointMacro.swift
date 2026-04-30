@@ -26,10 +26,24 @@ public struct EndpointMacro: ExpressionMacro {
             )
         }
 
-        let method = arguments[arguments.startIndex].expression.trimmedDescription
+        let methodArgument = arguments[arguments.startIndex]
+        guard methodArgument.label == nil else {
+            throw InnoNetworkMacroDiagnostic(
+                "#endpoint first argument (method) must be unlabeled.",
+                id: "endpoint-unexpected-method-label"
+            )
+        }
+        let method = methodArgument.expression.trimmedDescription
         let pathIndex = arguments.index(after: arguments.startIndex)
         let responseIndex = arguments.index(after: pathIndex)
-        let path = arguments[pathIndex].expression.trimmedDescription
+        let pathArgument = arguments[pathIndex]
+        guard pathArgument.label == nil else {
+            throw InnoNetworkMacroDiagnostic(
+                "#endpoint second argument (path) must be unlabeled.",
+                id: "endpoint-unexpected-path-label"
+            )
+        }
+        let path = pathArgument.expression.trimmedDescription
         let responseArgument = arguments[responseIndex]
         guard responseArgument.label?.text == "as" else {
             throw InnoNetworkMacroDiagnostic(

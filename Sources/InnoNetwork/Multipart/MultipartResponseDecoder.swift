@@ -173,15 +173,6 @@ private extension Data {
 }
 
 
-private func skipLineBreak(in data: Data, index: inout Data.Index) {
-    if data.hasPrefix(Data("\r\n".utf8), at: index) {
-        index = data.index(index, offsetBy: 2)
-    } else if data.hasPrefix(Data("\n".utf8), at: index) {
-        index = data.index(after: index)
-    }
-}
-
-
 private func trimTrailingLineBreak(in data: Data, end: inout Data.Index) {
     guard end > data.startIndex else { return }
     let previous = data.index(before: end)

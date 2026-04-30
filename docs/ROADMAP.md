@@ -12,6 +12,7 @@
 - Pulse adapter 예제: 4.0.0 범위에서는 macro/codegen과 resilience surface에 집중하고, 외부 observability dependency 예제는 별도 PR에서 평가한다.
 - streaming multipart decoder: 4.0.0의 `MultipartResponseDecoder`는 buffered parser로 제한한다. 대용량 multipart streaming은 back-pressure와 partial failure semantics를 정한 뒤 별도 설계한다.
 - Hummingbird in-process integration test: 4.0.0에서는 기본 CI 결정성을 유지하고, server-side Swift dependency가 필요한 통합 테스트는 follow-up으로 둔다.
+- response cache surface 확장: 4.0.0의 `storeCacheIfNeeded`는 `200 OK`만 저장한다. 추후 RFC 7234 cacheable status code (203/204/301/404/410 등) 확대와 서버 `Cache-Control: no-store`/`no-cache` 응답 존중을 별도 마일스톤에서 평가한다.
 
 ## Post-4.0 Candidates
 

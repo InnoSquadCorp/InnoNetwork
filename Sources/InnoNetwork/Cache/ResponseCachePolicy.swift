@@ -2,9 +2,17 @@ import Foundation
 
 /// Opt-in response caching policy for request/response APIs.
 public enum ResponseCachePolicy: Sendable, Equatable {
+    /// No cache reads or writes; identical to having no cache configured.
     case disabled
+    /// Always hit the network. Cache reads and writes are both skipped, so
+    /// the cache stays untouched—useful when callers want fresh data without
+    /// polluting an existing cache.
     case networkOnly
+    /// Serve from cache while entries are within `maxAge`. Stale entries fall
+    /// through to the network and are written back on a 200 response.
     case cacheFirst(maxAge: Duration)
+    /// Serve fresh entries directly. Within the `staleWindow` past `maxAge`,
+    /// return the cached entry immediately and revalidate in the background.
     case staleWhileRevalidate(maxAge: Duration, staleWindow: Duration)
 }
 
@@ -23,6 +31,9 @@ public struct ResponseCacheKey: Hashable, Sendable {
 
     package init?(request: URLRequest) {
         guard let url = request.url?.absoluteString else { return nil }
+        // `Authorization` is intentionally part of the cache key so that
+        // user-scoped responses are not shared across identities. Token
+        // rotations therefore produce new keys and the cache acts per-identity.
         let excludedHeaderNames: Set<String> = [
             "accept-encoding",
             "accept-language",
@@ -94,6 +105,12 @@ public protocol ResponseCache: Sendable {
 
 
 /// In-memory `ResponseCache` implementation with a simple byte cap.
+///
+/// LRU bookkeeping is backed by an array, so each `set`/`touch`/`invalidate`
+/// is O(n) in the number of stored entries. This is acceptable for the
+/// default 5 MB cap (typically a few hundred entries) but degrades on much
+/// larger working sets. Provide a custom `ResponseCache` backed by an
+/// ordered dictionary if you raise `maxBytes` significantly.
 public actor InMemoryResponseCache: ResponseCache {
     private let maxBytes: Int
     private var storage: [ResponseCacheKey: CachedResponse] = [:]
@@ -162,6 +179,18 @@ package extension ResponseCachePolicy {
     }
 
     var allowsConditionalRevalidation: Bool {
+        switch self {
+        case .cacheFirst, .staleWhileRevalidate:
+            return true
+        case .disabled, .networkOnly:
+            return false
+        }
+    }
+
+    /// Whether the policy may persist responses into the cache.
+    /// `networkOnly` skips both reads and writes so it does not pollute the
+    /// cache even though it is otherwise "enabled".
+    var allowsCacheWrite: Bool {
         switch self {
         case .cacheFirst, .staleWhileRevalidate:
             return true

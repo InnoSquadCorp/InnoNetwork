@@ -100,4 +100,46 @@ struct MacroExpansionTests {
             macros: macros
         )
     }
+
+    @Test("endpoint macro rejects a labeled method argument")
+    func endpointMacroRejectsLabeledMethodArgument() {
+        assertMacroExpansion(
+            """
+            let endpoint = #endpoint(method: .get, "/users", as: User.self)
+            """,
+            expandedSource:
+                """
+                let endpoint = #endpoint(method: .get, "/users", as: User.self)
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message: "#endpoint first argument (method) must be unlabeled.",
+                    line: 1,
+                    column: 16
+                )
+            ],
+            macros: macros
+        )
+    }
+
+    @Test("endpoint macro rejects a labeled path argument")
+    func endpointMacroRejectsLabeledPathArgument() {
+        assertMacroExpansion(
+            """
+            let endpoint = #endpoint(.get, path: "/users", as: User.self)
+            """,
+            expandedSource:
+                """
+                let endpoint = #endpoint(.get, path: "/users", as: User.self)
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message: "#endpoint second argument (path) must be unlabeled.",
+                    line: 1,
+                    column: 16
+                )
+            ],
+            macros: macros
+        )
+    }
 }

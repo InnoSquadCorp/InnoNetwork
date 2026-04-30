@@ -62,7 +62,11 @@ package actor RefreshTokenCoordinator {
     package func refreshAndApply(to request: URLRequest) async throws -> URLRequest {
         let token = try await refreshedToken()
         try Task.checkCancellation()
-        return policy.tokenApplicator(token, request)
+        // Strip the prior `Authorization` header before reapplying so custom
+        // applicators that use `addValue` do not stack tokens on a replay.
+        var sanitized = request
+        sanitized.setValue(nil, forHTTPHeaderField: "Authorization")
+        return policy.tokenApplicator(token, sanitized)
     }
 
     package func shouldRefresh(statusCode: Int) -> Bool {
@@ -71,7 +75,15 @@ package actor RefreshTokenCoordinator {
 
     private func refreshedToken() async throws -> String {
         if let inFlight {
-            return try await inFlight.task.value
+            do {
+                return try await inFlight.task.value
+            } catch {
+                // The shared task already finished (failure). Clear it inside
+                // the actor so the next caller starts a fresh refresh instead
+                // of replaying the cached failure.
+                if self.inFlight?.id == inFlight.id { self.inFlight = nil }
+                throw error
+            }
         }
 
         let refreshTokenProvider = policy.refreshTokenProvider
@@ -80,15 +92,13 @@ package actor RefreshTokenCoordinator {
             try await refreshTokenProvider()
         }
         inFlight = InFlightRefresh(id: id, task: task)
-        Task.detached {
-            _ = await task.result
-            await self.clearInFlight(id: id)
+        do {
+            let token = try await task.value
+            if self.inFlight?.id == id { self.inFlight = nil }
+            return token
+        } catch {
+            if self.inFlight?.id == id { self.inFlight = nil }
+            throw error
         }
-        return try await task.value
-    }
-
-    private func clearInFlight(id: UUID) {
-        guard inFlight?.id == id else { return }
-        inFlight = nil
     }
 }
