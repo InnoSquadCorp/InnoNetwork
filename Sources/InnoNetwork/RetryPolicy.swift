@@ -56,6 +56,45 @@ public protocol RetryPolicy: Sendable {
         -> Bool
 }
 
+
+public struct RetryIdempotencyPolicy: Sendable, Equatable {
+    public let safeMethods: Set<String>
+    public let idempotencyHeaderName: String
+    public let retriesUnsafeMethodsWithIdempotencyKey: Bool
+    public let retriesAllMethods: Bool
+
+    /// Retries safe methods (`GET`, `HEAD`) and unsafe methods only when an
+    /// idempotency key header is present.
+    public static let safeMethodsAndIdempotencyKey = RetryIdempotencyPolicy()
+
+    /// Preserves pre-4.x method-agnostic retry behaviour for consumers that
+    /// already own duplicate-write protection above InnoNetwork.
+    public static let methodAgnostic = RetryIdempotencyPolicy(retriesAllMethods: true)
+
+    public init(
+        safeMethods: Set<String> = ["GET", "HEAD"],
+        idempotencyHeaderName: String = "Idempotency-Key",
+        retriesUnsafeMethodsWithIdempotencyKey: Bool = true,
+        retriesAllMethods: Bool = false
+    ) {
+        self.safeMethods = Set(safeMethods.map { $0.uppercased() })
+        self.idempotencyHeaderName = idempotencyHeaderName
+        self.retriesUnsafeMethodsWithIdempotencyKey = retriesUnsafeMethodsWithIdempotencyKey
+        self.retriesAllMethods = retriesAllMethods
+    }
+
+    public func allowsRetry(for request: URLRequest?) -> Bool {
+        guard !retriesAllMethods else { return true }
+        guard let request else { return false }
+        let method = (request.httpMethod ?? "GET").uppercased()
+        if safeMethods.contains(method) {
+            return true
+        }
+        guard retriesUnsafeMethodsWithIdempotencyKey else { return false }
+        return request.value(forHTTPHeaderField: idempotencyHeaderName)?.isEmpty == false
+    }
+}
+
 public extension RetryPolicy {
     var maxTotalRetries: Int { maxRetries }
     var maxRetryAfterDelay: TimeInterval? { nil }
@@ -110,6 +149,7 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
     public let jitterRatio: Double
     public let waitsForNetworkChanges: Bool
     public let networkChangeTimeout: TimeInterval?
+    public let idempotencyPolicy: RetryIdempotencyPolicy
 
     /// - Parameters:
     ///   - maxRetries: Maximum number of retries.
@@ -121,6 +161,9 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
     ///   - jitterRatio: Jitter ratio applied to the delay (e.g., 0.2 means ±20%). Must be non-negative; negative jitter results are clamped to 0.
     ///   - waitsForNetworkChanges: Whether to wait for network changes before retrying.
     ///   - networkChangeTimeout: Timeout for waiting for network changes. If `nil`, waits indefinitely.
+    ///   - idempotencyPolicy: Controls which HTTP methods the built-in policy
+    ///     can retry. Defaults to safe methods plus unsafe methods that carry
+    ///     `Idempotency-Key`.
     public init(
         maxRetries: Int = 3,
         maxTotalRetries: Int? = nil,
@@ -129,7 +172,8 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         maxDelay: TimeInterval = 30.0,
         jitterRatio: Double = 0.2,
         waitsForNetworkChanges: Bool = false,
-        networkChangeTimeout: TimeInterval? = 10.0
+        networkChangeTimeout: TimeInterval? = 10.0,
+        idempotencyPolicy: RetryIdempotencyPolicy = .safeMethodsAndIdempotencyKey
     ) {
         self.maxRetries = maxRetries
         self.maxTotalRetries = maxTotalRetries ?? maxRetries
@@ -139,6 +183,7 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         self.jitterRatio = jitterRatio
         self.waitsForNetworkChanges = waitsForNetworkChanges
         self.networkChangeTimeout = networkChangeTimeout
+        self.idempotencyPolicy = idempotencyPolicy
     }
 
     public func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
@@ -192,6 +237,7 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         request: URLRequest?,
         response: HTTPURLResponse?
     ) -> RetryDecision {
+        guard idempotencyPolicy.allowsRetry(for: request) else { return .noRetry }
         guard shouldRetry(error: error, retryIndex: retryIndex) else { return .noRetry }
         guard let response,
             response.statusCode == 429 || response.statusCode == 503,

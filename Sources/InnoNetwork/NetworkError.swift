@@ -150,6 +150,33 @@ extension NetworkError: CustomNSError {
         "com.innosquad.innonetwork"
     }
 
+    public var errorCode: Int {
+        switch self {
+        case .invalidBaseURL:
+            return 1001
+        case .invalidRequestConfiguration:
+            return 1002
+        case .jsonMapping:
+            return 2001
+        case .objectMapping:
+            return 2002
+        case .statusCode:
+            return 3001
+        case .nonHTTPResponse:
+            return 3002
+        case .underlying:
+            return 4001
+        case .trustEvaluationFailed:
+            return 5001
+        case .cancelled:
+            return NSURLErrorCancelled
+        case .timeout:
+            return NSURLErrorTimedOut
+        case .undefined:
+            return 9999
+        }
+    }
+
     public var errorUserInfo: [String: Any] {
         var userInfo: [String: Any] = [:]
         userInfo[NSLocalizedDescriptionKey] = errorDescription ?? "Network error"
@@ -197,6 +224,9 @@ public extension NetworkError {
 extension NetworkError {
     static func isCancellation(_ error: Error) -> Bool {
         if error is CancellationError {
+            return true
+        }
+        if case .cancelled = error as? NetworkError {
             return true
         }
         if let urlError = error as? URLError, urlError.code == .cancelled {

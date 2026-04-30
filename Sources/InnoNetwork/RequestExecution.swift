@@ -46,6 +46,10 @@ import Foundation
     var path: String { get }
     /// HTTP headers attached to the outgoing request.
     var headers: HTTPHeaders { get }
+    /// Content type derived from the payload encoding, when the request carries
+    /// a body. The request builder applies this after endpoint headers and
+    /// before request interceptors, so interceptors remain the final authority.
+    var bodyContentType: String? { get }
 
     /// Optional override for the set of acceptable HTTP status codes on this
     /// request. When `nil`, the executor falls back to
@@ -72,6 +76,10 @@ import Foundation
     /// Default override is `nil`, meaning the session-wide
     /// ``NetworkConfiguration/acceptableStatusCodes`` applies.
     var acceptableStatusCodes: Set<Int>? { nil }
+    /// Default body content type is absent; custom executables that return
+    /// ``RequestPayload/data(_:)`` or file payloads should override this when
+    /// they want InnoNetwork to set `Content-Type`.
+    var bodyContentType: String? { nil }
 }
 
 package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExecutable {
@@ -84,6 +92,15 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
     package var path: String { base.path }
     package var headers: HTTPHeaders { base.headers }
     package var acceptableStatusCodes: Set<Int>? { base.acceptableStatusCodes }
+    package var bodyContentType: String? {
+        guard base.parameters != nil else { return nil }
+        switch base.requestEncodingPolicy {
+        case .json, .formURLEncoded:
+            return "\(base.contentType.rawValue); charset=UTF-8"
+        case .none, .query:
+            return nil
+        }
+    }
 
     package func makePayload() throws -> RequestPayload {
         if base.contentType == .multipartFormData {
@@ -153,6 +170,7 @@ package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: S
     package var path: String { base.path }
     package var headers: HTTPHeaders { base.headers }
     package var acceptableStatusCodes: Set<Int>? { base.acceptableStatusCodes }
+    package var bodyContentType: String? { base.multipartFormData.contentTypeHeader }
 
     package func makePayload() throws -> RequestPayload {
         let formData = base.multipartFormData

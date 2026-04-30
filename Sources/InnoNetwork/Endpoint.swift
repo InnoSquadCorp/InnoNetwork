@@ -54,14 +54,8 @@ public struct Endpoint<Response: Decodable & Sendable>: APIDefinition {
         self.path = path
         self.parameters = parameters
         self.contentType = contentType
-        self.headers = Self.headers(headers, applying: contentType)
+        self.headers = headers
         self.acceptableStatusCodes = acceptableStatusCodes
-    }
-
-    private static func headers(_ headers: HTTPHeaders, applying contentType: ContentType) -> HTTPHeaders {
-        var updatedHeaders = headers
-        updatedHeaders.update(.contentType("\(contentType.rawValue); charset=UTF-8"))
-        return updatedHeaders
     }
 }
 
@@ -139,8 +133,8 @@ extension Endpoint {
 
     /// Returns a copy of this endpoint with the supplied header collection.
     /// Replaces the entire header set; pair with ``header(_:value:)`` if you
-    /// only need to add a single field. The endpoint still reapplies its
-    /// ``contentType`` as `Content-Type`, matching ``APIDefinition`` defaults.
+    /// only need to add a single field. Body requests still receive an automatic
+    /// `Content-Type` from their payload encoding at execution time.
     public func headers(_ headers: HTTPHeaders) -> Endpoint<Response> {
         Endpoint(
             method: method,
@@ -153,8 +147,8 @@ extension Endpoint {
     }
 
     /// Returns a copy of this endpoint with the supplied content-type. The
-    /// endpoint's `Content-Type` header is updated immediately to match this
-    /// value, mirroring ``APIDefinition`` defaults.
+    /// endpoint's body `Content-Type` is applied at execution time when the
+    /// request carries a payload.
     public func contentType(_ contentType: ContentType) -> Endpoint<Response> {
         Endpoint(
             method: method,

@@ -20,6 +20,7 @@ package struct RequestExecutor {
     ) async throws -> D.APIResponse {
         try Task.checkCancellation()
 
+        var retryRequest: URLRequest?
         do {
             let built = try requestBuilder.build(executable, configuration: configuration)
             var request = built.request
@@ -50,6 +51,7 @@ package struct RequestExecutor {
             if let refreshCoordinator = runtime.refreshCoordinator {
                 request = try await refreshCoordinator.applyCurrentToken(to: request)
             }
+            retryRequest = request
             await notifyRequestAdapted(
                 request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
@@ -107,13 +109,13 @@ package struct RequestExecutor {
             let surfaced = configuration.captureFailurePayload ? error : error.redactingFailurePayload()
             executable.logger.log(error: surfaced)
             await notifyFailure(surfaced, requestID: requestID, configuration: configuration)
-            throw surfaced
+            throw RequestExecutionFailure(error: surfaced, request: retryRequest ?? surfaced.underlyingRequest)
         } catch {
             let mapped = NetworkError.mapTransportError(error)
             let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
             executable.logger.log(error: surfaced)
             await notifyFailure(surfaced, requestID: requestID, configuration: configuration)
-            throw surfaced
+            throw RequestExecutionFailure(error: surfaced, request: retryRequest ?? surfaced.underlyingRequest)
         }
     }
 
@@ -191,30 +193,13 @@ package struct RequestExecutor {
         runtime: RequestExecutionRuntime,
         requestID: UUID
     ) async throws -> Response {
-        try await runtime.circuitBreakers.prepare(request: request, policy: configuration.circuitBreakerPolicy)
-
-        let result: TransportResult
-        if case .inline = bodySource,
-            let key = RequestDedupKey(request: request, policy: configuration.requestCoalescingPolicy)
-        {
-            result = try await runtime.requestCoalescer.run(key: key) {
-                try await self.transportAndRecordCircuit(
-                    request: request,
-                    bodySource: bodySource,
-                    context: context,
-                    runtime: runtime,
-                    policy: configuration.circuitBreakerPolicy
-                )
-            }
-        } else {
-            result = try await transportAndRecordCircuit(
-                request: request,
-                bodySource: bodySource,
-                context: context,
-                runtime: runtime,
-                policy: configuration.circuitBreakerPolicy
-            )
-        }
+        let result = try await performTransportResult(
+            request: request,
+            bodySource: bodySource,
+            configuration: configuration,
+            context: context,
+            runtime: runtime
+        )
 
         await eventHub.publish(
             .responseReceived(
@@ -231,6 +216,38 @@ package struct RequestExecutor {
             data: result.data,
             request: request,
             response: result.response
+        )
+    }
+
+    private func performTransportResult(
+        request: URLRequest,
+        bodySource: BodySource,
+        configuration: NetworkConfiguration,
+        context: NetworkRequestContext,
+        runtime: RequestExecutionRuntime
+    ) async throws -> TransportResult {
+        try await runtime.circuitBreakers.prepare(request: request, policy: configuration.circuitBreakerPolicy)
+
+        if case .inline = bodySource,
+            let key = RequestDedupKey(request: request, policy: configuration.requestCoalescingPolicy)
+        {
+            return try await runtime.requestCoalescer.run(key: key) {
+                try await self.transportAndRecordCircuit(
+                    request: request,
+                    bodySource: bodySource,
+                    context: context,
+                    runtime: runtime,
+                    policy: configuration.circuitBreakerPolicy
+                )
+            }
+        }
+
+        return try await transportAndRecordCircuit(
+            request: request,
+            bodySource: bodySource,
+            context: context,
+            runtime: runtime,
+            policy: configuration.circuitBreakerPolicy
         )
     }
 
@@ -355,9 +372,10 @@ package struct RequestExecutor {
                         try Task.checkCancellation()
                         await storeCacheIfNeeded(response, cacheKey: cacheKey, configuration: configuration)
                     }
-                } catch is CancellationError {
-                    return
                 } catch {
+                    if NetworkError.isCancellation(error) {
+                        return
+                    }
                     let mapped = NetworkError.mapTransportError(error)
                     let surfaced =
                         configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
@@ -381,7 +399,6 @@ package struct RequestExecutor {
         context: NetworkRequestContext,
         runtime: RequestExecutionRuntime
     ) async throws -> TransportResult {
-        try await runtime.circuitBreakers.prepare(request: request, policy: configuration.circuitBreakerPolicy)
         let revalidationContext = NetworkRequestContext(
             requestID: UUID(),
             retryIndex: context.retryIndex,
@@ -389,12 +406,12 @@ package struct RequestExecutor {
             trustPolicy: context.trustPolicy,
             eventObservers: context.eventObservers
         )
-        return try await transportAndRecordCircuit(
+        return try await performTransportResult(
             request: request,
             bodySource: bodySource,
+            configuration: configuration,
             context: revalidationContext,
-            runtime: runtime,
-            policy: configuration.circuitBreakerPolicy
+            runtime: runtime
         )
     }
 
