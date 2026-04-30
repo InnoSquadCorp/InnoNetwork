@@ -146,7 +146,7 @@ expected_provisionally=(
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
-'`Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
+'`Endpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
 '`WebSocketCloseDisposition` observation surface'
 '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
@@ -179,6 +179,7 @@ expected_shipping_public_declarations=(
   EmptyParameter
   EmptyResponse
   Endpoint
+  EndpointPathEncoding
   EventDeliveryPolicy
   EventPipelineAggregateSnapshotMetric
   EventPipelineConsumerDeliveryLatencyMetric
@@ -480,6 +481,8 @@ validate_public_surface_ledger() {
 validate_oss_readiness_public_api() {
   require_contains 'public struct Endpoint<Response: Decodable & Sendable>: APIDefinition' \
     "$repo_root/Sources/InnoNetwork/Endpoint.swift"
+  require_contains 'public enum EndpointPathEncoding' \
+    "$repo_root/Sources/InnoNetwork/EndpointPathEncoding.swift"
   require_contains 'public struct AnyEncodable: Encodable, Sendable' \
     "$repo_root/Sources/InnoNetwork/AnyEncodable.swift"
   require_contains 'public struct NetworkContext: Sendable' \
@@ -686,7 +689,7 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_test_support_product
       continue
       ;;
-    '`Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
+    '`Endpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
       validate_oss_readiness_public_api
       continue
       ;;

@@ -51,7 +51,7 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `InnoNetworkTestSupport` library product and its `public` symbols
   (currently `MockURLSession`, `WebSocketEventRecorder`, `StubBehavior`,
   `StubNetworkClient`, and `StubRequestKey`)
-- `Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
+- `Endpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `WebSocketCloseDisposition` observation surface
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
@@ -117,7 +117,7 @@ high-level compatibility classification readable for the 4.x release line.
   `CancellationTag`, `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
   `ContentType`, `CorrelationIDInterceptor`, `DefaultNetworkClient`,
   `DefaultNetworkLogger`, `EmptyParameter`, `EmptyResponse`, `Endpoint`,
-  `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
+  `EndpointPathEncoding`, `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
   `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,
   `MultipartPart`, `MultipartResponseDecoder`, `MultipartUploadStrategy`,
   `NetworkClient`, `NetworkConfiguration`, `NetworkContext`, `NetworkError`,

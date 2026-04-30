@@ -10,6 +10,7 @@ InnoNetwork	swift.class	InMemoryResponseCache
 InnoNetwork	swift.class	NetworkMonitor
 InnoNetwork	swift.class	ServerSentEventDecoder
 InnoNetwork	swift.enum	ContentType
+InnoNetwork	swift.enum	EndpointPathEncoding
 InnoNetwork	swift.enum	EventPipelineHubKind
 InnoNetwork	swift.enum	EventPipelineMetric
 InnoNetwork	swift.enum	EventPipelineOverflowPolicy
@@ -125,7 +126,7 @@ InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.custom(_:)
 InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.useDefaultKeys
 InnoNetwork	swift.init	AnyEncodable.init(_:)
 InnoNetwork	swift.init	AnyResponseDecoder.init(_:)
-InnoNetwork	swift.init	CachedResponse.init(data:statusCode:headers:storedAt:varyHeaders:)
+InnoNetwork	swift.init	CachedResponse.init(data:statusCode:headers:storedAt:requiresRevalidation:varyHeaders:)
 InnoNetwork	swift.init	CancellationTag.init(_:)
 InnoNetwork	swift.init	CancellationTag.init(stringLiteral:)
 InnoNetwork	swift.init	CircuitBreakerOpenError.init(host:retryAfter:)
@@ -283,6 +284,7 @@ InnoNetwork	swift.property	APIDefinition.transport
 InnoNetwork	swift.property	CachedResponse.data
 InnoNetwork	swift.property	CachedResponse.etag
 InnoNetwork	swift.property	CachedResponse.headers
+InnoNetwork	swift.property	CachedResponse.requiresRevalidation
 InnoNetwork	swift.property	CachedResponse.statusCode
 InnoNetwork	swift.property	CachedResponse.storedAt
 InnoNetwork	swift.property	CachedResponse.varyHeaders
@@ -545,6 +547,7 @@ InnoNetwork	swift.type.method	Endpoint.get(_:)
 InnoNetwork	swift.type.method	Endpoint.patch(_:)
 InnoNetwork	swift.type.method	Endpoint.post(_:)
 InnoNetwork	swift.type.method	Endpoint.put(_:)
+InnoNetwork	swift.type.method	EndpointPathEncoding.percentEncodedSegment(_:)
 InnoNetwork	swift.type.method	HTTPEmptyResponseDecodable.emptyResponseValue()
 InnoNetwork	swift.type.method	HTTPHeader.accept(_:)
 InnoNetwork	swift.type.method	HTTPHeader.acceptCharset(_:)
