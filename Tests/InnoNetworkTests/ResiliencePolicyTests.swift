@@ -61,6 +61,29 @@ private struct ResiliencePostRequest: APIDefinition {
 }
 
 
+private struct IdempotentResiliencePostRequest: APIDefinition {
+    struct Body: Encodable, Sendable {
+        let name: String
+    }
+
+    typealias Parameter = Body
+    typealias APIResponse = ResilienceUser
+
+    let parameters: Body?
+    var method: HTTPMethod { .post }
+    var path: String { "/users" }
+    var headers: HTTPHeaders {
+        var headers = HTTPHeaders.default
+        headers.add(name: "Idempotency-Key", value: "create-user-1")
+        return headers
+    }
+
+    init(name: String = "Jane") {
+        self.parameters = Body(name: name)
+    }
+}
+
+
 private struct HeaderSettingInterceptor: RequestInterceptor {
     let field: String
     let value: String
@@ -501,6 +524,72 @@ struct ResiliencePolicyTests {
         #expect(await session.requestCount == 2)
     }
 
+    @Test("Default retry policy does not retry unsafe methods without idempotency key")
+    func defaultRetryPolicyDoesNotRetryPostWithoutIdempotencyKey() async throws {
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 503),
+            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "unexpected")),
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 1, retryDelay: 0, jitterRatio: 0)
+            ),
+            session: session
+        )
+
+        await #expect(throws: NetworkError.self) {
+            try await client.request(ResiliencePostRequest())
+        }
+        #expect(await session.requestCount == 1)
+    }
+
+    @Test("Default retry policy retries unsafe methods with idempotency key")
+    func defaultRetryPolicyRetriesPostWithIdempotencyKey() async throws {
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 503),
+            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "created")),
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 1, retryDelay: 0, jitterRatio: 0)
+            ),
+            session: session
+        )
+
+        let user = try await client.request(IdempotentResiliencePostRequest())
+
+        #expect(user == ResilienceUser(id: 1, name: "created"))
+        #expect(await session.requestCount == 2)
+        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "Idempotency-Key") == "create-user-1")
+    }
+
+    @Test("Method-agnostic retry policy keeps legacy unsafe-method retry behavior")
+    func methodAgnosticRetryPolicyRetriesPostWithoutIdempotencyKey() async throws {
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 503),
+            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "legacy")),
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                retryPolicy: ExponentialBackoffRetryPolicy(
+                    maxRetries: 1,
+                    retryDelay: 0,
+                    jitterRatio: 0,
+                    idempotencyPolicy: .methodAgnostic
+                )
+            ),
+            session: session
+        )
+
+        let user = try await client.request(ResiliencePostRequest())
+
+        #expect(user == ResilienceUser(id: 1, name: "legacy"))
+        #expect(await session.requestCount == 2)
+    }
+
     @Test("GET coalescing shares one transport")
     func getCoalescingSharesTransport() async throws {
         let session = try SequenceURLSession(
@@ -743,6 +832,56 @@ struct ResiliencePolicyTests {
         #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
     }
 
+    @Test("SWR background revalidation uses request coalescing")
+    func staleWhileRevalidateBackgroundRevalidationCoalesces() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        let stale = ResilienceUser(id: 1, name: "stale")
+        let staleBody = try JSONEncoder().encode(stale)
+        await cache.set(
+            key,
+            CachedResponse(
+                data: staleBody,
+                headers: ["ETag": "v1"],
+                storedAt: Date(timeIntervalSinceNow: -5)
+            )
+        )
+        let fresh = ResilienceUser(id: 1, name: "fresh")
+        let session = try SequenceURLSession(
+            queue: [
+                queuedResponse(statusCode: 200, body: fresh, headers: ["ETag": "v2"])
+            ],
+            delay: .milliseconds(80)
+        )
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: URL(string: "https://api.example.com")!,
+                requestInterceptors: [
+                    HeaderSettingInterceptor(field: "Accept-Language", value: cacheFixtureAcceptLanguage)
+                ],
+                requestCoalescingPolicy: .getOnly,
+                responseCachePolicy: .staleWhileRevalidate(maxAge: .seconds(1), staleWindow: .seconds(10)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        async let first = client.request(ResilienceGetRequest())
+        async let second = client.request(ResilienceGetRequest())
+        let returned = try await [first, second]
+
+        #expect(returned == [stale, stale])
+        try await waitUntil {
+            guard let cached = await cache.get(key),
+                let decoded = try? JSONDecoder().decode(ResilienceUser.self, from: cached.data)
+            else {
+                return false
+            }
+            return await session.requestCount == 1 && decoded == fresh
+        }
+        #expect(await session.requestCount == 1)
+    }
+
     @Test("SWR background revalidation is cancelled by cancelAll")
     func staleWhileRevalidateBackgroundTaskIsCancelledByCancelAll() async throws {
         let cache = InMemoryResponseCache()
@@ -806,6 +945,39 @@ struct ResiliencePolicyTests {
         #expect(first == ResilienceUser(id: 1, name: "one"))
         #expect(second == ResilienceUser(id: 2, name: "two"))
         #expect(await session.requestCount == 2)
+    }
+
+    @Test("Response cache key fingerprints Authorization header values")
+    func responseCacheKeyFingerprintsAuthorizationHeaderValues() {
+        let first = ResponseCacheKey(
+            method: "GET",
+            url: "https://api.example.com/users/1",
+            headers: ["Authorization": "Bearer secret-one"]
+        )
+        let second = ResponseCacheKey(
+            method: "GET",
+            url: "https://api.example.com/users/1",
+            headers: ["Authorization": "Bearer secret-two"]
+        )
+
+        #expect(first != second)
+        #expect(first.headers.contains { $0.contains("authorization:sha256:") })
+        #expect(!first.headers.contains { $0.contains("secret-one") })
+        #expect(!second.headers.contains { $0.contains("secret-two") })
+    }
+
+    @Test("Response cache key strips URL fragments")
+    func responseCacheKeyStripsURLFragments() throws {
+        var firstRequest = URLRequest(url: try #require(URL(string: "https://api.example.com/users/1#first")))
+        firstRequest.httpMethod = "GET"
+        var secondRequest = URLRequest(url: try #require(URL(string: "https://api.example.com/users/1#second")))
+        secondRequest.httpMethod = "GET"
+
+        let first = try #require(ResponseCacheKey(request: firstRequest))
+        let second = try #require(ResponseCacheKey(request: secondRequest))
+
+        #expect(first == second)
+        #expect(first.url == "https://api.example.com/users/1")
     }
 
     @Test("Response cache keeps different Accept-Language headers separate")

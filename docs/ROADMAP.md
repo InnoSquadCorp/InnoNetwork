@@ -13,8 +13,12 @@
 - streaming multipart decoder: 4.0.0의 `MultipartResponseDecoder`는 buffered parser로 제한한다. 대용량 multipart streaming은 back-pressure와 partial failure semantics를 정한 뒤 별도 설계한다.
 - Hummingbird in-process integration test: 4.0.0에서는 기본 CI 결정성을 유지하고, server-side Swift dependency가 필요한 통합 테스트는 follow-up으로 둔다.
 - response cache surface 확장: 4.0.0의 `storeCacheIfNeeded`는 `200 OK`만 저장한다. 추후 RFC 7234 cacheable status code (203/204/301/404/410 등) 확대와 서버 `Cache-Control: no-store`/`no-cache` 응답 존중을 별도 마일스톤에서 평가한다.
-- response cache `Vary` semantics: 4.0.0 기본 key는 `Authorization`과 `Accept-Language`를 포함하지만, 응답 `Vary` 헤더 기반 자동 key 확장은 별도 설계가 필요하다.
-- macro/codegen dependency isolation: 현재 SwiftPM manifest API로는 top-level `swift-syntax` package dependency 자체를 trait 조건으로 제거할 수 없어, runtime-only 소비자의 true resolution isolation은 별도 `InnoNetworkCodegen` package 분리를 우선 후보로 둔다.
+- response cache `Vary` semantics: 4.0.0 기본 key는 `Authorization` fingerprint와 `Accept-Language`를 포함하지만, 응답 `Vary` 헤더 기반 자동 key 확장은 별도 설계가 필요하다.
+- observability exporter examples: core는 vendor-neutral로 유지하고, Sentry/OpenTelemetry/Pulse/Datadog adapter 예제는 별도 target/package로 평가한다.
+- benchmark regression gate 확장: event hub, request coalescing, cache lookup, download persistence, websocket send queue의 기준값/허용 편차를 별도 benchmark baseline으로 승격한다.
+- download 저장소 운영정책: disk full, temp cleanup, data protection class, app group container, identifier collision, 앱 업데이트/복구 시나리오를 문서와 테스트로 보강한다.
+- WebSocket protocol surface: subprotocol negotiation, close code mapping, send queue overflow, heartbeat timeout, compression 미지원, background transition 동작을 public cookbook으로 정리한다.
+- `advanced`/`customizingSafeDefaults` API 개선: safe default는 유지하면서 세부 튜닝 surface를 더 발견 가능하게 하는 builder ergonomics를 검토한다.
 
 ## Post-4.0 Candidates
 

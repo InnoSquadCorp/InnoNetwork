@@ -305,17 +305,46 @@ jobs:
           xcodebuild -version
           xcrun swift --version
 
-      - name: Build consumer smoke package
+      - name: Verify root package stays runtime-only
+        run: |
+          set -eo pipefail
+          mkdir -p .build
+          xcrun swift package show-dependencies | tee .build/root-dependencies.txt
+          if grep -q "swift-syntax" .build/root-dependencies.txt; then
+            echo "::error::Root InnoNetwork package must not resolve swift-syntax; codegen lives in Packages/InnoNetworkCodegen."
+            exit 1
+          fi
+
+      - name: Build core-only consumer smoke package
+        working-directory: Examples/CoreSmoke
+        run: xcrun swift build
+
+      - name: Build aggregate consumer smoke package
         working-directory: Examples/ConsumerSmoke
         run: xcrun swift build
 
-      - name: Build wrapper smoke package
+      - name: Build wrapper consumer smoke package
         working-directory: Examples/WrapperSmoke
+        run: xcrun swift build
+
+      - name: Build download-only consumer smoke package
+        working-directory: Examples/DownloadManager
+        run: xcrun swift build
+
+      - name: Build websocket-only consumer smoke package
+        working-directory: Examples/WebSocketChat
+        run: xcrun swift build
+
+      - name: Build test-support consumer smoke package
+        working-directory: Examples/TestSupportSmoke
         run: xcrun swift build
 
       - name: Build generated client recipe package
         working-directory: Examples/GeneratedClientRecipe
         run: xcrun swift build
+
+      - name: Test codegen package
+        run: xcrun swift test --package-path Packages/InnoNetworkCodegen --filter MacroExpansionTests
 
       - name: Build macro usage package
         working-directory: Examples/MacroUsage

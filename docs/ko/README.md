@@ -8,14 +8,16 @@
 > 이 문서는 [`README.md`](../../README.md) 의 한국어 미러입니다. 정확한 최신 사양은 영문 원본을
 > 우선합니다.
 
-InnoNetwork 는 Apple 플랫폼을 위한 타입 안전한 Swift 네트워킹 패키지입니다. 다섯 개의 공개 product
-로 구성되어 있습니다.
+InnoNetwork 는 Apple 플랫폼을 위한 타입 안전한 Swift 네트워킹 패키지입니다. root runtime package 는
+네 개의 공개 product 로 구성되어 있습니다.
 
 - `InnoNetwork` — 요청/응답 API
 - `InnoNetworkDownload` — 다운로드 생명주기 관리
 - `InnoNetworkWebSocket` — 연결 지향 실시간 흐름
 - `InnoNetworkTestSupport` — consumer test target용 공개 테스트 helper
-- `InnoNetworkCodegen` — 선택형 Swift macro endpoint helper
+
+선택형 Swift macro endpoint helper 는 별도 `Packages/InnoNetworkCodegen` package 에 있으며,
+runtime-only consumer 는 `swift-syntax` 를 resolve 하지 않습니다.
 
 Swift Concurrency, 명시적인 transport 정책, 운영 가시성을 중심으로 설계되어 프로토타입부터 프로덕션
 클라이언트까지 일관되게 사용할 수 있습니다.

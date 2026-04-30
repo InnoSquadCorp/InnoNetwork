@@ -24,6 +24,25 @@ across runs (important for cache-key reproducibility and snapshot-style tests).
 `keyEncodingStrategy` controls only the leaf key transformation (e.g. snake_case). The
 bracket structure itself is fixed.
 
+## URL construction contract
+
+Endpoint `path` values are path-only values. Do not include query or fragment
+components in `APIDefinition.path`, `MultipartAPIDefinition.path`, or
+`Endpoint` builder paths; a literal `?` or `#` is rejected with
+`NetworkError.invalidRequestConfiguration`.
+
+The base URL path is preserved and endpoint paths are appended after it. A
+leading slash in the endpoint path does not reset the base path:
+
+| Base URL | Endpoint path | Result |
+|----------|---------------|--------|
+| `https://api.example.com/v1` | `/users` | `https://api.example.com/v1/users` |
+| `https://api.example.com/v1/` | `users/%E2%9C%93` | `https://api.example.com/v1/users/%E2%9C%93` |
+
+Already percent-encoded path segments are preserved. Query values must be
+provided through `parameters` plus `URLQueryEncoder`, or through
+`Endpoint.query(_:)` for builder-style endpoints.
+
 ## Comparison with OpenAPI / RFC 6570
 
 InnoNetwork's bracket notation is **not** the OpenAPI 3 default. If your server is generated

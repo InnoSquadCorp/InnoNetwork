@@ -57,6 +57,11 @@ let users = try await client.request(
 Keep a dedicated ``APIDefinition`` when the endpoint owns custom
 interceptors, encoders/decoders, multipart upload behavior, or streaming.
 
+Endpoint paths are appended after the configured base URL path even when they
+start with `/`. Keep query values in `parameters`/``URLQueryEncoder`` or
+``Endpoint/query(_:)``; a literal `?` or `#` in the endpoint path is rejected as
+``NetworkError/invalidRequestConfiguration(_:)``.
+
 ## Request execution contract
 
 Stay on ``NetworkClient/request(_:)`` for normal typed requests and

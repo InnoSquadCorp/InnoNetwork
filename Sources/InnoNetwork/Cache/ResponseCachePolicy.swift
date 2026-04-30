@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Opt-in response caching policy for request/response APIs.
@@ -30,7 +31,7 @@ public struct ResponseCacheKey: Hashable, Sendable {
     }
 
     package init?(request: URLRequest) {
-        guard let url = request.url?.absoluteString else { return nil }
+        guard let url = Self.normalizedURLString(request.url) else { return nil }
         // `Authorization` is intentionally part of the cache key so that
         // user-scoped responses are not shared across identities. Token
         // rotations therefore produce new keys and the cache acts per-identity.
@@ -52,8 +53,30 @@ public struct ResponseCacheKey: Hashable, Sendable {
 
     private static func normalizedHeaders(_ headers: [String: String]) -> [String] {
         headers
-            .map { "\($0.key.lowercased()):\($0.value)" }
+            .map { header in
+                let name = header.key.lowercased()
+                let value = sensitiveHeaderNames.contains(name) ? fingerprint(header.value) : header.value
+                return "\(name):\(value)"
+            }
             .sorted()
+    }
+
+    private static let sensitiveHeaderNames: Set<String> = [
+        "authorization"
+    ]
+
+    private static func normalizedURLString(_ url: URL?) -> String? {
+        guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        components.fragment = nil
+        return components.url?.absoluteString
+    }
+
+    private static func fingerprint(_ value: String) -> String {
+        let digest = SHA256.hash(data: Data(value.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return "sha256:\(hex)"
     }
 }
 

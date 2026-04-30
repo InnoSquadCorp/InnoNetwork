@@ -1,10 +1,8 @@
 # Using Macros
 
-`InnoNetworkCodegen` is an optional product for compile-time endpoint helpers.
-Importing only `InnoNetwork` keeps the core runtime target free of
-`swift-syntax` linkage. SwiftPM may still resolve the package-level macro
-dependency while loading the package graph, so consumers with strict SBOM or
-fetch-isolation requirements should track the post-4.0 codegen package split.
+`InnoNetworkCodegen` is a separate package for compile-time endpoint helpers.
+Importing only the root `InnoNetwork` package does not resolve, fetch, or build
+`swift-syntax`. Macro users opt into `Packages/InnoNetworkCodegen` explicitly.
 
 ```swift
 import InnoNetwork
@@ -38,4 +36,4 @@ rejected with a diagnostic so call sites stay consistent.
 
 Keep hand-written ``APIDefinition`` types for endpoints that need custom
 parameters, interceptors, multipart uploads, streaming, or non-standard
-decoding. The macro product is provisionally stable in 4.0.0.
+decoding. The macro package is provisionally stable in 4.0.0.

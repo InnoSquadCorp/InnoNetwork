@@ -76,6 +76,12 @@ Real-world scenarios you'll encounter in actual application development.
 
 ## Compile-Time Integration Smokes
 
+### [CoreSmoke](./CoreSmoke)
+
+Compile-only package that depends only on the root `InnoNetwork` product. CI
+uses it with the root dependency-graph check to protect runtime-only consumers
+from accidental macro or codegen dependencies.
+
 ### [ConsumerSmoke](./ConsumerSmoke)
 
 Compile-only package that protects public consumer-facing API shapes across the
@@ -89,10 +95,14 @@ the 4.0.0 stable public contract.
 
 ### [MacroUsage](./MacroUsage)
 
-Compile-only package for the optional `InnoNetworkCodegen` product. It keeps
-macro usage separate from the core consumer smoke so `InnoNetwork`-only users do
-not link `swift-syntax` into their runtime target. SwiftPM may still resolve the
-package-level macro dependency while loading the full package graph.
+Compile-only package for the separate `Packages/InnoNetworkCodegen` package. It
+keeps macro usage outside the root runtime package so `InnoNetwork`-only users
+do not resolve `swift-syntax`.
+
+### [TestSupportSmoke](./TestSupportSmoke)
+
+Compile-only package that imports `InnoNetworkTestSupport` the way consumer test
+targets do.
 
 ## Getting Started
 

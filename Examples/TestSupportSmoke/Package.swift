@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "MacroUsage",
+    name: "TestSupportSmoke",
     platforms: [
         .iOS(.v18),
         .macOS(.v15),
@@ -12,17 +12,16 @@ let package = Package(
         .visionOS(.v2),
     ],
     dependencies: [
-        .package(name: "InnoNetwork", path: "../.."),
-        .package(name: "InnoNetworkCodegen", path: "../../Packages/InnoNetworkCodegen"),
+        .package(name: "InnoNetwork", path: "../..")
     ],
     targets: [
         .executableTarget(
-            name: "MacroUsage",
+            name: "TestSupportSmoke",
             dependencies: [
                 .product(name: "InnoNetwork", package: "InnoNetwork"),
-                .product(name: "InnoNetworkCodegen", package: "InnoNetworkCodegen"),
-            ],
-            path: "Sources/MacroUsage"
+                .product(name: "InnoNetworkTestSupport", package: "InnoNetwork"),
+            ]
         )
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

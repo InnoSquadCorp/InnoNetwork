@@ -23,9 +23,11 @@ The `CI` workflow must pass all of the following:
 6. `apple-platform-build-smoke` runs `xcodebuild ... build` for macOS, iOS,
    tvOS, watchOS, and visionOS destinations. Simulator destinations are
    build-only; SwiftPM test+coverage remains the runtime test gate.
-7. Consumer smoke builds the core consumer package, wrapper smoke, generated
-   client recipe, and optional `Examples/MacroUsage` package so
-   `InnoNetworkCodegen` stays covered without changing the core-only smoke.
+7. Consumer smoke first asserts that the root package dependency graph does not
+   contain `swift-syntax`, then builds separate core-only, aggregate,
+   download-only, websocket-only, test-support, generated-client, and codegen
+   usage packages. Macro tests run from `Packages/InnoNetworkCodegen` so the
+   codegen dependency graph stays isolated from runtime-only consumers.
 8. The benchmark smoke guard runs `swift run InnoNetworkBenchmarks --quick`
    with `--enforce-baseline --max-regression-percent 20`. A regression
    beyond 20% on the guarded benchmarks fails the PR workflow. The

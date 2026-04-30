@@ -7,7 +7,7 @@ unhealthy servers.
 
 A retry policy decides three things:
 
-1. **Whether to retry** at all (``RetryDecision/retry`` vs ``RetryDecision/abort``).
+1. **Whether to retry** at all (``RetryDecision/retry`` vs ``RetryDecision/noRetry``).
 2. **How long to wait** before retrying (delay, with optional jitter).
 3. **When to stop retrying entirely** (per-request cap and absolute total cap).
 
@@ -25,8 +25,8 @@ retries.
 ```swift
 let policy = ExponentialBackoffRetryPolicy(
     maxRetries: 3,
-    baseDelay: .milliseconds(500),
-    maxDelay: .seconds(30),
+    retryDelay: 0.5,
+    maxDelay: 30,
     maxTotalRetries: 12
 )
 ```
@@ -49,6 +49,45 @@ Retry-After: 5
 The next attempt fires after 5 seconds even if the exponential backoff for that attempt
 number would have been larger.
 
+## Idempotency defaults
+
+The built-in ``ExponentialBackoffRetryPolicy`` is conservative by default:
+
+- `GET` and `HEAD` can retry automatically
+- `POST`, upload, multipart, `PUT`, `PATCH`, and `DELETE` retry only when the
+  originating request carries an `Idempotency-Key` header
+- transport failures are still evaluated against the request method and headers
+  before retrying
+
+Use an idempotency key for any unsafe method where the server can deduplicate
+duplicate submissions:
+
+```swift
+struct CreateOrder: APIDefinition {
+    typealias Parameter = CreateOrderInput
+    typealias APIResponse = CreateOrderOutput
+
+    let parameters: CreateOrderInput?
+    var method: HTTPMethod { .post }
+    var path: String { "/orders" }
+
+    var headers: HTTPHeaders {
+        var headers = HTTPHeaders.default
+        headers.add(name: "Idempotency-Key", value: "order-\(parameters?.clientID ?? "unknown")")
+        return headers
+    }
+}
+```
+
+If a consumer already owns duplicate-write protection outside InnoNetwork and
+needs the previous method-agnostic behaviour, opt in explicitly:
+
+```swift
+builder.retryPolicy = ExponentialBackoffRetryPolicy(
+    idempotencyPolicy: .methodAgnostic
+)
+```
+
 ## Streaming requests do not retry
 
 `DefaultNetworkClient.stream(_:)` does not apply the retry policy — re-establishing a
@@ -64,21 +103,23 @@ For policies that need access to the request, response, or attempt count, implem
 
 ```swift
 struct CircuitBreakerRetryPolicy: RetryPolicy {
+    let maxRetries = 3
+    let retryDelay: TimeInterval = 0.5
     let breaker: CircuitBreaker
 
     func shouldRetry(
-        request: URLRequest,
-        response: HTTPURLResponse?,
-        error: Error?,
-        attempt: Int
-    ) async -> RetryDecision {
-        guard breaker.allowsRequest(to: request.url) else {
-            return .abort
+        error: NetworkError,
+        retryIndex: Int,
+        request: URLRequest?,
+        response: HTTPURLResponse?
+    ) -> RetryDecision {
+        guard breaker.allowsRequest(to: request?.url) else {
+            return .noRetry
         }
-        guard attempt < 3, isTransient(response, error) else {
-            return .abort
+        guard retryIndex < maxRetries, isTransient(response, error) else {
+            return .noRetry
         }
-        return .retry(delay: .milliseconds(500 * 1 << attempt))
+        return .retryAfter(retryDelay * Double(1 << retryIndex))
     }
 }
 ```
@@ -90,4 +131,5 @@ policy carry the delay alongside the retry decision in a single result.
 
 - ``RetryPolicy``
 - ``RetryDecision``
+- ``RetryIdempotencyPolicy``
 - ``ExponentialBackoffRetryPolicy``

@@ -145,9 +145,7 @@ public extension MultipartAPIDefinition {
     var responseDecoder: AnyResponseDecoder<APIResponse> { AnyResponseDecoder(strategy: responseDecodingStrategy) }
 
     var headers: HTTPHeaders {
-        var defaultHeaders = HTTPHeaders.default
-        defaultHeaders.add(.contentType(multipartFormData.contentTypeHeader))
-        return defaultHeaders
+        HTTPHeaders.default
     }
 
     var logger: NetworkLogger { DefaultNetworkLogger() }
@@ -178,9 +176,7 @@ public extension APIDefinition {
     var responseDecoder: AnyResponseDecoder<APIResponse> { AnyResponseDecoder(strategy: responseDecodingStrategy) }
 
     var headers: HTTPHeaders {
-        var defaultHeaders = HTTPHeaders.default
-        defaultHeaders.add(.contentType("\(contentType.rawValue); charset=UTF-8"))
-        return defaultHeaders
+        HTTPHeaders.default
     }
 
     var logger: NetworkLogger { DefaultNetworkLogger() }

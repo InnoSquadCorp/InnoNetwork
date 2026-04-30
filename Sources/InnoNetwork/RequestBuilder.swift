@@ -33,10 +33,10 @@ package struct RequestBuilder {
         configuration: NetworkConfiguration
     ) throws -> BuiltRequest {
         let payload = try executable.makePayload()
-        var targetURL = configuration.baseURL.appendingPathComponent(executable.path)
+        var targetURL = try Self.makeURL(baseURL: configuration.baseURL, endpointPath: executable.path)
         var httpBody: Data?
         var bodySource = BodySource.inline
-        var contentTypeOverride: String?
+        var bodyContentType = executable.bodyContentType
 
         switch payload {
         case .none:
@@ -47,21 +47,63 @@ package struct RequestBuilder {
             targetURL.append(queryItems: queryItems)
         case .fileURL(let url, let contentType):
             bodySource = .file(url, cleanupAfterUse: false)
-            contentTypeOverride = contentType
+            bodyContentType = contentType
         case .temporaryFileURL(let url, let contentType):
             bodySource = .file(url, cleanupAfterUse: true)
-            contentTypeOverride = contentType
+            bodyContentType = contentType
         }
 
         var request = URLRequest(url: targetURL)
         request.httpMethod = executable.method.rawValue
         request.allHTTPHeaderFields = executable.headers.dictionary
-        if let contentTypeOverride {
-            request.setValue(contentTypeOverride, forHTTPHeaderField: "Content-Type")
+        if payload.hasBody, let bodyContentType {
+            request.setValue(bodyContentType, forHTTPHeaderField: "Content-Type")
         }
         request.cachePolicy = configuration.cachePolicy
         request.timeoutInterval = configuration.timeout
         request.httpBody = httpBody
         return BuiltRequest(request: request, bodySource: bodySource)
+    }
+
+    private static func makeURL(baseURL: URL, endpointPath: String) throws -> URL {
+        guard !endpointPath.contains("?"), !endpointPath.contains("#") else {
+            throw NetworkError.invalidRequestConfiguration(
+                "Endpoint path must not contain query or fragment components. Use parameters/queryEncoder for query values."
+            )
+        }
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            throw NetworkError.invalidBaseURL(baseURL.absoluteString)
+        }
+
+        let basePath = components.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let childPath = endpointPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        switch (basePath.isEmpty, childPath.isEmpty) {
+        case (true, true):
+            components.percentEncodedPath = "/"
+        case (true, false):
+            components.percentEncodedPath = "/" + childPath
+        case (false, true):
+            components.percentEncodedPath = "/" + basePath
+        case (false, false):
+            components.percentEncodedPath = "/" + basePath + "/" + childPath
+        }
+
+        guard let url = components.url else {
+            throw NetworkError.invalidRequestConfiguration(
+                "Endpoint path must be a valid percent-encoded URL path."
+            )
+        }
+        return url
+    }
+}
+
+private extension RequestPayload {
+    var hasBody: Bool {
+        switch self {
+        case .data, .fileURL, .temporaryFileURL:
+            return true
+        case .none, .queryItems:
+            return false
+        }
     }
 }

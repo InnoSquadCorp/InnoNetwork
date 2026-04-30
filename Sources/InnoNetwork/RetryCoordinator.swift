@@ -1,5 +1,11 @@
 import Foundation
 
+package struct RequestExecutionFailure: Error {
+    let error: NetworkError
+    let request: URLRequest?
+}
+
+
 package struct RetryCoordinator {
     private let eventHub: NetworkEventHub
     private let clock: any InnoNetworkClock
@@ -33,6 +39,56 @@ package struct RetryCoordinator {
             do {
                 try Task.checkCancellation()
                 return try await operation(retryIndex, requestID)
+            } catch let failure as RequestExecutionFailure {
+                guard let policy = retryPolicy else { throw failure.error }
+                let decision = policy.shouldRetry(
+                    error: failure.error,
+                    retryIndex: retryIndex,
+                    request: failure.request ?? failure.error.underlyingRequest,
+                    response: failure.error.underlyingHTTPResponse
+                )
+                if case .noRetry = decision {
+                    throw failure.error
+                }
+                guard totalRetries < policy.maxTotalRetries else {
+                    throw failure.error
+                }
+
+                let currentRetryIndex = retryIndex
+                let computedDelay = policy.retryDelay(for: currentRetryIndex)
+                let delay = Self.delay(for: decision, computedDelay: computedDelay, policy: policy)
+                await eventHub.publish(
+                    .retryScheduled(
+                        requestID: requestID,
+                        retryIndex: currentRetryIndex,
+                        delay: delay,
+                        reason: failure.error.localizedDescription
+                    ),
+                    requestID: requestID,
+                    observers: eventObservers
+                )
+                totalRetries += 1
+
+                var nextRetryIndex = currentRetryIndex + 1
+                if policy.waitsForNetworkChanges, let monitor = networkMonitor {
+                    let newSnapshot = await monitor.waitForChange(
+                        from: snapshot,
+                        timeout: policy.networkChangeTimeout
+                    )
+                    if policy.shouldResetAttempts(afterNetworkChangeFrom: snapshot, to: newSnapshot) {
+                        nextRetryIndex = 0
+                    }
+                    if let newSnapshot {
+                        snapshot = newSnapshot
+                    } else {
+                        snapshot = await monitor.currentSnapshot() ?? snapshot
+                    }
+                }
+
+                if delay > 0 {
+                    try await clock.sleep(for: .seconds(delay))
+                }
+                retryIndex = nextRetryIndex
             } catch let error as NetworkError {
                 guard let policy = retryPolicy else { throw error }
                 let decision = policy.shouldRetry(
@@ -53,21 +109,7 @@ package struct RetryCoordinator {
                 // Honor server hint when present, but never less than the
                 // computed jittered delay. Policies may also provide an
                 // absolute Retry-After ceiling to avoid unbounded waits.
-                let delay: TimeInterval
-                switch decision {
-                case .noRetry:
-                    // Unreachable: handled above; keeps the switch exhaustive.
-                    throw error
-                case .retry:
-                    delay = computedDelay
-                case .retryAfter(let serverHint):
-                    let hintedDelay = max(serverHint, computedDelay)
-                    if let maxRetryAfterDelay = policy.maxRetryAfterDelay {
-                        delay = min(hintedDelay, max(maxRetryAfterDelay, computedDelay))
-                    } else {
-                        delay = hintedDelay
-                    }
-                }
+                let delay = Self.delay(for: decision, computedDelay: computedDelay, policy: policy)
                 await eventHub.publish(
                     .retryScheduled(
                         requestID: requestID,
@@ -106,6 +148,25 @@ package struct RetryCoordinator {
                 }
                 throw NetworkError.underlying(SendableUnderlyingError(error), nil)
             }
+        }
+    }
+
+    private static func delay(
+        for decision: RetryDecision,
+        computedDelay: TimeInterval,
+        policy: RetryPolicy
+    ) -> TimeInterval {
+        switch decision {
+        case .noRetry:
+            return computedDelay
+        case .retry:
+            return computedDelay
+        case .retryAfter(let serverHint):
+            let hintedDelay = max(serverHint, computedDelay)
+            if let maxRetryAfterDelay = policy.maxRetryAfterDelay {
+                return min(hintedDelay, max(maxRetryAfterDelay, computedDelay))
+            }
+            return hintedDelay
         }
     }
 }

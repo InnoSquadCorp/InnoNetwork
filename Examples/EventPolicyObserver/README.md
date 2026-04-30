@@ -43,7 +43,7 @@ usable in production builds.
 
 ## swift-metrics bridge
 
-This example intentionally has no external dependencies. A
+This example intentionally avoids third-party packages. A
 production-grade bridge to
 [swift-metrics](https://github.com/apple/swift-metrics) would look like:
 

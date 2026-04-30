@@ -120,4 +120,16 @@ struct NetworkErrorTimeoutTests {
         #expect(error.response == nil)
         #expect(error.underlyingError == nil)
     }
+
+    @Test("NSError bridge uses stable domain and codes")
+    func nsErrorBridgeUsesStableDomainAndCodes() {
+        let timeout = NetworkError.timeout(reason: .requestTimeout) as NSError
+        let cancelled = NetworkError.cancelled as NSError
+        let invalidRequest = NetworkError.invalidRequestConfiguration("bad") as NSError
+
+        #expect(timeout.domain == NetworkError.errorDomain)
+        #expect(timeout.code == NSURLErrorTimedOut)
+        #expect(cancelled.code == NSURLErrorCancelled)
+        #expect(invalidRequest.code == 1002)
+    }
 }
