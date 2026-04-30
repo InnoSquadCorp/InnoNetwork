@@ -1,14 +1,16 @@
 # API Stability
 
 This document defines the compatibility contract for the InnoNetwork 4.x
-release line. `4.0.0` is the upcoming public release baseline for this
-contract; until it is tagged, validate the line with `release/v4.0` or a
-specific repository revision.
+release line. `4.0.0` is the public baseline for this contract.
 
 ## Stable
 
 - `APIDefinition`
+- `CancellationTag`
 - `MultipartAPIDefinition`
+- `TransportPolicy`
+- `RequestEncodingPolicy`
+- `ResponseDecodingStrategy`
 - `DefaultNetworkClient`
 - `NetworkClient.request(_:)`
 - `NetworkClient.upload(_:)`
@@ -59,24 +61,25 @@ high-level compatibility classification readable for the 4.x release line.
 ### InnoNetwork
 
 - `APIDefinition`, `AnyEncodable`, `AnyResponseDecoder`, `CachedResponse`,
-  `CircuitBreakerOpenError`, `CircuitBreakerPolicy`, `ContentType`,
-  `CorrelationIDInterceptor`, `DefaultNetworkClient`, `DefaultNetworkLogger`,
-  `EmptyParameter`, `EmptyResponse`, `Endpoint`, `HTTPEmptyResponseDecodable`,
-  `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`, `InMemoryResponseCache`,
-  `MultipartAPIDefinition`, `MultipartFormData`, `MultipartPart`,
-  `MultipartResponseDecoder`, `MultipartUploadStrategy`, `NetworkClient`,
-  `NetworkConfiguration`, `NetworkContext`, `NetworkError`, `NetworkEvent`,
-  `NetworkEventObserving`, `NetworkInterfaceType`, `NetworkLoggingOptions`,
-  `NetworkLogger`, `NetworkMetricsReporting`, `NetworkMonitor`,
-  `NetworkMonitoring`, `NetworkReachabilityStatus`, `NetworkRequestContext`,
-  `NetworkSnapshot`, `NoOpNetworkEventObserver`, `NoOpNetworkLogger`,
-  `OSLogNetworkEventObserver`, `PublicKeyPinningPolicy`, `RefreshTokenPolicy`,
-  `RequestCoalescingPolicy`, `RequestInterceptor`, `Response`,
-  `ResponseCache`, `ResponseCacheKey`, `ResponseCachePolicy`,
-  `ResponseInterceptor`, `RetryDecision`, `RetryIdempotencyPolicy`, `RetryPolicy`,
+  `CancellationTag`, `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
+  `ContentType`, `CorrelationIDInterceptor`, `DefaultNetworkClient`,
+  `DefaultNetworkLogger`, `EmptyParameter`, `EmptyResponse`, `Endpoint`,
+  `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
+  `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,
+  `MultipartPart`, `MultipartResponseDecoder`, `MultipartUploadStrategy`,
+  `NetworkClient`, `NetworkConfiguration`, `NetworkContext`, `NetworkError`,
+  `NetworkEvent`, `NetworkEventObserving`, `NetworkInterfaceType`,
+  `NetworkLoggingOptions`, `NetworkLogger`, `NetworkMetricsReporting`,
+  `NetworkMonitor`, `NetworkMonitoring`, `NetworkReachabilityStatus`,
+  `NetworkRequestContext`, `NetworkSnapshot`, `NoOpNetworkEventObserver`,
+  `NoOpNetworkLogger`, `OSLogNetworkEventObserver`, `PublicKeyPinningPolicy`,
+  `RefreshTokenPolicy`, `RequestCoalescingPolicy`, `RequestEncodingPolicy`,
+  `RequestInterceptor`, `Response`, `ResponseCache`, `ResponseCacheKey`,
+  `ResponseCachePolicy`, `ResponseDecodingStrategy`, `ResponseInterceptor`,
+  `RetryDecision`, `RetryIdempotencyPolicy`, `RetryPolicy`,
   `SendableUnderlyingError`, `ServerSentEvent`, `ServerSentEventDecoder`,
   `StreamingAPIDefinition`, `StreamingResumePolicy`, `TimeoutReason`,
-  `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
+  `TransportPolicy`, `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
   `URLQueryCustomKeyTransform`, `URLQueryEncoder`, `URLQueryKeyEncodingStrategy`,
   and `URLSessionProtocol`.
 - Event-pipeline observability declarations: `EventDeliveryPolicy`,
@@ -108,9 +111,27 @@ high-level compatibility classification readable for the 4.x release line.
 
 ### SPI
 
-- `LowLevelNetworkClient`, `RequestPayload`, and `SingleRequestExecutable` are
-  public only through `@_spi(GeneratedClientSupport)` and remain outside the
-  default SwiftPM import contract.
+InnoNetwork exposes a small set of execution-pipeline hooks through
+`@_spi(GeneratedClientSupport)` for generated clients (for example, OpenAPI
+adapters) that need to plug their own serialization and decoding into the
+shared retry, refresh, and observability machinery. These symbols are
+**best-effort**: they are not part of the default SwiftPM import contract,
+they are not ABI-stable across releases, and they may evolve in any minor
+release without a deprecation window. Callers must opt in with
+`@_spi(GeneratedClientSupport) import InnoNetwork`.
+
+| Symbol | Visibility | Stability |
+|---|---|---|
+| `LowLevelNetworkClient` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+| `DefaultNetworkClient.perform(_:)` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+| `DefaultNetworkClient.perform(executable:)` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+| `SingleRequestExecutable` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+| `APISingleRequestExecutable` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+| `MultipartSingleRequestExecutable` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+| `RequestPayload` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
+
+See `Examples/WrapperSmoke` and `Examples/GeneratedClientRecipe` for the
+intended usage shape.
 
 ### InnoNetworkTestSupport
 
@@ -136,8 +157,11 @@ high-level compatibility classification readable for the 4.x release line.
 - `default` aliases are convenience entry points and should be treated as `safeDefaults` aliases.
 - Advanced builders are public and supported, but operational tuning values are not guaranteed to stay numerically identical across releases.
 - `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`,
-  `SingleRequestExecutable`, and `RequestPayload` are SPI surfaces and are not
-  part of the default SwiftPM import contract.
+  `SingleRequestExecutable`, `APISingleRequestExecutable`,
+  `MultipartSingleRequestExecutable`, and `RequestPayload` are SPI surfaces.
+  They are best-effort, are not part of the default SwiftPM import contract,
+  and may evolve in any minor release without a deprecation window — see the
+  SPI table under "Public Declaration Ledger" for the full list.
 - `PublicKeyPinningPolicy.HostMatchingStrategy.unionAllMatches` preserves the
   existing host pin lookup behavior. `mostSpecificHost` is stable as an
   opt-in stricter matching mode for operators who separate parent and

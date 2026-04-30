@@ -14,7 +14,6 @@ required_meta_docs=(
   "$repo_root/SECURITY.md"
   "$repo_root/SUPPORT.md"
   "$repo_root/CHANGELOG.md"
-  "$repo_root/MIGRATION_v4.md"
   "$repo_root/docs/RELEASE_POLICY.md"
   "$repo_root/docs/MIGRATION_POLICY.md"
   "$repo_root/docs/releases/4.0.0.md"
@@ -87,7 +86,11 @@ require_line "## Internal/Operational" "$api_stability"
 
 expected_stable=(
 '`APIDefinition`'
+'`CancellationTag`'
 '`MultipartAPIDefinition`'
+'`TransportPolicy`'
+'`RequestEncodingPolicy`'
+'`ResponseDecodingStrategy`'
 '`DefaultNetworkClient`'
 '`NetworkClient.request(_:)`'
 '`NetworkClient.upload(_:)`'
@@ -155,6 +158,7 @@ expected_shipping_public_declarations=(
   AnyEncodable
   AnyResponseDecoder
   CachedResponse
+  CancellationTag
   CircuitBreakerOpenError
   CircuitBreakerPolicy
   ContentType
@@ -215,11 +219,13 @@ expected_shipping_public_declarations=(
   PublicKeyPinningPolicy
   RefreshTokenPolicy
   RequestCoalescingPolicy
+  RequestEncodingPolicy
   RequestInterceptor
   Response
   ResponseCache
   ResponseCacheKey
   ResponseCachePolicy
+  ResponseDecodingStrategy
   ResponseInterceptor
   RetryDecision
   RetryIdempotencyPolicy
@@ -230,6 +236,7 @@ expected_shipping_public_declarations=(
   StreamingAPIDefinition
   StreamingResumePolicy
   TimeoutReason
+  TransportPolicy
   TrustEvaluating
   TrustFailureReason
   TrustPolicy
@@ -523,9 +530,25 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public protocol APIDefinition'
       target="$repo_root/Sources/InnoNetwork/APIDefinition.swift"
       ;;
+    '`CancellationTag`')
+      pattern='public struct CancellationTag'
+      target="$repo_root/Sources/InnoNetwork/CancellationTag.swift"
+      ;;
     '`MultipartAPIDefinition`')
       pattern='public protocol MultipartAPIDefinition'
       target="$repo_root/Sources/InnoNetwork/APIDefinition.swift"
+      ;;
+    '`TransportPolicy`')
+      pattern='public struct TransportPolicy'
+      target="$repo_root/Sources/InnoNetwork/TransportPolicy.swift"
+      ;;
+    '`RequestEncodingPolicy`')
+      pattern='public enum RequestEncodingPolicy'
+      target="$repo_root/Sources/InnoNetwork/RequestEncodingPolicy.swift"
+      ;;
+    '`ResponseDecodingStrategy`')
+      pattern='public enum ResponseDecodingStrategy'
+      target="$repo_root/Sources/InnoNetwork/ResponseDecodingStrategy.swift"
       ;;
     '`DefaultNetworkClient`')
       pattern='public final class DefaultNetworkClient'
@@ -720,7 +743,6 @@ forbidden_pattern 'does not pull|do not pull|not pull `swift-syntax`|has no exte
   "$api_stability" \
   "$readme" \
   "$repo_root/CHANGELOG.md" \
-  "$repo_root/MIGRATION_v4.md" \
   "$repo_root/docs/releases/4.0.0.md" \
   "$repo_root/SECURITY.md" \
   "$repo_root/docs" \
@@ -729,7 +751,6 @@ forbidden_pattern '4\.1\.0|4\.1 line|Pre-4\.1|4\.1 behaviour|v4\.1|docs/releases
   "$api_stability" \
   "$readme" \
   "$repo_root/CHANGELOG.md" \
-  "$repo_root/MIGRATION_v4.md" \
   "$repo_root/docs/releases/4.0.0.md" \
   "$repo_root/SECURITY.md" \
   "$repo_root/Benchmarks/README.md" \
@@ -740,7 +761,6 @@ forbidden_pattern '4\.2\.0|4\.2 line|pre-v4\.2|v4\.2|docs/releases/4\.2\.0' \
   "$api_stability" \
   "$readme" \
   "$repo_root/CHANGELOG.md" \
-  "$repo_root/MIGRATION_v4.md" \
   "$repo_root/docs/releases/4.0.0.md" \
   "$repo_root/SECURITY.md" \
   "$repo_root/Benchmarks/README.md" \

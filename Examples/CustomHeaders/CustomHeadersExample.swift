@@ -73,8 +73,6 @@ actor CustomContentTypeRequest: APIDefinition {
     var method: HTTPMethod { .post }
     var path: String { "/headers" }
 
-    var contentType: ContentType { .json }
-
     var headers: HTTPHeaders {
         var defaultHeaders = HTTPHeaders.default
         defaultHeaders.add(.contentType("application/vnd.api+json"))

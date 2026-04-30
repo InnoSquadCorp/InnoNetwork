@@ -39,10 +39,6 @@ public actor WebSocketTask: Identifiable {
     /// Use this for SLO dashboards that need "how flaky was this socket?".
     public var successfulReconnectCount: Int { _successfulReconnectCount }
 
-    /// Deprecated alias for ``attemptedReconnectCount``.
-    @available(*, deprecated, renamed: "attemptedReconnectCount")
-    public var reconnectCount: Int { _attemptedReconnectCount }
-
     /// Number of `send(_:message:)` / `send(_:string:)` operations currently
     /// awaiting completion on this task. Used by the manager's send-queue
     /// guard to enforce ``WebSocketConfiguration/sendQueueLimit``.

@@ -128,4 +128,3 @@ reset, attach observers to `WebSocketManager` directly rather than per-task.
   close-code classification.
 - [`WebSocketReconnectCoordinator.swift`](../Sources/InnoNetworkWebSocket/WebSocketReconnectCoordinator.swift) —
   backoff and attempt accounting.
-- [`MIGRATION_v4.md`](../MIGRATION_v4.md) — close-code typing changes for v4.

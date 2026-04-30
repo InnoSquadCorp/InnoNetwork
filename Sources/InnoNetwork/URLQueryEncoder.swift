@@ -14,7 +14,7 @@ public struct URLQueryEncoder: Sendable {
         dateEncodingStrategy: JSONEncoder.DateEncodingStrategy? = nil
     ) {
         self.keyEncodingStrategy = keyEncodingStrategy
-        self.dateEncodingStrategy = dateEncodingStrategy ?? .formatted(makeDefaultDateFormatter())
+        self.dateEncodingStrategy = dateEncodingStrategy ?? .formatted(defaultDateFormatter)
     }
 
     public init(

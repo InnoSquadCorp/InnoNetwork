@@ -20,13 +20,21 @@ import Foundation
 ///         .header("Idempotency-Key", value: idempotencyKey)
 ///         .decoding(Post.self)
 /// )
+///
+/// // form-url-encoded login
+/// let token = try await client.request(
+///     Endpoint.post("/login")
+///         .body(credentials)
+///         .transport(.formURLEncoded())
+///         .decoding(Token.self)
+/// )
 /// ```
 ///
 /// `Endpoint` deliberately exposes only request-shape concerns (method, path,
-/// query/body parameters, headers, content-type, acceptable status codes). Cross-cutting
-/// behaviour — interceptors, retry policy, trust evaluation — stays on
-/// ``NetworkConfiguration`` so endpoints written this way pick up the same
-/// session-wide policies as a hand-written ``APIDefinition``.
+/// query/body parameters, headers, transport, acceptable status codes).
+/// Cross-cutting behaviour — interceptors, retry policy, trust evaluation —
+/// stays on ``NetworkConfiguration`` so endpoints written this way pick up the
+/// same session-wide policies as a hand-written ``APIDefinition``.
 ///
 /// For multipart uploads, streaming requests, or per-endpoint interceptor
 /// chains, keep using a dedicated type that conforms to ``APIDefinition``,
@@ -38,25 +46,31 @@ public struct Endpoint<Response: Decodable & Sendable>: APIDefinition {
     public let method: HTTPMethod
     public let path: String
     public let parameters: AnyEncodable?
-    public let contentType: ContentType
     public let headers: HTTPHeaders
     public let acceptableStatusCodes: Set<Int>?
+    public let transport: TransportPolicy<Response>
 
     public init(
         method: HTTPMethod,
         path: String,
         parameters: AnyEncodable? = nil,
-        contentType: ContentType = .json,
         headers: HTTPHeaders = .default,
-        acceptableStatusCodes: Set<Int>? = nil
+        acceptableStatusCodes: Set<Int>? = nil,
+        transport: TransportPolicy<Response>? = nil
     ) {
         self.method = method
         self.path = path
         self.parameters = parameters
-        self.contentType = contentType
-        self.headers = headers
         self.acceptableStatusCodes = acceptableStatusCodes
+        let resolvedTransport = transport ?? Self.defaultTransport(for: method)
+        self.transport = resolvedTransport
+        self.headers = headers
     }
+
+    private static func defaultTransport(for method: HTTPMethod) -> TransportPolicy<Response> {
+        method == .get ? .query() : .json()
+    }
+
 }
 
 
@@ -90,15 +104,15 @@ extension Endpoint where Response == EmptyResponse {
 extension Endpoint {
     /// Returns a copy of this endpoint with query parameters attached. This is
     /// intended for `GET` endpoints; non-`GET` methods still follow the normal
-    /// ``APIDefinition`` encoding rules for their method and content type.
+    /// ``APIDefinition`` encoding rules for their method and transport.
     public func query(_ query: some Encodable & Sendable) -> Endpoint<Response> {
         Endpoint(
             method: method,
             path: path,
             parameters: AnyEncodable(query),
-            contentType: contentType,
             headers: headers,
-            acceptableStatusCodes: acceptableStatusCodes
+            acceptableStatusCodes: acceptableStatusCodes,
+            transport: transport
         )
     }
 
@@ -110,9 +124,9 @@ extension Endpoint {
             method: method,
             path: path,
             parameters: AnyEncodable(body),
-            contentType: contentType,
             headers: headers,
-            acceptableStatusCodes: acceptableStatusCodes
+            acceptableStatusCodes: acceptableStatusCodes,
+            transport: transport
         )
     }
 
@@ -125,38 +139,38 @@ extension Endpoint {
             method: method,
             path: path,
             parameters: parameters,
-            contentType: contentType,
             headers: newHeaders,
-            acceptableStatusCodes: acceptableStatusCodes
+            acceptableStatusCodes: acceptableStatusCodes,
+            transport: transport
         )
     }
 
     /// Returns a copy of this endpoint with the supplied header collection.
     /// Replaces the entire header set; pair with ``header(_:value:)`` if you
-    /// only need to add a single field. Body requests still receive an automatic
-    /// `Content-Type` from their payload encoding at execution time.
+    /// only need to add a single field. Transport-derived `Content-Type` is
+    /// applied later during request building only when an encoded body exists.
     public func headers(_ headers: HTTPHeaders) -> Endpoint<Response> {
         Endpoint(
             method: method,
             path: path,
             parameters: parameters,
-            contentType: contentType,
             headers: headers,
-            acceptableStatusCodes: acceptableStatusCodes
+            acceptableStatusCodes: acceptableStatusCodes,
+            transport: transport
         )
     }
 
-    /// Returns a copy of this endpoint with the supplied content-type. The
-    /// endpoint's body `Content-Type` is applied at execution time when the
-    /// request carries a payload.
-    public func contentType(_ contentType: ContentType) -> Endpoint<Response> {
+    /// Returns a copy of this endpoint with the supplied transport policy.
+    /// Transport-derived `Content-Type` is applied later during request building
+    /// only when an encoded body exists.
+    public func transport(_ transport: TransportPolicy<Response>) -> Endpoint<Response> {
         Endpoint(
             method: method,
             path: path,
             parameters: parameters,
-            contentType: contentType,
             headers: headers,
-            acceptableStatusCodes: acceptableStatusCodes
+            acceptableStatusCodes: acceptableStatusCodes,
+            transport: transport
         )
     }
 
@@ -168,9 +182,9 @@ extension Endpoint {
             method: method,
             path: path,
             parameters: parameters,
-            contentType: contentType,
             headers: headers,
-            acceptableStatusCodes: codes
+            acceptableStatusCodes: codes,
+            transport: transport
         )
     }
 }
@@ -183,14 +197,89 @@ extension Endpoint where Response == EmptyResponse {
     /// `.post(_:)`, etc.) into an endpoint that decodes the supplied type.
     /// This is the terminal step of the builder; the returned value can be
     /// passed directly to ``NetworkClient/request(_:)``.
+    ///
+    /// The current request-encoding shape (set via ``query(_:)``, ``body(_:)``,
+    /// or ``transport(_:)``) is carried over. Response decoding is reset to
+    /// the default JSON decoder for the new response type.
     public func decoding<T: Decodable & Sendable>(_ type: T.Type) -> Endpoint<T> {
         Endpoint<T>(
             method: method,
             path: path,
             parameters: parameters,
-            contentType: contentType,
             headers: headers,
-            acceptableStatusCodes: acceptableStatusCodes
+            acceptableStatusCodes: acceptableStatusCodes,
+            transport: Self.transportCarryingEncoding(from: transport, to: T.self)
         )
+    }
+
+    /// Translates this endpoint's `requestEncoding` into a fresh
+    /// ``TransportPolicy`` for the new response generic. Picked up by
+    /// ``decoding(_:)``.
+    private static func transportCarryingEncoding<T: Decodable & Sendable>(
+        from transport: TransportPolicy<EmptyResponse>,
+        to _: T.Type
+    ) -> TransportPolicy<T> {
+        switch transport.requestEncoding {
+        case .json(let encoder):
+            return .json(encoder: encoder)
+        case .query(let encoder, let rootKey):
+            return .query(encoder: encoder, rootKey: rootKey)
+        case .formURLEncoded(let encoder, let rootKey):
+            return .formURLEncoded(encoder: encoder, rootKey: rootKey)
+        case .none:
+            return noneEncodingTransportCarryingResponseShape(from: transport)
+        }
+    }
+
+    private static func noneEncodingTransportCarryingResponseShape<T: Decodable & Sendable>(
+        from transport: TransportPolicy<EmptyResponse>
+    ) -> TransportPolicy<T> {
+        switch transport.responseDecoding {
+        case .json(let decoder):
+            let strategy = ResponseDecodingStrategy<T>.json(decoder)
+            return TransportPolicy<T>(
+                requestEncoding: .none,
+                responseDecoding: strategy,
+                responseDecoder: AnyResponseDecoder(strategy: strategy)
+            )
+        case .jsonAllowingEmpty(let decoder):
+            return .multipart(decoder: decoder)
+        case .custom(let decodeEmptyResponse):
+            return .custom(encoding: .none) { data, response in
+                _ = try decodeEmptyResponse(data, response)
+                return try decodePromotedJSONResponse(data: data, response: response, as: T.self)
+            }
+        }
+    }
+
+    private static func decodePromotedJSONResponse<T: Decodable & Sendable>(
+        data: Data,
+        response: InnoNetwork.Response,
+        as type: T.Type
+    ) throws -> T {
+        do {
+            return try defaultResponseDecoder.decode(type, from: data)
+        } catch {
+            throw NetworkError.objectMapping(SendableUnderlyingError(error), response)
+        }
+    }
+}
+
+
+// MARK: - Content-Type header derivation
+
+extension RequestEncodingPolicy {
+    /// `Content-Type` header value implied by this encoding policy, if any.
+    /// Used by the request builder to apply automatic body headers only when
+    /// an encoded request body exists.
+    var contentTypeHeader: String? {
+        switch self {
+        case .json:
+            return "\(ContentType.json.rawValue); charset=UTF-8"
+        case .formURLEncoded:
+            return "\(ContentType.formUrlEncoded.rawValue); charset=UTF-8"
+        case .query, .none:
+            return nil
+        }
     }
 }

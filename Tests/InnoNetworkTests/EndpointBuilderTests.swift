@@ -38,7 +38,13 @@ struct EndpointBuilderTests {
         #expect(endpoint.method == .get)
         #expect(endpoint.path == "/users/42")
         #expect(endpoint.parameters == nil)
-        #expect(endpoint.contentType == .json)
+        // GET endpoints default to query-string transport, which does not set
+        // a Content-Type header.
+        if case .query = endpoint.transport.requestEncoding {
+            // expected
+        } else {
+            Issue.record("Default GET transport should be .query")
+        }
         #expect(endpoint.acceptableStatusCodes == nil)
     }
 
@@ -52,6 +58,91 @@ struct EndpointBuilderTests {
 
         #expect(endpoint.method == .get)
         #expect(endpoint.path == "/users/42")
+    }
+
+    @Test
+    func decodingPreservesMultipartTransportDecoder() {
+        let decoder = JSONDecoder()
+
+        let endpoint: Endpoint<EndpointAck> = Endpoint.post("/upload")
+            .transport(.multipart(decoder: decoder))
+            .decoding(EndpointAck.self)
+
+        if case .none = endpoint.transport.requestEncoding {
+            // expected
+        } else {
+            Issue.record("Promoted multipart endpoint should keep .none request encoding")
+        }
+        if case .json(let promotedDecoder) = endpoint.transport.responseDecoding {
+            #expect(promotedDecoder === decoder)
+        } else {
+            Issue.record("Promoted multipart endpoint should keep the original response decoder")
+        }
+    }
+
+    @Test
+    func decodingPreservesCustomNoneTransportShape() async throws {
+        let endpoint: Endpoint<EndpointAck> = Endpoint.post("/custom")
+            .transport(.custom(encoding: .none) { _, _ in EmptyResponse() })
+            .decoding(EndpointAck.self)
+
+        if case .none = endpoint.transport.requestEncoding {
+            // expected
+        } else {
+            Issue.record("Promoted custom .none endpoint should keep .none request encoding")
+        }
+        if case .custom = endpoint.transport.responseDecoding {
+            // expected
+        } else {
+            Issue.record("Promoted custom .none endpoint should keep a custom response strategy")
+        }
+
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+
+        let response = try await client.request(endpoint)
+
+        #expect(response.ok)
+        #expect(mockSession.capturedRequest?.httpBody == nil)
+        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == nil)
+    }
+
+    @Test
+    func decodingPreservesCustomNoneTransportValidation() async throws {
+        let endpoint: Endpoint<EndpointAck> = Endpoint.post("/custom")
+            .transport(
+                .custom(encoding: .none) { _, response in
+                    guard response.response?.value(forHTTPHeaderField: "X-Promoted-Decode") == "allowed" else {
+                        throw NetworkError.invalidRequestConfiguration("custom .none transport was not preserved")
+                    }
+                    return EmptyResponse()
+                }
+            )
+            .decoding(EndpointAck.self)
+
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+
+        do {
+            _ = try await client.request(endpoint)
+            Issue.record("Expected promoted custom .none transport validation to run")
+        } catch let error as NetworkError {
+            guard case .invalidRequestConfiguration(let message) = error else {
+                Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
+                return
+            }
+            #expect(message == "custom .none transport was not preserved")
+        } catch {
+            Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
+        }
     }
 
     @Test
@@ -92,11 +183,16 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func contentTypeBuilderUpdatesEndpointDefault() {
-        let endpoint = Endpoint.post("/raw")
-            .contentType(.textPlain)
+    func transportBuilderUpdatesEndpointEncodingWithoutStoringContentTypeHeader() {
+        let endpoint = Endpoint.post("/login")
+            .transport(.formURLEncoded())
 
-        #expect(endpoint.contentType == .textPlain)
+        if case .formURLEncoded = endpoint.transport.requestEncoding {
+            // expected
+        } else {
+            Issue.record("transport(.formURLEncoded()) should set requestEncoding to .formURLEncoded")
+        }
+        #expect(endpoint.headers.value(for: "Content-Type") == nil)
     }
 
     @Test
@@ -146,6 +242,21 @@ struct EndpointBuilderTests {
     }
 
     @Test
+    func bodylessPostDoesNotSendDefaultJSONContentType() async throws {
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+
+        _ = try await client.request(Endpoint.post("/ping").decoding(EndpointAck.self))
+
+        #expect(mockSession.capturedRequest?.httpBody == nil)
+        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == nil)
+    }
+
+    @Test
     func postBodyRequestCarriesJSONContentTypeHeader() async throws {
         struct CreatePost: Encodable, Sendable {
             let title: String
@@ -172,7 +283,7 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func contentTypeBuilderIsReflectedInRequestHeader() async throws {
+    func transportBuilderIsReflectedInRequestHeader() async throws {
         struct Login: Encodable, Sendable {
             let username: String
         }
@@ -188,7 +299,7 @@ struct EndpointBuilderTests {
         )
 
         let endpoint = Endpoint.post("/login")
-            .contentType(.formUrlEncoded)
+            .transport(.formURLEncoded())
             .body(Login(username: "test"))
             .decoding(LoginResponse.self)
 
@@ -196,6 +307,33 @@ struct EndpointBuilderTests {
 
         let contentType = try #require(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type"))
         #expect(contentType.contains("application/x-www-form-urlencoded"))
+    }
+
+    @Test
+    func switchingTransportToQueryDoesNotKeepStaleContentType() async throws {
+        struct Login: Encodable, Sendable {
+            let username: String
+        }
+
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+
+        let endpoint = Endpoint.post("/login")
+            .transport(.formURLEncoded())
+            .transport(.query())
+            .query(Login(username: "test"))
+            .decoding(EndpointAck.self)
+
+        _ = try await client.request(endpoint)
+
+        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == nil)
+        let url = try #require(mockSession.capturedRequest?.url)
+        let queryItems = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+        #expect(queryItems.contains(URLQueryItem(name: "username", value: "test")))
     }
 
     @Test

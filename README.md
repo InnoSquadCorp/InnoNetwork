@@ -33,13 +33,9 @@ prototypes to production clients.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", branch: "release/v4.0")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0")
 ]
 ```
-
-`4.0.0` is the upcoming 4.x public release baseline. Until the tag exists, pin
-the `release/v4.0` branch or a specific repository revision when validating
-these unreleased changes.
 
 ### Core Request
 
@@ -71,9 +67,9 @@ print(user)
 ```
 
 For simple endpoints that only need method, path, query/body parameters,
-headers, content type, and response decoding, use the builder-style
-`Endpoint` API. Keep a dedicated `APIDefinition` type when an endpoint owns
-interceptors, custom encoders/decoders, multipart uploads, or streaming.
+headers, transport, and response decoding, use the builder-style `Endpoint`
+API. Keep a dedicated `APIDefinition` type when an endpoint owns interceptors,
+custom transport, multipart uploads, or streaming.
 
 ```swift
 let user = try await client.request(
@@ -85,6 +81,34 @@ let users = try await client.request(
         .query(["limit": 20])
         .decoding([User].self)
 )
+
+// form-url-encoded body
+let token = try await client.request(
+    Endpoint.post("/login")
+        .body(credentials)
+        .transport(.formURLEncoded())
+        .decoding(Token.self)
+)
+```
+
+`APIDefinition` exposes one transport-shape entry point — `transport: TransportPolicy<APIResponse>`.
+The default is method-aware (`GET` → `.query()`, otherwise `.json()`), so most
+hand-written endpoints don't override it. Use the `TransportPolicy` factories
+when you need a different shape:
+
+```swift
+struct UpdateProfile: APIDefinition {
+    typealias Parameter = ProfileBody
+    typealias APIResponse = Profile
+
+    let parameters: ProfileBody?
+    var method: HTTPMethod { .patch }
+    var path: String { "/me" }
+
+    var transport: TransportPolicy<Profile> {
+        .json(decoder: snakeCaseDecoder)
+    }
+}
 ```
 
 ### Download
@@ -188,14 +212,13 @@ Protocol Buffers support moved to the separate `InnoNetworkProtobuf` package. Co
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", branch: "release/v4.0"),
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0"),
     .package(url: "https://github.com/InnoSquadCorp/InnoNetworkProtobuf.git", branch: "main")
 ]
 ```
 
-`InnoNetworkProtobuf` is being prepared for its first tagged release. Until
-that tag exists, follow the `main` branch of `InnoNetworkProtobuf` together
-with the unreleased InnoNetwork 4.0 release branch or a pinned revision.
+`InnoNetworkProtobuf` is being prepared for its first tagged release; until
+then, follow its `main` branch.
 
 ## Configuration
 
@@ -248,6 +271,40 @@ let client = DefaultNetworkClient(
     }
 )
 ```
+
+### Tag-based cancellation
+
+`request(_:tag:)` and `upload(_:tag:)` register the dispatched task under a
+`CancellationTag` so a screen, feature, or user session can drop just its own
+requests when it goes away. `cancelAll()` continues to drain every in-flight
+request when no granularity is required.
+
+```swift
+let feed: CancellationTag = "feed"
+
+async let posts = client.request(GetPosts(), tag: feed)
+async let banner = client.request(GetBanner(), tag: feed)
+
+// User leaves the feed screen — only feed-tagged requests stop:
+await client.cancelAll(matching: feed)
+```
+
+Untagged requests, and requests registered with a different tag, are left
+alone by `cancelAll(matching:)`.
+
+### Response cache and Vary handling
+
+The opt-in `ResponseCachePolicy` honours the response `Vary` header
+automatically (RFC 9111 §4.1):
+
+- `Vary: *` responses are not stored — the cache cannot prove a future
+  request would match.
+- A concrete `Vary` header (for example `Vary: Accept-Language`) captures the
+  named request headers when the response is stored. The next lookup matches
+  only when those same header values are present, so two clients with
+  different `Accept-Language` values do not see each other's payloads.
+- Responses without a `Vary` header are stored as before, with the existing
+  per-identity key (Authorization, etc.).
 
 ### Optional Macros
 
@@ -318,19 +375,20 @@ For operational tuning, see [Examples](Examples/README.md) and [API Stability](A
 
 ## Stability
 
-Public releases follow semantic versioning. `4.0.0` is the upcoming public
-baseline for the 4.x major line; until it is tagged, use `release/v4.0` or a
-specific revision for validation.
+Public releases follow semantic versioning starting with `4.0.0`, the first
+public release of the 4.x line.
 
 - Stable public API: [API_STABILITY.md](API_STABILITY.md)
 - Release rules and compatibility policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration expectations: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
 
-`safeDefaults` is the recommended public path. `default` aliases remain available for compatibility, but new examples and new integrations should prefer `safeDefaults`.
+`safeDefaults` is the recommended public path. `default` aliases are available
+as `safeDefaults` aliases, but new examples and new integrations should prefer
+`safeDefaults`.
 
-`request` and `upload` are the recommended request execution APIs for 4.0.0
-integrations. Lower-level extension points that exist in the source tree are
-not part of the 4.0.0 stable public contract.
+`request` and `upload` are the recommended request execution APIs. Lower-level
+extension points that exist in the source tree are not part of the stable
+public contract.
 
 For long-lived line-delimited transports (Server-Sent Events, NDJSON, log
 streams), use `DefaultNetworkClient.stream(_:)` together with a
@@ -408,10 +466,10 @@ Operational items to verify before shipping a client built on InnoNetwork.
   `401` refresh + replay. The policy single-flights concurrent refreshes and
   replays each fully adapted request at most once.
 - **Cache and circuit breaker.** Enable `ResponseCachePolicy` and
-  `CircuitBreakerPolicy` per client only after deciding the cache freshness and
-  host-failure budget for that API. Cache keys include an `Authorization`
-  fingerprint and `Accept-Language`; full HTTP `Vary` processing is not
-  automatic in 4.0.
+  `CircuitBreakerPolicy` per client only after deciding the cache freshness
+  and host-failure budget for that API. Cache keys include an `Authorization`
+  fingerprint and `Accept-Language` by default; the response `Vary` header
+  further refines lookups, and `Vary: *` responses are skipped.
 - **WebSocket reconnect cap.** `maxReconnectAttempts` limits successive automatic attempts.
   After exhaustion, surface the failure to the UI rather than reconnect on every app
   foreground.

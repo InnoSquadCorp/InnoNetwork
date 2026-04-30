@@ -55,15 +55,11 @@ public struct ResponseCacheKey: Hashable, Sendable {
         headers
             .map { header in
                 let name = header.key.lowercased()
-                let value = sensitiveHeaderNames.contains(name) ? fingerprint(header.value) : header.value
+                let value = HeaderValueNormalizer.normalizedValue(name: name, value: header.value)
                 return "\(name):\(value)"
             }
             .sorted()
     }
-
-    private static let sensitiveHeaderNames: Set<String> = [
-        "authorization"
-    ]
 
     private static func normalizedURLString(_ url: URL?) -> String? {
         guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
@@ -71,6 +67,17 @@ public struct ResponseCacheKey: Hashable, Sendable {
         }
         components.fragment = nil
         return components.url?.absoluteString
+    }
+}
+
+
+private enum HeaderValueNormalizer {
+    private static let sensitiveHeaderNames: Set<String> = [
+        "authorization"
+    ]
+
+    static func normalizedValue(name: String, value: String) -> String {
+        sensitiveHeaderNames.contains(name.lowercased()) ? fingerprint(value) : value
     }
 
     private static func fingerprint(_ value: String) -> String {
@@ -87,17 +94,27 @@ public struct CachedResponse: Sendable, Equatable {
     public let statusCode: Int
     public let headers: [String: String]
     public let storedAt: Date
+    /// Snapshot of the request headers that were present when this response
+    /// was stored, restricted to the names listed in the response `Vary`
+    /// header. `nil` means the response did not carry a `Vary` header (so
+    /// vary matching is skipped on lookup); an empty dictionary is reserved
+    /// for `Vary` headers that resolve to no concrete names. The values are
+    /// optional so a vary header that was absent on the original request
+    /// stays distinguishable from one that was present and empty.
+    public let varyHeaders: [String: String?]?
 
     public init(
         data: Data,
         statusCode: Int = 200,
         headers: [String: String] = [:],
-        storedAt: Date = Date()
+        storedAt: Date = Date(),
+        varyHeaders: [String: String?]? = nil
     ) {
         self.data = data
         self.statusCode = statusCode
         self.headers = headers
         self.storedAt = storedAt
+        self.varyHeaders = varyHeaders
     }
 
     public var etag: String? {
@@ -251,6 +268,72 @@ private extension CachedResponse {
     func age(since now: Date) -> TimeInterval {
         max(0, now.timeIntervalSince(storedAt))
     }
+}
+
+
+// MARK: - Vary handling
+
+package enum VaryEvaluation: Sendable, Equatable {
+    /// The response carried `Vary: *`. The cache must not store this entry
+    /// because no number of request-header copies can reliably distinguish
+    /// future variants.
+    case wildcardSkipsCache
+    /// No `Vary` header on the response, or one that resolves to no concrete
+    /// header names after normalization. The response can be cached without
+    /// any vary snapshot.
+    case noVary
+    /// The response named at least one varying request header. The associated
+    /// dictionary maps each lowercased header name to its current request
+    /// value (nil when the request did not include the header).
+    case vary([String: String?])
+}
+
+package func evaluateVary(
+    responseHeaders: [String: String],
+    request: URLRequest
+) -> VaryEvaluation {
+    let varyValue = responseHeaders.first { $0.key.caseInsensitiveCompare("Vary") == .orderedSame }?.value
+    guard let varyValue, !varyValue.isEmpty else {
+        return .noVary
+    }
+    let entries =
+        varyValue
+        .split(separator: ",")
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+    if entries.contains(where: { $0 == "*" }) {
+        return .wildcardSkipsCache
+    }
+    if entries.isEmpty {
+        return .noVary
+    }
+    var snapshot: [String: String?] = [:]
+    for header in entries {
+        let lowered = header.lowercased()
+        let normalizedValue = request.value(forHTTPHeaderField: header).map {
+            HeaderValueNormalizer.normalizedValue(name: lowered, value: $0)
+        }
+        snapshot.updateValue(normalizedValue, forKey: lowered)
+    }
+    return .vary(snapshot)
+}
+
+package func cachedResponseMatchesVary(
+    _ cached: CachedResponse,
+    request: URLRequest
+) -> Bool {
+    guard let storedVary = cached.varyHeaders else {
+        return true
+    }
+    for (header, storedValue) in storedVary {
+        let currentValue = request.value(forHTTPHeaderField: header).map {
+            HeaderValueNormalizer.normalizedValue(name: header, value: $0)
+        }
+        if currentValue != storedValue {
+            return false
+        }
+    }
+    return true
 }
 
 

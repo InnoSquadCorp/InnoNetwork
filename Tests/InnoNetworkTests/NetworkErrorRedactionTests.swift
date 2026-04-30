@@ -138,7 +138,6 @@ struct NetworkErrorRedactionTests {
             .invalidBaseURL("https://example.com"),
             .invalidRequestConfiguration("missing"),
             .cancelled,
-            .undefined,
             .timeout(reason: .requestTimeout, underlying: nil),
         ]
         for original in cases {
