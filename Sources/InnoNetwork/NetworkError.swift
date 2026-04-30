@@ -63,6 +63,17 @@ public enum NetworkError: Error, Sendable {
     /// associated value directly or use `NSError.userInfo[NSUnderlyingErrorKey]`
     /// after bridging.
     case timeout(reason: TimeoutReason, underlying: SendableUnderlyingError? = nil)
+    /// The transport completed but produced a response body larger than
+    /// ``NetworkConfiguration/responseBodyLimit``. Raised so the executor can
+    /// short-circuit decoding and so callers can choose a recovery strategy
+    /// (raise the limit, fall back to streaming, or surface a paged retry)
+    /// rather than silently OOM the process or pass an oversized payload to
+    /// `JSONDecoder`.
+    ///
+    /// - Parameters:
+    ///   - limit: The configured byte limit that was exceeded.
+    ///   - observed: The actual body size in bytes returned by the transport.
+    case responseTooLarge(limit: Int64, observed: Int64)
 }
 
 
@@ -109,6 +120,8 @@ extension NetworkError: LocalizedError {
             case .connectionTimeout:
                 return "The connection to the server timed out."
             }
+        case .responseTooLarge(let limit, let observed):
+            return "Response body of \(observed) bytes exceeded the configured limit of \(limit) bytes."
         }
     }
 }
@@ -126,6 +139,7 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout: return nil
+        case .responseTooLarge: return nil
         }
     }
 
@@ -141,6 +155,7 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout(_, let underlying): return underlying
+        case .responseTooLarge: return nil
         }
     }
 }
@@ -172,6 +187,8 @@ extension NetworkError: CustomNSError {
             return NSURLErrorCancelled
         case .timeout:
             return NSURLErrorTimedOut
+        case .responseTooLarge:
+            return 4002
         }
     }
 
@@ -208,7 +225,8 @@ public extension NetworkError {
             .underlying(_, nil),
             .trustEvaluationFailed,
             .cancelled,
-            .timeout:
+            .timeout,
+            .responseTooLarge:
             return self
         }
     }

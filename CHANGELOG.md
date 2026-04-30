@@ -9,6 +9,16 @@ Versioning for the 4.x release line.
 
 ### Added
 
+- `NetworkConfiguration.responseBodyLimit: Int64?` (default `nil`)
+  enforces a soft upper bound on the size of buffered response bodies.
+  When the configured limit is exceeded the executor short-circuits the
+  decoder and throws ``NetworkError/responseTooLarge(limit:observed:)``.
+  The check runs before response interceptors so user-supplied adapters
+  cannot observe a payload the executor will reject. The guard is
+  opt-in; setting it to `nil` keeps pre-4.1 behaviour. Endpoints that
+  need genuine memory-bounded handling should use the streaming surface
+  (`stream(_:)` / `bytes(for:)`).
+
 ### Changed
 
 - `RequestInterceptor` and `ResponseInterceptor` now carry DocC blocks

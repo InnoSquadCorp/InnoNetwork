@@ -100,6 +100,22 @@ public struct NetworkConfiguration: Sendable {
     /// the failing response body is worth the privacy trade-off.
     public let captureFailurePayload: Bool
 
+    /// Optional ceiling on the size of buffered response bodies, in bytes.
+    /// When `nil` (default) the executor enforces no limit and behaves
+    /// exactly as in 4.0. When set, the executor compares the received
+    /// `Data` length against the limit after transport completes and
+    /// throws ``NetworkError/responseTooLarge(limit:observed:)`` if the
+    /// payload exceeds it, before the body is handed to the decoder.
+    ///
+    /// > Note: This is a soft guard, not a streaming bound. Foundation's
+    /// > `URLSession.data(for:)` has already buffered the body in memory
+    /// > by the time the check runs. The benefit is a structured error
+    /// > (and a stable failure mode for retry/circuit-breaker policies)
+    /// > rather than an opaque OOM in the consumer or the decoder.
+    /// > Endpoints that need genuine memory-bounded handling should use
+    /// > the streaming surface (`stream(_:)` or `bytes(for:)`).
+    public let responseBodyLimit: Int64?
+
     public struct AdvancedBuilder: Sendable {
         public var baseURL: URL
         public var timeout: TimeInterval
@@ -120,6 +136,7 @@ public struct NetworkConfiguration: Sendable {
         public var responseCache: (any ResponseCache)?
         public var circuitBreakerPolicy: CircuitBreakerPolicy?
         public var captureFailurePayload: Bool
+        public var responseBodyLimit: Int64?
 
         fileprivate init(preset: NetworkConfiguration) {
             self.baseURL = preset.baseURL
@@ -141,6 +158,7 @@ public struct NetworkConfiguration: Sendable {
             self.responseCache = preset.responseCache
             self.circuitBreakerPolicy = preset.circuitBreakerPolicy
             self.captureFailurePayload = preset.captureFailurePayload
+            self.responseBodyLimit = preset.responseBodyLimit
         }
 
         fileprivate func build() -> NetworkConfiguration {
@@ -163,7 +181,8 @@ public struct NetworkConfiguration: Sendable {
                 responseCachePolicy: responseCachePolicy,
                 responseCache: responseCache,
                 circuitBreakerPolicy: circuitBreakerPolicy,
-                captureFailurePayload: captureFailurePayload
+                captureFailurePayload: captureFailurePayload,
+                responseBodyLimit: responseBodyLimit
             )
         }
     }
@@ -200,7 +219,8 @@ public struct NetworkConfiguration: Sendable {
         responseCachePolicy: ResponseCachePolicy = .disabled,
         responseCache: (any ResponseCache)? = nil,
         circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
-        captureFailurePayload: Bool = false
+        captureFailurePayload: Bool = false,
+        responseBodyLimit: Int64? = nil
     ) {
         self.baseURL = baseURL
         self.timeout = timeout
@@ -221,5 +241,6 @@ public struct NetworkConfiguration: Sendable {
         self.responseCache = responseCache
         self.circuitBreakerPolicy = circuitBreakerPolicy
         self.captureFailurePayload = captureFailurePayload
+        self.responseBodyLimit = responseBodyLimit
     }
 }

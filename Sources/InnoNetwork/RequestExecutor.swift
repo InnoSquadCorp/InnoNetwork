@@ -74,6 +74,18 @@ package struct RequestExecutor {
                 requestID: requestID
             )
 
+            // Enforced after transport but before response interceptors so
+            // a too-large body cannot be observed (and possibly logged) by
+            // user-supplied response adapters before the executor rejects
+            // it. The check is opt-in via `responseBodyLimit`; nil keeps
+            // pre-4.1 behaviour.
+            if let limit = configuration.responseBodyLimit {
+                let observed = Int64(networkResponse.data.count)
+                if observed > limit {
+                    throw NetworkError.responseTooLarge(limit: limit, observed: observed)
+                }
+            }
+
             // Onion unwinds inner→outer: per-request interceptors first,
             // session-level interceptors last. A session-level response
             // interceptor sees the same response a session-only setup would
