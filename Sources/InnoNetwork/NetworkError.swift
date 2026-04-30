@@ -145,8 +145,6 @@ extension NetworkError: CustomNSError {
             return 1001
         case .invalidRequestConfiguration:
             return 1002
-        case .jsonMapping:
-            return 2001
         case .objectMapping:
             return 2002
         case .statusCode:
@@ -161,8 +159,6 @@ extension NetworkError: CustomNSError {
             return NSURLErrorCancelled
         case .timeout:
             return NSURLErrorTimedOut
-        case .undefined:
-            return 9999
         }
     }
 

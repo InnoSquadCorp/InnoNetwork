@@ -1,6 +1,25 @@
 import Foundation
 
 /// Describes a request/response endpoint executed by `DefaultNetworkClient`.
+///
+/// `APIDefinition` exposes one transport-shape entry point — ``transport`` —
+/// instead of separate properties for content type, request encoder, query
+/// encoder, root key, decoder, and type-erased response decoder. Endpoints
+/// that need a non-default shape build the value through the
+/// ``TransportPolicy`` factories:
+///
+/// ```swift
+/// var transport: TransportPolicy<APIResponse> { .json() }                 // POST
+/// var transport: TransportPolicy<APIResponse> { .query() }                // GET
+/// var transport: TransportPolicy<APIResponse> { .formURLEncoded() }
+/// var transport: TransportPolicy<APIResponse> { .jsonAllowingEmpty() }    // 204-tolerant
+/// var transport: TransportPolicy<APIResponse> { .custom(encoding: ..., decode: ...) }
+/// ```
+///
+/// The default ``transport`` selects ``TransportPolicy/json(encoder:decoder:)``
+/// for body-bearing methods (`POST`, `PUT`, `PATCH`, `DELETE`) and
+/// ``TransportPolicy/query(encoder:rootKey:decoder:)`` for `GET`, so most
+/// hand-written endpoints can omit the property entirely.
 public protocol APIDefinition: Sendable {
     associatedtype Parameter: Encodable & Sendable
     associatedtype APIResponse: Decodable & Sendable
@@ -8,18 +27,6 @@ public protocol APIDefinition: Sendable {
     var parameters: Parameter? { get }
     var method: HTTPMethod { get }
     var path: String { get }
-
-    var contentType: ContentType { get }
-    /// Encoder used to serialize request body parameters as JSON.
-    var requestEncoder: JSONEncoder { get }
-    /// Encoder used to serialize query-string and form-url-encoded parameters.
-    var queryEncoder: URLQueryEncoder { get }
-    /// Optional root key used when wrapping top-level query or form parameters.
-    var queryRootKey: String? { get }
-    /// Decoder used by the default JSON response decoding strategy.
-    var decoder: JSONDecoder { get }
-    /// Type-erased decoder used to transform the HTTP response body into `APIResponse`.
-    var responseDecoder: AnyResponseDecoder<APIResponse> { get }
     var headers: HTTPHeaders { get }
 
     var logger: NetworkLogger { get }
@@ -29,13 +36,13 @@ public protocol APIDefinition: Sendable {
     /// Per-endpoint override for the set of acceptable HTTP status codes.
     ///
     /// When `nil`, the executor falls back to
-    /// ``NetworkConfiguration/acceptableStatusCodes``. Set this on a specific
-    /// endpoint when it should accept (or reject) status codes that the
-    /// session-wide default does not — for example, an endpoint that treats
-    /// `304 Not Modified` as success while every other endpoint treats it as
-    /// failure.
+    /// ``NetworkConfiguration/acceptableStatusCodes``.
     var acceptableStatusCodes: Set<Int>? { get }
 
+    /// Single transport-shape entry point. The default selects
+    /// ``TransportPolicy/json(encoder:decoder:)`` for body-bearing methods and
+    /// ``TransportPolicy/query(encoder:rootKey:decoder:)`` for `GET`.
+    var transport: TransportPolicy<APIResponse> { get }
 }
 
 
@@ -63,15 +70,17 @@ public enum MultipartUploadStrategy: Sendable, Equatable {
 
 
 /// Describes a multipart endpoint executed by `DefaultNetworkClient`.
+///
+/// Multipart endpoints encode their bodies through ``multipartFormData`` and
+/// only need ``transport`` to describe how the response is decoded. The
+/// default ``transport`` is ``TransportPolicy/multipart(decoder:)``, which
+/// configures a JSON response decoder.
 public protocol MultipartAPIDefinition: Sendable {
     associatedtype APIResponse: Decodable & Sendable
 
     var multipartFormData: MultipartFormData { get }
     var method: HTTPMethod { get }
     var path: String { get }
-
-    var decoder: JSONDecoder { get }
-    var responseDecoder: AnyResponseDecoder<APIResponse> { get }
     var headers: HTTPHeaders { get }
 
     var logger: NetworkLogger { get }
@@ -89,61 +98,46 @@ public protocol MultipartAPIDefinition: Sendable {
     /// should opt in to ``MultipartUploadStrategy/streamingThreshold(bytes:)``
     /// or ``MultipartUploadStrategy/alwaysStream``.
     var uploadStrategy: MultipartUploadStrategy { get }
+
+    /// Single transport-shape entry point. The default is
+    /// ``TransportPolicy/multipart(decoder:)``.
+    var transport: TransportPolicy<APIResponse> { get }
 }
 
-extension APIDefinition {
-    var transportPolicy: TransportPolicy<APIResponse> {
-        TransportPolicy(
-            requestEncoding: requestEncodingPolicy,
-            responseDecoding: responseDecodingStrategy,
-            responseDecoder: responseDecoder
-        )
-    }
+// MARK: - APIDefinition default extension
 
-    var requestEncodingPolicy: RequestEncodingPolicy {
+extension APIDefinition where Parameter == EmptyParameter {
+    public var parameters: Parameter? { nil }
+}
+
+public extension APIDefinition {
+    var headers: HTTPHeaders { HTTPHeaders.default }
+
+    var logger: NetworkLogger { DefaultNetworkLogger() }
+
+    var requestInterceptors: [RequestInterceptor] { [] }
+
+    var responseInterceptors: [ResponseInterceptor] { [] }
+
+    var acceptableStatusCodes: Set<Int>? { nil }
+
+    /// Method-aware default transport: `GET` maps to a query-string transport,
+    /// every other method maps to a JSON body transport. Override this
+    /// property when an endpoint needs `formURLEncoded`, `multipart`, an
+    /// empty-tolerant decoder, or a fully custom transport shape.
+    var transport: TransportPolicy<APIResponse> {
         switch method {
         case .get:
-            return .query(queryEncoder, rootKey: queryRootKey)
+            return .query()
         default:
-            switch contentType {
-            case .json:
-                return .json(requestEncoder)
-            case .formUrlEncoded:
-                return .formURLEncoded(queryEncoder, rootKey: queryRootKey)
-            case .multipartFormData:
-                return .none
-            default:
-                return .json(requestEncoder)
-            }
+            return .json()
         }
     }
-
-    var responseDecodingStrategy: ResponseDecodingStrategy<APIResponse> {
-        .json(decoder)
-    }
 }
 
-extension MultipartAPIDefinition {
-    var transportPolicy: TransportPolicy<APIResponse> {
-        TransportPolicy(
-            requestEncoding: requestEncodingPolicy,
-            responseDecoding: responseDecodingStrategy,
-            responseDecoder: responseDecoder
-        )
-    }
-
-    var requestEncodingPolicy: RequestEncodingPolicy { .none }
-
-    var responseDecodingStrategy: ResponseDecodingStrategy<APIResponse> {
-        .json(decoder)
-    }
-}
-
+// MARK: - MultipartAPIDefinition default extension
 
 public extension MultipartAPIDefinition {
-    var decoder: JSONDecoder { makeDefaultResponseDecoder() }
-    var responseDecoder: AnyResponseDecoder<APIResponse> { AnyResponseDecoder(strategy: responseDecodingStrategy) }
-
     var headers: HTTPHeaders {
         HTTPHeaders.default
     }
@@ -157,49 +151,36 @@ public extension MultipartAPIDefinition {
     var acceptableStatusCodes: Set<Int>? { nil }
 
     var uploadStrategy: MultipartUploadStrategy { .inMemory }
+
+    var transport: TransportPolicy<APIResponse> { .multipart() }
 }
 
-extension APIDefinition where Parameter == EmptyParameter {
-    public var parameters: Parameter? { nil }
-}
-
-public extension APIDefinition {
-    var contentType: ContentType { .json }
-
-    var requestEncoder: JSONEncoder { makeDefaultRequestEncoder() }
-
-    var queryEncoder: URLQueryEncoder { URLQueryEncoder() }
-
-    var queryRootKey: String? { nil }
-
-    var decoder: JSONDecoder { makeDefaultResponseDecoder() }
-    var responseDecoder: AnyResponseDecoder<APIResponse> { AnyResponseDecoder(strategy: responseDecodingStrategy) }
-
-    var headers: HTTPHeaders {
-        HTTPHeaders.default
-    }
-
-    var logger: NetworkLogger { DefaultNetworkLogger() }
-
-    var requestInterceptors: [RequestInterceptor] { [] }
-
-    var responseInterceptors: [ResponseInterceptor] { [] }
-
-    var acceptableStatusCodes: Set<Int>? { nil }
-}
-
-extension APIDefinition where APIResponse: HTTPEmptyResponseDecodable {
-    var responseDecodingStrategy: ResponseDecodingStrategy<APIResponse> { .jsonAllowingEmpty(decoder) }
-}
-
-extension MultipartAPIDefinition where APIResponse: HTTPEmptyResponseDecodable {
-    var responseDecodingStrategy: ResponseDecodingStrategy<APIResponse> { .jsonAllowingEmpty(decoder) }
-}
+// MARK: - Empty response specializations
 
 public extension APIDefinition where APIResponse: HTTPEmptyResponseDecodable {
-    var responseDecoder: AnyResponseDecoder<APIResponse> { AnyResponseDecoder(strategy: responseDecodingStrategy) }
+    /// `HTTPEmptyResponseDecodable` outputs are tolerant of HTTP 204 and empty
+    /// bodies by default, so the method-aware default transport routes through
+    /// the empty-capable decoders.
+    var transport: TransportPolicy<APIResponse> {
+        switch method {
+        case .get:
+            return TransportPolicy(
+                requestEncoding: .query(URLQueryEncoder(), rootKey: nil),
+                responseDecoding: .jsonAllowingEmpty(defaultResponseDecoder),
+                responseDecoder: .jsonEmptyCapable(decoder: defaultResponseDecoder)
+            )
+        default:
+            return .jsonAllowingEmpty()
+        }
+    }
 }
 
 public extension MultipartAPIDefinition where APIResponse: HTTPEmptyResponseDecodable {
-    var responseDecoder: AnyResponseDecoder<APIResponse> { AnyResponseDecoder(strategy: responseDecodingStrategy) }
+    var transport: TransportPolicy<APIResponse> {
+        TransportPolicy(
+            requestEncoding: .none,
+            responseDecoding: .jsonAllowingEmpty(defaultResponseDecoder),
+            responseDecoder: .jsonEmptyCapable(decoder: defaultResponseDecoder)
+        )
+    }
 }

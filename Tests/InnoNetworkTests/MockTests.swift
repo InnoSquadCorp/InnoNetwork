@@ -228,11 +228,12 @@ struct FormURLEncodedTests {
             var parameters: LoginParam?
             var method: HTTPMethod { .post }
             var path: String { "/login" }
-            var contentType: ContentType { .formUrlEncoded }
+
+            var transport: TransportPolicy<MockUser> { .formURLEncoded() }
 
             var headers: HTTPHeaders {
                 var defaultHeaders = HTTPHeaders.default
-                defaultHeaders.add(.contentType("\(contentType.rawValue); charset=UTF-8"))
+                defaultHeaders.add(.contentType("\(ContentType.formUrlEncoded.rawValue); charset=UTF-8"))
                 return defaultHeaders
             }
 

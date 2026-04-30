@@ -94,47 +94,36 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
     package var acceptableStatusCodes: Set<Int>? { base.acceptableStatusCodes }
     package var bodyContentType: String? {
         guard base.parameters != nil else { return nil }
-        switch base.requestEncodingPolicy {
-        case .json, .formURLEncoded:
-            return "\(base.contentType.rawValue); charset=UTF-8"
-        case .none, .query:
-            return nil
-        }
+        return base.transport.requestEncoding.contentTypeHeader
     }
 
     package func makePayload() throws -> RequestPayload {
-        if base.contentType == .multipartFormData {
-            throw NetworkError.invalidRequestConfiguration(
-                "Use MultipartAPIDefinition for multipart/form-data requests."
-            )
-        }
         guard let parameters = base.parameters else { return .none }
-        let transportPolicy = base.transportPolicy
+        let transport = base.transport
 
-        switch transportPolicy.requestEncoding {
+        switch transport.requestEncoding {
         case .none:
             return .none
-        case .query:
-            return .queryItems(try encodeQueryItems(parameters))
+        case .query(let encoder, let rootKey):
+            return .queryItems(try encodeQueryItems(parameters, encoder: encoder, rootKey: rootKey))
         case .json(let encoder):
             return .data(try encoder.encode(parameters))
-        case .formURLEncoded:
-            return .data(try encodeForm(parameters))
+        case .formURLEncoded(let encoder, let rootKey):
+            return .data(try encodeForm(parameters, encoder: encoder, rootKey: rootKey))
         }
     }
 
     package func decode(data: Data, response: Response) throws -> Base.APIResponse {
-        try base.transportPolicy.responseDecoder.decode(data: data, response: response)
+        try base.transport.responseDecoder.decode(data: data, response: response)
     }
 
-    private func encodeQueryItems(_ parameters: Base.Parameter) throws -> [URLQueryItem] {
+    private func encodeQueryItems(
+        _ parameters: Base.Parameter,
+        encoder: URLQueryEncoder,
+        rootKey: String?
+    ) throws -> [URLQueryItem] {
         do {
-            switch base.transportPolicy.requestEncoding {
-            case .query(let encoder, let rootKey), .formURLEncoded(let encoder, let rootKey):
-                return try encoder.encode(parameters, rootKey: rootKey)
-            default:
-                return try base.queryEncoder.encode(parameters, rootKey: base.queryRootKey)
-            }
+            return try encoder.encode(parameters, rootKey: rootKey)
         } catch URLQueryEncoder.EncodingError.unsupportedTopLevelValue {
             throw NetworkError.invalidRequestConfiguration(
                 "Top-level scalar or array query parameters require queryRootKey to be set."
@@ -142,16 +131,13 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
         }
     }
 
-    private func encodeForm(_ parameters: Base.Parameter) throws -> Data {
+    private func encodeForm(
+        _ parameters: Base.Parameter,
+        encoder: URLQueryEncoder,
+        rootKey: String?
+    ) throws -> Data {
         do {
-            switch base.transportPolicy.requestEncoding {
-            case .formURLEncoded(let encoder, let rootKey):
-                return try encoder.encodeForm(parameters, rootKey: rootKey)
-            case .query(let encoder, let rootKey):
-                return try encoder.encodeForm(parameters, rootKey: rootKey)
-            default:
-                return try base.queryEncoder.encodeForm(parameters, rootKey: base.queryRootKey)
-            }
+            return try encoder.encodeForm(parameters, rootKey: rootKey)
         } catch URLQueryEncoder.EncodingError.unsupportedTopLevelValue {
             throw NetworkError.invalidRequestConfiguration(
                 "Top-level scalar or array form parameters require queryRootKey to be set."
@@ -195,6 +181,6 @@ package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: S
     }
 
     package func decode(data: Data, response: Response) throws -> Base.APIResponse {
-        try base.transportPolicy.responseDecoder.decode(data: data, response: response)
+        try base.transport.responseDecoder.decode(data: data, response: response)
     }
 }

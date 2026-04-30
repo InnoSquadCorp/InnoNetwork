@@ -38,7 +38,13 @@ struct EndpointBuilderTests {
         #expect(endpoint.method == .get)
         #expect(endpoint.path == "/users/42")
         #expect(endpoint.parameters == nil)
-        #expect(endpoint.contentType == .json)
+        // GET endpoints default to query-string transport, which does not set
+        // a Content-Type header.
+        if case .query = endpoint.transport.requestEncoding {
+            // expected
+        } else {
+            Issue.record("Default GET transport should be .query")
+        }
         #expect(endpoint.acceptableStatusCodes == nil)
     }
 
@@ -92,11 +98,18 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func contentTypeBuilderUpdatesEndpointDefault() {
-        let endpoint = Endpoint.post("/raw")
-            .contentType(.textPlain)
+    func transportBuilderUpdatesEndpointEncodingAndHeader() {
+        let endpoint = Endpoint.post("/login")
+            .transport(.formURLEncoded())
 
-        #expect(endpoint.contentType == .textPlain)
+        if case .formURLEncoded = endpoint.transport.requestEncoding {
+            // expected
+        } else {
+            Issue.record("transport(.formURLEncoded()) should set requestEncoding to .formURLEncoded")
+        }
+        #expect(
+            endpoint.headers.value(for: "Content-Type")?.contains("application/x-www-form-urlencoded") == true
+        )
     }
 
     @Test
@@ -172,7 +185,7 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func contentTypeBuilderIsReflectedInRequestHeader() async throws {
+    func transportBuilderIsReflectedInRequestHeader() async throws {
         struct Login: Encodable, Sendable {
             let username: String
         }
@@ -188,7 +201,7 @@ struct EndpointBuilderTests {
         )
 
         let endpoint = Endpoint.post("/login")
-            .contentType(.formUrlEncoded)
+            .transport(.formURLEncoded())
             .body(Login(username: "test"))
             .decoding(LoginResponse.self)
 

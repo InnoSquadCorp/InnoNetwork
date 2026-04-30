@@ -33,6 +33,20 @@ private func makeShortDateFormatter() -> DateFormatter {
     return formatter
 }
 
+private func makeSnakeCaseJSONEncoder() -> JSONEncoder {
+    let encoder = JSONEncoder()
+    encoder.keyEncodingStrategy = .convertToSnakeCase
+    encoder.dateEncodingStrategy = .formatted(makeShortDateFormatter())
+    return encoder
+}
+
+private func makeSnakeCaseQueryEncoder() -> URLQueryEncoder {
+    URLQueryEncoder(
+        keyEncodingStrategy: URLQueryKeyEncodingStrategy.convertToSnakeCase,
+        dateEncodingStrategy: .formatted(makeShortDateFormatter())
+    )
+}
+
 private struct CustomJSONEncodingRequest: APIDefinition {
     typealias Parameter = EncodingPayload
     typealias APIResponse = EmptyResponse
@@ -42,11 +56,8 @@ private struct CustomJSONEncodingRequest: APIDefinition {
     var method: HTTPMethod { .post }
     var path: String { "/encoding/json" }
 
-    var requestEncoder: JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        encoder.dateEncodingStrategy = .formatted(makeShortDateFormatter())
-        return encoder
+    var transport: TransportPolicy<EmptyResponse> {
+        .json(encoder: makeSnakeCaseJSONEncoder())
     }
 }
 
@@ -59,11 +70,8 @@ private struct CustomQueryEncodingRequest: APIDefinition {
     var method: HTTPMethod { .get }
     var path: String { "/encoding/query" }
 
-    var queryEncoder: URLQueryEncoder {
-        URLQueryEncoder(
-            keyEncodingStrategy: URLQueryKeyEncodingStrategy.convertToSnakeCase,
-            dateEncodingStrategy: .formatted(makeShortDateFormatter())
-        )
+    var transport: TransportPolicy<EmptyResponse> {
+        .query(encoder: makeSnakeCaseQueryEncoder())
     }
 }
 
@@ -75,25 +83,10 @@ private struct CustomFormEncodingRequest: APIDefinition {
 
     var method: HTTPMethod { .post }
     var path: String { "/encoding/form" }
-    var contentType: ContentType { .formUrlEncoded }
 
-    var queryEncoder: URLQueryEncoder {
-        URLQueryEncoder(
-            keyEncodingStrategy: URLQueryKeyEncodingStrategy.convertToSnakeCase,
-            dateEncodingStrategy: .formatted(makeShortDateFormatter())
-        )
+    var transport: TransportPolicy<EmptyResponse> {
+        .formURLEncoded(encoder: makeSnakeCaseQueryEncoder())
     }
-}
-
-private struct MisconfiguredMultipartRequest: APIDefinition {
-    typealias Parameter = EncodingPayload
-    typealias APIResponse = EmptyResponse
-
-    let parameters: EncodingPayload?
-
-    var method: HTTPMethod { .post }
-    var path: String { "/encoding/misconfigured-multipart" }
-    var contentType: ContentType { .multipartFormData }
 }
 
 private struct TopLevelArrayQueryRequest: APIDefinition {
@@ -104,7 +97,10 @@ private struct TopLevelArrayQueryRequest: APIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/encoding/array-query" }
-    var queryRootKey: String? { "tags" }
+
+    var transport: TransportPolicy<EmptyResponse> {
+        .query(rootKey: "tags")
+    }
 }
 
 private struct MissingTopLevelArrayQueryRootKeyRequest: APIDefinition {
@@ -125,8 +121,10 @@ private struct TopLevelScalarFormRequest: APIDefinition {
 
     var method: HTTPMethod { .post }
     var path: String { "/encoding/scalar-form" }
-    var contentType: ContentType { .formUrlEncoded }
-    var queryRootKey: String? { "query" }
+
+    var transport: TransportPolicy<EmptyResponse> {
+        .formURLEncoded(rootKey: "query")
+    }
 }
 
 private struct MissingTopLevelScalarFormRootKeyRequest: APIDefinition {
@@ -137,7 +135,10 @@ private struct MissingTopLevelScalarFormRootKeyRequest: APIDefinition {
 
     var method: HTTPMethod { .post }
     var path: String { "/encoding/scalar-form" }
-    var contentType: ContentType { .formUrlEncoded }
+
+    var transport: TransportPolicy<EmptyResponse> {
+        .formURLEncoded()
+    }
 }
 
 private struct DictionaryQueryRequest: APIDefinition {
@@ -219,28 +220,6 @@ struct APIDefinitionEncodingTests {
         let bodyString = try #require(String(data: body, encoding: .utf8))
         #expect(bodyString.contains("user_name=Alice"))
         #expect(bodyString.contains("created_at=2024-12-17"))
-    }
-
-    @Test("Multipart content type on APIDefinition throws invalid request configuration")
-    func multipartContentTypeOnAPIDefinitionThrowsInvalidRequestConfiguration() async {
-        let mockSession = MockURLSession()
-        let client = DefaultNetworkClient(configuration: configuration, session: mockSession)
-
-        do {
-            let _: EmptyResponse = try await client.request(
-                MisconfiguredMultipartRequest(parameters: payload)
-            )
-            Issue.record("Expected invalidRequestConfiguration for multipart APIDefinition")
-        } catch let error as NetworkError {
-            guard case .invalidRequestConfiguration(let message) = error else {
-                Issue.record("Expected invalidRequestConfiguration, got \(error)")
-                return
-            }
-            #expect(message.contains("MultipartAPIDefinition"))
-            #expect(mockSession.capturedRequest == nil)
-        } catch {
-            Issue.record("Expected NetworkError, got \(error)")
-        }
     }
 
     @Test("Empty responses use protocol-based factory without force casts")

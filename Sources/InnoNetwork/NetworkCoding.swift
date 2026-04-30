@@ -9,6 +9,20 @@ import Foundation
 /// configuration.
 package let defaultDateFormatter: DateFormatter = makeDefaultDateFormatter()
 
+/// Canonical default `JSONEncoder` for InnoNetwork request bodies. Used as the
+/// implicit default when a ``TransportPolicy`` factory does not receive an
+/// explicit encoder. **Do not mutate this instance** — create a fresh
+/// `JSONEncoder` if you need different configuration; the cached instance is
+/// shared across the package.
+public let defaultRequestEncoder: JSONEncoder = makeDefaultRequestEncoder()
+
+/// Canonical default `JSONDecoder` for InnoNetwork response bodies. Used as
+/// the implicit default when a ``TransportPolicy`` factory does not receive
+/// an explicit decoder. **Do not mutate this instance** — create a fresh
+/// `JSONDecoder` if you need different configuration; the cached instance is
+/// shared across the package.
+public let defaultResponseDecoder: JSONDecoder = makeDefaultResponseDecoder()
+
 package func makeDefaultDateFormatter() -> DateFormatter {
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ"
