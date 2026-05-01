@@ -1,15 +1,15 @@
 # Observability exporters
 
-Bridge ``NetworkObservability`` events into vendor SDKs (Sentry,
+Bridge ``NetworkEventObserving`` events into vendor SDKs (Sentry,
 OpenTelemetry, Pulse, Datadog) through external adapter packages
 without coupling the core library to any specific telemetry vendor.
 
 ## Why adapters live outside this package
 
 InnoNetwork's observability surface is intentionally vendor-neutral.
-``NetworkObservability`` exposes structured events (request lifecycle,
-retry decisions, cache outcomes, refresh cycles) as a closure-based
-hook. A vendor SDK adapter is glue code: it forwards those events to
+``NetworkEvent`` exposes structured request lifecycle events, and
+``NetworkConfiguration/eventObservers`` attaches observers to the
+client. A vendor SDK adapter is glue code: it forwards those events to
 the vendor's tracer/span/breadcrumb API in the format the vendor
 expects.
 
@@ -22,82 +22,97 @@ ship at the cadence of its underlying vendor SDK.
 ## Adapter shape
 
 A typical adapter is a small product that depends on InnoNetwork plus
-the vendor SDK and exposes a single factory:
+the vendor SDK and exposes one or more observer types:
 
 ```swift
 import InnoNetwork
 import Sentry
 
-public struct SentryNetworkObservability {
-    public static func make() -> NetworkObservability {
-        NetworkObservability(
-            onEvent: { event in
-                switch event {
-                case .requestStarted(let context):
-                    SentrySDK.startTransaction(
-                        name: context.path,
-                        operation: "http.client"
-                    )
-                case .requestCompleted(let context, let result):
-                    // ...
-                    break
-                default:
-                    break
-                }
-            }
-        )
+public struct SentryNetworkEventObserver: NetworkEventObserving {
+    public init() {}
+
+    public func handle(_ event: NetworkEvent) async {
+        switch event {
+        case .requestStart(let requestID, let method, let url, let retryIndex):
+            SentrySDK.startTransaction(
+                name: "\(method) \(url)",
+                operation: "http.client"
+            )
+            _ = (requestID, retryIndex)
+        case .requestFinished(let requestID, let statusCode, let byteCount):
+            SentrySDK.addBreadcrumb(Breadcrumb(level: .info, category: "http.client"))
+            _ = (requestID, statusCode, byteCount)
+        case .requestFailed(let requestID, let errorCode, let message):
+            SentrySDK.capture(message: "request_failed \(errorCode): \(message)")
+            _ = requestID
+        default:
+            break
+        }
     }
 }
 ```
 
-The factory returns a ``NetworkObservability`` value the caller
-plugs into ``NetworkConfiguration``. The adapter owns:
+The caller plugs the observer into ``NetworkConfiguration``:
+
+```swift
+let configuration = NetworkConfiguration.advanced(baseURL: apiBaseURL) { builder in
+    builder.eventObservers.append(SentryNetworkEventObserver())
+}
+```
+
+The adapter owns:
 
 - Event-to-vendor type mapping (transactions, spans, breadcrumbs).
-- Sampling rules — InnoNetwork emits every event; the adapter decides
+- Sampling rules - InnoNetwork emits every event; the adapter decides
   what to forward.
 - Vendor-specific lifecycle (transaction commit, breadcrumb buffer
-  flush) tied to the configuration's request boundaries.
+  flush) tied to request boundaries.
+
+Use ``NetworkMetricsReporting`` alongside observers when a vendor needs
+raw `URLSessionTaskMetrics`; event observers are for logical lifecycle
+events, while metrics reporters receive Foundation's transport metrics.
 
 ## Example sketches
 
 ### OpenTelemetry
 
-Map each ``NetworkObservability/Event/requestStarted`` to a span,
-decorate it with `http.method` / `http.url` / `http.status_code`
-attributes from the matching ``NetworkObservability/Event/requestCompleted``,
-and end the span on success or failure. Retry attempts become child
-spans of the original request span so the trace tree shows attempt
-count without losing the parent.
+Map each `.requestStart` event to a span, decorate it with
+`http.request.method` and `url.full`, then attach
+`http.response.status_code` and `network.response.body.size` from the
+matching `.requestFinished` or `.responseReceived` event. Retry
+attempts can be represented as child spans by keying in-flight spans by
+`requestID`.
 
 ### Pulse
 
 Pulse already speaks a structured logging API. The adapter forwards
-`requestStarted` / `requestCompleted` directly to a Pulse network
-logger and lets the Pulse UI render the rest. Body capture should be
-gated by a sampling closure on the adapter — InnoNetwork does not
-buffer bodies for observability by default.
+`.requestStart`, `.responseReceived`, `.requestFinished`, and
+`.requestFailed` to a Pulse network logger and lets the Pulse UI render
+the rest. Body capture should be gated by a sampling closure on the
+adapter - InnoNetwork does not buffer bodies for observability by
+default.
 
 ### Datadog
 
 Datadog RUM and APM both have HTTP request models. An adapter
 typically forwards to RUM's resource API for foreground traffic and
-to the tracer for backend-style flows. Retry attempts and refresh
-cycles map cleanly to RUM's `addError` and `addAction` surfaces.
+to the tracer for backend-style flows. Retry decisions from
+`.retryScheduled` and refresh-token failures from `.requestFailed` map
+cleanly to RUM's error and action surfaces.
 
 ### Sentry
 
-Wrap each request in an `SentryTransaction` keyed by the
-``APIDefinition`` path. Surface ``NetworkError`` cases as captured
-errors with the canonical category as a tag so Sentry's grouping
-respects InnoNetwork's classification. Refresh-token cycles
-should be breadcrumbs rather than transactions — they're frequent and
-not interesting on their own unless they fail.
+Wrap each request in a transaction keyed by the observed method and URL
+or by an endpoint label supplied by the adapter's caller. Surface
+``NetworkError`` cases as captured errors with the canonical category
+as a tag so Sentry's grouping respects InnoNetwork's classification.
+Refresh-token cycles should be breadcrumbs rather than transactions -
+they're frequent and not interesting on their own unless they fail.
 
 ## Versioning and compatibility
 
 Adapter packages should pin their InnoNetwork dependency to a minor
 range (`from: "4.0.0"`) and bump on every observability surface change.
-The 4.x line guarantees additive changes to the event enum; an
-adapter that uses a `default:` case in its event switch will continue
-to compile against newer 4.x releases without modification.
+The 4.x line aims to keep changes additive; adapters should include a
+`default:` case in event switches so new ``NetworkEvent`` cases do not
+break compilation before the adapter has mapped them.

@@ -69,8 +69,8 @@ struct DomainSentinelGuard: DecodingInterceptor {
     ) async throws -> APIResponse where APIResponse: Sendable {
         if let sentinel = value as? DomainErrorCarrying, sentinel.errorCode != 0 {
             throw NetworkError.objectMapping(
-                response.data,
-                DomainSentinelError(code: sentinel.errorCode)
+                SendableUnderlyingError(DomainSentinelError(code: sentinel.errorCode)),
+                response
             )
         }
         return value
@@ -78,6 +78,7 @@ struct DomainSentinelGuard: DecodingInterceptor {
 }
 
 protocol DomainErrorCarrying { var errorCode: Int { get } }
+struct DomainSentinelError: Error, Sendable { let code: Int }
 ```
 
 The hook signature requires the returned value to match the input type, so

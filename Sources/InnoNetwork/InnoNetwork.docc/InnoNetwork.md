@@ -30,7 +30,9 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``NetworkConfiguration``
 - ``TrustPolicy``
 - <doc:TrustPolicies>
-- ``NetworkObservability``
+- ``NetworkEvent``
+- ``NetworkEventObserving``
+- ``NetworkMetricsReporting``
 
 ### Request and Response Behavior
 

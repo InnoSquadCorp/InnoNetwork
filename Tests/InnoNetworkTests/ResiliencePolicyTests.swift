@@ -55,6 +55,29 @@ private struct InterceptedResilienceGetRequest: APIDefinition {
     var requestInterceptors: [RequestInterceptor] { interceptors }
 }
 
+private actor ResponseRecorder {
+    private var responses: [Response] = []
+
+    func record(_ response: Response) {
+        responses.append(response)
+    }
+
+    func response(at index: Int = 0) -> Response? {
+        guard responses.indices.contains(index) else { return nil }
+        return responses[index]
+    }
+}
+
+private struct RecordingResponseInterceptor: ResponseInterceptor {
+    let recorder: ResponseRecorder
+
+    func adapt(_ urlResponse: Response, request: URLRequest) async throws -> Response {
+        _ = request
+        await recorder.record(urlResponse)
+        return urlResponse
+    }
+}
+
 
 private struct ResiliencePostRequest: APIDefinition {
     struct Body: Encodable, Sendable {
@@ -304,15 +327,30 @@ private func resilienceUserCacheKey() -> ResponseCacheKey {
 }
 
 
+private func responseHeader(_ response: Response, named name: String) -> String? {
+    guard
+        let pair = response.response?.allHeaderFields.first(where: { pair in
+            guard let key = pair.key as? String else { return false }
+            return key.caseInsensitiveCompare(name) == .orderedSame
+        })
+    else {
+        return nil
+    }
+    return pair.value as? String ?? String(describing: pair.value)
+}
+
+
 private func makeLocalizedCacheConfiguration(
     responseCachePolicy: ResponseCachePolicy,
-    responseCache: any ResponseCache
+    responseCache: any ResponseCache,
+    responseInterceptors: [ResponseInterceptor] = []
 ) -> NetworkConfiguration {
     NetworkConfiguration(
         baseURL: URL(string: "https://api.example.com")!,
         requestInterceptors: [
             HeaderSettingInterceptor(field: "Accept-Language", value: cacheFixtureAcceptLanguage)
         ],
+        responseInterceptors: responseInterceptors,
         responseCachePolicy: responseCachePolicy,
         responseCache: responseCache
     )
@@ -772,6 +810,7 @@ struct ResiliencePolicyTests {
     @Test("ETag 304 response uses cached body")
     func etagNotModifiedUsesCachedBody() async throws {
         let cache = InMemoryResponseCache()
+        let recorder = ResponseRecorder()
         let key = resilienceUserCacheKey()
         let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
         let storedAt = Date(timeIntervalSinceNow: -60)
@@ -789,7 +828,8 @@ struct ResiliencePolicyTests {
         let client = DefaultNetworkClient(
             configuration: makeLocalizedCacheConfiguration(
                 responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
-                responseCache: cache
+                responseCache: cache,
+                responseInterceptors: [RecordingResponseInterceptor(recorder: recorder)]
             ),
             session: session
         )
@@ -798,6 +838,10 @@ struct ResiliencePolicyTests {
 
         #expect(user == ResilienceUser(id: 1, name: "cached"))
         #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
+        let observedResponse = try #require(await recorder.response())
+        #expect(observedResponse.statusCode == 200)
+        #expect(responseHeader(observedResponse, named: "ETag") == "v2")
+        #expect(responseHeader(observedResponse, named: "Cache-Control") == "max-age=60")
         let refreshed = try #require(await cache.get(key))
         #expect(refreshed.etag == "v2")
         #expect(
@@ -809,6 +853,7 @@ struct ResiliencePolicyTests {
     @Test("304 carrying a different Vary header preserves the stored vary snapshot")
     func etagNotModifiedWithChangedVaryPreservesSnapshot() async throws {
         let cache = InMemoryResponseCache()
+        let recorder = ResponseRecorder()
         let key = resilienceUserCacheKey()
         let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
         let storedAt = Date(timeIntervalSinceNow: -60)
@@ -830,13 +875,19 @@ struct ResiliencePolicyTests {
         let client = DefaultNetworkClient(
             configuration: makeLocalizedCacheConfiguration(
                 responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
-                responseCache: cache
+                responseCache: cache,
+                responseInterceptors: [RecordingResponseInterceptor(recorder: recorder)]
             ),
             session: session
         )
 
-        _ = try await client.request(ResilienceGetRequest())
+        let user = try await client.request(ResilienceGetRequest())
 
+        #expect(user == ResilienceUser(id: 1, name: "cached"))
+        let observedResponse = try #require(await recorder.response())
+        #expect(observedResponse.statusCode == 200)
+        #expect(responseHeader(observedResponse, named: "Vary") == "Accept-Language")
+        #expect(responseHeader(observedResponse, named: "ETag") == "v1")
         let refreshed = try #require(await cache.get(key))
         #expect(refreshed.varyHeaders == ["accept-language": cacheFixtureAcceptLanguage])
         #expect(

@@ -12,7 +12,7 @@ without losing the single-flight refresh guarantee.
 | `RequestInterceptor.adapt(_:for:_:completion:)` | ``RequestInterceptor/adapt(_:)``                  |
 | `RequestInterceptor.retry(_:for:dueTo:completion:)` | ``RetryPolicy`` + ``RefreshTokenPolicy`` (split)  |
 | `RequestModifier`                        | per-``APIDefinition`` ``RequestInterceptor``             |
-| `EventMonitor`                           | ``NetworkObservability``                                 |
+| `EventMonitor`                           | ``NetworkEventObserving`` via ``NetworkConfiguration/eventObservers`` |
 | `Authenticator` / `AuthenticationInterceptor` | ``RefreshTokenPolicy``                              |
 | `ResponseSerializer`                     | ``ResponseInterceptor`` + decoder configuration          |
 | `RetryResult.retryWithDelay(_:)`         | return value of ``RetryPolicy/shouldRetry(error:retryIndex:request:response:)`` |
@@ -154,9 +154,9 @@ public protocol RetryPolicy: Sendable {
     func shouldRetry(
         error: NetworkError,
         retryIndex: Int,
-        request: URLRequest,
+        request: URLRequest?,
         response: HTTPURLResponse?
-    ) async -> RetryDecision
+    ) -> RetryDecision
 }
 ```
 

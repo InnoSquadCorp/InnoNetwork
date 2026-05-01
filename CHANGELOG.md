@@ -401,8 +401,9 @@ summary.
   invalidate stale callbacks across termination.
 - `ObservabilityExporters` DocC article (P3) describes how to write a
   vendor adapter (Sentry, OpenTelemetry, Pulse, Datadog) over
-  ``NetworkObservability`` as an external package — keeping the core
-  module vendor-neutral while documenting the adapter shape and
+  ``NetworkEventObserving`` / ``NetworkEvent`` as an external package
+  attached through ``NetworkConfiguration/eventObservers`` — keeping the
+  core module vendor-neutral while documenting the adapter shape and
   versioning expectations.
 - `OpenAPIGeneratorRecipe` DocC article (P3) walks through the
   workflow side of using `swift-openapi-generator` next to

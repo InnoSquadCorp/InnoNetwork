@@ -1,6 +1,12 @@
 import Foundation
 import OSLog
 
+private struct NotModifiedSubstitution {
+    let mergedResponse: Response
+    let preservedResponse: Response
+    let cached: CachedResponse
+}
+
 package struct RequestExecutor {
     private let session: URLSessionProtocol
     private let eventHub: NetworkEventHub
@@ -182,11 +188,11 @@ package struct RequestExecutor {
                 request: request,
                 configuration: configuration
             ) {
-                try enforceResponseBodyLimit(substitution.response, configuration: configuration)
                 if notModifiedRevisesVary(
                     cached: substitution.cached,
                     notModifiedHeaders: networkResponse.response?.allHeaderFields
                 ) {
+                    try enforceResponseBodyLimit(substitution.preservedResponse, configuration: configuration)
                     // The 304 advertises a different Vary dimension than the
                     // stored entry was keyed on. Rewriting with the new
                     // snapshot would silently move the entry to a different
@@ -199,15 +205,17 @@ package struct RequestExecutor {
                         cacheKey: cacheKey,
                         configuration: configuration
                     )
+                    return substitution.preservedResponse
                 } else {
+                    try enforceResponseBodyLimit(substitution.mergedResponse, configuration: configuration)
                     await storeCacheIfNeeded(
-                        substitution.response,
+                        substitution.mergedResponse,
                         cacheKey: cacheKey,
                         request: request,
                         configuration: configuration
                     )
+                    return substitution.mergedResponse
                 }
-                return substitution.response
             }
 
             if let refreshCoordinator = runtime.refreshCoordinator,
@@ -469,19 +477,26 @@ package struct RequestExecutor {
                         configuration: configuration
                     ) {
                         try Task.checkCancellation()
-                        try enforceResponseBodyLimit(substitution.response, configuration: configuration)
                         if notModifiedRevisesVary(
                             cached: substitution.cached,
                             notModifiedHeaders: result.response.allHeaderFields
                         ) {
+                            try enforceResponseBodyLimit(
+                                substitution.preservedResponse,
+                                configuration: configuration
+                            )
                             await refreshCachedFreshness(
                                 cached: substitution.cached,
                                 cacheKey: cacheKey,
                                 configuration: configuration
                             )
                         } else {
+                            try enforceResponseBodyLimit(
+                                substitution.mergedResponse,
+                                configuration: configuration
+                            )
                             await storeCacheIfNeeded(
-                                substitution.response,
+                                substitution.mergedResponse,
                                 cacheKey: cacheKey,
                                 request: revalidationRequest,
                                 configuration: configuration
@@ -558,13 +573,14 @@ package struct RequestExecutor {
         cacheKey: ResponseCacheKey?,
         request: URLRequest,
         configuration: NetworkConfiguration
-    ) async -> (response: Response, cached: CachedResponse)? {
+    ) async -> NotModifiedSubstitution? {
         guard response.statusCode == 304,
             configuration.responseCachePolicy.allowsConditionalRevalidation,
             let cacheKey,
             let cache = configuration.responseCache,
             let cached = await cachedRespectingVary(cache, key: cacheKey, request: request),
             let url = request.url,
+            let preservedHTTPResponse = cached.response(for: request),
             let httpResponse = HTTPURLResponse(
                 url: url,
                 statusCode: cached.statusCode,
@@ -574,12 +590,18 @@ package struct RequestExecutor {
         else {
             return nil
         }
-        return (
-            response: Response(
+        return NotModifiedSubstitution(
+            mergedResponse: Response(
                 statusCode: cached.statusCode,
                 data: cached.data,
                 request: request,
                 response: httpResponse
+            ),
+            preservedResponse: Response(
+                statusCode: cached.statusCode,
+                data: cached.data,
+                request: request,
+                response: preservedHTTPResponse
             ),
             cached: cached
         )

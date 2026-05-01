@@ -221,7 +221,15 @@ struct ResponseCacheVaryTests {
             data: Data(),
             statusCode: 200,
             headers: headers,
-            varyHeaders: varyHeader.map { ["\($0.lowercased())": "stored"] }
+            varyHeaders: varyHeader.map { header in
+                Dictionary(
+                    uniqueKeysWithValues: header.split(separator: ",").compactMap { rawName in
+                        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        guard !name.isEmpty else { return nil }
+                        return (name, "stored" as String?)
+                    }
+                )
+            }
         )
     }
 
