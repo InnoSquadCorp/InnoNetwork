@@ -17,7 +17,6 @@ required_meta_docs=(
   "$repo_root/docs/RELEASE_POLICY.md"
   "$repo_root/docs/MIGRATION_POLICY.md"
   "$repo_root/docs/releases/4.0.0.md"
-  "$repo_root/docs/releases/4.1.0.md"
 )
 required_feature_docs=(
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryPolicy.md"

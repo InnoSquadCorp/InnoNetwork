@@ -173,6 +173,93 @@ struct NetworkErrorTimeoutTests {
         }
     }
 
+    // MARK: - mapTransportError contract lock (P1.11)
+    //
+    // Locks the documented URLError → NetworkError surface so a future
+    // edit cannot silently collapse reachability/DNS failures into
+    // `.timeout` (which would change retry policies and user-facing copy).
+
+    @Test("mapTransportError: URLError.timedOut → .timeout(.requestTimeout)")
+    func mapTimedOutContract() {
+        let error = NetworkError.mapTransportError(URLError(.timedOut))
+        guard case .timeout(.requestTimeout, let underlying) = error else {
+            Issue.record("Expected .timeout(.requestTimeout), got \(error)")
+            return
+        }
+        #expect(underlying?.code == URLError.Code.timedOut.rawValue)
+        #expect(underlying?.domain == NSURLErrorDomain)
+    }
+
+    @Test("mapTransportError: URLError.cannotConnectToHost → .timeout(.connectionTimeout)")
+    func mapCannotConnectToHostContract() {
+        let error = NetworkError.mapTransportError(URLError(.cannotConnectToHost))
+        guard case .timeout(.connectionTimeout, let underlying) = error else {
+            Issue.record("Expected .timeout(.connectionTimeout), got \(error)")
+            return
+        }
+        #expect(underlying?.code == URLError.Code.cannotConnectToHost.rawValue)
+    }
+
+    @Test("mapTransportError: URLError.cannotFindHost → .underlying (DNS, not a timeout)")
+    func mapCannotFindHostContract() {
+        let error = NetworkError.mapTransportError(URLError(.cannotFindHost))
+        guard case .underlying(let underlying, nil) = error else {
+            Issue.record("Expected .underlying for cannotFindHost, got \(error)")
+            return
+        }
+        #expect(underlying.code == URLError.Code.cannotFindHost.rawValue)
+    }
+
+    @Test("mapTransportError: URLError.dnsLookupFailed → .underlying (DNS, not a timeout)")
+    func mapDNSLookupFailedContract() {
+        let error = NetworkError.mapTransportError(URLError(.dnsLookupFailed))
+        guard case .underlying(let underlying, nil) = error else {
+            Issue.record("Expected .underlying for dnsLookupFailed, got \(error)")
+            return
+        }
+        #expect(underlying.code == URLError.Code.dnsLookupFailed.rawValue)
+    }
+
+    @Test("mapTransportError: URLError.networkConnectionLost → .underlying (mid-flight drop, not a timeout)")
+    func mapNetworkConnectionLostContract() {
+        let error = NetworkError.mapTransportError(URLError(.networkConnectionLost))
+        guard case .underlying(let underlying, nil) = error else {
+            Issue.record("Expected .underlying for networkConnectionLost, got \(error)")
+            return
+        }
+        #expect(underlying.code == URLError.Code.networkConnectionLost.rawValue)
+    }
+
+    @Test("mapTransportError: URLError.notConnectedToInternet → .underlying (reachability, not a timeout)")
+    func mapNotConnectedContract() {
+        let error = NetworkError.mapTransportError(URLError(.notConnectedToInternet))
+        guard case .underlying(let underlying, nil) = error else {
+            Issue.record("Expected .underlying for notConnectedToInternet, got \(error)")
+            return
+        }
+        #expect(underlying.code == URLError.Code.notConnectedToInternet.rawValue)
+    }
+
+    @Test("mapTransportError: URLError.cancelled → .cancelled (collapses with CancellationError)")
+    func mapCancelledContract() {
+        let error = NetworkError.mapTransportError(URLError(.cancelled))
+        guard case .cancelled = error else {
+            Issue.record("Expected .cancelled for URLError.cancelled, got \(error)")
+            return
+        }
+    }
+
+    @Test("mapTransportError: existing NetworkError flows through unchanged")
+    func mapPassesThroughExistingNetworkError() {
+        let original = NetworkError.invalidRequestConfiguration("seed")
+        let mapped = NetworkError.mapTransportError(original)
+        guard case .invalidRequestConfiguration(let message) = mapped else {
+            Issue.record("Expected pass-through, got \(mapped)")
+            return
+        }
+        #expect(message == "seed")
+    }
+
     @Test("URLError.notConnectedToInternet stays underlying (reachability is not a timeout)")
     func urlErrorNotConnectedStaysUnderlying() async throws {
         let mockSession = MockURLSession()

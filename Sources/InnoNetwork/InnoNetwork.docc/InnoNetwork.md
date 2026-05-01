@@ -30,7 +30,9 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``NetworkConfiguration``
 - ``TrustPolicy``
 - <doc:TrustPolicies>
-- ``NetworkObservability``
+- ``NetworkEvent``
+- ``NetworkEventObserving``
+- ``NetworkMetricsReporting``
 
 ### Request and Response Behavior
 
@@ -39,8 +41,12 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``NetworkError``
 - ``MultipartResponseDecoder``
 - ``MultipartPart``
+- ``DecodingInterceptor``
+- <doc:DecodingInterceptorCookbook>
 - <doc:ErrorClassification>
 - <doc:OpenAPIGeneratorAdapter>
+- <doc:OpenAPIGeneratorRecipe>
+- <doc:ObservabilityExporters>
 - <doc:UsingMacros>
 
 ### Resilience
@@ -57,6 +63,7 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - <doc:RetryDecisions>
 - <doc:AuthRefresh>
 - <doc:CachingStrategies>
+- <doc:MigrationFromAlamofire>
 
 ### Event Pipeline
 

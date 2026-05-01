@@ -54,6 +54,16 @@ package actor RefreshTokenCoordinator {
         self.policy = policy
     }
 
+    /// Whether a refresh task is currently in flight.
+    ///
+    /// Reads are point-in-time and not synchronized with subsequent
+    /// dedup-key construction; callers must treat the value as a
+    /// best-effort hint. The intended consumer is
+    /// ``RequestExecutor`` segregating coalescer lanes during a refresh
+    /// window so a stale 401 result cannot leak across callers when
+    /// `Authorization` is excluded from the dedup key.
+    package var isRefreshInProgress: Bool { inFlight != nil }
+
     package func applyCurrentToken(to request: URLRequest) async throws -> URLRequest {
         guard let token = try await policy.currentTokenProvider() else { return request }
         return policy.tokenApplicator(token, request)

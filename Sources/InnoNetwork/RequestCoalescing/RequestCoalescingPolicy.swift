@@ -58,8 +58,14 @@ package struct RequestDedupKey: Hashable, Sendable {
     let url: String
     let headers: [String]
     let body: Data?
+    /// Optional lane discriminator that prevents callers from joining an
+    /// in-flight transport whose result might be invalidated mid-refresh.
+    /// Each caller observed during ``RefreshTokenCoordinator/isRefreshInProgress``
+    /// receives a unique lane so stale 401 results cannot leak through the
+    /// coalescer when `Authorization` is excluded from the key.
+    let refreshLane: UUID?
 
-    init?(request: URLRequest, policy: RequestCoalescingPolicy) {
+    init?(request: URLRequest, policy: RequestCoalescingPolicy, refreshLane: UUID? = nil) {
         guard policy.isEnabled else { return nil }
         let method = request.httpMethod?.uppercased() ?? "GET"
         guard policy.methods.contains(method) else { return nil }
@@ -75,6 +81,7 @@ package struct RequestDedupKey: Hashable, Sendable {
         self.url = url
         self.headers = headers
         self.body = request.httpBody
+        self.refreshLane = refreshLane
     }
 }
 

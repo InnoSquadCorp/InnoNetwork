@@ -329,6 +329,47 @@ package func evaluateVary(
     return .vary(snapshot)
 }
 
+/// Returns `true` when the `Vary` header on a 304 Not Modified response
+/// differs from the one that was active when `cached` was stored.
+///
+/// A 304 confirms that the stored representation is still fresh, but its
+/// own `Vary` header does *not* automatically describe the stored
+/// representation — it describes the variant the origin would have
+/// served on a full 200. When those differ, re-keying the stored entry
+/// against the new `Vary` snapshot would silently move it to a different
+/// cache dimension, so the executor must keep the existing snapshot and
+/// only refresh freshness instead of rewriting the entry.
+///
+/// Comparison is case-insensitive on header *names* only; whitespace
+/// around tokens is trimmed. A 304 that does not carry a `Vary` header
+/// is treated as "no revision" — the caller preserves the cached
+/// snapshot.
+package func notModifiedRevisesVary(
+    cached: CachedResponse,
+    notModifiedHeaders: [AnyHashable: Any]?
+) -> Bool {
+    guard let notModifiedHeaders else { return false }
+    let newVaryRaw =
+        notModifiedHeaders.first {
+            ($0.key as? String).map { $0.caseInsensitiveCompare("Vary") == .orderedSame } ?? false
+        }?.value as? String
+    guard let newVaryRaw, !newVaryRaw.isEmpty else { return false }
+
+    let oldVaryRaw =
+        cached.headers.first { $0.key.caseInsensitiveCompare("Vary") == .orderedSame }?.value
+
+    func normalizedTokens(_ raw: String?) -> Set<String> {
+        guard let raw else { return [] }
+        return Set(
+            raw
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty }
+        )
+    }
+    return normalizedTokens(newVaryRaw) != normalizedTokens(oldVaryRaw)
+}
+
 package func cachedResponseMatchesVary(
     _ cached: CachedResponse,
     request: URLRequest

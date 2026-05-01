@@ -30,6 +30,7 @@ Download task events flow through the shared event hub. Tune buffering, overflow
 
 - <doc:BackgroundDownloads>
 - <doc:Persistence>
+- <doc:SharedManagerMigration>
 - ``DownloadManager``
 - ``DownloadConfiguration``
 - ``DownloadTask``

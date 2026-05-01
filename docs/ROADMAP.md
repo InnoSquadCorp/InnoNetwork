@@ -2,11 +2,11 @@
 
 ## Current Review Backlog
 
-- See [ImprovementBacklog.md](ImprovementBacklog.md) for the 2026-05-01
-  review outcomes. The correctness items from that pass are handled in the
-  current follow-up PR; the remaining roadmap work is persistent-cache product
-  design, WebSocket protocol-surface expansion, and longer-term operational
-  automation.
+- See [reviews/4.x-comprehensive-evaluation.md](reviews/4.x-comprehensive-evaluation.md)
+  §1.4 / §1.5 for the 2026-05-01 review outcomes. The correctness items from
+  that pass are handled across PR #35 / PR #36 / PR #37; the remaining roadmap
+  work is persistent-cache product design, WebSocket protocol-surface
+  expansion, and longer-term operational automation.
 
 ## Deferred Operational Follow-ups
 

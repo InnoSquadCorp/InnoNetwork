@@ -77,6 +77,15 @@ The response `Vary` header is processed automatically. `Vary: *` responses are
 not stored, while concrete `Vary` headers capture a snapshot of the named request
 headers and require those values to match on later lookup.
 
+A `304 Not Modified` reply confirms freshness of the stored representation, but
+its own `Vary` header describes the variant the origin would have served on a
+full `200`. When the 304 carries a `Vary` value that differs from the snapshot
+captured when the entry was stored, InnoNetwork preserves the existing entry
+verbatim and only refreshes its `storedAt` timestamp instead of rewriting the
+entry under the new vary dimension. This keeps the stored representation
+addressable through its original vary signature; later 200 responses with the
+revised `Vary` are stored as new entries through the normal write path.
+
 Request coalescing can be enabled separately with ``RequestCoalescingPolicy``:
 
 ```swift

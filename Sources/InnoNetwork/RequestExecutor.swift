@@ -1,6 +1,12 @@
 import Foundation
 import OSLog
 
+private struct NotModifiedSubstitution {
+    let mergedResponse: Response
+    let preservedResponse: Response
+    let cached: CachedResponse
+}
+
 package struct RequestExecutor {
     private let session: URLSessionProtocol
     private let eventHub: NetworkEventHub
@@ -176,15 +182,40 @@ package struct RequestExecutor {
                 requestID: requestID
             )
 
-            if let converted = await convertNotModifiedIfNeeded(
+            if let substitution = await convertNotModifiedIfNeeded(
                 networkResponse,
                 cacheKey: cacheKey,
                 request: request,
                 configuration: configuration
             ) {
-                try enforceResponseBodyLimit(converted, configuration: configuration)
-                await storeCacheIfNeeded(converted, cacheKey: cacheKey, request: request, configuration: configuration)
-                return converted
+                if notModifiedRevisesVary(
+                    cached: substitution.cached,
+                    notModifiedHeaders: networkResponse.response?.allHeaderFields
+                ) {
+                    try enforceResponseBodyLimit(substitution.preservedResponse, configuration: configuration)
+                    // The 304 advertises a different Vary dimension than the
+                    // stored entry was keyed on. Rewriting with the new
+                    // snapshot would silently move the entry to a different
+                    // dimension; refresh `storedAt` instead so the freshness
+                    // window reflects the successful revalidation while the
+                    // stored representation remains addressable through its
+                    // original Vary signature.
+                    await refreshCachedFreshness(
+                        cached: substitution.cached,
+                        cacheKey: cacheKey,
+                        configuration: configuration
+                    )
+                    return substitution.preservedResponse
+                } else {
+                    try enforceResponseBodyLimit(substitution.mergedResponse, configuration: configuration)
+                    await storeCacheIfNeeded(
+                        substitution.mergedResponse,
+                        cacheKey: cacheKey,
+                        request: request,
+                        configuration: configuration
+                    )
+                    return substitution.mergedResponse
+                }
             }
 
             if let refreshCoordinator = runtime.refreshCoordinator,
@@ -262,6 +293,13 @@ package struct RequestExecutor {
         )
     }
 
+    private func refreshLaneIfInProgress(
+        coordinator: RefreshTokenCoordinator?
+    ) async -> UUID? {
+        guard let coordinator else { return nil }
+        return await coordinator.isRefreshInProgress ? UUID() : nil
+    }
+
     private func performTransportResult(
         request: URLRequest,
         bodySource: BodySource,
@@ -271,8 +309,21 @@ package struct RequestExecutor {
     ) async throws -> TransportResult {
         try await runtime.circuitBreakers.prepare(request: request, policy: configuration.circuitBreakerPolicy)
 
+        // When a refresh is in flight, segregate this caller into its own
+        // coalescer lane so a stale 401 from a peer's pre-refresh transport
+        // cannot be delivered as our result. When `Authorization` is part
+        // of the dedup key (the default policy), this is a no-op for
+        // correctness but pins the invariant; under
+        // ``RequestCoalescingPolicy/excludedHeaderNames`` containing
+        // `Authorization` it is the actual safeguard.
+        let refreshLane: UUID? = await refreshLaneIfInProgress(coordinator: runtime.refreshCoordinator)
+
         if case .inline = bodySource,
-            let key = RequestDedupKey(request: request, policy: configuration.requestCoalescingPolicy)
+            let key = RequestDedupKey(
+                request: request,
+                policy: configuration.requestCoalescingPolicy,
+                refreshLane: refreshLane
+            )
         {
             return try await runtime.requestCoalescer.run(key: key) {
                 try await self.transportAndRecordCircuit(
@@ -419,16 +470,38 @@ package struct RequestExecutor {
                         request: revalidationRequest,
                         response: result.response
                     )
-                    if let converted = await convertNotModifiedIfNeeded(
+                    if let substitution = await convertNotModifiedIfNeeded(
                         response,
                         cacheKey: cacheKey,
                         request: revalidationRequest,
                         configuration: configuration
                     ) {
                         try Task.checkCancellation()
-                        try enforceResponseBodyLimit(converted, configuration: configuration)
-                        await storeCacheIfNeeded(
-                            converted, cacheKey: cacheKey, request: revalidationRequest, configuration: configuration)
+                        if notModifiedRevisesVary(
+                            cached: substitution.cached,
+                            notModifiedHeaders: result.response.allHeaderFields
+                        ) {
+                            try enforceResponseBodyLimit(
+                                substitution.preservedResponse,
+                                configuration: configuration
+                            )
+                            await refreshCachedFreshness(
+                                cached: substitution.cached,
+                                cacheKey: cacheKey,
+                                configuration: configuration
+                            )
+                        } else {
+                            try enforceResponseBodyLimit(
+                                substitution.mergedResponse,
+                                configuration: configuration
+                            )
+                            await storeCacheIfNeeded(
+                                substitution.mergedResponse,
+                                cacheKey: cacheKey,
+                                request: revalidationRequest,
+                                configuration: configuration
+                            )
+                        }
                     } else {
                         try Task.checkCancellation()
                         try enforceResponseBodyLimit(response, configuration: configuration)
@@ -500,13 +573,14 @@ package struct RequestExecutor {
         cacheKey: ResponseCacheKey?,
         request: URLRequest,
         configuration: NetworkConfiguration
-    ) async -> Response? {
+    ) async -> NotModifiedSubstitution? {
         guard response.statusCode == 304,
             configuration.responseCachePolicy.allowsConditionalRevalidation,
             let cacheKey,
             let cache = configuration.responseCache,
             let cached = await cachedRespectingVary(cache, key: cacheKey, request: request),
             let url = request.url,
+            let preservedHTTPResponse = cached.response(for: request),
             let httpResponse = HTTPURLResponse(
                 url: url,
                 statusCode: cached.statusCode,
@@ -516,7 +590,53 @@ package struct RequestExecutor {
         else {
             return nil
         }
-        return Response(statusCode: cached.statusCode, data: cached.data, request: request, response: httpResponse)
+        return NotModifiedSubstitution(
+            mergedResponse: Response(
+                statusCode: cached.statusCode,
+                data: cached.data,
+                request: request,
+                response: httpResponse
+            ),
+            preservedResponse: Response(
+                statusCode: cached.statusCode,
+                data: cached.data,
+                request: request,
+                response: preservedHTTPResponse
+            ),
+            cached: cached
+        )
+    }
+
+    /// Re-stores `cached` under `cacheKey` with a refreshed `storedAt`.
+    ///
+    /// Used on the 304 substitution path when the not-modified response
+    /// advertises a different `Vary` dimension than the stored entry was
+    /// keyed on. The stored representation, headers, and Vary snapshot are
+    /// preserved verbatim; only the freshness timestamp moves forward so
+    /// the entry honours the successful conditional revalidation without
+    /// being silently rekeyed.
+    private func refreshCachedFreshness(
+        cached: CachedResponse,
+        cacheKey: ResponseCacheKey?,
+        configuration: NetworkConfiguration
+    ) async {
+        guard let cacheKey,
+            let cache = configuration.responseCache,
+            configuration.responseCachePolicy.allowsCacheWrite
+        else {
+            return
+        }
+        await cache.set(
+            cacheKey,
+            CachedResponse(
+                data: cached.data,
+                statusCode: cached.statusCode,
+                headers: cached.headers,
+                storedAt: Date(),
+                requiresRevalidation: cached.requiresRevalidation,
+                varyHeaders: cached.varyHeaders
+            )
+        )
     }
 
     private func mergedCachedHeaders(

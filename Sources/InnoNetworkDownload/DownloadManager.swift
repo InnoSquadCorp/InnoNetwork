@@ -75,6 +75,8 @@ public actor DownloadManager {
     /// > managers via ``make(configuration:)`` and storing them on the owning
     /// > feature module. The symbol stays available for the whole 4.x line so
     /// > existing call sites continue to compile.
+    ///
+    /// See <doc:SharedManagerMigration> for a step-by-step migration guide.
     @available(
         *,
         deprecated,
