@@ -37,12 +37,23 @@ Versioning for the 4.x release line.
   full canTransition matrix, terminal-state self-loops, every legal
   hop applies, and `restoreState` continues to bypass the guard for
   state restoration / test injection.
+- `NetworkErrorTimeoutTests` (P1.11) adds a contract-lock group that
+  exercises `NetworkError.mapTransportError` directly for every
+  documented `URLError` code (`timedOut`, `cannotConnectToHost`,
+  `cannotFindHost`, `dnsLookupFailed`, `networkConnectionLost`,
+  `notConnectedToInternet`, `cancelled`) and pins the mapped
+  `NetworkError` case plus the preserved underlying URLError code.
 
 ### Docs
 
 - `CachingStrategies` documents the new 304-with-new-Vary handling so
   callers know that successful conditional revalidation never rekeys
   the stored entry.
+- `NetworkError.mapTransportError(_:)` now carries a full docstring
+  explaining the intentionally narrow `URLError` → `.timeout` mapping
+  (only `timedOut` and `cannotConnectToHost`) and why DNS/reachability
+  failures stay as `.underlying`. The scattered inline rationale is
+  removed in favour of one canonical place.
 - Consolidated `docs/ImprovementBacklog.md` into
   `docs/reviews/4.x-comprehensive-evaluation.md`. The evaluation doc now
   carries the merged backlog as §1.5 and tracks PR-level status across

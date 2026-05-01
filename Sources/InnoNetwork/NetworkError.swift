@@ -252,6 +252,36 @@ extension NetworkError {
         return false
     }
 
+    /// Maps a raw transport error from `URLSession` (or a configured
+    /// transport adapter) into the public ``NetworkError`` surface.
+    ///
+    /// The mapping is **intentionally narrow** for `URLError`:
+    /// - `URLError.timedOut` →
+    ///   ``NetworkError/timeout(reason:underlying:)`` with
+    ///   ``TimeoutReason/requestTimeout``.
+    /// - `URLError.cannotConnectToHost` → `.timeout` with
+    ///   ``TimeoutReason/connectionTimeout`` (the TCP handshake failed
+    ///   inside the connect budget — a captive portal or refused socket).
+    /// - All other `URLError` codes — including `cannotFindHost`,
+    ///   `dnsLookupFailed`, `networkConnectionLost`, and
+    ///   `notConnectedToInternet` — stay as ``NetworkError/underlying(_:_:)``.
+    ///   These are *not* timeouts: name resolution and reachability
+    ///   failures must be distinguishable from a server that simply took
+    ///   too long, because the right user-facing copy and retry policy
+    ///   diverges between the two. Callers that need to recognize them
+    ///   should pattern-match the underlying `URLError` from
+    ///   ``SendableUnderlyingError``.
+    ///
+    /// `CancellationError` and `URLError.cancelled` collapse to
+    /// ``NetworkError/cancelled`` so cooperative cancellation is uniform.
+    /// `TrustEvaluationError` is forwarded as
+    /// ``NetworkError/trustEvaluationFailed(_:)``.
+    ///
+    /// > Important: This mapping is part of the public API contract — it is
+    /// > locked by `NetworkErrorTimeoutTests` (see the contract-lock test
+    /// > group). Do not widen the `.timeout` arm without a paired test
+    /// > update; collapsing additional `URLError` codes into `.timeout`
+    /// > silently changes consumer retry semantics.
     static func mapTransportError(_ error: Error) -> NetworkError {
         if let networkError = error as? NetworkError {
             return networkError
@@ -275,12 +305,6 @@ extension NetworkError {
             case .cannotConnectToHost:
                 return .timeout(reason: .connectionTimeout, underlying: SendableUnderlyingError(urlError))
             default:
-                // Other URLError codes (cannotFindHost, dnsLookupFailed,
-                // networkConnectionLost, notConnectedToInternet, …) are
-                // intentionally surfaced as `.underlying` so callers can tell
-                // a real timeout from a name-resolution or reachability
-                // failure. Adjust here only with a paired test in
-                // `NetworkErrorTimeoutTests`.
                 break
             }
         }
