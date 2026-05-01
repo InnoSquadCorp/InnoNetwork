@@ -1,7 +1,7 @@
 # Improvement Backlog
 
 Last reviewed: 2026-05-01  
-Baseline: `main` at `37e85a8`
+Baseline: `main` at `310fa2b`
 
 This document records the review findings from the 2026-05-01 code review and
 the status of the follow-up PR that addressed them. It separates completed
@@ -30,6 +30,17 @@ correctness/governance work from items that should stay as future design work.
 - [x] Deterministic lifecycle invariant tests cover terminal cleanup,
   manual-disconnect-wins, and stale-callback behavior through fixed transition
   sequences.
+- [x] WebSocket lifecycle now has a package-internal reducer/FSM with
+  generation, reconnect attempt, manual-disconnect, close-code, disposition,
+  and error payloads.
+- [x] `WebSocketTask.updateState(_:)` now enforces public legal transitions;
+  test-only direct state setup uses `restoreStateForTesting(_:)`.
+- [x] Manual disconnect, reconnect timer, stale callback, and terminal cleanup
+  paths now execute ordered reducer effects. Terminal cleanup uses one
+  generation-checked finalizer path after runtime cleanup and event delivery.
+- [x] URLSession task identifiers now carry the connection generation used by
+  delegate callbacks, so stale open/close/error callbacks cannot mutate a newer
+  connection generation or consume reconnect-attempt budget.
 
 ### Swift Concurrency / Task Ownership
 
@@ -79,20 +90,6 @@ correctness/governance work from items that should stay as future design work.
   part of release/CI documentation.
 
 ## Remaining Follow-up Work
-
-### P2: Internal WebSocket Lifecycle Reducer
-
-The current PR hardens the stale-callback race and expands deterministic
-invariant coverage, but it does not replace the implementation with a single
-event-driven reducer. A future design can keep public `WebSocketState` stable
-while introducing an internal state enum with generation, reconnect attempt,
-manual-disconnect, and terminal disposition payloads.
-
-Done when:
-
-- state transition decisions are pure and side effects are emitted separately
-- terminal cleanup is reachable through one finalizer path
-- illegal state combinations become unrepresentable internally
 
 ### P2: Benchmark Trend Automation
 
