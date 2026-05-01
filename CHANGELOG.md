@@ -5,7 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and the project follows Semantic
 Versioning for the 4.x release line.
 
-## [Unreleased]
+## [Unreleased] - 4.1.1
+
+### Added
+
+### Changed
+
+### Fixed
+
+### Tests
+
+### Docs
+
+- Consolidated `docs/ImprovementBacklog.md` into
+  `docs/reviews/4.x-comprehensive-evaluation.md`. The evaluation doc now
+  carries the merged backlog as §1.5 and tracks PR-level status across
+  PR #35 / #36 / #37 in §1.4. `docs/ROADMAP.md` was retargeted at the
+  consolidated doc.
+
+## [Unreleased] - 4.1.0
 
 ### Added
 
