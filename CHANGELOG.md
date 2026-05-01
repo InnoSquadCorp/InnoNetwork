@@ -43,6 +43,14 @@ Versioning for the 4.x release line.
   `cannotFindHost`, `dnsLookupFailed`, `networkConnectionLost`,
   `notConnectedToInternet`, `cancelled`) and pins the mapped
   `NetworkError` case plus the preserved underlying URLError code.
+- `IdempotencyRetryIntegrationTests` (P1.13) ties the Retry-After,
+  unsafe-method idempotency, and exponential-backoff branches together
+  end-to-end: POST 503 + `Retry-After` + `Idempotency-Key` retries
+  once with the same key; POST 503 + `Retry-After` without
+  `Idempotency-Key` does not retry; POST 503 without `Retry-After` but
+  with `Idempotency-Key` falls through to exponential backoff; and an
+  RFC 1123 `Retry-After` date in the past parses as `nil` so the
+  policy's own delay wins.
 
 ### Docs
 
