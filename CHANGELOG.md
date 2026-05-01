@@ -13,6 +13,17 @@ Versioning for the 4.x release line.
 
 ### Fixed
 
+- **Refresh-aware coalescer lanes (P2.1)**: when a refresh is in
+  flight, callers entering ``RequestExecutor`` now receive a unique
+  coalescer lane suffix so a peer's pre-refresh transport result
+  cannot leak into another caller's resumed continuation. Under the
+  default coalescing policy (``Authorization`` participates in the
+  dedup key) this is a defence-in-depth pin; under a policy that
+  excludes ``Authorization`` from the key it is the actual safeguard.
+  ``RefreshTokenCoordinator`` now exposes
+  ``isRefreshInProgress`` (package-visible, actor-isolated) so the
+  executor can read the lane state without breaking encapsulation.
+
 - **Response cache (P1.2)**: a 304 Not Modified response that carries a
   `Vary` header different from the one that was active when the cached
   entry was stored no longer rewrites the entry under the new vary
@@ -43,6 +54,13 @@ Versioning for the 4.x release line.
   `cannotFindHost`, `dnsLookupFailed`, `networkConnectionLost`,
   `notConnectedToInternet`, `cancelled`) and pins the mapped
   `NetworkError` case plus the preserved underlying URLError code.
+- `RefreshCoalescerRaceTests` (P2.1) covers two concurrent OLD-token
+  callers entering during a held refresh, validating that both
+  callers retry with the new token, that
+  `RefreshTokenCoordinator.isRefreshInProgress` flips around
+  `refreshAndApply`, and that `RequestDedupKey`'s `refreshLane`
+  suffix distinguishes otherwise-identical keys.
+
 - `IdempotencyRetryIntegrationTests` (P1.13) ties the Retry-After,
   unsafe-method idempotency, and exponential-backoff branches together
   end-to-end: POST 503 + `Retry-After` + `Idempotency-Key` retries

@@ -285,6 +285,13 @@ package struct RequestExecutor {
         )
     }
 
+    private func refreshLaneIfInProgress(
+        coordinator: RefreshTokenCoordinator?
+    ) async -> UUID? {
+        guard let coordinator else { return nil }
+        return await coordinator.isRefreshInProgress ? UUID() : nil
+    }
+
     private func performTransportResult(
         request: URLRequest,
         bodySource: BodySource,
@@ -294,8 +301,21 @@ package struct RequestExecutor {
     ) async throws -> TransportResult {
         try await runtime.circuitBreakers.prepare(request: request, policy: configuration.circuitBreakerPolicy)
 
+        // When a refresh is in flight, segregate this caller into its own
+        // coalescer lane so a stale 401 from a peer's pre-refresh transport
+        // cannot be delivered as our result. When `Authorization` is part
+        // of the dedup key (the default policy), this is a no-op for
+        // correctness but pins the invariant; under
+        // ``RequestCoalescingPolicy/excludedHeaderNames`` containing
+        // `Authorization` it is the actual safeguard.
+        let refreshLane: UUID? = await refreshLaneIfInProgress(coordinator: runtime.refreshCoordinator)
+
         if case .inline = bodySource,
-            let key = RequestDedupKey(request: request, policy: configuration.requestCoalescingPolicy)
+            let key = RequestDedupKey(
+                request: request,
+                policy: configuration.requestCoalescingPolicy,
+                refreshLane: refreshLane
+            )
         {
             return try await runtime.requestCoalescer.run(key: key) {
                 try await self.transportAndRecordCircuit(
