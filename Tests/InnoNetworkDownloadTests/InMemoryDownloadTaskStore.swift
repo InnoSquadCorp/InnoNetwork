@@ -13,6 +13,7 @@ import Foundation
 actor InMemoryDownloadTaskStore: DownloadTaskStore {
     private var records: [String: DownloadTaskPersistence.Record] = [:]
     private var shouldFailRemove = false
+    private var shouldFailUpsert = false
 
     init(seed: [DownloadTaskPersistence.Record] = []) {
         for record in seed {
@@ -24,7 +25,14 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         shouldFailRemove = shouldFail
     }
 
+    func setUpsertFailure(_ shouldFail: Bool) {
+        shouldFailUpsert = shouldFail
+    }
+
     func upsert(id: String, url: URL, destinationURL: URL) async throws {
+        if shouldFailUpsert {
+            throw InMemoryDownloadTaskStoreError.upsertFailed(id)
+        }
         records[id] = DownloadTaskPersistence.Record(
             id: id,
             url: url,
@@ -60,4 +68,5 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
 
 enum InMemoryDownloadTaskStoreError: Error, Equatable {
     case removeFailed(String)
+    case upsertFailed(String)
 }

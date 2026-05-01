@@ -67,6 +67,20 @@ public actor DownloadManager {
     /// during development. Production callers that need explicit failure
     /// handling should construct managers via ``make(configuration:)`` instead
     /// of relying on `shared`.
+    ///
+    /// > Important: `shared` is soft-deprecated. Apps that need more than one
+    /// > download policy (e.g., one manager for media with WiFi-only
+    /// > downloads, another for documents over cellular) cannot express that
+    /// > with a single global instance. Prefer constructing per-feature
+    /// > managers via ``make(configuration:)`` and storing them on the owning
+    /// > feature module. The symbol stays available for the whole 4.x line so
+    /// > existing call sites continue to compile.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use DownloadManager.make(configuration:) so each feature can pick its own DownloadConfiguration; the shared singleton forces a single global policy."
+    )
     public static let shared: DownloadManager = {
         do {
             return try DownloadManager(configuration: .default)
@@ -381,13 +395,20 @@ public actor DownloadManager {
 
     public func cancel(_ task: DownloadTask) async {
         guard await waitForRestore() else { return }
-        await task.updateState(.cancelled)
-        await task.setError(.cancelled)
-        await runtimeRegistry.onStateChanged?(task, .cancelled)
-        await eventHub.publish(.stateChanged(.cancelled), for: task.id)
+        // Drive the state transition only when we're leaving a non-terminal
+        // state. Calling `cancel` again on an already-terminal task (for
+        // example, after the first attempt's persistence removal failed)
+        // continues into the cleanup path below so callers can drain the
+        // registry without triggering an illegal-transition assertion.
+        if !(await task.state).isTerminal {
+            await task.updateState(.cancelled)
+            await task.setError(.cancelled)
+            await runtimeRegistry.onStateChanged?(task, .cancelled)
+            await eventHub.publish(.stateChanged(.cancelled), for: task.id)
 
-        if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
-            urlTask.cancel()
+            if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
+                urlTask.cancel()
+            }
         }
 
         do {

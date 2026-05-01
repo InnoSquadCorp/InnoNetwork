@@ -58,6 +58,21 @@ Learn how to customize HTTP headers for authentication, content negotiation, and
 
 ---
 
+### 3a. [Auth](./Auth)
+
+Wire `RefreshTokenPolicy` to a Keychain-backed token store with
+single-flight refresh and one-time replay after `401`.
+
+**Covers:**
+- Keychain (`SecItem`) wrapper actor for serialized read/write
+- `AuthService` actor that exposes `currentAccessToken` and `refreshAccessToken` closures
+- `RefreshTokenPolicy` registration via `NetworkConfiguration.advanced(...)`
+- Default Bearer `Authorization` token applicator and how to override it
+
+**Best for:** Production apps that need a session-token lifecycle without pulling auth-storage dependencies into the library.
+
+---
+
 ### 4. [RealWorldAPI](./RealWorldAPI)
 
 Real-world scenarios you'll encounter in actual application development.

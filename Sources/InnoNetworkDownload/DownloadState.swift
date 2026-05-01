@@ -22,7 +22,12 @@ public extension DownloadState {
         case .downloading:
             [.paused, .completed, .failed, .cancelled, .waiting]
         case .paused:
-            [.downloading, .cancelled]
+            // `.waiting` covers the resume-without-resume-data path, where
+            // the task is restarted from scratch and re-registers with
+            // persistence before reaching `.downloading`. `.failed` covers
+            // the resume-with-resume-data persistence-write failure that
+            // marks the paused task as failed without rerunning it.
+            [.downloading, .waiting, .failed, .cancelled]
         case .completed, .cancelled:
             []
         case .failed:

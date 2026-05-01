@@ -48,9 +48,11 @@ public protocol APIDefinition: Sendable {
 
 /// Strategy for delivering a multipart body to the URL session.
 ///
-/// The default is ``inMemory`` for backward compatibility. Endpoints that
-/// upload large attachments should switch to ``streamingThreshold(bytes:)``
-/// or ``alwaysStream`` to bound peak memory.
+/// The default is ``streamingThreshold(bytes:)`` at 50 MiB so that small
+/// payloads stay in memory (cheap, single-pass) while larger uploads spill
+/// to a temp file and avoid jetsam. Endpoints that know they are always
+/// small can opt into ``inMemory`` for the slight encoding-cost savings;
+/// endpoints that always upload large media can pick ``alwaysStream``.
 public enum MultipartUploadStrategy: Sendable, Equatable {
     /// Always encode the multipart body into a single in-memory `Data` and
     /// attach it to the request. Cheap for small payloads; risks jetsam on
@@ -93,10 +95,13 @@ public protocol MultipartAPIDefinition: Sendable {
     var acceptableStatusCodes: Set<Int>? { get }
 
     /// Strategy that decides whether the multipart body is encoded in memory
-    /// or streamed to a temp file. Default is ``MultipartUploadStrategy/inMemory``
-    /// so existing endpoints keep current behavior; large-attachment endpoints
-    /// should opt in to ``MultipartUploadStrategy/streamingThreshold(bytes:)``
-    /// or ``MultipartUploadStrategy/alwaysStream``.
+    /// or streamed to a temp file. Default is
+    /// ``MultipartUploadStrategy/streamingThreshold(bytes:)`` at 50 MiB so that
+    /// large attachments do not blow up peak memory by default. Endpoints that
+    /// always upload small payloads can override with
+    /// ``MultipartUploadStrategy/inMemory`` to skip the size check; endpoints
+    /// that always upload large payloads can override with
+    /// ``MultipartUploadStrategy/alwaysStream``.
     var uploadStrategy: MultipartUploadStrategy { get }
 
     /// Single transport-shape entry point. The default is
@@ -150,7 +155,7 @@ public extension MultipartAPIDefinition {
 
     var acceptableStatusCodes: Set<Int>? { nil }
 
-    var uploadStrategy: MultipartUploadStrategy { .inMemory }
+    var uploadStrategy: MultipartUploadStrategy { .streamingThreshold(bytes: 50 * 1024 * 1024) }
 
     var transport: TransportPolicy<APIResponse> { .multipart() }
 }

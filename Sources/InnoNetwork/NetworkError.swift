@@ -13,17 +13,34 @@ import Foundation
 /// the UI surface targeted retry copy ("the request is taking longer than
 /// expected" vs. "we couldn't reach the server") instead of a generic
 /// transport failure.
+///
+/// Mapping behaviour (see ``NetworkError/mapTransportError(_:)``):
+/// - `URLError.timedOut` → ``requestTimeout``.
+/// - `URLError.cannotConnectToHost` → ``connectionTimeout``.
+/// - Other `URLError` codes (`cannotFindHost`, `dnsLookupFailed`,
+///   `networkConnectionLost`, `notConnectedToInternet`, …) intentionally
+///   stay as ``NetworkError/underlying(_:_:)`` so callers can tell a real
+///   timeout from a name-resolution or reachability failure.
+/// - ``resourceTimeout`` is never produced by the built-in mapper because
+///   Foundation reports both request and resource timeout expiration as
+///   `URLError.timedOut` without exposing which interval fired. Higher-level
+///   transports that observe `URLSessionTaskMetrics` may construct this case
+///   directly.
 public enum TimeoutReason: Sendable, Equatable {
-    /// `URLError.timedOut` produced by the request timeoutInterval.
+    /// The request timed out before the server responded with the first byte.
+    /// Produced from `URLError.timedOut`.
     case requestTimeout
-    /// Resource-level timeout reported by a caller or higher-level transport.
-    ///
-    /// The core `URLError` mapper does not currently produce this case because
-    /// Foundation reports both request and resource timeout expiration as
-    /// `URLError.timedOut` without exposing which timeout interval fired.
+    /// The resource transfer exceeded its total time budget. Reserved for
+    /// callers that observe URLSession task metrics; the built-in transport
+    /// mapper cannot distinguish this from ``requestTimeout`` because
+    /// `URLError` does not surface which timeout interval fired.
     case resourceTimeout
-    /// Connection establishment timed out (for example, a captive portal
-    /// blocking the TCP handshake).
+    /// Connection establishment failed (for example, a captive portal
+    /// blocking the TCP handshake or the server actively refusing the
+    /// socket). Produced from `URLError.cannotConnectToHost`. Name
+    /// resolution and reachability failures (`cannotFindHost`,
+    /// `dnsLookupFailed`, `notConnectedToInternet`, …) stay as
+    /// ``NetworkError/underlying(_:_:)`` instead of mapping here.
     case connectionTimeout
 }
 
@@ -50,6 +67,17 @@ public enum NetworkError: Error, Sendable {
     /// associated value directly or use `NSError.userInfo[NSUnderlyingErrorKey]`
     /// after bridging.
     case timeout(reason: TimeoutReason, underlying: SendableUnderlyingError? = nil)
+    /// The transport completed but produced a response body larger than
+    /// ``NetworkConfiguration/responseBodyLimit``. Raised so the executor can
+    /// short-circuit decoding and so callers can choose a recovery strategy
+    /// (raise the limit, fall back to streaming, or surface a paged retry)
+    /// rather than silently OOM the process or pass an oversized payload to
+    /// `JSONDecoder`.
+    ///
+    /// - Parameters:
+    ///   - limit: The configured byte limit that was exceeded.
+    ///   - observed: The actual body size in bytes returned by the transport.
+    case responseTooLarge(limit: Int64, observed: Int64)
 }
 
 
@@ -96,6 +124,8 @@ extension NetworkError: LocalizedError {
             case .connectionTimeout:
                 return "The connection to the server timed out."
             }
+        case .responseTooLarge(let limit, let observed):
+            return "Response body of \(observed) bytes exceeded the configured limit of \(limit) bytes."
         }
     }
 }
@@ -113,6 +143,7 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout: return nil
+        case .responseTooLarge: return nil
         }
     }
 
@@ -128,6 +159,7 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout(_, let underlying): return underlying
+        case .responseTooLarge: return nil
         }
     }
 }
@@ -159,6 +191,8 @@ extension NetworkError: CustomNSError {
             return NSURLErrorCancelled
         case .timeout:
             return NSURLErrorTimedOut
+        case .responseTooLarge:
+            return 4002
         }
     }
 
@@ -195,7 +229,8 @@ public extension NetworkError {
             .underlying(_, nil),
             .trustEvaluationFailed,
             .cancelled,
-            .timeout:
+            .timeout,
+            .responseTooLarge:
             return self
         }
     }
@@ -240,6 +275,12 @@ extension NetworkError {
             case .cannotConnectToHost:
                 return .timeout(reason: .connectionTimeout, underlying: SendableUnderlyingError(urlError))
             default:
+                // Other URLError codes (cannotFindHost, dnsLookupFailed,
+                // networkConnectionLost, notConnectedToInternet, …) are
+                // intentionally surfaced as `.underlying` so callers can tell
+                // a real timeout from a name-resolution or reachability
+                // failure. Adjust here only with a paired test in
+                // `NetworkErrorTimeoutTests`.
                 break
             }
         }

@@ -64,6 +64,7 @@ InnoNetwork	swift.enum.case	NetworkError.invalidBaseURL(_:)
 InnoNetwork	swift.enum.case	NetworkError.invalidRequestConfiguration(_:)
 InnoNetwork	swift.enum.case	NetworkError.nonHTTPResponse(_:)
 InnoNetwork	swift.enum.case	NetworkError.objectMapping(_:_:)
+InnoNetwork	swift.enum.case	NetworkError.responseTooLarge(limit:observed:)
 InnoNetwork	swift.enum.case	NetworkError.statusCode(_:)
 InnoNetwork	swift.enum.case	NetworkError.timeout(reason:underlying:)
 InnoNetwork	swift.enum.case	NetworkError.trustEvaluationFailed(_:)
@@ -153,7 +154,7 @@ InnoNetwork	swift.init	InMemoryResponseCache.init(maxBytes:)
 InnoNetwork	swift.init	MultipartFormData.init(boundary:)
 InnoNetwork	swift.init	MultipartPart.init(headers:data:)
 InnoNetwork	swift.init	MultipartResponseDecoder.init(boundary:)
-InnoNetwork	swift.init	NetworkConfiguration.init(baseURL:timeout:cachePolicy:retryPolicy:networkMonitor:metricsReporter:trustPolicy:eventObservers:eventDeliveryPolicy:eventMetricsReporter:acceptableStatusCodes:requestInterceptors:responseInterceptors:refreshTokenPolicy:requestCoalescingPolicy:responseCachePolicy:responseCache:circuitBreakerPolicy:captureFailurePayload:)
+InnoNetwork	swift.init	NetworkConfiguration.init(baseURL:timeout:cachePolicy:retryPolicy:networkMonitor:metricsReporter:trustPolicy:eventObservers:eventDeliveryPolicy:eventMetricsReporter:acceptableStatusCodes:requestInterceptors:responseInterceptors:decodingInterceptors:refreshTokenPolicy:requestCoalescingPolicy:responseCachePolicy:responseCache:circuitBreakerPolicy:captureFailurePayload:responseBodyLimit:)
 InnoNetwork	swift.init	NetworkContext.init(traceID:correlationID:baggage:)
 InnoNetwork	swift.init	NetworkInterfaceType.init(rawValue:)
 InnoNetwork	swift.init	NetworkLoggingOptions.init(includeRequestBody:includeResponseBody:includeCookies:redactSensitiveData:sensitiveHeaderNames:)
@@ -180,6 +181,8 @@ InnoNetwork	swift.init	URLQueryEncoder.init(keyEncodingStrategy:dateEncodingStra
 InnoNetwork	swift.method	AnyEncodable.encode(to:)
 InnoNetwork	swift.method	AnyResponseDecoder.decode(data:response:)
 InnoNetwork	swift.method	CorrelationIDInterceptor.adapt(_:)
+InnoNetwork	swift.method	DecodingInterceptor.didDecode(_:response:)
+InnoNetwork	swift.method	DecodingInterceptor.willDecode(data:response:)
 InnoNetwork	swift.method	DefaultNetworkClient.cancelAll()
 InnoNetwork	swift.method	DefaultNetworkClient.cancelAll(matching:)
 InnoNetwork	swift.method	DefaultNetworkClient.perform(_:tag:)
@@ -361,6 +364,7 @@ InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.baseURL
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.cachePolicy
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.captureFailurePayload
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.circuitBreakerPolicy
+InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.decodingInterceptors
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.eventDeliveryPolicy
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.eventMetricsReporter
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.eventObservers
@@ -369,6 +373,7 @@ InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.networkMonitor
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.refreshTokenPolicy
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.requestCoalescingPolicy
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.requestInterceptors
+InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.responseBodyLimit
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.responseCache
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.responseCachePolicy
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.responseInterceptors
@@ -380,6 +385,7 @@ InnoNetwork	swift.property	NetworkConfiguration.baseURL
 InnoNetwork	swift.property	NetworkConfiguration.cachePolicy
 InnoNetwork	swift.property	NetworkConfiguration.captureFailurePayload
 InnoNetwork	swift.property	NetworkConfiguration.circuitBreakerPolicy
+InnoNetwork	swift.property	NetworkConfiguration.decodingInterceptors
 InnoNetwork	swift.property	NetworkConfiguration.eventDeliveryPolicy
 InnoNetwork	swift.property	NetworkConfiguration.eventMetricsReporter
 InnoNetwork	swift.property	NetworkConfiguration.eventObservers
@@ -388,6 +394,7 @@ InnoNetwork	swift.property	NetworkConfiguration.networkMonitor
 InnoNetwork	swift.property	NetworkConfiguration.refreshTokenPolicy
 InnoNetwork	swift.property	NetworkConfiguration.requestCoalescingPolicy
 InnoNetwork	swift.property	NetworkConfiguration.requestInterceptors
+InnoNetwork	swift.property	NetworkConfiguration.responseBodyLimit
 InnoNetwork	swift.property	NetworkConfiguration.responseCache
 InnoNetwork	swift.property	NetworkConfiguration.responseCachePolicy
 InnoNetwork	swift.property	NetworkConfiguration.responseInterceptors
@@ -469,6 +476,7 @@ InnoNetwork	swift.property	TransportPolicy.responseDecoding
 InnoNetwork	swift.property	URLQueryEncoder.dateEncodingStrategy
 InnoNetwork	swift.property	URLQueryEncoder.keyEncodingStrategy
 InnoNetwork	swift.protocol	APIDefinition
+InnoNetwork	swift.protocol	DecodingInterceptor
 InnoNetwork	swift.protocol	EventPipelineMetricsReporting
 InnoNetwork	swift.protocol	HTTPEmptyResponseDecodable
 InnoNetwork	swift.protocol	LowLevelNetworkClient

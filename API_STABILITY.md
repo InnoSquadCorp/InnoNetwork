@@ -38,6 +38,13 @@ release line. `4.0.0` is the public baseline for this contract.
 
 ## Provisionally Stable
 
+Symbols in this section are public and supported, but they may grow new
+cases, parameters, or shape during the 4.x line. Each change ships with
+release notes describing the migration path. Consumers who want strict
+compile-time stability should pin the package with
+`.upToNextMinor(from: "4.0.0")` (see "Version Pinning Guidance" below)
+and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
+
 - `default` aliases on configuration types
 - benchmark runner CLI flags and JSON summary presentation details
 - troubleshooting guidance and examples in README/DocC
@@ -49,6 +56,52 @@ release line. `4.0.0` is the public baseline for this contract.
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
 - `InnoNetworkCodegen` separate package and macro declarations
+- `DecodingInterceptor`
+
+## Provisionally Stable Evolution Boundaries
+
+Per-symbol evolution allowances within the 4.x line:
+
+- `default` aliases — may add new defaults; never removed within 4.x.
+- Benchmark runner CLI flags and JSON keys — may evolve to reflect new
+  metrics; baseline contents are operational policy.
+- README/DocC examples — track the stable APIs they illustrate; their
+  exact wording is not part of the compatibility contract.
+- `InnoNetworkTestSupport` — additional helpers may be added; existing
+  symbols stay source-compatible within 4.x.
+- `Endpoint`, `AnyEncodable`, `NetworkContext`, `CorrelationIDInterceptor` —
+  builder shape may grow new chainable methods.
+- `WebSocketCloseDisposition` — additional enum cases may appear as new
+  close-code classifications are formalized.
+- `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and
+  circuit breaker policy — built-in knobs may add fields with
+  source-compatible defaults; the generic execution pipeline stays
+  package/internal.
+- `MultipartResponseDecoder` — may evolve as the streaming-multipart
+  roadmap progresses.
+- `InnoNetworkCodegen` — macro signatures may add optional arguments.
+- `DecodingInterceptor` — protocol may grow new optional hooks with
+  default implementations as additional decode-boundary use cases
+  surface.
+
+## Version Pinning Guidance
+
+Apps that consume InnoNetwork via SwiftPM should pin against the latest
+4.x minor:
+
+```swift
+.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "4.0.0"))
+```
+
+`.upToNextMinor(from:)` accepts patch upgrades within the pinned minor
+but requires an explicit bump to consume the next minor. This matches
+the stability contract: stable surfaces follow SemVer, but provisionally
+stable surfaces may add or evolve in a minor bump, so consumers should
+review the changelog for the minor before adopting.
+
+Use `.upToNextMajor(from:)` only if you exclusively call the **Stable**
+ledger and accept that provisionally stable APIs may shift under you on
+minor releases.
 
 ## Public Declaration Ledger
 
@@ -183,6 +236,11 @@ intended usage shape.
 - Benchmark guard thresholds, guarded benchmark selection, and baseline
   contents are operational policy rather than public compatibility surface.
 - Internal/Operational items may change in minor releases without separate deprecation windows.
+- `NetworkError` is a `public` non-`@frozen` enum: new cases may be
+  added in minor releases, with each addition documented in the
+  changelog. Consumers who write exhaustive `switch` statements over
+  `NetworkError` should add `@unknown default` to keep their code
+  forward-compatible across minor bumps.
 
 ## Deprecation Policy
 

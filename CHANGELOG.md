@@ -5,6 +5,94 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and the project follows Semantic
 Versioning for the 4.x release line.
 
+## [Unreleased]
+
+### Added
+
+- `Examples/Auth` shows how to wire `RefreshTokenPolicy` to a
+  Keychain-backed token store. The example demonstrates the closure
+  contract (`currentToken`, `refreshToken`, `applyToken`), single-flight
+  refresh, and replay after `401`. The library itself stays
+  zero-dependency — Keychain integration lives in the example, not in
+  the runtime targets.
+- `DecodingInterceptor` protocol exposes a `willDecode(data:response:)`
+  hook that runs after response interceptors and before the configured
+  decoder, plus a generic `didDecode(_:response:)` hook that observes
+  the typed value before it returns to the caller. Both methods have
+  default no-op implementations so adapters only override the hook they
+  actually need (envelope unwrapping, payload sanitization, decode
+  metrics, typed-value normalization). `NetworkConfiguration.decodingInterceptors`
+  registers them at the session level.
+- `NetworkConfiguration.responseBodyLimit: Int64?` (default `nil`)
+  enforces a soft upper bound on the size of buffered response bodies.
+  When the configured limit is exceeded the executor short-circuits the
+  decoder and throws ``NetworkError/responseTooLarge(limit:observed:)``.
+  Cache hits, conditional revalidation, and fresh transport responses are
+  checked before cache writes, and the final decoder input is rechecked
+  after response and decoding interceptors. The guard is opt-in; setting
+  it to `nil` keeps the prior unbounded behaviour. Endpoints that need
+  genuine memory-bounded handling should use the streaming surface
+  (`stream(_:)` / `bytes(for:)`).
+
+### Changed
+
+- `API_STABILITY.md` now describes the evolution boundary for each
+  Provisionally Stable surface, recommends `.upToNextMinor(from:)` for
+  consumers who want strict compile-time stability, and explicitly lists
+  `DecodingInterceptor` as provisionally stable. The README install
+  snippet uses `.upToNextMinor(from:)` and links the trade-off with
+  `.upToNextMajor(from:)`.
+- `RequestInterceptor` and `ResponseInterceptor` now carry DocC blocks
+  that document the configuration → endpoint → refresh-token application
+  order, the unwinding semantics for response adapters, and the failure
+  contract (interceptor throws abort the current attempt, then the
+  configured retry policy decides whether another attempt runs). No
+  source-level changes; existing conforming types continue to compile.
+- `MultipartAPIDefinition.uploadStrategy` now defaults to
+  `.streamingThreshold(bytes: 50 * 1024 * 1024)` (50 MiB) instead of
+  `.inMemory`. Small payloads still encode in memory; bodies past the
+  threshold spill to a temp file and upload via `URLSession.upload(for:fromFile:)`,
+  bounding peak memory by default. Endpoints that intentionally relied on
+  the in-memory path should now declare it explicitly:
+  `var uploadStrategy: MultipartUploadStrategy { .inMemory }`.
+
+#### Migration: `NetworkError.responseTooLarge`
+
+`NetworkError` is a `public` non-`@frozen` enum, so the new
+`responseTooLarge(limit:observed:)` case requires consumers who write
+exhaustive `switch` statements over `NetworkError` to either handle the
+new case explicitly or add `@unknown default`. Code that catches
+`NetworkError` without exhaustive pattern matching is unaffected. The
+new case carries `errorCode == 4002` for `CustomNSError` bridging.
+
+### Deprecated
+
+- `DownloadManager.shared` is now soft-deprecated. The shared singleton
+  forces every feature in the process onto a single
+  `DownloadConfiguration`, which prevents per-feature retry budgets,
+  cellular policies, or storage roots. Prefer constructing per-feature
+  managers via ``DownloadManager.make(configuration:)``. The symbol
+  remains available for the entire 4.x line so existing call sites
+  continue to compile with a deprecation warning.
+
+### Fixed
+
+- `TimeoutReason` documentation now enumerates the exact `URLError` →
+  `NetworkError.timeout(reason:)` mapping (`.timedOut` →
+  `.requestTimeout`, `.cannotConnectToHost` → `.connectionTimeout`) and
+  records why other transport codes (DNS failures, reachability errors,
+  mid-flight drops) intentionally surface as `NetworkError.underlying`
+  instead of being reclassified as timeouts. Lock-down tests cover
+  `URLError.cancelled`, `.networkConnectionLost`, and
+  `.notConnectedToInternet`.
+- `DownloadTask.updateState(_:)` now validates transitions against the
+  documented `DownloadState.canTransition(to:)` table. Illegal transitions
+  trigger `assertionFailure` in DEBUG and an OSLog `.fault` in release,
+  then reject the assignment so the existing state is preserved. State
+  restoration (rebuilding actor state from persisted records or live
+  `URLSession` task state on relaunch) and test-only state injection now
+  use the new `restoreState(_:)` helper, which bypasses validation.
+
 ## [4.0.0]
 
 InnoNetwork's first public release. The package targets Apple platforms only

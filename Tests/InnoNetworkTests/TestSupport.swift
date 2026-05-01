@@ -13,12 +13,15 @@ func makeTestNetworkConfiguration(
     eventObservers: [any NetworkEventObserving] = [],
     acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes,
     requestInterceptors: [RequestInterceptor] = [],
+    responseInterceptors: [ResponseInterceptor] = [],
+    decodingInterceptors: [DecodingInterceptor] = [],
     refreshTokenPolicy: RefreshTokenPolicy? = nil,
     requestCoalescingPolicy: RequestCoalescingPolicy = .disabled,
     responseCachePolicy: ResponseCachePolicy = .disabled,
     responseCache: (any ResponseCache)? = nil,
     circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
-    captureFailurePayload: Bool = false
+    captureFailurePayload: Bool = false,
+    responseBodyLimit: Int64? = nil
 ) -> NetworkConfiguration {
     NetworkConfiguration(
         baseURL: URL(string: baseURL)!,
@@ -31,11 +34,14 @@ func makeTestNetworkConfiguration(
         eventObservers: eventObservers,
         acceptableStatusCodes: acceptableStatusCodes,
         requestInterceptors: requestInterceptors,
+        responseInterceptors: responseInterceptors,
+        decodingInterceptors: decodingInterceptors,
         refreshTokenPolicy: refreshTokenPolicy,
         requestCoalescingPolicy: requestCoalescingPolicy,
         responseCachePolicy: responseCachePolicy,
         responseCache: responseCache,
         circuitBreakerPolicy: circuitBreakerPolicy,
-        captureFailurePayload: captureFailurePayload
+        captureFailurePayload: captureFailurePayload,
+        responseBodyLimit: responseBodyLimit
     )
 }

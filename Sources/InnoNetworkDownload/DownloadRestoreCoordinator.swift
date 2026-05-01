@@ -48,7 +48,7 @@ package struct DownloadRestoreCoordinator {
                 state = .paused
             }
 
-            await downloadTask.updateState(state)
+            await downloadTask.restoreState(state)
         }
 
         let persistedTasks = await persistence.allRecords()

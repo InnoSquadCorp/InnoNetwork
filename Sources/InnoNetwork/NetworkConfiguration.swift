@@ -76,6 +76,13 @@ public struct NetworkConfiguration: Sendable {
     /// interceptor can observe the same response shape its peer would have
     /// produced under a per-endpoint setup.
     public let responseInterceptors: [ResponseInterceptor]
+    /// Decoding interceptors applied around the response decode boundary
+    /// for **every** request. Hooks fire after all response interceptors
+    /// have settled, immediately before and after the configured decoder
+    /// runs. Use them for envelope unwrapping, payload sanitization,
+    /// decode metrics, or typed-value normalization. See
+    /// ``DecodingInterceptor`` for ordering and failure semantics.
+    public let decodingInterceptors: [DecodingInterceptor]
     /// Optional token refresh policy. When configured, the client applies the
     /// current token before transport, refreshes once on matching auth status
     /// codes, and replays the fully adapted request at most one time.
@@ -100,6 +107,24 @@ public struct NetworkConfiguration: Sendable {
     /// the failing response body is worth the privacy trade-off.
     public let captureFailurePayload: Bool
 
+    /// Optional ceiling on the size of buffered response bodies, in bytes.
+    /// When `nil` (default) the executor enforces no limit and behaves
+    /// exactly as in 4.0. When set, the executor compares cached,
+    /// revalidated, and received transport bodies against the limit before
+    /// cache writes or decoder handoff, then rechecks the final decoder
+    /// input after response and decoding interceptors. If any payload
+    /// exceeds the limit, the executor throws
+    /// ``NetworkError/responseTooLarge(limit:observed:)``.
+    ///
+    /// > Note: This is a soft guard, not a streaming bound. Foundation's
+    /// > `URLSession.data(for:)` has already buffered the body in memory
+    /// > by the time the check runs. The benefit is a structured error
+    /// > (and a stable failure mode for retry/circuit-breaker policies)
+    /// > rather than an opaque OOM in the consumer or the decoder.
+    /// > Endpoints that need genuine memory-bounded handling should use
+    /// > the streaming surface (`stream(_:)` or `bytes(for:)`).
+    public let responseBodyLimit: Int64?
+
     public struct AdvancedBuilder: Sendable {
         public var baseURL: URL
         public var timeout: TimeInterval
@@ -114,12 +139,14 @@ public struct NetworkConfiguration: Sendable {
         public var acceptableStatusCodes: Set<Int>
         public var requestInterceptors: [RequestInterceptor]
         public var responseInterceptors: [ResponseInterceptor]
+        public var decodingInterceptors: [DecodingInterceptor]
         public var refreshTokenPolicy: RefreshTokenPolicy?
         public var requestCoalescingPolicy: RequestCoalescingPolicy
         public var responseCachePolicy: ResponseCachePolicy
         public var responseCache: (any ResponseCache)?
         public var circuitBreakerPolicy: CircuitBreakerPolicy?
         public var captureFailurePayload: Bool
+        public var responseBodyLimit: Int64?
 
         fileprivate init(preset: NetworkConfiguration) {
             self.baseURL = preset.baseURL
@@ -135,12 +162,14 @@ public struct NetworkConfiguration: Sendable {
             self.acceptableStatusCodes = preset.acceptableStatusCodes
             self.requestInterceptors = preset.requestInterceptors
             self.responseInterceptors = preset.responseInterceptors
+            self.decodingInterceptors = preset.decodingInterceptors
             self.refreshTokenPolicy = preset.refreshTokenPolicy
             self.requestCoalescingPolicy = preset.requestCoalescingPolicy
             self.responseCachePolicy = preset.responseCachePolicy
             self.responseCache = preset.responseCache
             self.circuitBreakerPolicy = preset.circuitBreakerPolicy
             self.captureFailurePayload = preset.captureFailurePayload
+            self.responseBodyLimit = preset.responseBodyLimit
         }
 
         fileprivate func build() -> NetworkConfiguration {
@@ -158,12 +187,14 @@ public struct NetworkConfiguration: Sendable {
                 acceptableStatusCodes: acceptableStatusCodes,
                 requestInterceptors: requestInterceptors,
                 responseInterceptors: responseInterceptors,
+                decodingInterceptors: decodingInterceptors,
                 refreshTokenPolicy: refreshTokenPolicy,
                 requestCoalescingPolicy: requestCoalescingPolicy,
                 responseCachePolicy: responseCachePolicy,
                 responseCache: responseCache,
                 circuitBreakerPolicy: circuitBreakerPolicy,
-                captureFailurePayload: captureFailurePayload
+                captureFailurePayload: captureFailurePayload,
+                responseBodyLimit: responseBodyLimit
             )
         }
     }
@@ -195,12 +226,14 @@ public struct NetworkConfiguration: Sendable {
         acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes,
         requestInterceptors: [RequestInterceptor] = [],
         responseInterceptors: [ResponseInterceptor] = [],
+        decodingInterceptors: [DecodingInterceptor] = [],
         refreshTokenPolicy: RefreshTokenPolicy? = nil,
         requestCoalescingPolicy: RequestCoalescingPolicy = .disabled,
         responseCachePolicy: ResponseCachePolicy = .disabled,
         responseCache: (any ResponseCache)? = nil,
         circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
-        captureFailurePayload: Bool = false
+        captureFailurePayload: Bool = false,
+        responseBodyLimit: Int64? = nil
     ) {
         self.baseURL = baseURL
         self.timeout = timeout
@@ -215,11 +248,13 @@ public struct NetworkConfiguration: Sendable {
         self.acceptableStatusCodes = acceptableStatusCodes
         self.requestInterceptors = requestInterceptors
         self.responseInterceptors = responseInterceptors
+        self.decodingInterceptors = decodingInterceptors
         self.refreshTokenPolicy = refreshTokenPolicy
         self.requestCoalescingPolicy = requestCoalescingPolicy
         self.responseCachePolicy = responseCachePolicy
         self.responseCache = responseCache
         self.circuitBreakerPolicy = circuitBreakerPolicy
         self.captureFailurePayload = captureFailurePayload
+        self.responseBodyLimit = responseBodyLimit
     }
 }

@@ -33,9 +33,17 @@ prototypes to production clients.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0")
+    // Recommended for app targets: pin to the current minor and accept
+    // patch upgrades. Provisionally stable APIs may evolve across minor
+    // bumps, so review CHANGELOG.md before adopting a new minor.
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", .upToNextMinor(from: "4.0.0"))
 ]
 ```
+
+> Use `from: "4.0.0"` (`.upToNextMajor`) only if you exclusively call
+> the **Stable** ledger in `API_STABILITY.md`. Provisionally stable
+> APIs (`Endpoint`, `WebSocketCloseDisposition`, `DecodingInterceptor`,
+> resilience policy surfaces, …) may change in any minor release.
 
 ### Core Request
 
@@ -117,7 +125,13 @@ struct UpdateProfile: APIDefinition {
 import Foundation
 import InnoNetworkDownload
 
-let manager = DownloadManager.shared
+// Construct one DownloadManager per feature (or per policy). Each
+// instance binds a unique URLSession identifier and DownloadConfiguration,
+// so a media downloader can be WiFi-only and resumable while a documents
+// downloader uses a different retry budget.
+let manager = try DownloadManager.make(
+    configuration: .safeDefaults(sessionIdentifier: "com.example.app.media")
+)
 let task = await manager.download(
     url: URL(string: "https://example.com/file.zip")!,
     toDirectory: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -127,6 +141,11 @@ for await event in await manager.events(for: task) {
     print(event)
 }
 ```
+
+> `DownloadManager.shared` still exists for back-compat, but is
+> soft-deprecated — a single global manager forces every feature to
+> share one configuration. Prefer per-feature managers via
+> `DownloadManager.make(configuration:)`.
 
 #### Destination filename policy
 
