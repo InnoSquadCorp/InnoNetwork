@@ -595,9 +595,10 @@ package struct RequestExecutor {
     ]
 
     private func cacheControlDirectives(in headers: [String: String]) -> Set<String> {
-        guard let value = headers.first(where: { $0.key.caseInsensitiveCompare("Cache-Control") == .orderedSame })?
-            .value
-        else {
+        let header = headers.first {
+            $0.key.caseInsensitiveCompare("Cache-Control") == .orderedSame
+        }
+        guard let value = header?.value else {
             return []
         }
         return Set(

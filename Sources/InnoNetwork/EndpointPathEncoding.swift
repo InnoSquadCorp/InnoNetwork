@@ -7,6 +7,12 @@ public enum EndpointPathEncoding {
     /// Unlike endpoint literal paths, dynamic placeholder values are treated
     /// as raw segment values. Slashes and percent signs are encoded so a user
     /// identifier such as `a/b` cannot accidentally change the path hierarchy.
+    ///
+    /// The value is rendered via `String(describing:)`, which matches what
+    /// Swift's string interpolation produces. Pass primitive identifiers
+    /// (`Int`, `UUID`, raw-value enums) or values whose `description` is the
+    /// intended segment text. Optionals render as `Optional(...)` / `nil`,
+    /// which is rarely desired — unwrap before calling.
     public static func percentEncodedSegment<T>(_ value: T) -> String {
         percentEncodedSegment(String(describing: value))
     }
