@@ -83,6 +83,13 @@ Versioning for the 4.x release line.
   background completion handlers, and decommissioning the remaining
   `.shared` call sites. The deprecation banner on
   ``DownloadManager/shared`` now links to the new article.
+- `docs/rfcs/persistent-response-cache.md` (P3) RFC enumerates the six
+  policies a future persistent ``ResponseCache`` companion product must
+  decide before implementation: cache key composition, freshness
+  precedence, eviction strategy, privacy posture for authenticated
+  responses, iOS data-protection class, and on-disk format versioning.
+  Code-free; positions persistent caching as a companion product
+  rather than a core-module feature.
 - `DecodingInterceptorCookbook` DocC article (P2.5) walks through
   ``DecodingInterceptor`` use cases: stripping a `{"data": ...}`
   envelope in `willDecode`, validating sentinel error codes in
