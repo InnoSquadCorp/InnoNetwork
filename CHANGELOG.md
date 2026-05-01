@@ -23,6 +23,14 @@ Versioning for the 4.x release line.
   actually need (envelope unwrapping, payload sanitization, decode
   metrics, typed-value normalization). `NetworkConfiguration.decodingInterceptors`
   registers them at the session level.
+- All `AsyncStream` / `AsyncThrowingStream` factories owned by InnoNetwork
+  now declare an explicit `bufferingPolicy`. Streaming responses,
+  download delegate events, and event-hub consumer streams use
+  `.unbounded` (event loss would corrupt task lifecycles or drop
+  server-emitted records); `NetworkMonitor` path snapshots use
+  `.bufferingNewest(16)` so a slow observer only ever sees the most
+  recent network state. Behaviour is unchanged for existing callers
+  whose consumers keep up with the producer.
 - `WebSocketConfiguration.closeHandshakeTimeout: Duration` (default
   `.seconds(3)`) lets callers tune how long the manager waits for the
   WebSocket close handshake to finish after `cancel(with:reason:)` before
