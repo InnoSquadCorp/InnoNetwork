@@ -43,6 +43,8 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - <doc:DecodingInterceptorCookbook>
 - <doc:ErrorClassification>
 - <doc:OpenAPIGeneratorAdapter>
+- <doc:OpenAPIGeneratorRecipe>
+- <doc:ObservabilityExporters>
 - <doc:UsingMacros>
 
 ### Resilience

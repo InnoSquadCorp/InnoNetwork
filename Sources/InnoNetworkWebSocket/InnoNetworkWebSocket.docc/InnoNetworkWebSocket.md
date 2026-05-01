@@ -66,6 +66,8 @@ for await event in await manager.events(for: task) {
 ### Realtime Flows
 
 - <doc:Reconnect>
+- <doc:WebSocketProtocolPolicy>
+- <doc:WebSocketBackgroundTransition>
 - ``WebSocketManager``
 - ``WebSocketConfiguration``
 - ``WebSocketTask``

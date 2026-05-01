@@ -83,6 +83,27 @@ Versioning for the 4.x release line.
   background completion handlers, and decommissioning the remaining
   `.shared` call sites. The deprecation banner on
   ``DownloadManager/shared`` now links to the new article.
+- `WebSocketProtocolPolicy` DocC article (P3) covers subprotocol
+  negotiation through ``WebSocketManager/connect(url:subprotocols:)``,
+  app-level protocol failure → close-code mapping, why
+  `permessage-deflate` is not supported on `URLSessionWebSocketTask`,
+  and heartbeat-tuning recommendations for foreground vs.
+  background-eligible vs. wired deployments.
+- `WebSocketBackgroundTransition` DocC article (P3) documents the
+  foreground-only reconnect policy, why heartbeats should be disabled
+  while suspended, and how ``WebSocketLifecycleReducer`` generations
+  invalidate stale callbacks across termination.
+- `ObservabilityExporters` DocC article (P3) describes how to write a
+  vendor adapter (Sentry, OpenTelemetry, Pulse, Datadog) over
+  ``NetworkObservability`` as an external package — keeping the core
+  module vendor-neutral while documenting the adapter shape and
+  versioning expectations.
+- `OpenAPIGeneratorRecipe` DocC article (P3) walks through the
+  workflow side of using `swift-openapi-generator` next to
+  InnoNetwork: project layout, build-plugin output handling, thin
+  ``APIDefinition`` wrappers around generated operations, drift
+  guardrails, and when to graduate to the SPI integration in
+  <doc:OpenAPIGeneratorAdapter>.
 - `docs/rfcs/persistent-response-cache.md` (P3) RFC enumerates the six
   policies a future persistent ``ResponseCache`` companion product must
   decide before implementation: cache key composition, freshness
