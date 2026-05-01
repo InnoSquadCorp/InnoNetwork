@@ -32,14 +32,15 @@ public struct APIDefinitionMacro: ExtensionMacro {
         let properties = storedPropertyNames(in: declaration)
         let path = try interpolatedPath(pathLiteral, properties: properties)
         let typeName = type.trimmedDescription
+        let accessPrefix = witnessAccessPrefix(in: declaration)
 
         return [
             try ExtensionDeclSyntax(
                 """
                 extension \(raw: typeName): APIDefinition {
-                    public typealias Parameter = EmptyParameter
-                    public var method: HTTPMethod { \(raw: method) }
-                    public var path: String { "\(raw: path)" }
+                    \(raw: accessPrefix)typealias Parameter = EmptyParameter
+                    \(raw: accessPrefix)var method: HTTPMethod { \(raw: method) }
+                    \(raw: accessPrefix)var path: String { "\(raw: path)" }
                 }
                 """
             )
@@ -108,6 +109,34 @@ public struct APIDefinitionMacro: ExtensionMacro {
             }
         }
         return names
+    }
+
+    private static func witnessAccessPrefix(in declaration: some DeclGroupSyntax) -> String {
+        let modifiers = declarationModifiers(in: declaration)
+        if modifiers.contains(where: { $0 == "public" || $0 == "open" }) {
+            return "public "
+        }
+        if modifiers.contains("package") {
+            return "package "
+        }
+        return ""
+    }
+
+    private static func declarationModifiers(in declaration: some DeclGroupSyntax) -> [String] {
+        let syntax = Syntax(declaration)
+        let modifiers: DeclModifierListSyntax?
+        if let declaration = syntax.as(StructDeclSyntax.self) {
+            modifiers = declaration.modifiers
+        } else if let declaration = syntax.as(ClassDeclSyntax.self) {
+            modifiers = declaration.modifiers
+        } else if let declaration = syntax.as(ActorDeclSyntax.self) {
+            modifiers = declaration.modifiers
+        } else if let declaration = syntax.as(EnumDeclSyntax.self) {
+            modifiers = declaration.modifiers
+        } else {
+            modifiers = nil
+        }
+        return modifiers?.map { $0.name.text } ?? []
     }
 
     private static func interpolatedPath(_ path: String, properties: Set<String>) throws -> String {
