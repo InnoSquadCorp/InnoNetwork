@@ -50,6 +50,7 @@ public protocol ResponseInterceptor: Sendable {
     ///     (correlating headers, recording per-endpoint metrics) without
     ///     having to thread state through the call site.
     /// - Returns: The adapted response to forward to the next stage.
-    /// - Throws: Any error to abort the request without retrying.
+    /// - Throws: Any error to abort the current attempt; the configured
+    ///   ``RetryPolicy`` decides whether another attempt runs.
     func adapt(_ urlResponse: Response, request: URLRequest) async throws -> Response
 }

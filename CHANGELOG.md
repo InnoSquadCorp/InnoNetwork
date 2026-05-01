@@ -27,11 +27,12 @@ Versioning for the 4.x release line.
   enforces a soft upper bound on the size of buffered response bodies.
   When the configured limit is exceeded the executor short-circuits the
   decoder and throws ``NetworkError/responseTooLarge(limit:observed:)``.
-  The check runs before response interceptors so user-supplied adapters
-  cannot observe a payload the executor will reject. The guard is
-  opt-in; setting it to `nil` keeps the prior unbounded behaviour.
-  Endpoints that need genuine memory-bounded handling should use the
-  streaming surface (`stream(_:)` / `bytes(for:)`).
+  Cache hits, conditional revalidation, and fresh transport responses are
+  checked before cache writes, and the final decoder input is rechecked
+  after response and decoding interceptors. The guard is opt-in; setting
+  it to `nil` keeps the prior unbounded behaviour. Endpoints that need
+  genuine memory-bounded handling should use the streaming surface
+  (`stream(_:)` / `bytes(for:)`).
 
 ### Changed
 
@@ -44,9 +45,9 @@ Versioning for the 4.x release line.
 - `RequestInterceptor` and `ResponseInterceptor` now carry DocC blocks
   that document the configuration → endpoint → refresh-token application
   order, the unwinding semantics for response adapters, and the failure
-  contract (interceptor throws abort the request without invoking the
-  retry policy). No source-level changes; existing conforming types
-  continue to compile.
+  contract (interceptor throws abort the current attempt, then the
+  configured retry policy decides whether another attempt runs). No
+  source-level changes; existing conforming types continue to compile.
 - `MultipartAPIDefinition.uploadStrategy` now defaults to
   `.streamingThreshold(bytes: 50 * 1024 * 1024)` (50 MiB) instead of
   `.inMemory`. Small payloads still encode in memory; bodies past the
@@ -86,8 +87,8 @@ new case carries `errorCode == 4002` for `CustomNSError` bridging.
   `.notConnectedToInternet`.
 - `DownloadTask.updateState(_:)` now validates transitions against the
   documented `DownloadState.canTransition(to:)` table. Illegal transitions
-  trigger `assertionFailure` in DEBUG and an OSLog `.fault` in release while
-  still applying the assignment to preserve runtime stability. State
+  trigger `assertionFailure` in DEBUG and an OSLog `.fault` in release,
+  then reject the assignment so the existing state is preserved. State
   restoration (rebuilding actor state from persisted records or live
   `URLSession` task state on relaunch) and test-only state injection now
   use the new `restoreState(_:)` helper, which bypasses validation.

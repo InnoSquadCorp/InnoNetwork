@@ -84,6 +84,7 @@ package struct RequestExecutor {
             for interceptor in configuration.responseInterceptors {
                 networkResponse = try await interceptor.adapt(networkResponse, request: request)
             }
+            try enforceResponseBodyLimit(networkResponse, configuration: configuration)
 
             // Per-endpoint override wins over the session-wide configuration
             // when present. Lets one definition treat e.g. 304 as success
@@ -115,6 +116,7 @@ package struct RequestExecutor {
                     response: networkResponse
                 )
             }
+            try enforceResponseBodyLimit(data: decodableData, configuration: configuration)
 
             var decoded = try executable.decode(data: decodableData, response: networkResponse)
             for interceptor in configuration.decodingInterceptors {
@@ -148,7 +150,7 @@ package struct RequestExecutor {
 
         while true {
             let cacheKey = ResponseCacheKey(request: request)
-            if let cachedResponse = await cachedResponseIfAvailable(
+            if let cachedResponse = try await cachedResponseIfAvailable(
                 cacheKey: cacheKey,
                 request: request,
                 configuration: configuration,
@@ -212,8 +214,15 @@ package struct RequestExecutor {
         _ response: Response,
         configuration: NetworkConfiguration
     ) throws {
+        try enforceResponseBodyLimit(data: response.data, configuration: configuration)
+    }
+
+    private func enforceResponseBodyLimit(
+        data: Data,
+        configuration: NetworkConfiguration
+    ) throws {
         guard let limit = configuration.responseBodyLimit else { return }
-        let observed = Int64(response.data.count)
+        let observed = Int64(data.count)
         if observed > limit {
             throw NetworkError.responseTooLarge(limit: limit, observed: observed)
         }
@@ -342,7 +351,7 @@ package struct RequestExecutor {
         context: NetworkRequestContext,
         bodySource: BodySource,
         runtime: RequestExecutionRuntime
-    ) async -> Response? {
+    ) async throws -> Response? {
         guard let cacheKey,
             request.httpMethod?.uppercased() == "GET",
             let cache = configuration.responseCache,
@@ -357,8 +366,24 @@ package struct RequestExecutor {
             return nil
         case .returnCached(let cached):
             guard let httpResponse = cached.response(for: request) else { return nil }
-            return Response(statusCode: cached.statusCode, data: cached.data, request: request, response: httpResponse)
+            let response = Response(
+                statusCode: cached.statusCode,
+                data: cached.data,
+                request: request,
+                response: httpResponse
+            )
+            try enforceResponseBodyLimit(response, configuration: configuration)
+            return response
         case .returnStaleAndRevalidate(let cached):
+            guard let httpResponse = cached.response(for: request) else { return nil }
+            let staleResponse = Response(
+                statusCode: cached.statusCode,
+                data: cached.data,
+                request: request,
+                response: httpResponse
+            )
+            try enforceResponseBodyLimit(staleResponse, configuration: configuration)
+
             let revalidationID = UUID()
             let startGate = TaskStartGate()
             let revalidationHandle = InFlightTaskHandle()
@@ -401,10 +426,12 @@ package struct RequestExecutor {
                         configuration: configuration
                     ) {
                         try Task.checkCancellation()
+                        try enforceResponseBodyLimit(converted, configuration: configuration)
                         await storeCacheIfNeeded(
                             converted, cacheKey: cacheKey, request: revalidationRequest, configuration: configuration)
                     } else {
                         try Task.checkCancellation()
+                        try enforceResponseBodyLimit(response, configuration: configuration)
                         await storeCacheIfNeeded(
                             response, cacheKey: cacheKey, request: revalidationRequest, configuration: configuration)
                     }
@@ -423,8 +450,7 @@ package struct RequestExecutor {
             }
             revalidationHandle.attach(revalidationTask)
             startGate.open()
-            guard let httpResponse = cached.response(for: request) else { return nil }
-            return Response(statusCode: cached.statusCode, data: cached.data, request: request, response: httpResponse)
+            return staleResponse
         }
     }
 

@@ -41,6 +41,7 @@ public protocol RequestInterceptor: Sendable {
     /// - Parameter urlRequest: The request as built by the executor or
     ///   produced by the previous interceptor in the chain.
     /// - Returns: The adapted request to forward to the next stage.
-    /// - Throws: Any error to abort the request without retrying.
+    /// - Throws: Any error to abort the current attempt; the configured
+    ///   ``RetryPolicy`` decides whether another attempt runs.
     func adapt(_ urlRequest: URLRequest) async throws -> URLRequest
 }

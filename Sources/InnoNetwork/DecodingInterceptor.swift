@@ -56,7 +56,8 @@ public protocol DecodingInterceptor: Sendable {
     ///     headers with the decoded value.
     /// - Returns: The typed value to forward to the next stage; return
     ///   `value` unchanged to act as a passive observer.
-    /// - Throws: Any error to abort the request without retrying.
+    /// - Throws: Any error to abort the current attempt; the configured
+    ///   ``RetryPolicy`` decides whether another attempt runs.
     func didDecode<APIResponse>(
         _ value: APIResponse,
         response: Response

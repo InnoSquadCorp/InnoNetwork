@@ -109,10 +109,12 @@ public struct NetworkConfiguration: Sendable {
 
     /// Optional ceiling on the size of buffered response bodies, in bytes.
     /// When `nil` (default) the executor enforces no limit and behaves
-    /// exactly as in 4.0. When set, the executor compares the received
-    /// `Data` length against the limit after transport completes and
-    /// throws ``NetworkError/responseTooLarge(limit:observed:)`` if the
-    /// payload exceeds it, before the body is handed to the decoder.
+    /// exactly as in 4.0. When set, the executor compares cached,
+    /// revalidated, and received transport bodies against the limit before
+    /// cache writes or decoder handoff, then rechecks the final decoder
+    /// input after response and decoding interceptors. If any payload
+    /// exceeds the limit, the executor throws
+    /// ``NetworkError/responseTooLarge(limit:observed:)``.
     ///
     /// > Note: This is a soft guard, not a streaming bound. Foundation's
     /// > `URLSession.data(for:)` has already buffered the body in memory
