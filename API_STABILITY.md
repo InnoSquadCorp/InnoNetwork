@@ -51,7 +51,7 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `InnoNetworkTestSupport` library product and its `public` symbols
   (currently `MockURLSession`, `WebSocketEventRecorder`, `StubBehavior`,
   `StubNetworkClient`, and `StubRequestKey`)
-- `Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
+- `Endpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `WebSocketCloseDisposition` observation surface
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
@@ -71,6 +71,10 @@ Per-symbol evolution allowances within the 4.x line:
   symbols stay source-compatible within 4.x.
 - `Endpoint`, `AnyEncodable`, `NetworkContext`, `CorrelationIDInterceptor` —
   builder shape may grow new chainable methods.
+- `EndpointPathEncoding` — may add new helpers for placeholder encoding;
+  existing entry points remain source-compatible. The set of percent-encoded
+  characters tracks RFC 3986 reserved/unreserved updates and may widen
+  encoding for newly disallowed scalars without prior deprecation.
 - `WebSocketCloseDisposition` — additional enum cases may appear as new
   close-code classifications are formalized.
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and
@@ -117,7 +121,7 @@ high-level compatibility classification readable for the 4.x release line.
   `CancellationTag`, `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
   `ContentType`, `CorrelationIDInterceptor`, `DefaultNetworkClient`,
   `DefaultNetworkLogger`, `EmptyParameter`, `EmptyResponse`, `Endpoint`,
-  `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
+  `EndpointPathEncoding`, `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
   `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,
   `MultipartPart`, `MultipartResponseDecoder`, `MultipartUploadStrategy`,
   `NetworkClient`, `NetworkConfiguration`, `NetworkContext`, `NetworkError`,

@@ -33,7 +33,7 @@ package struct RequestBuilder {
         configuration: NetworkConfiguration
     ) throws -> BuiltRequest {
         let payload = try executable.makePayload()
-        var targetURL = try Self.makeURL(baseURL: configuration.baseURL, endpointPath: executable.path)
+        var targetURL = try EndpointPathBuilder.makeURL(baseURL: configuration.baseURL, endpointPath: executable.path)
         var httpBody: Data?
         var bodySource = BodySource.inline
         var bodyContentType = executable.bodyContentType
@@ -63,37 +63,6 @@ package struct RequestBuilder {
         request.timeoutInterval = configuration.timeout
         request.httpBody = httpBody
         return BuiltRequest(request: request, bodySource: bodySource)
-    }
-
-    private static func makeURL(baseURL: URL, endpointPath: String) throws -> URL {
-        guard !endpointPath.contains("?"), !endpointPath.contains("#") else {
-            throw NetworkError.invalidRequestConfiguration(
-                "Endpoint path must not contain query or fragment components. Use parameters/queryEncoder for query values."
-            )
-        }
-        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
-            throw NetworkError.invalidBaseURL(baseURL.absoluteString)
-        }
-
-        let basePath = components.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let childPath = endpointPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        switch (basePath.isEmpty, childPath.isEmpty) {
-        case (true, true):
-            components.percentEncodedPath = "/"
-        case (true, false):
-            components.percentEncodedPath = "/" + childPath
-        case (false, true):
-            components.percentEncodedPath = "/" + basePath
-        case (false, false):
-            components.percentEncodedPath = "/" + basePath + "/" + childPath
-        }
-
-        guard let url = components.url else {
-            throw NetworkError.invalidRequestConfiguration(
-                "Endpoint path must be a valid percent-encoded URL path."
-            )
-        }
-        return url
     }
 }
 

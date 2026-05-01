@@ -146,7 +146,7 @@ expected_provisionally=(
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
-'`Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
+'`Endpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
 '`WebSocketCloseDisposition` observation surface'
 '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
@@ -179,6 +179,7 @@ expected_shipping_public_declarations=(
   EmptyParameter
   EmptyResponse
   Endpoint
+  EndpointPathEncoding
   EventDeliveryPolicy
   EventPipelineAggregateSnapshotMetric
   EventPipelineConsumerDeliveryLatencyMetric
@@ -480,6 +481,8 @@ validate_public_surface_ledger() {
 validate_oss_readiness_public_api() {
   require_contains 'public struct Endpoint<Response: Decodable & Sendable>: APIDefinition' \
     "$repo_root/Sources/InnoNetwork/Endpoint.swift"
+  require_contains 'public enum EndpointPathEncoding' \
+    "$repo_root/Sources/InnoNetwork/EndpointPathEncoding.swift"
   require_contains 'public struct AnyEncodable: Encodable, Sendable' \
     "$repo_root/Sources/InnoNetwork/AnyEncodable.swift"
   require_contains 'public struct NetworkContext: Sendable' \
@@ -686,7 +689,7 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_test_support_product
       continue
       ;;
-    '`Endpoint`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
+    '`Endpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
       validate_oss_readiness_public_api
       continue
       ;;
@@ -782,5 +785,17 @@ forbidden_pattern 'manager\.receive\(' \
   "$repo_root/docs" \
   "$repo_root/Sources" \
   "$repo_root/Tests"
+
+require_contains 'GET responses with RFC-cacheable whole-response status codes' \
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"
+require_contains '`Cache-Control: no-store` responses are not stored' \
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"
+require_contains 'The response `Vary` header is processed automatically' \
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"
+forbidden_pattern 'Only `200 OK` responses are persisted|written back on a 200 response|does not implement full HTTP `Vary`|server `Cache-Control: no-store` are not honoured|응답 `Vary` 헤더 기반 자동 key 확장은 별도 설계가 필요하다|Cache-Control expansion' \
+  "$repo_root/README.md" \
+  "$repo_root/docs" \
+  "$repo_root/Sources/InnoNetwork" \
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc"
 
 echo "docs-contract-sync: OK"

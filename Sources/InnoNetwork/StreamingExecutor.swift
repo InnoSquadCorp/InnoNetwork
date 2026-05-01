@@ -49,7 +49,7 @@ package struct StreamingExecutor: Sendable {
             do {
                 try Task.checkCancellation()
                 resumeState.beginAttempt()
-                var urlRequest = Self.makeURLRequest(
+                var urlRequest = try Self.makeURLRequest(
                     for: request,
                     configuration: configuration,
                     lastSeenEventID: resumeState.lastSeenEventID
@@ -209,8 +209,9 @@ package struct StreamingExecutor: Sendable {
         for request: T,
         configuration: NetworkConfiguration,
         lastSeenEventID: String?
-    ) -> URLRequest {
-        var urlRequest = URLRequest(url: configuration.baseURL.appendingPathComponent(request.path))
+    ) throws -> URLRequest {
+        let url = try EndpointPathBuilder.makeURL(baseURL: configuration.baseURL, endpointPath: request.path)
+        var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method.rawValue
         urlRequest.allHTTPHeaderFields = request.headers.dictionary
         urlRequest.cachePolicy = configuration.cachePolicy

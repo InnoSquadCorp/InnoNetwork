@@ -10,10 +10,14 @@ public enum ResponseCachePolicy: Sendable, Equatable {
     /// polluting an existing cache.
     case networkOnly
     /// Serve from cache while entries are within `maxAge`. Stale entries fall
-    /// through to the network and are written back on a 200 response.
+    /// through to the network and RFC-cacheable GET responses may be written back.
+    /// Entries flagged as `requiresRevalidation` (e.g. responses carrying
+    /// `Cache-Control: no-cache`) are revalidated even while inside `maxAge`.
     case cacheFirst(maxAge: Duration)
     /// Serve fresh entries directly. Within the `staleWindow` past `maxAge`,
     /// return the cached entry immediately and revalidate in the background.
+    /// Entries flagged as `requiresRevalidation` skip the fast path and force
+    /// revalidation on every request even within `maxAge`.
     case staleWhileRevalidate(maxAge: Duration, staleWindow: Duration)
 }
 
@@ -94,6 +98,9 @@ public struct CachedResponse: Sendable, Equatable {
     public let statusCode: Int
     public let headers: [String: String]
     public let storedAt: Date
+    /// Whether a cached entry must be revalidated before reuse even while it
+    /// is still inside the caller-provided freshness window.
+    public let requiresRevalidation: Bool
     /// Snapshot of the request headers that were present when this response
     /// was stored, restricted to the names listed in the response `Vary`
     /// header. `nil` means the response did not carry a `Vary` header (so
@@ -108,12 +115,14 @@ public struct CachedResponse: Sendable, Equatable {
         statusCode: Int = 200,
         headers: [String: String] = [:],
         storedAt: Date = Date(),
+        requiresRevalidation: Bool = false,
         varyHeaders: [String: String?]? = nil
     ) {
         self.data = data
         self.statusCode = statusCode
         self.headers = headers
         self.storedAt = storedAt
+        self.requiresRevalidation = requiresRevalidation
         self.varyHeaders = varyHeaders
     }
 
@@ -248,9 +257,11 @@ package extension ResponseCachePolicy {
             return .revalidate(nil)
         case .cacheFirst(let maxAge):
             guard let cached else { return .revalidate(nil) }
+            guard !cached.requiresRevalidation else { return .revalidate(cached) }
             return cached.age(since: now) <= maxAge.timeInterval ? .returnCached(cached) : .revalidate(cached)
         case .staleWhileRevalidate(let maxAge, let staleWindow):
             guard let cached else { return .revalidate(nil) }
+            guard !cached.requiresRevalidation else { return .revalidate(cached) }
             let age = cached.age(since: now)
             if age <= maxAge.timeInterval {
                 return .returnCached(cached)

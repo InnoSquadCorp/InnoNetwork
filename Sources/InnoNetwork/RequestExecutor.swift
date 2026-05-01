@@ -539,16 +539,10 @@ package struct RequestExecutor {
 
     /// Stores the response in cache when the policy allows writes.
     ///
-    /// Only `200 OK` responses are persisted in 4.0. Other RFC-cacheable status
-    /// codes (203, 204, 301, 404, 410, etc.) and server `Cache-Control: no-store`
-    /// are intentionally not honoured yet to keep the surface minimal—see
-    /// `docs/ROADMAP.md` for the planned expansion.
-    ///
-    /// Responses carrying `Vary: *` are intentionally **not** stored, mirroring
-    /// RFC 9111 §4.1: such responses can vary on anything the server feels like
-    /// and the cache cannot prove a future request would match. Responses with a
-    /// concrete `Vary` header capture a snapshot of the named request headers so
-    /// future lookups can reject mismatching values.
+    /// Only GET responses are persisted. InnoNetwork stores the RFC-cacheable
+    /// status codes that are safe for whole-response reuse and honours
+    /// `Cache-Control: no-store` / `no-cache` without changing the explicit
+    /// `ResponseCachePolicy` freshness window selected by the caller.
     private func storeCacheIfNeeded(
         _ response: Response,
         cacheKey: ResponseCacheKey?,
@@ -556,7 +550,7 @@ package struct RequestExecutor {
         configuration: NetworkConfiguration
     ) async {
         guard let cacheKey,
-            response.statusCode == 200,
+            request.httpMethod?.uppercased() == "GET",
             let cache = configuration.responseCache,
             configuration.responseCachePolicy.allowsCacheWrite
         else {
@@ -567,6 +561,14 @@ package struct RequestExecutor {
                 guard let key = pair.key as? String, let value = pair.value as? String else { return }
                 result[key] = value
             } ?? [:]
+        guard Self.cacheableStatusCodes.contains(response.statusCode) else {
+            return
+        }
+        let cacheControl = cacheControlDirectives(in: headerSnapshot)
+        if cacheControl.contains("no-store") {
+            await cache.invalidate(cacheKey)
+            return
+        }
         let varyHeaders: [String: String?]?
         switch evaluateVary(responseHeaders: headerSnapshot, request: request) {
         case .wildcardSkipsCache:
@@ -582,8 +584,42 @@ package struct RequestExecutor {
                 data: response.data,
                 statusCode: response.statusCode,
                 headers: headerSnapshot,
+                requiresRevalidation: cacheControl.contains("no-cache"),
                 varyHeaders: varyHeaders
             )
+        )
+    }
+
+    /// Status codes that are cacheable by default per RFC 9110 §15. `307`
+    /// (Temporary Redirect) is intentionally omitted — RFC 9110 marks it as
+    /// not cacheable by default, so caching it would silently change observed
+    /// redirect behaviour.
+    private static let cacheableStatusCodes: Set<Int> = [
+        200, 203, 204, 300, 301, 308, 404, 405, 410, 414, 501,
+    ]
+
+    /// Parses Cache-Control directive *names* only. Qualified directives whose
+    /// quoted values contain commas (e.g. `private="X-Foo, X-Bar"`) will split
+    /// into multiple tokens, so this helper must not be used to recover such
+    /// values — it only powers the `no-store` / `no-cache` lookups today.
+    private func cacheControlDirectives(in headers: [String: String]) -> Set<String> {
+        let combined =
+            headers
+            .filter { $0.key.caseInsensitiveCompare("Cache-Control") == .orderedSame }
+            .map { $0.value }
+            .joined(separator: ",")
+        guard !combined.isEmpty else { return [] }
+        return Set(
+            combined
+                .split(separator: ",")
+                .map { directive in
+                    directive
+                        .split(separator: "=", maxSplits: 1)
+                        .first?
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .lowercased() ?? ""
+                }
+                .filter { !$0.isEmpty }
         )
     }
 

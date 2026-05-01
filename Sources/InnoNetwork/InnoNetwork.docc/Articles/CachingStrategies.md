@@ -26,16 +26,28 @@ Available modes:
 
 When the server responds with `304 Not Modified`, InnoNetwork substitutes the
 cached body before status validation and decoding for conditional cache modes.
-Only `200 OK` responses are persisted; other RFC-cacheable status codes and
-server `Cache-Control: no-store` are not honoured in 4.0 and are tracked in
-the roadmap. Cache entries are keyed by HTTP method, absolute URL, and
-representation headers that affect privacy or request identity. `Authorization`
-is included as a SHA-256 fingerprint rather than a raw token, and
-`Accept-Language` is included so locale-specific responses do not cross-pollute.
-URL fragments are ignored because they are not sent to the server. InnoNetwork
-4.0 does not implement full HTTP `Vary` response-header processing; if an API
-varies on additional request headers, keep caching disabled for that endpoint
-until a custom key policy is available.
+GET responses with RFC-cacheable whole-response status codes (`200`, `203`,
+`204`, `300`, `301`, `308`, `404`, `405`, `410`, `414`, and `501`) are eligible
+for storage. `206 Partial Content` is intentionally excluded because range
+semantics require a different representation model.
+
+Cache entries are keyed by HTTP method, absolute URL, and representation
+headers that affect privacy or request identity. `Authorization` is included as
+a SHA-256 fingerprint rather than a raw token, and `Accept-Language` is included
+so locale-specific responses do not cross-pollute. URL fragments are ignored
+because they are not sent to the server.
+
+InnoNetwork honours response cache-control directives that affect storage and
+reuse:
+
+- `Cache-Control: no-store` responses are not stored and invalidate the current
+  key if an older entry exists.
+- `Cache-Control: no-cache` responses may be stored, but every lookup must
+  revalidate before reuse even inside the caller-provided freshness window.
+
+The response `Vary` header is processed automatically. `Vary: *` responses are
+not stored, while concrete `Vary` headers capture a snapshot of the named request
+headers and require those values to match on later lookup.
 
 Request coalescing can be enabled separately with ``RequestCoalescingPolicy``:
 

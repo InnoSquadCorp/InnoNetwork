@@ -15,6 +15,18 @@ private struct LineCounterStream: StreamingAPIDefinition {
     }
 }
 
+private struct PathCounterStream: StreamingAPIDefinition {
+    typealias Output = String
+
+    let path: String
+    var method: HTTPMethod { .get }
+
+    func decode(line: String) throws -> String? {
+        guard !line.isEmpty else { return nil }
+        return line
+    }
+}
+
 
 private final class ThrowingBytesSession: URLSessionProtocol, Sendable {
     let error: URLError
@@ -344,6 +356,28 @@ struct StreamingAPIDefinitionTests {
         await #expect(throws: NetworkError.self) {
             _ = try await iterator.next()
         }
+    }
+
+    @Test("stream() uses the shared endpoint path builder")
+    func streamUsesSharedEndpointPathBuilder() async throws {
+        let definition = PathCounterStream(path: "/events/raw space/\u{2713}")
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = URL(string: baseURL.absoluteString + "/events/raw%20space/%E2%9C%93")!
+        StreamingURLProtocol.register(
+            url: streamURL,
+            response: .success(statusCode: 200, data: Data("one\n".utf8))
+        )
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(baseURL: baseURL),
+            session: makeStreamingURLSession()
+        )
+
+        var values: [String] = []
+        for try await value in client.stream(definition) {
+            values.append(value)
+        }
+
+        #expect(values == ["one"])
     }
 
     @Test("stream() decode(line:) returning nil filters lines")

@@ -17,6 +17,19 @@ private struct ResilienceGetRequest: APIDefinition {
     var path: String { "/users/1" }
 }
 
+private struct CacheableEmptyRequest: APIDefinition, HTTPEmptyResponseDecodable {
+    typealias Parameter = EmptyParameter
+    typealias APIResponse = CacheableEmptyRequest
+
+    var method: HTTPMethod { .get }
+    var path: String { "/empty" }
+    var acceptableStatusCodes: Set<Int>? { [204] }
+
+    static func emptyResponseValue() -> CacheableEmptyRequest {
+        CacheableEmptyRequest()
+    }
+}
+
 
 private struct AuthorizedResilienceGetRequest: APIDefinition {
     typealias Parameter = EmptyParameter
@@ -978,6 +991,130 @@ struct ResiliencePolicyTests {
 
         #expect(first == second)
         #expect(first.url == "https://api.example.com/users/1")
+    }
+
+    @Test(
+        "Response cache stores RFC-cacheable GET status codes",
+        arguments: [203, 300, 301, 308, 404, 405, 410, 414, 501])
+    func responseCacheStoresCacheableStatusCodes(statusCode: Int) async throws {
+        let cache = InMemoryResponseCache()
+        let body = ResilienceUser(id: statusCode, name: "cached-\(statusCode)")
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: statusCode, body: body)
+        ])
+        let configuration = NetworkConfiguration(
+            baseURL: URL(string: "https://api.example.com")!,
+            acceptableStatusCodes: NetworkConfiguration.defaultAcceptableStatusCodes.union([statusCode]),
+            requestInterceptors: [
+                HeaderSettingInterceptor(field: "Accept-Language", value: cacheFixtureAcceptLanguage)
+            ],
+            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+            responseCache: cache
+        )
+        let client = DefaultNetworkClient(configuration: configuration, session: session)
+
+        let user = try await client.request(ResilienceGetRequest())
+
+        #expect(user == body)
+        let stored = try #require(await cache.get(resilienceUserCacheKey()))
+        #expect(stored.statusCode == statusCode)
+
+        let cachedOnlySession = SequenceURLSession(queue: [])
+        let cachedOnlyClient = DefaultNetworkClient(configuration: configuration, session: cachedOnlySession)
+        let cachedUser = try await cachedOnlyClient.request(ResilienceGetRequest())
+
+        #expect(cachedUser == body)
+        #expect(await cachedOnlySession.requestCount == 0)
+    }
+
+    @Test("Response cache stores 204 responses without a body")
+    func responseCacheStoresNoContentResponses() async throws {
+        let cache = InMemoryResponseCache()
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 204)
+        ])
+        let configuration = makeLocalizedCacheConfiguration(
+            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+            responseCache: cache
+        )
+        let client = DefaultNetworkClient(configuration: configuration, session: session)
+
+        _ = try await client.request(CacheableEmptyRequest())
+
+        let stored = try #require(
+            await cache.get(
+                ResponseCacheKey(
+                    method: "GET",
+                    url: "https://api.example.com/empty",
+                    headers: ["Accept-Language": cacheFixtureAcceptLanguage]
+                )
+            )
+        )
+        #expect(stored.statusCode == 204)
+    }
+
+    @Test("Cache-Control no-store invalidates existing cached entries and skips writes")
+    func cacheControlNoStoreInvalidatesExistingEntry() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        let staleBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale"))
+        await cache.set(
+            key,
+            CachedResponse(
+                data: staleBody,
+                headers: ["ETag": "old"],
+                storedAt: Date(timeIntervalSinceNow: -60)
+            )
+        )
+        let fresh = ResilienceUser(id: 1, name: "fresh")
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: fresh, headers: ["Cache-Control": "max-age=60, no-store"])
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let user = try await client.request(ResilienceGetRequest())
+
+        #expect(user == fresh)
+        #expect(await cache.get(key) == nil)
+    }
+
+    @Test("Cache-Control no-cache entries are stored but always revalidated")
+    func cacheControlNoCacheForcesRevalidation() async throws {
+        let cache = InMemoryResponseCache()
+        let cached = ResilienceUser(id: 1, name: "requires-revalidation")
+        let initialSession = try SequenceURLSession(queue: [
+            queuedResponse(
+                statusCode: 200,
+                body: cached,
+                headers: ["ETag": "v1", "Cache-Control": "no-cache, max-age=60"]
+            )
+        ])
+        let configuration = makeLocalizedCacheConfiguration(
+            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+            responseCache: cache
+        )
+        let initialClient = DefaultNetworkClient(configuration: configuration, session: initialSession)
+
+        _ = try await initialClient.request(ResilienceGetRequest())
+
+        let stored = try #require(await cache.get(resilienceUserCacheKey()))
+        #expect(stored.requiresRevalidation)
+
+        let revalidationSession = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 304, headers: ["ETag": "v2"])
+        ])
+        let revalidationClient = DefaultNetworkClient(configuration: configuration, session: revalidationSession)
+        let user = try await revalidationClient.request(ResilienceGetRequest())
+
+        #expect(user == cached)
+        #expect(await revalidationSession.requestCount == 1)
+        #expect(await revalidationSession.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
     }
 
     @Test("Response cache keeps different Accept-Language headers separate")
