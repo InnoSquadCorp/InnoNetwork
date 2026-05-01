@@ -61,6 +61,7 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - <doc:RetryDecisions>
 - <doc:AuthRefresh>
 - <doc:CachingStrategies>
+- <doc:MigrationFromAlamofire>
 
 ### Event Pipeline
 

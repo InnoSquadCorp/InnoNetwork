@@ -83,6 +83,13 @@ Versioning for the 4.x release line.
   background completion handlers, and decommissioning the remaining
   `.shared` call sites. The deprecation banner on
   ``DownloadManager/shared`` now links to the new article.
+- `MigrationFromAlamofire` DocC article (P3) maps Alamofire's
+  `RequestAdapter` / `RequestRetrier` / `AuthenticationInterceptor`
+  onto InnoNetwork's ``RequestInterceptor`` / ``RetryPolicy`` /
+  ``RefreshTokenPolicy`` split, calls out the actor-based single-flight
+  refresh as the operational difference vs. Alamofire's lock-based
+  serialization, and provides side-by-side 401-refresh-retry and
+  per-request adapter snippets plus a four-pass migration order.
 - `WebSocketProtocolPolicy` DocC article (P3) covers subprotocol
   negotiation through ``WebSocketManager/connect(url:subprotocols:)``,
   app-level protocol failure → close-code mapping, why
