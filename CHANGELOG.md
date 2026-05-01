@@ -48,6 +48,17 @@ Versioning for the 4.x release line.
   genuine memory-bounded handling should use the streaming surface
   (`stream(_:)` / `bytes(for:)`).
 
+### Documentation
+
+- `RequestCoalescingPolicy` now documents the interaction between
+  coalescing and `Authorization`: the header participates in the dedup
+  key by default, so callers with different tokens never share a
+  transport, and `RefreshTokenPolicy` is the supported way to recover
+  token-mismatch peers individually. Opting into Authorization-agnostic
+  dedup remains possible but is called out as only safe when every
+  caller in the cohort presents identical credentials. No behavioural
+  change.
+
 ### Fixed
 
 - `WebSocketState.connecting.nextStates` now lists `.reconnecting`. The
