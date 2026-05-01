@@ -42,9 +42,11 @@ behind an actor-safe handle (`let manager: DownloadManager`).
 Use ``DownloadConfiguration/safeDefaults(sessionIdentifier:)`` (or the
 designated initializer) to build a configuration with an explicit session
 identifier. The session identifier must be unique per
-``DownloadManager`` in the same process — the constructor throws
-``DownloadManagerError/duplicateSessionIdentifier(_:)`` if it is already
-claimed:
+``DownloadManager`` in the same process — the
+``DownloadManager/make(configuration:)`` factory (and the throwing
+designated initializer it wraps) throws
+``DownloadManagerError/duplicateSessionIdentifier(_:)`` if the
+identifier is already claimed by another live `DownloadManager`:
 
 ```swift
 let mediaConfiguration = DownloadConfiguration.safeDefaults(

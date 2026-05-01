@@ -97,7 +97,7 @@ not interesting on their own unless they fail.
 ## Versioning and compatibility
 
 Adapter packages should pin their InnoNetwork dependency to a minor
-range (`from: "4.1.0"`) and bump on every observability surface change.
+range (`from: "4.0.0"`) and bump on every observability surface change.
 The 4.x line guarantees additive changes to the event enum; an
 adapter that uses a `default:` case in its event switch will continue
 to compile against newer 4.x releases without modification.

@@ -27,7 +27,7 @@ else through ``DefaultNetworkClient``.
 
 ## Project layout
 
-```
+```text
 MyApp/
 ├── Sources/
 │   ├── MyApp/

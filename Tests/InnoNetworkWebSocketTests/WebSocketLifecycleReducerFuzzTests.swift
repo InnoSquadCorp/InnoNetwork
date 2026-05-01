@@ -110,7 +110,9 @@ struct WebSocketLifecycleReducerFuzzTests {
 
         let nonResetEvents: [WebSocketLifecycleEvent] = [
             .didOpen(generation: 5, protocolName: nil),
-            .didClose(generation: 5, closeCode: .abnormalClosure, disposition: .peerTerminal(.abnormalClosure, nil), error: nil),
+            .didClose(
+                generation: 5, closeCode: .abnormalClosure, disposition: .peerTerminal(.abnormalClosure, nil),
+                error: nil),
             .failure(generation: 5, disposition: .peerTerminal(.abnormalClosure, nil), error: .pingTimeout),
             .closeTimeout(closeCode: .normalClosure, error: .pingTimeout),
             .reconnectTimerFired,
@@ -156,7 +158,9 @@ struct WebSocketLifecycleReducerFuzzTests {
 
         let nonResetEvents: [WebSocketLifecycleEvent] = [
             .didOpen(generation: 7, protocolName: nil),
-            .didClose(generation: 7, closeCode: .abnormalClosure, disposition: .peerTerminal(.abnormalClosure, nil), error: nil),
+            .didClose(
+                generation: 7, closeCode: .abnormalClosure, disposition: .peerTerminal(.abnormalClosure, nil),
+                error: nil),
             .failure(generation: 7, disposition: .peerTerminal(.abnormalClosure, nil), error: .pingTimeout),
             .closeTimeout(closeCode: .normalClosure, error: .pingTimeout),
             .reconnectTimerFired,
@@ -186,11 +190,12 @@ struct WebSocketLifecycleReducerFuzzTests {
         for _ in 0..<200 {
             let event = randomEvent(state: state, rng: &rng)
             let context = randomContext(rng: &rng)
-            state = WebSocketLifecycleReducer.reduce(
-                state: state,
-                event: event,
-                context: context
-            ).state
+            state =
+                WebSocketLifecycleReducer.reduce(
+                    state: state,
+                    event: event,
+                    context: context
+                ).state
 
             let staleGeneration = state.generation - 10
             let staleEvents: [WebSocketLifecycleEvent] = [
@@ -201,7 +206,8 @@ struct WebSocketLifecycleReducerFuzzTests {
                     disposition: .peerTerminal(.abnormalClosure, nil),
                     error: nil
                 ),
-                .failure(generation: staleGeneration, disposition: .peerTerminal(.abnormalClosure, nil), error: .pingTimeout),
+                .failure(
+                    generation: staleGeneration, disposition: .peerTerminal(.abnormalClosure, nil), error: .pingTimeout),
             ]
 
             for stale in staleEvents {

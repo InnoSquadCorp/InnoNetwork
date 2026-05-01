@@ -20,7 +20,7 @@ struct DownloadTaskStateTransitionTests {
     // MARK: - canTransition matrix
 
     @Test("canTransition matrix matches the documented nextStates table")
-    func canTransitionMatrixIsConsistent() {
+    func canTransitionMatrixIsConsistent() async {
         for from in Self.allStates {
             for to in Self.allStates {
                 let allowed = from.canTransition(to: to)
@@ -31,17 +31,18 @@ struct DownloadTaskStateTransitionTests {
     }
 
     @Test("Terminal states only self-loop")
-    func terminalStatesOnlySelfLoop() {
+    func terminalStatesOnlySelfLoop() async {
         for terminal in [DownloadState.completed, .cancelled] {
             for to in Self.allStates {
                 let allowed = terminal.canTransition(to: to)
-                #expect(allowed == (to == terminal), "\(terminal) must only self-loop, got transition to \(to)=\(allowed)")
+                #expect(
+                    allowed == (to == terminal), "\(terminal) must only self-loop, got transition to \(to)=\(allowed)")
             }
         }
     }
 
     @Test("failed only transitions back to idle (or self)")
-    func failedTransitionsOnlyToIdle() {
+    func failedTransitionsOnlyToIdle() async {
         for to in Self.allStates {
             let allowed = DownloadState.failed.canTransition(to: to)
             let expected = (to == .failed) || (to == .idle)
