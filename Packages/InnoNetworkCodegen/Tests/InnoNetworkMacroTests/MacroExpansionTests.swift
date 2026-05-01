@@ -11,8 +11,8 @@ struct MacroExpansionTests {
         "endpoint": EndpointMacro.self,
     ]
 
-    @Test("APIDefinition macro derives protocol conformance")
-    func apiDefinitionExpansion() {
+    @Test("APIDefinition macro derives public protocol conformance")
+    func apiDefinitionPublicExpansion() {
         assertMacroExpansion(
             """
             @APIDefinition(method: .get, path: "/users/{id}")
@@ -32,6 +32,60 @@ struct MacroExpansionTests {
                     public typealias Parameter = EmptyParameter
                     public var method: HTTPMethod { .get }
                     public var path: String { "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))" }
+                }
+                """,
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro derives internal protocol conformance")
+    func apiDefinitionInternalExpansion() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .post, path: "/users/{id}/avatar")
+            struct UpdateAvatar {
+                let id: Int
+                typealias APIResponse = Avatar
+            }
+            """,
+            expandedSource:
+                """
+                struct UpdateAvatar {
+                    let id: Int
+                    typealias APIResponse = Avatar
+                }
+
+                extension UpdateAvatar: APIDefinition {
+                    typealias Parameter = EmptyParameter
+                    var method: HTTPMethod { .post }
+                    var path: String { "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))/avatar" }
+                }
+                """,
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro derives package protocol conformance")
+    func apiDefinitionPackageExpansion() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .delete, path: "/users/{id}")
+            package struct DeleteUser {
+                package let id: Int
+                package typealias APIResponse = EmptyResponse
+            }
+            """,
+            expandedSource:
+                """
+                package struct DeleteUser {
+                    package let id: Int
+                    package typealias APIResponse = EmptyResponse
+                }
+
+                extension DeleteUser: APIDefinition {
+                    package typealias Parameter = EmptyParameter
+                    package var method: HTTPMethod { .delete }
+                    package var path: String { "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))" }
                 }
                 """,
             macros: macros

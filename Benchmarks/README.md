@@ -7,9 +7,15 @@
 - `encoding/query-encoder-*` — `URLQueryEncoder` hot path (snake-case 변환 포함).
 - `events/task-event-*` — `TaskEventHub` fan-out / slow listener isolation.
 - `persistence/append-log-*` — Download persistence append/replay/compaction.
+- `persistence/download-persistence-restore` — persisted download registry restore cost after app relaunch.
 - `websocket/websocket-reconnect-decision` — `WebSocketReconnectCoordinator.reconnectAction` 분기 비용.
 - `websocket/websocket-close-disposition-classify` — `WebSocketCloseDisposition.classifyPeerClose` 분류기 비용 (4.0.0).
 - `websocket/websocket-ping-context-alloc` — `WebSocketPingContext` 생성 + `ContinuousClock.now` 읽기 비용 (4.0.0, heartbeat 루프 핫패스).
+- `websocket/websocket-send-queue-reserve` — send queue backpressure slot 예약/해제 hot path.
+- `websocket/websocket-lifecycle-transition-table` — lifecycle state transition table lookup cost.
+- `client/request-pipeline` — in-memory `DefaultNetworkClient.request(_:)` dispatch/retry/event/decode path.
+- `client/request-coalescing-shared-get` — shared GET request coalescing fan-in overhead.
+- `cache/response-cache-*` — response cache lookup and conditional revalidation preparation.
 
 ## Output Schema
 
@@ -34,6 +40,9 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
 ## Baseline Policy
 
 - baseline 파일은 [Baselines/default.json](Baselines/default.json)입니다.
+- baseline 수치는 GitHub Actions `macos-15-arm64` hosted runner의 `--quick`
+  결과를 기준으로 보정합니다. 로컬 개발 장비에서 더 빠르게 나오거나 느리게
+  나오는 diff는 참고용입니다.
 - runner는 baseline 대비 diff를 항상 출력합니다.
 - `--enforce-baseline`를 주면 guarded benchmark가 지정 threshold보다 느려질 때 non-zero exit로 실패합니다.
 - `--guard-benchmark group/name`는 회귀 판정 대상을 고정합니다. 지정하지 않으면 현재 실행된 전체 benchmark를 검사합니다.
@@ -43,6 +52,19 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
 
 ## CI Policy
 
-- PR CI는 `--quick` benchmark를 실제 실행하되, websocket guard 2개만 `20%` threshold로 막는 smoke gate를 사용합니다.
-- scheduled/manual benchmark workflow는 같은 websocket guard 2개를 `10%` threshold로 검사하는 strict regression gate입니다.
+- PR CI는 `--quick` benchmark를 실제 실행하고, 아래 guard 항목을 `20%` threshold로 막는 smoke gate를 사용합니다.
+- scheduled/manual benchmark workflow는 같은 guard 항목을 `10%` threshold로 검사하는 strict regression gate입니다.
 - 두 workflow 모두 JSON summary artifact를 업로드해 실패 시 수치 비교를 바로 확인할 수 있게 합니다.
+
+Guarded benchmark set:
+
+- `events/task-event-fanout-single`: event delivery의 최소 fan-out baseline.
+- `persistence/download-persistence-restore`: background download resume/restore 경로 baseline.
+- `websocket/websocket-close-disposition-classify`: close callback마다 실행되는 분류 hot path.
+- `websocket/websocket-ping-context-alloc`: heartbeat loop context 생성 hot path.
+- `websocket/websocket-send-queue-reserve`: send queue backpressure accounting baseline.
+- `websocket/websocket-lifecycle-transition-table`: lifecycle transition table lookup baseline.
+- `client/request-pipeline`: core request pipeline overhead baseline.
+- `client/request-coalescing-shared-get`: request coalescing fan-in baseline.
+- `cache/response-cache-lookup`: cache hit lookup baseline.
+- `cache/response-cache-revalidation`: conditional revalidation preparation baseline.

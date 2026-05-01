@@ -377,15 +377,24 @@ jobs:
           status=1
           for attempt in 1 2 3; do
             echo "Benchmark smoke attempt ${attempt}/3"
-            xcrun swift run InnoNetworkBenchmarks \
+            if xcrun swift run InnoNetworkBenchmarks \
               --quick \
               --json-path .build/benchmarks/results.json \
               --enforce-baseline \
+              --guard-benchmark events/task-event-fanout-single \
+              --guard-benchmark persistence/download-persistence-restore \
               --guard-benchmark websocket/websocket-close-disposition-classify \
-              --max-regression-percent 20
-            status=$?
-            if [ "$status" -eq 0 ]; then
+              --guard-benchmark websocket/websocket-ping-context-alloc \
+              --guard-benchmark websocket/websocket-send-queue-reserve \
+              --guard-benchmark websocket/websocket-lifecycle-transition-table \
+              --guard-benchmark client/request-pipeline \
+              --guard-benchmark client/request-coalescing-shared-get \
+              --guard-benchmark cache/response-cache-lookup \
+              --guard-benchmark cache/response-cache-revalidation \
+              --max-regression-percent 20; then
               exit 0
+            else
+              status=$?
             fi
             echo "::warning::Benchmark smoke attempt ${attempt} failed with exit code ${status}; retrying to smooth hosted-runner microbenchmark noise."
           done

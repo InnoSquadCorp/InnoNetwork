@@ -44,6 +44,12 @@ dependencies: [
 > the **Stable** ledger in `API_STABILITY.md`. Provisionally stable
 > APIs (`Endpoint`, `WebSocketCloseDisposition`, `DecodingInterceptor`,
 > resilience policy surfaces, …) may change in any minor release.
+>
+> InnoNetwork also intentionally requires Swift 6.2+ and current Apple OS
+> baselines (iOS 18, macOS 15, tvOS 18, watchOS 11, visionOS 2). That keeps
+> the package aligned with strict concurrency and modern URLSession behavior,
+> but apps with older deployment targets should keep a thin compatibility
+> client until they can raise their platform floor.
 
 ### Core Request
 
@@ -397,6 +403,9 @@ Header precedence is library defaults, endpoint headers, automatic body
 `Content-Type`, request interceptors, then `RefreshTokenPolicy` authorization.
 
 For operational tuning, see [Examples](Examples/README.md) and [API Stability](API_STABILITY.md).
+Teams migrating an existing client can start with
+[Migration Guides](docs/MigrationGuides.md) for URLSession, Alamofire, and Moya
+mapping notes.
 
 ## Stability
 
@@ -528,9 +537,11 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - Platform Support: [docs/PlatformSupport.md](docs/PlatformSupport.md)
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
+- Migration Guides: [docs/MigrationGuides.md](docs/MigrationGuides.md)
 - DocC Deployment: [docs/DocC_Deployment.md](docs/DocC_Deployment.md)
 - Query Encoding Reference: [docs/QueryEncoding.md](docs/QueryEncoding.md)
 - WebSocket Lifecycle: [docs/WebSocketLifecycle.md](docs/WebSocketLifecycle.md)
+- Task Ownership: [docs/TaskOwnership.md](docs/TaskOwnership.md)
 - Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 - 한국어 문서: [docs/ko/README.md](docs/ko/README.md)

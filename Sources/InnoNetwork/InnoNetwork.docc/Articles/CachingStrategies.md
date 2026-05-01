@@ -37,6 +37,34 @@ a SHA-256 fingerprint rather than a raw token, and `Accept-Language` is included
 so locale-specific responses do not cross-pollute. URL fragments are ignored
 because they are not sent to the server.
 
+## Scope and offline storage
+
+``ResponseCachePolicy`` is an executor-level response reuse policy, not a
+general offline database. It is a good fit when:
+
+- the request is an idempotent `GET`
+- the response body can be reused as one HTTP representation
+- freshness can be expressed with a caller-provided max age, ETag
+  revalidation, or stale-while-revalidate window
+- cache lifetime can remain process-local through ``InMemoryResponseCache``
+
+Use app-owned persistent storage when cached data needs domain indexing,
+offline mutation, conflict resolution, cross-launch browse/search, or user
+visible "downloaded for offline" semantics. In those cases, let InnoNetwork
+fetch and validate transport responses, then project the decoded model into
+SwiftData, Core Data, SQLite, files, or another app-owned store.
+
+Persistent response cache remains a future product decision. The preferred
+direction is an optional companion product rather than making disk persistence
+part of the core `InnoNetwork` target. Any first-party disk cache must define
+these policies before public API is exposed:
+
+- cache key normalization and configurable Vary/identity inputs
+- freshness precedence between caller policy, `Cache-Control`, and validators
+- eviction by byte budget, age, and user/account boundary
+- privacy defaults for Authorization-derived keys and sensitive payloads
+- platform data protection class, backup exclusion, and explicit deletion hooks
+
 InnoNetwork honours response cache-control directives that affect storage and
 reuse:
 

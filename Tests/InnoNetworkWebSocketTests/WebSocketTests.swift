@@ -1223,25 +1223,17 @@ struct WebSocketListenerLifecycleTests {
 
     @Test("Disconnecting task ignores stale connected callback")
     func disconnectingTaskIgnoresStaleConnectedCallback() async throws {
-        let manager = WebSocketManager(
-            configuration: WebSocketConfiguration(
-                heartbeatInterval: 0,
-                reconnectDelay: 0,
-                maxReconnectAttempts: 0,
-                sessionIdentifier: "test.websocket.stale-connected.\(UUID().uuidString)"
-            )
-        )
+        let harness = StubMessagingHarness()
+        let task = try await harness.connectAndReady()
         let recorder = WebSocketEventRecorder()
-
-        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
-        _ = await manager.addEventListener(for: task) { event in
+        _ = await harness.manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
 
-        let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
-        await task.updateState(.disconnecting)
-        await task.setAutoReconnectEnabled(false)
-        manager.handleConnected(taskIdentifier: taskIdentifier, protocolName: "stale")
+        await harness.manager.disconnect(task)
+        #expect(await task.state == .disconnecting)
+
+        harness.manager.handleConnected(taskIdentifier: harness.stubTaskIdentifier, protocolName: "stale")
 
         let connectedDelivered = await waitForEvent(recorder: recorder, timeout: 0.3) { event in
             if case .connected = event { return true }
@@ -1250,10 +1242,133 @@ struct WebSocketListenerLifecycleTests {
         #expect(!connectedDelivered)
         #expect(await task.state == .disconnecting)
 
-        await task.updateState(.connected)
-        await task.setAutoReconnectEnabled(true)
-        await manager.disconnect(task)
-        #expect(await waitForListenerCleanup(manager: manager, task: task))
+        harness.manager.handleDisconnected(
+            taskIdentifier: harness.stubTaskIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+        let disconnectedDelivered = await waitForEvent(recorder: recorder, timeout: 1.0) { event in
+            if case .disconnected = event { return true }
+            return false
+        }
+        #expect(disconnectedDelivered)
+        #expect(await waitForListenerCleanup(manager: harness.manager, task: task))
+        #expect(await waitForTaskRemoval(manager: harness.manager, task: task))
+    }
+
+    @Test("Manual disconnect close event removes listeners and task runtime without reconnect")
+    func manualDisconnectTerminalCleanupDoesNotReconnect() async throws {
+        let harness = StubMessagingHarness(reconnectDelay: 0, maxReconnectAttempts: 3)
+        let task = try await harness.connectAndReady()
+        let recorder = WebSocketEventRecorder()
+        _ = await harness.manager.addEventListener(for: task) { event in
+            recorder.record(event)
+        }
+
+        await harness.manager.disconnect(task)
+        harness.manager.handleDisconnected(
+            taskIdentifier: harness.stubTaskIdentifier,
+            closeCode: .goingAway,
+            reason: "client-close"
+        )
+
+        let disconnectedDelivered = await waitForEvent(recorder: recorder, timeout: 1.0) { event in
+            if case .disconnected = event { return true }
+            return false
+        }
+        #expect(disconnectedDelivered)
+        #expect(await task.state == .disconnected)
+        #expect(harness.stubSession.createdTasks.count == 1)
+        #expect(await waitForListenerCleanup(manager: harness.manager, task: task))
+        #expect(await waitForTaskRemoval(manager: harness.manager, task: task))
+    }
+
+    @Test("Terminal handshake failure removes listeners and task runtime")
+    func terminalHandshakeFailureRemovesRuntime() async throws {
+        let harness = StubMessagingHarness(reconnectDelay: 0, maxReconnectAttempts: 3)
+        let recorder = WebSocketEventRecorder()
+        let task = await harness.manager.connect(url: URL(string: "ws://stub.invalid/socket")!)
+        _ = await harness.manager.addEventListener(for: task) { event in
+            recorder.record(event)
+        }
+        let identifier = try #require(await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task))
+
+        harness.manager.handleSessionError(
+            taskIdentifier: identifier,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.userAuthenticationRequired.rawValue,
+                message: "401"
+            ),
+            statusCode: 401
+        )
+
+        let errorDelivered = await waitForEvent(recorder: recorder, timeout: 1.0) { event in
+            if case .error(.connectionFailed) = event { return true }
+            return false
+        }
+        #expect(errorDelivered)
+        #expect(await task.state == .failed)
+        #expect(harness.stubSession.createdTasks.count == 1)
+        #expect(await waitForListenerCleanup(manager: harness.manager, task: task))
+        #expect(await waitForTaskRemoval(manager: harness.manager, task: task))
+    }
+
+    @Test("Lifecycle model covers documented transition paths")
+    func lifecycleModelTransitionPaths() {
+        let sequences: [[WebSocketState]] = [
+            [.idle, .connecting, .connected, .disconnecting, .disconnected],
+            [.idle, .connecting, .failed, .idle, .connecting],
+            [.connected, .reconnecting, .connecting, .connected],
+            [.connected, .disconnected, .reconnecting, .failed],
+        ]
+
+        for sequence in sequences {
+            for (current, next) in zip(sequence, sequence.dropFirst()) {
+                #expect(current.canTransition(to: next))
+            }
+        }
+    }
+
+    @Test("Seeded lifecycle walks stay inside the documented transition table")
+    func seededLifecycleTransitionWalks() {
+        var seed: UInt64 = 0xC0FFEE
+        var state = WebSocketState.idle
+        for _ in 0..<128 {
+            let nextStates = Array(state.nextStates).sorted { $0.rawValue < $1.rawValue }
+            #expect(!nextStates.isEmpty)
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1
+            let next = nextStates[Int(seed % UInt64(nextStates.count))]
+            #expect(state.canTransition(to: next))
+            if state == .disconnecting {
+                #expect(next == .disconnected)
+            }
+            state = next
+        }
+    }
+
+    @Test("Lifecycle model enforces terminal cleanup invariants")
+    func lifecycleModelTerminalCleanupInvariants() {
+        let sequences: [[WebSocketLifecycleModel.Event]] = [
+            [.connect, .didOpen, .manualDisconnect, .didClose],
+            [.connect, .didOpen, .peerRetryableClose, .reconnectTimerFired, .didOpen, .terminalFailure],
+            [.connect, .terminalFailure],
+            [.connect, .didOpen, .manualDisconnect, .staleDidOpen, .didClose],
+        ]
+
+        for sequence in sequences {
+            var model = WebSocketLifecycleModel()
+            for event in sequence {
+                let generationBefore = model.generation
+                let closeTimeoutBefore = model.closeTimeoutActive
+                model.apply(event)
+                if event == .staleDidOpen {
+                    #expect(model.generation == generationBefore)
+                    #expect(model.closeTimeoutActive == closeTimeoutBefore)
+                }
+                #expect(model.invariantsHold)
+            }
+        }
     }
 
     @Test("Final reconnect failure removes listeners and task runtime")
@@ -1431,5 +1546,87 @@ struct WebSocketListenerLifecycleTests {
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
         return false
+    }
+}
+
+private struct WebSocketLifecycleModel {
+    enum Event: Equatable {
+        case connect
+        case didOpen
+        case staleDidOpen
+        case manualDisconnect
+        case didClose
+        case peerRetryableClose
+        case reconnectTimerFired
+        case terminalFailure
+    }
+
+    private(set) var state = WebSocketState.idle
+    private(set) var generation = 0
+    private(set) var runtimeActive = false
+    private(set) var eventHubFinished = false
+    private(set) var reconnectScheduled = false
+    private(set) var closeTimeoutActive = false
+    private(set) var manualDisconnectRequested = false
+
+    var invariantsHold: Bool {
+        if state.isTerminal {
+            return !runtimeActive
+                && eventHubFinished
+                && !reconnectScheduled
+                && !closeTimeoutActive
+        }
+        if manualDisconnectRequested && reconnectScheduled {
+            return false
+        }
+        return true
+    }
+
+    mutating func apply(_ event: Event) {
+        switch event {
+        case .connect:
+            generation += 1
+            state = .connecting
+            runtimeActive = true
+            eventHubFinished = false
+            reconnectScheduled = false
+            closeTimeoutActive = false
+            manualDisconnectRequested = false
+        case .didOpen:
+            guard state == .connecting || state == .reconnecting else { return }
+            state = .connected
+        case .staleDidOpen:
+            return
+        case .manualDisconnect:
+            manualDisconnectRequested = true
+            reconnectScheduled = false
+            closeTimeoutActive = true
+            if state.canTransition(to: .disconnecting) {
+                state = .disconnecting
+            }
+        case .didClose:
+            state = .disconnected
+            runtimeActive = false
+            eventHubFinished = true
+            reconnectScheduled = false
+            closeTimeoutActive = false
+        case .peerRetryableClose:
+            guard state == .connected, !manualDisconnectRequested else { return }
+            state = .reconnecting
+            reconnectScheduled = true
+        case .reconnectTimerFired:
+            guard reconnectScheduled, !manualDisconnectRequested else { return }
+            generation += 1
+            state = .connecting
+            reconnectScheduled = false
+            runtimeActive = true
+            eventHubFinished = false
+        case .terminalFailure:
+            state = .failed
+            runtimeActive = false
+            eventHubFinished = true
+            reconnectScheduled = false
+            closeTimeoutActive = false
+        }
     }
 }

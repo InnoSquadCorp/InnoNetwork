@@ -60,7 +60,7 @@ public actor WebSocketTask: Identifiable {
         self.subprotocols = subprotocols
     }
 
-    func updateState(_ newState: WebSocketState) {
+    package func updateState(_ newState: WebSocketState) {
         _state = newState
     }
 
@@ -98,14 +98,14 @@ public actor WebSocketTask: Identifiable {
     /// Atomically reserves a send slot if one is available. Returns true if
     /// the slot was reserved (caller must pair with ``releaseSendSlot()``);
     /// returns false if the queue is at `limit`.
-    func tryReserveSendSlot(limit: Int) -> Bool {
+    package func tryReserveSendSlot(limit: Int) -> Bool {
         guard _inFlightSends < limit else { return false }
         _inFlightSends += 1
         return true
     }
 
     /// Releases a send slot previously reserved by ``tryReserveSendSlot(limit:)``.
-    func releaseSendSlot() {
+    package func releaseSendSlot() {
         if _inFlightSends > 0 {
             _inFlightSends -= 1
         }

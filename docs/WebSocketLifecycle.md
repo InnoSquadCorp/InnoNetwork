@@ -89,6 +89,20 @@ These invariants prevent `_autoReconnectEnabled` from racing against
    that expired between attempts will surface as a fresh `handshakeUnauthorized` or
    `handshakeForbidden` and stop the loop.
 
+## Terminal cleanup ownership
+
+Terminal cleanup owns four effects as one unit: publish the final event, finish
+per-task event streams, cancel runtime timers/loops, and remove registry state.
+Stale callbacks may be ignored after generation/state checks, but they must not
+partially cancel close-handshake or reconnect runtime state that is still owned
+by the terminal path.
+
+The detailed task owner/cancel table is in
+[Task Ownership](TaskOwnership.md). The most important WebSocket-specific rule
+is that a delayed `didOpen` received after manual `disconnect` must leave the
+close-handshake timeout in place so `didClose` or the timeout finalizer can
+complete `.disconnected` cleanup.
+
 ## Heartbeat and ping/pong
 
 `WebSocketHeartbeatCoordinator` issues pings on the configured cadence. Each attempt:
@@ -128,3 +142,5 @@ reset, attach observers to `WebSocketManager` directly rather than per-task.
   close-code classification.
 - [`WebSocketReconnectCoordinator.swift`](../Sources/InnoNetworkWebSocket/WebSocketReconnectCoordinator.swift) —
   backoff and attempt accounting.
+- [Task Ownership](TaskOwnership.md) — owner/cancel rules for reconnect timers,
+  close-handshake timeouts, heartbeat loops, event delivery, and delegate bridges.
