@@ -23,7 +23,7 @@ public enum EndpointPathEncoding {
                 "EndpointPathEncoding.percentEncodedSegment received an Optional value, which would render as 'Optional(...)' or 'nil'. Unwrap the value before passing it to a path placeholder."
             )
             if let child = mirror.children.first {
-                return percentEncodedSegment(String(describing: child.value))
+                return percentEncodedSegment(child.value)
             }
             return percentEncodedSegment("nil")
         }

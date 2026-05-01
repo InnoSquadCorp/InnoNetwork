@@ -23,6 +23,12 @@ uses `EmptyParameter`, and interpolates stored properties that match path
 placeholders such as `{id}`. Placeholder values are passed through
 ``EndpointPathEncoding/percentEncodedSegment(_:)`` so each value stays within a
 single path segment even when it contains spaces, slashes, or non-ASCII text.
+The expansion emits the module-qualified call
+`InnoNetwork.EndpointPathEncoding.percentEncodedSegment(...)` to avoid
+ambiguity when consumer code imports another module that re-exports a same-named
+type. Do not declare a nested type named `InnoNetwork` in scopes where
+`@APIDefinition` is applied — it shadows the module reference and breaks the
+generated path expression.
 
 The ``endpoint(_:_:as:)`` expression macro expands to the fluent ``Endpoint``
 API:

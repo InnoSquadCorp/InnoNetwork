@@ -590,10 +590,18 @@ package struct RequestExecutor {
         )
     }
 
+    /// Status codes that are cacheable by default per RFC 9110 §15. `307`
+    /// (Temporary Redirect) is intentionally omitted — RFC 9110 marks it as
+    /// not cacheable by default, so caching it would silently change observed
+    /// redirect behaviour.
     private static let cacheableStatusCodes: Set<Int> = [
         200, 203, 204, 300, 301, 308, 404, 405, 410, 414, 501,
     ]
 
+    /// Parses Cache-Control directive *names* only. Qualified directives whose
+    /// quoted values contain commas (e.g. `private="X-Foo, X-Bar"`) will split
+    /// into multiple tokens, so this helper must not be used to recover such
+    /// values — it only powers the `no-store` / `no-cache` lookups today.
     private func cacheControlDirectives(in headers: [String: String]) -> Set<String> {
         let combined =
             headers
