@@ -71,6 +71,10 @@ Per-symbol evolution allowances within the 4.x line:
   symbols stay source-compatible within 4.x.
 - `Endpoint`, `AnyEncodable`, `NetworkContext`, `CorrelationIDInterceptor` —
   builder shape may grow new chainable methods.
+- `EndpointPathEncoding` — may add new helpers for placeholder encoding;
+  existing entry points remain source-compatible. The set of percent-encoded
+  characters tracks RFC 3986 reserved/unreserved updates and may widen
+  encoding for newly disallowed scalars without prior deprecation.
 - `WebSocketCloseDisposition` — additional enum cases may appear as new
   close-code classifications are formalized.
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and

@@ -11,10 +11,23 @@ public enum EndpointPathEncoding {
     /// The value is rendered via `String(describing:)`, which matches what
     /// Swift's string interpolation produces. Pass primitive identifiers
     /// (`Int`, `UUID`, raw-value enums) or values whose `description` is the
-    /// intended segment text. Optionals render as `Optional(...)` / `nil`,
-    /// which is rarely desired — unwrap before calling.
+    /// intended segment text. Optional values trigger an `assertionFailure`
+    /// in DEBUG builds because `String(describing:)` would silently render
+    /// them as `Optional(...)` / `nil` and ship a malformed URL; in RELEASE
+    /// builds the unwrapped description is used so transient logs/metrics
+    /// remain inspectable rather than crashing in production.
     public static func percentEncodedSegment<T>(_ value: T) -> String {
-        percentEncodedSegment(String(describing: value))
+        let mirror = Mirror(reflecting: value)
+        if mirror.displayStyle == .optional {
+            assertionFailure(
+                "EndpointPathEncoding.percentEncodedSegment received an Optional value, which would render as 'Optional(...)' or 'nil'. Unwrap the value before passing it to a path placeholder."
+            )
+            if let child = mirror.children.first {
+                return percentEncodedSegment(String(describing: child.value))
+            }
+            return percentEncodedSegment("nil")
+        }
+        return percentEncodedSegment(String(describing: value))
     }
 
     /// Percent-encodes a dynamic string for use as a single URL path segment.
@@ -87,11 +100,12 @@ public enum EndpointPathEncoding {
         )
     }
 
+    private static let hexDigits: [Character] = Array("0123456789ABCDEF")
+
     private static func percentEncoded(_ byte: UInt8) -> String {
-        let hex = Array("0123456789ABCDEF")
         let high = Int(byte >> 4)
         let low = Int(byte & 0x0F)
-        return "%\(hex[high])\(hex[low])"
+        return "%\(hexDigits[high])\(hexDigits[low])"
     }
 
     private static func isHexDigit(_ scalar: Unicode.Scalar) -> Bool {

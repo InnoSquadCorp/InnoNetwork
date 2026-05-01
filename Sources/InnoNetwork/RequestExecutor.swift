@@ -561,12 +561,12 @@ package struct RequestExecutor {
                 guard let key = pair.key as? String, let value = pair.value as? String else { return }
                 result[key] = value
             } ?? [:]
+        guard Self.cacheableStatusCodes.contains(response.statusCode) else {
+            return
+        }
         let cacheControl = cacheControlDirectives(in: headerSnapshot)
         if cacheControl.contains("no-store") {
             await cache.invalidate(cacheKey)
-            return
-        }
-        guard Self.cacheableStatusCodes.contains(response.statusCode) else {
             return
         }
         let varyHeaders: [String: String?]?
@@ -595,14 +595,14 @@ package struct RequestExecutor {
     ]
 
     private func cacheControlDirectives(in headers: [String: String]) -> Set<String> {
-        let header = headers.first {
-            $0.key.caseInsensitiveCompare("Cache-Control") == .orderedSame
-        }
-        guard let value = header?.value else {
-            return []
-        }
+        let combined =
+            headers
+            .filter { $0.key.caseInsensitiveCompare("Cache-Control") == .orderedSame }
+            .map { $0.value }
+            .joined(separator: ",")
+        guard !combined.isEmpty else { return [] }
         return Set(
-            value
+            combined
                 .split(separator: ",")
                 .map { directive in
                     directive

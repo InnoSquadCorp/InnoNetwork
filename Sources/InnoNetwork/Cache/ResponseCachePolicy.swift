@@ -11,9 +11,13 @@ public enum ResponseCachePolicy: Sendable, Equatable {
     case networkOnly
     /// Serve from cache while entries are within `maxAge`. Stale entries fall
     /// through to the network and RFC-cacheable GET responses may be written back.
+    /// Entries flagged as `requiresRevalidation` (e.g. responses carrying
+    /// `Cache-Control: no-cache`) are revalidated even while inside `maxAge`.
     case cacheFirst(maxAge: Duration)
     /// Serve fresh entries directly. Within the `staleWindow` past `maxAge`,
     /// return the cached entry immediately and revalidate in the background.
+    /// Entries flagged as `requiresRevalidation` skip the fast path and force
+    /// revalidation on every request even within `maxAge`.
     case staleWhileRevalidate(maxAge: Duration, staleWindow: Duration)
 }
 

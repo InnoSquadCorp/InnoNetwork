@@ -130,7 +130,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
                         id: "api-definition-unknown-placeholder"
                     )
                 }
-                result += "\\(EndpointPathEncoding.percentEncodedSegment(\(name)))"
+                result += "\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(\(name)))"
                 index = path.index(after: close)
             } else if character == "}" {
                 throw InnoNetworkMacroDiagnostic(
