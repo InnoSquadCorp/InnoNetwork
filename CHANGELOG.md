@@ -77,6 +77,12 @@ new case carries `errorCode == 4002` for `CustomNSError` bridging.
 
 ### Fixed
 
+- `CircuitBreakerRegistry.recordStatus(...)` no longer resets the rolling
+  failure window on 4xx responses. 4xx is now a no-op (the transport worked,
+  the failure is semantic), 5xx still counts as a transport failure, and
+  2xx/3xx clear the accumulated failures and release any half-open probe
+  slot. Previously a single 4xx interleaved between 5xx/timeout failures
+  could mask a host that was teetering on the failure threshold.
 - `TimeoutReason` documentation now enumerates the exact `URLError` →
   `NetworkError.timeout(reason:)` mapping (`.timedOut` →
   `.requestTimeout`, `.cannotConnectToHost` → `.connectionTimeout`) and

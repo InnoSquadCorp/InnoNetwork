@@ -97,7 +97,17 @@ package actor CircuitBreakerRegistry {
         guard let policy, let host = request.url?.host else { return }
         if (500...599).contains(statusCode) {
             recordCountableFailure(host: host, policy: policy)
+        } else if (400...499).contains(statusCode) {
+            // 4xx responses indicate a working transport with a client-side
+            // semantic problem; they must not count as transport failures and
+            // must not reset the rolling failure window either, otherwise a
+            // single 4xx mixed into a stream of 5xx/timeouts would mask a host
+            // teetering on the edge of the failure threshold.
+            return
         } else {
+            // 2xx/3xx and other non-error status families confirm the host is
+            // healthy: clear any accumulated failures and release a half-open
+            // probe slot.
             states[host] = .closed([])
         }
     }

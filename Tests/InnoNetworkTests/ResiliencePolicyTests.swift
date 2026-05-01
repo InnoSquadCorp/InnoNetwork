@@ -1333,6 +1333,38 @@ struct ResiliencePolicyTests {
         #expect(await session.requestCount == 2)
     }
 
+    @Test("4xx response does not reset accumulated transport failures")
+    func circuitBreakerWindowSurvivesInterleaved4xx() async throws {
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(failureThreshold: 3, windowSize: 3)
+        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
+
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+        // A 4xx between transport failures must not reset the rolling window.
+        await registry.recordStatus(request: request, policy: policy, statusCode: 404)
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+
+        await #expect(throws: NetworkError.self) {
+            try await registry.prepare(request: request, policy: policy)
+        }
+    }
+
+    @Test("2xx response closes the circuit and clears failures")
+    func circuitBreakerSuccessClosesCircuit() async throws {
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(failureThreshold: 3, windowSize: 3)
+        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
+
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+        await registry.recordStatus(request: request, policy: policy, statusCode: 200)
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+
+        try await registry.prepare(request: request, policy: policy)
+    }
+
     @Test("Coalesced transport failure counts once for circuit breaker")
     func coalescedFailureCountsOnceForCircuitBreaker() async throws {
         let session = try SequenceURLSession(
