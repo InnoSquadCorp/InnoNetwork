@@ -1,9 +1,12 @@
 # WebSocket Lifecycle
 
 `WebSocketManager` exposes a typed state machine that mirrors the underlying
-`URLSessionWebSocketTask` plus the library's reconnect bookkeeping. This page documents the
-allowed transitions, the invariants enforced across reconnect, and the corner cases that
-informed the current contract.
+`URLSessionWebSocketTask` plus the library's reconnect bookkeeping. Internally,
+the lifecycle is driven by a package-scoped reducer that stores connection
+generation, reconnect attempt, manual-disconnect, close-code, disposition, and
+error payloads together. Public `WebSocketState` remains the stable projection.
+This page documents the allowed transitions, the invariants enforced across
+reconnect, and the corner cases that informed the current contract.
 
 ## State machine
 
@@ -39,9 +42,15 @@ stateDiagram-v2
 `isTerminal` is `true` only for `disconnected` and `failed`. Every other state is observable
 as a "moving" state from the manager's perspective.
 
-The single source of truth is [`WebSocketState.swift`](../Sources/InnoNetworkWebSocket/WebSocketState.swift):
-the `nextStates` and `canTransition(to:)` accessors are the contract used by reconnect and
-disconnect coordinators.
+The public transition contract is
+[`WebSocketState.swift`](../Sources/InnoNetworkWebSocket/WebSocketState.swift):
+the `nextStates` and `canTransition(to:)` accessors document which projected
+states can follow each other. Production state mutation goes through
+[`WebSocketLifecycleReducer.swift`](../Sources/InnoNetworkWebSocket/WebSocketLifecycleReducer.swift),
+which returns the next internal lifecycle state plus ordered effects such as
+runtime cleanup, event publication, reconnect scheduling, and terminal finish.
+Test-only state injection is separated from production mutation via
+`restoreStateForTesting(_:)`.
 
 ## Reconnect classification
 
@@ -84,18 +93,32 @@ These invariants prevent `_autoReconnectEnabled` from racing against
    stays at `.exceeded` once the cap is reached. (See `WebSocketTask` counter docs in
    [`WebSocketTask.swift`](../Sources/InnoNetworkWebSocket/WebSocketTask.swift) for why
    the internal counter may overshoot.)
-4. **Reconnect attempts use a fresh `URLSessionWebSocketTask`.** Each attempt rebuilds the
+4. **Stale callbacks cannot advance generation.** Delegate callback identifiers
+   are registered with the connection generation that created the underlying
+   `URLSessionWebSocketTask`. Delayed `didOpen`, close, or error callbacks
+   whose generation no longer matches are reduced to `ignoreStaleCallback`;
+   they do not cancel the close-timeout task, publish a state event, advance
+   the current generation, or consume reconnect-attempt budget.
+5. **Reconnect attempts use a fresh `URLSessionWebSocketTask`.** Each attempt rebuilds the
    request with the latest interceptors and cookies. Server-issued auth tokens or permissions
    that expired between attempts will surface as a fresh `handshakeUnauthorized` or
    `handshakeForbidden` and stop the loop.
 
 ## Terminal cleanup ownership
 
-Terminal cleanup owns four effects as one unit: publish the final event, finish
-per-task event streams, cancel runtime timers/loops, and remove registry state.
+Terminal cleanup is reducer-driven and ordered. Runtime URL tasks/timers/loops
+are cancelled before the final event is published so receive loops are woken
+promptly; after callbacks and event listeners observe the terminal event, the
+manager generation-checks the task before finishing per-task event streams and
+removing registry state. This preserves the existing escape hatch where a
+consumer may call `retry(_:)` from a terminal callback without the old finalizer
+tearing down the newly registered generation.
+
 Stale callbacks may be ignored after generation/state checks, but they must not
 partially cancel close-handshake or reconnect runtime state that is still owned
-by the terminal path.
+by the terminal path. Once a task is already `disconnected` or `failed`, late
+close/error callbacks are also reduced to `ignoreStaleCallback` and cannot
+reschedule reconnect or consume reconnect-attempt budget.
 
 The detailed task owner/cancel table is in
 [Task Ownership](TaskOwnership.md). The most important WebSocket-specific rule
@@ -142,5 +165,7 @@ reset, attach observers to `WebSocketManager` directly rather than per-task.
   close-code classification.
 - [`WebSocketReconnectCoordinator.swift`](../Sources/InnoNetworkWebSocket/WebSocketReconnectCoordinator.swift) —
   backoff and attempt accounting.
+- [`WebSocketLifecycleReducer.swift`](../Sources/InnoNetworkWebSocket/WebSocketLifecycleReducer.swift) —
+  internal reducer state, events, effects, and transition table.
 - [Task Ownership](TaskOwnership.md) — owner/cancel rules for reconnect timers,
   close-handshake timeouts, heartbeat loops, event delivery, and delegate bridges.

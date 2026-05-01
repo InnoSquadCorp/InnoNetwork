@@ -606,7 +606,7 @@ final class HeartbeatTestHarness: Sendable {
     ) async {
         await runtimeRegistry.add(task)
         await runtimeRegistry.setURLTask(stubTask, for: task.id)
-        await task.updateState(.connected)
+        await task.restoreStateForTesting(.connected)
         // Attach the always-on recorder before the heartbeat task starts so
         // `.pong` events are never missed.
         let recorder = defaultRecorder

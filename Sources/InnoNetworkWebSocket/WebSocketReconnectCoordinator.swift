@@ -97,7 +97,6 @@ package struct WebSocketReconnectCoordinator {
             guard await task.autoReconnectEnabled else { return }
             let state = await task.state
             if Self.shouldReconnect(currentState: state, autoReconnectEnabled: true) {
-                await task.updateState(.reconnecting)
                 await startConnection(task)
             }
         }

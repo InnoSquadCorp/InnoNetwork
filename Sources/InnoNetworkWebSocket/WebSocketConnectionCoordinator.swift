@@ -22,6 +22,7 @@ package struct WebSocketConnectionCoordinator {
         _ task: WebSocketTask,
         onReceiveError: @escaping @Sendable (Int, Error) -> Void
     ) async {
+        let generation = await task.connectionGeneration
         await runtimeRegistry.cancelHeartbeatTask(for: task.id)
 
         var request = URLRequest(url: task.url)
@@ -43,7 +44,11 @@ package struct WebSocketConnectionCoordinator {
         }
 
         let urlTask = session.makeWebSocketTask(with: request)
-        await runtimeRegistry.setMapping(webSocketTask: task, for: urlTask.taskIdentifier)
+        await runtimeRegistry.setMapping(
+            webSocketTask: task,
+            for: urlTask.taskIdentifier,
+            generation: generation
+        )
         await runtimeRegistry.setURLTask(urlTask, for: task.id)
 
         urlTask.resume()

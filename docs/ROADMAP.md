@@ -4,8 +4,8 @@
 
 - See [ImprovementBacklog.md](ImprovementBacklog.md) for the 2026-05-01
   review outcomes. The correctness items from that pass are handled in the
-  current follow-up PR; the remaining roadmap work is deeper lifecycle
-  modeling, persistent-cache product design, and longer-term operational
+  current follow-up PR; the remaining roadmap work is persistent-cache product
+  design, WebSocket protocol-surface expansion, and longer-term operational
   automation.
 
 ## Deferred Operational Follow-ups
@@ -24,7 +24,6 @@
 - observability exporter examples: core는 vendor-neutral로 유지하고, Sentry/OpenTelemetry/Pulse/Datadog adapter 예제는 별도 target/package로 평가한다.
 - download 저장소 운영정책: disk full, temp cleanup, data protection class, app group container, identifier collision, 앱 업데이트/복구 시나리오를 문서와 테스트로 보강한다.
 - WebSocket protocol surface: subprotocol negotiation, app-level protocol failure mapping, compression 미지원, background transition 동작을 public cookbook으로 더 확장한다.
-- WebSocket lifecycle reducer: public `WebSocketState`는 유지하되 내부 상태를 generation/attempt/manual-disconnect payload가 있는 reducer로 승격할지 별도 설계한다.
 - Persistent response cache companion product: core API에 바로 넣지 않고 cache-key, freshness, eviction, privacy, data protection 정책을 먼저 RFC로 고정한다.
 - `advanced`/`customizingSafeDefaults` API 개선: safe default는 유지하면서 세부 튜닝 surface를 더 발견 가능하게 하는 builder ergonomics를 검토한다.
 

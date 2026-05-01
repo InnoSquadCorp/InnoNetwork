@@ -22,12 +22,12 @@ and event streams do not map to structured child tasks owned by one caller.
 
 | Task | Owner | Cancel rule | Notes |
 |---|---|---|---|
-| WebSocket close-handshake timeout | `WebSocketRuntimeRegistry` per task runtime | Cancel from WebSocket terminal cleanup after `.disconnected` or `.failed` is published | Stale `didOpen` callbacks must not cancel this timeout while manual disconnect is in progress. |
-| WebSocket reconnect timer | `WebSocketRuntimeRegistry` via `WebSocketReconnectCoordinator` | Cancel when manual disconnect wins, when max attempts fail, or when the task reaches a terminal state | Reconnect always creates a fresh URLSession task/generation. |
+| WebSocket close-handshake timeout | `WebSocketRuntimeRegistry` per task runtime | Cancel from the reducer's terminal cleanup path when close ack or timeout wins | Stale `didOpen` callbacks must reduce to `ignoreStaleCallback` while manual disconnect is in progress. |
+| WebSocket reconnect timer | `WebSocketRuntimeRegistry` via `WebSocketReconnectCoordinator` | Cancel when manual disconnect wins, when max attempts fail, or when the task reaches a terminal state | Reconnect timer firing is reduced to a fresh `connecting` generation before URLSession starts. |
 | WebSocket heartbeat loop | `WebSocketRuntimeRegistry` via `WebSocketHeartbeatCoordinator` | Cancel on manual disconnect, peer terminal close, ping timeout terminal failure, or reconnect handoff | Heartbeat events are scoped to one connection generation. |
 | Event delivery worker tasks | `TaskEventHub` partition/consumer state | Finish partition delivery from the owning manager before registry removal | Slow consumers must not block fast consumers. |
 | Background download completion handler | `DownloadManager` background session bridge | Invoke exactly once after restored URLSession events have drained | The app delegate owns receiving the system callback; the manager owns release timing. |
-| Foundation delegate callback bridge | `URLSession` delegate adapters and managers | Bridge callback into manager actor, then let manager-owned lifecycle cleanup decide cancellation | Delegate callbacks can arrive stale or out of order and should be generation-checked before mutating state. |
+| Foundation delegate callback bridge | `URLSession` delegate adapters and managers | Bridge callback into manager actor, then reduce it with the generation captured for that URLSession task identifier | Delegate callbacks can arrive stale or out of order and must be generation/state-checked before mutating state or consuming reconnect budget. |
 | Auth refresh single-flight | `RefreshTokenPolicy` refresh coordinator | Shared refresh is not cancelled just because one waiting request is cancelled | This is the main approved `Task.detached`-style boundary: caller cancellation must not poison a shared refresh for other requests. |
 
 ## Long-Lived Lifecycle
@@ -47,12 +47,15 @@ sequenceDiagram
     Manager->>Manager: validate generation and state
     Manager->>EventHub: publish state/event
     Caller->>Manager: disconnect or cancel
-    Manager->>Registry: cancel owned timers/loops
-    Manager->>EventHub: publish terminal event and finish stream
-    Manager->>Registry: remove runtime
+    Manager->>Manager: reduce lifecycle event to ordered effects
+    Manager->>Registry: cancel runtime URL task, timers, and loops
+    Manager->>EventHub: publish terminal event
+    Manager->>Manager: generation-check finalizer
+    Manager->>EventHub: finish stream
+    Manager->>Registry: remove task registry entry
 ```
 
-Terminal cleanup is the only place that should perform the full sequence of
-event publication, event hub finish, timer cancellation, and registry removal.
-Shortcut paths may ignore stale callbacks, but they must not partially tear down
-runtime state that another terminal owner still needs.
+The WebSocket lifecycle reducer is the only production path that decides the
+full sequence of runtime cleanup, terminal event publication, event hub finish,
+and registry removal. Shortcut paths may ignore stale callbacks, but they must
+not partially tear down runtime state that another terminal owner still needs.

@@ -65,6 +65,22 @@ struct WebSocketCloseDispositionObservationTests {
         #expect(underlyingError.message == "WebSocket close handshake timed out.")
     }
 
+    @Test("Zero close-handshake timeout finalizes through timeout path")
+    func zeroCloseHandshakeTimeoutFinalizesThroughTimeoutPath() async throws {
+        let harness = StubMessagingHarness(closeHandshakeTimeout: .zero)
+        let task = try await harness.connectAndReady()
+
+        await harness.manager.disconnect(task, closeCode: .normalClosure)
+
+        let disposition = await waitForCloseDisposition(task: task, timeout: .seconds(1))
+        guard case .handshakeTimeout(let code) = disposition else {
+            Issue.record("expected .handshakeTimeout, got \(String(describing: disposition))")
+            return
+        }
+        #expect(code == .normalClosure)
+        #expect(await waitForManagerTaskRemoval(manager: harness.manager, task: task, timeout: .seconds(1)))
+    }
+
     @Test("Peer close with retryable code records .peerRetryable disposition")
     func peerRetryableCloseRecordsDisposition() async throws {
         let harness = StubMessagingHarness()
@@ -156,4 +172,19 @@ private func waitForCloseDisposition(
         try? await Task.sleep(for: .milliseconds(10))
     }
     return await task.closeDisposition
+}
+
+private func waitForManagerTaskRemoval(
+    manager: WebSocketManager,
+    task: WebSocketTask,
+    timeout: Duration
+) async -> Bool {
+    let deadline = ContinuousClock.now.advanced(by: timeout)
+    while ContinuousClock.now < deadline {
+        if await manager.task(withId: task.id) == nil {
+            return true
+        }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return await manager.task(withId: task.id) == nil
 }
