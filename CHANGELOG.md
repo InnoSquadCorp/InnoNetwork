@@ -91,6 +91,12 @@ new case carries `errorCode == 4002` for `CustomNSError` bridging.
 
 ### Fixed
 
+- Macro diagnostics emitted by `@APIDefinition` and `#endpoint` now attach
+  their `SourceLocation` to the offending syntax node (the missing
+  argument list, the non-literal `path:` expression, the unlabeled
+  `as:` argument, etc.) instead of falling back to a generic location
+  on the macro attribute. IDE squiggles and `swift build` diagnostics
+  now point at the exact argument the user has to fix.
 - `CircuitBreakerRegistry.recordStatus(...)` no longer resets the rolling
   failure window on 4xx responses. 4xx is now a no-op (the transport worked,
   the failure is semantic), 5xx still counts as a transport failure, and

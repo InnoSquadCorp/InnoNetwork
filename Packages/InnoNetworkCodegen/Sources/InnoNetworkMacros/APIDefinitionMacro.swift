@@ -28,9 +28,10 @@ public struct APIDefinitionMacro: ExtensionMacro {
     ) throws -> [ExtensionDeclSyntax] {
         let arguments = try argumentList(from: node)
         let method = try requiredArgument(named: "method", in: arguments).expression.trimmedDescription
+        let pathArgument = try requiredArgument(named: "path", in: arguments)
         let pathLiteral = try stringLiteralArgument(named: "path", in: arguments)
         let properties = storedPropertyNames(in: declaration)
-        let path = try interpolatedPath(pathLiteral, properties: properties)
+        let path = try interpolatedPath(pathLiteral, properties: properties, anchor: pathArgument.expression)
         let typeName = type.trimmedDescription
         let accessPrefix = witnessAccessPrefix(in: declaration)
 
@@ -52,7 +53,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
             throw InnoNetworkMacroDiagnostic(
                 "@APIDefinition requires labeled arguments: method and path.",
                 id: "api-definition-missing-arguments"
-            )
+            ).error(at: node)
         }
         return arguments
     }
@@ -65,7 +66,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
             throw InnoNetworkMacroDiagnostic(
                 "@APIDefinition requires a \(name): argument.",
                 id: "api-definition-missing-\(name)"
-            )
+            ).error(at: arguments)
         }
         return argument
     }
@@ -79,7 +80,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
             throw InnoNetworkMacroDiagnostic(
                 "@APIDefinition \(name): must be a static string literal.",
                 id: "api-definition-nonliteral-\(name)"
-            )
+            ).error(at: argument.expression)
         }
 
         var value = ""
@@ -88,7 +89,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
                 throw InnoNetworkMacroDiagnostic(
                     "@APIDefinition \(name): does not support string interpolation.",
                     id: "api-definition-interpolated-\(name)"
-                )
+                ).error(at: segment)
             }
             value += stringSegment.content.text
         }
@@ -139,7 +140,11 @@ public struct APIDefinitionMacro: ExtensionMacro {
         return modifiers?.map { $0.name.text } ?? []
     }
 
-    private static func interpolatedPath(_ path: String, properties: Set<String>) throws -> String {
+    private static func interpolatedPath(
+        _ path: String,
+        properties: Set<String>,
+        anchor: some SyntaxProtocol
+    ) throws -> String {
         var result = ""
         var index = path.startIndex
         while index < path.endIndex {
@@ -149,7 +154,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
                     throw InnoNetworkMacroDiagnostic(
                         "@APIDefinition path contains an unterminated placeholder.",
                         id: "api-definition-unterminated-placeholder"
-                    )
+                    ).error(at: anchor)
                 }
                 let nameStart = path.index(after: index)
                 let name = String(path[nameStart..<close])
@@ -157,7 +162,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
                     throw InnoNetworkMacroDiagnostic(
                         "@APIDefinition path placeholder {\(name)} must match a stored property.",
                         id: "api-definition-unknown-placeholder"
-                    )
+                    ).error(at: anchor)
                 }
                 result += "\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(\(name)))"
                 index = path.index(after: close)
@@ -165,7 +170,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
                 throw InnoNetworkMacroDiagnostic(
                     "@APIDefinition path contains an unmatched closing brace.",
                     id: "api-definition-unmatched-placeholder"
-                )
+                ).error(at: anchor)
             } else {
                 result.append(character)
                 index = path.index(after: index)

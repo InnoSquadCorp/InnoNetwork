@@ -23,7 +23,7 @@ public struct EndpointMacro: ExpressionMacro {
             throw InnoNetworkMacroDiagnostic(
                 "#endpoint requires method, path, and as: response type arguments.",
                 id: "endpoint-invalid-argument-count"
-            )
+            ).error(at: node)
         }
 
         let methodArgument = arguments[arguments.startIndex]
@@ -31,7 +31,7 @@ public struct EndpointMacro: ExpressionMacro {
             throw InnoNetworkMacroDiagnostic(
                 "#endpoint first argument (method) must be unlabeled.",
                 id: "endpoint-unexpected-method-label"
-            )
+            ).error(at: methodArgument)
         }
         let method = methodArgument.expression.trimmedDescription
         let pathIndex = arguments.index(after: arguments.startIndex)
@@ -41,7 +41,7 @@ public struct EndpointMacro: ExpressionMacro {
             throw InnoNetworkMacroDiagnostic(
                 "#endpoint second argument (path) must be unlabeled.",
                 id: "endpoint-unexpected-path-label"
-            )
+            ).error(at: pathArgument)
         }
         let path = pathArgument.expression.trimmedDescription
         let responseArgument = arguments[responseIndex]
@@ -49,7 +49,7 @@ public struct EndpointMacro: ExpressionMacro {
             throw InnoNetworkMacroDiagnostic(
                 "#endpoint third argument must be labeled as:.",
                 id: "endpoint-missing-as-label"
-            )
+            ).error(at: responseArgument)
         }
 
         let responseType = responseArgument.expression.trimmedDescription
