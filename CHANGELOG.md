@@ -48,6 +48,14 @@ Versioning for the 4.x release line.
   genuine memory-bounded handling should use the streaming surface
   (`stream(_:)` / `bytes(for:)`).
 
+### Fixed
+
+- `WebSocketState.connecting.nextStates` now lists `.reconnecting`. The
+  manager already drives a connecting → reconnecting transition when a
+  handshake fails and the close disposition allows reconnect, so the
+  documented transition table now matches the runtime. No behavioural
+  change.
+
 ### Changed
 
 - `API_STABILITY.md` now describes the evolution boundary for each

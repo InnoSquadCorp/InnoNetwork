@@ -801,6 +801,7 @@ struct WebSocketManagerTests {
         #expect(WebSocketState.connected.nextStates == [.disconnecting, .disconnected, .reconnecting, .failed])
         #expect(WebSocketState.idle.canTransition(to: .connecting))
         #expect(WebSocketState.connecting.canTransition(to: .connected))
+        #expect(WebSocketState.connecting.canTransition(to: .reconnecting))
         #expect(WebSocketState.connected.canTransition(to: .reconnecting))
         #expect(WebSocketState.failed.canTransition(to: .idle))
         #expect(!WebSocketState.connected.canTransition(to: .idle))
