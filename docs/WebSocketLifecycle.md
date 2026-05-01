@@ -116,7 +116,9 @@ tearing down the newly registered generation.
 
 Stale callbacks may be ignored after generation/state checks, but they must not
 partially cancel close-handshake or reconnect runtime state that is still owned
-by the terminal path.
+by the terminal path. Once a task is already `disconnected` or `failed`, late
+close/error callbacks are also reduced to `ignoreStaleCallback` and cannot
+reschedule reconnect or consume reconnect-attempt budget.
 
 The detailed task owner/cancel table is in
 [Task Ownership](TaskOwnership.md). The most important WebSocket-specific rule

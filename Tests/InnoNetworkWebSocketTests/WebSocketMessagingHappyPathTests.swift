@@ -449,7 +449,8 @@ final class StubMessagingHarness: Sendable {
         heartbeatInterval: TimeInterval = 0,
         pongTimeout: TimeInterval = 10,
         reconnectDelay: TimeInterval = 0,
-        maxReconnectAttempts: Int = 0
+        maxReconnectAttempts: Int = 0,
+        closeHandshakeTimeout: Duration = .seconds(3)
     ) {
         let identifier = "test.websocket.stub.\(UUID().uuidString)"
         let stubSession = StubWebSocketURLSession()
@@ -473,7 +474,8 @@ final class StubMessagingHarness: Sendable {
                 pongTimeout: pongTimeout,
                 reconnectDelay: reconnectDelay,
                 maxReconnectAttempts: maxReconnectAttempts,
-                sessionIdentifier: identifier
+                sessionIdentifier: identifier,
+                closeHandshakeTimeout: closeHandshakeTimeout
             ),
             urlSession: stubSession,
             delegate: delegate,

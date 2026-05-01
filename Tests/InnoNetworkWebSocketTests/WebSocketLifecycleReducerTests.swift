@@ -22,11 +22,12 @@ struct WebSocketLifecycleReducerTests {
         )
 
         #expect(connected.state.publicState == .connected)
-        #expect(connected.effects == [
-            .cancelReconnect,
-            .startHeartbeat,
-            .publishConnected(protocolName: "chat"),
-        ])
+        #expect(
+            connected.effects == [
+                .cancelReconnect,
+                .startHeartbeat,
+                .publishConnected(protocolName: "chat"),
+            ])
     }
 
     @Test("connected manual disconnect finalizes through disconnected")
@@ -43,12 +44,13 @@ struct WebSocketLifecycleReducerTests {
         )
 
         #expect(disconnecting.state.publicState == .disconnecting)
-        #expect(disconnecting.effects == [
-            .cancelHeartbeat,
-            .cancelReconnect,
-            .cancelMessageListener,
-            .scheduleCloseTimeout(closeCode: .normalClosure),
-        ])
+        #expect(
+            disconnecting.effects == [
+                .cancelHeartbeat,
+                .cancelReconnect,
+                .cancelMessageListener,
+                .scheduleCloseTimeout(closeCode: .normalClosure),
+            ])
 
         let closed = WebSocketLifecycleReducer.reduce(
             state: disconnecting.state,
@@ -62,12 +64,13 @@ struct WebSocketLifecycleReducerTests {
 
         #expect(closed.state.publicState == .disconnected)
         #expect(closed.state.autoReconnectEnabled == false)
-        #expect(closed.effects == [
-            .cleanupRuntime,
-            .cancelCloseTimeout,
-            .publishDisconnected(error: manualError),
-            .finishTerminal(generation: 3),
-        ])
+        #expect(
+            closed.effects == [
+                .cleanupRuntime,
+                .cancelCloseTimeout,
+                .publishDisconnected(error: manualError),
+                .finishTerminal(generation: 3),
+            ])
     }
 
     @Test("retryable peer close schedules reconnect then timer starts fresh generation")
@@ -93,13 +96,14 @@ struct WebSocketLifecycleReducerTests {
         #expect(reconnecting.state.generation == 4)
         #expect(reconnecting.state.attempt == 1)
         #expect(reconnecting.state.closeCode == .goingAway)
-        #expect(reconnecting.effects == [
-            .cleanupRuntime,
-            .cancelHeartbeat,
-            .cancelMessageListener,
-            .publishDisconnected(error: error),
-            .scheduleReconnect,
-        ])
+        #expect(
+            reconnecting.effects == [
+                .cleanupRuntime,
+                .cancelHeartbeat,
+                .cancelMessageListener,
+                .publishDisconnected(error: error),
+                .scheduleReconnect,
+            ])
 
         let connecting = WebSocketLifecycleReducer.reduce(
             state: reconnecting.state,
@@ -153,13 +157,14 @@ struct WebSocketLifecycleReducerTests {
         )
 
         #expect(failed.state.publicState == .failed)
-        #expect(failed.effects == [
-            .cleanupRuntime,
-            .cancelHeartbeat,
-            .cancelMessageListener,
-            .publishError(error),
-            .finishTerminal(generation: 2),
-        ])
+        #expect(
+            failed.effects == [
+                .cleanupRuntime,
+                .cancelHeartbeat,
+                .cancelMessageListener,
+                .publishError(error),
+                .finishTerminal(generation: 2),
+            ])
     }
 
     @Test("disconnecting stale didOpen does not mutate state or generation")
@@ -209,6 +214,52 @@ struct WebSocketLifecycleReducerTests {
         #expect(staleClose.effects == [.ignoreStaleCallback])
         #expect(staleFailure.state == connecting)
         #expect(staleFailure.effects == [.ignoreStaleCallback])
+    }
+
+    @Test("terminal states ignore late close and failure callbacks")
+    func terminalStatesIgnoreLateCloseAndFailureCallbacks() {
+        let failed = WebSocketLifecycleState.failed(
+            generation: 11,
+            attempt: 3,
+            autoReconnect: true,
+            closeCode: nil,
+            disposition: .handshakeForbidden(403),
+            error: .unknown
+        )
+        let lateClose = WebSocketLifecycleReducer.reduce(
+            state: failed,
+            event: .didClose(
+                generation: 11,
+                closeCode: .goingAway,
+                disposition: .peerRetryable(.goingAway, nil),
+                error: .disconnected(nil)
+            ),
+            context: .init(reconnectAction: .retry, attempt: 4)
+        )
+
+        #expect(lateClose.state == failed)
+        #expect(lateClose.effects == [.ignoreStaleCallback])
+
+        let disconnected = WebSocketLifecycleState.disconnected(
+            generation: 12,
+            attempt: 1,
+            autoReconnect: false,
+            closeCode: .normalClosure,
+            disposition: .manual(.normalClosure),
+            error: .disconnected(nil)
+        )
+        let lateFailure = WebSocketLifecycleReducer.reduce(
+            state: disconnected,
+            event: .failure(
+                generation: 12,
+                disposition: .transportFailure(.pingTimeout),
+                error: .pingTimeout
+            ),
+            context: .init(reconnectAction: .retry, attempt: 2)
+        )
+
+        #expect(lateFailure.state == disconnected)
+        #expect(lateFailure.effects == [.ignoreStaleCallback])
     }
 
     @Test("WebSocketTask updateState rejects illegal production transitions")

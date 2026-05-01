@@ -176,6 +176,11 @@ package actor WebSocketRuntimeRegistry {
     }
 
     package func setCloseHandshakeTask(_ task: Task<Void, Never>, for taskId: String) async {
+        guard taskIdToURLTask[taskId] != nil else {
+            task.cancel()
+            await task.value
+            return
+        }
         if let previousTask = closeHandshakeTasks[taskId] {
             previousTask.cancel()
             await previousTask.value

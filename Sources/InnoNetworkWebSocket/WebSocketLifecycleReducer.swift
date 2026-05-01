@@ -398,10 +398,12 @@ package enum WebSocketLifecycleState: Sendable, Equatable {
         case .connected:
             return .connected(generation: generation, attempt: attempt, autoReconnect: autoReconnect)
         case .disconnecting:
-            let manualDisconnect = manualDisconnect ?? WebSocketManualDisconnect(
-                closeCode: closeCode ?? .normalClosure,
-                error: error
-            )
+            let manualDisconnect =
+                manualDisconnect
+                ?? WebSocketManualDisconnect(
+                    closeCode: closeCode ?? .normalClosure,
+                    error: error
+                )
             return .disconnecting(
                 generation: generation,
                 attempt: attempt,
@@ -657,7 +659,7 @@ package enum WebSocketLifecycleReducer {
             )
         }
 
-        if state.publicState == .disconnected || state.publicState == .disconnecting {
+        if state.publicState == .disconnected || state.publicState == .disconnecting || state.publicState == .failed {
             return .init(state: state, effects: [.ignoreStaleCallback])
         }
 
@@ -737,7 +739,7 @@ package enum WebSocketLifecycleReducer {
             return .init(state: state, effects: [.ignoreStaleCallback])
         }
 
-        if state.publicState == .disconnecting {
+        if state.publicState == .disconnecting || state.publicState.isTerminal {
             return .init(state: state, effects: [.ignoreStaleCallback])
         }
 

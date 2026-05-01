@@ -593,6 +593,7 @@ public final class WebSocketManager: NSObject, Sendable {
                 if callbackGeneration != currentGeneration
                     || previousState == .disconnecting
                     || previousState == .disconnected
+                    || previousState == .failed
                 {
                     context = .init()
                 } else {
@@ -731,6 +732,15 @@ public final class WebSocketManager: NSObject, Sendable {
         let finalError = makeFailureError(closeDisposition: closeDisposition)
         let currentGeneration = await task.connectionGeneration
         if let generation, generation != currentGeneration {
+            let transition = await task.applyLifecycleEvent(
+                .failure(generation: generation, disposition: closeDisposition, error: finalError)
+            )
+            await executeLifecycleEffects(transition.effects, for: task)
+            return
+        }
+
+        let currentState = await task.state
+        if currentState == .disconnecting || currentState.isTerminal {
             let transition = await task.applyLifecycleEvent(
                 .failure(generation: generation, disposition: closeDisposition, error: finalError)
             )

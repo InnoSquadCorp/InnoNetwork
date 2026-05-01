@@ -1293,6 +1293,38 @@ struct WebSocketListenerLifecycleTests {
         #expect(harness.stubSession.createdTasks.count == 1)
     }
 
+    @Test("Manual disconnect failure callback does not consume reconnect budget")
+    func manualDisconnectFailureCallbackDoesNotConsumeReconnectBudget() async throws {
+        let harness = StubMessagingHarness(reconnectDelay: 0, maxReconnectAttempts: 3)
+        let task = try await harness.connectAndReady()
+        let attemptsBeforeCallback = await task.attemptedReconnectCount
+
+        await harness.manager.disconnect(task)
+        #expect(await task.state == .disconnecting)
+
+        harness.manager.handleSessionError(
+            taskIdentifier: harness.stubTaskIdentifier,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.timedOut.rawValue,
+                message: "late timeout during manual close"
+            )
+        )
+
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(await task.state == .disconnecting)
+        #expect(await task.attemptedReconnectCount == attemptsBeforeCallback)
+        #expect(harness.stubSession.createdTasks.count == 1)
+
+        harness.manager.handleDisconnected(
+            taskIdentifier: harness.stubTaskIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+        #expect(await waitForTaskRemoval(manager: harness.manager, task: task))
+    }
+
     @Test("Manual disconnect close event removes listeners and task runtime without reconnect")
     func manualDisconnectTerminalCleanupDoesNotReconnect() async throws {
         let harness = StubMessagingHarness(reconnectDelay: 0, maxReconnectAttempts: 3)
