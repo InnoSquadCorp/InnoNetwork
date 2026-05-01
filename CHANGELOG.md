@@ -61,6 +61,14 @@ Versioning for the 4.x release line.
   `refreshAndApply`, and that `RequestDedupKey`'s `refreshLane`
   suffix distinguishes otherwise-identical keys.
 
+- `WebSocketLifecycleReducerFuzzTests` (P3) drives the reducer with
+  five deterministic SplitMix64-seeded random walks (1000 events
+  each) and pins three pure-function invariants: same `(state, event,
+  context)` triples produce equal transitions, generation counters
+  are monotonic, and stale-generation callbacks never mutate state
+  beyond emitting `.ignoreStaleCallback`. Two scripted scenarios
+  cover the manual-disconnect and max-reconnect-exceeded absorbing
+  terminals against every non-`reset` event.
 - `IdempotencyRetryIntegrationTests` (P1.13) ties the Retry-After,
   unsafe-method idempotency, and exponential-backoff branches together
   end-to-end: POST 503 + `Retry-After` + `Idempotency-Key` retries
