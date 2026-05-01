@@ -18,7 +18,7 @@ public extension WebSocketState {
         case .idle:
             [.connecting]
         case .connecting:
-            [.connected, .disconnected, .failed, .disconnecting]
+            [.connected, .disconnected, .failed, .disconnecting, .reconnecting]
         case .connected:
             [.disconnecting, .disconnected, .reconnecting, .failed]
         case .disconnecting:

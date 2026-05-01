@@ -162,7 +162,11 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     /// - Returns: An `AsyncThrowingStream<T.Output, Error>` whose values are
     ///   the non-nil results of ``StreamingAPIDefinition/decode(line:)``.
     public func stream<T: StreamingAPIDefinition>(_ request: T) -> AsyncThrowingStream<T.Output, Error> {
-        AsyncThrowingStream { continuation in
+        // Streaming responses must not silently drop server-emitted events
+        // (lost SSE frames, JSON-lines records, etc.), so the policy is
+        // explicit `.unbounded`. Callers that observe back-pressure should
+        // consume on a hot path or apply downstream batching themselves.
+        AsyncThrowingStream(bufferingPolicy: .unbounded) { continuation in
             let requestID = UUID()
             let inFlight = self.inFlight
             let configuration = self.configuration

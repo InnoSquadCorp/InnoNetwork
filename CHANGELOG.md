@@ -23,6 +23,20 @@ Versioning for the 4.x release line.
   actually need (envelope unwrapping, payload sanitization, decode
   metrics, typed-value normalization). `NetworkConfiguration.decodingInterceptors`
   registers them at the session level.
+- All `AsyncStream` / `AsyncThrowingStream` factories owned by InnoNetwork
+  now declare an explicit `bufferingPolicy`. Streaming responses,
+  download delegate events, and event-hub consumer streams use
+  `.unbounded` (event loss would corrupt task lifecycles or drop
+  server-emitted records); `NetworkMonitor` path snapshots use
+  `.bufferingNewest(16)` so a slow observer only ever sees the most
+  recent network state. Behaviour is unchanged for existing callers
+  whose consumers keep up with the producer.
+- `WebSocketConfiguration.closeHandshakeTimeout: Duration` (default
+  `.seconds(3)`) lets callers tune how long the manager waits for the
+  WebSocket close handshake to finish after `cancel(with:reason:)` before
+  finalizing the disconnect locally. Negative values are clamped to
+  `.zero`. The previous behaviour matched the new default exactly, so
+  existing code is unaffected.
 - `NetworkConfiguration.responseBodyLimit: Int64?` (default `nil`)
   enforces a soft upper bound on the size of buffered response bodies.
   When the configured limit is exceeded the executor short-circuits the
@@ -33,6 +47,48 @@ Versioning for the 4.x release line.
   it to `nil` keeps the prior unbounded behaviour. Endpoints that need
   genuine memory-bounded handling should use the streaming surface
   (`stream(_:)` / `bytes(for:)`).
+
+### Documentation
+
+- `NetworkEventHub.publish` now documents the partition lifecycle:
+  observers are bound at publish time so the hub is not a replayable
+  subscriber stream, and publishes that arrive after `finish(requestID:)`
+  are intentionally dropped because the consumer side of the partition
+  has already torn down. No behavioural change.
+- `RequestCoalescingPolicy` now documents the interaction between
+  coalescing and `Authorization`: the header participates in the dedup
+  key by default, so callers with different tokens never share a
+  transport, and `RefreshTokenPolicy` is the supported way to recover
+  token-mismatch peers individually. Opting into Authorization-agnostic
+  dedup remains possible but is called out as only safe when every
+  caller in the cohort presents identical credentials. No behavioural
+  change.
+
+### Fixed
+
+- `CircuitBreakerRegistry.recordStatus` now releases the half-open
+  probe slot when the probe response is a 4xx. Previously the new
+  4xx-as-no-op branch left `probeInFlight` stuck at `true` whenever
+  the probe came back with a client-side semantic failure (401/404/
+  etc), which wedged every subsequent request through `prepare(...)`.
+  In `.closed` 4xx remains a no-op (so it cannot mask accumulated
+  transport failures), but in `.halfOpen` it now closes the circuit
+  because the probe purpose is to confirm the transport works — and a
+  4xx response satisfies that. Adds `circuitBreakerHalfOpenProbe4xxReleasesSlot`
+  regression test.
+- `WebSocketManager.disconnect(_:closeCode:)` now snapshots
+  `configuration.closeHandshakeTimeout` into a local before spawning
+  the close-handshake timer. The previous code read the timeout via
+  `self?.configuration.closeHandshakeTimeout ?? .seconds(3)` *inside*
+  the spawned task, so a deallocated manager would still sleep the
+  default 3 seconds before the no-op tail and would silently fall
+  back to the default even when callers had configured a non-default
+  value.
+- `WebSocketState.connecting.nextStates` now lists `.reconnecting`. The
+  manager already drives a connecting → reconnecting transition when a
+  handshake fails and the close disposition allows reconnect, so the
+  documented transition table now matches the runtime. No behavioural
+  change.
 
 ### Changed
 
@@ -77,6 +133,18 @@ new case carries `errorCode == 4002` for `CustomNSError` bridging.
 
 ### Fixed
 
+- Macro diagnostics emitted by `@APIDefinition` and `#endpoint` now attach
+  their `SourceLocation` to the offending syntax node (the missing
+  argument list, the non-literal `path:` expression, the unlabeled
+  `as:` argument, etc.) instead of falling back to a generic location
+  on the macro attribute. IDE squiggles and `swift build` diagnostics
+  now point at the exact argument the user has to fix.
+- `CircuitBreakerRegistry.recordStatus(...)` no longer resets the rolling
+  failure window on 4xx responses. 4xx is now a no-op (the transport worked,
+  the failure is semantic), 5xx still counts as a transport failure, and
+  2xx/3xx clear the accumulated failures and release any half-open probe
+  slot. Previously a single 4xx interleaved between 5xx/timeout failures
+  could mask a host that was teetering on the failure threshold.
 - `TimeoutReason` documentation now enumerates the exact `URLError` →
   `NetworkError.timeout(reason:)` mapping (`.timedOut` →
   `.requestTimeout`, `.cannotConnectToHost` → `.connectionTimeout`) and

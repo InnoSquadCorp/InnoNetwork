@@ -95,6 +95,20 @@ struct WebSocketConfigurationTests {
         #expect(config.requestHeaders["Authorization"] == "Bearer token")
     }
 
+    @Test("closeHandshakeTimeout default is three seconds and clamps negatives")
+    func closeHandshakeTimeoutClampingAndDefault() {
+        #expect(WebSocketConfiguration.default.closeHandshakeTimeout == .seconds(3))
+        #expect(WebSocketConfiguration.safeDefaults().closeHandshakeTimeout == .seconds(3))
+        let custom = WebSocketConfiguration(closeHandshakeTimeout: .seconds(7))
+        #expect(custom.closeHandshakeTimeout == .seconds(7))
+        let clamped = WebSocketConfiguration(closeHandshakeTimeout: .seconds(-2))
+        #expect(clamped.closeHandshakeTimeout == .zero)
+        let advanced = WebSocketConfiguration.advanced {
+            $0.closeHandshakeTimeout = .milliseconds(500)
+        }
+        #expect(advanced.closeHandshakeTimeout == .milliseconds(500))
+    }
+
     @Test("Handshake adapters run for each connection request after static headers")
     func handshakeAdaptersRunForEachConnectionRequest() async throws {
         let tokenStore = WebSocketHandshakeTokenStore(tokens: ["first", "second"])
@@ -787,6 +801,7 @@ struct WebSocketManagerTests {
         #expect(WebSocketState.connected.nextStates == [.disconnecting, .disconnected, .reconnecting, .failed])
         #expect(WebSocketState.idle.canTransition(to: .connecting))
         #expect(WebSocketState.connecting.canTransition(to: .connected))
+        #expect(WebSocketState.connecting.canTransition(to: .reconnecting))
         #expect(WebSocketState.connected.canTransition(to: .reconnecting))
         #expect(WebSocketState.failed.canTransition(to: .idle))
         #expect(!WebSocketState.connected.canTransition(to: .idle))

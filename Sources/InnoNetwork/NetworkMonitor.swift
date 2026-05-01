@@ -158,7 +158,10 @@ public actor NetworkMonitor: NetworkMonitoring {
     }
 
     private func updates() -> AsyncStream<NetworkSnapshot> {
-        AsyncStream { continuation in
+        // Snapshots are state observations: a slow consumer should only ever
+        // see the most recent path state, never a backlog. `.bufferingNewest`
+        // keeps the latest snapshots and discards older ones under pressure.
+        AsyncStream(bufferingPolicy: .bufferingNewest(16)) { continuation in
             let id = UUID()
             continuations[id] = continuation
             continuation.onTermination = { @Sendable _ in

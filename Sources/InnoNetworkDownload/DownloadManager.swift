@@ -259,7 +259,14 @@ public actor DownloadManager {
         callbacks: DownloadSessionDelegateCallbacks,
         backgroundCompletionStore: BackgroundCompletionStore
     ) throws {
-        let (delegateEvents, delegateEventContinuation) = AsyncStream<DelegateEvent>.makeStream()
+        // Delegate events drive task lifecycle (suspend/resume/finish); dropping
+        // any of them would leave the actor wedged in an intermediate state,
+        // so this stream is intentionally `.unbounded`. The producer is the
+        // URLSession delegate, which yields a bounded number of events per
+        // task, so buffer growth is naturally bounded by the active task set.
+        let (delegateEvents, delegateEventContinuation) = AsyncStream<DelegateEvent>.makeStream(
+            bufferingPolicy: .unbounded
+        )
         try Self.registerSessionIdentifier(configuration.sessionIdentifier)
         self.configuration = configuration
         self.delegate = delegate

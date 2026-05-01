@@ -5,6 +5,21 @@ import Foundation
 /// Coalescing is disabled by default. When enabled, the client shares a single
 /// raw transport result among matching requests and decodes the result
 /// separately for each caller.
+///
+/// ## Authorization headers and coalescing
+///
+/// `Authorization` participates in the dedup key by default, so callers
+/// presenting different tokens never share a transport. That is the safe
+/// default — it prevents one caller's 401 from being delivered to a peer
+/// who carries a fresh token. Pair coalescing with ``RefreshTokenPolicy``
+/// directly: the refresh policy recovers token-mismatch waiters individually
+/// after the originating request returns 401, so each caller still ends up
+/// with the result that matches its own credentials.
+///
+/// To opt into Authorization-agnostic dedup (e.g. an internal service where
+/// every caller in the cohort shares the same token), pass `"Authorization"`
+/// in `excludedHeaderNames`. Doing so is only safe when every coalesced
+/// caller is guaranteed to be authenticated identically.
 public struct RequestCoalescingPolicy: Sendable, Equatable {
     public let isEnabled: Bool
     public let methods: Set<String>
@@ -14,7 +29,9 @@ public struct RequestCoalescingPolicy: Sendable, Equatable {
     public static let disabled = RequestCoalescingPolicy(isEnabled: false)
 
     /// Coalesces `GET` requests while ignoring volatile headers such as
-    /// `User-Agent` and `Date` when computing the key.
+    /// `User-Agent` and `Date` when computing the key. `Authorization`
+    /// remains part of the key, so callers with different tokens are never
+    /// coalesced together.
     public static let getOnly = RequestCoalescingPolicy()
 
     public init(
