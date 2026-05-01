@@ -41,6 +41,34 @@ interceptor therefore observes the same response shape it would observe
 under a session-only setup, regardless of how many endpoint interceptors
 sit between it and the transport.
 
+## Failure semantics
+
+An interceptor that throws aborts the **current attempt** immediately:
+no later interceptor in the same direction runs, the transport is
+not invoked, and the response chain is skipped. The thrown error is
+surfaced to the configured ``RetryPolicy`` exactly like a transport
+error would be. The policy decides whether the executor runs another
+attempt.
+
+Two rules follow from that:
+
+- Throw a ``NetworkError`` whose classification matches the desired
+  retry behaviour. Use ``NetworkError/statusCode(_:)`` if you want the
+  policy to treat the failure like a server-side rejection it might
+  retry. For permanent rejections, throw a category the policy
+  classifies as `.noRetry` (for example
+  ``NetworkError/invalidRequestConfiguration(_:)`` for a missing
+  signing key).
+- Errors that are *not* ``NetworkError`` are wrapped into
+  ``NetworkError/underlying(_:_:)`` for you, so the policy still sees a
+  uniform error shape. Conform domain-specific errors to your own
+  category mapping inside ``RetryPolicy/shouldRetry(error:retryIndex:request:response:)``
+  if you need finer control.
+
+Interceptors run again on every retry, so transient failures recover
+naturally — token refresh, signing nonces, and idempotency keys are
+recomputed on each attempt.
+
 ## Example: shared trace headers
 
 ```swift

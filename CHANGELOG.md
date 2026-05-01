@@ -75,6 +75,11 @@ Versioning for the 4.x release line.
 - `CachingStrategies` documents the new 304-with-new-Vary handling so
   callers know that successful conditional revalidation never rekeys
   the stored entry.
+- `Interceptors` DocC article (P2.2) now documents the throw semantics
+  shared by ``RequestInterceptor`` and ``ResponseInterceptor``: which
+  later stages are skipped on throw, how errors that aren't already
+  ``NetworkError`` are wrapped, and how the configured
+  ``RetryPolicy`` decides whether the executor runs another attempt.
 - `NetworkError.mapTransportError(_:)` now carries a full docstring
   explaining the intentionally narrow `URLError` → `.timeout` mapping
   (only `timedOut` and `cannotConnectToHost`) and why DNS/reachability
