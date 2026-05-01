@@ -50,6 +50,11 @@ Versioning for the 4.x release line.
 
 ### Documentation
 
+- `NetworkEventHub.publish` now documents the partition lifecycle:
+  observers are bound at publish time so the hub is not a replayable
+  subscriber stream, and publishes that arrive after `finish(requestID:)`
+  are intentionally dropped because the consumer side of the partition
+  has already torn down. No behavioural change.
 - `RequestCoalescingPolicy` now documents the interaction between
   coalescing and `Authorization`: the header participates in the dedup
   key by default, so callers with different tokens never share a

@@ -40,6 +40,14 @@ package actor NetworkEventHub {
         metricsProxy?.shutdown()
     }
 
+    /// Enqueues `event` for delivery to `observers` partitioned by `requestID`.
+    ///
+    /// Observers are bound at publish time, so this hub does not retain
+    /// historical events for late subscribers. After ``finish(requestID:)``
+    /// is called, subsequent `publish` calls for the same partition are
+    /// silently dropped — request lifecycles are terminal, and resurrecting
+    /// a closed partition with new events would risk delivering them after
+    /// the awaiting consumer has already cleaned up.
     package func publish(_ event: NetworkEvent, requestID: UUID, observers: [any NetworkEventObserving]) {
         guard !observers.isEmpty else { return }
         var partition = partitions[requestID] ?? PartitionState()
