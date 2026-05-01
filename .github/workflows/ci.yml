@@ -381,7 +381,16 @@ jobs:
               --quick \
               --json-path .build/benchmarks/results.json \
               --enforce-baseline \
+              --guard-benchmark events/task-event-fanout-single \
+              --guard-benchmark persistence/download-persistence-restore \
               --guard-benchmark websocket/websocket-close-disposition-classify \
+              --guard-benchmark websocket/websocket-ping-context-alloc \
+              --guard-benchmark websocket/websocket-send-queue-reserve \
+              --guard-benchmark websocket/websocket-lifecycle-transition-table \
+              --guard-benchmark client/request-pipeline \
+              --guard-benchmark client/request-coalescing-shared-get \
+              --guard-benchmark cache/response-cache-lookup \
+              --guard-benchmark cache/response-cache-revalidation \
               --max-regression-percent 20
             status=$?
             if [ "$status" -eq 0 ]; then

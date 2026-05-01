@@ -78,8 +78,10 @@ that feature still needs an RFC to settle the public contract first.
 
 ## Process note
 
-The audit was timeboxed and reviewed through code reading plus the existing
-`InnoNetworkBenchmarks` output; no separate microbenchmarks were added.
-If a future hot-path regression surfaces in the scheduled benchmark
-workflow, the corresponding rejected option above becomes a candidate for
-a focused follow-up PR with benchmark numbers attached.
+The audit was timeboxed and reviewed through code reading plus
+`InnoNetworkBenchmarks`. Later benchmark governance added focused guards for
+request pipeline, request coalescing, response cache, download restore, event
+delivery, and WebSocket lifecycle/send hot paths. If one of those guarded
+paths regresses in the scheduled benchmark workflow, the corresponding rejected
+option above becomes a candidate for a focused follow-up PR with benchmark
+numbers attached.

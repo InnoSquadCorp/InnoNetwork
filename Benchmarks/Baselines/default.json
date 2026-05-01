@@ -1,5 +1,5 @@
 {
-  "generatedAt" : "2026-04-28T22:12:07Z",
+  "generatedAt" : "2026-05-01T09:41:02Z",
   "results" : [
     {
       "elapsedSeconds" : 0.031351333,
@@ -16,25 +16,25 @@
       "operationsPerSecond" : 7025.686062810729
     },
     {
-      "elapsedSeconds" : 0.004626208,
+      "elapsedSeconds" : 0.022873042,
       "group" : "events",
-      "iterations" : 400,
+      "iterations" : 2000,
       "name" : "task-event-fanout-single",
-      "operationsPerSecond" : 86463.9030497548
+      "operationsPerSecond" : 87439.17840049435
     },
     {
-      "elapsedSeconds" : 0.018474292,
+      "elapsedSeconds" : 0.253442166,
       "group" : "events",
-      "iterations" : 400,
+      "iterations" : 2000,
       "name" : "task-event-fanout-many",
-      "operationsPerSecond" : 21651.70930501694
+      "operationsPerSecond" : 7891.346698796758
     },
     {
-      "elapsedSeconds" : 0.00959,
+      "elapsedSeconds" : 0.04579625,
       "group" : "events",
-      "iterations" : 400,
+      "iterations" : 2000,
       "name" : "task-event-slow-isolation",
-      "operationsPerSecond" : 41710.11470281544
+      "operationsPerSecond" : 43671.69801020826
     },
     {
       "elapsedSeconds" : 1.218916458,
@@ -58,6 +58,13 @@
       "operationsPerSecond" : 79.84722235059247
     },
     {
+      "elapsedSeconds" : 0.252735417,
+      "group" : "persistence",
+      "iterations" : 50,
+      "name" : "download-persistence-restore",
+      "operationsPerSecond" : 197.83535126776474
+    },
+    {
       "elapsedSeconds" : 0.01976675,
       "group" : "websocket",
       "iterations" : 20000,
@@ -79,11 +86,53 @@
       "operationsPerSecond" : 4938722.796897494
     },
     {
+      "elapsedSeconds" : 0.063568875,
+      "group" : "websocket",
+      "iterations" : 200000,
+      "name" : "websocket-send-queue-reserve",
+      "operationsPerSecond" : 3146193.793739468
+    },
+    {
+      "elapsedSeconds" : 0.106147041,
+      "group" : "websocket",
+      "iterations" : 200000,
+      "name" : "websocket-lifecycle-transition-table",
+      "operationsPerSecond" : 1884178.7591610774
+    },
+    {
+      "elapsedSeconds" : 0.134858875,
+      "group" : "client",
+      "iterations" : 2000,
+      "name" : "request-pipeline",
+      "operationsPerSecond" : 14830.317989824549
+    },
+    {
+      "elapsedSeconds" : 0.157962458,
+      "group" : "client",
+      "iterations" : 2000,
+      "name" : "request-coalescing-shared-get",
+      "operationsPerSecond" : 12661.236253996503
+    },
+    {
       "elapsedSeconds" : 0.052708583,
       "group" : "client",
       "iterations" : 2000,
       "name" : "concurrent-50-requests",
       "operationsPerSecond" : 37944.484297747105
+    },
+    {
+      "elapsedSeconds" : 0.211719167,
+      "group" : "cache",
+      "iterations" : 200000,
+      "name" : "response-cache-lookup",
+      "operationsPerSecond" : 944647.5859221569
+    },
+    {
+      "elapsedSeconds" : 0.074497667,
+      "group" : "cache",
+      "iterations" : 200000,
+      "name" : "response-cache-revalidation",
+      "operationsPerSecond" : 2684647.8293071915
     }
   ],
   "version" : 1

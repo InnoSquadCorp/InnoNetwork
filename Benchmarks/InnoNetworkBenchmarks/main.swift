@@ -243,9 +243,13 @@ private enum InnoNetworkBenchmarks {
     private static func runBenchmarks(options: BenchmarkOptions) async throws -> [BenchmarkResult] {
         var results: [BenchmarkResult] = []
         let encoderIterations = options.quick ? 2_000 : 20_000
-        let eventIterations = options.quick ? 400 : 4_000
+        let eventIterations = options.quick ? 2_000 : 20_000
         let persistenceIterations = options.quick ? 300 : 3_000
+        let restoreIterations = options.quick ? 50 : 500
+        let cacheIterations = options.quick ? 200_000 : 1_000_000
         let reconnectIterations = 20_000
+        let sendQueueIterations = options.quick ? 200_000 : 1_000_000
+        let lifecycleIterations = options.quick ? 200_000 : 1_000_000
         // The guarded websocket microbenchmarks were finishing in just a few
         // milliseconds in `--quick` mode, which made CI regressions overly
         // sensitive to runner scheduling noise. Keep the coarse smoke gate fast,
@@ -281,11 +285,18 @@ private enum InnoNetworkBenchmarks {
         results.append(try await benchmarkPersistenceAppend(iterations: persistenceIterations))
         results.append(try await benchmarkPersistenceReplay(iterations: persistenceIterations))
         results.append(try await benchmarkPersistenceCompaction(iterations: max(1_050, persistenceIterations)))
+        results.append(try await benchmarkPersistenceRestore(iterations: restoreIterations))
         results.append(try await benchmarkReconnectDecision(iterations: reconnectIterations))
         results.append(try await benchmarkCloseDispositionClassify(iterations: websocketGuardIterations))
         results.append(try await benchmarkPingContextAlloc(iterations: websocketGuardIterations))
+        results.append(try await benchmarkWebSocketSendQueue(iterations: sendQueueIterations))
+        results.append(try await benchmarkWebSocketLifecycleTransitionTable(iterations: lifecycleIterations))
         let clientIterations = options.quick ? 2_000 : 20_000
+        results.append(try await benchmarkRequestPipeline(iterations: clientIterations))
+        results.append(try await benchmarkRequestCoalescing(iterations: clientIterations))
         results.append(try await benchmarkConcurrentClientThroughput(iterations: clientIterations))
+        results.append(try await benchmarkResponseCacheLookup(iterations: cacheIterations))
+        results.append(try await benchmarkResponseCacheRevalidation(iterations: cacheIterations))
 
         return results
     }
@@ -427,6 +438,27 @@ private enum InnoNetworkBenchmarks {
         }
     }
 
+    private static func benchmarkPersistenceRestore(iterations: Int) async throws -> BenchmarkResult {
+        let directory = try makeTemporaryDirectory(prefix: "restore")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let seed = DownloadTaskPersistence(sessionIdentifier: "bench.restore", baseDirectoryURL: directory)
+        for index in 0..<200 {
+            try await seed.upsert(
+                id: "task-\(index)",
+                url: URL(string: "https://example.com/\(index)")!,
+                destinationURL: directory.appendingPathComponent("file-\(index)")
+            )
+        }
+
+        return try await measure(name: "download-persistence-restore", group: "persistence", iterations: iterations) {
+            for _ in 0..<iterations {
+                let restored = DownloadTaskPersistence(sessionIdentifier: "bench.restore", baseDirectoryURL: directory)
+                _ = await restored.allRecords()
+            }
+        }
+    }
+
     private static func benchmarkReconnectDecision(iterations: Int) async throws -> BenchmarkResult {
         try await measure(name: "websocket-reconnect-decision", group: "websocket", iterations: iterations) {
             let runtimeRegistry = WebSocketRuntimeRegistry()
@@ -486,11 +518,81 @@ private enum InnoNetworkBenchmarks {
         }
     }
 
+    private static func benchmarkWebSocketSendQueue(iterations: Int) async throws -> BenchmarkResult {
+        try await measure(name: "websocket-send-queue-reserve", group: "websocket", iterations: iterations) {
+            let task = WebSocketTask(url: URL(string: "wss://example.com/socket")!, id: "bench-send-queue")
+            for _ in 0..<iterations {
+                if await task.tryReserveSendSlot(limit: 1) {
+                    await task.releaseSendSlot()
+                }
+            }
+        }
+    }
+
+    private static func benchmarkWebSocketLifecycleTransitionTable(iterations: Int) async throws -> BenchmarkResult {
+        try await measure(name: "websocket-lifecycle-transition-table", group: "websocket", iterations: iterations) {
+            let states: [WebSocketState] = [
+                .idle,
+                .connecting,
+                .connected,
+                .disconnecting,
+                .disconnected,
+                .reconnecting,
+                .failed,
+            ]
+            for index in 0..<iterations {
+                let current = states[index % states.count]
+                let next = states[(index + 1) % states.count]
+                _ = current.canTransition(to: next)
+                _ = current.isTerminal
+            }
+        }
+    }
+
     /// Measures end-to-end throughput of `DefaultNetworkClient.request(_:)`
     /// using an in-memory URL session that returns a fixed JSON payload.
     /// Captures the dispatch + retry-coordinator + event-hub + decode path
     /// without any network or kernel I/O, so regressions in the actor /
     /// class isolation model surface here before they show up in production.
+    private static func benchmarkRequestPipeline(iterations: Int) async throws -> BenchmarkResult {
+        try await measure(name: "request-pipeline", group: "client", iterations: iterations) {
+            let client = DefaultNetworkClient(
+                configuration: NetworkConfiguration.safeDefaults(
+                    baseURL: URL(string: "https://benchmark.invalid")!
+                ),
+                session: InstantMockSession.shared
+            )
+            for _ in 0..<iterations {
+                _ = try await client.request(BenchmarkUserRequest())
+            }
+        }
+    }
+
+    private static func benchmarkRequestCoalescing(iterations: Int) async throws -> BenchmarkResult {
+        try await measure(name: "request-coalescing-shared-get", group: "client", iterations: iterations) {
+            let client = DefaultNetworkClient(
+                configuration: NetworkConfiguration.advanced(
+                    baseURL: URL(string: "https://benchmark.invalid")!
+                ) { builder in
+                    builder.requestCoalescingPolicy = .getOnly
+                },
+                session: DelayedMockSession(delayNanoseconds: 100_000)
+            )
+            let parallelism = 20
+            let batches = max(1, iterations / parallelism)
+            for _ in 0..<batches {
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    for _ in 0..<parallelism {
+                        group.addTask {
+                            _ = try await client.request(BenchmarkUserRequest())
+                        }
+                    }
+                    try await group.waitForAll()
+                }
+            }
+        }
+    }
+
     private static func benchmarkConcurrentClientThroughput(iterations: Int) async throws -> BenchmarkResult {
         try await measure(name: "concurrent-50-requests", group: "client", iterations: iterations) {
             let session = InstantMockSession.shared
@@ -510,6 +612,37 @@ private enum InnoNetworkBenchmarks {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private static func benchmarkResponseCacheLookup(iterations: Int) async throws -> BenchmarkResult {
+        try await measure(name: "response-cache-lookup", group: "cache", iterations: iterations) {
+            let cache = InMemoryResponseCache(maxBytes: 1_024 * 1_024)
+            let key = ResponseCacheKey(method: "GET", url: "https://benchmark.invalid/users/1")
+            let cached = CachedResponse(
+                data: Data(#"{"id":1,"name":"benchmark"}"#.utf8),
+                headers: ["Content-Type": "application/json"]
+            )
+            await cache.set(key, cached)
+            for _ in 0..<iterations {
+                _ = await cache.get(key)
+            }
+        }
+    }
+
+    private static func benchmarkResponseCacheRevalidation(iterations: Int) async throws -> BenchmarkResult {
+        try await measure(name: "response-cache-revalidation", group: "cache", iterations: iterations) {
+            let request = URLRequest(url: URL(string: "https://benchmark.invalid/users/1")!)
+            let policy = ResponseCachePolicy.cacheFirst(maxAge: .seconds(60))
+            let cached = CachedResponse(
+                data: Data(#"{"id":1,"name":"benchmark"}"#.utf8),
+                headers: ["ETag": #""bench-etag""#, "Content-Type": "application/json"],
+                storedAt: Date(timeIntervalSince1970: 0)
+            )
+            for _ in 0..<iterations {
+                _ = policy.prepare(cached: cached)
+                _ = cachedResponseMatchesVary(cached, request: request)
             }
         }
     }
@@ -751,6 +884,29 @@ private final class InstantMockSession: URLSessionProtocol, @unchecked Sendable 
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         (payload, response)
+    }
+}
+
+private final class DelayedMockSession: URLSessionProtocol, @unchecked Sendable {
+    private let delayNanoseconds: UInt64
+    private let payload = Data(#"{"id":1,"name":"benchmark"}"#.utf8)
+    private let response = HTTPURLResponse(
+        url: URL(string: "https://benchmark.invalid/users/1")!,
+        statusCode: 200,
+        httpVersion: "HTTP/1.1",
+        headerFields: ["Content-Type": "application/json"]
+    )!
+
+    init(delayNanoseconds: UInt64) {
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        _ = request
+        if delayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: delayNanoseconds)
+        }
+        return (payload, response)
     }
 }
 
