@@ -40,6 +40,9 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
 ## Baseline Policy
 
 - baseline 파일은 [Baselines/default.json](Baselines/default.json)입니다.
+- baseline 수치는 GitHub Actions `macos-15-arm64` hosted runner의 `--quick`
+  결과를 기준으로 보정합니다. 로컬 개발 장비에서 더 빠르게 나오거나 느리게
+  나오는 diff는 참고용입니다.
 - runner는 baseline 대비 diff를 항상 출력합니다.
 - `--enforce-baseline`를 주면 guarded benchmark가 지정 threshold보다 느려질 때 non-zero exit로 실패합니다.
 - `--guard-benchmark group/name`는 회귀 판정 대상을 고정합니다. 지정하지 않으면 현재 실행된 전체 benchmark를 검사합니다.

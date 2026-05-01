@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import InnoNetwork
 import InnoNetworkDownload
@@ -836,7 +837,12 @@ private enum InnoNetworkBenchmarks {
     }
 }
 
-try await InnoNetworkBenchmarks.runMain()
+do {
+    try await InnoNetworkBenchmarks.runMain()
+} catch {
+    fputs("InnoNetworkBenchmarks failed: \(error.localizedDescription)\n", stderr)
+    exit(EXIT_FAILURE)
+}
 
 private struct SmallPayload: Encodable, Sendable {
     let userID: Int
