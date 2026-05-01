@@ -56,7 +56,8 @@ public struct WebSocketConfiguration: Sendable {
                 eventDeliveryPolicy: .default,
                 eventMetricsReporter: nil,
                 sendQueueLimit: 256,
-                sendQueueOverflowPolicy: .fail
+                sendQueueOverflowPolicy: .fail,
+                closeHandshakeTimeout: .seconds(3)
             )
         }
 
@@ -82,7 +83,8 @@ public struct WebSocketConfiguration: Sendable {
                 ),
                 eventMetricsReporter: nil,
                 sendQueueLimit: 512,
-                sendQueueOverflowPolicy: .fail
+                sendQueueOverflowPolicy: .fail,
+                closeHandshakeTimeout: .seconds(3)
             )
         }
     }
@@ -143,6 +145,16 @@ public struct WebSocketConfiguration: Sendable {
     /// ``WebSocketSendOverflowPolicy/fail``.
     public let sendQueueOverflowPolicy: WebSocketSendOverflowPolicy
 
+    /// Maximum time the manager waits for the WebSocket close handshake to
+    /// complete after `cancel(with:reason:)` is issued. When the timer fires
+    /// without an upstream `didClose` delegate callback, the manager
+    /// finalizes the disconnect with the requested close code so the task
+    /// does not stay wedged in `.disconnecting`.
+    ///
+    /// Default is `.seconds(3)`. Negative values are clamped to `.zero`,
+    /// which effectively short-circuits the handshake wait.
+    public let closeHandshakeTimeout: Duration
+
     public struct AdvancedBuilder: Sendable {
         public var maxConnectionsPerHost: Int
         public var connectionTimeout: TimeInterval
@@ -161,6 +173,7 @@ public struct WebSocketConfiguration: Sendable {
         public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
         public var sendQueueLimit: Int
         public var sendQueueOverflowPolicy: WebSocketSendOverflowPolicy
+        public var closeHandshakeTimeout: Duration
 
         fileprivate init(preset: WebSocketConfiguration) {
             self.maxConnectionsPerHost = preset.maxConnectionsPerHost
@@ -180,6 +193,7 @@ public struct WebSocketConfiguration: Sendable {
             self.eventMetricsReporter = preset.eventMetricsReporter
             self.sendQueueLimit = preset.sendQueueLimit
             self.sendQueueOverflowPolicy = preset.sendQueueOverflowPolicy
+            self.closeHandshakeTimeout = preset.closeHandshakeTimeout
         }
 
         fileprivate func build() -> WebSocketConfiguration {
@@ -200,7 +214,8 @@ public struct WebSocketConfiguration: Sendable {
                 eventDeliveryPolicy: eventDeliveryPolicy,
                 eventMetricsReporter: eventMetricsReporter,
                 sendQueueLimit: sendQueueLimit,
-                sendQueueOverflowPolicy: sendQueueOverflowPolicy
+                sendQueueOverflowPolicy: sendQueueOverflowPolicy,
+                closeHandshakeTimeout: closeHandshakeTimeout
             )
         }
     }
@@ -232,7 +247,8 @@ public struct WebSocketConfiguration: Sendable {
         eventDeliveryPolicy: EventDeliveryPolicy = .default,
         eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
         sendQueueLimit: Int = 256,
-        sendQueueOverflowPolicy: WebSocketSendOverflowPolicy = .fail
+        sendQueueOverflowPolicy: WebSocketSendOverflowPolicy = .fail,
+        closeHandshakeTimeout: Duration = .seconds(3)
     ) {
         self.maxConnectionsPerHost = max(1, maxConnectionsPerHost)
         self.connectionTimeout = max(0, connectionTimeout)
@@ -251,6 +267,7 @@ public struct WebSocketConfiguration: Sendable {
         self.eventMetricsReporter = eventMetricsReporter
         self.sendQueueLimit = max(1, sendQueueLimit)
         self.sendQueueOverflowPolicy = sendQueueOverflowPolicy
+        self.closeHandshakeTimeout = closeHandshakeTimeout < .zero ? .zero : closeHandshakeTimeout
     }
 
     public static let `default` = safeDefaults()

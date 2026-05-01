@@ -123,9 +123,6 @@ private let webSocketManagerLogger = Logger(
     category: "websocket-manager"
 )
 
-private let closeHandshakeTimeout: Duration = .seconds(3)
-
-
 public final class WebSocketManager: NSObject, Sendable {
     public static let shared = WebSocketManager()
 
@@ -316,7 +313,7 @@ public final class WebSocketManager: NSObject, Sendable {
             urlTask.cancel(with: closeCode.urlSessionCloseCode, reason: nil)
             let closeTimeoutTask = Task { [weak self] in
                 do {
-                    try await Task.sleep(for: closeHandshakeTimeout)
+                    try await Task.sleep(for: self?.configuration.closeHandshakeTimeout ?? .seconds(3))
                 } catch is CancellationError {
                     return
                 } catch {

@@ -23,6 +23,12 @@ Versioning for the 4.x release line.
   actually need (envelope unwrapping, payload sanitization, decode
   metrics, typed-value normalization). `NetworkConfiguration.decodingInterceptors`
   registers them at the session level.
+- `WebSocketConfiguration.closeHandshakeTimeout: Duration` (default
+  `.seconds(3)`) lets callers tune how long the manager waits for the
+  WebSocket close handshake to finish after `cancel(with:reason:)` before
+  finalizing the disconnect locally. Negative values are clamped to
+  `.zero`. The previous behaviour matched the new default exactly, so
+  existing code is unaffected.
 - `NetworkConfiguration.responseBodyLimit: Int64?` (default `nil`)
   enforces a soft upper bound on the size of buffered response bodies.
   When the configured limit is exceeded the executor short-circuits the
