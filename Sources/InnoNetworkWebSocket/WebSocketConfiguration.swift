@@ -173,6 +173,12 @@ public struct WebSocketConfiguration: Sendable {
         public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
         public var sendQueueLimit: Int
         public var sendQueueOverflowPolicy: WebSocketSendOverflowPolicy
+        /// Maximum time the manager waits for the WebSocket close handshake
+        /// to complete after `cancel(with:reason:)` is issued before
+        /// finalizing the disconnect locally. Negative values are clamped to
+        /// `.zero` when the configuration is built. See
+        /// ``WebSocketConfiguration/closeHandshakeTimeout`` for full
+        /// semantics.
         public var closeHandshakeTimeout: Duration
 
         fileprivate init(preset: WebSocketConfiguration) {
