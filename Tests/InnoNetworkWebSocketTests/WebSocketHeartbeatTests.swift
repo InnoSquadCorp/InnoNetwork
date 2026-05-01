@@ -46,7 +46,7 @@ struct WebSocketHeartbeatTests {
             eventHub: eventHub
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
-        await task.updateState(.connected)
+        await task.restoreStateForTesting(.connected)
 
         await coordinator.startHeartbeat(for: task) { _ in }
 
@@ -71,7 +71,7 @@ struct WebSocketHeartbeatTests {
             eventHub: eventHub
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
-        await task.updateState(.connected)
+        await task.restoreStateForTesting(.connected)
 
         await coordinator.startHeartbeat(for: task) { _ in }
         await coordinator.startHeartbeat(for: task) { _ in }

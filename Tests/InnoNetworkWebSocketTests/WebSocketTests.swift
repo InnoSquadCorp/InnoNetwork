@@ -257,10 +257,10 @@ struct WebSocketTaskTests {
         let url = URL(string: "wss://echo.websocket.org")!
         let task = WebSocketTask(url: url)
 
-        await task.updateState(.connecting)
+        await task.restoreStateForTesting(.connecting)
         #expect(await task.state == .connecting)
 
-        await task.updateState(.connected)
+        await task.restoreStateForTesting(.connected)
         #expect(await task.state == .connected)
     }
 
@@ -281,7 +281,7 @@ struct WebSocketTaskTests {
         let url = URL(string: "wss://echo.websocket.org")!
         let task = WebSocketTask(url: url)
 
-        await task.updateState(.failed)
+        await task.restoreStateForTesting(.failed)
         await task.setError(.maxReconnectAttemptsExceeded)
         _ = await task.incrementAttemptedReconnectCount()
 
@@ -363,7 +363,7 @@ struct WebSocketManagerTests {
             maxReconnectAttempts: 0
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
-        await task.updateState(.failed)
+        await task.restoreStateForTesting(.failed)
 
         await harness.manager.retry(task)
 
@@ -832,7 +832,7 @@ struct WebSocketManagerTests {
         #expect(await waitForTaskRemoval(manager: manager, taskID: connectingTask.id))
 
         let reconnectingTask = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
-        await reconnectingTask.updateState(.reconnecting)
+        await reconnectingTask.restoreStateForTesting(.reconnecting)
         let reconnectingIdentifier = await manager.runtimeTaskIdentifier(for: reconnectingTask)
         await manager.disconnect(reconnectingTask)
         if let reconnectingIdentifier {
@@ -1059,7 +1059,7 @@ struct WebSocketListenerLifecycleTests {
                 )
             )
         )
-        await task.updateState(.disconnecting)
+        await task.restoreStateForTesting(.disconnecting)
         manager.handleDisconnected(
             taskIdentifier: taskIdentifier,
             closeCode: .goingAway,
@@ -1101,7 +1101,7 @@ struct WebSocketListenerLifecycleTests {
                 )
             )
         )
-        await task.updateState(.disconnecting)
+        await task.restoreStateForTesting(.disconnecting)
         #expect(await task.state == .disconnecting)
         #expect(await manager.task(withId: task.id) != nil)
 
@@ -1142,7 +1142,7 @@ struct WebSocketListenerLifecycleTests {
                 )
             )
         )
-        await task.updateState(.disconnecting)
+        await task.restoreStateForTesting(.disconnecting)
         manager.handleSessionError(
             taskIdentifier: taskIdentifier,
             error: SendableUnderlyingError(
@@ -1186,7 +1186,7 @@ struct WebSocketListenerLifecycleTests {
         }
 
         let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
-        await task.updateState(.disconnecting)
+        await task.restoreStateForTesting(.disconnecting)
         manager.handleDisconnected(
             taskIdentifier: taskIdentifier,
             closeCode: .goingAway,
@@ -1201,7 +1201,7 @@ struct WebSocketListenerLifecycleTests {
         }
         #expect(!duplicateDelivered)
 
-        await task.updateState(.disconnected)
+        await task.restoreStateForTesting(.disconnected)
         manager.handleDisconnected(
             taskIdentifier: taskIdentifier,
             closeCode: .goingAway,
@@ -1216,7 +1216,7 @@ struct WebSocketListenerLifecycleTests {
         }
         #expect(!duplicateWhenDisconnected)
 
-        await task.updateState(.connected)
+        await task.restoreStateForTesting(.connected)
         await task.setAutoReconnectEnabled(false)
         await task.beginManualDisconnect(
             error: .disconnected(
@@ -1227,7 +1227,7 @@ struct WebSocketListenerLifecycleTests {
                 )
             )
         )
-        await task.updateState(.disconnecting)
+        await task.restoreStateForTesting(.disconnecting)
         manager.handleDisconnected(
             taskIdentifier: taskIdentifier,
             closeCode: .normalClosure,
@@ -1269,6 +1269,28 @@ struct WebSocketListenerLifecycleTests {
         #expect(disconnectedDelivered)
         #expect(await waitForListenerCleanup(manager: harness.manager, task: task))
         #expect(await waitForTaskRemoval(manager: harness.manager, task: task))
+    }
+
+    @Test("Stale close callback does not advance reconnect attempts")
+    func staleCloseCallbackDoesNotAdvanceReconnectAttempts() async throws {
+        let harness = StubMessagingHarness(reconnectDelay: 0, maxReconnectAttempts: 3)
+        let task = try await harness.connectAndReady()
+
+        let staleIdentifier = harness.stubTaskIdentifier
+        _ = await task.advanceConnectionGeneration()
+        let attemptsBeforeCallback = await task.attemptedReconnectCount
+
+        harness.manager.handleDisconnected(
+            taskIdentifier: staleIdentifier,
+            closeCode: .goingAway,
+            reason: "stale-generation"
+        )
+
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(await task.state == .connected)
+        #expect(await task.attemptedReconnectCount == attemptsBeforeCallback)
+        #expect(harness.stubSession.createdTasks.count == 1)
     }
 
     @Test("Manual disconnect close event removes listeners and task runtime without reconnect")

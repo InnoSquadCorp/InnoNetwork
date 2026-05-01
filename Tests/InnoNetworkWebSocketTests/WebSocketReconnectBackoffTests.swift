@@ -180,7 +180,7 @@ struct WebSocketReconnectBackoffTests {
             runtimeRegistry: registry
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
-        await task.updateState(.disconnected)
+        await task.restoreStateForTesting(.disconnected)
         _ = await task.incrementAttemptedReconnectCount()
 
         await withCheckedContinuation { continuation in
@@ -192,7 +192,7 @@ struct WebSocketReconnectBackoffTests {
         }
 
         let state = await task.state
-        #expect(state == .reconnecting)
+        #expect(state == .disconnected)
         await registry.cancelReconnectTask(for: task.id)
     }
 
@@ -221,7 +221,7 @@ struct WebSocketReconnectBackoffTests {
             clock: clock
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
-        await task.updateState(.disconnected)
+        await task.restoreStateForTesting(.disconnected)
         _ = await task.incrementAttemptedReconnectCount()
 
         let startCalled = OSAllocatedUnfairLock<Bool>(initialState: false)
@@ -266,7 +266,7 @@ struct WebSocketReconnectBackoffTests {
             let task = WebSocketTask(
                 url: URL(string: "wss://example.invalid/attempt-\(index)")!
             )
-            await task.updateState(.disconnected)
+            await task.restoreStateForTesting(.disconnected)
             for _ in 0..<(index + 1) {
                 _ = await task.incrementAttemptedReconnectCount()
             }
@@ -317,7 +317,7 @@ struct WebSocketReconnectBackoffTests {
             clock: clock
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/cancel")!)
-        await task.updateState(.disconnected)
+        await task.restoreStateForTesting(.disconnected)
         _ = await task.incrementAttemptedReconnectCount()
 
         let startCalled = OSAllocatedUnfairLock<Bool>(initialState: false)
@@ -352,7 +352,7 @@ struct WebSocketReconnectBackoffTests {
         // reconnectCount=10 would produce 2^9 = 512s without the cap.
         // With the cap active at 5s, advancing 5.001s must dispatch.
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/cap")!)
-        await task.updateState(.disconnected)
+        await task.restoreStateForTesting(.disconnected)
         for _ in 0..<10 {
             _ = await task.incrementAttemptedReconnectCount()
         }
@@ -395,7 +395,7 @@ struct WebSocketReconnectBackoffTests {
         for _ in 0..<10 {
             _ = await task.incrementAttemptedReconnectCount()
         }
-        await task.updateState(.disconnected)
+        await task.restoreStateForTesting(.disconnected)
 
         let startCalled = OSAllocatedUnfairLock<Bool>(initialState: false)
         await coordinator.attemptReconnect(task: task) { _ in
@@ -432,7 +432,7 @@ struct WebSocketReconnectBackoffTests {
         // reconnectCount=3 → 2 * 2^2 = 8s total; no cap active, so 5s
         // advance must leave the waiter pending.
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/uncapped")!)
-        await task.updateState(.disconnected)
+        await task.restoreStateForTesting(.disconnected)
         for _ in 0..<3 {
             _ = await task.incrementAttemptedReconnectCount()
         }
