@@ -1,10 +1,18 @@
 # Roadmap
 
+## Current Review Backlog
+
+- See [ImprovementBacklog.md](ImprovementBacklog.md) for the 2026-05-01
+  review outcomes. The correctness items from that pass are handled in the
+  current follow-up PR; the remaining roadmap work is deeper lifecycle
+  modeling, persistent-cache product design, and longer-term operational
+  automation.
+
 ## Deferred Operational Follow-ups
 
 - persistence 내구성 심화: `fsync`, `checksum`, `compaction budget`, 대용량 큐 기준 정립
 - websocket 확장 포인트: handshake/auth refresh와 app-level protocol failure 분리
-- benchmark governance 확장: threshold 도입, trend tracking, PR comment 자동화
+- benchmark governance follow-up: PR comment 자동화와 장기 trend 저장소
 - configuration API 장기 정리: advanced surface 축소와 권장 public path 단순화
 - `@unchecked Sendable` 회귀 방지: production source는 CI에서 금지하고, 테스트 전용 helper의 예외는 TestSupport/test target 안에만 둔다.
 - 벤치마크 trend tracking: `Benchmarks/Baselines/default.json` 은 macos-15 기준으로 갱신되었고, PR smoke는 20%, scheduled/manual workflow는 10% threshold를 사용한다. 다음 단계는 PR comment 자동화와 장기 trend 저장소다.
@@ -14,9 +22,10 @@
 - Hummingbird in-process integration test: 4.0.0에서는 기본 CI 결정성을 유지하고, server-side Swift dependency가 필요한 통합 테스트는 follow-up으로 둔다.
 - response cache freshness policy 확장: 4.0.0은 명시적 `ResponseCachePolicy` freshness window를 기준으로 동작한다. 서버 `max-age`/`s-maxage` 우선순위, `must-revalidate`, custom cache-key policy는 별도 public API 설계 후 평가한다.
 - observability exporter examples: core는 vendor-neutral로 유지하고, Sentry/OpenTelemetry/Pulse/Datadog adapter 예제는 별도 target/package로 평가한다.
-- benchmark regression gate 확장: event hub, request coalescing, cache lookup, download persistence, websocket send queue의 기준값/허용 편차를 별도 benchmark baseline으로 승격한다.
 - download 저장소 운영정책: disk full, temp cleanup, data protection class, app group container, identifier collision, 앱 업데이트/복구 시나리오를 문서와 테스트로 보강한다.
-- WebSocket protocol surface: subprotocol negotiation, close code mapping, send queue overflow, heartbeat timeout, compression 미지원, background transition 동작을 public cookbook으로 정리한다.
+- WebSocket protocol surface: subprotocol negotiation, app-level protocol failure mapping, compression 미지원, background transition 동작을 public cookbook으로 더 확장한다.
+- WebSocket lifecycle reducer: public `WebSocketState`는 유지하되 내부 상태를 generation/attempt/manual-disconnect payload가 있는 reducer로 승격할지 별도 설계한다.
+- Persistent response cache companion product: core API에 바로 넣지 않고 cache-key, freshness, eviction, privacy, data protection 정책을 먼저 RFC로 고정한다.
 - `advanced`/`customizingSafeDefaults` API 개선: safe default는 유지하면서 세부 튜닝 surface를 더 발견 가능하게 하는 builder ergonomics를 검토한다.
 
 ## Post-4.0 Candidates
@@ -25,11 +34,8 @@
 - Dedicated OpenAPI Generator adapter package/product. 4.0.0 은
   `APIDefinition` wrapper recipe 를 공식 경로로 두고, SPI hook 은 stable
   contract 밖에 둔다.
-- Public close-disposition observation for WebSocket lifecycle UX.
-- Ping/pong context payloads with library-computed round-trip timing.
 - Download retry backoff tuning with jitter and explicit caps.
-- Runnable WebSocket / Download / event-policy observer samples.
-- ThreadSanitizer and stricter benchmark regression gates.
+- ThreadSanitizer adoption plan and benchmark trend automation.
 
 ## Public DSL Candidate
 

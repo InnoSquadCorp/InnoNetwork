@@ -166,6 +166,11 @@ high-level compatibility classification readable for the 4.x release line.
 - `APIDefinition(method:path:)` attached macro.
 - `endpoint(_:_:as:)` freestanding expression macro.
 
+Macro expansion is source-generation behavior, not a new runtime public API.
+The attached macro emits witnesses at the attached type's visibility
+(`public`, `package`, or implicit internal) so generated clients can export
+public endpoint types deliberately while app-internal endpoints remain internal.
+
 ### SPI
 
 InnoNetwork exposes a small set of execution-pipeline hooks through
@@ -189,6 +194,10 @@ release without a deprecation window. Callers must opt in with
 
 See `Examples/WrapperSmoke` and `Examples/GeneratedClientRecipe` for the
 intended usage shape.
+
+Generated clients should prefer the stable `APIDefinition` wrapper path. The
+SPI path is reserved for code generators that own custom serialization or
+decoding and can pin an InnoNetwork revision.
 
 ### InnoNetworkTestSupport
 

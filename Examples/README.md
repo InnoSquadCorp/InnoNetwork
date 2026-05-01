@@ -89,6 +89,58 @@ Real-world scenarios you'll encounter in actual application development.
 
 ---
 
+### 5. [DownloadManager](./DownloadManager)
+
+Background-capable download sample with progress events and restore-oriented
+manager setup.
+
+**Covers:**
+- Per-feature `DownloadManager`
+- Destination selection
+- Progress/event observation
+- Background session restore shape
+
+**Best for:** Apps that download media, documents, or offline assets.
+
+---
+
+### 6. [WebSocketChat](./WebSocketChat)
+
+CLI chat-style sample for opening a WebSocket, sending text, and observing
+server events.
+
+**Covers:**
+- `WebSocketManager.safeDefaults`
+- Event stream consumption
+- Send/receive loop
+- Manual shutdown
+
+**Best for:** Realtime features such as chat, collaboration, or live status.
+
+---
+
+### 7. [EventPolicyObserver](./EventPolicyObserver)
+
+Observability sample for event delivery metrics and custom reporting.
+
+**Covers:**
+- Event delivery metrics reporters
+- Logger/signpost style reporting
+- Event hub backpressure policy visibility
+
+**Best for:** Teams that need operational telemetry before production rollout.
+
+---
+
+## Feature Recipes
+
+- Auth refresh: [Auth](./Auth)
+- Pagination and CRUD: [RealWorldAPI](./RealWorldAPI)
+- Response cache: [Caching Strategies](../Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md)
+- Background download: [DownloadManager](./DownloadManager)
+- WebSocket chat: [WebSocketChat](./WebSocketChat)
+- Observability: [EventPolicyObserver](./EventPolicyObserver)
+
 ## Compile-Time Integration Smokes
 
 ### [CoreSmoke](./CoreSmoke)
