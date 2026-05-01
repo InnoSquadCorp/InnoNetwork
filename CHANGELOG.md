@@ -75,6 +75,14 @@ Versioning for the 4.x release line.
 - `CachingStrategies` documents the new 304-with-new-Vary handling so
   callers know that successful conditional revalidation never rekeys
   the stored entry.
+- `SharedManagerMigration` DocC article (P2.3) walks through moving
+  off ``DownloadManager.shared`` to dependency-injected per-feature
+  managers: picking an owning component, building an explicit
+  ``DownloadConfiguration`` with a unique session identifier,
+  constructing via ``DownloadManager/make(configuration:)``, routing
+  background completion handlers, and decommissioning the remaining
+  `.shared` call sites. The deprecation banner on
+  ``DownloadManager/shared`` now links to the new article.
 - `Interceptors` DocC article (P2.2) now documents the throw semantics
   shared by ``RequestInterceptor`` and ``ResponseInterceptor``: which
   later stages are skipped on throw, how errors that aren't already
