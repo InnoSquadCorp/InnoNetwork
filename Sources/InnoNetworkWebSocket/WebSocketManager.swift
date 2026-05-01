@@ -494,7 +494,12 @@ public final class WebSocketManager: NSObject, Sendable {
             guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
             let state = await task.state
             let autoReconnectEnabled = await task.autoReconnectEnabled
-            if state == .disconnecting || state == .disconnected || !autoReconnectEnabled {
+            if state == .disconnecting {
+                // Preserve the close-handshake timeout and didClose path; they
+                // own terminal cleanup for manual disconnects.
+                return
+            }
+            if state == .disconnected || !autoReconnectEnabled {
                 await runtimeRegistry.removeTaskRuntime(taskId: task.id)
                 return
             }
