@@ -66,6 +66,24 @@ Versioning for the 4.x release line.
 
 ### Fixed
 
+- `CircuitBreakerRegistry.recordStatus` now releases the half-open
+  probe slot when the probe response is a 4xx. Previously the new
+  4xx-as-no-op branch left `probeInFlight` stuck at `true` whenever
+  the probe came back with a client-side semantic failure (401/404/
+  etc), which wedged every subsequent request through `prepare(...)`.
+  In `.closed` 4xx remains a no-op (so it cannot mask accumulated
+  transport failures), but in `.halfOpen` it now closes the circuit
+  because the probe purpose is to confirm the transport works — and a
+  4xx response satisfies that. Adds `circuitBreakerHalfOpenProbe4xxReleasesSlot`
+  regression test.
+- `WebSocketManager.disconnect(_:closeCode:)` now snapshots
+  `configuration.closeHandshakeTimeout` into a local before spawning
+  the close-handshake timer. The previous code read the timeout via
+  `self?.configuration.closeHandshakeTimeout ?? .seconds(3)` *inside*
+  the spawned task, so a deallocated manager would still sleep the
+  default 3 seconds before the no-op tail and would silently fall
+  back to the default even when callers had configured a non-default
+  value.
 - `WebSocketState.connecting.nextStates` now lists `.reconnecting`. The
   manager already drives a connecting → reconnecting transition when a
   handshake fails and the close disposition allows reconnect, so the

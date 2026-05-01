@@ -311,9 +311,10 @@ public final class WebSocketManager: NSObject, Sendable {
             // URLSession demands its own close-code enum at the cancel() call,
             // so convert at the Foundation boundary.
             urlTask.cancel(with: closeCode.urlSessionCloseCode, reason: nil)
+            let closeHandshakeTimeout = configuration.closeHandshakeTimeout
             let closeTimeoutTask = Task { [weak self] in
                 do {
-                    try await Task.sleep(for: self?.configuration.closeHandshakeTimeout ?? .seconds(3))
+                    try await Task.sleep(for: closeHandshakeTimeout)
                 } catch is CancellationError {
                     return
                 } catch {

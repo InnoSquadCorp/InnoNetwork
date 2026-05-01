@@ -1333,6 +1333,23 @@ struct ResiliencePolicyTests {
         #expect(await session.requestCount == 2)
     }
 
+    @Test("Half-open probe receiving 4xx releases the probe slot")
+    func circuitBreakerHalfOpenProbe4xxReleasesSlot() async throws {
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1, resetAfter: .zero)
+        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
+
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+        // prepare(...) transitions open → halfOpen(probeInFlight: true) once
+        // resetAfter (here .zero) elapses.
+        try await registry.prepare(request: request, policy: policy)
+        // The probe came back with 404 — semantic failure, but the transport
+        // worked. The slot must be released so subsequent traffic is admitted.
+        await registry.recordStatus(request: request, policy: policy, statusCode: 404)
+
+        try await registry.prepare(request: request, policy: policy)
+    }
+
     @Test("4xx response does not reset accumulated transport failures")
     func circuitBreakerWindowSurvivesInterleaved4xx() async throws {
         let registry = CircuitBreakerRegistry()
