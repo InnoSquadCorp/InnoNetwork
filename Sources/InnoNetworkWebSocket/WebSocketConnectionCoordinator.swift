@@ -43,7 +43,12 @@ package struct WebSocketConnectionCoordinator {
         }
 
         let urlTask = session.makeWebSocketTask(with: request)
-        await runtimeRegistry.setMapping(webSocketTask: task, for: urlTask.taskIdentifier)
+        let generation = await task.connectionGeneration
+        await runtimeRegistry.setMapping(
+            webSocketTask: task,
+            for: urlTask.taskIdentifier,
+            generation: generation
+        )
         await runtimeRegistry.setURLTask(urlTask, for: task.id)
 
         urlTask.resume()

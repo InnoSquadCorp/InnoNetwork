@@ -5,7 +5,7 @@ public actor WebSocketTask: Identifiable {
     public nonisolated let url: URL
     public let subprotocols: [String]?
 
-    private var _state: WebSocketState = .idle
+    private var lifecycleState: WebSocketLifecycleState = .initial
     private var _attemptedReconnectCount: Int = 0
     private var _successfulReconnectCount: Int = 0
     private var _pingCounter: Int = 0
@@ -13,12 +13,8 @@ public actor WebSocketTask: Identifiable {
     private var _error: WebSocketError?
     private var _closeCode: WebSocketCloseCode?
     private var _closeDisposition: WebSocketCloseDisposition?
-    private var _autoReconnectEnabled: Bool = true
-    private var _pendingManualDisconnectError: WebSocketError?
-    private var _awaitingCloseHandshake = false
-    private var _connectionGeneration = 0
 
-    public var state: WebSocketState { _state }
+    public var state: WebSocketState { lifecycleState.publicState }
 
     /// Reconnect attempts dispatched since the most recent successful
     /// connection (or task start). Includes the attempt currently in flight.
@@ -50,9 +46,10 @@ public actor WebSocketTask: Identifiable {
     /// completes at least once. Values are stable across minor releases but
     /// new cases may be added (prefer `@unknown default`).
     public var closeDisposition: WebSocketCloseDisposition? { _closeDisposition }
-    public var autoReconnectEnabled: Bool { _autoReconnectEnabled }
-    public var awaitingCloseHandshake: Bool { _awaitingCloseHandshake }
-    package var connectionGeneration: Int { _connectionGeneration }
+    public var autoReconnectEnabled: Bool { lifecycleState.autoReconnectEnabled }
+    public var awaitingCloseHandshake: Bool { lifecycleState.awaitingCloseHandshake }
+    package var connectionGeneration: Int { lifecycleState.generation }
+    package var currentLifecycleState: WebSocketLifecycleState { lifecycleState }
 
     public init(url: URL, subprotocols: [String]? = nil, id: String = UUID().uuidString) {
         self.id = id
@@ -60,18 +57,46 @@ public actor WebSocketTask: Identifiable {
         self.subprotocols = subprotocols
     }
 
-    package func updateState(_ newState: WebSocketState) {
-        _state = newState
+    @discardableResult
+    package func updateState(_ newState: WebSocketState) -> WebSocketStateTransitionResult {
+        let previousState = lifecycleState.publicState
+        guard previousState.canTransition(to: newState) else {
+            return .rejected(previous: previousState, next: newState)
+        }
+
+        lifecycleState = lifecycleState.replacingPublicState(newState)
+        return .applied(previous: previousState, next: newState)
+    }
+
+    package func restoreStateForTesting(_ state: WebSocketState) {
+        lifecycleState = lifecycleState.replacingPublicState(state)
+    }
+
+    @discardableResult
+    package func applyLifecycleEvent(
+        _ event: WebSocketLifecycleEvent,
+        context: WebSocketLifecycleDecisionContext = .init()
+    ) -> WebSocketLifecycleTransition {
+        let transition = WebSocketLifecycleReducer.reduce(
+            state: lifecycleState,
+            event: event,
+            context: context
+        )
+        lifecycleState = transition.state
+        syncLifecycleMetadata()
+        return transition
     }
 
     @discardableResult
     package func advanceConnectionGeneration() -> Int {
-        _connectionGeneration += 1
-        return _connectionGeneration
+        let nextGeneration = lifecycleState.generation + 1
+        lifecycleState = lifecycleState.replacingGeneration(nextGeneration)
+        return nextGeneration
     }
 
     func incrementAttemptedReconnectCount() -> Int {
         _attemptedReconnectCount += 1
+        lifecycleState = lifecycleState.withAttempt(_attemptedReconnectCount)
         return _attemptedReconnectCount
     }
 
@@ -81,18 +106,22 @@ public actor WebSocketTask: Identifiable {
 
     func setError(_ error: WebSocketError?) {
         _error = error
+        lifecycleState = lifecycleState.withError(error)
     }
 
     func setCloseCode(_ closeCode: WebSocketCloseCode?) {
         _closeCode = closeCode
+        lifecycleState = lifecycleState.withCloseCode(closeCode)
     }
 
     func setCloseDisposition(_ disposition: WebSocketCloseDisposition?) {
         _closeDisposition = disposition
+        lifecycleState = lifecycleState.withCloseDisposition(disposition)
     }
 
     func resetAttemptedReconnectCount() {
         _attemptedReconnectCount = 0
+        lifecycleState = lifecycleState.withAttempt(0)
     }
 
     /// Atomically reserves a send slot if one is available. Returns true if
@@ -125,32 +154,48 @@ public actor WebSocketTask: Identifiable {
     }
 
     func setAutoReconnectEnabled(_ enabled: Bool) {
-        _autoReconnectEnabled = enabled
+        lifecycleState = lifecycleState.withAutoReconnectEnabled(enabled)
     }
 
     func beginManualDisconnect(error: WebSocketError?) {
-        _pendingManualDisconnectError = error
-        _awaitingCloseHandshake = true
+        let closeCode = lifecycleState.closeCode ?? .normalClosure
+        lifecycleState = .disconnecting(
+            generation: lifecycleState.generation,
+            attempt: lifecycleState.attempt,
+            manualDisconnect: WebSocketManualDisconnect(closeCode: closeCode, error: error)
+        )
     }
 
     func completeManualDisconnect() -> WebSocketError? {
-        let error = _pendingManualDisconnectError
-        _pendingManualDisconnectError = nil
-        _awaitingCloseHandshake = false
-        return error
+        lifecycleState.manualDisconnect?.error
     }
 
     func clearManualDisconnectState() {
-        _pendingManualDisconnectError = nil
-        _awaitingCloseHandshake = false
+        if case .disconnecting(let generation, let attempt, let manualDisconnect) = lifecycleState {
+            lifecycleState = .disconnected(
+                generation: generation,
+                attempt: attempt,
+                autoReconnect: false,
+                closeCode: manualDisconnect.closeCode,
+                disposition: nil,
+                error: nil
+            )
+            _closeCode = manualDisconnect.closeCode
+            _closeDisposition = nil
+            _error = nil
+        }
     }
 
     func isClientInitiatedCloseFlow() -> Bool {
-        _awaitingCloseHandshake || _pendingManualDisconnectError != nil
+        lifecycleState.awaitingCloseHandshake
     }
 
     func reset() {
-        _state = .idle
+        lifecycleState = .idle(
+            generation: lifecycleState.generation,
+            attempt: 0,
+            autoReconnect: true
+        )
         _attemptedReconnectCount = 0
         _successfulReconnectCount = 0
         _pingCounter = 0
@@ -158,9 +203,12 @@ public actor WebSocketTask: Identifiable {
         _error = nil
         _closeCode = nil
         _closeDisposition = nil
-        _autoReconnectEnabled = true
-        _pendingManualDisconnectError = nil
-        _awaitingCloseHandshake = false
+    }
+
+    private func syncLifecycleMetadata() {
+        _error = lifecycleState.error
+        _closeCode = lifecycleState.closeCode
+        _closeDisposition = lifecycleState.closeDisposition
     }
 }
 

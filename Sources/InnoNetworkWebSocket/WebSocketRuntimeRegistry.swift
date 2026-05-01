@@ -3,6 +3,7 @@ import Foundation
 package actor WebSocketRuntimeRegistry {
     private var tasks: [String: WebSocketTask] = [:]
     private var identifierToTask: [Int: WebSocketTask] = [:]
+    private var identifierToGeneration: [Int: Int] = [:]
     private var taskIdToIdentifier: [String: Int] = [:]
     private var taskIdToURLTask: [String: any WebSocketURLTask] = [:]
     private var heartbeatTasks: [String: Task<Void, Never>] = [:]
@@ -66,8 +67,9 @@ package actor WebSocketRuntimeRegistry {
         Array(tasks.values)
     }
 
-    package func setMapping(webSocketTask: WebSocketTask, for identifier: Int) {
+    package func setMapping(webSocketTask: WebSocketTask, for identifier: Int, generation: Int) {
         identifierToTask[identifier] = webSocketTask
+        identifierToGeneration[identifier] = generation
         taskIdToIdentifier[webSocketTask.id] = identifier
     }
 
@@ -77,6 +79,10 @@ package actor WebSocketRuntimeRegistry {
 
     package func webSocketTask(for identifier: Int) -> WebSocketTask? {
         identifierToTask[identifier]
+    }
+
+    package func connectionGeneration(for identifier: Int) -> Int? {
+        identifierToGeneration[identifier]
     }
 
     package func urlTask(for taskId: String) -> (any WebSocketURLTask)? {
@@ -89,6 +95,7 @@ package actor WebSocketRuntimeRegistry {
 
     package func detachRuntime(taskIdentifier: Int) {
         guard let task = identifierToTask.removeValue(forKey: taskIdentifier) else { return }
+        identifierToGeneration.removeValue(forKey: taskIdentifier)
         taskIdToIdentifier.removeValue(forKey: task.id)
     }
 
@@ -96,14 +103,16 @@ package actor WebSocketRuntimeRegistry {
         let urlTask = taskIdToURLTask.removeValue(forKey: taskId)
         if let identifier = taskIdToIdentifier.removeValue(forKey: taskId) {
             identifierToTask.removeValue(forKey: identifier)
+            identifierToGeneration.removeValue(forKey: identifier)
         } else {
-            identifierToTask = identifierToTask.filter { entry in
-                let isTarget = entry.value.id == taskId
-                if isTarget {
-                    taskIdToIdentifier.removeValue(forKey: taskId)
-                }
-                return !isTarget
+            let staleIdentifiers = identifierToTask.compactMap { identifier, task in
+                task.id == taskId ? identifier : nil
             }
+            for identifier in staleIdentifiers {
+                identifierToTask.removeValue(forKey: identifier)
+                identifierToGeneration.removeValue(forKey: identifier)
+            }
+            taskIdToIdentifier.removeValue(forKey: taskId)
         }
         urlTask?.cancel()
         await cancelHeartbeatTask(for: taskId)
