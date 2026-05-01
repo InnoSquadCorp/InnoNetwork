@@ -32,6 +32,11 @@ Versioning for the 4.x release line.
   no-Vary-on-304 scenarios.
 - `ResiliencePolicyTests.etagNotModifiedWithChangedVaryPreservesSnapshot`
   exercises the executor's 304-with-new-Vary path end-to-end.
+- `DownloadTaskStateTransitionTests` (P1.10) backfills regression
+  coverage for `DownloadTask.updateState`'s lifecycle guard:
+  full canTransition matrix, terminal-state self-loops, every legal
+  hop applies, and `restoreState` continues to bypass the guard for
+  state restoration / test injection.
 
 ### Docs
 
