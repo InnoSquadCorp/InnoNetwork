@@ -207,4 +207,76 @@ struct ResponseCacheVaryTests {
             )
         )
     }
+
+    // MARK: - notModifiedRevisesVary
+
+    private func cachedResponse(
+        varyHeader: String?
+    ) -> CachedResponse {
+        var headers: [String: String] = ["Content-Type": "application/json"]
+        if let varyHeader {
+            headers["Vary"] = varyHeader
+        }
+        return CachedResponse(
+            data: Data(),
+            statusCode: 200,
+            headers: headers,
+            varyHeaders: varyHeader.map { ["\($0.lowercased())": "stored"] }
+        )
+    }
+
+    @Test("304 with no Vary header is treated as no revision")
+    func notModifiedWithoutVaryIsNoOp() async {
+        let cached = cachedResponse(varyHeader: "Accept-Language")
+        #expect(
+            !notModifiedRevisesVary(
+                cached: cached,
+                notModifiedHeaders: ["Cache-Control": "max-age=120"] as [AnyHashable: Any]
+            )
+        )
+    }
+
+    @Test("304 with the same Vary header is treated as no revision")
+    func notModifiedWithSameVaryIsNoOp() async {
+        let cached = cachedResponse(varyHeader: "Accept-Language")
+        #expect(
+            !notModifiedRevisesVary(
+                cached: cached,
+                notModifiedHeaders: ["Vary": "Accept-Language"] as [AnyHashable: Any]
+            )
+        )
+    }
+
+    @Test("304 Vary token order/case is normalized before comparison")
+    func notModifiedVaryNormalizationIgnoresOrderAndCase() async {
+        let cached = cachedResponse(varyHeader: "Accept-Language, Accept-Encoding")
+        #expect(
+            !notModifiedRevisesVary(
+                cached: cached,
+                notModifiedHeaders: ["Vary": "accept-encoding,  Accept-Language"] as [AnyHashable: Any]
+            )
+        )
+    }
+
+    @Test("304 introducing a different Vary header counts as revision")
+    func notModifiedWithDifferentVaryIsRevision() async {
+        let cached = cachedResponse(varyHeader: "Accept-Language")
+        #expect(
+            notModifiedRevisesVary(
+                cached: cached,
+                notModifiedHeaders: ["Vary": "Accept"] as [AnyHashable: Any]
+            )
+        )
+    }
+
+    @Test("304 introducing a Vary header onto a stored entry without one counts as revision")
+    func notModifiedAddingVaryIsRevision() async {
+        let cached = cachedResponse(varyHeader: nil)
+        #expect(
+            notModifiedRevisesVary(
+                cached: cached,
+                notModifiedHeaders: ["Vary": "Accept-Language"] as [AnyHashable: Any]
+            )
+        )
+    }
 }

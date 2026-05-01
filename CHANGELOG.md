@@ -13,10 +13,31 @@ Versioning for the 4.x release line.
 
 ### Fixed
 
+- **Response cache (P1.2)**: a 304 Not Modified response that carries a
+  `Vary` header different from the one that was active when the cached
+  entry was stored no longer rewrites the entry under the new vary
+  dimension. The executor now refreshes the existing entry's
+  `storedAt` while preserving its headers, body, and vary snapshot — a
+  304 confirms freshness of the stored representation, but the 304's
+  own `Vary` describes the variant the origin would have served on a
+  full 200 and must not silently rekey the stored entry. Behaviour is
+  unchanged when the 304 carries the same `Vary` header (or no `Vary`
+  header), so existing call sites are unaffected.
+
 ### Tests
+
+- `ResponseCacheVaryTests` covers the new
+  `notModifiedRevisesVary(cached:notModifiedHeaders:)` helper across
+  same-Vary, normalized-token, different-Vary, added-Vary, and
+  no-Vary-on-304 scenarios.
+- `ResiliencePolicyTests.etagNotModifiedWithChangedVaryPreservesSnapshot`
+  exercises the executor's 304-with-new-Vary path end-to-end.
 
 ### Docs
 
+- `CachingStrategies` documents the new 304-with-new-Vary handling so
+  callers know that successful conditional revalidation never rekeys
+  the stored entry.
 - Consolidated `docs/ImprovementBacklog.md` into
   `docs/reviews/4.x-comprehensive-evaluation.md`. The evaluation doc now
   carries the merged backlog as §1.5 and tracks PR-level status across

@@ -176,15 +176,38 @@ package struct RequestExecutor {
                 requestID: requestID
             )
 
-            if let converted = await convertNotModifiedIfNeeded(
+            if let substitution = await convertNotModifiedIfNeeded(
                 networkResponse,
                 cacheKey: cacheKey,
                 request: request,
                 configuration: configuration
             ) {
-                try enforceResponseBodyLimit(converted, configuration: configuration)
-                await storeCacheIfNeeded(converted, cacheKey: cacheKey, request: request, configuration: configuration)
-                return converted
+                try enforceResponseBodyLimit(substitution.response, configuration: configuration)
+                if notModifiedRevisesVary(
+                    cached: substitution.cached,
+                    notModifiedHeaders: networkResponse.response?.allHeaderFields
+                ) {
+                    // The 304 advertises a different Vary dimension than the
+                    // stored entry was keyed on. Rewriting with the new
+                    // snapshot would silently move the entry to a different
+                    // dimension; refresh `storedAt` instead so the freshness
+                    // window reflects the successful revalidation while the
+                    // stored representation remains addressable through its
+                    // original Vary signature.
+                    await refreshCachedFreshness(
+                        cached: substitution.cached,
+                        cacheKey: cacheKey,
+                        configuration: configuration
+                    )
+                } else {
+                    await storeCacheIfNeeded(
+                        substitution.response,
+                        cacheKey: cacheKey,
+                        request: request,
+                        configuration: configuration
+                    )
+                }
+                return substitution.response
             }
 
             if let refreshCoordinator = runtime.refreshCoordinator,
@@ -419,16 +442,31 @@ package struct RequestExecutor {
                         request: revalidationRequest,
                         response: result.response
                     )
-                    if let converted = await convertNotModifiedIfNeeded(
+                    if let substitution = await convertNotModifiedIfNeeded(
                         response,
                         cacheKey: cacheKey,
                         request: revalidationRequest,
                         configuration: configuration
                     ) {
                         try Task.checkCancellation()
-                        try enforceResponseBodyLimit(converted, configuration: configuration)
-                        await storeCacheIfNeeded(
-                            converted, cacheKey: cacheKey, request: revalidationRequest, configuration: configuration)
+                        try enforceResponseBodyLimit(substitution.response, configuration: configuration)
+                        if notModifiedRevisesVary(
+                            cached: substitution.cached,
+                            notModifiedHeaders: result.response.allHeaderFields
+                        ) {
+                            await refreshCachedFreshness(
+                                cached: substitution.cached,
+                                cacheKey: cacheKey,
+                                configuration: configuration
+                            )
+                        } else {
+                            await storeCacheIfNeeded(
+                                substitution.response,
+                                cacheKey: cacheKey,
+                                request: revalidationRequest,
+                                configuration: configuration
+                            )
+                        }
                     } else {
                         try Task.checkCancellation()
                         try enforceResponseBodyLimit(response, configuration: configuration)
@@ -500,7 +538,7 @@ package struct RequestExecutor {
         cacheKey: ResponseCacheKey?,
         request: URLRequest,
         configuration: NetworkConfiguration
-    ) async -> Response? {
+    ) async -> (response: Response, cached: CachedResponse)? {
         guard response.statusCode == 304,
             configuration.responseCachePolicy.allowsConditionalRevalidation,
             let cacheKey,
@@ -516,7 +554,47 @@ package struct RequestExecutor {
         else {
             return nil
         }
-        return Response(statusCode: cached.statusCode, data: cached.data, request: request, response: httpResponse)
+        return (
+            response: Response(
+                statusCode: cached.statusCode,
+                data: cached.data,
+                request: request,
+                response: httpResponse
+            ),
+            cached: cached
+        )
+    }
+
+    /// Re-stores `cached` under `cacheKey` with a refreshed `storedAt`.
+    ///
+    /// Used on the 304 substitution path when the not-modified response
+    /// advertises a different `Vary` dimension than the stored entry was
+    /// keyed on. The stored representation, headers, and Vary snapshot are
+    /// preserved verbatim; only the freshness timestamp moves forward so
+    /// the entry honours the successful conditional revalidation without
+    /// being silently rekeyed.
+    private func refreshCachedFreshness(
+        cached: CachedResponse,
+        cacheKey: ResponseCacheKey?,
+        configuration: NetworkConfiguration
+    ) async {
+        guard let cacheKey,
+            let cache = configuration.responseCache,
+            configuration.responseCachePolicy.allowsCacheWrite
+        else {
+            return
+        }
+        await cache.set(
+            cacheKey,
+            CachedResponse(
+                data: cached.data,
+                statusCode: cached.statusCode,
+                headers: cached.headers,
+                storedAt: Date(),
+                requiresRevalidation: cached.requiresRevalidation,
+                varyHeaders: cached.varyHeaders
+            )
+        )
     }
 
     private func mergedCachedHeaders(

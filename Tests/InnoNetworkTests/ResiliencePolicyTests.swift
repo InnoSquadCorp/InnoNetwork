@@ -806,6 +806,47 @@ struct ResiliencePolicyTests {
         #expect(refreshed.storedAt > storedAt)
     }
 
+    @Test("304 carrying a different Vary header preserves the stored vary snapshot")
+    func etagNotModifiedWithChangedVaryPreservesSnapshot() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
+        let storedAt = Date(timeIntervalSinceNow: -60)
+        await cache.set(
+            key,
+            CachedResponse(
+                data: body,
+                headers: ["ETag": "v1", "Vary": "Accept-Language"],
+                storedAt: storedAt,
+                varyHeaders: ["accept-language": cacheFixtureAcceptLanguage]
+            )
+        )
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(
+                statusCode: 304,
+                headers: ["ETag": "v2", "Vary": "Accept"]
+            )
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        _ = try await client.request(ResilienceGetRequest())
+
+        let refreshed = try #require(await cache.get(key))
+        #expect(refreshed.varyHeaders == ["accept-language": cacheFixtureAcceptLanguage])
+        #expect(
+            refreshed.headers.first { $0.key.caseInsensitiveCompare("Vary") == .orderedSame }?.value
+                == "Accept-Language"
+        )
+        #expect(refreshed.etag == "v1")
+        #expect(refreshed.storedAt > storedAt)
+    }
+
     @Test("SWR returns stale data and revalidates in the background")
     func staleWhileRevalidateUpdatesCache() async throws {
         let cache = InMemoryResponseCache()
