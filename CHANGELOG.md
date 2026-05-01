@@ -83,6 +83,12 @@ Versioning for the 4.x release line.
   background completion handlers, and decommissioning the remaining
   `.shared` call sites. The deprecation banner on
   ``DownloadManager/shared`` now links to the new article.
+- `DecodingInterceptorCookbook` DocC article (P2.5) walks through
+  ``DecodingInterceptor`` use cases: stripping a `{"data": ...}`
+  envelope in `willDecode`, validating sentinel error codes in
+  `didDecode`, and choosing between session-only decoding chains and
+  per-endpoint placement (decoding interceptors only attach to
+  ``NetworkConfiguration/decodingInterceptors``).
 - `Interceptors` DocC article (P2.2) now documents the throw semantics
   shared by ``RequestInterceptor`` and ``ResponseInterceptor``: which
   later stages are skipped on throw, how errors that aren't already

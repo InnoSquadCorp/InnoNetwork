@@ -39,6 +39,8 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``NetworkError``
 - ``MultipartResponseDecoder``
 - ``MultipartPart``
+- ``DecodingInterceptor``
+- <doc:DecodingInterceptorCookbook>
 - <doc:ErrorClassification>
 - <doc:OpenAPIGeneratorAdapter>
 - <doc:UsingMacros>
