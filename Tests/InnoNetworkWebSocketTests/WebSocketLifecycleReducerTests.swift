@@ -6,7 +6,7 @@ import Testing
 @Suite("WebSocket lifecycle reducer tests")
 struct WebSocketLifecycleReducerTests {
     @Test("connect then didOpen transitions to connected")
-    func connectThenDidOpenTransitionsToConnected() {
+    func connectThenDidOpenTransitionsToConnected() async {
         let connecting = WebSocketLifecycleReducer.reduce(
             state: .initial,
             event: .connect
@@ -31,7 +31,7 @@ struct WebSocketLifecycleReducerTests {
     }
 
     @Test("connected manual disconnect finalizes through disconnected")
-    func connectedManualDisconnectFinalizesThroughDisconnected() {
+    func connectedManualDisconnectFinalizesThroughDisconnected() async {
         let connected = WebSocketLifecycleState.connected(
             generation: 3,
             attempt: 0,
@@ -74,7 +74,7 @@ struct WebSocketLifecycleReducerTests {
     }
 
     @Test("retryable peer close schedules reconnect then timer starts fresh generation")
-    func retryablePeerCloseSchedulesReconnectThenTimerStartsFreshGeneration() {
+    func retryablePeerCloseSchedulesReconnectThenTimerStartsFreshGeneration() async {
         let connected = WebSocketLifecycleState.connected(
             generation: 4,
             attempt: 0,
@@ -116,7 +116,7 @@ struct WebSocketLifecycleReducerTests {
     }
 
     @Test("exceeded peer close preserves close code on failed state")
-    func exceededPeerClosePreservesCloseCodeOnFailedState() {
+    func exceededPeerClosePreservesCloseCodeOnFailedState() async {
         let connected = WebSocketLifecycleState.connected(
             generation: 4,
             attempt: 2,
@@ -139,7 +139,7 @@ struct WebSocketLifecycleReducerTests {
     }
 
     @Test("terminal handshake failure transitions to failed")
-    func terminalHandshakeFailureTransitionsToFailed() {
+    func terminalHandshakeFailureTransitionsToFailed() async {
         let connecting = WebSocketLifecycleState.connecting(
             generation: 2,
             attempt: 0,
@@ -168,7 +168,7 @@ struct WebSocketLifecycleReducerTests {
     }
 
     @Test("disconnecting stale didOpen does not mutate state or generation")
-    func disconnectingStaleDidOpenDoesNotMutateStateOrGeneration() {
+    func disconnectingStaleDidOpenDoesNotMutateStateOrGeneration() async {
         let disconnecting = WebSocketLifecycleState.disconnecting(
             generation: 7,
             attempt: 1,
@@ -184,7 +184,7 @@ struct WebSocketLifecycleReducerTests {
     }
 
     @Test("stale close and failure callbacks do not mutate the current generation")
-    func staleCloseAndFailureCallbacksDoNotMutateCurrentGeneration() {
+    func staleCloseAndFailureCallbacksDoNotMutateCurrentGeneration() async {
         let connecting = WebSocketLifecycleState.connecting(
             generation: 10,
             attempt: 1,
@@ -217,7 +217,7 @@ struct WebSocketLifecycleReducerTests {
     }
 
     @Test("terminal states ignore late close and failure callbacks")
-    func terminalStatesIgnoreLateCloseAndFailureCallbacks() {
+    func terminalStatesIgnoreLateCloseAndFailureCallbacks() async {
         let failed = WebSocketLifecycleState.failed(
             generation: 11,
             attempt: 3,

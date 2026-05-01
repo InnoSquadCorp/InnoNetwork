@@ -1,8 +1,13 @@
 import Foundation
 
 public actor WebSocketTask: Identifiable {
+    /// Stable identifier for this logical WebSocket task.
     public nonisolated let id: String
+
+    /// Endpoint URL used when the manager creates or retries the underlying transport task.
     public nonisolated let url: URL
+
+    /// Optional WebSocket subprotocols advertised during the opening handshake.
     public let subprotocols: [String]?
 
     private var lifecycleState: WebSocketLifecycleState = .initial
@@ -14,6 +19,7 @@ public actor WebSocketTask: Identifiable {
     private var _closeCode: WebSocketCloseCode?
     private var _closeDisposition: WebSocketCloseDisposition?
 
+    /// Current public lifecycle state projected from the reducer-owned internal state.
     public var state: WebSocketState { lifecycleState.publicState }
 
     /// Reconnect attempts dispatched since the most recent successful
@@ -39,14 +45,23 @@ public actor WebSocketTask: Identifiable {
     /// awaiting completion on this task. Used by the manager's send-queue
     /// guard to enforce ``WebSocketConfiguration/sendQueueLimit``.
     public var inFlightSendCount: Int { _inFlightSends }
+
+    /// Most recent lifecycle error, including terminal failures and caller-initiated close context.
     public var error: WebSocketError? { _error }
+
+    /// Close code requested or observed by the current lifecycle, or `nil` while the socket is open.
     public var closeCode: WebSocketCloseCode? { _closeCode }
+
     /// Library-classified reason for the most recent close, observable after
     /// the task reaches `.disconnected` / `.failed`. `nil` until the task
     /// completes at least once. Values are stable across minor releases but
     /// new cases may be added (prefer `@unknown default`).
     public var closeDisposition: WebSocketCloseDisposition? { _closeDisposition }
+
+    /// Whether automatic reconnect is currently allowed for this task.
     public var autoReconnectEnabled: Bool { lifecycleState.autoReconnectEnabled }
+
+    /// Whether the task is waiting for a peer close acknowledgement after a caller-initiated close.
     public var awaitingCloseHandshake: Bool { lifecycleState.awaitingCloseHandshake }
     package var connectionGeneration: Int { lifecycleState.generation }
     package var currentLifecycleState: WebSocketLifecycleState { lifecycleState }
@@ -65,11 +80,13 @@ public actor WebSocketTask: Identifiable {
         }
 
         lifecycleState = lifecycleState.replacingPublicState(newState)
+        syncLifecycleMetadata()
         return .applied(previous: previousState, next: newState)
     }
 
     package func restoreStateForTesting(_ state: WebSocketState) {
         lifecycleState = lifecycleState.replacingPublicState(state)
+        syncLifecycleMetadata()
     }
 
     @discardableResult
@@ -82,6 +99,7 @@ public actor WebSocketTask: Identifiable {
             event: event,
             context: context
         )
+        guard !transition.isIgnoredCallback else { return transition }
         lifecycleState = transition.state
         syncLifecycleMetadata()
         return transition

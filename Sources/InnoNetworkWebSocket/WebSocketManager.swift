@@ -552,11 +552,12 @@ public final class WebSocketManager: NSObject, Sendable {
             let transition = await task.applyLifecycleEvent(
                 .didOpen(generation: generation, protocolName: protocolName)
             )
+            let didConnect = transition.state.publicState == .connected && !transition.isIgnoredCallback
 
-            if previousState == .reconnecting, transition.state.publicState == .connected {
+            if previousState == .reconnecting, didConnect {
                 await task.incrementSuccessfulReconnectCount()
             }
-            if transition.state.publicState == .connected {
+            if didConnect {
                 await task.resetAttemptedReconnectCount()
                 await task.resetPingCounter()
                 await task.setAutoReconnectEnabled(true)

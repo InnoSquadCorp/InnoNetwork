@@ -490,6 +490,10 @@ package struct WebSocketLifecycleTransition: Sendable, Equatable {
     package let state: WebSocketLifecycleState
     package let effects: [WebSocketLifecycleEffect]
 
+    package var isIgnoredCallback: Bool {
+        effects == [.ignoreStaleCallback]
+    }
+
     package init(
         state: WebSocketLifecycleState,
         effects: [WebSocketLifecycleEffect]

@@ -260,8 +260,51 @@ struct WebSocketTaskTests {
         await task.restoreStateForTesting(.connecting)
         #expect(await task.state == .connecting)
 
+        let result = await task.updateState(.connected)
+        #expect(result == .applied(previous: .connecting, next: .connected))
+        #expect(await task.state == .connected)
+    }
+
+    @Test("State helpers synchronize lifecycle metadata")
+    func stateHelpersSynchronizeLifecycleMetadata() async {
+        let url = URL(string: "wss://echo.websocket.org")!
+        let task = WebSocketTask(url: url)
+
+        let connecting = await task.applyLifecycleEvent(.connect)
+        _ = await task.applyLifecycleEvent(
+            .failure(
+                generation: connecting.state.generation,
+                disposition: .transportFailure(.pingTimeout),
+                error: .pingTimeout
+            ),
+            context: .init(reconnectAction: .terminal)
+        )
+        #expect(await task.state == .failed)
+        #expect(await task.error == .pingTimeout)
+        #expect(await task.closeDisposition == .transportFailure(.pingTimeout))
+
+        let result = await task.updateState(.connecting)
+        #expect(result == .applied(previous: .failed, next: .connecting))
+        #expect(await task.error == nil)
+        #expect(await task.closeCode == nil)
+        #expect(await task.closeDisposition == nil)
+
+        let failed = await task.applyLifecycleEvent(
+            .failure(
+                generation: connecting.state.generation,
+                disposition: .transportFailure(.pingTimeout),
+                error: .pingTimeout
+            ),
+            context: .init(reconnectAction: .terminal)
+        )
+        #expect(failed.state.publicState == .failed)
+        #expect(await task.error == .pingTimeout)
+
         await task.restoreStateForTesting(.connected)
         #expect(await task.state == .connected)
+        #expect(await task.error == nil)
+        #expect(await task.closeCode == nil)
+        #expect(await task.closeDisposition == nil)
     }
 
     @Test("Task reconnect count is incremented")
@@ -1269,6 +1312,29 @@ struct WebSocketListenerLifecycleTests {
         #expect(disconnectedDelivered)
         #expect(await waitForListenerCleanup(manager: harness.manager, task: task))
         #expect(await waitForTaskRemoval(manager: harness.manager, task: task))
+    }
+
+    @Test("Duplicate connected callback does not reset counters or error")
+    func duplicateConnectedCallbackDoesNotResetCountersOrError() async throws {
+        let harness = StubMessagingHarness()
+        let task = try await harness.connectAndReady()
+
+        _ = await task.incrementAttemptedReconnectCount()
+        let pingBeforeCallback = await task.incrementPingCounter()
+        await task.setError(.pingTimeout)
+        let successfulReconnectsBeforeCallback = await task.successfulReconnectCount
+
+        harness.manager.handleConnected(taskIdentifier: harness.stubTaskIdentifier, protocolName: "duplicate")
+
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(await task.state == .connected)
+        #expect(await task.attemptedReconnectCount == 1)
+        #expect(await task.successfulReconnectCount == successfulReconnectsBeforeCallback)
+        #expect(await task.error == .pingTimeout)
+
+        let pingAfterCallback = await task.incrementPingCounter()
+        #expect(pingAfterCallback == pingBeforeCallback + 1)
     }
 
     @Test("Stale close callback does not advance reconnect attempts")
