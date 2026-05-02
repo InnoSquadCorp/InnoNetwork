@@ -90,6 +90,12 @@ public enum MultipartUploadStrategy: Sendable, Equatable {
 /// ``EndpointShape``; `MultipartAPIDefinition` adds only the body-strategy
 /// surface (`multipartFormData`, `uploadStrategy`).
 public protocol MultipartAPIDefinition: EndpointShape {
+    /// Auth scope marker controlling whether `RefreshTokenPolicy` is required
+    /// before transport. Defaults to ``PublicAuthScope``; opt into
+    /// ``AuthRequiredScope`` to fail-fast when no refresh policy is
+    /// configured.
+    associatedtype Auth: EndpointAuthScope = PublicAuthScope
+
     var multipartFormData: MultipartFormData { get }
 
     /// Strategy that decides whether the multipart body is encoded in memory

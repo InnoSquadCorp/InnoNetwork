@@ -301,4 +301,35 @@ struct MultipartUploadStrategyTests {
         default: Issue.record("Expected .data for small body under default threshold, got \(payload)")
         }
     }
+
+    private struct PublicMultipartUpload: MultipartAPIDefinition {
+        typealias APIResponse = EmptyResponse
+        let multipartFormData: MultipartFormData
+        var method: HTTPMethod { .post }
+        var path: String { "/upload" }
+    }
+
+    private struct AuthenticatedMultipartUpload: MultipartAPIDefinition {
+        typealias APIResponse = EmptyResponse
+        typealias Auth = AuthRequiredScope
+        let multipartFormData: MultipartFormData
+        var method: HTTPMethod { .post }
+        var path: String { "/upload" }
+    }
+
+    @Test("Multipart endpoint with default Auth scope does not require refresh policy")
+    func publicMultipartDoesNotRequireRefreshPolicy() {
+        let executable = MultipartSingleRequestExecutable(
+            base: PublicMultipartUpload(multipartFormData: Self.makeFormData())
+        )
+        #expect(executable.requiresRefreshTokenPolicy == false)
+    }
+
+    @Test("Multipart endpoint with AuthRequiredScope requires refresh policy")
+    func authenticatedMultipartRequiresRefreshPolicy() {
+        let executable = MultipartSingleRequestExecutable(
+            base: AuthenticatedMultipartUpload(multipartFormData: Self.makeFormData())
+        )
+        #expect(executable.requiresRefreshTokenPolicy == true)
+    }
 }

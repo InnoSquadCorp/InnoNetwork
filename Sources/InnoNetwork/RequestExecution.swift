@@ -168,6 +168,7 @@ package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: S
     package var headers: HTTPHeaders { base.headers }
     package var acceptableStatusCodes: Set<Int>? { base.acceptableStatusCodes }
     package var bodyContentType: String? { base.multipartFormData.contentTypeHeader }
+    package var requiresRefreshTokenPolicy: Bool { Base.Auth.self == AuthRequiredScope.self }
 
     package func makePayload() throws -> RequestPayload {
         let formData = base.multipartFormData

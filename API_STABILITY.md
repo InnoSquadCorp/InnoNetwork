@@ -96,6 +96,11 @@ Per-symbol evolution allowances within the 4.x line:
   remains provided by `NetworkConfiguration`.
 - `EndpointAuthScope` — marker scopes can be added in future minors; the
   public/auth-required split remains source-compatible for 4.0.0.
+- `MultipartAPIDefinition.Auth` — the multipart protocol carries the same
+  `Auth: EndpointAuthScope` associated type as `APIDefinition`, defaulted to
+  `PublicAuthScope`. Existing multipart endpoints stay source-compatible;
+  authenticated multipart uploads must declare `typealias Auth = AuthRequiredScope`
+  to participate in `RefreshTokenPolicy` validation.
 - `StateReducer` — public reducer vocabulary for lifecycle state machines;
   package products can use it for internal reducers while keeping effect
   execution owned by their managers.
