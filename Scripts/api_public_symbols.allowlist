@@ -32,6 +32,7 @@ InnoNetwork	swift.enum	PublicKeyPinningPolicy.HostMatchingStrategy
 InnoNetwork	swift.enum	RequestEncodingPolicy
 InnoNetwork	swift.enum	RequestPayload
 InnoNetwork	swift.enum	ResponseBodyBufferingPolicy
+InnoNetwork	swift.enum	ResponseCacheHeaderPolicy
 InnoNetwork	swift.enum	ResponseCachePolicy
 InnoNetwork	swift.enum	ResponseDecodingStrategy
 InnoNetwork	swift.enum	RetryDecision
@@ -619,6 +620,8 @@ InnoNetwork	swift.type.method	HTTPHeader.websocketProtocol(_:)
 InnoNetwork	swift.type.method	NetworkConfiguration.advanced(baseURL:_:)
 InnoNetwork	swift.type.method	NetworkConfiguration.safeDefaults(baseURL:)
 InnoNetwork	swift.type.method	RefreshFailureCooldown.exponentialBackoff(base:max:)
+InnoNetwork	swift.type.method	ResponseCacheHeaderPolicy.registerSensitiveHeader(_:)
+InnoNetwork	swift.type.method	ResponseCacheHeaderPolicy.unregisterSensitiveHeader(_:)
 InnoNetwork	swift.type.method	ScopedEndpoint.delete(_:)
 InnoNetwork	swift.type.method	ScopedEndpoint.get(_:)
 InnoNetwork	swift.type.method	ScopedEndpoint.patch(_:)
@@ -648,6 +651,7 @@ InnoNetwork	swift.type.property	NetworkMonitor.shared
 InnoNetwork	swift.type.property	RefreshFailureCooldown.disabled
 InnoNetwork	swift.type.property	RequestCoalescingPolicy.disabled
 InnoNetwork	swift.type.property	RequestCoalescingPolicy.getOnly
+InnoNetwork	swift.type.property	ResponseCacheHeaderPolicy.sensitiveHeaderNames
 InnoNetwork	swift.type.property	RetryIdempotencyPolicy.methodAgnostic
 InnoNetwork	swift.type.property	RetryIdempotencyPolicy.safeMethodsAndIdempotencyKey
 InnoNetwork	swift.typealias	AuthenticatedEndpoint
