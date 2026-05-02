@@ -131,8 +131,12 @@ struct DownloadPersistenceHardeningTests {
             .appendingPathComponent("InnoNetworkDownload", isDirectory: true)
             .appendingPathComponent(sessionIdentifier, isDirectory: true)
             .appendingPathComponent("checkpoint.json", isDirectory: false)
-        let checkpointText = try String(contentsOf: checkpointURL, encoding: .utf8)
-        #expect(checkpointText.contains("orderedRecordIDs"))
+        let checkpointData = try Data(contentsOf: checkpointURL)
+        let checkpoint = try #require(
+            JSONSerialization.jsonObject(with: checkpointData) as? [String: Any]
+        )
+        let orderedRecordIDs = try #require(checkpoint["orderedRecordIDs"] as? [String])
+        #expect(orderedRecordIDs == ["newer", "older"])
 
         let reloaded = DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,

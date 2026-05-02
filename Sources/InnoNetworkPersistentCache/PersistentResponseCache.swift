@@ -17,7 +17,7 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
         case completeUnlessOpen
         /// File content is accessible after the first device unlock.
         case completeUntilFirstUserAuthentication
-        /// Do not apply a file-protection attribute.
+        /// Request unprotected storage for cache-owned files.
         case none
     }
 
@@ -66,6 +66,8 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     ///
     /// Defaults to ``DataProtectionClass/completeUnlessOpen``. Platforms that do
     /// not support Foundation file-protection attributes treat this as a no-op.
+    /// ``DataProtectionClass/none`` requests `NSFileProtectionNone` for
+    /// cache-owned paths instead of skipping existing protection updates.
     public let dataProtectionClass: DataProtectionClass
 
     /// Build a configuration. Only `directoryURL` is required; defaults match
@@ -174,6 +176,12 @@ public actor PersistentResponseCache: ResponseCache {
             from: indexURL,
             directoryURL: configuration.directoryURL,
             dataProtectionClass: configuration.dataProtectionClass,
+            fileManager: fileManager
+        )
+        Self.applyDataProtectionToExistingCacheFiles(
+            dataProtectionClass: configuration.dataProtectionClass,
+            indexURL: indexURL,
+            bodiesDirectoryURL: bodiesDirectoryURL,
             fileManager: fileManager
         )
     }
@@ -432,11 +440,38 @@ public actor PersistentResponseCache: ResponseCache {
         to url: URL,
         fileManager: FileManager
     ) {
-        guard let fileProtectionType = dataProtectionClass.fileProtectionType else { return }
         try? fileManager.setAttributes(
-            [.protectionKey: fileProtectionType],
+            [.protectionKey: dataProtectionClass.fileProtectionType],
             ofItemAtPath: url.path
         )
+    }
+
+    private static func applyDataProtectionToExistingCacheFiles(
+        dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
+        indexURL: URL,
+        bodiesDirectoryURL: URL,
+        fileManager: FileManager
+    ) {
+        if fileManager.fileExists(atPath: indexURL.path) {
+            applyDataProtection(dataProtectionClass, to: indexURL, fileManager: fileManager)
+        }
+
+        guard
+            let bodyURLs = try? fileManager.contentsOfDirectory(
+                at: bodiesDirectoryURL,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+        else {
+            return
+        }
+
+        for bodyURL in bodyURLs {
+            let isRegularFile =
+                (try? bodyURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false
+            guard isRegularFile else { continue }
+            applyDataProtection(dataProtectionClass, to: bodyURL, fileManager: fileManager)
+        }
     }
 
     private static func loadIndex(
@@ -503,7 +538,7 @@ private extension JSONEncoder {
 }
 
 private extension PersistentResponseCacheConfiguration.DataProtectionClass {
-    var fileProtectionType: FileProtectionType? {
+    var fileProtectionType: FileProtectionType {
         switch self {
         case .complete:
             return .complete
@@ -512,7 +547,7 @@ private extension PersistentResponseCacheConfiguration.DataProtectionClass {
         case .completeUntilFirstUserAuthentication:
             return .completeUntilFirstUserAuthentication
         case .none:
-            return nil
+            return .none
         }
     }
 }

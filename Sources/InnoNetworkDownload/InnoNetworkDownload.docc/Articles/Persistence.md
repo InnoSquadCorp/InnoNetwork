@@ -36,8 +36,9 @@ suffix in sequence order.
 
 Checkpoints written before the optional `orderedRecordIDs` field cannot fully
 recover the latest task id for repeated same-URL records. The loader keeps
-restoration deterministic by rebuilding the URL index with a best-effort
-fallback, then future compaction writes a fresh checkpoint with explicit order.
+restoration deterministic by applying `orderedRecordIDs` first when present,
+then appending unseen records in sorted-ID order as a best-effort fallback.
+Future compaction writes a fresh checkpoint with explicit order.
 
 ## Compaction
 

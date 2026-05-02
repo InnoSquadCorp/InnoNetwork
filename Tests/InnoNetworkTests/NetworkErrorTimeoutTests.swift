@@ -282,6 +282,23 @@ struct NetworkErrorTimeoutTests {
         }
     }
 
+    @Test("mapTransportError(attempt interval): elapsed at resource budget → .resourceTimeout")
+    func mapResourceTimeoutFromMeasuredAttemptInterval() {
+        let start = Date(timeIntervalSince1970: 0)
+        let end = start.addingTimeInterval(30)
+        let error = NetworkError.mapTransportError(
+            URLError(.timedOut),
+            startedAt: start,
+            endedAt: end,
+            resourceTimeoutInterval: 30
+        )
+        guard case .timeout(.resourceTimeout, let underlying) = error else {
+            Issue.record("Expected .timeout(.resourceTimeout), got \(error)")
+            return
+        }
+        #expect(underlying?.code == URLError.Code.timedOut.rawValue)
+    }
+
     @Test("mapTransportError(metrics:): missing inputs fall back to .requestTimeout")
     func mapFallsBackWhenMetricsMissing() {
         let nilMetrics = NetworkError.mapTransportError(

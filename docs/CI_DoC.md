@@ -31,8 +31,9 @@ The `CI` workflow must pass all of the following:
 8. The benchmark smoke guard runs `swift run InnoNetworkBenchmarks --quick`
    with `--enforce-baseline --max-regression-percent 20`. A regression
    beyond 20% on the guarded request pipeline, request coalescing, response
-   cache, event hub delivery, download persistence restore, and WebSocket
-   lifecycle/send hot paths fails the PR workflow. The scheduled/manual
+   cache, event hub delivery, download persistence restore/compaction,
+   decoding interceptor chain, and WebSocket lifecycle/send hot paths fails
+   the PR workflow. The scheduled/manual
    benchmark workflow uses the same guarded benchmarks with a stricter 10%
    threshold.
 
@@ -100,6 +101,9 @@ xcrun swift run InnoNetworkBenchmarks --quick \
   --guard-benchmark websocket/websocket-lifecycle-transition-table \
   --guard-benchmark client/request-pipeline \
   --guard-benchmark client/request-coalescing-shared-get \
+  --guard-benchmark client/decoding-interceptor-chain-1 \
+  --guard-benchmark client/decoding-interceptor-chain-3 \
+  --guard-benchmark client/decoding-interceptor-chain-8 \
   --guard-benchmark cache/response-cache-lookup \
   --guard-benchmark cache/response-cache-revalidation \
   --max-regression-percent 20

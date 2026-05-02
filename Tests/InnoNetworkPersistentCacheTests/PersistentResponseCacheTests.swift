@@ -215,7 +215,7 @@ struct PersistentResponseCacheTests {
     }
 
     @Test("Recovery reapplies data protection to recreated body directory")
-    func recoveryReappliesDataProtectionToRecreatedBodiesDirectory() throws {
+    func recoveryReappliesDataProtectionToRecreatedBodiesDirectory() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let recorder = ProtectionWriteRecorder()
@@ -298,16 +298,80 @@ struct PersistentResponseCacheTests {
     }
 
     @Test("PersistentResponseCacheConfiguration defaults to completeUnlessOpen protection")
-    func defaultDataProtectionClassIsCompleteUnlessOpen() {
+    func defaultDataProtectionClassIsCompleteUnlessOpen() async {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
         #expect(configuration.dataProtectionClass == .completeUnlessOpen)
     }
 
+    @Test("Reopen reapplies data protection to existing index and body files")
+    func reopenReappliesDataProtectionToExistingCacheFiles() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/reopen-protection")
+
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("protected".utf8)))
+        let bodyURLs = try existingBodyURLs(in: directory)
+        #expect(bodyURLs.isEmpty == false)
+
+        let recorder = ProtectionWriteRecorder()
+        let fileManager = RecordingFileManager(recorder: recorder)
+        _ = try PersistentResponseCache(configuration: configuration, fileManager: fileManager)
+
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        #expect(recorder.protectionWrites(for: indexURL.path).contains(.completeUnlessOpen))
+        for bodyURL in bodyURLs {
+            #expect(recorder.protectionWrites(for: bodyURL.path).contains(.completeUnlessOpen))
+        }
+    }
+
+    @Test("DataProtectionClass.none requests unprotected cache-owned paths")
+    func noneDataProtectionRequestsUnprotectedCacheOwnedPaths() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/unprotected")
+        let protectedConfiguration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            dataProtectionClass: .complete
+        )
+        let writer = try PersistentResponseCache(configuration: protectedConfiguration)
+        await writer.set(key, CachedResponse(data: Data("unprotect-me".utf8)))
+        let bodyURLs = try existingBodyURLs(in: directory)
+        #expect(bodyURLs.isEmpty == false)
+
+        let recorder = ProtectionWriteRecorder()
+        let fileManager = RecordingFileManager(recorder: recorder)
+        let unprotectedConfiguration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            dataProtectionClass: .none
+        )
+        _ = try PersistentResponseCache(configuration: unprotectedConfiguration, fileManager: fileManager)
+
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
+        #expect(recorder.protectionWrites(for: directory.path).contains(.none))
+        #expect(recorder.protectionWrites(for: bodiesURL.path).contains(.none))
+        #expect(recorder.protectionWrites(for: indexURL.path).contains(.none))
+        for bodyURL in bodyURLs {
+            #expect(recorder.protectionWrites(for: bodyURL.path).contains(.none))
+        }
+    }
+
     private func makeDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("innonetwork-persistent-cache-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    private func existingBodyURLs(in directory: URL) throws -> [URL] {
+        let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
+        return try FileManager.default.contentsOfDirectory(
+            at: bodiesURL,
+            includingPropertiesForKeys: nil
+        )
+        .filter { $0.pathExtension == "body" }
     }
 }
 

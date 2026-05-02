@@ -31,7 +31,7 @@ public struct ResponseCacheKey: Hashable, Sendable {
 
     public init(method: String, url: String, headers: [String: String] = [:]) {
         self.method = method.uppercased()
-        self.url = url
+        self.url = Self.normalizedURLString(URL(string: url)) ?? url
         self.headers = Self.normalizedHeaders(headers)
     }
 

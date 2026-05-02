@@ -13,8 +13,8 @@ Record the reason every time `default.json` changes.
 
 ## 4.0.0
 
-- Date: 2026-05-03
-- PR: pending
+- Date: 2026-05-02
+- PR: #42
 - Runner: local `--quick` companion numbers documented in `Benchmarks/README.md`
 - Benchmarks changed: added `client/decoding-interceptor-chain-{1,3,8}`;
   promoted `persistence/append-log-compaction` to the guarded benchmark set

@@ -62,7 +62,8 @@ first-party disk cache defines these policies explicitly:
 - freshness precedence between caller policy, `Cache-Control`, and validators
 - eviction by byte budget, age, and user/account boundary
 - privacy defaults for credential-derived keys and sensitive payloads
-- platform data protection class and explicit deletion hooks
+- platform data protection class and explicit deletion hooks. Selecting
+  `.none` requests `NSFileProtectionNone` on cache-owned paths.
 
 InnoNetwork honours response cache-control directives that affect storage and
 reuse:

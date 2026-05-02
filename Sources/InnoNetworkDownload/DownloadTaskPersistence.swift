@@ -623,7 +623,13 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         var seen: Set<String> = []
         var ordered: [String] = []
 
-        for ids in urlToID.values {
+        let orderedURLs = urlToID.keys.sorted { lhs, rhs in
+            lhs.absoluteString < rhs.absoluteString
+        }
+        for url in orderedURLs {
+            // Checkpoints store same-URL ids latest-first so legacy readers
+            // can recover the newest task without replaying append-log order.
+            let ids = (urlToID[url] ?? []).reversed()
             for id in ids where records[id] != nil && seen.insert(id).inserted {
                 ordered.append(id)
             }
@@ -648,7 +654,9 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         )
         var seen: Set<String> = []
 
-        for id in orderedRecordIDs ?? [] {
+        // The in-memory reverse index is oldest-first with `last` as winner,
+        // so replay latest-first checkpoint order in reverse.
+        for id in (orderedRecordIDs ?? []).reversed() {
             guard let record = records[id], seen.insert(id).inserted else { continue }
             appendIDToIndex(state: &state, url: record.url, id: id)
         }

@@ -48,8 +48,9 @@ writes a new checkpoint and truncates the event log.
 - **App update**: checkpoint schema additions must be optional with defaults
   for at least one major line. `resumeData` and `orderedRecordIDs` follow this
   rule in 4.0.0: older rows decode as `resumeData == nil` and legacy
-  checkpoints without `orderedRecordIDs` rebuild same-URL task-id order through
-  a deterministic best-effort fallback until the next checkpoint rewrite.
+  checkpoints rebuild same-URL task-id order from `orderedRecordIDs` first,
+  then append unseen records in sorted-ID order as a deterministic best-effort
+  fallback until the next checkpoint rewrite.
 
 ## Checksum Policy
 

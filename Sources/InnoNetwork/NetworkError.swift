@@ -23,8 +23,9 @@ import Foundation
 ///   timeout from a name-resolution or reachability failure.
 /// - ``resourceTimeout`` is produced by
 ///   ``NetworkError/mapTransportError(_:metrics:resourceTimeoutInterval:)``
-///   when the caller has `URLSessionTaskMetrics` and the configured
-///   resource-timeout interval. The overload returns
+///   when the caller has `URLSessionTaskMetrics`, or by the built-in
+///   executors using a measured attempt interval, plus the configured
+///   resource-timeout interval. These overloads return
 ///   ``resourceTimeout`` for `URLError.timedOut` only when the task
 ///   interval reaches the resource budget; otherwise it falls back to
 ///   ``requestTimeout``. The single-argument
@@ -35,9 +36,10 @@ public enum TimeoutReason: Sendable, Equatable {
     /// Produced from `URLError.timedOut`.
     case requestTimeout
     /// The resource transfer exceeded its total time budget. Reserved for
-    /// callers that observe URLSession task metrics; the built-in transport
-    /// mapper cannot distinguish this from ``requestTimeout`` because
-    /// `URLError` does not surface which timeout interval fired.
+    /// callers that observe URLSession task metrics, and for the built-in
+    /// executors when their measured attempt interval reaches the effective
+    /// request timeout. `URLError` does not surface which timeout interval
+    /// fired, so shorter or unmeasured attempts remain ``requestTimeout``.
     case resourceTimeout
     /// Connection establishment failed (for example, a captive portal
     /// blocking the TCP handshake or the server actively refusing the
@@ -361,6 +363,25 @@ extension NetworkError {
         mapTransportError(
             error,
             taskInterval: metrics?.taskInterval,
+            resourceTimeoutInterval: resourceTimeoutInterval
+        )
+    }
+
+    /// Attempt-interval variant used by built-in executors when URLSession
+    /// task metrics are not available on the throwing path. The mapping keeps
+    /// the same conservative rule as the metrics overload: only a timed-out
+    /// attempt whose measured elapsed time reaches the effective request
+    /// timeout is classified as ``TimeoutReason/resourceTimeout``.
+    static func mapTransportError(
+        _ error: Error,
+        startedAt: Date,
+        endedAt: Date,
+        resourceTimeoutInterval: TimeInterval?
+    ) -> NetworkError {
+        let intervalEnd = endedAt < startedAt ? startedAt : endedAt
+        return mapTransportError(
+            error,
+            taskInterval: DateInterval(start: startedAt, end: intervalEnd),
             resourceTimeoutInterval: resourceTimeoutInterval
         )
     }

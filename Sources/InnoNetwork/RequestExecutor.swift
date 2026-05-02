@@ -27,6 +27,8 @@ package struct RequestExecutor {
         try Task.checkCancellation()
 
         var retryRequest: URLRequest?
+        var attemptStartedAt: Date?
+        var effectiveRequestTimeout: TimeInterval?
         do {
             try validateAuthScope(executable, configuration: configuration)
             let built = try requestBuilder.build(executable, configuration: configuration)
@@ -59,6 +61,7 @@ package struct RequestExecutor {
                 request = try await refreshCoordinator.applyCurrentToken(to: request)
             }
             retryRequest = request
+            effectiveRequestTimeout = request.timeoutInterval
             await notifyRequestAdapted(
                 request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
@@ -72,6 +75,7 @@ package struct RequestExecutor {
                 eventObservers: configuration.eventObservers
             )
 
+            attemptStartedAt = Date()
             var networkResponse = try await executeWithPolicies(
                 request: request,
                 bodySource: built.bodySource,
@@ -144,7 +148,11 @@ package struct RequestExecutor {
             await notifyFailure(surfaced, requestID: requestID, configuration: configuration)
             throw RequestExecutionFailure(error: surfaced, request: retryRequest ?? surfaced.underlyingRequest)
         } catch {
-            let mapped = NetworkError.mapTransportError(error)
+            let mapped = Self.mapTransportError(
+                error,
+                startedAt: attemptStartedAt,
+                resourceTimeoutInterval: effectiveRequestTimeout
+            )
             let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
             executable.logger.log(error: surfaced)
             await notifyFailure(surfaced, requestID: requestID, configuration: configuration)
@@ -500,20 +508,30 @@ package struct RequestExecutor {
         configuration: NetworkConfiguration,
         context: NetworkRequestContext
     ) async throws -> TransportResult {
-        let (data, response): (Data, URLResponse)
-        switch bodySource {
-        case .inline:
-            (data, response) = try await inlineData(for: request, configuration: configuration, context: context)
-        case .file(let fileURL, _):
-            (data, response) = try await session.upload(for: request, fromFile: fileURL, context: context)
-        }
+        let attemptStartedAt = Date()
+        do {
+            let (data, response): (Data, URLResponse)
+            switch bodySource {
+            case .inline:
+                (data, response) = try await inlineData(for: request, configuration: configuration, context: context)
+            case .file(let fileURL, _):
+                (data, response) = try await session.upload(for: request, fromFile: fileURL, context: context)
+            }
 
-        try Task.checkCancellation()
+            try Task.checkCancellation()
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.nonHTTPResponse(response)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw NetworkError.nonHTTPResponse(response)
+            }
+            return TransportResult(data: data, response: httpResponse)
+        } catch {
+            throw NetworkError.mapTransportError(
+                error,
+                startedAt: attemptStartedAt,
+                endedAt: Date(),
+                resourceTimeoutInterval: request.timeoutInterval
+            )
         }
-        return TransportResult(data: data, response: httpResponse)
     }
 
     private func inlineData(
@@ -628,6 +646,8 @@ package struct RequestExecutor {
                 defer {
                     runtime.inFlight.deregister(id: revalidationID)
                 }
+                var revalidationStartedAt: Date?
+                var revalidationTimeout: TimeInterval?
 
                 do {
                     try Task.checkCancellation()
@@ -637,6 +657,8 @@ package struct RequestExecutor {
                         revalidationRequest.setValue(etag, forHTTPHeaderField: "If-None-Match")
                     }
 
+                    revalidationStartedAt = Date()
+                    revalidationTimeout = revalidationRequest.timeoutInterval
                     let result = try await revalidateInBackground(
                         request: revalidationRequest,
                         bodySource: bodySource,
@@ -694,7 +716,11 @@ package struct RequestExecutor {
                     if NetworkError.isCancellation(error) {
                         return
                     }
-                    let mapped = NetworkError.mapTransportError(error)
+                    let mapped = Self.mapTransportError(
+                        error,
+                        startedAt: revalidationStartedAt,
+                        resourceTimeoutInterval: revalidationTimeout
+                    )
                     let surfaced =
                         configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
                     Logger.API.error(
@@ -990,4 +1016,17 @@ package struct RequestExecutor {
         )
     }
 
+    private static func mapTransportError(
+        _ error: Error,
+        startedAt: Date?,
+        resourceTimeoutInterval: TimeInterval?
+    ) -> NetworkError {
+        guard let startedAt else { return NetworkError.mapTransportError(error) }
+        return NetworkError.mapTransportError(
+            error,
+            startedAt: startedAt,
+            endedAt: Date(),
+            resourceTimeoutInterval: resourceTimeoutInterval
+        )
+    }
 }

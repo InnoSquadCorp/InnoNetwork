@@ -120,6 +120,9 @@ the device is locked.
 - The companion's configuration must expose the protection class so
   apps can pick — and document the trade-off so callers don't pick
   ``.none`` for convenience.
+- ``.none`` is an explicit opt-out that requests `NSFileProtectionNone`
+  on cache-owned paths, including existing `index.json` and body files on
+  reopen. It is not a "skip applying protection" mode.
 
 ### 6. Migration and versioning
 
@@ -149,7 +152,7 @@ historical discussion above is preserved for context only.
 | Freshness | Executor precedence preserved: caller-declared `freshnessWindow` > origin `max-age` > store fallback. `no-store` and `private` short-circuit to do-not-store. |
 | Eviction | LRU with both 50 MB total byte budget and 1,000-entry budget, whichever fires first. Per-entry hard cap 5 MB. Eviction is synchronous on write. |
 | Privacy | Authenticated requests are not stored unless the caller opts in via configuration. `Cache-Control: private` short-circuits to do-not-store. Responses with `Set-Cookie` are rejected unless the caller opts in. Persisted request metadata fingerprints credential-like headers. |
-| Data protection | Configurable; default `.completeUnlessOpen`. App-group integrators may select `.completeUntilFirstUserAuthentication`. |
+| Data protection | Configurable; default `.completeUnlessOpen`. App-group integrators may select `.completeUntilFirstUserAuthentication`; `.none` requests `NSFileProtectionNone` for cache-owned paths. |
 | Migration | Versioned `index.json`. Unknown index versions and decode failures evict only the index and bodies subtree, leaving the user-supplied directory root untouched, and the store starts fresh. |
 
 ## Out of scope (still deferred)

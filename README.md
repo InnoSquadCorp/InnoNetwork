@@ -266,6 +266,7 @@ for await event in await manager.events(for: task) {
 - default 50 MB / 1000 entry / 5 MB per-entry caps
 - refuses authenticated, `Cache-Control: private`, and `Set-Cookie` responses by default
 - applies `.completeUnlessOpen` data protection to cache files by default
+- `dataProtectionClass: .none` requests `NSFileProtectionNone` for cache-owned paths
 - versioned index and hashed body files with corrupt-entry eviction
 
 ### `InnoNetworkTestSupport`

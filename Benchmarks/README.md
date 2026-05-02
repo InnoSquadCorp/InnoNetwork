@@ -109,5 +109,8 @@ Guarded benchmark set:
 - `websocket/websocket-lifecycle-transition-table`: lifecycle transition table lookup baseline.
 - `client/request-pipeline`: core request pipeline overhead baseline.
 - `client/request-coalescing-shared-get`: request coalescing fan-in baseline.
+- `client/decoding-interceptor-chain-1`: single passive decoding interceptor overhead baseline.
+- `client/decoding-interceptor-chain-3`: medium passive decoding interceptor chain overhead baseline.
+- `client/decoding-interceptor-chain-8`: deeper passive decoding interceptor chain overhead baseline.
 - `cache/response-cache-lookup`: cache hit lookup baseline.
 - `cache/response-cache-revalidation`: conditional revalidation preparation baseline.
