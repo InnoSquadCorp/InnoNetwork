@@ -4,9 +4,9 @@ Use ``RefreshTokenPolicy`` when a client should refresh a bearer token after an
 authentication response and replay the fully adapted request once.
 
 Auth refresh is part of InnoNetwork's internal execution pipeline, not a public
-generic execution-policy hook. The public surface is intentionally narrow:
-callers provide closures for reading the current token, refreshing it, and
-optionally applying it to a ``URLRequest``.
+retry policy. The public surface stays narrow: callers provide closures for
+reading the current token, refreshing it, and optionally applying it to a
+``URLRequest``.
 
 ```swift
 let refreshPolicy = RefreshTokenPolicy(
@@ -41,3 +41,40 @@ The default behaviour is:
 
 Provide `refreshStatusCodes:` or `applyToken:` only when your API differs from
 standard bearer-token authentication.
+
+## Mark Auth-Required Endpoints
+
+4.0.0 adds a type-level auth marker so an authenticated endpoint cannot
+silently run through a public client configuration:
+
+```swift
+struct Profile: Decodable, Sendable {
+    let id: String
+}
+
+let endpoint = AuthenticatedEndpoint
+    .get("/me")
+    .decoding(Profile.self)
+
+let profile = try await client.request(endpoint)
+```
+
+`AuthenticatedEndpoint<Response>` is a convenience alias for
+`ScopedEndpoint<Response, AuthRequiredScope>`. Custom endpoint definitions can
+opt into the same preflight guard:
+
+```swift
+struct GetProfile: APIDefinition {
+    typealias Parameter = EmptyParameter
+    typealias APIResponse = Profile
+    typealias Auth = AuthRequiredScope
+
+    let method: HTTPMethod = .get
+    let path = "/me"
+}
+```
+
+If the client has no ``NetworkConfiguration/refreshTokenPolicy``, the request
+fails before transport with ``NetworkError/invalidRequestConfiguration(_:)``.
+Public endpoints use ``PublicAuthScope`` by default and do not require a
+refresh policy.

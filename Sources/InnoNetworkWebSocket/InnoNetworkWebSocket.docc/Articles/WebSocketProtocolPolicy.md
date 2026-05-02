@@ -62,8 +62,8 @@ disposition mapping the manager uses to gate reconnect.
 (RFC 7692). Do not advertise compression in `Sec-WebSocket-Extensions`;
 the server will either reject the handshake or assume frames are
 deflated and corrupt them. If a deployment requires compression, the
-underlying transport must be replaced (e.g. an NIO-backed transport in
-a future release) — that is out of scope for the 4.x line.
+underlying transport must be replaced. That transport/product is explicitly
+out of scope for the 4.0.0 implementation PR.
 
 ## Heartbeat tuning
 

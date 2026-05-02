@@ -59,6 +59,46 @@ private struct SmokeUploadImage: MultipartAPIDefinition {
     var path: String { "/upload" }
 }
 
+private func compileBackgroundDownloadArticleExamples() async throws {
+    let configuration = DownloadConfiguration.advanced(
+        sessionIdentifier: "com.example.docsmoke.background.\(UUID().uuidString)"
+    ) { builder in
+        builder.allowsCellularAccess = true
+        builder.maxConnectionsPerHost = 4
+        builder.persistenceCompactionPolicy = .init(
+            maxEvents: 1_000,
+            maxLogBytes: 1_048_576,
+            tombstoneRatio: 0.25
+        )
+    }
+
+    let manager = try DownloadManager.make(configuration: configuration)
+    _ = await manager.waitForRestoration()
+
+    let task = await manager.download(
+        url: URL(string: "https://example.com/archive.zip")!,
+        to: FileManager.default.temporaryDirectory.appendingPathComponent("archive.zip")
+    )
+    await manager.pause(task)
+    await manager.resume(task)
+    await manager.cancel(task)
+}
+
+private func compileWebSocketArticleExamples() async {
+    let configuration = WebSocketConfiguration.advanced { builder in
+        builder.heartbeatInterval = 20
+        builder.pongTimeout = 5
+        builder.sendQueueLimit = 32
+    }
+    let manager = WebSocketManager(configuration: configuration)
+    let task = await manager.connect(
+        url: URL(string: "wss://echo.example.com/socket")!
+    )
+    let events = await manager.events(for: task)
+    _ = events
+    await manager.disconnect(task, closeCode: .custom(4001))
+}
+
 private func runDocSmoke() {
     let client = DefaultNetworkClient(
         configuration: .safeDefaults(
@@ -101,5 +141,7 @@ private func runDocSmoke() {
     _ = upload
 }
 
+_ = compileBackgroundDownloadArticleExamples
+_ = compileWebSocketArticleExamples
 runDocSmoke()
 print("InnoNetworkDocSmoke OK")

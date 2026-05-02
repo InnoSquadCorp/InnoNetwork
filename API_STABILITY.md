@@ -36,6 +36,13 @@ release line. `4.0.0` is the public baseline for this contract.
 - `PublicKeyPinningPolicy.HostMatchingStrategy`
 - `AnyResponseDecoder`
 - `URLQueryEncoder`
+- `URLQueryArrayEncodingStrategy`
+- `ResponseBodyBufferingPolicy`
+- `RequestExecutionPolicy`
+- `EndpointAuthScope`
+- `PublicAuthScope`
+- `AuthRequiredScope`
+- `StateReducer`
 - `EventDeliveryPolicy`
 - `WebSocketCloseCode`
 
@@ -54,7 +61,7 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `InnoNetworkTestSupport` library product and its `public` symbols
   (currently `MockURLSession`, `WebSocketEventRecorder`, `StubBehavior`,
   `StubNetworkClient`, and `StubRequestKey`)
-- `Endpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
+- `Endpoint`, `AuthenticatedEndpoint`, `ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `WebSocketCloseDisposition` observation surface
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
@@ -78,6 +85,25 @@ Per-symbol evolution allowances within the 4.x line:
   existing entry points remain source-compatible. The set of percent-encoded
   characters tracks RFC 3986 reserved/unreserved updates and may widen
   encoding for newly disallowed scalars without prior deprecation.
+- `URLQueryEncoder` — the default array convention remains indexed brackets
+  for 4.0.0 compatibility, while ``URLQueryArrayEncodingStrategy`` can opt in
+  to bracketed or repeated-key arrays per provider.
+- `ResponseBodyBufferingPolicy` — the default inline request path is
+  streaming, with `responseBodyLimit` retained as a source-compatible alias
+  for the policy's `maxBytes` value.
+- `RequestExecutionPolicy` — custom policies may wrap raw transport attempts;
+  built-in retry, refresh, cache, coalescing, and circuit breaker behavior
+  remains provided by `NetworkConfiguration`.
+- `EndpointAuthScope` — marker scopes can be added in future minors; the
+  public/auth-required split remains source-compatible for 4.0.0.
+- `MultipartAPIDefinition.Auth` — the multipart protocol carries the same
+  `Auth: EndpointAuthScope` associated type as `APIDefinition`, defaulted to
+  `PublicAuthScope`. Existing multipart endpoints stay source-compatible;
+  authenticated multipart uploads must declare `typealias Auth = AuthRequiredScope`
+  to participate in `RefreshTokenPolicy` validation.
+- `StateReducer` — public reducer vocabulary for lifecycle state machines;
+  package products can use it for internal reducers while keeping effect
+  execution owned by their managers.
 - `WebSocketCloseDisposition` — additional enum cases may appear as new
   close-code classifications are formalized.
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and
@@ -93,8 +119,7 @@ Per-symbol evolution allowances within the 4.x line:
 
 ## Version Pinning Guidance
 
-Apps that consume InnoNetwork via SwiftPM should pin against the latest
-4.x minor:
+Apps that consume InnoNetwork via SwiftPM should pin against the 4.0.0 minor:
 
 ```swift
 .package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "4.0.0"))
@@ -120,12 +145,15 @@ high-level compatibility classification readable for the 4.x release line.
 
 ### InnoNetwork
 
-- `APIDefinition`, `AnyEncodable`, `AnyResponseDecoder`, `CachedResponse`,
-  `CancellationTag`, `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
+- `APIDefinition`, `AnyEncodable`, `AnyRequestExecutionPolicy`,
+  `AnyResponseDecoder`, `AuthRequiredScope`, `AuthenticatedEndpoint`,
+  `CachedResponse`, `CancellationTag`,
+  `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
   `ContentType`, `CorrelationIDInterceptor`, `DecodingStage`,
   `DefaultNetworkClient`,
   `DefaultNetworkLogger`, `EmptyParameter`, `EmptyResponse`, `Endpoint`,
-  `EndpointPathEncoding`, `EndpointShape`, `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
+  `EndpointAuthScope`, `EndpointPathEncoding`, `EndpointShape`,
+  `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
   `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,
   `MultipartPart`, `MultipartResponseDecoder`, `MultipartUploadStrategy`,
   `NetworkClient`, `NetworkConfiguration`, `NetworkContext`, `NetworkError`,
@@ -133,16 +161,20 @@ high-level compatibility classification readable for the 4.x release line.
   `NetworkLoggingOptions`, `NetworkLogger`, `NetworkMetricsReporting`,
   `NetworkMonitor`, `NetworkMonitoring`, `NetworkReachabilityStatus`,
   `NetworkRequestContext`, `NetworkSnapshot`, `NoOpNetworkEventObserver`,
-  `NoOpNetworkLogger`, `OSLogNetworkEventObserver`, `PublicKeyPinningPolicy`,
+  `NoOpNetworkLogger`, `OSLogNetworkEventObserver`, `PublicAuthScope`,
+  `PublicKeyPinningPolicy`,
   `RefreshTokenPolicy`, `RequestCoalescingPolicy`, `RequestEncodingPolicy`,
   `RequestInterceptor`, `Response`, `ResponseCache`, `ResponseCacheKey`,
+  `RequestExecutionContext`, `RequestExecutionInput`, `RequestExecutionNext`,
+  `RequestExecutionPolicy`, `ResponseBodyBufferingPolicy`,
   `ResponseCachePolicy`, `ResponseDecodingStrategy`, `ResponseInterceptor`,
   `RetryDecision`, `RetryIdempotencyPolicy`, `RetryPolicy`,
-  `SendableUnderlyingError`, `ServerSentEvent`, `ServerSentEventDecoder`,
+  `ScopedEndpoint`, `SendableUnderlyingError`, `ServerSentEvent`,
+  `ServerSentEventDecoder`, `StateReducer`, `StateReduction`,
   `StreamingAPIDefinition`, `StreamingResumePolicy`, `TimeoutReason`,
   `TransportPolicy`, `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
-  `URLQueryCustomKeyTransform`, `URLQueryEncoder`, `URLQueryKeyEncodingStrategy`,
-  and `URLSessionProtocol`.
+  `URLQueryArrayEncodingStrategy`, `URLQueryCustomKeyTransform`,
+  `URLQueryEncoder`, `URLQueryKeyEncodingStrategy`, and `URLSessionProtocol`.
 - Event-pipeline observability declarations: `EventDeliveryPolicy`,
   `EventPipelineAggregateSnapshotMetric`,
   `EventPipelineConsumerDeliveryLatencyMetric`,
@@ -164,6 +196,10 @@ high-level compatibility classification readable for the 4.x release line.
   `WebSocketHandshakeRequestAdapter`, `WebSocketManager`,
   `WebSocketPingContext`, `WebSocketPongContext`, `WebSocketSendOverflowPolicy`,
   `WebSocketState`, and `WebSocketTask`.
+
+### InnoNetworkPersistentCache
+
+- `PersistentResponseCache` and `PersistentResponseCacheConfiguration`.
 
 ### InnoNetworkCodegen Package
 
@@ -301,9 +337,11 @@ requires `@_spi` import.
 - `WebSocketPingContext` and `WebSocketPongContext` public fields are stable
   because they are payloads of stable heartbeat events; their package-scoped
   initializers are construction details owned by the library.
-- Resilience policies are opt-in and provisionally stable. They expose
-  built-in knobs only; the generic execution pipeline remains package/internal
-  and may evolve without deprecation.
+- Resilience policies are opt-in and provisionally stable.
+  `RequestExecutionPolicy` is the stable custom hook for one transport
+  attempt; retry scheduling, auth refresh replay, response-cache substitution,
+  coalescing, and circuit-breaker state remain owned by built-in pipeline
+  stages that may evolve internally.
 - `InnoNetworkCodegen` is a separate compile-time package under
   `Packages/InnoNetworkCodegen`. Importing the root `InnoNetwork` package does
   not resolve or build `swift-syntax`; macro users opt into that dependency by

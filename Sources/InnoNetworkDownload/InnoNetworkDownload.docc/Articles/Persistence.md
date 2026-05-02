@@ -10,8 +10,9 @@ unexpected restarts. The store uses an append-log + checkpoint hybrid that keeps
 cheap on the hot path while bounding restoration cost.
 
 The default implementation lives in `AppendLogDownloadTaskStore`. Applications tune it
-through configuration-level choices such as the persistence directory, session identifier,
-and fsync policy. The storage protocol is package-internal and not a public extension point.
+through configuration-level choices such as the session identifier, fsync policy, and
+compaction policy. The storage protocol is package-internal and not a public extension
+point.
 
 ## On-disk layout
 
@@ -26,7 +27,7 @@ Each persisted session lives under `persistenceDirectory/<sessionIdentifier>/`:
 Each line of `events.log` is a self-describing event:
 
 ```json
-{"sequence":127,"timestamp":1714214830.123,"kind":"upsert","taskID":"…","url":"…","destinationURL":"…"}
+{"sequence":127,"timestamp":1714214830.123,"kind":"upsert","taskID":"…","url":"…","destinationURL":"…","resumeData":"…"}
 {"sequence":128,"timestamp":1714214831.456,"kind":"remove","taskID":"…"}
 ```
 
@@ -37,13 +38,30 @@ greater than the checkpoint's high-water mark.
 
 The store compacts the log into a fresh checkpoint when any of these triggers fire:
 
-- Event count ≥ 1000 since the last checkpoint.
-- Log file size ≥ 1 MiB.
-- Tombstone ratio ≥ 25 % (most events are deletions of completed/cancelled tasks).
+- Event count ≥ ``DownloadConfiguration/PersistenceCompactionPolicy/maxEvents`` since the
+  last checkpoint (`1,000` by default).
+- Log file size ≥ ``DownloadConfiguration/PersistenceCompactionPolicy/maxLogBytes`` (`1 MiB`
+  by default).
+- Tombstone ratio ≥ ``DownloadConfiguration/PersistenceCompactionPolicy/tombstoneRatio``
+  (`25%` by default).
 
 Compaction writes a temporary file and atomically renames it over `checkpoint.json`, then
 truncates `events.log`. A crash mid-compaction is safe — the next launch detects the stale
 log and replays from the older checkpoint.
+
+Tune the thresholds when a long-running process accumulates a very large download queue:
+
+```swift
+let configuration = DownloadConfiguration.advanced(
+    sessionIdentifier: "com.example.app.downloads"
+) { builder in
+    builder.persistenceCompactionPolicy = .init(
+        maxEvents: 500,
+        maxLogBytes: 512 * 1024,
+        tombstoneRatio: 0.2
+    )
+}
+```
 
 ## Corrupt file handling
 
@@ -59,18 +77,6 @@ The store uses `flock(LOCK_EX)` around every write. Two `DownloadManager` instan
 the same `sessionIdentifier` would compete for the lock. Foundation already merges them
 into a single backing session, so the second instance is the one that gets the lock-wait,
 and the manager's session-identifier guard surfaces the conflict before it gets that far.
-
-## Persistence directory choice
-
-| Choice | Survives `NSFileProtectionComplete`? | Cleared by user "Clear Storage"? |
-|--------|--------------------------------------|----------------------------------|
-| Documents | Yes | Yes (Settings → Storage → App) |
-| Application Support | Yes | Yes |
-| Caches | Yes (until system pressure) | Yes |
-| `tmp/` | No (system can delete at any time) | Yes |
-
-The default is Application Support. Use Caches only if you are willing to lose persisted
-task state when the OS reclaims space. `tmp/` is never appropriate.
 
 ## Tuning fsync semantics
 
@@ -102,6 +108,20 @@ let configuration = DownloadConfiguration.advanced(
 }
 ```
 
+## Paused resume data durability
+
+Paused tasks store `resumeData` in the same append-log record as their URL and destination.
+After `pause(_:)` completes, a later process launch can restore the task in `.paused` state
+and `resume(_:)` can create a system task from the stored resume payload. `resume(_:)`
+clears the persisted payload before the new system task is allowed to start; if the
+clearing write fails the in-flight system task is cancelled and the task is surfaced as
+`.failed(.persistenceFailure)` rather than left running with stale resume bytes on disk.
+The entire persistence row is removed on cancel or completion.
+
+The durability boundary is still best-effort because `URLSession` resume data is owned by
+the OS and server behavior. If the payload is rejected after an app upgrade, server range
+policy change, or cache invalidation, the transfer may restart from byte 0.
+
 ## Public configuration points
 
 The persistence store itself is package-internal. Applications customize its behavior
@@ -109,9 +129,8 @@ through public configuration:
 
 - Use a stable, app-unique ``DownloadConfiguration/sessionIdentifier`` for each background
   session.
-- Choose ``DownloadConfiguration/persistenceDirectory`` when the default Application Support
-  location is not appropriate.
 - Tune durability with ``DownloadConfiguration/persistenceFsyncPolicy``.
+- Tune append-log growth with ``DownloadConfiguration/persistenceCompactionPolicy``.
 
 The checkpoint and append-log file formats are internal implementation details. Do not parse
 or mutate them from application code; use ``DownloadManager`` APIs to observe and control

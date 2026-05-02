@@ -41,8 +41,9 @@ private application use. Both ranges are represented as ``WebSocketCloseCode/cus
 
 ```swift
 let suspended: WebSocketCloseCode = .custom(4001)
+let manager = WebSocketManager(configuration: .safeDefaults())
 
-await WebSocketManager.shared.disconnect(task, closeCode: suspended)
+await manager.disconnect(task, closeCode: suspended)
 ```
 
 Codes outside the 1000–4999 range are rejected at construction time — `init(rawValue:)`

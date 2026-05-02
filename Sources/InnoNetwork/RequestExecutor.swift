@@ -28,6 +28,7 @@ package struct RequestExecutor {
 
         var retryRequest: URLRequest?
         do {
+            try validateAuthScope(executable, configuration: configuration)
             let built = try requestBuilder.build(executable, configuration: configuration)
             var request = built.request
             let cleanupFileURL: URL?
@@ -143,6 +144,18 @@ package struct RequestExecutor {
         }
     }
 
+    private func validateAuthScope<D: SingleRequestExecutable>(
+        _ executable: D,
+        configuration: NetworkConfiguration
+    ) throws {
+        guard executable.requiresRefreshTokenPolicy, configuration.refreshTokenPolicy == nil else {
+            return
+        }
+        throw NetworkError.invalidRequestConfiguration(
+            "Auth-required endpoints require NetworkConfiguration.refreshTokenPolicy."
+        )
+    }
+
     private func executeWithPolicies(
         request adaptedRequest: URLRequest,
         bodySource: BodySource,
@@ -232,8 +245,9 @@ package struct RequestExecutor {
 
             // Enforced before the response cache is written so an oversize
             // body cannot poison subsequent GETs that would replay it from
-            // cache. The check is opt-in via `responseBodyLimit`; nil keeps
-            // the prior unbounded behaviour.
+            // cache. The check is controlled by responseBodyBufferingPolicy;
+            // nil keeps collection unbounded while still using the selected
+            // streaming or buffered transport path.
             try enforceResponseBodyLimit(networkResponse, configuration: configuration)
             await storeCacheIfNeeded(
                 networkResponse, cacheKey: cacheKey, request: request, configuration: configuration)
@@ -252,7 +266,7 @@ package struct RequestExecutor {
         data: Data,
         configuration: NetworkConfiguration
     ) throws {
-        guard let limit = configuration.responseBodyLimit else { return }
+        guard let limit = configuration.responseBodyBufferingPolicy.maxBytes else { return }
         let observed = Int64(data.count)
         if observed > limit {
             throw NetworkError.responseTooLarge(limit: limit, observed: observed)
@@ -267,30 +281,73 @@ package struct RequestExecutor {
         runtime: RequestExecutionRuntime,
         requestID: UUID
     ) async throws -> Response {
-        let result = try await performTransportResult(
+        try await executeCustomPolicies(
             request: request,
             bodySource: bodySource,
             configuration: configuration,
             context: context,
-            runtime: runtime
+            runtime: runtime,
+            requestID: requestID
         )
+    }
 
-        await eventHub.publish(
-            .responseReceived(
+    private func executeCustomPolicies(
+        request: URLRequest,
+        bodySource: BodySource,
+        configuration: NetworkConfiguration,
+        context: NetworkRequestContext,
+        runtime: RequestExecutionRuntime,
+        requestID: UUID
+    ) async throws -> Response {
+        let eventHub = self.eventHub
+        let baseNext = RequestExecutionNext { nextRequest in
+            let result = try await performTransportResult(
+                request: nextRequest,
+                bodySource: bodySource,
+                configuration: configuration,
+                context: context,
+                runtime: runtime
+            )
+            await eventHub.publish(
+                .responseReceived(
+                    requestID: requestID,
+                    statusCode: result.response.statusCode,
+                    byteCount: result.data.count
+                ),
                 requestID: requestID,
+                observers: configuration.eventObservers
+            )
+            return Response(
                 statusCode: result.response.statusCode,
-                byteCount: result.data.count
-            ),
+                data: result.data,
+                request: nextRequest,
+                response: result.response
+            )
+        }
+
+        let policyContext = RequestExecutionContext(
             requestID: requestID,
-            observers: configuration.eventObservers
+            retryIndex: context.retryIndex,
+            metricsReporter: context.metricsReporter,
+            trustPolicy: context.trustPolicy,
+            eventObservers: context.eventObservers
         )
 
-        return Response(
-            statusCode: result.response.statusCode,
-            data: result.data,
-            request: request,
-            response: result.response
-        )
+        let chain = configuration.customExecutionPolicies.reversed().reduce(baseNext) { next, policy in
+            RequestExecutionNext { nextRequest in
+                try await policy.execute(
+                    input: RequestExecutionInput(
+                        request: nextRequest,
+                        requestID: requestID,
+                        retryIndex: context.retryIndex
+                    ),
+                    context: policyContext,
+                    next: next
+                )
+            }
+        }
+
+        return try await chain.execute(request)
     }
 
     private func refreshLaneIfInProgress(
@@ -329,6 +386,7 @@ package struct RequestExecutor {
                 try await self.transportAndRecordCircuit(
                     request: request,
                     bodySource: bodySource,
+                    configuration: configuration,
                     context: context,
                     runtime: runtime,
                     policy: configuration.circuitBreakerPolicy
@@ -339,6 +397,7 @@ package struct RequestExecutor {
         return try await transportAndRecordCircuit(
             request: request,
             bodySource: bodySource,
+            configuration: configuration,
             context: context,
             runtime: runtime,
             policy: configuration.circuitBreakerPolicy
@@ -348,12 +407,18 @@ package struct RequestExecutor {
     private func transportAndRecordCircuit(
         request: URLRequest,
         bodySource: BodySource,
+        configuration: NetworkConfiguration,
         context: NetworkRequestContext,
         runtime: RequestExecutionRuntime,
         policy: CircuitBreakerPolicy?
     ) async throws -> TransportResult {
         do {
-            let result = try await transport(request: request, bodySource: bodySource, context: context)
+            let result = try await transport(
+                request: request,
+                bodySource: bodySource,
+                configuration: configuration,
+                context: context
+            )
             await runtime.circuitBreakers.recordStatus(
                 request: request,
                 policy: policy,
@@ -377,12 +442,13 @@ package struct RequestExecutor {
     private func transport(
         request: URLRequest,
         bodySource: BodySource,
+        configuration: NetworkConfiguration,
         context: NetworkRequestContext
     ) async throws -> TransportResult {
         let (data, response): (Data, URLResponse)
         switch bodySource {
         case .inline:
-            (data, response) = try await session.data(for: request, context: context)
+            (data, response) = try await inlineData(for: request, configuration: configuration, context: context)
         case .file(let fileURL, _):
             (data, response) = try await session.upload(for: request, fromFile: fileURL, context: context)
         }
@@ -393,6 +459,67 @@ package struct RequestExecutor {
             throw NetworkError.nonHTTPResponse(response)
         }
         return TransportResult(data: data, response: httpResponse)
+    }
+
+    private func inlineData(
+        for request: URLRequest,
+        configuration: NetworkConfiguration,
+        context: NetworkRequestContext
+    ) async throws -> (Data, URLResponse) {
+        switch configuration.responseBodyBufferingPolicy {
+        case .streaming(let maxBytes):
+            do {
+                let (bytes, response) = try await session.bytes(for: request, context: context)
+                let data = try await collect(bytes: bytes, response: response, maxBytes: maxBytes)
+                return (data, response)
+            } catch let error as NetworkError {
+                switch error {
+                case .invalidRequestConfiguration:
+                    // Falling back to a buffered transport silently bypasses
+                    // the configured `maxBytes` ceiling, so honour the bound
+                    // by surfacing the original error instead of collecting
+                    // an unbounded body. Only the truly unbounded streaming
+                    // mode (`maxBytes == nil`) is allowed to fall back.
+                    guard maxBytes == nil else { throw error }
+                    return try await session.data(for: request, context: context)
+                default:
+                    throw error
+                }
+            }
+        case .buffered:
+            return try await session.data(for: request, context: context)
+        }
+    }
+
+    private func collect(
+        bytes: URLSession.AsyncBytes,
+        response: URLResponse,
+        maxBytes: Int64?
+    ) async throws -> Data {
+        let normalizedLimit = maxBytes.map { max(0, $0) }
+        if let normalizedLimit,
+            response.expectedContentLength > normalizedLimit
+        {
+            throw NetworkError.responseTooLarge(
+                limit: normalizedLimit,
+                observed: response.expectedContentLength
+            )
+        }
+
+        var data = Data()
+        if response.expectedContentLength > 0 {
+            data.reserveCapacity(Int(min(response.expectedContentLength, Int64(Int.max))))
+        }
+        for try await byte in bytes {
+            data.append(byte)
+            if let normalizedLimit, Int64(data.count) > normalizedLimit {
+                throw NetworkError.responseTooLarge(
+                    limit: normalizedLimit,
+                    observed: Int64(data.count)
+                )
+            }
+        }
+        return data
     }
 
     private func cachedResponseIfAvailable(

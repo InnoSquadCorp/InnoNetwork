@@ -27,7 +27,7 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "generatedAt": "2026-03-19T05:35:45Z",
   "results": [
     {
@@ -37,7 +37,23 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
       "elapsedSeconds": 0.024379875,
       "operationsPerSecond": 82034.8750762668
     }
-  ]
+  ],
+  "baseline": {
+    "baselinePath": "Benchmarks/Baselines/default.json",
+    "enforceBaseline": true,
+    "maxRegressionPercent": 10,
+    "deltas": [
+      {
+        "group": "encoding",
+        "name": "query-encoder-small",
+        "baselineOperationsPerSecond": 80000,
+        "currentOperationsPerSecond": 82034.8750762668,
+        "deltaPercent": 2.54,
+        "isGuarded": false
+      }
+    ],
+    "guardFailures": []
+  }
 }
 ```
 
@@ -52,6 +68,8 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
 - `--guard-benchmark group/name`는 회귀 판정 대상을 고정합니다. 지정하지 않으면 현재 실행된 전체 benchmark를 검사합니다.
 - `--max-regression-percent <Double>`는 허용 가능한 최대 성능 저하 폭을 정합니다.
 - baseline은 의미 있는 성능 변화가 확인된 경우에만 사람이 갱신합니다.
+- baseline을 갱신하는 PR은 [Baselines/CHANGELOG.md](Baselines/CHANGELOG.md)에
+  runner, 변경 이유, 검증 결과를 남깁니다.
 - baseline 자동 업데이트는 하지 않습니다.
 
 ## Initial Baseline (4.0.0)
@@ -73,7 +91,11 @@ function dispatch.
 ## CI Policy
 
 - PR CI는 `--quick` benchmark를 실제 실행하고, 아래 guard 항목을 `20%` threshold로 막는 smoke gate를 사용합니다.
+- PR benchmark workflow는 JSON summary에서 Markdown comment를 렌더링해 guarded
+  benchmark delta를 PR에 남깁니다.
 - scheduled/manual benchmark workflow는 같은 guard 항목을 `10%` threshold로 검사하는 strict regression gate입니다.
+- scheduled/manual benchmark 결과는 `benchmark-trends` branch의
+  `trends/benchmark-results.jsonl`에 누적됩니다.
 - 두 workflow 모두 JSON summary artifact를 업로드해 실패 시 수치 비교를 바로 확인할 수 있게 합니다.
 
 Guarded benchmark set:

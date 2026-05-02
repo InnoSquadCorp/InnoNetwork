@@ -255,6 +255,23 @@ struct ResponseBodyLimitTests {
         #expect(received.count == payload.count)
     }
 
+    @Test("ResponseBodyBufferingPolicy carries the configured limit")
+    func bufferingPolicyCarriesLimit() {
+        let streaming = NetworkConfiguration(
+            baseURL: URL(string: "https://api.example.com")!,
+            responseBodyBufferingPolicy: .streaming(maxBytes: 2_048)
+        )
+        #expect(streaming.responseBodyLimit == 2_048)
+
+        let compatibilityAlias = NetworkConfiguration(
+            baseURL: URL(string: "https://api.example.com")!,
+            responseBodyBufferingPolicy: .buffered(maxBytes: 8_192),
+            responseBodyLimit: 1_024
+        )
+        #expect(compatibilityAlias.responseBodyBufferingPolicy == .buffered(maxBytes: 1_024))
+        #expect(compatibilityAlias.responseBodyLimit == 1_024)
+    }
+
     @Test("NSError bridge for responseTooLarge uses stable code")
     func nsErrorCodeIsStable() {
         let error = NetworkError.responseTooLarge(limit: 100, observed: 500) as NSError

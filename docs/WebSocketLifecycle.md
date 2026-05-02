@@ -146,11 +146,12 @@ can filter "this socket lost N consecutive pongs".
 For debugging or auth-refresh flows, you can drive reconnect manually:
 
 ```swift
-let task = await WebSocketManager.shared.connect(url: socketURL)
+let manager = WebSocketManager(configuration: .safeDefaults())
+let task = await manager.connect(url: socketURL)
 
 // Force a clean reconnect with a custom close code (e.g. application-defined 4001):
-await WebSocketManager.shared.disconnect(task, closeCode: .custom(4001))
-let resumed = await WebSocketManager.shared.connect(url: socketURL)
+await manager.disconnect(task, closeCode: .custom(4001))
+let resumed = await manager.connect(url: socketURL)
 ```
 
 The new connect call returns a *new* `WebSocketTask` (different `id`) — the previous task's

@@ -88,6 +88,7 @@ public actor DownloadManager {
 
     private let runtimeRegistry = DownloadRuntimeRegistry()
     private let restoreBarrier = RestoreBarrier()
+    private var pendingRestoreFailures: Set<String> = []
     private let eventHub: TaskEventHub<DownloadEvent>
     private let delegateEvents: AsyncStream<DelegateEvent>
     private let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
@@ -151,7 +152,8 @@ public actor DownloadManager {
             configuration: configuration,
             persistence: DownloadTaskPersistence(
                 sessionIdentifier: configuration.sessionIdentifier,
-                fsyncPolicy: configuration.persistenceFsyncPolicy
+                fsyncPolicy: configuration.persistenceFsyncPolicy,
+                compactionPolicy: configuration.persistenceCompactionPolicy
             )
         )
     }
@@ -257,7 +259,8 @@ public actor DownloadManager {
         // completes block until the barrier opens.
         Task { [weak self] in
             guard let self else { return }
-            await self.restoreCoordinator.restorePendingDownloads()
+            let pending = await self.restoreCoordinator.restorePendingDownloads()
+            await self.recordPendingRestoreFailures(pending)
             await self.restoreBarrier.complete()
         }
     }
@@ -268,6 +271,7 @@ public actor DownloadManager {
 
     public func setOnStateChangedHandler(_ callback: (@Sendable (DownloadTask, DownloadState) async -> Void)?) async {
         await runtimeRegistry.setOnStateChanged(callback)
+        await drainPendingRestoreFailuresToHandlers()
     }
 
     public func setOnCompletedHandler(_ callback: (@Sendable (DownloadTask, URL) async -> Void)?) async {
@@ -276,6 +280,20 @@ public actor DownloadManager {
 
     public func setOnFailedHandler(_ callback: (@Sendable (DownloadTask, DownloadError) async -> Void)?) async {
         await runtimeRegistry.setOnFailed(callback)
+        await drainPendingRestoreFailuresToHandlers()
+    }
+
+    /// Waits until launch restoration has reconciled persisted download tasks
+    /// with the background URLSession.
+    ///
+    /// Public download operations call this internally before mutating task
+    /// state, but apps that need to coordinate their own startup UI can await
+    /// the same barrier explicitly.
+    ///
+    /// - Returns: `true` when restoration completed, or `false` if the waiting
+    ///   task was cancelled.
+    public func waitForRestoration() async -> Bool {
+        await waitForRestore()
     }
 
     @discardableResult
@@ -308,6 +326,12 @@ public actor DownloadManager {
 
         if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
             let resumeData = await urlTask.cancelByProducingResumeData()
+            do {
+                try await persistence.updateResumeData(id: task.id, resumeData: resumeData)
+            } catch {
+                await transferCoordinator.markTaskFailedForPersistence(task, error: error)
+                return
+            }
             await task.setResumeData(resumeData)
             await task.updateState(.paused)
             await runtimeRegistry.onStateChanged?(task, .paused)
@@ -330,6 +354,16 @@ public actor DownloadManager {
             await transferCoordinator.register(urlTask: urlTask, for: task)
             await task.updateState(.downloading)
             await task.setResumeData(nil)
+            do {
+                try await persistence.updateResumeData(id: task.id, resumeData: nil)
+            } catch {
+                Self.logger.fault(
+                    "Failed to clear resumeData for task \(task.id, privacy: .private(mask: .hash)) on resume: \(String(describing: error), privacy: .private(mask: .hash))"
+                )
+                urlTask.cancel()
+                await transferCoordinator.markTaskFailedForPersistence(task, error: error)
+                return
+            }
             await runtimeRegistry.onStateChanged?(task, .downloading)
             await eventHub.publish(.stateChanged(.downloading), for: task.id)
             urlTask.resume()
@@ -432,7 +466,47 @@ public actor DownloadManager {
     }
 
     public func events(for task: DownloadTask) async -> AsyncStream<DownloadEvent> {
-        await eventHub.stream(for: task.id)
+        let stream = await eventHub.stream(for: task.id)
+        await flushPendingRestoreFailureIfNeeded(taskID: task.id)
+        return stream
+    }
+
+    private func recordPendingRestoreFailures(_ taskIDs: [String]) async {
+        pendingRestoreFailures.formUnion(taskIDs)
+        // If callers wired handlers up before restoration completed, flush
+        // immediately so they observe the failure without needing to also
+        // subscribe through `events(for:)`.
+        await drainPendingRestoreFailuresToHandlers()
+    }
+
+    private func flushPendingRestoreFailureIfNeeded(taskID: String) async {
+        guard pendingRestoreFailures.remove(taskID) != nil else { return }
+        await drainRestoreFailure(taskID: taskID)
+    }
+
+    private func drainPendingRestoreFailuresToHandlers() async {
+        let onState = await runtimeRegistry.onStateChanged
+        let onFailed = await runtimeRegistry.onFailed
+        guard onState != nil || onFailed != nil else { return }
+        let ids = pendingRestoreFailures
+        pendingRestoreFailures.removeAll()
+        for id in ids {
+            await drainRestoreFailure(taskID: id)
+        }
+    }
+
+    private func drainRestoreFailure(taskID: String) async {
+        let task = await runtimeRegistry.task(withId: taskID)
+        if let task {
+            await runtimeRegistry.onStateChanged?(task, .failed)
+            await runtimeRegistry.onFailed?(task, .restorationMissingSystemTask)
+        }
+        await eventHub.publish(.stateChanged(.failed), for: taskID)
+        await eventHub.publish(.failed(.restorationMissingSystemTask), for: taskID)
+        await eventHub.finish(taskID: taskID)
+        if let task {
+            await runtimeRegistry.remove(task)
+        }
     }
 
     private func waitForRestore() async -> Bool {

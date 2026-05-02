@@ -9,11 +9,12 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 InnoNetwork is a Swift package for type-safe networking on Apple platforms. The
-root runtime package provides four public products:
+root runtime package provides five public products:
 
 - `InnoNetwork` for request/response APIs
 - `InnoNetworkDownload` for download lifecycle management
 - `InnoNetworkWebSocket` for connection-oriented realtime flows
+- `InnoNetworkPersistentCache` for a conservative on-disk response cache
 - `InnoNetworkTestSupport` for consumer test targets
 
 Optional Swift macro endpoint helpers live in the separate
@@ -83,7 +84,7 @@ dependencies: [
 
 > Use `from: "4.0.0"` (`.upToNextMajor`) only if you exclusively call
 > the **Stable** ledger in `API_STABILITY.md`. Provisionally stable
-> APIs (`Endpoint`, `WebSocketCloseDisposition`, `DecodingInterceptor`,
+> APIs (`Endpoint`, `AuthenticatedEndpoint`, `WebSocketCloseDisposition`, `DecodingInterceptor`,
 > resilience policy surfaces, …) may change in any minor release.
 >
 > InnoNetwork also intentionally requires Swift 6.2+ and current Apple OS
@@ -144,6 +145,10 @@ let token = try await client.request(
         .transport(.formURLEncoded())
         .decoding(Token.self)
 )
+
+let me = try await client.request(
+    AuthenticatedEndpoint.get("/me").decoding(User.self)
+)
 ```
 
 `APIDefinition` exposes one transport-shape entry point — `transport: TransportPolicy<APIResponse>`.
@@ -152,15 +157,19 @@ hand-written endpoints don't override it. Use the `TransportPolicy` factories
 when you need a different shape:
 
 ```swift
-struct UpdateProfile: APIDefinition {
-    typealias Parameter = ProfileBody
-    typealias APIResponse = Profile
+struct UserPatch: Encodable, Sendable {
+    let displayName: String
+}
 
-    let parameters: ProfileBody?
+struct UpdateUser: APIDefinition {
+    typealias Parameter = UserPatch
+    typealias APIResponse = User
+
+    let parameters: UserPatch?
     var method: HTTPMethod { .patch }
     var path: String { "/me" }
 
-    var transport: TransportPolicy<Profile> {
+    var transport: TransportPolicy<User> {
         .json(decoder: snakeCaseDecoder)
     }
 }
@@ -215,11 +224,12 @@ construct the target URL yourself.
 import Foundation
 import InnoNetworkWebSocket
 
-let task = await WebSocketManager.shared.connect(
+let manager = WebSocketManager(configuration: .safeDefaults())
+let task = await manager.connect(
     url: URL(string: "wss://echo.example.com/socket")!
 )
 
-for await event in await WebSocketManager.shared.events(for: task) {
+for await event in await manager.events(for: task) {
     print(event)
 }
 ```
@@ -232,6 +242,8 @@ for await event in await WebSocketManager.shared.events(for: task) {
 - type-safe `APIDefinition` modeling
 - JSON, form-url-encoded, and multipart request support
 - retry coordination, auth refresh, request coalescing, response cache, and circuit breaker policies
+- streaming-by-default inline response buffering and public `RequestExecutionPolicy` hooks
+- phantom auth scopes through `Endpoint`, `AuthenticatedEndpoint`, and `AuthRequiredScope`
 - trust policy support and request lifecycle observability
 
 ### `InnoNetworkDownload`
@@ -247,6 +259,13 @@ for await event in await WebSocketManager.shared.events(for: task) {
 - reconnect policies with handshake-aware close taxonomy
 - listener retention across reconnect attempts
 - `AsyncStream` and listener-based event delivery
+
+### `InnoNetworkPersistentCache`
+
+- actor-backed `ResponseCache` implementation for on-disk GET caching
+- default 50 MB / 1000 entry / 5 MB per-entry caps
+- refuses authenticated and `Set-Cookie` responses by default
+- versioned index and hashed body files with corrupt-entry eviction
 
 ### `InnoNetworkTestSupport`
 
@@ -462,9 +481,9 @@ public release of the 4.x line.
 as `safeDefaults` aliases, but new examples and new integrations should prefer
 `safeDefaults`.
 
-`request` and `upload` are the recommended request execution APIs. Lower-level
-extension points that exist in the source tree are not part of the stable
-public contract.
+`request` and `upload` are the recommended request execution APIs. Use
+`RequestExecutionPolicy` for narrow transport-attempt customization. SPI
+lower-level execution hooks remain outside the stable public contract.
 
 For long-lived line-delimited transports (Server-Sent Events, NDJSON, log
 streams), use `DefaultNetworkClient.stream(_:)` together with a

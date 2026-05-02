@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetwork
 
 package struct WebSocketManualDisconnect: Sendable, Equatable {
     package let closeCode: WebSocketCloseCode
@@ -517,7 +518,7 @@ package enum WebSocketStateTransitionResult: Sendable, Equatable {
     }
 }
 
-package enum WebSocketLifecycleReducer {
+package enum WebSocketLifecycleReducer: StateReducer {
     package static func reduce(
         state: WebSocketLifecycleState,
         event: WebSocketLifecycleEvent,

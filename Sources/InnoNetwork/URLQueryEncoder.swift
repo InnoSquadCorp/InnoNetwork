@@ -1,6 +1,15 @@
 import Foundation
 import os
 
+public enum URLQueryArrayEncodingStrategy: Sendable, Equatable {
+    /// Encodes arrays as `tags[0]=swift&tags[1]=ios`.
+    case indexed
+    /// Encodes arrays as `tags[]=swift&tags[]=ios`.
+    case bracketed
+    /// Encodes arrays as `tags=swift&tags=ios`.
+    case repeated
+}
+
 public struct URLQueryEncoder: Sendable {
     public enum EncodingError: Error, Sendable {
         case unsupportedTopLevelValue
@@ -8,22 +17,27 @@ public struct URLQueryEncoder: Sendable {
 
     public var keyEncodingStrategy: URLQueryKeyEncodingStrategy
     public var dateEncodingStrategy: JSONEncoder.DateEncodingStrategy
+    public var arrayEncodingStrategy: URLQueryArrayEncodingStrategy
 
     public init(
         keyEncodingStrategy: URLQueryKeyEncodingStrategy = .useDefaultKeys,
-        dateEncodingStrategy: JSONEncoder.DateEncodingStrategy? = nil
+        dateEncodingStrategy: JSONEncoder.DateEncodingStrategy? = nil,
+        arrayEncodingStrategy: URLQueryArrayEncodingStrategy = .indexed
     ) {
         self.keyEncodingStrategy = keyEncodingStrategy
         self.dateEncodingStrategy = dateEncodingStrategy ?? .formatted(defaultDateFormatter)
+        self.arrayEncodingStrategy = arrayEncodingStrategy
     }
 
     public init(
         keyEncodingStrategy: JSONEncoder.KeyEncodingStrategy,
-        dateEncodingStrategy: JSONEncoder.DateEncodingStrategy? = nil
+        dateEncodingStrategy: JSONEncoder.DateEncodingStrategy? = nil,
+        arrayEncodingStrategy: URLQueryArrayEncodingStrategy = .indexed
     ) {
         self.init(
             keyEncodingStrategy: URLQueryKeyEncodingStrategy(keyEncodingStrategy),
-            dateEncodingStrategy: dateEncodingStrategy
+            dateEncodingStrategy: dateEncodingStrategy,
+            arrayEncodingStrategy: arrayEncodingStrategy
         )
     }
 
@@ -44,7 +58,8 @@ public struct URLQueryEncoder: Sendable {
     private var options: _URLQueryEncodingOptions {
         _URLQueryEncodingOptions(
             keyEncodingStrategy: keyEncodingStrategy,
-            dateEncodingStrategy: dateEncodingStrategy
+            dateEncodingStrategy: dateEncodingStrategy,
+            arrayEncodingStrategy: arrayEncodingStrategy
         )
     }
 
@@ -73,12 +88,23 @@ public struct URLQueryEncoder: Sendable {
             }
         case .array(let array):
             return array.enumerated().flatMap { index, element in
-                flatten(key: "\(key)[\(index)]", value: element)
+                flatten(key: arrayKey(parentKey: key, index: index), value: element)
             }
         case .scalar(let string):
             return [URLQueryItem(name: key, value: string)]
         case .null:
             return []
+        }
+    }
+
+    private func arrayKey(parentKey: String, index: Int) -> String {
+        switch arrayEncodingStrategy {
+        case .indexed:
+            return "\(parentKey)[\(index)]"
+        case .bracketed:
+            return "\(parentKey)[]"
+        case .repeated:
+            return parentKey
         }
     }
 }
@@ -170,6 +196,7 @@ private final class QueryValueBox {
 private struct _URLQueryEncodingOptions: Sendable {
     let keyEncodingStrategy: URLQueryKeyEncodingStrategy
     let dateEncodingStrategy: JSONEncoder.DateEncodingStrategy
+    let arrayEncodingStrategy: URLQueryArrayEncodingStrategy
 
     func transform(key: String, codingPath: [CodingKey]) -> String {
         switch keyEncodingStrategy {

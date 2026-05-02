@@ -20,7 +20,9 @@ func makeTestNetworkConfiguration(
     responseCachePolicy: ResponseCachePolicy = .disabled,
     responseCache: (any ResponseCache)? = nil,
     circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
+    customExecutionPolicies: [any RequestExecutionPolicy] = [],
     captureFailurePayload: Bool = false,
+    responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .buffered(),
     responseBodyLimit: Int64? = nil
 ) -> NetworkConfiguration {
     NetworkConfiguration(
@@ -41,7 +43,9 @@ func makeTestNetworkConfiguration(
         responseCachePolicy: responseCachePolicy,
         responseCache: responseCache,
         circuitBreakerPolicy: circuitBreakerPolicy,
+        customExecutionPolicies: customExecutionPolicies,
         captureFailurePayload: captureFailurePayload,
+        responseBodyBufferingPolicy: responseBodyBufferingPolicy,
         responseBodyLimit: responseBodyLimit
     )
 }

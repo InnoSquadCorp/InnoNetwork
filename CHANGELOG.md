@@ -17,8 +17,23 @@ summary.
 
 - Internal request execution pipeline stages for built-in preflight,
   transport, post-transport, status validation, and decode handling. The
-  generic pipeline remains package/internal; no public `RequestExecutionPolicy`
-  protocol is exposed.
+  built-in retry/cache/auth/coalescing/circuit stages remain owned by the
+  executor, while `RequestExecutionPolicy` is public for custom
+  transport-attempt wrappers.
+- `RequestExecutionPolicy`, `RequestExecutionInput`,
+  `RequestExecutionContext`, `RequestExecutionNext`, and
+  `AnyRequestExecutionPolicy` for custom transport-attempt policies.
+- `ResponseBodyBufferingPolicy`; inline requests now prefer
+  `URLSession.bytes(for:)` with bounded collection before decoder handoff.
+- `EndpointAuthScope`, `PublicAuthScope`, `AuthRequiredScope`,
+  `ScopedEndpoint`, and `AuthenticatedEndpoint` for type-level auth
+  boundaries. Auth-required endpoints fail before transport when no
+  `RefreshTokenPolicy` is configured.
+- `StateReducer` and `StateReduction` as the shared reducer vocabulary for
+  lifecycle state machines.
+- `InnoNetworkPersistentCache` product with `PersistentResponseCache` and
+  `PersistentResponseCacheConfiguration` for conservative on-disk GET
+  response caching.
 - `RefreshTokenPolicy` for current-token application, single-flight refresh,
   and one-time replay after configured auth status codes.
 - `RequestCoalescingPolicy` for raw transport fan-out among identical in-flight
@@ -90,6 +105,9 @@ summary.
 - Parametrized `URLQueryEncoderParametrizedTests` suite locks down the
   PHP/Rails-style bracket-notation invariants, sorted-key determinism,
   rootKey enforcement, and reserved-character handling.
+- `URLQueryArrayEncodingStrategy` lets `URLQueryEncoder` encode arrays as
+  indexed brackets, empty brackets, or repeated keys. The default remains
+  indexed brackets.
 - CI `apple-platform-build-smoke` job covers macOS, iOS, tvOS, watchOS, and
   visionOS build-only smoke validation.
 - Release artifacts (`benchmarks.json`, `sbom.cdx.json`) are signed with
@@ -147,15 +165,12 @@ summary.
   `.zero`. The previous behaviour matched the new default exactly, so
   existing code is unaffected.
 - `NetworkConfiguration.responseBodyLimit: Int64?` (default `nil`)
-  enforces a soft upper bound on the size of buffered response bodies.
-  When the configured limit is exceeded the executor short-circuits the
-  decoder and throws ``NetworkError/responseTooLarge(limit:observed:)``.
-  Cache hits, conditional revalidation, and fresh transport responses are
-  checked before cache writes, and the final decoder input is rechecked
-  after response and decoding interceptors. The guard is opt-in; setting
-  it to `nil` keeps the prior unbounded behaviour. Endpoints that need
-  genuine memory-bounded handling should use the streaming surface
-  (`stream(_:)` / `bytes(for:)`).
+  remains as a compatibility alias for
+  `NetworkConfiguration.responseBodyBufferingPolicy.maxBytes`. When the
+  configured limit is exceeded the executor short-circuits the decoder and
+  throws ``NetworkError/responseTooLarge(limit:observed:)``. Cache hits,
+  conditional revalidation, fresh transport responses, response
+  interceptors, and decoding interceptors are checked before decoder handoff.
 - ``RefreshTokenCoordinator/isRefreshInProgress`` — package-scoped
   point-in-time observation of refresh-coordinator state, used by
   ``RequestExecutor`` for refresh-aware coalescer lane segregation.
@@ -163,6 +178,17 @@ summary.
   parameter so the executor can synthesize per-caller dedup keys during
   refresh-in-flight windows without changing the default coalescing
   surface.
+- `DownloadManager.waitForRestoration()` public restore gate.
+- `DownloadError.restorationMissingSystemTask` for persisted records that no
+  longer have a system URLSession task during restoration.
+- Download append-log records now persist optional `resumeData`, and
+  `DownloadConfiguration.PersistenceCompactionPolicy` configures compaction
+  thresholds.
+- `@APIDefinition` now rejects optional path-placeholder properties at macro
+  expansion time.
+- Benchmark JSON summary version 2 includes baseline deltas and guard
+  failures. The benchmark workflow renders a PR comment and appends
+  scheduled/manual results to the `benchmark-trends` branch.
 
 ### Changed
 
@@ -180,6 +206,13 @@ summary.
   `Content-Type` header is derived from the transport's request encoding,
   and `decoding(_:)` carries the request encoding into the new response
   generic instead of resetting it.
+- `Endpoint<Response>` is now a compatibility alias for
+  `ScopedEndpoint<Response, PublicAuthScope>`. Use
+  `AuthenticatedEndpoint<Response>` or
+  `ScopedEndpoint<Response, AuthRequiredScope>` for auth-required fluent
+  endpoints.
+- `WebSocketManager.shared` is soft-deprecated. Construct
+  `WebSocketManager(configuration:)` per feature for new code.
 - `DefaultNetworkClient.stream(_:)` is now a thin `AsyncThrowingStream`
   factory; the streaming pipeline (per-attempt request preparation,
   lifecycle events, response interceptors, status validation, line
@@ -276,6 +309,46 @@ summary.
 
 ### Fixed
 
+- **PersistentResponseCache overwrite (PR #39)**: `set()` on an existing key
+  no longer deletes the freshly-written body file. The bodyfile cleanup runs
+  only when the new entry resolves to a different filename than the existing
+  one, so subsequent `get()` calls hit the new payload instead of seeing a
+  cold cache. `get()`'s body-read failure handling is now separated from the
+  best-effort `lastAccessedAt` index write, so a transient index write
+  failure (e.g. read-only mount) no longer demotes a successful read to a
+  miss.
+- **PersistentResponseCache recovery scope (PR #39)**: index recovery on
+  unknown version or decode failure now deletes only the cache's own
+  `index.json` and `bodies/` subtree. The user-supplied configuration
+  directory itself is preserved, so adjacent files in a shared parent
+  directory (`sentinel.txt`, sibling caches) survive recovery.
+- **RequestExecutor `responseReceived` placement (PR #39)**: the
+  `NetworkEvent.responseReceived` event now fires inside the transport
+  boundary used by custom `RequestExecutionPolicy` chains. A policy that
+  calls `next.execute(_:)` more than once now produces one event per
+  transport attempt; a policy that returns a synthetic response without
+  calling `next` no longer emits a synthetic transport event.
+- **Streaming `maxBytes` fallback (PR #39)**: when
+  `responseBodyBufferingPolicy` is `.streaming(maxBytes:)` and the transport
+  reports `invalidRequestConfiguration`, the executor no longer falls back
+  to the buffered `data(for:)` path. The configured byte cap is honoured —
+  the request fails fast instead of silently buffering an unbounded body.
+- **Multipart auth scope (PR #39)**: `MultipartAPIDefinition` now declares
+  `associatedtype Auth: EndpointAuthScope = PublicAuthScope`, so a multipart
+  endpoint conforming to `AuthRequiredScope` participates in the configured
+  `RefreshTokenPolicy` exactly like a non-multipart authenticated endpoint.
+  Default behaviour is unchanged (`PublicAuthScope`).
+- **Download resume-data clear (PR #39)**: `DownloadManager.resume(_:)` now
+  surfaces persistence failures when clearing the stored `resumeData`
+  before starting the new system task. On failure the in-flight task is
+  cancelled and the task is surfaced as `.failed(.persistenceFailure)`,
+  preventing a resumed transfer from running with stale resume bytes still
+  on disk.
+- **Restore-missing event delivery (PR #39)**: the
+  `.failed(.restorationMissingSystemTask)` failure for orphaned persisted
+  records is no longer published from `DownloadManager.init`. The event is
+  flushed when the caller subscribes via `events(for:)`, so the failure is
+  observable instead of being dropped into a partition with no consumer.
 - **CircuitBreaker (P1.1)**: `CircuitBreakerRegistry.recordStatus(...)` no
   longer resets the rolling failure window on 4xx responses. 4xx is now a
   no-op (the transport worked, the failure is semantic), 5xx still counts

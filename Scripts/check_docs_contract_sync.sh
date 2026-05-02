@@ -25,6 +25,10 @@ required_feature_docs=(
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/UsingMacros.md"
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/InnoNetwork.md"
+  "$repo_root/Sources/InnoNetworkDownload/InnoNetworkDownload.docc/Articles/BackgroundDownloads.md"
+  "$repo_root/Sources/InnoNetworkDownload/InnoNetworkDownload.docc/Articles/Persistence.md"
+  "$repo_root/Sources/InnoNetworkWebSocket/InnoNetworkWebSocket.docc/Articles/FeatureScopedManagers.md"
+  "$repo_root/Sources/InnoNetworkWebSocket/InnoNetworkWebSocket.docc/Articles/CloseCodes.md"
 )
 example_docs=(
   "$repo_root/Examples/BasicRequest/README.md"
@@ -116,6 +120,13 @@ expected_stable=(
 '`PublicKeyPinningPolicy.HostMatchingStrategy`'
 '`AnyResponseDecoder`'
 '`URLQueryEncoder`'
+'`URLQueryArrayEncodingStrategy`'
+'`ResponseBodyBufferingPolicy`'
+'`RequestExecutionPolicy`'
+'`EndpointAuthScope`'
+'`PublicAuthScope`'
+'`AuthRequiredScope`'
+'`StateReducer`'
 '`EventDeliveryPolicy`'
 '`WebSocketCloseCode`'
 )
@@ -149,7 +160,7 @@ expected_provisionally=(
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
-'`Endpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
+'`Endpoint`, `AuthenticatedEndpoint`, `ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
 '`WebSocketCloseDisposition` observation surface'
 '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
@@ -160,7 +171,10 @@ expected_provisionally=(
 expected_shipping_public_declarations=(
   APIDefinition
   AnyEncodable
+  AnyRequestExecutionPolicy
   AnyResponseDecoder
+  AuthenticatedEndpoint
+  AuthRequiredScope
   CachedResponse
   CancellationTag
   CircuitBreakerOpenError
@@ -183,6 +197,7 @@ expected_shipping_public_declarations=(
   EmptyParameter
   EmptyResponse
   Endpoint
+  EndpointAuthScope
   EndpointPathEncoding
   EndpointShape
   EventDeliveryPolicy
@@ -224,12 +239,20 @@ expected_shipping_public_declarations=(
   NoOpNetworkEventObserver
   NoOpNetworkLogger
   OSLogNetworkEventObserver
+  PublicAuthScope
+  PersistentResponseCache
+  PersistentResponseCacheConfiguration
   PublicKeyPinningPolicy
   RefreshTokenPolicy
   RequestCoalescingPolicy
   RequestEncodingPolicy
+  RequestExecutionContext
+  RequestExecutionInput
+  RequestExecutionNext
+  RequestExecutionPolicy
   RequestInterceptor
   Response
+  ResponseBodyBufferingPolicy
   ResponseCache
   ResponseCacheKey
   ResponseCachePolicy
@@ -238,9 +261,12 @@ expected_shipping_public_declarations=(
   RetryDecision
   RetryIdempotencyPolicy
   RetryPolicy
+  ScopedEndpoint
   SendableUnderlyingError
   ServerSentEvent
   ServerSentEventDecoder
+  StateReducer
+  StateReduction
   StreamingAPIDefinition
   StreamingResumePolicy
   TimeoutReason
@@ -252,6 +278,7 @@ expected_shipping_public_declarations=(
   URLQueryEncoder
   URLQueryKeyEncodingStrategy
   URLSessionProtocol
+  URLQueryArrayEncodingStrategy
   WebSocketCloseCode
   WebSocketCloseDisposition
   WebSocketConfiguration
@@ -311,6 +338,17 @@ validate_benchmark_docs() {
   require_contains 'swift run InnoNetworkBenchmarks --json-path /tmp/innonetwork-bench.json' "$readme"
   require_contains 'JSON summary' "$repo_root/Benchmarks/README.md"
   require_contains '"results"' "$repo_root/Benchmarks/README.md"
+}
+
+validate_doc_smoke_coverage() {
+  local doc_smoke="$repo_root/SmokeTests/InnoNetworkDocSmoke/main.swift"
+  require_contains 'compileBackgroundDownloadArticleExamples' "$doc_smoke"
+  require_contains 'waitForRestoration()' "$doc_smoke"
+  require_contains 'persistenceCompactionPolicy' "$doc_smoke"
+  require_contains 'compileWebSocketArticleExamples' "$doc_smoke"
+  require_contains 'WebSocketManager(configuration:' "$doc_smoke"
+  require_contains 'FeatureScopedManagers' \
+    "$repo_root/Sources/InnoNetworkWebSocket/InnoNetworkWebSocket.docc/InnoNetworkWebSocket.md"
 }
 
 validate_test_support_product() {
@@ -403,6 +441,7 @@ symbolgraph_dir = max(symbolgraph_dirs, key=lambda path: path.stat().st_mtime)
 included_modules = {
     "InnoNetwork",
     "InnoNetworkDownload",
+    "InnoNetworkPersistentCache",
     "InnoNetworkWebSocket",
     "InnoNetworkTestSupport",
 }
@@ -484,7 +523,11 @@ validate_public_surface_ledger() {
 }
 
 validate_oss_readiness_public_api() {
-  require_contains 'public struct Endpoint<Response: Decodable & Sendable>: APIDefinition' \
+  require_contains 'public struct ScopedEndpoint<Response: Decodable & Sendable, AuthScope: EndpointAuthScope>: APIDefinition' \
+    "$repo_root/Sources/InnoNetwork/Endpoint.swift"
+  require_contains 'public typealias Endpoint<Response: Decodable & Sendable> = ScopedEndpoint<Response, PublicAuthScope>' \
+    "$repo_root/Sources/InnoNetwork/Endpoint.swift"
+  require_contains 'public typealias AuthenticatedEndpoint<Response: Decodable & Sendable> = ScopedEndpoint<Response, AuthRequiredScope>' \
     "$repo_root/Sources/InnoNetwork/Endpoint.swift"
   require_contains 'public enum EndpointPathEncoding' \
     "$repo_root/Sources/InnoNetwork/EndpointPathEncoding.swift"
@@ -660,6 +703,34 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public struct URLQueryEncoder'
       target="$repo_root/Sources/InnoNetwork/URLQueryEncoder.swift"
       ;;
+    '`URLQueryArrayEncodingStrategy`')
+      pattern='public enum URLQueryArrayEncodingStrategy'
+      target="$repo_root/Sources/InnoNetwork/URLQueryEncoder.swift"
+      ;;
+    '`ResponseBodyBufferingPolicy`')
+      pattern='public enum ResponseBodyBufferingPolicy'
+      target="$repo_root/Sources/InnoNetwork/ResponseBodyBufferingPolicy.swift"
+      ;;
+    '`RequestExecutionPolicy`')
+      pattern='public protocol RequestExecutionPolicy'
+      target="$repo_root/Sources/InnoNetwork/RequestExecutionPolicy.swift"
+      ;;
+    '`EndpointAuthScope`')
+      pattern='public protocol EndpointAuthScope'
+      target="$repo_root/Sources/InnoNetwork/Endpoint.swift"
+      ;;
+    '`PublicAuthScope`')
+      pattern='public enum PublicAuthScope'
+      target="$repo_root/Sources/InnoNetwork/Endpoint.swift"
+      ;;
+    '`AuthRequiredScope`')
+      pattern='public enum AuthRequiredScope'
+      target="$repo_root/Sources/InnoNetwork/Endpoint.swift"
+      ;;
+    '`StateReducer`')
+      pattern='public protocol StateReducer'
+      target="$repo_root/Sources/InnoNetwork/StateReducer.swift"
+      ;;
     '`EventDeliveryPolicy`')
       pattern='public struct EventDeliveryPolicy'
       target="$repo_root/Sources/InnoNetwork/EventPipeline.swift"
@@ -699,13 +770,14 @@ for symbol in "${expected_provisionally[@]}"; do
       ;;
     'troubleshooting guidance and examples in README/DocC')
       validate_troubleshooting_and_examples_docs
+      validate_doc_smoke_coverage
       continue
       ;;
     '`InnoNetworkTestSupport` library product and its `public` symbols')
       validate_test_support_product
       continue
       ;;
-    '`Endpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
+    '`Endpoint`, `AuthenticatedEndpoint`, `ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
       validate_oss_readiness_public_api
       continue
       ;;

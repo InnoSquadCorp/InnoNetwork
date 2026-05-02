@@ -24,12 +24,24 @@ package struct DownloadRestoreCoordinator {
         self.transferCoordinator = transferCoordinator
     }
 
-    package func restorePendingDownloads() async {
+    /// Restore in-memory state from background URLSession tasks and persisted
+    /// records.
+    ///
+    /// Returns the IDs of tasks whose persisted record exists without a
+    /// corresponding system task. Their `.failed(.restorationMissingSystemTask)`
+    /// announcement is deferred to the manager so the events can be published
+    /// after the caller has had an opportunity to subscribe via
+    /// ``DownloadManager/events(for:)`` — publishing during init would race
+    /// the subscriber and the events would drain into an empty partition.
+    package func restorePendingDownloads() async -> [String] {
         let downloadTasks = await session.allDownloadTasks()
         var restoredTaskIDs = Set<String>()
 
         for urlTask in downloadTasks {
-            guard let downloadTask = await restoreTrackedTask(for: urlTask) else { continue }
+            guard let downloadTask = await restoreTrackedTask(for: urlTask) else {
+                urlTask.cancel()
+                continue
+            }
             restoredTaskIDs.insert(downloadTask.id)
 
             await transferCoordinator.register(urlTask: urlTask, for: downloadTask)
@@ -51,16 +63,40 @@ package struct DownloadRestoreCoordinator {
             await downloadTask.restoreState(state)
         }
 
+        var pendingMissingSystemTaskIDs: [String] = []
         let persistedTasks = await persistence.allRecords()
         for record in persistedTasks where !restoredTaskIDs.contains(record.id) {
+            if let resumeData = record.resumeData {
+                let restoredTask = DownloadTask(
+                    url: record.url,
+                    destinationURL: record.destinationURL,
+                    id: record.id,
+                    resumeData: resumeData
+                )
+                await restoredTask.restoreState(.paused)
+                await runtimeRegistry.add(restoredTask)
+                continue
+            }
+
+            let failedTask = DownloadTask(url: record.url, destinationURL: record.destinationURL, id: record.id)
+            await failedTask.restoreState(.failed)
+            await failedTask.setError(.restorationMissingSystemTask)
+            await runtimeRegistry.add(failedTask)
+            // Queue the failure announcement before attempting persistence
+            // cleanup. The manager replays this list to handler subscribers
+            // and stream consumers on first observation, so missing the
+            // append on a prune failure would silently drop the failure for
+            // any caller that was about to subscribe.
+            pendingMissingSystemTaskIDs.append(failedTask.id)
             do {
                 try await persistence.remove(id: record.id)
             } catch {
                 Self.logger.fault(
-                    "Failed to prune orphaned task \(record.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))"
+                    "Failed to prune orphaned task \(record.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash)). Failure announcement is still queued; the next launch will reprocess this record."
                 )
             }
         }
+        return pendingMissingSystemTaskIDs
     }
 
     private func restoreTrackedTask(for urlTask: any DownloadURLTask) async -> DownloadTask? {
@@ -80,7 +116,12 @@ package struct DownloadRestoreCoordinator {
         }
 
         guard let record = await persistence.record(forID: taskID) else { return nil }
-        let restoredTask = DownloadTask(url: record.url, destinationURL: record.destinationURL, id: record.id)
+        let restoredTask = DownloadTask(
+            url: record.url,
+            destinationURL: record.destinationURL,
+            id: record.id,
+            resumeData: record.resumeData
+        )
         await runtimeRegistry.add(restoredTask)
         return restoredTask
     }

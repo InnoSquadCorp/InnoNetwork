@@ -30,6 +30,17 @@ struct DownloadTaskStateTransitionTests {
         }
     }
 
+    @Test("DownloadLifecycleReducer emits rejection effects for illegal transitions")
+    func lifecycleReducerRejectsIllegalTransitions() async {
+        let reduction = DownloadLifecycleReducer.reduce(
+            state: .completed,
+            event: .transition(to: .downloading)
+        )
+
+        #expect(reduction.state == .completed)
+        #expect(reduction.effects == [.rejectIllegalTransition(from: .completed, to: .downloading)])
+    }
+
     @Test("Terminal states only self-loop")
     func terminalStatesOnlySelfLoop() async {
         for terminal in [DownloadState.completed, .cancelled] {

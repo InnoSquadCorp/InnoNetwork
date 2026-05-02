@@ -30,7 +30,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
         let method = try requiredArgument(named: "method", in: arguments).expression.trimmedDescription
         let pathArgument = try requiredArgument(named: "path", in: arguments)
         let pathLiteral = try stringLiteralArgument(named: "path", in: arguments)
-        let properties = storedPropertyNames(in: declaration)
+        let properties = storedProperties(in: declaration)
         let path = try interpolatedPath(pathLiteral, properties: properties, anchor: pathArgument.expression)
         let typeName = type.trimmedDescription
         let accessPrefix = witnessAccessPrefix(in: declaration)
@@ -96,8 +96,12 @@ public struct APIDefinitionMacro: ExtensionMacro {
         return value
     }
 
-    private static func storedPropertyNames(in declaration: some DeclGroupSyntax) -> Set<String> {
-        var names: Set<String> = []
+    private struct StoredProperty {
+        let isOptional: Bool
+    }
+
+    private static func storedProperties(in declaration: some DeclGroupSyntax) -> [String: StoredProperty] {
+        var properties: [String: StoredProperty] = [:]
         for member in declaration.memberBlock.members {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
             for binding in variable.bindings {
@@ -106,10 +110,27 @@ public struct APIDefinitionMacro: ExtensionMacro {
                 else {
                     continue
                 }
-                names.insert(identifier)
+                properties[identifier] = StoredProperty(isOptional: isOptionalType(binding.typeAnnotation?.type))
             }
         }
-        return names
+        return properties
+    }
+
+    /// Best-effort detection of whether a stored property is declared optional.
+    ///
+    /// Limitation: when `type` is `nil` (e.g. inferred-type bindings such as
+    /// `let value = expression`) we conservatively return `false`. The macro
+    /// only inspects syntactic types, so optional inference through a typealias
+    /// expansion or a generic placeholder is not detected — placeholders that
+    /// rely on those forms must be declared with explicit optional syntax to
+    /// be recognized.
+    private static func isOptionalType(_ type: TypeSyntax?) -> Bool {
+        guard let type else { return false }
+        if type.is(OptionalTypeSyntax.self) || type.is(ImplicitlyUnwrappedOptionalTypeSyntax.self) {
+            return true
+        }
+        let normalized = String(type.trimmedDescription.filter { $0 != " " })
+        return normalized.hasPrefix("Optional<") || normalized.hasPrefix("Swift.Optional<")
     }
 
     private static func witnessAccessPrefix(in declaration: some DeclGroupSyntax) -> String {
@@ -142,7 +163,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
 
     private static func interpolatedPath(
         _ path: String,
-        properties: Set<String>,
+        properties: [String: StoredProperty],
         anchor: some SyntaxProtocol
     ) throws -> String {
         var result = ""
@@ -158,10 +179,16 @@ public struct APIDefinitionMacro: ExtensionMacro {
                 }
                 let nameStart = path.index(after: index)
                 let name = String(path[nameStart..<close])
-                guard !name.isEmpty, properties.contains(name) else {
+                guard !name.isEmpty, let property = properties[name] else {
                     throw InnoNetworkMacroDiagnostic(
                         "@APIDefinition path placeholder {\(name)} must match a stored property.",
                         id: "api-definition-unknown-placeholder"
+                    ).error(at: anchor)
+                }
+                if property.isOptional {
+                    throw InnoNetworkMacroDiagnostic(
+                        "@APIDefinition path placeholder {\(name)} cannot reference an Optional stored property.",
+                        id: "api-definition-optional-placeholder"
                     ).error(at: anchor)
                 }
                 result += "\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(\(name)))"

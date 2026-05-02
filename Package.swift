@@ -39,6 +39,10 @@ let package = Package(
             name: "InnoNetworkWebSocket",
             targets: ["InnoNetworkWebSocket"]
         ),
+        .library(
+            name: "InnoNetworkPersistentCache",
+            targets: ["InnoNetworkPersistentCache"]
+        ),
         // Test helpers that consumers can pull into *their* test targets to
         // assert on InnoNetwork integrations (for example
         // ``MockURLSession``, ``StubNetworkClient``, and
@@ -69,6 +73,12 @@ let package = Package(
             name: "InnoNetworkWebSocket",
             dependencies: ["InnoNetwork"],
             path: "Sources/InnoNetworkWebSocket",
+            swiftSettings: strictSettings
+        ),
+        .target(
+            name: "InnoNetworkPersistentCache",
+            dependencies: ["InnoNetwork"],
+            path: "Sources/InnoNetworkPersistentCache",
             swiftSettings: strictSettings
         ),
         // Test helpers. Public symbols here form a Provisionally Stable
@@ -132,6 +142,12 @@ let package = Package(
             name: "InnoNetworkWebSocketTests",
             dependencies: ["InnoNetworkWebSocket", "InnoNetworkTestSupport"],
             path: "Tests/InnoNetworkWebSocketTests",
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "InnoNetworkPersistentCacheTests",
+            dependencies: ["InnoNetwork", "InnoNetworkPersistentCache"],
+            path: "Tests/InnoNetworkPersistentCacheTests",
             swiftSettings: strictSettings
         ),
         // Live-endpoint smoke tests. Builds unconditionally so the test

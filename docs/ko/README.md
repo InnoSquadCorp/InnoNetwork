@@ -9,11 +9,12 @@
 > 우선합니다.
 
 InnoNetwork 는 Apple 플랫폼을 위한 타입 안전한 Swift 네트워킹 패키지입니다. root runtime package 는
-네 개의 공개 product 로 구성되어 있습니다.
+다섯 개의 공개 product 로 구성되어 있습니다.
 
 - `InnoNetwork` — 요청/응답 API
 - `InnoNetworkDownload` — 다운로드 생명주기 관리
 - `InnoNetworkWebSocket` — 연결 지향 실시간 흐름
+- `InnoNetworkPersistentCache` — 보수적인 디스크 응답 캐시
 - `InnoNetworkTestSupport` — consumer test target용 공개 테스트 helper
 
 선택형 Swift macro endpoint helper 는 별도 `Packages/InnoNetworkCodegen` package 에 있으며,
@@ -92,11 +93,12 @@ for await event in await manager.events(for: task) {
 import Foundation
 import InnoNetworkWebSocket
 
-let task = await WebSocketManager.shared.connect(
+let manager = WebSocketManager(configuration: .safeDefaults())
+let task = await manager.connect(
     url: URL(string: "wss://echo.example.com/socket")!
 )
 
-for await event in await WebSocketManager.shared.events(for: task) {
+for await event in await manager.events(for: task) {
     print(event)
 }
 ```
@@ -130,6 +132,10 @@ let token = try await client.request(
         .body(credentials)
         .transport(.formURLEncoded())
         .decoding(Token.self)
+)
+
+let profile = try await client.request(
+    AuthenticatedEndpoint.get("/me").decoding(Profile.self)
 )
 ```
 
