@@ -18,8 +18,8 @@ public struct EventDeliveryPolicy: Sendable {
     public let overflowPolicy: EventPipelineOverflowPolicy
 
     public init(
-        maxBufferedEventsPerPartition: Int = 100,
-        maxBufferedEventsPerConsumer: Int = 100,
+        maxBufferedEventsPerPartition: Int = 256,
+        maxBufferedEventsPerConsumer: Int = 256,
         overflowPolicy: EventPipelineOverflowPolicy = .dropOldest
     ) {
         self.maxBufferedEventsPerPartition = max(1, maxBufferedEventsPerPartition)

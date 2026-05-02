@@ -63,24 +63,23 @@ public struct DefaultNetworkLogger: NetworkLogger {
         let url: String = sanitize(url: request.url, nilFallback: "")
         let method: String = request.httpMethod ?? "unknown method"
 
-        var log: String = "🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀"
-        log.append("\n\n\(method) \(url)\n")
+        var log: String = "[REQ] ────────────────────────────"
+        log.append("\n[REQ] \(method) \(url)\n")
         if let headers = request.allHTTPHeaderFields, !headers.isEmpty {
-            log.append("header: \(sanitize(headers: headers))\n")
+            log.append("[REQ] header: \(sanitize(headers: headers))\n")
         }
         if options.includeCookies, let cookies = cookieStorage.cookies {
-            log.append("cookies: \(sanitize(cookies: cookies))\n")
+            log.append("[REQ] cookies: \(sanitize(cookies: cookies))\n")
         }
         if options.includeRequestBody,
             let body = request.httpBody,
             let bodyString = String(bytes: body, encoding: .utf8)
         {
-            log.append("\(sanitize(body: bodyString))\n")
+            log.append("[REQ] body: \(sanitize(body: bodyString))\n")
         } else if request.httpBody != nil {
-            log.append("request body: <omitted>\n")
+            log.append("[REQ] body: <omitted>\n")
         }
-        log.append("END \(method)\n\n")
-        log.append("🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀")
+        log.append("[REQ] END \(method)")
         Logger.API.debug("\(log, privacy: .auto)")
         #endif
     }
@@ -90,23 +89,23 @@ public struct DefaultNetworkLogger: NetworkLogger {
         let request = response.request
         let url: String = sanitize(url: request?.url, nilFallback: "nil")
         let statusCode: Int = response.statusCode
+        let prefix = isError ? "[ERR]" : "[RES]"
 
-        var log: String = isError ? "💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣" : "💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌"
-        log.append("\n\n\(statusCode) \(url)\n")
+        var log: String = "\(prefix) ────────────────────────────"
+        log.append("\n\(prefix) \(statusCode) \(url)\n")
         if let headers = response.response?.allHeaderFields as? [String: String] {
             sanitize(headers: headers).forEach {
-                log.append("\($0.key): \($0.value)\n")
+                log.append("\(prefix) \($0.key): \($0.value)\n")
             }
         }
         if options.includeResponseBody,
             let responseBody = String(bytes: response.data, encoding: .utf8)
         {
-            log.append("\(sanitize(body: responseBody))\n")
+            log.append("\(prefix) body: \(sanitize(body: responseBody))\n")
         } else if !response.data.isEmpty {
-            log.append("response body: <omitted>\n")
+            log.append("\(prefix) body: <omitted>\n")
         }
-        log.append("END HTTP (\(response.data.count)-byte body)\n\n")
-        log.append(isError ? "💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣" : "💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌")
+        log.append("\(prefix) END HTTP (\(response.data.count)-byte body)")
         Logger.API.info("\(log, privacy: .auto)")
         #endif
     }
@@ -118,11 +117,10 @@ public struct DefaultNetworkLogger: NetworkLogger {
             return
         }
 
-        var log: String = "💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣"
-        log.append("\n\n\(error.errorCode)\n")
-        log.append("\(error.failureReason ?? error.errorDescription ?? "unknown error")\n")
-        log.append("END HTTP\n\n")
-        log.append("💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣")
+        var log: String = "[ERR] ────────────────────────────"
+        log.append("\n[ERR] code: \(error.errorCode)\n")
+        log.append("[ERR] \(error.failureReason ?? error.errorDescription ?? "unknown error")\n")
+        log.append("[ERR] END HTTP")
         Logger.API.debug("\(log, privacy: .auto)")
         #endif
     }
