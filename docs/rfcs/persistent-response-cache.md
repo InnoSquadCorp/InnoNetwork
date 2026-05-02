@@ -1,18 +1,23 @@
 # RFC: Persistent Response Cache (companion product)
 
-**Status:** Draft, exploratory.
+**Status:** Implemented in 4.0.0 as `InnoNetworkPersistentCache`.
 **Owner:** InnoNetwork core.
-**Target:** Companion product to InnoNetwork 4.x — a separate package or
-optional product that stores ``ResponseCache`` entries on disk so cached
-responses survive process restarts.
+**Target:** Companion product to InnoNetwork 4.0.0 — an optional product that
+stores ``ResponseCache`` entries on disk so cached responses survive process
+restarts.
 
 InnoNetwork's built-in ``InMemoryResponseCache`` covers the in-process
 revalidation path that ``ResponseCachePolicy`` and the executor's 304
 handling need. A persistent companion is a distinct concern: it owns
 durability, eviction, and privacy decisions that have no single right
 default and would balloon the core module's API surface if folded in.
-This RFC enumerates the policies the companion must decide before any
-implementation lands.
+The 4.0.0 implementation uses a conservative flat-file store:
+
+- versioned `index.json` plus SHA-256-addressed body files
+- max 50 MB total, max 1000 entries, max 5 MB per entry
+- authenticated responses are not stored by default
+- responses with `Set-Cookie` are not stored by default
+- unknown index versions and corrupt entries are evicted and startup continues
 
 ## Why a separate product
 
