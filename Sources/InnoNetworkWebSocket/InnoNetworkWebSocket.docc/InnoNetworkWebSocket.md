@@ -18,6 +18,11 @@ Use this module when you need:
 
 Reconnect decisions are driven by handshake and close outcomes, so the public manager can distinguish retryable failures from terminal ones without forcing application code to rebuild that policy every time.
 
+Prefer feature-scoped ``WebSocketManager`` instances. ``WebSocketManager/shared`` remains
+available for source compatibility in 4.0.0, but it is deprecated so reconnect,
+heartbeat, send-buffer, and event-delivery policy stay owned by the feature that opens the
+socket. See <doc:FeatureScopedManagers>.
+
 Event delivery for socket tasks flows through the shared event hub. Tune buffering, overflow behavior, and metrics integration via ``WebSocketConfiguration/eventDeliveryPolicy`` — see <doc:EventDeliveryPolicy> in the core module for a full guide.
 
 ### Observing heartbeat attempts
@@ -66,6 +71,7 @@ for await event in await manager.events(for: task) {
 ### Realtime Flows
 
 - <doc:Reconnect>
+- <doc:FeatureScopedManagers>
 - <doc:WebSocketProtocolPolicy>
 - <doc:WebSocketBackgroundTransition>
 - ``WebSocketManager``

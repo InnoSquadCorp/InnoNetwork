@@ -124,6 +124,12 @@ private let webSocketManagerLogger = Logger(
 )
 
 public final class WebSocketManager: NSObject, Sendable {
+    @available(
+        *,
+        deprecated,
+        message:
+            "Create a WebSocketManager(configuration:) per feature so socket policy, lifecycle, and event buffering stay feature-scoped."
+    )
     public static let shared = WebSocketManager()
 
     private let configuration: WebSocketConfiguration
