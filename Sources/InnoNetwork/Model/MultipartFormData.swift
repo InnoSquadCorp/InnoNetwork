@@ -4,10 +4,20 @@ import UniformTypeIdentifiers
 
 public struct MultipartFormData: Sendable {
     public let boundary: String
+    /// When `true`, every part's preamble emits a `Content-Length: <bytes>`
+    /// header alongside `Content-Disposition`. The default is `false`
+    /// because most servers ignore per-part `Content-Length`, the value
+    /// must be precomputed for streaming sources, and emitting it can
+    /// surprise interceptors that re-encode the body.
+    public var includesPartContentLength: Bool
     private var parts: [Part]
 
-    public init(boundary: String = "InnoNetwork.boundary.\(UUID().uuidString)") {
+    public init(
+        boundary: String = "InnoNetwork.boundary.\(UUID().uuidString)",
+        includesPartContentLength: Bool = false
+    ) {
         self.boundary = Self.sanitizedBoundary(boundary) ?? "InnoNetwork.boundary.\(UUID().uuidString)"
+        self.includesPartContentLength = includesPartContentLength
         self.parts = []
     }
 
@@ -74,7 +84,8 @@ public struct MultipartFormData: Sendable {
                 }
             }
             body.append(Data(boundaryPrefix.utf8))
-            body.append(part.headerData())
+            let contentLength: Int64? = includesPartContentLength ? Int64(partData.count) : nil
+            body.append(part.headerData(contentLength: contentLength))
             body.append(partData)
             body.append(Data("\r\n".utf8))
         }
@@ -115,7 +126,19 @@ public struct MultipartFormData: Sendable {
 
         for part in parts {
             try handle.write(contentsOf: boundaryPrefix)
-            try handle.write(contentsOf: part.headerData())
+            let contentLength: Int64?
+            if includesPartContentLength {
+                switch part.source {
+                case .data(let data):
+                    contentLength = Int64(data.count)
+                case .file(let url):
+                    let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+                    contentLength = (attributes?[.size] as? NSNumber)?.int64Value
+                }
+            } else {
+                contentLength = nil
+            }
+            try handle.write(contentsOf: part.headerData(contentLength: contentLength))
 
             switch part.source {
             case .data(let data):
@@ -161,15 +184,17 @@ public struct MultipartFormData: Sendable {
 
         for part in parts {
             add(Int64(boundaryLine))
-            add(Int64(part.headerData().count))
+            let partSize: Int64
             switch part.source {
             case .data(let data):
-                add(Int64(data.count))
+                partSize = Int64(data.count)
             case .file(let url):
                 let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-                let size = (attributes?[.size] as? NSNumber)?.int64Value ?? Int64.max / 4
-                add(size)
+                partSize = (attributes?[.size] as? NSNumber)?.int64Value ?? Int64.max / 4
             }
+            let contentLength: Int64? = includesPartContentLength ? partSize : nil
+            add(Int64(part.headerData(contentLength: contentLength).count))
+            add(partSize)
             add(Int64(crlf))
         }
         return total
@@ -222,18 +247,79 @@ extension MultipartFormData {
         let fileName: String?
         let mimeType: String?
 
-        func headerData() -> Data {
+        func headerData(contentLength: Int64? = nil) -> Data {
             var disposition = "Content-Disposition: form-data; name=\"\(Self.escapedHeaderParameter(name))\""
             if let fileName {
-                disposition += "; filename=\"\(Self.escapedHeaderParameter(fileName))\""
+                let asciiFallback = Self.asciiFallbackFilename(fileName)
+                disposition += "; filename=\"\(asciiFallback)\""
+                if Self.requiresExtendedFilename(fileName) {
+                    disposition += "; filename*=UTF-8''\(Self.rfc5987EncodedFilename(fileName))"
+                }
             }
             disposition += "\r\n"
             var data = Data(disposition.utf8)
             if let mimeType {
                 data.append(Data("Content-Type: \(Self.escapedHeaderValue(mimeType))\r\n".utf8))
             }
+            if let contentLength {
+                data.append(Data("Content-Length: \(contentLength)\r\n".utf8))
+            }
             data.append(Data("\r\n".utf8))
             return data
+        }
+
+        /// Detects whether the filename contains any byte that the legacy
+        /// ASCII `filename` parameter cannot represent verbatim. RFC 6266
+        /// §4.3 directs senders to additionally emit `filename*` (RFC 5987)
+        /// in that case so receivers that understand the extended syntax
+        /// can decode the original UTF-8 bytes.
+        static func requiresExtendedFilename(_ value: String) -> Bool {
+            for scalar in value.unicodeScalars {
+                if scalar.value > 0x7F { return true }
+            }
+            return false
+        }
+
+        /// Builds the RFC 5987 `value-chars` representation of the filename:
+        /// each byte that is not in the unreserved set gets percent-encoded.
+        static func rfc5987EncodedFilename(_ value: String) -> String {
+            var encoded = ""
+            for byte in value.utf8 {
+                if Self.isRFC5987Unreserved(byte) {
+                    encoded.append(Character(UnicodeScalar(byte)))
+                } else {
+                    encoded += percentEscape(UInt32(byte))
+                }
+            }
+            return encoded
+        }
+
+        /// Produces the ASCII fallback that goes in the legacy `filename`
+        /// parameter. Non-ASCII scalars collapse to `_` so the parameter
+        /// survives intermediaries that strip the extended `filename*`
+        /// counterpart, while CR/LF/quote/backslash continue to use the
+        /// existing percent-encoded escapes.
+        static func asciiFallbackFilename(_ value: String) -> String {
+            var sanitized = ""
+            for scalar in value.unicodeScalars {
+                if scalar.value > 0x7F {
+                    sanitized.append("_")
+                } else {
+                    sanitized.unicodeScalars.append(scalar)
+                }
+            }
+            return escapedHeaderParameter(sanitized)
+        }
+
+        private static func isRFC5987Unreserved(_ byte: UInt8) -> Bool {
+            switch byte {
+            case 0x30...0x39, 0x41...0x5A, 0x61...0x7A:
+                return true
+            case 0x21, 0x23, 0x24, 0x26, 0x2B, 0x2D, 0x2E, 0x5E, 0x5F, 0x60, 0x7C, 0x7E:
+                return true
+            default:
+                return false
+            }
         }
 
         private static func escapedHeaderParameter(_ value: String) -> String {

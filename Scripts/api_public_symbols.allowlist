@@ -173,7 +173,7 @@ InnoNetwork	swift.init	HTTPHeaders.init(arrayLiteral:)
 InnoNetwork	swift.init	HTTPHeaders.init(dictionaryLiteral:)
 InnoNetwork	swift.init	HTTPMethod.init(rawValue:)
 InnoNetwork	swift.init	InMemoryResponseCache.init(maxBytes:)
-InnoNetwork	swift.init	MultipartFormData.init(boundary:)
+InnoNetwork	swift.init	MultipartFormData.init(boundary:includesPartContentLength:)
 InnoNetwork	swift.init	MultipartPart.init(headers:data:)
 InnoNetwork	swift.init	MultipartResponseDecoder.init(boundary:)
 InnoNetwork	swift.init	NetworkConfiguration.init(baseURL:timeout:cachePolicy:retryPolicy:networkMonitor:metricsReporter:trustPolicy:eventObservers:eventDeliveryPolicy:eventMetricsReporter:acceptableStatusCodes:requestInterceptors:responseInterceptors:decodingInterceptors:refreshTokenPolicy:requestCoalescingPolicy:responseCachePolicy:responseCache:circuitBreakerPolicy:customExecutionPolicies:captureFailurePayload:responseBodyBufferingPolicy:responseBodyLimit:)
@@ -238,6 +238,7 @@ InnoNetwork	swift.method	HTTPHeaders.sorted()
 InnoNetwork	swift.method	HTTPHeaders.update(_:)
 InnoNetwork	swift.method	HTTPHeaders.update(name:value:)
 InnoNetwork	swift.method	HTTPHeaders.value(for:)
+InnoNetwork	swift.method	HTTPHeaders.values(for:)
 InnoNetwork	swift.method	InMemoryResponseCache.get(_:)
 InnoNetwork	swift.method	InMemoryResponseCache.invalidate(_:)
 InnoNetwork	swift.method	InMemoryResponseCache.set(_:_:)
@@ -380,6 +381,7 @@ InnoNetwork	swift.property	MultipartAPIDefinition.uploadStrategy
 InnoNetwork	swift.property	MultipartFormData.boundary
 InnoNetwork	swift.property	MultipartFormData.contentTypeHeader
 InnoNetwork	swift.property	MultipartFormData.estimatedEncodedSize
+InnoNetwork	swift.property	MultipartFormData.includesPartContentLength
 InnoNetwork	swift.property	MultipartPart.data
 InnoNetwork	swift.property	MultipartPart.headers
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.acceptableStatusCodes
