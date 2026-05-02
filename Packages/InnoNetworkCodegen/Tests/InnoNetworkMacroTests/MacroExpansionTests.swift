@@ -148,6 +148,34 @@ struct MacroExpansionTests {
         )
     }
 
+    @Test("APIDefinition macro rejects implicitly-unwrapped optional path placeholders")
+    func apiDefinitionImplicitlyUnwrappedOptionalPlaceholderDiagnostic() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .get, path: "/users/{id}")
+            struct GetUser {
+                let id: Int!
+                typealias APIResponse = User
+            }
+            """,
+            expandedSource:
+                """
+                struct GetUser {
+                    let id: Int!
+                    typealias APIResponse = User
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message: "@APIDefinition path placeholder {id} cannot reference an Optional stored property.",
+                    line: 1,
+                    column: 1
+                )
+            ],
+            macros: macros
+        )
+    }
+
     @Test("APIDefinition macro rejects Optional generic path placeholders")
     func apiDefinitionOptionalGenericPlaceholderDiagnostic() {
         assertMacroExpansion(

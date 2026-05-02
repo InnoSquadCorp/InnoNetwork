@@ -1,4 +1,3 @@
-import Foundation
 import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
@@ -117,12 +116,20 @@ public struct APIDefinitionMacro: ExtensionMacro {
         return properties
     }
 
+    /// Best-effort detection of whether a stored property is declared optional.
+    ///
+    /// Limitation: when `type` is `nil` (e.g. inferred-type bindings such as
+    /// `let value = expression`) we conservatively return `false`. The macro
+    /// only inspects syntactic types, so optional inference through a typealias
+    /// expansion or a generic placeholder is not detected — placeholders that
+    /// rely on those forms must be declared with explicit optional syntax to
+    /// be recognized.
     private static func isOptionalType(_ type: TypeSyntax?) -> Bool {
         guard let type else { return false }
         if type.is(OptionalTypeSyntax.self) || type.is(ImplicitlyUnwrappedOptionalTypeSyntax.self) {
             return true
         }
-        let normalized = type.trimmedDescription.replacingOccurrences(of: " ", with: "")
+        let normalized = String(type.trimmedDescription.filter { $0 != " " })
         return normalized.hasPrefix("Optional<") || normalized.hasPrefix("Swift.Optional<")
     }
 

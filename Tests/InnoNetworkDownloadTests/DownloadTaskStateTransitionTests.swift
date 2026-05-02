@@ -31,7 +31,7 @@ struct DownloadTaskStateTransitionTests {
     }
 
     @Test("DownloadLifecycleReducer emits rejection effects for illegal transitions")
-    func lifecycleReducerRejectsIllegalTransitions() {
+    func lifecycleReducerRejectsIllegalTransitions() async {
         let reduction = DownloadLifecycleReducer.reduce(
             state: .completed,
             event: .transition(to: .downloading)

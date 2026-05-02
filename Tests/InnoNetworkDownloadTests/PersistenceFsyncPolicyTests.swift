@@ -103,7 +103,7 @@ struct PersistenceFsyncPolicyTests {
     }
 
     @Test("PersistenceCompactionPolicy clamps unsafe values")
-    func compactionPolicyClamps() {
+    func compactionPolicyClamps() async {
         let policy = DownloadConfiguration.PersistenceCompactionPolicy(
             maxEvents: 0,
             maxLogBytes: 0,

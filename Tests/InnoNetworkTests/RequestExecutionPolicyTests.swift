@@ -181,6 +181,36 @@ struct RequestExecutionPolicyTests {
         }
     }
 
+    @Test("Non-HTTP response surfaces as NetworkError.nonHTTPResponse")
+    func nonHTTPResponseSurfacesAsNetworkError() async throws {
+        let mockSession = MockURLSession()
+        mockSession.mockResponse = URLResponse(
+            url: URL(string: "https://example.com")!,
+            mimeType: "application/octet-stream",
+            expectedContentLength: 0,
+            textEncodingName: nil
+        )
+        mockSession.mockData = Data()
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com"
+            ),
+            session: mockSession
+        )
+
+        do {
+            _ = try await client.request(DataEcho())
+            Issue.record("Expected NetworkError.nonHTTPResponse")
+        } catch let error as NetworkError {
+            switch error {
+            case .nonHTTPResponse:
+                break
+            default:
+                Issue.record("Expected NetworkError.nonHTTPResponse, got \(error)")
+            }
+        }
+    }
+
     @Test("Streaming with maxBytes does not silently fall back to a buffered transport")
     func streamingWithMaxBytesDoesNotFallBack() async throws {
         let mockSession = MockURLSession()
