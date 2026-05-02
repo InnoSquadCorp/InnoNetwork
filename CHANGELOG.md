@@ -17,8 +17,23 @@ summary.
 
 - Internal request execution pipeline stages for built-in preflight,
   transport, post-transport, status validation, and decode handling. The
-  generic pipeline remains package/internal; no public `RequestExecutionPolicy`
-  protocol is exposed.
+  built-in retry/cache/auth/coalescing/circuit stages remain owned by the
+  executor, while `RequestExecutionPolicy` is public for custom
+  transport-attempt wrappers.
+- `RequestExecutionPolicy`, `RequestExecutionInput`,
+  `RequestExecutionContext`, `RequestExecutionNext`, and
+  `AnyRequestExecutionPolicy` for custom transport-attempt policies.
+- `ResponseBodyBufferingPolicy`; inline requests now prefer
+  `URLSession.bytes(for:)` with bounded collection before decoder handoff.
+- `EndpointAuthScope`, `PublicAuthScope`, `AuthRequiredScope`,
+  `ScopedEndpoint`, and `AuthenticatedEndpoint` for type-level auth
+  boundaries. Auth-required endpoints fail before transport when no
+  `RefreshTokenPolicy` is configured.
+- `StateReducer` and `StateReduction` as the shared reducer vocabulary for
+  lifecycle state machines.
+- `InnoNetworkPersistentCache` product with `PersistentResponseCache` and
+  `PersistentResponseCacheConfiguration` for conservative on-disk GET
+  response caching.
 - `RefreshTokenPolicy` for current-token application, single-flight refresh,
   and one-time replay after configured auth status codes.
 - `RequestCoalescingPolicy` for raw transport fan-out among identical in-flight
@@ -90,6 +105,9 @@ summary.
 - Parametrized `URLQueryEncoderParametrizedTests` suite locks down the
   PHP/Rails-style bracket-notation invariants, sorted-key determinism,
   rootKey enforcement, and reserved-character handling.
+- `URLQueryArrayEncodingStrategy` lets `URLQueryEncoder` encode arrays as
+  indexed brackets, empty brackets, or repeated keys. The default remains
+  indexed brackets.
 - CI `apple-platform-build-smoke` job covers macOS, iOS, tvOS, watchOS, and
   visionOS build-only smoke validation.
 - Release artifacts (`benchmarks.json`, `sbom.cdx.json`) are signed with
@@ -147,15 +165,12 @@ summary.
   `.zero`. The previous behaviour matched the new default exactly, so
   existing code is unaffected.
 - `NetworkConfiguration.responseBodyLimit: Int64?` (default `nil`)
-  enforces a soft upper bound on the size of buffered response bodies.
-  When the configured limit is exceeded the executor short-circuits the
-  decoder and throws ``NetworkError/responseTooLarge(limit:observed:)``.
-  Cache hits, conditional revalidation, and fresh transport responses are
-  checked before cache writes, and the final decoder input is rechecked
-  after response and decoding interceptors. The guard is opt-in; setting
-  it to `nil` keeps the prior unbounded behaviour. Endpoints that need
-  genuine memory-bounded handling should use the streaming surface
-  (`stream(_:)` / `bytes(for:)`).
+  remains as a compatibility alias for
+  `NetworkConfiguration.responseBodyBufferingPolicy.maxBytes`. When the
+  configured limit is exceeded the executor short-circuits the decoder and
+  throws ``NetworkError/responseTooLarge(limit:observed:)``. Cache hits,
+  conditional revalidation, fresh transport responses, response
+  interceptors, and decoding interceptors are checked before decoder handoff.
 - ``RefreshTokenCoordinator/isRefreshInProgress`` — package-scoped
   point-in-time observation of refresh-coordinator state, used by
   ``RequestExecutor`` for refresh-aware coalescer lane segregation.
@@ -163,6 +178,17 @@ summary.
   parameter so the executor can synthesize per-caller dedup keys during
   refresh-in-flight windows without changing the default coalescing
   surface.
+- `DownloadManager.waitForRestoration()` public restore gate.
+- `DownloadError.restorationMissingSystemTask` for persisted records that no
+  longer have a system URLSession task during restoration.
+- Download append-log records now persist optional `resumeData`, and
+  `DownloadConfiguration.PersistenceCompactionPolicy` configures compaction
+  thresholds.
+- `@APIDefinition` now rejects optional path-placeholder properties at macro
+  expansion time.
+- Benchmark JSON summary version 2 includes baseline deltas and guard
+  failures. The benchmark workflow renders a PR comment and appends
+  scheduled/manual results to the `benchmark-trends` branch.
 
 ### Changed
 
@@ -180,6 +206,13 @@ summary.
   `Content-Type` header is derived from the transport's request encoding,
   and `decoding(_:)` carries the request encoding into the new response
   generic instead of resetting it.
+- `Endpoint<Response>` is now a compatibility alias for
+  `ScopedEndpoint<Response, PublicAuthScope>`. Use
+  `AuthenticatedEndpoint<Response>` or
+  `ScopedEndpoint<Response, AuthRequiredScope>` for auth-required fluent
+  endpoints.
+- `WebSocketManager.shared` is soft-deprecated. Construct
+  `WebSocketManager(configuration:)` per feature for new code.
 - `DefaultNetworkClient.stream(_:)` is now a thin `AsyncThrowingStream`
   factory; the streaming pipeline (per-attempt request preparation,
   lifecycle events, response interceptors, status validation, line

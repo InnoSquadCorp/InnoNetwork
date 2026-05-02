@@ -19,9 +19,9 @@
   taxonomy internals do not require public migration docs unless they affect
   documented behavior.
 
-## Major Releases
+## Future Major Releases
 
-- Major releases (`5.0.0`, `6.0.0`, ...) may change stable surfaces. When
+- Future major releases may change stable surfaces. When
   they do, the release notes must include before/after call-site examples for
   every breaking change and any behavior change covered by this policy.
 - Behavior-only changes that do not break call sites still require release
