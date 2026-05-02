@@ -9,6 +9,7 @@
 - [ ] docs contract sync
 - [ ] doc smoke build/run
 - [ ] benchmark smoke or quick run if relevant
+- [ ] baseline rationale updated if benchmark baselines changed
 
 ## Public API Impact
 

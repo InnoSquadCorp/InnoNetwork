@@ -16,9 +16,27 @@ private struct BenchmarkReport: Codable, Sendable {
     let version: Int
     let generatedAt: String
     let results: [BenchmarkResult]
+    let baseline: BenchmarkBaselineSummary?
 }
 
-private struct BenchmarkIdentifier: Hashable, Sendable {
+private struct BenchmarkBaselineSummary: Codable, Sendable {
+    let baselinePath: String
+    let enforceBaseline: Bool
+    let maxRegressionPercent: Double
+    let deltas: [BenchmarkBaselineDelta]
+    let guardFailures: [BenchmarkGuardFailure]
+}
+
+private struct BenchmarkBaselineDelta: Codable, Sendable {
+    let group: String
+    let name: String
+    let baselineOperationsPerSecond: Double
+    let currentOperationsPerSecond: Double
+    let deltaPercent: Double
+    let isGuarded: Bool
+}
+
+private struct BenchmarkIdentifier: Codable, Hashable, Sendable {
     let group: String
     let name: String
 
@@ -46,7 +64,7 @@ private struct BaselineComparison: Sendable {
     let isGuarded: Bool
 }
 
-private struct BenchmarkGuardFailure: Sendable {
+private struct BenchmarkGuardFailure: Codable, Sendable {
     let identifier: BenchmarkIdentifier
     let deltaPercent: Double
     let maxRegressionPercent: Double
@@ -195,10 +213,12 @@ private enum InnoNetworkBenchmarks {
     static func runMain() async throws {
         let options = try BenchmarkOptions.parse(arguments: Array(CommandLine.arguments.dropFirst()))
         let results = try await runBenchmarks(options: options)
+        let baselineSummary = try printBaselineDiff(results: results, options: options)
         let report = BenchmarkReport(
-            version: 1,
+            version: 2,
             generatedAt: ISO8601DateFormatter().string(from: .now),
-            results: results
+            results: results,
+            baseline: baselineSummary
         )
 
         print("InnoNetwork Benchmarks")
@@ -220,7 +240,7 @@ private enum InnoNetworkBenchmarks {
             print(jsonString)
         }
 
-        let guardFailures = try printBaselineDiff(report: report, options: options)
+        let guardFailures = baselineSummary?.guardFailures ?? []
         if !guardFailures.isEmpty {
             let failureSummary =
                 guardFailures
@@ -695,9 +715,9 @@ private enum InnoNetworkBenchmarks {
     }
 
     private static func printBaselineDiff(
-        report: BenchmarkReport,
+        results: [BenchmarkResult],
         options: BenchmarkOptions
-    ) throws -> [BenchmarkGuardFailure] {
+    ) throws -> BenchmarkBaselineSummary? {
         let baselineURL = URL(fileURLWithPath: options.baselinePath)
 
         guard FileManager.default.fileExists(atPath: baselineURL.path) else {
@@ -712,7 +732,7 @@ private enum InnoNetworkBenchmarks {
                 )
             }
             print("No baseline loaded from \(options.baselinePath) (file not found)")
-            return []
+            return nil
         }
 
         let data: Data
@@ -731,7 +751,7 @@ private enum InnoNetworkBenchmarks {
                 )
             }
             print("No baseline loaded from \(options.baselinePath) (read failed: \(error.localizedDescription))")
-            return []
+            return nil
         }
 
         let baseline: BenchmarkReport
@@ -750,7 +770,7 @@ private enum InnoNetworkBenchmarks {
                 )
             }
             print("No baseline loaded from \(options.baselinePath) (schema mismatch: \(error.localizedDescription))")
-            return []
+            return nil
         }
 
         let baselineMap: [BenchmarkIdentifier: BenchmarkResult]
@@ -761,10 +781,10 @@ private enum InnoNetworkBenchmarks {
                 throw error
             }
             print("No baseline loaded from \(options.baselinePath) (\(error.localizedDescription))")
-            return []
+            return nil
         }
 
-        let currentMap = try makeBenchmarkMap(from: report.results)
+        let currentMap = try makeBenchmarkMap(from: results)
         print("Baseline diff:")
         let guardedIdentifiers: Set<BenchmarkIdentifier>
         if options.enforceBaseline {
@@ -776,7 +796,8 @@ private enum InnoNetworkBenchmarks {
             guardedIdentifiers = options.guardBenchmarks
         }
         var comparisons: [BaselineComparison] = []
-        for result in report.results {
+        var deltas: [BenchmarkBaselineDelta] = []
+        for result in results {
             let identifier = BenchmarkIdentifier(group: result.group, name: result.name)
             guard let baseline = baselineMap[identifier] else {
                 if options.enforceBaseline, guardedIdentifiers.contains(identifier) {
@@ -805,6 +826,16 @@ private enum InnoNetworkBenchmarks {
                     isGuarded: isGuarded
                 )
             )
+            deltas.append(
+                BenchmarkBaselineDelta(
+                    group: identifier.group,
+                    name: identifier.name,
+                    baselineOperationsPerSecond: baseline.operationsPerSecond,
+                    currentOperationsPerSecond: result.operationsPerSecond,
+                    deltaPercent: delta,
+                    isGuarded: isGuarded
+                )
+            )
         }
 
         let missingGuardedBenchmarks = guardedIdentifiers.subtracting(Set(comparisons.map(\.identifier))).filter {
@@ -826,18 +857,21 @@ private enum InnoNetworkBenchmarks {
             )
         }
 
-        guard options.enforceBaseline else { return [] }
-
-        let failures = comparisons.compactMap { comparison -> BenchmarkGuardFailure? in
-            guard comparison.isGuarded else { return nil }
-            guard comparison.deltaPercent < 0 else { return nil }
-            let regression = abs(comparison.deltaPercent)
-            guard regression > options.maxRegressionPercent else { return nil }
-            return BenchmarkGuardFailure(
-                identifier: comparison.identifier,
-                deltaPercent: comparison.deltaPercent,
-                maxRegressionPercent: options.maxRegressionPercent
-            )
+        let failures: [BenchmarkGuardFailure]
+        if options.enforceBaseline {
+            failures = comparisons.compactMap { comparison -> BenchmarkGuardFailure? in
+                guard comparison.isGuarded else { return nil }
+                guard comparison.deltaPercent < 0 else { return nil }
+                let regression = abs(comparison.deltaPercent)
+                guard regression > options.maxRegressionPercent else { return nil }
+                return BenchmarkGuardFailure(
+                    identifier: comparison.identifier,
+                    deltaPercent: comparison.deltaPercent,
+                    maxRegressionPercent: options.maxRegressionPercent
+                )
+            }
+        } else {
+            failures = []
         }
 
         if !failures.isEmpty {
@@ -851,7 +885,13 @@ private enum InnoNetworkBenchmarks {
             }
         }
 
-        return failures
+        return BenchmarkBaselineSummary(
+            baselinePath: options.baselinePath,
+            enforceBaseline: options.enforceBaseline,
+            maxRegressionPercent: options.maxRegressionPercent,
+            deltas: deltas,
+            guardFailures: failures
+        )
     }
 
     private static func makeBenchmarkMap(

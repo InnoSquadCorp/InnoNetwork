@@ -1,9 +1,19 @@
 name: Benchmarks
 
 on:
+  pull_request:
+    paths:
+      - "Benchmarks/**"
+      - "Sources/**"
+      - "Package.swift"
+      - ".github/workflows/benchmarks.yml"
   workflow_dispatch:
   schedule:
     - cron: "0 3 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
 
 concurrency:
   group: benchmarks-${{ github.workflow }}-${{ github.ref }}
@@ -42,6 +52,8 @@ jobs:
         run: xcrun swift package resolve
 
       - name: Run guarded quick benchmarks
+        env:
+          MAX_REGRESSION_PERCENT: ${{ github.event_name == 'pull_request' && '20' || '10' }}
         run: |
           mkdir -p .build/benchmarks
           xcrun swift run InnoNetworkBenchmarks \
@@ -58,7 +70,52 @@ jobs:
             --guard-benchmark client/request-coalescing-shared-get \
             --guard-benchmark cache/response-cache-lookup \
             --guard-benchmark cache/response-cache-revalidation \
-            --max-regression-percent 10
+            --max-regression-percent "$MAX_REGRESSION_PERCENT"
+
+      - name: Render benchmark PR comment
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          if [ -f .build/benchmarks/results.json ]; then
+            python3 Scripts/render_benchmark_comment.py \
+              .build/benchmarks/results.json \
+              .build/benchmarks/comment.md
+          else
+            mkdir -p .build/benchmarks
+            printf '## InnoNetwork benchmark summary\n\nBenchmark run did not produce results.json.\n' \
+              > .build/benchmarks/comment.md
+          fi
+
+      - name: Comment benchmark summary on PR
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR_NUMBER" --body-file .build/benchmarks/comment.md
+
+      - name: Append scheduled benchmark trend
+        if: success() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          trend_dir="$(mktemp -d)"
+          git fetch origin benchmark-trends || true
+          if git show-ref --verify --quiet refs/remotes/origin/benchmark-trends; then
+            git worktree add "$trend_dir" origin/benchmark-trends
+          else
+            git worktree add --detach "$trend_dir"
+            git -C "$trend_dir" switch --orphan benchmark-trends
+            git -C "$trend_dir" rm -rf . || true
+          fi
+          python3 Scripts/append_benchmark_trend.py \
+            .build/benchmarks/results.json \
+            "$trend_dir/trends/benchmark-results.jsonl"
+          git -C "$trend_dir" add trends/benchmark-results.jsonl
+          if git -C "$trend_dir" diff --cached --quiet; then
+            exit 0
+          fi
+          git -C "$trend_dir" commit -m "Append benchmark trend for ${GITHUB_SHA}"
+          git -C "$trend_dir" push origin HEAD:benchmark-trends
 
       - name: Upload benchmark artifact
         if: always()
