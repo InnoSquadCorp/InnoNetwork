@@ -146,8 +146,8 @@ let token = try await client.request(
         .decoding(Token.self)
 )
 
-let profile = try await client.request(
-    AuthenticatedEndpoint.get("/me").decoding(Profile.self)
+let me = try await client.request(
+    AuthenticatedEndpoint.get("/me").decoding(User.self)
 )
 ```
 
@@ -157,15 +157,19 @@ hand-written endpoints don't override it. Use the `TransportPolicy` factories
 when you need a different shape:
 
 ```swift
-struct UpdateProfile: APIDefinition {
-    typealias Parameter = ProfileBody
-    typealias APIResponse = Profile
+struct UserPatch: Encodable, Sendable {
+    let displayName: String
+}
 
-    let parameters: ProfileBody?
+struct UpdateUser: APIDefinition {
+    typealias Parameter = UserPatch
+    typealias APIResponse = User
+
+    let parameters: UserPatch?
     var method: HTTPMethod { .patch }
     var path: String { "/me" }
 
-    var transport: TransportPolicy<Profile> {
+    var transport: TransportPolicy<User> {
         .json(decoder: snakeCaseDecoder)
     }
 }

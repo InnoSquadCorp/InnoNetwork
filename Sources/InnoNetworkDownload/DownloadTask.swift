@@ -22,6 +22,19 @@ public actor DownloadTask: Identifiable {
     public var resumeData: Data? { _resumeData }
     public var error: DownloadError? { _error }
 
+    /// Construct a download task description.
+    ///
+    /// - Parameters:
+    ///   - url: Source URL the task will download from.
+    ///   - destinationURL: File URL the downloaded payload will be moved to on
+    ///     completion.
+    ///   - id: Stable identifier used to correlate the task across restarts and
+    ///     to key persistence rows. Defaults to a fresh UUID; callers that
+    ///     restore state from disk should pass the persisted identifier.
+    ///   - resumeData: Optional `URLSession` resume payload. Pass non-nil only
+    ///     when reconstructing a task whose previous attempt was paused or
+    ///     interrupted; the manager will use it to resume from the last
+    ///     persisted byte offset.
     public init(url: URL, destinationURL: URL, id: String = UUID().uuidString, resumeData: Data? = nil) {
         self.id = id
         self.url = url

@@ -27,6 +27,9 @@ import Foundation
 /// surface (`parameters`).
 public protocol APIDefinition: EndpointShape {
     associatedtype Parameter: Encodable & Sendable
+    /// Authentication scope for the endpoint. Defaults to ``PublicAuthScope``.
+    /// Conform to ``AuthRequiredScope`` to opt into the configured
+    /// ``RefreshTokenPolicy`` and to require an authenticated executor.
     associatedtype Auth: EndpointAuthScope = PublicAuthScope
 
     var parameters: Parameter? { get }
@@ -90,10 +93,10 @@ public enum MultipartUploadStrategy: Sendable, Equatable {
 /// ``EndpointShape``; `MultipartAPIDefinition` adds only the body-strategy
 /// surface (`multipartFormData`, `uploadStrategy`).
 public protocol MultipartAPIDefinition: EndpointShape {
-    /// Auth scope marker controlling whether `RefreshTokenPolicy` is required
-    /// before transport. Defaults to ``PublicAuthScope``; opt into
-    /// ``AuthRequiredScope`` to fail-fast when no refresh policy is
-    /// configured.
+    /// Authentication scope for the endpoint. Defaults to ``PublicAuthScope``.
+    /// Conform to ``AuthRequiredScope`` to opt into the configured
+    /// ``RefreshTokenPolicy`` for multipart uploads (e.g. authenticated photo
+    /// uploads).
     associatedtype Auth: EndpointAuthScope = PublicAuthScope
 
     var multipartFormData: MultipartFormData { get }

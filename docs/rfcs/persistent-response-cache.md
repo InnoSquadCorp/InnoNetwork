@@ -135,21 +135,25 @@ The on-disk format will change. Plan for it from day one:
   upgrade is acceptable; partial migration is not (it bakes
   long-tail correctness bugs into the store).
 
-## Out of scope for the RFC
+## Implementation decisions (4.0.0)
 
-- Whether the companion is a separate SwiftPM package or a new
-  product target on the main package. (The protocol-based plug-in
-  surface means either works.)
-- Specific dependency choices (SQLite vs. flat-file vs. CoreData).
-  Each has trade-offs that depend on the policies above.
-- A streaming-bodies persistence story. Streaming responses are
-  excluded from the in-memory cache today; the persistent companion
-  inherits that exclusion until a separate RFC lifts it.
+The six policies above were resolved during the 4.0.0 implementation as
+follows. The shipped behaviour is what callers should rely on; the
+historical discussion above is preserved for context only.
 
-## Decision gate
+| Policy | 4.0.0 decision |
+|---|---|
+| Cache key | `(canonical method, URL, vary dimensions)` hashed into a SHA-256 body filename. Vary dimensions reuse `InMemoryResponseCache`'s normalization (lowercased header name, trimmed value; `*` ⇒ do-not-store). |
+| Freshness | Executor precedence preserved: caller-declared `freshnessWindow` > origin `max-age` > store fallback. `no-store` and `private` short-circuit to do-not-store. |
+| Eviction | LRU with both 50 MB total byte budget and 1,000-entry budget, whichever fires first. Per-entry hard cap 5 MB. Eviction is synchronous on write. |
+| Privacy | Authenticated requests are not stored unless the caller opts in via configuration. Responses with `Set-Cookie` are never stored. Persisted request metadata redacts `Authorization`. |
+| Data protection | Configurable; default `.completeUnlessOpen`. App-group integrators may select `.completeUntilFirstUserAuthentication`. |
+| Migration | Versioned `index.json`. Unknown index versions and decode failures evict only the index and bodies subtree, leaving the user-supplied directory root untouched, and the store starts fresh. |
 
-Before implementation begins, the six policies above must be decided
-and documented in a follow-up design doc. The companion should ship
-with conservative defaults (no authenticated responses, bounded LRU,
-``.completeUnlessOpen``) and an explicit opt-in surface for the
-policies that have meaningful upside outside the default.
+## Out of scope (still deferred)
+
+- A streaming-bodies persistence story. Streaming responses remain
+  excluded; lifting that exclusion is a separate RFC.
+- Alternate backends (SQLite, CoreData). The flat-file store covers the
+  current product target; backend swaps are an internal change behind
+  the existing protocol.

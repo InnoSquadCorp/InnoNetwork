@@ -2,14 +2,34 @@ import CryptoKit
 import Foundation
 import InnoNetwork
 
+/// Configuration for ``PersistentResponseCache``.
+///
+/// `directoryURL` is the only required parameter; the remaining knobs default
+/// to the values documented in the 4.0.0 RFC (50 MB total, 1,000 entries,
+/// 5 MB per entry, no authenticated responses, no `Set-Cookie` responses).
 public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
+    /// Directory the cache uses for its `index.json` and SHA-256-addressed
+    /// body files. The directory is created on first use. The cache writes
+    /// only to its own subtree (`index.json` and `bodies/`); other files
+    /// inside the directory are never deleted.
     public let directoryURL: URL
+    /// Total byte budget across all body files. Eviction fires synchronously
+    /// when this is exceeded.
     public let maxBytes: Int
+    /// Maximum number of entries kept on disk. Eviction fires synchronously
+    /// when this is exceeded.
     public let maxEntries: Int
+    /// Per-entry hard cap. Responses larger than this are not stored.
     public let maxEntryBytes: Int
+    /// When `true`, responses to requests carrying an `Authorization` header
+    /// are eligible for storage. Defaults to `false` for privacy.
     public let storesAuthenticatedResponses: Bool
+    /// When `true`, responses with `Set-Cookie` headers are eligible for
+    /// storage. Defaults to `false` for privacy.
     public let storesSetCookieResponses: Bool
 
+    /// Build a configuration. Only `directoryURL` is required; defaults match
+    /// the 4.0.0 RFC ("Implementation decisions" table).
     public init(
         directoryURL: URL,
         maxBytes: Int = 50 * 1024 * 1024,
@@ -27,6 +47,15 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     }
 }
 
+/// Persistent on-disk implementation of ``ResponseCache``.
+///
+/// Stores response bodies in a flat directory keyed by SHA-256 hashes of the
+/// canonical `(method, url, vary)` tuple. Survives process restarts and app
+/// upgrades; corrupt or unknown-version indexes are recovered by deleting the
+/// cache's own subtree (never the user-supplied directory root).
+///
+/// The cache enforces a synchronous LRU bound on every write so the disk
+/// footprint stays within the configured byte and entry budgets.
 public actor PersistentResponseCache: ResponseCache {
     private static let formatVersion = 1
 
@@ -65,6 +94,12 @@ public actor PersistentResponseCache: ResponseCache {
     private let indexURL: URL
     private var index: Index
 
+    /// Open or create a persistent response cache at `configuration.directoryURL`.
+    ///
+    /// Throws if the directory cannot be created. Unknown index versions and
+    /// decode failures are not surfaced as errors — the cache resets its own
+    /// state and continues, so a corrupt cache from a prior version is safe to
+    /// inherit.
     public init(
         configuration: PersistentResponseCacheConfiguration,
         fileManager: FileManager = .default
@@ -82,6 +117,10 @@ public actor PersistentResponseCache: ResponseCache {
         )
     }
 
+    /// Look up a cached response for `key`. Returns `nil` on miss or when the
+    /// body file cannot be read (the index entry is dropped). The recorded
+    /// `lastAccessedAt` is best-effort persisted; a failure to write the
+    /// index never demotes a successful read to a miss.
     public func get(_ key: ResponseCacheKey) async -> CachedResponse? {
         let diskKey = DiskKey(key)
         let id = Self.identifier(for: diskKey)
@@ -111,6 +150,11 @@ public actor PersistentResponseCache: ResponseCache {
         )
     }
 
+    /// Store `value` under `key`. Drops the entry instead of storing it when
+    /// the privacy policy rejects it (authenticated request or `Set-Cookie`
+    /// response with the corresponding flags off) or when the body exceeds
+    /// ``PersistentResponseCacheConfiguration/maxEntryBytes``. Eviction runs
+    /// synchronously to keep the on-disk footprint within budget.
     public func set(_ key: ResponseCacheKey, _ value: CachedResponse) async {
         guard shouldStore(key: key, response: value), value.data.count <= configuration.maxEntryBytes else {
             await invalidate(key)
@@ -149,6 +193,7 @@ public actor PersistentResponseCache: ResponseCache {
         }
     }
 
+    /// Remove the entry for `key` from the index and delete its body file.
     public func invalidate(_ key: ResponseCacheKey) async {
         let id = Self.identifier(for: DiskKey(key))
         if let entry = index.entries.removeValue(forKey: id) {
@@ -157,6 +202,8 @@ public actor PersistentResponseCache: ResponseCache {
         }
     }
 
+    /// Clear all entries. Resets the index and recreates the bodies directory.
+    /// The user-supplied configuration directory itself is left in place.
     public func removeAll() async {
         index.entries.removeAll()
         try? fileManager.removeItem(at: bodiesDirectoryURL)

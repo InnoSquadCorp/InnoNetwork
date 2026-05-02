@@ -3,6 +3,7 @@
 InnoNetwork	swift.associatedtype	APIDefinition.Auth
 InnoNetwork	swift.associatedtype	APIDefinition.Parameter
 InnoNetwork	swift.associatedtype	EndpointShape.APIResponse
+InnoNetwork	swift.associatedtype	MultipartAPIDefinition.Auth
 InnoNetwork	swift.associatedtype	SingleRequestExecutable.APIResponse
 InnoNetwork	swift.associatedtype	StateReducer.Context
 InnoNetwork	swift.associatedtype	StateReducer.Event
@@ -318,12 +319,6 @@ InnoNetwork	swift.property	CircuitBreakerPolicy.resetAfter
 InnoNetwork	swift.property	CircuitBreakerPolicy.windowSize
 InnoNetwork	swift.property	CorrelationIDInterceptor.correlationHeader
 InnoNetwork	swift.property	CorrelationIDInterceptor.traceHeader
-InnoNetwork	swift.property	Endpoint.acceptableStatusCodes
-InnoNetwork	swift.property	Endpoint.headers
-InnoNetwork	swift.property	Endpoint.method
-InnoNetwork	swift.property	Endpoint.parameters
-InnoNetwork	swift.property	Endpoint.path
-InnoNetwork	swift.property	Endpoint.transport
 InnoNetwork	swift.property	EndpointShape.acceptableStatusCodes
 InnoNetwork	swift.property	EndpointShape.headers
 InnoNetwork	swift.property	EndpointShape.logger

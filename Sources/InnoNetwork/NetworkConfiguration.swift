@@ -147,9 +147,22 @@ public struct NetworkConfiguration: Sendable {
         public var responseCachePolicy: ResponseCachePolicy
         public var responseCache: (any ResponseCache)?
         public var circuitBreakerPolicy: CircuitBreakerPolicy?
+        /// Custom ``RequestExecutionPolicy`` instances inserted around the
+        /// built-in transport. Policies execute in array order — the first
+        /// element wraps everything that follows, including the core
+        /// retry/refresh/transport pipeline. See
+        /// ``RequestExecutionNext/execute(_:)`` for the per-policy calling
+        /// contract.
         public var customExecutionPolicies: [any RequestExecutionPolicy]
         public var captureFailurePayload: Bool
+        /// Whether request bodies are streamed or buffered before decoding.
+        /// `URLSession` transports collect `bytes(for:)` with an optional
+        /// memory bound before cache writes or decoder handoff. Test doubles
+        /// that only implement `data(for:)` fall back to buffered transport.
         public var responseBodyBufferingPolicy: ResponseBodyBufferingPolicy
+        /// Compatibility alias for the optional maximum body size in
+        /// ``responseBodyBufferingPolicy``. New code should set
+        /// ``responseBodyBufferingPolicy`` directly.
         public var responseBodyLimit: Int64?
 
         fileprivate init(preset: NetworkConfiguration) {
