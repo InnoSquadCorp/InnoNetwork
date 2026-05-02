@@ -3,6 +3,14 @@
 This document defines the compatibility contract for the InnoNetwork 4.x
 release line. `4.0.0` is the public baseline for this contract.
 
+> **5.0 work-in-progress:** the `main` branch is preparing the 5.0 major
+> release. Breaking changes that ship before the 5.0 tag are listed under
+> the "5.0 Migration Guide" section below and are also captured in
+> `CHANGELOG.md` under the `[Unreleased]` heading. Until 5.0 is tagged,
+> the contract documented in the rest of this file describes the published
+> 4.x line; integrators tracking `main` should review the migration guide
+> on every minor bump.
+
 ## Stable
 
 - `APIDefinition`
@@ -13,7 +21,9 @@ release line. `4.0.0` is the public baseline for this contract.
 - `ResponseDecodingStrategy`
 - `DefaultNetworkClient`
 - `NetworkClient.request(_:)`
+- `NetworkClient.request(_:tag:)`
 - `NetworkClient.upload(_:)`
+- `NetworkClient.upload(_:tag:)`
 - `NetworkConfiguration.safeDefaults(baseURL:)`
 - `NetworkConfiguration.advanced(baseURL:_:)`
 - `DownloadConfiguration.safeDefaults()`
@@ -265,3 +275,61 @@ decoding and can pin an InnoNetwork revision.
   that no source-compatible replacement exists yet.
 - Internal/Operational items can change without deprecation because they are not
   part of the default SwiftPM import contract.
+
+## 5.0 Migration Guide
+
+The 5.0 line is staged on `main` and removes a small set of foot-guns that
+4.x carried for source-compatibility. Each subsection describes the
+breaking change, the rationale, and the supported migration. Items here
+land before the 5.0 tag and are also tracked in `CHANGELOG.md`
+`[Unreleased]`.
+
+### `DownloadManager.shared` is now Optional
+
+- **What changed.** `DownloadManager.shared` previously trapped via
+  `fatalError` when its session identifier was already claimed by another
+  manager. In 5.0 the property is typed as `DownloadManager?` and returns
+  `nil` after logging an OSLog `.fault` instead of crashing the process.
+- **Why.** The trap turned a recoverable identifier collision (typically
+  caused by tests, app extensions sharing an identifier, or repeated
+  `make(configuration:)` calls) into an app crash. Returning `nil` lets
+  callers fall back to `make(configuration:)` and surface their own error.
+- **Migration.** Prefer `DownloadManager.make(configuration:)`. If you
+  must touch `shared`, unwrap it explicitly:
+
+  ```swift
+  guard let manager = DownloadManager.shared else {
+      // Fall back to a deliberately-configured manager.
+      return try DownloadManager.make(configuration: .default)
+  }
+  ```
+
+  `shared` remains `@available(*, deprecated)` to nudge callers toward
+  `make(configuration:)`; it will be removed in a later major release.
+
+### `NetworkClient` gains `tag:` overloads
+
+- **What changed.** `NetworkClient` now declares
+  `request(_:tag:)` and `upload(_:tag:)` alongside the existing
+  un-tagged variants. The new methods accept an optional
+  `CancellationTag` so callers can group requests for bulk cancellation
+  via `DefaultNetworkClient.cancelAll(matching:)`.
+- **Why.** `DefaultNetworkClient` already exposed the tagged path; the
+  protocol omitted it, which meant code that programmed against
+  `NetworkClient` could not opt into grouped cancellation without a
+  cast. The 4.x asymmetry surfaced repeatedly in test stubs and
+  generated clients.
+- **Migration.** Existing call sites compile unchanged. Conformers that
+  do not implement the tagged overloads inherit a default extension
+  that forwards to the un-tagged variant and ignores the tag, so
+  out-of-tree stubs (for example `StubNetworkClient`) continue to
+  build. Conformers that *do* support cancellation grouping should
+  override the new methods to honor the tag.
+
+### Forward-looking notes
+
+Additional 5.0 commits (split `NetworkError.objectMapping` into
+`decoding(stage:)`, factor `EndpointShape`, platform-aware multipart
+streaming defaults) will append migration sections here as they land.
+Each will ship with a deprecated alias whenever a single-step migration
+is feasible.
