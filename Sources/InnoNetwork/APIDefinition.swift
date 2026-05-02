@@ -20,29 +20,15 @@ import Foundation
 /// for body-bearing methods (`POST`, `PUT`, `PATCH`, `DELETE`) and
 /// ``TransportPolicy/query(encoder:rootKey:decoder:)`` for `GET`, so most
 /// hand-written endpoints can omit the property entirely.
-public protocol APIDefinition: Sendable {
+///
+/// HTTP envelope requirements (method, path, headers, interceptors,
+/// status-code acceptance, transport) are inherited from
+/// ``EndpointShape``; `APIDefinition` adds only the body-strategy
+/// surface (`parameters`).
+public protocol APIDefinition: EndpointShape {
     associatedtype Parameter: Encodable & Sendable
-    associatedtype APIResponse: Decodable & Sendable
 
     var parameters: Parameter? { get }
-    var method: HTTPMethod { get }
-    var path: String { get }
-    var headers: HTTPHeaders { get }
-
-    var logger: NetworkLogger { get }
-    var requestInterceptors: [RequestInterceptor] { get }
-    var responseInterceptors: [ResponseInterceptor] { get }
-
-    /// Per-endpoint override for the set of acceptable HTTP status codes.
-    ///
-    /// When `nil`, the executor falls back to
-    /// ``NetworkConfiguration/acceptableStatusCodes``.
-    var acceptableStatusCodes: Set<Int>? { get }
-
-    /// Single transport-shape entry point. The default selects
-    /// ``TransportPolicy/json(encoder:decoder:)`` for body-bearing methods and
-    /// ``TransportPolicy/query(encoder:rootKey:decoder:)`` for `GET`.
-    var transport: TransportPolicy<APIResponse> { get }
 }
 
 
@@ -77,22 +63,13 @@ public enum MultipartUploadStrategy: Sendable, Equatable {
 /// only need ``transport`` to describe how the response is decoded. The
 /// default ``transport`` is ``TransportPolicy/multipart(decoder:)``, which
 /// configures a JSON response decoder.
-public protocol MultipartAPIDefinition: Sendable {
-    associatedtype APIResponse: Decodable & Sendable
-
+///
+/// HTTP envelope requirements (method, path, headers, interceptors,
+/// status-code acceptance, transport) are inherited from
+/// ``EndpointShape``; `MultipartAPIDefinition` adds only the body-strategy
+/// surface (`multipartFormData`, `uploadStrategy`).
+public protocol MultipartAPIDefinition: EndpointShape {
     var multipartFormData: MultipartFormData { get }
-    var method: HTTPMethod { get }
-    var path: String { get }
-    var headers: HTTPHeaders { get }
-
-    var logger: NetworkLogger { get }
-    var requestInterceptors: [RequestInterceptor] { get }
-    var responseInterceptors: [ResponseInterceptor] { get }
-
-    /// Per-endpoint override for the set of acceptable HTTP status codes.
-    ///
-    /// See ``APIDefinition/acceptableStatusCodes`` for semantics.
-    var acceptableStatusCodes: Set<Int>? { get }
 
     /// Strategy that decides whether the multipart body is encoded in memory
     /// or streamed to a temp file. Default is
@@ -103,10 +80,6 @@ public protocol MultipartAPIDefinition: Sendable {
     /// that always upload large payloads can override with
     /// ``MultipartUploadStrategy/alwaysStream``.
     var uploadStrategy: MultipartUploadStrategy { get }
-
-    /// Single transport-shape entry point. The default is
-    /// ``TransportPolicy/multipart(decoder:)``.
-    var transport: TransportPolicy<APIResponse> { get }
 }
 
 // MARK: - APIDefinition default extension
@@ -116,16 +89,6 @@ extension APIDefinition where Parameter == EmptyParameter {
 }
 
 public extension APIDefinition {
-    var headers: HTTPHeaders { HTTPHeaders.default }
-
-    var logger: NetworkLogger { DefaultNetworkLogger() }
-
-    var requestInterceptors: [RequestInterceptor] { [] }
-
-    var responseInterceptors: [ResponseInterceptor] { [] }
-
-    var acceptableStatusCodes: Set<Int>? { nil }
-
     /// Method-aware default transport: `GET` maps to a query-string transport,
     /// every other method maps to a JSON body transport. Override this
     /// property when an endpoint needs `formURLEncoded`, `multipart`, an
@@ -143,18 +106,6 @@ public extension APIDefinition {
 // MARK: - MultipartAPIDefinition default extension
 
 public extension MultipartAPIDefinition {
-    var headers: HTTPHeaders {
-        HTTPHeaders.default
-    }
-
-    var logger: NetworkLogger { DefaultNetworkLogger() }
-
-    var requestInterceptors: [RequestInterceptor] { [] }
-
-    var responseInterceptors: [ResponseInterceptor] { [] }
-
-    var acceptableStatusCodes: Set<Int>? { nil }
-
     var uploadStrategy: MultipartUploadStrategy { .streamingThreshold(bytes: 50 * 1024 * 1024) }
 
     var transport: TransportPolicy<APIResponse> { .multipart() }

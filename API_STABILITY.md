@@ -15,6 +15,7 @@ release line. `4.0.0` is the public baseline for this contract.
 
 - `APIDefinition`
 - `CancellationTag`
+- `EndpointShape`
 - `MultipartAPIDefinition`
 - `TransportPolicy`
 - `RequestEncodingPolicy`
@@ -131,7 +132,7 @@ high-level compatibility classification readable for the 4.x release line.
   `CancellationTag`, `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
   `ContentType`, `CorrelationIDInterceptor`, `DefaultNetworkClient`,
   `DefaultNetworkLogger`, `EmptyParameter`, `EmptyResponse`, `Endpoint`,
-  `EndpointPathEncoding`, `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
+  `EndpointPathEncoding`, `EndpointShape`, `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
   `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,
   `MultipartPart`, `MultipartResponseDecoder`, `MultipartUploadStrategy`,
   `NetworkClient`, `NetworkConfiguration`, `NetworkContext`, `NetworkError`,
@@ -326,10 +327,31 @@ land before the 5.0 tag and are also tracked in `CHANGELOG.md`
   build. Conformers that *do* support cancellation grouping should
   override the new methods to honor the tag.
 
+### `EndpointShape` extracted from endpoint protocols
+
+- **What changed.** A new `EndpointShape` protocol now captures the
+  HTTP envelope surface (`method`, `path`, `headers`, `logger`,
+  `requestInterceptors`, `responseInterceptors`,
+  `acceptableStatusCodes`, `transport`) shared by `APIDefinition` and
+  `MultipartAPIDefinition`. Both protocols inherit from `EndpointShape`
+  and only declare their body-strategy surface (`parameters` /
+  `multipartFormData` + `uploadStrategy`).
+- **Why.** The two endpoint protocols duplicated identical
+  requirements and identical default implementations. Consolidating
+  them onto `EndpointShape` removes a class of drift bugs (defaults
+  silently diverging on one protocol but not the other) and gives
+  generated clients a single vocabulary for "the envelope" without
+  reaching for two parallel protocols.
+- **Migration.** Endpoint conformances do not need to change. The
+  shared defaults moved to an `EndpointShape` extension, so any
+  `APIDefinition` or `MultipartAPIDefinition` written against 4.x
+  compiles unchanged. Only code that explicitly enumerated the parent
+  protocol's requirements (for example, library-internal generic
+  helpers) needs to redirect to `EndpointShape`.
+
 ### Forward-looking notes
 
 Additional 5.0 commits (split `NetworkError.objectMapping` into
-`decoding(stage:)`, factor `EndpointShape`, platform-aware multipart
-streaming defaults) will append migration sections here as they land.
-Each will ship with a deprecated alias whenever a single-step migration
-is feasible.
+`decoding(stage:)`, platform-aware multipart streaming defaults) will
+append migration sections here as they land. Each will ship with a
+deprecated alias whenever a single-step migration is feasible.

@@ -17,6 +17,16 @@ Versioning.
   `cancelAll(matching:)`. Callers that depend on `any NetworkClient`
   can now express grouped cancellation without down-casting to
   `DefaultNetworkClient`.
+- `EndpointShape` base protocol that captures the HTTP envelope
+  surface common to `APIDefinition` and `MultipartAPIDefinition`
+  (`method`, `path`, `headers`, `logger`, `requestInterceptors`,
+  `responseInterceptors`, `acceptableStatusCodes`, `transport`). Both
+  endpoint protocols now inherit from `EndpointShape` and only declare
+  their body-strategy surface (`parameters` / `multipartFormData` +
+  `uploadStrategy`). Existing endpoints compile unchanged because the
+  shared default implementations have moved to a single `EndpointShape`
+  extension. App code that conforms to `APIDefinition` or
+  `MultipartAPIDefinition` does not need to update.
 
 ### Changed (BREAKING)
 
