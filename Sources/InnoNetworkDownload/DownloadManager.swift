@@ -532,6 +532,12 @@ public actor DownloadManager {
 
     deinit {
         delegateEventContinuation.finish()
+        // URLSession retains its delegate until explicitly invalidated; without
+        // this call the underlying session and its DownloadSessionDelegate (and
+        // every callback closure they retain) outlive the manager. Background
+        // sessions also stay registered with the OS. `finishTasksAndInvalidate`
+        // lets in-flight transfers complete before tearing down.
+        session.finishTasksAndInvalidate()
         Self.unregisterSessionIdentifier(configuration.sessionIdentifier)
     }
 

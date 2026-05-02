@@ -262,10 +262,14 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         // Try the canonical RFC 1123 `IMF-fixdate` form first; that is the
         // only form servers are required to use, but accept the looser
         // RFC 850 / asctime variants RFC 9110 keeps for backwards compat.
+        // Note: the asctime form has no timezone field, so the parsed date
+        // takes its zone from `formatter.timeZone` (GMT below) — RFC 9110
+        // §5.6.7 specifies that all HTTP-date forms are interpreted in GMT
+        // regardless of how they spell it, so this is intentional.
         let formats = [
             "EEE, dd MMM yyyy HH:mm:ss zzz",  // IMF-fixdate
             "EEEE, dd-MMM-yy HH:mm:ss zzz",  // RFC 850
-            "EEE MMM d HH:mm:ss yyyy",  // asctime
+            "EEE MMM d HH:mm:ss yyyy",  // asctime (no zone — uses formatter.timeZone)
         ]
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

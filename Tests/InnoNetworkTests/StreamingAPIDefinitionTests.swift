@@ -679,10 +679,11 @@ struct StreamingAPIDefinitionTests {
             Issue.record("Expected decode error to surface")
         } catch let error as NetworkError {
             switch error {
-            case .underlying(let underlying, nil):
+            case .decoding(let stage, let underlying, _):
+                #expect(stage == .streamFrame)
                 #expect(underlying.message.contains("Malformed resumable stream line"))
             default:
-                Issue.record("Expected NetworkError.underlying decode error, got \(error)")
+                Issue.record("Expected NetworkError.decoding(stage: .streamFrame), got \(error)")
             }
         }
 

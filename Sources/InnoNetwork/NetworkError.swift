@@ -53,11 +53,8 @@ public enum TimeoutReason: Sendable, Equatable {
 /// ``NetworkError/decoding(stage:underlying:response:)``.
 ///
 /// The stage tag lets callers route decoding failures to different
-/// handlers without inspecting the underlying error: a multipart-part
-/// failure usually warrants surfacing the offending part to the user,
-/// while an envelope failure suggests the whole response is unusable
-/// regardless of the typed payload. ``RetryPolicy`` and
-/// ``DecodingInterceptor`` use the stage tag to decide whether a
+/// handlers without inspecting the underlying error. ``RetryPolicy``
+/// and ``DecodingInterceptor`` use the stage tag to decide whether a
 /// retry would change the outcome (it almost never does for decoding
 /// failures, so the default policy treats every stage as terminal).
 public enum DecodingStage: Sendable, Equatable {
@@ -70,21 +67,6 @@ public enum DecodingStage: Sendable, Equatable {
     /// to decode. The transport remains open; only the offending
     /// frame is rejected.
     case streamFrame
-
-    /// A part inside a buffered or streaming multipart response failed
-    /// to decode. Other parts may still be usable.
-    case multipartPart
-
-    /// A response envelope (for example a JSON `{ "data": ... }`
-    /// wrapper) failed to decode before the typed payload could be
-    /// extracted. Indicates a server-shape mismatch independent of
-    /// the declared payload type.
-    case envelope
-
-    /// An empty-tolerant decoder produced no value when the response
-    /// shape required one. Distinguishes "server returned 204 but
-    /// caller expects a typed value" from a generic body-decode failure.
-    case empty
 }
 
 

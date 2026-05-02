@@ -17,7 +17,7 @@ to the user, or escalate to crash reporting.
 | ``NetworkError/invalidRequestConfiguration(_:)`` | Request shape and policy mismatch. | Fix the API definition; never retry. |
 | ``NetworkError/jsonMapping(_:)`` | Request body could not be encoded. | Programmer error; do not retry. |
 | ``NetworkError/statusCode(_:)`` | Server returned a non-acceptable status. | Branch on `.response.statusCode`; let `RetryPolicy` decide retries. |
-| ``NetworkError/decoding(stage:underlying:response:)`` | Response failed to decode at a tagged pipeline stage (body, envelope, multipart part, stream frame, or empty-tolerant fallback). | Surface to the user; consider feature flagging the endpoint. Decoding failures are terminal — `isDecodingFailure` makes the rule explicit in custom retry policies. |
+| ``NetworkError/decoding(stage:underlying:response:)`` | Response failed to decode at a tagged pipeline stage (`.responseBody` for buffered bodies, `.streamFrame` for per-frame streaming decoders). | Surface to the user; consider feature flagging the endpoint. Decoding failures are terminal — `isDecodingFailure` makes the rule explicit in custom retry policies. |
 | ``NetworkError/nonHTTPResponse`` | Got a non-`HTTPURLResponse` (rare; usually misconfigured `URLSession`). | Treat as transport bug. |
 | ``NetworkError/underlying(_:)`` | Foundation/URLSession error not classified above. | Inspect `SendableUnderlyingError.code` for deeper triage. |
 | ``NetworkError/trustEvaluationFailed(_:)`` | TLS pinning or custom trust evaluator rejected the chain. | Surface to the user; do not auto-retry. |

@@ -259,9 +259,9 @@ summary.
 - `NetworkError.objectMapping(_:_:)` static factory is removed. Decode
   failures now surface exclusively as
   `NetworkError.decoding(stage:underlying:response:)` with a
-  `DecodingStage` (`.responseBody`, `.streamFrame`, `.multipartPart`,
-  `.envelope`, `.empty`) so retry policies and observability layers can
-  distinguish where in the pipeline the failure happened. Migrate
+  `DecodingStage` (`.responseBody`, `.streamFrame`) so retry policies
+  and observability layers can distinguish where in the pipeline the
+  failure happened. Migrate
   pattern matching from `.objectMapping(let underlying, let response)`
   to `.decoding(let stage, let underlying, let response)`; new
   `NetworkError.isDecodingFailure` is the canonical helper for "decode

@@ -141,7 +141,29 @@ package struct StreamingExecutor: Sendable {
                     guard let line else { break }
                     try Task.checkCancellation()
                     streamedByteCount += line.utf8.count
-                    if let output = try request.decode(line: line) {
+                    let decoded: T.Output?
+                    do {
+                        decoded = try request.decode(line: line)
+                    } catch {
+                        // Per-frame decode failure: surface with the
+                        // streamFrame stage so retry policies can tell
+                        // "the framing was malformed" apart from a
+                        // top-level body decode error. The Response
+                        // carries the offending line's bytes (capped to
+                        // a reasonable size by the line-iterator) so
+                        // observability can sample it.
+                        throw NetworkError.decoding(
+                            stage: .streamFrame,
+                            underlying: SendableUnderlyingError(error),
+                            response: Response(
+                                statusCode: networkResponse.statusCode,
+                                data: Data(line.utf8),
+                                request: urlRequest,
+                                response: httpResponse
+                            )
+                        )
+                    }
+                    if let output = decoded {
                         continuation.yield(output)
                         resumeState.observe(eventID: request.eventID(from: output))
                     }

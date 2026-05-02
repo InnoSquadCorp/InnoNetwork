@@ -353,19 +353,13 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
             }
         }
         inFlight.register(id: requestID, tag: tag, cancelHandler: { work.cancel() })
+        defer { inFlight.deregister(id: requestID) }
         startGate.open()
 
-        do {
-            let result = try await withTaskCancellationHandler {
-                try await work.value
-            } onCancel: {
-                work.cancel()
-            }
-            inFlight.deregister(id: requestID)
-            return result
-        } catch {
-            inFlight.deregister(id: requestID)
-            throw error
+        return try await withTaskCancellationHandler {
+            try await work.value
+        } onCancel: {
+            work.cancel()
         }
     }
 }

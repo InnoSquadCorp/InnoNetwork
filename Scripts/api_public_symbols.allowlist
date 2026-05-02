@@ -42,9 +42,6 @@ InnoNetwork	swift.enum.case	ContentType.protobuf
 InnoNetwork	swift.enum.case	ContentType.textHTML
 InnoNetwork	swift.enum.case	ContentType.textPlain
 InnoNetwork	swift.enum.case	ContentType.xml
-InnoNetwork	swift.enum.case	DecodingStage.empty
-InnoNetwork	swift.enum.case	DecodingStage.envelope
-InnoNetwork	swift.enum.case	DecodingStage.multipartPart
 InnoNetwork	swift.enum.case	DecodingStage.responseBody
 InnoNetwork	swift.enum.case	DecodingStage.streamFrame
 InnoNetwork	swift.enum.case	EventPipelineHubKind.downloadTask

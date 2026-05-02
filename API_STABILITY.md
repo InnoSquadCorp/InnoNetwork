@@ -412,14 +412,14 @@ entries live under `[4.0.0]`.
   and its compatibility static factory are both removed. Decode
   failures now surface exclusively as
   `NetworkError.decoding(stage:underlying:response:)` carrying a
-  `DecodingStage` (`.responseBody`, `.streamFrame`, `.multipartPart`,
-  `.envelope`, `.empty`) so the failure site is explicit. A new
-  `NetworkError.isDecodingFailure` helper makes "decode failures are
-  not retried" expressible without pattern matching.
+  `DecodingStage` (`.responseBody`, `.streamFrame`) so the failure
+  site is explicit. A new `NetworkError.isDecodingFailure` helper
+  makes "decode failures are not retried" expressible without pattern
+  matching.
 - **Why.** `objectMapping` collapsed every decode-related failure —
-  body, stream frame, multipart part, envelope, and empty-body —
-  into one case. Retry policies could not distinguish "the stream
-  framing was malformed" from "the JSON body had a missing field",
+  buffered body and per-frame streaming decode — into one case.
+  Retry policies could not distinguish "the stream framing was
+  malformed" from "the JSON body had a missing field",
   and observability layers had to inspect the underlying error to
   classify the stage. Splitting the case lets policies and metrics
   branch on stage directly.

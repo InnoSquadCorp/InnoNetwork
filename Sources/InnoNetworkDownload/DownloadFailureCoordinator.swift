@@ -31,6 +31,14 @@ package struct DownloadFailureCoordinator {
         restart: @Sendable (DownloadTask) async -> Void
     ) async {
         if isCancelledTransportError(error) {
+            // Cancelled transport errors short-circuit unconditionally:
+            // user cancels drain runtime+persistence in `cancel()` before
+            // this delegate callback fires, and system-driven cancels
+            // (background session reset, OS pressure) leave the task in a
+            // resumable state on disk so the caller can resume on the next
+            // launch. Treating them as transport failures would either
+            // double-drain or convert recoverable interruptions into
+            // permanent failures.
             return
         }
         let totalRetryCount = await task.totalRetryCount

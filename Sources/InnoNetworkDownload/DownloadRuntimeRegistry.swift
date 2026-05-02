@@ -71,6 +71,11 @@ package actor DownloadRuntimeRegistry {
         taskIdToIdentifier[taskId]
     }
 
+    /// Drops only the identifier ↔ task pairing while leaving the
+    /// `taskId → URLTask` handle in place. Callers that are also
+    /// retiring the URLTask must follow up with
+    /// ``removeTaskRuntime(taskId:)`` (or call it instead) to avoid
+    /// leaving the URLTask handle pinned in memory.
     package func detachRuntime(taskIdentifier: Int) {
         guard let task = identifierToTask.removeValue(forKey: taskIdentifier) else { return }
         taskIdToIdentifier.removeValue(forKey: task.id)
