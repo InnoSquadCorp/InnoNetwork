@@ -33,7 +33,9 @@ The `CI` workflow must pass all of the following:
    beyond 20% on the guarded request pipeline, request coalescing, response
    cache, event hub delivery, download persistence restore/compaction,
    decoding interceptor chain, and WebSocket lifecycle/send hot paths fails
-   the PR workflow. The scheduled/manual
+   the PR workflow. The decoding interceptor chain guards keep a 20,000-iteration
+   sample even in `--quick` mode so the CI smoke gate is not dominated by
+   sub-second hosted-runner scheduling noise. The scheduled/manual
    benchmark workflow uses the same guarded benchmarks with a stricter 10%
    threshold.
 

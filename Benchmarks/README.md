@@ -91,6 +91,10 @@ function dispatch.
 ## CI Policy
 
 - PR CI는 `--quick` benchmark를 실제 실행하고, 아래 guard 항목을 `20%` threshold로 막는 smoke gate를 사용합니다.
+- `decoding-interceptor-chain-{1,3,8}` guard는 `--quick` smoke에서도
+  20,000회 sample을 사용합니다. 2,000회 sample이 hosted runner에서 0.2초
+  안팎으로 끝나 PR smoke가 scheduling noise에 과민해지는 것을 막기 위한
+  안정화 설정입니다.
 - PR benchmark workflow는 JSON summary에서 Markdown comment를 렌더링해 guarded
   benchmark delta를 PR에 남깁니다.
 - scheduled/manual benchmark workflow는 같은 guard 항목을 `10%` threshold로 검사하는 strict regression gate입니다.
