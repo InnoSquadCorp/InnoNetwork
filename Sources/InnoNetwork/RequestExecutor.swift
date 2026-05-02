@@ -281,7 +281,7 @@ package struct RequestExecutor {
         runtime: RequestExecutionRuntime,
         requestID: UUID
     ) async throws -> Response {
-        let response = try await executeCustomPolicies(
+        try await executeCustomPolicies(
             request: request,
             bodySource: bodySource,
             configuration: configuration,
@@ -289,18 +289,6 @@ package struct RequestExecutor {
             runtime: runtime,
             requestID: requestID
         )
-
-        await eventHub.publish(
-            .responseReceived(
-                requestID: requestID,
-                statusCode: response.statusCode,
-                byteCount: response.data.count
-            ),
-            requestID: requestID,
-            observers: configuration.eventObservers
-        )
-
-        return response
     }
 
     private func executeCustomPolicies(
@@ -311,6 +299,7 @@ package struct RequestExecutor {
         runtime: RequestExecutionRuntime,
         requestID: UUID
     ) async throws -> Response {
+        let eventHub = self.eventHub
         let baseNext = RequestExecutionNext { nextRequest in
             let result = try await performTransportResult(
                 request: nextRequest,
@@ -318,6 +307,15 @@ package struct RequestExecutor {
                 configuration: configuration,
                 context: context,
                 runtime: runtime
+            )
+            await eventHub.publish(
+                .responseReceived(
+                    requestID: requestID,
+                    statusCode: result.response.statusCode,
+                    byteCount: result.data.count
+                ),
+                requestID: requestID,
+                observers: configuration.eventObservers
             )
             return Response(
                 statusCode: result.response.statusCode,
@@ -477,6 +475,12 @@ package struct RequestExecutor {
             } catch let error as NetworkError {
                 switch error {
                 case .invalidRequestConfiguration:
+                    // Falling back to a buffered transport silently bypasses
+                    // the configured `maxBytes` ceiling, so honour the bound
+                    // by surfacing the original error instead of collecting
+                    // an unbounded body. Only the truly unbounded streaming
+                    // mode (`maxBytes == nil`) is allowed to fall back.
+                    guard maxBytes == nil else { throw error }
                     return try await session.data(for: request, context: context)
                 default:
                     throw error

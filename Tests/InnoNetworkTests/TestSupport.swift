@@ -22,7 +22,7 @@ func makeTestNetworkConfiguration(
     circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
     customExecutionPolicies: [any RequestExecutionPolicy] = [],
     captureFailurePayload: Bool = false,
-    responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(),
+    responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .buffered(),
     responseBodyLimit: Int64? = nil
 ) -> NetworkConfiguration {
     NetworkConfiguration(
