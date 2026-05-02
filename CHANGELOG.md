@@ -309,6 +309,46 @@ summary.
 
 ### Fixed
 
+- **PersistentResponseCache overwrite (PR #39)**: `set()` on an existing key
+  no longer deletes the freshly-written body file. The bodyfile cleanup runs
+  only when the new entry resolves to a different filename than the existing
+  one, so subsequent `get()` calls hit the new payload instead of seeing a
+  cold cache. `get()`'s body-read failure handling is now separated from the
+  best-effort `lastAccessedAt` index write, so a transient index write
+  failure (e.g. read-only mount) no longer demotes a successful read to a
+  miss.
+- **PersistentResponseCache recovery scope (PR #39)**: index recovery on
+  unknown version or decode failure now deletes only the cache's own
+  `index.json` and `bodies/` subtree. The user-supplied configuration
+  directory itself is preserved, so adjacent files in a shared parent
+  directory (`sentinel.txt`, sibling caches) survive recovery.
+- **RequestExecutor `responseReceived` placement (PR #39)**: the
+  `NetworkEvent.responseReceived` event now fires inside the transport
+  boundary used by custom `RequestExecutionPolicy` chains. A policy that
+  calls `next.execute(_:)` more than once now produces one event per
+  transport attempt; a policy that returns a synthetic response without
+  calling `next` no longer emits a synthetic transport event.
+- **Streaming `maxBytes` fallback (PR #39)**: when
+  `responseBodyBufferingPolicy` is `.streaming(maxBytes:)` and the transport
+  reports `invalidRequestConfiguration`, the executor no longer falls back
+  to the buffered `data(for:)` path. The configured byte cap is honoured —
+  the request fails fast instead of silently buffering an unbounded body.
+- **Multipart auth scope (PR #39)**: `MultipartAPIDefinition` now declares
+  `associatedtype Auth: EndpointAuthScope = PublicAuthScope`, so a multipart
+  endpoint conforming to `AuthRequiredScope` participates in the configured
+  `RefreshTokenPolicy` exactly like a non-multipart authenticated endpoint.
+  Default behaviour is unchanged (`PublicAuthScope`).
+- **Download resume-data clear (PR #39)**: `DownloadManager.resume(_:)` now
+  surfaces persistence failures when clearing the stored `resumeData`
+  before starting the new system task. On failure the in-flight task is
+  cancelled and the task is surfaced as `.failed(.persistenceFailure)`,
+  preventing a resumed transfer from running with stale resume bytes still
+  on disk.
+- **Restore-missing event delivery (PR #39)**: the
+  `.failed(.restorationMissingSystemTask)` failure for orphaned persisted
+  records is no longer published from `DownloadManager.init`. The event is
+  flushed when the caller subscribes via `events(for:)`, so the failure is
+  observable instead of being dropped into a partition with no consumer.
 - **CircuitBreaker (P1.1)**: `CircuitBreakerRegistry.recordStatus(...)` no
   longer resets the rolling failure window on 4xx responses. 4xx is now a
   no-op (the transport worked, the failure is semantic), 5xx still counts
