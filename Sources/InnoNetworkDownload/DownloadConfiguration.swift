@@ -17,7 +17,10 @@ public struct DownloadConfiguration: Sendable {
                 maxRetryDelay: 60,
                 timeoutForRequest: 30,
                 timeoutForResource: 60 * 60 * 24,
-                allowsCellularAccess: true,
+                // Cellular is opt-in in 4.0.x: large background downloads on
+                // metered links surprise users. Apps that explicitly want
+                // cellular call ``DownloadConfiguration/cellularEnabled()``.
+                allowsCellularAccess: false,
                 sessionIdentifier: sessionIdentifier,
                 networkMonitor: NetworkMonitor.shared,
                 waitsForNetworkChanges: false,
@@ -25,7 +28,8 @@ public struct DownloadConfiguration: Sendable {
                 eventDeliveryPolicy: .default,
                 eventMetricsReporter: nil,
                 persistenceFsyncPolicy: .onCheckpoint,
-                persistenceCompactionPolicy: .default
+                persistenceCompactionPolicy: .default,
+                persistenceBaseDirectoryURL: nil
             )
         }
 
@@ -40,7 +44,7 @@ public struct DownloadConfiguration: Sendable {
                 maxRetryDelay: 30,
                 timeoutForRequest: 60,
                 timeoutForResource: 60 * 60 * 24,
-                allowsCellularAccess: true,
+                allowsCellularAccess: false,
                 sessionIdentifier: sessionIdentifier,
                 networkMonitor: NetworkMonitor.shared,
                 waitsForNetworkChanges: true,
@@ -52,7 +56,8 @@ public struct DownloadConfiguration: Sendable {
                 ),
                 eventMetricsReporter: nil,
                 persistenceFsyncPolicy: .onCheckpoint,
-                persistenceCompactionPolicy: .default
+                persistenceCompactionPolicy: .default,
+                persistenceBaseDirectoryURL: nil
             )
         }
     }
@@ -107,6 +112,14 @@ public struct DownloadConfiguration: Sendable {
     /// Controls when the append-log persistence layer rewrites a compact
     /// checkpoint and clears accumulated mutation events.
     public let persistenceCompactionPolicy: PersistenceCompactionPolicy
+    /// Optional override for the persistence root directory.
+    ///
+    /// When `nil` (the default), the append-log persistence store writes to
+    /// `applicationSupportDirectory/InnoNetworkDownload/<sessionIdentifier>`.
+    /// Apps that want to keep download metadata out of iCloud backups should
+    /// supply a directory under `cachesDirectory`. The supplied URL must be a
+    /// directory the process can read and write.
+    public let persistenceBaseDirectoryURL: URL?
 
     /// Durability policy for the append-log persistence layer.
     ///
@@ -210,6 +223,11 @@ public struct DownloadConfiguration: Sendable {
         public var persistenceFsyncPolicy: PersistenceFsyncPolicy
         /// Snapshot/compaction thresholds for the append-log persistence layer.
         public var persistenceCompactionPolicy: PersistenceCompactionPolicy
+        /// Optional override for the persistence root directory. Set to a
+        /// `cachesDirectory`-rooted URL to keep download metadata out of
+        /// iCloud backups, or to a process-private temporary directory in
+        /// tests.
+        public var persistenceBaseDirectoryURL: URL?
 
         fileprivate init(preset: DownloadConfiguration) {
             self.maxConnectionsPerHost = preset.maxConnectionsPerHost
@@ -230,6 +248,7 @@ public struct DownloadConfiguration: Sendable {
             self.eventMetricsReporter = preset.eventMetricsReporter
             self.persistenceFsyncPolicy = preset.persistenceFsyncPolicy
             self.persistenceCompactionPolicy = preset.persistenceCompactionPolicy
+            self.persistenceBaseDirectoryURL = preset.persistenceBaseDirectoryURL
         }
 
         fileprivate func build() -> DownloadConfiguration {
@@ -251,7 +270,8 @@ public struct DownloadConfiguration: Sendable {
                 eventDeliveryPolicy: eventDeliveryPolicy,
                 eventMetricsReporter: eventMetricsReporter,
                 persistenceFsyncPolicy: persistenceFsyncPolicy,
-                persistenceCompactionPolicy: persistenceCompactionPolicy
+                persistenceCompactionPolicy: persistenceCompactionPolicy,
+                persistenceBaseDirectoryURL: persistenceBaseDirectoryURL
             )
         }
     }
@@ -313,7 +333,8 @@ public struct DownloadConfiguration: Sendable {
         eventDeliveryPolicy: EventDeliveryPolicy = .default,
         eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
         persistenceFsyncPolicy: PersistenceFsyncPolicy = .onCheckpoint,
-        persistenceCompactionPolicy: PersistenceCompactionPolicy = .default
+        persistenceCompactionPolicy: PersistenceCompactionPolicy = .default,
+        persistenceBaseDirectoryURL: URL? = nil
     ) {
         self.maxConnectionsPerHost = max(1, maxConnectionsPerHost)
         self.maxRetryCount = max(0, maxRetryCount)
@@ -333,6 +354,36 @@ public struct DownloadConfiguration: Sendable {
         self.eventMetricsReporter = eventMetricsReporter
         self.persistenceFsyncPolicy = persistenceFsyncPolicy
         self.persistenceCompactionPolicy = persistenceCompactionPolicy
+        self.persistenceBaseDirectoryURL = persistenceBaseDirectoryURL
+    }
+
+    /// Returns a copy of this configuration with cellular access enabled.
+    ///
+    /// Use this on top of ``safeDefaults(sessionIdentifier:)`` when you have
+    /// confirmed (UI affordance, settings screen, or large-file justification)
+    /// that the user expects downloads to consume cellular bandwidth.
+    public func cellularEnabled() -> DownloadConfiguration {
+        DownloadConfiguration(
+            maxConnectionsPerHost: maxConnectionsPerHost,
+            maxRetryCount: maxRetryCount,
+            maxTotalRetries: maxTotalRetries,
+            retryDelay: retryDelay,
+            exponentialBackoff: exponentialBackoff,
+            retryJitterRatio: retryJitterRatio,
+            maxRetryDelay: maxRetryDelay,
+            timeoutForRequest: timeoutForRequest,
+            timeoutForResource: timeoutForResource,
+            allowsCellularAccess: true,
+            sessionIdentifier: sessionIdentifier,
+            networkMonitor: networkMonitor,
+            waitsForNetworkChanges: waitsForNetworkChanges,
+            networkChangeTimeout: networkChangeTimeout,
+            eventDeliveryPolicy: eventDeliveryPolicy,
+            eventMetricsReporter: eventMetricsReporter,
+            persistenceFsyncPolicy: persistenceFsyncPolicy,
+            persistenceCompactionPolicy: persistenceCompactionPolicy,
+            persistenceBaseDirectoryURL: persistenceBaseDirectoryURL
+        )
     }
 
     public static let `default` = safeDefaults()

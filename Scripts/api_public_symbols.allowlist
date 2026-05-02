@@ -701,10 +701,11 @@ InnoNetworkDownload	swift.enum.case	DownloadState.idle
 InnoNetworkDownload	swift.enum.case	DownloadState.paused
 InnoNetworkDownload	swift.enum.case	DownloadState.waiting
 InnoNetworkDownload	swift.init	DownloadConfiguration.PersistenceCompactionPolicy.init(maxEvents:maxLogBytes:tombstoneRatio:)
-InnoNetworkDownload	swift.init	DownloadConfiguration.init(maxConnectionsPerHost:maxRetryCount:maxTotalRetries:retryDelay:exponentialBackoff:retryJitterRatio:maxRetryDelay:timeoutForRequest:timeoutForResource:allowsCellularAccess:sessionIdentifier:networkMonitor:waitsForNetworkChanges:networkChangeTimeout:eventDeliveryPolicy:eventMetricsReporter:persistenceFsyncPolicy:persistenceCompactionPolicy:)
+InnoNetworkDownload	swift.init	DownloadConfiguration.init(maxConnectionsPerHost:maxRetryCount:maxTotalRetries:retryDelay:exponentialBackoff:retryJitterRatio:maxRetryDelay:timeoutForRequest:timeoutForResource:allowsCellularAccess:sessionIdentifier:networkMonitor:waitsForNetworkChanges:networkChangeTimeout:eventDeliveryPolicy:eventMetricsReporter:persistenceFsyncPolicy:persistenceCompactionPolicy:persistenceBaseDirectoryURL:)
 InnoNetworkDownload	swift.init	DownloadManager.init(configuration:)
 InnoNetworkDownload	swift.init	DownloadState.init(rawValue:)
 InnoNetworkDownload	swift.init	DownloadTask.init(url:destinationURL:id:resumeData:)
+InnoNetworkDownload	swift.method	DownloadConfiguration.cellularEnabled()
 InnoNetworkDownload	swift.method	DownloadManager.activeTasks()
 InnoNetworkDownload	swift.method	DownloadManager.addEventListener(for:listener:)
 InnoNetworkDownload	swift.method	DownloadManager.allTasks()
@@ -722,6 +723,7 @@ InnoNetworkDownload	swift.method	DownloadManager.setOnCompletedHandler(_:)
 InnoNetworkDownload	swift.method	DownloadManager.setOnFailedHandler(_:)
 InnoNetworkDownload	swift.method	DownloadManager.setOnProgressHandler(_:)
 InnoNetworkDownload	swift.method	DownloadManager.setOnStateChangedHandler(_:)
+InnoNetworkDownload	swift.method	DownloadManager.shutdown()
 InnoNetworkDownload	swift.method	DownloadManager.task(withId:)
 InnoNetworkDownload	swift.method	DownloadManager.waitForRestoration()
 InnoNetworkDownload	swift.method	DownloadState.canTransition(to:)
@@ -736,6 +738,7 @@ InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.maxRetr
 InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.maxTotalRetries
 InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.networkChangeTimeout
 InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.networkMonitor
+InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.persistenceBaseDirectoryURL
 InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.persistenceCompactionPolicy
 InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.persistenceFsyncPolicy
 InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.retryDelay
@@ -757,6 +760,7 @@ InnoNetworkDownload	swift.property	DownloadConfiguration.maxRetryDelay
 InnoNetworkDownload	swift.property	DownloadConfiguration.maxTotalRetries
 InnoNetworkDownload	swift.property	DownloadConfiguration.networkChangeTimeout
 InnoNetworkDownload	swift.property	DownloadConfiguration.networkMonitor
+InnoNetworkDownload	swift.property	DownloadConfiguration.persistenceBaseDirectoryURL
 InnoNetworkDownload	swift.property	DownloadConfiguration.persistenceCompactionPolicy
 InnoNetworkDownload	swift.property	DownloadConfiguration.persistenceFsyncPolicy
 InnoNetworkDownload	swift.property	DownloadConfiguration.retryDelay
