@@ -127,6 +127,27 @@ public struct NetworkConfiguration: Sendable {
     /// ``responseBodyBufferingPolicy`` directly.
     public let responseBodyLimit: Int64?
 
+    /// Optional escape hatch for callers that need to customize the
+    /// `URLSessionConfiguration` (proxy/HTTP2 tuning, connection pooling,
+    /// `httpAdditionalHeaders`, TLS minimum version, etc.) when materializing
+    /// a `URLSession` for this configuration. The closure receives a fresh
+    /// `URLSessionConfiguration.default`-derived instance and must return a
+    /// configuration the caller is comfortable shipping. The library never
+    /// invokes this hook itself; consumers wire it through
+    /// ``makeURLSessionConfiguration()`` when they construct their own
+    /// `URLSession` (the `DefaultNetworkClient` accepts an injected session).
+    public let urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
+
+    /// Build a `URLSessionConfiguration` derived from `URLSessionConfiguration.default`,
+    /// applying ``urlSessionConfigurationOverride`` when set. Provided as a
+    /// convenience for callers that construct their own `URLSession` and want
+    /// the override hook honored without re-implementing the wiring.
+    public func makeURLSessionConfiguration() -> URLSessionConfiguration {
+        let base = URLSessionConfiguration.default
+        guard let override = urlSessionConfigurationOverride else { return base }
+        return override(base)
+    }
+
     public struct AdvancedBuilder: Sendable {
         public var baseURL: URL
         public var timeout: TimeInterval
@@ -164,6 +185,8 @@ public struct NetworkConfiguration: Sendable {
         /// ``responseBodyBufferingPolicy``. New code should set
         /// ``responseBodyBufferingPolicy`` directly.
         public var responseBodyLimit: Int64?
+        /// See ``NetworkConfiguration/urlSessionConfigurationOverride``.
+        public var urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
 
         fileprivate init(preset: NetworkConfiguration) {
             self.baseURL = preset.baseURL
@@ -189,6 +212,7 @@ public struct NetworkConfiguration: Sendable {
             self.captureFailurePayload = preset.captureFailurePayload
             self.responseBodyBufferingPolicy = preset.responseBodyBufferingPolicy
             self.responseBodyLimit = preset.responseBodyLimit
+            self.urlSessionConfigurationOverride = preset.urlSessionConfigurationOverride
         }
 
         fileprivate func build() -> NetworkConfiguration {
@@ -215,7 +239,8 @@ public struct NetworkConfiguration: Sendable {
                 customExecutionPolicies: customExecutionPolicies,
                 captureFailurePayload: captureFailurePayload,
                 responseBodyBufferingPolicy: responseBodyBufferingPolicy,
-                responseBodyLimit: responseBodyLimit
+                responseBodyLimit: responseBodyLimit,
+                urlSessionConfigurationOverride: urlSessionConfigurationOverride
             )
         }
     }
@@ -256,7 +281,8 @@ public struct NetworkConfiguration: Sendable {
         customExecutionPolicies: [any RequestExecutionPolicy] = [],
         captureFailurePayload: Bool = false,
         responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(),
-        responseBodyLimit: Int64? = nil
+        responseBodyLimit: Int64? = nil,
+        urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)? = nil
     ) {
         let resolvedBufferingPolicy =
             responseBodyLimit.map { responseBodyBufferingPolicy.replacingMaxBytes($0) }
@@ -284,5 +310,6 @@ public struct NetworkConfiguration: Sendable {
         self.captureFailurePayload = captureFailurePayload
         self.responseBodyBufferingPolicy = resolvedBufferingPolicy
         self.responseBodyLimit = resolvedBufferingPolicy.maxBytes
+        self.urlSessionConfigurationOverride = urlSessionConfigurationOverride
     }
 }

@@ -8,6 +8,26 @@ import InnoNetwork
 /// to the values documented in the 4.0.0 RFC (50 MB total, 1,000 entries,
 /// 5 MB per entry, no authenticated responses, no `Set-Cookie` responses).
 public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
+    /// Durability policy for the on-disk index file.
+    ///
+    /// `fsync(_:)` forces an in-flight write through the OS page cache to
+    /// stable storage. `.always` opens an fd on the renamed index after the
+    /// atomic write and `fsync`s it (plus the parent directory) so the index
+    /// survives a hard crash. `.onCheckpoint`/`.never` retain the historic
+    /// `data.write(to:options:.atomic)` semantics where the rename is
+    /// linearized but the bytes are not necessarily flushed to platter.
+    public enum PersistenceFsyncPolicy: Sendable, Equatable {
+        /// `fsync(_:)` the index file and parent directory after every write.
+        case always
+        /// Same as ``never`` for the persistent response cache: the cache
+        /// rewrites the entire index on every change, so there is no
+        /// distinct checkpoint boundary. Provided for API parity with
+        /// ``DownloadConfiguration/PersistenceFsyncPolicy``.
+        case onCheckpoint
+        /// Rely on the OS to flush dirty pages on its own cadence.
+        case never
+    }
+
     /// Directory the cache uses for its `index.json` and SHA-256-addressed
     /// body files. The directory is created on first use. The cache writes
     /// only to its own subtree (`index.json` and `bodies/`); other files
@@ -27,6 +47,8 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     /// When `true`, responses with `Set-Cookie` headers are eligible for
     /// storage. Defaults to `false` for privacy.
     public let storesSetCookieResponses: Bool
+    /// Durability policy for the index file. Defaults to ``PersistenceFsyncPolicy/onCheckpoint``.
+    public let persistenceFsyncPolicy: PersistenceFsyncPolicy
 
     /// Build a configuration. Only `directoryURL` is required; defaults match
     /// the 4.0.0 RFC ("Implementation decisions" table).
@@ -36,7 +58,8 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
         maxEntries: Int = 1_000,
         maxEntryBytes: Int = 5 * 1024 * 1024,
         storesAuthenticatedResponses: Bool = false,
-        storesSetCookieResponses: Bool = false
+        storesSetCookieResponses: Bool = false,
+        persistenceFsyncPolicy: PersistenceFsyncPolicy = .onCheckpoint
     ) {
         self.directoryURL = directoryURL
         self.maxBytes = max(1, maxBytes)
@@ -44,6 +67,7 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
         self.maxEntryBytes = max(1, maxEntryBytes)
         self.storesAuthenticatedResponses = storesAuthenticatedResponses
         self.storesSetCookieResponses = storesSetCookieResponses
+        self.persistenceFsyncPolicy = persistenceFsyncPolicy
     }
 }
 
@@ -253,6 +277,29 @@ public actor PersistentResponseCache: ResponseCache {
     private func persistIndex() throws {
         let data = try JSONEncoder.persistentCache.encode(index)
         try data.write(to: indexURL, options: .atomic)
+        guard configuration.persistenceFsyncPolicy == .always else { return }
+        Self.fsyncFile(at: indexURL)
+        Self.fsyncDirectory(at: configuration.directoryURL)
+    }
+
+    private static func fsyncFile(at url: URL) {
+        let fd = url.withUnsafeFileSystemRepresentation { rep -> Int32 in
+            guard let rep else { return -1 }
+            return open(rep, O_RDONLY)
+        }
+        guard fd >= 0 else { return }
+        _ = fsync(fd)
+        close(fd)
+    }
+
+    private static func fsyncDirectory(at url: URL) {
+        let fd = url.withUnsafeFileSystemRepresentation { rep -> Int32 in
+            guard let rep else { return -1 }
+            return open(rep, O_RDONLY)
+        }
+        guard fd >= 0 else { return }
+        _ = fsync(fd)
+        close(fd)
     }
 
     private static func loadIndex(

@@ -160,6 +160,32 @@ struct PersistentResponseCacheTests {
         #expect(cached.data == Data("payload".utf8))
     }
 
+    @Test("persistenceFsyncPolicy=.always still persists across reopen")
+    func fsyncAlwaysPersistsAcrossReopen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            persistenceFsyncPolicy: .always
+        )
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/fsynced")
+
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("durable".utf8)))
+
+        let reader = try PersistentResponseCache(configuration: configuration)
+        let cached = try #require(await reader.get(key))
+        #expect(cached.data == Data("durable".utf8))
+    }
+
+    @Test("PersistentResponseCacheConfiguration defaults to .onCheckpoint")
+    func defaultFsyncPolicyIsOnCheckpoint() {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        #expect(configuration.persistenceFsyncPolicy == .onCheckpoint)
+    }
+
     private func makeDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("innonetwork-persistent-cache-\(UUID().uuidString)", isDirectory: true)
