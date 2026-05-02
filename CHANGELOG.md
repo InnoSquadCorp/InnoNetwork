@@ -30,8 +30,8 @@ notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
   failures rather than silently dropping parts. RFC 5987 `filename*=UTF-8''…`
   is emitted for non-ASCII filenames; ASCII fallback is preserved.
 - `MultipartResponseDecoder`: missing/invalid boundary raises
-  `NetworkError.decoding(stage: .multipartBoundary, …)` instead of returning
-  an empty array.
+  `NetworkError.invalidRequestConfiguration(...)` instead of returning an
+  empty array.
 - `RetryPolicy.init`: gains `jitterFactor` and `maxTotalRetryDuration`
   parameters with safe defaults. The `cancelled` event now fires even when
   the surrounding task is cancelled.
@@ -48,7 +48,9 @@ notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
   silently clamps. Keys are derived from `scheme://host:port` so different
   ports are isolated. The state machine uses a true rolling window and
   supports configurable hysteresis via `numberOfProbesRequiredToClose`.
-  DNS/TLS pinning failures are excluded from the failure count by default.
+  TLS pinning and certificate trust failures are excluded from the failure
+  count by default; DNS/name-resolution failures remain regular underlying
+  transport failures.
 - `DownloadConfiguration.safeDefaults` and `advanced` set
   `allowsCellularAccess = false`. Use `cellularEnabled()` to opt back in.
 - `DownloadManager.shutdown() async` is the canonical lifecycle teardown.

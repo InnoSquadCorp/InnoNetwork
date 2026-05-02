@@ -3,6 +3,18 @@ import Testing
 
 @testable import InnoNetwork
 
+private func eventPipelineOverflowPolicyEquals(
+    _ lhs: EventPipelineOverflowPolicy,
+    _ rhs: EventPipelineOverflowPolicy
+) -> Bool {
+    switch (lhs, rhs) {
+    case (.dropOldest, .dropOldest), (.dropNewest, .dropNewest):
+        return true
+    default:
+        return false
+    }
+}
+
 @Suite("NetworkMonitor lifecycle")
 struct NetworkMonitorLifecycleTests {
 
@@ -39,17 +51,6 @@ struct EventDeliveryPolicyDefaultTests {
         let policy = EventDeliveryPolicy.default
         #expect(policy.maxBufferedEventsPerPartition == 256)
         #expect(policy.maxBufferedEventsPerConsumer == 256)
-        #expect(policy.overflowPolicy == .dropOldest)
-    }
-}
-
-extension EventPipelineOverflowPolicy: Swift.Equatable {
-    public static func == (lhs: EventPipelineOverflowPolicy, rhs: EventPipelineOverflowPolicy) -> Bool {
-        switch (lhs, rhs) {
-        case (.dropOldest, .dropOldest), (.dropNewest, .dropNewest):
-            return true
-        default:
-            return false
-        }
+        #expect(eventPipelineOverflowPolicyEquals(policy.overflowPolicy, .dropOldest))
     }
 }

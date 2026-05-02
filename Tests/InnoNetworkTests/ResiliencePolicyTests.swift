@@ -1431,6 +1431,16 @@ struct ResiliencePolicyTests {
         #expect(await script.calls == 2)
     }
 
+    @Test("Refresh failure cooldown normalizes invalid bounds")
+    func refreshFailureCooldownNormalizesInvalidBounds() async {
+        let disabledByNegativeInput = RefreshFailureCooldown.exponentialBackoff(base: -1, max: -5)
+        #expect(disabledByNegativeInput.cooldown(afterConsecutiveFailures: 1) == 0)
+
+        let capRaisedToBase = RefreshFailureCooldown.exponentialBackoff(base: 2, max: 1)
+        #expect(capRaisedToBase.cooldown(afterConsecutiveFailures: 1) == 2)
+        #expect(capRaisedToBase.cooldown(afterConsecutiveFailures: 2) == 2)
+    }
+
     @Test("RefreshAndApply strips lowercase Authorization header before reapplying the new token")
     func refreshTokenStripsCaseInsensitiveAuthorization() async throws {
         let coordinator = RefreshTokenCoordinator(

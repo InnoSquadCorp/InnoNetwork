@@ -145,7 +145,10 @@ public struct DefaultNetworkLogger: NetworkLogger {
 
     func sanitize(cookies: [HTTPCookie]) -> String {
         guard options.redactSensitiveData else {
-            return cookies.map(\.description).joined(separator: "; ")
+            return
+                cookies
+                .map { Self.maskJWTLikeTokens(in: $0.description) }
+                .joined(separator: "; ")
         }
         return
             cookies

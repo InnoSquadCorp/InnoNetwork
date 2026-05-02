@@ -56,7 +56,7 @@ struct FaultInjectionHelpersTests {
     }
 
     @Test("FailingFileHandle fails on configured write index")
-    func failingFileHandle() throws {
+    func failingFileHandle() async throws {
         let handle = FailingFileHandle(plan: .init(failWriteAt: 2))
         try handle.write(contentsOf: Data([0x01]))
         #expect(throws: (any Error).self) { try handle.write(contentsOf: Data([0x02])) }

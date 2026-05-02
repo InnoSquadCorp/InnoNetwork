@@ -7,7 +7,7 @@ import Testing
 struct HTTPHeaderTests {
 
     @Test("add() preserves repeated entries, update() collapses them")
-    func addPreservesAndUpdateCollapses() {
+    func addPreservesAndUpdateCollapses() async {
         var headers = HTTPHeaders()
         headers.add(name: "Set-Cookie", value: "a=1")
         headers.add(name: "set-cookie", value: "b=2")
@@ -23,7 +23,7 @@ struct HTTPHeaderTests {
     }
 
     @Test("update() preserves the position of the first matching entry")
-    func updatePreservesFirstPosition() {
+    func updatePreservesFirstPosition() async {
         var headers = HTTPHeaders()
         headers.add(name: "X-A", value: "1")
         headers.add(name: "X-Multi", value: "first")
@@ -38,7 +38,7 @@ struct HTTPHeaderTests {
     }
 
     @Test("value(for:) returns the comma-joined RFC 7230 representation")
-    func valueReturnsRFC7230Join() {
+    func valueReturnsRFC7230Join() async {
         var headers = HTTPHeaders()
         headers.add(name: "Accept", value: "text/html")
         headers.add(name: "accept", value: "application/json")
@@ -48,7 +48,7 @@ struct HTTPHeaderTests {
     }
 
     @Test("dictionary collapses duplicates while keeping first canonical name")
-    func dictionaryCollapsesDuplicates() {
+    func dictionaryCollapsesDuplicates() async {
         var headers = HTTPHeaders()
         headers.add(name: "X-Accept", value: "text/html")
         headers.add(name: "X-Trace", value: "abc")
@@ -63,7 +63,7 @@ struct HTTPHeaderTests {
     }
 
     @Test("remove() drops every case-insensitive match")
-    func removeDropsAllMatches() {
+    func removeDropsAllMatches() async {
         var headers = HTTPHeaders()
         headers.add(name: "X-Trace", value: "1")
         headers.add(name: "X-OTHER", value: "y")
@@ -77,7 +77,7 @@ struct HTTPHeaderTests {
     }
 
     @Test("init([HTTPHeader]) preserves multi-value entries verbatim")
-    func arrayInitPreservesMultiValue() {
+    func arrayInitPreservesMultiValue() async {
         let headers = HTTPHeaders([
             HTTPHeader(name: "Set-Cookie", value: "a=1"),
             HTTPHeader(name: "Set-Cookie", value: "b=2"),
@@ -92,7 +92,7 @@ struct HTTPHeaderTests {
 struct MultipartFormDataHeaderTests {
 
     @Test("ASCII filenames emit the legacy filename parameter only")
-    func asciiFilenameEmitsLegacyOnly() throws {
+    func asciiFilenameEmitsLegacyOnly() async throws {
         var form = MultipartFormData(boundary: "TestBoundary")
         form.append(Data("hello".utf8), name: "file", fileName: "report.txt", mimeType: "text/plain")
 
@@ -104,7 +104,7 @@ struct MultipartFormDataHeaderTests {
     }
 
     @Test("Non-ASCII filenames emit RFC 5987 filename* alongside ASCII fallback")
-    func nonASCIIFilenameEmitsExtendedParameter() throws {
+    func nonASCIIFilenameEmitsExtendedParameter() async throws {
         var form = MultipartFormData(boundary: "TestBoundary")
         // Korean: 보고서.txt
         form.append(Data("hello".utf8), name: "file", fileName: "보고서.txt", mimeType: "text/plain")
@@ -122,7 +122,7 @@ struct MultipartFormDataHeaderTests {
     }
 
     @Test("Per-part Content-Length is opt-in via includesPartContentLength")
-    func contentLengthIsOptIn() throws {
+    func contentLengthIsOptIn() async throws {
         var optOut = MultipartFormData(boundary: "B")
         optOut.append(Data("abcdef".utf8), name: "f", fileName: "f.bin", mimeType: "application/octet-stream")
         let withoutHeader = String(data: try optOut.encode(), encoding: .utf8) ?? ""

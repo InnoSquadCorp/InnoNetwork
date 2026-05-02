@@ -44,8 +44,8 @@ the individual entries matter.
   parts. Wrap call sites in `do/catch` if you previously relied on
   silent skipping.
 - `MultipartResponseDecoder` raises
-  `NetworkError.decoding(stage: .multipartBoundary, …)` on missing or
-  invalid boundary instead of returning an empty array.
+  `NetworkError.invalidRequestConfiguration(...)` on missing or invalid
+  boundary instead of returning an empty array.
 - For non-ASCII filenames the encoder emits both `filename=` (ASCII
   fallback) and `filename*=UTF-8''<percent>` per RFC 5987. No caller
   changes required.
@@ -83,9 +83,10 @@ that asserted on `.cancelled` absence need to update.
   initializer.
 - `numberOfProbesRequiredToClose` (default 1) introduces optional
   hysteresis for flapping hosts.
-- DNS and TLS-pinning failures default to non-countable. Pass
-  `countsTransportSecurityFailures: true` to force them back into the
-  failure budget.
+- TLS-pinning and certificate trust failures default to non-countable. Pass
+  `countsTransportSecurityFailures: true` to force those security failures
+  back into the failure budget. DNS/name-resolution failures remain regular
+  underlying transport failures.
 
 ## DownloadConfiguration / DownloadManager
 

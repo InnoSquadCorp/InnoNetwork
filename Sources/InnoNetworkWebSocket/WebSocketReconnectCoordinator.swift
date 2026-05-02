@@ -178,8 +178,8 @@ package struct WebSocketReconnectCoordinator {
         if range.lowerBound <= range.upperBound {
             return randomOffset(range)
         }
-        let mid = range.upperBound
-        return randomOffset(mid...mid)
+        let fallback = range.upperBound
+        return randomOffset(fallback...fallback)
     }
 
     private static func shouldReconnect(currentState: WebSocketState, autoReconnectEnabled: Bool) -> Bool {

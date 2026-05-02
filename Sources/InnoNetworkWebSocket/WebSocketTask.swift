@@ -147,7 +147,7 @@ public actor WebSocketTask: Identifiable {
     /// The reconnect coordinator stamps this on the first reconnect attempt
     /// after a clean connection and uses ``reconnectWindowStartedAt`` to
     /// enforce ``WebSocketConfiguration/reconnectMaxTotalDuration``.
-    package func beginReconnectWindowIfNeeded(now: Date = .init()) {
+    package func beginReconnectWindowIfNeeded(now: Date) {
         if _reconnectWindowStartedAt == nil {
             _reconnectWindowStartedAt = now
         }

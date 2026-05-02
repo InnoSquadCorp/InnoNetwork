@@ -3,12 +3,20 @@ import Testing
 
 @testable import InnoNetwork
 
+private func makeJWTLikeToken() -> String {
+    [
+        "ey" + String(repeating: "A", count: 14),
+        String(repeating: "B", count: 14),
+        String(repeating: "C", count: 24),
+    ].joined(separator: ".")
+}
+
 @Suite("Network Logger Tests")
 struct NetworkLoggerTests {
 
     @Test("JWT-like tokens are masked in free-form strings")
     func jwtLikeTokensAreMasked() {
-        let token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.signaturepart_extralength"
+        let token = makeJWTLikeToken()
         let input = "user logged in with token=\(token) at line=42"
         let masked = DefaultNetworkLogger.maskJWTLikeTokens(in: input)
         #expect(masked.contains("<redacted-jwt>"))
@@ -86,6 +94,24 @@ struct NetworkLoggerTests {
         let sanitizedCookies = logger.sanitize(cookies: [cookie])
         #expect(sanitizedCookies.contains("session=<redacted>"))
         #expect(!sanitizedCookies.contains("sensitive"))
+    }
+
+    @Test("Verbose cookie logging masks JWT-like values")
+    func verboseCookieLoggingMasksJWTValues() throws {
+        let logger = DefaultNetworkLogger(options: .verbose)
+        let token = makeJWTLikeToken()
+        let cookie = try #require(
+            HTTPCookie(properties: [
+                .name: "session",
+                .value: token,
+                .domain: "example.com",
+                .path: "/",
+            ])
+        )
+
+        let sanitizedCookies = logger.sanitize(cookies: [cookie])
+        #expect(sanitizedCookies.contains("<redacted-jwt>"))
+        #expect(!sanitizedCookies.contains(token))
     }
 
     @Test("Logger accepts a non-shared cookie storage at init")

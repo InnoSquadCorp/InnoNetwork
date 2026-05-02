@@ -528,14 +528,16 @@ extension URLRequest {
     /// Returns `allHTTPHeaderFields` as `HTTPHeaders`.
     ///
     /// The setter routes per-header through `setValue`/`addValue` so that
-    /// multi-value entries (e.g. repeated `WWW-Authenticate` challenges that
-    /// were preserved when constructing `HTTPHeaders` from a response) are
-    /// applied to the request via Foundation's documented `addValue`
-    /// path rather than collapsed through the `[String: String]`
-    /// dictionary projection. The first occurrence per case-insensitive
+    /// in-memory duplicate entries in `HTTPHeaders` are applied to the
+    /// request via Foundation's documented `addValue` path rather than
+    /// collapsed through the `[String: String]` dictionary projection.
+    /// `HTTPURLResponse.allHeaderFields` has already collapsed duplicate
+    /// response header lines into one dictionary value before they can reach
+    /// this setter, so response round-trips cannot recover the original
+    /// repeated-line structure. The first occurrence per case-insensitive
     /// name uses `setValue` to clear any pre-existing entry; subsequent
     /// occurrences use `addValue` so Foundation can apply its
-    /// header-specific concatenation rules.
+    /// request-header concatenation rules.
     ///
     /// Headers that are semantically single-valued on requests
     /// (`Authorization`, `Content-Type`, `Content-Length`, `Host`,

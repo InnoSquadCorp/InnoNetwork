@@ -58,7 +58,9 @@ public struct RefreshFailureCooldown: Sendable {
     /// `failures == 0` returns zero — no cooldown until the *first* failure
     /// has occurred.
     public static func exponentialBackoff(base: TimeInterval, max cap: TimeInterval) -> RefreshFailureCooldown {
-        RefreshFailureCooldown(base: base, cap: cap)
+        let normalizedBase = max(0, base)
+        let normalizedCap = max(normalizedBase, cap)
+        return RefreshFailureCooldown(base: normalizedBase, cap: normalizedCap)
     }
 
     /// Disables cooldown entirely; every failure is immediately retryable.

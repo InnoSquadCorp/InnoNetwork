@@ -318,13 +318,38 @@ private final class SnakeCaseKeyTransformCache: Sendable {
     static let shared = SnakeCaseKeyTransformCache()
     static let capacity: Int = 4096
 
+    private struct FIFOKeyBuffer {
+        private var storage: [String?] = Array(repeating: nil, count: SnakeCaseKeyTransformCache.capacity)
+        private var head = 0
+        private var tail = 0
+        private var count = 0
+
+        mutating func append(_ key: String) {
+            if count == storage.count {
+                _ = removeFirst()
+            }
+            storage[tail] = key
+            tail = (tail + 1) % storage.count
+            count += 1
+        }
+
+        mutating func removeFirst() -> String? {
+            guard count > 0 else { return nil }
+            let key = storage[head]
+            storage[head] = nil
+            head = (head + 1) % storage.count
+            count -= 1
+            return key
+        }
+    }
+
     private struct State {
         var entries: [String: String] = [:]
         /// FIFO insertion order for eviction. We do not promote on read —
         /// a true LRU promotion would double the contended write paths,
         /// and the cache holds enough capacity that simple FIFO eviction is
         /// good enough to bound memory under runaway dynamic-key payloads.
-        var insertionOrder: [String] = []
+        var insertionOrder = FIFOKeyBuffer()
     }
 
     private let state = OSAllocatedUnfairLock<State>(initialState: State())
@@ -340,8 +365,7 @@ private final class SnakeCaseKeyTransformCache: Sendable {
 
         state.withLock { state in
             if state.entries[key] != nil { return }
-            if state.entries.count >= Self.capacity, let oldest = state.insertionOrder.first {
-                state.insertionOrder.removeFirst()
+            if state.entries.count >= Self.capacity, let oldest = state.insertionOrder.removeFirst() {
                 state.entries.removeValue(forKey: oldest)
             }
             state.entries[key] = transformed

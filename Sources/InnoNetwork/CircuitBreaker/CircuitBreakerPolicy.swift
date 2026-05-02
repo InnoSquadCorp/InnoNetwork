@@ -366,9 +366,7 @@ package actor CircuitBreakerRegistry {
             .serverCertificateHasUnknownRoot,
             .clientCertificateRejected,
             .clientCertificateRequired,
-            .secureConnectionFailed,
-            .cannotFindHost,
-            .dnsLookupFailed:
+            .secureConnectionFailed:
             return true
         default:
             return false

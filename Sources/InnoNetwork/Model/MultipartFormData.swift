@@ -338,10 +338,7 @@ extension MultipartFormData {
         /// in that case so receivers that understand the extended syntax
         /// can decode the original UTF-8 bytes.
         static func requiresExtendedFilename(_ value: String) -> Bool {
-            for scalar in value.unicodeScalars {
-                if scalar.value > 0x7F { return true }
-            }
-            return false
+            !value.unicodeScalars.allSatisfy { $0.value <= 0x7F }
         }
 
         /// Builds the RFC 5987 `value-chars` representation of the filename:

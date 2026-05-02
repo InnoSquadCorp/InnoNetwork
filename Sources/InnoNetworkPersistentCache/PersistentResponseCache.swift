@@ -186,8 +186,13 @@ public actor PersistentResponseCache: ResponseCache {
         // and are unaffected by this counter.
         pendingReadFlushes += 1
         if pendingReadFlushes >= readFlushBatchSize {
-            pendingReadFlushes = 0
-            try? persistIndex(durable: false)
+            do {
+                try persistIndex(durable: false)
+                pendingReadFlushes = 0
+            } catch {
+                // Keep the backlog so the next read can retry the best-effort
+                // metadata flush instead of losing all pending access times.
+            }
         }
 
         return CachedResponse(

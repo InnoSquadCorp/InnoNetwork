@@ -418,8 +418,9 @@ public actor DownloadManager {
     /// `shutdown()` is the supported lifecycle exit point. It releases the
     /// background session identifier, drops the URLSession's strong reference
     /// to its delegate, and stops the delegate-event consumer task. After
-    /// `shutdown()` returns, every public entry point is a no-op (or returns
-    /// an empty result for getters), and a fresh manager can claim the same
+    /// `shutdown()` returns, treat the manager as terminal and create a fresh
+    /// instance for new transfer work; diagnostic getters may still reflect
+    /// last-known in-memory task state. A fresh manager can claim the same
     /// `sessionIdentifier`. Calling `shutdown()` multiple times is safe.
     ///
     /// In tests and apps that own the manager instance directly, prefer

@@ -2,14 +2,10 @@ import Foundation
 
 /// Canonical InnoNetwork date formatter.
 ///
-/// Returns a single immutable, fully-configured `DateFormatter` instance.
-/// `DateFormatter`'s parse/format APIs have been documented as thread-safe
-/// for read-only use since iOS 7, and we never mutate the shared instance
-/// after construction, so callers can format/parse from any actor or
-/// concurrent task without serialising on a per-access factory.
-package var defaultDateFormatter: DateFormatter { _sharedDefaultDateFormatter }
-
-private let _sharedDefaultDateFormatter: DateFormatter = makeDefaultDateFormatter()
+/// Returns a freshly configured `DateFormatter` on every access so callers
+/// can mutate the instance and concurrent encoders/decoders never share
+/// formatter state.
+package var defaultDateFormatter: DateFormatter { makeDefaultDateFormatter() }
 
 /// Canonical default `JSONEncoder` for InnoNetwork request bodies. Used as the
 /// implicit default when a ``TransportPolicy`` factory does not receive an

@@ -7,7 +7,7 @@ import Testing
 struct CircuitBreakerPolicyValidationTests {
 
     @Test("Validating initializer rejects non-positive windowSize")
-    func rejectsNonPositiveWindow() {
+    func rejectsNonPositiveWindow() async {
         #expect(throws: CircuitBreakerPolicy.ConfigurationError.self) {
             _ = try CircuitBreakerPolicy(
                 validatedFailureThreshold: 1,
@@ -19,7 +19,7 @@ struct CircuitBreakerPolicyValidationTests {
     }
 
     @Test("Validating initializer rejects threshold > windowSize")
-    func rejectsThresholdAboveWindow() {
+    func rejectsThresholdAboveWindow() async {
         #expect(throws: CircuitBreakerPolicy.ConfigurationError.self) {
             _ = try CircuitBreakerPolicy(
                 validatedFailureThreshold: 5,
@@ -31,7 +31,7 @@ struct CircuitBreakerPolicyValidationTests {
     }
 
     @Test("Validating initializer rejects maxReset < reset")
-    func rejectsMaxBelowReset() {
+    func rejectsMaxBelowReset() async {
         #expect(throws: CircuitBreakerPolicy.ConfigurationError.self) {
             _ = try CircuitBreakerPolicy(
                 validatedFailureThreshold: 1,
@@ -43,7 +43,7 @@ struct CircuitBreakerPolicyValidationTests {
     }
 
     @Test("Silent-clamp initializer still applies normalization")
-    func silentClampStillWorks() {
+    func silentClampStillWorks() async {
         let policy = CircuitBreakerPolicy(
             failureThreshold: 100,
             windowSize: 3,
@@ -113,6 +113,28 @@ struct CircuitBreakerRegistryHardeningTests {
         try await registry.prepare(request: request, policy: policy)
     }
 
+    @Test("4xx response closes half-open circuit without waiting for hysteresis probes")
+    func clientErrorClosesHalfOpenCircuit() async throws {
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(
+            failureThreshold: 1,
+            windowSize: 1,
+            resetAfter: .zero,
+            maxResetAfter: .seconds(60),
+            numberOfProbesRequiredToClose: 3
+        )
+        let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
+
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+        try await registry.prepare(request: request, policy: policy)
+        await registry.recordStatus(request: request, policy: policy, statusCode: 404)
+
+        // A closed circuit admits repeated prepares. A lingering half-open
+        // entry would reserve the first probe slot and reject the second one.
+        try await registry.prepare(request: request, policy: policy)
+        try await registry.prepare(request: request, policy: policy)
+    }
+
     @Test("Cancellation in closed state preserves the rolling window")
     func cancellationPreservesClosedWindow() async throws {
         let registry = CircuitBreakerRegistry()
@@ -129,8 +151,8 @@ struct CircuitBreakerRegistryHardeningTests {
         }
     }
 
-    @Test("DNS lookup failure does not open the breaker by default")
-    func dnsFailureNotCountable() async throws {
+    @Test("DNS lookup failure remains a countable underlying transport failure")
+    func dnsFailureCountableAsUnderlyingTransportFailure() async throws {
         let registry = CircuitBreakerRegistry()
         let policy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1)
         let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
@@ -138,11 +160,13 @@ struct CircuitBreakerRegistryHardeningTests {
         let dns = URLError(.dnsLookupFailed)
         await registry.recordFailure(request: request, policy: policy, error: dns)
 
-        try await registry.prepare(request: request, policy: policy)
+        await #expect(throws: NetworkError.self) {
+            try await registry.prepare(request: request, policy: policy)
+        }
     }
 
-    @Test("DNS failures count when countsTransportSecurityFailures is true")
-    func dnsCountableWhenOptedIn() async throws {
+    @Test("Transport security URL failures count when countsTransportSecurityFailures is true")
+    func transportSecurityURLFailureCountableWhenOptedIn() async throws {
         let registry = CircuitBreakerRegistry()
         let policy = CircuitBreakerPolicy(
             failureThreshold: 1,
@@ -151,8 +175,8 @@ struct CircuitBreakerRegistryHardeningTests {
         )
         let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
 
-        let dns = URLError(.dnsLookupFailed)
-        await registry.recordFailure(request: request, policy: policy, error: dns)
+        let securityError = URLError(.secureConnectionFailed)
+        await registry.recordFailure(request: request, policy: policy, error: securityError)
 
         await #expect(throws: NetworkError.self) {
             try await registry.prepare(request: request, policy: policy)
@@ -167,6 +191,18 @@ struct CircuitBreakerRegistryHardeningTests {
         let trustError = NetworkError.trustEvaluationFailed(.systemTrustEvaluationFailed(reason: "bad"))
 
         await registry.recordFailure(request: request, policy: policy, error: trustError)
+
+        try await registry.prepare(request: request, policy: policy)
+    }
+
+    @Test("Transport security URL failures do not count by default")
+    func transportSecurityURLFailureNotCountableByDefault() async throws {
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1)
+        let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
+        let securityError = URLError(.secureConnectionFailed)
+
+        await registry.recordFailure(request: request, policy: policy, error: securityError)
 
         try await registry.prepare(request: request, policy: policy)
     }
