@@ -84,6 +84,43 @@ struct PersistentResponseCacheTests {
         #expect(await cache.get(key) != nil)
     }
 
+    @Test("Overwriting an entry preserves the freshly written body")
+    func overwriteKeepsFreshBody() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/overwrite")
+
+        await cache.set(key, CachedResponse(data: Data("first".utf8)))
+        await cache.set(key, CachedResponse(data: Data("second".utf8)))
+
+        let cached = try #require(await cache.get(key))
+        #expect(cached.data == Data("second".utf8))
+    }
+
+    @Test("get() returns the cached response when index persistence fails")
+    func getReturnsValueWhenIndexPersistenceFails() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/persist-fail")
+
+        await cache.set(key, CachedResponse(data: Data("payload".utf8)))
+
+        // Simulate read-only state by replacing the index file with a directory entry.
+        let indexURL = directory.appendingPathComponent("index.json")
+        try? FileManager.default.removeItem(at: indexURL)
+        try FileManager.default.createDirectory(at: indexURL, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: indexURL) }
+
+        let cached = try #require(await cache.get(key))
+        #expect(cached.data == Data("payload".utf8))
+    }
+
     private func makeDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("innonetwork-persistent-cache-\(UUID().uuidString)", isDirectory: true)

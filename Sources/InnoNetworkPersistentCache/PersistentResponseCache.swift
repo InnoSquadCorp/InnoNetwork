@@ -88,24 +88,27 @@ public actor PersistentResponseCache: ResponseCache {
         guard var entry = index.entries[id] else { return nil }
         let bodyURL = bodiesDirectoryURL.appendingPathComponent(entry.bodyFileName, isDirectory: false)
 
+        let data: Data
         do {
-            let data = try Data(contentsOf: bodyURL)
-            entry.lastAccessedAt = Date()
-            index.entries[id] = entry
-            try persistIndex()
-            return CachedResponse(
-                data: data,
-                statusCode: entry.statusCode,
-                headers: entry.headers,
-                storedAt: entry.storedAt,
-                requiresRevalidation: entry.requiresRevalidation,
-                varyHeaders: entry.varyHeaders
-            )
+            data = try Data(contentsOf: bodyURL)
         } catch {
             removeEntry(id: id, entry: entry)
             try? persistIndex()
             return nil
         }
+
+        entry.lastAccessedAt = Date()
+        index.entries[id] = entry
+        try? persistIndex()
+
+        return CachedResponse(
+            data: data,
+            statusCode: entry.statusCode,
+            headers: entry.headers,
+            storedAt: entry.storedAt,
+            requiresRevalidation: entry.requiresRevalidation,
+            varyHeaders: entry.varyHeaders
+        )
     }
 
     public func set(_ key: ResponseCacheKey, _ value: CachedResponse) async {
@@ -135,7 +138,7 @@ public actor PersistentResponseCache: ResponseCache {
 
         do {
             try value.data.write(to: bodyURL, options: .atomic)
-            if let old = index.entries[id] {
+            if let old = index.entries[id], old.bodyFileName != bodyFileName {
                 removeBody(fileName: old.bodyFileName)
             }
             index.entries[id] = entry
