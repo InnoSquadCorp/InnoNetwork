@@ -718,6 +718,10 @@ private enum InnoNetworkBenchmarks {
         results: [BenchmarkResult],
         options: BenchmarkOptions
     ) throws -> BenchmarkBaselineSummary? {
+        // Validate the current run's identifiers regardless of whether a
+        // baseline is present so duplicate `group/name` pairs are caught even
+        // when `--enforce-baseline` is off and the baseline cannot be loaded.
+        let currentMap = try makeBenchmarkMap(from: results)
         let baselineURL = URL(fileURLWithPath: options.baselinePath)
 
         guard FileManager.default.fileExists(atPath: baselineURL.path) else {
@@ -784,7 +788,6 @@ private enum InnoNetworkBenchmarks {
             return nil
         }
 
-        let currentMap = try makeBenchmarkMap(from: results)
         print("Baseline diff:")
         let guardedIdentifiers: Set<BenchmarkIdentifier>
         if options.enforceBaseline {

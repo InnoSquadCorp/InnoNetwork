@@ -51,7 +51,9 @@ def main() -> int:
             ]
         )
         for item in ordered[:12]:
-            name = f"{item['group']}/{item['name']}"
+            group = item.get("group", "?")
+            bench_name = item.get("name", "?")
+            name = f"{group}/{bench_name}"
             delta = item.get("deltaPercent", 0.0)
             current = item.get("currentOperationsPerSecond", 0.0)
             baseline_ops = item.get("baselineOperationsPerSecond", 0.0)
@@ -63,11 +65,15 @@ def main() -> int:
     if failures:
         lines.extend(["", "### Regression guard failures"])
         for failure in failures:
-            identifier = failure["identifier"]
-            name = f"{identifier['group']}/{identifier['name']}"
+            identifier = failure.get("identifier") or {}
+            group = identifier.get("group", "?")
+            bench_name = identifier.get("name", "?")
+            name = f"{group}/{bench_name}"
+            delta = abs(failure.get("deltaPercent", 0.0))
+            limit = failure.get("maxRegressionPercent", 0.0)
             lines.append(
-                f"- `{name}` regressed by {abs(failure['deltaPercent']):.2f}% "
-                f"(limit {failure['maxRegressionPercent']:.2f}%)."
+                f"- `{name}` regressed by {delta:.2f}% "
+                f"(limit {limit:.2f}%)."
             )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

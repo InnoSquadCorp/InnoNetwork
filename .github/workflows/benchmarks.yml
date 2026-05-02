@@ -75,22 +75,34 @@ jobs:
       - name: Render benchmark PR comment
         if: always() && github.event_name == 'pull_request'
         run: |
-          if [ -f .build/benchmarks/results.json ]; then
-            python3 Scripts/render_benchmark_comment.py \
-              .build/benchmarks/results.json \
-              .build/benchmarks/comment.md
-          else
-            mkdir -p .build/benchmarks
-            printf '## InnoNetwork benchmark summary\n\nBenchmark run did not produce results.json.\n' \
-              > .build/benchmarks/comment.md
-          fi
+          mkdir -p .build/benchmarks
+          {
+            printf '<!-- innonetwork-benchmark-comment -->\n'
+            if [ -f .build/benchmarks/results.json ]; then
+              python3 Scripts/render_benchmark_comment.py \
+                .build/benchmarks/results.json \
+                /dev/stdout
+            else
+              printf '## InnoNetwork benchmark summary\n\nBenchmark run did not produce results.json.\n'
+            fi
+          } > .build/benchmarks/comment.md
 
-      - name: Comment benchmark summary on PR
+      - name: Find existing benchmark comment
         if: always() && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: gh pr comment "$PR_NUMBER" --body-file .build/benchmarks/comment.md
+        id: find-benchmark-comment
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: "<!-- innonetwork-benchmark-comment -->"
+
+      - name: Comment benchmark summary on PR (sticky)
+        if: always() && github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-benchmark-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: .build/benchmarks/comment.md
+          edit-mode: replace
 
       - name: Append scheduled benchmark trend
         if: success() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
