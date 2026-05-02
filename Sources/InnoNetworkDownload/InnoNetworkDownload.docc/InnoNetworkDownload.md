@@ -13,7 +13,7 @@ Use this module when you need:
 - foreground and background session handling
 - listener or `AsyncStream` delivery for download state transitions
 
-The shared manager is intentionally easy to start with, but custom managers remain available when you need an explicit ``DownloadConfiguration``.
+Construct one ``DownloadManager`` per download domain with an explicit ``DownloadConfiguration`` and a unique session identifier.
 
 Download task events flow through the shared event hub. Tune buffering, overflow behavior, and metrics integration via ``DownloadConfiguration/eventDeliveryPolicy`` — see <doc:EventDeliveryPolicy> in the core module for a full guide.
 
@@ -30,7 +30,6 @@ Download task events flow through the shared event hub. Tune buffering, overflow
 
 - <doc:BackgroundDownloads>
 - <doc:Persistence>
-- <doc:SharedManagerMigration>
 - ``DownloadManager``
 - ``DownloadConfiguration``
 - ``DownloadTask``

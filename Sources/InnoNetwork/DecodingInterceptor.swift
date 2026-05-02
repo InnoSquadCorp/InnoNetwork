@@ -25,8 +25,8 @@ import Foundation
 /// ``RetryPolicy`` exactly like a transport failure, so the policy
 /// still decides whether to retry the request — throw a ``NetworkError``
 /// whose classification reflects the desired retry outcome (e.g.
-/// ``NetworkError/objectMapping(_:_:)`` for a non-retryable schema
-/// mismatch).
+/// ``NetworkError/decoding(stage:underlying:response:)`` with
+/// ``DecodingStage/responseBody`` for a non-retryable schema mismatch).
 ///
 /// All conforming types must be `Sendable` because the executor may
 /// invoke them concurrently from multiple in-flight requests. Both

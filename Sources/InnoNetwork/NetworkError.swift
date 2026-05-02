@@ -21,11 +21,15 @@ import Foundation
 ///   `networkConnectionLost`, `notConnectedToInternet`, …) intentionally
 ///   stay as ``NetworkError/underlying(_:_:)`` so callers can tell a real
 ///   timeout from a name-resolution or reachability failure.
-/// - ``resourceTimeout`` is never produced by the built-in mapper because
-///   Foundation reports both request and resource timeout expiration as
-///   `URLError.timedOut` without exposing which interval fired. Higher-level
-///   transports that observe `URLSessionTaskMetrics` may construct this case
-///   directly.
+/// - ``resourceTimeout`` is produced by
+///   ``NetworkError/mapTransportError(_:metrics:resourceTimeoutInterval:)``
+///   when the caller has `URLSessionTaskMetrics` and the configured
+///   resource-timeout interval. The overload returns
+///   ``resourceTimeout`` for `URLError.timedOut` only when the task
+///   interval reaches the resource budget; otherwise it falls back to
+///   ``requestTimeout``. The single-argument
+///   ``NetworkError/mapTransportError(_:)`` retains the 4.x behaviour
+///   (`.requestTimeout` for every `URLError.timedOut`).
 public enum TimeoutReason: Sendable, Equatable {
     /// The request timed out before the server responded with the first byte.
     /// Produced from `URLError.timedOut`.
@@ -45,14 +49,38 @@ public enum TimeoutReason: Sendable, Equatable {
 }
 
 
+/// Stage of the response-decoding pipeline that produced a
+/// ``NetworkError/decoding(stage:underlying:response:)``.
+///
+/// The stage tag lets callers route decoding failures to different
+/// handlers without inspecting the underlying error. ``RetryPolicy``
+/// and ``DecodingInterceptor`` use the stage tag to decide whether a
+/// retry would change the outcome (it almost never does for decoding
+/// failures, so the default policy treats every stage as terminal).
+public enum DecodingStage: Sendable, Equatable {
+    /// The full response body failed to decode into the declared
+    /// `APIResponse` type. This is the most common stage and matches
+    /// the legacy `objectMapping` case.
+    case responseBody
+
+    /// A single line/event/frame inside a streaming response failed
+    /// to decode. The transport remains open; only the offending
+    /// frame is rejected.
+    case streamFrame
+}
+
+
 public enum NetworkError: Error, Sendable {
     case invalidBaseURL(String)
     /// Indicates an invalid request configuration
     case invalidRequestConfiguration(String)
     /// Indicates a response failed with an invalid HTTP status code.
     case statusCode(Response)
-    /// Indicates a response failed to map to a Decodable object.
-    case objectMapping(SendableUnderlyingError, Response)
+    /// Indicates a response failed to decode into the declared `APIResponse`
+    /// type. Carries a ``DecodingStage`` tag so callers can route
+    /// envelope/multipart/stream-frame failures separately from a top-level
+    /// body decode error.
+    case decoding(stage: DecodingStage, underlying: SendableUnderlyingError, response: Response)
 
     case nonHTTPResponse(URLResponse)
 
@@ -88,8 +116,8 @@ extension NetworkError: LocalizedError {
             return "Invalid base URL: \(string)"
         case .invalidRequestConfiguration(let message):
             return "Invalid request configuration: \(message)"
-        case .objectMapping(let error, _):
-            return "Failed to map data to a Decodable object: \(error.message)"
+        case .decoding(let stage, let error, _):
+            return "Failed to decode response (\(stage)): \(error.message)"
         case .statusCode:
             return "Status code didn't fall within the given range."
         case .underlying(let error, _):
@@ -136,7 +164,7 @@ public extension NetworkError {
         switch self {
         case .invalidBaseURL: return nil
         case .invalidRequestConfiguration: return nil
-        case .objectMapping(_, let response): return response
+        case .decoding(_, _, let response): return response
         case .statusCode(let response): return response
         case .underlying(_, let response): return response
         case .nonHTTPResponse: return nil
@@ -152,7 +180,7 @@ public extension NetworkError {
         switch self {
         case .invalidBaseURL: return nil
         case .invalidRequestConfiguration: return nil
-        case .objectMapping(let error, _): return error
+        case .decoding(_, let error, _): return error
         case .statusCode: return nil
         case .underlying(let error, _): return error
         case .nonHTTPResponse: return nil
@@ -161,6 +189,19 @@ public extension NetworkError {
         case .timeout(_, let underlying): return underlying
         case .responseTooLarge: return nil
         }
+    }
+
+    /// Returns `true` for any failure produced inside the response-decoding
+    /// pipeline. Built-in retry policies treat decoding failures as terminal
+    /// because retrying the same request against the same server yields the
+    /// same body shape; consumers writing their own retry strategy can use
+    /// this helper to express the same rule without enumerating
+    /// ``DecodingStage`` cases.
+    var isDecodingFailure: Bool {
+        if case .decoding = self {
+            return true
+        }
+        return false
     }
 }
 
@@ -177,7 +218,7 @@ extension NetworkError: CustomNSError {
             return 1001
         case .invalidRequestConfiguration:
             return 1002
-        case .objectMapping:
+        case .decoding:
             return 2002
         case .statusCode:
             return 3001
@@ -217,8 +258,8 @@ public extension NetworkError {
     /// logs, crash reports, or analytics through the error chain.
     func redactingFailurePayload() -> NetworkError {
         switch self {
-        case .objectMapping(let underlying, let response):
-            return .objectMapping(underlying, response.redactingData())
+        case .decoding(let stage, let underlying, let response):
+            return .decoding(stage: stage, underlying: underlying, response: response.redactingData())
         case .statusCode(let response):
             return .statusCode(response.redactingData())
         case .underlying(let err, let response?):
@@ -283,6 +324,37 @@ extension NetworkError {
     /// > update; collapsing additional `URLError` codes into `.timeout`
     /// > silently changes consumer retry semantics.
     static func mapTransportError(_ error: Error) -> NetworkError {
+        mapTransportError(error, metrics: nil, resourceTimeoutInterval: nil)
+    }
+
+    /// Metrics-aware variant of ``mapTransportError(_:)`` that can
+    /// distinguish ``TimeoutReason/resourceTimeout`` from
+    /// ``TimeoutReason/requestTimeout`` when the caller has the
+    /// `URLSessionTaskMetrics` for the failed request.
+    ///
+    /// `URLError.timedOut` collapses both timeouts on Foundation's
+    /// surface, so this overload only resolves the distinction when
+    /// **both** of the following are available:
+    /// - `metrics` from `URLSessionTaskDelegate`
+    ///   `urlSession(_:task:didFinishCollecting:)`, providing the
+    ///   actual task interval.
+    /// - `resourceTimeoutInterval`, the configured
+    ///   `timeoutIntervalForResource` for the URLSession that ran the
+    ///   task. When a request also overrides
+    ///   `URLRequest.timeoutInterval`, callers may pass that instead
+    ///   when they want to honour the per-request budget.
+    ///
+    /// When either input is missing, the mapping falls back to the
+    /// 4.x behaviour (`.requestTimeout` for `URLError.timedOut`).
+    /// `.resourceTimeout` is produced only when the task interval
+    /// elapsed at or above the configured resource timeout, which
+    /// matches Foundation's "we hit the resource budget" signal more
+    /// precisely than inferring from the error code alone.
+    static func mapTransportError(
+        _ error: Error,
+        metrics: URLSessionTaskMetrics?,
+        resourceTimeoutInterval: TimeInterval?
+    ) -> NetworkError {
         if let networkError = error as? NetworkError {
             return networkError
         }
@@ -301,7 +373,11 @@ extension NetworkError {
         if let urlError = error as? URLError {
             switch urlError.code {
             case .timedOut:
-                return .timeout(reason: .requestTimeout, underlying: SendableUnderlyingError(urlError))
+                let reason = resolveTimeoutReason(
+                    metrics: metrics,
+                    resourceTimeoutInterval: resourceTimeoutInterval
+                )
+                return .timeout(reason: reason, underlying: SendableUnderlyingError(urlError))
             case .cannotConnectToHost:
                 return .timeout(reason: .connectionTimeout, underlying: SendableUnderlyingError(urlError))
             default:
@@ -310,5 +386,23 @@ extension NetworkError {
         }
 
         return .underlying(SendableUnderlyingError(error), nil)
+    }
+
+    /// Decides between ``TimeoutReason/requestTimeout`` and
+    /// ``TimeoutReason/resourceTimeout`` for a `URLError.timedOut`,
+    /// using the task interval reported by URLSession metrics.
+    ///
+    /// Returns ``TimeoutReason/resourceTimeout`` only when the task
+    /// interval is at or beyond the configured resource budget; any
+    /// shorter elapsed time is treated as ``TimeoutReason/requestTimeout``.
+    private static func resolveTimeoutReason(
+        metrics: URLSessionTaskMetrics?,
+        resourceTimeoutInterval: TimeInterval?
+    ) -> TimeoutReason {
+        guard let metrics, let resourceTimeoutInterval, resourceTimeoutInterval > 0 else {
+            return .requestTimeout
+        }
+        let elapsed = metrics.taskInterval.duration
+        return elapsed + 0.001 >= resourceTimeoutInterval ? .resourceTimeout : .requestTimeout
     }
 }

@@ -29,7 +29,11 @@ extension AnyResponseDecoder where Output: Decodable & Sendable {
                 do {
                     return try decoder.decode(Output.self, from: data)
                 } catch {
-                    throw NetworkError.objectMapping(SendableUnderlyingError(error), response)
+                    throw NetworkError.decoding(
+                        stage: .responseBody,
+                        underlying: SendableUnderlyingError(error),
+                        response: response
+                    )
                 }
             }
         case .custom(let closure):
@@ -46,7 +50,11 @@ public extension AnyResponseDecoder where Output: Decodable {
             do {
                 return try decoder.decode(Output.self, from: data)
             } catch {
-                throw NetworkError.objectMapping(SendableUnderlyingError(error), response)
+                throw NetworkError.decoding(
+                    stage: .responseBody,
+                    underlying: SendableUnderlyingError(error),
+                    response: response
+                )
             }
         }
     }
@@ -62,7 +70,11 @@ public extension AnyResponseDecoder where Output: Decodable & HTTPEmptyResponseD
             do {
                 return try decoder.decode(Output.self, from: data)
             } catch {
-                throw NetworkError.objectMapping(SendableUnderlyingError(error), response)
+                throw NetworkError.decoding(
+                    stage: .responseBody,
+                    underlying: SendableUnderlyingError(error),
+                    response: response
+                )
             }
         }
     }

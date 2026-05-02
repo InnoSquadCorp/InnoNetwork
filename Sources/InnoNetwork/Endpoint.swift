@@ -260,7 +260,11 @@ extension Endpoint where Response == EmptyResponse {
         do {
             return try defaultResponseDecoder.decode(type, from: data)
         } catch {
-            throw NetworkError.objectMapping(SendableUnderlyingError(error), response)
+            throw NetworkError.decoding(
+                stage: .responseBody,
+                underlying: SendableUnderlyingError(error),
+                response: response
+            )
         }
     }
 }

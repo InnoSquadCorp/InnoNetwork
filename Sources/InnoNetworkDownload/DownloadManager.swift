@@ -57,73 +57,6 @@ extension DownloadManagerError: LocalizedError {
 public actor DownloadManager {
     private static let logger = Logger(subsystem: "innosquad.network.download", category: "DownloadManager")
 
-    /// Shared `DownloadManager` for apps that need a single download domain.
-    ///
-    /// Initialized lazily with ``DownloadConfiguration/default``. If the
-    /// default session identifier is already claimed by another
-    /// `DownloadManager` in the same process, the shared instance falls back
-    /// to a process-unique identifier (logged via OSLog `.fault`) and an
-    /// `assertionFailure` is raised in DEBUG builds so the misuse is caught
-    /// during development. Production callers that need explicit failure
-    /// handling should construct managers via ``make(configuration:)`` instead
-    /// of relying on `shared`.
-    ///
-    /// > Important: `shared` is soft-deprecated. Apps that need more than one
-    /// > download policy (e.g., one manager for media with WiFi-only
-    /// > downloads, another for documents over cellular) cannot express that
-    /// > with a single global instance. Prefer constructing per-feature
-    /// > managers via ``make(configuration:)`` and storing them on the owning
-    /// > feature module. The symbol stays available for the whole 4.x line so
-    /// > existing call sites continue to compile.
-    ///
-    /// See <doc:SharedManagerMigration> for a step-by-step migration guide.
-    @available(
-        *,
-        deprecated,
-        message:
-            "Use DownloadManager.make(configuration:) so each feature can pick its own DownloadConfiguration; the shared singleton forces a single global policy."
-    )
-    public static let shared: DownloadManager = {
-        do {
-            return try DownloadManager(configuration: .default)
-        } catch DownloadManagerError.duplicateSessionIdentifier(let claimedIdentifier) {
-            let fallbackIdentifier = "\(claimedIdentifier).fallback.\(UUID().uuidString)"
-            let fallbackConfig = DownloadConfiguration.safeDefaults(
-                sessionIdentifier: fallbackIdentifier
-            )
-            DownloadManager.logger.fault(
-                """
-                DownloadManager.shared could not bind session identifier \
-                \(claimedIdentifier, privacy: .public): another DownloadManager already \
-                owns it. Falling back to \(fallbackIdentifier, privacy: .public). Use \
-                DownloadManager.make(configuration:) to construct managers with explicit \
-                session identifiers.
-                """)
-            assertionFailure(
-                """
-                DownloadManager.shared bound a fallback session identifier '\(fallbackIdentifier)'. \
-                Use DownloadManager.make(configuration:) and pass an explicit identifier instead \
-                of relying on `.shared` when multiple managers coexist.
-                """)
-            do {
-                return try DownloadManager(configuration: fallbackConfig)
-            } catch {
-                // Even the fallback failed — extremely unlikely because the
-                // fallback identifier is freshly UUID-prefixed. Crash so the
-                // problem surfaces rather than silently returning a broken
-                // singleton.
-                fatalError(
-                    "DownloadManager.shared cannot initialize with fallback identifier: \(error.localizedDescription)")
-            }
-        } catch {
-            // Any other initialization failure is structural (e.g., persistence
-            // directory inaccessible) and not something a fallback identifier
-            // would fix. Surface it.
-            fatalError(
-                "DownloadManager.shared cannot initialize with .default configuration: \(error.localizedDescription)")
-        }
-    }()
-
     /// Recommended throwing factory for constructing a `DownloadManager`.
     ///
     /// Equivalent to ``init(configuration:)``, but discoverable via type-level
@@ -270,6 +203,9 @@ public actor DownloadManager {
             bufferingPolicy: .unbounded
         )
         try Self.registerSessionIdentifier(configuration.sessionIdentifier)
+        callbacks.setInvalidationHandler { [identifier = configuration.sessionIdentifier] _ in
+            Self.unregisterSessionIdentifier(identifier)
+        }
         self.configuration = configuration
         self.delegate = delegate
         self.backgroundCompletionStore = backgroundCompletionStore
@@ -599,7 +535,15 @@ public actor DownloadManager {
 
     deinit {
         delegateEventContinuation.finish()
-        Self.unregisterSessionIdentifier(configuration.sessionIdentifier)
+        // URLSession retains its delegate until explicitly invalidated; without
+        // this call the underlying session and its DownloadSessionDelegate (and
+        // every callback closure they retain) outlive the manager. Background
+        // sessions also stay registered with the OS. `finishTasksAndInvalidate`
+        // lets in-flight transfers complete before tearing down. The session
+        // identifier remains claimed until URLSession reports invalidation, so
+        // a replacement manager cannot reuse the identifier while Foundation is
+        // still draining delegate callbacks for the old session.
+        session.finishTasksAndInvalidate()
     }
 
     private static func registerSessionIdentifier(_ identifier: String) throws {

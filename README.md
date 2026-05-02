@@ -27,6 +27,47 @@ prototypes to production clients.
 > 📚 **API Reference (DocC):** https://innosquadcorp.github.io/InnoNetwork/
 > 🇰🇷 **한국어 문서:** [docs/ko/README.md](docs/ko/README.md)
 
+## Choosing the Right Entry Point
+
+InnoNetwork ships several layers. Pick the highest one that matches your
+situation — most apps never need anything below `APIDefinition`.
+
+```text
+Are you generating clients from an OpenAPI / IDL spec at build time?
+├─ yes ─► @APIDefinition / #endpoint macros from InnoNetworkCodegen
+│        (separate package; runtime-only consumers do not resolve swift-syntax)
+└─ no
+   │
+   Does the endpoint own interceptors, custom transport, multipart, or streaming?
+   ├─ yes ─► APIDefinition / MultipartAPIDefinition / StreamingAPIDefinition
+   │        (dedicated value type per endpoint)
+   └─ no
+      │
+      Do you just need method + path + headers + query/body + decoding?
+      ├─ yes ─► Endpoint builder  (e.g. Endpoint.get("/users").decoding(User.self))
+      └─ no
+         │
+         Are you building an SDK or library wrapper that needs raw
+         transport hooks (no decoding, no interceptors)?
+         └─ yes ─► LowLevelNetworkClient (@_spi(LowLevel))
+                   — minor-version-mutable surface, see API_STABILITY.md
+```
+
+### When NOT to use InnoNetwork
+
+- **Linux / server-side Swift.** InnoNetwork is Apple-platform-only by
+  design (URLSession, `OSAllocatedUnfairLock`, OSLog, Network.framework).
+  Use AsyncHTTPClient or a server framework on Linux.
+- **One-off scripts where URLSession's three-line GET is enough.** The
+  type-safety surface only pays off once you have shared interceptors,
+  retry/coalescing/cache policies, or a fleet of endpoints.
+- **Push-style protocols outside HTTP and WebSocket.** gRPC, MQTT,
+  WebTransport are out of scope; pair InnoNetwork with a dedicated
+  client.
+- **You need synchronous APIs.** The package is built on Swift
+  Concurrency end-to-end; there is no `DispatchQueue`/completion-handler
+  fallback.
+
 ## Quick Start
 
 ### Install
@@ -148,10 +189,11 @@ for await event in await manager.events(for: task) {
 }
 ```
 
-> `DownloadManager.shared` still exists for back-compat, but is
-> soft-deprecated — a single global manager forces every feature to
-> share one configuration. Prefer per-feature managers via
-> `DownloadManager.make(configuration:)`.
+> The 4.0.0 line removes the global `DownloadManager.shared` singleton —
+> every feature now constructs and owns its own manager via
+> ``DownloadManager.make(configuration:)`` with a unique session identifier.
+> The throwing factory surfaces ``DownloadManagerError`` (e.g.,
+> `duplicateSessionIdentifier`) directly so the failure mode is explicit.
 
 #### Destination filename policy
 
@@ -376,8 +418,8 @@ do {
         print("Invalid request configuration: \(message)")
     case .statusCode(let response):
         print("Unexpected status code: \(response.statusCode)")
-    case .objectMapping(let underlying, _):
-        print("Decoding failed: \(underlying)")
+    case .decoding(let stage, let underlying, _):
+        print("Decoding failed (\(stage)): \(underlying)")
     case .trustEvaluationFailed(let reason):
         print("Trust evaluation failed: \(reason)")
     case .cancelled:
@@ -478,7 +520,7 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - **Redaction defaults.** `NetworkLogger` and `OSLogNetworkEventObserver` mark URLs, headers,
   and request bodies as `.private` by default. Do not flip them to `.public` outside of
   controlled diagnostic builds.
-- **Failure payload capture.** `NetworkError.objectMapping(_, response)` carries a `Response`;
+- **Failure payload capture.** `NetworkError.decoding(stage:, underlying:, response:)` carries a `Response`;
   by default that `response.data` is redacted to empty data unless you opt in via
   `NetworkConfiguration.captureFailurePayload = true`. Keep that flag off in release
   configurations to avoid storing PII inside crash logs or analytics.

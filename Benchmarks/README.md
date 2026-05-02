@@ -15,6 +15,10 @@
 - `websocket/websocket-lifecycle-transition-table` — lifecycle state transition table lookup cost.
 - `client/request-pipeline` — in-memory `DefaultNetworkClient.request(_:)` dispatch/retry/event/decode path.
 - `client/request-coalescing-shared-get` — shared GET request coalescing fan-in overhead.
+- `client/decoding-interceptor-chain-{1,3,8}` — passive `DecodingInterceptor`
+  chain depth baseline. The per-iteration delta between depths captures the
+  per-link allocation/dispatch overhead. Baseline added so future
+  regressions in the chain shape surface here before reaching production.
 - `cache/response-cache-*` — response cache lookup and conditional revalidation preparation.
 
 ## Output Schema
@@ -49,6 +53,22 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
 - `--max-regression-percent <Double>`는 허용 가능한 최대 성능 저하 폭을 정합니다.
 - baseline은 의미 있는 성능 변화가 확인된 경우에만 사람이 갱신합니다.
 - baseline 자동 업데이트는 하지 않습니다.
+
+## Initial Baseline (4.0.0)
+
+`decoding-interceptor-chain-{1,3,8}` baseline numbers from a single
+`--quick` run on Apple Silicon (Darwin 25.4 / M-series). Local-only
+reference; `Baselines/default.json` is the source of truth for CI.
+
+| Benchmark | Iterations | Elapsed (s) | ops/sec |
+| --- | --- | --- | --- |
+| `client/decoding-interceptor-chain-1` | 2 000 | 0.0422 | ~47 400 |
+| `client/decoding-interceptor-chain-3` | 2 000 | 0.0426 | ~46 900 |
+| `client/decoding-interceptor-chain-8` | 2 000 | 0.0436 | ~45 900 |
+
+The marginal cost of an additional passive interceptor is roughly
+0.1 µs per request on this hardware, dominated by per-link async
+function dispatch.
 
 ## CI Policy
 

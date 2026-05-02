@@ -97,6 +97,13 @@ Call this path only from a package that intentionally opts into
 `@_spi(GeneratedClientSupport)` and pins current source. The low-level API can
 change before it is promoted into the stable contract.
 
+> Important: the `@_spi(GeneratedClientSupport)` surface is governed by a
+> dedicated compatibility contract documented in
+> [`API_STABILITY.md` →
+> "@_spi(GeneratedClientSupport) Compatibility Contract"](../../../../API_STABILITY.md#_spigeneratedclientsupport-compatibility-contract).
+> SPI symbols may break in any minor release; pin to an exact InnoNetwork tag
+> if you import them outside `InnoNetworkCodegen`.
+
 ## Repository sample
 
 The repository includes `Examples/GeneratedClientRecipe`, a compile-only sample

@@ -7,13 +7,16 @@ release line. `4.0.0` is the public baseline for this contract.
 
 - `APIDefinition`
 - `CancellationTag`
+- `EndpointShape`
 - `MultipartAPIDefinition`
 - `TransportPolicy`
 - `RequestEncodingPolicy`
 - `ResponseDecodingStrategy`
 - `DefaultNetworkClient`
 - `NetworkClient.request(_:)`
+- `NetworkClient.request(_:tag:)`
 - `NetworkClient.upload(_:)`
+- `NetworkClient.upload(_:tag:)`
 - `NetworkConfiguration.safeDefaults(baseURL:)`
 - `NetworkConfiguration.advanced(baseURL:_:)`
 - `DownloadConfiguration.safeDefaults()`
@@ -119,9 +122,10 @@ high-level compatibility classification readable for the 4.x release line.
 
 - `APIDefinition`, `AnyEncodable`, `AnyResponseDecoder`, `CachedResponse`,
   `CancellationTag`, `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
-  `ContentType`, `CorrelationIDInterceptor`, `DefaultNetworkClient`,
+  `ContentType`, `CorrelationIDInterceptor`, `DecodingStage`,
+  `DefaultNetworkClient`,
   `DefaultNetworkLogger`, `EmptyParameter`, `EmptyResponse`, `Endpoint`,
-  `EndpointPathEncoding`, `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
+  `EndpointPathEncoding`, `EndpointShape`, `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
   `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,
   `MultipartPart`, `MultipartResponseDecoder`, `MultipartUploadStrategy`,
   `NetworkClient`, `NetworkConfiguration`, `NetworkContext`, `NetworkError`,
@@ -199,6 +203,65 @@ Generated clients should prefer the stable `APIDefinition` wrapper path. The
 SPI path is reserved for code generators that own custom serialization or
 decoding and can pin an InnoNetwork revision.
 
+#### `@_spi(GeneratedClientSupport)` Compatibility Contract
+
+This subsection is the canonical contract for the
+`@_spi(GeneratedClientSupport)` surface. It is referenced from
+`Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md` and
+from `Examples/GeneratedClientRecipe` so generated-client authors have a
+single entry point for the rules.
+
+**1. SPI may break in any release, including minor releases.**
+
+The symbols listed in the SPI table above sit *outside* the
+SemVer contract that governs the `Stable` and `Provisionally Stable`
+sections. They may be renamed, resigned, removed, or replaced in any
+minor release (for example `5.1 → 5.2`) without a deprecation window
+and without a `[Breaking]` callout in `CHANGELOG.md`. SPI changes still
+appear in the changelog, but in a dedicated `[SPI]` subsection that
+does not require a major version bump.
+
+**2. `InnoNetworkCodegen` is co-updated for every SPI break.**
+
+Whenever an SPI symbol changes shape, the matching
+`Packages/InnoNetworkCodegen` macros and recipe templates ship updated
+expansions in the **same release** of InnoNetwork. Consumers who use
+the macro path (`@APIDefinition(...)` and `endpoint(_:_:as:)`) and pin
+both packages to the same InnoNetwork tag therefore never observe an
+SPI break — the regenerated witnesses absorb the new shape.
+
+This guarantee is *only* extended to `InnoNetworkCodegen`. Third-party
+generators (custom OpenAPI adapters, in-house DSLs, hand-written `@_spi`
+imports) must validate their integration against each new InnoNetwork
+release.
+
+**3. External `@_spi` imports are opt-in and unsupported.**
+
+Code outside the `InnoNetwork` and `InnoNetworkCodegen` packages that
+writes:
+
+```swift
+@_spi(GeneratedClientSupport) import InnoNetwork
+```
+
+is opting into a pre-release-grade surface. We do not run breakage
+audits against external `@_spi` consumers, and Issues that report
+"`@_spi` symbol X disappeared in 5.y" will be closed with a pointer to
+this section. Specifically:
+
+- **Build errors** after a minor bump are expected and not regressions.
+- **Pin to an exact InnoNetwork tag** (`.exact("4.0.0")`) if you import
+  `@_spi`. `.upToNextMinor` is *not* tight enough.
+- **Treat `@_spi` upgrades as code-level reviews** — diff the SPI
+  surface in `Sources/InnoNetwork/...` and re-run your generator.
+
+**4. Stable wrapper path is the supported escape hatch.**
+
+If your generator does not need to own custom serialization or decoding,
+prefer the stable `APIDefinition` / `MultipartAPIDefinition` wrapper
+path. That path follows the standard `Stable` SemVer contract and never
+requires `@_spi` import.
+
 ### InnoNetworkTestSupport
 
 - `MockURLSession`, `StubBehavior`, `StubNetworkClient`, `StubRequestKey`, and
@@ -265,3 +328,147 @@ decoding and can pin an InnoNetwork revision.
   that no source-compatible replacement exists yet.
 - Internal/Operational items can change without deprecation because they are not
   part of the default SwiftPM import contract.
+
+## 4.0.0 Migration Notes
+
+These notes describe behaviour changes that landed during the 4.0.0
+preparation cycle, where the published shape removes earlier
+foot-guns. Each subsection captures the breaking change, the
+rationale, and the supported migration. The matching `CHANGELOG.md`
+entries live under `[4.0.0]`.
+
+### `DownloadManager.shared` removed
+
+- **What changed.** `DownloadManager.shared` is removed. There is no
+  global singleton; every `DownloadManager` is constructed explicitly
+  through `DownloadManager.make(configuration:)` (or
+  `DownloadManager(configuration:)`).
+- **Why.** The 4.x accessor trapped via `fatalError` on duplicate
+  session identifiers, then briefly mitigated to an Optional that hid
+  the failure mode behind a silent `nil`. Both shapes forced every
+  feature in a process onto a single `DownloadConfiguration` and made
+  the failure path either fatal or invisible. Removing the singleton
+  keeps the failure shape (`DownloadManagerError.duplicateSessionIdentifier`)
+  visible at the call site and lets each feature own its own
+  configuration.
+- **Migration.** Replace `DownloadManager.shared` with an injected
+  manager owned by the feature module:
+
+  ```swift
+  let manager = try DownloadManager.make(
+      configuration: .safeDefaults(sessionIdentifier: "com.example.media")
+  )
+  ```
+
+  Pass that manager to whatever component performs the download
+  (typically via initializer injection). For tests, construct a manager
+  with a UUID-suffixed session identifier to avoid cross-test
+  collisions.
+
+### `NetworkClient` gains `tag:` overloads
+
+- **What changed.** `NetworkClient` now declares
+  `request(_:tag:)` and `upload(_:tag:)` alongside the existing
+  un-tagged variants. The new methods accept an optional
+  `CancellationTag` so callers can group requests for bulk cancellation
+  via `DefaultNetworkClient.cancelAll(matching:)`.
+- **Why.** `DefaultNetworkClient` already exposed the tagged path; the
+  protocol omitted it, which meant code that programmed against
+  `NetworkClient` could not opt into grouped cancellation without a
+  cast. The 4.x asymmetry surfaced repeatedly in test stubs and
+  generated clients.
+- **Migration.** Existing call sites compile unchanged. `NetworkClient`
+  conformers must implement the tagged overloads explicitly so grouped
+  cancellation cannot be silently dropped by a default forwarding
+  implementation. Stubs that do not own cancellable runtime work may
+  forward to their untagged path, but wrappers around another
+  `NetworkClient` should preserve the tag when delegating.
+
+### `EndpointShape` extracted from endpoint protocols
+
+- **What changed.** A new `EndpointShape` protocol now captures the
+  HTTP envelope surface (`method`, `path`, `headers`, `logger`,
+  `requestInterceptors`, `responseInterceptors`,
+  `acceptableStatusCodes`, `transport`) shared by `APIDefinition` and
+  `MultipartAPIDefinition`. Both protocols inherit from `EndpointShape`
+  and only declare their body-strategy surface (`parameters` /
+  `multipartFormData` + `uploadStrategy`).
+- **Why.** The two endpoint protocols duplicated identical
+  requirements and identical default implementations. Consolidating
+  them onto `EndpointShape` removes a class of drift bugs (defaults
+  silently diverging on one protocol but not the other) and gives
+  generated clients a single vocabulary for "the envelope" without
+  reaching for two parallel protocols.
+- **Migration.** Endpoint conformances do not need to change. The
+  shared defaults moved to an `EndpointShape` extension, so any
+  `APIDefinition` or `MultipartAPIDefinition` written against 4.x
+  compiles unchanged. Only code that explicitly enumerated the parent
+  protocol's requirements (for example, library-internal generic
+  helpers) needs to redirect to `EndpointShape`.
+
+### `NetworkError.objectMapping` split into `decoding(stage:)`
+
+- **What changed.** The `NetworkError.objectMapping(_:_:)` enum case
+  and its compatibility static factory are both removed. Decode
+  failures now surface exclusively as
+  `NetworkError.decoding(stage:underlying:response:)` carrying a
+  `DecodingStage` (`.responseBody`, `.streamFrame`) so the failure
+  site is explicit. A new `NetworkError.isDecodingFailure` helper
+  makes "decode failures are not retried" expressible without pattern
+  matching.
+- **Why.** `objectMapping` collapsed every decode-related failure —
+  buffered body and per-frame streaming decode — into one case.
+  Retry policies could not distinguish "the stream framing was
+  malformed" from "the JSON body had a missing field",
+  and observability layers had to inspect the underlying error to
+  classify the stage. Splitting the case lets policies and metrics
+  branch on stage directly.
+- **Migration.** Replace construction sites that called
+  `.objectMapping(underlying, response)` with
+  `.decoding(stage: .responseBody, underlying: underlying, response: response)`.
+  Pattern-matching `case .objectMapping(let underlying, let response)`
+  must be migrated to
+  `case .decoding(let stage, let underlying, let response)`. Callers
+  that previously branched on "decode failure vs other" can use
+  `error.isDecodingFailure` instead of pattern matching.
+
+### `MultipartUploadStrategy.platformDefault` is now the default
+
+- **What changed.** `MultipartAPIDefinition.uploadStrategy`'s default
+  is now `MultipartUploadStrategy.platformDefault`, a memory-aware
+  `streamingThreshold` that picks **16 MiB** on iOS, watchOS, and tvOS
+  and **50 MiB** on macOS and visionOS. The 4.x default was an
+  unconditional 50 MiB threshold across every platform.
+- **Why.** iOS and tvOS jetsam, and watchOS extension memory limits,
+  routinely killed apps that uploaded 30–40 MiB media payloads. The
+  unconditional 50 MiB ceiling let `inMemory` encoding allocate well
+  above the platform's working-set headroom before the streaming
+  fallback kicked in. Splitting the default by platform aligns the
+  encoded body's peak memory with the host OS's tolerance.
+- **Migration.** Multipart endpoints that did not override
+  `uploadStrategy` get the new behavior automatically. On iOS,
+  watchOS, and tvOS, bodies between 16 MiB and 50 MiB now stream to
+  a temp file instead of being held in `Data`; this trades a small
+  amount of disk I/O for a much lower memory footprint. Endpoints
+  that need the previous 50 MiB threshold on every platform should
+  override `uploadStrategy` with
+  `.streamingThreshold(bytes: 50 * 1024 * 1024)`. Endpoints that
+  already explicitly chose `.inMemory`, `.alwaysStream`, or a
+  specific `.streamingThreshold(bytes:)` are unaffected.
+
+### `TimeoutReason.resourceTimeout` is metrics-aware
+
+- **What changed.** The transport mapper now formally produces
+  `TimeoutReason.resourceTimeout` when callers supply
+  `URLSessionTaskMetrics` and the configured resource-timeout
+  interval. The metrics-aware overload returns `.resourceTimeout` for
+  `URLError.timedOut` only when the task interval reaches the
+  resource budget; otherwise it falls back to `.requestTimeout`.
+- **Why.** Earlier 4.x snapshots reserved `.resourceTimeout` for
+  higher-level transports without producing it from the built-in
+  mapper, so callers could not branch on the resource-vs-request
+  distinction reliably.
+- **Migration.** None for the single-argument mapper, which retains
+  its prior behaviour. Callers that already constructed
+  `NetworkError.timeout(reason: .resourceTimeout, …)` directly are
+  unaffected.

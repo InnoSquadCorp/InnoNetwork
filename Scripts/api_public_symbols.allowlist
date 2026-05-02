@@ -1,8 +1,7 @@
 # Generated from Swift symbol graphs.
 # Format: module<TAB>kind.identifier<TAB>dot.separated.pathComponents
-InnoNetwork	swift.associatedtype	APIDefinition.APIResponse
 InnoNetwork	swift.associatedtype	APIDefinition.Parameter
-InnoNetwork	swift.associatedtype	MultipartAPIDefinition.APIResponse
+InnoNetwork	swift.associatedtype	EndpointShape.APIResponse
 InnoNetwork	swift.associatedtype	SingleRequestExecutable.APIResponse
 InnoNetwork	swift.associatedtype	StreamingAPIDefinition.Output
 InnoNetwork	swift.class	DefaultNetworkClient
@@ -10,6 +9,7 @@ InnoNetwork	swift.class	InMemoryResponseCache
 InnoNetwork	swift.class	NetworkMonitor
 InnoNetwork	swift.class	ServerSentEventDecoder
 InnoNetwork	swift.enum	ContentType
+InnoNetwork	swift.enum	DecodingStage
 InnoNetwork	swift.enum	EndpointPathEncoding
 InnoNetwork	swift.enum	EventPipelineHubKind
 InnoNetwork	swift.enum	EventPipelineMetric
@@ -42,6 +42,8 @@ InnoNetwork	swift.enum.case	ContentType.protobuf
 InnoNetwork	swift.enum.case	ContentType.textHTML
 InnoNetwork	swift.enum.case	ContentType.textPlain
 InnoNetwork	swift.enum.case	ContentType.xml
+InnoNetwork	swift.enum.case	DecodingStage.responseBody
+InnoNetwork	swift.enum.case	DecodingStage.streamFrame
 InnoNetwork	swift.enum.case	EventPipelineHubKind.downloadTask
 InnoNetwork	swift.enum.case	EventPipelineHubKind.genericTask
 InnoNetwork	swift.enum.case	EventPipelineHubKind.networkRequest
@@ -61,10 +63,10 @@ InnoNetwork	swift.enum.case	MultipartUploadStrategy.alwaysStream
 InnoNetwork	swift.enum.case	MultipartUploadStrategy.inMemory
 InnoNetwork	swift.enum.case	MultipartUploadStrategy.streamingThreshold(bytes:)
 InnoNetwork	swift.enum.case	NetworkError.cancelled
+InnoNetwork	swift.enum.case	NetworkError.decoding(stage:underlying:response:)
 InnoNetwork	swift.enum.case	NetworkError.invalidBaseURL(_:)
 InnoNetwork	swift.enum.case	NetworkError.invalidRequestConfiguration(_:)
 InnoNetwork	swift.enum.case	NetworkError.nonHTTPResponse(_:)
-InnoNetwork	swift.enum.case	NetworkError.objectMapping(_:_:)
 InnoNetwork	swift.enum.case	NetworkError.responseTooLarge(limit:observed:)
 InnoNetwork	swift.enum.case	NetworkError.statusCode(_:)
 InnoNetwork	swift.enum.case	NetworkError.timeout(reason:underlying:)
@@ -232,7 +234,9 @@ InnoNetwork	swift.method	MultipartFormData.encode()
 InnoNetwork	swift.method	MultipartFormData.writeEncodedData(to:)
 InnoNetwork	swift.method	MultipartResponseDecoder.decode(_:contentType:)
 InnoNetwork	swift.method	NetworkClient.request(_:)
+InnoNetwork	swift.method	NetworkClient.request(_:tag:)
 InnoNetwork	swift.method	NetworkClient.upload(_:)
+InnoNetwork	swift.method	NetworkClient.upload(_:tag:)
 InnoNetwork	swift.method	NetworkError.redactingFailurePayload()
 InnoNetwork	swift.method	NetworkEventObserving.handle(_:)
 InnoNetwork	swift.method	NetworkLogger.log(error:)
@@ -272,14 +276,7 @@ InnoNetwork	swift.method	URLSessionProtocol.bytes(for:context:)
 InnoNetwork	swift.method	URLSessionProtocol.data(for:)
 InnoNetwork	swift.method	URLSessionProtocol.data(for:context:)
 InnoNetwork	swift.method	URLSessionProtocol.upload(for:fromFile:context:)
-InnoNetwork	swift.property	APIDefinition.acceptableStatusCodes
-InnoNetwork	swift.property	APIDefinition.headers
-InnoNetwork	swift.property	APIDefinition.logger
-InnoNetwork	swift.property	APIDefinition.method
 InnoNetwork	swift.property	APIDefinition.parameters
-InnoNetwork	swift.property	APIDefinition.path
-InnoNetwork	swift.property	APIDefinition.requestInterceptors
-InnoNetwork	swift.property	APIDefinition.responseInterceptors
 InnoNetwork	swift.property	APIDefinition.transport
 InnoNetwork	swift.property	CachedResponse.data
 InnoNetwork	swift.property	CachedResponse.etag
@@ -305,6 +302,14 @@ InnoNetwork	swift.property	Endpoint.method
 InnoNetwork	swift.property	Endpoint.parameters
 InnoNetwork	swift.property	Endpoint.path
 InnoNetwork	swift.property	Endpoint.transport
+InnoNetwork	swift.property	EndpointShape.acceptableStatusCodes
+InnoNetwork	swift.property	EndpointShape.headers
+InnoNetwork	swift.property	EndpointShape.logger
+InnoNetwork	swift.property	EndpointShape.method
+InnoNetwork	swift.property	EndpointShape.path
+InnoNetwork	swift.property	EndpointShape.requestInterceptors
+InnoNetwork	swift.property	EndpointShape.responseInterceptors
+InnoNetwork	swift.property	EndpointShape.transport
 InnoNetwork	swift.property	EventDeliveryPolicy.maxBufferedEventsPerConsumer
 InnoNetwork	swift.property	EventDeliveryPolicy.maxBufferedEventsPerPartition
 InnoNetwork	swift.property	EventDeliveryPolicy.overflowPolicy
@@ -346,14 +351,7 @@ InnoNetwork	swift.property	HTTPHeaders.description
 InnoNetwork	swift.property	HTTPHeaders.dictionary
 InnoNetwork	swift.property	HTTPHeaders.endIndex
 InnoNetwork	swift.property	HTTPHeaders.startIndex
-InnoNetwork	swift.property	MultipartAPIDefinition.acceptableStatusCodes
-InnoNetwork	swift.property	MultipartAPIDefinition.headers
-InnoNetwork	swift.property	MultipartAPIDefinition.logger
-InnoNetwork	swift.property	MultipartAPIDefinition.method
 InnoNetwork	swift.property	MultipartAPIDefinition.multipartFormData
-InnoNetwork	swift.property	MultipartAPIDefinition.path
-InnoNetwork	swift.property	MultipartAPIDefinition.requestInterceptors
-InnoNetwork	swift.property	MultipartAPIDefinition.responseInterceptors
 InnoNetwork	swift.property	MultipartAPIDefinition.transport
 InnoNetwork	swift.property	MultipartAPIDefinition.uploadStrategy
 InnoNetwork	swift.property	MultipartFormData.boundary
@@ -409,6 +407,7 @@ InnoNetwork	swift.property	NetworkContext.traceID
 InnoNetwork	swift.property	NetworkError.errorCode
 InnoNetwork	swift.property	NetworkError.errorDescription
 InnoNetwork	swift.property	NetworkError.errorUserInfo
+InnoNetwork	swift.property	NetworkError.isDecodingFailure
 InnoNetwork	swift.property	NetworkError.response
 InnoNetwork	swift.property	NetworkLoggingOptions.includeCookies
 InnoNetwork	swift.property	NetworkLoggingOptions.includeRequestBody
@@ -479,6 +478,7 @@ InnoNetwork	swift.property	URLQueryEncoder.dateEncodingStrategy
 InnoNetwork	swift.property	URLQueryEncoder.keyEncodingStrategy
 InnoNetwork	swift.protocol	APIDefinition
 InnoNetwork	swift.protocol	DecodingInterceptor
+InnoNetwork	swift.protocol	EndpointShape
 InnoNetwork	swift.protocol	EventPipelineMetricsReporting
 InnoNetwork	swift.protocol	HTTPEmptyResponseDecodable
 InnoNetwork	swift.protocol	LowLevelNetworkClient
@@ -575,6 +575,7 @@ InnoNetwork	swift.type.property	HTTPHeader.defaultAcceptEncoding
 InnoNetwork	swift.type.property	HTTPHeader.defaultAcceptLanguage
 InnoNetwork	swift.type.property	HTTPHeader.defaultUserAgent
 InnoNetwork	swift.type.property	HTTPHeaders.default
+InnoNetwork	swift.type.property	MultipartUploadStrategy.platformDefault
 InnoNetwork	swift.type.property	NetworkConfiguration.defaultAcceptableStatusCodes
 InnoNetwork	swift.type.property	NetworkContext.$current
 InnoNetwork	swift.type.property	NetworkContext.current
@@ -704,7 +705,6 @@ InnoNetworkDownload	swift.type.method	DownloadConfiguration.safeDefaults()
 InnoNetworkDownload	swift.type.method	DownloadConfiguration.safeDefaults(sessionIdentifier:)
 InnoNetworkDownload	swift.type.method	DownloadManager.make(configuration:)
 InnoNetworkDownload	swift.type.property	DownloadConfiguration.default
-InnoNetworkDownload	swift.type.property	DownloadManager.shared
 InnoNetworkDownload	swift.type.property	DownloadProgress.zero
 InnoNetworkTestSupport	swift.class	MockURLSession
 InnoNetworkTestSupport	swift.class	StubNetworkClient
@@ -723,7 +723,9 @@ InnoNetworkTestSupport	swift.method	MockURLSession.setMockJSON(_:statusCode:)
 InnoNetworkTestSupport	swift.method	MockURLSession.setMockResponse(statusCode:data:)
 InnoNetworkTestSupport	swift.method	StubNetworkClient.register(_:for:behavior:)
 InnoNetworkTestSupport	swift.method	StubNetworkClient.request(_:)
+InnoNetworkTestSupport	swift.method	StubNetworkClient.request(_:tag:)
 InnoNetworkTestSupport	swift.method	StubNetworkClient.upload(_:)
+InnoNetworkTestSupport	swift.method	StubNetworkClient.upload(_:tag:)
 InnoNetworkTestSupport	swift.method	WebSocketEventRecorder.record(_:)
 InnoNetworkTestSupport	swift.method	WebSocketEventRecorder.snapshot()
 InnoNetworkTestSupport	swift.method	WebSocketEventRecorder.waitForEvent(timeout:matching:)

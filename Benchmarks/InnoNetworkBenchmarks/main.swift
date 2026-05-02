@@ -298,6 +298,22 @@ private enum InnoNetworkBenchmarks {
         results.append(try await benchmarkConcurrentClientThroughput(iterations: clientIterations))
         results.append(try await benchmarkResponseCacheLookup(iterations: cacheIterations))
         results.append(try await benchmarkResponseCacheRevalidation(iterations: cacheIterations))
+        let interceptorIterations = options.quick ? 2_000 : 20_000
+        results.append(
+            try await benchmarkDecodingInterceptorChain(
+                depth: 1,
+                iterations: interceptorIterations,
+                name: "decoding-interceptor-chain-1"))
+        results.append(
+            try await benchmarkDecodingInterceptorChain(
+                depth: 3,
+                iterations: interceptorIterations,
+                name: "decoding-interceptor-chain-3"))
+        results.append(
+            try await benchmarkDecodingInterceptorChain(
+                depth: 8,
+                iterations: interceptorIterations,
+                name: "decoding-interceptor-chain-8"))
 
         return results
     }
@@ -632,6 +648,36 @@ private enum InnoNetworkBenchmarks {
         }
     }
 
+    /// Measures the per-link cost of the `DecodingInterceptor` chain.
+    ///
+    /// The benchmark runs the full request pipeline against an in-memory URL
+    /// session that returns a fixed JSON payload, with `depth` passive
+    /// interceptors installed (identity `willDecode` / `didDecode`). The
+    /// per-iteration delta between depths captures the allocation cost of
+    /// adding a chain link. Used as a baseline so future regressions in the
+    /// dispatch/iteration shape surface here before they reach production.
+    private static func benchmarkDecodingInterceptorChain(
+        depth: Int,
+        iterations: Int,
+        name: String
+    ) async throws -> BenchmarkResult {
+        try await measure(name: name, group: "client", iterations: iterations) {
+            let interceptors: [any DecodingInterceptor] =
+                Array(repeating: PassiveDecodingInterceptor(), count: depth)
+            let client = DefaultNetworkClient(
+                configuration: NetworkConfiguration.advanced(
+                    baseURL: URL(string: "https://benchmark.invalid")!
+                ) { builder in
+                    builder.decodingInterceptors = interceptors
+                },
+                session: InstantMockSession.shared
+            )
+            for _ in 0..<iterations {
+                _ = try await client.request(BenchmarkUserRequest())
+            }
+        }
+    }
+
     private static func benchmarkResponseCacheRevalidation(iterations: Int) async throws -> BenchmarkResult {
         try await measure(name: "response-cache-revalidation", group: "cache", iterations: iterations) {
             let request = URLRequest(url: URL(string: "https://benchmark.invalid/users/1")!)
@@ -859,6 +905,19 @@ private struct SmallPayload: Encodable, Sendable {
 private struct BenchmarkUser: Codable, Sendable {
     let id: Int
     let name: String
+}
+
+/// Identity decoding interceptor used to populate the chain-depth benchmark.
+/// Both hooks return their input unchanged; the cost surfaced by repeated
+/// depths is the per-link dispatch and iteration overhead.
+private struct PassiveDecodingInterceptor: DecodingInterceptor {
+    func willDecode(data: Data, response: Response) async throws -> Data { data }
+    func didDecode<APIResponse>(
+        _ value: APIResponse,
+        response: Response
+    ) async throws -> APIResponse where APIResponse: Sendable {
+        value
+    }
 }
 
 private struct BenchmarkUserRequest: APIDefinition {

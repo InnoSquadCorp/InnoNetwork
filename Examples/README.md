@@ -324,8 +324,8 @@ do {
     switch error {
     case .statusCode(let response):
         print("HTTP Error: \(response.statusCode)")
-    case .objectMapping(let decodingError, _):
-        print("Decoding Error: \(decodingError)")
+    case .decoding(let stage, let decodingError, _):
+        print("Decoding Error (\(stage)): \(decodingError)")
     default:
         print("Other Error: \(error)")
     }
@@ -337,7 +337,11 @@ do {
 ```swift
 import InnoNetworkDownload
 
-let manager = DownloadManager.shared
+// Per-feature manager with a unique session identifier. 4.0.0 removes
+// `DownloadManager.shared`, so construction is explicit at the feature boundary.
+let manager = try DownloadManager.make(
+    configuration: .safeDefaults(sessionIdentifier: "com.example.app.media")
+)
 
 // Start download
 let task = await manager.download(

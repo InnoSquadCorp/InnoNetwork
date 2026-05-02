@@ -48,7 +48,9 @@ public enum EndpointPathEncoding {
         var result = ""
         var index = value.startIndex
         while index < value.endIndex {
-            let scalar = value[index].unicodeScalars.first!
+            guard let scalar = value[index].unicodeScalars.first else {
+                throw invalidPercentEscape(in: value)
+            }
             if scalar.value == Self.percent {
                 let first = value.index(after: index)
                 guard first < value.endIndex else {
@@ -56,8 +58,10 @@ public enum EndpointPathEncoding {
                 }
                 let second = value.index(after: first)
                 guard second < value.endIndex,
-                    isHexDigit(value[first].unicodeScalars.first!),
-                    isHexDigit(value[second].unicodeScalars.first!)
+                    let firstScalar = value[first].unicodeScalars.first,
+                    let secondScalar = value[second].unicodeScalars.first,
+                    isHexDigit(firstScalar),
+                    isHexDigit(secondScalar)
                 else {
                     throw invalidPercentEscape(in: value)
                 }

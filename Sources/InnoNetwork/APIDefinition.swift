@@ -20,39 +20,28 @@ import Foundation
 /// for body-bearing methods (`POST`, `PUT`, `PATCH`, `DELETE`) and
 /// ``TransportPolicy/query(encoder:rootKey:decoder:)`` for `GET`, so most
 /// hand-written endpoints can omit the property entirely.
-public protocol APIDefinition: Sendable {
+///
+/// HTTP envelope requirements (method, path, headers, interceptors,
+/// status-code acceptance, transport) are inherited from
+/// ``EndpointShape``; `APIDefinition` adds only the body-strategy
+/// surface (`parameters`).
+public protocol APIDefinition: EndpointShape {
     associatedtype Parameter: Encodable & Sendable
-    associatedtype APIResponse: Decodable & Sendable
 
     var parameters: Parameter? { get }
-    var method: HTTPMethod { get }
-    var path: String { get }
-    var headers: HTTPHeaders { get }
-
-    var logger: NetworkLogger { get }
-    var requestInterceptors: [RequestInterceptor] { get }
-    var responseInterceptors: [ResponseInterceptor] { get }
-
-    /// Per-endpoint override for the set of acceptable HTTP status codes.
-    ///
-    /// When `nil`, the executor falls back to
-    /// ``NetworkConfiguration/acceptableStatusCodes``.
-    var acceptableStatusCodes: Set<Int>? { get }
-
-    /// Single transport-shape entry point. The default selects
-    /// ``TransportPolicy/json(encoder:decoder:)`` for body-bearing methods and
-    /// ``TransportPolicy/query(encoder:rootKey:decoder:)`` for `GET`.
-    var transport: TransportPolicy<APIResponse> { get }
 }
 
 
 /// Strategy for delivering a multipart body to the URL session.
 ///
-/// The default is ``streamingThreshold(bytes:)`` at 50 MiB so that small
-/// payloads stay in memory (cheap, single-pass) while larger uploads spill
-/// to a temp file and avoid jetsam. Endpoints that know they are always
-/// small can opt into ``inMemory`` for the slight encoding-cost savings;
-/// endpoints that always upload large media can pick ``alwaysStream``.
+/// The default is ``platformDefault`` — a memory-aware
+/// ``streamingThreshold(bytes:)`` that picks 16 MiB on memory-constrained
+/// platforms (iOS, watchOS, tvOS) and 50 MiB on platforms with more
+/// headroom (macOS, visionOS). Small payloads stay in memory (cheap,
+/// single-pass) while larger uploads spill to a temp file and avoid
+/// jetsam. Endpoints that know they are always small can opt into
+/// ``inMemory`` for the slight encoding-cost savings; endpoints that
+/// always upload large media can pick ``alwaysStream``.
 public enum MultipartUploadStrategy: Sendable, Equatable {
     /// Always encode the multipart body into a single in-memory `Data` and
     /// attach it to the request. Cheap for small payloads; risks jetsam on
@@ -68,6 +57,23 @@ public enum MultipartUploadStrategy: Sendable, Equatable {
     /// Always stream the body to a temp file before uploading. Ensures peak
     /// memory stays bounded regardless of body size.
     case alwaysStream
+
+    /// Platform-aware default: ``streamingThreshold(bytes:)`` sized for the
+    /// host platform's typical memory budget.
+    ///
+    /// - iOS, watchOS, tvOS: 16 MiB. These platforms have aggressive jetsam
+    ///   limits and tight working sets, especially in extensions or when
+    ///   the app is backgrounded mid-upload.
+    /// - macOS, visionOS: 50 MiB. Desktop and spatial environments have
+    ///   significantly more headroom and can amortize the larger
+    ///   in-memory window in exchange for fewer temp-file writes.
+    public static var platformDefault: MultipartUploadStrategy {
+        #if os(iOS) || os(watchOS) || os(tvOS)
+        return .streamingThreshold(bytes: 16 * 1024 * 1024)
+        #else
+        return .streamingThreshold(bytes: 50 * 1024 * 1024)
+        #endif
+    }
 }
 
 
@@ -77,36 +83,25 @@ public enum MultipartUploadStrategy: Sendable, Equatable {
 /// only need ``transport`` to describe how the response is decoded. The
 /// default ``transport`` is ``TransportPolicy/multipart(decoder:)``, which
 /// configures a JSON response decoder.
-public protocol MultipartAPIDefinition: Sendable {
-    associatedtype APIResponse: Decodable & Sendable
-
+///
+/// HTTP envelope requirements (method, path, headers, interceptors,
+/// status-code acceptance, transport) are inherited from
+/// ``EndpointShape``; `MultipartAPIDefinition` adds only the body-strategy
+/// surface (`multipartFormData`, `uploadStrategy`).
+public protocol MultipartAPIDefinition: EndpointShape {
     var multipartFormData: MultipartFormData { get }
-    var method: HTTPMethod { get }
-    var path: String { get }
-    var headers: HTTPHeaders { get }
-
-    var logger: NetworkLogger { get }
-    var requestInterceptors: [RequestInterceptor] { get }
-    var responseInterceptors: [ResponseInterceptor] { get }
-
-    /// Per-endpoint override for the set of acceptable HTTP status codes.
-    ///
-    /// See ``APIDefinition/acceptableStatusCodes`` for semantics.
-    var acceptableStatusCodes: Set<Int>? { get }
 
     /// Strategy that decides whether the multipart body is encoded in memory
     /// or streamed to a temp file. Default is
-    /// ``MultipartUploadStrategy/streamingThreshold(bytes:)`` at 50 MiB so that
-    /// large attachments do not blow up peak memory by default. Endpoints that
+    /// ``MultipartUploadStrategy/platformDefault`` — a memory-aware
+    /// ``MultipartUploadStrategy/streamingThreshold(bytes:)`` (16 MiB on
+    /// iOS/watchOS/tvOS, 50 MiB on macOS/visionOS) so that large
+    /// attachments do not blow up peak memory by default. Endpoints that
     /// always upload small payloads can override with
-    /// ``MultipartUploadStrategy/inMemory`` to skip the size check; endpoints
-    /// that always upload large payloads can override with
+    /// ``MultipartUploadStrategy/inMemory`` to skip the size check;
+    /// endpoints that always upload large payloads can override with
     /// ``MultipartUploadStrategy/alwaysStream``.
     var uploadStrategy: MultipartUploadStrategy { get }
-
-    /// Single transport-shape entry point. The default is
-    /// ``TransportPolicy/multipart(decoder:)``.
-    var transport: TransportPolicy<APIResponse> { get }
 }
 
 // MARK: - APIDefinition default extension
@@ -116,16 +111,6 @@ extension APIDefinition where Parameter == EmptyParameter {
 }
 
 public extension APIDefinition {
-    var headers: HTTPHeaders { HTTPHeaders.default }
-
-    var logger: NetworkLogger { DefaultNetworkLogger() }
-
-    var requestInterceptors: [RequestInterceptor] { [] }
-
-    var responseInterceptors: [ResponseInterceptor] { [] }
-
-    var acceptableStatusCodes: Set<Int>? { nil }
-
     /// Method-aware default transport: `GET` maps to a query-string transport,
     /// every other method maps to a JSON body transport. Override this
     /// property when an endpoint needs `formURLEncoded`, `multipart`, an
@@ -143,19 +128,7 @@ public extension APIDefinition {
 // MARK: - MultipartAPIDefinition default extension
 
 public extension MultipartAPIDefinition {
-    var headers: HTTPHeaders {
-        HTTPHeaders.default
-    }
-
-    var logger: NetworkLogger { DefaultNetworkLogger() }
-
-    var requestInterceptors: [RequestInterceptor] { [] }
-
-    var responseInterceptors: [ResponseInterceptor] { [] }
-
-    var acceptableStatusCodes: Set<Int>? { nil }
-
-    var uploadStrategy: MultipartUploadStrategy { .streamingThreshold(bytes: 50 * 1024 * 1024) }
+    var uploadStrategy: MultipartUploadStrategy { .platformDefault }
 
     var transport: TransportPolicy<APIResponse> { .multipart() }
 }

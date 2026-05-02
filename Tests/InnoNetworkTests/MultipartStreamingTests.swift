@@ -279,10 +279,15 @@ struct MultipartUploadStrategyTests {
         var path: String { "/upload" }
     }
 
-    @Test("Default uploadStrategy is .streamingThreshold(50 MiB)")
+    @Test("Default uploadStrategy is MultipartUploadStrategy.platformDefault")
     func defaultStrategyIsStreamingThreshold() {
         let endpoint = DefaultStrategyUpload(multipartFormData: Self.makeFormData())
+        #expect(endpoint.uploadStrategy == .platformDefault)
+        #if os(iOS) || os(watchOS) || os(tvOS)
+        #expect(endpoint.uploadStrategy == .streamingThreshold(bytes: Int64(16 * 1024 * 1024)))
+        #else
         #expect(endpoint.uploadStrategy == .streamingThreshold(bytes: Int64(50 * 1024 * 1024)))
+        #endif
     }
 
     @Test("Default strategy keeps small bodies in memory")

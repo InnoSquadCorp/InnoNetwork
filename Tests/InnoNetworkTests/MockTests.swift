@@ -107,7 +107,7 @@ struct MockNetworkTests {
         }
     }
 
-    @Test("Decoding error throws NetworkError.objectMapping")
+    @Test("Decoding error throws NetworkError.decoding")
     func decodingError() async throws {
         let mockSession = MockURLSession()
         mockSession.mockData = "invalid json".data(using: .utf8)!

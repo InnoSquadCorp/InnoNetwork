@@ -6,16 +6,12 @@ import Testing
 @Suite("Download Manager Init Tests")
 struct DownloadManagerInitTests {
 
-    @available(*, deprecated, message: "Verifies the soft-deprecated DownloadManager.shared singleton.")
     @Test("make(configuration:) constructs a manager without throwing for a unique identifier")
     func makeSucceedsForUniqueIdentifier() throws {
-        // A randomized identifier guarantees no collision with the shared
-        // singleton or with other test cases running in the same suite.
         let identifier = "test.make.\(UUID().uuidString)"
         let configuration = DownloadConfiguration.safeDefaults(sessionIdentifier: identifier)
 
-        let manager = try DownloadManager.make(configuration: configuration)
-        #expect(manager !== DownloadManager.shared)
+        _ = try DownloadManager.make(configuration: configuration)
     }
 
     @Test("make(configuration:) throws duplicateSessionIdentifier on conflict")

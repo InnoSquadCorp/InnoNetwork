@@ -159,7 +159,7 @@ struct WebSocketHeartbeatTimingTests {
 
     @Test("Event stream .pong(_:) delivers the same WebSocketPongContext as setOnPongHandler callback")
     func pongEventStreamAndCallbackReceiveIdenticalContext() async throws {
-        // Locks in the 5.0 contract: the `.pong(_:)` event case and the
+        // Locks in the 4.0.0 contract: the `.pong(_:)` event case and the
         // `setOnPongHandler(_:)` callback both carry the same context value
         // at the same logical point in the heartbeat cycle. Consumers can
         // choose either path and see matching `attemptNumber` / `roundTrip`.

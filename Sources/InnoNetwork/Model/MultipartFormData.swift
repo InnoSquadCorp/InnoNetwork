@@ -33,25 +33,6 @@ public struct MultipartFormData: Sendable {
         append(value ? "true" : "false", name: name)
     }
 
-    /// Appends a file from disk by reading its entire contents into memory
-    /// at append time.
-    ///
-    /// This works for small attachments but is not safe for large media —
-    /// 100MB videos can trigger jetsam on iOS. Use the asynchronous variant
-    /// ``appendFile(at:name:mimeType:)-async`` and pair it with
-    /// ``writeEncodedData(to:)`` to stream the body to disk instead.
-    @available(
-        *, deprecated,
-        message:
-            "Use the async appendFile(at:name:mimeType:) overload combined with writeEncodedData(to:) to avoid loading the file into memory."
-    )
-    public mutating func appendFile(at url: URL, name: String, mimeType: String? = nil) throws {
-        let data = try Data(contentsOf: url)
-        let fileName = url.lastPathComponent
-        let detectedMimeType = mimeType ?? Self.mimeType(for: url.pathExtension)
-        parts.append(Part(source: .data(data), name: name, fileName: fileName, mimeType: detectedMimeType))
-    }
-
     /// Appends a file by URL without reading its contents.
     ///
     /// The bytes are streamed at the time the body is encoded — either

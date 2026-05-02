@@ -10,6 +10,25 @@ public protocol NetworkClient: Sendable {
     /// - Throws: A ``NetworkError`` or another execution error produced while encoding,
     ///   sending, validating, or decoding the request.
     func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse
+
+    /// Executes a typed request and registers it under the supplied
+    /// ``CancellationTag`` so it can later be cancelled together with other
+    /// requests bearing the same tag (typically via
+    /// ``DefaultNetworkClient/cancelAll(matching:)``).
+    ///
+    /// Conformers must implement this overload explicitly. A tag-aware call
+    /// that silently falls back to ``request(_:)`` would make grouped
+    /// cancellation appear to succeed while leaving the work unreachable from
+    /// the tag registry.
+    ///
+    /// - Parameters:
+    ///   - request: The typed request definition to execute.
+    ///   - tag: Optional cancellation tag; pass `nil` for ungrouped requests.
+    /// - Returns: The decoded `APIResponse` produced by the request definition.
+    /// - Throws: A ``NetworkError`` or another execution error produced while encoding,
+    ///   sending, validating, or decoding the request.
+    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse
+
     /// Executes a multipart request modeled with ``MultipartAPIDefinition``.
     ///
     /// Prefer this entry point for upload-style integrations.
@@ -19,6 +38,13 @@ public protocol NetworkClient: Sendable {
     /// - Throws: A ``NetworkError`` or another execution error produced while building,
     ///   sending, validating, or decoding the multipart request.
     func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse
+
+    /// Executes a multipart upload and registers it under the supplied
+    /// ``CancellationTag``. See ``request(_:tag:)`` for semantics.
+    ///
+    /// Conformers must implement this overload explicitly; see
+    /// ``request(_:tag:)`` for the grouped-cancellation contract.
+    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse
 }
 
 /// Low-level typed execution contract for framework authors and policy layers.
@@ -124,7 +150,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     private let session: URLSessionProtocol
     private let requestBuilder = RequestBuilder()
     private let eventHub: NetworkEventHub
-    private let inFlight = InFlightRegistry()
+    package let inFlight = InFlightRegistry()
     private let executionRuntime: RequestExecutionRuntime
 
     public init(
@@ -310,19 +336,13 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
             }
         }
         inFlight.register(id: requestID, tag: tag, cancelHandler: { work.cancel() })
+        defer { inFlight.deregister(id: requestID) }
         startGate.open()
 
-        do {
-            let result = try await withTaskCancellationHandler {
-                try await work.value
-            } onCancel: {
-                work.cancel()
-            }
-            inFlight.deregister(id: requestID)
-            return result
-        } catch {
-            inFlight.deregister(id: requestID)
-            throw error
+        return try await withTaskCancellationHandler {
+            try await work.value
+        } onCancel: {
+            work.cancel()
         }
     }
 }
