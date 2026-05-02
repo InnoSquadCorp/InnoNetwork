@@ -149,9 +149,12 @@ for await event in await manager.events(for: task) {
 ```
 
 > `DownloadManager.shared` still exists for back-compat, but is
-> soft-deprecated — a single global manager forces every feature to
-> share one configuration. Prefer per-feature managers via
-> `DownloadManager.make(configuration:)`.
+> soft-deprecated. The singleton forces every feature to share one
+> configuration **and can fatalError on first access** if persistence is
+> unavailable or the fallback session identifier is also claimed.
+> `DownloadManager.make(configuration:)` surfaces such failures as a
+> thrown `DownloadManagerError` instead — prefer it for production
+> code paths.
 
 #### Destination filename policy
 

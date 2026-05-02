@@ -81,7 +81,7 @@ public actor DownloadManager {
         *,
         deprecated,
         message:
-            "Use DownloadManager.make(configuration:) so each feature can pick its own DownloadConfiguration; the shared singleton forces a single global policy."
+            "Use DownloadManager.make(configuration:). The shared singleton forces a single global policy and can fatalError on first access if persistence is unavailable or the fallback session identifier is also claimed. `make(configuration:)` surfaces the failure as a thrown DownloadManagerError instead."
     )
     public static let shared: DownloadManager = {
         do {

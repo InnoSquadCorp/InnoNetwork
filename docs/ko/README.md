@@ -71,7 +71,11 @@ print(user)
 import Foundation
 import InnoNetworkDownload
 
-let manager = DownloadManager.shared
+// `DownloadManager.shared` 는 deprecated 입니다. 기능별로 고유한 세션 식별자를
+// 가진 매니저를 생성하세요 (자세한 내용은 `SharedManagerMigration` 문서 참고).
+let manager = try DownloadManager.make(
+    configuration: .safeDefaults(sessionIdentifier: "com.example.app.media")
+)
 let task = await manager.download(
     url: URL(string: "https://example.com/file.zip")!,
     toDirectory: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
