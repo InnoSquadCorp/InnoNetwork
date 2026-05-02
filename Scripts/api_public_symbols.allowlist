@@ -15,6 +15,7 @@ InnoNetwork	swift.class	InMemoryResponseCache
 InnoNetwork	swift.class	NetworkMonitor
 InnoNetwork	swift.class	ServerSentEventDecoder
 InnoNetwork	swift.enum	AuthRequiredScope
+InnoNetwork	swift.enum	CircuitBreakerPolicy.ConfigurationError
 InnoNetwork	swift.enum	ContentType
 InnoNetwork	swift.enum	DecodingStage
 InnoNetwork	swift.enum	EndpointPathEncoding
@@ -44,6 +45,10 @@ InnoNetwork	swift.enum	URLQueryArrayEncodingStrategy
 InnoNetwork	swift.enum	URLQueryEncoder.EncodingError
 InnoNetwork	swift.enum	URLQueryFloatEncodingStrategy
 InnoNetwork	swift.enum	URLQueryKeyEncodingStrategy
+InnoNetwork	swift.enum.case	CircuitBreakerPolicy.ConfigurationError.maxResetSmallerThanReset
+InnoNetwork	swift.enum.case	CircuitBreakerPolicy.ConfigurationError.negativeDuration(field:)
+InnoNetwork	swift.enum.case	CircuitBreakerPolicy.ConfigurationError.nonPositive(field:value:)
+InnoNetwork	swift.enum.case	CircuitBreakerPolicy.ConfigurationError.thresholdExceedsWindow(threshold:window:)
 InnoNetwork	swift.enum.case	ContentType.formUrlEncoded
 InnoNetwork	swift.enum.case	ContentType.imageJPEG
 InnoNetwork	swift.enum.case	ContentType.imagePNG
@@ -153,7 +158,8 @@ InnoNetwork	swift.init	CachedResponse.init(data:statusCode:headers:storedAt:requ
 InnoNetwork	swift.init	CancellationTag.init(_:)
 InnoNetwork	swift.init	CancellationTag.init(stringLiteral:)
 InnoNetwork	swift.init	CircuitBreakerOpenError.init(host:retryAfter:)
-InnoNetwork	swift.init	CircuitBreakerPolicy.init(failureThreshold:windowSize:resetAfter:maxResetAfter:)
+InnoNetwork	swift.init	CircuitBreakerPolicy.init(failureThreshold:windowSize:resetAfter:maxResetAfter:numberOfProbesRequiredToClose:countsTransportSecurityFailures:)
+InnoNetwork	swift.init	CircuitBreakerPolicy.init(validatedFailureThreshold:windowSize:resetAfter:maxResetAfter:numberOfProbesRequiredToClose:countsTransportSecurityFailures:)
 InnoNetwork	swift.init	ContentType.init(rawValue:)
 InnoNetwork	swift.init	CorrelationIDInterceptor.init(traceHeader:correlationHeader:)
 InnoNetwork	swift.init	DefaultNetworkClient.init(configuration:session:)
@@ -319,8 +325,11 @@ InnoNetwork	swift.property	CircuitBreakerOpenError.errorCode
 InnoNetwork	swift.property	CircuitBreakerOpenError.errorDescription
 InnoNetwork	swift.property	CircuitBreakerOpenError.host
 InnoNetwork	swift.property	CircuitBreakerOpenError.retryAfter
+InnoNetwork	swift.property	CircuitBreakerPolicy.ConfigurationError.description
+InnoNetwork	swift.property	CircuitBreakerPolicy.countsTransportSecurityFailures
 InnoNetwork	swift.property	CircuitBreakerPolicy.failureThreshold
 InnoNetwork	swift.property	CircuitBreakerPolicy.maxResetAfter
+InnoNetwork	swift.property	CircuitBreakerPolicy.numberOfProbesRequiredToClose
 InnoNetwork	swift.property	CircuitBreakerPolicy.resetAfter
 InnoNetwork	swift.property	CircuitBreakerPolicy.windowSize
 InnoNetwork	swift.property	CorrelationIDInterceptor.correlationHeader
