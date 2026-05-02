@@ -7,13 +7,14 @@ on:
       - "Sources/**"
       - "Package.swift"
       - ".github/workflows/benchmarks.yml"
+      - "Scripts/render_benchmark_comment.py"
+      - "Scripts/append_benchmark_trend.py"
   workflow_dispatch:
   schedule:
     - cron: "0 3 * * 1"
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: benchmarks-${{ github.workflow }}-${{ github.ref }}
@@ -24,6 +25,9 @@ jobs:
     name: Run Benchmarks
     runs-on: macos-15
     timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
       - name: Checkout
@@ -104,8 +108,32 @@ jobs:
           body-path: .build/benchmarks/comment.md
           edit-mode: replace
 
-      - name: Append scheduled benchmark trend
-        if: success() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      - name: Upload benchmark artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: innonetwork-benchmarks
+          path: .build/benchmarks/results.json
+
+  append-trend:
+    name: Append benchmark trend
+    if: success() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    needs: run-benchmarks
+    runs-on: macos-15
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download benchmark artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: innonetwork-benchmarks
+          path: .build/benchmarks
+
+      - name: Append benchmark trend to benchmark-trends branch
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -128,10 +156,3 @@ jobs:
           fi
           git -C "$trend_dir" commit -m "Append benchmark trend for ${GITHUB_SHA}"
           git -C "$trend_dir" push origin HEAD:benchmark-trends
-
-      - name: Upload benchmark artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: innonetwork-benchmarks
-          path: .build/benchmarks/results.json
