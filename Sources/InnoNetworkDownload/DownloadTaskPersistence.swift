@@ -102,11 +102,14 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
 
     private struct StoreState: Sendable {
         var records: [String: DownloadTaskPersistence.Record]
-        // Reverse index from source URL → task id so `id(forURL:)` is O(1).
-        // The append-log already enforces that `records[id]` is the
-        // authoritative record; this index is rebuilt on load and kept in
-        // sync on every mutate so it never lies about authoritative state.
-        var urlToID: [URL: String]
+        // Reverse index from source URL → ordered task ids so `id(forURL:)`
+        // is O(1) yet still correct when multiple records share a URL. The
+        // last element wins for `id(forURL:)`, which models the documented
+        // "most recently upserted" semantic; intermediate ids remain
+        // discoverable via `record(forID:)` and survive removal of any
+        // sibling. Rebuilt on load and kept in sync on every mutate so it
+        // never lies about authoritative state.
+        var urlToID: [URL: [String]]
         var nextSequence: Int64
         var logEventCount: Int
         var tombstoneCount: Int
@@ -178,12 +181,10 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     package func upsert(id: String, url: URL, destinationURL: URL, resumeData: Data?) async throws {
         try await mutate {
             // Drop any reverse-index entry that was previously tied to a
-            // different URL for this id. Re-mapping `urlToID` for the new URL
-            // happens unconditionally below.
+            // different URL for this id; the new URL gets the id appended
+            // below so `id(forURL:)` keeps returning the most-recent upsert.
             if let existing = $0.records[id], existing.url != url {
-                if $0.urlToID[existing.url] == id {
-                    $0.urlToID.removeValue(forKey: existing.url)
-                }
+                Self.removeIDFromIndex(state: &$0, url: existing.url, id: id)
             }
             $0.records[id] = DownloadTaskPersistence.Record(
                 id: id,
@@ -191,7 +192,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
                 destinationURL: destinationURL,
                 resumeData: resumeData
             )
-            $0.urlToID[url] = id
+            Self.appendIDToIndex(state: &$0, url: url, id: id)
             return Event(
                 sequence: $0.nextSequence,
                 timestamp: .now,
@@ -213,9 +214,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     package func remove(id: String) async throws {
         guard state.records[id] != nil else { return }
         try await mutate {
-            if let existing = $0.records.removeValue(forKey: id),
-                $0.urlToID[existing.url] == id {
-                $0.urlToID.removeValue(forKey: existing.url)
+            if let existing = $0.records.removeValue(forKey: id) {
+                Self.removeIDFromIndex(state: &$0, url: existing.url, id: id)
             }
             $0.tombstoneCount += 1
             return Event(
@@ -240,7 +240,24 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
 
     package func id(forURL url: URL?) async -> String? {
         guard let url else { return nil }
-        return state.urlToID[url]
+        return state.urlToID[url]?.last
+    }
+
+    private static func appendIDToIndex(state: inout StoreState, url: URL, id: String) {
+        var ids = state.urlToID[url] ?? []
+        ids.removeAll { $0 == id }
+        ids.append(id)
+        state.urlToID[url] = ids
+    }
+
+    private static func removeIDFromIndex(state: inout StoreState, url: URL, id: String) {
+        guard var ids = state.urlToID[url] else { return }
+        ids.removeAll { $0 == id }
+        if ids.isEmpty {
+            state.urlToID.removeValue(forKey: url)
+        } else {
+            state.urlToID[url] = ids
+        }
     }
 
     package func prune(keeping ids: Set<String>) async throws {
@@ -249,9 +266,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             guard !staleIDs.isEmpty else { return [] }
 
             for staleID in staleIDs {
-                if let existing = state.records.removeValue(forKey: staleID),
-                    state.urlToID[existing.url] == staleID {
-                    state.urlToID.removeValue(forKey: existing.url)
+                if let existing = state.records.removeValue(forKey: staleID) {
+                    Self.removeIDFromIndex(state: &state, url: existing.url, id: staleID)
                 }
             }
             state.tombstoneCount += staleIDs.count
@@ -273,49 +289,61 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         try await mutate { state in [transform(&state)] }
     }
 
+    /// Read-after-write consistency note: while `mutate` is awaiting
+    /// `awaitDirectoryLock` (after the descriptor was opened but before the
+    /// flock returns) actor isolation is released, so concurrent reads
+    /// (`id(forURL:)`, `record(forID:)`, `allRecords()`) observe the
+    /// in-memory `state` from before this mutation. The on-disk log is
+    /// still serialized by the inter-process flock, but in-process readers
+    /// must accept that an in-flight mutation is not yet visible. Callers
+    /// that need read-after-write within a single process should sequence
+    /// reads after the awaited `mutate`.
     private func mutate(_ transform: (inout StoreState) -> [Event]) async throws {
         let fsyncPolicy = self.fsyncPolicy
         let compactionPolicy = self.compactionPolicy
         let fsync = self.fsync
-        let updatedState = try Self.withDirectoryLock(lockURL: lockURL, fileManager: fileManager) {
-            var diskState = try Self.loadState(
-                directoryURL: directoryURL,
-                checkpointURL: checkpointURL,
-                logURL: logURL,
-                fileManager: fileManager
-            )
+        let descriptorRaw = try Self.openLockDescriptor(lockURL: lockURL, fileManager: fileManager)
+        let descriptor = try await Self.awaitDirectoryLock(descriptor: descriptorRaw, timeout: 10)
+        defer { Self.releaseDirectoryLock(descriptor) }
+        var diskState = try Self.loadState(
+            directoryURL: directoryURL,
+            checkpointURL: checkpointURL,
+            logURL: logURL,
+            fileManager: fileManager
+        )
 
-            let events = transform(&diskState)
-            guard !events.isEmpty else { return diskState }
+        let events = transform(&diskState)
+        guard !events.isEmpty else {
+            state = diskState
+            return
+        }
 
-            try Self.append(
-                events: events,
-                to: logURL,
+        try Self.append(
+            events: events,
+            to: logURL,
+            fileManager: fileManager,
+            fsyncPolicy: fsyncPolicy,
+            fsync: fsync
+        )
+        diskState.logEventCount += events.count
+        diskState.logSize = Self.fileSize(at: logURL, fileManager: fileManager)
+        diskState.nextSequence += Int64(events.count)
+
+        if Self.shouldCompact(state: diskState, policy: compactionPolicy) {
+            try Self.writeCheckpoint(
+                records: diskState.records,
+                to: checkpointURL,
                 fileManager: fileManager,
                 fsyncPolicy: fsyncPolicy,
                 fsync: fsync
             )
-            diskState.logEventCount += events.count
-            diskState.logSize = Self.fileSize(at: logURL, fileManager: fileManager)
-            diskState.nextSequence += Int64(events.count)
-
-            if Self.shouldCompact(state: diskState, policy: compactionPolicy) {
-                try Self.writeCheckpoint(
-                    records: diskState.records,
-                    to: checkpointURL,
-                    fileManager: fileManager,
-                    fsyncPolicy: fsyncPolicy,
-                    fsync: fsync
-                )
-                try Self.resetLog(at: logURL, fileManager: fileManager)
-                diskState.logEventCount = 0
-                diskState.tombstoneCount = 0
-                diskState.logSize = 0
-            }
-
-            return diskState
+            try Self.resetLog(at: logURL, fileManager: fileManager)
+            diskState.logEventCount = 0
+            diskState.tombstoneCount = 0
+            diskState.logSize = 0
         }
-        state = updatedState
+
+        state = diskState
     }
 
     private static func defaultBaseDirectory(fileManager: FileManager) -> URL {
@@ -334,6 +362,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     ) throws -> StoreState {
         try ensureDirectoryExists(at: directoryURL, fileManager: fileManager)
         var records: [String: DownloadTaskPersistence.Record] = [:]
+        var urlToID: [URL: [String]] = [:]
         var nextSequence: Int64 = 0
         var logEventCount = 0
         var tombstoneCount = 0
@@ -346,8 +375,19 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
                     throw CocoaError(.coderInvalidValue)
                 }
                 records = envelope.records
+                // Checkpoint loses ordering between same-URL ids; the only
+                // information available is "these ids existed at the
+                // checkpoint", so any single-id-per-URL stamping is correct
+                // for `id(forURL:).last`. The append-log replay below
+                // restores upsert-order accuracy for any URL touched after
+                // the checkpoint.
+                for (id, record) in records {
+                    urlToID[record.url, default: []].append(id)
+                }
             } catch {
                 quarantineFileIfNeeded(checkpointURL, fileManager: fileManager)
+                records = [:]
+                urlToID = [:]
             }
         }
 
@@ -355,20 +395,17 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             let replayResult = try replayLog(
                 at: logURL,
                 onto: records,
+                initialURLToID: urlToID,
                 checkpointURL: checkpointURL,
                 fileManager: fileManager
             )
             records = replayResult.records
+            urlToID = replayResult.urlToID
             nextSequence = replayResult.nextSequence
             logEventCount = replayResult.logEventCount
             tombstoneCount = replayResult.tombstoneCount
         }
 
-        var urlToID: [URL: String] = [:]
-        urlToID.reserveCapacity(records.count)
-        for (id, record) in records {
-            urlToID[record.url] = id
-        }
         return StoreState(
             records: records,
             urlToID: urlToID,
@@ -382,24 +419,30 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     private static func replayLog(
         at logURL: URL,
         onto initialRecords: [String: DownloadTaskPersistence.Record],
+        initialURLToID: [URL: [String]],
         checkpointURL: URL,
         fileManager: FileManager
     ) throws -> (
-        records: [String: DownloadTaskPersistence.Record], nextSequence: Int64, logEventCount: Int, tombstoneCount: Int
+        records: [String: DownloadTaskPersistence.Record],
+        urlToID: [URL: [String]],
+        nextSequence: Int64,
+        logEventCount: Int,
+        tombstoneCount: Int
     ) {
         var records = initialRecords
+        var urlToID = initialURLToID
         var nextSequence: Int64 = 0
         var logEventCount = 0
         var tombstoneCount = 0
 
         let data = try Data(contentsOf: logURL)
         guard !data.isEmpty else {
-            return (records, nextSequence, logEventCount, tombstoneCount)
+            return (records, urlToID, nextSequence, logEventCount, tombstoneCount)
         }
 
         guard let contents = String(data: data, encoding: .utf8) else {
             quarantineFileIfNeeded(logURL, fileManager: fileManager)
-            return (records, nextSequence, logEventCount, tombstoneCount)
+            return (records, urlToID, nextSequence, logEventCount, tombstoneCount)
         }
 
         let lines = contents.split(whereSeparator: \.isNewline)
@@ -419,14 +462,35 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             switch event.kind {
             case .upsert:
                 guard let url = event.url, let destinationURL = event.destinationURL else { continue }
+                if let existing = records[event.taskID], existing.url != url {
+                    var ids = urlToID[existing.url] ?? []
+                    ids.removeAll { $0 == event.taskID }
+                    if ids.isEmpty {
+                        urlToID.removeValue(forKey: existing.url)
+                    } else {
+                        urlToID[existing.url] = ids
+                    }
+                }
                 records[event.taskID] = DownloadTaskPersistence.Record(
                     id: event.taskID,
                     url: url,
                     destinationURL: destinationURL,
                     resumeData: event.resumeData
                 )
+                var ids = urlToID[url] ?? []
+                ids.removeAll { $0 == event.taskID }
+                ids.append(event.taskID)
+                urlToID[url] = ids
             case .remove:
-                records.removeValue(forKey: event.taskID)
+                if let existing = records.removeValue(forKey: event.taskID) {
+                    var ids = urlToID[existing.url] ?? []
+                    ids.removeAll { $0 == event.taskID }
+                    if ids.isEmpty {
+                        urlToID.removeValue(forKey: existing.url)
+                    } else {
+                        urlToID[existing.url] = ids
+                    }
+                }
                 tombstoneCount += 1
             }
             nextSequence = max(nextSequence, event.sequence + 1)
@@ -448,7 +512,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             try resetLog(at: logURL, fileManager: fileManager)
         }
 
-        return (records, nextSequence, logEventCount, tombstoneCount)
+        return (records, urlToID, nextSequence, logEventCount, tombstoneCount)
     }
 
     private static func append(
@@ -612,17 +676,31 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         timeout: TimeInterval = 10,
         _ work: () throws -> T
     ) throws -> T {
+        let descriptor = try acquireDirectoryLockBlocking(
+            lockURL: lockURL,
+            fileManager: fileManager,
+            timeout: timeout
+        )
+        defer { releaseDirectoryLock(descriptor) }
+        return try work()
+    }
+
+    private static func openLockDescriptor(
+        lockURL: URL,
+        fileManager: FileManager
+    ) throws -> Int32 {
         try ensureDirectoryExists(at: lockURL.deletingLastPathComponent(), fileManager: fileManager)
         let descriptor = open(lockURL.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
-        guard descriptor >= 0 else {
-            throw CocoaError(.fileReadUnknown)
-        }
+        guard descriptor >= 0 else { throw CocoaError(.fileReadUnknown) }
+        return descriptor
+    }
 
-        // LOCK_EX | LOCK_NB lets us bound the wait. A blocking flock would
-        // hang the actor (and any caller awaiting persistence) indefinitely
-        // when another process or stuck unit-test holds the lock. We poll
-        // every 50ms up to `timeout`, then surface a typed CocoaError so
-        // callers see a recoverable failure rather than a deadlock.
+    private static func acquireDirectoryLockBlocking(
+        lockURL: URL,
+        fileManager: FileManager,
+        timeout: TimeInterval
+    ) throws -> Int32 {
+        let descriptor = try openLockDescriptor(lockURL: lockURL, fileManager: fileManager)
         let deadline = Date().addingTimeInterval(timeout)
         while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
             let lockErrno = errno
@@ -636,11 +714,40 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             }
             usleep(50_000)
         }
-        defer {
-            flock(descriptor, LOCK_UN)
-            close(descriptor)
-        }
+        return descriptor
+    }
 
-        return try work()
+    /// Polls a previously-opened lock file descriptor with cooperative
+    /// `Task.sleep` between attempts. The descriptor is opened ahead of time
+    /// by the caller so this method does not need to capture the actor's
+    /// non-Sendable `FileManager`.
+    private static func awaitDirectoryLock(
+        descriptor: Int32,
+        timeout: TimeInterval
+    ) async throws -> Int32 {
+        let deadline = Date().addingTimeInterval(timeout)
+        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+            let lockErrno = errno
+            if lockErrno != EWOULDBLOCK && lockErrno != EAGAIN {
+                close(descriptor)
+                throw CocoaError(.fileLocking)
+            }
+            if Date() >= deadline {
+                close(descriptor)
+                throw CocoaError(.fileLocking)
+            }
+            do {
+                try await Task.sleep(nanoseconds: 50_000_000)
+            } catch {
+                close(descriptor)
+                throw error
+            }
+        }
+        return descriptor
+    }
+
+    private static func releaseDirectoryLock(_ descriptor: Int32) {
+        flock(descriptor, LOCK_UN)
+        close(descriptor)
     }
 }

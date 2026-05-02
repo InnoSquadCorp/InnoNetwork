@@ -149,7 +149,7 @@ struct WebSocketLifecycleReducerFuzzTests {
                 disposition: .peerTerminal(.abnormalClosure, nil),
                 error: .pingTimeout
             ),
-            context: .init(reconnectAction: .exceeded, attempt: 10)
+            context: .init(reconnectAction: .exceeded(reason: .attempts), attempt: 10)
         )
 
         #expect(failed.state.publicState == .failed)
@@ -269,7 +269,7 @@ struct WebSocketLifecycleReducerFuzzTests {
         case 1:
             return .init(reconnectAction: .terminal)
         default:
-            return .init(reconnectAction: .exceeded, attempt: Int(rng.next() % 10) + 1)
+            return .init(reconnectAction: .exceeded(reason: .attempts), attempt: Int(rng.next() % 10) + 1)
         }
     }
 }

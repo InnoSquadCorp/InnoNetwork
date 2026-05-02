@@ -3,7 +3,12 @@ import Foundation
 package enum WebSocketReconnectAction: Equatable {
     case retry
     case terminal
-    case exceeded
+    case exceeded(reason: ExceededReason)
+
+    package enum ExceededReason: Equatable {
+        case attempts
+        case duration
+    }
 }
 
 package struct WebSocketReconnectCoordinator {
@@ -66,14 +71,14 @@ package struct WebSocketReconnectCoordinator {
             // Bump the counter so observers see the rejected attempt before
             // returning .exceeded — mirrors the maxReconnectAttempts semantics.
             _ = await task.incrementAttemptedReconnectCount()
-            return .exceeded
+            return .exceeded(reason: .duration)
         }
 
         let reconnectCount = await task.incrementAttemptedReconnectCount()
         if reconnectCount <= configuration.maxReconnectAttempts {
             return .retry
         }
-        return .exceeded
+        return .exceeded(reason: .attempts)
     }
 
     package func reconnectAction(

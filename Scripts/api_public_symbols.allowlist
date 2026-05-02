@@ -904,6 +904,7 @@ InnoNetworkWebSocket	swift.enum.case	WebSocketError.disconnected(_:)
 InnoNetworkWebSocket	swift.enum.case	WebSocketError.invalidURL(_:)
 InnoNetworkWebSocket	swift.enum.case	WebSocketError.maxReconnectAttemptsExceeded
 InnoNetworkWebSocket	swift.enum.case	WebSocketError.pingTimeout
+InnoNetworkWebSocket	swift.enum.case	WebSocketError.reconnectWindowExceeded
 InnoNetworkWebSocket	swift.enum.case	WebSocketError.sendQueueOverflow(limit:)
 InnoNetworkWebSocket	swift.enum.case	WebSocketError.unknown
 InnoNetworkWebSocket	swift.enum.case	WebSocketEvent.connected(_:)

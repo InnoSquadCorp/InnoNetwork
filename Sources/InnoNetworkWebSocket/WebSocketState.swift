@@ -58,6 +58,14 @@ public enum WebSocketError: Error, Sendable, Equatable {
     case disconnected(SendableUnderlyingError?)
     case pingTimeout
     case maxReconnectAttemptsExceeded
+    /// Reconnect was attempted but the configured
+    /// ``WebSocketConfiguration/reconnectMaxTotalDuration`` window elapsed
+    /// before the connection re-established, even though the per-task
+    /// `maxReconnectAttempts` budget had not been exhausted. Distinct from
+    /// ``maxReconnectAttemptsExceeded`` so observers can decide whether to
+    /// surface a "give up — this network is down" UX vs. a "we used all
+    /// our retries" UX.
+    case reconnectWindowExceeded
     case cancelled
     /// The outbound queue reached `sendQueueLimit` while the overflow policy
     /// was configured to fail the send operation.
@@ -82,6 +90,8 @@ extension WebSocketError: LocalizedError {
             return "WebSocket ping timed out"
         case .maxReconnectAttemptsExceeded:
             return "Maximum reconnect attempts exceeded"
+        case .reconnectWindowExceeded:
+            return "Reconnect time window elapsed"
         case .cancelled:
             return "WebSocket connection was cancelled"
         case .sendQueueOverflow(let limit):

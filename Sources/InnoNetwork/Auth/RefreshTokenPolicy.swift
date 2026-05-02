@@ -147,37 +147,52 @@ package actor RefreshTokenCoordinator {
 
         let refreshTokenProvider = policy.refreshTokenProvider
         let id = UUID()
-        let task = Task.detached(priority: Task.currentPriority) {
-            try await refreshTokenProvider()
+        // State transitions are driven by the detached task's own completion
+        // (success/failure/cancel) rather than by the awaiter's catch arms.
+        // If the *caller* of `refreshedToken()` is cancelled while awaiting
+        // `task.value`, the detached task keeps running, so resetting state
+        // here would let a follow-up caller launch a duplicate refresh.
+        // Routing the transition through the task itself preserves
+        // single-flight even under aggressive caller cancellation.
+        let task = Task.detached(priority: Task.currentPriority) { [weak self] () async throws -> String in
+            do {
+                let token = try await refreshTokenProvider()
+                await self?.refreshDidSucceed(id: id)
+                return token
+            } catch is CancellationError {
+                await self?.refreshDidCancel(id: id)
+                throw CancellationError()
+            } catch {
+                await self?.refreshDidFail(id: id, error: error)
+                throw error
+            }
         }
         state = .inFlight(id: id, task: task)
+        return try await task.value
+    }
 
-        do {
-            let token = try await task.value
-            if case .inFlight(let currentId, _) = state, currentId == id {
-                consecutiveFailures = 0
-                state = .idle
-            }
-            return token
-        } catch is CancellationError {
-            if case .inFlight(let currentId, _) = state, currentId == id {
-                state = .idle
-            }
-            throw CancellationError()
-        } catch {
-            if case .inFlight(let currentId, _) = state, currentId == id {
-                consecutiveFailures += 1
-                let cooldown = policy.failureCooldown.cooldown(afterConsecutiveFailures: consecutiveFailures)
-                if cooldown > 0 {
-                    state = .cooldown(
-                        until: now().addingTimeInterval(cooldown),
-                        lastError: error
-                    )
-                } else {
-                    state = .idle
-                }
-            }
-            throw error
+    private func refreshDidSucceed(id: UUID) {
+        guard case .inFlight(let currentId, _) = state, currentId == id else { return }
+        consecutiveFailures = 0
+        state = .idle
+    }
+
+    private func refreshDidCancel(id: UUID) {
+        guard case .inFlight(let currentId, _) = state, currentId == id else { return }
+        state = .idle
+    }
+
+    private func refreshDidFail(id: UUID, error: any Error & Sendable) {
+        guard case .inFlight(let currentId, _) = state, currentId == id else { return }
+        consecutiveFailures += 1
+        let cooldown = policy.failureCooldown.cooldown(afterConsecutiveFailures: consecutiveFailures)
+        if cooldown > 0 {
+            state = .cooldown(
+                until: now().addingTimeInterval(cooldown),
+                lastError: error
+            )
+        } else {
+            state = .idle
         }
     }
 }

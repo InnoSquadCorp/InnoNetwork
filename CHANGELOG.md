@@ -72,6 +72,10 @@ notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
 - Test infrastructure: `FailingFileHandle`, `FsyncFailureInjector`,
   `FlockSimulator`, `ClockFailureInjector`, and `CountingURLSession` for
   fault-injection coverage of disk, POSIX, and clock failure paths.
+- `WebSocketError.reconnectWindowExceeded`: distinct terminal error when
+  `reconnectMaxTotalDuration` elapses before reconnect succeeds, separate
+  from `maxReconnectAttemptsExceeded` so observers can differentiate
+  "network down" from "exhausted retry budget".
 
 ### Fixed
 
@@ -110,6 +114,35 @@ notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
 - `InFlightRegistry` cancels the underlying `URLSessionTask` when
   `cancelAll(matching:)` fires, so tag-based cancellation drops the wire
   in milliseconds.
+- `URLRequest.headers` setter routes per-header through `setValue`/`addValue`
+  instead of the dictionary projection so multi-value entries
+  (`WWW-Authenticate`, etc.) survive round-tripping into a request.
+- `PersistentResponseCache`: `lastAccessedAt` updates on the read path skip
+  the durability `fsync` even under `.always` so cache-hit latency does not
+  amplify into per-read disk barriers. LRU eviction is now a single sort
+  + drain (was O(N²) on bulk overflow).
+- `RefreshTokenCoordinator`: state transitions (idle/inFlight/cooldown) are
+  driven by the detached refresh task itself rather than by the awaiter's
+  catch arms, preserving single-flight even under aggressive caller
+  cancellation.
+- `RetryCoordinator`: cancellation event publishing is unified at a single
+  chokepoint in `execute(...)` so all three catch arms produce exactly one
+  `.requestFailed` event for cancelled requests.
+- `MultipartFormData`: non-ASCII `name=` parts emit a paired `name*=UTF-8''…`
+  RFC 5987 companion alongside the ASCII fallback (matching the existing
+  `filename*` behaviour) so receivers that understand the extended syntax
+  recover the original UTF-8 bytes.
+- `WebSocketHeartbeatCoordinator`: every failed ping publishes
+  `.error(.pingTimeout)` regardless of whether the underlying error
+  matches the heartbeat classifier — silent unclassified errors no longer
+  hide mid-link failures until the missed-pong threshold trips.
+- `DefaultNetworkClient`: debug-only one-shot log when
+  `urlSessionConfigurationOverride` is set but the client is constructed
+  with `URLSession.shared`, surfacing the misconfiguration rather than
+  letting the override silently no-op.
+- `DownloadTaskPersistence`: `mutate(...)` acquires the directory lock via
+  `Task.sleep`-based polling so a contended lock no longer pins a
+  cooperative-executor thread under `usleep`.
 
 ## [4.0.0] - 2026-05-01
 

@@ -138,9 +138,14 @@ package struct WebSocketHeartbeatCoordinator {
                         }
                         break
                     }
-                    if isPingTimeout(error) {
-                        await eventHub.publish(.error(.pingTimeout), for: task.id)
-                    }
+                    // Always surface a failed heartbeat as `.pingTimeout` so
+                    // observers see one event per missed pong, regardless of
+                    // whether the underlying error matches the classifier.
+                    // Silently swallowing unclassified errors hid mid-link
+                    // failures (e.g. `URLError.badServerResponse` from a
+                    // misbehaving proxy) until the missed-pong threshold
+                    // tripped, which broke alerting on flaky paths.
+                    await eventHub.publish(.error(.pingTimeout), for: task.id)
                 }
             }
         }
@@ -202,30 +207,4 @@ package struct WebSocketHeartbeatCoordinator {
         }
     }
 
-    private func isPingTimeout(_ error: Error) -> Bool {
-        if let internalError = error as? WebSocketInternalError,
-            case .pingTimeout = internalError
-        {
-            return true
-        }
-
-        if let urlError = error as? URLError {
-            switch urlError.code {
-            // Heartbeat-classifiable transport failures: each of these arms
-            // means the link is gone or unreachable and the next pong will
-            // never arrive, so they should publish `.error(.pingTimeout)`
-            // instead of being swallowed silently.
-            case .timedOut,
-                 .cannotConnectToHost,
-                 .networkConnectionLost,
-                 .notConnectedToInternet,
-                 .cancelled:
-                return true
-            default:
-                return false
-            }
-        }
-
-        return false
-    }
 }

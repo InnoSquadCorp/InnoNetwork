@@ -126,11 +126,18 @@ public struct DefaultNetworkLogger: NetworkLogger {
     }
 
     func sanitize(headers: [String: String]) -> [String: String] {
-        guard options.redactSensitiveData else { return headers }
         var sanitized = headers
-        for key in headers.keys {
-            if options.sensitiveHeaderNames.contains(key.lowercased()) {
+        for (key, value) in headers {
+            if options.redactSensitiveData,
+                options.sensitiveHeaderNames.contains(key.lowercased())
+            {
                 sanitized[key] = "<redacted>"
+            } else {
+                // Strip JWT-like tokens that escape the sensitive-header
+                // allowlist (e.g., custom auth headers, third-party trace
+                // tokens). Defence-in-depth so a non-redacted header value
+                // does not silently emit a Bearer JWT into logs.
+                sanitized[key] = Self.maskJWTLikeTokens(in: value)
             }
         }
         return sanitized
@@ -147,8 +154,11 @@ public struct DefaultNetworkLogger: NetworkLogger {
     }
 
     func sanitize(body: String) -> String {
-        guard options.redactSensitiveData else { return body }
-        return "<redacted>"
+        if options.redactSensitiveData { return "<redacted>" }
+        // Even when explicit body redaction is disabled (verbose logging),
+        // mask JWT-like tokens so a copy/paste from logs cannot leak a
+        // bearer token attacker-readable.
+        return Self.maskJWTLikeTokens(in: body)
     }
 
     /// Replaces JWT-like tokens (`eyXXX.YYY.ZZZ` with base64url-safe segments)

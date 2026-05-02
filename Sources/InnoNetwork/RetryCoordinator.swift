@@ -36,12 +36,35 @@ package struct RetryCoordinator {
             await eventHub.finish(requestID: requestID)
             return value
         } catch {
+            // Cancellation can escape any of the three catch arms in
+            // `runRetryLoop` — `processRetryDecision` (clock.sleep,
+            // monitor.waitForChange) can throw a raw `CancellationError`
+            // that bypasses both typed catch arms. Normalize the thrown
+            // error type here so callers always observe `NetworkError.cancelled`
+            // regardless of which path produced the cancel, then publish
+            // the terminal `.requestFailed` event exactly once.
+            let propagated: Error
+            if NetworkError.isCancellation(error) {
+                let cancellationError = NetworkError.cancelled
+                propagated = cancellationError
+                await eventHub.publish(
+                    .requestFailed(
+                        requestID: requestID,
+                        errorCode: cancellationError.errorCode,
+                        message: cancellationError.errorDescription ?? "cancelled"
+                    ),
+                    requestID: requestID,
+                    observers: eventObservers
+                )
+            } else {
+                propagated = error
+            }
             // Awaiting `finish` *before* propagating the error guarantees
             // that any drained observer has settled before the caller's
             // `try await client.request(...)` resumes — without this,
             // observer-published-state could be inspected mid-drain.
             await eventHub.finish(requestID: requestID)
-            throw error
+            throw propagated
         }
     }
 
@@ -91,18 +114,13 @@ package struct RetryCoordinator {
                 totalRetries = outcome.nextTotalRetries
                 snapshot = outcome.snapshot
             } catch {
+                // Cancellation events for *all* three catch arms are
+                // published once at the `execute(...)` chokepoint. Here we
+                // only normalize the thrown error type so the chokepoint's
+                // `NetworkError.isCancellation` classifier sees a uniform
+                // `NetworkError.cancelled`.
                 if NetworkError.isCancellation(error) {
-                    let cancellationError = NetworkError.cancelled
-                    await eventHub.publish(
-                        .requestFailed(
-                            requestID: requestID,
-                            errorCode: cancellationError.errorCode,
-                            message: cancellationError.errorDescription ?? "cancelled"
-                        ),
-                        requestID: requestID,
-                        observers: eventObservers
-                    )
-                    throw cancellationError
+                    throw NetworkError.cancelled
                 }
                 throw NetworkError.underlying(SendableUnderlyingError(error), nil)
             }

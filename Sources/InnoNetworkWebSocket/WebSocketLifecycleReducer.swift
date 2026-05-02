@@ -709,8 +709,13 @@ package enum WebSocketLifecycleReducer: StateReducer {
                     .finishTerminal(generation: state.generation),
                 ]
             )
-        case .exceeded:
-            let finalError = WebSocketError.maxReconnectAttemptsExceeded
+        case .exceeded(let reason):
+            let finalError: WebSocketError = {
+                switch reason {
+                case .attempts: return .maxReconnectAttemptsExceeded
+                case .duration: return .reconnectWindowExceeded
+                }
+            }()
             let nextState = WebSocketLifecycleState.failed(
                 generation: state.generation,
                 attempt: attempt,
@@ -789,8 +794,13 @@ package enum WebSocketLifecycleReducer: StateReducer {
                     .finishTerminal(generation: state.generation),
                 ]
             )
-        case .exceeded:
-            let finalError = WebSocketError.maxReconnectAttemptsExceeded
+        case .exceeded(let reason):
+            let finalError: WebSocketError = {
+                switch reason {
+                case .attempts: return .maxReconnectAttemptsExceeded
+                case .duration: return .reconnectWindowExceeded
+                }
+            }()
             let nextState = WebSocketLifecycleState.failed(
                 generation: state.generation,
                 attempt: attempt,

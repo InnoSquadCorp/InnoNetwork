@@ -105,7 +105,7 @@ struct WebSocketReconnectHardeningTests {
         // been reached.
         now.withLock { $0 = $0.addingTimeInterval(5.5) }
         let second = await coordinator.reconnectAction(task: task)
-        #expect(second == .exceeded)
+        #expect(second == .exceeded(reason: .duration))
     }
 
     @Test("Successful reconnect clears the cumulative budget window")
@@ -193,40 +193,51 @@ struct WebSocketReconnectHardeningTests {
 }
 
 
-@Suite("WebSocket Heartbeat Hardening Tests")
+/// Historical reference suite — exercises the *policy* under which a
+/// transport failure should (have) trigger `.error(.pingTimeout)`. Production
+/// heartbeat now publishes `.pingTimeout` unconditionally on ANY send-ping
+/// failure (see `WebSocketHeartbeatCoordinator`), so these cases assert
+/// only the reference classifier defined locally below — they exist to
+/// document which transport failures were always intended as terminal for
+/// heartbeat. The unconditional production behavior is covered by the
+/// broader heartbeat tests in `WebSocketLifecycleTests` /
+/// `WebSocketReconnectBackoffTests`.
+@Suite("WebSocket Heartbeat Classifier Reference Tests")
 struct WebSocketHeartbeatHardeningTests {
 
-    @Test("URLError.cannotConnectToHost is classified as ping timeout")
+    @Test("Reference classifier flags URLError.cannotConnectToHost as ping timeout")
     func cannotConnectToHostClassifiedAsTimeout() {
         #expect(callIsPingTimeout(URLError(.cannotConnectToHost)))
     }
 
-    @Test("URLError.networkConnectionLost is classified as ping timeout")
+    @Test("Reference classifier flags URLError.networkConnectionLost as ping timeout")
     func networkConnectionLostClassifiedAsTimeout() {
         #expect(callIsPingTimeout(URLError(.networkConnectionLost)))
     }
 
-    @Test("URLError.notConnectedToInternet is classified as ping timeout")
+    @Test("Reference classifier flags URLError.notConnectedToInternet as ping timeout")
     func notConnectedToInternetClassifiedAsTimeout() {
         #expect(callIsPingTimeout(URLError(.notConnectedToInternet)))
     }
 
-    @Test("URLError.cancelled is classified as ping timeout for heartbeat purposes")
+    @Test("Reference classifier flags URLError.cancelled as ping timeout for heartbeat purposes")
     func cancelledClassifiedAsTimeout() {
         #expect(callIsPingTimeout(URLError(.cancelled)))
     }
 
-    @Test("Unrelated URLError codes are NOT classified as ping timeout")
+    @Test("Reference classifier excludes unrelated URLError codes (production publishes regardless)")
     func unrelatedURLErrorIsNotTimeout() {
+        // The reference classifier returns false for these; production
+        // still publishes `.error(.pingTimeout)` on any send-ping failure.
         #expect(!callIsPingTimeout(URLError(.badURL)))
         #expect(!callIsPingTimeout(URLError(.userAuthenticationRequired)))
     }
 
-    /// Mirrors `WebSocketHeartbeatCoordinator.isPingTimeout` semantics by
-    /// rebuilding the same classifier locally — the production method is
-    /// `private`, but the policy under test is small and stable enough that
-    /// keeping a parallel reference avoids exposing internals just for
-    /// tests.
+    /// Reference classifier used as the historical contract for which
+    /// transport failures should publish `.error(.pingTimeout)`. The
+    /// production heartbeat now publishes unconditionally on any send-ping
+    /// failure, but this table-driven coverage stays useful as a regression
+    /// guard for the classification policy.
     private func callIsPingTimeout(_ error: Error) -> Bool {
         if let internalError = error as? WebSocketInternalError,
             case .pingTimeout = internalError

@@ -150,6 +150,17 @@ enum HeaderValueNormalizer {
         isSensitive(name) ? fingerprint(value) : value
     }
 
+    /// Threat model: SHA-256 of the raw header value is collision-resistant
+    /// but **not** keyed. An attacker who can read on-disk cache keys (e.g.
+    /// shared keychain, lost-device exfiltration) can confirm whether a
+    /// guessed credential matches the value that produced the cache entry,
+    /// because the fingerprint is reproducible. This is acceptable for the
+    /// in-process cache — the raw value lives in memory anyway — but for
+    /// the persistent cache the fingerprint should ideally be HMAC-keyed
+    /// with a per-installation salt stored next to the index. The salting
+    /// pass is tracked as a v5 hardening item; for 4.0.x we keep the
+    /// unkeyed fingerprint and rely on disk-level encryption (`Data
+    /// Protection: Complete` on Apple platforms) for at-rest secrecy.
     private static func fingerprint(_ value: String) -> String {
         let digest = SHA256.hash(data: Data(value.utf8))
         let hex = digest.map { String(format: "%02x", $0) }.joined()

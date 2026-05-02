@@ -291,7 +291,28 @@ extension MultipartFormData {
         let mimeType: String?
 
         func headerData(contentLength: Int64? = nil) -> Data {
-            var disposition = "Content-Disposition: form-data; name=\"\(Self.escapedHeaderParameter(name))\""
+            // For non-ASCII field names, emit both the legacy `name=`
+            // (with non-ASCII collapsed to `_`) and an RFC 5987
+            // `name*=UTF-8''<percent>` companion so receivers that
+            // understand the extended syntax can decode the original UTF-8
+            // bytes. The `name=` ASCII fallback alone is ambiguous when
+            // multiple non-ASCII parts collide on `_`.
+            //
+            // Interop note: RFC 7578 (multipart/form-data) does NOT
+            // standardize `name*=` — only RFC 6266's `filename*=` is widely
+            // interoperable. Most lenient parsers ignore the unknown
+            // parameter and fall back to `name=`; strict implementations
+            // could in theory reject it. In practice common stacks
+            // (Express/multer, Spring, Rails, ASP.NET) tolerate it. Callers
+            // who must target a strict parser can keep field names ASCII
+            // to suppress emission. The companion is only added when the
+            // name actually contains non-ASCII scalars; pure-ASCII names
+            // keep wire-format unchanged.
+            let asciiName = Self.asciiFallbackFilename(name)
+            var disposition = "Content-Disposition: form-data; name=\"\(asciiName)\""
+            if Self.requiresExtendedFilename(name) {
+                disposition += "; name*=UTF-8''\(Self.rfc5987EncodedFilename(name))"
+            }
             if let fileName {
                 let asciiFallback = Self.asciiFallbackFilename(fileName)
                 disposition += "; filename=\"\(asciiFallback)\""
