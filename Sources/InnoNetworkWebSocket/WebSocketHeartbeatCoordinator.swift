@@ -209,10 +209,21 @@ package struct WebSocketHeartbeatCoordinator {
             return true
         }
 
-        if let urlError = error as? URLError,
-            urlError.code == .timedOut
-        {
-            return true
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            // Heartbeat-classifiable transport failures: each of these arms
+            // means the link is gone or unreachable and the next pong will
+            // never arrive, so they should publish `.error(.pingTimeout)`
+            // instead of being swallowed silently.
+            case .timedOut,
+                 .cannotConnectToHost,
+                 .networkConnectionLost,
+                 .notConnectedToInternet,
+                 .cancelled:
+                return true
+            default:
+                return false
+            }
         }
 
         return false

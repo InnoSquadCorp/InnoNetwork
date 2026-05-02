@@ -5,6 +5,7 @@ import Foundation
 /// itself; tests can inject a stub implementation.
 package protocol WebSocketURLTask: AnyObject, Sendable {
     var taskIdentifier: Int { get }
+    var maximumMessageSize: Int { get set }
     func resume()
     func send(_ message: URLSessionWebSocketTask.Message) async throws
     func receive() async throws -> URLSessionWebSocketTask.Message

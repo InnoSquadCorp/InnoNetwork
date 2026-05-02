@@ -17,10 +17,16 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
         var cancelledCloseCode: URLSessionWebSocketTask.CloseCode?
         var cancelledReason: Data?
         var didCancelUnconditionally = false
+        var maximumMessageSize: Int = 1 * 1024 * 1024
 
         var scriptedReceives: [Result<URLSessionWebSocketTask.Message, Error>] = []
         var pendingReceiveContinuations: [UUID: CheckedContinuation<URLSessionWebSocketTask.Message, Error>] = [:]
         var pendingOrder: [UUID] = []
+    }
+
+    var maximumMessageSize: Int {
+        get { stateLock.withLock { $0.maximumMessageSize } }
+        set { stateLock.withLock { $0.maximumMessageSize = newValue } }
     }
 
     private let stateLock = OSAllocatedUnfairLock<State>(initialState: State())
