@@ -41,6 +41,7 @@ InnoNetwork	swift.enum	TrustFailureReason
 InnoNetwork	swift.enum	TrustPolicy
 InnoNetwork	swift.enum	URLQueryArrayEncodingStrategy
 InnoNetwork	swift.enum	URLQueryEncoder.EncodingError
+InnoNetwork	swift.enum	URLQueryFloatEncodingStrategy
 InnoNetwork	swift.enum	URLQueryKeyEncodingStrategy
 InnoNetwork	swift.enum.case	ContentType.formUrlEncoded
 InnoNetwork	swift.enum.case	ContentType.imageJPEG
@@ -129,7 +130,7 @@ InnoNetwork	swift.enum.case	TrustFailureReason.hostNotPinned(_:)
 InnoNetwork	swift.enum.case	TrustFailureReason.missingServerTrust
 InnoNetwork	swift.enum.case	TrustFailureReason.pinMismatch(host:)
 InnoNetwork	swift.enum.case	TrustFailureReason.publicKeyExtractionFailed
-InnoNetwork	swift.enum.case	TrustFailureReason.systemTrustEvaluationFailed
+InnoNetwork	swift.enum.case	TrustFailureReason.systemTrustEvaluationFailed(reason:)
 InnoNetwork	swift.enum.case	TrustFailureReason.unsupportedAuthenticationMethod(_:)
 InnoNetwork	swift.enum.case	TrustPolicy.custom(_:)
 InnoNetwork	swift.enum.case	TrustPolicy.publicKeyPinning(_:)
@@ -138,6 +139,9 @@ InnoNetwork	swift.enum.case	URLQueryArrayEncodingStrategy.bracketed
 InnoNetwork	swift.enum.case	URLQueryArrayEncodingStrategy.indexed
 InnoNetwork	swift.enum.case	URLQueryArrayEncodingStrategy.repeated
 InnoNetwork	swift.enum.case	URLQueryEncoder.EncodingError.unsupportedTopLevelValue
+InnoNetwork	swift.enum.case	URLQueryEncoder.EncodingError.unsupportedValue(reason:)
+InnoNetwork	swift.enum.case	URLQueryFloatEncodingStrategy.convertToString(positiveInfinity:negativeInfinity:nan:)
+InnoNetwork	swift.enum.case	URLQueryFloatEncodingStrategy.throw
 InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.convertToSnakeCase
 InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.custom(_:)
 InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.useDefaultKeys
@@ -200,7 +204,7 @@ InnoNetwork	swift.init	ServerSentEventDecoder.init()
 InnoNetwork	swift.init	StateReduction.init(state:effects:)
 InnoNetwork	swift.init	TransportPolicy.init(requestEncoding:responseDecoding:responseDecoder:)
 InnoNetwork	swift.init	URLQueryCustomKeyTransform.init(_:)
-InnoNetwork	swift.init	URLQueryEncoder.init(keyEncodingStrategy:dateEncodingStrategy:arrayEncodingStrategy:)
+InnoNetwork	swift.init	URLQueryEncoder.init(keyEncodingStrategy:dateEncodingStrategy:arrayEncodingStrategy:nonConformingFloatEncodingStrategy:)
 InnoNetwork	swift.method	AnyEncodable.encode(to:)
 InnoNetwork	swift.method	AnyRequestExecutionPolicy.execute(input:context:next:)
 InnoNetwork	swift.method	AnyResponseDecoder.decode(data:response:)
@@ -515,6 +519,7 @@ InnoNetwork	swift.property	TransportPolicy.responseDecoding
 InnoNetwork	swift.property	URLQueryEncoder.arrayEncodingStrategy
 InnoNetwork	swift.property	URLQueryEncoder.dateEncodingStrategy
 InnoNetwork	swift.property	URLQueryEncoder.keyEncodingStrategy
+InnoNetwork	swift.property	URLQueryEncoder.nonConformingFloatEncodingStrategy
 InnoNetwork	swift.protocol	APIDefinition
 InnoNetwork	swift.protocol	DecodingInterceptor
 InnoNetwork	swift.protocol	EndpointAuthScope

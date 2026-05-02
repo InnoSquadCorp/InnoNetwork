@@ -5,6 +5,26 @@ import Testing
 
 @Suite("Network Logger Tests")
 struct NetworkLoggerTests {
+
+    @Test("JWT-like tokens are masked in free-form strings")
+    func jwtLikeTokensAreMasked() {
+        let token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.signaturepart_extralength"
+        let input = "user logged in with token=\(token) at line=42"
+        let masked = DefaultNetworkLogger.maskJWTLikeTokens(in: input)
+        #expect(masked.contains("<redacted-jwt>"))
+        #expect(!masked.contains(token))
+        // The non-JWT scaffolding around the token must still be present
+        // unchanged so ops can correlate the log line.
+        #expect(masked.contains("user logged in with token="))
+        #expect(masked.contains("at line=42"))
+    }
+
+    @Test("JWT mask leaves non-JWT-shaped strings untouched")
+    func nonJWTStringsAreUnchanged() {
+        let input = "name=alice age=30 path=/v1/users"
+        #expect(DefaultNetworkLogger.maskJWTLikeTokens(in: input) == input)
+    }
+
     @Test("Sensitive headers are redacted by default")
     func sensitiveHeadersAreRedacted() {
         let logger = DefaultNetworkLogger()

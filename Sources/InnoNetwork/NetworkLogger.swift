@@ -153,6 +153,24 @@ public struct DefaultNetworkLogger: NetworkLogger {
         return "<redacted>"
     }
 
+    /// Replaces JWT-like tokens (`eyXXX.YYY.ZZZ` with base64url-safe segments)
+    /// in a free-form string with `<redacted-jwt>`. Used as a defence-in-depth
+    /// pass on log strings that escape the structured `header`/`body` paths —
+    /// for example error descriptions that interpolate raw response bodies or
+    /// custom diagnostic suffixes appended by interceptors.
+    static func maskJWTLikeTokens(in string: String) -> String {
+        if !string.contains("ey") { return string }
+        let pattern = "ey[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return string }
+        let range = NSRange(string.startIndex..., in: string)
+        return regex.stringByReplacingMatches(
+            in: string,
+            options: [],
+            range: range,
+            withTemplate: "<redacted-jwt>"
+        )
+    }
+
     func sanitize(url: URL?, nilFallback: String = "") -> String {
         guard let url else { return nilFallback }
         guard options.redactSensitiveData else { return url.absoluteString }
