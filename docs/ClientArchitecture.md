@@ -42,11 +42,14 @@ keeping the built-in retry, refresh, coalescing, cache, and circuit-breaker
 policies as first-class configuration values on `NetworkConfiguration`.
 
 Custom policies should be small and transport-attempt scoped. They receive the
-adapted `URLRequest`, can call ``RequestExecutionNext`` once or not at all, and
-return a full ``Response``. They should not try to replace retry scheduling,
-auth refresh replay, response-cache freshness, or circuit-breaker state; those
-remain owned by the built-in policy layers so cancellation, metrics, and cache
-semantics stay consistent.
+adapted `URLRequest` and may invoke ``RequestExecutionNext`` zero, one, or
+multiple times — for example, a retry policy that replays the chain after a
+transient failure invokes `next` repeatedly, while a synthetic-response policy
+may decide to return without invoking `next` at all. The policy must always
+return a full ``Response``. Custom policies should not try to replace retry
+scheduling, auth refresh replay, response-cache freshness, or circuit-breaker
+state; those remain owned by the built-in policy layers so cancellation,
+metrics, and cache semantics stay consistent.
 
 ## Auth Scope
 

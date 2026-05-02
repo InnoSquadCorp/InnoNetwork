@@ -27,9 +27,12 @@ import Foundation
 /// surface (`parameters`).
 public protocol APIDefinition: EndpointShape {
     associatedtype Parameter: Encodable & Sendable
-    /// Authentication scope for the endpoint. Defaults to ``PublicAuthScope``.
-    /// Conform to ``AuthRequiredScope`` to opt into the configured
-    /// ``RefreshTokenPolicy`` and to require an authenticated executor.
+    /// Authentication scope marker for the endpoint. Defaults to
+    /// ``PublicAuthScope``. Set ``Auth`` to ``AuthRequiredScope`` to opt
+    /// into the configured ``RefreshTokenPolicy`` and require an
+    /// authenticated executor. ``EndpointAuthScope`` is a marker
+    /// protocol — assign one of its concrete implementations rather than
+    /// declaring conformance on the endpoint itself.
     associatedtype Auth: EndpointAuthScope = PublicAuthScope
 
     var parameters: Parameter? { get }
@@ -93,10 +96,12 @@ public enum MultipartUploadStrategy: Sendable, Equatable {
 /// ``EndpointShape``; `MultipartAPIDefinition` adds only the body-strategy
 /// surface (`multipartFormData`, `uploadStrategy`).
 public protocol MultipartAPIDefinition: EndpointShape {
-    /// Authentication scope for the endpoint. Defaults to ``PublicAuthScope``.
-    /// Conform to ``AuthRequiredScope`` to opt into the configured
-    /// ``RefreshTokenPolicy`` for multipart uploads (e.g. authenticated photo
-    /// uploads).
+    /// Authentication scope marker for the endpoint. Defaults to
+    /// ``PublicAuthScope``. Set ``Auth`` to ``AuthRequiredScope`` to opt
+    /// into the configured ``RefreshTokenPolicy`` for multipart uploads
+    /// (e.g. authenticated photo uploads). ``EndpointAuthScope`` is a
+    /// marker protocol — assign one of its concrete implementations
+    /// rather than declaring conformance on the endpoint itself.
     associatedtype Auth: EndpointAuthScope = PublicAuthScope
 
     var multipartFormData: MultipartFormData { get }
