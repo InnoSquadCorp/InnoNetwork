@@ -843,8 +843,8 @@ package struct RequestExecutor {
     ///
     /// Only GET responses are persisted. InnoNetwork stores the RFC-cacheable
     /// status codes that are safe for whole-response reuse and honours
-    /// `Cache-Control: no-store` / `no-cache` without changing the explicit
-    /// `ResponseCachePolicy` freshness window selected by the caller.
+    /// `Cache-Control: no-store` / `private` / `no-cache` without changing the
+    /// explicit `ResponseCachePolicy` freshness window selected by the caller.
     private func storeCacheIfNeeded(
         _ response: Response,
         cacheKey: ResponseCacheKey?,
@@ -867,7 +867,7 @@ package struct RequestExecutor {
             return
         }
         let cacheControl = cacheControlDirectives(in: headerSnapshot)
-        if cacheControl.contains("no-store") {
+        if cacheControl.contains("no-store") || cacheControl.contains("private") {
             await cache.invalidate(cacheKey)
             return
         }
@@ -903,7 +903,7 @@ package struct RequestExecutor {
     /// Parses Cache-Control directive *names* only. Qualified directives whose
     /// quoted values contain commas (e.g. `private="X-Foo, X-Bar"`) will split
     /// into multiple tokens, so this helper must not be used to recover such
-    /// values — it only powers the `no-store` / `no-cache` lookups today.
+    /// values — it only powers directive-presence checks today.
     private func cacheControlDirectives(in headers: [String: String]) -> Set<String> {
         let combined =
             headers

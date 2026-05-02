@@ -31,8 +31,13 @@ Each line of `events.log` is a self-describing event:
 {"sequence":128,"timestamp":1714214831.456,"kind":"remove","taskID":"…"}
 ```
 
-Restoration reads `checkpoint.json` first, then replays events with sequence numbers
-greater than the checkpoint's high-water mark.
+Restoration reads `checkpoint.json` first, then replays any remaining `events.log`
+suffix in sequence order.
+
+Checkpoints written before the optional `orderedRecordIDs` field cannot fully
+recover the latest task id for repeated same-URL records. The loader keeps
+restoration deterministic by rebuilding the URL index with a best-effort
+fallback, then future compaction writes a fresh checkpoint with explicit order.
 
 ## Compaction
 

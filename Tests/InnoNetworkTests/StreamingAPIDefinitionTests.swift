@@ -27,6 +27,24 @@ private struct PathCounterStream: StreamingAPIDefinition {
     }
 }
 
+private struct DuplicateAuthHeaderStream: StreamingAPIDefinition {
+    typealias Output = String
+
+    var method: HTTPMethod { .get }
+    var path: String { "/events" }
+    var headers: HTTPHeaders {
+        var headers = HTTPHeaders.default
+        headers.add(name: "Authorization", value: "Bearer stale")
+        headers.add(name: "authorization", value: "Bearer fresh")
+        return headers
+    }
+
+    func decode(line: String) throws -> String? {
+        guard !line.isEmpty else { return nil }
+        return line
+    }
+}
+
 
 private final class ThrowingBytesSession: URLSessionProtocol, Sendable {
     let error: URLError
@@ -476,6 +494,34 @@ struct StreamingAPIDefinitionTests {
         #expect(values == ["authorized"])
         #expect(captured.count == 1)
         #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer stream-token")
+    }
+
+    @Test("stream() applies single-value header semantics")
+    func streamDuplicateSingleValueHeadersUseLastValue() async throws {
+        let definition = DuplicateAuthHeaderStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 200, data: Data("authorized\n".utf8))
+            ])
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(baseURL: baseURL),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var values: [String] = []
+        for try await value in client.stream(definition) {
+            values.append(value)
+        }
+
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(values == ["authorized"])
+        #expect(captured.count == 1)
+        #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer fresh")
     }
 
     @Test("stream() maps URLError.timedOut to NetworkError.timeout(.requestTimeout)")

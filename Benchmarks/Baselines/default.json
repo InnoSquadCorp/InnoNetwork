@@ -1,5 +1,5 @@
 {
-  "generatedAt" : "2026-05-01T09:51:00Z",
+  "generatedAt" : "2026-05-02T17:09:27Z",
   "results" : [
     {
       "elapsedSeconds" : 0.052382417,
@@ -119,6 +119,27 @@
       "iterations" : 2000,
       "name" : "concurrent-50-requests",
       "operationsPerSecond" : 12668.39062349068
+    },
+    {
+      "elapsedSeconds" : 0.158039792,
+      "group" : "client",
+      "iterations" : 2000,
+      "name" : "decoding-interceptor-chain-1",
+      "operationsPerSecond" : 12655.040700129495
+    },
+    {
+      "elapsedSeconds" : 0.159466542,
+      "group" : "client",
+      "iterations" : 2000,
+      "name" : "decoding-interceptor-chain-3",
+      "operationsPerSecond" : 12541.815824914545
+    },
+    {
+      "elapsedSeconds" : 0.160543875,
+      "group" : "client",
+      "iterations" : 2000,
+      "name" : "decoding-interceptor-chain-8",
+      "operationsPerSecond" : 12457.653709928205
     },
     {
       "elapsedSeconds" : 0.428473667,

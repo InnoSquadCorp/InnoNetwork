@@ -152,6 +152,17 @@ unchanged — the hook is purely additive.
 Apps storing high-value responses on devices with frequent abrupt
 shutdowns should opt into `.always`.
 
+`dataProtectionClass` is also configurable and defaults to
+`.completeUnlessOpen`. The persistent cache applies it to the cache directory,
+`bodies/`, body files, and `index.json` after creation. App-group consumers may
+select `.completeUntilFirstUserAuthentication`; use `.none` only when another
+storage layer owns file protection.
+
+The default privacy policy now treats credential-like key headers
+(`Authorization`, `Cookie`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`,
+and custom headers registered through `ResponseCacheHeaderPolicy`) as
+authenticated. `Cache-Control: private` responses are always do-not-store.
+
 ## NetworkMonitor
 
 Lifecycle is now explicit:

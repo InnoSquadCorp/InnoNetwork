@@ -83,6 +83,17 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     private struct Envelope: Codable, Sendable {
         let version: Int
         let records: [String: DownloadTaskPersistence.Record]
+        let orderedRecordIDs: [String]?
+
+        init(
+            version: Int = 1,
+            records: [String: DownloadTaskPersistence.Record],
+            orderedRecordIDs: [String]? = nil
+        ) {
+            self.version = version
+            self.records = records
+            self.orderedRecordIDs = orderedRecordIDs
+        }
     }
 
     private enum EventKind: String, Codable, Sendable {
@@ -332,6 +343,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         if Self.shouldCompact(state: diskState, policy: compactionPolicy) {
             try Self.writeCheckpoint(
                 records: diskState.records,
+                urlToID: diskState.urlToID,
                 to: checkpointURL,
                 fileManager: fileManager,
                 fsyncPolicy: fsyncPolicy,
@@ -375,15 +387,10 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
                     throw CocoaError(.coderInvalidValue)
                 }
                 records = envelope.records
-                // Checkpoint loses ordering between same-URL ids; the only
-                // information available is "these ids existed at the
-                // checkpoint", so any single-id-per-URL stamping is correct
-                // for `id(forURL:).last`. The append-log replay below
-                // restores upsert-order accuracy for any URL touched after
-                // the checkpoint.
-                for (id, record) in records {
-                    urlToID[record.url, default: []].append(id)
-                }
+                urlToID = rebuildURLIndex(
+                    records: records,
+                    orderedRecordIDs: envelope.orderedRecordIDs
+                )
             } catch {
                 quarantineFileIfNeeded(checkpointURL, fileManager: fileManager)
                 records = [:]
@@ -544,6 +551,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             quarantineFileIfNeeded(logURL, fileManager: fileManager)
             try writeCheckpoint(
                 records: records,
+                urlToID: urlToID,
                 to: checkpointURL,
                 fileManager: fileManager,
                 fsyncPolicy: .onCheckpoint,
@@ -588,12 +596,16 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
 
     private static func writeCheckpoint(
         records: [String: DownloadTaskPersistence.Record],
+        urlToID: [URL: [String]],
         to checkpointURL: URL,
         fileManager: FileManager,
         fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy,
         fsync: @escaping @Sendable (Int32) -> Int32
     ) throws {
-        let envelope = Envelope(version: 1, records: records)
+        let envelope = Envelope(
+            records: records,
+            orderedRecordIDs: checkpointRecordOrder(records: records, urlToID: urlToID)
+        )
         let data = try JSONEncoder().encode(envelope)
         try writeAtomically(
             data: data,
@@ -602,6 +614,48 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             fsyncBeforeRename: fsyncPolicy != .never,
             fsync: fsync
         )
+    }
+
+    private static func checkpointRecordOrder(
+        records: [String: DownloadTaskPersistence.Record],
+        urlToID: [URL: [String]]
+    ) -> [String] {
+        var seen: Set<String> = []
+        var ordered: [String] = []
+
+        for ids in urlToID.values {
+            for id in ids where records[id] != nil && seen.insert(id).inserted {
+                ordered.append(id)
+            }
+        }
+        for id in records.keys.sorted() where seen.insert(id).inserted {
+            ordered.append(id)
+        }
+        return ordered
+    }
+
+    private static func rebuildURLIndex(
+        records: [String: DownloadTaskPersistence.Record],
+        orderedRecordIDs: [String]?
+    ) -> [URL: [String]] {
+        var state = StoreState(
+            records: records,
+            urlToID: [:],
+            nextSequence: 0,
+            logEventCount: 0,
+            tombstoneCount: 0,
+            logSize: 0
+        )
+        var seen: Set<String> = []
+
+        for id in orderedRecordIDs ?? [] {
+            guard let record = records[id], seen.insert(id).inserted else { continue }
+            appendIDToIndex(state: &state, url: record.url, id: id)
+        }
+        for id in records.keys.sorted() where seen.insert(id).inserted {
+            appendIDToIndex(state: &state, url: records[id]!.url, id: id)
+        }
+        return state.urlToID
     }
 
     private static func writeAtomically(

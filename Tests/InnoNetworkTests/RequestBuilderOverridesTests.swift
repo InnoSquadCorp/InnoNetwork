@@ -38,6 +38,20 @@ struct RequestBuilderOverridesTests {
         var parameters: GetWithBodyParameters? { GetWithBodyParameters(token: "secret") }
     }
 
+    private struct DuplicateAuthHeaderEndpoint: APIDefinition {
+        typealias Parameter = EmptyParameter
+        typealias APIResponse = BaseURLResponse
+
+        var method: HTTPMethod { .get }
+        var path: String { "/users/1" }
+        var headers: HTTPHeaders {
+            var headers = HTTPHeaders.default
+            headers.add(name: "Authorization", value: "Bearer stale")
+            headers.add(name: "authorization", value: "Bearer fresh")
+            return headers
+        }
+    }
+
     @Test("Per-request timeoutOverride wins over client configuration timeout")
     func perRequestTimeoutWins() async throws {
         let mockSession = MockURLSession()
@@ -83,5 +97,21 @@ struct RequestBuilderOverridesTests {
         }
         // The transport must not have been invoked.
         #expect(mockSession.capturedRequest == nil)
+    }
+
+    @Test("Request builder applies single-value header semantics")
+    func duplicateSingleValueHeadersUseLastValue() async throws {
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(BaseURLResponse(id: 1, name: "Tester"))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com"),
+            session: mockSession
+        )
+
+        _ = try await client.request(DuplicateAuthHeaderEndpoint())
+
+        #expect(
+            mockSession.capturedRequest?.value(forHTTPHeaderField: "Authorization") == "Bearer fresh"
+        )
     }
 }

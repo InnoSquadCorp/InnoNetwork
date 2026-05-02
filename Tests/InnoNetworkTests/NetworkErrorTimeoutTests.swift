@@ -255,10 +255,9 @@ struct NetworkErrorTimeoutTests {
     func mapResourceTimeoutFromMetrics() {
         let start = Date(timeIntervalSince1970: 0)
         let end = start.addingTimeInterval(60)
-        let metrics = StubURLSessionTaskMetrics(taskInterval: DateInterval(start: start, end: end))
         let error = NetworkError.mapTransportError(
             URLError(.timedOut),
-            metrics: metrics,
+            taskInterval: DateInterval(start: start, end: end),
             resourceTimeoutInterval: 60
         )
         guard case .timeout(.resourceTimeout, let underlying) = error else {
@@ -272,10 +271,9 @@ struct NetworkErrorTimeoutTests {
     func mapRequestTimeoutWhenBelowBudget() {
         let start = Date(timeIntervalSince1970: 0)
         let end = start.addingTimeInterval(15)
-        let metrics = StubURLSessionTaskMetrics(taskInterval: DateInterval(start: start, end: end))
         let error = NetworkError.mapTransportError(
             URLError(.timedOut),
-            metrics: metrics,
+            taskInterval: DateInterval(start: start, end: end),
             resourceTimeoutInterval: 60
         )
         guard case .timeout(.requestTimeout, _) = error else {
@@ -298,11 +296,9 @@ struct NetworkErrorTimeoutTests {
 
         let nilInterval = NetworkError.mapTransportError(
             URLError(.timedOut),
-            metrics: StubURLSessionTaskMetrics(
-                taskInterval: DateInterval(
-                    start: Date(timeIntervalSince1970: 0),
-                    end: Date(timeIntervalSince1970: 600)
-                )
+            taskInterval: DateInterval(
+                start: Date(timeIntervalSince1970: 0),
+                end: Date(timeIntervalSince1970: 600)
             ),
             resourceTimeoutInterval: nil
         )
@@ -343,15 +339,4 @@ struct NetworkErrorTimeoutTests {
             }
         }
     }
-}
-
-private final class StubURLSessionTaskMetrics: URLSessionTaskMetrics, @unchecked Sendable {
-    private let stubbedTaskInterval: DateInterval
-
-    init(taskInterval: DateInterval) {
-        self.stubbedTaskInterval = taskInterval
-        super.init()
-    }
-
-    override var taskInterval: DateInterval { stubbedTaskInterval }
 }

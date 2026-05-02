@@ -235,7 +235,7 @@ package struct StreamingExecutor: Sendable {
         let url = try EndpointPathBuilder.makeURL(baseURL: configuration.baseURL, endpointPath: request.path)
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method.rawValue
-        urlRequest.allHTTPHeaderFields = request.headers.dictionary
+        urlRequest.headers = request.headers
         urlRequest.cachePolicy = configuration.cachePolicy
         urlRequest.timeoutInterval = configuration.timeout
         if let lastSeenEventID {

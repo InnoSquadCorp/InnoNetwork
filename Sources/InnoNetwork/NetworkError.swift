@@ -358,6 +358,18 @@ extension NetworkError {
         metrics: URLSessionTaskMetrics?,
         resourceTimeoutInterval: TimeInterval?
     ) -> NetworkError {
+        mapTransportError(
+            error,
+            taskInterval: metrics?.taskInterval,
+            resourceTimeoutInterval: resourceTimeoutInterval
+        )
+    }
+
+    static func mapTransportError(
+        _ error: Error,
+        taskInterval: DateInterval?,
+        resourceTimeoutInterval: TimeInterval?
+    ) -> NetworkError {
         if let networkError = error as? NetworkError {
             return networkError
         }
@@ -377,7 +389,7 @@ extension NetworkError {
             switch urlError.code {
             case .timedOut:
                 let reason = resolveTimeoutReason(
-                    metrics: metrics,
+                    taskInterval: taskInterval,
                     resourceTimeoutInterval: resourceTimeoutInterval
                 )
                 return .timeout(reason: reason, underlying: SendableUnderlyingError(urlError))
@@ -399,13 +411,13 @@ extension NetworkError {
     /// interval is at or beyond the configured resource budget; any
     /// shorter elapsed time is treated as ``TimeoutReason/requestTimeout``.
     private static func resolveTimeoutReason(
-        metrics: URLSessionTaskMetrics?,
+        taskInterval: DateInterval?,
         resourceTimeoutInterval: TimeInterval?
     ) -> TimeoutReason {
-        guard let metrics, let resourceTimeoutInterval, resourceTimeoutInterval > 0 else {
+        guard let taskInterval, let resourceTimeoutInterval, resourceTimeoutInterval > 0 else {
             return .requestTimeout
         }
-        let elapsed = metrics.taskInterval.duration
+        let elapsed = taskInterval.duration
         return elapsed + 0.001 >= resourceTimeoutInterval ? .resourceTimeout : .requestTimeout
     }
 }

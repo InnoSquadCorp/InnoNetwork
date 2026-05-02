@@ -102,6 +102,7 @@ Guarded benchmark set:
 
 - `events/task-event-fanout-single`: event delivery의 최소 fan-out baseline.
 - `persistence/download-persistence-restore`: background download resume/restore 경로 baseline.
+- `persistence/append-log-compaction`: append-log snapshot compaction 경로 baseline.
 - `websocket/websocket-close-disposition-classify`: close callback마다 실행되는 분류 hot path.
 - `websocket/websocket-ping-context-alloc`: heartbeat loop context 생성 hot path.
 - `websocket/websocket-send-queue-reserve`: send queue backpressure accounting baseline.

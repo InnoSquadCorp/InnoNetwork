@@ -66,6 +66,7 @@ jobs:
             --enforce-baseline \
             --guard-benchmark events/task-event-fanout-single \
             --guard-benchmark persistence/download-persistence-restore \
+            --guard-benchmark persistence/append-log-compaction \
             --guard-benchmark websocket/websocket-close-disposition-classify \
             --guard-benchmark websocket/websocket-ping-context-alloc \
             --guard-benchmark websocket/websocket-send-queue-reserve \

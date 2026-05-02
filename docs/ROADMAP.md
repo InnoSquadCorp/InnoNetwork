@@ -22,7 +22,7 @@ into one release line:
 - Public `RequestExecutionPolicy` extension points for custom transport-attempt
   policies.
 - Shared `StateReducer` / `StateReduction` vocabulary plus reducer-driven
-  Download lifecycle decisions.
+  Download and WebSocket lifecycle decisions.
 - New `InnoNetworkPersistentCache` companion product.
 - Compile-time macro diagnostics for optional path placeholders.
 - Phantom auth scopes through `EndpointAuthScope`, `PublicAuthScope`,
@@ -34,6 +34,9 @@ into one release line:
   `URLSessionWebSocketTask` does not expose deflate negotiation, so the
   natural path is a separate optional transport product with a non-zero
   dependency budget.
+- Refresh lifecycle reducer expansion and broader Download side-effect
+  ownership remain out of this PR; Download already owns reducer-driven state
+  decisions in 4.0.0.
 - An NIO-backed WebSocket/HTTP transport product remains out of this PR so the
   root runtime products keep their zero-dependency shape.
 - Pulse/Sentry/OpenTelemetry adapter examples remain separate companion
@@ -53,3 +56,6 @@ into one release line:
   should live in test or TestSupport targets.
 - Revisit WebSocket compression and alternate transports only after the
   URLSession-based products have a tagged 4.0.0 baseline.
+- Continue hardening persistent cache operations with production feedback on
+  eviction policy, data-protection defaults, app-group deployment, and privacy
+  header policy.

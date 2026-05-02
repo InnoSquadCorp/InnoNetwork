@@ -304,8 +304,9 @@ package actor CircuitBreakerRegistry {
     static func hostKey(for request: URLRequest) -> String? {
         guard let url = request.url, let host = url.host, !host.isEmpty else { return nil }
         let scheme = url.scheme?.lowercased() ?? "http"
+        let normalizedHost = host.lowercased()
         let port = url.port ?? defaultPort(forScheme: scheme)
-        return "\(scheme)://\(host):\(port)"
+        return "\(scheme)://\(normalizedHost):\(port)"
     }
 
     private static func defaultPort(forScheme scheme: String) -> Int {

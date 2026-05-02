@@ -65,7 +65,7 @@ package struct RequestBuilder {
 
         var request = URLRequest(url: targetURL)
         request.httpMethod = executable.method.rawValue
-        request.allHTTPHeaderFields = executable.headers.dictionary
+        request.headers = executable.headers
         if payload.hasBody, let bodyContentType {
             request.setValue(bodyContentType, forHTTPHeaderField: "Content-Type")
         }

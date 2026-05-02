@@ -85,6 +85,22 @@ struct HTTPHeaderTests {
 
         #expect(headers.values(for: "Set-Cookie") == ["a=1", "b=2"])
     }
+
+    @Test("URLSessionConfiguration.headers applies request single-value semantics")
+    func configurationHeadersUseLastSingleValue() async {
+        var headers = HTTPHeaders()
+        headers.add(name: "Authorization", value: "Bearer stale")
+        headers.add(name: "authorization", value: "Bearer fresh")
+        headers.add(name: "Accept", value: "application/json")
+        headers.add(name: "accept", value: "text/plain")
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.headers = headers
+
+        let configured = configuration.headers
+        #expect(configured.value(for: "Authorization") == "Bearer fresh")
+        #expect(configured.value(for: "Accept") == "application/json, text/plain")
+    }
 }
 
 

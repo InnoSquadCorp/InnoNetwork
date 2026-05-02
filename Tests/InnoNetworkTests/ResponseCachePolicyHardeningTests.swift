@@ -41,6 +41,17 @@ struct ResponseCacheKeyQueryNormalizationTests {
 
         #expect(keyA == keyB)
     }
+
+    @Test("URL scheme and host casing are normalized")
+    func schemeAndHostCasingNormalize() throws {
+        let urlA = try #require(URL(string: "HTTPS://API.EXAMPLE.COM/v1/items?b=2&a=1"))
+        let urlB = try #require(URL(string: "https://api.example.com/v1/items?a=1&b=2"))
+
+        let keyA = try #require(ResponseCacheKey(request: URLRequest(url: urlA)))
+        let keyB = try #require(ResponseCacheKey(request: URLRequest(url: urlB)))
+
+        #expect(keyA == keyB)
+    }
 }
 
 

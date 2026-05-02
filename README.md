@@ -264,7 +264,8 @@ for await event in await manager.events(for: task) {
 
 - actor-backed `ResponseCache` implementation for on-disk GET caching
 - default 50 MB / 1000 entry / 5 MB per-entry caps
-- refuses authenticated and `Set-Cookie` responses by default
+- refuses authenticated, `Cache-Control: private`, and `Set-Cookie` responses by default
+- applies `.completeUnlessOpen` data protection to cache files by default
 - versioned index and hashed body files with corrupt-entry eviction
 
 ### `InnoNetworkTestSupport`
@@ -394,9 +395,9 @@ automatically (RFC 9111 §4.1):
 - GET responses with whole-response cacheable status codes (`200`, `203`,
   `204`, `300`, `301`, `308`, `404`, `405`, `410`, `414`, and `501`) can be
   stored; `206 Partial Content` is excluded.
-- `Cache-Control: no-store` invalidates the current cache key and skips writes.
-  `Cache-Control: no-cache` stores the response but forces revalidation before
-  every reuse.
+- `Cache-Control: no-store` and `Cache-Control: private` invalidate the current
+  cache key and skip writes. `Cache-Control: no-cache` stores the response but
+  forces revalidation before every reuse.
 
 ### Optional Macros
 
@@ -462,6 +463,14 @@ the `baseURL` path even when they start with `/`; endpoint paths must not includ
 `Content-Type` is attached only for body, multipart, or file-upload payloads.
 Header precedence is library defaults, endpoint headers, automatic body
 `Content-Type`, request interceptors, then `RefreshTokenPolicy` authorization.
+
+Choose `HTTPHeaders.add` only when a repeated field value is intentional, such
+as accept negotiation or other comma-combinable metadata. Prefer
+`HTTPHeaders.update`, subscript assignment, or `URLRequest.setValue` for
+single-value request fields such as `Authorization`, `Content-Type`, `Cookie`,
+and `Host`; `URLRequest.headers` and `URLSessionConfiguration.headers` apply
+single-value names with last-write-wins semantics while preserving repeatable
+header values.
 
 For operational tuning, see [Examples](Examples/README.md) and [API Stability](API_STABILITY.md).
 Teams migrating an existing client can start with
@@ -563,9 +572,10 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - **Cache and circuit breaker.** Enable `ResponseCachePolicy` and
   `CircuitBreakerPolicy` per client only after deciding the cache freshness
   and host-failure budget for that API. Cache keys include an `Authorization`
-  fingerprint and `Accept-Language` by default; the response `Vary` header
+  fingerprint, `Cookie`/credential-like headers are fingerprinted when present,
+  and `Accept-Language` is included by default; the response `Vary` header
   further refines lookups, `Vary: *` responses are skipped, and
-  `Cache-Control: no-store` / `no-cache` are honoured.
+  `Cache-Control: no-store` / `private` / `no-cache` are honoured.
 - **WebSocket reconnect cap.** `maxReconnectAttempts` limits successive automatic attempts.
   After exhaustion, surface the failure to the UI rather than reconnect on every app
   foreground.

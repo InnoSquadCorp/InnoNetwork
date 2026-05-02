@@ -70,6 +70,8 @@ public struct ResponseCacheKey: Hashable, Sendable {
         guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return nil
         }
+        components.scheme = components.scheme?.lowercased()
+        components.host = components.host?.lowercased()
         components.fragment = nil
         // Sort query items so semantically-equal requests with reordered query
         // strings (e.g. `?a=1&b=2` vs `?b=2&a=1`) collapse to a single cache

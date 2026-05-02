@@ -101,4 +101,44 @@ struct DownloadPersistenceHardeningTests {
         )
         #expect(await reloaded.id(forURL: url) == "persisted")
     }
+
+    @Test("checkpoint preserves same-URL reverse-index ordering")
+    func checkpointPreservesSameURLLatestID() async throws {
+        let sessionIdentifier = "url-checkpoint-order-test"
+        let baseDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("inno-persist-hardening-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: baseDir) }
+
+        let compactionPolicy = DownloadConfiguration.PersistenceCompactionPolicy(
+            maxEvents: 2,
+            maxLogBytes: UInt64.max,
+            tombstoneRatio: 1
+        )
+        let url = URL(string: "https://example.invalid/shared.bin")!
+        let firstDest = URL(fileURLWithPath: "/tmp/first.bin")
+        let secondDest = URL(fileURLWithPath: "/tmp/second.bin")
+
+        let writer = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDir,
+            compactionPolicy: compactionPolicy
+        )
+        try await writer.upsert(id: "older", url: url, destinationURL: firstDest)
+        try await writer.upsert(id: "newer", url: url, destinationURL: secondDest)
+
+        let checkpointURL =
+            baseDir
+            .appendingPathComponent("InnoNetworkDownload", isDirectory: true)
+            .appendingPathComponent(sessionIdentifier, isDirectory: true)
+            .appendingPathComponent("checkpoint.json", isDirectory: false)
+        let checkpointText = try String(contentsOf: checkpointURL, encoding: .utf8)
+        #expect(checkpointText.contains("orderedRecordIDs"))
+
+        let reloaded = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDir,
+            compactionPolicy: compactionPolicy
+        )
+        #expect(await reloaded.id(forURL: url) == "newer")
+    }
 }

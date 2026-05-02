@@ -44,6 +44,97 @@ struct PersistentResponseCacheTests {
         #expect(await cache.get(cookieKey) == nil)
     }
 
+    @Test("Default policy rejects Cookie request keys")
+    func rejectsCookieRequestKeysByDefault() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Cookie": "sid=secret"]
+        )
+
+        await cache.set(key, CachedResponse(data: Data("cookie-auth".utf8)))
+
+        #expect(await cache.get(key) == nil)
+    }
+
+    @Test("Default policy rejects registered sensitive request keys")
+    func rejectsRegisteredSensitiveRequestKeysByDefault() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let headerName = "X-Session-\(UUID().uuidString)"
+        ResponseCacheHeaderPolicy.registerSensitiveHeader(headerName)
+        defer { ResponseCacheHeaderPolicy.unregisterSensitiveHeader(headerName) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: [headerName: "secret"]
+        )
+
+        await cache.set(key, CachedResponse(data: Data("custom-auth".utf8)))
+
+        #expect(await cache.get(key) == nil)
+    }
+
+    @Test("Cache-Control private responses are rejected")
+    func rejectsCacheControlPrivateResponses() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/private")
+
+        await cache.set(
+            key,
+            CachedResponse(
+                data: Data("private".utf8),
+                headers: ["Cache-Control": "max-age=60, private"]
+            )
+        )
+
+        #expect(await cache.get(key) == nil)
+    }
+
+    @Test("Default policy evicts legacy sensitive entries on read")
+    func defaultPolicyEvictsLegacySensitiveEntriesOnRead() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Cookie": "sid=secret"]
+        )
+        let permissive = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                storesAuthenticatedResponses: true
+            )
+        )
+        await permissive.set(key, CachedResponse(data: Data("legacy".utf8)))
+        #expect(await permissive.get(key) != nil)
+
+        let strict = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        #expect(await strict.get(key) == nil)
+
+        let reopened = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                storesAuthenticatedResponses: true
+            )
+        )
+        #expect(await reopened.get(key) == nil)
+    }
+
     @Test("Evicts least recently used entries when over budget")
     func evictsLeastRecentlyUsedEntries() async throws {
         let directory = makeDirectory()
@@ -123,6 +214,23 @@ struct PersistentResponseCacheTests {
         #expect(FileManager.default.fileExists(atPath: sentinelURL.path))
     }
 
+    @Test("Recovery reapplies data protection to recreated body directory")
+    func recoveryReappliesDataProtectionToRecreatedBodiesDirectory() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let indexURL = directory.appendingPathComponent("index.json")
+        try Data(#"{"version":999,"entries":{}}"#.utf8).write(to: indexURL)
+
+        _ = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+
+        let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
+        let attributes = try FileManager.default.attributesOfItem(atPath: bodiesURL.path)
+        #expect(attributes[.protectionKey] as? FileProtectionType == .completeUnlessOpen)
+    }
+
     @Test("Overwriting an entry preserves the freshly written body")
     func overwriteKeepsFreshBody() async throws {
         let directory = makeDirectory()
@@ -184,6 +292,14 @@ struct PersistentResponseCacheTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
         #expect(configuration.persistenceFsyncPolicy == .onCheckpoint)
+    }
+
+    @Test("PersistentResponseCacheConfiguration defaults to completeUnlessOpen protection")
+    func defaultDataProtectionClassIsCompleteUnlessOpen() {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        #expect(configuration.dataProtectionClass == .completeUnlessOpen)
     }
 
     private func makeDirectory() -> URL {
