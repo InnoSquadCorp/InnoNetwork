@@ -211,6 +211,65 @@ Generated clients should prefer the stable `APIDefinition` wrapper path. The
 SPI path is reserved for code generators that own custom serialization or
 decoding and can pin an InnoNetwork revision.
 
+#### `@_spi(GeneratedClientSupport)` Compatibility Contract
+
+This subsection is the canonical contract for the
+`@_spi(GeneratedClientSupport)` surface. It is referenced from
+`Sources/InnoNetwork/InnoNetwork.docc/Articles/GeneratedClientRecipe.md` and
+from `Examples/GeneratedClientRecipe` so generated-client authors have a
+single entry point for the rules.
+
+**1. SPI may break in any release, including minor releases.**
+
+The symbols listed in the SPI table above sit *outside* the
+SemVer contract that governs the `Stable` and `Provisionally Stable`
+sections. They may be renamed, resigned, removed, or replaced in any
+minor release (for example `5.1 → 5.2`) without a deprecation window
+and without a `[Breaking]` callout in `CHANGELOG.md`. SPI changes still
+appear in the changelog, but in a dedicated `[SPI]` subsection that
+does not require a major version bump.
+
+**2. `InnoNetworkCodegen` is co-updated for every SPI break.**
+
+Whenever an SPI symbol changes shape, the matching
+`Packages/InnoNetworkCodegen` macros and recipe templates ship updated
+expansions in the **same release** of InnoNetwork. Consumers who use
+the macro path (`@APIDefinition(...)` and `endpoint(_:_:as:)`) and pin
+both packages to the same InnoNetwork tag therefore never observe an
+SPI break — the regenerated witnesses absorb the new shape.
+
+This guarantee is *only* extended to `InnoNetworkCodegen`. Third-party
+generators (custom OpenAPI adapters, in-house DSLs, hand-written `@_spi`
+imports) must validate their integration against each new InnoNetwork
+release.
+
+**3. External `@_spi` imports are opt-in and unsupported.**
+
+Code outside the `InnoNetwork` and `InnoNetworkCodegen` packages that
+writes:
+
+```swift
+@_spi(GeneratedClientSupport) import InnoNetwork
+```
+
+is opting into a pre-release-grade surface. We do not run breakage
+audits against external `@_spi` consumers, and Issues that report
+"`@_spi` symbol X disappeared in 5.y" will be closed with a pointer to
+this section. Specifically:
+
+- **Build errors** after a minor bump are expected and not regressions.
+- **Pin to an exact InnoNetwork tag** (`.exact("5.0.0")`) if you import
+  `@_spi`. `.upToNextMinor` is *not* tight enough.
+- **Treat `@_spi` upgrades as code-level reviews** — diff the SPI
+  surface in `Sources/InnoNetwork/...` and re-run your generator.
+
+**4. Stable wrapper path is the supported escape hatch.**
+
+If your generator does not need to own custom serialization or decoding,
+prefer the stable `APIDefinition` / `MultipartAPIDefinition` wrapper
+path. That path follows the standard `Stable` SemVer contract and never
+requires `@_spi` import.
+
 ### InnoNetworkTestSupport
 
 - `MockURLSession`, `StubBehavior`, `StubNetworkClient`, `StubRequestKey`, and
