@@ -47,7 +47,6 @@ package struct StreamingExecutor: Sendable {
 
         attempts: while true {
             var attemptStartedAt: Date?
-            var effectiveRequestTimeout: TimeInterval?
             do {
                 try Task.checkCancellation()
                 resumeState.beginAttempt()
@@ -94,7 +93,6 @@ package struct StreamingExecutor: Sendable {
                     eventObservers: configuration.eventObservers
                 )
                 attemptStartedAt = Date()
-                effectiveRequestTimeout = urlRequest.timeoutInterval
                 let (bytes, response) = try await session.bytes(for: urlRequest, context: context)
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw NetworkError.nonHTTPResponse(response)
@@ -193,8 +191,7 @@ package struct StreamingExecutor: Sendable {
                     }
                     throw Self.mapTransportError(
                         streamError,
-                        startedAt: attemptStartedAt,
-                        resourceTimeoutInterval: effectiveRequestTimeout
+                        startedAt: attemptStartedAt
                     )
                 }
 
@@ -215,8 +212,7 @@ package struct StreamingExecutor: Sendable {
             } catch {
                 let mapped = Self.mapTransportError(
                     error,
-                    startedAt: attemptStartedAt,
-                    resourceTimeoutInterval: effectiveRequestTimeout
+                    startedAt: attemptStartedAt
                 )
                 let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
                 let nsError = surfaced as NSError
@@ -277,15 +273,14 @@ package struct StreamingExecutor: Sendable {
 
     private static func mapTransportError(
         _ error: Error,
-        startedAt: Date?,
-        resourceTimeoutInterval: TimeInterval?
+        startedAt: Date?
     ) -> NetworkError {
         guard let startedAt else { return NetworkError.mapTransportError(error) }
         return NetworkError.mapTransportError(
             error,
             startedAt: startedAt,
             endedAt: Date(),
-            resourceTimeoutInterval: resourceTimeoutInterval
+            resourceTimeoutInterval: nil
         )
     }
 }

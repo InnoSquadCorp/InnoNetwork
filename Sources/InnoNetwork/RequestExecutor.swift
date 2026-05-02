@@ -28,7 +28,6 @@ package struct RequestExecutor {
 
         var retryRequest: URLRequest?
         var attemptStartedAt: Date?
-        var effectiveRequestTimeout: TimeInterval?
         do {
             try validateAuthScope(executable, configuration: configuration)
             let built = try requestBuilder.build(executable, configuration: configuration)
@@ -61,7 +60,6 @@ package struct RequestExecutor {
                 request = try await refreshCoordinator.applyCurrentToken(to: request)
             }
             retryRequest = request
-            effectiveRequestTimeout = request.timeoutInterval
             await notifyRequestAdapted(
                 request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
@@ -150,8 +148,7 @@ package struct RequestExecutor {
         } catch {
             let mapped = Self.mapTransportError(
                 error,
-                startedAt: attemptStartedAt,
-                resourceTimeoutInterval: effectiveRequestTimeout
+                startedAt: attemptStartedAt
             )
             let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
             executable.logger.log(error: surfaced)
@@ -529,7 +526,7 @@ package struct RequestExecutor {
                 error,
                 startedAt: attemptStartedAt,
                 endedAt: Date(),
-                resourceTimeoutInterval: request.timeoutInterval
+                resourceTimeoutInterval: nil
             )
         }
     }
@@ -647,7 +644,6 @@ package struct RequestExecutor {
                     runtime.inFlight.deregister(id: revalidationID)
                 }
                 var revalidationStartedAt: Date?
-                var revalidationTimeout: TimeInterval?
 
                 do {
                     try Task.checkCancellation()
@@ -658,7 +654,6 @@ package struct RequestExecutor {
                     }
 
                     revalidationStartedAt = Date()
-                    revalidationTimeout = revalidationRequest.timeoutInterval
                     let result = try await revalidateInBackground(
                         request: revalidationRequest,
                         bodySource: bodySource,
@@ -718,8 +713,7 @@ package struct RequestExecutor {
                     }
                     let mapped = Self.mapTransportError(
                         error,
-                        startedAt: revalidationStartedAt,
-                        resourceTimeoutInterval: revalidationTimeout
+                        startedAt: revalidationStartedAt
                     )
                     let surfaced =
                         configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
@@ -1018,15 +1012,14 @@ package struct RequestExecutor {
 
     private static func mapTransportError(
         _ error: Error,
-        startedAt: Date?,
-        resourceTimeoutInterval: TimeInterval?
+        startedAt: Date?
     ) -> NetworkError {
         guard let startedAt else { return NetworkError.mapTransportError(error) }
         return NetworkError.mapTransportError(
             error,
             startedAt: startedAt,
             endedAt: Date(),
-            resourceTimeoutInterval: resourceTimeoutInterval
+            resourceTimeoutInterval: nil
         )
     }
 }

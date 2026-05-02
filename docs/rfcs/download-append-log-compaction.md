@@ -47,10 +47,11 @@ writes a new checkpoint and truncates the event log.
   the next compaction.
 - **App update**: checkpoint schema additions must be optional with defaults
   for at least one major line. `resumeData` and `orderedRecordIDs` follow this
-  rule in 4.0.0: older rows decode as `resumeData == nil` and legacy
-  checkpoints rebuild same-URL task-id order from `orderedRecordIDs` first,
-  then append unseen records in sorted-ID order as a deterministic best-effort
-  fallback until the next checkpoint rewrite.
+  rule in 4.0.0: older rows decode as `resumeData == nil`. Checkpoints that
+  include `orderedRecordIDs` restore same-URL task-id order from that field
+  first, then append unseen records in sorted-ID order. Legacy checkpoints
+  without `orderedRecordIDs` use only that sorted-ID append order as a
+  deterministic best-effort fallback until the next checkpoint rewrite.
 
 ## Checksum Policy
 

@@ -22,6 +22,21 @@ private struct EmptyEcho: APIDefinition, HTTPEmptyResponseDecodable {
 }
 
 
+private final class DelayedTimingOutSession: URLSessionProtocol, Sendable {
+    private let delay: Duration
+
+    init(delay: Duration = .milliseconds(20)) {
+        self.delay = delay
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        _ = request
+        try await Task.sleep(for: delay)
+        throw URLError(.timedOut)
+    }
+}
+
+
 @Suite("NetworkError Timeout Tests")
 struct NetworkErrorTimeoutTests {
 
@@ -43,6 +58,30 @@ struct NetworkErrorTimeoutTests {
                 #expect(underlying?.code == URLError.Code.timedOut.rawValue)
             default:
                 Issue.record("Expected NetworkError.timeout(.requestTimeout), got \(error)")
+            }
+        }
+    }
+
+    @Test("URLRequest timeout budget still maps to requestTimeout after the measured attempt exceeds it")
+    func urlRequestTimeoutBudgetDoesNotMapToResourceTimeout() async throws {
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                timeout: 0.001
+            ),
+            session: DelayedTimingOutSession()
+        )
+
+        do {
+            _ = try await client.request(TimingOutAPIRequest())
+            Issue.record("Expected timeout error")
+        } catch let error as NetworkError {
+            switch error {
+            case .timeout(.requestTimeout, let underlying):
+                #expect(underlying?.domain == NSURLErrorDomain)
+                #expect(underlying?.code == URLError.Code.timedOut.rawValue)
+            default:
+                Issue.record("Expected URLRequest.timeoutInterval to stay .requestTimeout, got \(error)")
             }
         }
     }

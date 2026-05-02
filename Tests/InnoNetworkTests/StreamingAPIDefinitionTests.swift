@@ -65,6 +65,28 @@ private final class ThrowingBytesSession: URLSessionProtocol, Sendable {
 }
 
 
+private final class DelayedTimedOutBytesSession: URLSessionProtocol, Sendable {
+    private let delay: Duration
+
+    init(delay: Duration = .milliseconds(20)) {
+        self.delay = delay
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        _ = request
+        throw URLError(.badServerResponse)
+    }
+
+    func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
+        URLSession.AsyncBytes, URLResponse
+    ) {
+        _ = (request, context)
+        try await Task.sleep(for: delay)
+        throw URLError(.timedOut)
+    }
+}
+
+
 private final class DelayedFailingBytesSession: URLSessionProtocol, Sendable {
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         throw URLError(.badServerResponse)
@@ -543,6 +565,32 @@ struct StreamingAPIDefinitionTests {
                 #expect(underlying?.code == URLError.Code.timedOut.rawValue)
             default:
                 Issue.record("Expected NetworkError.timeout(.requestTimeout), got \(error)")
+            }
+        }
+    }
+
+    @Test("stream() keeps URLRequest timeout as requestTimeout after the measured attempt exceeds it")
+    func streamRequestTimeoutBudgetDoesNotMapToResourceTimeout() async throws {
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                timeout: 0.001
+            ),
+            session: DelayedTimedOutBytesSession()
+        )
+
+        let stream = client.stream(LineCounterStream())
+        var iterator = stream.makeAsyncIterator()
+        do {
+            _ = try await iterator.next()
+            Issue.record("Expected stream timeout error")
+        } catch let error as NetworkError {
+            switch error {
+            case .timeout(.requestTimeout, let underlying):
+                #expect(underlying?.domain == NSURLErrorDomain)
+                #expect(underlying?.code == URLError.Code.timedOut.rawValue)
+            default:
+                Issue.record("Expected URLRequest.timeoutInterval to stay .requestTimeout, got \(error)")
             }
         }
     }

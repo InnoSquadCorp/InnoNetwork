@@ -54,7 +54,7 @@ struct ResponseCacheKeyQueryNormalizationTests {
     }
 
     @Test("Direct cache key initializer normalizes valid URL strings")
-    func directInitializerNormalizesValidURLStrings() {
+    func directInitializerNormalizesValidURLStrings() async {
         let keyA = ResponseCacheKey(
             method: "get",
             url: "HTTPS://API.EXAMPLE.COM/v1/items?b=2&a=1#section"
@@ -69,7 +69,7 @@ struct ResponseCacheKeyQueryNormalizationTests {
     }
 
     @Test("Direct cache key initializer preserves unparsable URL strings")
-    func directInitializerPreservesUnparsableURLStrings() {
+    func directInitializerPreservesUnparsableURLStrings() async {
         let key = ResponseCacheKey(method: "GET", url: "://not a url")
         #expect(key.url == "://not a url")
     }

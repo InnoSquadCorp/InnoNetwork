@@ -172,7 +172,7 @@ public actor PersistentResponseCache: ResponseCache {
             fileManager: fileManager
         )
         Self.applyDataProtection(configuration.dataProtectionClass, to: bodiesDirectoryURL, fileManager: fileManager)
-        self.index = try Self.loadIndex(
+        let loadedIndex = try Self.loadIndex(
             from: indexURL,
             directoryURL: configuration.directoryURL,
             dataProtectionClass: configuration.dataProtectionClass,
@@ -180,6 +180,13 @@ public actor PersistentResponseCache: ResponseCache {
         )
         Self.applyDataProtectionToExistingCacheFiles(
             dataProtectionClass: configuration.dataProtectionClass,
+            indexURL: indexURL,
+            bodiesDirectoryURL: bodiesDirectoryURL,
+            fileManager: fileManager
+        )
+        self.index = try Self.scrubPolicyRejectedEntriesOnOpen(
+            loadedIndex,
+            configuration: configuration,
             indexURL: indexURL,
             bodiesDirectoryURL: bodiesDirectoryURL,
             fileManager: fileManager
@@ -313,24 +320,7 @@ public actor PersistentResponseCache: ResponseCache {
     }
 
     private func shouldStore(key: DiskKey, responseHeaders: [String: String]) -> Bool {
-        if !configuration.storesAuthenticatedResponses,
-            Self.containsSensitiveRequestHeader(key.headers)
-        {
-            return false
-        }
-
-        let cacheControl = Self.cacheControlDirectives(in: responseHeaders)
-        if cacheControl.contains("private") {
-            return false
-        }
-
-        if !configuration.storesSetCookieResponses,
-            responseHeaders.keys.contains(where: { $0.caseInsensitiveCompare("Set-Cookie") == .orderedSame })
-        {
-            return false
-        }
-
-        return true
+        Self.shouldStore(key: key, responseHeaders: responseHeaders, configuration: configuration)
     }
 
     private func evictIfNeeded() {
@@ -368,21 +358,95 @@ public actor PersistentResponseCache: ResponseCache {
     }
 
     private func removeBody(fileName: String) {
-        let bodyURL = bodiesDirectoryURL.appendingPathComponent(fileName, isDirectory: false)
-        try? fileManager.removeItem(at: bodyURL)
+        Self.removeBody(fileName: fileName, in: bodiesDirectoryURL, fileManager: fileManager)
     }
 
     private func persistIndex(durable: Bool = true) throws {
-        let data = try JSONEncoder.persistentCache.encode(index)
-        try data.write(to: indexURL, options: .atomic)
-        Self.applyDataProtection(configuration.dataProtectionClass, to: indexURL, fileManager: fileManager)
+        try Self.persistIndex(
+            index,
+            to: indexURL,
+            directoryURL: configuration.directoryURL,
+            configuration: configuration,
+            fileManager: fileManager,
+            durable: durable
+        )
         // Any successful flush — durable or not — clears the read-path
         // backlog because the encoded snapshot already includes the
         // accumulated `lastAccessedAt` updates.
         pendingReadFlushes = 0
+    }
+
+    private static func scrubPolicyRejectedEntriesOnOpen(
+        _ loadedIndex: Index,
+        configuration: PersistentResponseCacheConfiguration,
+        indexURL: URL,
+        bodiesDirectoryURL: URL,
+        fileManager: FileManager
+    ) throws -> Index {
+        var scrubbedIndex = loadedIndex
+        let rejectedEntries = loadedIndex.entries.filter { _, entry in
+            !shouldStore(key: entry.key, responseHeaders: entry.headers, configuration: configuration)
+        }
+        guard !rejectedEntries.isEmpty else { return loadedIndex }
+
+        for (id, entry) in rejectedEntries {
+            scrubbedIndex.entries.removeValue(forKey: id)
+            removeBody(fileName: entry.bodyFileName, in: bodiesDirectoryURL, fileManager: fileManager)
+        }
+        try persistIndex(
+            scrubbedIndex,
+            to: indexURL,
+            directoryURL: configuration.directoryURL,
+            configuration: configuration,
+            fileManager: fileManager
+        )
+        return scrubbedIndex
+    }
+
+    private static func persistIndex(
+        _ index: Index,
+        to indexURL: URL,
+        directoryURL: URL,
+        configuration: PersistentResponseCacheConfiguration,
+        fileManager: FileManager,
+        durable: Bool = true
+    ) throws {
+        let data = try JSONEncoder.persistentCache.encode(index)
+        try data.write(to: indexURL, options: .atomic)
+        applyDataProtection(configuration.dataProtectionClass, to: indexURL, fileManager: fileManager)
         guard durable, configuration.persistenceFsyncPolicy == .always else { return }
-        Self.fsyncFile(at: indexURL)
-        Self.fsyncDirectory(at: configuration.directoryURL)
+        fsyncFile(at: indexURL)
+        fsyncDirectory(at: directoryURL)
+    }
+
+    private static func removeBody(fileName: String, in bodiesDirectoryURL: URL, fileManager: FileManager) {
+        let bodyURL = bodiesDirectoryURL.appendingPathComponent(fileName, isDirectory: false)
+        try? fileManager.removeItem(at: bodyURL)
+    }
+
+    private static func shouldStore(
+        key: DiskKey,
+        responseHeaders: [String: String],
+        configuration: PersistentResponseCacheConfiguration
+    ) -> Bool {
+        if !configuration.storesAuthenticatedResponses,
+            containsSensitiveRequestHeader(key.headers)
+        {
+            return false
+        }
+
+        let cacheControl = cacheControlDirectives(in: responseHeaders)
+        if cacheControl.contains("private") {
+            return false
+        }
+
+        if !configuration.storesSetCookieResponses,
+            responseHeaders.keys.contains(where: { $0.caseInsensitiveCompare("Set-Cookie") == .orderedSame })
+        {
+            return false
+        }
+
+        return true
     }
 
     private static func fsyncFile(at url: URL) {

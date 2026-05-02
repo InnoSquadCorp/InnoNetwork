@@ -103,8 +103,8 @@ struct PersistentResponseCacheTests {
         #expect(await cache.get(key) == nil)
     }
 
-    @Test("Default policy evicts legacy sensitive entries on read")
-    func defaultPolicyEvictsLegacySensitiveEntriesOnRead() async throws {
+    @Test("Default policy scrubs legacy sensitive entries on open")
+    func defaultPolicyScrubsLegacySensitiveEntriesOnOpen() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let key = ResponseCacheKey(
@@ -120,11 +120,13 @@ struct PersistentResponseCacheTests {
         )
         await permissive.set(key, CachedResponse(data: Data("legacy".utf8)))
         #expect(await permissive.get(key) != nil)
+        #expect(try existingBodyURLs(in: directory).isEmpty == false)
 
-        let strict = try PersistentResponseCache(
+        _ = try PersistentResponseCache(
             configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
         )
-        #expect(await strict.get(key) == nil)
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(try indexEntryCount(in: directory) == 0)
 
         let reopened = try PersistentResponseCache(
             configuration: PersistentResponseCacheConfiguration(
@@ -133,6 +135,59 @@ struct PersistentResponseCacheTests {
             )
         )
         #expect(await reopened.get(key) == nil)
+    }
+
+    @Test("Default policy scrubs legacy Set-Cookie entries on open")
+    func defaultPolicyScrubsLegacySetCookieEntriesOnOpen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/cookie")
+        let permissive = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                storesSetCookieResponses: true
+            )
+        )
+        await permissive.set(
+            key,
+            CachedResponse(data: Data("cookie".utf8), headers: ["Set-Cookie": "sid=legacy"])
+        )
+        #expect(await permissive.get(key) != nil)
+        #expect(try existingBodyURLs(in: directory).isEmpty == false)
+
+        _ = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(try indexEntryCount(in: directory) == 0)
+    }
+
+    @Test("Default policy scrubs legacy Cache-Control private entries on open")
+    func defaultPolicyScrubsLegacyPrivateEntriesOnOpen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/private-legacy")
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        await cache.set(
+            key,
+            CachedResponse(data: Data("private".utf8), headers: ["Cache-Control": "max-age=60"])
+        )
+        #expect(try existingBodyURLs(in: directory).isEmpty == false)
+
+        try rewriteFirstIndexEntryHeaders(
+            in: directory,
+            headers: ["Cache-Control": "max-age=60, private"]
+        )
+
+        _ = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(try indexEntryCount(in: directory) == 0)
     }
 
     @Test("Evicts least recently used entries when over budget")
@@ -372,6 +427,45 @@ struct PersistentResponseCacheTests {
             includingPropertiesForKeys: nil
         )
         .filter { $0.pathExtension == "body" }
+    }
+
+    private func indexEntryCount(in directory: URL) throws -> Int {
+        let index = try indexObject(in: directory)
+        guard let entries = index["entries"] as? [String: Any] else {
+            throw testFixtureError("Missing persistent cache index entries")
+        }
+        return entries.count
+    }
+
+    private func rewriteFirstIndexEntryHeaders(in directory: URL, headers: [String: String]) throws {
+        var index = try indexObject(in: directory)
+        guard var entries = index["entries"] as? [String: Any],
+            let entryID = entries.keys.sorted().first,
+            var entry = entries[entryID] as? [String: Any]
+        else {
+            throw testFixtureError("Missing persistent cache entry to rewrite")
+        }
+
+        entry["headers"] = headers
+        entries[entryID] = entry
+        index["entries"] = entries
+
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        let data = try JSONSerialization.data(withJSONObject: index, options: [.sortedKeys])
+        try data.write(to: indexURL, options: .atomic)
+    }
+
+    private func indexObject(in directory: URL) throws -> [String: Any] {
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        let data = try Data(contentsOf: indexURL)
+        guard let index = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw testFixtureError("Persistent cache index is not a JSON object")
+        }
+        return index
+    }
+
+    private func testFixtureError(_ message: String) -> NSError {
+        NSError(domain: "PersistentResponseCacheTests", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
 }
 
