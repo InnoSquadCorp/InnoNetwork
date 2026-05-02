@@ -30,6 +30,17 @@ Versioning.
 
 ### Changed (BREAKING)
 
+- `MultipartAPIDefinition.uploadStrategy` default is now
+  `MultipartUploadStrategy.platformDefault`, a memory-aware
+  `streamingThreshold` that picks **16 MiB** on iOS/watchOS/tvOS and
+  **50 MiB** on macOS/visionOS. Multipart endpoints that did not
+  override `uploadStrategy` will, on memory-constrained Apple
+  platforms, switch from in-memory encoding to temp-file streaming
+  for bodies above 16 MiB. The behavior change avoids jetsam on
+  larger uploads at the cost of extra disk I/O. Endpoints that need
+  the previous 50 MiB threshold on every platform should override
+  `uploadStrategy` with
+  `.streamingThreshold(bytes: 50 * 1024 * 1024)`.
 - `NetworkError.objectMapping(_:_:)` is no longer an enum case. Decode
   failures now surface as `NetworkError.decoding(stage:underlying:response:)`
   with a `DecodingStage` (`.responseBody`, `.streamFrame`,

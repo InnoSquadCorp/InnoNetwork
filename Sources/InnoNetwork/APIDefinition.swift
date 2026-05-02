@@ -34,11 +34,14 @@ public protocol APIDefinition: EndpointShape {
 
 /// Strategy for delivering a multipart body to the URL session.
 ///
-/// The default is ``streamingThreshold(bytes:)`` at 50 MiB so that small
-/// payloads stay in memory (cheap, single-pass) while larger uploads spill
-/// to a temp file and avoid jetsam. Endpoints that know they are always
-/// small can opt into ``inMemory`` for the slight encoding-cost savings;
-/// endpoints that always upload large media can pick ``alwaysStream``.
+/// The default is ``platformDefault`` — a memory-aware
+/// ``streamingThreshold(bytes:)`` that picks 16 MiB on memory-constrained
+/// platforms (iOS, watchOS, tvOS) and 50 MiB on platforms with more
+/// headroom (macOS, visionOS). Small payloads stay in memory (cheap,
+/// single-pass) while larger uploads spill to a temp file and avoid
+/// jetsam. Endpoints that know they are always small can opt into
+/// ``inMemory`` for the slight encoding-cost savings; endpoints that
+/// always upload large media can pick ``alwaysStream``.
 public enum MultipartUploadStrategy: Sendable, Equatable {
     /// Always encode the multipart body into a single in-memory `Data` and
     /// attach it to the request. Cheap for small payloads; risks jetsam on
@@ -54,6 +57,23 @@ public enum MultipartUploadStrategy: Sendable, Equatable {
     /// Always stream the body to a temp file before uploading. Ensures peak
     /// memory stays bounded regardless of body size.
     case alwaysStream
+
+    /// Platform-aware default: ``streamingThreshold(bytes:)`` sized for the
+    /// host platform's typical memory budget.
+    ///
+    /// - iOS, watchOS, tvOS: 16 MiB. These platforms have aggressive jetsam
+    ///   limits and tight working sets, especially in extensions or when
+    ///   the app is backgrounded mid-upload.
+    /// - macOS, visionOS: 50 MiB. Desktop and spatial environments have
+    ///   significantly more headroom and can amortize the larger
+    ///   in-memory window in exchange for fewer temp-file writes.
+    public static var platformDefault: MultipartUploadStrategy {
+        #if os(iOS) || os(watchOS) || os(tvOS)
+        return .streamingThreshold(bytes: 16 * 1024 * 1024)
+        #else
+        return .streamingThreshold(bytes: 50 * 1024 * 1024)
+        #endif
+    }
 }
 
 
@@ -73,11 +93,13 @@ public protocol MultipartAPIDefinition: EndpointShape {
 
     /// Strategy that decides whether the multipart body is encoded in memory
     /// or streamed to a temp file. Default is
-    /// ``MultipartUploadStrategy/streamingThreshold(bytes:)`` at 50 MiB so that
-    /// large attachments do not blow up peak memory by default. Endpoints that
+    /// ``MultipartUploadStrategy/platformDefault`` — a memory-aware
+    /// ``MultipartUploadStrategy/streamingThreshold(bytes:)`` (16 MiB on
+    /// iOS/watchOS/tvOS, 50 MiB on macOS/visionOS) so that large
+    /// attachments do not blow up peak memory by default. Endpoints that
     /// always upload small payloads can override with
-    /// ``MultipartUploadStrategy/inMemory`` to skip the size check; endpoints
-    /// that always upload large payloads can override with
+    /// ``MultipartUploadStrategy/inMemory`` to skip the size check;
+    /// endpoints that always upload large payloads can override with
     /// ``MultipartUploadStrategy/alwaysStream``.
     var uploadStrategy: MultipartUploadStrategy { get }
 }
@@ -106,7 +128,7 @@ public extension APIDefinition {
 // MARK: - MultipartAPIDefinition default extension
 
 public extension MultipartAPIDefinition {
-    var uploadStrategy: MultipartUploadStrategy { .streamingThreshold(bytes: 50 * 1024 * 1024) }
+    var uploadStrategy: MultipartUploadStrategy { .platformDefault }
 
     var transport: TransportPolicy<APIResponse> { .multipart() }
 }

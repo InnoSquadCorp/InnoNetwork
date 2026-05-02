@@ -579,6 +579,7 @@ InnoNetwork	swift.type.property	HTTPHeader.defaultAcceptEncoding
 InnoNetwork	swift.type.property	HTTPHeader.defaultAcceptLanguage
 InnoNetwork	swift.type.property	HTTPHeader.defaultUserAgent
 InnoNetwork	swift.type.property	HTTPHeaders.default
+InnoNetwork	swift.type.property	MultipartUploadStrategy.platformDefault
 InnoNetwork	swift.type.property	NetworkConfiguration.defaultAcceptableStatusCodes
 InnoNetwork	swift.type.property	NetworkContext.$current
 InnoNetwork	swift.type.property	NetworkContext.current

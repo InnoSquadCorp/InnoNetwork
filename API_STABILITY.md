@@ -379,9 +379,33 @@ land before the 5.0 tag and are also tracked in `CHANGELOG.md`
   that previously branched on "decode failure vs other" can use
   `error.isDecodingFailure` instead of pattern matching.
 
+### `MultipartUploadStrategy.platformDefault` is now the default
+
+- **What changed.** `MultipartAPIDefinition.uploadStrategy`'s default
+  is now `MultipartUploadStrategy.platformDefault`, a memory-aware
+  `streamingThreshold` that picks **16 MiB** on iOS, watchOS, and tvOS
+  and **50 MiB** on macOS and visionOS. The 4.x default was an
+  unconditional 50 MiB threshold across every platform.
+- **Why.** iOS and tvOS jetsam, and watchOS extension memory limits,
+  routinely killed apps that uploaded 30–40 MiB media payloads. The
+  unconditional 50 MiB ceiling let `inMemory` encoding allocate well
+  above the platform's working-set headroom before the streaming
+  fallback kicked in. Splitting the default by platform aligns the
+  encoded body's peak memory with the host OS's tolerance.
+- **Migration.** Multipart endpoints that did not override
+  `uploadStrategy` get the new behavior automatically. On iOS,
+  watchOS, and tvOS, bodies between 16 MiB and 50 MiB now stream to
+  a temp file instead of being held in `Data`; this trades a small
+  amount of disk I/O for a much lower memory footprint. Endpoints
+  that need the previous 50 MiB threshold on every platform should
+  override `uploadStrategy` with
+  `.streamingThreshold(bytes: 50 * 1024 * 1024)`. Endpoints that
+  already explicitly chose `.inMemory`, `.alwaysStream`, or a
+  specific `.streamingThreshold(bytes:)` are unaffected.
+
 ### Forward-looking notes
 
-Additional 5.0 commits (platform-aware multipart streaming defaults,
-formalized `TimeoutReason.resourceTimeout` mapping) will append
-migration sections here as they land. Each will ship with a deprecated
-alias whenever a single-step migration is feasible.
+Additional 5.0 commits (formalized `TimeoutReason.resourceTimeout`
+mapping) will append migration sections here as they land. Each will
+ship with a deprecated alias whenever a single-step migration is
+feasible.
