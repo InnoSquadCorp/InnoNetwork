@@ -1,5 +1,5 @@
 {
-  "generatedAt" : "2026-05-02T17:09:27Z",
+  "generatedAt" : "2026-05-02T18:40:44Z",
   "results" : [
     {
       "elapsedSeconds" : 0.052382417,
@@ -16,11 +16,11 @@
       "operationsPerSecond" : 3988.4345369514745
     },
     {
-      "elapsedSeconds" : 0.066025709,
+      "elapsedSeconds" : 0.110349542,
       "group" : "events",
       "iterations" : 2000,
       "name" : "task-event-fanout-single",
-      "operationsPerSecond" : 30291.23095065893
+      "operationsPerSecond" : 18124.225653786583
     },
     {
       "elapsedSeconds" : 0.432039333,
@@ -100,18 +100,18 @@
       "operationsPerSecond" : 881628.3541694
     },
     {
-      "elapsedSeconds" : 0.272331708,
+      "elapsedSeconds" : 0.382771417,
       "group" : "client",
       "iterations" : 2000,
       "name" : "request-pipeline",
-      "operationsPerSecond" : 7343.985078667372
+      "operationsPerSecond" : 5225.050542371088
     },
     {
-      "elapsedSeconds" : 0.312012916,
+      "elapsedSeconds" : 0.513916375,
       "group" : "client",
       "iterations" : 2000,
       "name" : "request-coalescing-shared-get",
-      "operationsPerSecond" : 6409.9910530626885
+      "operationsPerSecond" : 3891.683739402155
     },
     {
       "elapsedSeconds" : 0.15787325,
@@ -121,25 +121,25 @@
       "operationsPerSecond" : 12668.39062349068
     },
     {
-      "elapsedSeconds" : 0.158039792,
+      "elapsedSeconds" : 3.450106375,
       "group" : "client",
-      "iterations" : 2000,
+      "iterations" : 20000,
       "name" : "decoding-interceptor-chain-1",
-      "operationsPerSecond" : 12655.040700129495
+      "operationsPerSecond" : 5796.9227108251125
     },
     {
-      "elapsedSeconds" : 0.159466542,
+      "elapsedSeconds" : 2.771382875,
       "group" : "client",
-      "iterations" : 2000,
+      "iterations" : 20000,
       "name" : "decoding-interceptor-chain-3",
-      "operationsPerSecond" : 12541.815824914545
+      "operationsPerSecond" : 7216.613835791274
     },
     {
-      "elapsedSeconds" : 0.160543875,
+      "elapsedSeconds" : 2.486711209,
       "group" : "client",
-      "iterations" : 2000,
+      "iterations" : 20000,
       "name" : "decoding-interceptor-chain-8",
-      "operationsPerSecond" : 12457.653709928205
+      "operationsPerSecond" : 8042.751376844741
     },
     {
       "elapsedSeconds" : 0.428473667,
@@ -149,11 +149,11 @@
       "operationsPerSecond" : 466773.14244378055
     },
     {
-      "elapsedSeconds" : 0.1171025,
+      "elapsedSeconds" : 0.155602292,
       "group" : "cache",
       "iterations" : 200000,
       "name" : "response-cache-revalidation",
-      "operationsPerSecond" : 1707905.4674323776
+      "operationsPerSecond" : 1285328.110719603
     }
   ],
   "version" : 1
