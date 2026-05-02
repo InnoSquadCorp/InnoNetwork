@@ -249,6 +249,69 @@ struct NetworkErrorTimeoutTests {
         }
     }
 
+    // MARK: - mapTransportError(_:metrics:resourceTimeoutInterval:)
+
+    @Test("mapTransportError(metrics:): elapsed at or beyond resource budget → .resourceTimeout")
+    func mapResourceTimeoutFromMetrics() {
+        let start = Date(timeIntervalSince1970: 0)
+        let end = start.addingTimeInterval(60)
+        let metrics = StubURLSessionTaskMetrics(taskInterval: DateInterval(start: start, end: end))
+        let error = NetworkError.mapTransportError(
+            URLError(.timedOut),
+            metrics: metrics,
+            resourceTimeoutInterval: 60
+        )
+        guard case .timeout(.resourceTimeout, let underlying) = error else {
+            Issue.record("Expected .timeout(.resourceTimeout), got \(error)")
+            return
+        }
+        #expect(underlying?.code == URLError.Code.timedOut.rawValue)
+    }
+
+    @Test("mapTransportError(metrics:): elapsed below resource budget → .requestTimeout")
+    func mapRequestTimeoutWhenBelowBudget() {
+        let start = Date(timeIntervalSince1970: 0)
+        let end = start.addingTimeInterval(15)
+        let metrics = StubURLSessionTaskMetrics(taskInterval: DateInterval(start: start, end: end))
+        let error = NetworkError.mapTransportError(
+            URLError(.timedOut),
+            metrics: metrics,
+            resourceTimeoutInterval: 60
+        )
+        guard case .timeout(.requestTimeout, _) = error else {
+            Issue.record("Expected .timeout(.requestTimeout) for sub-budget elapsed, got \(error)")
+            return
+        }
+    }
+
+    @Test("mapTransportError(metrics:): missing inputs fall back to .requestTimeout")
+    func mapFallsBackWhenMetricsMissing() {
+        let nilMetrics = NetworkError.mapTransportError(
+            URLError(.timedOut),
+            metrics: nil,
+            resourceTimeoutInterval: 60
+        )
+        guard case .timeout(.requestTimeout, _) = nilMetrics else {
+            Issue.record("Expected .requestTimeout when metrics are nil, got \(nilMetrics)")
+            return
+        }
+
+        let nilInterval = NetworkError.mapTransportError(
+            URLError(.timedOut),
+            metrics: StubURLSessionTaskMetrics(
+                taskInterval: DateInterval(
+                    start: Date(timeIntervalSince1970: 0),
+                    end: Date(timeIntervalSince1970: 600)
+                )
+            ),
+            resourceTimeoutInterval: nil
+        )
+        guard case .timeout(.requestTimeout, _) = nilInterval else {
+            Issue.record("Expected .requestTimeout when interval is nil, got \(nilInterval)")
+            return
+        }
+    }
+
     @Test("mapTransportError: existing NetworkError flows through unchanged")
     func mapPassesThroughExistingNetworkError() {
         let original = NetworkError.invalidRequestConfiguration("seed")
@@ -280,4 +343,15 @@ struct NetworkErrorTimeoutTests {
             }
         }
     }
+}
+
+private final class StubURLSessionTaskMetrics: URLSessionTaskMetrics, @unchecked Sendable {
+    private let stubbedTaskInterval: DateInterval
+
+    init(taskInterval: DateInterval) {
+        self.stubbedTaskInterval = taskInterval
+        super.init()
+    }
+
+    override var taskInterval: DateInterval { stubbedTaskInterval }
 }

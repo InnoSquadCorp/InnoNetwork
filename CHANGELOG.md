@@ -28,6 +28,19 @@ Versioning.
   extension. App code that conforms to `APIDefinition` or
   `MultipartAPIDefinition` does not need to update.
 
+### Changed
+
+- `TimeoutReason.resourceTimeout` is now formally produced by the
+  internal transport mapper when the caller supplies
+  `URLSessionTaskMetrics` and the configured resource-timeout
+  interval. The new metrics-aware mapping overload returns
+  `.resourceTimeout` for `URLError.timedOut` only when the task
+  interval reaches the resource budget; otherwise it falls back to
+  `.requestTimeout`. The single-argument mapper retains the 4.x
+  behaviour. The `TimeoutReason` doc comment is updated to describe
+  the new production path so callers know `.resourceTimeout` is no
+  longer a "reserved for higher-level transports" case.
+
 ### Changed (BREAKING)
 
 - `MultipartAPIDefinition.uploadStrategy` default is now
