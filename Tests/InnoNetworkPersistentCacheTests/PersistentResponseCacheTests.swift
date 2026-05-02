@@ -84,6 +84,42 @@ struct PersistentResponseCacheTests {
         #expect(await cache.get(key) != nil)
     }
 
+    @Test("Recovery preserves unrelated files in the cache directory")
+    func recoveryDoesNotWipeUserDirectory() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let indexURL = directory.appendingPathComponent("index.json")
+        try Data(#"{"version":999,"entries":{}}"#.utf8).write(to: indexURL)
+
+        let sentinelURL = directory.appendingPathComponent("sentinel.txt")
+        try Data("keep-me".utf8).write(to: sentinelURL)
+
+        _ = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+
+        #expect(FileManager.default.fileExists(atPath: sentinelURL.path))
+    }
+
+    @Test("Recovery preserves unrelated files when index is corrupt")
+    func recoveryFromCorruptIndexDoesNotWipeUserDirectory() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let indexURL = directory.appendingPathComponent("index.json")
+        try Data("not-json".utf8).write(to: indexURL)
+
+        let sentinelURL = directory.appendingPathComponent("sentinel.txt")
+        try Data("keep-me".utf8).write(to: sentinelURL)
+
+        _ = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+
+        #expect(FileManager.default.fileExists(atPath: sentinelURL.path))
+    }
+
     @Test("Overwriting an entry preserves the freshly written body")
     func overwriteKeepsFreshBody() async throws {
         let directory = makeDirectory()

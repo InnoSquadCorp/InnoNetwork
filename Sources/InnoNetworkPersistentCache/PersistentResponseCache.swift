@@ -217,25 +217,37 @@ public actor PersistentResponseCache: ResponseCache {
             return Index(version: formatVersion, entries: [:])
         }
 
+        let bodiesDirectoryURL = directoryURL.appendingPathComponent("bodies", isDirectory: true)
+
         do {
             let index = try JSONDecoder.persistentCache.decode(Index.self, from: Data(contentsOf: indexURL))
             guard index.version == formatVersion else {
-                try? fileManager.removeItem(at: directoryURL)
-                try fileManager.createDirectory(
-                    at: directoryURL.appendingPathComponent("bodies", isDirectory: true),
-                    withIntermediateDirectories: true
+                try resetCacheStorage(
+                    indexURL: indexURL,
+                    bodiesDirectoryURL: bodiesDirectoryURL,
+                    fileManager: fileManager
                 )
                 return Index(version: formatVersion, entries: [:])
             }
             return index
         } catch {
-            try? fileManager.removeItem(at: directoryURL)
-            try fileManager.createDirectory(
-                at: directoryURL.appendingPathComponent("bodies", isDirectory: true),
-                withIntermediateDirectories: true
+            try resetCacheStorage(
+                indexURL: indexURL,
+                bodiesDirectoryURL: bodiesDirectoryURL,
+                fileManager: fileManager
             )
             return Index(version: formatVersion, entries: [:])
         }
+    }
+
+    private static func resetCacheStorage(
+        indexURL: URL,
+        bodiesDirectoryURL: URL,
+        fileManager: FileManager
+    ) throws {
+        try? fileManager.removeItem(at: indexURL)
+        try? fileManager.removeItem(at: bodiesDirectoryURL)
+        try fileManager.createDirectory(at: bodiesDirectoryURL, withIntermediateDirectories: true)
     }
 
     private static func identifier(for key: DiskKey) -> String {
