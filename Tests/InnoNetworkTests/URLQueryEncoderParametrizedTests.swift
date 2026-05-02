@@ -127,6 +127,60 @@ struct URLQueryEncoderParametrizedTests {
         #expect(items.isEmpty)
     }
 
+    @Test(
+        "Array strategy controls scalar array keys",
+        arguments: [
+            (URLQueryArrayEncodingStrategy.indexed, "tags[0]=a&tags[1]=b"),
+            (.bracketed, "tags[]=a&tags[]=b"),
+            (.repeated, "tags=a&tags=b"),
+        ])
+    func arrayStrategyControlsScalarKeys(_ payload: (URLQueryArrayEncodingStrategy, String)) throws {
+        struct Wrap: Encodable { let tags: [String] }
+        let encoder = URLQueryEncoder(arrayEncodingStrategy: payload.0)
+
+        let items = try encoder.encode(Wrap(tags: ["a", "b"]))
+        let serialized = items.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&")
+
+        #expect(serialized == payload.1)
+    }
+
+    @Test("Bracketed strategy applies to nested arrays")
+    func bracketedStrategyAppliesToNestedArrays() throws {
+        struct Filter: Encodable { let tags: [String] }
+        struct Wrap: Encodable { let filter: Filter }
+
+        let items = try URLQueryEncoder(arrayEncodingStrategy: .bracketed)
+            .encode(Wrap(filter: Filter(tags: ["swift", "ios"])))
+
+        #expect(
+            items.map { "\($0.name)=\($0.value ?? "")" } == [
+                "filter[tags][]=swift",
+                "filter[tags][]=ios",
+            ])
+    }
+
+    @Test("Repeated strategy applies to top-level arrays with rootKey")
+    func repeatedStrategyAppliesToTopLevelArraysWithRootKey() throws {
+        let items = try URLQueryEncoder(arrayEncodingStrategy: .repeated)
+            .encode(["swift", "ios"], rootKey: "tag")
+
+        #expect(
+            items.map { "\($0.name)=\($0.value ?? "")" } == [
+                "tag=swift",
+                "tag=ios",
+            ])
+    }
+
+    @Test("Array strategy is shared by form-urlencoded encoding")
+    func arrayStrategyIsSharedByFormEncoding() throws {
+        struct Wrap: Encodable { let tags: [String] }
+
+        let data = try URLQueryEncoder(arrayEncodingStrategy: .bracketed)
+            .encodeForm(Wrap(tags: ["a", "b"]))
+
+        #expect(String(data: data, encoding: .utf8) == "tags%5B%5D=a&tags%5B%5D=b")
+    }
+
     @Test("Empty object emits no items for that key")
     func emptyObjectEmitsNothing() throws {
         struct User: Encodable {}

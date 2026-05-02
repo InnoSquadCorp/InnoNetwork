@@ -3,9 +3,9 @@
 Adapt generated SDKs onto `InnoNetwork` without binding the repository to a
 specific OpenAPI or RPC generator.
 
-> Important: this article tracks a future integration candidate. The
-> ``APIDefinition`` path is compatible with the 4.0.0 stable contract, but the
-> low-level execution path is not part of the 4.0.0 stability promise.
+> Important: prefer the stable ``APIDefinition`` and
+> ``RequestExecutionPolicy`` paths first. The low-level execution path remains
+> SPI and is not part of the 4.0.0 stability promise.
 
 ## Choose the integration path
 
@@ -16,9 +16,11 @@ default transport model:
 - responses are `Decodable`
 - query / body encoding can follow the built-in request policy
 
-Future wrapper work may use ``SingleRequestExecutable`` with
-``LowLevelNetworkClient/perform(executable:)`` when the generated surface wants
-to stay independent from ``APIDefinition`` or needs richer transport control:
+Generated SDKs that need transport-attempt behavior below interceptors can add
+a public ``RequestExecutionPolicy`` through ``NetworkConfiguration``. Use the
+SPI ``SingleRequestExecutable`` path only when the generated surface must stay
+independent from ``APIDefinition`` or needs custom serialization that cannot be
+represented as `Encodable`:
 
 - custom serialization outside `Encodable`
 - generator-owned request metadata and headers
@@ -54,7 +56,7 @@ Stay on ``NetworkClient/request(_:)`` for this shape. It keeps the generated
 type lightweight while reusing `InnoNetwork`'s default encoding, retry, trust,
 and observability behavior.
 
-## Future candidate: Generated operation to `SingleRequestExecutable`
+## SPI path: Generated operation to `SingleRequestExecutable`
 
 ```swift
 import Foundation
@@ -95,7 +97,7 @@ struct GeneratedExecutable<Operation: GeneratedExecutableContract>: SingleReques
 
 Call this path only from a package that intentionally opts into
 `@_spi(GeneratedClientSupport)` and pins current source. The low-level API can
-change before it is promoted into the stable contract.
+change outside the default import contract.
 
 > Important: the `@_spi(GeneratedClientSupport)` surface is governed by a
 > dedicated compatibility contract documented in
@@ -111,8 +113,7 @@ that demonstrates both the stable request path and the future-candidate wrapper
 path:
 
 - a generated REST-style operation adapted onto ``APIDefinition``
-- a richer generated operation adapted onto ``SingleRequestExecutable``
+- a richer generated operation adapted onto SPI ``SingleRequestExecutable``
 
-Use the `APIDefinition` portion as the 4.0.0 guidance. Treat the richer wrapper
-portion as roadmap material until the low-level execution hook is explicitly
-promoted.
+Use the `APIDefinition` and ``RequestExecutionPolicy`` portions as the 4.0.0
+guidance. Treat the richer wrapper portion as revision-pinned SPI material.

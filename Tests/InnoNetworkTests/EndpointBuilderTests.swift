@@ -61,6 +61,54 @@ struct EndpointBuilderTests {
     }
 
     @Test
+    func authenticatedEndpointRequiresRefreshPolicy() async throws {
+        let endpoint = AuthenticatedEndpoint.get("/me").decoding(EndpointAck.self)
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+
+        do {
+            _ = try await client.request(endpoint)
+            Issue.record("Expected auth-required endpoint to reject a public client configuration")
+        } catch let error as NetworkError {
+            guard case .invalidRequestConfiguration(let message) = error else {
+                Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
+                return
+            }
+            #expect(message.contains("refreshTokenPolicy"))
+            #expect(mockSession.capturedRequest == nil)
+        } catch {
+            Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
+        }
+    }
+
+    @Test
+    func authenticatedEndpointExecutesWithRefreshPolicy() async throws {
+        let endpoint = AuthenticatedEndpoint.get("/me").decoding(EndpointAck.self)
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let policy = RefreshTokenPolicy(
+            currentToken: { "token-1" },
+            refreshToken: { "token-2" }
+        )
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                refreshTokenPolicy: policy
+            ),
+            session: mockSession
+        )
+
+        let response = try await client.request(endpoint)
+
+        #expect(response.ok)
+        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Authorization") == "Bearer token-1")
+    }
+
+    @Test
     func decodingPreservesMultipartTransportDecoder() {
         let decoder = JSONDecoder()
 

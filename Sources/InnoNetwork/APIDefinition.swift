@@ -27,6 +27,7 @@ import Foundation
 /// surface (`parameters`).
 public protocol APIDefinition: EndpointShape {
     associatedtype Parameter: Encodable & Sendable
+    associatedtype Auth: EndpointAuthScope = PublicAuthScope
 
     var parameters: Parameter? { get }
 }

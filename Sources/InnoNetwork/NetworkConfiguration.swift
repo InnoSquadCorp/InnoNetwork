@@ -20,7 +20,9 @@ public struct NetworkConfiguration: Sendable {
                 eventMetricsReporter: nil,
                 acceptableStatusCodes: NetworkConfiguration.defaultAcceptableStatusCodes,
                 requestInterceptors: [],
-                responseInterceptors: []
+                responseInterceptors: [],
+                customExecutionPolicies: [],
+                responseBodyBufferingPolicy: .streaming()
             )
         }
 
@@ -42,7 +44,9 @@ public struct NetworkConfiguration: Sendable {
                 eventMetricsReporter: nil,
                 acceptableStatusCodes: NetworkConfiguration.defaultAcceptableStatusCodes,
                 requestInterceptors: [],
-                responseInterceptors: []
+                responseInterceptors: [],
+                customExecutionPolicies: [],
+                responseBodyBufferingPolicy: .streaming()
             )
         }
     }
@@ -95,6 +99,10 @@ public struct NetworkConfiguration: Sendable {
     public let responseCache: (any ResponseCache)?
     /// Optional per-host circuit breaker policy. Disabled by default.
     public let circuitBreakerPolicy: CircuitBreakerPolicy?
+    /// Custom public execution policies wrapped around each raw transport
+    /// attempt after request adaptation/auth application and before response
+    /// interceptors, status validation, cache writes, and decoding.
+    public let customExecutionPolicies: [any RequestExecutionPolicy]
 
     /// When `false` (default), response bodies attached to ``NetworkError``
     /// cases (`decoding`, `statusCode`, and `underlying` when present) are
@@ -107,22 +115,16 @@ public struct NetworkConfiguration: Sendable {
     /// the failing response body is worth the privacy trade-off.
     public let captureFailurePayload: Bool
 
-    /// Optional ceiling on the size of buffered response bodies, in bytes.
-    /// When `nil` (default) the executor enforces no limit and behaves
-    /// exactly as in 4.0. When set, the executor compares cached,
-    /// revalidated, and received transport bodies against the limit before
-    /// cache writes or decoder handoff, then rechecks the final decoder
-    /// input after response and decoding interceptors. If any payload
-    /// exceeds the limit, the executor throws
-    /// ``NetworkError/responseTooLarge(limit:observed:)``.
-    ///
-    /// > Note: This is a soft guard, not a streaming bound. Foundation's
-    /// > `URLSession.data(for:)` has already buffered the body in memory
-    /// > by the time the check runs. The benefit is a structured error
-    /// > (and a stable failure mode for retry/circuit-breaker policies)
-    /// > rather than an opaque OOM in the consumer or the decoder.
-    /// > Endpoints that need genuine memory-bounded handling should use
-    /// > the streaming surface (`stream(_:)` or `bytes(for:)`).
+    /// Inline response body collection policy. The 4.0.0 default is
+    /// ``ResponseBodyBufferingPolicy/streaming(maxBytes:)`` so real
+    /// `URLSession` transports collect `bytes(for:)` with an optional memory
+    /// bound before cache writes or decoder handoff. Test doubles that only
+    /// implement `data(for:)` fall back to buffered transport.
+    public let responseBodyBufferingPolicy: ResponseBodyBufferingPolicy
+
+    /// Compatibility alias for the optional maximum body size in
+    /// ``responseBodyBufferingPolicy``. New code should set
+    /// ``responseBodyBufferingPolicy`` directly.
     public let responseBodyLimit: Int64?
 
     public struct AdvancedBuilder: Sendable {
@@ -145,7 +147,9 @@ public struct NetworkConfiguration: Sendable {
         public var responseCachePolicy: ResponseCachePolicy
         public var responseCache: (any ResponseCache)?
         public var circuitBreakerPolicy: CircuitBreakerPolicy?
+        public var customExecutionPolicies: [any RequestExecutionPolicy]
         public var captureFailurePayload: Bool
+        public var responseBodyBufferingPolicy: ResponseBodyBufferingPolicy
         public var responseBodyLimit: Int64?
 
         fileprivate init(preset: NetworkConfiguration) {
@@ -168,7 +172,9 @@ public struct NetworkConfiguration: Sendable {
             self.responseCachePolicy = preset.responseCachePolicy
             self.responseCache = preset.responseCache
             self.circuitBreakerPolicy = preset.circuitBreakerPolicy
+            self.customExecutionPolicies = preset.customExecutionPolicies
             self.captureFailurePayload = preset.captureFailurePayload
+            self.responseBodyBufferingPolicy = preset.responseBodyBufferingPolicy
             self.responseBodyLimit = preset.responseBodyLimit
         }
 
@@ -193,7 +199,9 @@ public struct NetworkConfiguration: Sendable {
                 responseCachePolicy: responseCachePolicy,
                 responseCache: responseCache,
                 circuitBreakerPolicy: circuitBreakerPolicy,
+                customExecutionPolicies: customExecutionPolicies,
                 captureFailurePayload: captureFailurePayload,
+                responseBodyBufferingPolicy: responseBodyBufferingPolicy,
                 responseBodyLimit: responseBodyLimit
             )
         }
@@ -232,9 +240,14 @@ public struct NetworkConfiguration: Sendable {
         responseCachePolicy: ResponseCachePolicy = .disabled,
         responseCache: (any ResponseCache)? = nil,
         circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
+        customExecutionPolicies: [any RequestExecutionPolicy] = [],
         captureFailurePayload: Bool = false,
+        responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(),
         responseBodyLimit: Int64? = nil
     ) {
+        let resolvedBufferingPolicy =
+            responseBodyLimit.map { responseBodyBufferingPolicy.replacingMaxBytes($0) }
+            ?? responseBodyBufferingPolicy
         self.baseURL = baseURL
         self.timeout = timeout
         self.cachePolicy = cachePolicy
@@ -254,7 +267,9 @@ public struct NetworkConfiguration: Sendable {
         self.responseCachePolicy = responseCachePolicy
         self.responseCache = responseCache
         self.circuitBreakerPolicy = circuitBreakerPolicy
+        self.customExecutionPolicies = customExecutionPolicies
         self.captureFailurePayload = captureFailurePayload
-        self.responseBodyLimit = responseBodyLimit
+        self.responseBodyBufferingPolicy = resolvedBufferingPolicy
+        self.responseBodyLimit = resolvedBufferingPolicy.maxBytes
     }
 }

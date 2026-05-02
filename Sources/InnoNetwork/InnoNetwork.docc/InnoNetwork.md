@@ -23,6 +23,8 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``DefaultNetworkClient``
 - ``NetworkClient``
 - ``APIDefinition``
+- ``Endpoint``
+- ``AuthenticatedEndpoint``
 - ``MultipartAPIDefinition``
 
 ### Configuration
@@ -58,11 +60,15 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``ResponseCachePolicy``
 - ``ResponseCache``
 - ``InMemoryResponseCache``
+- ``RequestExecutionPolicy``
+- ``ResponseBodyBufferingPolicy``
+- ``StateReducer``
 - ``CircuitBreakerPolicy``
 - ``CircuitBreakerOpenError``
 - <doc:RetryDecisions>
 - <doc:AuthRefresh>
 - <doc:CachingStrategies>
+- <doc:AppNetworkingCookbook>
 - <doc:MigrationFromAlamofire>
 
 ### Event Pipeline

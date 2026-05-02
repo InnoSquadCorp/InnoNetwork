@@ -1,5 +1,23 @@
 import Foundation
 
+/// Marker protocol used to describe whether an endpoint requires the
+/// configured refresh-token lane before it can execute.
+public protocol EndpointAuthScope: Sendable {}
+
+/// Default auth scope for public endpoints that can execute without a
+/// ``RefreshTokenPolicy``.
+public enum PublicAuthScope: EndpointAuthScope {}
+
+/// Auth scope for endpoints that require ``NetworkConfiguration`` to include
+/// a ``RefreshTokenPolicy``.
+public enum AuthRequiredScope: EndpointAuthScope {}
+
+/// Compatibility alias for public fluent endpoints.
+public typealias Endpoint<Response: Decodable & Sendable> = ScopedEndpoint<Response, PublicAuthScope>
+
+/// Fluent endpoint alias for authenticated API calls.
+public typealias AuthenticatedEndpoint<Response: Decodable & Sendable> = ScopedEndpoint<Response, AuthRequiredScope>
+
 /// Fluent, builder-style alternative to declaring a custom ``APIDefinition``.
 ///
 /// `Endpoint` is intended for the simple-case ergonomics gap in the existing
@@ -39,9 +57,10 @@ import Foundation
 /// For multipart uploads, streaming requests, or per-endpoint interceptor
 /// chains, keep using a dedicated type that conforms to ``APIDefinition``,
 /// ``MultipartAPIDefinition``, or ``StreamingAPIDefinition``.
-public struct Endpoint<Response: Decodable & Sendable>: APIDefinition {
+public struct ScopedEndpoint<Response: Decodable & Sendable, AuthScope: EndpointAuthScope>: APIDefinition {
     public typealias Parameter = AnyEncodable
     public typealias APIResponse = Response
+    public typealias Auth = AuthScope
 
     public let method: HTTPMethod
     public let path: String
@@ -76,37 +95,37 @@ public struct Endpoint<Response: Decodable & Sendable>: APIDefinition {
 
 // MARK: - Builder entry points
 
-extension Endpoint where Response == EmptyResponse {
-    public static func get(_ path: String) -> Endpoint<EmptyResponse> {
-        Endpoint(method: .get, path: path)
+extension ScopedEndpoint where Response == EmptyResponse {
+    public static func get(_ path: String) -> Self {
+        Self(method: .get, path: path)
     }
 
-    public static func post(_ path: String) -> Endpoint<EmptyResponse> {
-        Endpoint(method: .post, path: path)
+    public static func post(_ path: String) -> Self {
+        Self(method: .post, path: path)
     }
 
-    public static func put(_ path: String) -> Endpoint<EmptyResponse> {
-        Endpoint(method: .put, path: path)
+    public static func put(_ path: String) -> Self {
+        Self(method: .put, path: path)
     }
 
-    public static func patch(_ path: String) -> Endpoint<EmptyResponse> {
-        Endpoint(method: .patch, path: path)
+    public static func patch(_ path: String) -> Self {
+        Self(method: .patch, path: path)
     }
 
-    public static func delete(_ path: String) -> Endpoint<EmptyResponse> {
-        Endpoint(method: .delete, path: path)
+    public static func delete(_ path: String) -> Self {
+        Self(method: .delete, path: path)
     }
 }
 
 
 // MARK: - Fluent modifiers (preserve Response type)
 
-extension Endpoint {
+extension ScopedEndpoint {
     /// Returns a copy of this endpoint with query parameters attached. This is
     /// intended for `GET` endpoints; non-`GET` methods still follow the normal
     /// ``APIDefinition`` encoding rules for their method and transport.
-    public func query(_ query: some Encodable & Sendable) -> Endpoint<Response> {
-        Endpoint(
+    public func query(_ query: some Encodable & Sendable) -> Self {
+        Self(
             method: method,
             path: path,
             parameters: AnyEncodable(query),
@@ -119,8 +138,8 @@ extension Endpoint {
     /// Returns a copy of this endpoint with the supplied request body. The
     /// caller's value is wrapped in an ``AnyEncodable`` so the endpoint can
     /// travel across actor boundaries while staying `Sendable`.
-    public func body(_ body: some Encodable & Sendable) -> Endpoint<Response> {
-        Endpoint(
+    public func body(_ body: some Encodable & Sendable) -> Self {
+        Self(
             method: method,
             path: path,
             parameters: AnyEncodable(body),
@@ -132,10 +151,10 @@ extension Endpoint {
 
     /// Returns a copy of this endpoint with a single header added or updated.
     /// Existing headers with the same name (case-insensitively) are replaced.
-    public func header(_ name: String, value: String) -> Endpoint<Response> {
+    public func header(_ name: String, value: String) -> Self {
         var newHeaders = headers
         newHeaders.update(name: name, value: value)
-        return Endpoint(
+        return Self(
             method: method,
             path: path,
             parameters: parameters,
@@ -149,8 +168,8 @@ extension Endpoint {
     /// Replaces the entire header set; pair with ``header(_:value:)`` if you
     /// only need to add a single field. Transport-derived `Content-Type` is
     /// applied later during request building only when an encoded body exists.
-    public func headers(_ headers: HTTPHeaders) -> Endpoint<Response> {
-        Endpoint(
+    public func headers(_ headers: HTTPHeaders) -> Self {
+        Self(
             method: method,
             path: path,
             parameters: parameters,
@@ -163,8 +182,8 @@ extension Endpoint {
     /// Returns a copy of this endpoint with the supplied transport policy.
     /// Transport-derived `Content-Type` is applied later during request building
     /// only when an encoded body exists.
-    public func transport(_ transport: TransportPolicy<Response>) -> Endpoint<Response> {
-        Endpoint(
+    public func transport(_ transport: TransportPolicy<Response>) -> Self {
+        Self(
             method: method,
             path: path,
             parameters: parameters,
@@ -177,8 +196,8 @@ extension Endpoint {
     /// Returns a copy of this endpoint with a per-endpoint override for the
     /// set of HTTP status codes treated as success. See
     /// ``APIDefinition/acceptableStatusCodes`` for the precedence rule.
-    public func acceptableStatusCodes(_ codes: Set<Int>) -> Endpoint<Response> {
-        Endpoint(
+    public func acceptableStatusCodes(_ codes: Set<Int>) -> Self {
+        Self(
             method: method,
             path: path,
             parameters: parameters,
@@ -192,7 +211,7 @@ extension Endpoint {
 
 // MARK: - Decoding promotion
 
-extension Endpoint where Response == EmptyResponse {
+extension ScopedEndpoint where Response == EmptyResponse {
     /// Promotes an `Endpoint<EmptyResponse>` (the result of `.get(_:)`,
     /// `.post(_:)`, etc.) into an endpoint that decodes the supplied type.
     /// This is the terminal step of the builder; the returned value can be
@@ -201,8 +220,8 @@ extension Endpoint where Response == EmptyResponse {
     /// The current request-encoding shape (set via ``query(_:)``, ``body(_:)``,
     /// or ``transport(_:)``) is carried over. Response decoding is reset to
     /// the default JSON decoder for the new response type.
-    public func decoding<T: Decodable & Sendable>(_ type: T.Type) -> Endpoint<T> {
-        Endpoint<T>(
+    public func decoding<T: Decodable & Sendable>(_ type: T.Type) -> ScopedEndpoint<T, AuthScope> {
+        ScopedEndpoint<T, AuthScope>(
             method: method,
             path: path,
             parameters: parameters,

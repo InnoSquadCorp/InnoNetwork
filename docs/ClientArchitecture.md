@@ -2,7 +2,8 @@
 
 InnoNetwork's public request API remains `DefaultNetworkClient.request(_:)`.
 4.0.0 adds built-in resilience features by splitting the internal executor into
-explicit stages while keeping the generic execution pipeline package-scoped.
+explicit stages and exposing a narrow custom execution-policy hook around the
+raw transport attempt.
 
 ## Request Path
 
@@ -10,7 +11,9 @@ explicit stages while keeping the generic execution pipeline package-scoped.
 build request
   -> configuration request interceptors
   -> endpoint request interceptors
+  -> auth-scope preflight
   -> built-in preflight policies
+  -> custom execution policies
   -> transport
   -> built-in post-transport policies
   -> response interceptors
@@ -28,16 +31,37 @@ Built-in policies occupy the preflight and post-transport slots:
   substitute `304` bodies, and refresh stale entries in the background.
 - `CircuitBreakerPolicy` short-circuits repeated per-host failures before
   transport and surfaces open-circuit failures through `NetworkError.underlying`.
+- `RequestExecutionPolicy` wraps one raw transport attempt when applications
+  need custom tracing, request signing, A/B routing, or response rewriting that
+  belongs below interceptors but above `URLSession`.
 
 ## Public Surface Policy
 
-4.0.0 intentionally does not expose a public `RequestExecutionPolicy` protocol.
-The supported public contract is the set of built-in policy configuration
-values on `NetworkConfiguration` and `NetworkConfiguration.AdvancedBuilder`.
+4.0.0 exposes ``RequestExecutionPolicy`` as an additive extension point, while
+keeping the built-in retry, refresh, coalescing, cache, and circuit-breaker
+policies as first-class configuration values on `NetworkConfiguration`.
 
-This keeps the pipeline free to evolve while still covering the common
-production features that need privileged executor access: replay, raw transport
-fan-out, cache substitution, and failure classification.
+Custom policies should be small and transport-attempt scoped. They receive the
+adapted `URLRequest`, can call ``RequestExecutionNext`` once or not at all, and
+return a full ``Response``. They should not try to replace retry scheduling,
+auth refresh replay, response-cache freshness, or circuit-breaker state; those
+remain owned by the built-in policy layers so cancellation, metrics, and cache
+semantics stay consistent.
+
+## Auth Scope
+
+`APIDefinition` now carries an auth marker:
+
+```swift
+associatedtype Auth: EndpointAuthScope = PublicAuthScope
+```
+
+Fluent public endpoints continue to use `Endpoint<Response>`, which is a
+compatibility alias for `ScopedEndpoint<Response, PublicAuthScope>`.
+Authenticated calls can use `AuthenticatedEndpoint<Response>` or a custom
+`APIDefinition` with `typealias Auth = AuthRequiredScope`. Auth-required
+requests fail before transport with `NetworkError.invalidRequestConfiguration`
+when the client configuration has no `RefreshTokenPolicy`.
 
 ## Optional Codegen
 

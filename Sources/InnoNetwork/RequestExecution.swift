@@ -56,6 +56,11 @@ import Foundation
     /// ``NetworkConfiguration/acceptableStatusCodes``.
     var acceptableStatusCodes: Set<Int>? { get }
 
+    /// Whether this request requires a configured ``RefreshTokenPolicy`` before
+    /// execution. Generated and fluent endpoint paths use this to make
+    /// auth-required APIs fail early when the client was configured as public.
+    var requiresRefreshTokenPolicy: Bool { get }
+
     /// Produces the encoded payload for the request.
     ///
     /// - Returns: A ``RequestPayload`` that matches the expected request transport semantics.
@@ -80,6 +85,9 @@ import Foundation
     /// ``RequestPayload/data(_:)`` or file payloads should override this when
     /// they want InnoNetwork to set `Content-Type`.
     var bodyContentType: String? { nil }
+    /// Default executable contracts are public unless their adapter opts into
+    /// the auth-required lane.
+    var requiresRefreshTokenPolicy: Bool { false }
 }
 
 package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExecutable {
@@ -92,6 +100,7 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
     package var path: String { base.path }
     package var headers: HTTPHeaders { base.headers }
     package var acceptableStatusCodes: Set<Int>? { base.acceptableStatusCodes }
+    package var requiresRefreshTokenPolicy: Bool { Base.Auth.self == AuthRequiredScope.self }
     package var bodyContentType: String? {
         guard base.parameters != nil else { return nil }
         return base.transport.requestEncoding.contentTypeHeader
