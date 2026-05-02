@@ -4,10 +4,28 @@ import UniformTypeIdentifiers
 
 public struct MultipartFormData: Sendable {
     public let boundary: String
+    /// When `true`, every part's preamble emits a `Content-Length: <bytes>`
+    /// header alongside `Content-Disposition`. The default is `false`
+    /// because most servers ignore per-part `Content-Length`, the value
+    /// must be precomputed for streaming sources, and emitting it can
+    /// surprise interceptors that re-encode the body.
+    public var includesPartContentLength: Bool
+    /// When `true`, ``writeEncodedData(to:)`` calls `synchronize()` on the
+    /// destination file handle before closing so the bytes survive an
+    /// abrupt power loss between the write and the actual upload. The
+    /// default is `false` because the temp file is uploaded immediately
+    /// in the same process and the extra fsync is wasteful for that flow.
+    public var synchronizesEncodedFile: Bool
     private var parts: [Part]
 
-    public init(boundary: String = "InnoNetwork.boundary.\(UUID().uuidString)") {
+    public init(
+        boundary: String = "InnoNetwork.boundary.\(UUID().uuidString)",
+        includesPartContentLength: Bool = false,
+        synchronizesEncodedFile: Bool = false
+    ) {
         self.boundary = Self.sanitizedBoundary(boundary) ?? "InnoNetwork.boundary.\(UUID().uuidString)"
+        self.includesPartContentLength = includesPartContentLength
+        self.synchronizesEncodedFile = synchronizesEncodedFile
         self.parts = []
     }
 
@@ -35,11 +53,34 @@ public struct MultipartFormData: Sendable {
 
     /// Appends a file by URL without reading its contents.
     ///
-    /// The bytes are streamed at the time the body is encoded — either
-    /// lazily into memory by ``encode()`` or chunk-by-chunk to disk by
+    /// File reachability is checked at append time so the encoder fails
+    /// fast at the call site instead of swallowing missing files at
+    /// encode time. The bytes themselves are streamed later — lazily
+    /// into memory by ``encode()`` or chunk-by-chunk to disk by
     /// ``writeEncodedData(to:)``. Prefer the latter for any payload that
     /// could exceed a few megabytes.
-    public mutating func appendFile(at url: URL, name: String, mimeType: String? = nil) async throws {
+    ///
+    /// - Parameters:
+    ///   - url: Local file URL.
+    ///   - name: Form field name.
+    ///   - mimeType: Optional MIME override; otherwise inferred from the
+    ///     file extension.
+    /// - Throws: ``NetworkError/invalidRequestConfiguration(_:)`` when the
+    ///   URL does not point at a regular readable file.
+    public mutating func appendFile(at url: URL, name: String, mimeType: String? = nil) throws {
+        guard url.isFileURL else {
+            throw NetworkError.invalidRequestConfiguration(
+                "MultipartFormData.appendFile expects a file URL; got \(url.scheme ?? "non-file")."
+            )
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+            isDirectory.boolValue == false
+        else {
+            throw NetworkError.invalidRequestConfiguration(
+                "MultipartFormData.appendFile could not locate a regular file at \(url.path)."
+            )
+        }
         let fileName = url.lastPathComponent
         let detectedMimeType = mimeType ?? Self.mimeType(for: url.pathExtension)
         parts.append(Part(source: .file(url), name: name, fileName: fileName, mimeType: detectedMimeType))
@@ -50,11 +91,14 @@ public struct MultipartFormData: Sendable {
     /// Use this for small bodies where memory pressure is not a concern.
     /// For large file uploads, prefer ``writeEncodedData(to:)`` so the
     /// body is streamed chunk-by-chunk to disk and uploaded via
-    /// `URLSession.upload(for:fromFile:)`. File parts that cannot be read
-    /// are skipped entirely and logged as warnings; use
-    /// ``writeEncodedData(to:)`` when read failures must be surfaced to the
-    /// caller.
-    public func encode() -> Data {
+    /// `URLSession.upload(for:fromFile:)`.
+    ///
+    /// - Throws: Any I/O error encountered while reading a file part.
+    ///   Earlier versions silently skipped unreadable file parts; that
+    ///   masked configuration bugs (typoed paths, files removed between
+    ///   ``appendFile(at:name:mimeType:)`` and encoding) so reads now
+    ///   surface their underlying error to the caller.
+    public func encode() throws -> Data {
         var body = Data()
         let boundaryPrefix = "--\(boundary)\r\n"
 
@@ -64,17 +108,11 @@ public struct MultipartFormData: Sendable {
             case .data(let data):
                 partData = data
             case .file(let url):
-                do {
-                    partData = try Data(contentsOf: url)
-                } catch {
-                    Logger.API.warning(
-                        "multipart_encode_skipped_file boundary=\(boundary, privacy: .public) name=\(part.name, privacy: .private(mask: .hash)) file=\(url.lastPathComponent, privacy: .private(mask: .hash)) error=\(error.localizedDescription, privacy: .private)"
-                    )
-                    continue
-                }
+                partData = try Data(contentsOf: url)
             }
             body.append(Data(boundaryPrefix.utf8))
-            body.append(part.headerData())
+            let contentLength: Int64? = includesPartContentLength ? Int64(partData.count) : nil
+            body.append(part.headerData(contentLength: contentLength))
             body.append(partData)
             body.append(Data("\r\n".utf8))
         }
@@ -107,15 +145,43 @@ public struct MultipartFormData: Sendable {
         }
         manager.createFile(atPath: fileURL.path, contents: nil, attributes: nil)
         let handle = try FileHandle(forWritingTo: fileURL)
-        defer { try? handle.close() }
 
+        // Manual close handling: `defer { try? handle.close() }` would
+        // swallow disk-full or fsync errors detected at flush time, so
+        // close explicitly on the success path and best-effort on
+        // failure (after the original error has been captured).
+        do {
+            try writeBody(to: handle)
+            if synchronizesEncodedFile {
+                try handle.synchronize()
+            }
+            try handle.close()
+        } catch {
+            try? handle.close()
+            throw error
+        }
+    }
+
+    private func writeBody(to handle: FileHandle) throws {
         let boundaryPrefix = Data("--\(boundary)\r\n".utf8)
         let crlf = Data("\r\n".utf8)
         let chunkSize = 64 * 1024
 
         for part in parts {
             try handle.write(contentsOf: boundaryPrefix)
-            try handle.write(contentsOf: part.headerData())
+            let contentLength: Int64?
+            if includesPartContentLength {
+                switch part.source {
+                case .data(let data):
+                    contentLength = Int64(data.count)
+                case .file(let url):
+                    let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+                    contentLength = (attributes?[.size] as? NSNumber)?.int64Value
+                }
+            } else {
+                contentLength = nil
+            }
+            try handle.write(contentsOf: part.headerData(contentLength: contentLength))
 
             switch part.source {
             case .data(let data):
@@ -161,15 +227,17 @@ public struct MultipartFormData: Sendable {
 
         for part in parts {
             add(Int64(boundaryLine))
-            add(Int64(part.headerData().count))
+            let partSize: Int64
             switch part.source {
             case .data(let data):
-                add(Int64(data.count))
+                partSize = Int64(data.count)
             case .file(let url):
                 let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-                let size = (attributes?[.size] as? NSNumber)?.int64Value ?? Int64.max / 4
-                add(size)
+                partSize = (attributes?[.size] as? NSNumber)?.int64Value ?? Int64.max / 4
             }
+            let contentLength: Int64? = includesPartContentLength ? partSize : nil
+            add(Int64(part.headerData(contentLength: contentLength).count))
+            add(partSize)
             add(Int64(crlf))
         }
         return total
@@ -222,18 +290,97 @@ extension MultipartFormData {
         let fileName: String?
         let mimeType: String?
 
-        func headerData() -> Data {
-            var disposition = "Content-Disposition: form-data; name=\"\(Self.escapedHeaderParameter(name))\""
+        func headerData(contentLength: Int64? = nil) -> Data {
+            // For non-ASCII field names, emit both the legacy `name=`
+            // (with non-ASCII collapsed to `_`) and an RFC 5987
+            // `name*=UTF-8''<percent>` companion so receivers that
+            // understand the extended syntax can decode the original UTF-8
+            // bytes. The `name=` ASCII fallback alone is ambiguous when
+            // multiple non-ASCII parts collide on `_`.
+            //
+            // Interop note: RFC 7578 (multipart/form-data) does NOT
+            // standardize `name*=` — only RFC 6266's `filename*=` is widely
+            // interoperable. Most lenient parsers ignore the unknown
+            // parameter and fall back to `name=`; strict implementations
+            // could in theory reject it. In practice common stacks
+            // (Express/multer, Spring, Rails, ASP.NET) tolerate it. Callers
+            // who must target a strict parser can keep field names ASCII
+            // to suppress emission. The companion is only added when the
+            // name actually contains non-ASCII scalars; pure-ASCII names
+            // keep wire-format unchanged.
+            let asciiName = Self.asciiFallbackFilename(name)
+            var disposition = "Content-Disposition: form-data; name=\"\(asciiName)\""
+            if Self.requiresExtendedFilename(name) {
+                disposition += "; name*=UTF-8''\(Self.rfc5987EncodedFilename(name))"
+            }
             if let fileName {
-                disposition += "; filename=\"\(Self.escapedHeaderParameter(fileName))\""
+                let asciiFallback = Self.asciiFallbackFilename(fileName)
+                disposition += "; filename=\"\(asciiFallback)\""
+                if Self.requiresExtendedFilename(fileName) {
+                    disposition += "; filename*=UTF-8''\(Self.rfc5987EncodedFilename(fileName))"
+                }
             }
             disposition += "\r\n"
             var data = Data(disposition.utf8)
             if let mimeType {
                 data.append(Data("Content-Type: \(Self.escapedHeaderValue(mimeType))\r\n".utf8))
             }
+            if let contentLength {
+                data.append(Data("Content-Length: \(contentLength)\r\n".utf8))
+            }
             data.append(Data("\r\n".utf8))
             return data
+        }
+
+        /// Detects whether the filename contains any byte that the legacy
+        /// ASCII `filename` parameter cannot represent verbatim. RFC 6266
+        /// §4.3 directs senders to additionally emit `filename*` (RFC 5987)
+        /// in that case so receivers that understand the extended syntax
+        /// can decode the original UTF-8 bytes.
+        static func requiresExtendedFilename(_ value: String) -> Bool {
+            !value.unicodeScalars.allSatisfy { $0.value <= 0x7F }
+        }
+
+        /// Builds the RFC 5987 `value-chars` representation of the filename:
+        /// each byte that is not in the unreserved set gets percent-encoded.
+        static func rfc5987EncodedFilename(_ value: String) -> String {
+            var encoded = ""
+            for byte in value.utf8 {
+                if Self.isRFC5987Unreserved(byte) {
+                    encoded.append(Character(UnicodeScalar(byte)))
+                } else {
+                    encoded += percentEscape(UInt32(byte))
+                }
+            }
+            return encoded
+        }
+
+        /// Produces the ASCII fallback that goes in the legacy `filename`
+        /// parameter. Non-ASCII scalars collapse to `_` so the parameter
+        /// survives intermediaries that strip the extended `filename*`
+        /// counterpart, while CR/LF/quote/backslash continue to use the
+        /// existing percent-encoded escapes.
+        static func asciiFallbackFilename(_ value: String) -> String {
+            var sanitized = ""
+            for scalar in value.unicodeScalars {
+                if scalar.value > 0x7F {
+                    sanitized.append("_")
+                } else {
+                    sanitized.unicodeScalars.append(scalar)
+                }
+            }
+            return escapedHeaderParameter(sanitized)
+        }
+
+        private static func isRFC5987Unreserved(_ byte: UInt8) -> Bool {
+            switch byte {
+            case 0x30...0x39, 0x41...0x5A, 0x61...0x7A:
+                return true
+            case 0x21, 0x23, 0x24, 0x26, 0x2B, 0x2D, 0x2E, 0x5E, 0x5F, 0x60, 0x7C, 0x7E:
+                return true
+            default:
+                return false
+            }
         }
 
         private static func escapedHeaderParameter(_ value: String) -> String {

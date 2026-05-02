@@ -4,7 +4,14 @@ import Foundation
 public enum TrustFailureReason: Sendable, Equatable {
     case unsupportedAuthenticationMethod(String)
     case missingServerTrust
-    case systemTrustEvaluationFailed
+    /// The system trust evaluation rejected the chain. The associated
+    /// `reason` carries the localized description from
+    /// `SecTrustEvaluateWithError`'s out-error when one was produced — it is
+    /// `nil` only when Security.framework reports failure without populating
+    /// an error (rare in practice). Surface this through metrics/logging so
+    /// production failures distinguish "expired leaf" from "untrusted root"
+    /// instead of collapsing every TLS reject onto a single bucket.
+    case systemTrustEvaluationFailed(reason: String?)
     case hostNotPinned(String)
     case publicKeyExtractionFailed
     case pinMismatch(host: String)
@@ -176,8 +183,10 @@ enum TrustEvaluator {
             return .cancel(.missingServerTrust)
         }
 
-        guard SecTrustEvaluateWithError(serverTrust, nil) else {
-            return .cancel(.systemTrustEvaluationFailed)
+        var trustError: CFError?
+        if !SecTrustEvaluateWithError(serverTrust, &trustError) {
+            let reason = (trustError as Error?)?.localizedDescription
+            return .cancel(.systemTrustEvaluationFailed(reason: reason))
         }
 
         let host = challenge.protectionSpace.host.lowercased()

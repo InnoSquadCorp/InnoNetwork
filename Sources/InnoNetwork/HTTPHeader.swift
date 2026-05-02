@@ -14,32 +14,45 @@ public struct HTTPHeaders: Sendable {
     /// Creates an empty instance.
     public init() {}
 
-    /// Creates an instance from an array of `HTTPHeader`s. Duplicate case-insensitive names are collapsed into the last
-    /// name and value encountered.
+    /// Creates an instance from an array of `HTTPHeader`s. Entries are
+    /// preserved in order, including multiple entries that share a
+    /// case-insensitive name (e.g. `Set-Cookie`).
     public init(_ headers: [HTTPHeader]) {
-        headers.forEach { update($0) }
+        self.headers = headers
     }
 
-    /// Creates an instance from a `[String: String]`. Duplicate case-insensitive names are collapsed into the last name
-    /// and value encountered.
+    /// Creates an instance from a `[String: String]`. The dictionary cannot
+    /// represent multi-value headers; callers that need to preserve repeated
+    /// `Set-Cookie` or `WWW-Authenticate` entries should use ``init(_:)``
+    /// with an array literal instead.
     public init(_ dictionary: [String: String]) {
-        dictionary.forEach { update(HTTPHeader(name: $0.key, value: $0.value)) }
+        self.headers = dictionary.map { HTTPHeader(name: $0.key, value: $0.value) }
     }
 
-    /// Case-insensitively updates or appends an `HTTPHeader` into the instance using the provided `name` and `value`.
+    /// Appends an `HTTPHeader` to the instance, preserving any existing
+    /// entries that share the same case-insensitive name.
+    ///
+    /// Use this for headers that legitimately repeat — most commonly
+    /// `Set-Cookie` and `WWW-Authenticate` — where collapsing into a
+    /// comma-joined string would either be invalid (cookies) or lose
+    /// challenge boundaries.
+    ///
+    /// For headers that should hold a single value, prefer ``update(_:)``
+    /// or ``update(name:value:)``.
     ///
     /// - Parameters:
     ///   - name:  The `HTTPHeader` name.
     ///   - value: The `HTTPHeader` value.
     public mutating func add(name: String, value: String) {
-        update(HTTPHeader(name: name, value: value))
+        headers.append(HTTPHeader(name: name, value: value))
     }
 
-    /// Case-insensitively updates or appends the provided `HTTPHeader` into the instance.
+    /// Appends the provided `HTTPHeader` to the instance, preserving any
+    /// existing entries that share the same case-insensitive name.
     ///
-    /// - Parameter header: The `HTTPHeader` to update or append.
+    /// - Parameter header: The `HTTPHeader` to append.
     public mutating func add(_ header: HTTPHeader) {
-        update(header)
+        headers.append(header)
     }
 
     /// Case-insensitively updates or appends an `HTTPHeader` into the instance using the provided `name` and `value`.
@@ -51,25 +64,38 @@ public struct HTTPHeaders: Sendable {
         update(HTTPHeader(name: name, value: value))
     }
 
-    /// Case-insensitively updates or appends the provided `HTTPHeader` into the instance.
+    /// Case-insensitively replaces all existing entries that share the
+    /// header name with the provided `HTTPHeader`. If no matching entry
+    /// exists, the header is appended.
+    ///
+    /// Prefer this for single-valued headers (``Authorization``,
+    /// ``Content-Type``, etc.) so a misconfigured retry path cannot
+    /// accidentally accumulate duplicates.
     ///
     /// - Parameter header: The `HTTPHeader` to update or append.
     public mutating func update(_ header: HTTPHeader) {
-        guard let index = headers.index(of: header.name) else {
-            headers.append(header)
-            return
+        let lowercasedName = header.name.lowercased()
+        var didReplace = false
+        headers = headers.compactMap { existing in
+            if existing.name.lowercased() == lowercasedName {
+                if didReplace { return nil }
+                didReplace = true
+                return header
+            }
+            return existing
         }
-
-        headers.replaceSubrange(index...index, with: [header])
+        if !didReplace {
+            headers.append(header)
+        }
     }
 
-    /// Case-insensitively removes an `HTTPHeader`, if it exists, from the instance.
+    /// Case-insensitively removes every `HTTPHeader` matching `name`,
+    /// including duplicates added via ``add(name:value:)``.
     ///
     /// - Parameter name: The name of the `HTTPHeader` to remove.
     public mutating func remove(name: String) {
-        guard let index = headers.index(of: name) else { return }
-
-        headers.remove(at: index)
+        let lowercasedName = name.lowercased()
+        headers.removeAll { $0.name.lowercased() == lowercasedName }
     }
 
     /// Sort the current instance by header name, case insensitively.
@@ -89,13 +115,30 @@ public struct HTTPHeaders: Sendable {
 
     /// Case-insensitively find a header's value by name.
     ///
+    /// When several entries share the same case-insensitive name, the
+    /// returned value is the joined RFC 7230 §3.2.2 representation
+    /// (`value-1, value-2`). Callers that need to inspect each
+    /// individual entry — for example to read repeated `Set-Cookie`
+    /// headers — should use ``values(for:)`` instead.
+    ///
     /// - Parameter name: The name of the header to search for, case-insensitively.
     ///
     /// - Returns:        The value of header, if it exists.
     public func value(for name: String) -> String? {
-        guard let index = headers.index(of: name) else { return nil }
+        let matches = values(for: name)
+        guard !matches.isEmpty else { return nil }
+        return matches.joined(separator: ", ")
+    }
 
-        return headers[index].value
+    /// Case-insensitively returns every value associated with `name`, in
+    /// the order they were added. Use this for response headers that may
+    /// legitimately repeat (`Set-Cookie`, `WWW-Authenticate`).
+    ///
+    /// - Parameter name: The name of the header to search for, case-insensitively.
+    /// - Returns:        Each value associated with `name`, or an empty array.
+    public func values(for name: String) -> [String] {
+        let lowercasedName = name.lowercased()
+        return headers.compactMap { $0.name.lowercased() == lowercasedName ? $0.value : nil }
     }
 
     /// Case-insensitively access the header with the given name.
@@ -112,13 +155,41 @@ public struct HTTPHeaders: Sendable {
         }
     }
 
-    /// The dictionary representation of all headers.
+    /// The dictionary representation of all headers, suitable for passing
+    /// to `URLRequest.allHTTPHeaderFields`.
     ///
-    /// This representation does not preserve the current order of the instance.
+    /// Multiple entries that share a case-insensitive name are collapsed
+    /// into a single comma-joined value per RFC 7230 §3.2.2. The first
+    /// occurrence of the name is preserved as the canonical key. This
+    /// representation does not preserve insertion order.
+    ///
+    /// `Set-Cookie` is the one well-known header where comma-joining is
+    /// invalid. The library never sets `Set-Cookie` on outbound requests,
+    /// so the join is safe in practice for the request-side use of this
+    /// property; consumers reading inbound response headers should iterate
+    /// the collection or call ``values(for:)`` instead of going through
+    /// this dictionary.
     public var dictionary: [String: String] {
-        let namesAndValues = headers.map { ($0.name, $0.value) }
+        var canonicalKeys: [String: String] = [:]
+        var grouped: [String: [String]] = [:]
+        var insertionOrder: [String] = []
 
-        return Dictionary(namesAndValues, uniquingKeysWith: { _, last in last })
+        for header in headers {
+            let lowercased = header.name.lowercased()
+            if canonicalKeys[lowercased] == nil {
+                canonicalKeys[lowercased] = header.name
+                insertionOrder.append(lowercased)
+            }
+            grouped[lowercased, default: []].append(header.value)
+        }
+
+        var result: [String: String] = [:]
+        result.reserveCapacity(insertionOrder.count)
+        for key in insertionOrder {
+            let canonical = canonicalKeys[key] ?? key
+            result[canonical] = grouped[key]?.joined(separator: ", ")
+        }
+        return result
     }
 }
 
@@ -430,11 +501,68 @@ extension Collection<String> {
 
 // MARK: - System Type Extensions
 
+/// Lowercased names of request headers that are semantically single-valued
+/// per RFC 7230/9110/6265. `URLRequest.headers` setter forces last-write-wins
+/// on these so a duplicate entry in the input cannot accumulate via
+/// `addValue`. Notably:
+///
+/// - `Cookie` (RFC 6265 §5.4): clients MUST NOT attach more than one
+///   `Cookie` header field; some strict origins reject duplicates.
+/// - `Authorization`/`Proxy-Authorization`: a single credential per request.
+/// - `Content-Type`/`Content-Length`/`Host`/`User-Agent`/`From`/`Referer`:
+///   list-tokenization is undefined and proxies/origins disagree on
+///   handling, so duplicates are unsafe wire-format.
+private let singleValueRequestHeaderNames: Set<String> = [
+    "authorization",
+    "proxy-authorization",
+    "content-type",
+    "content-length",
+    "host",
+    "user-agent",
+    "from",
+    "referer",
+    "cookie",
+]
+
 extension URLRequest {
     /// Returns `allHTTPHeaderFields` as `HTTPHeaders`.
+    ///
+    /// The setter routes per-header through `setValue`/`addValue` so that
+    /// in-memory duplicate entries in `HTTPHeaders` are applied to the
+    /// request via Foundation's documented `addValue` path rather than
+    /// collapsed through the `[String: String]` dictionary projection.
+    /// `HTTPURLResponse.allHeaderFields` has already collapsed duplicate
+    /// response header lines into one dictionary value before they can reach
+    /// this setter, so response round-trips cannot recover the original
+    /// repeated-line structure. The first occurrence per case-insensitive
+    /// name uses `setValue` to clear any pre-existing entry; subsequent
+    /// occurrences use `addValue` so Foundation can apply its
+    /// request-header concatenation rules.
+    ///
+    /// Headers that are semantically single-valued on requests
+    /// (`Authorization`, `Content-Type`, `Content-Length`, `Host`,
+    /// `User-Agent`) always use `setValue` so a duplicate entry in
+    /// `newValue` cannot accumulate via `addValue` — last write wins,
+    /// which matches the wire-protocol contract for those names.
     public var headers: HTTPHeaders {
         get { allHTTPHeaderFields.map(HTTPHeaders.init) ?? HTTPHeaders() }
-        set { allHTTPHeaderFields = newValue.dictionary }
+        set {
+            if let existing = allHTTPHeaderFields {
+                for key in existing.keys {
+                    setValue(nil, forHTTPHeaderField: key)
+                }
+            }
+            var seenLowercased: Set<String> = []
+            for header in newValue {
+                let lowercased = header.name.lowercased()
+                let isSingleValue = singleValueRequestHeaderNames.contains(lowercased)
+                if isSingleValue || seenLowercased.insert(lowercased).inserted {
+                    setValue(header.value, forHTTPHeaderField: header.name)
+                } else {
+                    addValue(header.value, forHTTPHeaderField: header.name)
+                }
+            }
+        }
     }
 }
 

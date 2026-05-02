@@ -1,17 +1,97 @@
 import Foundation
 
 /// Per-host circuit breaker policy for short-circuiting repeated failures.
+///
+/// The breaker tracks the most recent `windowSize` countable attempts per
+/// host and trips into the open state once the number of failures within the
+/// window meets `failureThreshold`. While open, requests fail immediately
+/// with ``CircuitBreakerOpenError``. After `resetAfter` elapses the breaker
+/// transitions to half-open and admits a single probe; `numberOfProbesRequiredToClose`
+/// consecutive successful probes are needed before the circuit fully closes
+/// (default `1`, i.e. no hysteresis).
 public struct CircuitBreakerPolicy: Sendable, Equatable {
     public let failureThreshold: Int
     public let windowSize: Int
     public let resetAfter: Duration
     public let maxResetAfter: Duration
+    public let numberOfProbesRequiredToClose: Int
+    public let countsTransportSecurityFailures: Bool
 
+    /// Errors thrown by the validating initializer.
+    public enum ConfigurationError: Error, Sendable, Equatable, CustomStringConvertible {
+        case nonPositive(field: String, value: Int)
+        case thresholdExceedsWindow(threshold: Int, window: Int)
+        case negativeDuration(field: String)
+        case maxResetSmallerThanReset
+
+        public var description: String {
+            switch self {
+            case .nonPositive(let field, let value):
+                return "CircuitBreakerPolicy.\(field) must be > 0 (got \(value))."
+            case .thresholdExceedsWindow(let threshold, let window):
+                return "CircuitBreakerPolicy.failureThreshold (\(threshold)) cannot exceed windowSize (\(window))."
+            case .negativeDuration(let field):
+                return "CircuitBreakerPolicy.\(field) cannot be negative."
+            case .maxResetSmallerThanReset:
+                return "CircuitBreakerPolicy.maxResetAfter cannot be smaller than resetAfter."
+            }
+        }
+    }
+
+    /// Validating initializer. Throws ``ConfigurationError`` if any argument
+    /// is out of range. Prefer this over the silent-clamp ``init(failureThreshold:windowSize:resetAfter:maxResetAfter:)``.
+    public init(
+        validatedFailureThreshold failureThreshold: Int,
+        windowSize: Int,
+        resetAfter: Duration,
+        maxResetAfter: Duration,
+        numberOfProbesRequiredToClose: Int = 1,
+        countsTransportSecurityFailures: Bool = false
+    ) throws {
+        guard windowSize > 0 else {
+            throw ConfigurationError.nonPositive(field: "windowSize", value: windowSize)
+        }
+        guard failureThreshold > 0 else {
+            throw ConfigurationError.nonPositive(field: "failureThreshold", value: failureThreshold)
+        }
+        guard failureThreshold <= windowSize else {
+            throw ConfigurationError.thresholdExceedsWindow(threshold: failureThreshold, window: windowSize)
+        }
+        guard numberOfProbesRequiredToClose > 0 else {
+            throw ConfigurationError.nonPositive(
+                field: "numberOfProbesRequiredToClose",
+                value: numberOfProbesRequiredToClose
+            )
+        }
+        guard resetAfter >= .zero else {
+            throw ConfigurationError.negativeDuration(field: "resetAfter")
+        }
+        guard maxResetAfter >= .zero else {
+            throw ConfigurationError.negativeDuration(field: "maxResetAfter")
+        }
+        guard maxResetAfter >= resetAfter else {
+            throw ConfigurationError.maxResetSmallerThanReset
+        }
+
+        self.failureThreshold = failureThreshold
+        self.windowSize = windowSize
+        self.resetAfter = resetAfter
+        self.maxResetAfter = maxResetAfter
+        self.numberOfProbesRequiredToClose = numberOfProbesRequiredToClose
+        self.countsTransportSecurityFailures = countsTransportSecurityFailures
+    }
+
+    /// Backwards-compatible silent-clamp initializer. Out-of-range values are
+    /// coerced to safe defaults so callers cannot construct an unusable
+    /// policy. New code should prefer ``init(validatedFailureThreshold:windowSize:resetAfter:maxResetAfter:numberOfProbesRequiredToClose:countsTransportSecurityFailures:)``
+    /// which surfaces invalid inputs as `ConfigurationError`.
     public init(
         failureThreshold: Int = 5,
         windowSize: Int = 10,
         resetAfter: Duration = .seconds(30),
-        maxResetAfter: Duration = .seconds(300)
+        maxResetAfter: Duration = .seconds(300),
+        numberOfProbesRequiredToClose: Int = 1,
+        countsTransportSecurityFailures: Bool = false
     ) {
         let normalizedWindowSize = max(1, windowSize)
         let normalizedResetAfter = max(.zero, resetAfter)
@@ -20,6 +100,8 @@ public struct CircuitBreakerPolicy: Sendable, Equatable {
         self.failureThreshold = min(max(1, failureThreshold), normalizedWindowSize)
         self.resetAfter = normalizedResetAfter
         self.maxResetAfter = max(normalizedResetAfter, maxResetAfter)
+        self.numberOfProbesRequiredToClose = max(1, numberOfProbesRequiredToClose)
+        self.countsTransportSecurityFailures = countsTransportSecurityFailures
     }
 }
 
@@ -45,125 +127,249 @@ public struct CircuitBreakerOpenError: Error, Sendable, Equatable, LocalizedErro
 
 
 package actor CircuitBreakerRegistry {
-    private enum Mode {
-        case closed([Bool])
-        case open(until: Date, resetAfter: Duration)
-        case halfOpen(probeInFlight: Bool, resetAfter: Duration)
+    /// Idle state TTL: hosts that have not been touched for this duration are
+    /// garbage-collected on the next access. Long-running clients with bursty
+    /// traffic across many hosts otherwise leak per-host state forever.
+    private static let stateIdleTTL: TimeInterval = 5 * 60
+
+    private struct ClosedState: Equatable {
+        /// Rolling window of attempts. `true` = countable failure, `false` = success.
+        var window: [Bool]
     }
 
-    private var states: [String: Mode] = [:]
+    private enum Mode: Equatable {
+        case closed(ClosedState)
+        case open(until: Date, resetAfter: Duration)
+        case halfOpen(probeInFlight: Bool, successCount: Int, resetAfter: Duration)
+    }
+
+    private struct Entry {
+        var mode: Mode
+        var lastAccessAt: Date
+    }
+
+    private var states: [String: Entry] = [:]
 
     package init() {}
 
     package func prepare(request: URLRequest, policy: CircuitBreakerPolicy?) throws {
-        guard policy != nil, let host = request.url?.host else { return }
+        guard policy != nil, let key = Self.hostKey(for: request) else { return }
         let now = Date()
-        let mode = states[host] ?? .closed([])
-        switch mode {
+        garbageCollect(now: now)
+        let entry = states[key] ?? Entry(mode: .closed(ClosedState(window: [])), lastAccessAt: now)
+        switch entry.mode {
         case .closed:
             return
         case .open(let until, let resetAfter):
             if now >= until {
-                states[host] = .halfOpen(probeInFlight: true, resetAfter: resetAfter)
+                states[key] = Entry(
+                    mode: .halfOpen(probeInFlight: true, successCount: 0, resetAfter: resetAfter),
+                    lastAccessAt: now
+                )
                 return
             }
             throw NetworkError.underlying(
-                SendableUnderlyingError(CircuitBreakerOpenError(host: host, retryAfter: until.timeIntervalSince(now))),
+                SendableUnderlyingError(CircuitBreakerOpenError(host: key, retryAfter: until.timeIntervalSince(now))),
                 nil
             )
-        case .halfOpen(let probeInFlight, let resetAfter):
+        case .halfOpen(let probeInFlight, let successCount, let resetAfter):
             guard !probeInFlight else {
                 throw NetworkError.underlying(
-                    SendableUnderlyingError(CircuitBreakerOpenError(host: host, retryAfter: resetAfter.timeInterval)),
+                    SendableUnderlyingError(CircuitBreakerOpenError(host: key, retryAfter: resetAfter.timeInterval)),
                     nil
                 )
             }
-            states[host] = .halfOpen(probeInFlight: true, resetAfter: resetAfter)
+            states[key] = Entry(
+                mode: .halfOpen(probeInFlight: true, successCount: successCount, resetAfter: resetAfter),
+                lastAccessAt: now
+            )
         }
     }
 
     package func recordSuccess(request: URLRequest, policy: CircuitBreakerPolicy?) {
-        guard policy != nil, let host = request.url?.host else { return }
-        states[host] = .closed([])
+        guard let policy, let key = Self.hostKey(for: request) else { return }
+        recordOutcome(key: key, isFailure: false, policy: policy)
     }
 
     package func recordFailure(request: URLRequest, policy: CircuitBreakerPolicy?, error: Error) {
-        guard let policy, let host = request.url?.host else { return }
-        guard isCountable(error: error) else { return }
-        recordCountableFailure(host: host, policy: policy)
+        guard let policy, let key = Self.hostKey(for: request) else { return }
+        guard isCountable(error: error, policy: policy) else { return }
+        recordOutcome(key: key, isFailure: true, policy: policy)
     }
 
     package func recordStatus(request: URLRequest, policy: CircuitBreakerPolicy?, statusCode: Int) {
-        guard let policy, let host = request.url?.host else { return }
+        guard let policy, let key = Self.hostKey(for: request) else { return }
         if (500...599).contains(statusCode) {
-            recordCountableFailure(host: host, policy: policy)
+            recordOutcome(key: key, isFailure: true, policy: policy)
         } else if (400...499).contains(statusCode) {
             // 4xx responses indicate a working transport with a client-side
-            // semantic problem. In `.closed` they must not count as transport
-            // failures and must not reset the rolling failure window either,
-            // otherwise a single 4xx mixed into a stream of 5xx/timeouts
-            // would mask a host teetering on the edge of the failure
-            // threshold. In `.halfOpen` the probe purpose is to confirm the
-            // transport is healthy — a 4xx response satisfies that contract,
-            // so close the circuit and release the probe slot. Without this
-            // branch the probe stays `inFlight` forever and every subsequent
-            // request is rejected.
-            if case .halfOpen = states[host] {
-                states[host] = .closed([])
+            // semantic problem. They do not advance the rolling window in
+            // either direction. In half-open they release the probe slot
+            // because the transport itself is healthy.
+            if case .halfOpen = states[key]?.mode {
+                states[key] = Entry(mode: .closed(ClosedState(window: [])), lastAccessAt: Date())
             }
         } else {
             // 2xx/3xx and other non-error status families confirm the host is
-            // healthy: clear any accumulated failures and release a half-open
-            // probe slot.
-            states[host] = .closed([])
+            // healthy.
+            recordOutcome(key: key, isFailure: false, policy: policy)
         }
     }
 
     /// Releases a half-open probe slot when the probe is cancelled before it
-    /// can record success or failure. Without this the host would stay in
-    /// `halfOpen(probeInFlight: true)` and reject every subsequent request.
+    /// can record success or failure. Closed-state failure counts are
+    /// preserved.
     package func recordCancellation(request: URLRequest, policy: CircuitBreakerPolicy?) {
-        guard policy != nil, let host = request.url?.host else { return }
-        if case .halfOpen = states[host] {
-            states[host] = .closed([])
+        guard policy != nil, let key = Self.hostKey(for: request) else { return }
+        guard let entry = states[key] else { return }
+        switch entry.mode {
+        case .halfOpen(_, let successCount, let resetAfter):
+            states[key] = Entry(
+                mode: .halfOpen(probeInFlight: false, successCount: successCount, resetAfter: resetAfter),
+                lastAccessAt: Date()
+            )
+        case .closed, .open:
+            // Cancellation in closed/open: preserve state. The cancellation
+            // was not a transport outcome and should not influence the
+            // rolling window.
+            return
         }
     }
 
-    private func recordCountableFailure(host: String, policy: CircuitBreakerPolicy) {
-        let mode = states[host] ?? .closed([])
+    private func recordOutcome(key: String, isFailure: Bool, policy: CircuitBreakerPolicy) {
+        let now = Date()
+        let mode = states[key]?.mode ?? .closed(ClosedState(window: []))
         switch mode {
-        case .closed(let failures):
-            var updated = failures
-            updated.append(true)
-            if updated.count > policy.windowSize {
-                updated.removeFirst(updated.count - policy.windowSize)
+        case .closed(var state):
+            state.window.append(isFailure)
+            if state.window.count > policy.windowSize {
+                state.window.removeFirst(state.window.count - policy.windowSize)
             }
-            if updated.count >= policy.failureThreshold {
-                states[host] = .open(
-                    until: Date().addingTimeInterval(policy.resetAfter.timeInterval), resetAfter: policy.resetAfter)
+            let failureCount = state.window.lazy.filter { $0 }.count
+            if isFailure, failureCount >= policy.failureThreshold {
+                states[key] = Entry(
+                    mode: .open(
+                        until: now.addingTimeInterval(policy.resetAfter.timeInterval),
+                        resetAfter: policy.resetAfter
+                    ),
+                    lastAccessAt: now
+                )
             } else {
-                states[host] = .closed(updated)
+                states[key] = Entry(mode: .closed(state), lastAccessAt: now)
             }
         case .open:
+            // Already open — outcomes here cannot occur because `prepare`
+            // either short-circuits or transitions to half-open. Defensive
+            // no-op.
             return
-        case .halfOpen(_, let resetAfter):
-            let doubled = min(resetAfter.timeInterval * 2, policy.maxResetAfter.timeInterval)
-            let next = Duration.milliseconds(Int64((doubled * 1000).rounded()))
-            states[host] = .open(until: Date().addingTimeInterval(next.timeInterval), resetAfter: next)
+        case .halfOpen(_, let successCount, let resetAfter):
+            if isFailure {
+                let doubled = min(resetAfter.timeInterval * 2, policy.maxResetAfter.timeInterval)
+                let next = Duration.milliseconds(Int64((doubled * 1000).rounded()))
+                states[key] = Entry(
+                    mode: .open(until: now.addingTimeInterval(next.timeInterval), resetAfter: next),
+                    lastAccessAt: now
+                )
+            } else {
+                let updatedSuccess = successCount + 1
+                if updatedSuccess >= policy.numberOfProbesRequiredToClose {
+                    states[key] = Entry(
+                        mode: .closed(ClosedState(window: [])),
+                        lastAccessAt: now
+                    )
+                } else {
+                    // Hysteresis: keep half-open and require additional probes
+                    // before fully closing. Release the in-flight slot so the
+                    // next probe can be admitted.
+                    states[key] = Entry(
+                        mode: .halfOpen(
+                            probeInFlight: false,
+                            successCount: updatedSuccess,
+                            resetAfter: resetAfter
+                        ),
+                        lastAccessAt: now
+                    )
+                }
+            }
         }
     }
 
-    private func isCountable(error: Error) -> Bool {
+    private func garbageCollect(now: Date) {
+        states = states.filter { _, entry in
+            now.timeIntervalSince(entry.lastAccessAt) <= Self.stateIdleTTL
+        }
+    }
+
+    /// Visible for tests. Returns the canonical breaker key for a request.
+    static func hostKey(for request: URLRequest) -> String? {
+        guard let url = request.url, let host = url.host, !host.isEmpty else { return nil }
+        let scheme = url.scheme?.lowercased() ?? "http"
+        let port = url.port ?? defaultPort(forScheme: scheme)
+        return "\(scheme)://\(host):\(port)"
+    }
+
+    private static func defaultPort(forScheme scheme: String) -> Int {
+        switch scheme {
+        case "http", "ws":
+            return 80
+        case "https", "wss":
+            return 443
+        default:
+            return 0
+        }
+    }
+
+    private func isCountable(error: Error, policy: CircuitBreakerPolicy) -> Bool {
+        if NetworkError.isCancellation(error) { return false }
+        if isTransportSecurityError(error) {
+            return policy.countsTransportSecurityFailures
+        }
         if let networkError = error as? NetworkError {
             switch networkError {
             case .timeout, .nonHTTPResponse:
                 return true
+            case .trustEvaluationFailed:
+                return policy.countsTransportSecurityFailures
             case .underlying(let underlying, _):
-                return !NetworkError.isCancellation(underlying)
+                if NetworkError.isCancellation(underlying) { return false }
+                if isTransportSecurityUnderlying(underlying) {
+                    return policy.countsTransportSecurityFailures
+                }
+                return true
             default:
                 return false
             }
         }
-        return !NetworkError.isCancellation(error)
+        return true
+    }
+
+    private func isTransportSecurityError(_ error: Error) -> Bool {
+        if let urlError = error as? URLError, isTransportSecurityURLErrorCode(urlError.code) {
+            return true
+        }
+        if let networkError = error as? NetworkError, case .trustEvaluationFailed = networkError {
+            return true
+        }
+        return false
+    }
+
+    private func isTransportSecurityUnderlying(_ underlying: SendableUnderlyingError) -> Bool {
+        guard underlying.domain == NSURLErrorDomain else { return false }
+        return isTransportSecurityURLErrorCode(URLError.Code(rawValue: underlying.code))
+    }
+
+    private func isTransportSecurityURLErrorCode(_ code: URLError.Code) -> Bool {
+        switch code {
+        case .serverCertificateUntrusted,
+            .serverCertificateHasBadDate,
+            .serverCertificateNotYetValid,
+            .serverCertificateHasUnknownRoot,
+            .clientCertificateRejected,
+            .clientCertificateRequired,
+            .secureConnectionFailed:
+            return true
+        default:
+            return false
+        }
     }
 }

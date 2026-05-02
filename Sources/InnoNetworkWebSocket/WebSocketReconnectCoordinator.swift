@@ -3,7 +3,12 @@ import Foundation
 package enum WebSocketReconnectAction: Equatable {
     case retry
     case terminal
-    case exceeded
+    case exceeded(reason: ExceededReason)
+
+    package enum ExceededReason: Equatable {
+        case attempts
+        case duration
+    }
 }
 
 package struct WebSocketReconnectCoordinator {
@@ -11,6 +16,8 @@ package struct WebSocketReconnectCoordinator {
     let runtimeRegistry: WebSocketRuntimeRegistry
     let clock: any InnoNetworkClock
     let randomOffset: @Sendable (ClosedRange<Double>) -> Double
+    let dateProvider: @Sendable () -> Date
+    let eventHub: TaskEventHub<WebSocketEvent>?
 
     package init(
         configuration: WebSocketConfiguration,
@@ -18,12 +25,16 @@ package struct WebSocketReconnectCoordinator {
         clock: any InnoNetworkClock = SystemClock(),
         randomOffset: @escaping @Sendable (ClosedRange<Double>) -> Double = { range in
             Double.random(in: range)
-        }
+        },
+        dateProvider: @escaping @Sendable () -> Date = { Date() },
+        eventHub: TaskEventHub<WebSocketEvent>? = nil
     ) {
         self.configuration = configuration
         self.runtimeRegistry = runtimeRegistry
         self.clock = clock
         self.randomOffset = randomOffset
+        self.dateProvider = dateProvider
+        self.eventHub = eventHub
     }
 
     /// Increments the task's attempted-reconnect counter and returns the
@@ -47,11 +58,27 @@ package struct WebSocketReconnectCoordinator {
             return .terminal
         }
 
+        // Stamp the reconnect-window if this is the first reconnect attempt
+        // after a clean connection. The stamp is cleared by the manager once
+        // a reconnect succeeds or the task is reset.
+        let now = dateProvider()
+        await task.beginReconnectWindowIfNeeded(now: now)
+
+        if configuration.reconnectMaxTotalDuration > 0,
+            let started = await task.reconnectWindowStartedAt,
+            now.timeIntervalSince(started) > configuration.reconnectMaxTotalDuration
+        {
+            // Bump the counter so observers see the rejected attempt before
+            // returning .exceeded — mirrors the maxReconnectAttempts semantics.
+            _ = await task.incrementAttemptedReconnectCount()
+            return .exceeded(reason: .duration)
+        }
+
         let reconnectCount = await task.incrementAttemptedReconnectCount()
         if reconnectCount <= configuration.maxReconnectAttempts {
             return .retry
         }
-        return .exceeded
+        return .exceeded(reason: .attempts)
     }
 
     package func reconnectAction(
@@ -74,7 +101,15 @@ package struct WebSocketReconnectCoordinator {
         task: WebSocketTask,
         startConnection: @escaping @Sendable (WebSocketTask) async -> Void
     ) async {
-        let reconnectTask = Task {
+        // Cancel any prior reconnect task before installing a new one. We do
+        // this explicitly here (in addition to setReconnectTask's swap-and-
+        // cancel) so the new Task we are about to spawn never overlaps with
+        // a stale predecessor's clock waiter — both would otherwise race the
+        // shared TestClock and/or fire a pair of startConnection callbacks
+        // under rapid disconnect bursts.
+        await runtimeRegistry.cancelReconnectTask(for: task.id)
+
+        let reconnectTask = Task { [eventHub] in
             let reconnectCount = await task.attemptedReconnectCount
             let delay = reconnectDelay(forAttempt: reconnectCount)
 
@@ -83,6 +118,14 @@ package struct WebSocketReconnectCoordinator {
             } catch is CancellationError {
                 return
             } catch {
+                // Sleep failed for a reason other than cancellation. The
+                // previous behaviour silently dropped the reconnect attempt;
+                // surface a paired error event so observers can correlate the
+                // skipped retry with their telemetry instead of seeing the
+                // socket stall in `.reconnecting` forever.
+                if let eventHub {
+                    await eventHub.publish(.error(.unknown), for: task.id)
+                }
                 return
             }
 
@@ -105,18 +148,38 @@ package struct WebSocketReconnectCoordinator {
     }
 
     private func reconnectDelay(forAttempt reconnectCount: Int) -> TimeInterval {
-        let baseDelay = configuration.reconnectDelay * pow(2, Double(reconnectCount - 1))
+        // `pow(2, -1)` would shrink the base delay below the configured
+        // floor when `reconnectCount == 0`. Clamp the exponent so the very
+        // first reconnect always uses the configured `reconnectDelay` as the
+        // floor (count=1 → 2^0 = 1×, matching exponential expectations).
+        let safeCount = max(1, reconnectCount)
+        let baseDelay = configuration.reconnectDelay * pow(2, Double(safeCount - 1))
 
         guard configuration.maxReconnectDelay > 0 else {
             let jitter = abs(baseDelay * configuration.reconnectJitterRatio)
-            return max(0.0, baseDelay + randomOffset((-jitter)...(jitter)))
+            let lowerBound = -jitter
+            let upperBound = jitter
+            return max(0.0, baseDelay + sample(lowerBound...upperBound))
         }
 
         let cappedBase = min(baseDelay, configuration.maxReconnectDelay)
         let jitter = abs(cappedBase * configuration.reconnectJitterRatio)
         let lowerBound = max(0.0, cappedBase - jitter)
         let upperBound = min(configuration.maxReconnectDelay, cappedBase + jitter)
-        return randomOffset(lowerBound...upperBound)
+        return sample(lowerBound...upperBound)
+    }
+
+    /// Clamp inverted bounds before delegating to ``randomOffset``. Floating-
+    /// point cancellation (e.g. tiny `cappedBase - jitter` undershoot when
+    /// jitter ≥ cappedBase) can otherwise produce `lowerBound > upperBound`,
+    /// which traps inside the standard library's `Range`/`ClosedRange`
+    /// initializer.
+    private func sample(_ range: ClosedRange<Double>) -> Double {
+        if range.lowerBound <= range.upperBound {
+            return randomOffset(range)
+        }
+        let fallback = range.upperBound
+        return randomOffset(fallback...fallback)
     }
 
     private static func shouldReconnect(currentState: WebSocketState, autoReconnectEnabled: Bool) -> Bool {

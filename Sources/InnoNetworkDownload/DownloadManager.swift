@@ -89,6 +89,7 @@ public actor DownloadManager {
     private let runtimeRegistry = DownloadRuntimeRegistry()
     private let restoreBarrier = RestoreBarrier()
     private var pendingRestoreFailures: Set<String> = []
+    private var isShutdown = false
     private let eventHub: TaskEventHub<DownloadEvent>
     private let delegateEvents: AsyncStream<DelegateEvent>
     private let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
@@ -152,6 +153,7 @@ public actor DownloadManager {
             configuration: configuration,
             persistence: DownloadTaskPersistence(
                 sessionIdentifier: configuration.sessionIdentifier,
+                baseDirectoryURL: configuration.persistenceBaseDirectoryURL,
                 fsyncPolicy: configuration.persistenceFsyncPolicy,
                 compactionPolicy: configuration.persistenceCompactionPolicy
             )
@@ -410,6 +412,46 @@ public actor DownloadManager {
         }
     }
 
+    /// Tears down the manager: cancels every in-flight transfer, finishes
+    /// outstanding event streams, and invalidates the underlying URLSession.
+    ///
+    /// `shutdown()` is the supported lifecycle exit point. It releases the
+    /// background session identifier, drops the URLSession's strong reference
+    /// to its delegate, and stops the delegate-event consumer task. After
+    /// `shutdown()` returns, treat the manager as terminal and create a fresh
+    /// instance for new transfer work; diagnostic getters may still reflect
+    /// last-known in-memory task state. A fresh manager can claim the same
+    /// `sessionIdentifier`. Calling `shutdown()` multiple times is safe.
+    ///
+    /// In tests and apps that own the manager instance directly, prefer
+    /// `shutdown()` over relying on `deinit` — Foundation will hold the
+    /// session (and thus the manager and its closures) alive until invalidate
+    /// completes, which can take longer than the surrounding scope.
+    public func shutdown() async {
+        guard !isShutdown else { return }
+        isShutdown = true
+
+        delegateEventContinuation.finish()
+
+        // Cancel every in-flight URLSession task before invalidating, then
+        // close the per-task event partition so listeners receive a clean
+        // end-of-stream signal instead of hanging indefinitely. We do not
+        // await the URLSession-level cancellation (it's fire-and-forget by
+        // contract); `invalidateAndCancel()` below drains the rest.
+        for task in await runtimeRegistry.allTasks() {
+            if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
+                urlTask.cancel()
+            }
+            await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+            await eventHub.finish(taskID: task.id)
+        }
+
+        // `invalidateAndCancel()` (not `finishTasksAndInvalidate()`) is the
+        // correct call here: any pending transfers should die immediately so
+        // the OS releases the session identifier and the delegate.
+        session.invalidateAndCancel()
+    }
+
     public func retry(_ task: DownloadTask) async {
         guard await waitForRestore() else { return }
         guard await task.state == .failed else { return }
@@ -613,10 +655,10 @@ public actor DownloadManager {
         // this call the underlying session and its DownloadSessionDelegate (and
         // every callback closure they retain) outlive the manager. Background
         // sessions also stay registered with the OS. `finishTasksAndInvalidate`
-        // lets in-flight transfers complete before tearing down. The session
-        // identifier remains claimed until URLSession reports invalidation, so
-        // a replacement manager cannot reuse the identifier while Foundation is
-        // still draining delegate callbacks for the old session.
+        // lets in-flight transfers complete before tearing down, and is
+        // idempotent against any earlier ``shutdown()`` call. Apps that need
+        // bounded teardown latency should call `shutdown()` explicitly so the
+        // session identifier is released before this fallback runs.
         session.finishTasksAndInvalidate()
     }
 

@@ -8,6 +8,26 @@ import InnoNetwork
 /// to the values documented in the 4.0.0 RFC (50 MB total, 1,000 entries,
 /// 5 MB per entry, no authenticated responses, no `Set-Cookie` responses).
 public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
+    /// Durability policy for the on-disk index file.
+    ///
+    /// `fsync(_:)` forces an in-flight write through the OS page cache to
+    /// stable storage. `.always` opens an fd on the renamed index after the
+    /// atomic write and `fsync`s it (plus the parent directory) so the index
+    /// survives a hard crash. `.onCheckpoint`/`.never` retain the historic
+    /// `data.write(to:options:.atomic)` semantics where the rename is
+    /// linearized but the bytes are not necessarily flushed to platter.
+    public enum PersistenceFsyncPolicy: Sendable, Equatable {
+        /// `fsync(_:)` the index file and parent directory after every write.
+        case always
+        /// Same as ``never`` for the persistent response cache: the cache
+        /// rewrites the entire index on every change, so there is no
+        /// distinct checkpoint boundary. Provided for API parity with
+        /// ``DownloadConfiguration/PersistenceFsyncPolicy``.
+        case onCheckpoint
+        /// Rely on the OS to flush dirty pages on its own cadence.
+        case never
+    }
+
     /// Directory the cache uses for its `index.json` and SHA-256-addressed
     /// body files. The directory is created on first use. The cache writes
     /// only to its own subtree (`index.json` and `bodies/`); other files
@@ -27,6 +47,8 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     /// When `true`, responses with `Set-Cookie` headers are eligible for
     /// storage. Defaults to `false` for privacy.
     public let storesSetCookieResponses: Bool
+    /// Durability policy for the index file. Defaults to ``PersistenceFsyncPolicy/onCheckpoint``.
+    public let persistenceFsyncPolicy: PersistenceFsyncPolicy
 
     /// Build a configuration. Only `directoryURL` is required; defaults match
     /// the 4.0.0 RFC ("Implementation decisions" table).
@@ -36,7 +58,8 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
         maxEntries: Int = 1_000,
         maxEntryBytes: Int = 5 * 1024 * 1024,
         storesAuthenticatedResponses: Bool = false,
-        storesSetCookieResponses: Bool = false
+        storesSetCookieResponses: Bool = false,
+        persistenceFsyncPolicy: PersistenceFsyncPolicy = .onCheckpoint
     ) {
         self.directoryURL = directoryURL
         self.maxBytes = max(1, maxBytes)
@@ -44,6 +67,7 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
         self.maxEntryBytes = max(1, maxEntryBytes)
         self.storesAuthenticatedResponses = storesAuthenticatedResponses
         self.storesSetCookieResponses = storesSetCookieResponses
+        self.persistenceFsyncPolicy = persistenceFsyncPolicy
     }
 }
 
@@ -93,6 +117,16 @@ public actor PersistentResponseCache: ResponseCache {
     private let bodiesDirectoryURL: URL
     private let indexURL: URL
     private var index: Index
+    /// Number of read-path `lastAccessedAt` updates that have not yet been
+    /// flushed to disk. Reads are buffered to amortize the JSON-encode +
+    /// atomic-write cost across many hits; insertions/deletions still flush
+    /// immediately so durability of the working set is unaffected.
+    private var pendingReadFlushes: Int = 0
+    /// Flush threshold: every `readFlushBatchSize` cache hits triggers one
+    /// best-effort `persistIndex(durable: false)`. Tuned conservatively so a
+    /// process crash loses at most this many access-time updates — LRU
+    /// ordering is recoverable from `storedAt` if the cache restarts cold.
+    private let readFlushBatchSize: Int = 32
 
     /// Open or create a persistent response cache at `configuration.directoryURL`.
     ///
@@ -138,7 +172,28 @@ public actor PersistentResponseCache: ResponseCache {
 
         entry.lastAccessedAt = Date()
         index.entries[id] = entry
-        try? persistIndex()
+        // Read-path metadata updates skip the durability fsync AND are
+        // batched: only every `readFlushBatchSize`-th hit triggers an
+        // atomic-write. Reasons:
+        //   * `.always` fsync exists to make insertions durable. LRU
+        //     bookkeeping is recoverable best-effort.
+        //   * JSON-encoding the full index + atomic rename on every cache
+        //     hit dominates the hot read path on devices with slow flash.
+        //   * A process crash loses at most `readFlushBatchSize` access-time
+        //     updates; ordering can be reconstructed from `storedAt` and
+        //     subsequent reads quickly re-establish the LRU tail.
+        // Insertions/deletions/evictions still call `persistIndex` directly
+        // and are unaffected by this counter.
+        pendingReadFlushes += 1
+        if pendingReadFlushes >= readFlushBatchSize {
+            do {
+                try persistIndex(durable: false)
+                pendingReadFlushes = 0
+            } catch {
+                // Keep the backlog so the next read can retry the best-effort
+                // metadata flush instead of losing all pending access times.
+            }
+        }
 
         return CachedResponse(
             data: data,
@@ -228,11 +283,27 @@ public actor PersistentResponseCache: ResponseCache {
     }
 
     private func evictIfNeeded() {
-        while index.entries.count > configuration.maxEntries || totalBytes > configuration.maxBytes {
-            guard let victim = index.entries.min(by: { $0.value.lastAccessedAt < $1.value.lastAccessedAt }) else {
-                return
-            }
-            removeEntry(id: victim.key, entry: victim.value)
+        guard index.entries.count > configuration.maxEntries || totalBytes > configuration.maxBytes else {
+            return
+        }
+        // Single sort then drain in LRU order via index advance. The previous
+        // implementation re-scanned `entries` for `min(by:)` on every step
+        // (O(N²)); using `removeFirst` would still pay an O(N) shift per
+        // step. An incrementing cursor keeps the inner loop O(1) per victim,
+        // so total work is O(N log N) for the sort + O(K) for K evictions.
+        let sortedIDs = index.entries.keys.sorted { lhs, rhs in
+            let lhsDate = index.entries[lhs]?.lastAccessedAt ?? .distantPast
+            let rhsDate = index.entries[rhs]?.lastAccessedAt ?? .distantPast
+            return lhsDate < rhsDate
+        }
+        var cursor = sortedIDs.startIndex
+        while cursor < sortedIDs.endIndex,
+            index.entries.count > configuration.maxEntries || totalBytes > configuration.maxBytes
+        {
+            let victimID = sortedIDs[cursor]
+            cursor = sortedIDs.index(after: cursor)
+            guard let victim = index.entries[victimID] else { continue }
+            removeEntry(id: victimID, entry: victim)
         }
     }
 
@@ -250,9 +321,36 @@ public actor PersistentResponseCache: ResponseCache {
         try? fileManager.removeItem(at: bodyURL)
     }
 
-    private func persistIndex() throws {
+    private func persistIndex(durable: Bool = true) throws {
         let data = try JSONEncoder.persistentCache.encode(index)
         try data.write(to: indexURL, options: .atomic)
+        // Any successful flush — durable or not — clears the read-path
+        // backlog because the encoded snapshot already includes the
+        // accumulated `lastAccessedAt` updates.
+        pendingReadFlushes = 0
+        guard durable, configuration.persistenceFsyncPolicy == .always else { return }
+        Self.fsyncFile(at: indexURL)
+        Self.fsyncDirectory(at: configuration.directoryURL)
+    }
+
+    private static func fsyncFile(at url: URL) {
+        let fd = url.withUnsafeFileSystemRepresentation { rep -> Int32 in
+            guard let rep else { return -1 }
+            return open(rep, O_RDONLY)
+        }
+        guard fd >= 0 else { return }
+        _ = fsync(fd)
+        close(fd)
+    }
+
+    private static func fsyncDirectory(at url: URL) {
+        let fd = url.withUnsafeFileSystemRepresentation { rep -> Int32 in
+            guard let rep else { return -1 }
+            return open(rep, O_RDONLY)
+        }
+        guard fd >= 0 else { return }
+        _ = fsync(fd)
+        close(fd)
     }
 
     private static func loadIndex(

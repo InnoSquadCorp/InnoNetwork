@@ -15,6 +15,7 @@ InnoNetwork	swift.class	InMemoryResponseCache
 InnoNetwork	swift.class	NetworkMonitor
 InnoNetwork	swift.class	ServerSentEventDecoder
 InnoNetwork	swift.enum	AuthRequiredScope
+InnoNetwork	swift.enum	CircuitBreakerPolicy.ConfigurationError
 InnoNetwork	swift.enum	ContentType
 InnoNetwork	swift.enum	DecodingStage
 InnoNetwork	swift.enum	EndpointPathEncoding
@@ -32,6 +33,7 @@ InnoNetwork	swift.enum	PublicKeyPinningPolicy.HostMatchingStrategy
 InnoNetwork	swift.enum	RequestEncodingPolicy
 InnoNetwork	swift.enum	RequestPayload
 InnoNetwork	swift.enum	ResponseBodyBufferingPolicy
+InnoNetwork	swift.enum	ResponseCacheHeaderPolicy
 InnoNetwork	swift.enum	ResponseCachePolicy
 InnoNetwork	swift.enum	ResponseDecodingStrategy
 InnoNetwork	swift.enum	RetryDecision
@@ -41,7 +43,12 @@ InnoNetwork	swift.enum	TrustFailureReason
 InnoNetwork	swift.enum	TrustPolicy
 InnoNetwork	swift.enum	URLQueryArrayEncodingStrategy
 InnoNetwork	swift.enum	URLQueryEncoder.EncodingError
+InnoNetwork	swift.enum	URLQueryFloatEncodingStrategy
 InnoNetwork	swift.enum	URLQueryKeyEncodingStrategy
+InnoNetwork	swift.enum.case	CircuitBreakerPolicy.ConfigurationError.maxResetSmallerThanReset
+InnoNetwork	swift.enum.case	CircuitBreakerPolicy.ConfigurationError.negativeDuration(field:)
+InnoNetwork	swift.enum.case	CircuitBreakerPolicy.ConfigurationError.nonPositive(field:value:)
+InnoNetwork	swift.enum.case	CircuitBreakerPolicy.ConfigurationError.thresholdExceedsWindow(threshold:window:)
 InnoNetwork	swift.enum.case	ContentType.formUrlEncoded
 InnoNetwork	swift.enum.case	ContentType.imageJPEG
 InnoNetwork	swift.enum.case	ContentType.imagePNG
@@ -129,7 +136,7 @@ InnoNetwork	swift.enum.case	TrustFailureReason.hostNotPinned(_:)
 InnoNetwork	swift.enum.case	TrustFailureReason.missingServerTrust
 InnoNetwork	swift.enum.case	TrustFailureReason.pinMismatch(host:)
 InnoNetwork	swift.enum.case	TrustFailureReason.publicKeyExtractionFailed
-InnoNetwork	swift.enum.case	TrustFailureReason.systemTrustEvaluationFailed
+InnoNetwork	swift.enum.case	TrustFailureReason.systemTrustEvaluationFailed(reason:)
 InnoNetwork	swift.enum.case	TrustFailureReason.unsupportedAuthenticationMethod(_:)
 InnoNetwork	swift.enum.case	TrustPolicy.custom(_:)
 InnoNetwork	swift.enum.case	TrustPolicy.publicKeyPinning(_:)
@@ -138,6 +145,9 @@ InnoNetwork	swift.enum.case	URLQueryArrayEncodingStrategy.bracketed
 InnoNetwork	swift.enum.case	URLQueryArrayEncodingStrategy.indexed
 InnoNetwork	swift.enum.case	URLQueryArrayEncodingStrategy.repeated
 InnoNetwork	swift.enum.case	URLQueryEncoder.EncodingError.unsupportedTopLevelValue
+InnoNetwork	swift.enum.case	URLQueryEncoder.EncodingError.unsupportedValue(reason:)
+InnoNetwork	swift.enum.case	URLQueryFloatEncodingStrategy.convertToString(positiveInfinity:negativeInfinity:nan:)
+InnoNetwork	swift.enum.case	URLQueryFloatEncodingStrategy.throw
 InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.convertToSnakeCase
 InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.custom(_:)
 InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.useDefaultKeys
@@ -148,7 +158,8 @@ InnoNetwork	swift.init	CachedResponse.init(data:statusCode:headers:storedAt:requ
 InnoNetwork	swift.init	CancellationTag.init(_:)
 InnoNetwork	swift.init	CancellationTag.init(stringLiteral:)
 InnoNetwork	swift.init	CircuitBreakerOpenError.init(host:retryAfter:)
-InnoNetwork	swift.init	CircuitBreakerPolicy.init(failureThreshold:windowSize:resetAfter:maxResetAfter:)
+InnoNetwork	swift.init	CircuitBreakerPolicy.init(failureThreshold:windowSize:resetAfter:maxResetAfter:numberOfProbesRequiredToClose:countsTransportSecurityFailures:)
+InnoNetwork	swift.init	CircuitBreakerPolicy.init(validatedFailureThreshold:windowSize:resetAfter:maxResetAfter:numberOfProbesRequiredToClose:countsTransportSecurityFailures:)
 InnoNetwork	swift.init	ContentType.init(rawValue:)
 InnoNetwork	swift.init	CorrelationIDInterceptor.init(traceHeader:correlationHeader:)
 InnoNetwork	swift.init	DefaultNetworkClient.init(configuration:session:)
@@ -169,10 +180,10 @@ InnoNetwork	swift.init	HTTPHeaders.init(arrayLiteral:)
 InnoNetwork	swift.init	HTTPHeaders.init(dictionaryLiteral:)
 InnoNetwork	swift.init	HTTPMethod.init(rawValue:)
 InnoNetwork	swift.init	InMemoryResponseCache.init(maxBytes:)
-InnoNetwork	swift.init	MultipartFormData.init(boundary:)
+InnoNetwork	swift.init	MultipartFormData.init(boundary:includesPartContentLength:synchronizesEncodedFile:)
 InnoNetwork	swift.init	MultipartPart.init(headers:data:)
 InnoNetwork	swift.init	MultipartResponseDecoder.init(boundary:)
-InnoNetwork	swift.init	NetworkConfiguration.init(baseURL:timeout:cachePolicy:retryPolicy:networkMonitor:metricsReporter:trustPolicy:eventObservers:eventDeliveryPolicy:eventMetricsReporter:acceptableStatusCodes:requestInterceptors:responseInterceptors:decodingInterceptors:refreshTokenPolicy:requestCoalescingPolicy:responseCachePolicy:responseCache:circuitBreakerPolicy:customExecutionPolicies:captureFailurePayload:responseBodyBufferingPolicy:responseBodyLimit:)
+InnoNetwork	swift.init	NetworkConfiguration.init(baseURL:timeout:cachePolicy:retryPolicy:networkMonitor:metricsReporter:trustPolicy:eventObservers:eventDeliveryPolicy:eventMetricsReporter:acceptableStatusCodes:requestInterceptors:responseInterceptors:decodingInterceptors:refreshTokenPolicy:requestCoalescingPolicy:responseCachePolicy:responseCache:circuitBreakerPolicy:customExecutionPolicies:captureFailurePayload:responseBodyBufferingPolicy:responseBodyLimit:urlSessionConfigurationOverride:)
 InnoNetwork	swift.init	NetworkContext.init(traceID:correlationID:baggage:)
 InnoNetwork	swift.init	NetworkInterfaceType.init(rawValue:)
 InnoNetwork	swift.init	NetworkLoggingOptions.init(includeRequestBody:includeResponseBody:includeCookies:redactSensitiveData:sensitiveHeaderNames:)
@@ -184,7 +195,7 @@ InnoNetwork	swift.init	NoOpNetworkEventObserver.init()
 InnoNetwork	swift.init	NoOpNetworkLogger.init()
 InnoNetwork	swift.init	OSLogNetworkEventObserver.init()
 InnoNetwork	swift.init	PublicKeyPinningPolicy.init(pinsByHost:includesSubdomains:allowDefaultEvaluationForUnpinnedHosts:hostMatchingStrategy:)
-InnoNetwork	swift.init	RefreshTokenPolicy.init(refreshStatusCodes:currentToken:refreshToken:applyToken:)
+InnoNetwork	swift.init	RefreshTokenPolicy.init(refreshStatusCodes:failureCooldown:currentToken:refreshToken:applyToken:)
 InnoNetwork	swift.init	RequestCoalescingPolicy.init(methods:excludedHeaderNames:)
 InnoNetwork	swift.init	RequestExecutionContext.init(requestID:retryIndex:metricsReporter:trustPolicy:eventObservers:)
 InnoNetwork	swift.init	RequestExecutionInput.init(request:requestID:retryIndex:)
@@ -200,7 +211,7 @@ InnoNetwork	swift.init	ServerSentEventDecoder.init()
 InnoNetwork	swift.init	StateReduction.init(state:effects:)
 InnoNetwork	swift.init	TransportPolicy.init(requestEncoding:responseDecoding:responseDecoder:)
 InnoNetwork	swift.init	URLQueryCustomKeyTransform.init(_:)
-InnoNetwork	swift.init	URLQueryEncoder.init(keyEncodingStrategy:dateEncodingStrategy:arrayEncodingStrategy:)
+InnoNetwork	swift.init	URLQueryEncoder.init(keyEncodingStrategy:dateEncodingStrategy:arrayEncodingStrategy:nonConformingFloatEncodingStrategy:)
 InnoNetwork	swift.method	AnyEncodable.encode(to:)
 InnoNetwork	swift.method	AnyRequestExecutionPolicy.execute(input:context:next:)
 InnoNetwork	swift.method	AnyResponseDecoder.decode(data:response:)
@@ -234,6 +245,7 @@ InnoNetwork	swift.method	HTTPHeaders.sorted()
 InnoNetwork	swift.method	HTTPHeaders.update(_:)
 InnoNetwork	swift.method	HTTPHeaders.update(name:value:)
 InnoNetwork	swift.method	HTTPHeaders.value(for:)
+InnoNetwork	swift.method	HTTPHeaders.values(for:)
 InnoNetwork	swift.method	InMemoryResponseCache.get(_:)
 InnoNetwork	swift.method	InMemoryResponseCache.invalidate(_:)
 InnoNetwork	swift.method	InMemoryResponseCache.set(_:_:)
@@ -258,6 +270,8 @@ InnoNetwork	swift.method	NetworkLogger.log(request:)
 InnoNetwork	swift.method	NetworkLogger.log(response:isError:)
 InnoNetwork	swift.method	NetworkMetricsReporting.report(metrics:for:response:)
 InnoNetwork	swift.method	NetworkMonitor.currentSnapshot()
+InnoNetwork	swift.method	NetworkMonitor.start()
+InnoNetwork	swift.method	NetworkMonitor.stop()
 InnoNetwork	swift.method	NetworkMonitor.waitForChange(from:timeout:)
 InnoNetwork	swift.method	NetworkMonitoring.currentSnapshot()
 InnoNetwork	swift.method	NetworkMonitoring.waitForChange(from:timeout:)
@@ -313,19 +327,24 @@ InnoNetwork	swift.property	CircuitBreakerOpenError.errorCode
 InnoNetwork	swift.property	CircuitBreakerOpenError.errorDescription
 InnoNetwork	swift.property	CircuitBreakerOpenError.host
 InnoNetwork	swift.property	CircuitBreakerOpenError.retryAfter
+InnoNetwork	swift.property	CircuitBreakerPolicy.ConfigurationError.description
+InnoNetwork	swift.property	CircuitBreakerPolicy.countsTransportSecurityFailures
 InnoNetwork	swift.property	CircuitBreakerPolicy.failureThreshold
 InnoNetwork	swift.property	CircuitBreakerPolicy.maxResetAfter
+InnoNetwork	swift.property	CircuitBreakerPolicy.numberOfProbesRequiredToClose
 InnoNetwork	swift.property	CircuitBreakerPolicy.resetAfter
 InnoNetwork	swift.property	CircuitBreakerPolicy.windowSize
 InnoNetwork	swift.property	CorrelationIDInterceptor.correlationHeader
 InnoNetwork	swift.property	CorrelationIDInterceptor.traceHeader
 InnoNetwork	swift.property	EndpointShape.acceptableStatusCodes
+InnoNetwork	swift.property	EndpointShape.cachePolicyOverride
 InnoNetwork	swift.property	EndpointShape.headers
 InnoNetwork	swift.property	EndpointShape.logger
 InnoNetwork	swift.property	EndpointShape.method
 InnoNetwork	swift.property	EndpointShape.path
 InnoNetwork	swift.property	EndpointShape.requestInterceptors
 InnoNetwork	swift.property	EndpointShape.responseInterceptors
+InnoNetwork	swift.property	EndpointShape.timeoutOverride
 InnoNetwork	swift.property	EndpointShape.transport
 InnoNetwork	swift.property	EventDeliveryPolicy.maxBufferedEventsPerConsumer
 InnoNetwork	swift.property	EventDeliveryPolicy.maxBufferedEventsPerPartition
@@ -374,6 +393,8 @@ InnoNetwork	swift.property	MultipartAPIDefinition.uploadStrategy
 InnoNetwork	swift.property	MultipartFormData.boundary
 InnoNetwork	swift.property	MultipartFormData.contentTypeHeader
 InnoNetwork	swift.property	MultipartFormData.estimatedEncodedSize
+InnoNetwork	swift.property	MultipartFormData.includesPartContentLength
+InnoNetwork	swift.property	MultipartFormData.synchronizesEncodedFile
 InnoNetwork	swift.property	MultipartPart.data
 InnoNetwork	swift.property	MultipartPart.headers
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.acceptableStatusCodes
@@ -422,6 +443,9 @@ InnoNetwork	swift.property	NetworkConfiguration.responseInterceptors
 InnoNetwork	swift.property	NetworkConfiguration.retryPolicy
 InnoNetwork	swift.property	NetworkConfiguration.timeout
 InnoNetwork	swift.property	NetworkConfiguration.trustPolicy
+InnoNetwork	swift.property	NetworkConfiguration.urlSessionConfigurationOverride
+InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.urlSessionConfigurationOverride
+InnoNetwork	swift.method	NetworkConfiguration.makeURLSessionConfiguration()
 InnoNetwork	swift.property	NetworkContext.baggage
 InnoNetwork	swift.property	NetworkContext.correlationID
 InnoNetwork	swift.property	NetworkContext.traceID
@@ -494,6 +518,7 @@ InnoNetwork	swift.property	ServerSentEvent.id
 InnoNetwork	swift.property	ServerSentEvent.retry
 InnoNetwork	swift.property	SingleRequestExecutable.acceptableStatusCodes
 InnoNetwork	swift.property	SingleRequestExecutable.bodyContentType
+InnoNetwork	swift.property	SingleRequestExecutable.cachePolicyOverride
 InnoNetwork	swift.property	SingleRequestExecutable.headers
 InnoNetwork	swift.property	SingleRequestExecutable.logger
 InnoNetwork	swift.property	SingleRequestExecutable.method
@@ -501,6 +526,7 @@ InnoNetwork	swift.property	SingleRequestExecutable.path
 InnoNetwork	swift.property	SingleRequestExecutable.requestInterceptors
 InnoNetwork	swift.property	SingleRequestExecutable.requiresRefreshTokenPolicy
 InnoNetwork	swift.property	SingleRequestExecutable.responseInterceptors
+InnoNetwork	swift.property	SingleRequestExecutable.timeoutOverride
 InnoNetwork	swift.property	StateReduction.effects
 InnoNetwork	swift.property	StateReduction.state
 InnoNetwork	swift.property	StreamingAPIDefinition.acceptableStatusCodes
@@ -515,6 +541,7 @@ InnoNetwork	swift.property	TransportPolicy.responseDecoding
 InnoNetwork	swift.property	URLQueryEncoder.arrayEncodingStrategy
 InnoNetwork	swift.property	URLQueryEncoder.dateEncodingStrategy
 InnoNetwork	swift.property	URLQueryEncoder.keyEncodingStrategy
+InnoNetwork	swift.property	URLQueryEncoder.nonConformingFloatEncodingStrategy
 InnoNetwork	swift.protocol	APIDefinition
 InnoNetwork	swift.protocol	DecodingInterceptor
 InnoNetwork	swift.protocol	EndpointAuthScope
@@ -571,6 +598,7 @@ InnoNetwork	swift.struct	NoOpNetworkEventObserver
 InnoNetwork	swift.struct	NoOpNetworkLogger
 InnoNetwork	swift.struct	OSLogNetworkEventObserver
 InnoNetwork	swift.struct	PublicKeyPinningPolicy
+InnoNetwork	swift.struct	RefreshFailureCooldown
 InnoNetwork	swift.struct	RefreshTokenPolicy
 InnoNetwork	swift.struct	RequestCoalescingPolicy
 InnoNetwork	swift.struct	RequestExecutionContext
@@ -605,6 +633,9 @@ InnoNetwork	swift.type.method	HTTPHeader.userAgent(_:)
 InnoNetwork	swift.type.method	HTTPHeader.websocketProtocol(_:)
 InnoNetwork	swift.type.method	NetworkConfiguration.advanced(baseURL:_:)
 InnoNetwork	swift.type.method	NetworkConfiguration.safeDefaults(baseURL:)
+InnoNetwork	swift.type.method	RefreshFailureCooldown.exponentialBackoff(base:max:)
+InnoNetwork	swift.type.method	ResponseCacheHeaderPolicy.registerSensitiveHeader(_:)
+InnoNetwork	swift.type.method	ResponseCacheHeaderPolicy.unregisterSensitiveHeader(_:)
 InnoNetwork	swift.type.method	ScopedEndpoint.delete(_:)
 InnoNetwork	swift.type.method	ScopedEndpoint.get(_:)
 InnoNetwork	swift.type.method	ScopedEndpoint.patch(_:)
@@ -631,8 +662,10 @@ InnoNetwork	swift.type.property	NetworkError.errorDomain
 InnoNetwork	swift.type.property	NetworkLoggingOptions.secureDefault
 InnoNetwork	swift.type.property	NetworkLoggingOptions.verbose
 InnoNetwork	swift.type.property	NetworkMonitor.shared
+InnoNetwork	swift.type.property	RefreshFailureCooldown.disabled
 InnoNetwork	swift.type.property	RequestCoalescingPolicy.disabled
 InnoNetwork	swift.type.property	RequestCoalescingPolicy.getOnly
+InnoNetwork	swift.type.property	ResponseCacheHeaderPolicy.sensitiveHeaderNames
 InnoNetwork	swift.type.property	RetryIdempotencyPolicy.methodAgnostic
 InnoNetwork	swift.type.property	RetryIdempotencyPolicy.safeMethodsAndIdempotencyKey
 InnoNetwork	swift.typealias	AuthenticatedEndpoint
@@ -671,10 +704,11 @@ InnoNetworkDownload	swift.enum.case	DownloadState.idle
 InnoNetworkDownload	swift.enum.case	DownloadState.paused
 InnoNetworkDownload	swift.enum.case	DownloadState.waiting
 InnoNetworkDownload	swift.init	DownloadConfiguration.PersistenceCompactionPolicy.init(maxEvents:maxLogBytes:tombstoneRatio:)
-InnoNetworkDownload	swift.init	DownloadConfiguration.init(maxConnectionsPerHost:maxRetryCount:maxTotalRetries:retryDelay:exponentialBackoff:retryJitterRatio:maxRetryDelay:timeoutForRequest:timeoutForResource:allowsCellularAccess:sessionIdentifier:networkMonitor:waitsForNetworkChanges:networkChangeTimeout:eventDeliveryPolicy:eventMetricsReporter:persistenceFsyncPolicy:persistenceCompactionPolicy:)
+InnoNetworkDownload	swift.init	DownloadConfiguration.init(maxConnectionsPerHost:maxRetryCount:maxTotalRetries:retryDelay:exponentialBackoff:retryJitterRatio:maxRetryDelay:timeoutForRequest:timeoutForResource:allowsCellularAccess:sessionIdentifier:networkMonitor:waitsForNetworkChanges:networkChangeTimeout:eventDeliveryPolicy:eventMetricsReporter:persistenceFsyncPolicy:persistenceCompactionPolicy:persistenceBaseDirectoryURL:)
 InnoNetworkDownload	swift.init	DownloadManager.init(configuration:)
 InnoNetworkDownload	swift.init	DownloadState.init(rawValue:)
 InnoNetworkDownload	swift.init	DownloadTask.init(url:destinationURL:id:resumeData:)
+InnoNetworkDownload	swift.method	DownloadConfiguration.cellularEnabled()
 InnoNetworkDownload	swift.method	DownloadManager.activeTasks()
 InnoNetworkDownload	swift.method	DownloadManager.addEventListener(for:listener:)
 InnoNetworkDownload	swift.method	DownloadManager.allTasks()
@@ -692,6 +726,7 @@ InnoNetworkDownload	swift.method	DownloadManager.setOnCompletedHandler(_:)
 InnoNetworkDownload	swift.method	DownloadManager.setOnFailedHandler(_:)
 InnoNetworkDownload	swift.method	DownloadManager.setOnProgressHandler(_:)
 InnoNetworkDownload	swift.method	DownloadManager.setOnStateChangedHandler(_:)
+InnoNetworkDownload	swift.method	DownloadManager.shutdown()
 InnoNetworkDownload	swift.method	DownloadManager.task(withId:)
 InnoNetworkDownload	swift.method	DownloadManager.waitForRestoration()
 InnoNetworkDownload	swift.method	DownloadState.canTransition(to:)
@@ -706,6 +741,7 @@ InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.maxRetr
 InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.maxTotalRetries
 InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.networkChangeTimeout
 InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.networkMonitor
+InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.persistenceBaseDirectoryURL
 InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.persistenceCompactionPolicy
 InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.persistenceFsyncPolicy
 InnoNetworkDownload	swift.property	DownloadConfiguration.AdvancedBuilder.retryDelay
@@ -727,6 +763,7 @@ InnoNetworkDownload	swift.property	DownloadConfiguration.maxRetryDelay
 InnoNetworkDownload	swift.property	DownloadConfiguration.maxTotalRetries
 InnoNetworkDownload	swift.property	DownloadConfiguration.networkChangeTimeout
 InnoNetworkDownload	swift.property	DownloadConfiguration.networkMonitor
+InnoNetworkDownload	swift.property	DownloadConfiguration.persistenceBaseDirectoryURL
 InnoNetworkDownload	swift.property	DownloadConfiguration.persistenceCompactionPolicy
 InnoNetworkDownload	swift.property	DownloadConfiguration.persistenceFsyncPolicy
 InnoNetworkDownload	swift.property	DownloadConfiguration.retryDelay
@@ -769,7 +806,11 @@ InnoNetworkDownload	swift.type.property	DownloadConfiguration.default
 InnoNetworkDownload	swift.type.property	DownloadProgress.zero
 InnoNetworkPersistentCache	swift.class	PersistentResponseCache
 InnoNetworkPersistentCache	swift.init	PersistentResponseCache.init(configuration:fileManager:)
-InnoNetworkPersistentCache	swift.init	PersistentResponseCacheConfiguration.init(directoryURL:maxBytes:maxEntries:maxEntryBytes:storesAuthenticatedResponses:storesSetCookieResponses:)
+InnoNetworkPersistentCache	swift.enum	PersistentResponseCacheConfiguration.PersistenceFsyncPolicy
+InnoNetworkPersistentCache	swift.enum.case	PersistentResponseCacheConfiguration.PersistenceFsyncPolicy.always
+InnoNetworkPersistentCache	swift.enum.case	PersistentResponseCacheConfiguration.PersistenceFsyncPolicy.never
+InnoNetworkPersistentCache	swift.enum.case	PersistentResponseCacheConfiguration.PersistenceFsyncPolicy.onCheckpoint
+InnoNetworkPersistentCache	swift.init	PersistentResponseCacheConfiguration.init(directoryURL:maxBytes:maxEntries:maxEntryBytes:storesAuthenticatedResponses:storesSetCookieResponses:persistenceFsyncPolicy:)
 InnoNetworkPersistentCache	swift.method	PersistentResponseCache.get(_:)
 InnoNetworkPersistentCache	swift.method	PersistentResponseCache.invalidate(_:)
 InnoNetworkPersistentCache	swift.method	PersistentResponseCache.removeAll()
@@ -778,6 +819,7 @@ InnoNetworkPersistentCache	swift.property	PersistentResponseCacheConfiguration.d
 InnoNetworkPersistentCache	swift.property	PersistentResponseCacheConfiguration.maxBytes
 InnoNetworkPersistentCache	swift.property	PersistentResponseCacheConfiguration.maxEntries
 InnoNetworkPersistentCache	swift.property	PersistentResponseCacheConfiguration.maxEntryBytes
+InnoNetworkPersistentCache	swift.property	PersistentResponseCacheConfiguration.persistenceFsyncPolicy
 InnoNetworkPersistentCache	swift.property	PersistentResponseCacheConfiguration.storesAuthenticatedResponses
 InnoNetworkPersistentCache	swift.property	PersistentResponseCacheConfiguration.storesSetCookieResponses
 InnoNetworkPersistentCache	swift.struct	PersistentResponseCacheConfiguration
@@ -862,6 +904,7 @@ InnoNetworkWebSocket	swift.enum.case	WebSocketError.disconnected(_:)
 InnoNetworkWebSocket	swift.enum.case	WebSocketError.invalidURL(_:)
 InnoNetworkWebSocket	swift.enum.case	WebSocketError.maxReconnectAttemptsExceeded
 InnoNetworkWebSocket	swift.enum.case	WebSocketError.pingTimeout
+InnoNetworkWebSocket	swift.enum.case	WebSocketError.reconnectWindowExceeded
 InnoNetworkWebSocket	swift.enum.case	WebSocketError.sendQueueOverflow(limit:)
 InnoNetworkWebSocket	swift.enum.case	WebSocketError.unknown
 InnoNetworkWebSocket	swift.enum.case	WebSocketEvent.connected(_:)
@@ -882,7 +925,7 @@ InnoNetworkWebSocket	swift.enum.case	WebSocketState.failed
 InnoNetworkWebSocket	swift.enum.case	WebSocketState.idle
 InnoNetworkWebSocket	swift.enum.case	WebSocketState.reconnecting
 InnoNetworkWebSocket	swift.init	WebSocketCloseCode.init(rawValue:)
-InnoNetworkWebSocket	swift.init	WebSocketConfiguration.init(maxConnectionsPerHost:connectionTimeout:heartbeatInterval:pongTimeout:maxMissedPongs:reconnectDelay:reconnectJitterRatio:maxReconnectDelay:maxReconnectAttempts:allowsCellularAccess:sessionIdentifier:requestHeaders:handshakeRequestAdapters:eventDeliveryPolicy:eventMetricsReporter:sendQueueLimit:sendQueueOverflowPolicy:closeHandshakeTimeout:)
+InnoNetworkWebSocket	swift.init	WebSocketConfiguration.init(maxConnectionsPerHost:connectionTimeout:heartbeatInterval:pongTimeout:maxMissedPongs:reconnectDelay:reconnectJitterRatio:maxReconnectDelay:maxReconnectAttempts:reconnectMaxTotalDuration:allowsCellularAccess:sessionIdentifier:requestHeaders:handshakeRequestAdapters:eventDeliveryPolicy:eventMetricsReporter:sendQueueLimit:sendQueueOverflowPolicy:closeHandshakeTimeout:maximumMessageSize:permessageDeflateEnabled:)
 InnoNetworkWebSocket	swift.init	WebSocketHandshakeRequestAdapter.init(_:)
 InnoNetworkWebSocket	swift.init	WebSocketManager.init(configuration:)
 InnoNetworkWebSocket	swift.init	WebSocketState.init(rawValue:)
@@ -923,9 +966,12 @@ InnoNetworkWebSocket	swift.property	WebSocketConfiguration.AdvancedBuilder.maxCo
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.AdvancedBuilder.maxMissedPongs
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.AdvancedBuilder.maxReconnectAttempts
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.AdvancedBuilder.maxReconnectDelay
+InnoNetworkWebSocket	swift.property	WebSocketConfiguration.AdvancedBuilder.maximumMessageSize
+InnoNetworkWebSocket	swift.property	WebSocketConfiguration.AdvancedBuilder.permessageDeflateEnabled
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.AdvancedBuilder.pongTimeout
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.AdvancedBuilder.reconnectDelay
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.AdvancedBuilder.reconnectJitterRatio
+InnoNetworkWebSocket	swift.property	WebSocketConfiguration.AdvancedBuilder.reconnectMaxTotalDuration
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.AdvancedBuilder.requestHeaders
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.AdvancedBuilder.sendQueueLimit
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.AdvancedBuilder.sendQueueOverflowPolicy
@@ -941,9 +987,12 @@ InnoNetworkWebSocket	swift.property	WebSocketConfiguration.maxConnectionsPerHost
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.maxMissedPongs
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.maxReconnectAttempts
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.maxReconnectDelay
+InnoNetworkWebSocket	swift.property	WebSocketConfiguration.maximumMessageSize
+InnoNetworkWebSocket	swift.property	WebSocketConfiguration.permessageDeflateEnabled
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.pongTimeout
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.reconnectDelay
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.reconnectJitterRatio
+InnoNetworkWebSocket	swift.property	WebSocketConfiguration.reconnectMaxTotalDuration
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.requestHeaders
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.sendQueueLimit
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.sendQueueOverflowPolicy

@@ -91,6 +91,10 @@ package struct RequestExecutor {
             for interceptor in configuration.responseInterceptors {
                 networkResponse = try await interceptor.adapt(networkResponse, request: request)
             }
+            // After response interceptors settle, give cancellation a chance
+            // to short-circuit before we spend cycles on body-limit checks,
+            // decode, and didDecode chains.
+            try Task.checkCancellation()
             try enforceResponseBodyLimit(networkResponse, configuration: configuration)
 
             // Per-endpoint override wins over the session-wide configuration
@@ -125,6 +129,10 @@ package struct RequestExecutor {
             }
             try enforceResponseBodyLimit(data: decodableData, configuration: configuration)
 
+            // Synchronous decode can block for several ms on large payloads;
+            // the surrounding async machinery would not check cancellation
+            // again until didDecode runs, so insert a checkpoint here.
+            try Task.checkCancellation()
             var decoded = try executable.decode(data: decodableData, response: networkResponse)
             for interceptor in configuration.decodingInterceptors {
                 decoded = try await interceptor.didDecode(decoded, response: networkResponse)
@@ -366,42 +374,80 @@ package struct RequestExecutor {
     ) async throws -> TransportResult {
         try await runtime.circuitBreakers.prepare(request: request, policy: configuration.circuitBreakerPolicy)
 
-        // When a refresh is in flight, segregate this caller into its own
-        // coalescer lane so a stale 401 from a peer's pre-refresh transport
-        // cannot be delivered as our result. When `Authorization` is part
-        // of the dedup key (the default policy), this is a no-op for
-        // correctness but pins the invariant; under
-        // ``RequestCoalescingPolicy/excludedHeaderNames`` containing
-        // `Authorization` it is the actual safeguard.
-        let refreshLane: UUID? = await refreshLaneIfInProgress(coordinator: runtime.refreshCoordinator)
+        // `prepare()` may have flipped a half-open probe slot to
+        // `probeInFlight: true`. The await on `refreshLaneIfInProgress` and
+        // the coalescer dispatch below are both cancellation points; if the
+        // outer task is cancelled before transport runs, no `recordX` would
+        // fire and the probe slot would stay held until GC. Wrap the rest
+        // of the path so any pre-transport cancellation releases the slot.
+        //
+        // `transportAndRecordCircuit` records its own cancellation after
+        // transport. To avoid double-recording on the rethrow path, the
+        // inner method wraps cancellation in `CircuitBreakerHandledError`
+        // so the outer catch knows it has already been accounted for.
+        do {
+            // When a refresh is in flight, segregate this caller into its own
+            // coalescer lane so a stale 401 from a peer's pre-refresh transport
+            // cannot be delivered as our result. When `Authorization` is part
+            // of the dedup key (the default policy), this is a no-op for
+            // correctness but pins the invariant; under
+            // ``RequestCoalescingPolicy/excludedHeaderNames`` containing
+            // `Authorization` it is the actual safeguard.
+            let refreshLane: UUID? = await refreshLaneIfInProgress(coordinator: runtime.refreshCoordinator)
 
-        if case .inline = bodySource,
-            let key = RequestDedupKey(
-                request: request,
-                policy: configuration.requestCoalescingPolicy,
-                refreshLane: refreshLane
-            )
-        {
-            return try await runtime.requestCoalescer.run(key: key) {
-                try await self.transportAndRecordCircuit(
+            if case .inline = bodySource,
+                let key = RequestDedupKey(
                     request: request,
-                    bodySource: bodySource,
-                    configuration: configuration,
-                    context: context,
-                    runtime: runtime,
+                    policy: configuration.requestCoalescingPolicy,
+                    refreshLane: refreshLane
+                )
+            {
+                return try await runtime.requestCoalescer.run(key: key) {
+                    try await self.transportAndRecordCircuit(
+                        request: request,
+                        bodySource: bodySource,
+                        configuration: configuration,
+                        context: context,
+                        runtime: runtime,
+                        policy: configuration.circuitBreakerPolicy
+                    )
+                }
+            }
+
+            return try await transportAndRecordCircuit(
+                request: request,
+                bodySource: bodySource,
+                configuration: configuration,
+                context: context,
+                runtime: runtime,
+                policy: configuration.circuitBreakerPolicy
+            )
+        } catch let handled as CircuitBreakerHandledError {
+            // Inner already recorded (cancellation OR failure); just unwrap
+            // and rethrow so callers (`RetryCoordinator`, public API,
+            // `NetworkError.isCancellation`) never observe the sentinel.
+            throw handled.underlying
+        } catch {
+            // Anything reaching here did NOT pass through
+            // `transportAndRecordCircuit`'s catch arm — typed throws from
+            // `prepare()` (e.g. `circuitBreakerOpen`) and pre-transport
+            // cancellation both land here. Only cancellation needs to
+            // release the half-open probe slot; other typed errors are
+            // owned by `prepare()` and should propagate unchanged. A rare
+            // race where a coalescer-follower self-cancels while the
+            // leader is still transporting can lead to two
+            // `recordCancellation` calls for the same host key — the
+            // operation is idempotent on `halfOpen(probeInFlight: true →
+            // false)` and a no-op in `closed`/`open`, so this absorbs
+            // safely without state corruption.
+            if NetworkError.isCancellation(error) {
+                await runtime.circuitBreakers.recordCancellation(
+                    request: request,
                     policy: configuration.circuitBreakerPolicy
                 )
             }
+            throw error
         }
-
-        return try await transportAndRecordCircuit(
-            request: request,
-            bodySource: bodySource,
-            configuration: configuration,
-            context: context,
-            runtime: runtime,
-            policy: configuration.circuitBreakerPolicy
-        )
     }
 
     private func transportAndRecordCircuit(
@@ -435,8 +481,17 @@ package struct RequestExecutor {
                     error: error
                 )
             }
-            throw error
+            // Tag the error so `runWithCircuitBreaker`'s outer catch knows
+            // the circuit breaker has already been notified for this throw.
+            throw CircuitBreakerHandledError(underlying: error)
         }
+    }
+
+    /// Internal sentinel that marks a thrown error as already accounted for
+    /// by `transportAndRecordCircuit`. The outer wrapper unwraps it before
+    /// returning to callers so the public throw shape is unchanged.
+    private struct CircuitBreakerHandledError: Error {
+        let underlying: Error
     }
 
     private func transport(

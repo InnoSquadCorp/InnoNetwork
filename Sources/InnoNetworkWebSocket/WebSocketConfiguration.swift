@@ -49,6 +49,7 @@ public struct WebSocketConfiguration: Sendable {
                 reconnectJitterRatio: 0.2,
                 maxReconnectDelay: 0,
                 maxReconnectAttempts: 5,
+                reconnectMaxTotalDuration: 0,
                 allowsCellularAccess: true,
                 sessionIdentifier: "com.innonetwork.websocket",
                 requestHeaders: [:],
@@ -57,7 +58,9 @@ public struct WebSocketConfiguration: Sendable {
                 eventMetricsReporter: nil,
                 sendQueueLimit: 256,
                 sendQueueOverflowPolicy: .fail,
-                closeHandshakeTimeout: .seconds(3)
+                closeHandshakeTimeout: .seconds(3),
+                maximumMessageSize: 1 * 1024 * 1024,
+                permessageDeflateEnabled: false
             )
         }
 
@@ -72,6 +75,7 @@ public struct WebSocketConfiguration: Sendable {
                 reconnectJitterRatio: 0.1,
                 maxReconnectDelay: 0,
                 maxReconnectAttempts: 8,
+                reconnectMaxTotalDuration: 0,
                 allowsCellularAccess: true,
                 sessionIdentifier: "com.innonetwork.websocket",
                 requestHeaders: [:],
@@ -84,7 +88,9 @@ public struct WebSocketConfiguration: Sendable {
                 eventMetricsReporter: nil,
                 sendQueueLimit: 512,
                 sendQueueOverflowPolicy: .fail,
-                closeHandshakeTimeout: .seconds(3)
+                closeHandshakeTimeout: .seconds(3),
+                maximumMessageSize: 1 * 1024 * 1024,
+                permessageDeflateEnabled: false
             )
         }
     }
@@ -122,6 +128,18 @@ public struct WebSocketConfiguration: Sendable {
     /// Number of reconnect retries after the initial connection attempt.
     /// Total connection attempts are `1 + maxReconnectAttempts`.
     public let maxReconnectAttempts: Int
+    /// Optional cumulative wall-clock budget in seconds covering all reconnect
+    /// attempts within a single disconnect window. The reconnect coordinator
+    /// stamps the first attempt and refuses further retries once `now` exceeds
+    /// the budget, classifying the result as ``WebSocketReconnectAction/exceeded``.
+    /// Successful reconnects clear the window, so flapping over many days does
+    /// not consume the budget linearly.
+    ///
+    /// - `> 0`: budget enforced.
+    /// - `<= 0`: unlimited (default — preserves legacy behaviour).
+    ///
+    /// Negative values are clamped to `0` (disabled).
+    public let reconnectMaxTotalDuration: TimeInterval
     /// Whether cellular data is allowed for socket connections.
     public let allowsCellularAccess: Bool
     /// Reserved for API compatibility with managers that support background sessions.
@@ -155,6 +173,20 @@ public struct WebSocketConfiguration: Sendable {
     /// which effectively short-circuits the handshake wait.
     public let closeHandshakeTimeout: Duration
 
+    /// Maximum payload size in bytes that the underlying
+    /// `URLSessionWebSocketTask` will buffer for a single inbound message
+    /// before failing the receive. Applied after the task is created. The
+    /// platform default is 1 MiB; values lower than `1` are clamped to `1`.
+    public let maximumMessageSize: Int
+
+    /// Configuration intent for `permessage-deflate`. `URLSessionWebSocketTask`
+    /// does not currently advertise `permessage-deflate`, so this property is
+    /// **purely advisory** — it is recorded for upstream tooling and surfaces
+    /// the user's preference but does not change wire negotiation. Custom
+    /// transports may opt in to honour it. See
+    /// `<doc:WebSocketProtocolPolicy>` for migration notes.
+    public let permessageDeflateEnabled: Bool
+
     public struct AdvancedBuilder: Sendable {
         public var maxConnectionsPerHost: Int
         public var connectionTimeout: TimeInterval
@@ -165,6 +197,9 @@ public struct WebSocketConfiguration: Sendable {
         public var reconnectJitterRatio: Double
         public var maxReconnectDelay: TimeInterval
         public var maxReconnectAttempts: Int
+        /// Cumulative reconnect-window budget in seconds. See
+        /// ``WebSocketConfiguration/reconnectMaxTotalDuration``.
+        public var reconnectMaxTotalDuration: TimeInterval
         public var allowsCellularAccess: Bool
         public var sessionIdentifier: String
         public var requestHeaders: [String: String]
@@ -180,6 +215,10 @@ public struct WebSocketConfiguration: Sendable {
         /// ``WebSocketConfiguration/closeHandshakeTimeout`` for full
         /// semantics.
         public var closeHandshakeTimeout: Duration
+        /// See ``WebSocketConfiguration/maximumMessageSize``.
+        public var maximumMessageSize: Int
+        /// See ``WebSocketConfiguration/permessageDeflateEnabled``.
+        public var permessageDeflateEnabled: Bool
 
         fileprivate init(preset: WebSocketConfiguration) {
             self.maxConnectionsPerHost = preset.maxConnectionsPerHost
@@ -191,6 +230,7 @@ public struct WebSocketConfiguration: Sendable {
             self.reconnectJitterRatio = preset.reconnectJitterRatio
             self.maxReconnectDelay = preset.maxReconnectDelay
             self.maxReconnectAttempts = preset.maxReconnectAttempts
+            self.reconnectMaxTotalDuration = preset.reconnectMaxTotalDuration
             self.allowsCellularAccess = preset.allowsCellularAccess
             self.sessionIdentifier = preset.sessionIdentifier
             self.requestHeaders = preset.requestHeaders
@@ -200,6 +240,8 @@ public struct WebSocketConfiguration: Sendable {
             self.sendQueueLimit = preset.sendQueueLimit
             self.sendQueueOverflowPolicy = preset.sendQueueOverflowPolicy
             self.closeHandshakeTimeout = preset.closeHandshakeTimeout
+            self.maximumMessageSize = preset.maximumMessageSize
+            self.permessageDeflateEnabled = preset.permessageDeflateEnabled
         }
 
         fileprivate func build() -> WebSocketConfiguration {
@@ -213,6 +255,7 @@ public struct WebSocketConfiguration: Sendable {
                 reconnectJitterRatio: reconnectJitterRatio,
                 maxReconnectDelay: maxReconnectDelay,
                 maxReconnectAttempts: maxReconnectAttempts,
+                reconnectMaxTotalDuration: reconnectMaxTotalDuration,
                 allowsCellularAccess: allowsCellularAccess,
                 sessionIdentifier: sessionIdentifier,
                 requestHeaders: requestHeaders,
@@ -221,7 +264,9 @@ public struct WebSocketConfiguration: Sendable {
                 eventMetricsReporter: eventMetricsReporter,
                 sendQueueLimit: sendQueueLimit,
                 sendQueueOverflowPolicy: sendQueueOverflowPolicy,
-                closeHandshakeTimeout: closeHandshakeTimeout
+                closeHandshakeTimeout: closeHandshakeTimeout,
+                maximumMessageSize: maximumMessageSize,
+                permessageDeflateEnabled: permessageDeflateEnabled
             )
         }
     }
@@ -246,6 +291,7 @@ public struct WebSocketConfiguration: Sendable {
         reconnectJitterRatio: Double = 0.2,
         maxReconnectDelay: TimeInterval = 0,
         maxReconnectAttempts: Int = 5,
+        reconnectMaxTotalDuration: TimeInterval = 0,
         allowsCellularAccess: Bool = true,
         sessionIdentifier: String = "com.innonetwork.websocket",
         requestHeaders: [String: String] = [:],
@@ -254,7 +300,9 @@ public struct WebSocketConfiguration: Sendable {
         eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
         sendQueueLimit: Int = 256,
         sendQueueOverflowPolicy: WebSocketSendOverflowPolicy = .fail,
-        closeHandshakeTimeout: Duration = .seconds(3)
+        closeHandshakeTimeout: Duration = .seconds(3),
+        maximumMessageSize: Int = 1 * 1024 * 1024,
+        permessageDeflateEnabled: Bool = false
     ) {
         self.maxConnectionsPerHost = max(1, maxConnectionsPerHost)
         self.connectionTimeout = max(0, connectionTimeout)
@@ -265,6 +313,7 @@ public struct WebSocketConfiguration: Sendable {
         self.reconnectJitterRatio = min(1.0, max(0.0, reconnectJitterRatio))
         self.maxReconnectDelay = max(0, maxReconnectDelay)
         self.maxReconnectAttempts = max(0, maxReconnectAttempts)
+        self.reconnectMaxTotalDuration = max(0, reconnectMaxTotalDuration)
         self.allowsCellularAccess = allowsCellularAccess
         self.sessionIdentifier = sessionIdentifier
         self.requestHeaders = requestHeaders
@@ -274,6 +323,8 @@ public struct WebSocketConfiguration: Sendable {
         self.sendQueueLimit = max(1, sendQueueLimit)
         self.sendQueueOverflowPolicy = sendQueueOverflowPolicy
         self.closeHandshakeTimeout = closeHandshakeTimeout < .zero ? .zero : closeHandshakeTimeout
+        self.maximumMessageSize = max(1, maximumMessageSize)
+        self.permessageDeflateEnabled = permessageDeflateEnabled
     }
 
     public static let `default` = safeDefaults()

@@ -3,8 +3,36 @@ import Testing
 
 @testable import InnoNetwork
 
+private func makeJWTLikeToken() -> String {
+    [
+        "ey" + String(repeating: "A", count: 14),
+        String(repeating: "B", count: 14),
+        String(repeating: "C", count: 24),
+    ].joined(separator: ".")
+}
+
 @Suite("Network Logger Tests")
 struct NetworkLoggerTests {
+
+    @Test("JWT-like tokens are masked in free-form strings")
+    func jwtLikeTokensAreMasked() {
+        let token = makeJWTLikeToken()
+        let input = "user logged in with token=\(token) at line=42"
+        let masked = DefaultNetworkLogger.maskJWTLikeTokens(in: input)
+        #expect(masked.contains("<redacted-jwt>"))
+        #expect(!masked.contains(token))
+        // The non-JWT scaffolding around the token must still be present
+        // unchanged so ops can correlate the log line.
+        #expect(masked.contains("user logged in with token="))
+        #expect(masked.contains("at line=42"))
+    }
+
+    @Test("JWT mask leaves non-JWT-shaped strings untouched")
+    func nonJWTStringsAreUnchanged() {
+        let input = "name=alice age=30 path=/v1/users"
+        #expect(DefaultNetworkLogger.maskJWTLikeTokens(in: input) == input)
+    }
+
     @Test("Sensitive headers are redacted by default")
     func sensitiveHeadersAreRedacted() {
         let logger = DefaultNetworkLogger()
@@ -66,6 +94,24 @@ struct NetworkLoggerTests {
         let sanitizedCookies = logger.sanitize(cookies: [cookie])
         #expect(sanitizedCookies.contains("session=<redacted>"))
         #expect(!sanitizedCookies.contains("sensitive"))
+    }
+
+    @Test("Verbose cookie logging masks JWT-like values")
+    func verboseCookieLoggingMasksJWTValues() throws {
+        let logger = DefaultNetworkLogger(options: .verbose)
+        let token = makeJWTLikeToken()
+        let cookie = try #require(
+            HTTPCookie(properties: [
+                .name: "session",
+                .value: token,
+                .domain: "example.com",
+                .path: "/",
+            ])
+        )
+
+        let sanitizedCookies = logger.sanitize(cookies: [cookie])
+        #expect(sanitizedCookies.contains("<redacted-jwt>"))
+        #expect(!sanitizedCookies.contains(token))
     }
 
     @Test("Logger accepts a non-shared cookie storage at init")

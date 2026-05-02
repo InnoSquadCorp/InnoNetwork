@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 
 /// Opt-in response caching policy for request/response APIs.
 public enum ResponseCachePolicy: Sendable, Equatable {
@@ -70,20 +71,96 @@ public struct ResponseCacheKey: Hashable, Sendable {
             return nil
         }
         components.fragment = nil
+        // Sort query items so semantically-equal requests with reordered query
+        // strings (e.g. `?a=1&b=2` vs `?b=2&a=1`) collapse to a single cache
+        // slot. Stable secondary sort by value keeps repeated names well-defined.
+        if let items = components.queryItems, items.count > 1 {
+            components.queryItems = items.sorted { lhs, rhs in
+                if lhs.name != rhs.name { return lhs.name < rhs.name }
+                return (lhs.value ?? "") < (rhs.value ?? "")
+            }
+        }
         return components.url?.absoluteString
     }
 }
 
 
-private enum HeaderValueNormalizer {
-    private static let sensitiveHeaderNames: Set<String> = [
-        "authorization"
-    ]
-
-    static func normalizedValue(name: String, value: String) -> String {
-        sensitiveHeaderNames.contains(name.lowercased()) ? fingerprint(value) : value
+/// Public registry for cache-key sensitive header names.
+///
+/// `ResponseCacheKey` fingerprints values of headers in this registry with
+/// SHA-256 instead of including raw values, so credentials and similar secrets
+/// never appear in stored cache keys. Built-in defaults cover common
+/// authentication/identity headers; callers can register custom names for
+/// proprietary identity headers.
+public enum ResponseCacheHeaderPolicy {
+    /// Registers `name` (case-insensitive) as a sensitive header. Subsequent
+    /// cache-key derivations fingerprint values for this header. Calls are
+    /// thread-safe and idempotent.
+    public static func registerSensitiveHeader(_ name: String) {
+        HeaderValueNormalizer.registerSensitiveHeader(name)
     }
 
+    /// Removes a previously registered sensitive header. Built-in defaults
+    /// cannot be removed.
+    public static func unregisterSensitiveHeader(_ name: String) {
+        HeaderValueNormalizer.unregisterSensitiveHeader(name)
+    }
+
+    /// Returns the union of built-in and user-registered sensitive header
+    /// names, all lowercased. Useful for diagnostics and tests.
+    public static var sensitiveHeaderNames: Set<String> {
+        HeaderValueNormalizer.allSensitiveHeaderNames()
+    }
+}
+
+
+enum HeaderValueNormalizer {
+    static let defaultSensitiveHeaderNames: Set<String> = [
+        "authorization",
+        "cookie",
+        "proxy-authorization",
+        "x-api-key",
+        "x-auth-token",
+    ]
+
+    private static let extraSensitiveHeaders = OSAllocatedUnfairLock<Set<String>>(initialState: [])
+
+    static func registerSensitiveHeader(_ name: String) {
+        let lowered = name.lowercased()
+        guard !defaultSensitiveHeaderNames.contains(lowered) else { return }
+        extraSensitiveHeaders.withLock { _ = $0.insert(lowered) }
+    }
+
+    static func unregisterSensitiveHeader(_ name: String) {
+        let lowered = name.lowercased()
+        extraSensitiveHeaders.withLock { _ = $0.remove(lowered) }
+    }
+
+    static func allSensitiveHeaderNames() -> Set<String> {
+        extraSensitiveHeaders.withLock { defaultSensitiveHeaderNames.union($0) }
+    }
+
+    static func isSensitive(_ name: String) -> Bool {
+        let lowered = name.lowercased()
+        if defaultSensitiveHeaderNames.contains(lowered) { return true }
+        return extraSensitiveHeaders.withLock { $0.contains(lowered) }
+    }
+
+    static func normalizedValue(name: String, value: String) -> String {
+        isSensitive(name) ? fingerprint(value) : value
+    }
+
+    /// Threat model: SHA-256 of the raw header value is collision-resistant
+    /// but **not** keyed. An attacker who can read on-disk cache keys (e.g.
+    /// shared keychain, lost-device exfiltration) can confirm whether a
+    /// guessed credential matches the value that produced the cache entry,
+    /// because the fingerprint is reproducible. This is acceptable for the
+    /// in-process cache — the raw value lives in memory anyway — but for
+    /// the persistent cache the fingerprint should ideally be HMAC-keyed
+    /// with a per-installation salt stored next to the index. The salting
+    /// pass is tracked as a v5 hardening item; for 4.0.x we keep the
+    /// unkeyed fingerprint and rely on disk-level encryption (`Data
+    /// Protection: Complete` on Apple platforms) for at-rest secrecy.
     private static func fingerprint(_ value: String) -> String {
         let digest = SHA256.hash(data: Data(value.utf8))
         let hex = digest.map { String(format: "%02x", $0) }.joined()
@@ -140,8 +217,29 @@ public struct CachedResponse: Sendable, Equatable {
         )
     }
 
+    /// Approximate in-memory size of the cached payload in bytes. Includes the
+    /// body, response headers, the vary-snapshot, and a fixed allowance for
+    /// the stored timestamp and other Swift overhead. The `InMemoryResponseCache`
+    /// adds key-side bytes (URL/method/key headers) on top before comparing
+    /// against `maxBytes`.
     package var byteCost: Int {
-        data.count + headers.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count }
+        let headersCost = headers.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count }
+        let varyCost =
+            varyHeaders?.reduce(0) { partial, entry in
+                partial + entry.key.utf8.count + (entry.value?.utf8.count ?? 0)
+            } ?? 0
+        // Date stride covers `storedAt`; constant overhead covers the boxed
+        // optional `varyHeaders` and the `requiresRevalidation` flag.
+        return data.count + headersCost + varyCost + MemoryLayout<Date>.stride + 16
+    }
+}
+
+
+package extension ResponseCacheKey {
+    /// Approximate in-memory size of the key in bytes. Used by
+    /// `InMemoryResponseCache` to charge key bytes against `maxBytes`.
+    var byteCost: Int {
+        method.utf8.count + url.utf8.count + headers.reduce(0) { $0 + $1.utf8.count }
     }
 }
 
@@ -154,17 +252,33 @@ public protocol ResponseCache: Sendable {
 }
 
 
-/// In-memory `ResponseCache` implementation with a simple byte cap.
+/// In-memory `ResponseCache` implementation with a byte cap and O(1) LRU
+/// bookkeeping.
 ///
-/// LRU bookkeeping is backed by an array, so each `set`/`touch`/`invalidate`
-/// is O(n) in the number of stored entries. This is acceptable for the
-/// default 5 MB cap (typically a few hundred entries) but degrades on much
-/// larger working sets. Provide a custom `ResponseCache` backed by an
-/// ordered dictionary if you raise `maxBytes` significantly.
+/// Every `get`, `set`, and `invalidate` is O(1) regardless of the working set
+/// size, backed by a doubly-linked list of nodes plus a dictionary for direct
+/// lookup. Eviction charges against the sum of cached body bytes, response
+/// headers, the vary snapshot, and the key bytes, so `maxBytes` reflects an
+/// approximation of real memory usage rather than just body bytes.
 public actor InMemoryResponseCache: ResponseCache {
+    private final class Node {
+        let key: ResponseCacheKey
+        var value: CachedResponse
+        var cost: Int
+        var prev: Node?
+        var next: Node?
+
+        init(key: ResponseCacheKey, value: CachedResponse, cost: Int) {
+            self.key = key
+            self.value = value
+            self.cost = cost
+        }
+    }
+
     private let maxBytes: Int
-    private var storage: [ResponseCacheKey: CachedResponse] = [:]
-    private var order: [ResponseCacheKey] = []
+    private var nodes: [ResponseCacheKey: Node] = [:]
+    private var head: Node?
+    private var tail: Node?
     private var currentBytes = 0
 
     public init(maxBytes: Int = 5 * 1024 * 1024) {
@@ -172,39 +286,73 @@ public actor InMemoryResponseCache: ResponseCache {
     }
 
     public func get(_ key: ResponseCacheKey) async -> CachedResponse? {
-        guard let value = storage[key] else { return nil }
-        touch(key)
-        return value
+        guard let node = nodes[key] else { return nil }
+        moveToHead(node)
+        return node.value
     }
 
     public func set(_ key: ResponseCacheKey, _ value: CachedResponse) async {
-        if let existing = storage[key] {
-            currentBytes -= existing.byteCost
+        let entryCost = key.byteCost + value.byteCost
+        if let existing = nodes[key] {
+            currentBytes -= existing.cost
+            existing.value = value
+            existing.cost = entryCost
+            currentBytes += entryCost
+            moveToHead(existing)
+        } else {
+            let node = Node(key: key, value: value, cost: entryCost)
+            nodes[key] = node
+            currentBytes += entryCost
+            insertAtHead(node)
         }
-        storage[key] = value
-        currentBytes += value.byteCost
-        touch(key)
         evictIfNeeded()
     }
 
     public func invalidate(_ key: ResponseCacheKey) async {
-        if let existing = storage.removeValue(forKey: key) {
-            currentBytes -= existing.byteCost
-        }
-        order.removeAll { $0 == key }
+        guard let node = nodes.removeValue(forKey: key) else { return }
+        currentBytes -= node.cost
+        unlink(node)
+        if currentBytes < 0 { currentBytes = 0 }
     }
 
-    private func touch(_ key: ResponseCacheKey) {
-        order.removeAll { $0 == key }
-        order.append(key)
+    private func insertAtHead(_ node: Node) {
+        node.prev = nil
+        node.next = head
+        head?.prev = node
+        head = node
+        if tail == nil { tail = node }
+    }
+
+    private func unlink(_ node: Node) {
+        let prev = node.prev
+        let next = node.next
+        prev?.next = next
+        next?.prev = prev
+        if head === node { head = next }
+        if tail === node { tail = prev }
+        node.prev = nil
+        node.next = nil
+    }
+
+    private func moveToHead(_ node: Node) {
+        guard head !== node else { return }
+        unlink(node)
+        insertAtHead(node)
     }
 
     private func evictIfNeeded() {
-        while currentBytes > maxBytes, let first = order.first {
-            order.removeFirst()
-            if let removed = storage.removeValue(forKey: first) {
-                currentBytes -= removed.byteCost
-            }
+        while currentBytes > maxBytes, let last = tail {
+            nodes.removeValue(forKey: last.key)
+            currentBytes -= last.cost
+            unlink(last)
+        }
+        // Storage/order desync guard: if the dictionary is empty, clear the
+        // list and reset the byte counter so a subsequent insert starts from a
+        // known-good state even after an internal accounting error.
+        if nodes.isEmpty {
+            head = nil
+            tail = nil
+            currentBytes = 0
         }
     }
 }
@@ -381,11 +529,45 @@ package func cachedResponseMatchesVary(
         let currentValue = request.value(forHTTPHeaderField: header).map {
             HeaderValueNormalizer.normalizedValue(name: header, value: $0)
         }
-        if currentValue != storedValue {
+        if !varyValuesEqual(stored: storedValue, current: currentValue, headerName: header) {
             return false
         }
     }
     return true
+}
+
+private func varyValuesEqual(stored: String?, current: String?, headerName: String) -> Bool {
+    switch (stored, current) {
+    case (nil, nil):
+        return true
+    case (nil, _), (_, nil):
+        return false
+    case (let storedValue?, let currentValue?):
+        if isMultiTokenVaryHeader(headerName) {
+            return varyTokenSet(storedValue) == varyTokenSet(currentValue)
+        }
+        // Trim RFC 7230 OWS so byte-for-byte differences in incidental
+        // whitespace (e.g. `gzip` vs ` gzip`) do not break vary matching.
+        return storedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            == currentValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private func isMultiTokenVaryHeader(_ name: String) -> Bool {
+    switch name.lowercased() {
+    case "accept", "accept-encoding", "accept-language", "accept-charset":
+        return true
+    default:
+        return false
+    }
+}
+
+private func varyTokenSet(_ raw: String) -> Set<String> {
+    Set(
+        raw.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+    )
 }
 
 

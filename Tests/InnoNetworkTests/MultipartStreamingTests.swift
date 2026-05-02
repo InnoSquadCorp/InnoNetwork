@@ -14,7 +14,7 @@ struct MultipartStreamingTests {
         formData.append(
             Data("payload-bytes".utf8), name: "blob", fileName: "blob.bin", mimeType: "application/octet-stream")
 
-        let inMemory = formData.encode()
+        let inMemory = try formData.encode()
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(
             "multipart-stream-\(UUID().uuidString).bin")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -34,7 +34,7 @@ struct MultipartStreamingTests {
             mimeType: "text/plain\r\nInjected-Mime: yes"
         )
 
-        let encoded = try #require(String(data: formData.encode(), encoding: .utf8))
+        let encoded = try #require(String(data: try formData.encode(), encoding: .utf8))
         #expect(encoded.contains(#"name="field%22%0D%0AInjected-Header: yes%5C""#))
         #expect(encoded.contains(#"filename="avatar%22%0D%0AInjected-File: yes%5C.png""#))
         #expect(encoded.contains("Content-Type: text/plain%0D%0AInjected-Mime: yes"))
@@ -61,13 +61,13 @@ struct MultipartStreamingTests {
         #expect(formData.boundary.count <= 70)
         #expect(!formData.contentTypeHeader.contains("\r\nInjected"))
 
-        let encoded = try #require(String(data: formData.encode(), encoding: .utf8))
+        let encoded = try #require(String(data: try formData.encode(), encoding: .utf8))
         #expect(encoded.contains("--\(formData.boundary)\r\n"))
         #expect(!encoded.contains("\r\nInjected"))
     }
 
     @Test("writeEncodedData streams a file part without loading it whole")
-    func writeStreamsFileParts() async throws {
+    func writeStreamsFileParts() throws {
         let sourceURL = FileManager.default.temporaryDirectory.appendingPathComponent(
             "multipart-source-\(UUID().uuidString).bin")
         defer { try? FileManager.default.removeItem(at: sourceURL) }
@@ -77,7 +77,7 @@ struct MultipartStreamingTests {
         try payload.write(to: sourceURL)
 
         var formData = MultipartFormData(boundary: "stream-boundary")
-        try await formData.appendFile(at: sourceURL, name: "file", mimeType: "application/octet-stream")
+        try formData.appendFile(at: sourceURL, name: "file", mimeType: "application/octet-stream")
 
         let outURL = FileManager.default.temporaryDirectory.appendingPathComponent(
             "multipart-out-\(UUID().uuidString).bin")
@@ -92,24 +92,34 @@ struct MultipartStreamingTests {
         #expect(String(data: onDisk, encoding: .utf8)?.contains("--stream-boundary--") == true)
     }
 
-    @Test("Async appendFile does not read the source file at append time")
-    func asyncAppendFileDefersRead() async throws {
+    @Test("appendFile fails fast when the source file does not exist")
+    func appendFileRejectsMissingFile() throws {
+        let missingURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "multipart-missing-\(UUID().uuidString).bin")
+
+        var formData = MultipartFormData(boundary: "defer-boundary")
+        #expect(throws: NetworkError.self) {
+            try formData.appendFile(at: missingURL, name: "file", mimeType: "text/plain")
+        }
+    }
+
+    @Test("encode/writeEncodedData surface file read failures rather than silently skipping")
+    func fileReadFailureIsSurfaced() throws {
         let sourceURL = FileManager.default.temporaryDirectory.appendingPathComponent(
             "multipart-defer-\(UUID().uuidString).bin")
         try Data("hello".utf8).write(to: sourceURL)
 
         var formData = MultipartFormData(boundary: "defer-boundary")
-        try await formData.appendFile(at: sourceURL, name: "file", mimeType: "text/plain")
+        try formData.appendFile(at: sourceURL, name: "file", mimeType: "text/plain")
 
-        // Delete the source before encoding — the async appendFile path
-        // should have stored only the URL, not a Data copy. encode() will
-        // therefore observe the missing file and skip the entire part, but
-        // writeEncodedData should surface the read failure as a thrown error.
+        // Remove the source between append and encode. Earlier versions
+        // silently skipped the part inside encode(); the contract now
+        // surfaces the underlying read failure to the caller.
         try FileManager.default.removeItem(at: sourceURL)
 
-        let encoded = String(data: formData.encode(), encoding: .utf8) ?? ""
-        #expect(encoded == "--defer-boundary--\r\n")
-        #expect(!encoded.contains("name=\"file\""))
+        #expect(throws: (any Error).self) {
+            _ = try formData.encode()
+        }
 
         let outURL = FileManager.default.temporaryDirectory.appendingPathComponent(
             "multipart-defer-out-\(UUID().uuidString).bin")
@@ -121,13 +131,13 @@ struct MultipartStreamingTests {
 
     @Test("Existing append(Data:name:) APIs still produce identical encode() output")
     @MainActor
-    func dataAppendKeepsEncodeOutputStable() {
+    func dataAppendKeepsEncodeOutputStable() throws {
         var formData = MultipartFormData(boundary: "compat-boundary")
         formData.append("Alice", name: "user")
         formData.append(42, name: "count")
         formData.append(true, name: "active")
 
-        let encoded = formData.encode()
+        let encoded = try formData.encode()
         let asString = String(data: encoded, encoding: .utf8) ?? ""
         #expect(asString.contains("name=\"user\""))
         #expect(asString.contains("Alice"))
@@ -141,7 +151,7 @@ struct MultipartStreamingTests {
     // MARK: - estimatedEncodedSize
 
     @Test("estimatedEncodedSize matches encode().count for data-only parts")
-    func estimatedSizeMatchesEncodeForDataParts() {
+    func estimatedSizeMatchesEncodeForDataParts() throws {
         var formData = MultipartFormData(boundary: "size-boundary")
         formData.append("Alice", name: "user")
         formData.append(
@@ -150,11 +160,12 @@ struct MultipartStreamingTests {
 
         // estimatedEncodedSize should not be expensive (no bytes are read from
         // the data source twice) but must match the actual encoded length.
-        #expect(Int64(formData.encode().count) == formData.estimatedEncodedSize)
+        let encoded = try formData.encode()
+        #expect(Int64(encoded.count) == formData.estimatedEncodedSize)
     }
 
     @Test("estimatedEncodedSize accounts for file parts via FileManager attributes")
-    func estimatedSizeIncludesFileBytes() async throws {
+    func estimatedSizeIncludesFileBytes() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent("estimated-\(UUID().uuidString).bin")
         let payload = Data(repeating: 0xCD, count: 4096)
@@ -162,7 +173,7 @@ struct MultipartStreamingTests {
         defer { try? FileManager.default.removeItem(at: fileURL) }
 
         var formData = MultipartFormData(boundary: "size-file-boundary")
-        try await formData.appendFile(at: fileURL, name: "doc")
+        try formData.appendFile(at: fileURL, name: "doc")
 
         // Encoder may stream the file at encode() time, so we compare the
         // estimator against the streaming-encode count to avoid loading the

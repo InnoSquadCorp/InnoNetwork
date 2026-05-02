@@ -42,7 +42,7 @@ struct WebSocketReconnectBackoffTests {
         for _ in 0..<3 {
             lastAction = await coordinator.reconnectAction(task: task)
         }
-        #expect(lastAction == .exceeded)
+        #expect(lastAction == .exceeded(reason: .attempts))
         // attemptedReconnectCount overshoots the cap by one (the rejected
         // attempt that produced .exceeded).
         #expect(await task.attemptedReconnectCount == 3)

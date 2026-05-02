@@ -63,24 +63,23 @@ public struct DefaultNetworkLogger: NetworkLogger {
         let url: String = sanitize(url: request.url, nilFallback: "")
         let method: String = request.httpMethod ?? "unknown method"
 
-        var log: String = "🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀"
-        log.append("\n\n\(method) \(url)\n")
+        var log: String = "[REQ] ────────────────────────────"
+        log.append("\n[REQ] \(method) \(url)\n")
         if let headers = request.allHTTPHeaderFields, !headers.isEmpty {
-            log.append("header: \(sanitize(headers: headers))\n")
+            log.append("[REQ] header: \(sanitize(headers: headers))\n")
         }
         if options.includeCookies, let cookies = cookieStorage.cookies {
-            log.append("cookies: \(sanitize(cookies: cookies))\n")
+            log.append("[REQ] cookies: \(sanitize(cookies: cookies))\n")
         }
         if options.includeRequestBody,
             let body = request.httpBody,
             let bodyString = String(bytes: body, encoding: .utf8)
         {
-            log.append("\(sanitize(body: bodyString))\n")
+            log.append("[REQ] body: \(sanitize(body: bodyString))\n")
         } else if request.httpBody != nil {
-            log.append("request body: <omitted>\n")
+            log.append("[REQ] body: <omitted>\n")
         }
-        log.append("END \(method)\n\n")
-        log.append("🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀")
+        log.append("[REQ] END \(method)")
         Logger.API.debug("\(log, privacy: .auto)")
         #endif
     }
@@ -90,23 +89,23 @@ public struct DefaultNetworkLogger: NetworkLogger {
         let request = response.request
         let url: String = sanitize(url: request?.url, nilFallback: "nil")
         let statusCode: Int = response.statusCode
+        let prefix = isError ? "[ERR]" : "[RES]"
 
-        var log: String = isError ? "💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣" : "💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌"
-        log.append("\n\n\(statusCode) \(url)\n")
+        var log: String = "\(prefix) ────────────────────────────"
+        log.append("\n\(prefix) \(statusCode) \(url)\n")
         if let headers = response.response?.allHeaderFields as? [String: String] {
             sanitize(headers: headers).forEach {
-                log.append("\($0.key): \($0.value)\n")
+                log.append("\(prefix) \($0.key): \($0.value)\n")
             }
         }
         if options.includeResponseBody,
             let responseBody = String(bytes: response.data, encoding: .utf8)
         {
-            log.append("\(sanitize(body: responseBody))\n")
+            log.append("\(prefix) body: \(sanitize(body: responseBody))\n")
         } else if !response.data.isEmpty {
-            log.append("response body: <omitted>\n")
+            log.append("\(prefix) body: <omitted>\n")
         }
-        log.append("END HTTP (\(response.data.count)-byte body)\n\n")
-        log.append(isError ? "💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣" : "💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌💌")
+        log.append("\(prefix) END HTTP (\(response.data.count)-byte body)")
         Logger.API.info("\(log, privacy: .auto)")
         #endif
     }
@@ -118,21 +117,27 @@ public struct DefaultNetworkLogger: NetworkLogger {
             return
         }
 
-        var log: String = "💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣"
-        log.append("\n\n\(error.errorCode)\n")
-        log.append("\(error.failureReason ?? error.errorDescription ?? "unknown error")\n")
-        log.append("END HTTP\n\n")
-        log.append("💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣💣")
+        var log: String = "[ERR] ────────────────────────────"
+        log.append("\n[ERR] code: \(error.errorCode)\n")
+        log.append("[ERR] \(error.failureReason ?? error.errorDescription ?? "unknown error")\n")
+        log.append("[ERR] END HTTP")
         Logger.API.debug("\(log, privacy: .auto)")
         #endif
     }
 
     func sanitize(headers: [String: String]) -> [String: String] {
-        guard options.redactSensitiveData else { return headers }
         var sanitized = headers
-        for key in headers.keys {
-            if options.sensitiveHeaderNames.contains(key.lowercased()) {
+        for (key, value) in headers {
+            if options.redactSensitiveData,
+                options.sensitiveHeaderNames.contains(key.lowercased())
+            {
                 sanitized[key] = "<redacted>"
+            } else {
+                // Strip JWT-like tokens that escape the sensitive-header
+                // allowlist (e.g., custom auth headers, third-party trace
+                // tokens). Defence-in-depth so a non-redacted header value
+                // does not silently emit a Bearer JWT into logs.
+                sanitized[key] = Self.maskJWTLikeTokens(in: value)
             }
         }
         return sanitized
@@ -140,7 +145,10 @@ public struct DefaultNetworkLogger: NetworkLogger {
 
     func sanitize(cookies: [HTTPCookie]) -> String {
         guard options.redactSensitiveData else {
-            return cookies.map(\.description).joined(separator: "; ")
+            return
+                cookies
+                .map { Self.maskJWTLikeTokens(in: $0.description) }
+                .joined(separator: "; ")
         }
         return
             cookies
@@ -149,8 +157,29 @@ public struct DefaultNetworkLogger: NetworkLogger {
     }
 
     func sanitize(body: String) -> String {
-        guard options.redactSensitiveData else { return body }
-        return "<redacted>"
+        if options.redactSensitiveData { return "<redacted>" }
+        // Even when explicit body redaction is disabled (verbose logging),
+        // mask JWT-like tokens so a copy/paste from logs cannot leak a
+        // bearer token attacker-readable.
+        return Self.maskJWTLikeTokens(in: body)
+    }
+
+    /// Replaces JWT-like tokens (`eyXXX.YYY.ZZZ` with base64url-safe segments)
+    /// in a free-form string with `<redacted-jwt>`. Used as a defence-in-depth
+    /// pass on log strings that escape the structured `header`/`body` paths —
+    /// for example error descriptions that interpolate raw response bodies or
+    /// custom diagnostic suffixes appended by interceptors.
+    static func maskJWTLikeTokens(in string: String) -> String {
+        if !string.contains("ey") { return string }
+        let pattern = "ey[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return string }
+        let range = NSRange(string.startIndex..., in: string)
+        return regex.stringByReplacingMatches(
+            in: string,
+            options: [],
+            range: range,
+            withTemplate: "<redacted-jwt>"
+        )
     }
 
     func sanitize(url: URL?, nilFallback: String = "") -> String {

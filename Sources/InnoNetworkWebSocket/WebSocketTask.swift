@@ -18,6 +18,7 @@ public actor WebSocketTask: Identifiable {
     private var _error: WebSocketError?
     private var _closeCode: WebSocketCloseCode?
     private var _closeDisposition: WebSocketCloseDisposition?
+    private var _reconnectWindowStartedAt: Date?
 
     /// Current public lifecycle state projected from the reducer-owned internal state.
     public var state: WebSocketState { lifecycleState.publicState }
@@ -142,6 +143,24 @@ public actor WebSocketTask: Identifiable {
         lifecycleState = lifecycleState.withAttempt(0)
     }
 
+    /// Marks the start of a reconnect window if one is not already in flight.
+    /// The reconnect coordinator stamps this on the first reconnect attempt
+    /// after a clean connection and uses ``reconnectWindowStartedAt`` to
+    /// enforce ``WebSocketConfiguration/reconnectMaxTotalDuration``.
+    package func beginReconnectWindowIfNeeded(now: Date) {
+        if _reconnectWindowStartedAt == nil {
+            _reconnectWindowStartedAt = now
+        }
+    }
+
+    /// Clears the reconnect window stamp. Called after a successful reconnect
+    /// or task ``reset()``.
+    package func clearReconnectWindow() {
+        _reconnectWindowStartedAt = nil
+    }
+
+    package var reconnectWindowStartedAt: Date? { _reconnectWindowStartedAt }
+
     /// Atomically reserves a send slot if one is available. Returns true if
     /// the slot was reserved (caller must pair with ``releaseSendSlot()``);
     /// returns false if the queue is at `limit`.
@@ -221,6 +240,7 @@ public actor WebSocketTask: Identifiable {
         _error = nil
         _closeCode = nil
         _closeDisposition = nil
+        _reconnectWindowStartedAt = nil
     }
 
     private func syncLifecycleMetadata() {

@@ -158,7 +158,8 @@ public final class WebSocketManager: NSObject, Sendable {
     private var reconnectCoordinator: WebSocketReconnectCoordinator {
         WebSocketReconnectCoordinator(
             configuration: configuration,
-            runtimeRegistry: runtimeRegistry
+            runtimeRegistry: runtimeRegistry,
+            eventHub: eventHub
         )
     }
 
@@ -565,6 +566,7 @@ public final class WebSocketManager: NSObject, Sendable {
             }
             if didConnect {
                 await task.resetAttemptedReconnectCount()
+                await task.clearReconnectWindow()
                 await task.resetPingCounter()
                 await task.setAutoReconnectEnabled(true)
                 await task.setError(nil)

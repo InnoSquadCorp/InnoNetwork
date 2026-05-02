@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import os
 
 @testable import InnoNetwork
 
@@ -1358,7 +1359,7 @@ struct ResiliencePolicyTests {
         #expect(applied.value(forHTTPHeaderField: "Authorization") == "Bearer new")
     }
 
-    @Test("Failed refresh does not replay stale failure to subsequent callers")
+    @Test("Failed refresh does not replay stale failure to subsequent callers when cooldown is disabled")
     func refreshTokenFailedRefreshDoesNotReplayStaleFailure() async throws {
         actor RefreshScript {
             var calls = 0
@@ -1373,6 +1374,7 @@ struct ResiliencePolicyTests {
         let script = RefreshScript()
         let coordinator = RefreshTokenCoordinator(
             policy: RefreshTokenPolicy(
+                failureCooldown: .disabled,
                 currentToken: { "old" },
                 refreshToken: { try await script.next() }
             )
@@ -1386,6 +1388,77 @@ struct ResiliencePolicyTests {
 
         #expect(await script.calls == 2)
         #expect(applied.value(forHTTPHeaderField: "Authorization") == "Bearer fresh")
+    }
+
+    @Test("Refresh failure cooldown throttles subsequent callers within the cooldown window")
+    func refreshTokenFailureCooldownThrottlesCallers() async throws {
+        actor RefreshScript {
+            var calls = 0
+            func next() async throws -> String {
+                calls += 1
+                throw NetworkError.invalidRequestConfiguration("refresh keeps failing")
+            }
+        }
+        let script = RefreshScript()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let nowBox = OSAllocatedUnfairLock<Date>(initialState: now)
+        let coordinator = RefreshTokenCoordinator(
+            policy: RefreshTokenPolicy(
+                failureCooldown: .exponentialBackoff(base: 5, max: 60),
+                currentToken: { "old" },
+                refreshToken: { try await script.next() }
+            ),
+            now: { nowBox.withLock { $0 } }
+        )
+        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
+
+        // First call performs refresh and fails — opens cooldown for 5s.
+        await #expect(throws: NetworkError.self) {
+            _ = try await coordinator.refreshAndApply(to: request)
+        }
+        // Second call within cooldown window must throw cached error WITHOUT
+        // invoking the refresh provider again.
+        await #expect(throws: NetworkError.self) {
+            _ = try await coordinator.refreshAndApply(to: request)
+        }
+        #expect(await script.calls == 1)
+
+        // Advancing past the cooldown window allows another attempt.
+        nowBox.withLock { $0 = now.addingTimeInterval(6) }
+        await #expect(throws: NetworkError.self) {
+            _ = try await coordinator.refreshAndApply(to: request)
+        }
+        #expect(await script.calls == 2)
+    }
+
+    @Test("Refresh failure cooldown normalizes invalid bounds")
+    func refreshFailureCooldownNormalizesInvalidBounds() async {
+        let disabledByNegativeInput = RefreshFailureCooldown.exponentialBackoff(base: -1, max: -5)
+        #expect(disabledByNegativeInput.cooldown(afterConsecutiveFailures: 1) == 0)
+
+        let capRaisedToBase = RefreshFailureCooldown.exponentialBackoff(base: 2, max: 1)
+        #expect(capRaisedToBase.cooldown(afterConsecutiveFailures: 1) == 2)
+        #expect(capRaisedToBase.cooldown(afterConsecutiveFailures: 2) == 2)
+    }
+
+    @Test("RefreshAndApply strips lowercase Authorization header before reapplying the new token")
+    func refreshTokenStripsCaseInsensitiveAuthorization() async throws {
+        let coordinator = RefreshTokenCoordinator(
+            policy: RefreshTokenPolicy(
+                currentToken: { "old" },
+                refreshToken: { "fresh" }
+            )
+        )
+        var request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
+        // Manually planted lowercase header — without a case-insensitive strip
+        // this would coexist with the new "Authorization" entry on the replay.
+        request.setValue("Bearer stale", forHTTPHeaderField: "authorization")
+
+        let applied = try await coordinator.refreshAndApply(to: request)
+        let headers = applied.allHTTPHeaderFields ?? [:]
+        let authHeaders = headers.filter { $0.key.caseInsensitiveCompare("Authorization") == .orderedSame }
+        #expect(authHeaders.count == 1)
+        #expect(authHeaders.first?.value == "Bearer fresh")
     }
 
     @Test("Half-open probe cancellation releases the host")

@@ -1,17 +1,23 @@
 import Foundation
 @preconcurrency import Network
+import os
 
 private final class PathMonitorStorage: Sendable {
-    private let monitor: NWPathMonitor
     private let queue: DispatchQueue
+    private let activeMonitor: OSAllocatedUnfairLock<NWPathMonitor?>
 
     init() {
-        self.monitor = NWPathMonitor()
         self.queue = DispatchQueue(label: "com.innonetwork.networkmonitor")
+        self.activeMonitor = OSAllocatedUnfairLock(initialState: nil)
     }
 
     func makePathStream() -> AsyncStream<NWPath> {
-        AsyncStream(bufferingPolicy: .bufferingNewest(64)) { [monitor] continuation in
+        // `NWPathMonitor.cancel()` is terminal: a cancelled monitor cannot be
+        // restarted. Recreate one per `makePathStream()` so that callers may
+        // stop and re-start observation without leaking the prior instance.
+        let monitor = NWPathMonitor()
+        activeMonitor.withLock { $0 = monitor }
+        return AsyncStream(bufferingPolicy: .bufferingNewest(64)) { [monitor] continuation in
             monitor.pathUpdateHandler = { path in
                 continuation.yield(path)
             }
@@ -22,11 +28,17 @@ private final class PathMonitorStorage: Sendable {
     }
 
     func start() {
-        monitor.start(queue: queue)
+        let monitor = activeMonitor.withLock { $0 }
+        monitor?.start(queue: queue)
     }
 
     func cancel() {
-        monitor.cancel()
+        let monitor = activeMonitor.withLock { state -> NWPathMonitor? in
+            let snapshot = state
+            state = nil
+            return snapshot
+        }
+        monitor?.cancel()
     }
 }
 
@@ -123,6 +135,30 @@ public actor NetworkMonitor: NetworkMonitoring {
     deinit {
         pathConsumerTask?.cancel()
         pathMonitor.cancel()
+    }
+
+    /// Begin observing path updates. Calling this before the first `currentSnapshot`
+    /// or `waitForChange` lets callers control the moment the underlying
+    /// `NWPathMonitor` is started — useful for tests, app-lifecycle integration,
+    /// or deferring system observers until after launch. Repeat calls are
+    /// idempotent.
+    public func start() {
+        startMonitoringIfNeeded()
+    }
+
+    /// Stop observing path updates and tear down the underlying `NWPathMonitor`
+    /// and consumer task. Subsequent calls to `start()`, `currentSnapshot()`,
+    /// or `waitForChange(...)` will resume monitoring with a fresh consumer.
+    public func stop() {
+        guard isMonitoring else { return }
+        pathConsumerTask?.cancel()
+        pathConsumerTask = nil
+        pathMonitor.cancel()
+        for continuation in continuations.values {
+            continuation.finish()
+        }
+        continuations.removeAll()
+        isMonitoring = false
     }
 
     public func currentSnapshot() async -> NetworkSnapshot? {

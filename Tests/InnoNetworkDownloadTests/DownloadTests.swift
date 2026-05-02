@@ -14,7 +14,28 @@ struct DownloadConfigurationTests {
         #expect(config.maxRetryCount == 3)
         #expect(config.maxTotalRetries == 3)
         #expect(config.retryDelay == 1.0)
-        #expect(config.allowsCellularAccess == true)
+        // Cellular is opt-in in 4.0.x — see `cellularEnabled()`.
+        #expect(config.allowsCellularAccess == false)
+    }
+
+    @Test("cellularEnabled() returns a copy with cellular access on")
+    func cellularEnabledFlipsAllowsCellularAccess() {
+        let base = DownloadConfiguration.safeDefaults(sessionIdentifier: "test.cellular.opt-in")
+        #expect(base.allowsCellularAccess == false)
+        let cellular = base.cellularEnabled()
+        #expect(cellular.allowsCellularAccess == true)
+        // Other fields should be preserved unchanged.
+        #expect(cellular.sessionIdentifier == base.sessionIdentifier)
+        #expect(cellular.maxRetryCount == base.maxRetryCount)
+    }
+
+    @Test("persistenceBaseDirectoryURL flows through the AdvancedBuilder")
+    func persistenceBaseDirectoryURLRoundtrips() {
+        let custom = URL(fileURLWithPath: "/tmp/inno-test-cache", isDirectory: true)
+        let config = DownloadConfiguration.advanced { builder in
+            builder.persistenceBaseDirectoryURL = custom
+        }
+        #expect(config.persistenceBaseDirectoryURL == custom)
     }
 
     @Test("safeDefaults matches default configuration")

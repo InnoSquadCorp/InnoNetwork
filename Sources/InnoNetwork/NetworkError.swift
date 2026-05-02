@@ -130,7 +130,10 @@ extension NetworkError: LocalizedError {
                 return "Unsupported authentication method: \(method)"
             case .missingServerTrust:
                 return "Missing server trust."
-            case .systemTrustEvaluationFailed:
+            case .systemTrustEvaluationFailed(let reason):
+                if let reason {
+                    return "System trust evaluation failed: \(reason)"
+                }
                 return "System trust evaluation failed."
             case .hostNotPinned(let host):
                 return "No pin configured for host: \(host)"

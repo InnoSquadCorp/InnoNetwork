@@ -130,7 +130,7 @@ struct WebSocketLifecycleReducerTests {
                 disposition: .peerRetryable(.goingAway, nil),
                 error: .disconnected(nil)
             ),
-            context: .init(reconnectAction: .exceeded, attempt: 3)
+            context: .init(reconnectAction: .exceeded(reason: .attempts), attempt: 3)
         )
 
         #expect(failed.state.publicState == .failed)

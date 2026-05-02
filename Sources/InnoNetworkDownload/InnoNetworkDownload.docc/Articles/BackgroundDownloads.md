@@ -118,14 +118,14 @@ transparent to observers.
 
 ## Cellular and roaming
 
-The default `safeDefaults` configuration allows cellular access. For consumer apps that
-should never burn cellular data on multi-megabyte downloads, override:
+The default `safeDefaults` configuration disables cellular access. For apps that
+explicitly allow background downloads over cellular, opt in:
 
 ```swift
 let configuration = DownloadConfiguration.advanced(
     sessionIdentifier: "com.example.app.downloads"
 ) { builder in
-    builder.allowsCellularAccess = false
+    builder.allowsCellularAccess = true
 }
 ```
 

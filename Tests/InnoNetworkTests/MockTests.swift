@@ -269,7 +269,7 @@ struct MultipartFormDataTests {
         formData.append("john@example.com", name: "email")
         formData.append(25, name: "age")
 
-        let data = formData.encode()
+        let data = try formData.encode()
         let string = try #require(String(data: data, encoding: .utf8))
 
         #expect(string.contains("--test-boundary"))
@@ -288,7 +288,7 @@ struct MultipartFormDataTests {
         let imageData = "fake-image-content".data(using: .utf8)!
         formData.append(imageData, name: "avatar", fileName: "avatar.png", mimeType: "image/png")
 
-        let data = formData.encode()
+        let data = try formData.encode()
         let string = try #require(String(data: data, encoding: .utf8))
 
         #expect(string.contains("name=\"avatar\""))

@@ -44,6 +44,7 @@ package struct WebSocketConnectionCoordinator {
         }
 
         let urlTask = session.makeWebSocketTask(with: request)
+        urlTask.maximumMessageSize = configuration.maximumMessageSize
         await runtimeRegistry.setMapping(
             webSocketTask: task,
             for: urlTask.taskIdentifier,
