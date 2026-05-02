@@ -24,7 +24,16 @@ package struct DownloadRestoreCoordinator {
         self.transferCoordinator = transferCoordinator
     }
 
-    package func restorePendingDownloads() async {
+    /// Restore in-memory state from background URLSession tasks and persisted
+    /// records.
+    ///
+    /// Returns the IDs of tasks whose persisted record exists without a
+    /// corresponding system task. Their `.failed(.restorationMissingSystemTask)`
+    /// announcement is deferred to the manager so the events can be published
+    /// after the caller has had an opportunity to subscribe via
+    /// ``DownloadManager/events(for:)`` — publishing during init would race
+    /// the subscriber and the events would drain into an empty partition.
+    package func restorePendingDownloads() async -> [String] {
         let downloadTasks = await session.allDownloadTasks()
         var restoredTaskIDs = Set<String>()
 
@@ -54,6 +63,7 @@ package struct DownloadRestoreCoordinator {
             await downloadTask.restoreState(state)
         }
 
+        var pendingMissingSystemTaskIDs: [String] = []
         let persistedTasks = await persistence.allRecords()
         for record in persistedTasks where !restoredTaskIDs.contains(record.id) {
             if let resumeData = record.resumeData {
@@ -74,8 +84,6 @@ package struct DownloadRestoreCoordinator {
             await runtimeRegistry.add(failedTask)
             await runtimeRegistry.onStateChanged?(failedTask, .failed)
             await runtimeRegistry.onFailed?(failedTask, .restorationMissingSystemTask)
-            await transferCoordinator.eventHub.publish(.stateChanged(.failed), for: failedTask.id)
-            await transferCoordinator.eventHub.publish(.failed(.restorationMissingSystemTask), for: failedTask.id)
             do {
                 try await persistence.remove(id: record.id)
             } catch {
@@ -84,9 +92,9 @@ package struct DownloadRestoreCoordinator {
                 )
                 continue
             }
-            await transferCoordinator.eventHub.finish(taskID: failedTask.id)
-            await runtimeRegistry.remove(failedTask)
+            pendingMissingSystemTaskIDs.append(failedTask.id)
         }
+        return pendingMissingSystemTaskIDs
     }
 
     private func restoreTrackedTask(for urlTask: any DownloadURLTask) async -> DownloadTask? {

@@ -112,9 +112,11 @@ let configuration = DownloadConfiguration.advanced(
 
 Paused tasks store `resumeData` in the same append-log record as their URL and destination.
 After `pause(_:)` completes, a later process launch can restore the task in `.paused` state
-and `resume(_:)` can create a system task from the stored resume payload. The payload is
-cleared when resume succeeds, and the entire persistence row is removed on cancel or
-completion.
+and `resume(_:)` can create a system task from the stored resume payload. `resume(_:)`
+clears the persisted payload before the new system task is allowed to start; if the
+clearing write fails the in-flight system task is cancelled and the task is surfaced as
+`.failed(.persistenceFailure)` rather than left running with stale resume bytes on disk.
+The entire persistence row is removed on cancel or completion.
 
 The durability boundary is still best-effort because `URLSession` resume data is owned by
 the OS and server behavior. If the payload is rejected after an app upgrade, server range

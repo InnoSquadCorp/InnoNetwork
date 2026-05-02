@@ -88,6 +88,7 @@ public actor DownloadManager {
 
     private let runtimeRegistry = DownloadRuntimeRegistry()
     private let restoreBarrier = RestoreBarrier()
+    private var pendingRestoreFailures: Set<String> = []
     private let eventHub: TaskEventHub<DownloadEvent>
     private let delegateEvents: AsyncStream<DelegateEvent>
     private let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
@@ -258,7 +259,8 @@ public actor DownloadManager {
         // completes block until the barrier opens.
         Task { [weak self] in
             guard let self else { return }
-            await self.restoreCoordinator.restorePendingDownloads()
+            let pending = await self.restoreCoordinator.restorePendingDownloads()
+            await self.recordPendingRestoreFailures(pending)
             await self.restoreBarrier.complete()
         }
     }
@@ -350,7 +352,16 @@ public actor DownloadManager {
             await transferCoordinator.register(urlTask: urlTask, for: task)
             await task.updateState(.downloading)
             await task.setResumeData(nil)
-            try? await persistence.updateResumeData(id: task.id, resumeData: nil)
+            do {
+                try await persistence.updateResumeData(id: task.id, resumeData: nil)
+            } catch {
+                Self.logger.fault(
+                    "Failed to clear resumeData for task \(task.id, privacy: .private(mask: .hash)) on resume: \(String(describing: error), privacy: .private(mask: .hash))"
+                )
+                urlTask.cancel()
+                await transferCoordinator.markTaskFailedForPersistence(task, error: error)
+                return
+            }
             await runtimeRegistry.onStateChanged?(task, .downloading)
             await eventHub.publish(.stateChanged(.downloading), for: task.id)
             urlTask.resume()
@@ -453,7 +464,23 @@ public actor DownloadManager {
     }
 
     public func events(for task: DownloadTask) async -> AsyncStream<DownloadEvent> {
-        await eventHub.stream(for: task.id)
+        let stream = await eventHub.stream(for: task.id)
+        await flushPendingRestoreFailureIfNeeded(taskID: task.id)
+        return stream
+    }
+
+    private func recordPendingRestoreFailures(_ taskIDs: [String]) {
+        pendingRestoreFailures.formUnion(taskIDs)
+    }
+
+    private func flushPendingRestoreFailureIfNeeded(taskID: String) async {
+        guard pendingRestoreFailures.remove(taskID) != nil else { return }
+        await eventHub.publish(.stateChanged(.failed), for: taskID)
+        await eventHub.publish(.failed(.restorationMissingSystemTask), for: taskID)
+        await eventHub.finish(taskID: taskID)
+        if let task = await runtimeRegistry.task(withId: taskID) {
+            await runtimeRegistry.remove(task)
+        }
     }
 
     private func waitForRestore() async -> Bool {
