@@ -130,7 +130,8 @@ high-level compatibility classification readable for the 4.x release line.
 
 - `APIDefinition`, `AnyEncodable`, `AnyResponseDecoder`, `CachedResponse`,
   `CancellationTag`, `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
-  `ContentType`, `CorrelationIDInterceptor`, `DefaultNetworkClient`,
+  `ContentType`, `CorrelationIDInterceptor`, `DecodingStage`,
+  `DefaultNetworkClient`,
   `DefaultNetworkLogger`, `EmptyParameter`, `EmptyResponse`, `Endpoint`,
   `EndpointPathEncoding`, `EndpointShape`, `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
   `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,
@@ -349,9 +350,38 @@ land before the 5.0 tag and are also tracked in `CHANGELOG.md`
   protocol's requirements (for example, library-internal generic
   helpers) needs to redirect to `EndpointShape`.
 
+### `NetworkError.objectMapping` split into `decoding(stage:)`
+
+- **What changed.** The `NetworkError.objectMapping(_:_:)` enum case is
+  removed. Decode failures now surface as
+  `NetworkError.decoding(stage:underlying:response:)` carrying a
+  `DecodingStage` (`.responseBody`, `.streamFrame`, `.multipartPart`,
+  `.envelope`, `.empty`) so the failure site is explicit. A
+  source-compatible static factory `NetworkError.objectMapping(_:_:)`
+  remains, marked `@available(*, deprecated, renamed:)`, so existing
+  *construction* sites compile with a deprecation warning. A new
+  `NetworkError.isDecodingFailure` helper makes "decode failures are
+  not retried" expressible without pattern matching.
+- **Why.** `objectMapping` collapsed every decode-related failure —
+  body, stream frame, multipart part, envelope, and empty-body —
+  into one case. Retry policies could not distinguish "the stream
+  framing was malformed" from "the JSON body had a missing field",
+  and observability layers had to inspect the underlying error to
+  classify the stage. Splitting the case lets policies and metrics
+  branch on stage directly.
+- **Migration.** Construction sites compile with a deprecation
+  warning; switch to
+  `NetworkError.decoding(stage: .responseBody, underlying:, response:)`.
+  Pattern-matching `case .objectMapping(let underlying, let response)`
+  must be migrated to
+  `case .decoding(let stage, let underlying, let response)`; this is
+  a hard break because Swift cannot alias enum-case patterns. Callers
+  that previously branched on "decode failure vs other" can use
+  `error.isDecodingFailure` instead of pattern matching.
+
 ### Forward-looking notes
 
-Additional 5.0 commits (split `NetworkError.objectMapping` into
-`decoding(stage:)`, platform-aware multipart streaming defaults) will
-append migration sections here as they land. Each will ship with a
-deprecated alias whenever a single-step migration is feasible.
+Additional 5.0 commits (platform-aware multipart streaming defaults,
+formalized `TimeoutReason.resourceTimeout` mapping) will append
+migration sections here as they land. Each will ship with a deprecated
+alias whenever a single-step migration is feasible.

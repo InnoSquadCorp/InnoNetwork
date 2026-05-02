@@ -214,8 +214,8 @@ actor ErrorHandlingExample {
                 print("   → Client error")
             }
 
-        case .objectMapping(let decodingError, let response):
-            print("❌ Object Mapping Error: \(decodingError)")
+        case .decoding(let stage, let decodingError, let response):
+            print("❌ Decoding Error (\(stage)): \(decodingError)")
             print("   Status Code: \(response.statusCode)")
 
         case .nonHTTPResponse(let response):

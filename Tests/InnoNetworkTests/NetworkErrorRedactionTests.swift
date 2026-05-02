@@ -18,13 +18,13 @@ struct NetworkErrorRedactionTests {
     }
 
     // The decoder fails on this body so the executor produces
-    // NetworkError.objectMapping(_, response). The body deliberately resembles
-    // PII so the redaction expectation is meaningful — if it leaked, it would
-    // show up in error logs.
+    // NetworkError.decoding(stage: .responseBody, ...). The body deliberately
+    // resembles PII so the redaction expectation is meaningful — if it leaked,
+    // it would show up in error logs.
     private static let pii = "{\"email\":\"alice@example.com\",\"ssn\":\"123-45-6789\"}"
 
-    @Test("Default config redacts NetworkError.objectMapping payload bytes")
-    func defaultRedactsObjectMapping() async {
+    @Test("Default config redacts NetworkError.decoding payload bytes")
+    func defaultRedactsDecoding() async {
         let mockSession = MockURLSession()
         mockSession.setMockResponse(statusCode: 200, data: Data(Self.pii.utf8))
 
@@ -35,23 +35,24 @@ struct NetworkErrorRedactionTests {
 
         do {
             _ = try await client.request(GetUser())
-            Issue.record("Expected NetworkError.objectMapping")
+            Issue.record("Expected NetworkError.decoding")
         } catch let error as NetworkError {
             switch error {
-            case .objectMapping(_, let response):
+            case .decoding(let stage, _, let response):
+                #expect(stage == .responseBody)
                 #expect(response.data.isEmpty, "Failure payload must be redacted by default")
                 // Status, headers, and request must remain intact.
                 #expect(response.statusCode == 200)
                 #expect(response.response != nil)
             default:
-                Issue.record("Expected .objectMapping, got \(error)")
+                Issue.record("Expected .decoding, got \(error)")
             }
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
     }
 
-    @Test("captureFailurePayload=true preserves NetworkError.objectMapping payload bytes")
+    @Test("captureFailurePayload=true preserves NetworkError.decoding payload bytes")
     func captureKeepsPayload() async {
         let mockSession = MockURLSession()
         mockSession.setMockResponse(statusCode: 200, data: Data(Self.pii.utf8))
@@ -66,13 +67,13 @@ struct NetworkErrorRedactionTests {
 
         do {
             _ = try await client.request(GetUser())
-            Issue.record("Expected NetworkError.objectMapping")
+            Issue.record("Expected NetworkError.decoding")
         } catch let error as NetworkError {
             switch error {
-            case .objectMapping(_, let response):
+            case .decoding(_, _, let response):
                 #expect(String(data: response.data, encoding: .utf8) == Self.pii)
             default:
-                Issue.record("Expected .objectMapping, got \(error)")
+                Issue.record("Expected .decoding, got \(error)")
             }
         } catch {
             Issue.record("Unexpected error: \(error)")

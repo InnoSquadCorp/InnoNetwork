@@ -45,14 +45,61 @@ public enum TimeoutReason: Sendable, Equatable {
 }
 
 
+/// Stage of the response-decoding pipeline that produced a
+/// ``NetworkError/decoding(stage:underlying:response:)``.
+///
+/// The stage tag lets callers route decoding failures to different
+/// handlers without inspecting the underlying error: a multipart-part
+/// failure usually warrants surfacing the offending part to the user,
+/// while an envelope failure suggests the whole response is unusable
+/// regardless of the typed payload. ``RetryPolicy`` and
+/// ``DecodingInterceptor`` use the stage tag to decide whether a
+/// retry would change the outcome (it almost never does for decoding
+/// failures, so the default policy treats every stage as terminal).
+public enum DecodingStage: Sendable, Equatable {
+    /// The full response body failed to decode into the declared
+    /// `APIResponse` type. This is the most common stage and matches
+    /// the legacy `objectMapping` case.
+    case responseBody
+
+    /// A single line/event/frame inside a streaming response failed
+    /// to decode. The transport remains open; only the offending
+    /// frame is rejected.
+    case streamFrame
+
+    /// A part inside a buffered or streaming multipart response failed
+    /// to decode. Other parts may still be usable.
+    case multipartPart
+
+    /// A response envelope (for example a JSON `{ "data": ... }`
+    /// wrapper) failed to decode before the typed payload could be
+    /// extracted. Indicates a server-shape mismatch independent of
+    /// the declared payload type.
+    case envelope
+
+    /// An empty-tolerant decoder produced no value when the response
+    /// shape required one. Distinguishes "server returned 204 but
+    /// caller expects a typed value" from a generic body-decode failure.
+    case empty
+}
+
+
 public enum NetworkError: Error, Sendable {
     case invalidBaseURL(String)
     /// Indicates an invalid request configuration
     case invalidRequestConfiguration(String)
     /// Indicates a response failed with an invalid HTTP status code.
     case statusCode(Response)
-    /// Indicates a response failed to map to a Decodable object.
-    case objectMapping(SendableUnderlyingError, Response)
+    /// Indicates a response failed to decode into the declared `APIResponse`
+    /// type. Carries a ``DecodingStage`` tag so callers can route
+    /// envelope/multipart/stream-frame failures separately from a top-level
+    /// body decode error.
+    ///
+    /// Replaces the 4.x `objectMapping(_:_:)` case. For source compatibility
+    /// during migration, ``NetworkError/objectMapping(_:_:)`` remains as a
+    /// deprecated factory function that forwards construction to
+    /// `.decoding(stage: .responseBody, ...)` — see the 5.0 migration guide.
+    case decoding(stage: DecodingStage, underlying: SendableUnderlyingError, response: Response)
 
     case nonHTTPResponse(URLResponse)
 
@@ -88,8 +135,8 @@ extension NetworkError: LocalizedError {
             return "Invalid base URL: \(string)"
         case .invalidRequestConfiguration(let message):
             return "Invalid request configuration: \(message)"
-        case .objectMapping(let error, _):
-            return "Failed to map data to a Decodable object: \(error.message)"
+        case .decoding(let stage, let error, _):
+            return "Failed to decode response (\(stage)): \(error.message)"
         case .statusCode:
             return "Status code didn't fall within the given range."
         case .underlying(let error, _):
@@ -136,7 +183,7 @@ public extension NetworkError {
         switch self {
         case .invalidBaseURL: return nil
         case .invalidRequestConfiguration: return nil
-        case .objectMapping(_, let response): return response
+        case .decoding(_, _, let response): return response
         case .statusCode(let response): return response
         case .underlying(_, let response): return response
         case .nonHTTPResponse: return nil
@@ -152,7 +199,7 @@ public extension NetworkError {
         switch self {
         case .invalidBaseURL: return nil
         case .invalidRequestConfiguration: return nil
-        case .objectMapping(let error, _): return error
+        case .decoding(_, let error, _): return error
         case .statusCode: return nil
         case .underlying(let error, _): return error
         case .nonHTTPResponse: return nil
@@ -161,6 +208,36 @@ public extension NetworkError {
         case .timeout(_, let underlying): return underlying
         case .responseTooLarge: return nil
         }
+    }
+
+    /// Returns `true` for any failure produced inside the response-decoding
+    /// pipeline. Built-in retry policies treat decoding failures as terminal
+    /// because retrying the same request against the same server yields the
+    /// same body shape; consumers writing their own retry strategy can use
+    /// this helper to express the same rule without enumerating
+    /// ``DecodingStage`` cases.
+    var isDecodingFailure: Bool {
+        if case .decoding = self {
+            return true
+        }
+        return false
+    }
+}
+
+// MARK: - 4.x compatibility surface
+
+public extension NetworkError {
+    /// Compatibility factory matching the 4.x ``objectMapping(_:_:)`` case.
+    /// Forwards construction to ``decoding(stage:underlying:response:)`` with
+    /// ``DecodingStage/responseBody``. Pattern matching against
+    /// `.objectMapping` is no longer possible in 5.0 — switch over
+    /// `.decoding(stage:, underlying:, response:)` instead.
+    @available(*, deprecated, renamed: "decoding(stage:underlying:response:)", message: "Use .decoding(stage: .responseBody, underlying:, response:). The objectMapping enum case was replaced in InnoNetwork 5.0; this factory exists for one migration cycle and will be removed.")
+    static func objectMapping(
+        _ underlying: SendableUnderlyingError,
+        _ response: Response
+    ) -> NetworkError {
+        .decoding(stage: .responseBody, underlying: underlying, response: response)
     }
 }
 
@@ -177,7 +254,7 @@ extension NetworkError: CustomNSError {
             return 1001
         case .invalidRequestConfiguration:
             return 1002
-        case .objectMapping:
+        case .decoding:
             return 2002
         case .statusCode:
             return 3001
@@ -217,8 +294,8 @@ public extension NetworkError {
     /// logs, crash reports, or analytics through the error chain.
     func redactingFailurePayload() -> NetworkError {
         switch self {
-        case .objectMapping(let underlying, let response):
-            return .objectMapping(underlying, response.redactingData())
+        case .decoding(let stage, let underlying, let response):
+            return .decoding(stage: stage, underlying: underlying, response: response.redactingData())
         case .statusCode(let response):
             return .statusCode(response.redactingData())
         case .underlying(let err, let response?):

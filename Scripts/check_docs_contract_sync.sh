@@ -87,13 +87,16 @@ require_line "## Internal/Operational" "$api_stability"
 expected_stable=(
 '`APIDefinition`'
 '`CancellationTag`'
+'`EndpointShape`'
 '`MultipartAPIDefinition`'
 '`TransportPolicy`'
 '`RequestEncodingPolicy`'
 '`ResponseDecodingStrategy`'
 '`DefaultNetworkClient`'
 '`NetworkClient.request(_:)`'
+'`NetworkClient.request(_:tag:)`'
 '`NetworkClient.upload(_:)`'
+'`NetworkClient.upload(_:tag:)`'
 '`NetworkConfiguration.safeDefaults(baseURL:)`'
 '`NetworkConfiguration.advanced(baseURL:_:)`'
 '`DownloadConfiguration.safeDefaults()`'
@@ -165,6 +168,7 @@ expected_shipping_public_declarations=(
   ContentType
   CorrelationIDInterceptor
   DecodingInterceptor
+  DecodingStage
   DefaultNetworkClient
   DefaultNetworkLogger
   DownloadConfiguration
@@ -180,6 +184,7 @@ expected_shipping_public_declarations=(
   EmptyResponse
   Endpoint
   EndpointPathEncoding
+  EndpointShape
   EventDeliveryPolicy
   EventPipelineAggregateSnapshotMetric
   EventPipelineConsumerDeliveryLatencyMetric
@@ -539,6 +544,10 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public struct CancellationTag'
       target="$repo_root/Sources/InnoNetwork/CancellationTag.swift"
       ;;
+    '`EndpointShape`')
+      pattern='public protocol EndpointShape: Sendable'
+      target="$repo_root/Sources/InnoNetwork/EndpointShape.swift"
+      ;;
     '`MultipartAPIDefinition`')
       pattern='public protocol MultipartAPIDefinition'
       target="$repo_root/Sources/InnoNetwork/APIDefinition.swift"
@@ -563,8 +572,16 @@ for symbol in "${expected_stable[@]}"; do
       pattern='^    func request<T: APIDefinition>\(_ request: T\) async throws -> T\.APIResponse$'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
+    '`NetworkClient.request(_:tag:)`')
+      pattern='^    func request<T: APIDefinition>\(_ request: T, tag: CancellationTag\?\) async throws -> T\.APIResponse$'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
     '`NetworkClient.upload(_:)`')
       pattern='^    func upload<T: MultipartAPIDefinition>\(_ request: T\) async throws -> T\.APIResponse$'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`NetworkClient.upload(_:tag:)`')
+      pattern='^    func upload<T: MultipartAPIDefinition>\(_ request: T, tag: CancellationTag\?\) async throws -> T\.APIResponse$'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkConfiguration.safeDefaults(baseURL:)`')
@@ -656,19 +673,18 @@ for symbol in "${expected_stable[@]}"; do
       ;;
   esac
 
-  if has_rg; then
-    if [[ "$symbol" == '`NetworkClient.request(_:)`' || "$symbol" == '`NetworkClient.upload(_:)`' ]]; then
+  case "$symbol" in
+    '`NetworkClient.request(_:)`' | '`NetworkClient.request(_:tag:)`' | '`NetworkClient.upload(_:)`' | '`NetworkClient.upload(_:tag:)`')
       validate_protocol_symbol "NetworkClient" "$target" "$pattern"
-    else
-      rg -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
-    fi
-  else
-    if [[ "$symbol" == '`NetworkClient.request(_:)`' || "$symbol" == '`NetworkClient.upload(_:)`' ]]; then
-      validate_protocol_symbol "NetworkClient" "$target" "$pattern"
-    else
-      grep -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
-    fi
-  fi
+      ;;
+    *)
+      if has_rg; then
+        rg -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
+      else
+        grep -Fq "$pattern" "$target" || fail "stable symbol $symbol is not present in production sources"
+      fi
+      ;;
+  esac
 done
 
 for symbol in "${expected_provisionally[@]}"; do

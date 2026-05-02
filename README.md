@@ -379,8 +379,8 @@ do {
         print("Invalid request configuration: \(message)")
     case .statusCode(let response):
         print("Unexpected status code: \(response.statusCode)")
-    case .objectMapping(let underlying, _):
-        print("Decoding failed: \(underlying)")
+    case .decoding(let stage, let underlying, _):
+        print("Decoding failed (\(stage)): \(underlying)")
     case .trustEvaluationFailed(let reason):
         print("Trust evaluation failed: \(reason)")
     case .cancelled:
@@ -481,7 +481,7 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - **Redaction defaults.** `NetworkLogger` and `OSLogNetworkEventObserver` mark URLs, headers,
   and request bodies as `.private` by default. Do not flip them to `.public` outside of
   controlled diagnostic builds.
-- **Failure payload capture.** `NetworkError.objectMapping(_, response)` carries a `Response`;
+- **Failure payload capture.** `NetworkError.decoding(stage:, underlying:, response:)` carries a `Response`;
   by default that `response.data` is redacted to empty data unless you opt in via
   `NetworkConfiguration.captureFailurePayload = true`. Keep that flag off in release
   configurations to avoid storing PII inside crash logs or analytics.

@@ -97,8 +97,8 @@ public struct NetworkConfiguration: Sendable {
     public let circuitBreakerPolicy: CircuitBreakerPolicy?
 
     /// When `false` (default), response bodies attached to ``NetworkError``
-    /// cases (`objectMapping`, `jsonMapping`, `statusCode`, and `underlying`
-    /// when present) are zeroed out before the error is logged or surfaced
+    /// cases (`decoding`, `statusCode`, and `underlying` when present) are
+    /// zeroed out before the error is logged or surfaced
     /// to consumers, so PII in failure payloads cannot accidentally leak
     /// into crash logs, analytics, or error reporting. Status code, headers,
     /// and the original `URLRequest` are preserved.

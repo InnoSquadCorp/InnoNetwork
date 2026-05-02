@@ -68,9 +68,10 @@ struct DomainSentinelGuard: DecodingInterceptor {
         response: Response
     ) async throws -> APIResponse where APIResponse: Sendable {
         if let sentinel = value as? DomainErrorCarrying, sentinel.errorCode != 0 {
-            throw NetworkError.objectMapping(
-                SendableUnderlyingError(DomainSentinelError(code: sentinel.errorCode)),
-                response
+            throw NetworkError.decoding(
+                stage: .responseBody,
+                underlying: SendableUnderlyingError(DomainSentinelError(code: sentinel.errorCode)),
+                response: response
             )
         }
         return value
@@ -83,7 +84,8 @@ struct DomainSentinelError: Error, Sendable { let code: Int }
 
 The hook signature requires the returned value to match the input type, so
 this is an inspection-or-throw boundary, not a type-changing transform. Use
-``NetworkError/objectMapping(_:_:)`` for non-retryable schema-level failures;
+``NetworkError/decoding(stage:underlying:response:)`` with
+``DecodingStage/responseBody`` for non-retryable schema-level failures;
 use ``NetworkError/statusCode(_:)`` if you want the failure to flow through
 the same retry classification a server-side rejection would.
 

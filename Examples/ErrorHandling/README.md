@@ -19,7 +19,7 @@ InnoNetwork provides the following error types:
 - `NetworkError.invalidBaseURL`: Invalid base URL configuration
 - `NetworkError.jsonMapping`: Failed to parse JSON response
 - `NetworkError.statusCode`: HTTP status code outside 200-299 range
-- `NetworkError.objectMapping`: Failed to map response to Decodable object
+- `NetworkError.decoding`: Failed to decode response (carries `DecodingStage` tag)
 - `NetworkError.nonHTTPResponse`: Response is not HTTPURLResponse
 - `NetworkError.underlying`: Underlying network error (URLError, etc.)
 - `NetworkError.undefined`: Undefined error
@@ -65,8 +65,8 @@ do {
         } else if response.statusCode >= 400 {
             print("→ Client error")
         }
-    case .objectMapping(let decodingError, let response):
-        print("Object Mapping Error: \(decodingError)")
+    case .decoding(let stage, let decodingError, let response):
+        print("Decoding Error (\(stage)): \(decodingError)")
         print("Status Code: \(response.statusCode)")
     case .nonHTTPResponse(let response):
         print("Non-HTTP Response: \(response)")

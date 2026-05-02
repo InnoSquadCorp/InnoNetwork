@@ -30,6 +30,18 @@ Versioning.
 
 ### Changed (BREAKING)
 
+- `NetworkError.objectMapping(_:_:)` is no longer an enum case. Decode
+  failures now surface as `NetworkError.decoding(stage:underlying:response:)`
+  with a `DecodingStage` (`.responseBody`, `.streamFrame`,
+  `.multipartPart`, `.envelope`, `.empty`) so retry policies and
+  observability layers can distinguish where in the pipeline the failure
+  happened. A static factory `NetworkError.objectMapping(_:_:)` remains
+  with `@available(*, deprecated, renamed:)` so construction sites
+  compile with a deprecation warning, but `case .objectMapping` patterns
+  must be migrated to `case .decoding(let stage, _, _)`. A new
+  `NetworkError.isDecodingFailure` convenience helper lets retry
+  policies express "decode failures are not retried" without pattern
+  matching.
 - `DownloadManager.shared` is now `DownloadManager?` instead of
   `DownloadManager`. The accessor returns `nil` when initialization fails
   (for example, if both the default and fallback session identifiers are

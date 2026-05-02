@@ -324,8 +324,8 @@ do {
     switch error {
     case .statusCode(let response):
         print("HTTP Error: \(response.statusCode)")
-    case .objectMapping(let decodingError, _):
-        print("Decoding Error: \(decodingError)")
+    case .decoding(let stage, let decodingError, _):
+        print("Decoding Error (\(stage)): \(decodingError)")
     default:
         print("Other Error: \(error)")
     }
