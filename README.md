@@ -189,13 +189,11 @@ for await event in await manager.events(for: task) {
 }
 ```
 
-> `DownloadManager.shared` still exists for back-compat, but is
-> soft-deprecated. The singleton forces every feature to share one
-> configuration **and can fatalError on first access** if persistence is
-> unavailable or the fallback session identifier is also claimed.
-> `DownloadManager.make(configuration:)` surfaces such failures as a
-> thrown `DownloadManagerError` instead — prefer it for production
-> code paths.
+> The 4.0.0 line removes the global `DownloadManager.shared` singleton —
+> every feature now constructs and owns its own manager via
+> ``DownloadManager.make(configuration:)`` with a unique session identifier.
+> The throwing factory surfaces ``DownloadManagerError`` (e.g.,
+> `duplicateSessionIdentifier`) directly so the failure mode is explicit.
 
 #### Destination filename policy
 

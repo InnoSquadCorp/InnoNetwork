@@ -54,8 +54,8 @@ release the wake-lock promptly:
 
 ```swift
 // In your AppDelegate / scene entry point. Route the completion to the
-// DownloadManager that owns this session identifier — `make(configuration:)`
-// is the recommended factory; `.shared` is deprecated and Optional.
+// DownloadManager that owns this session identifier — construct it with
+// `make(configuration:)` and store the manager on the owning feature module.
 func application(
     _ application: UIApplication,
     handleEventsForBackgroundURLSession identifier: String,

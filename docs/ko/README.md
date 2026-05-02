@@ -71,8 +71,8 @@ print(user)
 import Foundation
 import InnoNetworkDownload
 
-// `DownloadManager.shared` 는 deprecated 입니다. 기능별로 고유한 세션 식별자를
-// 가진 매니저를 생성하세요 (자세한 내용은 `SharedManagerMigration` 문서 참고).
+// 4.0.0부터는 전역 `DownloadManager.shared` 가 제거되었습니다. 기능별로 고유한
+// 세션 식별자를 가진 매니저를 직접 생성해 소유하세요.
 let manager = try DownloadManager.make(
     configuration: .safeDefaults(sessionIdentifier: "com.example.app.media")
 )

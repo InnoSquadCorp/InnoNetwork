@@ -337,28 +337,33 @@ foot-guns. Each subsection captures the breaking change, the
 rationale, and the supported migration. The matching `CHANGELOG.md`
 entries live under `[4.0.0]`.
 
-### `DownloadManager.shared` is now Optional
+### `DownloadManager.shared` removed
 
-- **What changed.** `DownloadManager.shared` previously trapped via
-  `fatalError` when its session identifier was already claimed by another
-  manager. The property is now typed as `DownloadManager?` and returns
-  `nil` after logging an OSLog `.fault` instead of crashing the process.
-- **Why.** The trap turned a recoverable identifier collision (typically
-  caused by tests, app extensions sharing an identifier, or repeated
-  `make(configuration:)` calls) into an app crash. Returning `nil` lets
-  callers fall back to `make(configuration:)` and surface their own error.
-- **Migration.** Prefer `DownloadManager.make(configuration:)`. If you
-  must touch `shared`, unwrap it explicitly:
+- **What changed.** `DownloadManager.shared` is removed. There is no
+  global singleton; every `DownloadManager` is constructed explicitly
+  through `DownloadManager.make(configuration:)` (or
+  `DownloadManager(configuration:)`).
+- **Why.** The 4.x accessor trapped via `fatalError` on duplicate
+  session identifiers, then briefly mitigated to an Optional that hid
+  the failure mode behind a silent `nil`. Both shapes forced every
+  feature in a process onto a single `DownloadConfiguration` and made
+  the failure path either fatal or invisible. Removing the singleton
+  keeps the failure shape (`DownloadManagerError.duplicateSessionIdentifier`)
+  visible at the call site and lets each feature own its own
+  configuration.
+- **Migration.** Replace `DownloadManager.shared` with an injected
+  manager owned by the feature module:
 
   ```swift
-  guard let manager = DownloadManager.shared else {
-      // Fall back to a deliberately-configured manager.
-      return try DownloadManager.make(configuration: .default)
-  }
+  let manager = try DownloadManager.make(
+      configuration: .safeDefaults(sessionIdentifier: "com.example.media")
+  )
   ```
 
-  `shared` remains `@available(*, deprecated)` to nudge callers toward
-  `make(configuration:)`; it will be removed in a later major release.
+  Pass that manager to whatever component performs the download
+  (typically via initializer injection). For tests, construct a manager
+  with a UUID-suffixed session identifier to avoid cross-test
+  collisions.
 
 ### `NetworkClient` gains `tag:` overloads
 
@@ -403,14 +408,12 @@ entries live under `[4.0.0]`.
 
 ### `NetworkError.objectMapping` split into `decoding(stage:)`
 
-- **What changed.** The `NetworkError.objectMapping(_:_:)` enum case is
-  removed. Decode failures now surface as
+- **What changed.** The `NetworkError.objectMapping(_:_:)` enum case
+  and its compatibility static factory are both removed. Decode
+  failures now surface exclusively as
   `NetworkError.decoding(stage:underlying:response:)` carrying a
   `DecodingStage` (`.responseBody`, `.streamFrame`, `.multipartPart`,
-  `.envelope`, `.empty`) so the failure site is explicit. A
-  source-compatible static factory `NetworkError.objectMapping(_:_:)`
-  remains, marked `@available(*, deprecated, renamed:)`, so existing
-  *construction* sites compile with a deprecation warning. A new
+  `.envelope`, `.empty`) so the failure site is explicit. A new
   `NetworkError.isDecodingFailure` helper makes "decode failures are
   not retried" expressible without pattern matching.
 - **Why.** `objectMapping` collapsed every decode-related failure —
@@ -420,13 +423,12 @@ entries live under `[4.0.0]`.
   and observability layers had to inspect the underlying error to
   classify the stage. Splitting the case lets policies and metrics
   branch on stage directly.
-- **Migration.** Construction sites compile with a deprecation
-  warning; switch to
-  `NetworkError.decoding(stage: .responseBody, underlying:, response:)`.
+- **Migration.** Replace construction sites that called
+  `.objectMapping(underlying, response)` with
+  `.decoding(stage: .responseBody, underlying: underlying, response: response)`.
   Pattern-matching `case .objectMapping(let underlying, let response)`
   must be migrated to
-  `case .decoding(let stage, let underlying, let response)`; this is
-  a hard break because Swift cannot alias enum-case patterns. Callers
+  `case .decoding(let stage, let underlying, let response)`. Callers
   that previously branched on "decode failure vs other" can use
   `error.isDecodingFailure` instead of pattern matching.
 

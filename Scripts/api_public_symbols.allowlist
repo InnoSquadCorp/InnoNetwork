@@ -566,7 +566,6 @@ InnoNetwork	swift.type.method	HTTPHeader.userAgent(_:)
 InnoNetwork	swift.type.method	HTTPHeader.websocketProtocol(_:)
 InnoNetwork	swift.type.method	NetworkConfiguration.advanced(baseURL:_:)
 InnoNetwork	swift.type.method	NetworkConfiguration.safeDefaults(baseURL:)
-InnoNetwork	swift.type.method	NetworkError.objectMapping(_:_:)
 InnoNetwork	swift.type.method	TransportPolicy.custom(encoding:decode:)
 InnoNetwork	swift.type.method	TransportPolicy.formURLEncoded(encoder:rootKey:decoder:)
 InnoNetwork	swift.type.method	TransportPolicy.json(encoder:decoder:)
@@ -709,7 +708,6 @@ InnoNetworkDownload	swift.type.method	DownloadConfiguration.safeDefaults()
 InnoNetworkDownload	swift.type.method	DownloadConfiguration.safeDefaults(sessionIdentifier:)
 InnoNetworkDownload	swift.type.method	DownloadManager.make(configuration:)
 InnoNetworkDownload	swift.type.property	DownloadConfiguration.default
-InnoNetworkDownload	swift.type.property	DownloadManager.shared
 InnoNetworkDownload	swift.type.property	DownloadProgress.zero
 InnoNetworkTestSupport	swift.class	MockURLSession
 InnoNetworkTestSupport	swift.class	StubNetworkClient

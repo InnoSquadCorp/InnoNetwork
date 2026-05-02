@@ -166,7 +166,7 @@ let response = try await client.upload(UploadPhoto(title: "My Photo", imageData:
 
 ```swift
 // Construct one DownloadManager per feature with a unique session identifier.
-// `DownloadManager.shared` is deprecated — see SharedManagerMigration.
+// 4.0.0 removed the global `DownloadManager.shared`; manage lifetimes via DI.
 let manager = try DownloadManager.make(
     configuration: .safeDefaults(sessionIdentifier: "com.example.app.media")
 )

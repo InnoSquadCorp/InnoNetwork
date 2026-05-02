@@ -50,10 +50,10 @@ summary.
   `successfulReconnectCount` expose per-cycle attempts and lifetime
   successes.
 - `DownloadManager.make(configuration:) throws` factory mirrors the throwing
-  initializer with a more discoverable name. `DownloadManager.shared`
-  logs an OSLog `.fault`, asserts in DEBUG, and falls back to a
-  process-unique identifier on duplicate-session-identifier conflicts so the
-  singleton stays usable.
+  initializer with a more discoverable name. The 4.0.0 line removes the
+  global `DownloadManager.shared` singleton entirely; every feature owns
+  a manager constructed via `make(configuration:)` with a unique session
+  identifier and surfaces `DownloadManagerError` directly.
 - `StreamingResumePolicy` (`.disabled`, `.lastEventID(maxAttempts:retryDelay:)`)
   drives optional reconnect-with-Last-Event-ID resume on streaming endpoints.
   `StreamingAPIDefinition.eventID(from:)` is the user hook that feeds the
@@ -246,38 +246,30 @@ summary.
   it falls back to `.requestTimeout`. Previously this case was
   reserved for higher-level transports.
 
-### Deprecated
-
-- `DownloadManager.shared` is now `DownloadManager?` and is soft-deprecated.
-  The accessor returns `nil` when initialization fails (for example, if both
-  the default and fallback session identifiers are already claimed, or
-  persistence is unavailable) and emits an OSLog `.fault`; the previous
-  `fatalError` paths have been removed. The shared singleton also forces
-  every feature in the process onto a single `DownloadConfiguration`,
-  which prevents per-feature retry budgets, cellular policies, or
-  storage roots. Prefer constructing per-feature managers via
-  ``DownloadManager.make(configuration:)``, which throws
-  `DownloadManagerError` so the failure mode is explicit. Existing
-  `DownloadManager.shared.foo()` call sites must be updated to
-  `DownloadManager.shared?.foo()` or to a `make(configuration:)`-owned
-  instance. The symbol remains available for the 4.x line so existing
-  call sites continue to compile with a deprecation warning. See the
-  ``SharedManagerMigration`` DocC article for the migration cookbook.
-- `NetworkError.objectMapping(_:_:)` is no longer an enum case. Decode
-  failures now surface as `NetworkError.decoding(stage:underlying:response:)`
-  with a `DecodingStage` (`.responseBody`, `.streamFrame`,
-  `.multipartPart`, `.envelope`, `.empty`) so retry policies and
-  observability layers can distinguish where in the pipeline the
-  failure happened. A static factory `NetworkError.objectMapping(_:_:)`
-  remains with `@available(*, deprecated, renamed:)` so construction
-  sites compile with a deprecation warning, but `case .objectMapping`
-  patterns must be migrated to `case .decoding(let stage, _, _)`. A
-  new `NetworkError.isDecodingFailure` convenience helper lets retry
-  policies express "decode failures are not retried" without pattern
-  matching.
-
 ### Removed
 
+- `DownloadManager.shared` is removed in 4.0.0. The previous accessor
+  trapped on first access in failure modes (duplicate session identifier,
+  unavailable persistence) and forced every feature onto a single
+  `DownloadConfiguration`. Construct managers via
+  `DownloadManager.make(configuration:)` with a unique session identifier
+  per feature; the throwing factory surfaces `DownloadManagerError`
+  directly so callers can react to `duplicateSessionIdentifier` instead
+  of receiving an Optional or trapping.
+- `NetworkError.objectMapping(_:_:)` static factory is removed. Decode
+  failures now surface exclusively as
+  `NetworkError.decoding(stage:underlying:response:)` with a
+  `DecodingStage` (`.responseBody`, `.streamFrame`, `.multipartPart`,
+  `.envelope`, `.empty`) so retry policies and observability layers can
+  distinguish where in the pipeline the failure happened. Migrate
+  pattern matching from `.objectMapping(let underlying, let response)`
+  to `.decoding(let stage, let underlying, let response)`; new
+  `NetworkError.isDecodingFailure` is the canonical helper for "decode
+  failures are not retried".
+- `MultipartFormData.appendFile(at:name:mimeType:) throws` (the
+  synchronous in-memory overload) is removed. Use the async overload
+  combined with `writeEncodedData(to:)` so file bytes stream from disk
+  without loading into memory at append time.
 - `NetworkError.undefined` and `NetworkError.jsonMapping` — both cases were
   unreachable in production code and only existed as test fixtures.
   Decode failures now surface as `.decoding(stage:underlying:response:)`.
@@ -419,14 +411,6 @@ summary.
 - `CachingStrategies` documents the new 304-with-new-Vary handling so
   callers know that successful conditional revalidation never rekeys
   the stored entry.
-- `SharedManagerMigration` DocC article (P2.3) walks through moving
-  off ``DownloadManager.shared`` to dependency-injected per-feature
-  managers: picking an owning component, building an explicit
-  ``DownloadConfiguration`` with a unique session identifier,
-  constructing via ``DownloadManager/make(configuration:)``, routing
-  background completion handlers, and decommissioning the remaining
-  `.shared` call sites. The deprecation banner on
-  ``DownloadManager/shared`` now links to the new article.
 - `MigrationFromAlamofire` DocC article (P3) maps Alamofire's
   `RequestAdapter` / `RequestRetrier` / `AuthenticationInterceptor`
   onto InnoNetwork's ``RequestInterceptor`` / ``RetryPolicy`` /
