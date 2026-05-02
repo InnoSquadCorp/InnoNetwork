@@ -91,6 +91,10 @@ package struct RequestExecutor {
             for interceptor in configuration.responseInterceptors {
                 networkResponse = try await interceptor.adapt(networkResponse, request: request)
             }
+            // After response interceptors settle, give cancellation a chance
+            // to short-circuit before we spend cycles on body-limit checks,
+            // decode, and didDecode chains.
+            try Task.checkCancellation()
             try enforceResponseBodyLimit(networkResponse, configuration: configuration)
 
             // Per-endpoint override wins over the session-wide configuration
@@ -125,6 +129,10 @@ package struct RequestExecutor {
             }
             try enforceResponseBodyLimit(data: decodableData, configuration: configuration)
 
+            // Synchronous decode can block for several ms on large payloads;
+            // the surrounding async machinery would not check cancellation
+            // again until didDecode runs, so insert a checkpoint here.
+            try Task.checkCancellation()
             var decoded = try executable.decode(data: decodableData, response: networkResponse)
             for interceptor in configuration.decodingInterceptors {
                 decoded = try await interceptor.didDecode(decoded, response: networkResponse)
