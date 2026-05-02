@@ -22,10 +22,11 @@ public actor DownloadTask: Identifiable {
     public var resumeData: Data? { _resumeData }
     public var error: DownloadError? { _error }
 
-    public init(url: URL, destinationURL: URL, id: String = UUID().uuidString) {
+    public init(url: URL, destinationURL: URL, id: String = UUID().uuidString, resumeData: Data? = nil) {
         self.id = id
         self.url = url
         self.destinationURL = destinationURL
+        self._resumeData = resumeData
     }
 
     /// Apply a new state, enforcing the documented transition table from
@@ -40,14 +41,18 @@ public actor DownloadTask: Identifiable {
     /// ``restoreState(_:)``.
     func updateState(_ newState: DownloadState) {
         let current = _state
-        if !current.canTransition(to: newState) {
+        let reduction = DownloadLifecycleReducer.reduce(
+            state: current,
+            event: .transition(to: newState)
+        )
+        if reduction.effects.contains(.rejectIllegalTransition(from: current, to: newState)) {
             Self.logger.fault(
                 "Illegal DownloadState transition: \(current.rawValue, privacy: .public) -> \(newState.rawValue, privacy: .public) for task \(self.id, privacy: .private(mask: .hash))"
             )
             assertionFailure("Illegal DownloadState transition: \(current) -> \(newState) for task \(self.id)")
             return
         }
-        _state = newState
+        _state = reduction.state
     }
 
     /// Assign the task state without validating the transition.

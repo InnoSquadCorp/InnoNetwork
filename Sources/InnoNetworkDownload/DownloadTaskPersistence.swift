@@ -2,7 +2,8 @@ import Darwin
 import Foundation
 
 package protocol DownloadTaskStore: Actor {
-    func upsert(id: String, url: URL, destinationURL: URL) async throws
+    func upsert(id: String, url: URL, destinationURL: URL, resumeData: Data?) async throws
+    func updateResumeData(id: String, resumeData: Data?) async throws
     func remove(id: String) async throws
     func record(forID id: String) async -> DownloadTaskPersistence.Record?
     func allRecords() async -> [DownloadTaskPersistence.Record]
@@ -15,6 +16,14 @@ package actor DownloadTaskPersistence {
         let id: String
         let url: URL
         let destinationURL: URL
+        let resumeData: Data?
+
+        package init(id: String, url: URL, destinationURL: URL, resumeData: Data? = nil) {
+            self.id = id
+            self.url = url
+            self.destinationURL = destinationURL
+            self.resumeData = resumeData
+        }
     }
 
     private let store: any DownloadTaskStore
@@ -24,6 +33,7 @@ package actor DownloadTaskPersistence {
         fileManager: FileManager = .default,
         baseDirectoryURL: URL? = nil,
         fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy = .onCheckpoint,
+        compactionPolicy: DownloadConfiguration.PersistenceCompactionPolicy = .default,
         fsync: @escaping @Sendable (Int32) -> Int32 = Darwin.fsync
     ) {
         _ = fileManager
@@ -31,6 +41,7 @@ package actor DownloadTaskPersistence {
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL,
             fsyncPolicy: fsyncPolicy,
+            compactionPolicy: compactionPolicy,
             fsync: fsync
         )
     }
@@ -39,8 +50,12 @@ package actor DownloadTaskPersistence {
         self.store = store
     }
 
-    package func upsert(id: String, url: URL, destinationURL: URL) async throws {
-        try await store.upsert(id: id, url: url, destinationURL: destinationURL)
+    package func upsert(id: String, url: URL, destinationURL: URL, resumeData: Data? = nil) async throws {
+        try await store.upsert(id: id, url: url, destinationURL: destinationURL, resumeData: resumeData)
+    }
+
+    package func updateResumeData(id: String, resumeData: Data?) async throws {
+        try await store.updateResumeData(id: id, resumeData: resumeData)
     }
 
     package func remove(id: String) async throws {
@@ -82,6 +97,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         let taskID: String
         let url: URL?
         let destinationURL: URL?
+        let resumeData: Data?
     }
 
     private struct StoreState: Sendable {
@@ -98,6 +114,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     private let logURL: URL
     private let lockURL: URL
     private let fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy
+    private let compactionPolicy: DownloadConfiguration.PersistenceCompactionPolicy
     private let fsync: @Sendable (Int32) -> Int32
     private var state: StoreState
 
@@ -105,6 +122,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         sessionIdentifier: String,
         baseDirectoryURL: URL? = nil,
         fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy = .onCheckpoint,
+        compactionPolicy: DownloadConfiguration.PersistenceCompactionPolicy = .default,
         fsync: @escaping @Sendable (Int32) -> Int32 = Darwin.fsync
     ) {
         let fileManager = FileManager.default
@@ -140,22 +158,35 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         self.logURL = logURL
         self.lockURL = lockURL
         self.fsyncPolicy = fsyncPolicy
+        self.compactionPolicy = compactionPolicy
         self.fsync = fsync
         self.state = initialState
     }
 
-    package func upsert(id: String, url: URL, destinationURL: URL) async throws {
+    package func upsert(id: String, url: URL, destinationURL: URL, resumeData: Data?) async throws {
         try await mutate {
-            $0.records[id] = DownloadTaskPersistence.Record(id: id, url: url, destinationURL: destinationURL)
+            $0.records[id] = DownloadTaskPersistence.Record(
+                id: id,
+                url: url,
+                destinationURL: destinationURL,
+                resumeData: resumeData
+            )
             return Event(
                 sequence: $0.nextSequence,
                 timestamp: .now,
                 kind: .upsert,
                 taskID: id,
                 url: url,
-                destinationURL: destinationURL
+                destinationURL: destinationURL,
+                resumeData: resumeData
             )
         }
+    }
+
+    package func updateResumeData(id: String, resumeData: Data?) async throws {
+        guard let existing = state.records[id] else { return }
+        try await upsert(
+            id: existing.id, url: existing.url, destinationURL: existing.destinationURL, resumeData: resumeData)
     }
 
     package func remove(id: String) async throws {
@@ -169,7 +200,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
                 kind: .remove,
                 taskID: id,
                 url: nil,
-                destinationURL: nil
+                destinationURL: nil,
+                resumeData: nil
             )
         }
     }
@@ -203,7 +235,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
                     kind: .remove,
                     taskID: staleID,
                     url: nil,
-                    destinationURL: nil
+                    destinationURL: nil,
+                    resumeData: nil
                 )
             }
         }
@@ -215,6 +248,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
 
     private func mutate(_ transform: (inout StoreState) -> [Event]) async throws {
         let fsyncPolicy = self.fsyncPolicy
+        let compactionPolicy = self.compactionPolicy
         let fsync = self.fsync
         let updatedState = try Self.withDirectoryLock(lockURL: lockURL, fileManager: fileManager) {
             var diskState = try Self.loadState(
@@ -238,7 +272,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             diskState.logSize = Self.fileSize(at: logURL, fileManager: fileManager)
             diskState.nextSequence += Int64(events.count)
 
-            if Self.shouldCompact(state: diskState) {
+            if Self.shouldCompact(state: diskState, policy: compactionPolicy) {
                 try Self.writeCheckpoint(
                     records: diskState.records,
                     to: checkpointURL,
@@ -355,7 +389,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
                 records[event.taskID] = DownloadTaskPersistence.Record(
                     id: event.taskID,
                     url: url,
-                    destinationURL: destinationURL
+                    destinationURL: destinationURL,
+                    resumeData: event.resumeData
                 )
             case .remove:
                 records.removeValue(forKey: event.taskID)
@@ -497,18 +532,21 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         try fsyncFileDescriptor(descriptor, fsync: fsync)
     }
 
-    private static func shouldCompact(state: StoreState) -> Bool {
-        if state.logEventCount >= 1_000 {
+    private static func shouldCompact(
+        state: StoreState,
+        policy: DownloadConfiguration.PersistenceCompactionPolicy
+    ) -> Bool {
+        if state.logEventCount >= policy.maxEvents {
             return true
         }
 
-        if state.logSize >= 1_048_576 {
+        if state.logSize >= policy.maxLogBytes {
             return true
         }
 
         guard state.logEventCount > 0 else { return false }
         let tombstoneRatio = Double(state.tombstoneCount) / Double(state.logEventCount)
-        return tombstoneRatio >= 0.25
+        return tombstoneRatio >= policy.tombstoneRatio
     }
 
     private static func fileSize(at url: URL, fileManager: FileManager) -> UInt64 {

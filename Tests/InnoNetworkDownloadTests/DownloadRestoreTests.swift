@@ -41,6 +41,58 @@ struct DownloadRestoreTests {
         #expect(await harness.persistence.record(forID: "orphan-task") == nil)
     }
 
+    @Test("Paused persisted records with resume data restore without a system task")
+    func pausedRecordWithResumeDataRestores() async throws {
+        let pausedID = "paused-task-\(UUID().uuidString)"
+        let resumeData = Data("resume-after-relaunch".utf8)
+        let pausedRecord = DownloadTaskPersistence.Record(
+            id: pausedID,
+            url: URL(string: "https://example.invalid/paused.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-paused.zip"),
+            resumeData: resumeData
+        )
+        let resumedStub = StubDownloadURLTask()
+        let harness = try StubDownloadHarness(
+            label: "restore-paused",
+            prepopulatedRecords: [pausedRecord],
+            prequeuedStubs: [resumedStub]
+        )
+
+        let probe = await harness.startDownload(
+            url: URL(string: "https://example.invalid/probe.zip")!
+        )
+        await harness.manager.cancel(probe)
+
+        let restoredTask = try #require(await harness.manager.task(withId: pausedID))
+        #expect(await restoredTask.state == .paused)
+        #expect(await restoredTask.resumeData == resumeData)
+
+        await harness.manager.resume(restoredTask)
+
+        #expect(harness.stubSession.lastResumeData == resumeData)
+        #expect(await restoredTask.resumeData == nil)
+    }
+
+    @Test("Foreign system tasks are cancelled during restore")
+    func foreignSystemTasksAreCancelled() async throws {
+        let foreignURL = URL(string: "https://example.invalid/foreign.zip")!
+        let foreignStub = StubDownloadURLTask(
+            request: URLRequest(url: foreignURL),
+            initialState: .running
+        )
+        let harness = try StubDownloadHarness(
+            label: "restore-foreign",
+            preinstalledStubs: [foreignStub]
+        )
+
+        let probe = await harness.startDownload(
+            url: URL(string: "https://example.invalid/probe.zip")!
+        )
+        await harness.manager.cancel(probe)
+
+        #expect(foreignStub.cancelCount == 1)
+    }
+
     @Test("Restore adopts an existing URL task whose taskDescription matches a persisted id")
     func restoreAdoptsExistingURLTask() async throws {
         let trackedID = "persisted-task-\(UUID().uuidString)"

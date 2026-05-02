@@ -151,7 +151,8 @@ public actor DownloadManager {
             configuration: configuration,
             persistence: DownloadTaskPersistence(
                 sessionIdentifier: configuration.sessionIdentifier,
-                fsyncPolicy: configuration.persistenceFsyncPolicy
+                fsyncPolicy: configuration.persistenceFsyncPolicy,
+                compactionPolicy: configuration.persistenceCompactionPolicy
             )
         )
     }
@@ -278,6 +279,19 @@ public actor DownloadManager {
         await runtimeRegistry.setOnFailed(callback)
     }
 
+    /// Waits until launch restoration has reconciled persisted download tasks
+    /// with the background URLSession.
+    ///
+    /// Public download operations call this internally before mutating task
+    /// state, but apps that need to coordinate their own startup UI can await
+    /// the same barrier explicitly.
+    ///
+    /// - Returns: `true` when restoration completed, or `false` if the waiting
+    ///   task was cancelled.
+    public func waitForRestoration() async -> Bool {
+        await waitForRestore()
+    }
+
     @discardableResult
     public func download(url: URL, to destinationURL: URL) async -> DownloadTask {
         guard await waitForRestore() else {
@@ -308,6 +322,12 @@ public actor DownloadManager {
 
         if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
             let resumeData = await urlTask.cancelByProducingResumeData()
+            do {
+                try await persistence.updateResumeData(id: task.id, resumeData: resumeData)
+            } catch {
+                await transferCoordinator.markTaskFailedForPersistence(task, error: error)
+                return
+            }
             await task.setResumeData(resumeData)
             await task.updateState(.paused)
             await runtimeRegistry.onStateChanged?(task, .paused)
@@ -330,6 +350,7 @@ public actor DownloadManager {
             await transferCoordinator.register(urlTask: urlTask, for: task)
             await task.updateState(.downloading)
             await task.setResumeData(nil)
+            try? await persistence.updateResumeData(id: task.id, resumeData: nil)
             await runtimeRegistry.onStateChanged?(task, .downloading)
             await eventHub.publish(.stateChanged(.downloading), for: task.id)
             urlTask.resume()

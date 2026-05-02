@@ -18,19 +18,22 @@ let configuration = DownloadConfiguration.advanced(
     sessionIdentifier: "com.example.app.downloads"
 ) { builder in
     builder.allowsCellularAccess = true
-    builder.discretionary = false
-    builder.isWaitingForConnectivity = true
-    builder.persistenceDirectory = .documents
+    builder.maxConnectionsPerHost = 4
+    builder.persistenceCompactionPolicy = .init(
+        maxEvents: 1_000,
+        maxLogBytes: 1_048_576,
+        tombstoneRatio: 0.25
+    )
 }
 ```
 
 - **Session identifier.** Must be globally unique within the app process. Reusing an
   identifier across two `DownloadManager` instances causes Foundation to merge tasks into
   the first session — the second never receives delegate callbacks.
-- **`discretionary`.** When `true`, the OS may delay the transfer to favour battery and
-  data plan efficiency. Set `false` only when the user explicitly initiated the download.
-- **`isWaitingForConnectivity`.** When `true`, the task waits for connectivity rather than
-  failing immediately on radio loss. Recommended for user-driven downloads.
+- **Cellular access.** Set `allowsCellularAccess` per feature when downloads may be large
+  or expensive for the user.
+- **Persistence compaction.** Long-running apps can tune the append-log snapshot budget
+  without replacing the persistence store.
 
 ## Info.plist
 
@@ -81,20 +84,33 @@ with the system's `allDownloadTasks()`:
 - Tasks that are persisted but missing from the system are marked failed and the
   persistence row is removed.
 - Tasks that exist in the system but are not persisted are cancelled (they are foreign).
+- Paused tasks with durable resume data can be restored from persistence even when
+  `URLSession` no longer reports a live task.
 
 Every public manager entry point waits for restoration internally before it
 starts or mutates download work, so callers can issue new downloads immediately
 after constructing the owning manager.
 
 ```swift
+// Optional: explicitly await restoration (every public entry point already
+// awaits it internally, so this is only needed when callers want to gate
+// UI on restore completion).
+let didRestore = await mediaDownloads.waitForRestoration()
+
 let task = await mediaDownloads.download(url: remoteURL, to: destinationURL)
 ```
 
 ## Pause and resume
 
 `pause(_:)` calls `cancelByProducingResumeData()` on the underlying URL task, captures the
-resume data on the actor, and transitions the task to `.paused`. `resume(_:)` rehydrates
-the task with the saved resume data.
+resume data in persistence, and transitions the task to `.paused`. `resume(_:)` rehydrates
+the task with the saved resume data and clears the stored resume payload once the new
+system task is created.
+
+InnoNetwork 4.0.0 treats resume data as best-effort durable state. Process termination
+after `pause(_:)` completes can resume from persisted `resumeData` on the next launch.
+Server-side invalidation, OS resume-data incompatibility, or cache/range-policy changes
+can still force a fresh download from byte 0.
 
 If the resume data has been invalidated by the server (cache TTL, range support change),
 the resumed task will fall back to a fresh download from byte 0. The transition is
@@ -110,8 +126,6 @@ let configuration = DownloadConfiguration.advanced(
     sessionIdentifier: "com.example.app.downloads"
 ) { builder in
     builder.allowsCellularAccess = false
-    builder.allowsExpensiveNetworkAccess = false  // hotspot, etc.
-    builder.allowsConstrainedNetworkAccess = false  // Low Data Mode
 }
 ```
 

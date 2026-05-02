@@ -84,6 +84,7 @@ public enum DownloadError: Error, Sendable {
     case cancelled
     case maxRetriesExceeded
     case noResumeData
+    case restorationMissingSystemTask
     case unknown
 }
 
@@ -102,6 +103,8 @@ extension DownloadError: LocalizedError {
             return "Maximum retry attempts exceeded"
         case .noResumeData:
             return "No resume data available"
+        case .restorationMissingSystemTask:
+            return "Persisted download no longer exists in the background URLSession"
         case .unknown:
             return "Unknown error occurred"
         }

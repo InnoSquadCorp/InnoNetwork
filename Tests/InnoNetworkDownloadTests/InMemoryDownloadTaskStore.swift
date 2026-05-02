@@ -29,15 +29,21 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         shouldFailUpsert = shouldFail
     }
 
-    func upsert(id: String, url: URL, destinationURL: URL) async throws {
+    func upsert(id: String, url: URL, destinationURL: URL, resumeData: Data?) async throws {
         if shouldFailUpsert {
             throw InMemoryDownloadTaskStoreError.upsertFailed(id)
         }
         records[id] = DownloadTaskPersistence.Record(
             id: id,
             url: url,
-            destinationURL: destinationURL
+            destinationURL: destinationURL,
+            resumeData: resumeData
         )
+    }
+
+    func updateResumeData(id: String, resumeData: Data?) async throws {
+        guard let record = records[id] else { return }
+        try await upsert(id: id, url: record.url, destinationURL: record.destinationURL, resumeData: resumeData)
     }
 
     func remove(id: String) async throws {

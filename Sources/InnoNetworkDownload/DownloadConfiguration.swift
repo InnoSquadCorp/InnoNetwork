@@ -23,7 +23,9 @@ public struct DownloadConfiguration: Sendable {
                 waitsForNetworkChanges: false,
                 networkChangeTimeout: 10.0,
                 eventDeliveryPolicy: .default,
-                eventMetricsReporter: nil
+                eventMetricsReporter: nil,
+                persistenceFsyncPolicy: .onCheckpoint,
+                persistenceCompactionPolicy: .default
             )
         }
 
@@ -48,7 +50,9 @@ public struct DownloadConfiguration: Sendable {
                     maxBufferedEventsPerConsumer: 512,
                     overflowPolicy: .dropOldest
                 ),
-                eventMetricsReporter: nil
+                eventMetricsReporter: nil,
+                persistenceFsyncPolicy: .onCheckpoint,
+                persistenceCompactionPolicy: .default
             )
         }
     }
@@ -100,6 +104,9 @@ public struct DownloadConfiguration: Sendable {
     /// ``PersistenceFsyncPolicy`` for the trade-offs. Defaults to
     /// ``PersistenceFsyncPolicy/onCheckpoint``.
     public let persistenceFsyncPolicy: PersistenceFsyncPolicy
+    /// Controls when the append-log persistence layer rewrites a compact
+    /// checkpoint and clears accumulated mutation events.
+    public let persistenceCompactionPolicy: PersistenceCompactionPolicy
 
     /// Durability policy for the append-log persistence layer.
     ///
@@ -125,6 +132,31 @@ public struct DownloadConfiguration: Sendable {
         /// progress; recovery falls back to the most recent durable
         /// checkpoint. Use only when re-download is cheap.
         case never
+    }
+
+    /// Snapshot/compaction thresholds for the download persistence append log.
+    ///
+    /// The defaults keep the 4.0.0 behavior explicit: compact after 1,000 log
+    /// events, after the log reaches 1 MiB, or when tombstones are at least
+    /// 25% of the log. Long-running apps can lower these limits to keep the
+    /// recovery scan short, or raise them when write amplification matters
+    /// more than startup replay time.
+    public struct PersistenceCompactionPolicy: Sendable, Equatable {
+        public var maxEvents: Int
+        public var maxLogBytes: UInt64
+        public var tombstoneRatio: Double
+
+        public init(
+            maxEvents: Int = 1_000,
+            maxLogBytes: UInt64 = 1_048_576,
+            tombstoneRatio: Double = 0.25
+        ) {
+            self.maxEvents = max(1, maxEvents)
+            self.maxLogBytes = max(1, maxLogBytes)
+            self.tombstoneRatio = min(1.0, max(0.0, tombstoneRatio))
+        }
+
+        public static let `default` = PersistenceCompactionPolicy()
     }
 
     /// Mutable builder seeded from the advanced tuning preset.
@@ -167,6 +199,8 @@ public struct DownloadConfiguration: Sendable {
         public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
         /// `fsync(_:)` policy for the append-log persistence layer.
         public var persistenceFsyncPolicy: PersistenceFsyncPolicy
+        /// Snapshot/compaction thresholds for the append-log persistence layer.
+        public var persistenceCompactionPolicy: PersistenceCompactionPolicy
 
         fileprivate init(preset: DownloadConfiguration) {
             self.maxConnectionsPerHost = preset.maxConnectionsPerHost
@@ -186,6 +220,7 @@ public struct DownloadConfiguration: Sendable {
             self.eventDeliveryPolicy = preset.eventDeliveryPolicy
             self.eventMetricsReporter = preset.eventMetricsReporter
             self.persistenceFsyncPolicy = preset.persistenceFsyncPolicy
+            self.persistenceCompactionPolicy = preset.persistenceCompactionPolicy
         }
 
         fileprivate func build() -> DownloadConfiguration {
@@ -206,7 +241,8 @@ public struct DownloadConfiguration: Sendable {
                 networkChangeTimeout: networkChangeTimeout,
                 eventDeliveryPolicy: eventDeliveryPolicy,
                 eventMetricsReporter: eventMetricsReporter,
-                persistenceFsyncPolicy: persistenceFsyncPolicy
+                persistenceFsyncPolicy: persistenceFsyncPolicy,
+                persistenceCompactionPolicy: persistenceCompactionPolicy
             )
         }
     }
@@ -267,7 +303,8 @@ public struct DownloadConfiguration: Sendable {
         networkChangeTimeout: TimeInterval? = 10.0,
         eventDeliveryPolicy: EventDeliveryPolicy = .default,
         eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
-        persistenceFsyncPolicy: PersistenceFsyncPolicy = .onCheckpoint
+        persistenceFsyncPolicy: PersistenceFsyncPolicy = .onCheckpoint,
+        persistenceCompactionPolicy: PersistenceCompactionPolicy = .default
     ) {
         self.maxConnectionsPerHost = max(1, maxConnectionsPerHost)
         self.maxRetryCount = max(0, maxRetryCount)
@@ -286,6 +323,7 @@ public struct DownloadConfiguration: Sendable {
         self.eventDeliveryPolicy = eventDeliveryPolicy
         self.eventMetricsReporter = eventMetricsReporter
         self.persistenceFsyncPolicy = persistenceFsyncPolicy
+        self.persistenceCompactionPolicy = persistenceCompactionPolicy
     }
 
     public static let `default` = safeDefaults()

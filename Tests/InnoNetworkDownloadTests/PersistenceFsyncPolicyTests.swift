@@ -47,9 +47,11 @@ private final class FsyncCallRecorder: @unchecked Sendable {
 
 
 private actor FailingUpsertDownloadTaskStore: DownloadTaskStore {
-    func upsert(id: String, url: URL, destinationURL: URL) async throws {
+    func upsert(id: String, url: URL, destinationURL: URL, resumeData: Data?) async throws {
         throw PersistenceTestError.upsertFailed
     }
+
+    func updateResumeData(id: String, resumeData: Data?) async throws {}
 
     func remove(id: String) async throws {}
 
@@ -76,6 +78,7 @@ struct PersistenceFsyncPolicyTests {
     func defaultIsOnCheckpoint() {
         let configuration = DownloadConfiguration()
         #expect(configuration.persistenceFsyncPolicy == .onCheckpoint)
+        #expect(configuration.persistenceCompactionPolicy == .default)
     }
 
     @Test("Advanced builder propagates the override")
@@ -84,8 +87,12 @@ struct PersistenceFsyncPolicyTests {
             sessionIdentifier: "test.fsync.always.\(UUID().uuidString)"
         ) { builder in
             builder.persistenceFsyncPolicy = .always
+            builder.persistenceCompactionPolicy = .init(maxEvents: 16, maxLogBytes: 4_096, tombstoneRatio: 0.5)
         }
         #expect(always.persistenceFsyncPolicy == .always)
+        #expect(always.persistenceCompactionPolicy.maxEvents == 16)
+        #expect(always.persistenceCompactionPolicy.maxLogBytes == 4_096)
+        #expect(always.persistenceCompactionPolicy.tombstoneRatio == 0.5)
 
         let never = DownloadConfiguration.advanced(
             sessionIdentifier: "test.fsync.never.\(UUID().uuidString)"
@@ -93,6 +100,19 @@ struct PersistenceFsyncPolicyTests {
             builder.persistenceFsyncPolicy = .never
         }
         #expect(never.persistenceFsyncPolicy == .never)
+    }
+
+    @Test("PersistenceCompactionPolicy clamps unsafe values")
+    func compactionPolicyClamps() {
+        let policy = DownloadConfiguration.PersistenceCompactionPolicy(
+            maxEvents: 0,
+            maxLogBytes: 0,
+            tombstoneRatio: 2
+        )
+
+        #expect(policy.maxEvents == 1)
+        #expect(policy.maxLogBytes == 1)
+        #expect(policy.tombstoneRatio == 1)
     }
 
     @Test(
