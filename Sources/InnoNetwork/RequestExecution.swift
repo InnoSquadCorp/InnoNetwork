@@ -194,21 +194,29 @@ package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: S
         let formData = base.multipartFormData
         switch base.uploadStrategy {
         case .inMemory:
-            return .data(formData.encode())
+            return .data(try formData.encode())
         case .alwaysStream:
             return try Self.streamPayload(formData: formData)
         case .streamingThreshold(let bytes):
             if formData.estimatedEncodedSize > bytes {
                 return try Self.streamPayload(formData: formData)
             }
-            return .data(formData.encode())
+            return .data(try formData.encode())
         }
     }
 
     private static func streamPayload(formData: MultipartFormData) throws -> RequestPayload {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         let tempFile = tempDirectory.appendingPathComponent("innonetwork.multipart.\(UUID().uuidString)")
-        try formData.writeEncodedData(to: tempFile)
+        do {
+            try formData.writeEncodedData(to: tempFile)
+        } catch {
+            // Clean up partial bytes left behind by `writeEncodedData` —
+            // the caller never sees the URL, so without this the temp
+            // directory accumulates orphaned files.
+            try? FileManager.default.removeItem(at: tempFile)
+            throw error
+        }
         return .temporaryFileURL(tempFile, contentType: formData.contentTypeHeader)
     }
 

@@ -92,11 +92,11 @@ struct HTTPHeaderTests {
 struct MultipartFormDataHeaderTests {
 
     @Test("ASCII filenames emit the legacy filename parameter only")
-    func asciiFilenameEmitsLegacyOnly() {
+    func asciiFilenameEmitsLegacyOnly() throws {
         var form = MultipartFormData(boundary: "TestBoundary")
         form.append(Data("hello".utf8), name: "file", fileName: "report.txt", mimeType: "text/plain")
 
-        let body = form.encode()
+        let body = try form.encode()
         let bodyString = String(data: body, encoding: .utf8) ?? ""
 
         #expect(bodyString.contains("filename=\"report.txt\""))
@@ -104,12 +104,12 @@ struct MultipartFormDataHeaderTests {
     }
 
     @Test("Non-ASCII filenames emit RFC 5987 filename* alongside ASCII fallback")
-    func nonASCIIFilenameEmitsExtendedParameter() {
+    func nonASCIIFilenameEmitsExtendedParameter() throws {
         var form = MultipartFormData(boundary: "TestBoundary")
         // Korean: 보고서.txt
         form.append(Data("hello".utf8), name: "file", fileName: "보고서.txt", mimeType: "text/plain")
 
-        let body = form.encode()
+        let body = try form.encode()
         let bodyString = String(data: body, encoding: .utf8) ?? ""
 
         // ASCII fallback: each non-ASCII scalar becomes "_"
@@ -122,15 +122,15 @@ struct MultipartFormDataHeaderTests {
     }
 
     @Test("Per-part Content-Length is opt-in via includesPartContentLength")
-    func contentLengthIsOptIn() {
+    func contentLengthIsOptIn() throws {
         var optOut = MultipartFormData(boundary: "B")
         optOut.append(Data("abcdef".utf8), name: "f", fileName: "f.bin", mimeType: "application/octet-stream")
-        let withoutHeader = String(data: optOut.encode(), encoding: .utf8) ?? ""
+        let withoutHeader = String(data: try optOut.encode(), encoding: .utf8) ?? ""
         #expect(withoutHeader.contains("Content-Length:") == false)
 
         var optIn = MultipartFormData(boundary: "B", includesPartContentLength: true)
         optIn.append(Data("abcdef".utf8), name: "f", fileName: "f.bin", mimeType: "application/octet-stream")
-        let withHeader = String(data: optIn.encode(), encoding: .utf8) ?? ""
+        let withHeader = String(data: try optIn.encode(), encoding: .utf8) ?? ""
         #expect(withHeader.contains("Content-Length: 6\r\n"))
     }
 }

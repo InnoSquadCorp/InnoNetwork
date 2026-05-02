@@ -173,7 +173,7 @@ InnoNetwork	swift.init	HTTPHeaders.init(arrayLiteral:)
 InnoNetwork	swift.init	HTTPHeaders.init(dictionaryLiteral:)
 InnoNetwork	swift.init	HTTPMethod.init(rawValue:)
 InnoNetwork	swift.init	InMemoryResponseCache.init(maxBytes:)
-InnoNetwork	swift.init	MultipartFormData.init(boundary:includesPartContentLength:)
+InnoNetwork	swift.init	MultipartFormData.init(boundary:includesPartContentLength:synchronizesEncodedFile:)
 InnoNetwork	swift.init	MultipartPart.init(headers:data:)
 InnoNetwork	swift.init	MultipartResponseDecoder.init(boundary:)
 InnoNetwork	swift.init	NetworkConfiguration.init(baseURL:timeout:cachePolicy:retryPolicy:networkMonitor:metricsReporter:trustPolicy:eventObservers:eventDeliveryPolicy:eventMetricsReporter:acceptableStatusCodes:requestInterceptors:responseInterceptors:decodingInterceptors:refreshTokenPolicy:requestCoalescingPolicy:responseCachePolicy:responseCache:circuitBreakerPolicy:customExecutionPolicies:captureFailurePayload:responseBodyBufferingPolicy:responseBodyLimit:)
@@ -382,6 +382,7 @@ InnoNetwork	swift.property	MultipartFormData.boundary
 InnoNetwork	swift.property	MultipartFormData.contentTypeHeader
 InnoNetwork	swift.property	MultipartFormData.estimatedEncodedSize
 InnoNetwork	swift.property	MultipartFormData.includesPartContentLength
+InnoNetwork	swift.property	MultipartFormData.synchronizesEncodedFile
 InnoNetwork	swift.property	MultipartPart.data
 InnoNetwork	swift.property	MultipartPart.headers
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.acceptableStatusCodes

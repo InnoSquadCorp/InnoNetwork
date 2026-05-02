@@ -10,14 +10,22 @@ public struct MultipartFormData: Sendable {
     /// must be precomputed for streaming sources, and emitting it can
     /// surprise interceptors that re-encode the body.
     public var includesPartContentLength: Bool
+    /// When `true`, ``writeEncodedData(to:)`` calls `synchronize()` on the
+    /// destination file handle before closing so the bytes survive an
+    /// abrupt power loss between the write and the actual upload. The
+    /// default is `false` because the temp file is uploaded immediately
+    /// in the same process and the extra fsync is wasteful for that flow.
+    public var synchronizesEncodedFile: Bool
     private var parts: [Part]
 
     public init(
         boundary: String = "InnoNetwork.boundary.\(UUID().uuidString)",
-        includesPartContentLength: Bool = false
+        includesPartContentLength: Bool = false,
+        synchronizesEncodedFile: Bool = false
     ) {
         self.boundary = Self.sanitizedBoundary(boundary) ?? "InnoNetwork.boundary.\(UUID().uuidString)"
         self.includesPartContentLength = includesPartContentLength
+        self.synchronizesEncodedFile = synchronizesEncodedFile
         self.parts = []
     }
 
@@ -45,11 +53,34 @@ public struct MultipartFormData: Sendable {
 
     /// Appends a file by URL without reading its contents.
     ///
-    /// The bytes are streamed at the time the body is encoded — either
-    /// lazily into memory by ``encode()`` or chunk-by-chunk to disk by
+    /// File reachability is checked at append time so the encoder fails
+    /// fast at the call site instead of swallowing missing files at
+    /// encode time. The bytes themselves are streamed later — lazily
+    /// into memory by ``encode()`` or chunk-by-chunk to disk by
     /// ``writeEncodedData(to:)``. Prefer the latter for any payload that
     /// could exceed a few megabytes.
-    public mutating func appendFile(at url: URL, name: String, mimeType: String? = nil) async throws {
+    ///
+    /// - Parameters:
+    ///   - url: Local file URL.
+    ///   - name: Form field name.
+    ///   - mimeType: Optional MIME override; otherwise inferred from the
+    ///     file extension.
+    /// - Throws: ``NetworkError/invalidRequestConfiguration(_:)`` when the
+    ///   URL does not point at a regular readable file.
+    public mutating func appendFile(at url: URL, name: String, mimeType: String? = nil) throws {
+        guard url.isFileURL else {
+            throw NetworkError.invalidRequestConfiguration(
+                "MultipartFormData.appendFile expects a file URL; got \(url.scheme ?? "non-file")."
+            )
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+            isDirectory.boolValue == false
+        else {
+            throw NetworkError.invalidRequestConfiguration(
+                "MultipartFormData.appendFile could not locate a regular file at \(url.path)."
+            )
+        }
         let fileName = url.lastPathComponent
         let detectedMimeType = mimeType ?? Self.mimeType(for: url.pathExtension)
         parts.append(Part(source: .file(url), name: name, fileName: fileName, mimeType: detectedMimeType))
@@ -60,11 +91,14 @@ public struct MultipartFormData: Sendable {
     /// Use this for small bodies where memory pressure is not a concern.
     /// For large file uploads, prefer ``writeEncodedData(to:)`` so the
     /// body is streamed chunk-by-chunk to disk and uploaded via
-    /// `URLSession.upload(for:fromFile:)`. File parts that cannot be read
-    /// are skipped entirely and logged as warnings; use
-    /// ``writeEncodedData(to:)`` when read failures must be surfaced to the
-    /// caller.
-    public func encode() -> Data {
+    /// `URLSession.upload(for:fromFile:)`.
+    ///
+    /// - Throws: Any I/O error encountered while reading a file part.
+    ///   Earlier versions silently skipped unreadable file parts; that
+    ///   masked configuration bugs (typoed paths, files removed between
+    ///   ``appendFile(at:name:mimeType:)`` and encoding) so reads now
+    ///   surface their underlying error to the caller.
+    public func encode() throws -> Data {
         var body = Data()
         let boundaryPrefix = "--\(boundary)\r\n"
 
@@ -74,14 +108,7 @@ public struct MultipartFormData: Sendable {
             case .data(let data):
                 partData = data
             case .file(let url):
-                do {
-                    partData = try Data(contentsOf: url)
-                } catch {
-                    Logger.API.warning(
-                        "multipart_encode_skipped_file boundary=\(boundary, privacy: .public) name=\(part.name, privacy: .private(mask: .hash)) file=\(url.lastPathComponent, privacy: .private(mask: .hash)) error=\(error.localizedDescription, privacy: .private)"
-                    )
-                    continue
-                }
+                partData = try Data(contentsOf: url)
             }
             body.append(Data(boundaryPrefix.utf8))
             let contentLength: Int64? = includesPartContentLength ? Int64(partData.count) : nil
@@ -118,8 +145,24 @@ public struct MultipartFormData: Sendable {
         }
         manager.createFile(atPath: fileURL.path, contents: nil, attributes: nil)
         let handle = try FileHandle(forWritingTo: fileURL)
-        defer { try? handle.close() }
 
+        // Manual close handling: `defer { try? handle.close() }` would
+        // swallow disk-full or fsync errors detected at flush time, so
+        // close explicitly on the success path and best-effort on
+        // failure (after the original error has been captured).
+        do {
+            try writeBody(to: handle)
+            if synchronizesEncodedFile {
+                try handle.synchronize()
+            }
+            try handle.close()
+        } catch {
+            try? handle.close()
+            throw error
+        }
+    }
+
+    private func writeBody(to handle: FileHandle) throws {
         let boundaryPrefix = Data("--\(boundary)\r\n".utf8)
         let crlf = Data("\r\n".utf8)
         let chunkSize = 64 * 1024

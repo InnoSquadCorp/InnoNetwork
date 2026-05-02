@@ -57,7 +57,9 @@ public struct MultipartResponseDecoder: Sendable {
 
         let delimiter = Data("--\(boundary)".utf8)
         guard var currentBoundary = nextBoundary(in: data, delimiter: delimiter, after: data.startIndex) else {
-            return []
+            throw NetworkError.invalidRequestConfiguration(
+                "Multipart response body did not contain the boundary delimiter."
+            )
         }
 
         var parts: [MultipartPart] = []
