@@ -60,7 +60,10 @@ struct PersistentResponseCacheTests {
         let second = ResponseCacheKey(method: "GET", url: "https://example.com/2")
 
         await cache.set(first, CachedResponse(data: Data(repeating: 1, count: 24)))
-        try await Task.sleep(for: .milliseconds(1))
+        // 1 ms is below the modification-time resolution on APFS / macOS
+        // CI runners, so the LRU comparison can tie and the wrong entry
+        // gets evicted. 50 ms gives the index touch a stable ordering.
+        try await Task.sleep(for: .milliseconds(50))
         await cache.set(second, CachedResponse(data: Data(repeating: 2, count: 24)))
 
         #expect(await cache.get(first) == nil)
