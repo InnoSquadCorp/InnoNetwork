@@ -27,6 +27,47 @@ prototypes to production clients.
 > 📚 **API Reference (DocC):** https://innosquadcorp.github.io/InnoNetwork/
 > 🇰🇷 **한국어 문서:** [docs/ko/README.md](docs/ko/README.md)
 
+## Choosing the Right Entry Point
+
+InnoNetwork ships several layers. Pick the highest one that matches your
+situation — most apps never need anything below `APIDefinition`.
+
+```
+Are you generating clients from an OpenAPI / IDL spec at build time?
+├─ yes ─► @APIDefinition / #endpoint macros from InnoNetworkCodegen
+│        (separate package; runtime-only consumers do not resolve swift-syntax)
+└─ no
+   │
+   Does the endpoint own interceptors, custom transport, multipart, or streaming?
+   ├─ yes ─► APIDefinition / MultipartAPIDefinition / StreamingAPIDefinition
+   │        (dedicated value type per endpoint)
+   └─ no
+      │
+      Do you just need method + path + headers + query/body + decoding?
+      ├─ yes ─► Endpoint builder  (e.g. Endpoint.get("/users").decoding(User.self))
+      └─ no
+         │
+         Are you building an SDK or library wrapper that needs raw
+         transport hooks (no decoding, no interceptors)?
+         └─ yes ─► LowLevelNetworkClient (@_spi(LowLevel))
+                   — minor-version-mutable surface, see API_STABILITY.md
+```
+
+### When NOT to use InnoNetwork
+
+- **Linux / server-side Swift.** InnoNetwork is Apple-platform-only by
+  design (URLSession, `OSAllocatedUnfairLock`, OSLog, Network.framework).
+  Use AsyncHTTPClient or a server framework on Linux.
+- **One-off scripts where URLSession's three-line GET is enough.** The
+  type-safety surface only pays off once you have shared interceptors,
+  retry/coalescing/cache policies, or a fleet of endpoints.
+- **Push-style protocols outside HTTP and WebSocket.** gRPC, MQTT,
+  WebTransport are out of scope; pair InnoNetwork with a dedicated
+  client.
+- **You need synchronous APIs.** The package is built on Swift
+  Concurrency end-to-end; there is no `DispatchQueue`/completion-handler
+  fallback.
+
 ## Quick Start
 
 ### Install
