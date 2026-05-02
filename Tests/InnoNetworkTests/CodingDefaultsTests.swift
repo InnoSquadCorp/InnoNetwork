@@ -14,17 +14,18 @@ private func expectCanonicalFormatterConfiguration(_ formatter: DateFormatter) {
 @Suite("Coding Defaults Tests")
 struct CodingDefaultsTests {
 
-    @Test("defaultDateFormatter returns a fresh canonical instance on every access")
-    func defaultDateFormatterReturnsFreshCanonicalInstance() async {
+    @Test("defaultDateFormatter returns the shared canonical instance on every access")
+    func defaultDateFormatterReturnsSharedCanonicalInstance() async {
         let first = defaultDateFormatter
         let second = defaultDateFormatter
-        #expect(first !== second)
+        // The accessor exposes a single immutable instance; consumers never
+        // mutate it, so the shared identity is by design.
+        #expect(first === second)
         expectCanonicalFormatterConfiguration(first)
-        expectCanonicalFormatterConfiguration(second)
     }
 
-    @Test("Default request and response coders use fresh canonical date formatters")
-    func encoderDecoderUseFreshCanonicalFormatters() async throws {
+    @Test("Default request and response coders use the shared canonical date formatter")
+    func encoderDecoderUseSharedCanonicalFormatter() async throws {
         let encoder = makeDefaultRequestEncoder()
         let decoder = makeDefaultResponseDecoder()
         guard
@@ -34,9 +35,40 @@ struct CodingDefaultsTests {
             Issue.record("Default coders should use a formatted date strategy")
             return
         }
-        #expect(encoderFormatter !== decoderFormatter)
+        #expect(encoderFormatter === decoderFormatter)
         expectCanonicalFormatterConfiguration(encoderFormatter)
-        expectCanonicalFormatterConfiguration(decoderFormatter)
+    }
+
+    @Test("makeDefaultRequestEncoder honours an explicit keyEncodingStrategy")
+    func encoderHonoursKeyEncodingStrategy() async {
+        let encoder = makeDefaultRequestEncoder(keyEncodingStrategy: .convertToSnakeCase)
+        if case .convertToSnakeCase = encoder.keyEncodingStrategy {
+            // expected
+        } else {
+            Issue.record("Encoder should reflect the requested key strategy")
+        }
+        let defaulted = makeDefaultRequestEncoder()
+        if case .useDefaultKeys = defaulted.keyEncodingStrategy {
+            // expected
+        } else {
+            Issue.record("Default key strategy must remain useDefaultKeys")
+        }
+    }
+
+    @Test("makeDefaultResponseDecoder honours an explicit keyDecodingStrategy")
+    func decoderHonoursKeyDecodingStrategy() async {
+        let decoder = makeDefaultResponseDecoder(keyDecodingStrategy: .convertFromSnakeCase)
+        if case .convertFromSnakeCase = decoder.keyDecodingStrategy {
+            // expected
+        } else {
+            Issue.record("Decoder should reflect the requested key strategy")
+        }
+        let defaulted = makeDefaultResponseDecoder()
+        if case .useDefaultKeys = defaulted.keyDecodingStrategy {
+            // expected
+        } else {
+            Issue.record("Default key strategy must remain useDefaultKeys")
+        }
     }
 
     @Test("Default coder accessors return fresh mutable instances")
