@@ -188,7 +188,7 @@ InnoNetwork	swift.init	NoOpNetworkEventObserver.init()
 InnoNetwork	swift.init	NoOpNetworkLogger.init()
 InnoNetwork	swift.init	OSLogNetworkEventObserver.init()
 InnoNetwork	swift.init	PublicKeyPinningPolicy.init(pinsByHost:includesSubdomains:allowDefaultEvaluationForUnpinnedHosts:hostMatchingStrategy:)
-InnoNetwork	swift.init	RefreshTokenPolicy.init(refreshStatusCodes:currentToken:refreshToken:applyToken:)
+InnoNetwork	swift.init	RefreshTokenPolicy.init(refreshStatusCodes:failureCooldown:currentToken:refreshToken:applyToken:)
 InnoNetwork	swift.init	RequestCoalescingPolicy.init(methods:excludedHeaderNames:)
 InnoNetwork	swift.init	RequestExecutionContext.init(requestID:retryIndex:metricsReporter:trustPolicy:eventObservers:)
 InnoNetwork	swift.init	RequestExecutionInput.init(request:requestID:retryIndex:)
@@ -576,6 +576,7 @@ InnoNetwork	swift.struct	NoOpNetworkEventObserver
 InnoNetwork	swift.struct	NoOpNetworkLogger
 InnoNetwork	swift.struct	OSLogNetworkEventObserver
 InnoNetwork	swift.struct	PublicKeyPinningPolicy
+InnoNetwork	swift.struct	RefreshFailureCooldown
 InnoNetwork	swift.struct	RefreshTokenPolicy
 InnoNetwork	swift.struct	RequestCoalescingPolicy
 InnoNetwork	swift.struct	RequestExecutionContext
@@ -610,6 +611,7 @@ InnoNetwork	swift.type.method	HTTPHeader.userAgent(_:)
 InnoNetwork	swift.type.method	HTTPHeader.websocketProtocol(_:)
 InnoNetwork	swift.type.method	NetworkConfiguration.advanced(baseURL:_:)
 InnoNetwork	swift.type.method	NetworkConfiguration.safeDefaults(baseURL:)
+InnoNetwork	swift.type.method	RefreshFailureCooldown.exponentialBackoff(base:max:)
 InnoNetwork	swift.type.method	ScopedEndpoint.delete(_:)
 InnoNetwork	swift.type.method	ScopedEndpoint.get(_:)
 InnoNetwork	swift.type.method	ScopedEndpoint.patch(_:)
@@ -636,6 +638,7 @@ InnoNetwork	swift.type.property	NetworkError.errorDomain
 InnoNetwork	swift.type.property	NetworkLoggingOptions.secureDefault
 InnoNetwork	swift.type.property	NetworkLoggingOptions.verbose
 InnoNetwork	swift.type.property	NetworkMonitor.shared
+InnoNetwork	swift.type.property	RefreshFailureCooldown.disabled
 InnoNetwork	swift.type.property	RequestCoalescingPolicy.disabled
 InnoNetwork	swift.type.property	RequestCoalescingPolicy.getOnly
 InnoNetwork	swift.type.property	RetryIdempotencyPolicy.methodAgnostic

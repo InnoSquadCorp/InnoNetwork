@@ -7,7 +7,7 @@ package final class RequestExecutionRuntime: Sendable {
     let inFlight: InFlightRegistry
 
     init(configuration: NetworkConfiguration, inFlight: InFlightRegistry) {
-        self.refreshCoordinator = configuration.refreshTokenPolicy.map(RefreshTokenCoordinator.init(policy:))
+        self.refreshCoordinator = configuration.refreshTokenPolicy.map { RefreshTokenCoordinator(policy: $0) }
         self.requestCoalescer = RequestCoalescer()
         self.circuitBreakers = CircuitBreakerRegistry()
         self.inFlight = inFlight
