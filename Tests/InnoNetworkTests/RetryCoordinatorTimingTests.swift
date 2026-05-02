@@ -188,6 +188,33 @@ struct RetryCoordinatorTimingTests {
         #expect(value == 9)
         #expect(attemptCounter.withLock { $0 } == 2)
     }
+
+    @Test("Cancellation in unknown error path publishes requestFailed before finish")
+    func cancellationPublishesRequestFailedEvent() async throws {
+        let eventHub = NetworkEventHub()
+        let coordinator = RetryCoordinator(eventHub: eventHub)
+        let eventStore = RetryTimingEventStore()
+        let observer = RetryTimingEventObserver(store: eventStore)
+        let requestID = UUID()
+
+        await #expect(throws: NetworkError.self) {
+            _ = try await coordinator.execute(
+                retryPolicy: nil,
+                networkMonitor: nil,
+                requestID: requestID,
+                eventObservers: [observer]
+            ) { (_: Int, _: UUID) -> Int in
+                throw CancellationError()
+            }
+        }
+
+        // `execute` only returns/throws after `finish(requestID:)` has been
+        // awaited, so the requestFailed event must already have been
+        // observed — no polling needed.
+        let observedFailures = await eventStore.requestFailedEntries()
+        #expect(observedFailures.count == 1)
+        #expect(observedFailures.first?.requestID == requestID)
+    }
 }
 
 
@@ -210,6 +237,15 @@ private actor RetryTimingEventStore {
     private func retryScheduledDelays() -> [TimeInterval] {
         events.compactMap { event in
             if case .retryScheduled(_, _, let delay, _) = event { return delay }
+            return nil
+        }
+    }
+
+    func requestFailedEntries() -> [(requestID: UUID, errorCode: Int)] {
+        events.compactMap { event in
+            if case .requestFailed(let requestID, let errorCode, _) = event {
+                return (requestID, errorCode)
+            }
             return nil
         }
     }
