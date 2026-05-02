@@ -178,6 +178,9 @@ struct URLQueryEncoderParametrizedTests {
         let data = try URLQueryEncoder(arrayEncodingStrategy: .bracketed)
             .encodeForm(Wrap(tags: ["a", "b"]))
 
+        // `[` and `]` are not in the form-urlencoded unreserved set, so they
+        // must be percent-encoded. They appear in the *name* portion of the
+        // pair; the values are plain ASCII.
         #expect(String(data: data, encoding: .utf8) == "tags%5B%5D=a&tags%5B%5D=b")
     }
 
@@ -223,27 +226,24 @@ struct URLQueryEncoderParametrizedTests {
     // MARK: - Roundtrip via encodeForm
 
     @Test(
-        "encodeForm matches encode percent-encoded form for simple objects",
+        "encodeForm produces application/x-www-form-urlencoded body for simple objects",
         arguments: [
-            ("alice", 30),
-            ("bob with space", 99),
-            ("한글이름", 10),
+            ("alice", 30, "age=30&name=alice"),
+            ("bob with space", 99, "age=99&name=bob+with+space"),
+            (
+                "한글이름", 10,
+                "age=10&name=%ED%95%9C%EA%B8%80%EC%9D%B4%EB%A6%84"
+            ),
         ])
-    func encodeFormMatchesEncode(_ payload: (String, Int)) throws {
+    func encodeFormMatchesFormUrlencodedSpec(_ payload: (String, Int, String)) throws {
         struct Wrap: Encodable {
             let name: String
             let age: Int
         }
         let value = Wrap(name: payload.0, age: payload.1)
 
-        let items = try URLQueryEncoder().encode(value)
         let formData = try URLQueryEncoder().encodeForm(value)
-
-        var components = URLComponents()
-        components.queryItems = items
-        let expected = (components.percentEncodedQuery ?? "")
-
-        #expect(String(data: formData, encoding: .utf8) == expected)
+        #expect(String(data: formData, encoding: .utf8) == payload.2)
     }
 
     // MARK: - Optional / nil handling
@@ -288,5 +288,57 @@ struct URLQueryEncoderParametrizedTests {
         // encoding happens later when these are attached to URLComponents.
         // The logical value must match the input verbatim.
         #expect(items == [URLQueryItem(name: "payload", value: value)])
+    }
+
+    // MARK: - Non-conforming Float / Double
+
+    @Test("NaN throws by default")
+    func nanThrowsByDefault() {
+        struct Wrap: Encodable { let x: Double }
+        let encoder = URLQueryEncoder()
+        #expect(throws: URLQueryEncoder.EncodingError.self) {
+            _ = try encoder.encode(Wrap(x: .nan))
+        }
+    }
+
+    @Test("Infinity throws by default for Float and Double")
+    func infinityThrowsByDefault() {
+        struct WrapD: Encodable { let x: Double }
+        struct WrapF: Encodable { let x: Float }
+        let encoder = URLQueryEncoder()
+        #expect(throws: URLQueryEncoder.EncodingError.self) {
+            _ = try encoder.encode(WrapD(x: .infinity))
+        }
+        #expect(throws: URLQueryEncoder.EncodingError.self) {
+            _ = try encoder.encode(WrapF(x: -.infinity))
+        }
+    }
+
+    @Test("convertToString strategy emits the configured sentinels")
+    func convertToStringStrategyEmitsSentinels() throws {
+        struct Wrap: Encodable { let x: Double }
+        let encoder = URLQueryEncoder(
+            nonConformingFloatEncodingStrategy: .convertToString(
+                positiveInfinity: "+inf",
+                negativeInfinity: "-inf",
+                nan: "nan"
+            )
+        )
+        let items = try encoder.encode(Wrap(x: .nan))
+        #expect(items == [URLQueryItem(name: "x", value: "nan")])
+        let infItems = try encoder.encode(Wrap(x: .infinity))
+        #expect(infItems == [URLQueryItem(name: "x", value: "+inf")])
+    }
+
+    // MARK: - Decimal locale-independence
+
+    @Test("Decimal stringification is locale-independent")
+    func decimalIsLocaleIndependent() throws {
+        struct Wrap: Encodable { let amount: Decimal }
+        // `Decimal.description` always uses POSIX numeric form regardless
+        // of the user's regional settings, so a value like 1.5 must never
+        // round-trip as "1,5".
+        let items = try URLQueryEncoder().encode(Wrap(amount: Decimal(string: "1.5")!))
+        #expect(items == [URLQueryItem(name: "amount", value: "1.5")])
     }
 }

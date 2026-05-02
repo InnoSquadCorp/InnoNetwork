@@ -10,34 +10,49 @@ public enum URLQueryArrayEncodingStrategy: Sendable, Equatable {
     case repeated
 }
 
+/// Controls how `Float`/`Double` values that cannot be expressed in a query
+/// string (NaN, +/-infinity) are encoded. Default is `.throw`, which surfaces
+/// the bad value as a typed error so misconfigured payloads do not silently
+/// land on the wire as Swift's `"nan"` / `"inf"` debug spellings.
+public enum URLQueryFloatEncodingStrategy: Sendable, Equatable {
+    case `throw`
+    case convertToString(positiveInfinity: String, negativeInfinity: String, nan: String)
+}
+
 public struct URLQueryEncoder: Sendable {
-    public enum EncodingError: Error, Sendable {
+    public enum EncodingError: Error, Sendable, Equatable {
         case unsupportedTopLevelValue
+        case unsupportedValue(reason: String)
     }
 
     public var keyEncodingStrategy: URLQueryKeyEncodingStrategy
     public var dateEncodingStrategy: JSONEncoder.DateEncodingStrategy
     public var arrayEncodingStrategy: URLQueryArrayEncodingStrategy
+    public var nonConformingFloatEncodingStrategy: URLQueryFloatEncodingStrategy
 
     public init(
         keyEncodingStrategy: URLQueryKeyEncodingStrategy = .useDefaultKeys,
         dateEncodingStrategy: JSONEncoder.DateEncodingStrategy? = nil,
-        arrayEncodingStrategy: URLQueryArrayEncodingStrategy = .indexed
+        arrayEncodingStrategy: URLQueryArrayEncodingStrategy = .indexed,
+        nonConformingFloatEncodingStrategy: URLQueryFloatEncodingStrategy = .throw
     ) {
         self.keyEncodingStrategy = keyEncodingStrategy
         self.dateEncodingStrategy = dateEncodingStrategy ?? .formatted(defaultDateFormatter)
         self.arrayEncodingStrategy = arrayEncodingStrategy
+        self.nonConformingFloatEncodingStrategy = nonConformingFloatEncodingStrategy
     }
 
     public init(
         keyEncodingStrategy: JSONEncoder.KeyEncodingStrategy,
         dateEncodingStrategy: JSONEncoder.DateEncodingStrategy? = nil,
-        arrayEncodingStrategy: URLQueryArrayEncodingStrategy = .indexed
+        arrayEncodingStrategy: URLQueryArrayEncodingStrategy = .indexed,
+        nonConformingFloatEncodingStrategy: URLQueryFloatEncodingStrategy = .throw
     ) {
         self.init(
             keyEncodingStrategy: URLQueryKeyEncodingStrategy(keyEncodingStrategy),
             dateEncodingStrategy: dateEncodingStrategy,
-            arrayEncodingStrategy: arrayEncodingStrategy
+            arrayEncodingStrategy: arrayEncodingStrategy,
+            nonConformingFloatEncodingStrategy: nonConformingFloatEncodingStrategy
         )
     }
 
@@ -50,16 +65,45 @@ public struct URLQueryEncoder: Sendable {
 
     public func encodeForm<T: Encodable>(_ value: T, rootKey: String? = nil) throws -> Data {
         let queryItems = try encode(value, rootKey: rootKey)
-        var components = URLComponents()
-        components.queryItems = queryItems
-        return Data((components.percentEncodedQuery ?? "").utf8)
+        let pairs: [String] = queryItems.map { item in
+            let name = Self.formEscape(item.name)
+            let value = Self.formEscape(item.value ?? "")
+            return "\(name)=\(value)"
+        }
+        return Data(pairs.joined(separator: "&").utf8)
+    }
+
+    /// Percent-encodes per the `application/x-www-form-urlencoded` rules
+    /// (HTML5 form submission): unreserved alphanumerics and `*-._` pass
+    /// through unchanged, space becomes `+`, and everything else is escaped
+    /// as percent-encoded UTF-8 octets. This differs from
+    /// `URLComponents.percentEncodedQuery`, which leaves `space` as `%20`.
+    static func formEscape(_ value: String) -> String {
+        var escaped = ""
+        escaped.reserveCapacity(value.utf8.count)
+        for byte in value.utf8 {
+            switch byte {
+            case 0x20:
+                escaped.append("+")
+            case 0x30...0x39, 0x41...0x5A, 0x61...0x7A,
+                 0x2A, 0x2D, 0x2E, 0x5F:
+                escaped.append(Character(UnicodeScalar(byte)))
+            default:
+                let hex = String(byte, radix: 16, uppercase: true)
+                escaped.append("%")
+                if hex.count == 1 { escaped.append("0") }
+                escaped.append(hex)
+            }
+        }
+        return escaped
     }
 
     private var options: _URLQueryEncodingOptions {
         _URLQueryEncodingOptions(
             keyEncodingStrategy: keyEncodingStrategy,
             dateEncodingStrategy: dateEncodingStrategy,
-            arrayEncodingStrategy: arrayEncodingStrategy
+            arrayEncodingStrategy: arrayEncodingStrategy,
+            nonConformingFloatEncodingStrategy: nonConformingFloatEncodingStrategy
         )
     }
 
@@ -197,6 +241,37 @@ private struct _URLQueryEncodingOptions: Sendable {
     let keyEncodingStrategy: URLQueryKeyEncodingStrategy
     let dateEncodingStrategy: JSONEncoder.DateEncodingStrategy
     let arrayEncodingStrategy: URLQueryArrayEncodingStrategy
+    let nonConformingFloatEncodingStrategy: URLQueryFloatEncodingStrategy
+
+    /// Stringifies a `Double` for the wire. Returns `nil` if the value is
+    /// non-conforming and the strategy is `.throw`; the caller is expected
+    /// to convert that into a typed encoding error so the bad value never
+    /// silently lands as `"nan"` / `"inf"`.
+    func stringForDouble(_ value: Double) throws -> String {
+        if value.isFinite { return String(value) }
+        switch nonConformingFloatEncodingStrategy {
+        case .throw:
+            throw URLQueryEncoder.EncodingError.unsupportedValue(
+                reason: value.isNaN ? "NaN" : (value > 0 ? "+Infinity" : "-Infinity")
+            )
+        case .convertToString(let pos, let neg, let nan):
+            if value.isNaN { return nan }
+            return value > 0 ? pos : neg
+        }
+    }
+
+    func stringForFloat(_ value: Float) throws -> String {
+        if value.isFinite { return String(value) }
+        switch nonConformingFloatEncodingStrategy {
+        case .throw:
+            throw URLQueryEncoder.EncodingError.unsupportedValue(
+                reason: value.isNaN ? "NaN" : (value > 0 ? "+Infinity" : "-Infinity")
+            )
+        case .convertToString(let pos, let neg, let nan):
+            if value.isNaN { return nan }
+            return value > 0 ? pos : neg
+        }
+    }
 
     func transform(key: String, codingPath: [CodingKey]) -> String {
         switch keyEncodingStrategy {
@@ -241,19 +316,37 @@ private struct _URLQueryEncodingOptions: Sendable {
 
 private final class SnakeCaseKeyTransformCache: Sendable {
     static let shared = SnakeCaseKeyTransformCache()
+    static let capacity: Int = 4096
 
-    private let cache = OSAllocatedUnfairLock<[String: String]>(initialState: [:])
+    private struct State {
+        var entries: [String: String] = [:]
+        /// FIFO insertion order for eviction. We do not promote on read —
+        /// a true LRU promotion would double the contended write paths,
+        /// and the cache holds enough capacity that simple FIFO eviction is
+        /// good enough to bound memory under runaway dynamic-key payloads.
+        var insertionOrder: [String] = []
+    }
+
+    private let state = OSAllocatedUnfairLock<State>(initialState: State())
 
     private init() {}
 
     func transform(_ key: String) -> String {
-        if let cached = cache.withLock({ $0[key] }) {
+        if let cached = state.withLock({ $0.entries[key] }) {
             return cached
         }
 
         let transformed = Self.convertToSnakeCase(key)
 
-        cache.withLock { $0[key] = transformed }
+        state.withLock { state in
+            if state.entries[key] != nil { return }
+            if state.entries.count >= Self.capacity, let oldest = state.insertionOrder.first {
+                state.insertionOrder.removeFirst()
+                state.entries.removeValue(forKey: oldest)
+            }
+            state.entries[key] = transformed
+            state.insertionOrder.append(key)
+        }
         return transformed
     }
 
@@ -319,7 +412,7 @@ private final class SnakeCaseKeyTransformCache: Sendable {
 
 private final class _URLQueryValueEncoder: Encoder {
     let options: _URLQueryEncodingOptions
-    var codingPath: [CodingKey]
+    let codingPath: [CodingKey]
     var userInfo: [CodingUserInfoKey: Any] = [:]
     fileprivate let box: QueryValueBox
 
@@ -372,8 +465,12 @@ private struct URLQueryKeyedEncodingContainer<Key: CodingKey>: KeyedEncodingCont
         childBox(for: key).setScalar(value ? "true" : "false")
     }
     mutating func encode(_ value: String, forKey key: Key) throws { childBox(for: key).setScalar(value) }
-    mutating func encode(_ value: Double, forKey key: Key) throws { childBox(for: key).setScalar(String(value)) }
-    mutating func encode(_ value: Float, forKey key: Key) throws { childBox(for: key).setScalar(String(value)) }
+    mutating func encode(_ value: Double, forKey key: Key) throws {
+        childBox(for: key).setScalar(try encoder.options.stringForDouble(value))
+    }
+    mutating func encode(_ value: Float, forKey key: Key) throws {
+        childBox(for: key).setScalar(try encoder.options.stringForFloat(value))
+    }
     mutating func encode(_ value: Int, forKey key: Key) throws { childBox(for: key).setScalar(String(value)) }
     mutating func encode(_ value: Int8, forKey key: Key) throws { childBox(for: key).setScalar(String(value)) }
     mutating func encode(_ value: Int16, forKey key: Key) throws { childBox(for: key).setScalar(String(value)) }
@@ -472,8 +569,8 @@ private struct URLQueryUnkeyedEncodingContainer: UnkeyedEncodingContainer {
 
     mutating func encode(_ value: Bool) throws { appendChild().setScalar(value ? "true" : "false") }
     mutating func encode(_ value: String) throws { appendChild().setScalar(value) }
-    mutating func encode(_ value: Double) throws { appendChild().setScalar(String(value)) }
-    mutating func encode(_ value: Float) throws { appendChild().setScalar(String(value)) }
+    mutating func encode(_ value: Double) throws { appendChild().setScalar(try encoder.options.stringForDouble(value)) }
+    mutating func encode(_ value: Float) throws { appendChild().setScalar(try encoder.options.stringForFloat(value)) }
     mutating func encode(_ value: Int) throws { appendChild().setScalar(String(value)) }
     mutating func encode(_ value: Int8) throws { appendChild().setScalar(String(value)) }
     mutating func encode(_ value: Int16) throws { appendChild().setScalar(String(value)) }
@@ -556,8 +653,8 @@ private struct URLQuerySingleValueEncodingContainer: SingleValueEncodingContaine
     mutating func encodeNil() throws { box.setNull() }
     mutating func encode(_ value: Bool) throws { box.setScalar(value ? "true" : "false") }
     mutating func encode(_ value: String) throws { box.setScalar(value) }
-    mutating func encode(_ value: Double) throws { box.setScalar(String(value)) }
-    mutating func encode(_ value: Float) throws { box.setScalar(String(value)) }
+    mutating func encode(_ value: Double) throws { box.setScalar(try encoder.options.stringForDouble(value)) }
+    mutating func encode(_ value: Float) throws { box.setScalar(try encoder.options.stringForFloat(value)) }
     mutating func encode(_ value: Int) throws { box.setScalar(String(value)) }
     mutating func encode(_ value: Int8) throws { box.setScalar(String(value)) }
     mutating func encode(_ value: Int16) throws { box.setScalar(String(value)) }
@@ -611,15 +708,19 @@ private func encodeQueryValue<T: Encodable>(
     case let number as UInt64:
         box.setScalar(String(number))
     case let number as Float:
-        box.setScalar(String(number))
+        box.setScalar(try options.stringForFloat(number))
     case let number as Double:
-        box.setScalar(String(number))
+        box.setScalar(try options.stringForDouble(number))
     case let date as Date:
         box.storage = try makeStorage(from: options.convert(date: date, codingPath: codingPath))
     case let data as Data:
         box.setScalar(data.base64EncodedString())
     case let decimal as Decimal:
-        box.setScalar(NSDecimalNumber(decimal: decimal).stringValue)
+        // `NSDecimalNumber.stringValue` honours the user's locale, so values
+        // like `1.5` round-trip as `"1,5"` in comma-decimal locales, which
+        // is invalid for any HTTP server expecting POSIX numeric form. The
+        // `Decimal.description` representation is locale-independent.
+        box.setScalar(decimal.description)
     case let url as URL:
         box.setScalar(url.absoluteString)
     default:
