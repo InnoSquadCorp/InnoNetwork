@@ -17,7 +17,7 @@
 - `client/request-coalescing-shared-get` — shared GET request coalescing fan-in overhead.
 - `client/decoding-interceptor-chain-{1,3,8}` — passive `DecodingInterceptor`
   chain depth baseline. The per-iteration delta between depths captures the
-  per-link allocation/dispatch overhead. New in 5.0; baseline added so future
+  per-link allocation/dispatch overhead. Baseline added so future
   regressions in the chain shape surface here before reaching production.
 - `cache/response-cache-*` — response cache lookup and conditional revalidation preparation.
 
@@ -54,7 +54,7 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
 - baseline은 의미 있는 성능 변화가 확인된 경우에만 사람이 갱신합니다.
 - baseline 자동 업데이트는 하지 않습니다.
 
-## Initial Baseline (5.0)
+## Initial Baseline (4.0.0)
 
 `decoding-interceptor-chain-{1,3,8}` baseline numbers from a single
 `--quick` run on Apple Silicon (Darwin 25.4 / M-series). Local-only

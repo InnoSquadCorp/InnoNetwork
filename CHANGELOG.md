@@ -5,78 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and the project follows Semantic
 Versioning.
 
-## [Unreleased] — 5.0 work-in-progress
-
-### Added
-
-- `NetworkClient.request(_:tag:)` and `NetworkClient.upload(_:tag:)` are
-  now part of the protocol surface, with default implementations that
-  forward to the existing no-tag overloads. Existing conformers continue
-  to compile unchanged; conformers that wrap an in-flight registry can
-  override the new requirements to honour grouped cancellation through
-  `cancelAll(matching:)`. Callers that depend on `any NetworkClient`
-  can now express grouped cancellation without down-casting to
-  `DefaultNetworkClient`.
-- `EndpointShape` base protocol that captures the HTTP envelope
-  surface common to `APIDefinition` and `MultipartAPIDefinition`
-  (`method`, `path`, `headers`, `logger`, `requestInterceptors`,
-  `responseInterceptors`, `acceptableStatusCodes`, `transport`). Both
-  endpoint protocols now inherit from `EndpointShape` and only declare
-  their body-strategy surface (`parameters` / `multipartFormData` +
-  `uploadStrategy`). Existing endpoints compile unchanged because the
-  shared default implementations have moved to a single `EndpointShape`
-  extension. App code that conforms to `APIDefinition` or
-  `MultipartAPIDefinition` does not need to update.
-
-### Changed
-
-- `TimeoutReason.resourceTimeout` is now formally produced by the
-  internal transport mapper when the caller supplies
-  `URLSessionTaskMetrics` and the configured resource-timeout
-  interval. The new metrics-aware mapping overload returns
-  `.resourceTimeout` for `URLError.timedOut` only when the task
-  interval reaches the resource budget; otherwise it falls back to
-  `.requestTimeout`. The single-argument mapper retains the 4.x
-  behaviour. The `TimeoutReason` doc comment is updated to describe
-  the new production path so callers know `.resourceTimeout` is no
-  longer a "reserved for higher-level transports" case.
-
-### Changed (BREAKING)
-
-- `MultipartAPIDefinition.uploadStrategy` default is now
-  `MultipartUploadStrategy.platformDefault`, a memory-aware
-  `streamingThreshold` that picks **16 MiB** on iOS/watchOS/tvOS and
-  **50 MiB** on macOS/visionOS. Multipart endpoints that did not
-  override `uploadStrategy` will, on memory-constrained Apple
-  platforms, switch from in-memory encoding to temp-file streaming
-  for bodies above 16 MiB. The behavior change avoids jetsam on
-  larger uploads at the cost of extra disk I/O. Endpoints that need
-  the previous 50 MiB threshold on every platform should override
-  `uploadStrategy` with
-  `.streamingThreshold(bytes: 50 * 1024 * 1024)`.
-- `NetworkError.objectMapping(_:_:)` is no longer an enum case. Decode
-  failures now surface as `NetworkError.decoding(stage:underlying:response:)`
-  with a `DecodingStage` (`.responseBody`, `.streamFrame`,
-  `.multipartPart`, `.envelope`, `.empty`) so retry policies and
-  observability layers can distinguish where in the pipeline the failure
-  happened. A static factory `NetworkError.objectMapping(_:_:)` remains
-  with `@available(*, deprecated, renamed:)` so construction sites
-  compile with a deprecation warning, but `case .objectMapping` patterns
-  must be migrated to `case .decoding(let stage, _, _)`. A new
-  `NetworkError.isDecodingFailure` convenience helper lets retry
-  policies express "decode failures are not retried" without pattern
-  matching.
-- `DownloadManager.shared` is now `DownloadManager?` instead of
-  `DownloadManager`. The accessor returns `nil` when initialization fails
-  (for example, if both the default and fallback session identifiers are
-  already claimed, or persistence is unavailable) and emits an OSLog
-  `.fault`. The previous `fatalError` paths have been removed. Callers
-  should migrate to `DownloadManager.make(configuration:)`, which throws
-  `DownloadManagerError` so the failure mode is explicit. Existing
-  `DownloadManager.shared.foo()` call sites must be updated to
-  `DownloadManager.shared?.foo()` or to a `make(configuration:)`-owned
-  instance.
-
 ## [4.0.0] - 2026-05-01
 
 InnoNetwork's first public release. The package targets Apple platforms only
@@ -167,10 +95,24 @@ summary.
 - Release artifacts (`benchmarks.json`, `sbom.cdx.json`) are signed with
   sigstore cosign keyless signatures. SECURITY.md describes the
   `cosign verify-blob` invocation.
-- `CancellationTag` plus `DefaultNetworkClient.request(_:tag:)`,
-  `upload(_:tag:)`, and `cancelAll(matching:)` for grouping requests so a
-  screen, feature, or user session can drop just its own subset without
-  draining the rest of the client.
+- `CancellationTag` plus `NetworkClient.request(_:tag:)`,
+  `NetworkClient.upload(_:tag:)`, and `DefaultNetworkClient.cancelAll(matching:)`
+  for grouping requests so a screen, feature, or user session can drop
+  just its own subset without draining the rest of the client. The
+  tagged overloads are first-class members of the `NetworkClient`
+  protocol with default implementations that forward to the
+  un-tagged variant, so existing conformers (including
+  `StubNetworkClient`) continue to compile while new conformers can
+  honour the tag for grouped cancellation.
+- `EndpointShape` base protocol that captures the HTTP envelope
+  surface common to `APIDefinition` and `MultipartAPIDefinition`
+  (`method`, `path`, `headers`, `logger`, `requestInterceptors`,
+  `responseInterceptors`, `acceptableStatusCodes`, `transport`). Both
+  endpoint protocols now inherit from `EndpointShape` and only declare
+  their body-strategy surface (`parameters` / `multipartFormData` +
+  `uploadStrategy`). Existing endpoints compile unchanged because the
+  shared default implementations live on a single `EndpointShape`
+  extension.
 - Response cache honours the response `Vary` header (RFC 9111 §4.1).
   `Vary: *` responses are not stored, and concrete `Vary` headers capture a
   request-header snapshot that future lookups must match. Helpers
@@ -285,29 +227,60 @@ summary.
   configured retry policy decides whether another attempt runs). No
   source-level changes; existing conforming types continue to compile.
 - `MultipartAPIDefinition.uploadStrategy` now defaults to
-  `.streamingThreshold(bytes: 50 * 1024 * 1024)` (50 MiB) instead of
-  `.inMemory`. Small payloads still encode in memory; bodies past the
-  threshold spill to a temp file and upload via `URLSession.upload(for:fromFile:)`,
-  bounding peak memory by default. Endpoints that intentionally relied on
-  the in-memory path should now declare it explicitly:
-  `var uploadStrategy: MultipartUploadStrategy { .inMemory }`.
+  `MultipartUploadStrategy.platformDefault`, a memory-aware
+  `streamingThreshold` that picks **16 MiB** on iOS/watchOS/tvOS and
+  **50 MiB** on macOS/visionOS, instead of `.inMemory`. Small payloads
+  still encode in memory; bodies past the threshold spill to a temp
+  file and upload via `URLSession.upload(for:fromFile:)`, bounding peak
+  memory and avoiding jetsam on memory-constrained platforms.
+  Endpoints that intentionally relied on the in-memory path should
+  declare it explicitly with
+  `var uploadStrategy: MultipartUploadStrategy { .inMemory }`; endpoints
+  that need a uniform 50 MiB threshold across every platform can pin
+  `.streamingThreshold(bytes: 50 * 1024 * 1024)` directly.
+- `TimeoutReason.resourceTimeout` is formally produced by the internal
+  transport mapper when the caller supplies `URLSessionTaskMetrics`
+  and the configured resource-timeout interval. The metrics-aware
+  mapping overload returns `.resourceTimeout` for `URLError.timedOut`
+  only when the task interval reaches the resource budget; otherwise
+  it falls back to `.requestTimeout`. Previously this case was
+  reserved for higher-level transports.
 
 ### Deprecated
 
-- `DownloadManager.shared` is now soft-deprecated. The shared singleton
-  forces every feature in the process onto a single
-  `DownloadConfiguration`, which prevents per-feature retry budgets,
-  cellular policies, or storage roots. Prefer constructing per-feature
-  managers via ``DownloadManager.make(configuration:)``. The symbol
-  remains available for the entire 4.x line so existing call sites
-  continue to compile with a deprecation warning. See the
+- `DownloadManager.shared` is now `DownloadManager?` and is soft-deprecated.
+  The accessor returns `nil` when initialization fails (for example, if both
+  the default and fallback session identifiers are already claimed, or
+  persistence is unavailable) and emits an OSLog `.fault`; the previous
+  `fatalError` paths have been removed. The shared singleton also forces
+  every feature in the process onto a single `DownloadConfiguration`,
+  which prevents per-feature retry budgets, cellular policies, or
+  storage roots. Prefer constructing per-feature managers via
+  ``DownloadManager.make(configuration:)``, which throws
+  `DownloadManagerError` so the failure mode is explicit. Existing
+  `DownloadManager.shared.foo()` call sites must be updated to
+  `DownloadManager.shared?.foo()` or to a `make(configuration:)`-owned
+  instance. The symbol remains available for the 4.x line so existing
+  call sites continue to compile with a deprecation warning. See the
   ``SharedManagerMigration`` DocC article for the migration cookbook.
+- `NetworkError.objectMapping(_:_:)` is no longer an enum case. Decode
+  failures now surface as `NetworkError.decoding(stage:underlying:response:)`
+  with a `DecodingStage` (`.responseBody`, `.streamFrame`,
+  `.multipartPart`, `.envelope`, `.empty`) so retry policies and
+  observability layers can distinguish where in the pipeline the
+  failure happened. A static factory `NetworkError.objectMapping(_:_:)`
+  remains with `@available(*, deprecated, renamed:)` so construction
+  sites compile with a deprecation warning, but `case .objectMapping`
+  patterns must be migrated to `case .decoding(let stage, _, _)`. A
+  new `NetworkError.isDecodingFailure` convenience helper lets retry
+  policies express "decode failures are not retried" without pattern
+  matching.
 
 ### Removed
 
 - `NetworkError.undefined` and `NetworkError.jsonMapping` — both cases were
   unreachable in production code and only existed as test fixtures.
-  `.objectMapping(error, response)` covers every JSON decode failure.
+  Decode failures now surface as `.decoding(stage:underlying:response:)`.
 
 ### Fixed
 

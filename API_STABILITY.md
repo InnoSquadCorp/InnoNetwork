@@ -3,14 +3,6 @@
 This document defines the compatibility contract for the InnoNetwork 4.x
 release line. `4.0.0` is the public baseline for this contract.
 
-> **5.0 work-in-progress:** the `main` branch is preparing the 5.0 major
-> release. Breaking changes that ship before the 5.0 tag are listed under
-> the "5.0 Migration Guide" section below and are also captured in
-> `CHANGELOG.md` under the `[Unreleased]` heading. Until 5.0 is tagged,
-> the contract documented in the rest of this file describes the published
-> 4.x line; integrators tracking `main` should review the migration guide
-> on every minor bump.
-
 ## Stable
 
 - `APIDefinition`
@@ -258,7 +250,7 @@ audits against external `@_spi` consumers, and Issues that report
 this section. Specifically:
 
 - **Build errors** after a minor bump are expected and not regressions.
-- **Pin to an exact InnoNetwork tag** (`.exact("5.0.0")`) if you import
+- **Pin to an exact InnoNetwork tag** (`.exact("4.0.0")`) if you import
   `@_spi`. `.upToNextMinor` is *not* tight enough.
 - **Treat `@_spi` upgrades as code-level reviews** — diff the SPI
   surface in `Sources/InnoNetwork/...` and re-run your generator.
@@ -337,19 +329,19 @@ requires `@_spi` import.
 - Internal/Operational items can change without deprecation because they are not
   part of the default SwiftPM import contract.
 
-## 5.0 Migration Guide
+## 4.0.0 Migration Notes
 
-The 5.0 line is staged on `main` and removes a small set of foot-guns that
-4.x carried for source-compatibility. Each subsection describes the
-breaking change, the rationale, and the supported migration. Items here
-land before the 5.0 tag and are also tracked in `CHANGELOG.md`
-`[Unreleased]`.
+These notes describe behaviour changes that landed during the 4.0.0
+preparation cycle, where the published shape removes earlier
+foot-guns. Each subsection captures the breaking change, the
+rationale, and the supported migration. The matching `CHANGELOG.md`
+entries live under `[4.0.0]`.
 
 ### `DownloadManager.shared` is now Optional
 
 - **What changed.** `DownloadManager.shared` previously trapped via
   `fatalError` when its session identifier was already claimed by another
-  manager. In 5.0 the property is typed as `DownloadManager?` and returns
+  manager. The property is now typed as `DownloadManager?` and returns
   `nil` after logging an OSLog `.fault` instead of crashing the process.
 - **Why.** The trap turned a recoverable identifier collision (typically
   caused by tests, app extensions sharing an identifier, or repeated
@@ -462,9 +454,19 @@ land before the 5.0 tag and are also tracked in `CHANGELOG.md`
   already explicitly chose `.inMemory`, `.alwaysStream`, or a
   specific `.streamingThreshold(bytes:)` are unaffected.
 
-### Forward-looking notes
+### `TimeoutReason.resourceTimeout` is metrics-aware
 
-Additional 5.0 commits (formalized `TimeoutReason.resourceTimeout`
-mapping) will append migration sections here as they land. Each will
-ship with a deprecated alias whenever a single-step migration is
-feasible.
+- **What changed.** The transport mapper now formally produces
+  `TimeoutReason.resourceTimeout` when callers supply
+  `URLSessionTaskMetrics` and the configured resource-timeout
+  interval. The metrics-aware overload returns `.resourceTimeout` for
+  `URLError.timedOut` only when the task interval reaches the
+  resource budget; otherwise it falls back to `.requestTimeout`.
+- **Why.** Earlier 4.x snapshots reserved `.resourceTimeout` for
+  higher-level transports without producing it from the built-in
+  mapper, so callers could not branch on the resource-vs-request
+  distinction reliably.
+- **Migration.** None for the single-argument mapper, which retains
+  its prior behaviour. Callers that already constructed
+  `NetworkError.timeout(reason: .resourceTimeout, …)` directly are
+  unaffected.

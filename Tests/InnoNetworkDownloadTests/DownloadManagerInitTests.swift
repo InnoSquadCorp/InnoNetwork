@@ -15,7 +15,7 @@ struct DownloadManagerInitTests {
         let configuration = DownloadConfiguration.safeDefaults(sessionIdentifier: identifier)
 
         let manager = try DownloadManager.make(configuration: configuration)
-        // `shared` is Optional after the 5.0 fatalError removal; nil is a
+        // `shared` is Optional after the 4.0.0 fatalError removal; nil is a
         // valid resolution if its session identifier was already claimed.
         if let shared = DownloadManager.shared {
             #expect(manager !== shared)

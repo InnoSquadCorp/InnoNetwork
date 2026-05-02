@@ -99,10 +99,11 @@ public enum NetworkError: Error, Sendable {
     /// envelope/multipart/stream-frame failures separately from a top-level
     /// body decode error.
     ///
-    /// Replaces the 4.x `objectMapping(_:_:)` case. For source compatibility
+    /// Replaces the legacy `objectMapping(_:_:)` case. For source compatibility
     /// during migration, ``NetworkError/objectMapping(_:_:)`` remains as a
     /// deprecated factory function that forwards construction to
-    /// `.decoding(stage: .responseBody, ...)` — see the 5.0 migration guide.
+    /// `.decoding(stage: .responseBody, ...)` — see the 4.0.0 migration notes
+    /// in `API_STABILITY.md`.
     case decoding(stage: DecodingStage, underlying: SendableUnderlyingError, response: Response)
 
     case nonHTTPResponse(URLResponse)
@@ -234,9 +235,9 @@ public extension NetworkError {
     /// Compatibility factory matching the 4.x ``objectMapping(_:_:)`` case.
     /// Forwards construction to ``decoding(stage:underlying:response:)`` with
     /// ``DecodingStage/responseBody``. Pattern matching against
-    /// `.objectMapping` is no longer possible in 5.0 — switch over
+    /// `.objectMapping` is no longer possible in 4.0.0 — switch over
     /// `.decoding(stage:, underlying:, response:)` instead.
-    @available(*, deprecated, renamed: "decoding(stage:underlying:response:)", message: "Use .decoding(stage: .responseBody, underlying:, response:). The objectMapping enum case was replaced in InnoNetwork 5.0; this factory exists for one migration cycle and will be removed.")
+    @available(*, deprecated, renamed: "decoding(stage:underlying:response:)", message: "Use .decoding(stage: .responseBody, underlying:, response:). The objectMapping enum case was replaced in InnoNetwork 4.0.0; this factory exists for one migration cycle and will be removed.")
     static func objectMapping(
         _ underlying: SendableUnderlyingError,
         _ response: Response
