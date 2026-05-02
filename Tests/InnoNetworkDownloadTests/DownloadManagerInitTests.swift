@@ -6,7 +6,7 @@ import Testing
 @Suite("Download Manager Init Tests")
 struct DownloadManagerInitTests {
 
-    @available(*, deprecated, message: "Verifies the soft-deprecated DownloadManager.shared singleton.")
+    @available(*, deprecated, message: "Verifies the deprecated DownloadManager.shared singleton.")
     @Test("make(configuration:) constructs a manager without throwing for a unique identifier")
     func makeSucceedsForUniqueIdentifier() throws {
         // A randomized identifier guarantees no collision with the shared
@@ -15,7 +15,11 @@ struct DownloadManagerInitTests {
         let configuration = DownloadConfiguration.safeDefaults(sessionIdentifier: identifier)
 
         let manager = try DownloadManager.make(configuration: configuration)
-        #expect(manager !== DownloadManager.shared)
+        // `shared` is Optional after the 5.0 fatalError removal; nil is a
+        // valid resolution if its session identifier was already claimed.
+        if let shared = DownloadManager.shared {
+            #expect(manager !== shared)
+        }
     }
 
     @Test("make(configuration:) throws duplicateSessionIdentifier on conflict")

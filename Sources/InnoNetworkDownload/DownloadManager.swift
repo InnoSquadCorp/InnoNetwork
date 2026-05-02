@@ -59,31 +59,30 @@ public actor DownloadManager {
 
     /// Shared `DownloadManager` for apps that need a single download domain.
     ///
-    /// Initialized lazily with ``DownloadConfiguration/default``. If the
-    /// default session identifier is already claimed by another
-    /// `DownloadManager` in the same process, the shared instance falls back
-    /// to a process-unique identifier (logged via OSLog `.fault`) and an
-    /// `assertionFailure` is raised in DEBUG builds so the misuse is caught
-    /// during development. Production callers that need explicit failure
-    /// handling should construct managers via ``make(configuration:)`` instead
-    /// of relying on `shared`.
+    /// Initialized lazily with ``DownloadConfiguration/default``. The accessor
+    /// is `Optional` and resolves to `nil` when initialization fails — for
+    /// example, if the default session identifier is already claimed by
+    /// another `DownloadManager` in the process and the fallback identifier
+    /// also fails, or if the persistence directory cannot be created. Each
+    /// failure is logged via OSLog `.fault`.
     ///
-    /// > Important: `shared` is soft-deprecated. Apps that need more than one
+    /// > Important: `shared` is deprecated. Apps that need more than one
     /// > download policy (e.g., one manager for media with WiFi-only
     /// > downloads, another for documents over cellular) cannot express that
-    /// > with a single global instance. Prefer constructing per-feature
-    /// > managers via ``make(configuration:)`` and storing them on the owning
-    /// > feature module. The symbol stays available for the whole 4.x line so
-    /// > existing call sites continue to compile.
+    /// > with a single global instance, and the optional return makes the
+    /// > absence of failure handling at the call site visible. Prefer
+    /// > constructing per-feature managers via ``make(configuration:)`` and
+    /// > storing them on the owning feature module — the throwing factory
+    /// > surfaces the underlying ``DownloadManagerError`` directly.
     ///
     /// See <doc:SharedManagerMigration> for a step-by-step migration guide.
     @available(
         *,
         deprecated,
         message:
-            "Use DownloadManager.make(configuration:). The shared singleton forces a single global policy and can fatalError on first access if persistence is unavailable or the fallback session identifier is also claimed. `make(configuration:)` surfaces the failure as a thrown DownloadManagerError instead."
+            "Use DownloadManager.make(configuration:). `shared` is now Optional and may be nil if initialization fails; `make(configuration:)` throws DownloadManagerError instead so the failure mode is explicit."
     )
-    public static let shared: DownloadManager = {
+    public static let shared: DownloadManager? = {
         do {
             return try DownloadManager(configuration: .default)
         } catch DownloadManagerError.duplicateSessionIdentifier(let claimedIdentifier) {
@@ -108,19 +107,23 @@ public actor DownloadManager {
             do {
                 return try DownloadManager(configuration: fallbackConfig)
             } catch {
-                // Even the fallback failed — extremely unlikely because the
-                // fallback identifier is freshly UUID-prefixed. Crash so the
-                // problem surfaces rather than silently returning a broken
-                // singleton.
-                fatalError(
-                    "DownloadManager.shared cannot initialize with fallback identifier: \(error.localizedDescription)")
+                DownloadManager.logger.fault(
+                    """
+                    DownloadManager.shared could not initialize with fallback identifier \
+                    \(fallbackIdentifier, privacy: .public): \
+                    \(error.localizedDescription, privacy: .public). Returning nil — use \
+                    DownloadManager.make(configuration:) for explicit failure handling.
+                    """)
+                return nil
             }
         } catch {
-            // Any other initialization failure is structural (e.g., persistence
-            // directory inaccessible) and not something a fallback identifier
-            // would fix. Surface it.
-            fatalError(
-                "DownloadManager.shared cannot initialize with .default configuration: \(error.localizedDescription)")
+            DownloadManager.logger.fault(
+                """
+                DownloadManager.shared could not initialize with .default configuration: \
+                \(error.localizedDescription, privacy: .public). Returning nil — use \
+                DownloadManager.make(configuration:) for explicit failure handling.
+                """)
+            return nil
         }
     }()
 

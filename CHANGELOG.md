@@ -3,7 +3,22 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and the project follows Semantic
-Versioning for the 4.x release line.
+Versioning.
+
+## [Unreleased] — 5.0 work-in-progress
+
+### Changed (BREAKING)
+
+- `DownloadManager.shared` is now `DownloadManager?` instead of
+  `DownloadManager`. The accessor returns `nil` when initialization fails
+  (for example, if both the default and fallback session identifiers are
+  already claimed, or persistence is unavailable) and emits an OSLog
+  `.fault`. The previous `fatalError` paths have been removed. Callers
+  should migrate to `DownloadManager.make(configuration:)`, which throws
+  `DownloadManagerError` so the failure mode is explicit. Existing
+  `DownloadManager.shared.foo()` call sites must be updated to
+  `DownloadManager.shared?.foo()` or to a `make(configuration:)`-owned
+  instance.
 
 ## [4.0.0] - 2026-05-01
 

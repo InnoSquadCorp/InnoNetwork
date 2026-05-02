@@ -53,14 +53,16 @@ the app and delivers a completion handler. Wire it through to the manager so the
 release the wake-lock promptly:
 
 ```swift
-// In your AppDelegate / scene entry point:
+// In your AppDelegate / scene entry point. Route the completion to the
+// DownloadManager that owns this session identifier — `make(configuration:)`
+// is the recommended factory; `.shared` is deprecated and Optional.
 func application(
     _ application: UIApplication,
     handleEventsForBackgroundURLSession identifier: String,
     completionHandler: @escaping () -> Void
 ) {
     Task {
-        await DownloadManager.shared.attachBackgroundCompletion(
+        await mediaDownloads.attachBackgroundCompletion(
             identifier: identifier,
             completion: completionHandler
         )
@@ -85,7 +87,7 @@ with the system's `allDownloadTasks()`:
 You can wait for restoration explicitly before issuing new downloads:
 
 ```swift
-await DownloadManager.shared.waitForRestoration()
+await mediaDownloads.waitForRestoration()
 ```
 
 ## Pause and resume
