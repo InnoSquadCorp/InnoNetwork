@@ -167,7 +167,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     private let session: URLSessionProtocol
     private let requestBuilder = RequestBuilder()
     private let eventHub: NetworkEventHub
-    private let inFlight = InFlightRegistry()
+    package let inFlight = InFlightRegistry()
     private let executionRuntime: RequestExecutionRuntime
 
     public init(
