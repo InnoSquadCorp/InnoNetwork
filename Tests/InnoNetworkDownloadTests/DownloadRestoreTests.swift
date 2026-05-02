@@ -146,4 +146,88 @@ struct DownloadRestoreTests {
         #expect(await harness.manager.allTasks().isEmpty)
         _ = task
     }
+
+    @Test("Persistence prune failure still queues missing-system-task announcement")
+    func pruneFailureStillSurfacesRestoreFailure() async throws {
+        let orphanID = "orphan-\(UUID().uuidString)"
+        let orphanRecord = DownloadTaskPersistence.Record(
+            id: orphanID,
+            url: URL(string: "https://example.invalid/orphan.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-orphan.zip")
+        )
+        let harness = try StubDownloadHarness(
+            label: "restore-prune-fail",
+            prepopulatedRecords: [orphanRecord]
+        )
+        await harness.store.setRemoveFailure(true)
+
+        // Make sure restore has run by issuing a probe and then awaiting the
+        // event stream for the orphan task. The first subscription drains the
+        // pending-restore queue.
+        let probe = await harness.startDownload()
+        await harness.manager.cancel(probe)
+
+        let orphanTask = DownloadTask(
+            url: orphanRecord.url,
+            destinationURL: orphanRecord.destinationURL,
+            id: orphanID
+        )
+        let stream = await harness.manager.events(for: orphanTask)
+        var sawFailure = false
+        for await event in stream {
+            if case .failed(.restorationMissingSystemTask) = event {
+                sawFailure = true
+                break
+            }
+        }
+        #expect(sawFailure)
+
+        // Persistence record should remain (because remove threw); next
+        // launch will reprocess it.
+        #expect(await harness.persistence.record(forID: orphanID) != nil)
+    }
+
+    @Test("Restore failure replays to onFailed handler when set after restore")
+    func restoreFailureReplaysToHandlerSubscriber() async throws {
+        let orphanID = "orphan-handler-\(UUID().uuidString)"
+        let orphanRecord = DownloadTaskPersistence.Record(
+            id: orphanID,
+            url: URL(string: "https://example.invalid/orphan-handler.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-orphan-handler.zip")
+        )
+        let harness = try StubDownloadHarness(
+            label: "restore-handler",
+            prepopulatedRecords: [orphanRecord]
+        )
+
+        // Wait for restore by issuing a probe.
+        let probe = await harness.startDownload()
+        await harness.manager.cancel(probe)
+
+        let observed = ObservedFailure()
+        await harness.manager.setOnFailedHandler { task, error in
+            await observed.record(taskID: task.id, error: error)
+        }
+
+        // Setting the handler triggers an immediate drain of pending failures.
+        let recorded = await observed.snapshot()
+        let matched = recorded.contains { taskID, error in
+            guard taskID == orphanID else { return false }
+            if case .restorationMissingSystemTask = error { return true }
+            return false
+        }
+        #expect(matched)
+    }
+}
+
+private actor ObservedFailure {
+    private var entries: [(String, DownloadError)] = []
+
+    func record(taskID: String, error: DownloadError) {
+        entries.append((taskID, error))
+    }
+
+    func snapshot() -> [(String, DownloadError)] {
+        entries
+    }
 }

@@ -82,17 +82,19 @@ package struct DownloadRestoreCoordinator {
             await failedTask.restoreState(.failed)
             await failedTask.setError(.restorationMissingSystemTask)
             await runtimeRegistry.add(failedTask)
-            await runtimeRegistry.onStateChanged?(failedTask, .failed)
-            await runtimeRegistry.onFailed?(failedTask, .restorationMissingSystemTask)
+            // Queue the failure announcement before attempting persistence
+            // cleanup. The manager replays this list to handler subscribers
+            // and stream consumers on first observation, so missing the
+            // append on a prune failure would silently drop the failure for
+            // any caller that was about to subscribe.
+            pendingMissingSystemTaskIDs.append(failedTask.id)
             do {
                 try await persistence.remove(id: record.id)
             } catch {
                 Self.logger.fault(
-                    "Failed to prune orphaned task \(record.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))"
+                    "Failed to prune orphaned task \(record.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash)). Failure announcement is still queued; the next launch will reprocess this record."
                 )
-                continue
             }
-            pendingMissingSystemTaskIDs.append(failedTask.id)
         }
         return pendingMissingSystemTaskIDs
     }

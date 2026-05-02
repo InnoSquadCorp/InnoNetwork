@@ -271,6 +271,7 @@ public actor DownloadManager {
 
     public func setOnStateChangedHandler(_ callback: (@Sendable (DownloadTask, DownloadState) async -> Void)?) async {
         await runtimeRegistry.setOnStateChanged(callback)
+        await drainPendingRestoreFailuresToHandlers()
     }
 
     public func setOnCompletedHandler(_ callback: (@Sendable (DownloadTask, URL) async -> Void)?) async {
@@ -279,6 +280,7 @@ public actor DownloadManager {
 
     public func setOnFailedHandler(_ callback: (@Sendable (DownloadTask, DownloadError) async -> Void)?) async {
         await runtimeRegistry.setOnFailed(callback)
+        await drainPendingRestoreFailuresToHandlers()
     }
 
     /// Waits until launch restoration has reconciled persisted download tasks
@@ -469,16 +471,40 @@ public actor DownloadManager {
         return stream
     }
 
-    private func recordPendingRestoreFailures(_ taskIDs: [String]) {
+    private func recordPendingRestoreFailures(_ taskIDs: [String]) async {
         pendingRestoreFailures.formUnion(taskIDs)
+        // If callers wired handlers up before restoration completed, flush
+        // immediately so they observe the failure without needing to also
+        // subscribe through `events(for:)`.
+        await drainPendingRestoreFailuresToHandlers()
     }
 
     private func flushPendingRestoreFailureIfNeeded(taskID: String) async {
         guard pendingRestoreFailures.remove(taskID) != nil else { return }
+        await drainRestoreFailure(taskID: taskID)
+    }
+
+    private func drainPendingRestoreFailuresToHandlers() async {
+        let onState = await runtimeRegistry.onStateChanged
+        let onFailed = await runtimeRegistry.onFailed
+        guard onState != nil || onFailed != nil else { return }
+        let ids = pendingRestoreFailures
+        pendingRestoreFailures.removeAll()
+        for id in ids {
+            await drainRestoreFailure(taskID: id)
+        }
+    }
+
+    private func drainRestoreFailure(taskID: String) async {
+        let task = await runtimeRegistry.task(withId: taskID)
+        if let task {
+            await runtimeRegistry.onStateChanged?(task, .failed)
+            await runtimeRegistry.onFailed?(task, .restorationMissingSystemTask)
+        }
         await eventHub.publish(.stateChanged(.failed), for: taskID)
         await eventHub.publish(.failed(.restorationMissingSystemTask), for: taskID)
         await eventHub.finish(taskID: taskID)
-        if let task = await runtimeRegistry.task(withId: taskID) {
+        if let task {
             await runtimeRegistry.remove(task)
         }
     }
