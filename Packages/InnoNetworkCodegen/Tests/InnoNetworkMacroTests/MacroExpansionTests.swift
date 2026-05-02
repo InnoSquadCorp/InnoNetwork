@@ -120,6 +120,62 @@ struct MacroExpansionTests {
         )
     }
 
+    @Test("APIDefinition macro rejects optional path placeholders")
+    func apiDefinitionOptionalPlaceholderDiagnostic() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .get, path: "/users/{id}")
+            public struct GetUser {
+                public let id: Int?
+                public typealias APIResponse = User
+            }
+            """,
+            expandedSource:
+                """
+                public struct GetUser {
+                    public let id: Int?
+                    public typealias APIResponse = User
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message: "@APIDefinition path placeholder {id} cannot reference an Optional stored property.",
+                    line: 1,
+                    column: 1
+                )
+            ],
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro rejects Optional generic path placeholders")
+    func apiDefinitionOptionalGenericPlaceholderDiagnostic() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .get, path: "/users/{id}")
+            struct GetUser {
+                let id: Optional<Int>
+                typealias APIResponse = User
+            }
+            """,
+            expandedSource:
+                """
+                struct GetUser {
+                    let id: Optional<Int>
+                    typealias APIResponse = User
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message: "@APIDefinition path placeholder {id} cannot reference an Optional stored property.",
+                    line: 1,
+                    column: 1
+                )
+            ],
+            macros: macros
+        )
+    }
+
     @Test("endpoint macro creates Endpoint builder expression")
     func endpointExpansion() {
         assertMacroExpansion(

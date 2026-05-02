@@ -1,3 +1,4 @@
+import Foundation
 import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
@@ -30,7 +31,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
         let method = try requiredArgument(named: "method", in: arguments).expression.trimmedDescription
         let pathArgument = try requiredArgument(named: "path", in: arguments)
         let pathLiteral = try stringLiteralArgument(named: "path", in: arguments)
-        let properties = storedPropertyNames(in: declaration)
+        let properties = storedProperties(in: declaration)
         let path = try interpolatedPath(pathLiteral, properties: properties, anchor: pathArgument.expression)
         let typeName = type.trimmedDescription
         let accessPrefix = witnessAccessPrefix(in: declaration)
@@ -96,8 +97,12 @@ public struct APIDefinitionMacro: ExtensionMacro {
         return value
     }
 
-    private static func storedPropertyNames(in declaration: some DeclGroupSyntax) -> Set<String> {
-        var names: Set<String> = []
+    private struct StoredProperty {
+        let isOptional: Bool
+    }
+
+    private static func storedProperties(in declaration: some DeclGroupSyntax) -> [String: StoredProperty] {
+        var properties: [String: StoredProperty] = [:]
         for member in declaration.memberBlock.members {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
             for binding in variable.bindings {
@@ -106,10 +111,19 @@ public struct APIDefinitionMacro: ExtensionMacro {
                 else {
                     continue
                 }
-                names.insert(identifier)
+                properties[identifier] = StoredProperty(isOptional: isOptionalType(binding.typeAnnotation?.type))
             }
         }
-        return names
+        return properties
+    }
+
+    private static func isOptionalType(_ type: TypeSyntax?) -> Bool {
+        guard let type else { return false }
+        if type.is(OptionalTypeSyntax.self) || type.is(ImplicitlyUnwrappedOptionalTypeSyntax.self) {
+            return true
+        }
+        let normalized = type.trimmedDescription.replacingOccurrences(of: " ", with: "")
+        return normalized.hasPrefix("Optional<") || normalized.hasPrefix("Swift.Optional<")
     }
 
     private static func witnessAccessPrefix(in declaration: some DeclGroupSyntax) -> String {
@@ -142,7 +156,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
 
     private static func interpolatedPath(
         _ path: String,
-        properties: Set<String>,
+        properties: [String: StoredProperty],
         anchor: some SyntaxProtocol
     ) throws -> String {
         var result = ""
@@ -158,10 +172,16 @@ public struct APIDefinitionMacro: ExtensionMacro {
                 }
                 let nameStart = path.index(after: index)
                 let name = String(path[nameStart..<close])
-                guard !name.isEmpty, properties.contains(name) else {
+                guard !name.isEmpty, let property = properties[name] else {
                     throw InnoNetworkMacroDiagnostic(
                         "@APIDefinition path placeholder {\(name)} must match a stored property.",
                         id: "api-definition-unknown-placeholder"
+                    ).error(at: anchor)
+                }
+                if property.isOptional {
+                    throw InnoNetworkMacroDiagnostic(
+                        "@APIDefinition path placeholder {\(name)} cannot reference an Optional stored property.",
+                        id: "api-definition-optional-placeholder"
                     ).error(at: anchor)
                 }
                 result += "\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(\(name)))"
