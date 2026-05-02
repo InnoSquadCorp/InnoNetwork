@@ -542,7 +542,7 @@ private func varyValuesEqual(stored: String?, current: String?, headerName: Stri
         return true
     case (nil, _), (_, nil):
         return false
-    case let (storedValue?, currentValue?):
+    case (let storedValue?, let currentValue?):
         if isMultiTokenVaryHeader(headerName) {
             return varyTokenSet(storedValue) == varyTokenSet(currentValue)
         }

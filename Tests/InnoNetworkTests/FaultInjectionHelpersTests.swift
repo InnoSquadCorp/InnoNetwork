@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import InnoNetwork
 @testable import InnoNetworkTestSupport
 
@@ -41,8 +42,16 @@ struct FaultInjectionHelpersTests {
         let second = await sim.tryAcquire()
         await sim.release()
         let third = await sim.tryAcquire()
-        if case .acquired = first {} else { Issue.record("expected acquired"); return }
-        if case .wouldBlock = second {} else { Issue.record("expected wouldBlock"); return }
+        if case .acquired = first {
+        } else {
+            Issue.record("expected acquired")
+            return
+        }
+        if case .wouldBlock = second {
+        } else {
+            Issue.record("expected wouldBlock")
+            return
+        }
         if case .acquired = third {} else { Issue.record("expected acquired again") }
     }
 

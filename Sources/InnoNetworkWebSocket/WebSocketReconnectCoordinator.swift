@@ -65,8 +65,8 @@ package struct WebSocketReconnectCoordinator {
         await task.beginReconnectWindowIfNeeded(now: now)
 
         if configuration.reconnectMaxTotalDuration > 0,
-           let started = await task.reconnectWindowStartedAt,
-           now.timeIntervalSince(started) > configuration.reconnectMaxTotalDuration
+            let started = await task.reconnectWindowStartedAt,
+            now.timeIntervalSince(started) > configuration.reconnectMaxTotalDuration
         {
             // Bump the counter so observers see the rejected attempt before
             // returning .exceeded — mirrors the maxReconnectAttempts semantics.

@@ -435,33 +435,22 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         var logEventCount = 0
         var tombstoneCount = 0
 
-        let data = try Data(contentsOf: logURL)
-        guard !data.isEmpty else {
-            return (records, urlToID, nextSequence, logEventCount, tombstoneCount)
-        }
+        let handle = try FileHandle(forReadingFrom: logURL)
+        defer { try? handle.close() }
 
-        guard let contents = String(data: data, encoding: .utf8) else {
-            quarantineFileIfNeeded(logURL, fileManager: fileManager)
-            return (records, urlToID, nextSequence, logEventCount, tombstoneCount)
-        }
+        var buffer = Data()
+        var didReadAnyBytes = false
+        var didEncounterCorruptSuffix = false
+        let chunkSize = 64 * 1024
+        let maximumReplayLineBytes = 64 * 1024 * 1024
+        let decoder = JSONDecoder()
 
-        let lines = contents.split(whereSeparator: \.isNewline)
-        var validPrefixEvents: [Event] = []
-
-        for line in lines {
-            do {
-                let event = try JSONDecoder().decode(Event.self, from: Data(line.utf8))
-                validPrefixEvents.append(event)
-            } catch {
-                quarantineFileIfNeeded(logURL, fileManager: fileManager)
-                break
-            }
-        }
-
-        for event in validPrefixEvents {
+        func replayLine(_ lineData: Data) throws {
+            guard !lineData.isEmpty else { return }
+            let event = try decoder.decode(Event.self, from: lineData)
             switch event.kind {
             case .upsert:
-                guard let url = event.url, let destinationURL = event.destinationURL else { continue }
+                guard let url = event.url, let destinationURL = event.destinationURL else { return }
                 if let existing = records[event.taskID], existing.url != url {
                     var ids = urlToID[existing.url] ?? []
                     ids.removeAll { $0 == event.taskID }
@@ -497,11 +486,62 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             logEventCount += 1
         }
 
-        if validPrefixEvents.count != lines.count {
+        func processBufferedLine(upTo newlineIndex: Data.Index) throws {
+            var lineData = buffer.subdata(in: buffer.startIndex..<newlineIndex)
+            if lineData.last == 0x0D {
+                lineData.removeLast()
+            }
+            let nextIndex = buffer.index(after: newlineIndex)
+            buffer.removeSubrange(buffer.startIndex..<nextIndex)
+            try replayLine(lineData)
+        }
+
+        while true {
+            let chunk = try handle.read(upToCount: chunkSize) ?? Data()
+            if chunk.isEmpty { break }
+            didReadAnyBytes = true
+            buffer.append(chunk)
+
+            if buffer.count > maximumReplayLineBytes, buffer.firstIndex(of: 0x0A) == nil {
+                didEncounterCorruptSuffix = true
+                break
+            }
+
+            while let newlineIndex = buffer.firstIndex(of: 0x0A) {
+                do {
+                    try processBufferedLine(upTo: newlineIndex)
+                } catch {
+                    didEncounterCorruptSuffix = true
+                    break
+                }
+            }
+
+            if didEncounterCorruptSuffix {
+                break
+            }
+        }
+
+        if !didReadAnyBytes {
+            return (records, urlToID, nextSequence, logEventCount, tombstoneCount)
+        }
+
+        if !didEncounterCorruptSuffix, !buffer.isEmpty {
+            if buffer.last == 0x0D {
+                buffer.removeLast()
+            }
+            do {
+                try replayLine(buffer)
+            } catch {
+                didEncounterCorruptSuffix = true
+            }
+        }
+
+        if didEncounterCorruptSuffix {
             // Recovery path: a partial / corrupt suffix of the log forced us
             // to rewrite the checkpoint. fsync defensively so the recovery
             // does not have to be redone if the process crashes again before
             // the OS flushes.
+            quarantineFileIfNeeded(logURL, fileManager: fileManager)
             try writeCheckpoint(
                 records: records,
                 to: checkpointURL,

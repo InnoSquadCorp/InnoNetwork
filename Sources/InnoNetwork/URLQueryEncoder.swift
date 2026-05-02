@@ -86,7 +86,7 @@ public struct URLQueryEncoder: Sendable {
             case 0x20:
                 escaped.append("+")
             case 0x30...0x39, 0x41...0x5A, 0x61...0x7A,
-                 0x2A, 0x2D, 0x2E, 0x5F:
+                0x2A, 0x2D, 0x2E, 0x5F:
                 escaped.append(Character(UnicodeScalar(byte)))
             default:
                 let hex = String(byte, radix: 16, uppercase: true)

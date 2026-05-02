@@ -11,29 +11,29 @@ that need source updates or behavior review.
 
 **NaN/Infinity now throw.** The default
 `nonConformingFloatEncodingStrategy` is `.throw`, so encoding a `Double.nan`
-or `.infinity` raises `EncodingError.invalidValue`. If you intentionally
-shipped these values, opt back in with
-`URLQueryEncoder.nonConformingFloatEncodingStrategy = .convertToString(...)`.
+or `.infinity` raises `EncodingError.unsupportedValue(reason:)`. If you
+intentionally shipped these values, initialize or mutate an encoder with
+`nonConformingFloatEncodingStrategy: .convertToString(...)`.
 
-**Decimal locale.** `Decimal` values are now rendered through a POSIX-locked
-formatter, so non-en_US locales no longer emit `,` decimal separators.
+**Decimal locale.** `Decimal` values now use `Decimal.description`, which is
+locale-independent, so non-en_US locales no longer emit `,` decimal separators.
 
 **Form encoding.** `encodeForm` is now strictly RFC 1866
 `application/x-www-form-urlencoded`: spaces become `+`, `+` is percent-encoded
 as `%2B`. If you were relying on the previous percent-encoded space, switch
 to `encode` (URL-component encoding) or update wire-level expectations.
 
-**Data → base64url.** `Data` values now serialize as base64url (no padding)
-rather than standard base64. Servers that decoded the old format need to
-support either, or callers should pre-convert.
+**Data remains standard Base64.** `Data` values still serialize through
+`Data.base64EncodedString()`. No server migration is required for binary
+query payloads.
 
 ## HTTPHeader
 
 `HTTPHeader` storage is an ordered list. `Set-Cookie` and `WWW-Authenticate`
-preserve duplicates. The `dictionary` projection has been deprecated in
-favor of `URLRequest.allHTTPHeaderFields` integration; for direct dictionary
-consumption, use `HTTPHeader.collapsed` (last-write-wins, only when the
-caller is explicit about losing duplicates).
+preserve duplicates. `value(for:)` and the `dictionary` projection collapse
+repeated case-insensitive names into a single comma-joined value while
+preserving the first spelling as the canonical key. Use `values(for:)` when
+the individual entries matter.
 
 ## MultipartFormData / MultipartResponseDecoder
 
@@ -61,39 +61,41 @@ that asserted on `.cancelled` absence need to update.
 
 ## RefreshTokenPolicy
 
-- Refresh runs as a structured child task. When every concurrent caller
-  cancels, the refresh is cancelled too. If you depended on a refresh
-  outliving its callers, capture the result in a separate retained `Task`.
+- Refresh runs in a detached single-flight task. Caller cancellation while
+  awaiting the refresh no longer clears the in-flight state, so a follow-up
+  caller does not launch a duplicate refresh.
 - Consecutive failures enter an exponential cooldown
-  (`baseCooldown=1s, max=30s`). Callers during cooldown receive the
-  cached error. To bypass cooldown for a one-shot operator nudge, clear
-  state via `await policy.reset()`.
+  (`RefreshFailureCooldown.exponentialBackoff(base: 1.0, max: 30.0)`).
+  Callers during cooldown receive the cached error. Configure
+  `failureCooldown: .disabled` to retain the old immediate-retry behavior.
 - `Authorization` strip is case-insensitive.
-- `isRefreshInProgress` is deprecated; observe coalescer state through
-  the new state-machine APIs.
 
 ## CircuitBreakerPolicy
 
-- `init` is now `throws`. Wrap construction in `try` or `try?`.
+- The existing `init(failureThreshold:windowSize:...)` remains source
+  compatible and still silently clamps out-of-range values.
+- New code that wants explicit validation can use the throwing
+  `init(validatedFailureThreshold:windowSize:resetAfter:maxResetAfter:numberOfProbesRequiredToClose:countsTransportSecurityFailures:)`.
 - Keys derive from `scheme://host:port`, so HTTPS and HTTP variants of
   the same host are isolated, as are explicit alt-port deployments.
-- `failureThreshold` and `maxResetAfter` are validated explicitly. Bad
-  values throw at init instead of being silently clamped.
+- `failureThreshold`, `windowSize`, `resetAfter`, `maxResetAfter`, and
+  `numberOfProbesRequiredToClose` are validated explicitly by the validating
+  initializer.
 - `numberOfProbesRequiredToClose` (default 1) introduces optional
   hysteresis for flapping hosts.
 - DNS and TLS-pinning failures default to non-countable. Pass
-  `countsTransportPreflightFailures: true` to force them back into the
+  `countsTransportSecurityFailures: true` to force them back into the
   failure budget.
 
 ## DownloadConfiguration / DownloadManager
 
-- `DownloadConfiguration.safeDefaults(...)` and `advancedTuning(...)`
+- `DownloadConfiguration.safeDefaults(...)` and `advanced(...)`
   now set `allowsCellularAccess = false`. Existing apps that downloaded
   over cellular need an explicit `.cellularEnabled()` opt-in.
-- The persistence base directory now defaults to a subdirectory under
-  `cachesDirectory` (iCloud-backup-skipped). Apps that relied on
-  `Application Support` placement should pass
-  `persistenceBaseDirectoryURL` explicitly.
+- The persistence base directory remains
+  `applicationSupportDirectory/InnoNetworkDownload/<sessionIdentifier>` when
+  `persistenceBaseDirectoryURL` is `nil`. Apps that want iCloud-backup-skipped
+  storage should pass a caches-directory URL explicitly.
 - `DownloadManager.shutdown() async` is the canonical teardown:
 
   ```swift
@@ -111,9 +113,8 @@ that asserted on `.cancelled` absence need to update.
 ## DownloadTaskPersistence
 
 - The append log is replayed via `FileHandle` chunk streaming. Existing
-  v1 logs are accepted; new writes use schema v2 with `createdAt` and
-  `lastUpdatedAt` metadata. The migration is automatic on first open;
-  there is no caller action.
+  v1 logs are accepted and new writes keep the existing v1 record schema.
+  There is no caller action.
 - The directory lock now uses non-blocking `flock` with a 10s deadline.
   `withDirectoryLock` throws `CocoaError(.fileLocking)` instead of
   hanging when another process holds the lock.
@@ -156,9 +157,9 @@ Lifecycle is now explicit:
 
 ```swift
 let monitor = NetworkMonitor.shared
-monitor.start()
+await monitor.start()
 // ... usage ...
-monitor.stop()
+await monitor.stop()
 ```
 
 `deinit` cancels the underlying `pathUpdateHandler`. Tests that

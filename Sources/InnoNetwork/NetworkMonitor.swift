@@ -1,6 +1,6 @@
 import Foundation
-import os
 @preconcurrency import Network
+import os
 
 private final class PathMonitorStorage: Sendable {
     private let queue: DispatchQueue

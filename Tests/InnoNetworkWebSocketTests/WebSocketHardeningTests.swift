@@ -247,10 +247,10 @@ struct WebSocketHeartbeatHardeningTests {
         if let urlError = error as? URLError {
             switch urlError.code {
             case .timedOut,
-                 .cannotConnectToHost,
-                 .networkConnectionLost,
-                 .notConnectedToInternet,
-                 .cancelled:
+                .cannotConnectToHost,
+                .networkConnectionLost,
+                .notConnectedToInternet,
+                .cancelled:
                 return true
             default:
                 return false

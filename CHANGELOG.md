@@ -15,15 +15,16 @@ notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
 ### Breaking
 
 - `URLQueryEncoder`: `nonConformingFloatEncodingStrategy` defaults to
-  `.throw`. NaN/Infinity now raise `EncodingError.invalidValue` instead of
-  serializing to provider-dependent strings. `Decimal` values are encoded
-  via `String(describing:)` over a POSIX-locked formatter so non-en_US
-  locales no longer emit `,` decimal separators. `Data` is encoded as
-  base64url, and `encodeForm` produces RFC 1866 `application/x-www-form-urlencoded`
+  `.throw`. NaN/Infinity now raise `EncodingError.unsupportedValue(reason:)`
+  instead of serializing to provider-dependent strings. `Decimal` values use
+  `Decimal.description` so non-en_US locales no longer emit `,` decimal
+  separators. `Data` remains standard Base64 via `Data.base64EncodedString()`,
+  and `encodeForm` produces RFC 1866 `application/x-www-form-urlencoded`
   output (space → `+`, `+` percent-encoded).
 - `HTTPHeader`: storage is now an ordered list. `Set-Cookie` and
   `WWW-Authenticate` retain duplicate values; the dictionary projection
-  collapses to the last write only when callers explicitly request it.
+  comma-joins repeated case-insensitive names while preserving the first
+  spelling as the canonical key.
 - `MultipartFormData.appendFile(at:)` is now `throws` (was `async throws`)
   and validates file existence at append time. `encode()` surfaces file-read
   failures rather than silently dropping parts. RFC 5987 `filename*=UTF-8''…`
@@ -34,19 +35,21 @@ notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
 - `RetryPolicy.init`: gains `jitterFactor` and `maxTotalRetryDuration`
   parameters with safe defaults. The `cancelled` event now fires even when
   the surrounding task is cancelled.
-- `RefreshTokenPolicy`: refresh runs as a structured child task and is
-  cancelled when every caller cancels. Consecutive failures enter an
-  exponential cooldown (`baseCooldown=1s, max=30s`); callers during cooldown
-  receive the cached error rather than triggering a hot-loop refresh.
-  `Authorization` strip is case-insensitive. `isRefreshInProgress` is
-  deprecated.
-- `CircuitBreakerPolicy.init` is `throws`. Threshold/probe parameters are
-  validated explicitly (no silent clamping). Keys are derived from
-  `scheme://host:port` so different ports are isolated. The state machine
-  uses a true rolling window and supports a configurable hysteresis via
-  `numberOfProbesRequiredToClose`. DNS/TLS pinning failures are excluded
-  from the failure count by default.
-- `DownloadConfiguration.safeDefaults` and `advancedTuning` set
+- `RefreshTokenPolicy`: refresh completion now drives the
+  idle/in-flight/cooldown state from the detached refresh task itself, so
+  caller cancellation while awaiting a refresh no longer clears single-flight
+  state. Consecutive failures enter
+  `RefreshFailureCooldown.exponentialBackoff(base: 1.0, max: 30.0)`; callers
+  during cooldown receive the cached error rather than triggering a hot-loop
+  refresh. `Authorization` strip is case-insensitive.
+- `CircuitBreakerPolicy.init(validatedFailureThreshold:windowSize:resetAfter:maxResetAfter:numberOfProbesRequiredToClose:countsTransportSecurityFailures:)`
+  adds explicit throwing validation while the existing
+  `init(failureThreshold:windowSize:...)` remains source-compatible and
+  silently clamps. Keys are derived from `scheme://host:port` so different
+  ports are isolated. The state machine uses a true rolling window and
+  supports configurable hysteresis via `numberOfProbesRequiredToClose`.
+  DNS/TLS pinning failures are excluded from the failure count by default.
+- `DownloadConfiguration.safeDefaults` and `advanced` set
   `allowsCellularAccess = false`. Use `cellularEnabled()` to opt back in.
 - `DownloadManager.shutdown() async` is the canonical lifecycle teardown.
   In-flight tasks are cancelled, the URLSession is `invalidateAndCancel()`d,
@@ -102,11 +105,12 @@ notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
   memory stays bounded on multi-MB logs. `withDirectoryLock` polls
   `flock(LOCK_EX | LOCK_NB)` with a 10s deadline and 50ms backoff instead
   of blocking indefinitely. The `fileManager` parameter is now actually
-  honored. `Record` schema includes `createdAt`/`lastUpdatedAt`.
+  honored. The persisted `Record` schema remains `id`/`url`/`destinationURL`/
+  `resumeData`.
 - `TrustPolicy`: `SecTrustEvaluateWithError` captures the underlying error
-  and surfaces it via `NetworkError.tlsEvaluation(reason:)`.
+  and surfaces it via `NetworkError.trustEvaluationFailed(...)`.
 - `NetworkLogger`: JWT-shaped tokens are auto-masked. CLI environments can
-  fall back to stderr instead of `os_log`.
+  inspect the same redacted payload through `os_log`.
 - `EventDeliveryPolicy.default` is `.dropOldest(buffer: 256)`; unbounded
   buffering is an explicit opt-in.
 - `NetworkMonitor` exposes explicit `start()`/`stop()` and cancels its
