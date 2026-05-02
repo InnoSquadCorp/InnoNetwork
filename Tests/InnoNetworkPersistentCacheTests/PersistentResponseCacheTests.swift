@@ -218,17 +218,20 @@ struct PersistentResponseCacheTests {
     func recoveryReappliesDataProtectionToRecreatedBodiesDirectory() throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let recorder = ProtectionWriteRecorder()
+        let fileManager = RecordingFileManager(recorder: recorder)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let indexURL = directory.appendingPathComponent("index.json")
         try Data(#"{"version":999,"entries":{}}"#.utf8).write(to: indexURL)
 
         _ = try PersistentResponseCache(
-            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory),
+            fileManager: fileManager
         )
 
         let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
-        let attributes = try FileManager.default.attributesOfItem(atPath: bodiesURL.path)
-        #expect(attributes[.protectionKey] as? FileProtectionType == .completeUnlessOpen)
+        #expect(FileManager.default.fileExists(atPath: bodiesURL.path))
+        #expect(recorder.protectionWrites(for: bodiesURL.path) == [.completeUnlessOpen, .completeUnlessOpen])
     }
 
     @Test("Overwriting an entry preserves the freshly written body")
@@ -305,5 +308,39 @@ struct PersistentResponseCacheTests {
     private func makeDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("innonetwork-persistent-cache-\(UUID().uuidString)", isDirectory: true)
+    }
+}
+
+private final class ProtectionWriteRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var writes: [String: [FileProtectionType]] = [:]
+
+    func record(_ protectionType: FileProtectionType, path: String) {
+        lock.lock()
+        writes[path, default: []].append(protectionType)
+        lock.unlock()
+    }
+
+    func protectionWrites(for path: String) -> [FileProtectionType] {
+        lock.lock()
+        let pathWrites = writes[path] ?? []
+        lock.unlock()
+        return pathWrites
+    }
+}
+
+private final class RecordingFileManager: FileManager, @unchecked Sendable {
+    private let recorder: ProtectionWriteRecorder
+
+    init(recorder: ProtectionWriteRecorder) {
+        self.recorder = recorder
+        super.init()
+    }
+
+    override func setAttributes(_ attributes: [FileAttributeKey: Any], ofItemAtPath path: String) throws {
+        if let protectionType = attributes[.protectionKey] as? FileProtectionType {
+            recorder.record(protectionType, path: path)
+        }
+        try super.setAttributes(attributes, ofItemAtPath: path)
     }
 }
