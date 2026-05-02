@@ -64,16 +64,22 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
             }
         }
     }
+
+    package func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
+        callbacks.handleInvalidation(error.map(SendableUnderlyingError.init))
+    }
 }
 
 
 package final class DownloadSessionDelegateCallbacks: Sendable {
     package typealias ProgressHandler = @Sendable (Int, Int64, Int64, Int64) -> Void
     package typealias CompletionHandler = @Sendable (Int, URL?, SendableUnderlyingError?) -> Void
+    package typealias InvalidationHandler = @Sendable (SendableUnderlyingError?) -> Void
 
     private struct Handlers {
         var progress: ProgressHandler?
         var completion: CompletionHandler?
+        var invalidation: InvalidationHandler?
     }
 
     private let handlersLock = OSAllocatedUnfairLock<Handlers>(initialState: .init())
@@ -87,6 +93,12 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
         handlersLock.withLock {
             $0.progress = onProgress
             $0.completion = onCompletion
+        }
+    }
+
+    package func setInvalidationHandler(_ callback: @escaping InvalidationHandler) {
+        handlersLock.withLock {
+            $0.invalidation = callback
         }
     }
 
@@ -110,6 +122,10 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
         error: SendableUnderlyingError?
     ) {
         handlersLock.withLock { $0.completion }?(taskIdentifier, location, error)
+    }
+
+    package func handleInvalidation(_ error: SendableUnderlyingError?) {
+        handlersLock.withLock { $0.invalidation }?(error)
     }
 }
 

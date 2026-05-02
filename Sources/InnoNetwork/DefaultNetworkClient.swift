@@ -16,9 +16,10 @@ public protocol NetworkClient: Sendable {
     /// requests bearing the same tag (typically via
     /// ``DefaultNetworkClient/cancelAll(matching:)``).
     ///
-    /// A default implementation forwards to ``request(_:)`` and ignores the
-    /// tag. Conformers that own an in-flight registry should override this
-    /// requirement to honour grouped cancellation.
+    /// Conformers must implement this overload explicitly. A tag-aware call
+    /// that silently falls back to ``request(_:)`` would make grouped
+    /// cancellation appear to succeed while leaving the work unreachable from
+    /// the tag registry.
     ///
     /// - Parameters:
     ///   - request: The typed request definition to execute.
@@ -41,27 +42,9 @@ public protocol NetworkClient: Sendable {
     /// Executes a multipart upload and registers it under the supplied
     /// ``CancellationTag``. See ``request(_:tag:)`` for semantics.
     ///
-    /// A default implementation forwards to ``upload(_:)`` and ignores the
-    /// tag.
+    /// Conformers must implement this overload explicitly; see
+    /// ``request(_:tag:)`` for the grouped-cancellation contract.
     func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse
-}
-
-public extension NetworkClient {
-    /// Default forwarding implementation: ignores the tag and executes the
-    /// no-tag overload. Conformers that wrap an ``InFlightRegistry`` (such as
-    /// ``DefaultNetworkClient``) override this to register the request for
-    /// grouped cancellation.
-    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse {
-        _ = tag
-        return try await self.request(request)
-    }
-
-    /// Default forwarding implementation that mirrors ``request(_:tag:)``
-    /// for multipart uploads.
-    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse {
-        _ = tag
-        return try await self.upload(request)
-    }
 }
 
 /// Low-level typed execution contract for framework authors and policy layers.

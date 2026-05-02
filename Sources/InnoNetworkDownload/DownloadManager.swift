@@ -203,6 +203,9 @@ public actor DownloadManager {
             bufferingPolicy: .unbounded
         )
         try Self.registerSessionIdentifier(configuration.sessionIdentifier)
+        callbacks.setInvalidationHandler { [identifier = configuration.sessionIdentifier] _ in
+            Self.unregisterSessionIdentifier(identifier)
+        }
         self.configuration = configuration
         self.delegate = delegate
         self.backgroundCompletionStore = backgroundCompletionStore
@@ -536,9 +539,11 @@ public actor DownloadManager {
         // this call the underlying session and its DownloadSessionDelegate (and
         // every callback closure they retain) outlive the manager. Background
         // sessions also stay registered with the OS. `finishTasksAndInvalidate`
-        // lets in-flight transfers complete before tearing down.
+        // lets in-flight transfers complete before tearing down. The session
+        // identifier remains claimed until URLSession reports invalidation, so
+        // a replacement manager cannot reuse the identifier while Foundation is
+        // still draining delegate callbacks for the old session.
         session.finishTasksAndInvalidate()
-        Self.unregisterSessionIdentifier(configuration.sessionIdentifier)
     }
 
     private static func registerSessionIdentifier(_ identifier: String) throws {

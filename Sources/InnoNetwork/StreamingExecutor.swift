@@ -158,8 +158,8 @@ package struct StreamingExecutor: Sendable {
                             response: Response(
                                 statusCode: networkResponse.statusCode,
                                 data: Data(line.utf8),
-                                request: urlRequest,
-                                response: httpResponse
+                                request: networkResponse.request,
+                                response: networkResponse.response ?? httpResponse
                             )
                         )
                     }

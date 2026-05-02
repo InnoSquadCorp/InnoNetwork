@@ -337,8 +337,8 @@ do {
 ```swift
 import InnoNetworkDownload
 
-// Per-feature manager with a unique session identifier. `.shared` is
-// deprecated — see SharedManagerMigration.
+// Per-feature manager with a unique session identifier. 4.0.0 removes
+// `DownloadManager.shared`, so construction is explicit at the feature boundary.
 let manager = try DownloadManager.make(
     configuration: .safeDefaults(sessionIdentifier: "com.example.app.media")
 )

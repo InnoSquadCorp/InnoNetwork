@@ -135,16 +135,22 @@ struct RetryAfterFuzzTests {
                 request: URLRequest(url: url),
                 response: httpResponse
             )
+            let expectedDecision: RetryDecision
+            if status == 429 || status == 503, includeHeader {
+                expectedDecision = .retryAfter(TimeInterval(headerSeconds))
+            } else if status == 408 || status == 429 || (500...599).contains(status) {
+                expectedDecision = .retry
+            } else {
+                expectedDecision = .noRetry
+            }
 
-            switch decision {
-            case .retryAfter(let seconds):
-                #expect(status == 429 || status == 503, "retryAfter on non-429/503 status \(status)")
-                #expect(includeHeader, "retryAfter without Retry-After header")
+            if decision != expectedDecision {
+                Issue.record(
+                    "expected \(expectedDecision) for status \(status), includeHeader=\(includeHeader), got \(decision)"
+                )
+            }
+            if case .retryAfter(let seconds) = decision {
                 #expect(seconds == TimeInterval(headerSeconds))
-            case .retry, .noRetry:
-                if status == 429 || status == 503, includeHeader {
-                    Issue.record("expected .retryAfter for parseable Retry-After on \(status)")
-                }
             }
         }
     }

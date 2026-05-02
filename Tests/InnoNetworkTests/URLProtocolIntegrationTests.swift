@@ -175,12 +175,14 @@ private final class StubURLProtocol: URLProtocol {
 
         switch spec {
         case .success(let statusCode, let data, let headers):
-            guard let response = HTTPURLResponse(
-                url: url,
-                statusCode: statusCode,
-                httpVersion: "HTTP/1.1",
-                headerFields: headers
-            ) else {
+            guard
+                let response = HTTPURLResponse(
+                    url: url,
+                    statusCode: statusCode,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: headers
+                )
+            else {
                 client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
                 return
             }
@@ -188,12 +190,14 @@ private final class StubURLProtocol: URLProtocol {
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)
         case .redirect(let statusCode, let location):
-            guard let response = HTTPURLResponse(
-                url: url,
-                statusCode: statusCode,
-                httpVersion: "HTTP/1.1",
-                headerFields: ["Location": location.absoluteString]
-            ) else {
+            guard
+                let response = HTTPURLResponse(
+                    url: url,
+                    statusCode: statusCode,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Location": location.absoluteString]
+                )
+            else {
                 client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
                 return
             }

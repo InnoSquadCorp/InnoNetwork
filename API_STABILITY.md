@@ -377,12 +377,12 @@ entries live under `[4.0.0]`.
   `NetworkClient` could not opt into grouped cancellation without a
   cast. The 4.x asymmetry surfaced repeatedly in test stubs and
   generated clients.
-- **Migration.** Existing call sites compile unchanged. Conformers that
-  do not implement the tagged overloads inherit a default extension
-  that forwards to the un-tagged variant and ignores the tag, so
-  out-of-tree stubs (for example `StubNetworkClient`) continue to
-  build. Conformers that *do* support cancellation grouping should
-  override the new methods to honor the tag.
+- **Migration.** Existing call sites compile unchanged. `NetworkClient`
+  conformers must implement the tagged overloads explicitly so grouped
+  cancellation cannot be silently dropped by a default forwarding
+  implementation. Stubs that do not own cancellable runtime work may
+  forward to their untagged path, but wrappers around another
+  `NetworkClient` should preserve the tag when delegating.
 
 ### `EndpointShape` extracted from endpoint protocols
 

@@ -61,12 +61,10 @@ func application(
     handleEventsForBackgroundURLSession identifier: String,
     completionHandler: @escaping () -> Void
 ) {
-    Task {
-        await mediaDownloads.attachBackgroundCompletion(
-            identifier: identifier,
-            completion: completionHandler
-        )
-    }
+    mediaDownloads.handleBackgroundSessionCompletion(
+        identifier,
+        completion: completionHandler
+    )
 }
 ```
 
@@ -84,10 +82,12 @@ with the system's `allDownloadTasks()`:
   persistence row is removed.
 - Tasks that exist in the system but are not persisted are cancelled (they are foreign).
 
-You can wait for restoration explicitly before issuing new downloads:
+Every public manager entry point waits for restoration internally before it
+starts or mutates download work, so callers can issue new downloads immediately
+after constructing the owning manager.
 
 ```swift
-await mediaDownloads.waitForRestoration()
+let task = await mediaDownloads.download(url: remoteURL, to: destinationURL)
 ```
 
 ## Pause and resume

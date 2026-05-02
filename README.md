@@ -32,7 +32,7 @@ prototypes to production clients.
 InnoNetwork ships several layers. Pick the highest one that matches your
 situation — most apps never need anything below `APIDefinition`.
 
-```
+```text
 Are you generating clients from an OpenAPI / IDL spec at build time?
 ├─ yes ─► @APIDefinition / #endpoint macros from InnoNetworkCodegen
 │        (separate package; runtime-only consumers do not resolve swift-syntax)

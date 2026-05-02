@@ -77,7 +77,9 @@ struct ResponseCachePolicyFuzzTests {
             switch result {
             case .returnCached:
                 #expect(!requiresRevalidation, "returnCached emitted for entry that requires revalidation")
-                #expect(ageSeconds <= maxAgeSeconds, "returnCached emitted past maxAge: age=\(ageSeconds) maxAge=\(maxAgeSeconds)")
+                #expect(
+                    ageSeconds <= maxAgeSeconds,
+                    "returnCached emitted past maxAge: age=\(ageSeconds) maxAge=\(maxAgeSeconds)")
             case .revalidate(let payload):
                 #expect(payload != nil, "cacheFirst dropped cached payload during revalidate")
                 if !requiresRevalidation {
@@ -109,7 +111,9 @@ struct ResponseCachePolicyFuzzTests {
             switch result {
             case .returnCached:
                 #expect(!requiresRevalidation, "swr returnCached for entry that requires revalidation")
-                #expect(ageSeconds <= maxAgeSeconds, "swr returnCached past maxAge: age=\(ageSeconds) maxAge=\(maxAgeSeconds)")
+                #expect(
+                    ageSeconds <= maxAgeSeconds,
+                    "swr returnCached past maxAge: age=\(ageSeconds) maxAge=\(maxAgeSeconds)")
             case .returnStaleAndRevalidate:
                 #expect(!requiresRevalidation, "swr stale-and-revalidate for entry that requires revalidation")
                 #expect(

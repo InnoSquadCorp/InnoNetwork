@@ -44,9 +44,11 @@ struct InFlightRegistryRaceTests {
         for _ in 0..<count {
             let id = UUID()
             counters.withLock { $0[id] = 0 }
-            registry.register(id: id, tag: nil, cancelHandler: { @Sendable in
-                counters.withLock { $0[id, default: 0] += 1 }
-            })
+            registry.register(
+                id: id, tag: nil,
+                cancelHandler: { @Sendable in
+                    counters.withLock { $0[id, default: 0] += 1 }
+                })
         }
 
         registry.cancelAll()
@@ -71,19 +73,25 @@ struct InFlightRegistryRaceTests {
         let tagB: CancellationTag = "feature.b"
 
         for _ in 0..<10 {
-            registry.register(id: UUID(), tag: tagA, cancelHandler: { @Sendable in
-                firedA.withLock { $0 += 1 }
-            })
+            registry.register(
+                id: UUID(), tag: tagA,
+                cancelHandler: { @Sendable in
+                    firedA.withLock { $0 += 1 }
+                })
         }
         for _ in 0..<7 {
-            registry.register(id: UUID(), tag: tagB, cancelHandler: { @Sendable in
-                firedB.withLock { $0 += 1 }
-            })
+            registry.register(
+                id: UUID(), tag: tagB,
+                cancelHandler: { @Sendable in
+                    firedB.withLock { $0 += 1 }
+                })
         }
         for _ in 0..<5 {
-            registry.register(id: UUID(), tag: nil, cancelHandler: { @Sendable in
-                firedNil.withLock { $0 += 1 }
-            })
+            registry.register(
+                id: UUID(), tag: nil,
+                cancelHandler: { @Sendable in
+                    firedNil.withLock { $0 += 1 }
+                })
         }
 
         registry.cancelAll(matching: tagA)
@@ -109,9 +117,11 @@ struct InFlightRegistryRaceTests {
             group.addTask {
                 for _ in 0..<200 {
                     let id = UUID()
-                    registry.register(id: id, tag: nil, cancelHandler: { @Sendable in
-                        cancellations.withLock { $0 += 1 }
-                    })
+                    registry.register(
+                        id: id, tag: nil,
+                        cancelHandler: { @Sendable in
+                            cancellations.withLock { $0 += 1 }
+                        })
                     await Task.yield()
                 }
             }
@@ -149,12 +159,15 @@ struct InFlightRegistryRaceTests {
         func data(for request: URLRequest) async throws -> (Data, URLResponse) {
             started.withLock { $0 += 1 }
             try await Task.sleep(for: .seconds(60))
-            return (Data(), HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!)
+            return (
+                Data(),
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+            )
         }
     }
 
@@ -179,7 +192,7 @@ struct InFlightRegistryRaceTests {
 
         task.cancel()
         // The task body throws CancellationError → NetworkError.cancelled.
-        await #expect(throws: NetworkError.self) {
+        await expectCancelled {
             _ = try await task.value
         }
 
@@ -212,7 +225,7 @@ struct InFlightRegistryRaceTests {
         }
 
         await client.cancelAll(matching: tag)
-        await #expect(throws: NetworkError.self) {
+        await expectCancelled {
             _ = try await work.value
         }
 
@@ -221,5 +234,16 @@ struct InFlightRegistryRaceTests {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(client.inFlight.inFlightCount == 0)
+    }
+
+    private func expectCancelled(_ operation: () async throws -> Void) async {
+        do {
+            try await operation()
+            Issue.record("Expected NetworkError.cancelled")
+        } catch NetworkError.cancelled {
+            // Expected.
+        } catch {
+            Issue.record("Expected NetworkError.cancelled, got \(error)")
+        }
     }
 }

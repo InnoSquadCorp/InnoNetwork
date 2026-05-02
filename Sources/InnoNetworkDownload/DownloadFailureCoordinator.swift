@@ -31,6 +31,7 @@ package struct DownloadFailureCoordinator {
         restart: @Sendable (DownloadTask) async -> Void
     ) async {
         if isCancelledTransportError(error) {
+            await runtimeRegistry.removeTaskRuntime(taskId: task.id)
             // Cancelled transport errors short-circuit unconditionally:
             // user cancels drain runtime+persistence in `cancel()` before
             // this delegate callback fires, and system-driven cancels
