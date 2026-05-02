@@ -7,6 +7,17 @@ Versioning.
 
 ## [Unreleased] — 5.0 work-in-progress
 
+### Added
+
+- `NetworkClient.request(_:tag:)` and `NetworkClient.upload(_:tag:)` are
+  now part of the protocol surface, with default implementations that
+  forward to the existing no-tag overloads. Existing conformers continue
+  to compile unchanged; conformers that wrap an in-flight registry can
+  override the new requirements to honour grouped cancellation through
+  `cancelAll(matching:)`. Callers that depend on `any NetworkClient`
+  can now express grouped cancellation without down-casting to
+  `DefaultNetworkClient`.
+
 ### Changed (BREAKING)
 
 - `DownloadManager.shared` is now `DownloadManager?` instead of

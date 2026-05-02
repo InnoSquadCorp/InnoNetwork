@@ -10,6 +10,24 @@ public protocol NetworkClient: Sendable {
     /// - Throws: A ``NetworkError`` or another execution error produced while encoding,
     ///   sending, validating, or decoding the request.
     func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse
+
+    /// Executes a typed request and registers it under the supplied
+    /// ``CancellationTag`` so it can later be cancelled together with other
+    /// requests bearing the same tag (typically via
+    /// ``DefaultNetworkClient/cancelAll(matching:)``).
+    ///
+    /// A default implementation forwards to ``request(_:)`` and ignores the
+    /// tag. Conformers that own an in-flight registry should override this
+    /// requirement to honour grouped cancellation.
+    ///
+    /// - Parameters:
+    ///   - request: The typed request definition to execute.
+    ///   - tag: Optional cancellation tag; pass `nil` for ungrouped requests.
+    /// - Returns: The decoded `APIResponse` produced by the request definition.
+    /// - Throws: A ``NetworkError`` or another execution error produced while encoding,
+    ///   sending, validating, or decoding the request.
+    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse
+
     /// Executes a multipart request modeled with ``MultipartAPIDefinition``.
     ///
     /// Prefer this entry point for upload-style integrations.
@@ -19,6 +37,31 @@ public protocol NetworkClient: Sendable {
     /// - Throws: A ``NetworkError`` or another execution error produced while building,
     ///   sending, validating, or decoding the multipart request.
     func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse
+
+    /// Executes a multipart upload and registers it under the supplied
+    /// ``CancellationTag``. See ``request(_:tag:)`` for semantics.
+    ///
+    /// A default implementation forwards to ``upload(_:)`` and ignores the
+    /// tag.
+    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse
+}
+
+public extension NetworkClient {
+    /// Default forwarding implementation: ignores the tag and executes the
+    /// no-tag overload. Conformers that wrap an ``InFlightRegistry`` (such as
+    /// ``DefaultNetworkClient``) override this to register the request for
+    /// grouped cancellation.
+    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse {
+        _ = tag
+        return try await self.request(request)
+    }
+
+    /// Default forwarding implementation that mirrors ``request(_:tag:)``
+    /// for multipart uploads.
+    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse {
+        _ = tag
+        return try await self.upload(request)
+    }
 }
 
 /// Low-level typed execution contract for framework authors and policy layers.
