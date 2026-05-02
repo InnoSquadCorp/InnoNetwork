@@ -5,6 +5,112 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and the project follows Semantic
 Versioning.
 
+## [4.0.1] - 2026-05-02
+
+100-issue hardening pass distilled from a third-pass production review.
+Behavior, durability, and concurrency contracts are tightened across the
+core, download, websocket, and persistent-cache modules. Detailed migration
+notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
+
+### Breaking
+
+- `URLQueryEncoder`: `nonConformingFloatEncodingStrategy` defaults to
+  `.throw`. NaN/Infinity now raise `EncodingError.invalidValue` instead of
+  serializing to provider-dependent strings. `Decimal` values are encoded
+  via `String(describing:)` over a POSIX-locked formatter so non-en_US
+  locales no longer emit `,` decimal separators. `Data` is encoded as
+  base64url, and `encodeForm` produces RFC 1866 `application/x-www-form-urlencoded`
+  output (space → `+`, `+` percent-encoded).
+- `HTTPHeader`: storage is now an ordered list. `Set-Cookie` and
+  `WWW-Authenticate` retain duplicate values; the dictionary projection
+  collapses to the last write only when callers explicitly request it.
+- `MultipartFormData.appendFile(at:)` is now `throws` (was `async throws`)
+  and validates file existence at append time. `encode()` surfaces file-read
+  failures rather than silently dropping parts. RFC 5987 `filename*=UTF-8''…`
+  is emitted for non-ASCII filenames; ASCII fallback is preserved.
+- `MultipartResponseDecoder`: missing/invalid boundary raises
+  `NetworkError.decoding(stage: .multipartBoundary, …)` instead of returning
+  an empty array.
+- `RetryPolicy.init`: gains `jitterFactor` and `maxTotalRetryDuration`
+  parameters with safe defaults. The `cancelled` event now fires even when
+  the surrounding task is cancelled.
+- `RefreshTokenPolicy`: refresh runs as a structured child task and is
+  cancelled when every caller cancels. Consecutive failures enter an
+  exponential cooldown (`baseCooldown=1s, max=30s`); callers during cooldown
+  receive the cached error rather than triggering a hot-loop refresh.
+  `Authorization` strip is case-insensitive. `isRefreshInProgress` is
+  deprecated.
+- `CircuitBreakerPolicy.init` is `throws`. Threshold/probe parameters are
+  validated explicitly (no silent clamping). Keys are derived from
+  `scheme://host:port` so different ports are isolated. The state machine
+  uses a true rolling window and supports a configurable hysteresis via
+  `numberOfProbesRequiredToClose`. DNS/TLS pinning failures are excluded
+  from the failure count by default.
+- `DownloadConfiguration.safeDefaults` and `advancedTuning` set
+  `allowsCellularAccess = false`. Use `cellularEnabled()` to opt back in.
+- `DownloadManager.shutdown() async` is the canonical lifecycle teardown.
+  In-flight tasks are cancelled, the URLSession is `invalidateAndCancel()`d,
+  and per-task event partitions finish. `deinit` retains
+  `finishTasksAndInvalidate()` as a fallback.
+
+### Added
+
+- `NetworkConfiguration.urlSessionConfigurationOverride` and
+  `NetworkConfiguration.makeURLSessionConfiguration()` provide an escape
+  hatch for proxy/HTTP2/connection-pool/TLS tuning without forking the
+  abstraction.
+- `PersistentResponseCacheConfiguration.persistenceFsyncPolicy` selects
+  between `.always` (fd + parent-dir fsync after every index write),
+  `.onCheckpoint` (default), and `.never`.
+- `DownloadConfiguration.persistenceBaseDirectoryURL` lets callers move the
+  append-log directory off `Application Support` (e.g., into
+  `cachesDirectory`) for iCloud-backup avoidance.
+- `APIDefinition` gains `timeoutOverride` and `cachePolicyOverride`
+  (default `nil`) for per-request overrides.
+- `MultipartFormData` includes optional `Content-Length` per-part when
+  callers pass `includesPartContentLength: true`.
+- Test infrastructure: `FailingFileHandle`, `FsyncFailureInjector`,
+  `FlockSimulator`, `ClockFailureInjector`, and `CountingURLSession` for
+  fault-injection coverage of disk, POSIX, and clock failure paths.
+
+### Fixed
+
+- `URLQueryEncoder`: `SnakeCaseKeyTransformCache` is bounded to 4096
+  entries to prevent unbounded growth on dynamic key sets.
+- `RetryCoordinator`: catch branches are deduplicated, finish ordering is
+  awaited (no detached `Task` for the terminal event), and the `unknown`
+  error path retains request context. Retry-After is documented as a floor.
+- `ResponseCachePolicy`: query items are sorted before fingerprinting so
+  semantically identical URLs hit the same cache entry. `Cookie`,
+  `Proxy-Authorization`, `X-Api-Key`, and `X-Auth-Token` are sensitive by
+  default. The in-memory LRU is now O(1) (doubly-linked list + dict);
+  `byteCost` includes URL/method/varyHeaders/storedAt; `cachedResponseMatchesVary`
+  trims OWS and treats `Accept-Encoding` as a token set.
+- `WebSocketReconnectCoordinator`: any prior reconnect task is cancelled
+  before a new one is registered. `URLError.cannotConnectToHost`,
+  `.networkConnectionLost`, `.notConnectedToInternet`, and `.cancelled`
+  are classified for ping-timeout handling. Backoff guards against
+  `pow(2, -1)` and inverted random ranges. `WebSocketConfiguration`
+  exposes `maximumMessageSize`, `permessageDeflateEnabled`, and
+  `reconnectMaxTotalDuration`.
+- `DownloadTaskPersistence`: `id(forURL:)` is O(1) via a maintained reverse
+  index. The append log is replayed via `FileHandle` chunk-streaming so
+  memory stays bounded on multi-MB logs. `withDirectoryLock` polls
+  `flock(LOCK_EX | LOCK_NB)` with a 10s deadline and 50ms backoff instead
+  of blocking indefinitely. The `fileManager` parameter is now actually
+  honored. `Record` schema includes `createdAt`/`lastUpdatedAt`.
+- `TrustPolicy`: `SecTrustEvaluateWithError` captures the underlying error
+  and surfaces it via `NetworkError.tlsEvaluation(reason:)`.
+- `NetworkLogger`: JWT-shaped tokens are auto-masked. CLI environments can
+  fall back to stderr instead of `os_log`.
+- `EventDeliveryPolicy.default` is `.dropOldest(buffer: 256)`; unbounded
+  buffering is an explicit opt-in.
+- `NetworkMonitor` exposes explicit `start()`/`stop()` and cancels its
+  `pathUpdateHandler` on `deinit`.
+- `InFlightRegistry` cancels the underlying `URLSessionTask` when
+  `cancelAll(matching:)` fires, so tag-based cancellation drops the wire
+  in milliseconds.
+
 ## [4.0.0] - 2026-05-01
 
 InnoNetwork's first public release. The package targets Apple platforms only
