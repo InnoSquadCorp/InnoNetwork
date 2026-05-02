@@ -142,9 +142,16 @@ public struct DownloadConfiguration: Sendable {
     /// recovery scan short, or raise them when write amplification matters
     /// more than startup replay time.
     public struct PersistenceCompactionPolicy: Sendable, Equatable {
-        public var maxEvents: Int
-        public var maxLogBytes: UInt64
-        public var tombstoneRatio: Double
+        /// Append-log mutation count that triggers a checkpoint rewrite.
+        /// Clamped to `>= 1`. Default `1_000`.
+        public let maxEvents: Int
+        /// Append-log file-size threshold (bytes) that triggers a checkpoint
+        /// rewrite. Clamped to `>= 1`. Default `1_048_576` (1 MiB).
+        public let maxLogBytes: UInt64
+        /// Fraction of log entries that must be tombstones (`0.0...1.0`)
+        /// before a checkpoint is forced. Out-of-range values are clamped.
+        /// Default `0.25`.
+        public let tombstoneRatio: Double
 
         public init(
             maxEvents: Int = 1_000,
@@ -156,6 +163,8 @@ public struct DownloadConfiguration: Sendable {
             self.tombstoneRatio = min(1.0, max(0.0, tombstoneRatio))
         }
 
+        /// Compaction policy with the documented 4.0.0 defaults
+        /// (`maxEvents: 1_000`, `maxLogBytes: 1 MiB`, `tombstoneRatio: 0.25`).
         public static let `default` = PersistenceCompactionPolicy()
     }
 
