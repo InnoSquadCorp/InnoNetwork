@@ -61,6 +61,16 @@ import Foundation
     /// auth-required APIs fail early when the client was configured as public.
     var requiresRefreshTokenPolicy: Bool { get }
 
+    /// Optional per-request override for the request timeout. When non-nil
+    /// the value replaces ``NetworkConfiguration/timeout`` on the built
+    /// `URLRequest`.
+    var timeoutOverride: TimeInterval? { get }
+
+    /// Optional per-request override for `URLRequest.cachePolicy`. When
+    /// non-nil the value replaces ``NetworkConfiguration/cachePolicy`` on
+    /// the built `URLRequest`.
+    var cachePolicyOverride: URLRequest.CachePolicy? { get }
+
     /// Produces the encoded payload for the request.
     ///
     /// - Returns: A ``RequestPayload`` that matches the expected request transport semantics.
@@ -88,6 +98,12 @@ import Foundation
     /// Default executable contracts are public unless their adapter opts into
     /// the auth-required lane.
     var requiresRefreshTokenPolicy: Bool { false }
+    /// Default timeout override is `nil` so the client configuration
+    /// timeout applies.
+    var timeoutOverride: TimeInterval? { nil }
+    /// Default cache policy override is `nil` so the client configuration
+    /// cache policy applies.
+    var cachePolicyOverride: URLRequest.CachePolicy? { nil }
 }
 
 package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExecutable {
@@ -101,6 +117,8 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
     package var headers: HTTPHeaders { base.headers }
     package var acceptableStatusCodes: Set<Int>? { base.acceptableStatusCodes }
     package var requiresRefreshTokenPolicy: Bool { Base.Auth.self == AuthRequiredScope.self }
+    package var timeoutOverride: TimeInterval? { base.timeoutOverride }
+    package var cachePolicyOverride: URLRequest.CachePolicy? { base.cachePolicyOverride }
     package var bodyContentType: String? {
         guard base.parameters != nil else { return nil }
         return base.transport.requestEncoding.contentTypeHeader
@@ -169,6 +187,8 @@ package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: S
     package var acceptableStatusCodes: Set<Int>? { base.acceptableStatusCodes }
     package var bodyContentType: String? { base.multipartFormData.contentTypeHeader }
     package var requiresRefreshTokenPolicy: Bool { Base.Auth.self == AuthRequiredScope.self }
+    package var timeoutOverride: TimeInterval? { base.timeoutOverride }
+    package var cachePolicyOverride: URLRequest.CachePolicy? { base.cachePolicyOverride }
 
     package func makePayload() throws -> RequestPayload {
         let formData = base.multipartFormData

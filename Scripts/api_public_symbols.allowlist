@@ -324,12 +324,14 @@ InnoNetwork	swift.property	CircuitBreakerPolicy.windowSize
 InnoNetwork	swift.property	CorrelationIDInterceptor.correlationHeader
 InnoNetwork	swift.property	CorrelationIDInterceptor.traceHeader
 InnoNetwork	swift.property	EndpointShape.acceptableStatusCodes
+InnoNetwork	swift.property	EndpointShape.cachePolicyOverride
 InnoNetwork	swift.property	EndpointShape.headers
 InnoNetwork	swift.property	EndpointShape.logger
 InnoNetwork	swift.property	EndpointShape.method
 InnoNetwork	swift.property	EndpointShape.path
 InnoNetwork	swift.property	EndpointShape.requestInterceptors
 InnoNetwork	swift.property	EndpointShape.responseInterceptors
+InnoNetwork	swift.property	EndpointShape.timeoutOverride
 InnoNetwork	swift.property	EndpointShape.transport
 InnoNetwork	swift.property	EventDeliveryPolicy.maxBufferedEventsPerConsumer
 InnoNetwork	swift.property	EventDeliveryPolicy.maxBufferedEventsPerPartition
@@ -498,6 +500,7 @@ InnoNetwork	swift.property	ServerSentEvent.id
 InnoNetwork	swift.property	ServerSentEvent.retry
 InnoNetwork	swift.property	SingleRequestExecutable.acceptableStatusCodes
 InnoNetwork	swift.property	SingleRequestExecutable.bodyContentType
+InnoNetwork	swift.property	SingleRequestExecutable.cachePolicyOverride
 InnoNetwork	swift.property	SingleRequestExecutable.headers
 InnoNetwork	swift.property	SingleRequestExecutable.logger
 InnoNetwork	swift.property	SingleRequestExecutable.method
@@ -505,6 +508,7 @@ InnoNetwork	swift.property	SingleRequestExecutable.path
 InnoNetwork	swift.property	SingleRequestExecutable.requestInterceptors
 InnoNetwork	swift.property	SingleRequestExecutable.requiresRefreshTokenPolicy
 InnoNetwork	swift.property	SingleRequestExecutable.responseInterceptors
+InnoNetwork	swift.property	SingleRequestExecutable.timeoutOverride
 InnoNetwork	swift.property	StateReduction.effects
 InnoNetwork	swift.property	StateReduction.state
 InnoNetwork	swift.property	StreamingAPIDefinition.acceptableStatusCodes

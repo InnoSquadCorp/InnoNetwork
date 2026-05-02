@@ -66,6 +66,18 @@ public protocol EndpointShape: Sendable {
     /// is decoded. Concrete endpoint protocols supply method-aware or
     /// body-aware defaults via their own extensions.
     var transport: TransportPolicy<APIResponse> { get }
+
+    /// Per-endpoint override for the request timeout. When non-nil the
+    /// value replaces ``NetworkConfiguration/timeout`` on the built
+    /// `URLRequest`. Defaults to `nil` so endpoints inherit the client
+    /// timeout.
+    var timeoutOverride: TimeInterval? { get }
+
+    /// Per-endpoint override for `URLRequest.cachePolicy`. When non-nil
+    /// the value replaces ``NetworkConfiguration/cachePolicy`` on the
+    /// built `URLRequest`. Defaults to `nil` so endpoints inherit the
+    /// client cache policy.
+    var cachePolicyOverride: URLRequest.CachePolicy? { get }
 }
 
 // MARK: - Shared default implementations
@@ -85,4 +97,10 @@ public extension EndpointShape {
 
     /// Default status-code policy, delegating to the client configuration.
     var acceptableStatusCodes: Set<Int>? { nil }
+
+    /// Default timeout override, delegating to the client configuration.
+    var timeoutOverride: TimeInterval? { nil }
+
+    /// Default cache policy override, delegating to the client configuration.
+    var cachePolicyOverride: URLRequest.CachePolicy? { nil }
 }

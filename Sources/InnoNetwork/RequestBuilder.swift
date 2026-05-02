@@ -33,6 +33,16 @@ package struct RequestBuilder {
         configuration: NetworkConfiguration
     ) throws -> BuiltRequest {
         let payload = try executable.makePayload()
+
+        // GET requests with a body are accepted by some servers and silently
+        // dropped by others; reject them so the caller is forced to use a
+        // body-bearing method instead of getting non-deterministic behaviour.
+        if payload.hasBody, executable.method == .get {
+            throw NetworkError.invalidRequestConfiguration(
+                "HTTP GET requests must not carry a request body. Use POST or PUT for body-bearing endpoints."
+            )
+        }
+
         var targetURL = try EndpointPathBuilder.makeURL(baseURL: configuration.baseURL, endpointPath: executable.path)
         var httpBody: Data?
         var bodySource = BodySource.inline
@@ -59,8 +69,8 @@ package struct RequestBuilder {
         if payload.hasBody, let bodyContentType {
             request.setValue(bodyContentType, forHTTPHeaderField: "Content-Type")
         }
-        request.cachePolicy = configuration.cachePolicy
-        request.timeoutInterval = configuration.timeout
+        request.cachePolicy = executable.cachePolicyOverride ?? configuration.cachePolicy
+        request.timeoutInterval = executable.timeoutOverride ?? configuration.timeout
         request.httpBody = httpBody
         return BuiltRequest(request: request, bodySource: bodySource)
     }
