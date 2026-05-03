@@ -174,19 +174,11 @@ private final class RequestTaskDelegate: NSObject, URLSessionTaskDelegate {
     ) {
         let policy = context.redirectPolicy
         let originalRequest = request
-        let handler = UncheckedSendableBox(completionHandler)
-        Task {
-            let result = await policy.redirect(
-                request: newRequest,
-                response: response,
-                originalRequest: originalRequest
-            )
-            handler.value(result)
-        }
+        let result = policy.redirect(
+            request: newRequest,
+            response: response,
+            originalRequest: originalRequest
+        )
+        completionHandler(result)
     }
-}
-
-private struct UncheckedSendableBox<Value>: @unchecked Sendable {
-    let value: Value
-    init(_ value: Value) { self.value = value }
 }

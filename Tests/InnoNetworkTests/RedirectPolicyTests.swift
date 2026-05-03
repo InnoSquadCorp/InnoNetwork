@@ -25,7 +25,7 @@ struct RedirectPolicyTests {
         )!
 
         let result = try #require(
-            await policy.redirect(request: redirect, response: response, originalRequest: original)
+            policy.redirect(request: redirect, response: response, originalRequest: original)
         )
 
         #expect(result.value(forHTTPHeaderField: "Authorization") == "Bearer secret-token")
@@ -53,7 +53,7 @@ struct RedirectPolicyTests {
         )!
 
         let result = try #require(
-            await policy.redirect(request: redirect, response: response, originalRequest: original)
+            policy.redirect(request: redirect, response: response, originalRequest: original)
         )
 
         #expect(result.value(forHTTPHeaderField: "Authorization") == nil)
@@ -78,7 +78,7 @@ struct RedirectPolicyTests {
         )!
 
         let result = try #require(
-            await policy.redirect(request: redirect, response: response, originalRequest: original)
+            policy.redirect(request: redirect, response: response, originalRequest: original)
         )
         #expect(result.value(forHTTPHeaderField: "Authorization") == nil)
     }
@@ -99,7 +99,7 @@ struct RedirectPolicyTests {
         )!
 
         let result = try #require(
-            await policy.redirect(request: redirect, response: response, originalRequest: original)
+            policy.redirect(request: redirect, response: response, originalRequest: original)
         )
         #expect(result.value(forHTTPHeaderField: "Authorization") == nil)
     }
@@ -119,7 +119,7 @@ struct RedirectPolicyTests {
         )!
 
         let result = try #require(
-            await policy.redirect(request: redirect, response: response, originalRequest: original)
+            policy.redirect(request: redirect, response: response, originalRequest: original)
         )
         #expect(result.value(forHTTPHeaderField: "Authorization") == nil)
         #expect(result.value(forHTTPHeaderField: "Cookie") == nil)
@@ -137,7 +137,7 @@ struct RedirectPolicyTests {
             headerFields: ["Location": redirect.url!.absoluteString]
         )!
 
-        let result = await policy.redirect(
+        let result = policy.redirect(
             request: redirect, response: response, originalRequest: original
         )
         #expect(result == nil)
@@ -157,7 +157,7 @@ struct RedirectPolicyTests {
         )!
 
         let result = try #require(
-            await policy.redirect(request: redirect, response: response, originalRequest: original)
+            policy.redirect(request: redirect, response: response, originalRequest: original)
         )
         #expect(result.value(forHTTPHeaderField: "Authorization") == "Bearer token")
     }

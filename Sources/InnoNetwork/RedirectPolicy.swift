@@ -34,7 +34,7 @@ public protocol RedirectPolicy: Sendable {
         request: URLRequest,
         response: HTTPURLResponse,
         originalRequest: URLRequest
-    ) async -> URLRequest?
+    ) -> URLRequest?
 }
 
 /// The default ``RedirectPolicy`` shipped with InnoNetwork.
@@ -60,7 +60,7 @@ public struct DefaultRedirectPolicy: RedirectPolicy {
         request: URLRequest,
         response: HTTPURLResponse,
         originalRequest: URLRequest
-    ) async -> URLRequest? {
+    ) -> URLRequest? {
         guard let targetURL = request.url,
             let scheme = targetURL.scheme?.lowercased(),
             scheme == "http" || scheme == "https"

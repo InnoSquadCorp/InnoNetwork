@@ -33,7 +33,7 @@ struct SecurityIntegrationTests {
         )!
 
         let result = try #require(
-            await configuration.redirectPolicy.redirect(
+            configuration.redirectPolicy.redirect(
                 request: redirected,
                 response: response,
                 originalRequest: original
