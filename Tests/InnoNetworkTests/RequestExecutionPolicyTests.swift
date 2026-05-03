@@ -237,4 +237,58 @@ struct RequestExecutionPolicyTests {
         }
         #expect(mockSession.capturedRequest == nil)
     }
+
+    @Test("BufferedAsyncBytes emits 64 KiB chunks")
+    func bufferedAsyncBytesEmitsChunks() async throws {
+        var sizes: [Int] = []
+        for try await chunk in BufferedAsyncBytes(CountingByteSequence(count: 150_000)) {
+            sizes.append(chunk.count)
+        }
+        #expect(sizes == [65_536, 65_536, 18_928])
+    }
+
+    @Test("BufferedAsyncBytes throws at the first byte past maxBytes")
+    func bufferedAsyncBytesThrowsAtFirstBytePastLimit() async throws {
+        var iterator = BufferedAsyncBytes(
+            CountingByteSequence(count: 2_048),
+            maxBytes: 1_024
+        ).makeAsyncIterator()
+
+        do {
+            while try await iterator.next() != nil {}
+            Issue.record("Expected NetworkError.responseTooLarge")
+        } catch let error as NetworkError {
+            switch error {
+            case .responseTooLarge(let limit, let observed):
+                #expect(limit == 1_024)
+                #expect(observed == 1_025)
+            default:
+                Issue.record("Expected NetworkError.responseTooLarge, got \(error)")
+            }
+        }
+    }
+}
+
+private struct CountingByteSequence: AsyncSequence, Sendable {
+    typealias Element = UInt8
+
+    let count: Int
+
+    func makeAsyncIterator() -> Iterator {
+        Iterator(remaining: count)
+    }
+
+    struct Iterator: AsyncIteratorProtocol {
+        private var remaining: Int
+
+        fileprivate init(remaining: Int) {
+            self.remaining = remaining
+        }
+
+        mutating func next() async -> UInt8? {
+            guard remaining > 0 else { return nil }
+            remaining -= 1
+            return 0xA5
+        }
+    }
 }
