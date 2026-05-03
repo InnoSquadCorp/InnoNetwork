@@ -14,6 +14,25 @@ operational visibility from prototype to production. See
 summary and [`docs/Migration-4.0.0.md`](docs/Migration-4.0.0.md) for migration
 guidance.
 
+### 49-Item Hardening Summary
+
+This release folds the full 49-item hardening pass into the public 4.0.0
+baseline instead of shipping it as a follow-up patch. The review severity
+distribution was 1 Critical, 17 High, 23 Medium, and 8 Low items. Breaking
+changes are intentional and are called out below; migration recipes live in
+[`docs/Migration-4.0.0.md`](docs/Migration-4.0.0.md).
+
+| Area | Hardening IDs |
+| --- | --- |
+| Security / privacy | 1-1, 1-2, 1-5, 2-12, 3-2, 3-4, 3-20, 3-22 |
+| Memory / lifecycle / concurrency | 1-3, 1-4, 2-1, 2-7, 2-15, 2-16, 3-9, 3-14 |
+| Data integrity / retry / cache correctness | 2-2, 2-3, 2-5, 2-13, 2-17, 2-18, 3-1, 3-3, 3-6, 3-15 |
+| HTTP standards | 2-21, 3-5, 3-11, 3-12 |
+| Performance hot paths | 2-4, 2-6, 2-9, 2-10, 2-11, 2-14, 2-22, 3-7, 3-13, 3-18 |
+| API / naming cleanup | 2-8, 2-19, 2-20, 3-17, 3-19 |
+| Test infrastructure | 3-8, 3-10, 3-21 |
+| CI / supply chain | 3-16 |
+
 ### Hardening Pass — Breaking
 
 - `URLQueryEncoder`: `nonConformingFloatEncodingStrategy` defaults to
@@ -59,6 +78,11 @@ guidance.
   In-flight tasks are cancelled, the URLSession is `invalidateAndCancel()`d,
   and per-task event partitions finish. `deinit` retains
   `finishTasksAndInvalidate()` as a fallback.
+- `Endpoint<Response>` and `AuthenticatedEndpoint<Response>` fluent aliases
+  are removed. Use `ScopedEndpoint<Response, PublicAuthScope>` or
+  `ScopedEndpoint<Response, AuthRequiredScope>` explicitly.
+- `WebSocketManager.shared` is removed. Construct and inject a
+  feature-owned `WebSocketManager(configuration:)`.
 
 ### Hardening Pass — Added
 
@@ -66,6 +90,12 @@ guidance.
   `NetworkConfiguration.makeURLSessionConfiguration()` provide an escape
   hatch for proxy/HTTP2/connection-pool/TLS tuning without forking the
   abstraction.
+- `NetworkConfiguration.redirectPolicy` defaults to
+  `DefaultRedirectPolicy`, which strips `Authorization`, `Cookie`, and
+  `Proxy-Authorization` on cross-origin redirects.
+- `NetworkConfiguration.allowsInsecureHTTP` defaults to `false`; plain
+  `http://` base URLs fail during request construction unless a client
+  explicitly opts in for a local/dev endpoint.
 - `PersistentResponseCacheConfiguration.persistenceFsyncPolicy` selects
   between `.always` (fd + parent-dir fsync after every index write),
   `.onCheckpoint` (default), and `.never`.
@@ -83,9 +113,18 @@ guidance.
   `reconnectMaxTotalDuration` elapses before reconnect succeeds, separate
   from `maxReconnectAttemptsExceeded` so observers can differentiate
   "network down" from "exhausted retry budget".
+- Supply-chain CI: Dependabot now watches SwiftPM and GitHub Actions, every
+  workflow action is pinned to a full commit SHA, and CI runs
+  `actions/dependency-review-action` on pull requests.
 
 ### Hardening Pass — Fixed
 
+- Redirect handling no longer leaks credential-bearing headers across
+  origins, and base URLs containing embedded `user:password@` credentials
+  or fragments fail before transport dispatch.
+- `Cache-Control` parsing is quoted-string aware. Directives such as
+  `private="Set-Cookie, Authorization"` now still count as `private`,
+  invalidating the current cache key and skipping storage.
 - `URLQueryEncoder`: `SnakeCaseKeyTransformCache` is bounded to 4096
   entries to prevent unbounded growth on dynamic key sets.
 - `RetryCoordinator`: catch branches are deduplicated, finish ordering is

@@ -8,6 +8,19 @@ behavior review.
 
 ---
 
+## Immediate Migration Checklist
+
+| Previous usage | 4.0.0 replacement / action |
+| --- | --- |
+| `Endpoint<Response>` | Use `ScopedEndpoint<Response, PublicAuthScope>`. Builder roots become `ScopedEndpoint<EmptyResponse, PublicAuthScope>.get(...)`, `.post(...)`, etc. |
+| `AuthenticatedEndpoint<Response>` | Use `ScopedEndpoint<Response, AuthRequiredScope>` and configure `NetworkConfiguration.refreshTokenPolicy`. |
+| `WebSocketManager.shared` | Own and inject a manager per feature: `WebSocketManager(configuration:)` or `DownloadManager.make(configuration:)` for download flows. |
+| `DownloadManager.shared` | Use `try DownloadManager.make(configuration:)` with a unique `sessionIdentifier`; handle `DownloadManagerError` where the owning feature can recover. |
+| Relying on `SendableUnderlyingError ==` comparing messages | Equality is now stable code identity only (`domain` + `code`). Compare descriptions separately if UI text matters. |
+| Plain `http://` API base URLs | They fail by default. Use HTTPS, or set `allowsInsecureHTTP = true` only for a scoped local/dev client. |
+| Base URLs with `user:password@host` or `#fragment` | Move credentials to `Authorization` / request interceptors and remove fragments from `baseURL`. |
+| `urlSessionConfigurationOverride` with the default client initializer | Build a `URLSession` from `configuration.makeURLSessionConfiguration()` and pass it to `DefaultNetworkClient(configuration:session:)`. |
+
 ## URLQueryEncoder
 
 **NaN/Infinity now throw.** The default
@@ -142,6 +155,23 @@ Callers that supplied their own `URLSessionConfiguration` still work
 unchanged when they pass the matching `URLSession` explicitly. Constructing
 `DefaultNetworkClient(configuration:)` with a non-nil override now fails fast,
 because the default `URLSession.shared` cannot observe that override.
+
+`redirectPolicy` defaults to `DefaultRedirectPolicy`. Cross-origin redirects
+strip `Authorization`, `Cookie`, and `Proxy-Authorization`; same-origin
+redirects keep the original request headers. Custom policies can cancel
+redirects or apply stricter tenant-specific allowlists.
+
+Plain HTTP is rejected by default during request construction. Keep production
+clients on HTTPS. For local development or a controlled LAN-only endpoint,
+scope the opt-in to that client:
+
+```swift
+let config = NetworkConfiguration.advanced(
+    baseURL: URL(string: "http://localhost:8080")!
+) {
+    $0.allowsInsecureHTTP = true
+}
+```
 
 ## PersistentResponseCacheConfiguration
 

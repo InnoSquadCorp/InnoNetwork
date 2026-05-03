@@ -6,6 +6,7 @@
 [![Swift](https://img.shields.io/badge/Swift-6.2-orange)](https://swift.org)
 [![SwiftPM](https://img.shields.io/badge/SwiftPM-compatible-brightgreen)](https://swift.org/package-manager)
 [![Platforms](https://img.shields.io/badge/platforms-iOS%2018%20%7C%20macOS%2015%20%7C%20tvOS%2018%20%7C%20watchOS%2011%20%7C%20visionOS%202-lightgrey)](#platform-matrix)
+[![Supply Chain](https://img.shields.io/badge/supply%20chain-SHA--pinned%20Actions%20%2B%20Dependabot-blue)](#production-checklist)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 InnoNetwork is a Swift package for type-safe networking on Apple platforms. The
@@ -339,6 +340,7 @@ let tunedNetwork = NetworkConfiguration.advanced(
     baseURL: URL(string: "https://api.example.com")!
 ) { builder in
     builder.timeout = 30
+    builder.redirectPolicy = DefaultRedirectPolicy()
     builder.retryPolicy = ExponentialBackoffRetryPolicy()
     builder.trustPolicy = .systemDefault
     builder.requestCoalescingPolicy = .getOnly
@@ -350,6 +352,29 @@ let tunedNetwork = NetworkConfiguration.advanced(
 Auth refresh, coalescing, caching, and circuit breaking are opt-in. The
 request execution pipeline stays internal; public configuration exposes only
 the built-in policies.
+
+### Transport security defaults
+
+Core request clients default to HTTPS-only construction and safe redirect
+handling:
+
+- `DefaultRedirectPolicy` strips `Authorization`, `Cookie`, and
+  `Proxy-Authorization` when a redirect crosses scheme, host, or port.
+- Plain `http://` base URLs fail before transport unless the client opts in
+  with `allowsInsecureHTTP = true`.
+- Base URLs with embedded `user:password@host` credentials or fragments are
+  rejected; put credentials in an interceptor or `RefreshTokenPolicy` instead.
+
+Keep the HTTP opt-in scoped to local development or a controlled LAN-only
+client:
+
+```swift
+let local = NetworkConfiguration.advanced(
+    baseURL: URL(string: "http://localhost:8080")!
+) { builder in
+    builder.allowsInsecureHTTP = true
+}
+```
 
 ```swift
 let refreshPolicy = RefreshTokenPolicy(
@@ -404,8 +429,9 @@ automatically (RFC 9111 §4.1):
   `204`, `300`, `301`, `308`, `404`, `405`, `410`, `414`, and `501`) can be
   stored; `206 Partial Content` is excluded.
 - `Cache-Control: no-store` and `Cache-Control: private` invalidate the current
-  cache key and skip writes. `Cache-Control: no-cache` stores the response but
-  forces revalidation before every reuse.
+  cache key and skip writes, including quoted directives such as
+  `private="Set-Cookie, Authorization"`. `Cache-Control: no-cache` stores the
+  response but forces revalidation before every reuse.
 
 ### Optional Macros
 
@@ -530,12 +556,17 @@ Operational items to verify before shipping a client built on InnoNetwork.
   pins (current + next) and document the rotation cadence so the app keeps validating after
   certificate replacement. Consider feature-gated rollback to `.systemDefault` for emergency
   recovery.
+- **Redirect credential leakage.** Keep the default `DefaultRedirectPolicy`
+  unless you have a stricter allowlist. Any custom policy must preserve the
+  cross-origin stripping of `Authorization`, `Cookie`, and
+  `Proxy-Authorization`.
 - **Pinning host matching.** Keep the default `.unionAllMatches` if parent-domain pins should
   act as backup pins for subdomains. Use `.mostSpecificHost` when `example.com` and
   `api.example.com` pins must be operated as separate trust scopes.
 - **App Transport Security (ATS).** The default `safeDefaults` configuration assumes ATS is
   enabled. Avoid `NSAllowsArbitraryLoads` in production `Info.plist`. If a non-HTTPS host is
-  unavoidable, scope an `NSExceptionDomains` entry to that host only.
+  unavoidable, scope an `NSExceptionDomains` entry to that host only and set
+  `allowsInsecureHTTP = true` only on the matching client configuration.
 - **Custom trust evaluation.** A `TrustEvaluating` implementation runs before request bodies are
   ever decoded, so a rejected challenge becomes `NetworkError.trustEvaluationFailed`. Surface
   the failure to a user-facing recovery path; do not auto-retry on trust failure.
