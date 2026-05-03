@@ -227,6 +227,43 @@ struct RefreshCoalescerRaceTests {
         #expect(await coordinator.isRefreshInProgress == false)
     }
 
+    @Test("Subsequent coordinator runs a fresh refresh after a prior coordinator was released")
+    func freshCoordinatorRunsRefreshAfterPriorWasReleased() async throws {
+        // The detached refresh task captures `self` weakly. Even though
+        // the awaiter on `refreshAndApply` keeps the coordinator alive
+        // until that call returns, releasing the coordinator after a
+        // completed refresh leaves no global state behind: a brand-new
+        // coordinator with the same policy must run its own independent
+        // refresh.
+        actor RefreshCounter {
+            private(set) var count: Int = 0
+            func bump() { count += 1 }
+        }
+        let counter = RefreshCounter()
+        let policy = RefreshTokenPolicy(
+            currentToken: { "old" },
+            refreshToken: {
+                await counter.bump()
+                return "new"
+            }
+        )
+        let request = URLRequest(url: URL(string: "https://api.example.com/me")!)
+
+        weak var weakFirstCoordinator: RefreshTokenCoordinator?
+        do {
+            let first = RefreshTokenCoordinator(policy: policy)
+            weakFirstCoordinator = first
+            _ = try await first.refreshAndApply(to: request)
+        }
+        for _ in 0..<10 { await Task.yield() }
+        #expect(weakFirstCoordinator == nil, "first coordinator should release after its refresh completes")
+
+        let second = RefreshTokenCoordinator(policy: policy)
+        _ = try await second.refreshAndApply(to: request)
+        let observedCount = await counter.count
+        #expect(observedCount == 2, "fresh coordinator must drive its own refresh — got \(observedCount)")
+    }
+
     @Test("RequestDedupKey distinguishes refreshLane suffix")
     func dedupKeyDistinguishesRefreshLane() throws {
         var request = URLRequest(url: URL(string: "https://api.example.com/me")!)

@@ -156,7 +156,13 @@ package actor RefreshTokenCoordinator {
         // here would let a follow-up caller launch a duplicate refresh.
         // Routing the transition through the task itself preserves
         // single-flight even under aggressive caller cancellation.
-        let task = Task.detached(priority: Task.currentPriority) { [weak self] () async throws -> String in
+        //
+        // No explicit priority: `Task.currentPriority` previously hard-coded
+        // the actor's caller priority into the detached task, which inverted
+        // priority when a low-priority caller forced a high-priority refresh
+        // to wait. Falling back to the runtime default lets the cooperative
+        // pool reorder the refresh under the prevailing priority.
+        let task = Task.detached { [weak self] () async throws -> String in
             do {
                 let token = try await refreshTokenProvider()
                 await self?.refreshDidSucceed(id: id)
