@@ -235,6 +235,16 @@ private final class QueryValueBox {
         storage = .array(array)
     }
 
+    func appendArrayElement(_ element: QueryValueBox) {
+        switch storage {
+        case .array(var array):
+            array.append(element)
+            storage = .array(array)
+        default:
+            storage = .array([element])
+        }
+    }
+
     func setScalar(_ value: String) {
         storage = .scalar(value)
     }
@@ -249,6 +259,7 @@ private struct _URLQueryEncodingOptions: Sendable {
     let dateEncodingStrategy: JSONEncoder.DateEncodingStrategy
     let arrayEncodingStrategy: URLQueryArrayEncodingStrategy
     let nonConformingFloatEncodingStrategy: URLQueryFloatEncodingStrategy
+    nonisolated(unsafe) private static let iso8601DateFormatter = ISO8601DateFormatter()
 
     /// Stringifies a `Double` for the wire. Returns `nil` if the value is
     /// non-conforming and the strategy is `.throw`; the caller is expected
@@ -303,7 +314,7 @@ private struct _URLQueryEncodingOptions: Sendable {
         case .millisecondsSince1970:
             return .scalar(String(date.timeIntervalSince1970 * 1000.0))
         case .iso8601:
-            return .scalar(ISO8601DateFormatter().string(from: date))
+            return .scalar(Self.iso8601DateFormatter.string(from: date))
         case .formatted(let formatter):
             return .scalar(formatter.string(from: date))
         case .custom(let encode):
@@ -658,14 +669,7 @@ private struct URLQueryUnkeyedEncodingContainer: UnkeyedEncodingContainer {
 
     private func appendChild() -> QueryValueBox {
         let child = QueryValueBox()
-        let array: [QueryValueBox]
-        switch box.storage {
-        case .array(let existing):
-            array = existing + [child]
-        default:
-            array = [child]
-        }
-        box.setArray(array)
+        box.appendArrayElement(child)
         return child
     }
 }

@@ -184,6 +184,31 @@ struct URLQueryEncoderParametrizedTests {
         #expect(String(data: data, encoding: .utf8) == "tags%5B%5D=a&tags%5B%5D=b")
     }
 
+    @Test("Large scalar arrays preserve order")
+    func largeScalarArraysPreserveOrder() throws {
+        struct Wrap: Encodable { let tags: [String] }
+        let values = (0..<2_048).map { "tag-\($0)" }
+
+        let items = try URLQueryEncoder().encode(Wrap(tags: values))
+
+        #expect(items.count == values.count)
+        #expect(items.first == URLQueryItem(name: "tags[0]", value: "tag-0"))
+        #expect(items.last == URLQueryItem(name: "tags[2047]", value: "tag-2047"))
+    }
+
+    @Test("ISO8601 date encoding remains deterministic")
+    func iso8601DateEncodingIsDeterministic() throws {
+        struct Wrap: Encodable { let date: Date }
+        let encoder = URLQueryEncoder(dateEncodingStrategy: .iso8601)
+        let value = Wrap(date: Date(timeIntervalSince1970: 0))
+
+        let first = try encoder.encode(value)
+        let second = try encoder.encode(value)
+
+        #expect(first == [URLQueryItem(name: "date", value: "1970-01-01T00:00:00Z")])
+        #expect(second == first)
+    }
+
     @Test("Empty object emits no items for that key")
     func emptyObjectEmitsNothing() throws {
         struct User: Encodable {}
