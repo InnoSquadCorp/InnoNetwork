@@ -1,7 +1,11 @@
 import Foundation
 import InnoNetwork
-import InnoNetworkPersistentCache
 import Testing
+#if canImport(Darwin)
+import Darwin
+#endif
+
+@testable import InnoNetworkPersistentCache
 
 @Suite("Persistent Response Cache Tests")
 struct PersistentResponseCacheTests {
@@ -485,6 +489,15 @@ struct PersistentResponseCacheTests {
         let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
         #expect(configuration.persistenceFsyncPolicy == .onCheckpoint)
     }
+
+    #if canImport(Darwin)
+    @Test("F_FULLFSYNC fallback is limited to unsupported descriptors")
+    func fullFsyncFallbackIsLimitedToUnsupportedDescriptors() {
+        #expect(PersistentResponseCache.isFullFsyncUnsupported(EINVAL))
+        #expect(PersistentResponseCache.isFullFsyncUnsupported(EOPNOTSUPP))
+        #expect(!PersistentResponseCache.isFullFsyncUnsupported(EIO))
+    }
+    #endif
 
     @Test("PersistentResponseCacheConfiguration defaults to completeUnlessOpen protection")
     func defaultDataProtectionClassIsCompleteUnlessOpen() async {

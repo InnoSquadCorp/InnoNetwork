@@ -1,6 +1,11 @@
 import CryptoKit
 import Foundation
 import InnoNetwork
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 /// Configuration for ``PersistentResponseCache``.
 ///
@@ -23,14 +28,15 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
 
     /// Durability policy for the on-disk index file.
     ///
-    /// `fsync(_:)` forces an in-flight write through the OS page cache to
-    /// stable storage. `.always` opens an fd on the renamed index after the
-    /// atomic write and `fsync`s it (plus the parent directory) so the index
-    /// survives a hard crash. `.onCheckpoint`/`.never` retain the historic
+    /// `.always` opens an fd on the renamed index after the atomic write and,
+    /// on Darwin, first asks the filesystem for `F_FULLFSYNC` durability
+    /// before falling back to `fsync(_:)` only when unsupported. It also
+    /// flushes the parent directory so the renamed index survives a hard
+    /// crash. `.onCheckpoint`/`.never` retain the historic
     /// `data.write(to:options:.atomic)` semantics where the rename is
-    /// linearized but the bytes are not necessarily flushed to platter.
+    /// linearized but the bytes are not necessarily flushed to stable storage.
     public enum PersistenceFsyncPolicy: Sendable, Equatable {
-        /// `fsync(_:)` the index file and parent directory after every write.
+        /// Fully synchronize the index file and parent directory after every write.
         case always
         /// Same as ``never`` for the persistent response cache: the cache
         /// rewrites the entire index on every change, so there is no
@@ -570,8 +576,8 @@ public actor PersistentResponseCache: ResponseCache {
             return open(rep, O_RDONLY)
         }
         guard fd >= 0 else { return }
-        _ = fsync(fd)
-        close(fd)
+        defer { close(fd) }
+        _ = syncFileDescriptor(fd)
     }
 
     private static func fsyncDirectory(at url: URL) {
@@ -580,8 +586,30 @@ public actor PersistentResponseCache: ResponseCache {
             return open(rep, O_RDONLY)
         }
         guard fd >= 0 else { return }
-        _ = fsync(fd)
-        close(fd)
+        defer { close(fd) }
+        _ = syncFileDescriptor(fd)
+    }
+
+    @discardableResult
+    private static func syncFileDescriptor(_ fd: Int32) -> Int32 {
+        #if canImport(Darwin)
+        if fcntl(fd, F_FULLFSYNC, 0) == 0 {
+            return 0
+        }
+        guard isFullFsyncUnsupported(errno) else {
+            return -1
+        }
+        #endif
+        return fsync(fd)
+    }
+
+    static func isFullFsyncUnsupported(_ errorNumber: Int32) -> Bool {
+        #if canImport(Darwin)
+        errorNumber == EINVAL || errorNumber == EOPNOTSUPP
+        #else
+        _ = errorNumber
+        false
+        #endif
     }
 
     private static func containsSensitiveRequestHeader(_ headers: [String]) -> Bool {

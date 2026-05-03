@@ -147,8 +147,10 @@ because the default `URLSession.shared` cannot observe that override.
 
 `persistenceFsyncPolicy` is a new field with three modes:
 
-- `.always` — fd-level `fsync` of the index file and its parent
-  directory after every write. Highest durability, highest IO cost.
+- `.always` — fd-level full sync of the index file and its parent
+  directory after every write. On Darwin this uses `F_FULLFSYNC` first
+  and falls back to `fsync` only when the filesystem does not support it.
+  Highest durability, highest IO cost.
 - `.onCheckpoint` (default) — historical atomic-rename behavior.
 - `.never` — rely on the OS to flush dirty pages.
 
