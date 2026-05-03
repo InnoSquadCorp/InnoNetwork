@@ -53,6 +53,15 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         records.removeValue(forKey: id)
     }
 
+    func remove(ids: Set<String>) async throws {
+        if shouldFailRemove {
+            throw InMemoryDownloadTaskStoreError.bulkRemoveFailed(ids)
+        }
+        for id in ids {
+            records.removeValue(forKey: id)
+        }
+    }
+
     func record(forID id: String) async -> DownloadTaskPersistence.Record? {
         records[id]
     }
@@ -74,5 +83,6 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
 
 enum InMemoryDownloadTaskStoreError: Error, Equatable {
     case removeFailed(String)
+    case bulkRemoveFailed(Set<String>)
     case upsertFailed(String)
 }

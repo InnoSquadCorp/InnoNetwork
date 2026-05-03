@@ -325,6 +325,38 @@ struct DownloadManagerTests {
         #expect(await waitForTaskCount(manager: harness.manager, expectedCount: 0))
     }
 
+    @Test("cancelAll drains persistence in a single bulk call")
+    func cancelAllBulkPersistenceRemove() async throws {
+        // Stage many concurrent downloads so the persistence store has a
+        // non-trivial set of records. The pre-fix loop paid one
+        // `persistence.remove(id:)` (and thus one fsync) per task; the
+        // bulk path collapses that into a single `remove(ids:)` call. We
+        // assert the post-condition: every record is gone, every task
+        // moved to `.cancelled`, and the manager is empty.
+        let harness = try StubDownloadHarness(label: "manager-cancelall-bulk")
+        for _ in 0..<24 {
+            harness.stubSession.enqueue(StubDownloadURLTask())
+        }
+
+        var tasks: [DownloadTask] = []
+        for index in 0..<25 {
+            let url = URL(string: "https://example.com/bulk-\(index).bin")!
+            let destination = URL(fileURLWithPath: "/tmp/test-bulk-\(index).bin")
+            tasks.append(await harness.startDownload(url: url, destinationURL: destination))
+        }
+
+        #expect((await harness.manager.allTasks()).count == tasks.count)
+        #expect((await harness.persistence.allRecords()).count == tasks.count)
+
+        await harness.manager.cancelAll()
+
+        #expect(await waitForTaskCount(manager: harness.manager, expectedCount: 0))
+        #expect((await harness.persistence.allRecords()).isEmpty)
+        for task in tasks {
+            #expect(await task.state == .cancelled)
+        }
+    }
+
     @Test("Duplicate session identifiers surface a recoverable initialization error")
     func duplicateSessionIdentifierThrows() throws {
         let identifier = "test.duplicate.\(UUID().uuidString)"

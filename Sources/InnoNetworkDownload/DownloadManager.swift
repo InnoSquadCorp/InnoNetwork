@@ -413,8 +413,58 @@ public actor DownloadManager {
 
     public func cancelAll() async {
         guard await waitForRestore() else { return }
-        for task in await runtimeRegistry.allTasks() {
-            await cancel(task)
+        let tasks = await runtimeRegistry.allTasks()
+        guard !tasks.isEmpty else { return }
+
+        // Phase 1: drive every state transition + URL-task cancel up front,
+        // before touching persistence. Each task's state snapshot/transition
+        // is an independent actor exchange, so a TaskGroup lets the runtime
+        // dispatcher hand them out in any order; the per-task work itself
+        // still serializes inside `DownloadTask` and `runtimeRegistry`. This
+        // step also collects the IDs we ultimately need to remove.
+        var cancelledIDs: Set<String> = []
+        cancelledIDs.reserveCapacity(tasks.count)
+
+        await withTaskGroup(of: String?.self) { group in
+            for task in tasks {
+                group.addTask {
+                    if !(await task.state).isTerminal {
+                        await task.updateState(.cancelled)
+                        await task.setError(.cancelled)
+                    }
+                    return task.id
+                }
+            }
+            for await id in group {
+                if let id { cancelledIDs.insert(id) }
+            }
+        }
+
+        for task in tasks where cancelledIDs.contains(task.id) {
+            await runtimeRegistry.onStateChanged?(task, .cancelled)
+            await eventHub.publish(.stateChanged(.cancelled), for: task.id)
+            if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
+                urlTask.cancel()
+            }
+        }
+
+        // Phase 2: a single bulk persistence remove takes the directory
+        // lock once and emits one fsync regardless of `tasks.count`. The
+        // pre-fix loop paid O(N) lock acquisitions and could spend seconds
+        // on a 100-task cancel storm.
+        do {
+            try await persistence.remove(ids: cancelledIDs)
+        } catch {
+            Self.logger.fault(
+                "cancelAll persistence bulk-remove failed for \(cancelledIDs.count, privacy: .public) ids: \(String(describing: error), privacy: .private(mask: .hash))"
+            )
+            return
+        }
+
+        for task in tasks where cancelledIDs.contains(task.id) {
+            await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+            await eventHub.finish(taskID: task.id)
+            await runtimeRegistry.remove(task)
         }
     }
 
@@ -661,6 +711,17 @@ public actor DownloadManager {
 
     deinit {
         delegateEventContinuation.finish()
+        if !isShutdown {
+            // Apps that drop the manager without calling `shutdown()` get a
+            // visible warning so the leak shows up in os_log instead of as
+            // a silent background session lingering past the manager's
+            // lifetime. We can't `await shutdown()` from `deinit`, so the
+            // best we can do is finish the session and rely on Foundation
+            // to drain in-flight transfers in the background.
+            Self.logger.warning(
+                "DownloadManager deinit reached without shutdown() — call shutdown() explicitly for bounded teardown of session '\(self.configuration.sessionIdentifier, privacy: .public)'"
+            )
+        }
         // URLSession retains its delegate until explicitly invalidated; without
         // this call the underlying session and its DownloadSessionDelegate (and
         // every callback closure they retain) outlive the manager. Background

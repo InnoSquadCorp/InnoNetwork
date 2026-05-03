@@ -55,6 +55,8 @@ private actor FailingUpsertDownloadTaskStore: DownloadTaskStore {
 
     func remove(id: String) async throws {}
 
+    func remove(ids: Set<String>) async throws {}
+
     func record(forID id: String) async -> DownloadTaskPersistence.Record? {
         nil
     }

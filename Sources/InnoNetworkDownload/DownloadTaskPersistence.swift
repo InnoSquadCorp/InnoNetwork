@@ -5,6 +5,7 @@ package protocol DownloadTaskStore: Actor {
     func upsert(id: String, url: URL, destinationURL: URL, resumeData: Data?) async throws
     func updateResumeData(id: String, resumeData: Data?) async throws
     func remove(id: String) async throws
+    func remove(ids: Set<String>) async throws
     func record(forID id: String) async -> DownloadTaskPersistence.Record?
     func allRecords() async -> [DownloadTaskPersistence.Record]
     func id(forURL url: URL?) async -> String?
@@ -60,6 +61,15 @@ package actor DownloadTaskPersistence {
 
     package func remove(id: String) async throws {
         try await store.remove(id: id)
+    }
+
+    /// Bulk remove a set of IDs in a single mutate, taking the directory
+    /// lock once and emitting one fsync regardless of `ids.count`. Used by
+    /// `DownloadManager.cancelAll()` to avoid the N×lock + N×fsync cost of
+    /// looping `remove(id:)` under cancel storms.
+    package func remove(ids: Set<String>) async throws {
+        guard !ids.isEmpty else { return }
+        try await store.remove(ids: ids)
     }
 
     package func record(forID id: String) async -> Record? {
@@ -238,6 +248,33 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
                 destinationURL: nil,
                 resumeData: nil
             )
+        }
+    }
+
+    package func remove(ids: Set<String>) async throws {
+        let presentIDs = ids.intersection(state.records.keys)
+        guard !presentIDs.isEmpty else { return }
+        try await mutate { state in
+            var removed: [String] = []
+            removed.reserveCapacity(presentIDs.count)
+            for id in presentIDs {
+                if let existing = state.records.removeValue(forKey: id) {
+                    Self.removeIDFromIndex(state: &state, url: existing.url, id: id)
+                    removed.append(id)
+                }
+            }
+            state.tombstoneCount += removed.count
+            return removed.enumerated().map { index, id in
+                Event(
+                    sequence: state.nextSequence + Int64(index),
+                    timestamp: .now,
+                    kind: .remove,
+                    taskID: id,
+                    url: nil,
+                    destinationURL: nil,
+                    resumeData: nil
+                )
+            }
         }
     }
 
