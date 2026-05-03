@@ -130,7 +130,9 @@ struct RetryCoordinatorTimingTests {
         for cycle in 1...3 {
             #expect(await clock.waitForEnqueuedCount(atLeast: cycle))
             clock.advance(by: .seconds(3))
-            #expect(await clock.waitForEnqueuedCount(atLeast: cycle + 1) || cycle == 3)
+            if cycle < 3 {
+                #expect(await clock.waitForEnqueuedCount(atLeast: cycle + 1))
+            }
         }
 
         let value = try await result
