@@ -350,8 +350,8 @@ guidance.
   `AuthenticatedEndpoint<Response>` or
   `ScopedEndpoint<Response, AuthRequiredScope>` for auth-required fluent
   endpoints.
-- `WebSocketManager.shared` is soft-deprecated. Construct
-  `WebSocketManager(configuration:)` per feature for new code.
+- `WebSocketManager.shared` has been removed. Construct
+  `WebSocketManager(configuration:)` per feature.
 - `DefaultNetworkClient.stream(_:)` is now a thin `AsyncThrowingStream`
   factory; the streaming pipeline (per-attempt request preparation,
   lifecycle events, response interceptors, status validation, line

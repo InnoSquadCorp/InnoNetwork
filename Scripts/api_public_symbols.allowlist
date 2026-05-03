@@ -1060,4 +1060,3 @@ InnoNetworkWebSocket	swift.struct	WebSocketPongContext
 InnoNetworkWebSocket	swift.type.method	WebSocketConfiguration.advanced(_:)
 InnoNetworkWebSocket	swift.type.method	WebSocketConfiguration.safeDefaults()
 InnoNetworkWebSocket	swift.type.property	WebSocketConfiguration.default
-InnoNetworkWebSocket	swift.type.property	WebSocketManager.shared

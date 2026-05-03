@@ -15,7 +15,7 @@ into one release line:
   and baseline-rationale documentation.
 - `URLQueryArrayEncodingStrategy` for indexed, bracketed, and repeated-key
   provider conventions.
-- `WebSocketManager.shared` deprecation in favor of feature-scoped manager
+- `WebSocketManager.shared` removal in favor of feature-scoped manager
   instances.
 - Streaming-by-default inline transport through `bytes(for:)` and
   `ResponseBodyBufferingPolicy`.

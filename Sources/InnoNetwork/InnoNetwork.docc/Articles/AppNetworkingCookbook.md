@@ -112,8 +112,7 @@ it. Completed, resumed, and cancelled tasks clear that data.
 
 ## WebSocket Observation
 
-Prefer a feature-scoped `WebSocketManager` instance over
-`WebSocketManager.shared`.
+Create a feature-scoped `WebSocketManager` instance for each realtime owner.
 
 ```swift
 let socket = try await networking.realtime.connect(url: socketURL)
