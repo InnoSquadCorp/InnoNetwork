@@ -479,6 +479,19 @@ struct EndpointBuilderTests {
                 == "a%2Fb%20100%25%20%E2%9C%93")
     }
 
+    @Test("Dynamic path segments support primitive, UUID, and raw-value identifiers")
+    func dynamicPathSegmentsSupportIdentifierTypes() throws {
+        enum Scope: String, Sendable {
+            case nested = "admin/root"
+        }
+
+        let uuid = try #require(UUID(uuidString: "A1B2C3D4-E5F6-4789-ABCD-1234567890AB"))
+
+        #expect(EndpointPathEncoding.percentEncodedSegment(42) == "42")
+        #expect(EndpointPathEncoding.percentEncodedSegment(uuid) == "A1B2C3D4-E5F6-4789-ABCD-1234567890AB")
+        #expect(EndpointPathEncoding.percentEncodedSegment(Scope.nested) == "admin%2Froot")
+    }
+
     @Test(
         "Malformed endpoint paths fail before transport",
         arguments: ["/files/%", "/files/%2", "/files/%ZZ", "/users?name=kim", "/users#section"])
