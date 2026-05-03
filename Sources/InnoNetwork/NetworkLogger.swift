@@ -189,6 +189,9 @@ public struct DefaultNetworkLogger: NetworkLogger {
             return url.absoluteString
         }
 
+        if components.user != nil { components.user = nil }
+        if components.password != nil { components.password = nil }
+
         if let queryItems = components.queryItems, !queryItems.isEmpty {
             components.queryItems = queryItems.map {
                 URLQueryItem(name: $0.name, value: $0.value == nil ? nil : "<redacted>")

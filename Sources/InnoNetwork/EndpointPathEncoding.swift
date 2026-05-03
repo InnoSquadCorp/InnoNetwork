@@ -156,6 +156,17 @@ package enum EndpointPathBuilder {
             )
         }
 
+        if components.user != nil || components.password != nil {
+            throw NetworkError.invalidBaseURL(
+                "Base URL must not contain userinfo (user:password@). Use a request interceptor or Authorization header instead."
+            )
+        }
+        if components.fragment != nil {
+            throw NetworkError.invalidBaseURL(
+                "Base URL must not contain a fragment."
+            )
+        }
+
         let basePath = components.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let childPath = try EndpointPathEncoding.percentEncodedPathLiteral(endpointPath)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
