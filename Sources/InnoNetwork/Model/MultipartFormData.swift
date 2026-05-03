@@ -122,12 +122,28 @@ public struct MultipartFormData: Sendable {
     /// body is streamed chunk-by-chunk to disk and uploaded via
     /// `URLSession.upload(for:fromFile:)`.
     ///
-    /// - Throws: Any I/O error encountered while reading a file part.
-    ///   Earlier versions silently skipped unreadable file parts; that
-    ///   masked configuration bugs (typoed paths, files removed between
-    ///   ``appendFile(at:name:mimeType:)`` and encoding) so reads now
-    ///   surface their underlying error to the caller.
-    public func encode() throws -> Data {
+    /// - Parameter maxInMemoryBytes: Upper bound on the size of the
+    ///   produced `Data`. The estimator runs first and the call throws
+    ///   when the encoded body would exceed this cap, before any source
+    ///   files are read. Defaults to 16 MiB; pass a larger value when
+    ///   the caller knows the body is bounded, or call
+    ///   ``writeEncodedData(to:)`` for unbounded payloads. Pass
+    ///   `Int.max` to disable the guard.
+    /// - Throws:
+    ///   - ``NetworkError/invalidRequestConfiguration(_:)`` when the
+    ///     estimated size exceeds `maxInMemoryBytes`.
+    ///   - Any I/O error encountered while reading a file part. Earlier
+    ///     versions silently skipped unreadable file parts; that masked
+    ///     configuration bugs (typoed paths, files removed between
+    ///     ``appendFile(at:name:mimeType:)`` and encoding) so reads now
+    ///     surface their underlying error to the caller.
+    public func encode(maxInMemoryBytes: Int = 16 << 20) throws -> Data {
+        let estimated = estimatedEncodedSize
+        if estimated > Int64(maxInMemoryBytes) {
+            throw NetworkError.invalidRequestConfiguration(
+                "MultipartFormData.encode produces ~\(estimated) bytes which exceeds the \(maxInMemoryBytes)-byte in-memory cap; use writeEncodedData(to:) for large payloads."
+            )
+        }
         var body = Data()
         let boundaryPrefix = "--\(boundary)\r\n"
 

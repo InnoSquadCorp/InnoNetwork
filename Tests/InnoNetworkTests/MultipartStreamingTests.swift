@@ -407,6 +407,45 @@ struct MultipartUploadStrategyTests {
         }
     }
 
+    @Test("encode() rejects payloads above the in-memory cap")
+    func encodeRejectsPayloadAboveCap() throws {
+        var formData = MultipartFormData(boundary: "cap-guard")
+        formData.append(Data(repeating: 0xAB, count: 32 * 1024), name: "blob")
+
+        do {
+            _ = try formData.encode(maxInMemoryBytes: 1024)
+            Issue.record("Expected encode to throw when payload exceeds the cap")
+        } catch let error as NetworkError {
+            if case .invalidRequestConfiguration(let message) = error {
+                #expect(message.contains("in-memory cap"))
+                #expect(message.contains("writeEncodedData"))
+            } else {
+                Issue.record("Expected .invalidRequestConfiguration, got \(error)")
+            }
+        } catch {
+            Issue.record("Expected NetworkError, got \(error)")
+        }
+
+        // The same payload encodes successfully when the cap is raised.
+        _ = try formData.encode(maxInMemoryBytes: 64 * 1024)
+    }
+
+    @Test("encode() default cap is 16 MiB and rejects 32 MiB payloads")
+    func encodeDefaultCapIs16MiB() throws {
+        var formData = MultipartFormData(boundary: "default-cap")
+        // 32 MiB payload — exceeds the 16 MiB default.
+        formData.append(Data(repeating: 0x01, count: 32 << 20), name: "blob")
+
+        do {
+            _ = try formData.encode()
+            Issue.record("Expected encode default cap to throw on 32 MiB payload")
+        } catch is NetworkError {
+            // Pass.
+        } catch {
+            Issue.record("Expected NetworkError, got \(error)")
+        }
+    }
+
     @Test("estimatedEncodedSize returns Int64.max when file metadata is unreachable")
     func estimatedSizeReturnsMaxWhenMetadataUnreachable() throws {
         // Stage a reachable file, then delete it to simulate a TOCTOU window
