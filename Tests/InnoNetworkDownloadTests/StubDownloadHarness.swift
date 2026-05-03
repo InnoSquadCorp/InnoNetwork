@@ -27,7 +27,7 @@ final class StubDownloadHarness: Sendable {
 
     private let callbacks: DownloadSessionDelegateCallbacks
     private let backgroundCompletionStore: BackgroundCompletionStore
-    private let sessionIdentifier: String
+    let sessionIdentifier: String
 
     init(
         maxRetryCount: Int = 2,
@@ -37,11 +37,12 @@ final class StubDownloadHarness: Sendable {
         waitsForNetworkChanges: Bool = false,
         networkChangeTimeout: TimeInterval? = 0.5,
         label: String = "stub",
+        sessionIdentifier: String? = nil,
         prepopulatedRecords: [DownloadTaskPersistence.Record] = [],
         prequeuedStubs: [StubDownloadURLTask] = [],
         preinstalledStubs: [StubDownloadURLTask] = []
     ) throws {
-        let identifier = "test.download.\(label).\(UUID().uuidString)"
+        let identifier = sessionIdentifier ?? "test.download.\(label).\(UUID().uuidString)"
         self.sessionIdentifier = identifier
 
         let stubSession = StubDownloadURLSession()
@@ -70,6 +71,9 @@ final class StubDownloadHarness: Sendable {
         )
         self.callbacks = callbacks
         self.backgroundCompletionStore = backgroundCompletionStore
+        stubSession.setInvalidationHandler {
+            callbacks.handleInvalidation(nil)
+        }
 
         let store = InMemoryDownloadTaskStore(seed: prepopulatedRecords)
         self.store = store
