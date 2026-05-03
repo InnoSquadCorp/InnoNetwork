@@ -175,13 +175,18 @@ struct RetryOncePolicy: RetryPolicy {
         return retryDelay
     }
 
-    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
-        guard retryIndex < maxRetries else { return false }
+    func shouldRetry(
+        error: NetworkError,
+        retryIndex: Int,
+        request: URLRequest?,
+        response: HTTPURLResponse?
+    ) -> RetryDecision {
+        guard retryIndex < maxRetries else { return .noRetry }
         switch error {
         case .underlying, .nonHTTPResponse, .timeout:
-            return true
+            return .retry
         default:
-            return false
+            return .noRetry
         }
     }
 }
@@ -406,9 +411,17 @@ struct RetryPolicyTests {
             maxDelay: 10,
             jitterRatio: 0,
             waitsForNetworkChanges: false,
-            networkChangeTimeout: nil
+            networkChangeTimeout: nil,
+            idempotencyPolicy: .methodAgnostic
         )
-        #expect(policy.shouldRetry(error: .statusCode(response), retryIndex: 0))
+        #expect(
+            policy.shouldRetry(
+                error: .statusCode(response),
+                retryIndex: 0,
+                request: nil,
+                response: response.response
+            ) == .retry
+        )
     }
 
     @Test("ExponentialBackoffRetryPolicy never retries cancellation")
@@ -420,10 +433,18 @@ struct RetryPolicyTests {
             maxDelay: 10,
             jitterRatio: 0,
             waitsForNetworkChanges: false,
-            networkChangeTimeout: nil
+            networkChangeTimeout: nil,
+            idempotencyPolicy: .methodAgnostic
         )
 
-        #expect(!policy.shouldRetry(error: .cancelled, retryIndex: 0))
+        #expect(
+            policy.shouldRetry(
+                error: .cancelled,
+                retryIndex: 0,
+                request: nil,
+                response: nil
+            ) == .noRetry
+        )
     }
 
     @Test("shouldResetAttempts detects snapshot changes")
@@ -483,7 +504,8 @@ struct RetryPolicyTests {
             maxDelay: 10,
             jitterRatio: 0,
             waitsForNetworkChanges: false,
-            networkChangeTimeout: nil
+            networkChangeTimeout: nil,
+            idempotencyPolicy: .methodAgnostic
         )
         let response = Response(
             statusCode: 503,
@@ -498,9 +520,21 @@ struct RetryPolicyTests {
         )
 
         for retryIndex in 0..<maxRetries {
-            #expect(policy.shouldRetry(error: .statusCode(response), retryIndex: retryIndex))
+            let decision = policy.shouldRetry(
+                error: .statusCode(response),
+                retryIndex: retryIndex,
+                request: nil,
+                response: response.response
+            )
+            #expect(decision != .noRetry)
         }
-        #expect(!policy.shouldRetry(error: .statusCode(response), retryIndex: maxRetries))
+        let stopDecision = policy.shouldRetry(
+            error: .statusCode(response),
+            retryIndex: maxRetries,
+            request: nil,
+            response: response.response
+        )
+        #expect(stopDecision == .noRetry)
     }
 }
 

@@ -3,29 +3,11 @@ import Testing
 
 @testable import InnoNetwork
 
-private struct LegacyBoolPolicy: RetryPolicy {
-    let maxRetries = 1
-    let maxTotalRetries = 1
-    let retryDelay: TimeInterval = 0
-    let result: Bool
-
-    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
-        result
-    }
-}
-
-
 private struct ContextualPolicy: RetryPolicy {
     let maxRetries = 1
     let maxTotalRetries = 1
     let retryDelay: TimeInterval = 0
     let returnedDecision: RetryDecision
-
-    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
-        // Should not be reached because the contextual override is provided.
-        Issue.record("Legacy boolean shouldRetry was called even though the contextual override exists.")
-        return false
-    }
 
     func shouldRetry(
         error: NetworkError,
@@ -50,26 +32,8 @@ struct RetryDecisionTests {
         #expect(RetryDecision.retry != RetryDecision.retryAfter(0))
     }
 
-    @Test("Legacy boolean shouldRetry maps true → .retry and false → .noRetry by default")
-    func legacyBoolMapsThroughDefault() {
-        let retryDecision = LegacyBoolPolicy(result: true).shouldRetry(
-            error: .invalidRequestConfiguration("fixture"),
-            retryIndex: 0,
-            request: nil,
-            response: nil
-        )
-        let noRetryDecision = LegacyBoolPolicy(result: false).shouldRetry(
-            error: .invalidRequestConfiguration("fixture"),
-            retryIndex: 0,
-            request: nil,
-            response: nil
-        )
-        #expect(retryDecision == .retry)
-        #expect(noRetryDecision == .noRetry)
-    }
-
-    @Test("Contextual override is preferred over the legacy boolean overload")
-    func contextualOverrideTakesPrecedence() {
+    @Test("Contextual shouldRetry returns the policy's verdict verbatim")
+    func contextualReturnsPolicyVerdict() {
         let policy = ContextualPolicy(returnedDecision: .retryAfter(5))
         let decision = policy.shouldRetry(
             error: .invalidRequestConfiguration("fixture"),

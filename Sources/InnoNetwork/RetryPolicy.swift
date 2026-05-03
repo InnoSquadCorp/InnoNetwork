@@ -31,19 +31,14 @@ public protocol RetryPolicy: Sendable {
     /// Returns the delay (in seconds) for the given retry index.
     /// `retryIndex` is 0-based and represents actual retry executions.
     func retryDelay(for retryIndex: Int) -> TimeInterval
-    /// Legacy boolean retry decision. Kept for source compatibility; new
-    /// policies should override
-    /// ``shouldRetry(error:retryIndex:request:response:)`` instead so they
-    /// can honor `Retry-After` headers and per-request rules.
-    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool
     /// Contextual retry verdict.
     ///
     /// Implementers receive the originating request and the parsed
     /// `HTTPURLResponse` (when one was produced — `nil` for transport
     /// failures that did not reach a status code) and return a
-    /// ``RetryDecision``. The default implementation delegates to the
-    /// boolean overload for source compatibility, returning
-    /// ``RetryDecision/retry`` or ``RetryDecision/noRetry`` accordingly.
+    /// ``RetryDecision``. This is the sole retry-decision entry point — the
+    /// 4.0 release removed the legacy boolean overload that earlier versions
+    /// kept for source compatibility.
     func shouldRetry(
         error: NetworkError,
         retryIndex: Int,
@@ -110,21 +105,6 @@ public extension RetryPolicy {
         _ = retryIndex
         return retryDelay
     }
-
-    /// Default contextual decision: defers to the legacy boolean overload
-    /// so existing implementations keep compiling without changes. Custom
-    /// policies that want to honor `Retry-After` headers, branch on HTTP
-    /// methods, or inspect response bodies should override this method
-    /// directly.
-    func shouldRetry(
-        error: NetworkError,
-        retryIndex: Int,
-        request: URLRequest?,
-        response: HTTPURLResponse?
-    ) -> RetryDecision {
-        _ = (request, response)
-        return shouldRetry(error: error, retryIndex: retryIndex) ? .retry : .noRetry
-    }
 }
 
 
@@ -186,7 +166,7 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         self.idempotencyPolicy = idempotencyPolicy
     }
 
-    public func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
+    private func isRetryableErrorClass(_ error: NetworkError, retryIndex: Int) -> Bool {
         guard retryIndex < maxRetries else { return false }
         switch error {
         case .statusCode(let response):
@@ -224,13 +204,13 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
             || oldSnapshot.status != newSnapshot.status
     }
 
-    /// Contextual retry decision that honors `Retry-After` on `429` and
-    /// `503` responses per RFC 9110 §10.2.3 (delta-seconds form) and
+    /// Contextual retry decision that honors `Retry-After` on `429`, `503`,
+    /// and `3xx` responses per RFC 9110 §10.2.3 (delta-seconds form) and
     /// RFC 9110 §5.6.7 (HTTP-date form).
     ///
-    /// Falls back to ``shouldRetry(error:retryIndex:)`` for every case
-    /// where no `Retry-After` header is present or the value cannot be
-    /// parsed; the coordinator then picks the policy's own jittered delay.
+    /// Returns `.retry` (no server hint) when no `Retry-After` header is
+    /// present or the value cannot be parsed; the coordinator then picks
+    /// the policy's own jittered delay.
     public func shouldRetry(
         error: NetworkError,
         retryIndex: Int,
@@ -238,26 +218,41 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         response: HTTPURLResponse?
     ) -> RetryDecision {
         guard idempotencyPolicy.allowsRetry(for: request) else { return .noRetry }
-        guard shouldRetry(error: error, retryIndex: retryIndex) else { return .noRetry }
+        guard isRetryableErrorClass(error, retryIndex: retryIndex) else { return .noRetry }
         guard let response,
-            response.statusCode == 429 || response.statusCode == 503,
+            Self.honorsRetryAfter(statusCode: response.statusCode),
             let header = response.value(forHTTPHeaderField: "Retry-After")
         else {
             return .retry
         }
-        if let seconds = Self.parseRetryAfter(header) {
+        // Cap parsed Retry-After values so a malicious or buggy server
+        // cannot pin a retry attempt to a year-scale delay; the policy's
+        // own `maxRetryAfterDelay` (or `maxDelay` when unset) is the
+        // ceiling.
+        let cap = maxRetryAfterDelay ?? maxDelay
+        if let seconds = Self.parseRetryAfter(header, maxSeconds: cap) {
             return .retryAfter(seconds)
         }
         return .retry
     }
 
+    /// RFC 9110 §10.2.3 lists `Retry-After` as applicable to `503`, `429`,
+    /// and the `3xx` redirect class. URLSession typically follows
+    /// redirects automatically, but custom redirect policies can surface
+    /// the original response — honor the hint in that case too.
+    private static func honorsRetryAfter(statusCode: Int) -> Bool {
+        statusCode == 429 || statusCode == 503 || (300...399).contains(statusCode)
+    }
+
     /// Parses an RFC 9110 `Retry-After` header value into a non-negative
     /// `TimeInterval`. Returns `nil` for malformed input or HTTP-dates in
-    /// the past so the coordinator falls back to the computed backoff.
-    static func parseRetryAfter(_ value: String, now: Date = Date()) -> TimeInterval? {
+    /// the past so the coordinator falls back to the computed backoff. The
+    /// returned value is clamped to `maxSeconds` to prevent absurd waits
+    /// from `Retry-After: 9223372036854775807`-style header values.
+    static func parseRetryAfter(_ value: String, now: Date = Date(), maxSeconds: TimeInterval = .infinity) -> TimeInterval? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if let seconds = Int(trimmed), seconds >= 0 {
-            return TimeInterval(seconds)
+            return min(TimeInterval(seconds), maxSeconds)
         }
         // Try the canonical RFC 1123 `IMF-fixdate` form first; that is the
         // only form servers are required to use, but accept the looser
@@ -284,7 +279,8 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
                 formatter.dateFormat = format
                 if let date = formatter.date(from: candidate) {
                     let delta = date.timeIntervalSince(now)
-                    return delta > 0 ? delta : nil
+                    guard delta > 0 else { return nil }
+                    return min(delta, maxSeconds)
                 }
             }
         }

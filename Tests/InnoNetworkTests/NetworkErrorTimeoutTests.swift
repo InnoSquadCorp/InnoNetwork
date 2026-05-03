@@ -132,10 +132,35 @@ struct NetworkErrorTimeoutTests {
 
     @Test("ExponentialBackoffRetryPolicy retries on .timeout")
     func policyRetriesOnTimeout() {
-        let policy = ExponentialBackoffRetryPolicy(maxRetries: 2)
-        #expect(policy.shouldRetry(error: .timeout(reason: .requestTimeout), retryIndex: 0) == true)
-        #expect(policy.shouldRetry(error: .timeout(reason: .connectionTimeout), retryIndex: 1) == true)
-        #expect(policy.shouldRetry(error: .timeout(reason: .resourceTimeout), retryIndex: 2) == false)
+        let policy = ExponentialBackoffRetryPolicy(
+            maxRetries: 2,
+            idempotencyPolicy: .methodAgnostic
+        )
+        let request = URLRequest(url: URL(string: "https://example.com")!)
+        #expect(
+            policy.shouldRetry(
+                error: .timeout(reason: .requestTimeout),
+                retryIndex: 0,
+                request: request,
+                response: nil
+            ) == .retry
+        )
+        #expect(
+            policy.shouldRetry(
+                error: .timeout(reason: .connectionTimeout),
+                retryIndex: 1,
+                request: request,
+                response: nil
+            ) == .retry
+        )
+        #expect(
+            policy.shouldRetry(
+                error: .timeout(reason: .resourceTimeout),
+                retryIndex: 2,
+                request: request,
+                response: nil
+            ) == .noRetry
+        )
     }
 
     @Test("Localized description differentiates between timeout reasons")

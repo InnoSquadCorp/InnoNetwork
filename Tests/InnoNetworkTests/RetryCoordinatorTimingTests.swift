@@ -268,8 +268,13 @@ private struct FixedDelayRetryPolicy: RetryPolicy {
     let maxRetries: Int
     let retryDelay: TimeInterval
 
-    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
-        retryIndex < maxRetries
+    func shouldRetry(
+        error: NetworkError,
+        retryIndex: Int,
+        request: URLRequest?,
+        response: HTTPURLResponse?
+    ) -> RetryDecision {
+        retryIndex < maxRetries ? .retry : .noRetry
     }
 }
 
@@ -281,16 +286,12 @@ private struct RetryAfterCapPolicy: RetryPolicy {
     let maxRetryAfterDelay: TimeInterval?
     let serverHint: TimeInterval
 
-    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
-        retryIndex < maxRetries
-    }
-
     func shouldRetry(
         error: NetworkError,
         retryIndex: Int,
         request: URLRequest?,
         response: HTTPURLResponse?
     ) -> RetryDecision {
-        shouldRetry(error: error, retryIndex: retryIndex) ? .retryAfter(serverHint) : .noRetry
+        retryIndex < maxRetries ? .retryAfter(serverHint) : .noRetry
     }
 }

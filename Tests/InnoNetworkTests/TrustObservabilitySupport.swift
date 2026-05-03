@@ -27,13 +27,18 @@ struct TrustObservabilityRetryPolicy: RetryPolicy {
         return retryDelay
     }
 
-    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
-        guard retryIndex < maxRetries else { return false }
+    func shouldRetry(
+        error: NetworkError,
+        retryIndex: Int,
+        request: URLRequest?,
+        response: HTTPURLResponse?
+    ) -> RetryDecision {
+        guard retryIndex < maxRetries else { return .noRetry }
         switch error {
         case .underlying, .nonHTTPResponse, .timeout:
-            return true
+            return .retry
         default:
-            return false
+            return .noRetry
         }
     }
 }

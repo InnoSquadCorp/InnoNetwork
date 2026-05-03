@@ -145,11 +145,24 @@ package struct RetryCoordinator {
         snapshot: NetworkSnapshot?
     ) async throws -> RetryStepOutcome {
         guard let policy = retryPolicy else { throw error }
-        let decision = policy.shouldRetry(
+        let policyDecision = policy.shouldRetry(
             error: error,
             retryIndex: retryIndex,
             request: request,
             response: error.underlyingHTTPResponse
+        )
+        // Coordinator-level safety net: even if a custom policy elects to
+        // retry, never auto-retry a non-idempotent timeout that has no
+        // `Idempotency-Key`. A POST/PATCH that timed out may already have
+        // been received and processed by the server — retrying without an
+        // idempotency anchor risks duplicate writes (e.g. duplicate
+        // payments). Built-in `ExponentialBackoffRetryPolicy` enforces this
+        // through `idempotencyPolicy`; this guard catches custom policies
+        // that omit the check.
+        let decision = Self.applyIdempotencySafetyNet(
+            decision: policyDecision,
+            error: error,
+            request: request
         )
         if case .noRetry = decision {
             throw error
@@ -197,6 +210,22 @@ package struct RetryCoordinator {
             nextTotalRetries: totalRetries + 1,
             snapshot: nextSnapshot
         )
+    }
+
+    private static func applyIdempotencySafetyNet(
+        decision: RetryDecision,
+        error: NetworkError,
+        request: URLRequest?
+    ) -> RetryDecision {
+        if case .noRetry = decision { return decision }
+        guard case .timeout = error else { return decision }
+        guard let request else { return decision }
+        let method = (request.httpMethod ?? "GET").uppercased()
+        let nonIdempotentMethods: Set<String> = ["POST", "PATCH"]
+        guard nonIdempotentMethods.contains(method) else { return decision }
+        let hasIdempotencyKey = request.value(forHTTPHeaderField: "Idempotency-Key")?.isEmpty == false
+        if hasIdempotencyKey { return decision }
+        return .noRetry
     }
 
     private static func delay(
