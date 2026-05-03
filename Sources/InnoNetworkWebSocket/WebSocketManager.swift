@@ -139,6 +139,23 @@ public final class WebSocketManager: NSObject, Sendable {
     package let runtimeRegistry = WebSocketRuntimeRegistry()
     private let eventHub: TaskEventHub<WebSocketEvent>
 
+    /// One-shot serialized event channel for URLSession delegate callbacks.
+    /// `WebSocketSessionDelegate` invokes the four `handle*` entry points
+    /// synchronously from arbitrary delegate-queue threads — without this
+    /// channel each call would spawn its own `Task`, allowing
+    /// `didOpen → didReceive → didClose` to interleave on the actor
+    /// executor and (rarely) reorder the lifecycle observed by a single
+    /// task. The single consumer Task drains in arrival order so each
+    /// task identifier observes a strict FIFO of its own callbacks.
+    private let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
+
+    private enum DelegateEvent: Sendable {
+        case connected(taskIdentifier: Int, protocolName: String?)
+        case disconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?)
+        case mappedError(taskIdentifier: Int, error: WebSocketError)
+        case sessionError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int?)
+    }
+
     private var receiveLoop: WebSocketReceiveLoop {
         WebSocketReceiveLoop(
             runtimeRegistry: runtimeRegistry,
@@ -212,7 +229,35 @@ public final class WebSocketManager: NSObject, Sendable {
         )
         self.session = urlSession
 
+        let (stream, continuation) = AsyncStream.makeStream(
+            of: DelegateEvent.self,
+            // 256 buffered events: a single socket sees ~3 lifecycle
+            // callbacks per reconnect cycle, so the cap absorbs deep
+            // back-pressure during reconnect storms while still bounding
+            // memory if the consumer wedges. `bufferingNewest` discards
+            // older events under pressure, which mirrors how the prior
+            // per-task spawning would have dropped lifecycle work that
+            // arrived before the actor caught up.
+            bufferingPolicy: .bufferingNewest(256)
+        )
+        self.delegateEventContinuation = continuation
+
         super.init()
+
+        // After `super.init()` `self` is fully formed, so the consumer
+        // Task can capture it weakly. Each loop iteration drains exactly
+        // one event before awaiting the next, which is what gives us the
+        // strict per-task FIFO ordering the prior per-callback `Task`
+        // spawning could not guarantee. The Task is intentionally not
+        // stored: `deinit` finishes the continuation, the for-await loop
+        // exits, and the Task self-completes — no retain cycle is
+        // possible because the closure captures `self` weakly.
+        Task { [weak self] in
+            for await event in stream {
+                guard let self else { return }
+                await self.processDelegateEvent(event)
+            }
+        }
 
         callbacks.setHandlers(
             onConnected: { [weak self] taskIdentifier, protocolName in
@@ -233,6 +278,23 @@ public final class WebSocketManager: NSObject, Sendable {
                 )
             }
         )
+    }
+
+    deinit {
+        delegateEventContinuation.finish()
+    }
+
+    private func processDelegateEvent(_ event: DelegateEvent) async {
+        switch event {
+        case let .connected(taskIdentifier, protocolName):
+            await processConnected(taskIdentifier: taskIdentifier, protocolName: protocolName)
+        case let .disconnected(taskIdentifier, closeCode, reason):
+            await processDisconnected(taskIdentifier: taskIdentifier, closeCode: closeCode, reason: reason)
+        case let .mappedError(taskIdentifier, error):
+            await processMappedError(taskIdentifier: taskIdentifier, error: error)
+        case let .sessionError(taskIdentifier, error, statusCode):
+            await processSessionError(taskIdentifier: taskIdentifier, error: error, statusCode: statusCode)
+        }
     }
 
     /// Sets a callback that runs when a socket connects.
@@ -553,144 +615,164 @@ public final class WebSocketManager: NSObject, Sendable {
     }
 
     func handleConnected(taskIdentifier: Int, protocolName: String?) {
-        Task {
-            guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
-            let previousState = await task.state
-            let generation = await callbackGeneration(
-                for: taskIdentifier,
-                fallbackTask: task
-            )
-            let transition = await task.applyLifecycleEvent(
-                .didOpen(generation: generation, protocolName: protocolName)
-            )
-            let didConnect = transition.state.publicState == .connected && !transition.isIgnoredCallback
-
-            if previousState == .reconnecting, didConnect {
-                await task.incrementSuccessfulReconnectCount()
-            }
-            if didConnect {
-                await task.resetAttemptedReconnectCount()
-                await task.clearReconnectWindow()
-                await task.resetPingCounter()
-                await task.setAutoReconnectEnabled(true)
-                await task.setError(nil)
-            }
-            await executeLifecycleEffects(transition.effects, for: task)
-        }
+        delegateEventContinuation.yield(
+            .connected(taskIdentifier: taskIdentifier, protocolName: protocolName)
+        )
     }
 
     func handleDisconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?) {
-        Task {
-            guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
-            let previousState = await task.state
-            let callbackGeneration = await callbackGeneration(
-                for: taskIdentifier,
-                fallbackTask: task
-            )
-            let isManualClose = await task.awaitingCloseHandshake
-            let disposition: WebSocketCloseDisposition
-            let error: WebSocketError?
-            let context: WebSocketLifecycleDecisionContext
-
-            if isManualClose {
-                disposition = .manual(closeCode)
-                error = await task.currentLifecycleState.manualDisconnect?.error
-                context = .init()
-            } else {
-                disposition = WebSocketCloseDisposition.classifyPeerClose(
-                    closeCode,
-                    reason: reason
-                )
-                error = makeDisconnectedError(closeDisposition: disposition)
-                let currentGeneration = await task.connectionGeneration
-                if callbackGeneration != currentGeneration
-                    || previousState == .disconnecting
-                    || previousState == .disconnected
-                    || previousState == .failed
-                {
-                    context = .init()
-                } else {
-                    let reconnectAction = await reconnectCoordinator.reconnectAction(
-                        task: task,
-                        closeDisposition: disposition,
-                        previousState: previousState
-                    )
-                    context = .init(
-                        reconnectAction: reconnectAction,
-                        attempt: await task.attemptedReconnectCount
-                    )
-                }
-            }
-
-            let transition = await task.applyLifecycleEvent(
-                .didClose(
-                    generation: callbackGeneration,
-                    closeCode: closeCode,
-                    disposition: disposition,
-                    error: error
-                ),
-                context: context
-            )
-            await executeLifecycleEffects(transition.effects, for: task)
-        }
+        delegateEventContinuation.yield(
+            .disconnected(taskIdentifier: taskIdentifier, closeCode: closeCode, reason: reason)
+        )
     }
 
     func handleError(taskIdentifier: Int, error: Error) {
         let wsError = mapWebSocketError(error)
-        Task {
-            if case .cancelled = wsError,
-                let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
-                await task.isClientInitiatedCloseFlow()
-            {
-                return
-            }
-            if case .cancelled = wsError {
-                return
-            }
-            await handleMappedError(taskIdentifier: taskIdentifier, error: wsError)
-        }
+        delegateEventContinuation.yield(
+            .mappedError(taskIdentifier: taskIdentifier, error: wsError)
+        )
     }
 
     func handleSessionError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int? = nil) {
-        Task {
-            if isCancelledTransportError(error),
-                let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
-                await task.isClientInitiatedCloseFlow()
+        delegateEventContinuation.yield(
+            .sessionError(taskIdentifier: taskIdentifier, error: error, statusCode: statusCode)
+        )
+    }
+
+    private func processConnected(taskIdentifier: Int, protocolName: String?) async {
+        guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
+        let previousState = await task.state
+        let generation = await callbackGeneration(
+            for: taskIdentifier,
+            fallbackTask: task
+        )
+        let transition = await task.applyLifecycleEvent(
+            .didOpen(generation: generation, protocolName: protocolName)
+        )
+        let didConnect = transition.state.publicState == .connected && !transition.isIgnoredCallback
+
+        if previousState == .reconnecting, didConnect {
+            await task.incrementSuccessfulReconnectCount()
+        }
+        if didConnect {
+            await task.resetAttemptedReconnectCount()
+            await task.clearReconnectWindow()
+            await task.resetPingCounter()
+            await task.setAutoReconnectEnabled(true)
+            await task.setError(nil)
+        }
+        await executeLifecycleEffects(transition.effects, for: task)
+    }
+
+    private func processDisconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?) async {
+        guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
+        let previousState = await task.state
+        let callbackGeneration = await callbackGeneration(
+            for: taskIdentifier,
+            fallbackTask: task
+        )
+        let isManualClose = await task.awaitingCloseHandshake
+        let disposition: WebSocketCloseDisposition
+        let error: WebSocketError?
+        let context: WebSocketLifecycleDecisionContext
+
+        if isManualClose {
+            disposition = .manual(closeCode)
+            error = await task.currentLifecycleState.manualDisconnect?.error
+            context = .init()
+        } else {
+            disposition = WebSocketCloseDisposition.classifyPeerClose(
+                closeCode,
+                reason: reason
+            )
+            error = makeDisconnectedError(closeDisposition: disposition)
+            let currentGeneration = await task.connectionGeneration
+            if callbackGeneration != currentGeneration
+                || previousState == .disconnecting
+                || previousState == .disconnected
+                || previousState == .failed
             {
-                return
-            }
-
-            guard !isCancelledTransportError(error) else { return }
-            guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
-
-            let state = await task.state
-            if state == .connecting || state == .reconnecting {
-                let disposition = WebSocketCloseDisposition.classifyHandshake(
-                    statusCode: statusCode,
-                    error: error
-                )
-                await handleFailure(
+                context = .init()
+            } else {
+                let reconnectAction = await reconnectCoordinator.reconnectAction(
                     task: task,
-                    generation: await callbackGeneration(
-                        for: taskIdentifier,
-                        fallbackTask: task
-                    ),
                     closeDisposition: disposition,
-                    previousState: state
+                    previousState: previousState
                 )
-                return
+                context = .init(
+                    reconnectAction: reconnectAction,
+                    attempt: await task.attemptedReconnectCount
+                )
             }
+        }
 
-            let wsError: WebSocketError = isTimeoutTransportError(error) ? .pingTimeout : .connectionFailed(error)
+        let transition = await task.applyLifecycleEvent(
+            .didClose(
+                generation: callbackGeneration,
+                closeCode: closeCode,
+                disposition: disposition,
+                error: error
+            ),
+            context: context
+        )
+        await executeLifecycleEffects(transition.effects, for: task)
+    }
+
+    private func processMappedError(taskIdentifier: Int, error wsError: WebSocketError) async {
+        if case .cancelled = wsError,
+            let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
+            await task.isClientInitiatedCloseFlow()
+        {
+            return
+        }
+        if case .cancelled = wsError {
+            return
+        }
+        await handleMappedError(taskIdentifier: taskIdentifier, error: wsError)
+    }
+
+    private func processSessionError(
+        taskIdentifier: Int,
+        error: SendableUnderlyingError,
+        statusCode: Int?
+    ) async {
+        if isCancelledTransportError(error),
+            let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
+            await task.isClientInitiatedCloseFlow()
+        {
+            return
+        }
+
+        guard !isCancelledTransportError(error) else { return }
+        guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
+
+        let state = await task.state
+        if state == .connecting || state == .reconnecting {
+            let disposition = WebSocketCloseDisposition.classifyHandshake(
+                statusCode: statusCode,
+                error: error
+            )
             await handleFailure(
                 task: task,
                 generation: await callbackGeneration(
                     for: taskIdentifier,
                     fallbackTask: task
                 ),
-                closeDisposition: .transportFailure(wsError)
+                closeDisposition: disposition,
+                previousState: state
             )
+            return
         }
+
+        let wsError: WebSocketError = isTimeoutTransportError(error) ? .pingTimeout : .connectionFailed(error)
+        await handleFailure(
+            task: task,
+            generation: await callbackGeneration(
+                for: taskIdentifier,
+                fallbackTask: task
+            ),
+            closeDisposition: .transportFailure(wsError)
+        )
     }
 
     private func mapWebSocketError(_ error: Error) -> WebSocketError {
