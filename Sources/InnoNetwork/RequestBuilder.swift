@@ -43,7 +43,11 @@ package struct RequestBuilder {
             )
         }
 
-        var targetURL = try EndpointPathBuilder.makeURL(baseURL: configuration.baseURL, endpointPath: executable.path)
+        var targetURL = try EndpointPathBuilder.makeURL(
+            baseURL: configuration.baseURL,
+            endpointPath: executable.path,
+            allowsInsecureHTTP: configuration.allowsInsecureHTTP
+        )
         var httpBody: Data?
         var bodySource = BodySource.inline
         var bodyContentType = executable.bodyContentType

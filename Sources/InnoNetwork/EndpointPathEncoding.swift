@@ -141,9 +141,19 @@ public enum EndpointPathEncoding {
 }
 
 package enum EndpointPathBuilder {
-    package static func makeURL(baseURL: URL, endpointPath: String) throws -> URL {
+    package static func makeURL(
+        baseURL: URL,
+        endpointPath: String,
+        allowsInsecureHTTP: Bool = false
+    ) throws -> URL {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             throw NetworkError.invalidBaseURL(baseURL.absoluteString)
+        }
+
+        if let scheme = components.scheme?.lowercased(), scheme == "http", !allowsInsecureHTTP {
+            throw NetworkError.invalidBaseURL(
+                "Plain HTTP base URL is rejected by default. Pass allowsInsecureHTTP: true on NetworkConfiguration to opt in."
+            )
         }
 
         let basePath = components.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))

@@ -241,7 +241,11 @@ package struct StreamingExecutor: Sendable {
         configuration: NetworkConfiguration,
         lastSeenEventID: String?
     ) throws -> URLRequest {
-        let url = try EndpointPathBuilder.makeURL(baseURL: configuration.baseURL, endpointPath: request.path)
+        let url = try EndpointPathBuilder.makeURL(
+            baseURL: configuration.baseURL,
+            endpointPath: request.path,
+            allowsInsecureHTTP: configuration.allowsInsecureHTTP
+        )
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method.rawValue
         urlRequest.headers = request.headers

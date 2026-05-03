@@ -135,6 +135,16 @@ public struct NetworkConfiguration: Sendable {
     /// hops per RFC 9110 §15.4.4.
     public let redirectPolicy: any RedirectPolicy
 
+    /// When `false` (default), a `baseURL` with `http://` scheme is rejected
+    /// at request-build time with ``NetworkError/invalidBaseURL(_:)``. App
+    /// Transport Security blocks plain-HTTP traffic at the Apple platform
+    /// level for App Store submissions; this flag adds a defense-in-depth
+    /// guard for callers that may have ATS exemptions or run in macOS/CLI
+    /// targets without ATS enforcement. Set to `true` only when the
+    /// non-encrypted endpoint is intentional (loopback, private LAN, opt-in
+    /// staging).
+    public let allowsInsecureHTTP: Bool
+
     /// Optional escape hatch for callers that need to customize the
     /// `URLSessionConfiguration` (proxy/HTTP2 tuning, connection pooling,
     /// `httpAdditionalHeaders`, TLS minimum version, etc.) when materializing
@@ -196,6 +206,8 @@ public struct NetworkConfiguration: Sendable {
         public var responseBodyLimit: Int64?
         /// See ``NetworkConfiguration/redirectPolicy``.
         public var redirectPolicy: any RedirectPolicy
+        /// See ``NetworkConfiguration/allowsInsecureHTTP``.
+        public var allowsInsecureHTTP: Bool
         /// See ``NetworkConfiguration/urlSessionConfigurationOverride``.
         public var urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
 
@@ -224,6 +236,7 @@ public struct NetworkConfiguration: Sendable {
             self.responseBodyBufferingPolicy = preset.responseBodyBufferingPolicy
             self.responseBodyLimit = preset.responseBodyLimit
             self.redirectPolicy = preset.redirectPolicy
+            self.allowsInsecureHTTP = preset.allowsInsecureHTTP
             self.urlSessionConfigurationOverride = preset.urlSessionConfigurationOverride
         }
 
@@ -253,7 +266,8 @@ public struct NetworkConfiguration: Sendable {
                 responseBodyBufferingPolicy: responseBodyBufferingPolicy,
                 responseBodyLimit: responseBodyLimit,
                 urlSessionConfigurationOverride: urlSessionConfigurationOverride,
-                redirectPolicy: redirectPolicy
+                redirectPolicy: redirectPolicy,
+                allowsInsecureHTTP: allowsInsecureHTTP
             )
         }
     }
@@ -296,7 +310,8 @@ public struct NetworkConfiguration: Sendable {
         responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(),
         responseBodyLimit: Int64? = nil,
         urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)? = nil,
-        redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy()
+        redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy(),
+        allowsInsecureHTTP: Bool = false
     ) {
         let resolvedBufferingPolicy =
             responseBodyLimit.map { responseBodyBufferingPolicy.replacingMaxBytes($0) }
@@ -326,5 +341,6 @@ public struct NetworkConfiguration: Sendable {
         self.responseBodyLimit = resolvedBufferingPolicy.maxBytes
         self.urlSessionConfigurationOverride = urlSessionConfigurationOverride
         self.redirectPolicy = redirectPolicy
+        self.allowsInsecureHTTP = allowsInsecureHTTP
     }
 }
