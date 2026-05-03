@@ -215,9 +215,15 @@ public actor PersistentResponseCache: ResponseCache {
         }
         let bodyURL = bodiesDirectoryURL.appendingPathComponent(entry.bodyFileName, isDirectory: false)
 
+        // Body reads (potentially up to `maxEntryBytes`, default 5 MB) run on
+        // a detached task so the actor can process unrelated requests while
+        // slow flash blocks the read. The actor remains the single writer of
+        // `index`, so suspending here does not violate the cache invariants:
+        // a concurrent set/invalidate for this key will queue and observe the
+        // up-to-date state once we resume.
         let data: Data
         do {
-            data = try Data(contentsOf: bodyURL)
+            data = try await Self.readBodyData(at: bodyURL)
         } catch {
             removeEntry(id: id, entry: entry)
             try? persistIndex()
@@ -294,9 +300,19 @@ public actor PersistentResponseCache: ResponseCache {
             lastAccessedAt: Date()
         )
 
+        // Body writes are detached so the actor doesn't block on flash I/O
+        // for an entry that can be up to `maxEntryBytes`. `.atomic` rename
+        // semantics make concurrent writes for the same key safe (later
+        // rename wins) and SHA-256-derived `bodyFileName` means different
+        // keys never share a destination. The actor still serializes the
+        // index update + `persistIndex` that follows, so the on-disk and
+        // in-memory views remain consistent.
         do {
-            try value.data.write(to: bodyURL, options: .atomic)
-            Self.applyDataProtection(configuration.dataProtectionClass, to: bodyURL, fileManager: fileManager)
+            try await Self.writeBodyData(
+                value.data,
+                to: bodyURL,
+                dataProtectionClass: configuration.dataProtectionClass
+            )
             if let old = index.entries[id], old.bodyFileName != bodyFileName {
                 removeBody(fileName: old.bodyFileName)
             }
@@ -470,6 +486,29 @@ public actor PersistentResponseCache: ResponseCache {
 
     private static func totalBytes(in index: Index) -> Int {
         index.entries.values.reduce(0) { $0 + $1.byteCost }
+    }
+
+    /// Read a body file off the actor's executor. Wrapping the synchronous
+    /// `Data(contentsOf:)` in a detached task lets the cache actor service
+    /// other requests while slow flash satisfies the read.
+    private static func readBodyData(at url: URL) async throws -> Data {
+        try await Task.detached { try Data(contentsOf: url) }.value
+    }
+
+    /// Write a body file off the actor's executor and apply the configured
+    /// data-protection class. `FileManager.default` is documented as
+    /// thread-safe for the read/write/attribute APIs we use here, so the
+    /// detached task always uses the singleton — overriding the actor's
+    /// `fileManager` only affects on-actor metadata, not body bytes.
+    private static func writeBodyData(
+        _ data: Data,
+        to url: URL,
+        dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass
+    ) async throws {
+        try await Task.detached {
+            try data.write(to: url, options: .atomic)
+            applyDataProtection(dataProtectionClass, to: url, fileManager: .default)
+        }.value
     }
 
     private static func persistIndex(
