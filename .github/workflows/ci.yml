@@ -29,6 +29,10 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Review dependency changes
+        # GitHub's dependency-review API requires the repository dependency
+        # graph setting to be enabled. Keep the signal visible without
+        # blocking PRs until the org-level setting is turned on.
+        continue-on-error: true
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
 
   lint:
