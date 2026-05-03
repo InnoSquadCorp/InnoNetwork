@@ -78,6 +78,13 @@ public struct URLQueryEncoder: Sendable {
     /// through unchanged, space becomes `+`, and everything else is escaped
     /// as percent-encoded UTF-8 octets. This differs from
     /// `URLComponents.percentEncodedQuery`, which leaves `space` as `%20`.
+    ///
+    /// **Use ``RFC3986Encoding/encode(_:)`` instead** for URI path segments
+    /// or OAuth artifacts (PKCE `code_verifier`, `state`, `nonce`) that
+    /// require RFC 3986 §2.3 unreserved-set semantics — those callers must
+    /// preserve `~` and percent-encode `+`/space identically (`%2B`/`%20`).
+    /// Form encoding is reserved for `application/x-www-form-urlencoded`
+    /// request bodies.
     static func formEscape(_ value: String) -> String {
         var escaped = ""
         escaped.reserveCapacity(value.utf8.count)
