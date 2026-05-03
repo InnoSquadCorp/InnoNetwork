@@ -922,10 +922,9 @@ package struct RequestExecutor {
         200, 203, 204, 300, 301, 308, 404, 405, 410, 414, 501,
     ]
 
-    /// Parses Cache-Control directive *names* only. Qualified directives whose
-    /// quoted values contain commas (e.g. `private="X-Foo, X-Bar"`) will split
-    /// into multiple tokens, so this helper must not be used to recover such
-    /// values — it only powers directive-presence checks today.
+    /// Parses Cache-Control directive *names* only. Quoted-string aware
+    /// (RFC 9110 §5.6.4) so qualified directives like
+    /// `private="X-Foo, X-Bar"` are not shredded into spurious tokens.
     private func cacheControlDirectives(in headers: [String: String]) -> Set<String> {
         let combined =
             headers
@@ -934,15 +933,8 @@ package struct RequestExecutor {
             .joined(separator: ",")
         guard !combined.isEmpty else { return [] }
         return Set(
-            combined
-                .split(separator: ",")
-                .map { directive in
-                    directive
-                        .split(separator: "=", maxSplits: 1)
-                        .first?
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                        .lowercased() ?? ""
-                }
+            HTTPListParser.split(combined)
+                .map(HTTPListParser.directiveName(of:))
                 .filter { !$0.isEmpty }
         )
     }

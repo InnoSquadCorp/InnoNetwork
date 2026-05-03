@@ -562,15 +562,8 @@ public actor PersistentResponseCache: ResponseCache {
             .joined(separator: ",")
         guard !combined.isEmpty else { return [] }
         return Set(
-            combined
-                .split(separator: ",")
-                .map { directive in
-                    directive
-                        .split(separator: "=", maxSplits: 1)
-                        .first?
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                        .lowercased() ?? ""
-                }
+            HTTPListParser.split(combined)
+                .map(HTTPListParser.directiveName(of:))
                 .filter { !$0.isEmpty }
         )
     }
