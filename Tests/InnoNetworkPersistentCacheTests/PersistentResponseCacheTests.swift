@@ -443,6 +443,29 @@ struct PersistentResponseCacheTests {
         #expect(cached.data == Data("second".utf8))
     }
 
+    @Test("Overwrite updates byte budget before eviction")
+    func overwriteUpdatesByteBudgetBeforeEviction() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxBytes: 64,
+                maxEntries: 10,
+                maxEntryBytes: 64
+            )
+        )
+        let overwritten = ResponseCacheKey(method: "GET", url: "https://example.com/overwrite-budget")
+        let peer = ResponseCacheKey(method: "GET", url: "https://example.com/peer-budget")
+
+        await cache.set(overwritten, CachedResponse(data: Data(repeating: 1, count: 40)))
+        await cache.set(overwritten, CachedResponse(data: Data(repeating: 2, count: 1)))
+        await cache.set(peer, CachedResponse(data: Data(repeating: 3, count: 40)))
+
+        #expect(await cache.get(overwritten) != nil)
+        #expect(await cache.get(peer) != nil)
+    }
+
     @Test("get() returns the cached response when index persistence fails")
     func getReturnsValueWhenIndexPersistenceFails() async throws {
         let directory = makeDirectory()
