@@ -376,6 +376,8 @@ private func streamingEventName(_ event: NetworkEvent) -> String {
         return "finished"
     case .requestFailed:
         return "failed"
+    case .cacheRevalidation:
+        return "cache_revalidation"
     }
 }
 

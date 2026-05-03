@@ -194,5 +194,7 @@ func trustObservabilityRequestID(of event: NetworkEvent) -> UUID {
         return requestID
     case .requestFailed(let requestID, _, _):
         return requestID
+    case .cacheRevalidation(let originalID, _):
+        return originalID
     }
 }

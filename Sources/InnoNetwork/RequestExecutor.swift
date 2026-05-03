@@ -189,7 +189,8 @@ package struct RequestExecutor {
                 configuration: configuration,
                 context: context,
                 bodySource: bodySource,
-                runtime: runtime
+                runtime: runtime,
+                originalRequestID: requestID
             ) {
                 return cachedResponse
             }
@@ -599,7 +600,8 @@ package struct RequestExecutor {
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
         bodySource: BodySource,
-        runtime: RequestExecutionRuntime
+        runtime: RequestExecutionRuntime,
+        originalRequestID: UUID
     ) async throws -> Response? {
         guard let cacheKey,
             request.httpMethod?.uppercased() == "GET",
@@ -639,12 +641,19 @@ package struct RequestExecutor {
             runtime.inFlight.register(id: revalidationID) {
                 revalidationHandle.cancel()
             }
+            let eventHub = self.eventHub
             let revalidationTask = Task {
                 await startGate.wait()
                 defer {
                     runtime.inFlight.deregister(id: revalidationID)
                 }
                 var revalidationStartedAt: Date?
+                let observers = context.eventObservers
+                await eventHub.publish(
+                    .cacheRevalidation(originalID: originalRequestID, state: .scheduled),
+                    requestID: revalidationID,
+                    observers: observers
+                )
 
                 do {
                     try Task.checkCancellation()
@@ -670,6 +679,7 @@ package struct RequestExecutor {
                         request: revalidationRequest,
                         response: result.response
                     )
+                    let terminalState: CacheRevalidationState
                     if let substitution = await convertNotModifiedIfNeeded(
                         response,
                         cacheKey: cacheKey,
@@ -702,27 +712,44 @@ package struct RequestExecutor {
                                 configuration: configuration
                             )
                         }
+                        terminalState = .notModified
                     } else {
                         try Task.checkCancellation()
                         try enforceResponseBodyLimit(response, configuration: configuration)
                         await storeCacheIfNeeded(
                             response, cacheKey: cacheKey, request: revalidationRequest, configuration: configuration)
+                        terminalState = .completed(statusCode: result.response.statusCode)
                     }
+                    await eventHub.publish(
+                        .cacheRevalidation(originalID: originalRequestID, state: terminalState),
+                        requestID: revalidationID,
+                        observers: observers
+                    )
                 } catch {
-                    if NetworkError.isCancellation(error) {
-                        return
+                    if !NetworkError.isCancellation(error) {
+                        let mapped = Self.mapTransportError(
+                            error,
+                            startedAt: revalidationStartedAt
+                        )
+                        let surfaced =
+                            configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
+                        Logger.API.error(
+                            "Background revalidation failed: \(surfaced.localizedDescription, privacy: .public)"
+                        )
+                        await eventHub.publish(
+                            .cacheRevalidation(
+                                originalID: originalRequestID,
+                                state: .failed(
+                                    errorCode: surfaced.errorCode,
+                                    message: surfaced.localizedDescription
+                                )
+                            ),
+                            requestID: revalidationID,
+                            observers: observers
+                        )
                     }
-                    let mapped = Self.mapTransportError(
-                        error,
-                        startedAt: revalidationStartedAt
-                    )
-                    let surfaced =
-                        configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
-                    Logger.API.error(
-                        "Background revalidation failed: \(surfaced.localizedDescription, privacy: .public)"
-                    )
-                    return
                 }
+                await eventHub.finish(requestID: revalidationID)
             }
             revalidationHandle.attach(revalidationTask)
             startGate.open()
