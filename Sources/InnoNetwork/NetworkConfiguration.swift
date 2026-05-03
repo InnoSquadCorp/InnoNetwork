@@ -150,10 +150,12 @@ public struct NetworkConfiguration: Sendable {
     /// `httpAdditionalHeaders`, TLS minimum version, etc.) when materializing
     /// a `URLSession` for this configuration. The closure receives a fresh
     /// `URLSessionConfiguration.default`-derived instance and must return a
-    /// configuration the caller is comfortable shipping. The library never
-    /// invokes this hook itself; consumers wire it through
-    /// ``makeURLSessionConfiguration()`` when they construct their own
-    /// `URLSession` (the `DefaultNetworkClient` accepts an injected session).
+    /// configuration the caller is comfortable shipping. Because
+    /// `URLSession.shared` cannot honor this hook, `DefaultNetworkClient`
+    /// rejects the combination of a non-nil override and the default shared
+    /// session. Consumers must wire this through
+    /// ``makeURLSessionConfiguration()`` and pass the resulting `URLSession`
+    /// explicitly.
     public let urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
 
     /// Build a `URLSessionConfiguration` derived from `URLSessionConfiguration.default`,

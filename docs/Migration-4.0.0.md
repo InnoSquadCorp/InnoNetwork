@@ -139,7 +139,9 @@ let client = DefaultNetworkClient(configuration: config, session: session)
 ```
 
 Callers that supplied their own `URLSessionConfiguration` still work
-unchanged — the hook is purely additive.
+unchanged when they pass the matching `URLSession` explicitly. Constructing
+`DefaultNetworkClient(configuration:)` with a non-nil override now fails fast,
+because the default `URLSession.shared` cannot observe that override.
 
 ## PersistentResponseCacheConfiguration
 
