@@ -90,7 +90,8 @@ package struct StreamingExecutor: Sendable {
                     retryIndex: resumeAttempts,
                     metricsReporter: configuration.metricsReporter,
                     trustPolicy: configuration.trustPolicy,
-                    eventObservers: configuration.eventObservers
+                    eventObservers: configuration.eventObservers,
+                    redirectPolicy: configuration.redirectPolicy
                 )
                 attemptStartedAt = Date()
                 let (bytes, response) = try await session.bytes(for: urlRequest, context: context)

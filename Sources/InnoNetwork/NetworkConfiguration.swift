@@ -22,7 +22,8 @@ public struct NetworkConfiguration: Sendable {
                 requestInterceptors: [],
                 responseInterceptors: [],
                 customExecutionPolicies: [],
-                responseBodyBufferingPolicy: .streaming()
+                responseBodyBufferingPolicy: .streaming(),
+                redirectPolicy: DefaultRedirectPolicy()
             )
         }
 
@@ -46,7 +47,8 @@ public struct NetworkConfiguration: Sendable {
                 requestInterceptors: [],
                 responseInterceptors: [],
                 customExecutionPolicies: [],
-                responseBodyBufferingPolicy: .streaming()
+                responseBodyBufferingPolicy: .streaming(),
+                redirectPolicy: DefaultRedirectPolicy()
             )
         }
     }
@@ -127,6 +129,12 @@ public struct NetworkConfiguration: Sendable {
     /// ``responseBodyBufferingPolicy`` directly.
     public let responseBodyLimit: Int64?
 
+    /// Decides how the client reacts to HTTP redirects (3xx + `Location`).
+    /// Defaults to ``DefaultRedirectPolicy``, which strips
+    /// `Authorization`, `Cookie`, and `Proxy-Authorization` on cross-origin
+    /// hops per RFC 9110 §15.4.4.
+    public let redirectPolicy: any RedirectPolicy
+
     /// Optional escape hatch for callers that need to customize the
     /// `URLSessionConfiguration` (proxy/HTTP2 tuning, connection pooling,
     /// `httpAdditionalHeaders`, TLS minimum version, etc.) when materializing
@@ -186,6 +194,8 @@ public struct NetworkConfiguration: Sendable {
         /// ``responseBodyBufferingPolicy``. New code should set
         /// ``responseBodyBufferingPolicy`` directly.
         public var responseBodyLimit: Int64?
+        /// See ``NetworkConfiguration/redirectPolicy``.
+        public var redirectPolicy: any RedirectPolicy
         /// See ``NetworkConfiguration/urlSessionConfigurationOverride``.
         public var urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
 
@@ -213,6 +223,7 @@ public struct NetworkConfiguration: Sendable {
             self.captureFailurePayload = preset.captureFailurePayload
             self.responseBodyBufferingPolicy = preset.responseBodyBufferingPolicy
             self.responseBodyLimit = preset.responseBodyLimit
+            self.redirectPolicy = preset.redirectPolicy
             self.urlSessionConfigurationOverride = preset.urlSessionConfigurationOverride
         }
 
@@ -241,7 +252,8 @@ public struct NetworkConfiguration: Sendable {
                 captureFailurePayload: captureFailurePayload,
                 responseBodyBufferingPolicy: responseBodyBufferingPolicy,
                 responseBodyLimit: responseBodyLimit,
-                urlSessionConfigurationOverride: urlSessionConfigurationOverride
+                urlSessionConfigurationOverride: urlSessionConfigurationOverride,
+                redirectPolicy: redirectPolicy
             )
         }
     }
@@ -283,7 +295,8 @@ public struct NetworkConfiguration: Sendable {
         captureFailurePayload: Bool = false,
         responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(),
         responseBodyLimit: Int64? = nil,
-        urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)? = nil
+        urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)? = nil,
+        redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy()
     ) {
         let resolvedBufferingPolicy =
             responseBodyLimit.map { responseBodyBufferingPolicy.replacingMaxBytes($0) }
@@ -312,5 +325,6 @@ public struct NetworkConfiguration: Sendable {
         self.responseBodyBufferingPolicy = resolvedBufferingPolicy
         self.responseBodyLimit = resolvedBufferingPolicy.maxBytes
         self.urlSessionConfigurationOverride = urlSessionConfigurationOverride
+        self.redirectPolicy = redirectPolicy
     }
 }

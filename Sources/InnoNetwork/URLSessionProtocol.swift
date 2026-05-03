@@ -63,7 +63,9 @@ public extension URLSessionProtocol {
 
 extension URLSession: URLSessionProtocol {
     public func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
-        if context.metricsReporter == nil, context.trustPolicy.isSystemDefault {
+        if context.metricsReporter == nil,
+           context.trustPolicy.isSystemDefault,
+           context.redirectPolicy is DefaultRedirectPolicy {
             return try await data(for: request)
         }
 
@@ -81,7 +83,9 @@ extension URLSession: URLSessionProtocol {
     public func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
         URLSession.AsyncBytes, URLResponse
     ) {
-        if context.metricsReporter == nil, context.trustPolicy.isSystemDefault {
+        if context.metricsReporter == nil,
+           context.trustPolicy.isSystemDefault,
+           context.redirectPolicy is DefaultRedirectPolicy {
             return try await bytes(for: request, delegate: nil)
         }
 
@@ -99,7 +103,9 @@ extension URLSession: URLSessionProtocol {
     public func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (
         Data, URLResponse
     ) {
-        if context.metricsReporter == nil, context.trustPolicy.isSystemDefault {
+        if context.metricsReporter == nil,
+           context.trustPolicy.isSystemDefault,
+           context.redirectPolicy is DefaultRedirectPolicy {
             return try await upload(for: request, fromFile: fileURL)
         }
 
@@ -155,4 +161,29 @@ private final class RequestTaskDelegate: NSObject, URLSessionTaskDelegate {
             completionHandler(.cancelAuthenticationChallenge, nil)
         }
     }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        let policy = context.redirectPolicy
+        let originalRequest = request
+        let handler = UncheckedSendableBox(completionHandler)
+        Task {
+            let result = await policy.redirect(
+                request: newRequest,
+                response: response,
+                originalRequest: originalRequest
+            )
+            handler.value(result)
+        }
+    }
+}
+
+private struct UncheckedSendableBox<Value>: @unchecked Sendable {
+    let value: Value
+    init(_ value: Value) { self.value = value }
 }

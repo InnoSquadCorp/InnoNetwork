@@ -70,7 +70,8 @@ package struct RequestExecutor {
                 retryIndex: retryIndex,
                 metricsReporter: configuration.metricsReporter,
                 trustPolicy: configuration.trustPolicy,
-                eventObservers: configuration.eventObservers
+                eventObservers: configuration.eventObservers,
+                redirectPolicy: configuration.redirectPolicy
             )
 
             attemptStartedAt = Date()
@@ -741,7 +742,8 @@ package struct RequestExecutor {
             retryIndex: context.retryIndex,
             metricsReporter: context.metricsReporter,
             trustPolicy: context.trustPolicy,
-            eventObservers: context.eventObservers
+            eventObservers: context.eventObservers,
+            redirectPolicy: context.redirectPolicy
         )
         return try await performTransportResult(
             request: request,
