@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Retry verdict returned by ``RetryPolicy/shouldRetry(error:retryIndex:request:response:)``.
 ///
@@ -131,6 +132,20 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
     public let networkChangeTimeout: TimeInterval?
     public let idempotencyPolicy: RetryIdempotencyPolicy
 
+    private static let retryAfterDateFormats = [
+        "EEE, dd MMM yyyy HH:mm:ss zzz",  // IMF-fixdate
+        "EEEE, dd-MMM-yy HH:mm:ss zzz",  // RFC 850
+        "EEE MMM d HH:mm:ss yyyy",  // asctime (no zone — uses formatter.timeZone)
+    ]
+    private static let retryAfterFormatter = OSAllocatedUnfairLock<DateFormatter>(
+        initialState: {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            return formatter
+        }()
+    )
+
     /// - Parameters:
     ///   - maxRetries: Maximum number of retries.
     ///   - maxTotalRetries: Maximum total retry count even if the counter is reset.
@@ -261,29 +276,30 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         // takes its zone from `formatter.timeZone` (GMT below) — RFC 9110
         // §5.6.7 specifies that all HTTP-date forms are interpreted in GMT
         // regardless of how they spell it, so this is intentional.
-        let formats = [
-            "EEE, dd MMM yyyy HH:mm:ss zzz",  // IMF-fixdate
-            "EEEE, dd-MMM-yy HH:mm:ss zzz",  // RFC 850
-            "EEE MMM d HH:mm:ss yyyy",  // asctime (no zone — uses formatter.timeZone)
-        ]
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(abbreviation: "GMT")
         let normalizedWhitespace =
             trimmed
             .split(whereSeparator: { $0 == " " || $0 == "\t" })
             .joined(separator: " ")
         let candidates = normalizedWhitespace == trimmed ? [trimmed] : [trimmed, normalizedWhitespace]
         for candidate in candidates {
-            for format in formats {
-                formatter.dateFormat = format
-                if let date = formatter.date(from: candidate) {
-                    let delta = date.timeIntervalSince(now)
-                    guard delta > 0 else { return nil }
-                    return min(delta, maxSeconds)
-                }
+            if let date = Self.parseRetryAfterHTTPDate(candidate) {
+                let delta = date.timeIntervalSince(now)
+                guard delta > 0 else { return nil }
+                return min(delta, maxSeconds)
             }
         }
         return nil
+    }
+
+    private static func parseRetryAfterHTTPDate(_ value: String) -> Date? {
+        retryAfterFormatter.withLock { formatter in
+            for format in retryAfterDateFormats {
+                formatter.dateFormat = format
+                if let date = formatter.date(from: value) {
+                    return date
+                }
+            }
+            return nil
+        }
     }
 }

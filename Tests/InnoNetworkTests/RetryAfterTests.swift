@@ -30,6 +30,27 @@ struct RetryAfterParsingTests {
         #expect(seconds == 60)
     }
 
+    @Test("HTTP-date parser is deterministic under concurrent access")
+    func httpDateParsingIsConcurrentSafe() async {
+        let now = Date(timeIntervalSince1970: 0)
+        let headers = [
+            "Thu, 01 Jan 1970 00:01:00 GMT",
+            "Thursday, 01-Jan-70 00:01:00 GMT",
+            "Thu Jan  1 00:01:00 1970",
+        ]
+        await withTaskGroup(of: TimeInterval?.self) { group in
+            for index in 0..<128 {
+                group.addTask {
+                    ExponentialBackoffRetryPolicy.parseRetryAfter(headers[index % headers.count], now: now)
+                }
+            }
+
+            for await seconds in group {
+                #expect(seconds == 60)
+            }
+        }
+    }
+
     @Test("HTTP-date in the past returns nil")
     func httpDateInPast() {
         let now = Date(timeIntervalSince1970: 1_000_000_000)
