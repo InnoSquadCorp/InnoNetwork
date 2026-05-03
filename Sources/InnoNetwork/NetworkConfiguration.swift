@@ -106,6 +106,20 @@ public struct NetworkConfiguration: Sendable {
     /// interceptors, status validation, cache writes, and decoding.
     public let customExecutionPolicies: [any RequestExecutionPolicy]
 
+    /// Produces the default `User-Agent` value at request-build time.
+    ///
+    /// The provider is evaluated for each request when the endpoint still
+    /// carries the library default `User-Agent`, allowing tests and apps with
+    /// custom bundle metadata to avoid a process-start snapshot.
+    public let userAgentProvider: @Sendable () -> String
+
+    /// Produces the default `Accept-Language` value at request-build time.
+    ///
+    /// The provider is evaluated for each request when the endpoint still
+    /// carries the library default `Accept-Language`, so locale changes can
+    /// be reflected without rebuilding endpoint types.
+    public let acceptLanguageProvider: @Sendable () -> String
+
     /// When `false` (default), response bodies attached to ``NetworkError``
     /// cases (`decoding`, `statusCode`, and `underlying` when present) are
     /// zeroed out before the error is logged or surfaced
@@ -196,6 +210,10 @@ public struct NetworkConfiguration: Sendable {
         /// ``RequestExecutionNext/execute(_:)`` for the per-policy calling
         /// contract.
         public var customExecutionPolicies: [any RequestExecutionPolicy]
+        /// See ``NetworkConfiguration/userAgentProvider``.
+        public var userAgentProvider: @Sendable () -> String
+        /// See ``NetworkConfiguration/acceptLanguageProvider``.
+        public var acceptLanguageProvider: @Sendable () -> String
         public var captureFailurePayload: Bool
         /// Whether request bodies are streamed or buffered before decoding.
         /// `URLSession` transports collect `bytes(for:)` with an optional
@@ -234,6 +252,8 @@ public struct NetworkConfiguration: Sendable {
             self.responseCache = preset.responseCache
             self.circuitBreakerPolicy = preset.circuitBreakerPolicy
             self.customExecutionPolicies = preset.customExecutionPolicies
+            self.userAgentProvider = preset.userAgentProvider
+            self.acceptLanguageProvider = preset.acceptLanguageProvider
             self.captureFailurePayload = preset.captureFailurePayload
             self.responseBodyBufferingPolicy = preset.responseBodyBufferingPolicy
             self.responseBodyLimit = preset.responseBodyLimit
@@ -264,6 +284,8 @@ public struct NetworkConfiguration: Sendable {
                 responseCache: responseCache,
                 circuitBreakerPolicy: circuitBreakerPolicy,
                 customExecutionPolicies: customExecutionPolicies,
+                userAgentProvider: userAgentProvider,
+                acceptLanguageProvider: acceptLanguageProvider,
                 captureFailurePayload: captureFailurePayload,
                 responseBodyBufferingPolicy: responseBodyBufferingPolicy,
                 responseBodyLimit: responseBodyLimit,
@@ -308,6 +330,8 @@ public struct NetworkConfiguration: Sendable {
         responseCache: (any ResponseCache)? = nil,
         circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
         customExecutionPolicies: [any RequestExecutionPolicy] = [],
+        userAgentProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultUserAgent.value },
+        acceptLanguageProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultAcceptLanguage.value },
         captureFailurePayload: Bool = false,
         responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(),
         responseBodyLimit: Int64? = nil,
@@ -338,6 +362,8 @@ public struct NetworkConfiguration: Sendable {
         self.responseCache = responseCache
         self.circuitBreakerPolicy = circuitBreakerPolicy
         self.customExecutionPolicies = customExecutionPolicies
+        self.userAgentProvider = userAgentProvider
+        self.acceptLanguageProvider = acceptLanguageProvider
         self.captureFailurePayload = captureFailurePayload
         self.responseBodyBufferingPolicy = resolvedBufferingPolicy
         self.responseBodyLimit = resolvedBufferingPolicy.maxBytes

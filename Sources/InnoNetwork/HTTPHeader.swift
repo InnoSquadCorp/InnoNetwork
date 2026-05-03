@@ -410,11 +410,13 @@ extension HTTPHeaders {
     /// The default set of `HTTPHeaders` attached to every `APIDefinition`
     /// request. Includes `Accept-Encoding`, `Accept-Language`, and
     /// `User-Agent` derived from the current process.
-    public static let `default`: HTTPHeaders = [
-        .defaultAcceptEncoding,
-        .defaultAcceptLanguage,
-        .defaultUserAgent,
-    ]
+    public static var `default`: HTTPHeaders {
+        [
+            .defaultAcceptEncoding,
+            .defaultAcceptLanguage,
+            .defaultUserAgent,
+        ]
+    }
 }
 
 extension HTTPHeader {
@@ -437,8 +439,16 @@ extension HTTPHeader {
     /// `Locale` for the user's `preferredLanguages`.
     ///
     /// See the [Accept-Language HTTP header documentation](https://tools.ietf.org/html/rfc7231#section-5.3.5).
-    public static let defaultAcceptLanguage: HTTPHeader = .acceptLanguage(
-        Locale.preferredLanguages.prefix(6).qualityEncoded())
+    public static var defaultAcceptLanguage: HTTPHeader {
+        makeDefaultAcceptLanguage(preferredLanguages: Locale.preferredLanguages)
+    }
+
+    /// Builds a default `Accept-Language` header from an explicit preferred
+    /// language list. Useful for tests and clients that own locale selection
+    /// outside `Locale.preferredLanguages`.
+    public static func makeDefaultAcceptLanguage(preferredLanguages: [String]) -> HTTPHeader {
+        .acceptLanguage(preferredLanguages.prefix(6).qualityEncoded())
+    }
 
     /// The library default `User-Agent` header, derived from the running
     /// process and platform.
@@ -446,8 +456,13 @@ extension HTTPHeader {
     /// See the [User-Agent header documentation](https://tools.ietf.org/html/rfc7231#section-5.5.3).
     ///
     /// Example: `MyApp/1.0 (com.example.MyApp; build:1; iOS 18.0.0)`
-    public static let defaultUserAgent: HTTPHeader = {
-        let info = Bundle.main.infoDictionary
+    public static var defaultUserAgent: HTTPHeader {
+        makeDefaultUserAgent(bundle: .main)
+    }
+
+    /// Builds a default `User-Agent` header from an explicit bundle.
+    public static func makeDefaultUserAgent(bundle: Bundle) -> HTTPHeader {
+        let info = bundle.infoDictionary
         let executable =
             (info?["CFBundleExecutable"] as? String)
             ?? (ProcessInfo.processInfo.arguments.first?.split(separator: "/").last.map(String.init)) ?? "Unknown"
@@ -494,7 +509,7 @@ extension HTTPHeader {
         let userAgent = "\(executable)/\(appVersion) (\(bundle); build:\(appBuild); \(osNameVersion))"
 
         return .userAgent(userAgent)
-    }()
+    }
 }
 
 extension Collection<String> {

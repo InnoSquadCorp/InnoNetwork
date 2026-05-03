@@ -116,6 +116,10 @@ Per-symbol evolution allowances within the 4.x line:
 - `DecodingInterceptor` — protocol may grow new optional hooks with
   default implementations as additional decode-boundary use cases
   surface.
+- `HTTPHeader`, `HTTPHeaders`, and default header providers — default
+  `User-Agent` / `Accept-Language` values are evaluated at request-build time
+  so applications can inject bundle or locale ownership without relying on a
+  process-start snapshot.
 
 ## Version Pinning Guidance
 

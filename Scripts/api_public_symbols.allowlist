@@ -190,7 +190,7 @@ InnoNetwork	swift.init	InMemoryResponseCache.init(maxBytes:)
 InnoNetwork	swift.init	MultipartFormData.init(boundary:includesPartContentLength:synchronizesEncodedFile:)
 InnoNetwork	swift.init	MultipartPart.init(headers:data:)
 InnoNetwork	swift.init	MultipartResponseDecoder.init(boundary:)
-InnoNetwork	swift.init	NetworkConfiguration.init(baseURL:timeout:cachePolicy:retryPolicy:networkMonitor:metricsReporter:trustPolicy:eventObservers:eventDeliveryPolicy:eventMetricsReporter:acceptableStatusCodes:requestInterceptors:responseInterceptors:decodingInterceptors:refreshTokenPolicy:requestCoalescingPolicy:responseCachePolicy:responseCache:circuitBreakerPolicy:customExecutionPolicies:captureFailurePayload:responseBodyBufferingPolicy:responseBodyLimit:urlSessionConfigurationOverride:redirectPolicy:allowsInsecureHTTP:)
+InnoNetwork	swift.init	NetworkConfiguration.init(baseURL:timeout:cachePolicy:retryPolicy:networkMonitor:metricsReporter:trustPolicy:eventObservers:eventDeliveryPolicy:eventMetricsReporter:acceptableStatusCodes:requestInterceptors:responseInterceptors:decodingInterceptors:refreshTokenPolicy:requestCoalescingPolicy:responseCachePolicy:responseCache:circuitBreakerPolicy:customExecutionPolicies:userAgentProvider:acceptLanguageProvider:captureFailurePayload:responseBodyBufferingPolicy:responseBodyLimit:urlSessionConfigurationOverride:redirectPolicy:allowsInsecureHTTP:)
 InnoNetwork	swift.init	NetworkContext.init(traceID:correlationID:baggage:)
 InnoNetwork	swift.init	NetworkInterfaceType.init(rawValue:)
 InnoNetwork	swift.init	NetworkLoggingOptions.init(includeRequestBody:includeResponseBody:includeCookies:redactSensitiveData:sensitiveHeaderNames:)
@@ -406,6 +406,7 @@ InnoNetwork	swift.property	MultipartFormData.includesPartContentLength
 InnoNetwork	swift.property	MultipartFormData.synchronizesEncodedFile
 InnoNetwork	swift.property	MultipartPart.data
 InnoNetwork	swift.property	MultipartPart.headers
+InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.acceptLanguageProvider
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.acceptableStatusCodes
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.allowsInsecureHTTP
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.baseURL
@@ -432,6 +433,8 @@ InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.retryPolicy
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.timeout
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.trustPolicy
 InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.urlSessionConfigurationOverride
+InnoNetwork	swift.property	NetworkConfiguration.AdvancedBuilder.userAgentProvider
+InnoNetwork	swift.property	NetworkConfiguration.acceptLanguageProvider
 InnoNetwork	swift.property	NetworkConfiguration.acceptableStatusCodes
 InnoNetwork	swift.property	NetworkConfiguration.allowsInsecureHTTP
 InnoNetwork	swift.property	NetworkConfiguration.baseURL
@@ -458,6 +461,7 @@ InnoNetwork	swift.property	NetworkConfiguration.retryPolicy
 InnoNetwork	swift.property	NetworkConfiguration.timeout
 InnoNetwork	swift.property	NetworkConfiguration.trustPolicy
 InnoNetwork	swift.property	NetworkConfiguration.urlSessionConfigurationOverride
+InnoNetwork	swift.property	NetworkConfiguration.userAgentProvider
 InnoNetwork	swift.property	NetworkContext.baggage
 InnoNetwork	swift.property	NetworkContext.correlationID
 InnoNetwork	swift.property	NetworkContext.traceID
@@ -654,6 +658,8 @@ InnoNetwork	swift.type.method	HTTPHeader.authorization(username:password:)
 InnoNetwork	swift.type.method	HTTPHeader.contentDisposition(_:)
 InnoNetwork	swift.type.method	HTTPHeader.contentEncoding(_:)
 InnoNetwork	swift.type.method	HTTPHeader.contentType(_:)
+InnoNetwork	swift.type.method	HTTPHeader.makeDefaultAcceptLanguage(preferredLanguages:)
+InnoNetwork	swift.type.method	HTTPHeader.makeDefaultUserAgent(bundle:)
 InnoNetwork	swift.type.method	HTTPHeader.userAgent(_:)
 InnoNetwork	swift.type.method	HTTPHeader.websocketProtocol(_:)
 InnoNetwork	swift.type.method	NetworkConfiguration.advanced(baseURL:_:)

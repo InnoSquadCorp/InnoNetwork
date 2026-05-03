@@ -174,6 +174,45 @@ struct HTTPHeaderTests {
         #expect(encoded.contains("q=-") == false)
         #expect(encoded.hasSuffix("encoding-10;q=0, encoding-11;q=0"))
     }
+
+    @Test("Default Accept-Language can be built from injected languages")
+    func defaultAcceptLanguageUsesInjectedLanguages() {
+        let header = HTTPHeader.makeDefaultAcceptLanguage(
+            preferredLanguages: ["ko-KR", "en-US", "ja-JP"]
+        )
+
+        #expect(header.name == "Accept-Language")
+        #expect(header.value == "ko-KR, en-US;q=0.9, ja-JP;q=0.8")
+    }
+
+    @Test("Default User-Agent can be built from an injected bundle")
+    func defaultUserAgentUsesInjectedBundle() throws {
+        let bundleURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("InjectedUserAgent-\(UUID().uuidString).bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bundleURL) }
+
+        let info: [String: String] = [
+            "CFBundleExecutable": "InjectedApp",
+            "CFBundleIdentifier": "com.example.injected",
+            "CFBundleShortVersionString": "9.8",
+            "CFBundleVersion": "765",
+        ]
+        let plist = try PropertyListSerialization.data(
+            fromPropertyList: info,
+            format: .xml,
+            options: 0
+        )
+        try plist.write(to: bundleURL.appendingPathComponent("Info.plist"))
+
+        let bundle = try #require(Bundle(url: bundleURL))
+        let header = HTTPHeader.makeDefaultUserAgent(bundle: bundle)
+
+        #expect(header.name == "User-Agent")
+        #expect(header.value.hasPrefix("InjectedApp/9.8 "))
+        #expect(header.value.contains("com.example.injected"))
+        #expect(header.value.contains("build:765"))
+    }
 }
 
 
