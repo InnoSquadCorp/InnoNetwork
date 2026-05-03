@@ -166,7 +166,37 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
         )
         self.configuration = configuration
         self.session = session
-        self.executionRuntime = RequestExecutionRuntime(configuration: configuration, inFlight: inFlight)
+        self.executionRuntime = RequestExecutionRuntime(
+            configuration: configuration,
+            inFlight: inFlight,
+            clock: SystemClock()
+        )
+        self.eventHub = NetworkEventHub(
+            policy: configuration.eventDeliveryPolicy,
+            metricsReporter: configuration.eventMetricsReporter,
+            hubKind: .networkRequest
+        )
+    }
+
+    package init(
+        configuration: NetworkConfiguration,
+        session: URLSessionProtocol = URLSession.shared,
+        clock: any InnoNetworkClock
+    ) {
+        precondition(
+            !Self.requiresExplicitSessionForConfigurationOverride(
+                configuration: configuration,
+                session: session
+            ),
+            "[InnoNetwork] urlSessionConfigurationOverride is set but DefaultNetworkClient was constructed with URLSession.shared; pass an explicit `session:` built from `configuration.makeURLSessionConfiguration()` to honor the hook."
+        )
+        self.configuration = configuration
+        self.session = session
+        self.executionRuntime = RequestExecutionRuntime(
+            configuration: configuration,
+            inFlight: inFlight,
+            clock: clock
+        )
         self.eventHub = NetworkEventHub(
             policy: configuration.eventDeliveryPolicy,
             metricsReporter: configuration.eventMetricsReporter,

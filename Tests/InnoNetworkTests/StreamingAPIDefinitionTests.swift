@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 
 @testable import InnoNetwork
@@ -732,6 +733,67 @@ struct StreamingAPIDefinitionTests {
         let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
         #expect(captured.count == 1)
         #expect(captured.first?.value(forHTTPHeaderField: "Last-Event-ID") == nil)
+    }
+
+    @Test("StreamingExecutor waits on injected clock before resume")
+    func resumeDelayUsesInjectedClock() async throws {
+        let clock = TestClock()
+        let runtime = RequestExecutionRuntime(
+            configuration: NetworkConfiguration(baseURL: URL(string: "https://example.com")!),
+            inFlight: InFlightRegistry(),
+            clock: clock
+        )
+
+        async let waited: Void = StreamingExecutor.waitBeforeResume(
+            delay: 5,
+            executionRuntime: runtime
+        )
+
+        #expect(await clock.waitForWaiters(count: 1))
+
+        clock.advance(by: .seconds(5))
+        try await waited
+    }
+
+    @Test("StreamingExecutor skips injected clock when resume delay is zero")
+    func zeroResumeDelaySkipsInjectedClock() async throws {
+        let clock = TestClock()
+        let runtime = RequestExecutionRuntime(
+            configuration: NetworkConfiguration(baseURL: URL(string: "https://example.com")!),
+            inFlight: InFlightRegistry(),
+            clock: clock
+        )
+
+        try await StreamingExecutor.waitBeforeResume(
+            delay: 0,
+            executionRuntime: runtime
+        )
+
+        #expect(clock.enqueuedCount == 0)
+    }
+
+    @Test("StreamingExecutor propagates injected clock cancellation")
+    func resumeDelayPropagatesClockCancellation() async {
+        let clock = TestClock()
+        let runtime = RequestExecutionRuntime(
+            configuration: NetworkConfiguration(baseURL: URL(string: "https://example.com")!),
+            inFlight: InFlightRegistry(),
+            clock: clock
+        )
+        let waitTask = Task {
+            try await StreamingExecutor.waitBeforeResume(
+                delay: 5,
+                executionRuntime: runtime
+            )
+        }
+
+        #expect(await clock.waitForWaiters(count: 1))
+
+        waitTask.cancel()
+
+        await #expect(throws: CancellationError.self) {
+            try await waitTask.value
+        }
     }
 
     @Test("Streaming resume state does not reuse a stale Last-Event-ID after an attempt sees no new cursor")

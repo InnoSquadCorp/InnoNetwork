@@ -184,9 +184,10 @@ package struct StreamingExecutor: Sendable {
                     )
                     if canResume {
                         resumeAttempts += 1
-                        if resumeDelay > 0 {
-                            try? await Task.sleep(for: .seconds(resumeDelay))
-                        }
+                        try await Self.waitBeforeResume(
+                            delay: resumeDelay,
+                            executionRuntime: executionRuntime
+                        )
                         try Task.checkCancellation()
                         continue attempts
                     }
@@ -235,6 +236,14 @@ package struct StreamingExecutor: Sendable {
     }
 
     // MARK: - Helpers
+
+    package static func waitBeforeResume(
+        delay: TimeInterval,
+        executionRuntime: RequestExecutionRuntime
+    ) async throws {
+        guard delay > 0 else { return }
+        try await executionRuntime.clock.sleep(for: .seconds(delay))
+    }
 
     private static func makeURLRequest<T: StreamingAPIDefinition>(
         for request: T,
