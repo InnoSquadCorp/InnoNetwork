@@ -44,6 +44,152 @@ struct PersistentResponseCacheTests {
         #expect(await cache.get(cookieKey) == nil)
     }
 
+    @Test("Default policy rejects Cookie request keys")
+    func rejectsCookieRequestKeysByDefault() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Cookie": "sid=secret"]
+        )
+
+        await cache.set(key, CachedResponse(data: Data("cookie-auth".utf8)))
+
+        #expect(await cache.get(key) == nil)
+    }
+
+    @Test("Default policy rejects registered sensitive request keys")
+    func rejectsRegisteredSensitiveRequestKeysByDefault() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let headerName = "X-Session-\(UUID().uuidString)"
+        ResponseCacheHeaderPolicy.registerSensitiveHeader(headerName)
+        defer { ResponseCacheHeaderPolicy.unregisterSensitiveHeader(headerName) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: [headerName: "secret"]
+        )
+
+        await cache.set(key, CachedResponse(data: Data("custom-auth".utf8)))
+
+        #expect(await cache.get(key) == nil)
+    }
+
+    @Test("Cache-Control private responses are rejected")
+    func rejectsCacheControlPrivateResponses() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/private")
+
+        await cache.set(
+            key,
+            CachedResponse(
+                data: Data("private".utf8),
+                headers: ["Cache-Control": "max-age=60, private"]
+            )
+        )
+
+        #expect(await cache.get(key) == nil)
+    }
+
+    @Test("Default policy scrubs legacy sensitive entries on open")
+    func defaultPolicyScrubsLegacySensitiveEntriesOnOpen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Cookie": "sid=secret"]
+        )
+        let permissive = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                storesAuthenticatedResponses: true
+            )
+        )
+        await permissive.set(key, CachedResponse(data: Data("legacy".utf8)))
+        #expect(await permissive.get(key) != nil)
+        #expect(try existingBodyURLs(in: directory).isEmpty == false)
+
+        _ = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(try indexEntryCount(in: directory) == 0)
+
+        let reopened = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                storesAuthenticatedResponses: true
+            )
+        )
+        #expect(await reopened.get(key) == nil)
+    }
+
+    @Test("Default policy scrubs legacy Set-Cookie entries on open")
+    func defaultPolicyScrubsLegacySetCookieEntriesOnOpen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/cookie")
+        let permissive = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                storesSetCookieResponses: true
+            )
+        )
+        await permissive.set(
+            key,
+            CachedResponse(data: Data("cookie".utf8), headers: ["Set-Cookie": "sid=legacy"])
+        )
+        #expect(await permissive.get(key) != nil)
+        #expect(try existingBodyURLs(in: directory).isEmpty == false)
+
+        _ = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(try indexEntryCount(in: directory) == 0)
+    }
+
+    @Test("Default policy scrubs legacy Cache-Control private entries on open")
+    func defaultPolicyScrubsLegacyPrivateEntriesOnOpen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/private-legacy")
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        await cache.set(
+            key,
+            CachedResponse(data: Data("private".utf8), headers: ["Cache-Control": "max-age=60"])
+        )
+        #expect(try existingBodyURLs(in: directory).isEmpty == false)
+
+        try rewriteFirstIndexEntryHeaders(
+            in: directory,
+            headers: ["Cache-Control": "max-age=60, private"]
+        )
+
+        _ = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(try indexEntryCount(in: directory) == 0)
+    }
+
     @Test("Evicts least recently used entries when over budget")
     func evictsLeastRecentlyUsedEntries() async throws {
         let directory = makeDirectory()
@@ -123,6 +269,26 @@ struct PersistentResponseCacheTests {
         #expect(FileManager.default.fileExists(atPath: sentinelURL.path))
     }
 
+    @Test("Recovery reapplies data protection to recreated body directory")
+    func recoveryReappliesDataProtectionToRecreatedBodiesDirectory() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let recorder = ProtectionWriteRecorder()
+        let fileManager = RecordingFileManager(recorder: recorder)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let indexURL = directory.appendingPathComponent("index.json")
+        try Data(#"{"version":999,"entries":{}}"#.utf8).write(to: indexURL)
+
+        _ = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory),
+            fileManager: fileManager
+        )
+
+        let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
+        #expect(FileManager.default.fileExists(atPath: bodiesURL.path))
+        #expect(recorder.protectionWrites(for: bodiesURL.path) == [.completeUnlessOpen, .completeUnlessOpen])
+    }
+
     @Test("Overwriting an entry preserves the freshly written body")
     func overwriteKeepsFreshBody() async throws {
         let directory = makeDirectory()
@@ -186,8 +352,153 @@ struct PersistentResponseCacheTests {
         #expect(configuration.persistenceFsyncPolicy == .onCheckpoint)
     }
 
+    @Test("PersistentResponseCacheConfiguration defaults to completeUnlessOpen protection")
+    func defaultDataProtectionClassIsCompleteUnlessOpen() async {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        #expect(configuration.dataProtectionClass == .completeUnlessOpen)
+    }
+
+    @Test("Reopen reapplies data protection to existing index and body files")
+    func reopenReappliesDataProtectionToExistingCacheFiles() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/reopen-protection")
+
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("protected".utf8)))
+        let bodyURLs = try existingBodyURLs(in: directory)
+        #expect(bodyURLs.isEmpty == false)
+
+        let recorder = ProtectionWriteRecorder()
+        let fileManager = RecordingFileManager(recorder: recorder)
+        _ = try PersistentResponseCache(configuration: configuration, fileManager: fileManager)
+
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        #expect(recorder.protectionWrites(for: indexURL.path).contains(.completeUnlessOpen))
+        for bodyURL in bodyURLs {
+            #expect(recorder.protectionWrites(for: bodyURL.path).contains(.completeUnlessOpen))
+        }
+    }
+
+    @Test("DataProtectionClass.none requests unprotected cache-owned paths")
+    func noneDataProtectionRequestsUnprotectedCacheOwnedPaths() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/unprotected")
+        let protectedConfiguration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            dataProtectionClass: .complete
+        )
+        let writer = try PersistentResponseCache(configuration: protectedConfiguration)
+        await writer.set(key, CachedResponse(data: Data("unprotect-me".utf8)))
+        let bodyURLs = try existingBodyURLs(in: directory)
+        #expect(bodyURLs.isEmpty == false)
+
+        let recorder = ProtectionWriteRecorder()
+        let fileManager = RecordingFileManager(recorder: recorder)
+        let unprotectedConfiguration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            dataProtectionClass: .none
+        )
+        _ = try PersistentResponseCache(configuration: unprotectedConfiguration, fileManager: fileManager)
+
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
+        #expect(recorder.protectionWrites(for: directory.path).contains(.none))
+        #expect(recorder.protectionWrites(for: bodiesURL.path).contains(.none))
+        #expect(recorder.protectionWrites(for: indexURL.path).contains(.none))
+        for bodyURL in bodyURLs {
+            #expect(recorder.protectionWrites(for: bodyURL.path).contains(.none))
+        }
+    }
+
     private func makeDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("innonetwork-persistent-cache-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    private func existingBodyURLs(in directory: URL) throws -> [URL] {
+        let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
+        return try FileManager.default.contentsOfDirectory(
+            at: bodiesURL,
+            includingPropertiesForKeys: nil
+        )
+        .filter { $0.pathExtension == "body" }
+    }
+
+    private func indexEntryCount(in directory: URL) throws -> Int {
+        let index = try indexObject(in: directory)
+        guard let entries = index["entries"] as? [String: Any] else {
+            throw testFixtureError("Missing persistent cache index entries")
+        }
+        return entries.count
+    }
+
+    private func rewriteFirstIndexEntryHeaders(in directory: URL, headers: [String: String]) throws {
+        var index = try indexObject(in: directory)
+        guard var entries = index["entries"] as? [String: Any],
+            let entryID = entries.keys.sorted().first,
+            var entry = entries[entryID] as? [String: Any]
+        else {
+            throw testFixtureError("Missing persistent cache entry to rewrite")
+        }
+
+        entry["headers"] = headers
+        entries[entryID] = entry
+        index["entries"] = entries
+
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        let data = try JSONSerialization.data(withJSONObject: index, options: [.sortedKeys])
+        try data.write(to: indexURL, options: .atomic)
+    }
+
+    private func indexObject(in directory: URL) throws -> [String: Any] {
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        let data = try Data(contentsOf: indexURL)
+        guard let index = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw testFixtureError("Persistent cache index is not a JSON object")
+        }
+        return index
+    }
+
+    private func testFixtureError(_ message: String) -> NSError {
+        NSError(domain: "PersistentResponseCacheTests", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+}
+
+private final class ProtectionWriteRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var writes: [String: [FileProtectionType]] = [:]
+
+    func record(_ protectionType: FileProtectionType, path: String) {
+        lock.lock()
+        writes[path, default: []].append(protectionType)
+        lock.unlock()
+    }
+
+    func protectionWrites(for path: String) -> [FileProtectionType] {
+        lock.lock()
+        let pathWrites = writes[path] ?? []
+        lock.unlock()
+        return pathWrites
+    }
+}
+
+private final class RecordingFileManager: FileManager, @unchecked Sendable {
+    private let recorder: ProtectionWriteRecorder
+
+    init(recorder: ProtectionWriteRecorder) {
+        self.recorder = recorder
+        super.init()
+    }
+
+    override func setAttributes(_ attributes: [FileAttributeKey: Any], ofItemAtPath path: String) throws {
+        if let protectionType = attributes[.protectionKey] as? FileProtectionType {
+            recorder.record(protectionType, path: path)
+        }
+        try super.setAttributes(attributes, ofItemAtPath: path)
     }
 }

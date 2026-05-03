@@ -55,10 +55,14 @@ struct AppNetworking: Sendable {
 }
 ```
 
-`PersistentResponseCache` refuses authenticated and `Set-Cookie` responses by
-default. If an authenticated endpoint should be cached, make that choice in a
-feature-specific cache product rather than turning the default disk cache into
-a shared credential store.
+`PersistentResponseCache` refuses authenticated, `Cache-Control: private`, and
+`Set-Cookie` responses by default, and applies `.completeUnlessOpen` data
+protection to its files. `dataProtectionClass: .none` explicitly requests
+`NSFileProtectionNone` on cache-owned paths instead of skipping protection
+updates. If a cookie-authenticated endpoint should be cached, make that choice
+in a feature-specific cache product and prefer explicit request headers or
+origin `private`/`no-store` directives; cookies injected by `URLSession`
+storage are not fully visible at the cache abstraction boundary.
 
 ## Typed Auth Boundary
 

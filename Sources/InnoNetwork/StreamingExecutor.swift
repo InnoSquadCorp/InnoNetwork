@@ -46,6 +46,7 @@ package struct StreamingExecutor: Sendable {
         var resumeAttempts = 0
 
         attempts: while true {
+            var attemptStartedAt: Date?
             do {
                 try Task.checkCancellation()
                 resumeState.beginAttempt()
@@ -91,6 +92,7 @@ package struct StreamingExecutor: Sendable {
                     trustPolicy: configuration.trustPolicy,
                     eventObservers: configuration.eventObservers
                 )
+                attemptStartedAt = Date()
                 let (bytes, response) = try await session.bytes(for: urlRequest, context: context)
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw NetworkError.nonHTTPResponse(response)
@@ -187,7 +189,10 @@ package struct StreamingExecutor: Sendable {
                         try Task.checkCancellation()
                         continue attempts
                     }
-                    throw NetworkError.mapTransportError(streamError)
+                    throw Self.mapTransportError(
+                        streamError,
+                        startedAt: attemptStartedAt
+                    )
                 }
 
                 // Stream completed cleanly.
@@ -205,7 +210,10 @@ package struct StreamingExecutor: Sendable {
                 continuation.finish()
                 return
             } catch {
-                let mapped = NetworkError.mapTransportError(error)
+                let mapped = Self.mapTransportError(
+                    error,
+                    startedAt: attemptStartedAt
+                )
                 let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
                 let nsError = surfaced as NSError
                 await eventHub.publish(
@@ -235,7 +243,7 @@ package struct StreamingExecutor: Sendable {
         let url = try EndpointPathBuilder.makeURL(baseURL: configuration.baseURL, endpointPath: request.path)
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method.rawValue
-        urlRequest.allHTTPHeaderFields = request.headers.dictionary
+        urlRequest.headers = request.headers
         urlRequest.cachePolicy = configuration.cachePolicy
         urlRequest.timeoutInterval = configuration.timeout
         if let lastSeenEventID {
@@ -261,5 +269,18 @@ package struct StreamingExecutor: Sendable {
             current = try await refreshCoordinator.applyCurrentToken(to: current)
         }
         return current
+    }
+
+    private static func mapTransportError(
+        _ error: Error,
+        startedAt: Date?
+    ) -> NetworkError {
+        guard let startedAt else { return NetworkError.mapTransportError(error) }
+        return NetworkError.mapTransportError(
+            error,
+            startedAt: startedAt,
+            endedAt: Date(),
+            resourceTimeoutInterval: nil
+        )
     }
 }

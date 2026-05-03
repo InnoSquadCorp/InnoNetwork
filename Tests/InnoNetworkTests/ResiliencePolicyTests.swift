@@ -1177,6 +1177,37 @@ struct ResiliencePolicyTests {
         #expect(await cache.get(key) == nil)
     }
 
+    @Test("Cache-Control private invalidates existing cached entries and skips writes")
+    func cacheControlPrivateInvalidatesExistingEntry() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        let staleBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale"))
+        await cache.set(
+            key,
+            CachedResponse(
+                data: staleBody,
+                headers: ["ETag": "old"],
+                storedAt: Date(timeIntervalSinceNow: -60)
+            )
+        )
+        let fresh = ResilienceUser(id: 1, name: "fresh-private")
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: fresh, headers: ["Cache-Control": "max-age=60, private"])
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let user = try await client.request(ResilienceGetRequest())
+
+        #expect(user == fresh)
+        #expect(await cache.get(key) == nil)
+    }
+
     @Test("Cache-Control no-cache entries are stored but always revalidated")
     func cacheControlNoCacheForcesRevalidation() async throws {
         let cache = InMemoryResponseCache()

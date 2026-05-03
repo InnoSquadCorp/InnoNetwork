@@ -168,8 +168,9 @@ await client.cancelAll(matching: feed)  // feed 태그만 취소
 - `Vary` 헤더가 없는 응답은 기존 키 정책 (Authorization 등) 만으로 저장됩니다.
 - GET 응답 중 전체 표현을 재사용할 수 있는 cacheable status (`200`, `203`, `204`,
   `300`, `301`, `308`, `404`, `405`, `410`, `414`, `501`) 는 저장 대상입니다.
-- `Cache-Control: no-store` 는 현재 키를 무효화하고 저장하지 않습니다.
-  `Cache-Control: no-cache` 는 저장하되 매 lookup 마다 재검증을 강제합니다.
+- `Cache-Control: no-store` 와 `Cache-Control: private` 는 현재 키를 무효화하고
+  저장하지 않습니다. `Cache-Control: no-cache` 는 저장하되 매 lookup 마다
+  재검증을 강제합니다.
 
 ---
 

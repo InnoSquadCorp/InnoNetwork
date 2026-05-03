@@ -383,12 +383,16 @@ jobs:
               --enforce-baseline \
               --guard-benchmark events/task-event-fanout-single \
               --guard-benchmark persistence/download-persistence-restore \
+              --guard-benchmark persistence/append-log-compaction \
               --guard-benchmark websocket/websocket-close-disposition-classify \
               --guard-benchmark websocket/websocket-ping-context-alloc \
               --guard-benchmark websocket/websocket-send-queue-reserve \
               --guard-benchmark websocket/websocket-lifecycle-transition-table \
               --guard-benchmark client/request-pipeline \
               --guard-benchmark client/request-coalescing-shared-get \
+              --guard-benchmark client/decoding-interceptor-chain-1 \
+              --guard-benchmark client/decoding-interceptor-chain-3 \
+              --guard-benchmark client/decoding-interceptor-chain-8 \
               --guard-benchmark cache/response-cache-lookup \
               --guard-benchmark cache/response-cache-revalidation \
               --max-regression-percent 20; then

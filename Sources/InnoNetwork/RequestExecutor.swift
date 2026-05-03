@@ -27,6 +27,7 @@ package struct RequestExecutor {
         try Task.checkCancellation()
 
         var retryRequest: URLRequest?
+        var attemptStartedAt: Date?
         do {
             try validateAuthScope(executable, configuration: configuration)
             let built = try requestBuilder.build(executable, configuration: configuration)
@@ -72,6 +73,7 @@ package struct RequestExecutor {
                 eventObservers: configuration.eventObservers
             )
 
+            attemptStartedAt = Date()
             var networkResponse = try await executeWithPolicies(
                 request: request,
                 bodySource: built.bodySource,
@@ -144,7 +146,10 @@ package struct RequestExecutor {
             await notifyFailure(surfaced, requestID: requestID, configuration: configuration)
             throw RequestExecutionFailure(error: surfaced, request: retryRequest ?? surfaced.underlyingRequest)
         } catch {
-            let mapped = NetworkError.mapTransportError(error)
+            let mapped = Self.mapTransportError(
+                error,
+                startedAt: attemptStartedAt
+            )
             let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
             executable.logger.log(error: surfaced)
             await notifyFailure(surfaced, requestID: requestID, configuration: configuration)
@@ -500,20 +505,30 @@ package struct RequestExecutor {
         configuration: NetworkConfiguration,
         context: NetworkRequestContext
     ) async throws -> TransportResult {
-        let (data, response): (Data, URLResponse)
-        switch bodySource {
-        case .inline:
-            (data, response) = try await inlineData(for: request, configuration: configuration, context: context)
-        case .file(let fileURL, _):
-            (data, response) = try await session.upload(for: request, fromFile: fileURL, context: context)
-        }
+        let attemptStartedAt = Date()
+        do {
+            let (data, response): (Data, URLResponse)
+            switch bodySource {
+            case .inline:
+                (data, response) = try await inlineData(for: request, configuration: configuration, context: context)
+            case .file(let fileURL, _):
+                (data, response) = try await session.upload(for: request, fromFile: fileURL, context: context)
+            }
 
-        try Task.checkCancellation()
+            try Task.checkCancellation()
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NetworkError.nonHTTPResponse(response)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw NetworkError.nonHTTPResponse(response)
+            }
+            return TransportResult(data: data, response: httpResponse)
+        } catch {
+            throw NetworkError.mapTransportError(
+                error,
+                startedAt: attemptStartedAt,
+                endedAt: Date(),
+                resourceTimeoutInterval: nil
+            )
         }
-        return TransportResult(data: data, response: httpResponse)
     }
 
     private func inlineData(
@@ -628,6 +643,7 @@ package struct RequestExecutor {
                 defer {
                     runtime.inFlight.deregister(id: revalidationID)
                 }
+                var revalidationStartedAt: Date?
 
                 do {
                     try Task.checkCancellation()
@@ -637,6 +653,7 @@ package struct RequestExecutor {
                         revalidationRequest.setValue(etag, forHTTPHeaderField: "If-None-Match")
                     }
 
+                    revalidationStartedAt = Date()
                     let result = try await revalidateInBackground(
                         request: revalidationRequest,
                         bodySource: bodySource,
@@ -694,7 +711,10 @@ package struct RequestExecutor {
                     if NetworkError.isCancellation(error) {
                         return
                     }
-                    let mapped = NetworkError.mapTransportError(error)
+                    let mapped = Self.mapTransportError(
+                        error,
+                        startedAt: revalidationStartedAt
+                    )
                     let surfaced =
                         configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
                     Logger.API.error(
@@ -843,8 +863,8 @@ package struct RequestExecutor {
     ///
     /// Only GET responses are persisted. InnoNetwork stores the RFC-cacheable
     /// status codes that are safe for whole-response reuse and honours
-    /// `Cache-Control: no-store` / `no-cache` without changing the explicit
-    /// `ResponseCachePolicy` freshness window selected by the caller.
+    /// `Cache-Control: no-store` / `private` / `no-cache` without changing the
+    /// explicit `ResponseCachePolicy` freshness window selected by the caller.
     private func storeCacheIfNeeded(
         _ response: Response,
         cacheKey: ResponseCacheKey?,
@@ -867,7 +887,7 @@ package struct RequestExecutor {
             return
         }
         let cacheControl = cacheControlDirectives(in: headerSnapshot)
-        if cacheControl.contains("no-store") {
+        if cacheControl.contains("no-store") || cacheControl.contains("private") {
             await cache.invalidate(cacheKey)
             return
         }
@@ -903,7 +923,7 @@ package struct RequestExecutor {
     /// Parses Cache-Control directive *names* only. Qualified directives whose
     /// quoted values contain commas (e.g. `private="X-Foo, X-Bar"`) will split
     /// into multiple tokens, so this helper must not be used to recover such
-    /// values — it only powers the `no-store` / `no-cache` lookups today.
+    /// values — it only powers directive-presence checks today.
     private func cacheControlDirectives(in headers: [String: String]) -> Set<String> {
         let combined =
             headers
@@ -990,4 +1010,16 @@ package struct RequestExecutor {
         )
     }
 
+    private static func mapTransportError(
+        _ error: Error,
+        startedAt: Date?
+    ) -> NetworkError {
+        guard let startedAt else { return NetworkError.mapTransportError(error) }
+        return NetworkError.mapTransportError(
+            error,
+            startedAt: startedAt,
+            endedAt: Date(),
+            resourceTimeoutInterval: nil
+        )
+    }
 }

@@ -318,7 +318,11 @@ private enum InnoNetworkBenchmarks {
         results.append(try await benchmarkConcurrentClientThroughput(iterations: clientIterations))
         results.append(try await benchmarkResponseCacheLookup(iterations: cacheIterations))
         results.append(try await benchmarkResponseCacheRevalidation(iterations: cacheIterations))
-        let interceptorIterations = options.quick ? 2_000 : 20_000
+        // The decoding-interceptor guards exercise the async request pipeline
+        // and were too short at 2k iterations on hosted runners. Keep them in
+        // the quick smoke set, but measure a multi-second sample so transient
+        // scheduling noise does not look like a real interceptor regression.
+        let interceptorIterations = 20_000
         results.append(
             try await benchmarkDecodingInterceptorChain(
                 depth: 1,

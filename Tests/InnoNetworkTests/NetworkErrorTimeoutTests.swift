@@ -22,6 +22,21 @@ private struct EmptyEcho: APIDefinition, HTTPEmptyResponseDecodable {
 }
 
 
+private final class DelayedTimingOutSession: URLSessionProtocol, Sendable {
+    private let delay: Duration
+
+    init(delay: Duration = .milliseconds(20)) {
+        self.delay = delay
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        _ = request
+        try await Task.sleep(for: delay)
+        throw URLError(.timedOut)
+    }
+}
+
+
 @Suite("NetworkError Timeout Tests")
 struct NetworkErrorTimeoutTests {
 
@@ -43,6 +58,30 @@ struct NetworkErrorTimeoutTests {
                 #expect(underlying?.code == URLError.Code.timedOut.rawValue)
             default:
                 Issue.record("Expected NetworkError.timeout(.requestTimeout), got \(error)")
+            }
+        }
+    }
+
+    @Test("URLRequest timeout budget still maps to requestTimeout after the measured attempt exceeds it")
+    func urlRequestTimeoutBudgetDoesNotMapToResourceTimeout() async throws {
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                timeout: 0.001
+            ),
+            session: DelayedTimingOutSession()
+        )
+
+        do {
+            _ = try await client.request(TimingOutAPIRequest())
+            Issue.record("Expected timeout error")
+        } catch let error as NetworkError {
+            switch error {
+            case .timeout(.requestTimeout, let underlying):
+                #expect(underlying?.domain == NSURLErrorDomain)
+                #expect(underlying?.code == URLError.Code.timedOut.rawValue)
+            default:
+                Issue.record("Expected URLRequest.timeoutInterval to stay .requestTimeout, got \(error)")
             }
         }
     }
@@ -255,10 +294,9 @@ struct NetworkErrorTimeoutTests {
     func mapResourceTimeoutFromMetrics() {
         let start = Date(timeIntervalSince1970: 0)
         let end = start.addingTimeInterval(60)
-        let metrics = StubURLSessionTaskMetrics(taskInterval: DateInterval(start: start, end: end))
         let error = NetworkError.mapTransportError(
             URLError(.timedOut),
-            metrics: metrics,
+            taskInterval: DateInterval(start: start, end: end),
             resourceTimeoutInterval: 60
         )
         guard case .timeout(.resourceTimeout, let underlying) = error else {
@@ -272,16 +310,32 @@ struct NetworkErrorTimeoutTests {
     func mapRequestTimeoutWhenBelowBudget() {
         let start = Date(timeIntervalSince1970: 0)
         let end = start.addingTimeInterval(15)
-        let metrics = StubURLSessionTaskMetrics(taskInterval: DateInterval(start: start, end: end))
         let error = NetworkError.mapTransportError(
             URLError(.timedOut),
-            metrics: metrics,
+            taskInterval: DateInterval(start: start, end: end),
             resourceTimeoutInterval: 60
         )
         guard case .timeout(.requestTimeout, _) = error else {
             Issue.record("Expected .timeout(.requestTimeout) for sub-budget elapsed, got \(error)")
             return
         }
+    }
+
+    @Test("mapTransportError(attempt interval): elapsed at resource budget → .resourceTimeout")
+    func mapResourceTimeoutFromMeasuredAttemptInterval() {
+        let start = Date(timeIntervalSince1970: 0)
+        let end = start.addingTimeInterval(30)
+        let error = NetworkError.mapTransportError(
+            URLError(.timedOut),
+            startedAt: start,
+            endedAt: end,
+            resourceTimeoutInterval: 30
+        )
+        guard case .timeout(.resourceTimeout, let underlying) = error else {
+            Issue.record("Expected .timeout(.resourceTimeout), got \(error)")
+            return
+        }
+        #expect(underlying?.code == URLError.Code.timedOut.rawValue)
     }
 
     @Test("mapTransportError(metrics:): missing inputs fall back to .requestTimeout")
@@ -298,11 +352,9 @@ struct NetworkErrorTimeoutTests {
 
         let nilInterval = NetworkError.mapTransportError(
             URLError(.timedOut),
-            metrics: StubURLSessionTaskMetrics(
-                taskInterval: DateInterval(
-                    start: Date(timeIntervalSince1970: 0),
-                    end: Date(timeIntervalSince1970: 600)
-                )
+            taskInterval: DateInterval(
+                start: Date(timeIntervalSince1970: 0),
+                end: Date(timeIntervalSince1970: 600)
             ),
             resourceTimeoutInterval: nil
         )
@@ -343,15 +395,4 @@ struct NetworkErrorTimeoutTests {
             }
         }
     }
-}
-
-private final class StubURLSessionTaskMetrics: URLSessionTaskMetrics, @unchecked Sendable {
-    private let stubbedTaskInterval: DateInterval
-
-    init(taskInterval: DateInterval) {
-        self.stubbedTaskInterval = taskInterval
-        super.init()
-    }
-
-    override var taskInterval: DateInterval { stubbedTaskInterval }
 }

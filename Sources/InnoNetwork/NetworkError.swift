@@ -21,10 +21,13 @@ import Foundation
 ///   `networkConnectionLost`, `notConnectedToInternet`, …) intentionally
 ///   stay as ``NetworkError/underlying(_:_:)`` so callers can tell a real
 ///   timeout from a name-resolution or reachability failure.
-/// - ``resourceTimeout`` is produced by
-///   ``NetworkError/mapTransportError(_:metrics:resourceTimeoutInterval:)``
-///   when the caller has `URLSessionTaskMetrics` and the configured
-///   resource-timeout interval. The overload returns
+/// - ``resourceTimeout`` is produced by the metrics-aware or
+///   attempt-interval overloads only when the caller also supplies a true
+///   `URLSessionConfiguration.timeoutIntervalForResource` budget.
+///   `URLRequest.timeoutInterval` remains a request-level timeout and must
+///   not be passed as that resource budget. The built-in request and stream
+///   executors pass `nil` for `NetworkConfiguration.timeout` because that
+///   value is applied to `URLRequest.timeoutInterval`. These overloads return
 ///   ``resourceTimeout`` for `URLError.timedOut` only when the task
 ///   interval reaches the resource budget; otherwise it falls back to
 ///   ``requestTimeout``. The single-argument
@@ -35,9 +38,12 @@ public enum TimeoutReason: Sendable, Equatable {
     /// Produced from `URLError.timedOut`.
     case requestTimeout
     /// The resource transfer exceeded its total time budget. Reserved for
-    /// callers that observe URLSession task metrics; the built-in transport
-    /// mapper cannot distinguish this from ``requestTimeout`` because
-    /// `URLError` does not surface which timeout interval fired.
+    /// callers that observe URLSession task metrics, and for the built-in
+    /// executors when their measured attempt interval reaches an explicitly
+    /// known resource-timeout budget. `URLRequest.timeoutInterval` is a
+    /// request-level timeout, so it still maps to ``requestTimeout``.
+    /// `URLError` does not surface which timeout interval fired, so shorter
+    /// or unmeasured attempts remain ``requestTimeout``.
     case resourceTimeout
     /// Connection establishment failed (for example, a captive portal
     /// blocking the TCP handshake or the server actively refusing the
@@ -343,9 +349,9 @@ extension NetworkError {
     ///   actual task interval.
     /// - `resourceTimeoutInterval`, the configured
     ///   `timeoutIntervalForResource` for the URLSession that ran the
-    ///   task. When a request also overrides
-    ///   `URLRequest.timeoutInterval`, callers may pass that instead
-    ///   when they want to honour the per-request budget.
+    ///   task. Do not pass `URLRequest.timeoutInterval` here: Foundation
+    ///   treats it as a request-level timeout, not the resource-wide
+    ///   transfer budget.
     ///
     /// When either input is missing, the mapping falls back to the
     /// 4.x behaviour (`.requestTimeout` for `URLError.timedOut`).
@@ -356,6 +362,38 @@ extension NetworkError {
     static func mapTransportError(
         _ error: Error,
         metrics: URLSessionTaskMetrics?,
+        resourceTimeoutInterval: TimeInterval?
+    ) -> NetworkError {
+        mapTransportError(
+            error,
+            taskInterval: metrics?.taskInterval,
+            resourceTimeoutInterval: resourceTimeoutInterval
+        )
+    }
+
+    /// Attempt-interval variant used by built-in executors when URLSession
+    /// task metrics are not available on the throwing path. The mapping keeps
+    /// the same conservative rule as the metrics overload: only a timed-out
+    /// attempt whose measured elapsed time reaches an explicitly configured
+    /// resource timeout is classified as ``TimeoutReason/resourceTimeout``.
+    /// Passing `nil` preserves request-level timeout semantics.
+    static func mapTransportError(
+        _ error: Error,
+        startedAt: Date,
+        endedAt: Date,
+        resourceTimeoutInterval: TimeInterval?
+    ) -> NetworkError {
+        let intervalEnd = endedAt < startedAt ? startedAt : endedAt
+        return mapTransportError(
+            error,
+            taskInterval: DateInterval(start: startedAt, end: intervalEnd),
+            resourceTimeoutInterval: resourceTimeoutInterval
+        )
+    }
+
+    static func mapTransportError(
+        _ error: Error,
+        taskInterval: DateInterval?,
         resourceTimeoutInterval: TimeInterval?
     ) -> NetworkError {
         if let networkError = error as? NetworkError {
@@ -377,7 +415,7 @@ extension NetworkError {
             switch urlError.code {
             case .timedOut:
                 let reason = resolveTimeoutReason(
-                    metrics: metrics,
+                    taskInterval: taskInterval,
                     resourceTimeoutInterval: resourceTimeoutInterval
                 )
                 return .timeout(reason: reason, underlying: SendableUnderlyingError(urlError))
@@ -399,13 +437,13 @@ extension NetworkError {
     /// interval is at or beyond the configured resource budget; any
     /// shorter elapsed time is treated as ``TimeoutReason/requestTimeout``.
     private static func resolveTimeoutReason(
-        metrics: URLSessionTaskMetrics?,
+        taskInterval: DateInterval?,
         resourceTimeoutInterval: TimeInterval?
     ) -> TimeoutReason {
-        guard let metrics, let resourceTimeoutInterval, resourceTimeoutInterval > 0 else {
+        guard let taskInterval, let resourceTimeoutInterval, resourceTimeoutInterval > 0 else {
             return .requestTimeout
         }
-        let elapsed = metrics.taskInterval.duration
+        let elapsed = taskInterval.duration
         return elapsed + 0.001 >= resourceTimeoutInterval ? .resourceTimeout : .requestTimeout
     }
 }

@@ -27,6 +27,24 @@ private struct PathCounterStream: StreamingAPIDefinition {
     }
 }
 
+private struct DuplicateAuthHeaderStream: StreamingAPIDefinition {
+    typealias Output = String
+
+    var method: HTTPMethod { .get }
+    var path: String { "/events" }
+    var headers: HTTPHeaders {
+        var headers = HTTPHeaders.default
+        headers.add(name: "Authorization", value: "Bearer stale")
+        headers.add(name: "authorization", value: "Bearer fresh")
+        return headers
+    }
+
+    func decode(line: String) throws -> String? {
+        guard !line.isEmpty else { return nil }
+        return line
+    }
+}
+
 
 private final class ThrowingBytesSession: URLSessionProtocol, Sendable {
     let error: URLError
@@ -43,6 +61,28 @@ private final class ThrowingBytesSession: URLSessionProtocol, Sendable {
         URLSession.AsyncBytes, URLResponse
     ) {
         throw error
+    }
+}
+
+
+private final class DelayedTimedOutBytesSession: URLSessionProtocol, Sendable {
+    private let delay: Duration
+
+    init(delay: Duration = .milliseconds(20)) {
+        self.delay = delay
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        _ = request
+        throw URLError(.badServerResponse)
+    }
+
+    func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
+        URLSession.AsyncBytes, URLResponse
+    ) {
+        _ = (request, context)
+        try await Task.sleep(for: delay)
+        throw URLError(.timedOut)
     }
 }
 
@@ -478,6 +518,34 @@ struct StreamingAPIDefinitionTests {
         #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer stream-token")
     }
 
+    @Test("stream() applies single-value header semantics")
+    func streamDuplicateSingleValueHeadersUseLastValue() async throws {
+        let definition = DuplicateAuthHeaderStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 200, data: Data("authorized\n".utf8))
+            ])
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(baseURL: baseURL),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var values: [String] = []
+        for try await value in client.stream(definition) {
+            values.append(value)
+        }
+
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(values == ["authorized"])
+        #expect(captured.count == 1)
+        #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer fresh")
+    }
+
     @Test("stream() maps URLError.timedOut to NetworkError.timeout(.requestTimeout)")
     func streamMapsTimedOutToRequestTimeout() async throws {
         let client = DefaultNetworkClient(
@@ -497,6 +565,32 @@ struct StreamingAPIDefinitionTests {
                 #expect(underlying?.code == URLError.Code.timedOut.rawValue)
             default:
                 Issue.record("Expected NetworkError.timeout(.requestTimeout), got \(error)")
+            }
+        }
+    }
+
+    @Test("stream() keeps URLRequest timeout as requestTimeout after the measured attempt exceeds it")
+    func streamRequestTimeoutBudgetDoesNotMapToResourceTimeout() async throws {
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                timeout: 0.001
+            ),
+            session: DelayedTimedOutBytesSession()
+        )
+
+        let stream = client.stream(LineCounterStream())
+        var iterator = stream.makeAsyncIterator()
+        do {
+            _ = try await iterator.next()
+            Issue.record("Expected stream timeout error")
+        } catch let error as NetworkError {
+            switch error {
+            case .timeout(.requestTimeout, let underlying):
+                #expect(underlying?.domain == NSURLErrorDomain)
+                #expect(underlying?.code == URLError.Code.timedOut.rawValue)
+            default:
+                Issue.record("Expected URLRequest.timeoutInterval to stay .requestTimeout, got \(error)")
             }
         }
     }

@@ -88,6 +88,20 @@ struct CircuitBreakerRegistryHardeningTests {
         try await registry.prepare(request: httpsRequest, policy: policy)
     }
 
+    @Test("Host casing maps to the same circuit state")
+    func hostCasingSharesState() async throws {
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1)
+        let uppercaseHost = URLRequest(url: URL(string: "https://API.EXAMPLE.COM/x")!)
+        let lowercaseHost = URLRequest(url: URL(string: "https://api.example.com/x")!)
+
+        await registry.recordStatus(request: uppercaseHost, policy: policy, statusCode: 500)
+
+        await #expect(throws: NetworkError.self) {
+            try await registry.prepare(request: lowercaseHost, policy: policy)
+        }
+    }
+
     @Test("Hysteresis requires multiple successful probes before closing")
     func hysteresisRequiresMultipleProbes() async throws {
         let registry = CircuitBreakerRegistry()

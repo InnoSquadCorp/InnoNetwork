@@ -32,10 +32,10 @@ for storage. `206 Partial Content` is intentionally excluded because range
 semantics require a different representation model.
 
 Cache entries are keyed by HTTP method, absolute URL, and representation
-headers that affect privacy or request identity. `Authorization` is included as
-a SHA-256 fingerprint rather than a raw token, and `Accept-Language` is included
-so locale-specific responses do not cross-pollute. URL fragments are ignored
-because they are not sent to the server.
+headers that affect privacy or request identity. Credential-like headers such as
+`Authorization` and `Cookie` are included as SHA-256 fingerprints rather than raw
+values, and `Accept-Language` is included so locale-specific responses do not
+cross-pollute. URL fragments are ignored because they are not sent to the server.
 
 ## Scope and offline storage
 
@@ -54,22 +54,24 @@ visible "downloaded for offline" semantics. In those cases, let InnoNetwork
 fetch and validate transport responses, then project the decoded model into
 SwiftData, Core Data, SQLite, files, or another app-owned store.
 
-Persistent response cache remains a future product decision. The preferred
-direction is an optional companion product rather than making disk persistence
-part of the core `InnoNetwork` target. Any first-party disk cache must define
-these policies before public API is exposed:
+Persistent response caching ships as the optional `InnoNetworkPersistentCache`
+companion product rather than being part of the core `InnoNetwork` target. Its
+first-party disk cache defines these policies explicitly:
 
 - cache key normalization and configurable Vary/identity inputs
 - freshness precedence between caller policy, `Cache-Control`, and validators
 - eviction by byte budget, age, and user/account boundary
-- privacy defaults for Authorization-derived keys and sensitive payloads
-- platform data protection class, backup exclusion, and explicit deletion hooks
+- privacy defaults for credential-derived keys and sensitive payloads
+- platform data protection class and explicit deletion hooks. Selecting
+  `.none` requests `NSFileProtectionNone` on cache-owned paths.
 
 InnoNetwork honours response cache-control directives that affect storage and
 reuse:
 
 - `Cache-Control: no-store` responses are not stored and invalidate the current
   key if an older entry exists.
+- `Cache-Control: private` responses are treated as do-not-store by the built-in
+  executor and the persistent companion cache.
 - `Cache-Control: no-cache` responses may be stored, but every lookup must
   revalidate before reuse even inside the caller-provided freshness window.
 

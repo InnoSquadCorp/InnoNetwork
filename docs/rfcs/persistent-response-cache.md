@@ -16,6 +16,7 @@ The 4.0.0 implementation uses a conservative flat-file store:
 - versioned `index.json` plus SHA-256-addressed body files
 - max 50 MB total, max 1000 entries, max 5 MB per entry
 - authenticated responses are not stored by default
+- `Cache-Control: private` responses are not stored
 - responses with `Set-Cookie` are not stored by default
 - unknown index versions and corrupt entries are evicted and startup continues
 
@@ -101,9 +102,10 @@ performance one.
   storing authenticated responses.
 - Does the store accept responses with `Set-Cookie` headers? The
   default should be no.
-- Does the store redact `Authorization` from any persisted request
-  metadata? (We persist enough request context to recompute vary
-  dimensions; that context must not leak credentials.)
+- Does the store redact credential-like request metadata (`Authorization`,
+  `Cookie`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`, and custom
+  sensitive headers)? We persist enough request context to recompute vary
+  dimensions; that context must not leak credentials.
 
 ### 5. Data protection class
 
@@ -118,6 +120,9 @@ the device is locked.
 - The companion's configuration must expose the protection class so
   apps can pick — and document the trade-off so callers don't pick
   ``.none`` for convenience.
+- ``.none`` is an explicit opt-out that requests `NSFileProtectionNone`
+  on cache-owned paths, including existing `index.json` and body files on
+  reopen. It is not a "skip applying protection" mode.
 
 ### 6. Migration and versioning
 
@@ -146,8 +151,8 @@ historical discussion above is preserved for context only.
 | Cache key | `(canonical method, URL, vary dimensions)` hashed into a SHA-256 body filename. Vary dimensions reuse `InMemoryResponseCache`'s normalization (lowercased header name, trimmed value; `*` ⇒ do-not-store). |
 | Freshness | Executor precedence preserved: caller-declared `freshnessWindow` > origin `max-age` > store fallback. `no-store` and `private` short-circuit to do-not-store. |
 | Eviction | LRU with both 50 MB total byte budget and 1,000-entry budget, whichever fires first. Per-entry hard cap 5 MB. Eviction is synchronous on write. |
-| Privacy | Authenticated requests are not stored unless the caller opts in via configuration. Responses with `Set-Cookie` are never stored. Persisted request metadata redacts `Authorization`. |
-| Data protection | Configurable; default `.completeUnlessOpen`. App-group integrators may select `.completeUntilFirstUserAuthentication`. |
+| Privacy | Authenticated requests are not stored unless the caller opts in via configuration. `Cache-Control: private` short-circuits to do-not-store. Responses with `Set-Cookie` are rejected unless the caller opts in. Persisted request metadata fingerprints credential-like headers. |
+| Data protection | Configurable; default `.completeUnlessOpen`. App-group integrators may select `.completeUntilFirstUserAuthentication`; `.none` requests `NSFileProtectionNone` for cache-owned paths. |
 | Migration | Versioned `index.json`. Unknown index versions and decode failures evict only the index and bodies subtree, leaving the user-supplied directory root untouched, and the store starts fresh. |
 
 ## Out of scope (still deferred)

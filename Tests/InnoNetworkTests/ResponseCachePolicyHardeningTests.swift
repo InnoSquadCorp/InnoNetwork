@@ -41,6 +41,38 @@ struct ResponseCacheKeyQueryNormalizationTests {
 
         #expect(keyA == keyB)
     }
+
+    @Test("URL scheme and host casing are normalized")
+    func schemeAndHostCasingNormalize() async throws {
+        let urlA = try #require(URL(string: "HTTPS://API.EXAMPLE.COM/v1/items?b=2&a=1"))
+        let urlB = try #require(URL(string: "https://api.example.com/v1/items?a=1&b=2"))
+
+        let keyA = try #require(ResponseCacheKey(request: URLRequest(url: urlA)))
+        let keyB = try #require(ResponseCacheKey(request: URLRequest(url: urlB)))
+
+        #expect(keyA == keyB)
+    }
+
+    @Test("Direct cache key initializer normalizes valid URL strings")
+    func directInitializerNormalizesValidURLStrings() async {
+        let keyA = ResponseCacheKey(
+            method: "get",
+            url: "HTTPS://API.EXAMPLE.COM/v1/items?b=2&a=1#section"
+        )
+        let keyB = ResponseCacheKey(
+            method: "GET",
+            url: "https://api.example.com/v1/items?a=1&b=2"
+        )
+
+        #expect(keyA == keyB)
+        #expect(keyA.url == "https://api.example.com/v1/items?a=1&b=2")
+    }
+
+    @Test("Direct cache key initializer preserves unparsable URL strings")
+    func directInitializerPreservesUnparsableURLStrings() async {
+        let key = ResponseCacheKey(method: "GET", url: "://not a url")
+        #expect(key.url == "://not a url")
+    }
 }
 
 

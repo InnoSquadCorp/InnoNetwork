@@ -26,9 +26,9 @@ The store keeps two files:
 - `checkpoint.json`: compact snapshot of live records.
 - `events.log`: newline-delimited append log of events since the checkpoint.
 
-On startup the store loads the checkpoint first, then replays events in order.
-If replay exceeds policy thresholds, the store writes a new checkpoint and
-truncates the event log.
+On startup the store loads the checkpoint first, then replays any remaining
+event-log suffix in order. If replay exceeds policy thresholds, the store
+writes a new checkpoint and truncates the event log.
 
 ## Recovery Rules
 
@@ -36,8 +36,9 @@ truncates the event log.
   not mutate in-memory persistence state for that event.
 - **Disk full while compacting**: keep the old checkpoint/log pair and retry
   compaction on a later write.
-- **Malformed event row**: skip the row, continue replay, and let the next
-  successful compaction remove it.
+- **Malformed event suffix**: keep the events replayed before the corrupt
+  suffix, quarantine the log, write a fresh checkpoint, and truncate the active
+  log.
 - **Malformed checkpoint**: start from an empty snapshot and replay the event
   log. If both are corrupt, restoration produces no persisted records but the
   manager remains usable.
@@ -45,8 +46,12 @@ truncates the event log.
   current-version event log when possible, and rewrite a current checkpoint on
   the next compaction.
 - **App update**: checkpoint schema additions must be optional with defaults
-  for at least one major line. `resumeData` follows this rule in 4.0.0:
-  older rows decode as `resumeData == nil`.
+  for at least one major line. `resumeData` and `orderedRecordIDs` follow this
+  rule in 4.0.0: older rows decode as `resumeData == nil`. Checkpoints that
+  include `orderedRecordIDs` restore same-URL task-id order from that field
+  first, then append unseen records in sorted-ID order. Legacy checkpoints
+  without `orderedRecordIDs` use only that sorted-ID append order as a
+  deterministic best-effort fallback until the next checkpoint rewrite.
 
 ## Checksum Policy
 

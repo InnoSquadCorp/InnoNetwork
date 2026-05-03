@@ -152,6 +152,14 @@ Header precedence is fixed as: library defaults, endpoint headers, automatic
 body `Content-Type`, request interceptors, then ``RefreshTokenPolicy``
 authorization. The last writer for a case-insensitive header name wins.
 
+When building headers manually, use ``HTTPHeaders/add(name:value:)`` only for
+fields where repeated values are intentional. Use ``HTTPHeaders/update(name:value:)``,
+subscript assignment, or `URLRequest.setValue(_:forHTTPHeaderField:)` for
+single-value request fields such as `Authorization`, `Content-Type`, `Cookie`,
+and `Host`. The `URLRequest.headers` and `URLSessionConfiguration.headers`
+bridges apply those single-value names with last-write-wins semantics while
+preserving repeatable header values.
+
 ## Streaming responses
 
 ``DefaultNetworkClient/stream(_:)`` runs session-level

@@ -524,6 +524,32 @@ private let singleValueRequestHeaderNames: Set<String> = [
     "cookie",
 ]
 
+private func requestHeaderDictionary(from headers: HTTPHeaders) -> [String: String] {
+    var canonicalKeys: [String: String] = [:]
+    var result: [String: String] = [:]
+
+    for header in headers {
+        let lowercased = header.name.lowercased()
+        if singleValueRequestHeaderNames.contains(lowercased) {
+            if let existingKey = canonicalKeys[lowercased], existingKey != header.name {
+                result.removeValue(forKey: existingKey)
+            }
+            canonicalKeys[lowercased] = header.name
+            result[header.name] = header.value
+            continue
+        }
+
+        if let existingKey = canonicalKeys[lowercased], let existingValue = result[existingKey] {
+            result[existingKey] = "\(existingValue), \(header.value)"
+        } else {
+            canonicalKeys[lowercased] = header.name
+            result[header.name] = header.value
+        }
+    }
+
+    return result
+}
+
 extension URLRequest {
     /// Returns `allHTTPHeaderFields` as `HTTPHeaders`.
     ///
@@ -577,6 +603,6 @@ extension URLSessionConfiguration {
     /// Returns `httpAdditionalHeaders` as `HTTPHeaders`.
     public var headers: HTTPHeaders {
         get { (httpAdditionalHeaders as? [String: String]).map(HTTPHeaders.init) ?? HTTPHeaders() }
-        set { httpAdditionalHeaders = newValue.dictionary }
+        set { httpAdditionalHeaders = requestHeaderDictionary(from: newValue) }
     }
 }
