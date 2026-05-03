@@ -752,6 +752,12 @@ public actor DownloadManager {
 private actor RestoreBarrier {
     private var isCompleted = false
     private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
+    /// Tracks the detached `Task`s spawned by the `withTaskCancellationHandler`
+    /// `onCancel:` branch. Without this set, a cancel storm would queue an
+    /// unbounded number of one-shot Tasks against the actor's executor; on
+    /// shutdown we cancel any that haven't yet drained so they don't outlive
+    /// the manager.
+    private var pendingCancellationTasks: [UUID: Task<Void, Never>] = [:]
 
     func wait() async throws {
         guard !isCompleted else { return }
@@ -765,13 +771,35 @@ private actor RestoreBarrier {
                 waiters[waiterID] = continuation
             }
         } onCancel: {
-            Task {
+            let task: Task<Void, Never> = Task { [weak self] in
+                guard let self else { return }
                 await self.cancelWaiter(waiterID)
+            }
+            // The `onCancel:` handler runs from the cancelling task's
+            // context, not from inside the actor — hop back through a
+            // detached registration so we still capture the Task handle in
+            // `pendingCancellationTasks`.
+            Task { [weak self] in
+                guard let self else { return }
+                await self.registerPendingCancellation(id: waiterID, task: task)
             }
         }
     }
 
+    private func registerPendingCancellation(id: UUID, task: Task<Void, Never>) {
+        // If the actor already finished the cancellation by the time this
+        // registration runs, the Task is harmless to record and self-prunes
+        // when `cancelWaiter` finishes — but we still skip when the barrier
+        // is fully completed to keep the dictionary bounded.
+        guard !isCompleted else {
+            task.cancel()
+            return
+        }
+        pendingCancellationTasks[id] = task
+    }
+
     private func cancelWaiter(_ waiterID: UUID) {
+        defer { pendingCancellationTasks.removeValue(forKey: waiterID) }
         guard let waiter = waiters.removeValue(forKey: waiterID) else { return }
         waiter.resume(throwing: CancellationError())
     }
@@ -783,6 +811,10 @@ private actor RestoreBarrier {
             waiter.resume(returning: ())
         }
         waiters.removeAll(keepingCapacity: false)
+        for task in pendingCancellationTasks.values {
+            task.cancel()
+        }
+        pendingCancellationTasks.removeAll(keepingCapacity: false)
     }
 }
 
