@@ -77,4 +77,56 @@ struct SendableUnderlyingErrorTests {
         #expect(captured.underlyingChain.isEmpty)
         #expect(captured.underlying == nil)
     }
+
+    @Test("Equality uses domain and code so localized messages do not affect identity")
+    func equalityUsesDomainAndCodeOnly() {
+        let english = SendableUnderlyingError(
+            domain: NSURLErrorDomain,
+            code: -1001,
+            message: "The request timed out.",
+            failureReason: "A server did not respond.",
+            recoverySuggestion: "Try again later.",
+            underlyingChain: [
+                .init(domain: NSPOSIXErrorDomain, code: 60, message: "Operation timed out"),
+            ]
+        )
+        let localized = SendableUnderlyingError(
+            domain: NSURLErrorDomain,
+            code: -1001,
+            message: "Zeituberschreitung bei der Anforderung.",
+            failureReason: "Der Server hat nicht geantwortet.",
+            recoverySuggestion: "Versuchen Sie es spater erneut.",
+            underlyingChain: [
+                .init(domain: NSPOSIXErrorDomain, code: 61, message: "Connection refused"),
+            ]
+        )
+
+        #expect(english == localized)
+    }
+
+    @Test("Equality still distinguishes domain and code changes")
+    func equalityDistinguishesDomainAndCode() {
+        let timeout = SendableUnderlyingError(domain: NSURLErrorDomain, code: -1001, message: "Timed out")
+        let unavailable = SendableUnderlyingError(domain: NSURLErrorDomain, code: -1009, message: "Offline")
+        let cacheTimeout = SendableUnderlyingError(domain: "InnoNetwork.Cache", code: -1001, message: "Timed out")
+
+        #expect(timeout != unavailable)
+        #expect(timeout != cacheTimeout)
+    }
+
+    @Test("Frame equality uses domain and code so wrapped messages stay diagnostic only")
+    func frameEqualityUsesDomainAndCodeOnly() {
+        let english = SendableUnderlyingError.Frame(
+            domain: NSPOSIXErrorDomain,
+            code: 60,
+            message: "Operation timed out"
+        )
+        let localized = SendableUnderlyingError.Frame(
+            domain: NSPOSIXErrorDomain,
+            code: 60,
+            message: "Zeituberschreitung"
+        )
+
+        #expect(english == localized)
+    }
 }

@@ -25,6 +25,10 @@ public struct SendableUnderlyingError: Error, Sendable, Equatable, CustomStringC
             self.recoverySuggestion = recoverySuggestion
         }
 
+        public static func == (lhs: Frame, rhs: Frame) -> Bool {
+            lhs.domain == rhs.domain && lhs.code == rhs.code
+        }
+
         public var description: String { "\(domain)(\(code)): \(message)" }
     }
 
@@ -69,6 +73,10 @@ public struct SendableUnderlyingError: Error, Sendable, Equatable, CustomStringC
         self.failureReason = nsError.localizedFailureReason
         self.recoverySuggestion = nsError.localizedRecoverySuggestion
         self.underlyingChain = Self.captureChain(from: nsError)
+    }
+
+    public static func == (lhs: SendableUnderlyingError, rhs: SendableUnderlyingError) -> Bool {
+        lhs.domain == rhs.domain && lhs.code == rhs.code
     }
 
     /// First frame of the underlying chain, when the source error wrapped
