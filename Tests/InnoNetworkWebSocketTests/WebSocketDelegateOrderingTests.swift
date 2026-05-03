@@ -33,7 +33,7 @@ struct WebSocketDelegateOrderingTests {
             reason: nil
         )
 
-        let observed = await recorder.waitForEvent(timeout: 2.0) { event in
+        let observed = try await recorder.waitForEvent(timeout: 2.0) { event in
             if case .disconnected = event { return true }
             return false
         }
@@ -88,7 +88,7 @@ struct WebSocketDelegateOrderingTests {
         // cycles after the first close may be dropped by the registry
         // (the stub task is removed on .normalClosure), so we just
         // confirm at least one (connected, disconnected) pair lands.
-        _ = await recorder.waitForEvent(timeout: 1.0) { event in
+        _ = try await recorder.waitForEvent(timeout: 1.0) { event in
             if case .disconnected = event { return true }
             return false
         }
