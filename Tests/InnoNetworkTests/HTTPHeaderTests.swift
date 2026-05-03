@@ -86,6 +86,47 @@ struct HTTPHeaderTests {
         #expect(headers.values(for: "Set-Cookie") == ["a=1", "b=2"])
     }
 
+    @Test("URLRequest.headers setter preserves multi-value list-rule headers")
+    func urlRequestHeadersPreservesMultiValue() async {
+        var headers = HTTPHeaders()
+        headers.add(name: "Accept", value: "text/html")
+        headers.add(name: "Accept", value: "application/json")
+        headers.add(name: "Link", value: "<https://a>; rel=next")
+        headers.add(name: "Link", value: "<https://b>; rel=last")
+
+        var request = URLRequest(url: URL(string: "https://example.com")!)
+        request.headers = headers
+
+        #expect(request.value(forHTTPHeaderField: "Accept") == "text/html,application/json")
+        #expect(request.value(forHTTPHeaderField: "Link") == "<https://a>; rel=next,<https://b>; rel=last")
+    }
+
+    @Test("URLRequest.headers setter collapses single-value Authorization to last value")
+    func urlRequestHeadersSingleValueCollapses() async {
+        var headers = HTTPHeaders()
+        headers.add(name: "Authorization", value: "Bearer stale")
+        headers.add(name: "authorization", value: "Bearer fresh")
+
+        var request = URLRequest(url: URL(string: "https://example.com")!)
+        request.headers = headers
+
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fresh")
+    }
+
+    @Test("URLRequest.headers setter clears prior headers before applying new set")
+    func urlRequestHeadersClearsExisting() async {
+        var request = URLRequest(url: URL(string: "https://example.com")!)
+        request.setValue("legacy", forHTTPHeaderField: "X-Legacy")
+        request.setValue("old", forHTTPHeaderField: "Authorization")
+
+        var fresh = HTTPHeaders()
+        fresh.add(name: "Authorization", value: "Bearer new")
+        request.headers = fresh
+
+        #expect(request.value(forHTTPHeaderField: "X-Legacy") == nil)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer new")
+    }
+
     @Test("URLSessionConfiguration.headers applies request single-value semantics")
     func configurationHeadersUseLastSingleValue() async {
         var headers = HTTPHeaders()
