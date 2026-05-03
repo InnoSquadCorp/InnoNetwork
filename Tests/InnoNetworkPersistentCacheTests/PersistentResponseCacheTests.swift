@@ -1,11 +1,13 @@
 import Foundation
 import InnoNetwork
 import Testing
+
+@testable import InnoNetworkPersistentCache
+
 #if canImport(Darwin)
 import Darwin
 #endif
 
-@testable import InnoNetworkPersistentCache
 
 @Suite("Persistent Response Cache Tests")
 struct PersistentResponseCacheTests {

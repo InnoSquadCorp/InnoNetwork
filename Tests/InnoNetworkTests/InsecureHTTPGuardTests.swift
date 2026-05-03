@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import InnoNetwork
 
 @Suite("Plain HTTP guard — invalidBaseURL unless allowsInsecureHTTP opts in")

@@ -10,7 +10,7 @@ struct SendableUnderlyingErrorTests {
     func capturesUnderlyingChain() {
         let kernel = NSError(
             domain: NSPOSIXErrorDomain,
-            code: 60, // ETIMEDOUT
+            code: 60,  // ETIMEDOUT
             userInfo: [NSLocalizedDescriptionKey: "Operation timed out"]
         )
         let cfNetwork = NSError(
@@ -87,7 +87,7 @@ struct SendableUnderlyingErrorTests {
             failureReason: "A server did not respond.",
             recoverySuggestion: "Try again later.",
             underlyingChain: [
-                .init(domain: NSPOSIXErrorDomain, code: 60, message: "Operation timed out"),
+                .init(domain: NSPOSIXErrorDomain, code: 60, message: "Operation timed out")
             ]
         )
         let localized = SendableUnderlyingError(
@@ -97,7 +97,7 @@ struct SendableUnderlyingErrorTests {
             failureReason: "Der Server hat nicht geantwortet.",
             recoverySuggestion: "Versuchen Sie es spater erneut.",
             underlyingChain: [
-                .init(domain: NSPOSIXErrorDomain, code: 61, message: "Connection refused"),
+                .init(domain: NSPOSIXErrorDomain, code: 61, message: "Connection refused")
             ]
         )
 

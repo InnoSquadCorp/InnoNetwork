@@ -54,7 +54,9 @@ struct EndpointBuilderTests {
             let id: Int
         }
 
-        let endpoint: ScopedEndpoint<User, PublicAuthScope> = ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/users/42").decoding(User.self)
+        let endpoint: ScopedEndpoint<User, PublicAuthScope> = ScopedEndpoint<EmptyResponse, PublicAuthScope>.get(
+            "/users/42"
+        ).decoding(User.self)
 
         #expect(endpoint.method == .get)
         #expect(endpoint.path == "/users/42")
@@ -112,7 +114,8 @@ struct EndpointBuilderTests {
     func decodingPreservesMultipartTransportDecoder() {
         let decoder = JSONDecoder()
 
-        let endpoint: ScopedEndpoint<EndpointAck, PublicAuthScope> = ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/upload")
+        let endpoint: ScopedEndpoint<EndpointAck, PublicAuthScope> = ScopedEndpoint<EmptyResponse, PublicAuthScope>
+            .post("/upload")
             .transport(.multipart(decoder: decoder))
             .decoding(EndpointAck.self)
 
@@ -130,7 +133,8 @@ struct EndpointBuilderTests {
 
     @Test
     func decodingPreservesCustomNoneTransportShape() async throws {
-        let endpoint: ScopedEndpoint<EndpointAck, PublicAuthScope> = ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/custom")
+        let endpoint: ScopedEndpoint<EndpointAck, PublicAuthScope> = ScopedEndpoint<EmptyResponse, PublicAuthScope>
+            .post("/custom")
             .transport(.custom(encoding: .none) { _, _ in EmptyResponse() })
             .decoding(EndpointAck.self)
 
@@ -161,7 +165,8 @@ struct EndpointBuilderTests {
 
     @Test
     func decodingPreservesCustomNoneTransportValidation() async throws {
-        let endpoint: ScopedEndpoint<EndpointAck, PublicAuthScope> = ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/custom")
+        let endpoint: ScopedEndpoint<EndpointAck, PublicAuthScope> = ScopedEndpoint<EmptyResponse, PublicAuthScope>
+            .post("/custom")
             .transport(
                 .custom(encoding: .none) { _, response in
                     guard response.response?.value(forHTTPHeaderField: "X-Promoted-Decode") == "allowed" else {
@@ -284,7 +289,8 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        _ = try await client.request(ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/users/1").decoding(EndpointAck.self))
+        _ = try await client.request(
+            ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/users/1").decoding(EndpointAck.self))
 
         #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == nil)
     }
@@ -298,7 +304,8 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        _ = try await client.request(ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/ping").decoding(EndpointAck.self))
+        _ = try await client.request(
+            ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/ping").decoding(EndpointAck.self))
 
         #expect(mockSession.capturedRequest?.httpBody == nil)
         #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == nil)
@@ -447,7 +454,8 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        _ = try await client.request(ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/files/a%2Fb").decoding(EndpointAck.self))
+        _ = try await client.request(
+            ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/files/a%2Fb").decoding(EndpointAck.self))
 
         #expect(mockSession.capturedRequest?.url?.absoluteString == "https://api.example.com/api/v1/files/a%2Fb")
     }
@@ -467,7 +475,8 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        _ = try await client.request(ScopedEndpoint<EmptyResponse, PublicAuthScope>.get(path).decoding(EndpointAck.self))
+        _ = try await client.request(
+            ScopedEndpoint<EmptyResponse, PublicAuthScope>.get(path).decoding(EndpointAck.self))
 
         #expect(mockSession.capturedRequest?.url?.absoluteString == expectedURL)
     }

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import InnoNetwork
 
 @Suite("HTTPListParser — RFC 9110 §5.6 quoted-string aware split")

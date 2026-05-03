@@ -96,7 +96,7 @@ struct URLProtocolIntegrationTests {
                 statusCode: 200,
                 data: payload,
                 headers: [
-                    "Content-Type": "application/octet-stream",
+                    "Content-Type": "application/octet-stream"
                 ]
             )
         )

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import InnoNetwork
 
 @Suite("RFC 3986 §2.3 unreserved-set encoding")

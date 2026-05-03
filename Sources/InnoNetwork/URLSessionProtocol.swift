@@ -64,8 +64,9 @@ public extension URLSessionProtocol {
 extension URLSession: URLSessionProtocol {
     public func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
         if context.metricsReporter == nil,
-           context.trustPolicy.isSystemDefault,
-           context.redirectPolicy is DefaultRedirectPolicy {
+            context.trustPolicy.isSystemDefault,
+            context.redirectPolicy is DefaultRedirectPolicy
+        {
             return try await data(for: request)
         }
 
@@ -84,8 +85,9 @@ extension URLSession: URLSessionProtocol {
         URLSession.AsyncBytes, URLResponse
     ) {
         if context.metricsReporter == nil,
-           context.trustPolicy.isSystemDefault,
-           context.redirectPolicy is DefaultRedirectPolicy {
+            context.trustPolicy.isSystemDefault,
+            context.redirectPolicy is DefaultRedirectPolicy
+        {
             return try await bytes(for: request, delegate: nil)
         }
 
@@ -104,8 +106,9 @@ extension URLSession: URLSessionProtocol {
         Data, URLResponse
     ) {
         if context.metricsReporter == nil,
-           context.trustPolicy.isSystemDefault,
-           context.redirectPolicy is DefaultRedirectPolicy {
+            context.trustPolicy.isSystemDefault,
+            context.redirectPolicy is DefaultRedirectPolicy
+        {
             return try await upload(for: request, fromFile: fileURL)
         }
 

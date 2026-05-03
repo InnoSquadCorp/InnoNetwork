@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import InnoNetwork
 
 @Suite("URL credential redaction — userinfo never leaks to logs or errors")

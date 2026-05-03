@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import InnoNetwork
 
 @Suite("Redirect policy — RFC 9110 §15.4.4 cross-origin sensitive header strip")

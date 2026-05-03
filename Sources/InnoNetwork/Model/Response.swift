@@ -60,8 +60,8 @@ public struct Response: CustomDebugStringConvertible, Equatable, Sendable {
 
     static func strippingURLCredentials(_ request: URLRequest) -> URLRequest {
         guard let url = request.url,
-              var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              components.user != nil || components.password != nil
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+            components.user != nil || components.password != nil
         else {
             return request
         }

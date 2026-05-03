@@ -1,6 +1,7 @@
 import Foundation
 
-public struct SendableUnderlyingError: Error, Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
+public struct SendableUnderlyingError: Error, Sendable, Equatable, CustomStringConvertible, CustomDebugStringConvertible
+{
     /// Single frame in an `NSUnderlyingErrorKey` chain. Flat so the
     /// surrounding struct can store an array without falling into
     /// recursive value-type storage.

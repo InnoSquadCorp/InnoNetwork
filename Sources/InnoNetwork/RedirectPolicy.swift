@@ -62,8 +62,8 @@ public struct DefaultRedirectPolicy: RedirectPolicy {
         originalRequest: URLRequest
     ) async -> URLRequest? {
         guard let targetURL = request.url,
-              let scheme = targetURL.scheme?.lowercased(),
-              scheme == "http" || scheme == "https"
+            let scheme = targetURL.scheme?.lowercased(),
+            scheme == "http" || scheme == "https"
         else {
             return nil
         }
@@ -86,14 +86,14 @@ public struct DefaultRedirectPolicy: RedirectPolicy {
     static func isSameOrigin(_ lhs: URL?, _ rhs: URL?) -> Bool {
         guard let lhs, let rhs else { return false }
         guard let lhsScheme = lhs.scheme?.lowercased(),
-              let rhsScheme = rhs.scheme?.lowercased(),
-              lhsScheme == rhsScheme
+            let rhsScheme = rhs.scheme?.lowercased(),
+            lhsScheme == rhsScheme
         else {
             return false
         }
         guard let lhsHost = lhs.host?.lowercased(),
-              let rhsHost = rhs.host?.lowercased(),
-              lhsHost == rhsHost
+            let rhsHost = rhs.host?.lowercased(),
+            lhsHost == rhsHost
         else {
             return false
         }

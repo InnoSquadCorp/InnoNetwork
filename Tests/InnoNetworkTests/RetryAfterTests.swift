@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import os
 
 @testable import InnoNetwork
 
@@ -329,7 +330,6 @@ struct RetryAfterParsingTests {
     }
 }
 
-import os
 
 /// Minimal `OSAllocatedUnfairLock` wrapper used by the C16 regression
 /// tests so the integer counter can be mutated from the `@Sendable`

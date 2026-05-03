@@ -278,13 +278,13 @@ public final class WebSocketManager: NSObject, Sendable {
 
     private func processDelegateEvent(_ event: DelegateEvent) async {
         switch event {
-        case let .connected(taskIdentifier, protocolName):
+        case .connected(let taskIdentifier, let protocolName):
             await processConnected(taskIdentifier: taskIdentifier, protocolName: protocolName)
-        case let .disconnected(taskIdentifier, closeCode, reason):
+        case .disconnected(let taskIdentifier, let closeCode, let reason):
             await processDisconnected(taskIdentifier: taskIdentifier, closeCode: closeCode, reason: reason)
-        case let .mappedError(taskIdentifier, error):
+        case .mappedError(let taskIdentifier, let error):
             await processMappedError(taskIdentifier: taskIdentifier, error: error)
-        case let .sessionError(taskIdentifier, error, statusCode):
+        case .sessionError(let taskIdentifier, let error, let statusCode):
             await processSessionError(taskIdentifier: taskIdentifier, error: error, statusCode: statusCode)
         }
     }

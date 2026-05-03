@@ -264,7 +264,9 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
     /// the past so the coordinator falls back to the computed backoff. The
     /// returned value is clamped to `maxSeconds` to prevent absurd waits
     /// from `Retry-After: 9223372036854775807`-style header values.
-    static func parseRetryAfter(_ value: String, now: Date = Date(), maxSeconds: TimeInterval = .infinity) -> TimeInterval? {
+    static func parseRetryAfter(_ value: String, now: Date = Date(), maxSeconds: TimeInterval = .infinity)
+        -> TimeInterval?
+    {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if let seconds = Int(trimmed), seconds >= 0 {
             return min(TimeInterval(seconds), maxSeconds)
