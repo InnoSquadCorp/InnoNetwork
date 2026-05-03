@@ -306,13 +306,20 @@ extension HTTPHeader {
 
     /// Returns a `Basic` `Authorization` header using the `username` and `password` provided.
     ///
+    /// Credentials are normalized to Unicode NFC and encoded as UTF-8 before
+    /// Base64 encoding. RFC 7617 defines the `charset=UTF-8` parameter only
+    /// on `WWW-Authenticate` challenges; `Authorization` credentials remain a
+    /// single token68 value, so this helper does not append auth parameters.
+    ///
     /// - Parameters:
     ///   - username: The username of the header.
     ///   - password: The password of the header.
     ///
     /// - Returns:    The header.
     public static func authorization(username: String, password: String) -> HTTPHeader {
-        let credential = Data("\(username):\(password)".utf8).base64EncodedString()
+        let userPass = "\(username):\(password)" as NSString
+        let normalizedUserPass = userPass.precomposedStringWithCanonicalMapping
+        let credential = Data(normalizedUserPass.utf8).base64EncodedString()
 
         return authorization("Basic \(credential)")
     }

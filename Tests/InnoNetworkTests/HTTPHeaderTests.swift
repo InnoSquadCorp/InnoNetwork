@@ -142,6 +142,23 @@ struct HTTPHeaderTests {
         #expect(configured.value(for: "Authorization") == "Bearer fresh")
         #expect(configured.value(for: "Accept") == "application/json, text/plain")
     }
+
+    @Test("Basic authorization encodes non-ASCII credentials as UTF-8 token68")
+    func basicAuthorizationEncodesNonASCIIAsUTF8Token68() {
+        let header = HTTPHeader.authorization(username: "test", password: "123\u{00A3}")
+
+        #expect(header.name == "Authorization")
+        #expect(header.value == "Basic dGVzdDoxMjPCow==")
+        #expect(header.value.contains("charset") == false)
+    }
+
+    @Test("Basic authorization normalizes Unicode credentials to NFC")
+    func basicAuthorizationNormalizesUnicodeCredentialsToNFC() {
+        let decomposedAccent = "e\u{0301}"
+        let header = HTTPHeader.authorization(username: "user", password: decomposedAccent)
+
+        #expect(header.value == "Basic dXNlcjrDqQ==")
+    }
 }
 
 
