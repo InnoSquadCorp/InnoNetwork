@@ -343,4 +343,82 @@ struct MultipartUploadStrategyTests {
         )
         #expect(executable.requiresRefreshTokenPolicy == true)
     }
+
+    @Test("append(_:Double:name:) rejects NaN and infinity")
+    func doubleAppendRejectsNonFiniteValues() {
+        var formData = MultipartFormData(boundary: "non-finite")
+        for value: Double in [.nan, .infinity, -.infinity, .signalingNaN] {
+            do {
+                try formData.append(value, name: "score")
+                Issue.record("Expected throw for non-finite Double \(value)")
+            } catch let error as NetworkError {
+                if case .invalidRequestConfiguration = error {
+                    continue
+                }
+                Issue.record("Expected .invalidRequestConfiguration, got \(error)")
+            } catch {
+                Issue.record("Expected NetworkError, got \(error)")
+            }
+        }
+
+        // Finite values still pass through.
+        try? formData.append(3.14159, name: "pi")
+        let body = try? formData.encode()
+        #expect(body.map { String(decoding: $0, as: UTF8.self).contains("3.14159") } == true)
+    }
+
+    @Test("appendFile surfaces missing-file errors with the underlying reason")
+    func appendFileSurfacesMissingFile() {
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent("inno-missing-\(UUID().uuidString)")
+        var formData = MultipartFormData(boundary: "appendfile-missing")
+        do {
+            try formData.appendFile(at: missing, name: "image")
+            Issue.record("Expected throw for missing file")
+        } catch let error as NetworkError {
+            if case .invalidRequestConfiguration(let message) = error {
+                #expect(message.contains(missing.path))
+            } else {
+                Issue.record("Expected .invalidRequestConfiguration, got \(error)")
+            }
+        } catch {
+            Issue.record("Expected NetworkError, got \(error)")
+        }
+    }
+
+    @Test("appendFile rejects directories with a clear file-type message")
+    func appendFileRejectsDirectories() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("inno-directory-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        var formData = MultipartFormData(boundary: "appendfile-dir")
+        do {
+            try formData.appendFile(at: directory, name: "image")
+            Issue.record("Expected throw for directory URL")
+        } catch let error as NetworkError {
+            if case .invalidRequestConfiguration(let message) = error {
+                #expect(message.contains("regular file"))
+            } else {
+                Issue.record("Expected .invalidRequestConfiguration, got \(error)")
+            }
+        } catch {
+            Issue.record("Expected NetworkError, got \(error)")
+        }
+    }
+
+    @Test("estimatedEncodedSize returns Int64.max when file metadata is unreachable")
+    func estimatedSizeReturnsMaxWhenMetadataUnreachable() throws {
+        // Stage a reachable file, then delete it to simulate a TOCTOU window
+        // between `appendFile` and the size estimator.
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("inno-toctou-\(UUID().uuidString).bin")
+        try Data("payload".utf8).write(to: url)
+
+        var formData = MultipartFormData(boundary: "size-toctou")
+        try formData.appendFile(at: url, name: "blob")
+
+        try FileManager.default.removeItem(at: url)
+        #expect(formData.estimatedEncodedSize == Int64.max)
+    }
 }

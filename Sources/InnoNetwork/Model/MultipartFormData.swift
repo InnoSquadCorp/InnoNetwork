@@ -34,16 +34,34 @@ public struct MultipartFormData: Sendable {
     }
 
     public mutating func append(_ string: String, name: String) {
-        if let data = string.data(using: .utf8) {
-            parts.append(Part(source: .data(data), name: name, fileName: nil, mimeType: nil))
-        }
+        // Swift `String` is always valid UTF-8, so `Data(string.utf8)`
+        // cannot fail. The previous `string.data(using: .utf8)` returned
+        // `Optional<Data>` and silently dropped the part on `nil`, which
+        // could only ever happen via a future encoding regression — not
+        // a recoverable user error.
+        let data = Data(string.utf8)
+        parts.append(Part(source: .data(data), name: name, fileName: nil, mimeType: nil))
     }
 
     public mutating func append(_ value: Int, name: String) {
         append(String(value), name: name)
     }
 
-    public mutating func append(_ value: Double, name: String) {
+    /// Appends a numeric form field.
+    ///
+    /// - Throws: ``NetworkError/invalidRequestConfiguration(_:)`` when
+    ///   `value` is `NaN` or infinite. Such values would otherwise
+    ///   serialize as `"nan"` or `"inf"` and silently misrepresent the
+    ///   caller's intent on the wire — a strict server typically rejects
+    ///   the entire request, while a lenient one accepts a meaningless
+    ///   value. Callers must clamp or substitute a sentinel before
+    ///   appending.
+    public mutating func append(_ value: Double, name: String) throws {
+        guard value.isFinite else {
+            throw NetworkError.invalidRequestConfiguration(
+                "MultipartFormData.append cannot serialize a non-finite Double for field \"\(name)\"."
+            )
+        }
         append(String(value), name: name)
     }
 
@@ -73,12 +91,23 @@ public struct MultipartFormData: Sendable {
                 "MultipartFormData.appendFile expects a file URL; got \(url.scheme ?? "non-file")."
             )
         }
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
-            isDirectory.boolValue == false
-        else {
+        // `attributesOfItem` surfaces the underlying POSIX/permission error
+        // verbatim instead of `fileExists`'s lossy boolean. Callers can
+        // therefore distinguish "not found" from "EACCES" / "EISDIR" /
+        // "ENOTDIR" — the failure reason is preserved on the underlying
+        // `NSError`.
+        let attributes: [FileAttributeKey: Any]
+        do {
+            attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        } catch {
             throw NetworkError.invalidRequestConfiguration(
-                "MultipartFormData.appendFile could not locate a regular file at \(url.path)."
+                "MultipartFormData.appendFile could not read attributes at \(url.path): \(error.localizedDescription)"
+            )
+        }
+        let fileType = attributes[.type] as? FileAttributeType
+        guard fileType == .typeRegular || fileType == .typeSymbolicLink else {
+            throw NetworkError.invalidRequestConfiguration(
+                "MultipartFormData.appendFile expects a regular file at \(url.path); got \(fileType?.rawValue ?? "unknown")."
             )
         }
         let fileName = url.lastPathComponent
@@ -209,11 +238,14 @@ public struct MultipartFormData: Sendable {
     /// to keep the body in memory or stream it to disk.
     ///
     /// For data parts the size is exact. For file parts the size is read from
-    /// `FileManager` attributes. If metadata lookup fails, the estimator uses a
-    /// conservative sentinel so the executor prefers the streaming upload path
-    /// instead of underestimating an unreadable or unexpectedly large file.
-    /// The per-part headers and boundary frame are accounted for so the result
-    /// is a tight upper bound when all file metadata is available.
+    /// `FileManager` attributes. If metadata lookup fails, the estimator
+    /// returns `Int64.max` so the executor unconditionally prefers the
+    /// streaming upload path. (The previous `Int64.max / 4` sentinel was
+    /// large enough to defeat the in-memory threshold but small enough that
+    /// summing several unreadable parts could still overflow back into the
+    /// in-memory branch.) The per-part headers and boundary frame are
+    /// accounted for so the result is a tight upper bound when all file
+    /// metadata is available.
     public var estimatedEncodedSize: Int64 {
         let boundaryLine = "--\(boundary)\r\n".utf8.count
         let trailingBoundary = "--\(boundary)--\r\n".utf8.count
@@ -233,7 +265,11 @@ public struct MultipartFormData: Sendable {
                 partSize = Int64(data.count)
             case .file(let url):
                 let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-                partSize = (attributes?[.size] as? NSNumber)?.int64Value ?? Int64.max / 4
+                if let size = (attributes?[.size] as? NSNumber)?.int64Value {
+                    partSize = size
+                } else {
+                    return Int64.max
+                }
             }
             let contentLength: Int64? = includesPartContentLength ? partSize : nil
             add(Int64(part.headerData(contentLength: contentLength).count))
