@@ -170,6 +170,17 @@ public actor WebSocketTask: Identifiable {
         return true
     }
 
+    /// Atomically checks the lifecycle state and reserves a send slot.
+    ///
+    /// Returns `nil` when the task is not connected, `false` when the send
+    /// queue is full, and `true` when a slot was reserved.
+    package func tryReserveConnectedSendSlot(limit: Int) -> Bool? {
+        guard lifecycleState.publicState == .connected else { return nil }
+        guard _inFlightSends < limit else { return false }
+        _inFlightSends += 1
+        return true
+    }
+
     /// Releases a send slot previously reserved by ``tryReserveSendSlot(limit:)``.
     package func releaseSendSlot() {
         if _inFlightSends > 0 {
@@ -182,6 +193,14 @@ public actor WebSocketTask: Identifiable {
     /// ready (and on `reset()`) so consumers can tell heartbeat attempts
     /// within a single connection apart.
     func incrementPingCounter() -> Int {
+        _pingCounter += 1
+        return _pingCounter
+    }
+
+    /// Returns the next ping attempt number only while the socket is connected.
+    /// No counter side effect is applied for closing, terminal, or pre-open states.
+    package func nextConnectedPingAttempt() -> Int? {
+        guard lifecycleState.publicState == .connected else { return nil }
         _pingCounter += 1
         return _pingCounter
     }
