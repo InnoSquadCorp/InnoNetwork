@@ -59,12 +59,12 @@ metrics, and cache semantics stay consistent.
 associatedtype Auth: EndpointAuthScope = PublicAuthScope
 ```
 
-Fluent public endpoints continue to use `Endpoint<Response>`, which is a
-compatibility alias for `ScopedEndpoint<Response, PublicAuthScope>`.
-Authenticated calls can use `AuthenticatedEndpoint<Response>` or a custom
-`APIDefinition` with `typealias Auth = AuthRequiredScope`. Auth-required
-requests fail before transport with `NetworkError.invalidRequestConfiguration`
-when the client configuration has no `RefreshTokenPolicy`.
+Fluent public endpoints use `ScopedEndpoint<Response, PublicAuthScope>`.
+Authenticated fluent calls use `ScopedEndpoint<Response, AuthRequiredScope>`,
+or a custom `APIDefinition` with `typealias Auth = AuthRequiredScope`.
+Auth-required requests fail before transport with
+`NetworkError.invalidRequestConfiguration` when the client configuration has no
+`RefreshTokenPolicy`.
 
 ## Optional Codegen
 

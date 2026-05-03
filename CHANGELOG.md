@@ -164,8 +164,8 @@ guidance.
   `AnyRequestExecutionPolicy` for custom transport-attempt policies.
 - `ResponseBodyBufferingPolicy`; inline requests now prefer
   `URLSession.bytes(for:)` with bounded collection before decoder handoff.
-- `EndpointAuthScope`, `PublicAuthScope`, `AuthRequiredScope`,
-  `ScopedEndpoint`, and `AuthenticatedEndpoint` for type-level auth
+- `EndpointAuthScope`, `PublicAuthScope`, `AuthRequiredScope`, and
+  `ScopedEndpoint` for type-level auth
   boundaries. Auth-required endpoints fail before transport when no
   `RefreshTokenPolicy` is configured.
 - `StateReducer` and `StateReduction` as the shared reducer vocabulary for
@@ -341,13 +341,12 @@ guidance.
   (`.json`, `.query`, `.formURLEncoded`, `.multipart`, `.custom`) that
   automatically pick empty-tolerant decoders for
   `HTTPEmptyResponseDecodable` outputs.
-- `Endpoint` replaces `.contentType(_:)` with `.transport(_:)`. The
+- `ScopedEndpoint` replaces `.contentType(_:)` with `.transport(_:)`. The
   `Content-Type` header is derived from the transport's request encoding,
   and `decoding(_:)` carries the request encoding into the new response
   generic instead of resetting it.
-- `Endpoint<Response>` is now a compatibility alias for
-  `ScopedEndpoint<Response, PublicAuthScope>`. Use
-  `AuthenticatedEndpoint<Response>` or
+- Fluent endpoint aliases are removed. Use
+  `ScopedEndpoint<Response, PublicAuthScope>` for public fluent endpoints and
   `ScopedEndpoint<Response, AuthRequiredScope>` for auth-required fluent
   endpoints.
 - `WebSocketManager.shared` has been removed. Construct

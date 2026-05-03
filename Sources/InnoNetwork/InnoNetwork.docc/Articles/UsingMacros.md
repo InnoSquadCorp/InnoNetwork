@@ -40,11 +40,11 @@ type. Do not declare a nested type named `InnoNetwork` in scopes where
 `@APIDefinition` is applied — it shadows the module reference and breaks the
 generated path expression.
 
-The ``endpoint(_:_:as:)`` expression macro expands to the fluent ``Endpoint``
-API:
+The ``endpoint(_:_:as:)`` expression macro expands to the fluent
+``ScopedEndpoint`` API:
 
 ```swift
-Endpoint<EmptyResponse>(method: .get, path: "/users/1")
+ScopedEndpoint<EmptyResponse, PublicAuthScope>(method: .get, path: "/users/1")
     .decoding(User.self)
 ```
 

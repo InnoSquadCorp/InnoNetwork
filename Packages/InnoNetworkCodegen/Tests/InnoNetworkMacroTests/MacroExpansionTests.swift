@@ -204,7 +204,7 @@ struct MacroExpansionTests {
         )
     }
 
-    @Test("endpoint macro creates Endpoint builder expression")
+    @Test("endpoint macro creates ScopedEndpoint builder expression")
     func endpointExpansion() {
         assertMacroExpansion(
             """
@@ -212,7 +212,7 @@ struct MacroExpansionTests {
             """,
             expandedSource:
                 """
-                let endpoint = Endpoint<EmptyResponse>(method: .get, path: "/users/\\(id)").decoding(User.self)
+                let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>(method: .get, path: "/users/\\(id)").decoding(User.self)
                 """,
             macros: macros
         )

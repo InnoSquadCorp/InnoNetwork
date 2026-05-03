@@ -45,7 +45,8 @@ Are you generating clients from an OpenAPI / IDL spec at build time?
    └─ no
       │
       Do you just need method + path + headers + query/body + decoding?
-      ├─ yes ─► Endpoint builder  (e.g. Endpoint.get("/users").decoding(User.self))
+      ├─ yes ─► ScopedEndpoint builder
+      │          (e.g. ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/users").decoding(User.self))
       └─ no
          │
          Are you building an SDK or library wrapper that needs raw
@@ -84,7 +85,7 @@ dependencies: [
 
 > Use `from: "4.0.0"` (`.upToNextMajor`) only if you exclusively call
 > the **Stable** ledger in `API_STABILITY.md`. Provisionally stable
-> APIs (`Endpoint`, `AuthenticatedEndpoint`, `WebSocketCloseDisposition`, `DecodingInterceptor`,
+> APIs (`ScopedEndpoint`, `WebSocketCloseDisposition`, `DecodingInterceptor`,
 > resilience policy surfaces, …) may change in any minor release.
 >
 > InnoNetwork also intentionally requires Swift 6.2+ and current Apple OS
@@ -123,31 +124,37 @@ print(user)
 ```
 
 For simple endpoints that only need method, path, query/body parameters,
-headers, transport, and response decoding, use the builder-style `Endpoint`
-API. Keep a dedicated `APIDefinition` type when an endpoint owns interceptors,
+headers, transport, and response decoding, use the builder-style
+`ScopedEndpoint` API. Keep a dedicated `APIDefinition` type when an endpoint owns interceptors,
 custom transport, multipart uploads, or streaming.
 
 ```swift
 let user = try await client.request(
-    Endpoint.get("/users/1").decoding(User.self)
+    ScopedEndpoint<EmptyResponse, PublicAuthScope>
+        .get("/users/1")
+        .decoding(User.self)
 )
 
 let users = try await client.request(
-    Endpoint.get("/users")
+    ScopedEndpoint<EmptyResponse, PublicAuthScope>
+        .get("/users")
         .query(["limit": 20])
         .decoding([User].self)
 )
 
 // form-url-encoded body
 let token = try await client.request(
-    Endpoint.post("/login")
+    ScopedEndpoint<EmptyResponse, PublicAuthScope>
+        .post("/login")
         .body(credentials)
         .transport(.formURLEncoded())
         .decoding(Token.self)
 )
 
 let me = try await client.request(
-    AuthenticatedEndpoint.get("/me").decoding(User.self)
+    ScopedEndpoint<EmptyResponse, AuthRequiredScope>
+        .get("/me")
+        .decoding(User.self)
 )
 ```
 
@@ -243,7 +250,7 @@ for await event in await manager.events(for: task) {
 - JSON, form-url-encoded, and multipart request support
 - retry coordination, auth refresh, request coalescing, response cache, and circuit breaker policies
 - streaming-by-default inline response buffering and public `RequestExecutionPolicy` hooks
-- phantom auth scopes through `Endpoint`, `AuthenticatedEndpoint`, and `AuthRequiredScope`
+- phantom auth scopes through `ScopedEndpoint`, `PublicAuthScope`, and `AuthRequiredScope`
 - trust policy support and request lifecycle observability
 
 ### `InnoNetworkDownload`

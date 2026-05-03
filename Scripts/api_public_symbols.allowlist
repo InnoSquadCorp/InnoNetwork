@@ -702,8 +702,6 @@ InnoNetwork	swift.type.property	ResponseCacheHeaderPolicy.sensitiveHeaderNames
 InnoNetwork	swift.type.property	RetryIdempotencyPolicy.methodAgnostic
 InnoNetwork	swift.type.property	RetryIdempotencyPolicy.safeMethodsAndIdempotencyKey
 InnoNetwork	swift.type.property	SendableUnderlyingError.maxUnderlyingDepth
-InnoNetwork	swift.typealias	AuthenticatedEndpoint
-InnoNetwork	swift.typealias	Endpoint
 InnoNetwork	swift.typealias	ScopedEndpoint.APIResponse
 InnoNetwork	swift.typealias	ScopedEndpoint.Auth
 InnoNetwork	swift.typealias	ScopedEndpoint.Parameter

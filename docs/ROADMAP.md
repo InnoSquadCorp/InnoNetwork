@@ -26,7 +26,7 @@ into one release line:
 - New `InnoNetworkPersistentCache` companion product.
 - Compile-time macro diagnostics for optional path placeholders.
 - Phantom auth scopes through `EndpointAuthScope`, `PublicAuthScope`,
-  `AuthRequiredScope`, and `AuthenticatedEndpoint`.
+  `AuthRequiredScope`, and `ScopedEndpoint`.
 
 ## Explicitly Deferred
 

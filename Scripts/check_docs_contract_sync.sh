@@ -160,7 +160,7 @@ expected_provisionally=(
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
-'`Endpoint`, `AuthenticatedEndpoint`, `ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
+'`ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
 '`WebSocketCloseDisposition` observation surface'
 '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
@@ -173,7 +173,6 @@ expected_shipping_public_declarations=(
   AnyEncodable
   AnyRequestExecutionPolicy
   AnyResponseDecoder
-  AuthenticatedEndpoint
   AuthRequiredScope
   CachedResponse
   CancellationTag
@@ -196,7 +195,6 @@ expected_shipping_public_declarations=(
   DownloadTask
   EmptyParameter
   EmptyResponse
-  Endpoint
   EndpointAuthScope
   EndpointPathEncoding
   EndpointShape
@@ -455,10 +453,6 @@ validate_public_surface_ledger() {
 validate_oss_readiness_public_api() {
   require_contains 'public struct ScopedEndpoint<Response: Decodable & Sendable, AuthScope: EndpointAuthScope>: APIDefinition' \
     "$repo_root/Sources/InnoNetwork/Endpoint.swift"
-  require_contains 'public typealias Endpoint<Response: Decodable & Sendable> = ScopedEndpoint<Response, PublicAuthScope>' \
-    "$repo_root/Sources/InnoNetwork/Endpoint.swift"
-  require_contains 'public typealias AuthenticatedEndpoint<Response: Decodable & Sendable> = ScopedEndpoint<Response, AuthRequiredScope>' \
-    "$repo_root/Sources/InnoNetwork/Endpoint.swift"
   require_contains 'public enum EndpointPathEncoding' \
     "$repo_root/Sources/InnoNetwork/EndpointPathEncoding.swift"
   require_contains 'public struct AnyEncodable: Encodable, Sendable' \
@@ -707,7 +701,7 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_test_support_product
       continue
       ;;
-    '`Endpoint`, `AuthenticatedEndpoint`, `ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
+    '`ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
       validate_oss_readiness_public_api
       continue
       ;;

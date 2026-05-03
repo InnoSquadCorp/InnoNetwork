@@ -23,7 +23,7 @@ import InnoNetwork
 public macro APIDefinition(method: HTTPMethod, path: String) =
     #externalMacro(module: "InnoNetworkMacros", type: "APIDefinitionMacro")
 
-/// Creates a fluent ``Endpoint`` expression from method, path, and response type.
+/// Creates a fluent ``ScopedEndpoint`` expression from method, path, and response type.
 ///
 /// The third argument must be labeled `as:` and passed a response metatype,
 /// for example `#endpoint(.get, "/users", as: User.self)`.
@@ -32,12 +32,12 @@ public macro APIDefinition(method: HTTPMethod, path: String) =
 ///   - method: HTTP method used to create the endpoint.
 ///   - path: Endpoint path string.
 ///   - responseType: Response metatype passed with the `as:` label.
-/// - Returns: An ``Endpoint`` configured with `method` and `path`, then
-///   converted to decode `responseType`.
+/// - Returns: A public-scope ``ScopedEndpoint`` configured with `method` and
+///   `path`, then converted to decode `responseType`.
 @freestanding(expression)
-public macro endpoint<Response>(
+public macro endpoint<Response: Decodable & Sendable>(
     _ method: HTTPMethod,
     _ path: String,
     as responseType: Response.Type
-) -> Endpoint<Response> =
+) -> ScopedEndpoint<Response, PublicAuthScope> =
     #externalMacro(module: "InnoNetworkMacros", type: "EndpointMacro")
