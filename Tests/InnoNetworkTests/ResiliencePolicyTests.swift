@@ -80,6 +80,34 @@ private struct RecordingResponseInterceptor: ResponseInterceptor {
 }
 
 
+private actor CountingResponseCache: ResponseCache {
+    private let cached: CachedResponse?
+    private(set) var getCount = 0
+    private(set) var setCount = 0
+    private(set) var invalidateCount = 0
+
+    init(cached: CachedResponse? = nil) {
+        self.cached = cached
+    }
+
+    func get(_ key: ResponseCacheKey) async -> CachedResponse? {
+        _ = key
+        getCount += 1
+        return cached
+    }
+
+    func set(_ key: ResponseCacheKey, _ value: CachedResponse) async {
+        _ = (key, value)
+        setCount += 1
+    }
+
+    func invalidate(_ key: ResponseCacheKey) async {
+        _ = key
+        invalidateCount += 1
+    }
+}
+
+
 private struct ResiliencePostRequest: APIDefinition {
     struct Body: Encodable, Sendable {
         let name: String
@@ -1318,6 +1346,38 @@ struct ResiliencePolicyTests {
             ResponseCacheKey(method: "GET", url: "https://api.example.com/users/1")
         )
         #expect(stored == nil)
+    }
+
+    @Test("Network-only cache policy does not touch configured cache")
+    func responseCacheNetworkOnlySkipsCacheReadsWritesAndInvalidation() async throws {
+        let cachedBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
+        let cache = CountingResponseCache(
+            cached: CachedResponse(data: cachedBody, headers: ["ETag": "v1"])
+        )
+        let body = ResilienceUser(id: 2, name: "fresh")
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(
+                statusCode: 200,
+                body: body,
+                headers: ["Cache-Control": "no-store"]
+            )
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                responseCachePolicy: .networkOnly,
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let user = try await client.request(ResilienceGetRequest())
+
+        #expect(user == body)
+        #expect(await cache.getCount == 0)
+        #expect(await cache.setCount == 0)
+        #expect(await cache.invalidateCount == 0)
+        #expect(await session.requestCount == 1)
     }
 
     @Test("Circuit breaker opens after countable failure")

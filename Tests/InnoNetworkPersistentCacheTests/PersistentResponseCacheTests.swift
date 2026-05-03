@@ -216,6 +216,140 @@ struct PersistentResponseCacheTests {
         #expect(await cache.get(second) != nil)
     }
 
+    @Test("Reopen drops entries that exceed a stricter maxEntryBytes")
+    func reopenDropsEntriesExceedingStricterMaxEntryBytes() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/oversized")
+        let writer = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxEntryBytes: 64
+            )
+        )
+        await writer.set(key, CachedResponse(data: Data(repeating: 1, count: 32)))
+
+        let reopened = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxEntryBytes: 16
+            )
+        )
+
+        #expect(await reopened.get(key) == nil)
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(try indexEntryCount(in: directory) == 0)
+    }
+
+    @Test("Reopen enforces stricter entry count budget")
+    func reopenEnforcesStricterEntryCountBudget() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let writer = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxEntries: 10,
+                maxEntryBytes: 64
+            )
+        )
+        let first = ResponseCacheKey(method: "GET", url: "https://example.com/count-1")
+        let second = ResponseCacheKey(method: "GET", url: "https://example.com/count-2")
+        let third = ResponseCacheKey(method: "GET", url: "https://example.com/count-3")
+
+        await writer.set(first, CachedResponse(data: Data(repeating: 1, count: 8)))
+        await writer.set(second, CachedResponse(data: Data(repeating: 2, count: 8)))
+        await writer.set(third, CachedResponse(data: Data(repeating: 3, count: 8)))
+        try rewriteIndexEntryAccessTime(
+            in: directory,
+            url: first.url,
+            lastAccessedAt: "2026-05-03T00:00:00Z"
+        )
+        try rewriteIndexEntryAccessTime(
+            in: directory,
+            url: second.url,
+            lastAccessedAt: "2026-05-03T00:00:01Z"
+        )
+        try rewriteIndexEntryAccessTime(
+            in: directory,
+            url: third.url,
+            lastAccessedAt: "2026-05-03T00:00:02Z"
+        )
+
+        let reopened = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxEntries: 1,
+                maxEntryBytes: 64
+            )
+        )
+
+        #expect(await reopened.get(first) == nil)
+        #expect(await reopened.get(second) == nil)
+        #expect(await reopened.get(third) != nil)
+        #expect(try indexEntryCount(in: directory) == 1)
+    }
+
+    @Test("Reopen enforces stricter byte budget")
+    func reopenEnforcesStricterByteBudget() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let writer = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxBytes: 128,
+                maxEntryBytes: 64
+            )
+        )
+        let first = ResponseCacheKey(method: "GET", url: "https://example.com/bytes-1")
+        let second = ResponseCacheKey(method: "GET", url: "https://example.com/bytes-2")
+
+        await writer.set(first, CachedResponse(data: Data(repeating: 1, count: 24)))
+        await writer.set(second, CachedResponse(data: Data(repeating: 2, count: 24)))
+        try rewriteIndexEntryAccessTime(
+            in: directory,
+            url: first.url,
+            lastAccessedAt: "2026-05-03T00:00:00Z"
+        )
+        try rewriteIndexEntryAccessTime(
+            in: directory,
+            url: second.url,
+            lastAccessedAt: "2026-05-03T00:00:01Z"
+        )
+
+        let reopened = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxBytes: 32,
+                maxEntryBytes: 64
+            )
+        )
+
+        #expect(await reopened.get(first) == nil)
+        #expect(await reopened.get(second) != nil)
+        #expect(try indexEntryCount(in: directory) == 1)
+    }
+
+    @Test("get() drops a body that grew past maxEntryBytes after init")
+    func getDropsBodyThatExceedsMaxEntryBytesAfterInit() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/grown-body")
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxEntryBytes: 64
+            )
+        )
+        await cache.set(key, CachedResponse(data: Data(repeating: 1, count: 8)))
+        let bodyURL = try #require(existingBodyURLs(in: directory).first)
+
+        try Data(repeating: 9, count: 128).write(to: bodyURL, options: .atomic)
+
+        #expect(await cache.get(key) == nil)
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(try indexEntryCount(in: directory) == 0)
+    }
+
     @Test("Unknown index version is evicted and startup continues")
     func unknownVersionEvictsAndContinues() async throws {
         let directory = makeDirectory()
@@ -447,6 +581,39 @@ struct PersistentResponseCacheTests {
         }
 
         entry["headers"] = headers
+        entries[entryID] = entry
+        index["entries"] = entries
+
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        let data = try JSONSerialization.data(withJSONObject: index, options: [.sortedKeys])
+        try data.write(to: indexURL, options: .atomic)
+    }
+
+    private func rewriteIndexEntryAccessTime(
+        in directory: URL,
+        url: String,
+        lastAccessedAt: String
+    ) throws {
+        var index = try indexObject(in: directory)
+        guard var entries = index["entries"] as? [String: Any] else {
+            throw testFixtureError("Missing persistent cache index entries")
+        }
+        guard
+            let entryID = entries.first(where: { _, value in
+                guard let entry = value as? [String: Any],
+                    let key = entry["key"] as? [String: Any],
+                    let entryURL = key["url"] as? String
+                else {
+                    return false
+                }
+                return entryURL == url
+            })?.key,
+            var entry = entries[entryID] as? [String: Any]
+        else {
+            throw testFixtureError("Missing persistent cache entry for \(url)")
+        }
+
+        entry["lastAccessedAt"] = lastAccessedAt
         entries[entryID] = entry
         index["entries"] = entries
 

@@ -387,6 +387,17 @@ package extension ResponseCachePolicy {
         }
     }
 
+    /// Whether the policy may read an existing cached response.
+    /// `networkOnly` must leave cache metadata untouched, so it skips reads.
+    var allowsCacheRead: Bool {
+        switch self {
+        case .cacheFirst, .staleWhileRevalidate:
+            return true
+        case .disabled, .networkOnly:
+            return false
+        }
+    }
+
     /// Whether the policy may persist responses into the cache.
     /// `networkOnly` skips both reads and writes so it does not pollute the
     /// cache even though it is otherwise "enabled".

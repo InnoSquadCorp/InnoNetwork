@@ -184,8 +184,15 @@ public actor PersistentResponseCache: ResponseCache {
             bodiesDirectoryURL: bodiesDirectoryURL,
             fileManager: fileManager
         )
-        self.index = try Self.scrubPolicyRejectedEntriesOnOpen(
+        let policyScrubbedIndex = try Self.scrubPolicyRejectedEntriesOnOpen(
             loadedIndex,
+            configuration: configuration,
+            indexURL: indexURL,
+            bodiesDirectoryURL: bodiesDirectoryURL,
+            fileManager: fileManager
+        )
+        self.index = try Self.enforceBudgetsOnOpen(
+            policyScrubbedIndex,
             configuration: configuration,
             indexURL: indexURL,
             bodiesDirectoryURL: bodiesDirectoryURL,
@@ -212,6 +219,11 @@ public actor PersistentResponseCache: ResponseCache {
         do {
             data = try Data(contentsOf: bodyURL)
         } catch {
+            removeEntry(id: id, entry: entry)
+            try? persistIndex()
+            return nil
+        }
+        guard data.count <= configuration.maxEntryBytes else {
             removeEntry(id: id, entry: entry)
             try? persistIndex()
             return nil
@@ -403,6 +415,63 @@ public actor PersistentResponseCache: ResponseCache {
         return scrubbedIndex
     }
 
+    private static func enforceBudgetsOnOpen(
+        _ loadedIndex: Index,
+        configuration: PersistentResponseCacheConfiguration,
+        indexURL: URL,
+        bodiesDirectoryURL: URL,
+        fileManager: FileManager
+    ) throws -> Index {
+        var budgetedIndex = loadedIndex
+        var didMutate = false
+
+        for (id, entry) in loadedIndex.entries {
+            let bodyURL = bodiesDirectoryURL.appendingPathComponent(entry.bodyFileName, isDirectory: false)
+            guard let bodySize = fileSize(at: bodyURL, fileManager: fileManager) else {
+                budgetedIndex.entries.removeValue(forKey: id)
+                didMutate = true
+                continue
+            }
+            if bodySize > configuration.maxEntryBytes {
+                budgetedIndex.entries.removeValue(forKey: id)
+                removeBody(fileName: entry.bodyFileName, in: bodiesDirectoryURL, fileManager: fileManager)
+                didMutate = true
+            }
+        }
+
+        let sortedIDs = budgetedIndex.entries.keys.sorted { lhs, rhs in
+            let lhsDate = budgetedIndex.entries[lhs]?.lastAccessedAt ?? .distantPast
+            let rhsDate = budgetedIndex.entries[rhs]?.lastAccessedAt ?? .distantPast
+            return lhsDate < rhsDate
+        }
+        var cursor = sortedIDs.startIndex
+        while cursor < sortedIDs.endIndex,
+            budgetedIndex.entries.count > configuration.maxEntries
+                || totalBytes(in: budgetedIndex) > configuration.maxBytes
+        {
+            let victimID = sortedIDs[cursor]
+            cursor = sortedIDs.index(after: cursor)
+            guard let victim = budgetedIndex.entries.removeValue(forKey: victimID) else { continue }
+            removeBody(fileName: victim.bodyFileName, in: bodiesDirectoryURL, fileManager: fileManager)
+            didMutate = true
+        }
+
+        if didMutate {
+            try persistIndex(
+                budgetedIndex,
+                to: indexURL,
+                directoryURL: configuration.directoryURL,
+                configuration: configuration,
+                fileManager: fileManager
+            )
+        }
+        return budgetedIndex
+    }
+
+    private static func totalBytes(in index: Index) -> Int {
+        index.entries.values.reduce(0) { $0 + $1.byteCost }
+    }
+
     private static func persistIndex(
         _ index: Index,
         to indexURL: URL,
@@ -422,6 +491,13 @@ public actor PersistentResponseCache: ResponseCache {
     private static func removeBody(fileName: String, in bodiesDirectoryURL: URL, fileManager: FileManager) {
         let bodyURL = bodiesDirectoryURL.appendingPathComponent(fileName, isDirectory: false)
         try? fileManager.removeItem(at: bodyURL)
+    }
+
+    private static func fileSize(at url: URL, fileManager: FileManager) -> Int? {
+        guard let size = try? fileManager.attributesOfItem(atPath: url.path)[.size] as? NSNumber else {
+            return nil
+        }
+        return size.intValue
     }
 
     private static func shouldStore(
