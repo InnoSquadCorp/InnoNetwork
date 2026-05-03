@@ -5,14 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and the project follows Semantic
 Versioning.
 
-## [4.0.1] - 2026-05-02
+## [4.0.0] - 2026-05-02
 
-100-issue hardening pass distilled from a third-pass production review.
-Behavior, durability, and concurrency contracts are tightened across the
-core, download, websocket, and persistent-cache modules. Detailed migration
-notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
+InnoNetwork's first public release. The package targets Apple platforms only
+and is built around Swift Concurrency, explicit transport policies, and
+operational visibility from prototype to production. See
+[`docs/releases/4.0.0.md`](docs/releases/4.0.0.md) for the one-page release
+summary and [`docs/Migration-4.0.0.md`](docs/Migration-4.0.0.md) for migration
+guidance.
 
-### Breaking
+### Hardening Pass — Breaking
 
 - `URLQueryEncoder`: `nonConformingFloatEncodingStrategy` defaults to
   `.throw`. NaN/Infinity now raise `EncodingError.unsupportedValue(reason:)`
@@ -58,7 +60,7 @@ notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
   and per-task event partitions finish. `deinit` retains
   `finishTasksAndInvalidate()` as a fallback.
 
-### Added
+### Hardening Pass — Added
 
 - `NetworkConfiguration.urlSessionConfigurationOverride` and
   `NetworkConfiguration.makeURLSessionConfiguration()` provide an escape
@@ -82,7 +84,7 @@ notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
   from `maxReconnectAttemptsExceeded` so observers can differentiate
   "network down" from "exhausted retry budget".
 
-### Fixed
+### Hardening Pass — Fixed
 
 - `URLQueryEncoder`: `SnakeCaseKeyTransformCache` is bounded to 4096
   entries to prevent unbounded growth on dynamic key sets.
@@ -149,14 +151,6 @@ notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
 - `DownloadTaskPersistence`: `mutate(...)` acquires the directory lock via
   `Task.sleep`-based polling so a contended lock no longer pins a
   cooperative-executor thread under `usleep`.
-
-## [4.0.0] - 2026-05-01
-
-InnoNetwork's first public release. The package targets Apple platforms only
-and is built around Swift Concurrency, explicit transport policies, and
-operational visibility from prototype to production. See
-[`docs/releases/4.0.0.md`](docs/releases/4.0.0.md) for the one-page release
-summary.
 
 ### Added
 

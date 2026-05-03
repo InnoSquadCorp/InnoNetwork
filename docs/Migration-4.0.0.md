@@ -1,9 +1,10 @@
-# Migration Guide: 4.0.0 → 4.0.1
+# Migration Guide: 4.0.0
 
-The 4.0.1 hardening pass tightens behavior, durability, and concurrency
-contracts across the core, download, websocket, and persistent-cache modules.
-Most call sites compile unchanged; the breaking changes below cover the spots
-that need source updates or behavior review.
+This guide covers the 4.0.0 hardening contract. The hardening pass tightens
+behavior, durability, and concurrency contracts across the core, download,
+websocket, and persistent-cache modules. Most call sites compile unchanged;
+the breaking changes below cover the spots that need source updates or
+behavior review.
 
 ---
 
