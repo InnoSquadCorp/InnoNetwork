@@ -40,6 +40,42 @@ struct ServerSentEventDecoderTests {
         #expect(event == ServerSentEvent(id: "42", event: "ping", data: "payload", retry: 5000))
     }
 
+    @Test("UTF-8 BOM on first line is stripped")
+    func firstLineBOMIsStripped() {
+        let decoder = ServerSentEventDecoder()
+
+        _ = decoder.decode(line: "\u{FEFF}data: hello")
+        let event = decoder.decode(line: "")
+
+        #expect(event == ServerSentEvent(data: "hello"))
+    }
+
+    @Test("retry field accepts only ASCII digits")
+    func retryAcceptsOnlyASCIIDigits() {
+        let decoder = ServerSentEventDecoder()
+
+        _ = decoder.decode(line: "retry: -100")
+        _ = decoder.decode(line: "retry: +100")
+        _ = decoder.decode(line: "retry: 10.5")
+        _ = decoder.decode(line: "retry: ５")
+        _ = decoder.decode(line: "retry: 0050")
+        _ = decoder.decode(line: "data: payload")
+        let event = decoder.decode(line: "")
+
+        #expect(event == ServerSentEvent(data: "payload", retry: 50))
+    }
+
+    @Test("id field containing NUL is ignored")
+    func idContainingNULIsIgnored() {
+        let decoder = ServerSentEventDecoder()
+
+        _ = decoder.decode(line: "id: bad\u{0000}id")
+        _ = decoder.decode(line: "data: payload")
+        let event = decoder.decode(line: "")
+
+        #expect(event == ServerSentEvent(data: "payload"))
+    }
+
     @Test("Comment lines are ignored")
     func commentLinesIgnored() {
         let decoder = ServerSentEventDecoder()

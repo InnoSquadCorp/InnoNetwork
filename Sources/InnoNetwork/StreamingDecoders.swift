@@ -58,6 +58,7 @@ public struct ServerSentEvent: Sendable, Equatable {
 public final class ServerSentEventDecoder: Sendable {
     private struct State {
         var current = ServerSentEvent()
+        var hasProcessedFirstLine = false
     }
 
     private let state = OSAllocatedUnfairLock<State>(initialState: State())
@@ -71,8 +72,16 @@ public final class ServerSentEventDecoder: Sendable {
     /// - Parameter line: One UTF-8 line from the SSE response stream.
     /// - Returns: A dispatched event, or `nil` while still aggregating
     ///   the current frame.
-    public func decode(line: String) -> ServerSentEvent? {
+    public func decode(line inputLine: String) -> ServerSentEvent? {
         state.withLock { state in
+            let line: String
+            if state.hasProcessedFirstLine {
+                line = inputLine
+            } else {
+                state.hasProcessedFirstLine = true
+                line = inputLine.hasPrefix("\u{FEFF}") ? String(inputLine.dropFirst()) : inputLine
+            }
+
             // Blank line dispatches the current event.
             if line.isEmpty {
                 let frame = state.current
@@ -111,7 +120,9 @@ public final class ServerSentEventDecoder: Sendable {
 
             switch field {
             case "id":
-                state.current.id = value
+                if !value.contains("\u{0000}") {
+                    state.current.id = value
+                }
             case "event":
                 state.current.event = value
             case "data":
@@ -120,7 +131,7 @@ public final class ServerSentEventDecoder: Sendable {
                 }
                 state.current.data.append(value)
             case "retry":
-                if let ms = Int(value) {
+                if value.allSatisfy(\.isASCIIDigit), let ms = Int(value) {
                     state.current.retry = ms
                 }
             default:
@@ -129,5 +140,12 @@ public final class ServerSentEventDecoder: Sendable {
             }
             return nil
         }
+    }
+}
+
+private extension Character {
+    var isASCIIDigit: Bool {
+        guard unicodeScalars.count == 1, let scalar = unicodeScalars.first else { return false }
+        return scalar.value >= 0x30 && scalar.value <= 0x39
     }
 }
