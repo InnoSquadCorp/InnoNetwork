@@ -159,6 +159,21 @@ struct HTTPHeaderTests {
 
         #expect(header.value == "Basic dXNlcjrDqQ==")
     }
+
+    @Test("qualityEncoded omits q=1 and strips insignificant zeros")
+    func qualityEncodedFormatsQValues() {
+        let encoded = ["br", "gzip", "deflate"].qualityEncoded()
+
+        #expect(encoded == "br, gzip;q=0.9, deflate;q=0.8")
+    }
+
+    @Test("qualityEncoded clamps long lists at zero")
+    func qualityEncodedClampsLongListsAtZero() {
+        let encoded = (0..<12).map { "encoding-\($0)" }.qualityEncoded()
+
+        #expect(encoded.contains("q=-") == false)
+        #expect(encoded.hasSuffix("encoding-10;q=0, encoding-11;q=0"))
+    }
 }
 
 

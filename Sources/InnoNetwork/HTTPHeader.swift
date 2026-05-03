@@ -500,10 +500,22 @@ extension HTTPHeader {
 extension Collection<String> {
     func qualityEncoded() -> String {
         enumerated().map { index, encoding in
-            let quality = 1.0 - (Double(index) * 0.1)
-            return "\(encoding);q=\(quality)"
+            let quality = Swift.min(1.0, Swift.max(0.0, 1.0 - (Double(index) * 0.1)))
+            guard quality < 1 else { return encoding }
+            return "\(encoding);q=\(formattedQualityValue(quality))"
         }.joined(separator: ", ")
     }
+}
+
+private func formattedQualityValue(_ quality: Double) -> String {
+    var formatted = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), quality)
+    while formatted.last == "0" {
+        formatted.removeLast()
+    }
+    if formatted.last == "." {
+        formatted.removeLast()
+    }
+    return formatted
 }
 
 // MARK: - System Type Extensions
