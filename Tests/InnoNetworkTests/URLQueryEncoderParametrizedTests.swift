@@ -209,6 +209,30 @@ struct URLQueryEncoderParametrizedTests {
         #expect(second == first)
     }
 
+    @Test("ISO8601 date encoding matches the legacy ISO8601DateFormatter wire format")
+    func iso8601DateEncodingMatchesLegacyFormatter() throws {
+        // The Sendable `Date.ISO8601FormatStyle.iso8601` migration must
+        // produce byte-equal output to the previous
+        // `ISO8601DateFormatter()` (default `.withInternetDateTime` options)
+        // for representative epoch / mid-2000s / pre-epoch dates so
+        // server-visible query strings do not regress for callers that
+        // rely on the exact wire format.
+        struct Wrap: Encodable { let date: Date }
+        let encoder = URLQueryEncoder(dateEncodingStrategy: .iso8601)
+        let legacy = ISO8601DateFormatter()
+
+        let dates: [Date] = [
+            Date(timeIntervalSince1970: 0),
+            Date(timeIntervalSince1970: 1_700_000_000),
+            Date(timeIntervalSince1970: -86_400),
+        ]
+
+        for date in dates {
+            let encoded = try encoder.encode(Wrap(date: date))
+            #expect(encoded == [URLQueryItem(name: "date", value: legacy.string(from: date))])
+        }
+    }
+
     @Test("Empty object emits no items for that key")
     func emptyObjectEmitsNothing() throws {
         struct User: Encodable {}

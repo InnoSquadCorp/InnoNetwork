@@ -259,7 +259,12 @@ private struct _URLQueryEncodingOptions: Sendable {
     let dateEncodingStrategy: JSONEncoder.DateEncodingStrategy
     let arrayEncodingStrategy: URLQueryArrayEncodingStrategy
     let nonConformingFloatEncodingStrategy: URLQueryFloatEncodingStrategy
-    nonisolated(unsafe) private static let iso8601DateFormatter = ISO8601DateFormatter()
+    /// Sendable, Foundation-cached ISO 8601 formatter equivalent to
+    /// `ISO8601DateFormatter()` with the default `.withInternetDateTime`
+    /// options (e.g. `2026-05-04T01:23:45Z`). `Date.ISO8601FormatStyle` is
+    /// `Sendable` so it doesn't need the `nonisolated(unsafe)` escape hatch
+    /// that `ISO8601DateFormatter` did under Swift 6 strict concurrency.
+    static let iso8601FormatStyle = Date.ISO8601FormatStyle.iso8601
 
     /// Stringifies a `Double` for the wire. Returns `nil` if the value is
     /// non-conforming and the strategy is `.throw`; the caller is expected
@@ -314,7 +319,7 @@ private struct _URLQueryEncodingOptions: Sendable {
         case .millisecondsSince1970:
             return .scalar(String(date.timeIntervalSince1970 * 1000.0))
         case .iso8601:
-            return .scalar(Self.iso8601DateFormatter.string(from: date))
+            return .scalar(Self.iso8601FormatStyle.format(date))
         case .formatted(let formatter):
             return .scalar(formatter.string(from: date))
         case .custom(let encode):
