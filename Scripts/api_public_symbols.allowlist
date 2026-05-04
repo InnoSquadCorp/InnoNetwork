@@ -511,6 +511,7 @@ InnoNetwork	swift.property	RetryIdempotencyPolicy.idempotencyHeaderName
 InnoNetwork	swift.property	RetryIdempotencyPolicy.retriesAllMethods
 InnoNetwork	swift.property	RetryIdempotencyPolicy.retriesUnsafeMethodsWithIdempotencyKey
 InnoNetwork	swift.property	RetryIdempotencyPolicy.safeMethods
+InnoNetwork	swift.property	RetryPolicy.idempotencyPolicy
 InnoNetwork	swift.property	RetryPolicy.maxRetries
 InnoNetwork	swift.property	RetryPolicy.maxRetryAfterDelay
 InnoNetwork	swift.property	RetryPolicy.maxTotalRetries

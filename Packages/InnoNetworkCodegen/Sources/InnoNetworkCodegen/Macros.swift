@@ -26,7 +26,10 @@ public macro APIDefinition(method: HTTPMethod, path: String) =
 /// Creates a fluent ``ScopedEndpoint`` expression from method, path, and response type.
 ///
 /// The third argument must be labeled `as:` and passed a response metatype,
-/// for example `#endpoint(.get, "/users", as: User.self)`.
+/// for example `#endpoint(.get, "/users", as: User.self)`. The expansion
+/// returns a ``ScopedEndpoint`` parameterised by ``PublicAuthScope`` —
+/// callers that need the authenticated executor must use the four-argument
+/// overload below and pass `scope: AuthRequiredScope.self`.
 ///
 /// - Parameters:
 ///   - method: HTTP method used to create the endpoint.
@@ -40,4 +43,30 @@ public macro endpoint<Response: Decodable & Sendable>(
     _ path: String,
     as responseType: Response.Type
 ) -> ScopedEndpoint<Response, PublicAuthScope> =
+    #externalMacro(module: "InnoNetworkMacros", type: "EndpointMacro")
+
+/// Creates a fluent ``ScopedEndpoint`` expression with an explicit
+/// ``EndpointAuthScope``, e.g.
+/// `#endpoint(.get, "/me", as: User.self, scope: AuthRequiredScope.self)`.
+///
+/// Use this overload when the endpoint requires the authenticated executor
+/// — passing `AuthRequiredScope.self` makes the requirement visible at the
+/// type level so the executor's auth preflight cannot be bypassed via the
+/// macro path.
+///
+/// - Parameters:
+///   - method: HTTP method used to create the endpoint.
+///   - path: Endpoint path string.
+///   - responseType: Response metatype passed with the `as:` label.
+///   - scope: Concrete ``EndpointAuthScope`` metatype (e.g.
+///     ``AuthRequiredScope/self`` or ``PublicAuthScope/self``).
+/// - Returns: A ``ScopedEndpoint`` parameterised by `scope` and decoding
+///   `responseType`.
+@freestanding(expression)
+public macro endpoint<Response: Decodable & Sendable, Scope: EndpointAuthScope>(
+    _ method: HTTPMethod,
+    _ path: String,
+    as responseType: Response.Type,
+    scope: Scope.Type
+) -> ScopedEndpoint<Response, Scope> =
     #externalMacro(module: "InnoNetworkMacros", type: "EndpointMacro")

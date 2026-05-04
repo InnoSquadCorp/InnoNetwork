@@ -86,6 +86,13 @@ public final class ServerSentEventDecoder: Sendable {
             if line.isEmpty {
                 let frame = state.current
                 state.current = ServerSentEvent()
+                // `StreamingExecutor` reuses the same decoder instance
+                // across resume/reconnect attempts on the same request, so
+                // the BOM-stripping bit must reset on every event boundary
+                // — otherwise the first line of a fresh HTTP response
+                // stream after reconnect would see `hasProcessedFirstLine`
+                // still set and miss the leading BOM.
+                state.hasProcessedFirstLine = false
                 if frame.id == nil, frame.event == nil, frame.data.isEmpty, frame.retry == nil {
                     return nil
                 }

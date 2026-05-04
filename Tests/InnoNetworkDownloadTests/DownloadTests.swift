@@ -355,6 +355,11 @@ struct DownloadManagerTests {
         for task in tasks {
             #expect(await task.state == .cancelled)
         }
+        // Guard the bulk persistence path: regression tests must catch a
+        // future revert to per-id `remove(id:)` looping. Exactly one bulk
+        // call covers every cancelled task.
+        #expect(await harness.store.bulkRemoveCallCount == 1)
+        #expect(await harness.store.singleRemoveCallCount == 0)
     }
 
     @Test("Duplicate session identifiers surface a recoverable initialization error")

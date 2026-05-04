@@ -87,7 +87,7 @@ public struct SendableUnderlyingError: Error, Sendable, Equatable, CustomStringC
     private static func captureChain(from error: NSError) -> [Frame] {
         var frames: [Frame] = []
         var cursor: NSError? = error.userInfo[NSUnderlyingErrorKey] as? NSError
-        while let current = cursor, frames.count < maxUnderlyingDepth - 1 {
+        while let current = cursor, frames.count < maxUnderlyingDepth {
             frames.append(
                 Frame(
                     domain: current.domain,

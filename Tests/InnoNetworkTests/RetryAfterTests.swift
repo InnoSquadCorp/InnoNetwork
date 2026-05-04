@@ -196,12 +196,12 @@ struct RetryAfterParsingTests {
         let response = try #require(
             HTTPURLResponse(
                 url: url,
-                statusCode: 503,
+                statusCode: 302,
                 httpVersion: nil,
                 headerFields: ["Retry-After": "7"]
             ))
         let networkResponse = Response(
-            statusCode: 503,
+            statusCode: 302,
             data: Data(),
             request: URLRequest(url: url),
             response: response

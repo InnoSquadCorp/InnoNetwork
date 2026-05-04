@@ -48,6 +48,13 @@ public protocol RetryPolicy: Sendable {
     ) -> RetryDecision
     var waitsForNetworkChanges: Bool { get }
     var networkChangeTimeout: TimeInterval? { get }
+    /// Idempotency policy consulted by the retry coordinator's safety net
+    /// for non-idempotent timeouts. The default impl returns
+    /// ``RetryIdempotencyPolicy/safeMethodsAndIdempotencyKey`` so custom
+    /// policies inherit the conservative behaviour automatically; override
+    /// to expose ``RetryIdempotencyPolicy/methodAgnostic`` when the caller
+    /// owns duplicate-write protection above InnoNetwork.
+    var idempotencyPolicy: RetryIdempotencyPolicy { get }
     func shouldResetAttempts(afterNetworkChangeFrom oldSnapshot: NetworkSnapshot?, to newSnapshot: NetworkSnapshot?)
         -> Bool
 }
@@ -96,6 +103,7 @@ public extension RetryPolicy {
     var maxRetryAfterDelay: TimeInterval? { nil }
     var waitsForNetworkChanges: Bool { false }
     var networkChangeTimeout: TimeInterval? { nil }
+    var idempotencyPolicy: RetryIdempotencyPolicy { .safeMethodsAndIdempotencyKey }
     func shouldResetAttempts(afterNetworkChangeFrom oldSnapshot: NetworkSnapshot?, to newSnapshot: NetworkSnapshot?)
         -> Bool
     {
@@ -233,6 +241,28 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         response: HTTPURLResponse?
     ) -> RetryDecision {
         guard idempotencyPolicy.allowsRetry(for: request) else { return .noRetry }
+        // Cap parsed Retry-After values so a malicious or buggy server
+        // cannot pin a retry attempt to a year-scale delay; the policy's
+        // own `maxRetryAfterDelay` (or `maxDelay` when unset) is the
+        // ceiling.
+        let cap = maxRetryAfterDelay ?? maxDelay
+
+        // 3xx responses are not retryable on their own, but RFC 9110 §10.2.3
+        // lists Retry-After as applicable to 3xx — handle that branch
+        // explicitly so callers that surface a non-followed 3xx (e.g. a
+        // redirect policy that rejected the target) can honor the server
+        // hint. This must run before `isRetryableErrorClass`, which excludes
+        // 3xx from the general retryable set.
+        if retryIndex < maxRetries,
+            let response,
+            (300...399).contains(response.statusCode),
+            Self.honorsRetryAfter(statusCode: response.statusCode),
+            let header = response.value(forHTTPHeaderField: "Retry-After"),
+            let seconds = Self.parseRetryAfter(header, maxSeconds: cap)
+        {
+            return .retryAfter(seconds)
+        }
+
         guard isRetryableErrorClass(error, retryIndex: retryIndex) else { return .noRetry }
         guard let response,
             Self.honorsRetryAfter(statusCode: response.statusCode),
@@ -240,11 +270,6 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         else {
             return .retry
         }
-        // Cap parsed Retry-After values so a malicious or buggy server
-        // cannot pin a retry attempt to a year-scale delay; the policy's
-        // own `maxRetryAfterDelay` (or `maxDelay` when unset) is the
-        // ceiling.
-        let cap = maxRetryAfterDelay ?? maxDelay
         if let seconds = Self.parseRetryAfter(header, maxSeconds: cap) {
             return .retryAfter(seconds)
         }

@@ -218,6 +218,76 @@ struct MacroExpansionTests {
         )
     }
 
+    @Test("endpoint macro propagates AuthRequiredScope when scope: is provided")
+    func endpointAuthRequiredScopeExpansion() {
+        assertMacroExpansion(
+            """
+            let endpoint = #endpoint(.get, "/me", as: User.self, scope: AuthRequiredScope.self)
+            """,
+            expandedSource:
+                """
+                let endpoint = ScopedEndpoint<EmptyResponse, AuthRequiredScope>(method: .get, path: "/me").decoding(User.self)
+                """,
+            macros: macros
+        )
+    }
+
+    @Test("endpoint macro accepts an explicit PublicAuthScope via scope:")
+    func endpointExplicitPublicAuthScopeExpansion() {
+        assertMacroExpansion(
+            """
+            let endpoint = #endpoint(.get, "/health", as: Health.self, scope: PublicAuthScope.self)
+            """,
+            expandedSource:
+                """
+                let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>(method: .get, path: "/health").decoding(Health.self)
+                """,
+            macros: macros
+        )
+    }
+
+    @Test("endpoint macro requires the scope label on the four-argument form")
+    func endpointMacroRejectsUnlabeledFourthArgument() {
+        assertMacroExpansion(
+            """
+            let endpoint = #endpoint(.get, "/me", as: User.self, AuthRequiredScope.self)
+            """,
+            expandedSource:
+                """
+                let endpoint = #endpoint(.get, "/me", as: User.self, AuthRequiredScope.self)
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message: "#endpoint fourth argument must be labeled scope:.",
+                    line: 1,
+                    column: 16
+                )
+            ],
+            macros: macros
+        )
+    }
+
+    @Test("endpoint macro rejects a non-metatype scope argument")
+    func endpointMacroRejectsNonMetatypeScope() {
+        assertMacroExpansion(
+            """
+            let endpoint = #endpoint(.get, "/me", as: User.self, scope: AuthRequiredScope())
+            """,
+            expandedSource:
+                """
+                let endpoint = #endpoint(.get, "/me", as: User.self, scope: AuthRequiredScope())
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message: "#endpoint scope: argument must be a metatype expression (e.g. AuthRequiredScope.self).",
+                    line: 1,
+                    column: 16
+                )
+            ],
+            macros: macros
+        )
+    }
+
     @Test("endpoint macro requires the as label")
     func endpointMissingAsDiagnostic() {
         assertMacroExpansion(

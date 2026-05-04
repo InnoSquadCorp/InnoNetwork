@@ -135,10 +135,13 @@ public enum EndpointPathEncoding {
     }
 
     private static func optionalSegment(_ value: String?) -> String {
-        assertionFailure(
-            "EndpointPathEncoding.percentEncodedSegment received an Optional value. Unwrap the value before passing it to a path placeholder."
-        )
-        return percentEncodedSegment(value ?? "nil")
+        guard let unwrapped = value else {
+            assertionFailure(
+                "EndpointPathEncoding.percentEncodedSegment received a nil Optional. Unwrap the value before passing it to a path placeholder."
+            )
+            return percentEncodedSegment("nil")
+        }
+        return percentEncodedSegment(unwrapped)
     }
 
     private static let hexDigits: [Character] = Array("0123456789ABCDEF")

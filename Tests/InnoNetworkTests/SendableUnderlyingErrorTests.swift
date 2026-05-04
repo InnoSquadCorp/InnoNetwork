@@ -51,8 +51,10 @@ struct SendableUnderlyingErrorTests {
             )
         }
         let captured = SendableUnderlyingError(current)
-        // Top-level + maxUnderlyingDepth-1 frames in the chain.
-        #expect(captured.underlyingChain.count == SendableUnderlyingError.maxUnderlyingDepth - 1)
+        // The chain captures up to ``maxUnderlyingDepth`` frames in
+        // addition to the top-level error itself, so a deeper underlying
+        // chain is truncated exactly at the documented depth.
+        #expect(captured.underlyingChain.count == SendableUnderlyingError.maxUnderlyingDepth)
     }
 
     @Test("description renders the chain with arrows so logs preserve the cause path")

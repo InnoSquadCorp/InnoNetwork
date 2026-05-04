@@ -420,27 +420,31 @@ public actor DownloadManager {
         // before touching persistence. Each task's state snapshot/transition
         // is an independent actor exchange, so a TaskGroup lets the runtime
         // dispatcher hand them out in any order; the per-task work itself
-        // still serializes inside `DownloadTask` and `runtimeRegistry`. This
-        // step also collects the IDs we ultimately need to remove.
-        var cancelledIDs: Set<String> = []
-        cancelledIDs.reserveCapacity(tasks.count)
+        // still serializes inside `DownloadTask` and `runtimeRegistry`.
+        //
+        // Only tasks we actually transitioned to `.cancelled` are collected.
+        // Already-terminal tasks (`.completed` / `.failed` / `.cancelled`)
+        // are left to their owning transition paths so observers do not
+        // receive a spurious `.cancelled` callback while `task.state`
+        // remains in its prior terminal value.
+        var transitionedIDs: Set<String> = []
+        transitionedIDs.reserveCapacity(tasks.count)
 
         await withTaskGroup(of: String?.self) { group in
             for task in tasks {
                 group.addTask {
-                    if !(await task.state).isTerminal {
-                        await task.updateState(.cancelled)
-                        await task.setError(.cancelled)
-                    }
+                    guard !(await task.state).isTerminal else { return nil }
+                    await task.updateState(.cancelled)
+                    await task.setError(.cancelled)
                     return task.id
                 }
             }
             for await id in group {
-                if let id { cancelledIDs.insert(id) }
+                if let id { transitionedIDs.insert(id) }
             }
         }
 
-        for task in tasks where cancelledIDs.contains(task.id) {
+        for task in tasks where transitionedIDs.contains(task.id) {
             await runtimeRegistry.onStateChanged?(task, .cancelled)
             await eventHub.publish(.stateChanged(.cancelled), for: task.id)
             if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
@@ -453,15 +457,15 @@ public actor DownloadManager {
         // pre-fix loop paid O(N) lock acquisitions and could spend seconds
         // on a 100-task cancel storm.
         do {
-            try await persistence.remove(ids: cancelledIDs)
+            try await persistence.remove(ids: transitionedIDs)
         } catch {
             Self.logger.fault(
-                "cancelAll persistence bulk-remove failed for \(cancelledIDs.count, privacy: .public) ids: \(String(describing: error), privacy: .private(mask: .hash))"
+                "cancelAll persistence bulk-remove failed for \(transitionedIDs.count, privacy: .public) ids: \(String(describing: error), privacy: .private(mask: .hash))"
             )
             return
         }
 
-        for task in tasks where cancelledIDs.contains(task.id) {
+        for task in tasks where transitionedIDs.contains(task.id) {
             await runtimeRegistry.removeTaskRuntime(taskId: task.id)
             await eventHub.finish(taskID: task.id)
             await runtimeRegistry.remove(task)
