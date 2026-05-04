@@ -26,6 +26,13 @@ package actor TaskEventHub<Event: Sendable> {
         let event: Event
         let enqueuedAt: Date
         let completion: DeliveryCompletion?
+        let completionMode: CompletionMode
+    }
+
+    private enum CompletionMode: Sendable {
+        case none
+        case listenerEnqueue
+        case listenerDelivery
     }
 
     private struct StreamConsumerState {
@@ -181,7 +188,18 @@ package actor TaskEventHub<Event: Sendable> {
     }
 
     package func publish(_ event: Event, for taskID: String) {
-        enqueue(event, for: taskID, completion: nil)
+        enqueue(event, for: taskID, completion: nil, completionMode: .none)
+    }
+
+    package func publishAndWaitForEnqueue(_ event: Event, for taskID: String) async {
+        await withCheckedContinuation { continuation in
+            enqueue(
+                event,
+                for: taskID,
+                completion: DeliveryCompletion(continuation),
+                completionMode: .listenerEnqueue
+            )
+        }
     }
 
     package func publishAndWaitForDelivery(_ event: Event, for taskID: String) async {
@@ -189,12 +207,18 @@ package actor TaskEventHub<Event: Sendable> {
             enqueue(
                 event,
                 for: taskID,
-                completion: DeliveryCompletion(continuation)
+                completion: DeliveryCompletion(continuation),
+                completionMode: .listenerDelivery
             )
         }
     }
 
-    private func enqueue(_ event: Event, for taskID: String, completion: DeliveryCompletion?) {
+    private func enqueue(
+        _ event: Event,
+        for taskID: String,
+        completion: DeliveryCompletion?,
+        completionMode: CompletionMode
+    ) {
         var partition = partitions[taskID] ?? PartitionState()
         guard !partition.isClosed else {
             completion?.resume()
@@ -212,7 +236,14 @@ package actor TaskEventHub<Event: Sendable> {
                 return
             }
         }
-        partition.queue.append(PendingEvent(event: event, enqueuedAt: .now, completion: completion))
+        partition.queue.append(
+            PendingEvent(
+                event: event,
+                enqueuedAt: .now,
+                completion: completion,
+                completionMode: completionMode
+            )
+        )
         partitions[taskID] = partition
         reportPartitionMetric(for: taskID, partition: partition)
         startDrainIfNeeded(taskID: taskID)
@@ -285,11 +316,19 @@ package actor TaskEventHub<Event: Sendable> {
                 updateStreamMetricsReconciliationTaskState()
             }
             let listeners = Array(partition.listeners.values)
-            if pendingEvent.completion == nil {
+            switch pendingEvent.completionMode {
+            case .none:
                 for listener in listeners {
                     await listener.enqueue(pendingEvent.event, enqueuedAt: pendingEvent.enqueuedAt)
                 }
-            } else {
+            case .listenerEnqueue:
+                await deliverAndWaitForHandlerStart(
+                    event: pendingEvent.event,
+                    enqueuedAt: pendingEvent.enqueuedAt,
+                    to: listeners
+                )
+                pendingEvent.completion?.resume()
+            case .listenerDelivery:
                 await deliverAndWait(
                     event: pendingEvent.event,
                     enqueuedAt: pendingEvent.enqueuedAt,
@@ -309,6 +348,24 @@ package actor TaskEventHub<Event: Sendable> {
         }
 
         await cleanupPartitionIfPossible(taskID: taskID)
+    }
+
+    private func deliverAndWaitForHandlerStart(
+        event: Event,
+        enqueuedAt: Date,
+        to listeners: [EventDeliveryChain<Event>]
+    ) async {
+        guard !listeners.isEmpty else { return }
+
+        await withTaskGroup(of: Void.self) { group in
+            for listener in listeners {
+                group.addTask {
+                    await listener.enqueueAndWaitForHandlerStart(event, enqueuedAt: enqueuedAt)
+                }
+            }
+
+            await group.waitForAll()
+        }
     }
 
     private func deliverAndWait(

@@ -213,6 +213,24 @@ struct EventHubTests {
         #expect(await gate.hasReturned())
     }
 
+    @Test("TaskEventHub publishAndWaitForEnqueue does not wait for listener completion")
+    func taskEventHubPublishAndWaitForEnqueueDoesNotWaitForListenerCompletion() async {
+        let hub = TaskEventHub<Int>()
+        let gate = DeliveryGate()
+
+        _ = await hub.addListener(taskID: "enqueue") { _ in
+            await gate.markStarted()
+            await gate.waitForRelease()
+        }
+
+        await hub.publishAndWaitForEnqueue(1, for: "enqueue")
+
+        await gate.waitUntilStarted()
+        #expect(await gate.hasReturned() == false)
+
+        await gate.release()
+    }
+
     @Test("TaskEventHub publishAndWaitForDelivery completes when finish races delivery")
     func taskEventHubPublishAndWaitForDeliveryCompletesWhenFinishRacesDelivery() async {
         let hub = TaskEventHub<Int>()

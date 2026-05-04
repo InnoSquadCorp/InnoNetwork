@@ -223,14 +223,13 @@ public final class WebSocketManager: NSObject, Sendable {
 
         let (stream, continuation) = AsyncStream.makeStream(
             of: DelegateEvent.self,
-            // 256 buffered events: a single socket sees ~3 lifecycle
-            // callbacks per reconnect cycle, so the cap absorbs deep
-            // back-pressure during reconnect storms while still bounding
-            // memory if the consumer wedges. `bufferingNewest` discards
-            // older events under pressure, which mirrors how the prior
-            // per-task spawning would have dropped lifecycle work that
-            // arrived before the actor caught up.
-            bufferingPolicy: .bufferingNewest(256)
+            // Delegate events are reducer inputs, not best-effort UI
+            // notifications. Dropping `didOpen`, `didClose`, or error
+            // callbacks can leave task state, terminal cleanup, and
+            // reconnect accounting inconsistent, so keep this bridge
+            // lossless. User-facing event fan-out remains governed by
+            // `TaskEventHub` delivery policy.
+            bufferingPolicy: .unbounded
         )
         self.delegateEventContinuation = continuation
 
@@ -563,10 +562,10 @@ public final class WebSocketManager: NSObject, Sendable {
                 await eventHub.publish(.connected(protocolName), for: task.id)
             case .publishDisconnected(let error):
                 await runtimeRegistry.onDisconnected?(task, error)
-                await eventHub.publishAndWaitForDelivery(.disconnected(error), for: task.id)
+                await eventHub.publishAndWaitForEnqueue(.disconnected(error), for: task.id)
             case .publishError(let error):
                 await runtimeRegistry.onError?(task, error)
-                await eventHub.publishAndWaitForDelivery(.error(error), for: task.id)
+                await eventHub.publishAndWaitForEnqueue(.error(error), for: task.id)
             case .scheduleReconnect:
                 await reconnectCoordinator.attemptReconnect(task: task) { [weak self] task in
                     await self?.startReconnecting(task)

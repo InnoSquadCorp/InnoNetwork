@@ -116,6 +116,79 @@ struct DownloadManagerHardeningTests {
         await second.manager.shutdown()
     }
 
+    @Test("directory downloads preserve safe single-component filenames")
+    func directoryDownloadPreservesSafeFileName() async throws {
+        let harness = try StubDownloadHarness(label: "safe-filename")
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("innonetwork-download-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let task = await harness.manager.download(
+            url: URL(string: "https://example.invalid/archive.zip")!,
+            toDirectory: directory,
+            fileName: " archive.zip "
+        )
+
+        #expect(task.destinationURL == directory.appendingPathComponent("archive.zip", isDirectory: false))
+        await harness.manager.shutdown()
+    }
+
+    @Test(
+        "directory downloads fall back for unsafe filenames",
+        arguments: ["../escape.zip", "nested/file.zip", "nested\\file.zip", "", "   ", ".", ".."]
+    )
+    func directoryDownloadFallsBackForUnsafeFileNames(fileName: String) async throws {
+        let harness = try StubDownloadHarness(label: "unsafe-filename")
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("innonetwork-download-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let task = await harness.manager.download(
+            url: URL(string: "https://example.invalid/archive.zip")!,
+            toDirectory: directory,
+            fileName: fileName
+        )
+
+        #expect(task.destinationURL.deletingLastPathComponent() == directory)
+        #expect(task.destinationURL.lastPathComponent.hasPrefix("download-"))
+        await harness.manager.shutdown()
+    }
+
+    @Test("directory downloads fall back for NUL-containing filenames")
+    func directoryDownloadFallsBackForNULFileName() async throws {
+        let harness = try StubDownloadHarness(label: "nul-filename")
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("innonetwork-download-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let task = await harness.manager.download(
+            url: URL(string: "https://example.invalid/archive.zip")!,
+            toDirectory: directory,
+            fileName: "bad\u{0}name"
+        )
+
+        #expect(task.destinationURL.deletingLastPathComponent() == directory)
+        #expect(task.destinationURL.lastPathComponent.hasPrefix("download-"))
+        await harness.manager.shutdown()
+    }
+
+    @Test("directory downloads fall back when URL has no file name")
+    func directoryDownloadFallsBackWhenURLHasNoFileName() async throws {
+        let harness = try StubDownloadHarness(label: "empty-url-filename")
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("innonetwork-download-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let task = await harness.manager.download(
+            url: URL(string: "https://example.invalid/")!,
+            toDirectory: directory
+        )
+
+        #expect(task.destinationURL.deletingLastPathComponent() == directory)
+        #expect(task.destinationURL.lastPathComponent.hasPrefix("download-"))
+        await harness.manager.shutdown()
+    }
+
     private func waitForCondition(
         timeout: TimeInterval = 1.0,
         predicate: @escaping @Sendable () async -> Bool

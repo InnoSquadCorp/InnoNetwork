@@ -122,4 +122,163 @@ struct WebSocketDelegateOrderingTests {
             index += 1
         }
     }
+
+    @Test("Delegate bridge does not drop lifecycle events under back-pressure")
+    func delegateBridgeDoesNotDropLifecycleEventsUnderBackPressure() async throws {
+        let harness = StubMessagingHarness()
+        let gate = DelegateBackpressureGate()
+        await harness.manager.setOnConnectedHandler { _, _ in
+            await gate.enterAndWaitUntilReleased()
+        }
+
+        let task = await harness.manager.connect(url: URL(string: "ws://stub.invalid/backpressure")!)
+
+        let recorder = WebSocketEventRecorder()
+        _ = await harness.manager.addEventListener(for: task) { event in
+            recorder.record(event)
+        }
+
+        harness.manager.handleConnected(taskIdentifier: harness.stubTaskIdentifier, protocolName: nil)
+        #expect(await waitForDelegateGateEntry(gate))
+
+        // Queue the real terminal event first, then enough unrelated
+        // delegate callbacks to overflow the former `.bufferingNewest(256)`
+        // bridge while the consumer is still blocked in the connected
+        // callback. The real close must survive because it drives terminal
+        // cleanup and listener delivery.
+        harness.manager.handleDisconnected(
+            taskIdentifier: harness.stubTaskIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+        for offset in 0..<300 {
+            harness.manager.handleConnected(
+                taskIdentifier: 1_000_000 + offset,
+                protocolName: nil
+            )
+        }
+
+        await gate.release()
+
+        let observedDisconnect = try await recorder.waitForEvent(timeout: 2.0) { event in
+            if case .disconnected = event { return true }
+            return false
+        }
+        #expect(observedDisconnect)
+        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
+    }
+
+    @Test("Terminal cleanup does not wait for listener handler completion")
+    func terminalCleanupDoesNotWaitForListenerHandlerCompletion() async throws {
+        let harness = StubMessagingHarness()
+        let task = await harness.manager.connect(url: URL(string: "ws://stub.invalid/terminal-listener")!)
+        let gate = DelegateBackpressureGate()
+        let streamProbe = WebSocketStreamFinishProbe()
+        let stream = await harness.manager.events(for: task)
+        let streamTask = Task {
+            for await event in stream {
+                if case .disconnected = event {
+                    await streamProbe.markSawDisconnected()
+                }
+            }
+            await streamProbe.markFinished()
+        }
+
+        _ = await harness.manager.addEventListener(for: task) { event in
+            if case .disconnected = event {
+                await gate.enterAndWaitUntilReleased()
+            }
+        }
+
+        harness.manager.handleConnected(taskIdentifier: harness.stubTaskIdentifier, protocolName: nil)
+        harness.manager.handleDisconnected(
+            taskIdentifier: harness.stubTaskIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+
+        #expect(await waitForDelegateGateEntry(gate))
+        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
+        #expect(await waitForStreamFinish(streamProbe))
+        #expect(await streamProbe.didSeeDisconnected)
+
+        await gate.release()
+        streamTask.cancel()
+        _ = await streamTask.result
+    }
+}
+
+
+private actor DelegateBackpressureGate {
+    private var didEnter = false
+    private var isReleased = false
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    var hasEntered: Bool { didEnter }
+
+    func enterAndWaitUntilReleased() async {
+        didEnter = true
+        guard !isReleased else { return }
+        await withCheckedContinuation { continuation in
+            if isReleased {
+                continuation.resume()
+            } else {
+                releaseWaiters.append(continuation)
+            }
+        }
+    }
+
+    func release() {
+        guard !isReleased else { return }
+        isReleased = true
+        for waiter in releaseWaiters {
+            waiter.resume()
+        }
+        releaseWaiters.removeAll(keepingCapacity: false)
+    }
+}
+
+private actor WebSocketStreamFinishProbe {
+    private var sawDisconnected = false
+    private var finished = false
+
+    var didSeeDisconnected: Bool { sawDisconnected }
+    var didFinish: Bool { finished }
+
+    func markSawDisconnected() {
+        sawDisconnected = true
+    }
+
+    func markFinished() {
+        finished = true
+    }
+}
+
+
+private func waitForDelegateGateEntry(
+    _ gate: DelegateBackpressureGate,
+    timeout: TimeInterval = 1.0
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await gate.hasEntered {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return await gate.hasEntered
+}
+
+private func waitForStreamFinish(
+    _ probe: WebSocketStreamFinishProbe,
+    timeout: TimeInterval = 1.0
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await probe.didFinish {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return await probe.didFinish
 }

@@ -318,14 +318,33 @@ public actor DownloadManager {
 
     @discardableResult
     public func download(url: URL, toDirectory directory: URL, fileName: String? = nil) async -> DownloadTask {
+        let destinationURL = Self.resolvedDirectoryDownloadDestination(
+            sourceURL: url,
+            directory: directory,
+            fileName: fileName
+        )
         guard await waitForRestore() else {
-            let name = fileName ?? url.lastPathComponent
-            let destinationURL = directory.appendingPathComponent(name)
             return DownloadTask(url: url, destinationURL: destinationURL)
         }
-        let name = fileName ?? url.lastPathComponent
-        let destinationURL = directory.appendingPathComponent(name)
         return await download(url: url, to: destinationURL)
+    }
+
+    private static func resolvedDirectoryDownloadDestination(
+        sourceURL: URL,
+        directory: URL,
+        fileName: String?
+    ) -> URL {
+        let rawName = fileName ?? sourceURL.lastPathComponent
+        let name = safeDirectoryDownloadFileName(rawName) ?? "download-\(UUID().uuidString)"
+        return directory.appendingPathComponent(name, isDirectory: false)
+    }
+
+    private static func safeDirectoryDownloadFileName(_ rawName: String) -> String? {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != ".", name != ".." else { return nil }
+        guard name.contains("/") == false, name.contains("\\") == false else { return nil }
+        guard name.unicodeScalars.contains(where: { $0.value == 0 }) == false else { return nil }
+        return name
     }
 
     public func pause(_ task: DownloadTask) async {
