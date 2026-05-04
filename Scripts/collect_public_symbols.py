@@ -5,6 +5,8 @@ from pathlib import Path
 
 
 def main() -> None:
+    if len(sys.argv) < 2:
+        raise SystemExit("Usage: collect_public_symbols.py <repo-root>")
     repo_root = Path(sys.argv[1])
     symbolgraph_dirs = [path for path in (repo_root / ".build").glob("*/symbolgraph") if path.is_dir()]
     if not symbolgraph_dirs:

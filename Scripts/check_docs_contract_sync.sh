@@ -311,10 +311,24 @@ validate_protocol_symbol() {
   local target="$2"
   local expected="$3"
 
+  # Compare on whitespace-collapsed text so reformatting (line wraps,
+  # extra spaces, tabs) does not break the contract check. Public API
+  # tokens are still compared exactly; only horizontal whitespace
+  # variations are normalized away.
   awk -v protocol_name="$protocol_name" -v expected="$expected" '
+    function normalize(s) {
+      gsub(/[ \t\r\n]+/, " ", s)
+      sub(/^ /, "", s)
+      sub(/ $/, "", s)
+      return s
+    }
+    BEGIN { norm_expected = normalize(expected) }
     $0 ~ "^public protocol " protocol_name ": Sendable \\{$" { in_protocol = 1; next }
     in_protocol && /^\}$/ { exit }
-    in_protocol && $0 == expected { found = 1; exit }
+    in_protocol {
+      norm_line = normalize($0)
+      if (norm_line == norm_expected) { found = 1; exit }
+    }
     END { exit found ? 0 : 1 }
   ' "$target" || fail "symbol '$expected' is not present in $protocol_name protocol"
 }

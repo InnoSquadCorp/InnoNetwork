@@ -41,7 +41,7 @@ struct ServerSentEventDecoderTests {
     }
 
     @Test("UTF-8 BOM on first line is stripped")
-    func firstLineBOMIsStripped() {
+    func firstLineBOMIsStripped() async {
         let decoder = ServerSentEventDecoder()
 
         _ = decoder.decode(line: "\u{FEFF}data: hello")
@@ -50,8 +50,31 @@ struct ServerSentEventDecoderTests {
         #expect(event == ServerSentEvent(data: "hello"))
     }
 
+    @Test("UTF-8 BOM stripped again after reconnect on the same decoder")
+    func bomStrippedOnSecondStreamAfterReconnect() async {
+        // `StreamingExecutor` reuses the same `ServerSentEventDecoder`
+        // instance across resume/reconnect attempts. The decoder must
+        // therefore reset its first-line state on every event boundary so
+        // a fresh HTTP response stream starting with U+FEFF is still
+        // stripped. This regression-tests the cross-reconnect bug.
+        let decoder = ServerSentEventDecoder()
+
+        // First stream: BOM stripped on the leading line as before.
+        _ = decoder.decode(line: "\u{FEFF}data: first")
+        let firstEvent = decoder.decode(line: "")
+        #expect(firstEvent == ServerSentEvent(data: "first"))
+
+        // Simulated reconnect: the same decoder instance now sees a brand
+        // new stream that also starts with U+FEFF. Without resetting the
+        // first-line bit on dispatch, the leading BOM would survive into
+        // the parsed `data:` value.
+        _ = decoder.decode(line: "\u{FEFF}data: second")
+        let secondEvent = decoder.decode(line: "")
+        #expect(secondEvent == ServerSentEvent(data: "second"))
+    }
+
     @Test("retry field accepts only ASCII digits")
-    func retryAcceptsOnlyASCIIDigits() {
+    func retryAcceptsOnlyASCIIDigits() async {
         let decoder = ServerSentEventDecoder()
 
         _ = decoder.decode(line: "retry: -100")
@@ -66,7 +89,7 @@ struct ServerSentEventDecoderTests {
     }
 
     @Test("id field containing NUL is ignored")
-    func idContainingNULIsIgnored() {
+    func idContainingNULIsIgnored() async {
         let decoder = ServerSentEventDecoder()
 
         _ = decoder.decode(line: "id: bad\u{0000}id")

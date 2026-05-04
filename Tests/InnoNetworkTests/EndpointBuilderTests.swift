@@ -32,7 +32,7 @@ private struct FragmentPathRequest: APIDefinition {
 @Suite
 struct EndpointBuilderTests {
     @Test
-    func getProducesEmptyResponseEndpointWithDefaults() {
+    func getProducesEmptyResponseEndpointWithDefaults() async {
         let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/users/42")
 
         #expect(endpoint.method == .get)
@@ -49,7 +49,7 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func decodingPromotesEndpointResponseType() {
+    func decodingPromotesEndpointResponseType() async {
         struct User: Decodable, Sendable, Equatable {
             let id: Int
         }
@@ -217,7 +217,7 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func headerCaseInsensitivelyReplacesValues() {
+    func headerCaseInsensitivelyReplacesValues() async {
         let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/items")
             .header("X-Trace-ID", value: "abc")
             .header("x-trace-id", value: "def")
@@ -227,7 +227,7 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func acceptableStatusCodesOverrideIsCarriedThroughDecoding() {
+    func acceptableStatusCodesOverrideIsCarriedThroughDecoding() async {
         let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/maybe")
             .acceptableStatusCodes([200, 304])
             .decoding(EmptyResponse.self)
@@ -236,7 +236,7 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func transportBuilderUpdatesEndpointEncodingWithoutStoringContentTypeHeader() {
+    func transportBuilderUpdatesEndpointEncodingWithoutStoringContentTypeHeader() async {
         let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/login")
             .transport(.formURLEncoded())
 
@@ -482,14 +482,14 @@ struct EndpointBuilderTests {
     }
 
     @Test("Dynamic path segments encode slashes and percent signs")
-    func dynamicPathSegmentsAreEncodedAsSingleSegments() {
+    func dynamicPathSegmentsAreEncodedAsSingleSegments() async {
         #expect(
             EndpointPathEncoding.percentEncodedSegment("a/b 100% \u{2713}")
                 == "a%2Fb%20100%25%20%E2%9C%93")
     }
 
     @Test("Dynamic path segments support primitive, UUID, and raw-value identifiers")
-    func dynamicPathSegmentsSupportIdentifierTypes() throws {
+    func dynamicPathSegmentsSupportIdentifierTypes() async throws {
         enum Scope: String, Sendable {
             case nested = "admin/root"
         }

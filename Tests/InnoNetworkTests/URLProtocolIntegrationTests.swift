@@ -85,6 +85,14 @@ struct URLProtocolIntegrationTests {
         #expect(captured.first?.value(forHTTPHeaderField: "X-Test-Marker") == "marker-value")
     }
 
+    // The two streaming-buffering tests below stay at the URLProtocol
+    // integration level because `URLSession.AsyncBytes` is not externally
+    // constructible — `MockURLSession.bytes(for:)` cannot synthesise a
+    // value of that type without going through a real URLSession. A
+    // future refactor that abstracts `URLSessionProtocol.bytes(for:)`
+    // over a generic `AsyncSequence<UInt8, Error>` would let these
+    // assertions move into `MockURLSession`.
+
     @Test("Streaming body buffering collects a 5 MiB response")
     func streamingBodyBufferingCollectsLargeResponse() async throws {
         let baseURL = URL(string: "https://large-\(UUID().uuidString).example.com")!

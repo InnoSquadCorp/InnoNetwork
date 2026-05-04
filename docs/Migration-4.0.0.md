@@ -14,7 +14,7 @@ behavior review.
 | --- | --- |
 | `Endpoint<Response>` | Use `ScopedEndpoint<Response, PublicAuthScope>`. Builder roots become `ScopedEndpoint<EmptyResponse, PublicAuthScope>.get(...)`, `.post(...)`, etc. |
 | `AuthenticatedEndpoint<Response>` | Use `ScopedEndpoint<Response, AuthRequiredScope>` and configure `NetworkConfiguration.refreshTokenPolicy`. |
-| `WebSocketManager.shared` | Own and inject a manager per feature: `WebSocketManager(configuration:)` or `DownloadManager.make(configuration:)` for download flows. |
+| `WebSocketManager.shared` | Own and inject a manager per feature: `WebSocketManager(configuration:)`. |
 | `DownloadManager.shared` | Use `try DownloadManager.make(configuration:)` with a unique `sessionIdentifier`; handle `DownloadManagerError` where the owning feature can recover. |
 | Relying on `SendableUnderlyingError ==` comparing messages | Equality is now stable code identity only (`domain` + `code`). Compare descriptions separately if UI text matters. |
 | Plain `http://` API base URLs | They fail by default. Use HTTPS, or set `allowsInsecureHTTP = true` only for a scoped local/dev client. |
