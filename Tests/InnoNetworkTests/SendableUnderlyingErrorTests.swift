@@ -7,7 +7,7 @@ import Testing
 struct SendableUnderlyingErrorTests {
 
     @Test("init(_:) captures NSUnderlyingErrorKey chain bounded by maxUnderlyingDepth")
-    func capturesUnderlyingChain() {
+    func capturesUnderlyingChain() async {
         let kernel = NSError(
             domain: NSPOSIXErrorDomain,
             code: 60,  // ETIMEDOUT
@@ -40,7 +40,7 @@ struct SendableUnderlyingErrorTests {
     }
 
     @Test("Chain capture stops at maxUnderlyingDepth even when chain is longer")
-    func chainBoundedByDepthLimit() {
+    func chainBoundedByDepthLimit() async {
         let depth = SendableUnderlyingError.maxUnderlyingDepth + 5
         var current: NSError = NSError(domain: "leaf", code: 0)
         for index in 0..<depth {
@@ -58,7 +58,7 @@ struct SendableUnderlyingErrorTests {
     }
 
     @Test("description renders the chain with arrows so logs preserve the cause path")
-    func descriptionRendersChain() {
+    func descriptionRendersChain() async {
         let inner = NSError(domain: "kernel", code: 60, userInfo: [NSLocalizedDescriptionKey: "ETIMEDOUT"])
         let outer = NSError(
             domain: "transport",
@@ -73,7 +73,7 @@ struct SendableUnderlyingErrorTests {
     }
 
     @Test("Errors without NSUnderlyingErrorKey produce an empty chain")
-    func leafErrorHasEmptyChain() {
+    func leafErrorHasEmptyChain() async {
         let leaf = NSError(domain: "leaf", code: 0)
         let captured = SendableUnderlyingError(leaf)
         #expect(captured.underlyingChain.isEmpty)
@@ -81,7 +81,7 @@ struct SendableUnderlyingErrorTests {
     }
 
     @Test("Equality uses domain and code so localized messages do not affect identity")
-    func equalityUsesDomainAndCodeOnly() {
+    func equalityUsesDomainAndCodeOnly() async {
         let english = SendableUnderlyingError(
             domain: NSURLErrorDomain,
             code: -1001,
@@ -107,7 +107,7 @@ struct SendableUnderlyingErrorTests {
     }
 
     @Test("Equality still distinguishes domain and code changes")
-    func equalityDistinguishesDomainAndCode() {
+    func equalityDistinguishesDomainAndCode() async {
         let timeout = SendableUnderlyingError(domain: NSURLErrorDomain, code: -1001, message: "Timed out")
         let unavailable = SendableUnderlyingError(domain: NSURLErrorDomain, code: -1009, message: "Offline")
         let cacheTimeout = SendableUnderlyingError(domain: "InnoNetwork.Cache", code: -1001, message: "Timed out")
@@ -117,7 +117,7 @@ struct SendableUnderlyingErrorTests {
     }
 
     @Test("Frame equality uses domain and code so wrapped messages stay diagnostic only")
-    func frameEqualityUsesDomainAndCodeOnly() {
+    func frameEqualityUsesDomainAndCodeOnly() async {
         let english = SendableUnderlyingError.Frame(
             domain: NSPOSIXErrorDomain,
             code: 60,
