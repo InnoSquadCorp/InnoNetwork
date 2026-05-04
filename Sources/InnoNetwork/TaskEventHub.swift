@@ -171,8 +171,9 @@ package actor TaskEventHub<Event: Sendable> {
         )
         partitions[taskID] = partition
         updateStreamMetricsReconciliationTaskState()
-        stream.continuation.onTermination = { @Sendable _ in
-            Task {
+        stream.continuation.onTermination = { @Sendable [weak self] _ in
+            guard let self else { return }
+            Task { [self] in
                 await self.removeContinuation(taskID: taskID, continuationID: continuationID)
             }
         }

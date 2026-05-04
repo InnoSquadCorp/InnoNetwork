@@ -369,13 +369,31 @@ private func responseHeader(_ response: Response, named name: String) -> String?
 }
 
 
+private func originalRequestID(from event: NetworkEvent) -> UUID? {
+    guard case .requestStart(let requestID, _, _, _) = event else { return nil }
+    return requestID
+}
+
+
+private func recordedRevalidationEvents(
+    in store: NetworkEventStore
+) async -> [(originalID: UUID, state: CacheRevalidationState)] {
+    await store.snapshot().compactMap { event in
+        guard case .cacheRevalidation(let originalID, let state) = event else { return nil }
+        return (originalID: originalID, state: state)
+    }
+}
+
+
 private func makeLocalizedCacheConfiguration(
     responseCachePolicy: ResponseCachePolicy,
     responseCache: any ResponseCache,
-    responseInterceptors: [ResponseInterceptor] = []
+    responseInterceptors: [ResponseInterceptor] = [],
+    eventObservers: [any NetworkEventObserving] = []
 ) -> NetworkConfiguration {
     NetworkConfiguration(
         baseURL: URL(string: "https://api.example.com")!,
+        eventObservers: eventObservers,
         requestInterceptors: [
             HeaderSettingInterceptor(field: "Accept-Language", value: cacheFixtureAcceptLanguage)
         ],
@@ -964,6 +982,52 @@ struct ResiliencePolicyTests {
             return await session.requestCount == 1 && decoded == fresh
         }
         #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
+    }
+
+    @Test("SWR revalidation events carry original request ID")
+    func staleWhileRevalidateRevalidationEventsUseOriginalRequestID() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        let stale = ResilienceUser(id: 1, name: "stale")
+        let staleBody = try JSONEncoder().encode(stale)
+        await cache.set(
+            key,
+            CachedResponse(
+                data: staleBody,
+                headers: ["ETag": "v1"],
+                storedAt: Date(timeIntervalSinceNow: -5)
+            )
+        )
+        let store = NetworkEventStore()
+        let observer = RecordingNetworkEventObserver(store: store)
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "fresh"), headers: ["ETag": "v2"])
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeLocalizedCacheConfiguration(
+                responseCachePolicy: .staleWhileRevalidate(maxAge: .seconds(1), staleWindow: .seconds(10)),
+                responseCache: cache,
+                eventObservers: [observer]
+            ),
+            session: session
+        )
+
+        let returned = try await client.request(ResilienceGetRequest())
+
+        #expect(returned == stale)
+        try await waitUntil {
+            let states = await recordedRevalidationEvents(in: store).map { $0.state }
+            return states == [
+                CacheRevalidationState.scheduled,
+                CacheRevalidationState.completed(statusCode: 200),
+            ]
+        }
+
+        let events = await store.snapshot()
+        let originalRequestID = try #require(events.compactMap(originalRequestID(from:)).first)
+        let observedRevalidationEvents = await recordedRevalidationEvents(in: store)
+        #expect(!observedRevalidationEvents.isEmpty)
+        #expect(observedRevalidationEvents.allSatisfy { $0.originalID == originalRequestID })
     }
 
     @Test("SWR background revalidation uses request coalescing")

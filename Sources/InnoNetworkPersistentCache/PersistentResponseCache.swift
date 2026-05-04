@@ -2,6 +2,12 @@ import CryptoKit
 import Foundation
 import InnoNetwork
 
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
 /// Configuration for ``PersistentResponseCache``.
 ///
 /// `directoryURL` is the only required parameter; the remaining knobs default
@@ -23,14 +29,15 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
 
     /// Durability policy for the on-disk index file.
     ///
-    /// `fsync(_:)` forces an in-flight write through the OS page cache to
-    /// stable storage. `.always` opens an fd on the renamed index after the
-    /// atomic write and `fsync`s it (plus the parent directory) so the index
-    /// survives a hard crash. `.onCheckpoint`/`.never` retain the historic
+    /// `.always` opens an fd on the renamed index after the atomic write and,
+    /// on Darwin, first asks the filesystem for `F_FULLFSYNC` durability
+    /// before falling back to `fsync(_:)` only when unsupported. It also
+    /// flushes the parent directory so the renamed index survives a hard
+    /// crash. `.onCheckpoint`/`.never` retain the historic
     /// `data.write(to:options:.atomic)` semantics where the rename is
-    /// linearized but the bytes are not necessarily flushed to platter.
+    /// linearized but the bytes are not necessarily flushed to stable storage.
     public enum PersistenceFsyncPolicy: Sendable, Equatable {
-        /// `fsync(_:)` the index file and parent directory after every write.
+        /// Fully synchronize the index file and parent directory after every write.
         case always
         /// Same as ``never`` for the persistent response cache: the cache
         /// rewrites the entire index on every change, so there is no
@@ -138,7 +145,9 @@ public actor PersistentResponseCache: ResponseCache {
     private let fileManager: FileManager
     private let bodiesDirectoryURL: URL
     private let indexURL: URL
+    private let identifierEncoder = JSONEncoder.persistentCache
     private var index: Index
+    private var runningTotalBytes: Int
     /// Number of read-path `lastAccessedAt` updates that have not yet been
     /// flushed to disk. Reads are buffered to amortize the JSON-encode +
     /// atomic-write cost across many hits; insertions/deletions still flush
@@ -191,13 +200,15 @@ public actor PersistentResponseCache: ResponseCache {
             bodiesDirectoryURL: bodiesDirectoryURL,
             fileManager: fileManager
         )
-        self.index = try Self.enforceBudgetsOnOpen(
+        let finalIndex = try Self.enforceBudgetsOnOpen(
             policyScrubbedIndex,
             configuration: configuration,
             indexURL: indexURL,
             bodiesDirectoryURL: bodiesDirectoryURL,
             fileManager: fileManager
         )
+        self.index = finalIndex
+        self.runningTotalBytes = Self.totalBytes(in: finalIndex)
     }
 
     /// Look up a cached response for `key`. Returns `nil` on miss or when the
@@ -206,7 +217,7 @@ public actor PersistentResponseCache: ResponseCache {
     /// index never demotes a successful read to a miss.
     public func get(_ key: ResponseCacheKey) async -> CachedResponse? {
         let diskKey = DiskKey(key)
-        let id = Self.identifier(for: diskKey)
+        let id = identifier(for: diskKey)
         guard var entry = index.entries[id] else { return nil }
         guard shouldStore(key: entry.key, responseHeaders: entry.headers) else {
             removeEntry(id: id, entry: entry)
@@ -215,9 +226,15 @@ public actor PersistentResponseCache: ResponseCache {
         }
         let bodyURL = bodiesDirectoryURL.appendingPathComponent(entry.bodyFileName, isDirectory: false)
 
+        // Body reads (potentially up to `maxEntryBytes`, default 5 MB) run on
+        // a detached task so the actor can process unrelated requests while
+        // slow flash blocks the read. The actor remains the single writer of
+        // `index`, so suspending here does not violate the cache invariants:
+        // a concurrent set/invalidate for this key will queue and observe the
+        // up-to-date state once we resume.
         let data: Data
         do {
-            data = try Data(contentsOf: bodyURL)
+            data = try await Self.readBodyData(at: bodyURL)
         } catch {
             removeEntry(id: id, entry: entry)
             try? persistIndex()
@@ -276,7 +293,7 @@ public actor PersistentResponseCache: ResponseCache {
         }
 
         let diskKey = DiskKey(key)
-        let id = Self.identifier(for: diskKey)
+        let id = identifier(for: diskKey)
         let bodyFileName = "\(id).body"
         let bodyURL = bodiesDirectoryURL.appendingPathComponent(bodyFileName, isDirectory: false)
         let byteCost =
@@ -294,13 +311,27 @@ public actor PersistentResponseCache: ResponseCache {
             lastAccessedAt: Date()
         )
 
+        // Body writes are detached so the actor doesn't block on flash I/O
+        // for an entry that can be up to `maxEntryBytes`. `.atomic` rename
+        // semantics make concurrent writes for the same key safe (later
+        // rename wins) and SHA-256-derived `bodyFileName` means different
+        // keys never share a destination. The actor still serializes the
+        // index update + `persistIndex` that follows, so the on-disk and
+        // in-memory views remain consistent.
         do {
-            try value.data.write(to: bodyURL, options: .atomic)
-            Self.applyDataProtection(configuration.dataProtectionClass, to: bodyURL, fileManager: fileManager)
-            if let old = index.entries[id], old.bodyFileName != bodyFileName {
-                removeBody(fileName: old.bodyFileName)
+            try await Self.writeBodyData(
+                value.data,
+                to: bodyURL,
+                dataProtectionClass: configuration.dataProtectionClass
+            )
+            if let old = index.entries[id] {
+                runningTotalBytes -= old.byteCost
+                if old.bodyFileName != bodyFileName {
+                    removeBody(fileName: old.bodyFileName)
+                }
             }
             index.entries[id] = entry
+            runningTotalBytes += entry.byteCost
             evictIfNeeded()
             try persistIndex()
         } catch {
@@ -310,9 +341,9 @@ public actor PersistentResponseCache: ResponseCache {
 
     /// Remove the entry for `key` from the index and delete its body file.
     public func invalidate(_ key: ResponseCacheKey) async {
-        let id = Self.identifier(for: DiskKey(key))
-        if let entry = index.entries.removeValue(forKey: id) {
-            removeBody(fileName: entry.bodyFileName)
+        let id = identifier(for: DiskKey(key))
+        if let entry = index.entries[id] {
+            removeEntry(id: id, entry: entry)
             try? persistIndex()
         }
     }
@@ -321,6 +352,7 @@ public actor PersistentResponseCache: ResponseCache {
     /// The user-supplied configuration directory itself is left in place.
     public func removeAll() async {
         index.entries.removeAll()
+        runningTotalBytes = 0
         try? fileManager.removeItem(at: bodiesDirectoryURL)
         try? fileManager.createDirectory(at: bodiesDirectoryURL, withIntermediateDirectories: true)
         Self.applyDataProtection(configuration.dataProtectionClass, to: bodiesDirectoryURL, fileManager: fileManager)
@@ -336,7 +368,7 @@ public actor PersistentResponseCache: ResponseCache {
     }
 
     private func evictIfNeeded() {
-        guard index.entries.count > configuration.maxEntries || totalBytes > configuration.maxBytes else {
+        guard index.entries.count > configuration.maxEntries || runningTotalBytes > configuration.maxBytes else {
             return
         }
         // Single sort then drain in LRU order via index advance. The previous
@@ -351,7 +383,7 @@ public actor PersistentResponseCache: ResponseCache {
         }
         var cursor = sortedIDs.startIndex
         while cursor < sortedIDs.endIndex,
-            index.entries.count > configuration.maxEntries || totalBytes > configuration.maxBytes
+            index.entries.count > configuration.maxEntries || runningTotalBytes > configuration.maxBytes
         {
             let victimID = sortedIDs[cursor]
             cursor = sortedIDs.index(after: cursor)
@@ -360,12 +392,10 @@ public actor PersistentResponseCache: ResponseCache {
         }
     }
 
-    private var totalBytes: Int {
-        index.entries.values.reduce(0) { $0 + $1.byteCost }
-    }
-
     private func removeEntry(id: String, entry: Entry) {
-        index.entries.removeValue(forKey: id)
+        if let removed = index.entries.removeValue(forKey: id) {
+            runningTotalBytes -= removed.byteCost
+        }
         removeBody(fileName: entry.bodyFileName)
     }
 
@@ -472,6 +502,29 @@ public actor PersistentResponseCache: ResponseCache {
         index.entries.values.reduce(0) { $0 + $1.byteCost }
     }
 
+    /// Read a body file off the actor's executor. Wrapping the synchronous
+    /// `Data(contentsOf:)` in a detached task lets the cache actor service
+    /// other requests while slow flash satisfies the read.
+    private static func readBodyData(at url: URL) async throws -> Data {
+        try await Task.detached { try Data(contentsOf: url) }.value
+    }
+
+    /// Write a body file off the actor's executor and apply the configured
+    /// data-protection class. `FileManager.default` is documented as
+    /// thread-safe for the read/write/attribute APIs we use here, so the
+    /// detached task always uses the singleton — overriding the actor's
+    /// `fileManager` only affects on-actor metadata, not body bytes.
+    private static func writeBodyData(
+        _ data: Data,
+        to url: URL,
+        dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass
+    ) async throws {
+        try await Task.detached {
+            try data.write(to: url, options: .atomic)
+            applyDataProtection(dataProtectionClass, to: url, fileManager: .default)
+        }.value
+    }
+
     private static func persistIndex(
         _ index: Index,
         to indexURL: URL,
@@ -531,8 +584,8 @@ public actor PersistentResponseCache: ResponseCache {
             return open(rep, O_RDONLY)
         }
         guard fd >= 0 else { return }
-        _ = fsync(fd)
-        close(fd)
+        defer { close(fd) }
+        _ = syncFileDescriptor(fd)
     }
 
     private static func fsyncDirectory(at url: URL) {
@@ -541,8 +594,30 @@ public actor PersistentResponseCache: ResponseCache {
             return open(rep, O_RDONLY)
         }
         guard fd >= 0 else { return }
-        _ = fsync(fd)
-        close(fd)
+        defer { close(fd) }
+        _ = syncFileDescriptor(fd)
+    }
+
+    @discardableResult
+    private static func syncFileDescriptor(_ fd: Int32) -> Int32 {
+        #if canImport(Darwin)
+        if fcntl(fd, F_FULLFSYNC, 0) == 0 {
+            return 0
+        }
+        guard isFullFsyncUnsupported(errno) else {
+            return -1
+        }
+        #endif
+        return fsync(fd)
+    }
+
+    static func isFullFsyncUnsupported(_ errorNumber: Int32) -> Bool {
+        #if canImport(Darwin)
+        errorNumber == EINVAL || errorNumber == EOPNOTSUPP
+        #else
+        _ = errorNumber
+        false
+        #endif
     }
 
     private static func containsSensitiveRequestHeader(_ headers: [String]) -> Bool {
@@ -562,15 +637,8 @@ public actor PersistentResponseCache: ResponseCache {
             .joined(separator: ",")
         guard !combined.isEmpty else { return [] }
         return Set(
-            combined
-                .split(separator: ",")
-                .map { directive in
-                    directive
-                        .split(separator: "=", maxSplits: 1)
-                        .first?
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                        .lowercased() ?? ""
-                }
+            HTTPListParser.split(combined)
+                .map(HTTPListParser.directiveName(of:))
                 .filter { !$0.isEmpty }
         )
     }
@@ -661,8 +729,8 @@ public actor PersistentResponseCache: ResponseCache {
         applyDataProtection(dataProtectionClass, to: bodiesDirectoryURL, fileManager: fileManager)
     }
 
-    private static func identifier(for key: DiskKey) -> String {
-        let data = try? JSONEncoder.persistentCache.encode(key)
+    private func identifier(for key: DiskKey) -> String {
+        let data = try? identifierEncoder.encode(key)
         let digest = SHA256.hash(data: data ?? Data())
         return digest.map { String(format: "%02x", $0) }.joined()
     }

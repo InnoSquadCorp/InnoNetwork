@@ -160,7 +160,7 @@ expected_provisionally=(
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
-'`Endpoint`, `AuthenticatedEndpoint`, `ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
+'`ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
 '`WebSocketCloseDisposition` observation surface'
 '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
@@ -173,7 +173,6 @@ expected_shipping_public_declarations=(
   AnyEncodable
   AnyRequestExecutionPolicy
   AnyResponseDecoder
-  AuthenticatedEndpoint
   AuthRequiredScope
   CachedResponse
   CancellationTag
@@ -196,7 +195,6 @@ expected_shipping_public_declarations=(
   DownloadTask
   EmptyParameter
   EmptyResponse
-  Endpoint
   EndpointAuthScope
   EndpointPathEncoding
   EndpointShape
@@ -311,21 +309,28 @@ expected_test_support_public_declarations=(
 validate_protocol_symbol() {
   local protocol_name="$1"
   local target="$2"
-  local pattern="$3"
+  local expected="$3"
 
-  if has_rg; then
-    awk -v protocol_name="$protocol_name" '
-      $0 ~ "^public protocol " protocol_name ": Sendable \\{$" { in_protocol = 1; next }
-      in_protocol && /^\}$/ { exit }
-      in_protocol { print }
-    ' "$target" | rg -q "$pattern" || fail "symbol matching $pattern is not present in $protocol_name protocol"
-  else
-    awk -v protocol_name="$protocol_name" '
-      $0 ~ "^public protocol " protocol_name ": Sendable \\{$" { in_protocol = 1; next }
-      in_protocol && /^\}$/ { exit }
-      in_protocol { print }
-    ' "$target" | grep -Eq "$pattern" || fail "symbol matching $pattern is not present in $protocol_name protocol"
-  fi
+  # Compare on whitespace-collapsed text so reformatting (line wraps,
+  # extra spaces, tabs) does not break the contract check. Public API
+  # tokens are still compared exactly; only horizontal whitespace
+  # variations are normalized away.
+  awk -v protocol_name="$protocol_name" -v expected="$expected" '
+    function normalize(s) {
+      gsub(/[ \t\r\n]+/, " ", s)
+      sub(/^ /, "", s)
+      sub(/ $/, "", s)
+      return s
+    }
+    BEGIN { norm_expected = normalize(expected) }
+    $0 ~ "^public protocol " protocol_name ": Sendable \\{$" { in_protocol = 1; next }
+    in_protocol && /^\}$/ { exit }
+    in_protocol {
+      norm_line = normalize($0)
+      if (norm_line == norm_expected) { found = 1; exit }
+    }
+    END { exit found ? 0 : 1 }
+  ' "$target" || fail "symbol '$expected' is not present in $protocol_name protocol"
 }
 
 validate_default_aliases() {
@@ -427,70 +432,7 @@ collect_public_symbols() {
   dump_status=$?
   set -e
 
-  python3 - "$repo_root" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-repo_root = Path(sys.argv[1])
-symbolgraph_dirs = [path for path in (repo_root / ".build").glob("*/symbolgraph") if path.is_dir()]
-if not symbolgraph_dirs:
-    raise SystemExit("No Swift symbol graph directory was generated.")
-
-symbolgraph_dir = max(symbolgraph_dirs, key=lambda path: path.stat().st_mtime)
-included_modules = {
-    "InnoNetwork",
-    "InnoNetworkDownload",
-    "InnoNetworkPersistentCache",
-    "InnoNetworkWebSocket",
-    "InnoNetworkTestSupport",
-}
-included_kinds = {
-    "swift.actor",
-    "swift.associatedtype",
-    "swift.class",
-    "swift.enum",
-    "swift.enum.case",
-    "swift.func",
-    "swift.init",
-    "swift.macro",
-    "swift.method",
-    "swift.property",
-    "swift.protocol",
-    "swift.struct",
-    "swift.type.method",
-    "swift.type.property",
-    "swift.typealias",
-}
-rows = set()
-seen_modules = set()
-for path in sorted(symbolgraph_dir.glob("*.symbols.json")):
-    if "@" in path.name or path.name.startswith("InnoNetworkPackageTests"):
-        continue
-    with path.open(encoding="utf-8") as handle:
-        data = json.load(handle)
-    module = data.get("module", {}).get("name")
-    if module not in included_modules:
-        continue
-    seen_modules.add(module)
-    for symbol in data.get("symbols", []):
-        if symbol.get("accessLevel") != "public":
-            continue
-        kind = symbol.get("kind", {}).get("identifier")
-        if kind not in included_kinds:
-            continue
-        components = symbol.get("pathComponents") or []
-        if not components:
-            continue
-        rows.add(f"{module}\t{kind}\t{'.'.join(components)}")
-
-missing_modules = sorted(included_modules - seen_modules)
-if missing_modules:
-    raise SystemExit(f"Missing required symbol graphs: {', '.join(missing_modules)}")
-
-for row in sorted(rows):
-    print(row)
-PY
+  python3 "$repo_root/Scripts/collect_public_symbols.py" "$repo_root"
 
   if [[ "$dump_status" -ne 0 ]]; then
     echo "docs-contract-sync: swift package dump-symbol-graph exited with $dump_status after emitting required library symbol graphs; ignoring non-contract target extraction failure." >&2
@@ -524,10 +466,6 @@ validate_public_surface_ledger() {
 
 validate_oss_readiness_public_api() {
   require_contains 'public struct ScopedEndpoint<Response: Decodable & Sendable, AuthScope: EndpointAuthScope>: APIDefinition' \
-    "$repo_root/Sources/InnoNetwork/Endpoint.swift"
-  require_contains 'public typealias Endpoint<Response: Decodable & Sendable> = ScopedEndpoint<Response, PublicAuthScope>' \
-    "$repo_root/Sources/InnoNetwork/Endpoint.swift"
-  require_contains 'public typealias AuthenticatedEndpoint<Response: Decodable & Sendable> = ScopedEndpoint<Response, AuthRequiredScope>' \
     "$repo_root/Sources/InnoNetwork/Endpoint.swift"
   require_contains 'public enum EndpointPathEncoding' \
     "$repo_root/Sources/InnoNetwork/EndpointPathEncoding.swift"
@@ -612,19 +550,19 @@ for symbol in "${expected_stable[@]}"; do
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.request(_:)`')
-      pattern='^    func request<T: APIDefinition>\(_ request: T\) async throws -> T\.APIResponse$'
+      pattern='    func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.request(_:tag:)`')
-      pattern='^    func request<T: APIDefinition>\(_ request: T, tag: CancellationTag\?\) async throws -> T\.APIResponse$'
+      pattern='    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.upload(_:)`')
-      pattern='^    func upload<T: MultipartAPIDefinition>\(_ request: T\) async throws -> T\.APIResponse$'
+      pattern='    func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.upload(_:tag:)`')
-      pattern='^    func upload<T: MultipartAPIDefinition>\(_ request: T, tag: CancellationTag\?\) async throws -> T\.APIResponse$'
+      pattern='    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkConfiguration.safeDefaults(baseURL:)`')
@@ -777,7 +715,7 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_test_support_product
       continue
       ;;
-    '`Endpoint`, `AuthenticatedEndpoint`, `ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
+    '`ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
       validate_oss_readiness_public_api
       continue
       ;;

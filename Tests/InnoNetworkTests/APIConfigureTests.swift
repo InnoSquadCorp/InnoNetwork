@@ -70,6 +70,35 @@ struct BaseURLConfigurationTests {
         #expect(resolved.timeoutIntervalForRequest == 99)
     }
 
+    @Test("urlSessionConfigurationOverride requires explicit non-shared session")
+    func urlSessionConfigurationOverrideRequiresExplicitSession() {
+        let baseURL = URL(string: "https://api.example.com/v1")!
+        let config = NetworkConfiguration.advanced(baseURL: baseURL) {
+            $0.urlSessionConfigurationOverride = { sessionConfig in
+                sessionConfig.httpMaximumConnectionsPerHost = 8
+                return sessionConfig
+            }
+        }
+
+        #expect(
+            DefaultNetworkClient.requiresExplicitSessionForConfigurationOverride(
+                configuration: config,
+                session: URLSession.shared
+            )
+        )
+
+        let session = URLSession(configuration: config.makeURLSessionConfiguration())
+        defer { session.invalidateAndCancel() }
+
+        #expect(
+            !DefaultNetworkClient.requiresExplicitSessionForConfigurationOverride(
+                configuration: config,
+                session: session
+            )
+        )
+        _ = DefaultNetworkClient(configuration: config, session: session)
+    }
+
     @Test("makeURLSessionConfiguration() returns default when no override set")
     func makeURLSessionConfigurationDefaults() {
         let baseURL = URL(string: "https://api.example.com/v1")!

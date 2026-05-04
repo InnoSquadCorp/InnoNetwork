@@ -1,11 +1,25 @@
-# Migration Guide: 4.0.0 → 4.0.1
+# Migration Guide: 4.0.0
 
-The 4.0.1 hardening pass tightens behavior, durability, and concurrency
-contracts across the core, download, websocket, and persistent-cache modules.
-Most call sites compile unchanged; the breaking changes below cover the spots
-that need source updates or behavior review.
+This guide covers the 4.0.0 hardening contract. The hardening pass tightens
+behavior, durability, and concurrency contracts across the core, download,
+websocket, and persistent-cache modules. Most call sites compile unchanged;
+the breaking changes below cover the spots that need source updates or
+behavior review.
 
 ---
+
+## Immediate Migration Checklist
+
+| Previous usage | 4.0.0 replacement / action |
+| --- | --- |
+| `Endpoint<Response>` | Use `ScopedEndpoint<Response, PublicAuthScope>`. Builder roots become `ScopedEndpoint<EmptyResponse, PublicAuthScope>.get(...)`, `.post(...)`, etc. |
+| `AuthenticatedEndpoint<Response>` | Use `ScopedEndpoint<Response, AuthRequiredScope>` and configure `NetworkConfiguration.refreshTokenPolicy`. |
+| `WebSocketManager.shared` | Own and inject a manager per feature: `WebSocketManager(configuration:)`. |
+| `DownloadManager.shared` | Use `try DownloadManager.make(configuration:)` with a unique `sessionIdentifier`; handle `DownloadManagerError` where the owning feature can recover. |
+| Relying on `SendableUnderlyingError ==` comparing messages | Equality is now stable code identity only (`domain` + `code`). Compare descriptions separately if UI text matters. |
+| Plain `http://` API base URLs | They fail by default. Use HTTPS, or set `allowsInsecureHTTP = true` only for a scoped local/dev client. |
+| Base URLs with `user:password@host` or `#fragment` | Move credentials to `Authorization` / request interceptors and remove fragments from `baseURL`. |
+| `urlSessionConfigurationOverride` with the default client initializer | Build a `URLSession` from `configuration.makeURLSessionConfiguration()` and pass it to `DefaultNetworkClient(configuration:session:)`. |
 
 ## URLQueryEncoder
 
@@ -138,14 +152,35 @@ let client = DefaultNetworkClient(configuration: config, session: session)
 ```
 
 Callers that supplied their own `URLSessionConfiguration` still work
-unchanged — the hook is purely additive.
+unchanged when they pass the matching `URLSession` explicitly. Constructing
+`DefaultNetworkClient(configuration:)` with a non-nil override now fails fast,
+because the default `URLSession.shared` cannot observe that override.
+
+`redirectPolicy` defaults to `DefaultRedirectPolicy`. Cross-origin redirects
+strip `Authorization`, `Cookie`, and `Proxy-Authorization`; same-origin
+redirects keep the original request headers. Custom policies can cancel
+redirects or apply stricter tenant-specific allowlists.
+
+Plain HTTP is rejected by default during request construction. Keep production
+clients on HTTPS. For local development or a controlled LAN-only endpoint,
+scope the opt-in to that client:
+
+```swift
+let config = NetworkConfiguration.advanced(
+    baseURL: URL(string: "http://localhost:8080")!
+) {
+    $0.allowsInsecureHTTP = true
+}
+```
 
 ## PersistentResponseCacheConfiguration
 
 `persistenceFsyncPolicy` is a new field with three modes:
 
-- `.always` — fd-level `fsync` of the index file and its parent
-  directory after every write. Highest durability, highest IO cost.
+- `.always` — fd-level full sync of the index file and its parent
+  directory after every write. On Darwin this uses `F_FULLFSYNC` first
+  and falls back to `fsync` only when the filesystem does not support it.
+  Highest durability, highest IO cost.
 - `.onCheckpoint` (default) — historical atomic-rename behavior.
 - `.never` — rely on the OS to flush dirty pages.
 

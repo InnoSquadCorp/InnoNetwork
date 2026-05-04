@@ -52,16 +52,14 @@ struct Profile: Decodable, Sendable {
     let id: String
 }
 
-let endpoint = AuthenticatedEndpoint
+let endpoint = ScopedEndpoint<EmptyResponse, AuthRequiredScope>
     .get("/me")
     .decoding(Profile.self)
 
 let profile = try await client.request(endpoint)
 ```
 
-`AuthenticatedEndpoint<Response>` is a convenience alias for
-`ScopedEndpoint<Response, AuthRequiredScope>`. Custom endpoint definitions can
-opt into the same preflight guard:
+Custom endpoint definitions can opt into the same preflight guard:
 
 ```swift
 struct GetProfile: APIDefinition {

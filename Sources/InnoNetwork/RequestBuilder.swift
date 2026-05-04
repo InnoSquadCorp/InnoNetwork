@@ -43,7 +43,11 @@ package struct RequestBuilder {
             )
         }
 
-        var targetURL = try EndpointPathBuilder.makeURL(baseURL: configuration.baseURL, endpointPath: executable.path)
+        var targetURL = try EndpointPathBuilder.makeURL(
+            baseURL: configuration.baseURL,
+            endpointPath: executable.path,
+            allowsInsecureHTTP: configuration.allowsInsecureHTTP
+        )
         var httpBody: Data?
         var bodySource = BodySource.inline
         var bodyContentType = executable.bodyContentType
@@ -66,6 +70,7 @@ package struct RequestBuilder {
         var request = URLRequest(url: targetURL)
         request.httpMethod = executable.method.rawValue
         request.headers = executable.headers
+        refreshDynamicDefaultHeaders(on: &request, configuration: configuration)
         if payload.hasBody, let bodyContentType {
             request.setValue(bodyContentType, forHTTPHeaderField: "Content-Type")
         }
@@ -73,6 +78,34 @@ package struct RequestBuilder {
         request.timeoutInterval = executable.timeoutOverride ?? configuration.timeout
         request.httpBody = httpBody
         return BuiltRequest(request: request, bodySource: bodySource)
+    }
+
+    private func refreshDynamicDefaultHeaders(
+        on request: inout URLRequest,
+        configuration: NetworkConfiguration
+    ) {
+        replaceHeader(
+            name: "User-Agent",
+            defaultValue: HTTPHeader.defaultUserAgent.value,
+            provider: configuration.userAgentProvider,
+            on: &request
+        )
+        replaceHeader(
+            name: "Accept-Language",
+            defaultValue: HTTPHeader.defaultAcceptLanguage.value,
+            provider: configuration.acceptLanguageProvider,
+            on: &request
+        )
+    }
+
+    private func replaceHeader(
+        name: String,
+        defaultValue: String,
+        provider: @Sendable () -> String,
+        on request: inout URLRequest
+    ) {
+        guard request.value(forHTTPHeaderField: name) == defaultValue else { return }
+        request.setValue(provider(), forHTTPHeaderField: name)
     }
 }
 

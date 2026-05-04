@@ -306,13 +306,20 @@ extension HTTPHeader {
 
     /// Returns a `Basic` `Authorization` header using the `username` and `password` provided.
     ///
+    /// Credentials are normalized to Unicode NFC and encoded as UTF-8 before
+    /// Base64 encoding. RFC 7617 defines the `charset=UTF-8` parameter only
+    /// on `WWW-Authenticate` challenges; `Authorization` credentials remain a
+    /// single token68 value, so this helper does not append auth parameters.
+    ///
     /// - Parameters:
     ///   - username: The username of the header.
     ///   - password: The password of the header.
     ///
     /// - Returns:    The header.
     public static func authorization(username: String, password: String) -> HTTPHeader {
-        let credential = Data("\(username):\(password)".utf8).base64EncodedString()
+        let userPass = "\(username):\(password)" as NSString
+        let normalizedUserPass = userPass.precomposedStringWithCanonicalMapping
+        let credential = Data(normalizedUserPass.utf8).base64EncodedString()
 
         return authorization("Basic \(credential)")
     }
@@ -403,11 +410,13 @@ extension HTTPHeaders {
     /// The default set of `HTTPHeaders` attached to every `APIDefinition`
     /// request. Includes `Accept-Encoding`, `Accept-Language`, and
     /// `User-Agent` derived from the current process.
-    public static let `default`: HTTPHeaders = [
-        .defaultAcceptEncoding,
-        .defaultAcceptLanguage,
-        .defaultUserAgent,
-    ]
+    public static var `default`: HTTPHeaders {
+        [
+            .defaultAcceptEncoding,
+            .defaultAcceptLanguage,
+            .defaultUserAgent,
+        ]
+    }
 }
 
 extension HTTPHeader {
@@ -430,8 +439,16 @@ extension HTTPHeader {
     /// `Locale` for the user's `preferredLanguages`.
     ///
     /// See the [Accept-Language HTTP header documentation](https://tools.ietf.org/html/rfc7231#section-5.3.5).
-    public static let defaultAcceptLanguage: HTTPHeader = .acceptLanguage(
-        Locale.preferredLanguages.prefix(6).qualityEncoded())
+    public static var defaultAcceptLanguage: HTTPHeader {
+        makeDefaultAcceptLanguage(preferredLanguages: Locale.preferredLanguages)
+    }
+
+    /// Builds a default `Accept-Language` header from an explicit preferred
+    /// language list. Useful for tests and clients that own locale selection
+    /// outside `Locale.preferredLanguages`.
+    public static func makeDefaultAcceptLanguage(preferredLanguages: [String]) -> HTTPHeader {
+        .acceptLanguage(preferredLanguages.prefix(6).qualityEncoded())
+    }
 
     /// The library default `User-Agent` header, derived from the running
     /// process and platform.
@@ -439,8 +456,13 @@ extension HTTPHeader {
     /// See the [User-Agent header documentation](https://tools.ietf.org/html/rfc7231#section-5.5.3).
     ///
     /// Example: `MyApp/1.0 (com.example.MyApp; build:1; iOS 18.0.0)`
-    public static let defaultUserAgent: HTTPHeader = {
-        let info = Bundle.main.infoDictionary
+    public static var defaultUserAgent: HTTPHeader {
+        makeDefaultUserAgent(bundle: .main)
+    }
+
+    /// Builds a default `User-Agent` header from an explicit bundle.
+    public static func makeDefaultUserAgent(bundle: Bundle) -> HTTPHeader {
+        let info = bundle.infoDictionary
         let executable =
             (info?["CFBundleExecutable"] as? String)
             ?? (ProcessInfo.processInfo.arguments.first?.split(separator: "/").last.map(String.init)) ?? "Unknown"
@@ -487,16 +509,28 @@ extension HTTPHeader {
         let userAgent = "\(executable)/\(appVersion) (\(bundle); build:\(appBuild); \(osNameVersion))"
 
         return .userAgent(userAgent)
-    }()
+    }
 }
 
 extension Collection<String> {
     func qualityEncoded() -> String {
         enumerated().map { index, encoding in
-            let quality = 1.0 - (Double(index) * 0.1)
-            return "\(encoding);q=\(quality)"
+            let quality = Swift.min(1.0, Swift.max(0.0, 1.0 - (Double(index) * 0.1)))
+            guard quality < 1 else { return encoding }
+            return "\(encoding);q=\(formattedQualityValue(quality))"
         }.joined(separator: ", ")
     }
+}
+
+private func formattedQualityValue(_ quality: Double) -> String {
+    var formatted = String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), quality)
+    while formatted.last == "0" {
+        formatted.removeLast()
+    }
+    if formatted.last == "." {
+        formatted.removeLast()
+    }
+    return formatted
 }
 
 // MARK: - System Type Extensions

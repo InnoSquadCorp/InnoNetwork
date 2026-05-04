@@ -90,7 +90,8 @@ package struct StreamingExecutor: Sendable {
                     retryIndex: resumeAttempts,
                     metricsReporter: configuration.metricsReporter,
                     trustPolicy: configuration.trustPolicy,
-                    eventObservers: configuration.eventObservers
+                    eventObservers: configuration.eventObservers,
+                    redirectPolicy: configuration.redirectPolicy
                 )
                 attemptStartedAt = Date()
                 let (bytes, response) = try await session.bytes(for: urlRequest, context: context)
@@ -183,9 +184,10 @@ package struct StreamingExecutor: Sendable {
                     )
                     if canResume {
                         resumeAttempts += 1
-                        if resumeDelay > 0 {
-                            try? await Task.sleep(for: .seconds(resumeDelay))
-                        }
+                        try await Self.waitBeforeResume(
+                            delay: resumeDelay,
+                            executionRuntime: executionRuntime
+                        )
                         try Task.checkCancellation()
                         continue attempts
                     }
@@ -235,12 +237,24 @@ package struct StreamingExecutor: Sendable {
 
     // MARK: - Helpers
 
+    package static func waitBeforeResume(
+        delay: TimeInterval,
+        executionRuntime: RequestExecutionRuntime
+    ) async throws {
+        guard delay > 0 else { return }
+        try await executionRuntime.clock.sleep(for: .seconds(delay))
+    }
+
     private static func makeURLRequest<T: StreamingAPIDefinition>(
         for request: T,
         configuration: NetworkConfiguration,
         lastSeenEventID: String?
     ) throws -> URLRequest {
-        let url = try EndpointPathBuilder.makeURL(baseURL: configuration.baseURL, endpointPath: request.path)
+        let url = try EndpointPathBuilder.makeURL(
+            baseURL: configuration.baseURL,
+            endpointPath: request.path,
+            allowsInsecureHTTP: configuration.allowsInsecureHTTP
+        )
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method.rawValue
         urlRequest.headers = request.headers

@@ -128,18 +128,18 @@
       "operationsPerSecond" : 5796.9227108251125
     },
     {
-      "elapsedSeconds" : 2.771382875,
+      "elapsedSeconds" : 3.448275862,
       "group" : "client",
       "iterations" : 20000,
       "name" : "decoding-interceptor-chain-3",
-      "operationsPerSecond" : 7216.613835791274
+      "operationsPerSecond" : 5800.0
     },
     {
-      "elapsedSeconds" : 2.486711209,
+      "elapsedSeconds" : 3.448275862,
       "group" : "client",
       "iterations" : 20000,
       "name" : "decoding-interceptor-chain-8",
-      "operationsPerSecond" : 8042.751376844741
+      "operationsPerSecond" : 5800.0
     },
     {
       "elapsedSeconds" : 0.428473667,

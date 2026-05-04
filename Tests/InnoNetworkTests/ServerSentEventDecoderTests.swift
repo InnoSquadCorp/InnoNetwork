@@ -40,6 +40,65 @@ struct ServerSentEventDecoderTests {
         #expect(event == ServerSentEvent(id: "42", event: "ping", data: "payload", retry: 5000))
     }
 
+    @Test("UTF-8 BOM on first line is stripped")
+    func firstLineBOMIsStripped() async {
+        let decoder = ServerSentEventDecoder()
+
+        _ = decoder.decode(line: "\u{FEFF}data: hello")
+        let event = decoder.decode(line: "")
+
+        #expect(event == ServerSentEvent(data: "hello"))
+    }
+
+    @Test("UTF-8 BOM stripped again after reconnect on the same decoder")
+    func bomStrippedOnSecondStreamAfterReconnect() async {
+        // `StreamingExecutor` reuses the same `ServerSentEventDecoder`
+        // instance across resume/reconnect attempts. The decoder must
+        // therefore reset its first-line state on every event boundary so
+        // a fresh HTTP response stream starting with U+FEFF is still
+        // stripped. This regression-tests the cross-reconnect bug.
+        let decoder = ServerSentEventDecoder()
+
+        // First stream: BOM stripped on the leading line as before.
+        _ = decoder.decode(line: "\u{FEFF}data: first")
+        let firstEvent = decoder.decode(line: "")
+        #expect(firstEvent == ServerSentEvent(data: "first"))
+
+        // Simulated reconnect: the same decoder instance now sees a brand
+        // new stream that also starts with U+FEFF. Without resetting the
+        // first-line bit on dispatch, the leading BOM would survive into
+        // the parsed `data:` value.
+        _ = decoder.decode(line: "\u{FEFF}data: second")
+        let secondEvent = decoder.decode(line: "")
+        #expect(secondEvent == ServerSentEvent(data: "second"))
+    }
+
+    @Test("retry field accepts only ASCII digits")
+    func retryAcceptsOnlyASCIIDigits() async {
+        let decoder = ServerSentEventDecoder()
+
+        _ = decoder.decode(line: "retry: -100")
+        _ = decoder.decode(line: "retry: +100")
+        _ = decoder.decode(line: "retry: 10.5")
+        _ = decoder.decode(line: "retry: ５")
+        _ = decoder.decode(line: "retry: 0050")
+        _ = decoder.decode(line: "data: payload")
+        let event = decoder.decode(line: "")
+
+        #expect(event == ServerSentEvent(data: "payload", retry: 50))
+    }
+
+    @Test("id field containing NUL is ignored")
+    func idContainingNULIsIgnored() async {
+        let decoder = ServerSentEventDecoder()
+
+        _ = decoder.decode(line: "id: bad\u{0000}id")
+        _ = decoder.decode(line: "data: payload")
+        let event = decoder.decode(line: "")
+
+        #expect(event == ServerSentEvent(data: "payload"))
+    }
+
     @Test("Comment lines are ignored")
     func commentLinesIgnored() {
         let decoder = ServerSentEventDecoder()

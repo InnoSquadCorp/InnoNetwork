@@ -35,6 +35,25 @@ public enum NetworkEvent: Sendable {
         errorCode: Int,
         message: String
     )
+    /// Emitted while a stale-while-revalidate cache hit fans out a
+    /// background refresh. Carries the *original* requestID so observers
+    /// can correlate the revalidation with the request that returned the
+    /// stale body, instead of the disposable internal UUID used to track
+    /// the in-flight refresh task.
+    case cacheRevalidation(
+        originalID: UUID,
+        state: CacheRevalidationState
+    )
+}
+
+/// Lifecycle stages of a background cache revalidation. Observers receive
+/// `.scheduled` when the refresh task starts and one of the terminal cases
+/// when it ends. Used by ``NetworkEvent/cacheRevalidation(originalID:state:)``.
+public enum CacheRevalidationState: Sendable, Equatable {
+    case scheduled
+    case completed(statusCode: Int)
+    case notModified
+    case failed(errorCode: Int, message: String)
 }
 
 /// Receives request lifecycle events emitted by the networking client.
@@ -81,6 +100,10 @@ public struct OSLogNetworkEventObserver: NetworkEventObserving {
             Logger.API.error(
                 "request_failed id=\(requestID.uuidString, privacy: .public) code=\(errorCode) message=\(message, privacy: .private)"
             )
+        case .cacheRevalidation(let originalID, let state):
+            Logger.API.debug(
+                "cache_revalidation original_id=\(originalID.uuidString, privacy: .public) state=\(String(describing: state), privacy: .public)"
+            )
         }
         #endif
     }
@@ -92,18 +115,21 @@ public struct NetworkRequestContext: Sendable {
     public let metricsReporter: (any NetworkMetricsReporting)?
     public let trustPolicy: TrustPolicy
     public let eventObservers: [any NetworkEventObserving]
+    public let redirectPolicy: any RedirectPolicy
 
     public init(
         requestID: UUID = UUID(),
         retryIndex: Int = 0,
         metricsReporter: (any NetworkMetricsReporting)? = nil,
         trustPolicy: TrustPolicy = .systemDefault,
-        eventObservers: [any NetworkEventObserving] = []
+        eventObservers: [any NetworkEventObserving] = [],
+        redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy()
     ) {
         self.requestID = requestID
         self.retryIndex = retryIndex
         self.metricsReporter = metricsReporter
         self.trustPolicy = trustPolicy
         self.eventObservers = eventObservers
+        self.redirectPolicy = redirectPolicy
     }
 }

@@ -50,12 +50,19 @@ package final class InFlightRegistry: Sendable {
     /// are left alone. Matching entries are removed from the registry.
     package func cancelAll(matching tag: CancellationTag) {
         let handlers = entries.withLock { state -> [@Sendable () -> Void] in
-            let matchingKeys = state.compactMap { key, entry -> UUID? in
-                entry.tag == tag ? key : nil
+            var handlers: [@Sendable () -> Void] = []
+            handlers.reserveCapacity(state.count)
+            var retained: [UUID: Entry] = [:]
+            retained.reserveCapacity(state.count)
+            for (id, entry) in state {
+                if entry.tag == tag {
+                    handlers.append(entry.cancelHandler)
+                } else {
+                    retained[id] = entry
+                }
             }
-            return matchingKeys.compactMap { key -> (@Sendable () -> Void)? in
-                state.removeValue(forKey: key)?.cancelHandler
-            }
+            state = retained
+            return handlers
         }
         for handler in handlers {
             handler()

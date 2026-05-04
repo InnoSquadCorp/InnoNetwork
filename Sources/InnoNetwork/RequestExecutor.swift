@@ -7,6 +7,55 @@ private struct NotModifiedSubstitution {
     let cached: CachedResponse
 }
 
+struct BufferedAsyncBytes<Base: AsyncSequence>: AsyncSequence where Base.Element == UInt8 {
+    typealias Element = [UInt8]
+
+    private let bytes: Base
+    private let chunkSize: Int
+    private let maxBytes: Int64?
+
+    init(_ bytes: Base, chunkSize: Int = 64 * 1024, maxBytes: Int64? = nil) {
+        self.bytes = bytes
+        self.chunkSize = Swift.max(1, chunkSize)
+        self.maxBytes = maxBytes
+    }
+
+    func makeAsyncIterator() -> Iterator {
+        Iterator(
+            iterator: bytes.makeAsyncIterator(),
+            chunkSize: chunkSize,
+            maxBytes: maxBytes
+        )
+    }
+
+    struct Iterator: AsyncIteratorProtocol {
+        private var iterator: Base.AsyncIterator
+        private let chunkSize: Int
+        private let maxBytes: Int64?
+        private var observedBytes: Int64 = 0
+
+        fileprivate init(iterator: Base.AsyncIterator, chunkSize: Int, maxBytes: Int64?) {
+            self.iterator = iterator
+            self.chunkSize = chunkSize
+            self.maxBytes = maxBytes
+        }
+
+        mutating func next() async throws -> [UInt8]? {
+            var chunk: [UInt8] = []
+            chunk.reserveCapacity(chunkSize)
+            while chunk.count < chunkSize {
+                guard let byte = try await iterator.next() else { break }
+                observedBytes += 1
+                if let maxBytes, observedBytes > maxBytes {
+                    throw NetworkError.responseTooLarge(limit: maxBytes, observed: observedBytes)
+                }
+                chunk.append(byte)
+            }
+            return chunk.isEmpty ? nil : chunk
+        }
+    }
+}
+
 package struct RequestExecutor {
     private let session: URLSessionProtocol
     private let eventHub: NetworkEventHub
@@ -70,7 +119,8 @@ package struct RequestExecutor {
                 retryIndex: retryIndex,
                 metricsReporter: configuration.metricsReporter,
                 trustPolicy: configuration.trustPolicy,
-                eventObservers: configuration.eventObservers
+                eventObservers: configuration.eventObservers,
+                redirectPolicy: configuration.redirectPolicy
             )
 
             attemptStartedAt = Date()
@@ -188,7 +238,8 @@ package struct RequestExecutor {
                 configuration: configuration,
                 context: context,
                 bodySource: bodySource,
-                runtime: runtime
+                runtime: runtime,
+                originalRequestID: requestID
             ) {
                 return cachedResponse
             }
@@ -578,16 +629,13 @@ package struct RequestExecutor {
 
         var data = Data()
         if response.expectedContentLength > 0 {
-            data.reserveCapacity(Int(min(response.expectedContentLength, Int64(Int.max))))
+            let expectedBytes =
+                normalizedLimit.map { min(response.expectedContentLength, $0) }
+                ?? response.expectedContentLength
+            data.reserveCapacity(Int(clamping: expectedBytes))
         }
-        for try await byte in bytes {
-            data.append(byte)
-            if let normalizedLimit, Int64(data.count) > normalizedLimit {
-                throw NetworkError.responseTooLarge(
-                    limit: normalizedLimit,
-                    observed: Int64(data.count)
-                )
-            }
+        for try await chunk in BufferedAsyncBytes(bytes, maxBytes: normalizedLimit) {
+            data.append(contentsOf: chunk)
         }
         return data
     }
@@ -598,7 +646,8 @@ package struct RequestExecutor {
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
         bodySource: BodySource,
-        runtime: RequestExecutionRuntime
+        runtime: RequestExecutionRuntime,
+        originalRequestID: UUID
     ) async throws -> Response? {
         guard let cacheKey,
             request.httpMethod?.uppercased() == "GET",
@@ -638,12 +687,19 @@ package struct RequestExecutor {
             runtime.inFlight.register(id: revalidationID) {
                 revalidationHandle.cancel()
             }
+            let eventHub = self.eventHub
             let revalidationTask = Task {
                 await startGate.wait()
                 defer {
                     runtime.inFlight.deregister(id: revalidationID)
                 }
                 var revalidationStartedAt: Date?
+                let observers = context.eventObservers
+                await eventHub.publish(
+                    .cacheRevalidation(originalID: originalRequestID, state: .scheduled),
+                    requestID: revalidationID,
+                    observers: observers
+                )
 
                 do {
                     try Task.checkCancellation()
@@ -669,6 +725,7 @@ package struct RequestExecutor {
                         request: revalidationRequest,
                         response: result.response
                     )
+                    let terminalState: CacheRevalidationState
                     if let substitution = await convertNotModifiedIfNeeded(
                         response,
                         cacheKey: cacheKey,
@@ -701,27 +758,44 @@ package struct RequestExecutor {
                                 configuration: configuration
                             )
                         }
+                        terminalState = .notModified
                     } else {
                         try Task.checkCancellation()
                         try enforceResponseBodyLimit(response, configuration: configuration)
                         await storeCacheIfNeeded(
                             response, cacheKey: cacheKey, request: revalidationRequest, configuration: configuration)
+                        terminalState = .completed(statusCode: result.response.statusCode)
                     }
+                    await eventHub.publish(
+                        .cacheRevalidation(originalID: originalRequestID, state: terminalState),
+                        requestID: revalidationID,
+                        observers: observers
+                    )
                 } catch {
-                    if NetworkError.isCancellation(error) {
-                        return
+                    if !NetworkError.isCancellation(error) {
+                        let mapped = Self.mapTransportError(
+                            error,
+                            startedAt: revalidationStartedAt
+                        )
+                        let surfaced =
+                            configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
+                        Logger.API.error(
+                            "Background revalidation failed: \(surfaced.localizedDescription, privacy: .public)"
+                        )
+                        await eventHub.publish(
+                            .cacheRevalidation(
+                                originalID: originalRequestID,
+                                state: .failed(
+                                    errorCode: surfaced.errorCode,
+                                    message: surfaced.localizedDescription
+                                )
+                            ),
+                            requestID: revalidationID,
+                            observers: observers
+                        )
                     }
-                    let mapped = Self.mapTransportError(
-                        error,
-                        startedAt: revalidationStartedAt
-                    )
-                    let surfaced =
-                        configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
-                    Logger.API.error(
-                        "Background revalidation failed: \(surfaced.localizedDescription, privacy: .public)"
-                    )
-                    return
                 }
+                await eventHub.finish(requestID: revalidationID)
             }
             revalidationHandle.attach(revalidationTask)
             startGate.open()
@@ -741,7 +815,8 @@ package struct RequestExecutor {
             retryIndex: context.retryIndex,
             metricsReporter: context.metricsReporter,
             trustPolicy: context.trustPolicy,
-            eventObservers: context.eventObservers
+            eventObservers: context.eventObservers,
+            redirectPolicy: context.redirectPolicy
         )
         return try await performTransportResult(
             request: request,
@@ -920,10 +995,9 @@ package struct RequestExecutor {
         200, 203, 204, 300, 301, 308, 404, 405, 410, 414, 501,
     ]
 
-    /// Parses Cache-Control directive *names* only. Qualified directives whose
-    /// quoted values contain commas (e.g. `private="X-Foo, X-Bar"`) will split
-    /// into multiple tokens, so this helper must not be used to recover such
-    /// values — it only powers directive-presence checks today.
+    /// Parses Cache-Control directive *names* only. Quoted-string aware
+    /// (RFC 9110 §5.6.4) so qualified directives like
+    /// `private="X-Foo, X-Bar"` are not shredded into spurious tokens.
     private func cacheControlDirectives(in headers: [String: String]) -> Set<String> {
         let combined =
             headers
@@ -932,15 +1006,8 @@ package struct RequestExecutor {
             .joined(separator: ",")
         guard !combined.isEmpty else { return [] }
         return Set(
-            combined
-                .split(separator: ",")
-                .map { directive in
-                    directive
-                        .split(separator: "=", maxSplits: 1)
-                        .first?
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                        .lowercased() ?? ""
-                }
+            HTTPListParser.split(combined)
+                .map(HTTPListParser.directiveName(of:))
                 .filter { !$0.isEmpty }
         )
     }

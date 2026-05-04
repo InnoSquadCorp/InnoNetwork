@@ -86,6 +86,47 @@ struct HTTPHeaderTests {
         #expect(headers.values(for: "Set-Cookie") == ["a=1", "b=2"])
     }
 
+    @Test("URLRequest.headers setter preserves multi-value list-rule headers")
+    func urlRequestHeadersPreservesMultiValue() async {
+        var headers = HTTPHeaders()
+        headers.add(name: "Accept", value: "text/html")
+        headers.add(name: "Accept", value: "application/json")
+        headers.add(name: "Link", value: "<https://a>; rel=next")
+        headers.add(name: "Link", value: "<https://b>; rel=last")
+
+        var request = URLRequest(url: URL(string: "https://example.com")!)
+        request.headers = headers
+
+        #expect(request.value(forHTTPHeaderField: "Accept") == "text/html,application/json")
+        #expect(request.value(forHTTPHeaderField: "Link") == "<https://a>; rel=next,<https://b>; rel=last")
+    }
+
+    @Test("URLRequest.headers setter collapses single-value Authorization to last value")
+    func urlRequestHeadersSingleValueCollapses() async {
+        var headers = HTTPHeaders()
+        headers.add(name: "Authorization", value: "Bearer stale")
+        headers.add(name: "authorization", value: "Bearer fresh")
+
+        var request = URLRequest(url: URL(string: "https://example.com")!)
+        request.headers = headers
+
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fresh")
+    }
+
+    @Test("URLRequest.headers setter clears prior headers before applying new set")
+    func urlRequestHeadersClearsExisting() async {
+        var request = URLRequest(url: URL(string: "https://example.com")!)
+        request.setValue("legacy", forHTTPHeaderField: "X-Legacy")
+        request.setValue("old", forHTTPHeaderField: "Authorization")
+
+        var fresh = HTTPHeaders()
+        fresh.add(name: "Authorization", value: "Bearer new")
+        request.headers = fresh
+
+        #expect(request.value(forHTTPHeaderField: "X-Legacy") == nil)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer new")
+    }
+
     @Test("URLSessionConfiguration.headers applies request single-value semantics")
     func configurationHeadersUseLastSingleValue() async {
         var headers = HTTPHeaders()
@@ -100,6 +141,77 @@ struct HTTPHeaderTests {
         let configured = configuration.headers
         #expect(configured.value(for: "Authorization") == "Bearer fresh")
         #expect(configured.value(for: "Accept") == "application/json, text/plain")
+    }
+
+    @Test("Basic authorization encodes non-ASCII credentials as UTF-8 token68")
+    func basicAuthorizationEncodesNonASCIIAsUTF8Token68() {
+        let header = HTTPHeader.authorization(username: "test", password: "123\u{00A3}")
+
+        #expect(header.name == "Authorization")
+        #expect(header.value == "Basic dGVzdDoxMjPCow==")
+        #expect(header.value.contains("charset") == false)
+    }
+
+    @Test("Basic authorization normalizes Unicode credentials to NFC")
+    func basicAuthorizationNormalizesUnicodeCredentialsToNFC() {
+        let decomposedAccent = "e\u{0301}"
+        let header = HTTPHeader.authorization(username: "user", password: decomposedAccent)
+
+        #expect(header.value == "Basic dXNlcjrDqQ==")
+    }
+
+    @Test("qualityEncoded omits q=1 and strips insignificant zeros")
+    func qualityEncodedFormatsQValues() {
+        let encoded = ["br", "gzip", "deflate"].qualityEncoded()
+
+        #expect(encoded == "br, gzip;q=0.9, deflate;q=0.8")
+    }
+
+    @Test("qualityEncoded clamps long lists at zero")
+    func qualityEncodedClampsLongListsAtZero() {
+        let encoded = (0..<12).map { "encoding-\($0)" }.qualityEncoded()
+
+        #expect(encoded.contains("q=-") == false)
+        #expect(encoded.hasSuffix("encoding-10;q=0, encoding-11;q=0"))
+    }
+
+    @Test("Default Accept-Language can be built from injected languages")
+    func defaultAcceptLanguageUsesInjectedLanguages() {
+        let header = HTTPHeader.makeDefaultAcceptLanguage(
+            preferredLanguages: ["ko-KR", "en-US", "ja-JP"]
+        )
+
+        #expect(header.name == "Accept-Language")
+        #expect(header.value == "ko-KR, en-US;q=0.9, ja-JP;q=0.8")
+    }
+
+    @Test("Default User-Agent can be built from an injected bundle")
+    func defaultUserAgentUsesInjectedBundle() throws {
+        let bundleURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("InjectedUserAgent-\(UUID().uuidString).bundle", isDirectory: true)
+        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bundleURL) }
+
+        let info: [String: String] = [
+            "CFBundleExecutable": "InjectedApp",
+            "CFBundleIdentifier": "com.example.injected",
+            "CFBundleShortVersionString": "9.8",
+            "CFBundleVersion": "765",
+        ]
+        let plist = try PropertyListSerialization.data(
+            fromPropertyList: info,
+            format: .xml,
+            options: 0
+        )
+        try plist.write(to: bundleURL.appendingPathComponent("Info.plist"))
+
+        let bundle = try #require(Bundle(url: bundleURL))
+        let header = HTTPHeader.makeDefaultUserAgent(bundle: bundle)
+
+        #expect(header.name == "User-Agent")
+        #expect(header.value.hasPrefix("InjectedApp/9.8 "))
+        #expect(header.value.contains("com.example.injected"))
+        #expect(header.value.contains("build:765"))
     }
 }
 

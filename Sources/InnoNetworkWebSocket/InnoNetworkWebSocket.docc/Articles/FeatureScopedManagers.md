@@ -5,10 +5,10 @@ process-wide singleton.
 
 ## Overview
 
-``WebSocketManager/shared`` remains available in 4.0.0 for source compatibility, but it is
-soft-deprecated. A single global manager forces unrelated realtime flows to share reconnect,
-heartbeat, send-buffer, event-buffer, and metrics settings. Feature-scoped managers keep
-those policies close to the socket owner.
+InnoNetwork 4.0.0 removes the process-wide `WebSocketManager.shared` singleton.
+A single global manager forces unrelated realtime flows to share reconnect,
+heartbeat, send-buffer, event-buffer, and metrics settings. Feature-scoped
+managers keep those policies close to the socket owner.
 
 ```swift
 import InnoNetworkWebSocket

@@ -14,6 +14,12 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
     private var records: [String: DownloadTaskPersistence.Record] = [:]
     private var shouldFailRemove = false
     private var shouldFailUpsert = false
+    /// Number of times the bulk `remove(ids:)` entry point has been invoked.
+    /// Surface so tests can assert that `cancelAll` reaches persistence
+    /// through the bulk path exactly once instead of looping `remove(id:)`.
+    private(set) var bulkRemoveCallCount = 0
+    /// Number of times the per-id `remove(id:)` entry point has been invoked.
+    private(set) var singleRemoveCallCount = 0
 
     init(seed: [DownloadTaskPersistence.Record] = []) {
         for record in seed {
@@ -47,10 +53,21 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
     }
 
     func remove(id: String) async throws {
+        singleRemoveCallCount += 1
         if shouldFailRemove {
             throw InMemoryDownloadTaskStoreError.removeFailed(id)
         }
         records.removeValue(forKey: id)
+    }
+
+    func remove(ids: Set<String>) async throws {
+        bulkRemoveCallCount += 1
+        if shouldFailRemove {
+            throw InMemoryDownloadTaskStoreError.bulkRemoveFailed(ids)
+        }
+        for id in ids {
+            records.removeValue(forKey: id)
+        }
     }
 
     func record(forID id: String) async -> DownloadTaskPersistence.Record? {
@@ -74,5 +91,6 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
 
 enum InMemoryDownloadTaskStoreError: Error, Equatable {
     case removeFailed(String)
+    case bulkRemoveFailed(Set<String>)
     case upsertFailed(String)
 }

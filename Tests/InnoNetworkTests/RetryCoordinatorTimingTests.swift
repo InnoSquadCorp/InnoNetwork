@@ -130,7 +130,9 @@ struct RetryCoordinatorTimingTests {
         for cycle in 1...3 {
             #expect(await clock.waitForEnqueuedCount(atLeast: cycle))
             clock.advance(by: .seconds(3))
-            #expect(await clock.waitForEnqueuedCount(atLeast: cycle + 1) || cycle == 3)
+            if cycle < 3 {
+                #expect(await clock.waitForEnqueuedCount(atLeast: cycle + 1))
+            }
         }
 
         let value = try await result
@@ -208,10 +210,11 @@ struct RetryCoordinatorTimingTests {
             }
         }
 
-        // `execute` only returns/throws after `finish(requestID:)` has been
-        // awaited, so the requestFailed event must already have been
-        // observed — no polling needed.
-        let observedFailures = await eventStore.requestFailedEntries()
+        // `eventHub.publish` enqueues the event on a partition that
+        // drains through a Task that may still be in flight when
+        // `finish(requestID:)` returns; poll until the observer chain
+        // delivers the failure or the timeout elapses.
+        let observedFailures = await eventStore.waitForRequestFailed(count: 1)
         #expect(observedFailures.count == 1)
         #expect(observedFailures.first?.requestID == requestID)
     }
@@ -249,6 +252,25 @@ private actor RetryTimingEventStore {
             return nil
         }
     }
+
+    /// Polls `requestFailedEntries()` until at least `count` entries are
+    /// observed or `timeout` elapses. ``NetworkEventHub`` drains and
+    /// delivers events asynchronously through the partition queue, so
+    /// `finish(requestID:)` only guarantees the partition is closed, not
+    /// that observers have already received every queued event. Tests
+    /// that need to assert on a published event must poll instead of
+    /// reading once.
+    func waitForRequestFailed(
+        count: Int,
+        timeout: TimeInterval = 1.0
+    ) async -> [(requestID: UUID, errorCode: Int)] {
+        let deadline = Date().addingTimeInterval(timeout)
+        while requestFailedEntries().count < count {
+            if Date() >= deadline { break }
+            try? await Task.sleep(for: .milliseconds(2))
+        }
+        return requestFailedEntries()
+    }
 }
 
 
@@ -268,8 +290,13 @@ private struct FixedDelayRetryPolicy: RetryPolicy {
     let maxRetries: Int
     let retryDelay: TimeInterval
 
-    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
-        retryIndex < maxRetries
+    func shouldRetry(
+        error: NetworkError,
+        retryIndex: Int,
+        request: URLRequest?,
+        response: HTTPURLResponse?
+    ) -> RetryDecision {
+        retryIndex < maxRetries ? .retry : .noRetry
     }
 }
 
@@ -281,16 +308,12 @@ private struct RetryAfterCapPolicy: RetryPolicy {
     let maxRetryAfterDelay: TimeInterval?
     let serverHint: TimeInterval
 
-    func shouldRetry(error: NetworkError, retryIndex: Int) -> Bool {
-        retryIndex < maxRetries
-    }
-
     func shouldRetry(
         error: NetworkError,
         retryIndex: Int,
         request: URLRequest?,
         response: HTTPURLResponse?
     ) -> RetryDecision {
-        shouldRetry(error: error, retryIndex: retryIndex) ? .retryAfter(serverHint) : .noRetry
+        retryIndex < maxRetries ? .retryAfter(serverHint) : .noRetry
     }
 }

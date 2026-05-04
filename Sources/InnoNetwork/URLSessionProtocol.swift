@@ -63,10 +63,10 @@ public extension URLSessionProtocol {
 
 extension URLSession: URLSessionProtocol {
     public func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
-        if context.metricsReporter == nil, context.trustPolicy.isSystemDefault {
-            return try await data(for: request)
-        }
-
+        // Always install the delegate so the configured ``RedirectPolicy``
+        // (in particular ``DefaultRedirectPolicy``) can strip credential-
+        // bearing headers on cross-origin redirects per RFC 9110 §15.4.4.
+        // URLSession's native redirect handling does not apply our policy.
         let delegate = RequestTaskDelegate(request: request, context: context)
         do {
             return try await data(for: request, delegate: delegate)
@@ -81,10 +81,6 @@ extension URLSession: URLSessionProtocol {
     public func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
         URLSession.AsyncBytes, URLResponse
     ) {
-        if context.metricsReporter == nil, context.trustPolicy.isSystemDefault {
-            return try await bytes(for: request, delegate: nil)
-        }
-
         let delegate = RequestTaskDelegate(request: request, context: context)
         do {
             return try await bytes(for: request, delegate: delegate)
@@ -99,10 +95,6 @@ extension URLSession: URLSessionProtocol {
     public func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (
         Data, URLResponse
     ) {
-        if context.metricsReporter == nil, context.trustPolicy.isSystemDefault {
-            return try await upload(for: request, fromFile: fileURL)
-        }
-
         let delegate = RequestTaskDelegate(request: request, context: context)
         do {
             return try await upload(for: request, fromFile: fileURL, delegate: delegate)
@@ -154,5 +146,22 @@ private final class RequestTaskDelegate: NSObject, URLSessionTaskDelegate {
             trustFailureReasonLock.withLock { $0 = reason }
             completionHandler(.cancelAuthenticationChallenge, nil)
         }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        let policy = context.redirectPolicy
+        let originalRequest = request
+        let result = policy.redirect(
+            request: newRequest,
+            response: response,
+            originalRequest: originalRequest
+        )
+        completionHandler(result)
     }
 }

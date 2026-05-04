@@ -21,6 +21,8 @@ func makeTestNetworkConfiguration(
     responseCache: (any ResponseCache)? = nil,
     circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
     customExecutionPolicies: [any RequestExecutionPolicy] = [],
+    userAgentProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultUserAgent.value },
+    acceptLanguageProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultAcceptLanguage.value },
     captureFailurePayload: Bool = false,
     responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .buffered(),
     responseBodyLimit: Int64? = nil
@@ -44,6 +46,8 @@ func makeTestNetworkConfiguration(
         responseCache: responseCache,
         circuitBreakerPolicy: circuitBreakerPolicy,
         customExecutionPolicies: customExecutionPolicies,
+        userAgentProvider: userAgentProvider,
+        acceptLanguageProvider: acceptLanguageProvider,
         captureFailurePayload: captureFailurePayload,
         responseBodyBufferingPolicy: responseBodyBufferingPolicy,
         responseBodyLimit: responseBodyLimit

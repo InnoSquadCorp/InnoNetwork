@@ -84,6 +84,81 @@ struct URLProtocolIntegrationTests {
         #expect(captured.count == 1)
         #expect(captured.first?.value(forHTTPHeaderField: "X-Test-Marker") == "marker-value")
     }
+
+    // The two streaming-buffering tests below stay at the URLProtocol
+    // integration level because `URLSession.AsyncBytes` is not externally
+    // constructible — `MockURLSession.bytes(for:)` cannot synthesise a
+    // value of that type without going through a real URLSession. A
+    // future refactor that abstracts `URLSessionProtocol.bytes(for:)`
+    // over a generic `AsyncSequence<UInt8, Error>` would let these
+    // assertions move into `MockURLSession`.
+
+    @Test("Streaming body buffering collects a 5 MiB response")
+    func streamingBodyBufferingCollectsLargeResponse() async throws {
+        let baseURL = URL(string: "https://large-\(UUID().uuidString).example.com")!
+        let target = baseURL.appendingPathComponent("/large")
+        let payload = Data(repeating: 0xA5, count: 5 * 1_024 * 1_024)
+        StubURLProtocol.register(
+            url: target,
+            response: .success(
+                statusCode: 200,
+                data: payload,
+                headers: [
+                    "Content-Type": "application/octet-stream"
+                ]
+            )
+        )
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                responseBodyBufferingPolicy: .streaming()
+            ),
+            session: makeStubURLSession()
+        )
+
+        let response = try await client.request(BinaryEndpoint(path: "/large"))
+        #expect(response == payload)
+    }
+
+    @Test("Streaming body buffering rejects known 5 MiB responses above maxBytes")
+    func streamingBodyBufferingRejectsKnownOversizedResponse() async throws {
+        let baseURL = URL(string: "https://large-limit-\(UUID().uuidString).example.com")!
+        let target = baseURL.appendingPathComponent("/large")
+        let payload = Data(repeating: 0x5A, count: 5 * 1_024 * 1_024)
+        StubURLProtocol.register(
+            url: target,
+            response: .success(
+                statusCode: 200,
+                data: payload,
+                headers: [
+                    "Content-Type": "application/octet-stream",
+                    "Content-Length": "\(payload.count)",
+                ]
+            )
+        )
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                responseBodyBufferingPolicy: .streaming(maxBytes: 1_024)
+            ),
+            session: makeStubURLSession()
+        )
+
+        do {
+            _ = try await client.request(BinaryEndpoint(path: "/large"))
+            Issue.record("Expected NetworkError.responseTooLarge")
+        } catch let error as NetworkError {
+            switch error {
+            case .responseTooLarge(let limit, let observed):
+                #expect(limit == 1_024)
+                #expect(observed == Int64(payload.count))
+            default:
+                Issue.record("Expected NetworkError.responseTooLarge, got \(error)")
+            }
+        }
+    }
 }
 
 private struct RedirectMessage: Decodable, Sendable {
@@ -108,6 +183,18 @@ private struct HeaderEchoEndpoint: APIDefinition {
         var headers = HTTPHeaders.default
         headers.add(HTTPHeader(name: "X-Test-Marker", value: "marker-value"))
         return headers
+    }
+}
+
+private struct BinaryEndpoint: APIDefinition {
+    typealias Parameter = EmptyParameter
+    typealias APIResponse = Data
+
+    let path: String
+    var method: HTTPMethod { .get }
+
+    var transport: TransportPolicy<Data> {
+        .custom(encoding: .json(defaultRequestEncoder)) { data, _ in data }
     }
 }
 

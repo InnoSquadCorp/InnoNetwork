@@ -66,8 +66,8 @@ storage are not fully visible at the cache abstraction boundary.
 
 ## Typed Auth Boundary
 
-Use `AuthenticatedEndpoint` for requests that must not run unless the client
-has a refresh policy.
+Use `ScopedEndpoint<EmptyResponse, AuthRequiredScope>` for requests that must
+not run unless the client has a refresh policy.
 
 ```swift
 struct Profile: Decodable, Sendable {
@@ -76,15 +76,19 @@ struct Profile: Decodable, Sendable {
 }
 
 let profile = try await networking.api.request(
-    AuthenticatedEndpoint.get("/me").decoding(Profile.self)
+    ScopedEndpoint<EmptyResponse, AuthRequiredScope>
+        .get("/me")
+        .decoding(Profile.self)
 )
 ```
 
-Public calls can keep using `Endpoint`:
+Public calls use `ScopedEndpoint<EmptyResponse, PublicAuthScope>`:
 
 ```swift
 let catalog = try await networking.api.request(
-    Endpoint.get("/catalog").decoding(Catalog.self)
+    ScopedEndpoint<EmptyResponse, PublicAuthScope>
+        .get("/catalog")
+        .decoding(Catalog.self)
 )
 ```
 
@@ -112,8 +116,7 @@ it. Completed, resumed, and cancelled tasks clear that data.
 
 ## WebSocket Observation
 
-Prefer a feature-scoped `WebSocketManager` instance over
-`WebSocketManager.shared`.
+Create a feature-scoped `WebSocketManager` instance for each realtime owner.
 
 ```swift
 let socket = try await networking.realtime.connect(url: socketURL)

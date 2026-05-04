@@ -1,5 +1,4 @@
 import Foundation
-import OSLog
 
 public protocol NetworkClient: Sendable {
     /// Executes a standard typed request modeled with ``APIDefinition``.
@@ -158,29 +157,59 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
         configuration: NetworkConfiguration,
         session: URLSessionProtocol = URLSession.shared
     ) {
+        precondition(
+            !Self.requiresExplicitSessionForConfigurationOverride(
+                configuration: configuration,
+                session: session
+            ),
+            "[InnoNetwork] urlSessionConfigurationOverride is set but DefaultNetworkClient was constructed with URLSession.shared; pass an explicit `session:` built from `configuration.makeURLSessionConfiguration()` to honor the hook."
+        )
         self.configuration = configuration
         self.session = session
-        self.executionRuntime = RequestExecutionRuntime(configuration: configuration, inFlight: inFlight)
+        self.executionRuntime = RequestExecutionRuntime(
+            configuration: configuration,
+            inFlight: inFlight,
+            clock: SystemClock()
+        )
         self.eventHub = NetworkEventHub(
             policy: configuration.eventDeliveryPolicy,
             metricsReporter: configuration.eventMetricsReporter,
             hubKind: .networkRequest
         )
-        #if DEBUG
-        // The override hook is documented to require explicit caller wiring
-        // through `makeURLSessionConfiguration()`. When the default
-        // `URLSession.shared` survives initialization while an override is
-        // also configured, the override silently has no effect — surface a
-        // one-line debug log so the misconfiguration is visible during
-        // development without paying for the warning at runtime in release.
-        if configuration.urlSessionConfigurationOverride != nil,
-            session as AnyObject === URLSession.shared as AnyObject
-        {
-            Logger.API.debug(
-                "[InnoNetwork] urlSessionConfigurationOverride is set but DefaultNetworkClient was constructed with URLSession.shared; the override will not take effect. Pass an explicit `session:` built from `configuration.makeURLSessionConfiguration()` to honor the hook."
-            )
-        }
-        #endif
+    }
+
+    package init(
+        configuration: NetworkConfiguration,
+        session: URLSessionProtocol = URLSession.shared,
+        clock: any InnoNetworkClock
+    ) {
+        precondition(
+            !Self.requiresExplicitSessionForConfigurationOverride(
+                configuration: configuration,
+                session: session
+            ),
+            "[InnoNetwork] urlSessionConfigurationOverride is set but DefaultNetworkClient was constructed with URLSession.shared; pass an explicit `session:` built from `configuration.makeURLSessionConfiguration()` to honor the hook."
+        )
+        self.configuration = configuration
+        self.session = session
+        self.executionRuntime = RequestExecutionRuntime(
+            configuration: configuration,
+            inFlight: inFlight,
+            clock: clock
+        )
+        self.eventHub = NetworkEventHub(
+            policy: configuration.eventDeliveryPolicy,
+            metricsReporter: configuration.eventMetricsReporter,
+            hubKind: .networkRequest
+        )
+    }
+
+    static func requiresExplicitSessionForConfigurationOverride(
+        configuration: NetworkConfiguration,
+        session: URLSessionProtocol
+    ) -> Bool {
+        configuration.urlSessionConfigurationOverride != nil
+            && session as AnyObject === URLSession.shared as AnyObject
     }
 
     /// Begins a long-lived streaming request and returns an

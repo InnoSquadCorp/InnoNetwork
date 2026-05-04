@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import os
 
 @testable import InnoNetwork
 
@@ -113,5 +114,32 @@ struct RequestBuilderOverridesTests {
         #expect(
             mockSession.capturedRequest?.value(forHTTPHeaderField: "Authorization") == "Bearer fresh"
         )
+    }
+
+    @Test("Default header providers are evaluated for each request")
+    func defaultHeaderProvidersRefreshEachRequest() async throws {
+        let userAgent = OSAllocatedUnfairLock(initialState: "TestApp/1")
+        let acceptLanguage = OSAllocatedUnfairLock(initialState: "en-US")
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(BaseURLResponse(id: 1, name: "Tester"))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                userAgentProvider: { userAgent.withLock { $0 } },
+                acceptLanguageProvider: { acceptLanguage.withLock { $0 } }
+            ),
+            session: mockSession
+        )
+
+        _ = try await client.request(InheritsClientDefaultsEndpoint())
+        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "User-Agent") == "TestApp/1")
+        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Accept-Language") == "en-US")
+
+        userAgent.withLock { $0 = "TestApp/2" }
+        acceptLanguage.withLock { $0 = "ko-KR" }
+
+        _ = try await client.request(InheritsClientDefaultsEndpoint())
+        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "User-Agent") == "TestApp/2")
+        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Accept-Language") == "ko-KR")
     }
 }

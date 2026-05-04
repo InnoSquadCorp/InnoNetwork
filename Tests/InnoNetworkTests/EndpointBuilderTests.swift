@@ -32,8 +32,8 @@ private struct FragmentPathRequest: APIDefinition {
 @Suite
 struct EndpointBuilderTests {
     @Test
-    func getProducesEmptyResponseEndpointWithDefaults() {
-        let endpoint = Endpoint.get("/users/42")
+    func getProducesEmptyResponseEndpointWithDefaults() async {
+        let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/users/42")
 
         #expect(endpoint.method == .get)
         #expect(endpoint.path == "/users/42")
@@ -49,12 +49,14 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func decodingPromotesEndpointResponseType() {
+    func decodingPromotesEndpointResponseType() async {
         struct User: Decodable, Sendable, Equatable {
             let id: Int
         }
 
-        let endpoint: Endpoint<User> = Endpoint.get("/users/42").decoding(User.self)
+        let endpoint: ScopedEndpoint<User, PublicAuthScope> = ScopedEndpoint<EmptyResponse, PublicAuthScope>.get(
+            "/users/42"
+        ).decoding(User.self)
 
         #expect(endpoint.method == .get)
         #expect(endpoint.path == "/users/42")
@@ -62,7 +64,7 @@ struct EndpointBuilderTests {
 
     @Test
     func authenticatedEndpointRequiresRefreshPolicy() async throws {
-        let endpoint = AuthenticatedEndpoint.get("/me").decoding(EndpointAck.self)
+        let endpoint = ScopedEndpoint<EmptyResponse, AuthRequiredScope>.get("/me").decoding(EndpointAck.self)
         let mockSession = MockURLSession()
         try mockSession.setMockJSON(EndpointAck(ok: true))
         let client = DefaultNetworkClient(
@@ -87,7 +89,7 @@ struct EndpointBuilderTests {
 
     @Test
     func authenticatedEndpointExecutesWithRefreshPolicy() async throws {
-        let endpoint = AuthenticatedEndpoint.get("/me").decoding(EndpointAck.self)
+        let endpoint = ScopedEndpoint<EmptyResponse, AuthRequiredScope>.get("/me").decoding(EndpointAck.self)
         let mockSession = MockURLSession()
         try mockSession.setMockJSON(EndpointAck(ok: true))
         let policy = RefreshTokenPolicy(
@@ -112,7 +114,8 @@ struct EndpointBuilderTests {
     func decodingPreservesMultipartTransportDecoder() {
         let decoder = JSONDecoder()
 
-        let endpoint: Endpoint<EndpointAck> = Endpoint.post("/upload")
+        let endpoint: ScopedEndpoint<EndpointAck, PublicAuthScope> = ScopedEndpoint<EmptyResponse, PublicAuthScope>
+            .post("/upload")
             .transport(.multipart(decoder: decoder))
             .decoding(EndpointAck.self)
 
@@ -130,7 +133,8 @@ struct EndpointBuilderTests {
 
     @Test
     func decodingPreservesCustomNoneTransportShape() async throws {
-        let endpoint: Endpoint<EndpointAck> = Endpoint.post("/custom")
+        let endpoint: ScopedEndpoint<EndpointAck, PublicAuthScope> = ScopedEndpoint<EmptyResponse, PublicAuthScope>
+            .post("/custom")
             .transport(.custom(encoding: .none) { _, _ in EmptyResponse() })
             .decoding(EndpointAck.self)
 
@@ -161,7 +165,8 @@ struct EndpointBuilderTests {
 
     @Test
     func decodingPreservesCustomNoneTransportValidation() async throws {
-        let endpoint: Endpoint<EndpointAck> = Endpoint.post("/custom")
+        let endpoint: ScopedEndpoint<EndpointAck, PublicAuthScope> = ScopedEndpoint<EmptyResponse, PublicAuthScope>
+            .post("/custom")
             .transport(
                 .custom(encoding: .none) { _, response in
                     guard response.response?.value(forHTTPHeaderField: "X-Promoted-Decode") == "allowed" else {
@@ -199,7 +204,7 @@ struct EndpointBuilderTests {
             let title: String
         }
 
-        let endpoint = Endpoint.post("/posts")
+        let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/posts")
             .body(CreatePost(title: "hello"))
             .decoding(EmptyResponse.self)
 
@@ -212,8 +217,8 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func headerCaseInsensitivelyReplacesValues() {
-        let endpoint = Endpoint.get("/items")
+    func headerCaseInsensitivelyReplacesValues() async {
+        let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/items")
             .header("X-Trace-ID", value: "abc")
             .header("x-trace-id", value: "def")
 
@@ -222,8 +227,8 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func acceptableStatusCodesOverrideIsCarriedThroughDecoding() {
-        let endpoint = Endpoint.get("/maybe")
+    func acceptableStatusCodesOverrideIsCarriedThroughDecoding() async {
+        let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/maybe")
             .acceptableStatusCodes([200, 304])
             .decoding(EmptyResponse.self)
 
@@ -231,8 +236,8 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func transportBuilderUpdatesEndpointEncodingWithoutStoringContentTypeHeader() {
-        let endpoint = Endpoint.post("/login")
+    func transportBuilderUpdatesEndpointEncodingWithoutStoringContentTypeHeader() async {
+        let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/login")
             .transport(.formURLEncoded())
 
         if case .formURLEncoded = endpoint.transport.requestEncoding {
@@ -260,7 +265,7 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        let endpoint = Endpoint.get("/users")
+        let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/users")
             .query(SearchQuery(limit: 10, sort: "name"))
             .decoding(SearchResponse.self)
 
@@ -284,7 +289,8 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        _ = try await client.request(Endpoint.get("/users/1").decoding(EndpointAck.self))
+        _ = try await client.request(
+            ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/users/1").decoding(EndpointAck.self))
 
         #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == nil)
     }
@@ -298,7 +304,8 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        _ = try await client.request(Endpoint.post("/ping").decoding(EndpointAck.self))
+        _ = try await client.request(
+            ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/ping").decoding(EndpointAck.self))
 
         #expect(mockSession.capturedRequest?.httpBody == nil)
         #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == nil)
@@ -320,7 +327,7 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        let endpoint = Endpoint.post("/posts")
+        let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/posts")
             .body(CreatePost(title: "hello"))
             .decoding(CreatedPost.self)
 
@@ -346,7 +353,7 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        let endpoint = Endpoint.post("/login")
+        let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/login")
             .transport(.formURLEncoded())
             .body(Login(username: "test"))
             .decoding(LoginResponse.self)
@@ -370,7 +377,7 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        let endpoint = Endpoint.post("/login")
+        let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/login")
             .transport(.formURLEncoded())
             .transport(.query())
             .query(Login(username: "test"))
@@ -393,7 +400,7 @@ struct EndpointBuilderTests {
             let title: String
         }
 
-        let endpoint = Endpoint.post("/posts")
+        let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/posts")
             .headers(headers)
             .body(CreatePost(title: "hello"))
             .decoding(EndpointAck.self)
@@ -430,7 +437,7 @@ struct EndpointBuilderTests {
         )
 
         _ = try await client.request(
-            Endpoint.post("/posts")
+            ScopedEndpoint<EmptyResponse, PublicAuthScope>.post("/posts")
                 .body(CreatePost(title: "hello"))
                 .decoding(EndpointAck.self)
         )
@@ -447,7 +454,8 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        _ = try await client.request(Endpoint.get("/files/a%2Fb").decoding(EndpointAck.self))
+        _ = try await client.request(
+            ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/files/a%2Fb").decoding(EndpointAck.self))
 
         #expect(mockSession.capturedRequest?.url?.absoluteString == "https://api.example.com/api/v1/files/a%2Fb")
     }
@@ -467,16 +475,30 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        _ = try await client.request(Endpoint.get(path).decoding(EndpointAck.self))
+        _ = try await client.request(
+            ScopedEndpoint<EmptyResponse, PublicAuthScope>.get(path).decoding(EndpointAck.self))
 
         #expect(mockSession.capturedRequest?.url?.absoluteString == expectedURL)
     }
 
     @Test("Dynamic path segments encode slashes and percent signs")
-    func dynamicPathSegmentsAreEncodedAsSingleSegments() {
+    func dynamicPathSegmentsAreEncodedAsSingleSegments() async {
         #expect(
             EndpointPathEncoding.percentEncodedSegment("a/b 100% \u{2713}")
                 == "a%2Fb%20100%25%20%E2%9C%93")
+    }
+
+    @Test("Dynamic path segments support primitive, UUID, and raw-value identifiers")
+    func dynamicPathSegmentsSupportIdentifierTypes() async throws {
+        enum Scope: String, Sendable {
+            case nested = "admin/root"
+        }
+
+        let uuid = try #require(UUID(uuidString: "A1B2C3D4-E5F6-4789-ABCD-1234567890AB"))
+
+        #expect(EndpointPathEncoding.percentEncodedSegment(42) == "42")
+        #expect(EndpointPathEncoding.percentEncodedSegment(uuid) == "A1B2C3D4-E5F6-4789-ABCD-1234567890AB")
+        #expect(EndpointPathEncoding.percentEncodedSegment(Scope.nested) == "admin%2Froot")
     }
 
     @Test(
@@ -490,7 +512,7 @@ struct EndpointBuilderTests {
         )
 
         await #expect(throws: NetworkError.self) {
-            try await client.request(Endpoint.get(path))
+            try await client.request(ScopedEndpoint<EmptyResponse, PublicAuthScope>.get(path))
         }
         #expect(mockSession.capturedRequest == nil)
     }
@@ -522,7 +544,7 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        let endpoint = Endpoint.get("/empty")
+        let endpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/empty")
             .acceptableStatusCodes([304])
             .decoding(AcceptedResponse.self)
 

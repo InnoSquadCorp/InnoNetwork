@@ -5,14 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and the project follows Semantic
 Versioning.
 
-## [4.0.1] - 2026-05-02
+## [4.0.0] - 2026-05-02
 
-100-issue hardening pass distilled from a third-pass production review.
-Behavior, durability, and concurrency contracts are tightened across the
-core, download, websocket, and persistent-cache modules. Detailed migration
-notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
+InnoNetwork's first public release. The package targets Apple platforms only
+and is built around Swift Concurrency, explicit transport policies, and
+operational visibility from prototype to production. See
+[`docs/releases/4.0.0.md`](docs/releases/4.0.0.md) for the one-page release
+summary and [`docs/Migration-4.0.0.md`](docs/Migration-4.0.0.md) for migration
+guidance.
 
-### Breaking
+### 49-Item Hardening Summary
+
+This release folds the full 49-item hardening pass into the public 4.0.0
+baseline instead of shipping it as a follow-up patch. The review severity
+distribution was 1 Critical, 17 High, 23 Medium, and 8 Low items. Breaking
+changes are intentional and are called out below; migration recipes live in
+[`docs/Migration-4.0.0.md`](docs/Migration-4.0.0.md).
+
+| Area | Hardening IDs |
+| --- | --- |
+| Security / privacy | 1-1, 1-2, 1-5, 2-12, 3-2, 3-4, 3-20, 3-22 |
+| Memory / lifecycle / concurrency | 1-3, 1-4, 2-1, 2-7, 2-15, 2-16, 3-9, 3-14 |
+| Data integrity / retry / cache correctness | 2-2, 2-3, 2-5, 2-13, 2-17, 2-18, 3-1, 3-3, 3-6, 3-15 |
+| HTTP standards | 2-21, 3-5, 3-11, 3-12 |
+| Performance hot paths | 2-4, 2-6, 2-9, 2-10, 2-11, 2-14, 2-22, 3-7, 3-13, 3-18 |
+| API / naming cleanup | 2-8, 2-19, 2-20, 3-17, 3-19 |
+| Test infrastructure | 3-8, 3-10, 3-21 |
+| CI / supply chain | 3-16 |
+
+### Hardening Pass — Breaking
 
 - `URLQueryEncoder`: `nonConformingFloatEncodingStrategy` defaults to
   `.throw`. NaN/Infinity now raise `EncodingError.unsupportedValue(reason:)`
@@ -57,13 +78,24 @@ notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
   In-flight tasks are cancelled, the URLSession is `invalidateAndCancel()`d,
   and per-task event partitions finish. `deinit` retains
   `finishTasksAndInvalidate()` as a fallback.
+- `Endpoint<Response>` and `AuthenticatedEndpoint<Response>` fluent aliases
+  are removed. Use `ScopedEndpoint<Response, PublicAuthScope>` or
+  `ScopedEndpoint<Response, AuthRequiredScope>` explicitly.
+- `WebSocketManager.shared` is removed. Construct and inject a
+  feature-owned `WebSocketManager(configuration:)`.
 
-### Added
+### Hardening Pass — Added
 
 - `NetworkConfiguration.urlSessionConfigurationOverride` and
   `NetworkConfiguration.makeURLSessionConfiguration()` provide an escape
   hatch for proxy/HTTP2/connection-pool/TLS tuning without forking the
   abstraction.
+- `NetworkConfiguration.redirectPolicy` defaults to
+  `DefaultRedirectPolicy`, which strips `Authorization`, `Cookie`, and
+  `Proxy-Authorization` on cross-origin redirects.
+- `NetworkConfiguration.allowsInsecureHTTP` defaults to `false`; plain
+  `http://` base URLs fail during request construction unless a client
+  explicitly opts in for a local/dev endpoint.
 - `PersistentResponseCacheConfiguration.persistenceFsyncPolicy` selects
   between `.always` (fd + parent-dir fsync after every index write),
   `.onCheckpoint` (default), and `.never`.
@@ -81,9 +113,18 @@ notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
   `reconnectMaxTotalDuration` elapses before reconnect succeeds, separate
   from `maxReconnectAttemptsExceeded` so observers can differentiate
   "network down" from "exhausted retry budget".
+- Supply-chain CI: Dependabot now watches SwiftPM and GitHub Actions, every
+  workflow action is pinned to a full commit SHA, and CI runs
+  `actions/dependency-review-action` on pull requests.
 
-### Fixed
+### Hardening Pass — Fixed
 
+- Redirect handling no longer leaks credential-bearing headers across
+  origins, and base URLs containing embedded `user:password@` credentials
+  or fragments fail before transport dispatch.
+- `Cache-Control` parsing is quoted-string aware. Directives such as
+  `private="Set-Cookie, Authorization"` now still count as `private`,
+  invalidating the current cache key and skipping storage.
 - `URLQueryEncoder`: `SnakeCaseKeyTransformCache` is bounded to 4096
   entries to prevent unbounded growth on dynamic key sets.
 - `RetryCoordinator`: catch branches are deduplicated, finish ordering is
@@ -150,14 +191,6 @@ notes live in [`docs/Migration-4.0.x.md`](docs/Migration-4.0.x.md).
   `Task.sleep`-based polling so a contended lock no longer pins a
   cooperative-executor thread under `usleep`.
 
-## [4.0.0] - 2026-05-01
-
-InnoNetwork's first public release. The package targets Apple platforms only
-and is built around Swift Concurrency, explicit transport policies, and
-operational visibility from prototype to production. See
-[`docs/releases/4.0.0.md`](docs/releases/4.0.0.md) for the one-page release
-summary.
-
 ### Added
 
 - Internal request execution pipeline stages for built-in preflight,
@@ -170,8 +203,8 @@ summary.
   `AnyRequestExecutionPolicy` for custom transport-attempt policies.
 - `ResponseBodyBufferingPolicy`; inline requests now prefer
   `URLSession.bytes(for:)` with bounded collection before decoder handoff.
-- `EndpointAuthScope`, `PublicAuthScope`, `AuthRequiredScope`,
-  `ScopedEndpoint`, and `AuthenticatedEndpoint` for type-level auth
+- `EndpointAuthScope`, `PublicAuthScope`, `AuthRequiredScope`, and
+  `ScopedEndpoint` for type-level auth
   boundaries. Auth-required endpoints fail before transport when no
   `RefreshTokenPolicy` is configured.
 - `StateReducer` and `StateReduction` as the shared reducer vocabulary for
@@ -347,17 +380,16 @@ summary.
   (`.json`, `.query`, `.formURLEncoded`, `.multipart`, `.custom`) that
   automatically pick empty-tolerant decoders for
   `HTTPEmptyResponseDecodable` outputs.
-- `Endpoint` replaces `.contentType(_:)` with `.transport(_:)`. The
+- `ScopedEndpoint` replaces `.contentType(_:)` with `.transport(_:)`. The
   `Content-Type` header is derived from the transport's request encoding,
   and `decoding(_:)` carries the request encoding into the new response
   generic instead of resetting it.
-- `Endpoint<Response>` is now a compatibility alias for
-  `ScopedEndpoint<Response, PublicAuthScope>`. Use
-  `AuthenticatedEndpoint<Response>` or
+- Fluent endpoint aliases are removed. Use
+  `ScopedEndpoint<Response, PublicAuthScope>` for public fluent endpoints and
   `ScopedEndpoint<Response, AuthRequiredScope>` for auth-required fluent
   endpoints.
-- `WebSocketManager.shared` is soft-deprecated. Construct
-  `WebSocketManager(configuration:)` per feature for new code.
+- `WebSocketManager.shared` has been removed. Construct
+  `WebSocketManager(configuration:)` per feature.
 - `DefaultNetworkClient.stream(_:)` is now a thin `AsyncThrowingStream`
   factory; the streaming pipeline (per-attempt request preparation,
   lifecycle events, response interceptors, status validation, line

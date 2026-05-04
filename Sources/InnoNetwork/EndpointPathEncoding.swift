@@ -8,31 +8,61 @@ public enum EndpointPathEncoding {
     /// as raw segment values. Slashes and percent signs are encoded so a user
     /// identifier such as `a/b` cannot accidentally change the path hierarchy.
     ///
-    /// The value is rendered via `String(describing:)`, which matches what
-    /// Swift's string interpolation produces. Pass primitive identifiers
-    /// (`Int`, `UUID`, raw-value enums) or values whose `description` is the
-    /// intended segment text. Optional values trigger an `assertionFailure`
-    /// in DEBUG builds because `String(describing:)` would silently render
-    /// them as `Optional(...)` / `nil` and ship a malformed URL; in RELEASE
-    /// builds the unwrapped description is used so transient logs/metrics
-    /// remain inspectable rather than crashing in production.
-    public static func percentEncodedSegment<T>(_ value: T) -> String {
-        let mirror = Mirror(reflecting: value)
-        if mirror.displayStyle == .optional {
-            assertionFailure(
-                "EndpointPathEncoding.percentEncodedSegment received an Optional value, which would render as 'Optional(...)' or 'nil'. Unwrap the value before passing it to a path placeholder."
-            )
-            if let child = mirror.children.first {
-                return percentEncodedSegment(child.value)
-            }
-            return percentEncodedSegment("nil")
-        }
-        return percentEncodedSegment(String(describing: value))
+    /// The value must have a lossless string representation so path
+    /// placeholders do not accidentally accept arbitrary debug descriptions.
+    /// Use primitive identifiers (`Int`, `String`, `Bool`, etc.), `UUID`, or
+    /// raw-value enums whose raw value is losslessly string-convertible.
+    public static func percentEncodedSegment<T>(_ value: T) -> String
+    where T: LosslessStringConvertible & Sendable {
+        percentEncodedSegment(String(value))
+    }
+
+    /// Percent-encodes a dynamic optional value for use as a single URL path
+    /// segment.
+    ///
+    /// Optional values trigger an `assertionFailure` in DEBUG builds because
+    /// accepting them silently would hide a missing path component. In
+    /// RELEASE builds, `.some` values are unwrapped and `.none` renders as
+    /// `"nil"` to preserve the previous non-crashing behavior.
+    public static func percentEncodedSegment<T>(_ value: T?) -> String
+    where T: LosslessStringConvertible & Sendable {
+        optionalSegment(value.map(String.init))
+    }
+
+    /// Percent-encodes a dynamic UUID for use as a single URL path segment.
+    public static func percentEncodedSegment(_ value: UUID) -> String {
+        percentEncodedSegment(value.uuidString)
+    }
+
+    /// Percent-encodes a dynamic optional UUID for use as a single URL path
+    /// segment.
+    public static func percentEncodedSegment(_ value: UUID?) -> String {
+        optionalSegment(value?.uuidString)
+    }
+
+    /// Percent-encodes a dynamic raw-value enum for use as a single URL path
+    /// segment.
+    public static func percentEncodedSegment<T>(_ value: T) -> String
+    where T: RawRepresentable & Sendable, T.RawValue: LosslessStringConvertible & Sendable {
+        percentEncodedSegment(value.rawValue)
+    }
+
+    /// Percent-encodes a dynamic optional raw-value enum for use as a single
+    /// URL path segment.
+    public static func percentEncodedSegment<T>(_ value: T?) -> String
+    where T: RawRepresentable & Sendable, T.RawValue: LosslessStringConvertible & Sendable {
+        optionalSegment(value.map { String($0.rawValue) })
     }
 
     /// Percent-encodes a dynamic string for use as a single URL path segment.
     public static func percentEncodedSegment(_ value: String) -> String {
         percentEncode(value, preservingPercentEscapes: false, allowsSlash: false)
+    }
+
+    /// Percent-encodes a dynamic optional string for use as a single URL path
+    /// segment.
+    public static func percentEncodedSegment(_ value: String?) -> String {
+        optionalSegment(value)
     }
 
     package static func percentEncodedPathLiteral(_ path: String) throws -> String {
@@ -104,6 +134,16 @@ public enum EndpointPathEncoding {
         )
     }
 
+    private static func optionalSegment(_ value: String?) -> String {
+        guard let unwrapped = value else {
+            assertionFailure(
+                "EndpointPathEncoding.percentEncodedSegment received a nil Optional. Unwrap the value before passing it to a path placeholder."
+            )
+            return percentEncodedSegment("nil")
+        }
+        return percentEncodedSegment(unwrapped)
+    }
+
     private static let hexDigits: [Character] = Array("0123456789ABCDEF")
 
     private static func percentEncoded(_ byte: UInt8) -> String {
@@ -141,9 +181,30 @@ public enum EndpointPathEncoding {
 }
 
 package enum EndpointPathBuilder {
-    package static func makeURL(baseURL: URL, endpointPath: String) throws -> URL {
+    package static func makeURL(
+        baseURL: URL,
+        endpointPath: String,
+        allowsInsecureHTTP: Bool = false
+    ) throws -> URL {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             throw NetworkError.invalidBaseURL(baseURL.absoluteString)
+        }
+
+        if let scheme = components.scheme?.lowercased(), scheme == "http", !allowsInsecureHTTP {
+            throw NetworkError.invalidBaseURL(
+                "Plain HTTP base URL is rejected by default. Pass allowsInsecureHTTP: true on NetworkConfiguration to opt in."
+            )
+        }
+
+        if components.user != nil || components.password != nil {
+            throw NetworkError.invalidBaseURL(
+                "Base URL must not contain userinfo (user:password@). Use a request interceptor or Authorization header instead."
+            )
+        }
+        if components.fragment != nil {
+            throw NetworkError.invalidBaseURL(
+                "Base URL must not contain a fragment."
+            )
         }
 
         let basePath = components.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))

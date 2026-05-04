@@ -61,7 +61,7 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `InnoNetworkTestSupport` library product and its `public` symbols
   (currently `MockURLSession`, `WebSocketEventRecorder`, `StubBehavior`,
   `StubNetworkClient`, and `StubRequestKey`)
-- `Endpoint`, `AuthenticatedEndpoint`, `ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
+- `ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `WebSocketCloseDisposition` observation surface
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
@@ -79,7 +79,7 @@ Per-symbol evolution allowances within the 4.x line:
   exact wording is not part of the compatibility contract.
 - `InnoNetworkTestSupport` — additional helpers may be added; existing
   symbols stay source-compatible within 4.x.
-- `Endpoint`, `AnyEncodable`, `NetworkContext`, `CorrelationIDInterceptor` —
+- `ScopedEndpoint`, `AnyEncodable`, `NetworkContext`, `CorrelationIDInterceptor` —
   builder shape may grow new chainable methods.
 - `EndpointPathEncoding` — may add new helpers for placeholder encoding;
   existing entry points remain source-compatible. The set of percent-encoded
@@ -116,6 +116,10 @@ Per-symbol evolution allowances within the 4.x line:
 - `DecodingInterceptor` — protocol may grow new optional hooks with
   default implementations as additional decode-boundary use cases
   surface.
+- `HTTPHeader`, `HTTPHeaders`, and default header providers — default
+  `User-Agent` / `Accept-Language` values are evaluated at request-build time
+  so applications can inject bundle or locale ownership without relying on a
+  process-start snapshot.
 
 ## Version Pinning Guidance
 
@@ -146,12 +150,12 @@ high-level compatibility classification readable for the 4.x release line.
 ### InnoNetwork
 
 - `APIDefinition`, `AnyEncodable`, `AnyRequestExecutionPolicy`,
-  `AnyResponseDecoder`, `AuthRequiredScope`, `AuthenticatedEndpoint`,
+  `AnyResponseDecoder`, `AuthRequiredScope`,
   `CachedResponse`, `CancellationTag`,
   `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
   `ContentType`, `CorrelationIDInterceptor`, `DecodingStage`,
   `DefaultNetworkClient`,
-  `DefaultNetworkLogger`, `EmptyParameter`, `EmptyResponse`, `Endpoint`,
+  `DefaultNetworkLogger`, `EmptyParameter`, `EmptyResponse`,
   `EndpointAuthScope`, `EndpointPathEncoding`, `EndpointShape`,
   `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
   `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,

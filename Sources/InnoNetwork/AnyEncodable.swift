@@ -1,8 +1,8 @@
 import Foundation
 
-/// Type-erased `Encodable` wrapper used by the builder-style ``Endpoint`` API
-/// to carry an arbitrary request body without forcing every endpoint type
-/// to surface its parameter shape as a generic parameter.
+/// Type-erased `Encodable` wrapper used by the builder-style
+/// ``ScopedEndpoint`` API to carry an arbitrary request body without forcing
+/// every endpoint type to surface its parameter shape as a generic parameter.
 ///
 /// `AnyEncodable` captures the wrapped value's `encode(to:)` behaviour in a
 /// `@Sendable` closure so the wrapper itself can travel across actor and

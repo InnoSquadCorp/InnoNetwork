@@ -78,6 +78,13 @@ public struct URLQueryEncoder: Sendable {
     /// through unchanged, space becomes `+`, and everything else is escaped
     /// as percent-encoded UTF-8 octets. This differs from
     /// `URLComponents.percentEncodedQuery`, which leaves `space` as `%20`.
+    ///
+    /// **Use ``RFC3986Encoding/encode(_:)`` instead** for URI path segments
+    /// or OAuth artifacts (PKCE `code_verifier`, `state`, `nonce`) that
+    /// require RFC 3986 §2.3 unreserved-set semantics — those callers must
+    /// preserve `~` and percent-encode `+`/space identically (`%2B`/`%20`).
+    /// Form encoding is reserved for `application/x-www-form-urlencoded`
+    /// request bodies.
     static func formEscape(_ value: String) -> String {
         var escaped = ""
         escaped.reserveCapacity(value.utf8.count)
@@ -228,6 +235,16 @@ private final class QueryValueBox {
         storage = .array(array)
     }
 
+    func appendArrayElement(_ element: QueryValueBox) {
+        switch storage {
+        case .array(var array):
+            array.append(element)
+            storage = .array(array)
+        default:
+            storage = .array([element])
+        }
+    }
+
     func setScalar(_ value: String) {
         storage = .scalar(value)
     }
@@ -242,6 +259,12 @@ private struct _URLQueryEncodingOptions: Sendable {
     let dateEncodingStrategy: JSONEncoder.DateEncodingStrategy
     let arrayEncodingStrategy: URLQueryArrayEncodingStrategy
     let nonConformingFloatEncodingStrategy: URLQueryFloatEncodingStrategy
+    /// Sendable, Foundation-cached ISO 8601 formatter equivalent to
+    /// `ISO8601DateFormatter()` with the default `.withInternetDateTime`
+    /// options (e.g. `2026-05-04T01:23:45Z`). `Date.ISO8601FormatStyle` is
+    /// `Sendable` so it doesn't need the `nonisolated(unsafe)` escape hatch
+    /// that `ISO8601DateFormatter` did under Swift 6 strict concurrency.
+    static let iso8601FormatStyle = Date.ISO8601FormatStyle.iso8601
 
     /// Stringifies a `Double` for the wire. Returns `nil` if the value is
     /// non-conforming and the strategy is `.throw`; the caller is expected
@@ -296,7 +319,7 @@ private struct _URLQueryEncodingOptions: Sendable {
         case .millisecondsSince1970:
             return .scalar(String(date.timeIntervalSince1970 * 1000.0))
         case .iso8601:
-            return .scalar(ISO8601DateFormatter().string(from: date))
+            return .scalar(Self.iso8601FormatStyle.format(date))
         case .formatted(let formatter):
             return .scalar(formatter.string(from: date))
         case .custom(let encode):
@@ -651,14 +674,7 @@ private struct URLQueryUnkeyedEncodingContainer: UnkeyedEncodingContainer {
 
     private func appendChild() -> QueryValueBox {
         let child = QueryValueBox()
-        let array: [QueryValueBox]
-        switch box.storage {
-        case .array(let existing):
-            array = existing + [child]
-        default:
-            array = [child]
-        }
-        box.setArray(array)
+        box.appendArrayElement(child)
         return child
     }
 }

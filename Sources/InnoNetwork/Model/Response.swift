@@ -45,15 +45,31 @@ public struct Response: CustomDebugStringConvertible, Equatable, Sendable {
     /// Returns a copy of the response with `data` zeroed out, used by the
     /// failure-payload redaction path so callers cannot accidentally observe
     /// the raw response body when ``NetworkConfiguration/captureFailurePayload``
-    /// is disabled. Status code, request, and HTTPURLResponse metadata are
-    /// preserved.
+    /// is disabled. Status code and HTTPURLResponse metadata are preserved;
+    /// any `user:password@` userinfo on the request URL is stripped so
+    /// embedded credentials cannot leak to crash logs or analytics.
     public func redactingData() -> Response {
         guard let response else { return self }
         return Response(
             statusCode: statusCode,
             data: Data(),
-            request: request,
+            request: request.map(Self.strippingURLCredentials),
             response: response
         )
+    }
+
+    static func strippingURLCredentials(_ request: URLRequest) -> URLRequest {
+        guard let url = request.url,
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+            components.user != nil || components.password != nil
+        else {
+            return request
+        }
+        components.user = nil
+        components.password = nil
+        guard let stripped = components.url else { return request }
+        var copy = request
+        copy.url = stripped
+        return copy
     }
 }

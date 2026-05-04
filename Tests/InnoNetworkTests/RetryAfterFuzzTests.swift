@@ -109,7 +109,10 @@ struct RetryAfterFuzzTests {
         }
     }
 
-    @Test("contextual shouldRetry emits .retryAfter only on 429/503 with parseable header", arguments: seeds)
+    @Test(
+        "contextual shouldRetry emits .retryAfter on 429/503 and 3xx with parseable header",
+        arguments: seeds
+    )
     func contextualShouldRetryRoutesByStatusAndHeader(seed: UInt64) throws {
         var rng = SplitMix64(seed: seed)
         let policy = ExponentialBackoffRetryPolicy(maxRetries: 5, retryDelay: 1)
@@ -136,7 +139,10 @@ struct RetryAfterFuzzTests {
                 response: httpResponse
             )
             let expectedDecision: RetryDecision
-            if status == 429 || status == 503, includeHeader {
+            // RFC 9110 §10.2.3 lists Retry-After as applicable to 3xx in
+            // addition to 429/503; the policy honors all three classes.
+            let honorsRetryAfter = (300...399).contains(status) || status == 429 || status == 503
+            if honorsRetryAfter, includeHeader {
                 expectedDecision = .retryAfter(TimeInterval(headerSeconds))
             } else if status == 408 || status == 429 || (500...599).contains(status) {
                 expectedDecision = .retry

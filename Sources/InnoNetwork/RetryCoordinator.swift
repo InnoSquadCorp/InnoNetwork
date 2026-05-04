@@ -145,11 +145,26 @@ package struct RetryCoordinator {
         snapshot: NetworkSnapshot?
     ) async throws -> RetryStepOutcome {
         guard let policy = retryPolicy else { throw error }
-        let decision = policy.shouldRetry(
+        let policyDecision = policy.shouldRetry(
             error: error,
             retryIndex: retryIndex,
             request: request,
             response: error.underlyingHTTPResponse
+        )
+        // Coordinator-level safety net: even if a custom policy elects to
+        // retry, never auto-retry a non-idempotent timeout when the active
+        // ``RetryIdempotencyPolicy`` would reject it. A POST/PATCH that
+        // timed out may already have been received and processed by the
+        // server — retrying without an idempotency anchor risks duplicate
+        // writes (e.g. duplicate payments). Consult the policy's exposed
+        // ``RetryIdempotencyPolicy`` so callers using `.methodAgnostic`,
+        // a custom safe-method set, or a custom header name are honoured
+        // instead of being overridden by a hardcoded default.
+        let decision = Self.applyIdempotencySafetyNet(
+            decision: policyDecision,
+            error: error,
+            request: request,
+            idempotency: policy.idempotencyPolicy
         )
         if case .noRetry = decision {
             throw error
@@ -197,6 +212,31 @@ package struct RetryCoordinator {
             nextTotalRetries: totalRetries + 1,
             snapshot: nextSnapshot
         )
+    }
+
+    private static func applyIdempotencySafetyNet(
+        decision: RetryDecision,
+        error: NetworkError,
+        request: URLRequest?,
+        idempotency: RetryIdempotencyPolicy
+    ) -> RetryDecision {
+        if case .noRetry = decision { return decision }
+        guard case .timeout = error else { return decision }
+        guard let request else { return decision }
+        // `.methodAgnostic` (or any custom policy that retries every method)
+        // means the caller owns duplicate-write protection above
+        // InnoNetwork — never override the policy decision.
+        if idempotency.retriesAllMethods { return decision }
+        let method = (request.httpMethod ?? "GET").uppercased()
+        // Methods explicitly considered safe by the active policy (e.g.
+        // GET/HEAD by default) are never converted to `.noRetry`.
+        if idempotency.safeMethods.contains(method) { return decision }
+        // For non-safe methods, only block when the configured idempotency
+        // header is missing. Custom header names are honored.
+        let hasIdempotencyKey =
+            request.value(forHTTPHeaderField: idempotency.idempotencyHeaderName)?.isEmpty == false
+        if hasIdempotencyKey { return decision }
+        return .noRetry
     }
 
     private static func delay(

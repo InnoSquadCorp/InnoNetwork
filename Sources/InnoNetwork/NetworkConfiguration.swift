@@ -22,7 +22,8 @@ public struct NetworkConfiguration: Sendable {
                 requestInterceptors: [],
                 responseInterceptors: [],
                 customExecutionPolicies: [],
-                responseBodyBufferingPolicy: .streaming()
+                responseBodyBufferingPolicy: .streaming(),
+                redirectPolicy: DefaultRedirectPolicy()
             )
         }
 
@@ -46,7 +47,8 @@ public struct NetworkConfiguration: Sendable {
                 requestInterceptors: [],
                 responseInterceptors: [],
                 customExecutionPolicies: [],
-                responseBodyBufferingPolicy: .streaming()
+                responseBodyBufferingPolicy: .streaming(),
+                redirectPolicy: DefaultRedirectPolicy()
             )
         }
     }
@@ -104,6 +106,20 @@ public struct NetworkConfiguration: Sendable {
     /// interceptors, status validation, cache writes, and decoding.
     public let customExecutionPolicies: [any RequestExecutionPolicy]
 
+    /// Produces the default `User-Agent` value at request-build time.
+    ///
+    /// The provider is evaluated for each request when the endpoint still
+    /// carries the library default `User-Agent`, allowing tests and apps with
+    /// custom bundle metadata to avoid a process-start snapshot.
+    public let userAgentProvider: @Sendable () -> String
+
+    /// Produces the default `Accept-Language` value at request-build time.
+    ///
+    /// The provider is evaluated for each request when the endpoint still
+    /// carries the library default `Accept-Language`, so locale changes can
+    /// be reflected without rebuilding endpoint types.
+    public let acceptLanguageProvider: @Sendable () -> String
+
     /// When `false` (default), response bodies attached to ``NetworkError``
     /// cases (`decoding`, `statusCode`, and `underlying` when present) are
     /// zeroed out before the error is logged or surfaced
@@ -127,15 +143,33 @@ public struct NetworkConfiguration: Sendable {
     /// ``responseBodyBufferingPolicy`` directly.
     public let responseBodyLimit: Int64?
 
+    /// Decides how the client reacts to HTTP redirects (3xx + `Location`).
+    /// Defaults to ``DefaultRedirectPolicy``, which strips
+    /// `Authorization`, `Cookie`, and `Proxy-Authorization` on cross-origin
+    /// hops per RFC 9110 §15.4.4.
+    public let redirectPolicy: any RedirectPolicy
+
+    /// When `false` (default), a `baseURL` with `http://` scheme is rejected
+    /// at request-build time with ``NetworkError/invalidBaseURL(_:)``. App
+    /// Transport Security blocks plain-HTTP traffic at the Apple platform
+    /// level for App Store submissions; this flag adds a defense-in-depth
+    /// guard for callers that may have ATS exemptions or run in macOS/CLI
+    /// targets without ATS enforcement. Set to `true` only when the
+    /// non-encrypted endpoint is intentional (loopback, private LAN, opt-in
+    /// staging).
+    public let allowsInsecureHTTP: Bool
+
     /// Optional escape hatch for callers that need to customize the
     /// `URLSessionConfiguration` (proxy/HTTP2 tuning, connection pooling,
     /// `httpAdditionalHeaders`, TLS minimum version, etc.) when materializing
     /// a `URLSession` for this configuration. The closure receives a fresh
     /// `URLSessionConfiguration.default`-derived instance and must return a
-    /// configuration the caller is comfortable shipping. The library never
-    /// invokes this hook itself; consumers wire it through
-    /// ``makeURLSessionConfiguration()`` when they construct their own
-    /// `URLSession` (the `DefaultNetworkClient` accepts an injected session).
+    /// configuration the caller is comfortable shipping. Because
+    /// `URLSession.shared` cannot honor this hook, `DefaultNetworkClient`
+    /// rejects the combination of a non-nil override and the default shared
+    /// session. Consumers must wire this through
+    /// ``makeURLSessionConfiguration()`` and pass the resulting `URLSession`
+    /// explicitly.
     public let urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
 
     /// Build a `URLSessionConfiguration` derived from `URLSessionConfiguration.default`,
@@ -176,6 +210,10 @@ public struct NetworkConfiguration: Sendable {
         /// ``RequestExecutionNext/execute(_:)`` for the per-policy calling
         /// contract.
         public var customExecutionPolicies: [any RequestExecutionPolicy]
+        /// See ``NetworkConfiguration/userAgentProvider``.
+        public var userAgentProvider: @Sendable () -> String
+        /// See ``NetworkConfiguration/acceptLanguageProvider``.
+        public var acceptLanguageProvider: @Sendable () -> String
         public var captureFailurePayload: Bool
         /// Whether request bodies are streamed or buffered before decoding.
         /// `URLSession` transports collect `bytes(for:)` with an optional
@@ -186,6 +224,10 @@ public struct NetworkConfiguration: Sendable {
         /// ``responseBodyBufferingPolicy``. New code should set
         /// ``responseBodyBufferingPolicy`` directly.
         public var responseBodyLimit: Int64?
+        /// See ``NetworkConfiguration/redirectPolicy``.
+        public var redirectPolicy: any RedirectPolicy
+        /// See ``NetworkConfiguration/allowsInsecureHTTP``.
+        public var allowsInsecureHTTP: Bool
         /// See ``NetworkConfiguration/urlSessionConfigurationOverride``.
         public var urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
 
@@ -210,9 +252,13 @@ public struct NetworkConfiguration: Sendable {
             self.responseCache = preset.responseCache
             self.circuitBreakerPolicy = preset.circuitBreakerPolicy
             self.customExecutionPolicies = preset.customExecutionPolicies
+            self.userAgentProvider = preset.userAgentProvider
+            self.acceptLanguageProvider = preset.acceptLanguageProvider
             self.captureFailurePayload = preset.captureFailurePayload
             self.responseBodyBufferingPolicy = preset.responseBodyBufferingPolicy
             self.responseBodyLimit = preset.responseBodyLimit
+            self.redirectPolicy = preset.redirectPolicy
+            self.allowsInsecureHTTP = preset.allowsInsecureHTTP
             self.urlSessionConfigurationOverride = preset.urlSessionConfigurationOverride
         }
 
@@ -238,10 +284,14 @@ public struct NetworkConfiguration: Sendable {
                 responseCache: responseCache,
                 circuitBreakerPolicy: circuitBreakerPolicy,
                 customExecutionPolicies: customExecutionPolicies,
+                userAgentProvider: userAgentProvider,
+                acceptLanguageProvider: acceptLanguageProvider,
                 captureFailurePayload: captureFailurePayload,
                 responseBodyBufferingPolicy: responseBodyBufferingPolicy,
                 responseBodyLimit: responseBodyLimit,
-                urlSessionConfigurationOverride: urlSessionConfigurationOverride
+                urlSessionConfigurationOverride: urlSessionConfigurationOverride,
+                redirectPolicy: redirectPolicy,
+                allowsInsecureHTTP: allowsInsecureHTTP
             )
         }
     }
@@ -280,10 +330,14 @@ public struct NetworkConfiguration: Sendable {
         responseCache: (any ResponseCache)? = nil,
         circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
         customExecutionPolicies: [any RequestExecutionPolicy] = [],
+        userAgentProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultUserAgent.value },
+        acceptLanguageProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultAcceptLanguage.value },
         captureFailurePayload: Bool = false,
         responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(),
         responseBodyLimit: Int64? = nil,
-        urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)? = nil
+        urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)? = nil,
+        redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy(),
+        allowsInsecureHTTP: Bool = false
     ) {
         let resolvedBufferingPolicy =
             responseBodyLimit.map { responseBodyBufferingPolicy.replacingMaxBytes($0) }
@@ -308,9 +362,13 @@ public struct NetworkConfiguration: Sendable {
         self.responseCache = responseCache
         self.circuitBreakerPolicy = circuitBreakerPolicy
         self.customExecutionPolicies = customExecutionPolicies
+        self.userAgentProvider = userAgentProvider
+        self.acceptLanguageProvider = acceptLanguageProvider
         self.captureFailurePayload = captureFailurePayload
         self.responseBodyBufferingPolicy = resolvedBufferingPolicy
         self.responseBodyLimit = resolvedBufferingPolicy.maxBytes
         self.urlSessionConfigurationOverride = urlSessionConfigurationOverride
+        self.redirectPolicy = redirectPolicy
+        self.allowsInsecureHTTP = allowsInsecureHTTP
     }
 }

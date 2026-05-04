@@ -200,8 +200,9 @@ public actor NetworkMonitor: NetworkMonitoring {
         AsyncStream(bufferingPolicy: .bufferingNewest(16)) { continuation in
             let id = UUID()
             continuations[id] = continuation
-            continuation.onTermination = { @Sendable _ in
-                Task { await self.removeContinuation(id) }
+            continuation.onTermination = { @Sendable [weak self] _ in
+                guard let self else { return }
+                Task { [self] in await self.removeContinuation(id) }
             }
         }
     }

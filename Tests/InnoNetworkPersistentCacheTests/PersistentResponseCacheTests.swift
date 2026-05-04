@@ -1,7 +1,13 @@
 import Foundation
 import InnoNetwork
-import InnoNetworkPersistentCache
 import Testing
+
+@testable import InnoNetworkPersistentCache
+
+#if canImport(Darwin)
+import Darwin
+#endif
+
 
 @Suite("Persistent Response Cache Tests")
 struct PersistentResponseCacheTests {
@@ -439,6 +445,29 @@ struct PersistentResponseCacheTests {
         #expect(cached.data == Data("second".utf8))
     }
 
+    @Test("Overwrite updates byte budget before eviction")
+    func overwriteUpdatesByteBudgetBeforeEviction() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxBytes: 64,
+                maxEntries: 10,
+                maxEntryBytes: 64
+            )
+        )
+        let overwritten = ResponseCacheKey(method: "GET", url: "https://example.com/overwrite-budget")
+        let peer = ResponseCacheKey(method: "GET", url: "https://example.com/peer-budget")
+
+        await cache.set(overwritten, CachedResponse(data: Data(repeating: 1, count: 40)))
+        await cache.set(overwritten, CachedResponse(data: Data(repeating: 2, count: 1)))
+        await cache.set(peer, CachedResponse(data: Data(repeating: 3, count: 40)))
+
+        #expect(await cache.get(overwritten) != nil)
+        #expect(await cache.get(peer) != nil)
+    }
+
     @Test("get() returns the cached response when index persistence fails")
     func getReturnsValueWhenIndexPersistenceFails() async throws {
         let directory = makeDirectory()
@@ -485,6 +514,15 @@ struct PersistentResponseCacheTests {
         let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
         #expect(configuration.persistenceFsyncPolicy == .onCheckpoint)
     }
+
+    #if canImport(Darwin)
+    @Test("F_FULLFSYNC fallback is limited to unsupported descriptors")
+    func fullFsyncFallbackIsLimitedToUnsupportedDescriptors() {
+        #expect(PersistentResponseCache.isFullFsyncUnsupported(EINVAL))
+        #expect(PersistentResponseCache.isFullFsyncUnsupported(EOPNOTSUPP))
+        #expect(!PersistentResponseCache.isFullFsyncUnsupported(EIO))
+    }
+    #endif
 
     @Test("PersistentResponseCacheConfiguration defaults to completeUnlessOpen protection")
     func defaultDataProtectionClassIsCompleteUnlessOpen() async {
@@ -547,6 +585,42 @@ struct PersistentResponseCacheTests {
         for bodyURL in bodyURLs {
             #expect(recorder.protectionWrites(for: bodyURL.path).contains(.none))
         }
+    }
+
+    @Test("Body I/O runs off-actor so concurrent gets overlap")
+    func bodyReadsRunOffActor() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+
+        // Seed two large entries (256 KiB each) so each `Data(contentsOf:)`
+        // takes long enough that serialized execution would be measurably
+        // slower than parallel execution. Sizes intentionally stay below
+        // the default `maxEntryBytes` (5 MiB) so the policy accepts them.
+        let payloadCount = 256 * 1024
+        let payloadA = Data(repeating: 0xAA, count: payloadCount)
+        let payloadB = Data(repeating: 0xBB, count: payloadCount)
+        let keyA = ResponseCacheKey(method: "GET", url: "https://example.com/a")
+        let keyB = ResponseCacheKey(method: "GET", url: "https://example.com/b")
+
+        await cache.set(keyA, CachedResponse(data: payloadA))
+        await cache.set(keyB, CachedResponse(data: payloadB))
+
+        // Issue two `get`s in parallel. Because body reads now run on a
+        // detached task, the actor releases its executor while one read is
+        // in flight and immediately accepts the second `get` request — the
+        // two reads overlap on background threads. The pre-fix actor would
+        // serialize them. We assert correctness (both payloads survive
+        // round-trip) here; the latency improvement is exercised by the
+        // benchmarking suite.
+        async let resultA = cache.get(keyA)
+        async let resultB = cache.get(keyB)
+        let (a, b) = await (resultA, resultB)
+
+        #expect(a?.data == payloadA)
+        #expect(b?.data == payloadB)
     }
 
     private func makeDirectory() -> URL {

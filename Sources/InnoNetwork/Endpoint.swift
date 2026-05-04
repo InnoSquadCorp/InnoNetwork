@@ -12,28 +12,25 @@ public enum PublicAuthScope: EndpointAuthScope {}
 /// a ``RefreshTokenPolicy``.
 public enum AuthRequiredScope: EndpointAuthScope {}
 
-/// Compatibility alias for public fluent endpoints.
-public typealias Endpoint<Response: Decodable & Sendable> = ScopedEndpoint<Response, PublicAuthScope>
-
-/// Fluent endpoint alias for authenticated API calls.
-public typealias AuthenticatedEndpoint<Response: Decodable & Sendable> = ScopedEndpoint<Response, AuthRequiredScope>
-
 /// Fluent, builder-style alternative to declaring a custom ``APIDefinition``.
 ///
-/// `Endpoint` is intended for the simple-case ergonomics gap in the existing
-/// protocol: when a call site just needs `GET /users/42` decoding `User`,
-/// declaring a dedicated `struct GetUser: APIDefinition` is overkill. The
-/// builder lets the same call collapse to a single expression while still
+/// `ScopedEndpoint` is intended for the simple-case ergonomics gap in the
+/// existing protocol: when a call site just needs `GET /users/42` decoding
+/// `User`, declaring a dedicated `struct GetUser: APIDefinition` is overkill.
+/// The builder lets the same call collapse to a single expression while still
 /// flowing through the same execution pipeline (interceptors, retry policy,
 /// observability, trust, etc.) as a hand-written definition:
 ///
 /// ```swift
 /// let user = try await client.request(
-///     Endpoint.get("/users/\(id)").decoding(User.self)
+///     ScopedEndpoint<EmptyResponse, PublicAuthScope>
+///         .get("/users/\(id)")
+///         .decoding(User.self)
 /// )
 ///
 /// let post = try await client.request(
-///     Endpoint.post("/posts")
+///     ScopedEndpoint<EmptyResponse, PublicAuthScope>
+///         .post("/posts")
 ///         .body(CreatePost(title: "Hello", body: "World"))
 ///         .header("Idempotency-Key", value: idempotencyKey)
 ///         .decoding(Post.self)
@@ -41,15 +38,16 @@ public typealias AuthenticatedEndpoint<Response: Decodable & Sendable> = ScopedE
 ///
 /// // form-url-encoded login
 /// let token = try await client.request(
-///     Endpoint.post("/login")
+///     ScopedEndpoint<EmptyResponse, PublicAuthScope>
+///         .post("/login")
 ///         .body(credentials)
 ///         .transport(.formURLEncoded())
 ///         .decoding(Token.self)
 /// )
 /// ```
 ///
-/// `Endpoint` deliberately exposes only request-shape concerns (method, path,
-/// query/body parameters, headers, transport, acceptable status codes).
+/// `ScopedEndpoint` deliberately exposes only request-shape concerns (method,
+/// path, query/body parameters, headers, transport, acceptable status codes).
 /// Cross-cutting behaviour — interceptors, retry policy, trust evaluation —
 /// stays on ``NetworkConfiguration`` so endpoints written this way pick up the
 /// same session-wide policies as a hand-written ``APIDefinition``.
@@ -212,8 +210,9 @@ extension ScopedEndpoint {
 // MARK: - Decoding promotion
 
 extension ScopedEndpoint where Response == EmptyResponse {
-    /// Promotes an `Endpoint<EmptyResponse>` (the result of `.get(_:)`,
-    /// `.post(_:)`, etc.) into an endpoint that decodes the supplied type.
+    /// Promotes a `ScopedEndpoint<EmptyResponse, AuthScope>` (the result of
+    /// `.get(_:)`, `.post(_:)`, etc.) into an endpoint that decodes the
+    /// supplied type.
     /// This is the terminal step of the builder; the returned value can be
     /// passed directly to ``NetworkClient/request(_:)``.
     ///
