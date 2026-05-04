@@ -88,6 +88,7 @@ public actor DownloadManager {
 
     private let runtimeRegistry = DownloadRuntimeRegistry()
     private let restoreBarrier = RestoreBarrier()
+    private let invalidationBarrier: InvalidationBarrier
     private var pendingRestoreFailures: Set<String> = []
     private var isShutdown = false
     private let eventHub: TaskEventHub<DownloadEvent>
@@ -206,14 +207,19 @@ public actor DownloadManager {
         let (delegateEvents, delegateEventContinuation) = AsyncStream<DelegateEvent>.makeStream(
             bufferingPolicy: .unbounded
         )
+        let invalidationBarrier = InvalidationBarrier()
         try Self.registerSessionIdentifier(configuration.sessionIdentifier)
-        callbacks.setInvalidationHandler { [identifier = configuration.sessionIdentifier] _ in
+        callbacks.setInvalidationHandler { [identifier = configuration.sessionIdentifier, invalidationBarrier] _ in
             Self.unregisterSessionIdentifier(identifier)
+            Task {
+                await invalidationBarrier.complete()
+            }
         }
         self.configuration = configuration
         self.delegate = delegate
         self.backgroundCompletionStore = backgroundCompletionStore
         self.persistence = persistence
+        self.invalidationBarrier = invalidationBarrier
         self.eventHub = TaskEventHub(
             policy: configuration.eventDeliveryPolicy,
             metricsReporter: configuration.eventMetricsReporter,
@@ -428,7 +434,10 @@ public actor DownloadManager {
     /// session (and thus the manager and its closures) alive until invalidate
     /// completes, which can take longer than the surrounding scope.
     public func shutdown() async {
-        guard !isShutdown else { return }
+        guard !isShutdown else {
+            await invalidationBarrier.wait()
+            return
+        }
         isShutdown = true
 
         delegateEventContinuation.finish()
@@ -450,6 +459,7 @@ public actor DownloadManager {
         // correct call here: any pending transfers should die immediately so
         // the OS releases the session identifier and the delegate.
         session.invalidateAndCancel()
+        await invalidationBarrier.wait()
     }
 
     public func retry(_ task: DownloadTask) async {
@@ -710,6 +720,32 @@ private actor RestoreBarrier {
         isCompleted = true
         for waiter in waiters.values {
             waiter.resume(returning: ())
+        }
+        waiters.removeAll(keepingCapacity: false)
+    }
+}
+
+
+private actor InvalidationBarrier {
+    private var isCompleted = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isCompleted else { return }
+        await withCheckedContinuation { continuation in
+            if isCompleted {
+                continuation.resume()
+            } else {
+                waiters.append(continuation)
+            }
+        }
+    }
+
+    func complete() {
+        guard !isCompleted else { return }
+        isCompleted = true
+        for waiter in waiters {
+            waiter.resume()
         }
         waiters.removeAll(keepingCapacity: false)
     }

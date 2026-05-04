@@ -48,6 +48,104 @@ struct DownloadManagerHardeningTests {
         }
         #expect(observed <= 100)
     }
+
+    @Test("shutdown() waits for URLSession invalidation before returning")
+    func shutdownWaitsForInvalidationCallback() async throws {
+        let harness = try StubDownloadHarness(label: "shutdown-barrier")
+        harness.stubSession.setAutomaticallyCompletesInvalidation(false)
+        let probe = ShutdownCompletionProbe()
+
+        let shutdownTask = Task {
+            await harness.manager.shutdown()
+            await probe.markCompleted()
+        }
+
+        #expect(await waitForCondition { harness.stubSession.didInvalidateAndCancel })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(await probe.isCompleted == false)
+
+        harness.stubSession.completeInvalidation()
+        await shutdownTask.value
+        #expect(await probe.isCompleted)
+    }
+
+    @Test("concurrent shutdown() calls all wait for URLSession invalidation")
+    func concurrentShutdownCallsWaitForInvalidationCallback() async throws {
+        let harness = try StubDownloadHarness(label: "shutdown-concurrent-barrier")
+        harness.stubSession.setAutomaticallyCompletesInvalidation(false)
+        let firstProbe = ShutdownCompletionProbe()
+        let secondProbe = ShutdownCompletionProbe()
+
+        let firstShutdown = Task {
+            await firstProbe.markStarted()
+            await harness.manager.shutdown()
+            await firstProbe.markCompleted()
+        }
+
+        #expect(await waitForCondition { harness.stubSession.didInvalidateAndCancel })
+
+        let secondShutdown = Task {
+            await secondProbe.markStarted()
+            await harness.manager.shutdown()
+            await secondProbe.markCompleted()
+        }
+
+        #expect(await waitForCondition { await secondProbe.isStarted })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(await firstProbe.isCompleted == false)
+        #expect(await secondProbe.isCompleted == false)
+
+        harness.stubSession.completeInvalidation()
+        await firstShutdown.value
+        await secondShutdown.value
+        #expect(await firstProbe.isCompleted)
+        #expect(await secondProbe.isCompleted)
+    }
+
+    @Test("shutdown() releases the session identifier before returning")
+    func shutdownAllowsImmediateSessionIdentifierReuse() async throws {
+        let first = try StubDownloadHarness(label: "shutdown-reuse")
+        let identifier = first.sessionIdentifier
+
+        await first.manager.shutdown()
+
+        let second = try StubDownloadHarness(
+            label: "shutdown-reuse-second",
+            sessionIdentifier: identifier
+        )
+        await second.manager.shutdown()
+    }
+
+    private func waitForCondition(
+        timeout: TimeInterval = 1.0,
+        predicate: @escaping @Sendable () async -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await predicate() {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return await predicate()
+    }
+}
+
+
+private actor ShutdownCompletionProbe {
+    private var started = false
+    private var completed = false
+
+    var isStarted: Bool { started }
+    var isCompleted: Bool { completed }
+
+    func markStarted() {
+        started = true
+    }
+
+    func markCompleted() {
+        completed = true
+    }
 }
 
 

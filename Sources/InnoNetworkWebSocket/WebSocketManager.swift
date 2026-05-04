@@ -361,12 +361,10 @@ public final class WebSocketManager: NSObject, Sendable {
         task: WebSocketTask,
         _ body: @Sendable (any WebSocketURLTask) async throws -> Void
     ) async throws {
-        guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
+        let limit = configuration.sendQueueLimit
+        guard let reserved = await task.tryReserveConnectedSendSlot(limit: limit) else {
             throw WebSocketError.disconnected(nil)
         }
-
-        let limit = configuration.sendQueueLimit
-        let reserved = await task.tryReserveSendSlot(limit: limit)
         guard reserved else {
             switch configuration.sendQueueOverflowPolicy {
             case .fail:
@@ -375,6 +373,10 @@ public final class WebSocketManager: NSObject, Sendable {
                 await eventHub.publish(.sendDropped(limit: limit), for: task.id)
                 return
             }
+        }
+        guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
+            await task.releaseSendSlot()
+            throw WebSocketError.disconnected(nil)
         }
 
         do {
@@ -390,7 +392,9 @@ public final class WebSocketManager: NSObject, Sendable {
         guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
             throw WebSocketError.disconnected(nil)
         }
-        let attempt = await task.incrementPingCounter()
+        guard let attempt = await task.nextConnectedPingAttempt() else {
+            throw WebSocketError.disconnected(nil)
+        }
         let context = WebSocketPingContext(attemptNumber: attempt, dispatchedAt: .now)
         await eventHub.publish(.ping(context), for: task.id)
         do {

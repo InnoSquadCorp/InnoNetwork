@@ -129,6 +129,8 @@ final class StubDownloadURLSession: DownloadURLSession, @unchecked Sendable {
         var lastResumeData: Data?
         var didFinishTasksAndInvalidate = false
         var didInvalidateAndCancel = false
+        var automaticallyCompletesInvalidation = true
+        var invalidationHandler: (@Sendable () -> Void)?
     }
 
     private let stateLock = OSAllocatedUnfairLock<State>(initialState: State())
@@ -189,7 +191,25 @@ final class StubDownloadURLSession: DownloadURLSession, @unchecked Sendable {
     }
 
     func invalidateAndCancel() {
-        stateLock.withLock { $0.didInvalidateAndCancel = true }
+        let handler = stateLock.withLock { state -> (@Sendable () -> Void)? in
+            state.didInvalidateAndCancel = true
+            guard state.automaticallyCompletesInvalidation else { return nil }
+            return state.invalidationHandler
+        }
+        handler?()
+    }
+
+    func setInvalidationHandler(_ handler: @escaping @Sendable () -> Void) {
+        stateLock.withLock { $0.invalidationHandler = handler }
+    }
+
+    func setAutomaticallyCompletesInvalidation(_ enabled: Bool) {
+        stateLock.withLock { $0.automaticallyCompletesInvalidation = enabled }
+    }
+
+    func completeInvalidation() {
+        let handler = stateLock.withLock { $0.invalidationHandler }
+        handler?()
     }
 
     // MARK: Observations

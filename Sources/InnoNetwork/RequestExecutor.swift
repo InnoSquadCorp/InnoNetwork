@@ -603,7 +603,7 @@ package struct RequestExecutor {
         guard let cacheKey,
             request.httpMethod?.uppercased() == "GET",
             let cache = configuration.responseCache,
-            configuration.responseCachePolicy.isEnabled
+            configuration.responseCachePolicy.allowsCacheRead
         else {
             return nil
         }

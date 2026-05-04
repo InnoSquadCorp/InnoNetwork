@@ -75,6 +75,7 @@ struct WebSocketSendQueueTests {
         await manager.runtimeRegistry.add(task)
         let stub = StubWebSocketURLTask()
         await manager.runtimeRegistry.setURLTask(stub, for: task.id)
+        await task.restoreStateForTesting(.connected)
 
         // Pre-saturate the slot counter to mimic two in-flight sends.
         _ = await task.tryReserveSendSlot(limit: 2)
@@ -112,6 +113,7 @@ struct WebSocketSendQueueTests {
         await manager.runtimeRegistry.add(task)
         let stub = StubWebSocketURLTask()
         await manager.runtimeRegistry.setURLTask(stub, for: task.id)
+        await task.restoreStateForTesting(.connected)
 
         // Saturate the queue.
         _ = await task.tryReserveSendSlot(limit: 1)
@@ -138,6 +140,7 @@ struct WebSocketSendQueueTests {
         await manager.runtimeRegistry.add(task)
         let stub = StubWebSocketURLTask()
         await manager.runtimeRegistry.setURLTask(stub, for: task.id)
+        await task.restoreStateForTesting(.connected)
 
         try await manager.send(task, message: Data("hello".utf8))
         #expect(await task.inFlightSendCount == 0)

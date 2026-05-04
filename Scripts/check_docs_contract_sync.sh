@@ -875,5 +875,10 @@ forbidden_pattern 'Only `200 OK` responses are persisted|written back on a 200 r
   "$repo_root/docs" \
   "$repo_root/Sources/InnoNetwork" \
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc"
+forbidden_pattern 'wraps everything that follows|wraps the core retry/refresh/transport pipeline|retry/refresh/transport pipeline' \
+  "$repo_root/README.md" \
+  "$repo_root/docs" \
+  "$repo_root/Sources/InnoNetwork" \
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc"
 
 echo "docs-contract-sync: OK"

@@ -169,9 +169,10 @@ public struct NetworkConfiguration: Sendable {
         public var responseCache: (any ResponseCache)?
         public var circuitBreakerPolicy: CircuitBreakerPolicy?
         /// Custom ``RequestExecutionPolicy`` instances inserted around the
-        /// built-in transport. Policies execute in array order — the first
-        /// element wraps everything that follows, including the core
-        /// retry/refresh/transport pipeline. See
+        /// single transport attempt. Policies execute in array order — the
+        /// first element wraps the next policy and ultimately the transport
+        /// call for that attempt. Cache lookup/substitution, auth-refresh
+        /// replay, and outer retry scheduling remain outside this chain. See
         /// ``RequestExecutionNext/execute(_:)`` for the per-policy calling
         /// contract.
         public var customExecutionPolicies: [any RequestExecutionPolicy]
