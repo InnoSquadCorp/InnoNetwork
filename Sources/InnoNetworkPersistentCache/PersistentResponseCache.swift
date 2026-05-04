@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import InnoNetwork
+import OSLog
 
 #if canImport(Darwin)
 import Darwin
@@ -111,6 +112,7 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
 /// footprint stays within the configured byte and entry budgets.
 public actor PersistentResponseCache: ResponseCache {
     private static let formatVersion = 1
+    private static let logger = Logger(subsystem: "innosquad.network", category: "PersistentResponseCache")
 
     private struct DiskKey: Codable, Hashable, Sendable {
         let method: String
@@ -294,7 +296,7 @@ public actor PersistentResponseCache: ResponseCache {
 
         let diskKey = DiskKey(key)
         let id = identifier(for: diskKey)
-        let bodyFileName = "\(id).body"
+        let bodyFileName = "\(id)-\(UUID().uuidString).body"
         let bodyURL = bodiesDirectoryURL.appendingPathComponent(bodyFileName, isDirectory: false)
         let byteCost =
             value.data.count
@@ -313,11 +315,12 @@ public actor PersistentResponseCache: ResponseCache {
 
         // Body writes are detached so the actor doesn't block on flash I/O
         // for an entry that can be up to `maxEntryBytes`. `.atomic` rename
-        // semantics make concurrent writes for the same key safe (later
-        // rename wins) and SHA-256-derived `bodyFileName` means different
-        // keys never share a destination. The actor still serializes the
-        // index update + `persistIndex` that follows, so the on-disk and
-        // in-memory views remain consistent.
+        // semantics plus a unique body filename let us stage the new bytes
+        // without overwriting the previous body. The index is updated only
+        // after the staged body exists; if index persistence fails, the
+        // in-memory snapshot rolls back and the previous body stays valid.
+        let previousIndex = index
+        let previousRunningTotalBytes = runningTotalBytes
         do {
             try await Self.writeBodyData(
                 value.data,
@@ -326,16 +329,24 @@ public actor PersistentResponseCache: ResponseCache {
             )
             if let old = index.entries[id] {
                 runningTotalBytes -= old.byteCost
-                if old.bodyFileName != bodyFileName {
-                    removeBody(fileName: old.bodyFileName)
-                }
             }
             index.entries[id] = entry
             runningTotalBytes += entry.byteCost
-            evictIfNeeded()
+            var removableBodies = evictIfNeeded()
+            if let old = previousIndex.entries[id], old.bodyFileName != bodyFileName {
+                removableBodies.append(old.bodyFileName)
+            }
             try persistIndex()
+            for fileName in removableBodies {
+                removeBody(fileName: fileName)
+            }
         } catch {
+            index = previousIndex
+            runningTotalBytes = previousRunningTotalBytes
             removeBody(fileName: bodyFileName)
+            Self.logger.error(
+                "persistent_cache_set_failed url=\(key.url, privacy: .private) error=\(String(describing: error), privacy: .private)"
+            )
         }
     }
 
@@ -367,10 +378,11 @@ public actor PersistentResponseCache: ResponseCache {
         Self.shouldStore(key: key, responseHeaders: responseHeaders, configuration: configuration)
     }
 
-    private func evictIfNeeded() {
+    private func evictIfNeeded() -> [String] {
         guard index.entries.count > configuration.maxEntries || runningTotalBytes > configuration.maxBytes else {
-            return
+            return []
         }
+        var removedBodyFileNames: [String] = []
         // Single sort then drain in LRU order via index advance. The previous
         // implementation re-scanned `entries` for `min(by:)` on every step
         // (O(N²)); using `removeFirst` would still pay an O(N) shift per
@@ -388,8 +400,12 @@ public actor PersistentResponseCache: ResponseCache {
             let victimID = sortedIDs[cursor]
             cursor = sortedIDs.index(after: cursor)
             guard let victim = index.entries[victimID] else { continue }
-            removeEntry(id: victimID, entry: victim)
+            if let removed = index.entries.removeValue(forKey: victimID) {
+                runningTotalBytes -= removed.byteCost
+                removedBodyFileNames.append(victim.bodyFileName)
+            }
         }
+        return removedBodyFileNames
     }
 
     private func removeEntry(id: String, entry: Entry) {
