@@ -56,9 +56,12 @@ struct AsyncStreamLeakTests {
             await monitor.stop()
         }
 
-        for _ in 0..<5 {
-            await Task.yield()
-        }
+        // Same rationale as `taskEventHubDeinitsAfterStreamTakeover`: a
+        // suspending sleep is more reliable than a fixed `Task.yield()`
+        // count under CI load. The deferred `removeContinuation` Task must
+        // hop to the monitor's actor executor before the weak reference
+        // can drop.
+        try? await Task.sleep(for: .milliseconds(200), clock: .suspending)
 
         #expect(weakMonitor == nil)
     }
