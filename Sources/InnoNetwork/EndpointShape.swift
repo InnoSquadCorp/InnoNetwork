@@ -78,6 +78,19 @@ public protocol EndpointShape: Sendable {
     /// built `URLRequest`. Defaults to `nil` so endpoints inherit the
     /// client cache policy.
     var cachePolicyOverride: URLRequest.CachePolicy? { get }
+
+    /// Per-endpoint override for request priority. Defaults to `nil` so
+    /// endpoints inherit ``NetworkConfiguration/requestPriority``.
+    var priorityOverride: RequestPriority? { get }
+
+    /// Per-endpoint override for cellular access. Defaults to `nil`.
+    var allowsCellularAccessOverride: Bool? { get }
+
+    /// Per-endpoint override for expensive network access. Defaults to `nil`.
+    var allowsExpensiveNetworkAccessOverride: Bool? { get }
+
+    /// Per-endpoint override for constrained network access. Defaults to `nil`.
+    var allowsConstrainedNetworkAccessOverride: Bool? { get }
 }
 
 // MARK: - Shared default implementations
@@ -103,4 +116,16 @@ public extension EndpointShape {
 
     /// Default cache policy override, delegating to the client configuration.
     var cachePolicyOverride: URLRequest.CachePolicy? { nil }
+
+    /// Default priority override, delegating to the client configuration.
+    var priorityOverride: RequestPriority? { nil }
+
+    /// Default cellular access override, delegating to the client configuration.
+    var allowsCellularAccessOverride: Bool? { nil }
+
+    /// Default expensive network access override, delegating to the client configuration.
+    var allowsExpensiveNetworkAccessOverride: Bool? { nil }
+
+    /// Default constrained network access override, delegating to the client configuration.
+    var allowsConstrainedNetworkAccessOverride: Bool? { nil }
 }

@@ -260,6 +260,10 @@ package struct StreamingExecutor: Sendable {
         urlRequest.headers = request.headers
         urlRequest.cachePolicy = configuration.cachePolicy
         urlRequest.timeoutInterval = configuration.timeout
+        urlRequest.networkServiceType = configuration.requestPriority.networkServiceType
+        urlRequest.allowsCellularAccess = configuration.allowsCellularAccess
+        urlRequest.allowsExpensiveNetworkAccess = configuration.allowsExpensiveNetworkAccess
+        urlRequest.allowsConstrainedNetworkAccess = configuration.allowsConstrainedNetworkAccess
         if let lastSeenEventID {
             urlRequest.setValue(lastSeenEventID, forHTTPHeaderField: "Last-Event-ID")
         }

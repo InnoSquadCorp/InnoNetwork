@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// Encoded request payload values returned by ``SingleRequestExecutable/makePayload()``.
 ///
@@ -70,6 +71,14 @@ import Foundation
     /// non-nil the value replaces ``NetworkConfiguration/cachePolicy`` on
     /// the built `URLRequest`.
     var cachePolicyOverride: URLRequest.CachePolicy? { get }
+    /// Optional per-request override for request priority.
+    var priorityOverride: RequestPriority? { get }
+    /// Optional per-request override for cellular access.
+    var allowsCellularAccessOverride: Bool? { get }
+    /// Optional per-request override for expensive network access.
+    var allowsExpensiveNetworkAccessOverride: Bool? { get }
+    /// Optional per-request override for constrained network access.
+    var allowsConstrainedNetworkAccessOverride: Bool? { get }
 
     /// Produces the encoded payload for the request.
     ///
@@ -104,6 +113,14 @@ import Foundation
     /// Default cache policy override is `nil` so the client configuration
     /// cache policy applies.
     var cachePolicyOverride: URLRequest.CachePolicy? { nil }
+    /// Default priority override is `nil` so the client configuration applies.
+    var priorityOverride: RequestPriority? { nil }
+    /// Default cellular access override is `nil` so the client configuration applies.
+    var allowsCellularAccessOverride: Bool? { nil }
+    /// Default expensive network access override is `nil` so the client configuration applies.
+    var allowsExpensiveNetworkAccessOverride: Bool? { nil }
+    /// Default constrained network access override is `nil` so the client configuration applies.
+    var allowsConstrainedNetworkAccessOverride: Bool? { nil }
 }
 
 package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExecutable {
@@ -119,6 +136,10 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
     package var requiresRefreshTokenPolicy: Bool { Base.Auth.self == AuthRequiredScope.self }
     package var timeoutOverride: TimeInterval? { base.timeoutOverride }
     package var cachePolicyOverride: URLRequest.CachePolicy? { base.cachePolicyOverride }
+    package var priorityOverride: RequestPriority? { base.priorityOverride }
+    package var allowsCellularAccessOverride: Bool? { base.allowsCellularAccessOverride }
+    package var allowsExpensiveNetworkAccessOverride: Bool? { base.allowsExpensiveNetworkAccessOverride }
+    package var allowsConstrainedNetworkAccessOverride: Bool? { base.allowsConstrainedNetworkAccessOverride }
     package var bodyContentType: String? {
         guard base.parameters != nil else { return nil }
         return base.transport.requestEncoding.contentTypeHeader
@@ -176,6 +197,10 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
 }
 
 package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: SingleRequestExecutable {
+    private static var logger: Logger {
+        Logger(subsystem: "innosquad.network", category: "Multipart")
+    }
+
     let base: Base
 
     package var logger: NetworkLogger { base.logger }
@@ -189,6 +214,10 @@ package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: S
     package var requiresRefreshTokenPolicy: Bool { Base.Auth.self == AuthRequiredScope.self }
     package var timeoutOverride: TimeInterval? { base.timeoutOverride }
     package var cachePolicyOverride: URLRequest.CachePolicy? { base.cachePolicyOverride }
+    package var priorityOverride: RequestPriority? { base.priorityOverride }
+    package var allowsCellularAccessOverride: Bool? { base.allowsCellularAccessOverride }
+    package var allowsExpensiveNetworkAccessOverride: Bool? { base.allowsExpensiveNetworkAccessOverride }
+    package var allowsConstrainedNetworkAccessOverride: Bool? { base.allowsConstrainedNetworkAccessOverride }
 
     package func makePayload() throws -> RequestPayload {
         let formData = base.multipartFormData
@@ -214,6 +243,9 @@ package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: S
     private static func streamPayload(formData: MultipartFormData) throws -> RequestPayload {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         let tempFile = tempDirectory.appendingPathComponent("innonetwork.multipart.\(UUID().uuidString)")
+        logger.info(
+            "multipart_spilled_to_disk estimatedBytes=\(formData.estimatedEncodedSize, privacy: .public) path=\(tempFile.path, privacy: .private)"
+        )
         do {
             try formData.writeEncodedData(to: tempFile)
         } catch {

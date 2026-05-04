@@ -69,4 +69,48 @@ struct NetworkContextTests {
         #expect(adapted.value(forHTTPHeaderField: "traceparent") == "00-abc-def-01")
         #expect(adapted.value(forHTTPHeaderField: "X-Request-Id") == "req-77")
     }
+
+    @Test
+    func traceContextInterceptorPreservesExistingTraceparent() async throws {
+        let interceptor = TraceContextInterceptor()
+        var baseRequest = URLRequest(url: URL(string: "https://example.invalid/x")!)
+        baseRequest.setValue(
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            forHTTPHeaderField: "traceparent"
+        )
+
+        let adapted = try await interceptor.adapt(baseRequest)
+
+        #expect(
+            adapted.value(forHTTPHeaderField: "traceparent")
+                == "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+        )
+    }
+
+    @Test
+    func traceContextInterceptorPropagatesTaskLocalTraceparent() async throws {
+        let interceptor = TraceContextInterceptor()
+        let baseRequest = URLRequest(url: URL(string: "https://example.invalid/x")!)
+        let traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+
+        let adapted = try await NetworkContext.$current.withValue(
+            NetworkContext(traceID: traceparent)
+        ) {
+            try await interceptor.adapt(baseRequest)
+        }
+
+        #expect(adapted.value(forHTTPHeaderField: "traceparent") == traceparent)
+    }
+
+    @Test
+    func traceContextInterceptorGeneratesTraceparentWhenMissing() async throws {
+        let interceptor = TraceContextInterceptor(tracestate: "vendor=state")
+        let baseRequest = URLRequest(url: URL(string: "https://example.invalid/x")!)
+
+        let adapted = try await interceptor.adapt(baseRequest)
+        let traceparent = try #require(adapted.value(forHTTPHeaderField: "traceparent"))
+
+        #expect(W3CTraceContext(traceparent: traceparent) != nil)
+        #expect(adapted.value(forHTTPHeaderField: "tracestate") == "vendor=state")
+    }
 }
