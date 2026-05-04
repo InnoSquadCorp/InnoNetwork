@@ -45,6 +45,16 @@ into one release line:
   keeps `MultipartResponseDecoder` buffered.
 - Hummingbird or other server-side Swift in-process integration tests stay out
   of the Apple-client validation matrix.
+- Full `StreamingRetryPolicy` beyond Last-Event-ID resume remains deferred.
+  4.0.0 adds bounded output buffering but does not make arbitrary streams
+  replayable.
+- Multiple refresh-policy chains are deferred. 4.0.0 adds
+  `RefreshTokenPolicy.appliesTo` for request-level routing while keeping one
+  coordinator per client configuration.
+- Header/query result-builder DSLs, VCR-style recording, mutation testing,
+  full SwiftUI sample app, HTTPTypes/OpenAPI companion packages, Linux-safe
+  contracts, and iOS 17 LTS evaluation remain post-4.0 adoption work rather
+  than GA blockers.
 
 ## Continuing Operations
 

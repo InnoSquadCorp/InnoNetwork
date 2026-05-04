@@ -92,6 +92,7 @@ let package = Package(
             dependencies: [
                 "InnoNetwork",
                 "InnoNetworkDownload",
+                "InnoNetworkPersistentCache",
                 "InnoNetworkWebSocket",
             ],
             path: "Sources/InnoNetworkTestSupport",
@@ -112,6 +113,7 @@ let package = Package(
             dependencies: [
                 "InnoNetwork",
                 "InnoNetworkDownload",
+                "InnoNetworkPersistentCache",
                 "InnoNetworkWebSocket",
             ],
             path: "SmokeTests/InnoNetworkDocSmoke",

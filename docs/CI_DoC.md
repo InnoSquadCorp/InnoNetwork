@@ -15,20 +15,22 @@ The `CI` workflow must pass all of the following:
 1. `xcrun swift package resolve`
 2. `xcrun swift build`
 3. `xcrun swift test --no-parallel --enable-code-coverage`
-4. `rg -n "@unchecked Sendable" Sources/InnoNetwork Sources/InnoNetworkDownload Sources/InnoNetworkWebSocket` returns no matches
-5. Coverage report is generated under `.build/coverage/` and uploaded as a
+4. `rg -n "@unchecked Sendable" Sources/InnoNetwork Sources/InnoNetworkDownload Sources/InnoNetworkPersistentCache Sources/InnoNetworkWebSocket` returns no matches
+5. `bash Scripts/check_production_force_unwraps.sh` returns no matches in
+   production source targets. Tests and smoke fixtures are excluded.
+6. Coverage report is generated under `.build/coverage/` and uploaded as a
    workflow artifact. When the `CODECOV_TOKEN` secret is configured the
    `lcov` payload is also uploaded to Codecov; without the token the upload
    step is skipped (the artifact alone is enough for manual review).
-6. `apple-platform-build-smoke` runs `xcodebuild ... build` for macOS, iOS,
+7. `apple-platform-build-smoke` runs `xcodebuild ... build` for macOS, iOS,
    tvOS, watchOS, and visionOS destinations. Simulator destinations are
    build-only; SwiftPM test+coverage remains the runtime test gate.
-7. Consumer smoke first asserts that the root package dependency graph does not
+8. Consumer smoke first asserts that the root package dependency graph does not
    contain `swift-syntax`, then builds separate core-only, aggregate,
    download-only, websocket-only, test-support, generated-client, and codegen
    usage packages. Macro tests run from `Packages/InnoNetworkCodegen` so the
    codegen dependency graph stays isolated from runtime-only consumers.
-8. The benchmark smoke guard runs `swift run InnoNetworkBenchmarks --quick`
+9. The benchmark smoke guard runs `swift run InnoNetworkBenchmarks --quick`
    with `--enforce-baseline --max-regression-percent 20`. A regression
    beyond 20% on the guarded request pipeline, request coalescing, response
    cache, event hub delivery, download persistence restore/compaction,
@@ -44,6 +46,8 @@ The `CI` workflow must pass all of the following:
 - A PR is considered complete only when all CI checks are green.
 - If any check fails, the PR is not merge-ready.
 - Concurrency regressions and `@unchecked Sendable` additions in production sources are blocking failures.
+- Force unwrap additions in production sources are blocking failures; fixture
+  force unwraps belong in tests or smoke-only targets.
 
 ## Integration Tests Policy
 
@@ -64,7 +68,9 @@ xcrun swift test --no-parallel --enable-code-coverage
 rg -n "@unchecked Sendable" \
   Sources/InnoNetwork \
   Sources/InnoNetworkDownload \
+  Sources/InnoNetworkPersistentCache \
   Sources/InnoNetworkWebSocket
+bash Scripts/check_production_force_unwraps.sh
 
 # Optional: render the same coverage artifacts CI uploads.
 profdata="$(find .build -name 'default.profdata' -type f | head -n 1)"

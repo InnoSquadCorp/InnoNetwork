@@ -216,8 +216,12 @@ for await event in await manager.events(for: task) {
 
 `download(url:toDirectory:fileName:)` resolves the destination as:
 
-- If `fileName:` is provided, it is used verbatim under `directory`.
-- Otherwise the URL's last path component (`url.lastPathComponent`) is used.
+- If `fileName:` is provided, it is trimmed and used only when it is a safe
+  single path component.
+- Otherwise the URL's last path component (`url.lastPathComponent`) is used
+  when it is a safe single path component.
+- Empty names, `.`, `..`, or names containing `/`, `\`, or NUL fall back to a
+  generated `download-<UUID>` filename under `directory`.
 - The library does **not** rename on collision — if a file already exists at the resolved
   path, the download will overwrite it once it completes. Pass an explicit `fileName:` (for
   example, prefixed with the task UUID) when concurrent or repeated downloads to the same
@@ -249,8 +253,9 @@ for await event in await manager.events(for: task) {
 - async/await request execution
 - type-safe `APIDefinition` modeling
 - JSON, form-url-encoded, and multipart request support
-- retry coordination, auth refresh, request coalescing, response cache, and circuit breaker policies
+- retry coordination, stable idempotency keys, auth refresh, request coalescing, response cache, and circuit breaker policies
 - streaming-by-default inline response buffering and public `RequestExecutionPolicy` hooks
+- W3C `traceparent` propagation and curl command export helpers
 - phantom auth scopes through `ScopedEndpoint`, `PublicAuthScope`, and `AuthRequiredScope`
 - trust policy support and request lifecycle observability
 
@@ -318,7 +323,10 @@ then, follow its `main` branch.
 
 ## Configuration
 
-The recommended entry point is `safeDefaults`. Use `advanced` only when you need explicit operational tuning.
+The recommended entry point is `safeDefaults`. Use
+`recommendedForProduction(baseURL:)` when you want conservative retry,
+circuit-breaker, and idempotency-key defaults. Use `advanced` only when you
+need explicit operational tuning.
 
 ```swift
 import Foundation
@@ -644,6 +652,8 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - Examples: [Examples/README.md](Examples/README.md)
 - API Stability: [API_STABILITY.md](API_STABILITY.md)
 - Client Architecture: [docs/ClientArchitecture.md](docs/ClientArchitecture.md)
+- Policy Interactions: [docs/PolicyInteractions.md](docs/PolicyInteractions.md)
+- Operational Guides: [docs/OperationalGuides.md](docs/OperationalGuides.md)
 - Platform Support: [docs/PlatformSupport.md](docs/PlatformSupport.md)
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
