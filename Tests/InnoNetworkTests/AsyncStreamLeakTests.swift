@@ -32,10 +32,11 @@ struct AsyncStreamLeakTests {
         // onTermination closure can fire without keeping the hub alive.
         capturedStream = nil
 
-        // Allow the deferred onTermination Task to settle.
-        for _ in 0..<5 {
-            await Task.yield()
-        }
+        // Allow the deferred onTermination Task to settle. A short suspending
+        // sleep is more reliable than a fixed `Task.yield()` count under CI
+        // load — the termination Task must hop to an actor executor before
+        // the weak reference drops, and 5 cooperative yields can be too few.
+        try? await Task.sleep(for: .milliseconds(100), clock: .suspending)
 
         #expect(weakHub == nil)
     }

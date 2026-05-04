@@ -100,6 +100,14 @@ struct WebSocketDelegateOrderingTests {
             }
         }
 
+        // Guard the FIFO check with concrete pair-presence assertions so
+        // the test can never pass on a single `.disconnected` without a
+        // matching `.connected` ahead of it. Without these, the loop below
+        // simply never executes when `lifecycle.count <= 1`.
+        #expect(lifecycle.count >= 2)
+        #expect(lifecycle.first == "connected")
+        #expect(lifecycle.dropFirst().first == "disconnected")
+
         // Each consecutive pair must be (connected, disconnected) — never
         // a doubled disconnected before its connected.
         var index = 0
