@@ -206,6 +206,54 @@ struct WebSocketDelegateOrderingTests {
         streamTask.cancel()
         _ = await streamTask.result
     }
+
+    @Test("Terminal cleanup does not wait for an older listener event")
+    func terminalCleanupDoesNotWaitForOlderListenerEventCompletion() async throws {
+        let harness = StubMessagingHarness()
+        let task = await harness.manager.connect(url: URL(string: "ws://stub.invalid/terminal-backlog")!)
+        let gate = DelegateBackpressureGate()
+        let recorder = WebSocketEventRecorder()
+        let streamProbe = WebSocketStreamFinishProbe()
+        let stream = await harness.manager.events(for: task)
+        let streamTask = Task {
+            for await event in stream {
+                if case .disconnected = event {
+                    await streamProbe.markSawDisconnected()
+                }
+            }
+            await streamProbe.markFinished()
+        }
+
+        _ = await harness.manager.addEventListener(for: task) { event in
+            if case .connected = event {
+                await gate.enterAndWaitUntilReleased()
+            }
+            recorder.record(event)
+        }
+
+        harness.manager.handleConnected(taskIdentifier: harness.stubTaskIdentifier, protocolName: nil)
+        #expect(await waitForDelegateGateEntry(gate))
+
+        harness.manager.handleDisconnected(
+            taskIdentifier: harness.stubTaskIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+
+        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
+        #expect(await waitForStreamFinish(streamProbe))
+        #expect(await streamProbe.didSeeDisconnected)
+
+        await gate.release()
+        let observedDisconnect = try await recorder.waitForEvent(timeout: 1.0) { event in
+            if case .disconnected = event { return true }
+            return false
+        }
+        #expect(observedDisconnect)
+
+        streamTask.cancel()
+        _ = await streamTask.result
+    }
 }
 
 

@@ -6,12 +6,17 @@ import Foundation
 /// retry loop's stable request id. Every retry attempt for the same logical
 /// request therefore reuses the same header value.
 public struct IdempotencyKeyPolicy: Sendable {
+    /// Header name used to carry the idempotency key.
     public let headerName: String
+    /// HTTP methods that should receive a generated key.
     public let methods: Set<HTTPMethod>
+    /// Generates a key from the logical request id shared by all retry attempts.
     public let keyProvider: @Sendable (UUID) -> String?
 
+    /// Policy that never attaches an idempotency key.
     public static let disabled = IdempotencyKeyPolicy(methods: []) { _ in nil }
 
+    /// Attaches keys to unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`).
     public static func automaticForUnsafeMethods(
         headerName: String = "Idempotency-Key",
         keyProvider: @escaping @Sendable (UUID) -> String = { $0.uuidString }

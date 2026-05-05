@@ -5,11 +5,16 @@ import Foundation
 /// The wire shape is `version-trace-id-parent-id-trace-flags`, for example
 /// `00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`.
 public struct W3CTraceContext: Sendable, Equatable {
+    /// Trace Context version, currently `00`.
     public let version: String
+    /// 16-byte lowercase hex trace identifier.
     public let traceID: String
+    /// 8-byte lowercase hex parent span identifier.
     public let parentID: String
+    /// Lowercase hex trace flags, for example `01` when sampled.
     public let traceFlags: String
 
+    /// Header-ready `traceparent` string.
     public var traceparent: String {
         "\(version)-\(traceID)-\(parentID)-\(traceFlags)"
     }
@@ -84,8 +89,11 @@ public struct W3CTraceContext: Sendable, Equatable {
 /// context exists and `generateWhenMissing` is `true`, it creates a new
 /// sampled trace.
 public struct TraceContextInterceptor: RequestInterceptor {
+    /// Whether to create a new trace when no valid task-local context exists.
     public let generateWhenMissing: Bool
+    /// Sampling flag used when generating a new context or parent span.
     public let sampled: Bool
+    /// Optional `tracestate` value to attach when the request has none.
     public let tracestate: String?
 
     public init(
@@ -117,9 +125,31 @@ public struct TraceContextInterceptor: RequestInterceptor {
             if let context = W3CTraceContext(traceparent: traceID) {
                 return context
             }
-            return W3CTraceContext(traceID: traceID, parentID: UUID().uuidString, sampled: sampled)
+            if Self.isValidTraceID(traceID) {
+                return W3CTraceContext(
+                    traceID: traceID,
+                    parentID: Self.makeParentID(),
+                    sampled: sampled
+                )
+            }
         }
         guard generateWhenMissing else { return nil }
         return .generated(sampled: sampled)
+    }
+
+    private static func makeParentID() -> String {
+        String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16))
+    }
+
+    private static func isValidTraceID(_ value: String) -> Bool {
+        let normalized = value.lowercased()
+        guard normalized.count == 32,
+            normalized != String(repeating: "0", count: 32)
+        else {
+            return false
+        }
+        return normalized.utf8.allSatisfy { byte in
+            (48...57).contains(byte) || (97...102).contains(byte)
+        }
     }
 }

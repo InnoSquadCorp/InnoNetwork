@@ -103,6 +103,37 @@ struct NetworkContextTests {
     }
 
     @Test
+    func traceContextInterceptorPropagatesTaskLocalTraceID() async throws {
+        let interceptor = TraceContextInterceptor()
+        let baseRequest = URLRequest(url: URL(string: "https://example.invalid/x")!)
+        let traceID = "4bf92f3577b34da6a3ce929d0e0e4736"
+
+        let adapted = try await NetworkContext.$current.withValue(
+            NetworkContext(traceID: traceID)
+        ) {
+            try await interceptor.adapt(baseRequest)
+        }
+        let traceparent = try #require(adapted.value(forHTTPHeaderField: "traceparent"))
+        let context = try #require(W3CTraceContext(traceparent: traceparent))
+
+        #expect(context.traceID == traceID)
+    }
+
+    @Test
+    func traceContextInterceptorDoesNotGenerateForInvalidTaskLocalTraceWhenDisabled() async throws {
+        let interceptor = TraceContextInterceptor(generateWhenMissing: false)
+        let baseRequest = URLRequest(url: URL(string: "https://example.invalid/x")!)
+
+        let adapted = try await NetworkContext.$current.withValue(
+            NetworkContext(traceID: "not-a-w3c-trace")
+        ) {
+            try await interceptor.adapt(baseRequest)
+        }
+
+        #expect(adapted.value(forHTTPHeaderField: "traceparent") == nil)
+    }
+
+    @Test
     func traceContextInterceptorGeneratesTraceparentWhenMissing() async throws {
         let interceptor = TraceContextInterceptor(tracestate: "vendor=state")
         let baseRequest = URLRequest(url: URL(string: "https://example.invalid/x")!)

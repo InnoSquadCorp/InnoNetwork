@@ -157,7 +157,7 @@ jobs:
       - name: Enforce no unchecked sendable in production sources
         run: |
           set -eo pipefail
-          # Scope the check to the three shipping library targets so the
+          # Scope the check to the four shipping library targets so the
           # package-internal `InnoNetworkTestSupport` target (test helpers
           # like TestClock that legitimately use `@unchecked Sendable`) is
           # excluded. No product-library depends on InnoNetworkTestSupport,

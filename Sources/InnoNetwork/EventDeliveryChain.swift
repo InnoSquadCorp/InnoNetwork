@@ -25,7 +25,6 @@ package actor EventDeliveryChain<Event: Sendable> {
     private struct QueuedEvent: Sendable {
         let event: Event
         let enqueuedAt: Date
-        let handlerStartCompletion: DeliveryCompletion?
         let deliveryCompletion: DeliveryCompletion?
     }
 
@@ -57,20 +56,8 @@ package actor EventDeliveryChain<Event: Sendable> {
         enqueue(
             event,
             enqueuedAt: enqueuedAt,
-            handlerStartCompletion: nil,
             deliveryCompletion: nil
         )
-    }
-
-    package func enqueueAndWaitForHandlerStart(_ event: Event, enqueuedAt: Date = .now) async {
-        await withCheckedContinuation { continuation in
-            enqueue(
-                event,
-                enqueuedAt: enqueuedAt,
-                handlerStartCompletion: DeliveryCompletion(continuation),
-                deliveryCompletion: nil
-            )
-        }
     }
 
     package func enqueueAndWaitForDelivery(_ event: Event, enqueuedAt: Date = .now) async {
@@ -78,7 +65,6 @@ package actor EventDeliveryChain<Event: Sendable> {
             enqueue(
                 event,
                 enqueuedAt: enqueuedAt,
-                handlerStartCompletion: nil,
                 deliveryCompletion: DeliveryCompletion(continuation)
             )
         }
@@ -87,11 +73,9 @@ package actor EventDeliveryChain<Event: Sendable> {
     private func enqueue(
         _ event: Event,
         enqueuedAt: Date,
-        handlerStartCompletion: DeliveryCompletion?,
         deliveryCompletion: DeliveryCompletion?
     ) {
         guard !isClosed else {
-            handlerStartCompletion?.resume()
             deliveryCompletion?.resume()
             return
         }
@@ -100,12 +84,10 @@ package actor EventDeliveryChain<Event: Sendable> {
             switch policy.overflowPolicy {
             case .dropOldest:
                 if let droppedEvent = queue.popFirst() {
-                    droppedEvent.handlerStartCompletion?.resume()
                     droppedEvent.deliveryCompletion?.resume()
                 }
             case .dropNewest:
                 reportQueueState()
-                handlerStartCompletion?.resume()
                 deliveryCompletion?.resume()
                 return
             }
@@ -115,7 +97,6 @@ package actor EventDeliveryChain<Event: Sendable> {
             QueuedEvent(
                 event: event,
                 enqueuedAt: enqueuedAt,
-                handlerStartCompletion: handlerStartCompletion,
                 deliveryCompletion: deliveryCompletion
             )
         )
@@ -123,10 +104,16 @@ package actor EventDeliveryChain<Event: Sendable> {
         startDrainIfNeeded()
     }
 
-    package func finish() async {
+    package func finish(deliverQueuedEvents: Bool = false) async {
         isClosed = true
+        guard !deliverQueuedEvents else {
+            if !queue.isEmpty {
+                startDrainIfNeeded()
+            }
+            return
+        }
+
         while let queuedEvent = queue.popFirst() {
-            queuedEvent.handlerStartCompletion?.resume()
             queuedEvent.deliveryCompletion?.resume()
         }
         // `finish()` can be called by the active handler while self-removing;
@@ -144,7 +131,6 @@ package actor EventDeliveryChain<Event: Sendable> {
         while !Task.isCancelled {
             guard let queuedEvent = queue.popFirst() else { break }
             reportQueueState()
-            queuedEvent.handlerStartCompletion?.resume()
             await handler(queuedEvent.event)
             reportDeliveryLatency(Date.now.timeIntervalSince(queuedEvent.enqueuedAt))
             queuedEvent.deliveryCompletion?.resume()

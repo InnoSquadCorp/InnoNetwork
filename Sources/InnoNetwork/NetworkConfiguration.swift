@@ -66,9 +66,13 @@ public struct NetworkConfiguration: Sendable {
     public let baseURL: URL
     public let timeout: TimeInterval
     public let cachePolicy: URLRequest.CachePolicy
+    /// Default priority hint applied to requests that do not override it.
     public let requestPriority: RequestPriority
+    /// Default cellular-access policy applied to built `URLRequest` values.
     public let allowsCellularAccess: Bool
+    /// Default expensive-network policy applied to built `URLRequest` values.
     public let allowsExpensiveNetworkAccess: Bool
+    /// Default Low Data Mode policy applied to built `URLRequest` values.
     public let allowsConstrainedNetworkAccess: Bool
     public let retryPolicy: RetryPolicy?
     public let networkMonitor: (any NetworkMonitoring)?

@@ -2,6 +2,7 @@ import Foundation
 
 /// Options used when rendering a `URLRequest` as a reproducible curl command.
 public struct CurlCommandOptions: Sendable, Equatable {
+    /// Header names redacted by default, stored lowercase for comparison.
     public static let defaultRedactedHeaderNames: Set<String> = [
         "authorization",
         "cookie",
@@ -10,8 +11,11 @@ public struct CurlCommandOptions: Sendable, Equatable {
         "set-cookie",
     ]
 
+    /// Case-insensitive header names whose values should render as `<redacted>`.
     public let redactedHeaderNames: Set<String>
+    /// Whether the rendered command should include a request body when known.
     public let includesBody: Bool
+    /// Optional file URL used when the body is file-backed or too large for inline output.
     public let bodyFileURL: URL?
 
     public init(
