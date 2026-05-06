@@ -120,6 +120,32 @@ struct NetworkContextTests {
     }
 
     @Test
+    func traceContextRejectsReservedVersion() {
+        let traceparent = "ff-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+
+        #expect(W3CTraceContext(traceparent: traceparent) == nil)
+    }
+
+    @Test
+    func traceContextInitializerRejectsMalformedIdentifiers() {
+        #expect(W3CTraceContext(traceID: "not-a-trace-id", parentID: "00f067aa0ba902b7") == nil)
+        #expect(W3CTraceContext(traceID: "4bf92f3577b34da6a3ce929d0e0e4736", parentID: "0000000000000000") == nil)
+    }
+
+    @Test
+    func traceContextInitializerNormalizesValidIdentifiers() throws {
+        let context = try #require(
+            W3CTraceContext(
+                traceID: "4BF92F3577B34DA6A3CE929D0E0E4736",
+                parentID: "00F067AA0BA902B7",
+                sampled: false
+            )
+        )
+
+        #expect(context.traceparent == "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00")
+    }
+
+    @Test
     func traceContextInterceptorDoesNotGenerateForInvalidTaskLocalTraceWhenDisabled() async throws {
         let interceptor = TraceContextInterceptor(generateWhenMissing: false)
         let baseRequest = URLRequest(url: URL(string: "https://example.invalid/x")!)

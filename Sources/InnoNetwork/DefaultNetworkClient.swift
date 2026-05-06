@@ -241,11 +241,23 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     /// Use the default ``stream(_:)`` for lossless delivery. Pick a bounded
     /// ``StreamingBufferingPolicy`` only when the stream can tolerate dropped
     /// decoded outputs and capped memory is more important than replaying
-    /// every server-emitted line.
+    /// every server-emitted line. Bounded buffering is rejected when
+    /// ``StreamingResumePolicy/lastEventID(maxAttempts:retryDelay:)`` is active
+    /// because the resume cursor must not advance past values a slow consumer
+    /// never received.
     public func stream<T: StreamingAPIDefinition>(
         _ request: T,
         bufferingPolicy: StreamingBufferingPolicy
     ) -> AsyncThrowingStream<T.Output, Error> {
+        if let incompatibleBufferingError = Self.incompatibleStreamingBufferingError(
+            resumePolicy: request.resumePolicy,
+            bufferingPolicy: bufferingPolicy
+        ) {
+            return AsyncThrowingStream { continuation in
+                continuation.finish(throwing: incompatibleBufferingError)
+            }
+        }
+
         // Streaming responses must not silently drop server-emitted events
         // (lost SSE frames, JSON-lines records, etc.), so the policy is
         // explicit `.unbounded` by default. Bounded overloads are opt-in for
@@ -285,6 +297,21 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
             }
             inFlight.register(id: requestID, cancelHandler: { work.cancel() })
             startGate.open()
+        }
+    }
+
+    private static func incompatibleStreamingBufferingError(
+        resumePolicy: StreamingResumePolicy,
+        bufferingPolicy: StreamingBufferingPolicy
+    ) -> NetworkError? {
+        guard case .lastEventID = resumePolicy else { return nil }
+        switch bufferingPolicy {
+        case .unbounded:
+            return nil
+        case .bufferingNewest, .bufferingOldest:
+            return .invalidRequestConfiguration(
+                "StreamingResumePolicy.lastEventID requires unbounded output buffering. Use stream(_:) or disable resume before choosing a bounded buffering policy."
+            )
         }
     }
 

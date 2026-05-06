@@ -118,7 +118,8 @@ Per-symbol evolution allowances within the 4.x line:
   default implementations as additional decode-boundary use cases
   surface.
 - `StreamingBufferingPolicy` — bounded buffering cases may gain additional
-  policy knobs, but `stream(_:)` stays lossless by default for 4.x.
+  policy knobs, but `stream(_:)` stays lossless by default for 4.x and bounded
+  buffers remain incompatible with `StreamingResumePolicy.lastEventID`.
 - `TraceContextInterceptor` and `W3CTraceContext` — W3C header propagation
   remains additive; future minors may add richer correlation helpers without
   changing `NetworkEvent` case shape.

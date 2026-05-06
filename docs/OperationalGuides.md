@@ -47,12 +47,11 @@ streams whose consumers can tolerate dropped decoded values should use
 `.bufferingOldest(_:)` to cap memory.
 
 Bounded buffering is best for firehose-style streams where the latest decoded
-state is more important than every intermediate event. Do not combine bounded
-buffering with `StreamingResumePolicy.lastEventID` when the server requires
-exactly-once event delivery: a bounded consumer buffer can drop decoded outputs
-that the resume cursor has already observed. Use the default lossless
-`stream(_:)` for SSE feeds where `Last-Event-ID` must reflect every event the
-consumer will eventually process.
+state is more important than every intermediate event. The client rejects
+bounded buffering with `StreamingResumePolicy.lastEventID`: a bounded consumer
+buffer can drop decoded outputs that the resume cursor has already observed.
+Use the default lossless `stream(_:)` for SSE feeds where `Last-Event-ID` must
+reflect every event the consumer will eventually process.
 
 ## Local CPU Notes
 

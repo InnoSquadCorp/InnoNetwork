@@ -26,7 +26,8 @@ public struct W3CTraceContext: Sendable, Equatable {
         let traceID = String(parts[1]).lowercased()
         let parentID = String(parts[2]).lowercased()
         let traceFlags = String(parts[3]).lowercased()
-        guard Self.isLowercaseHex(version, count: 2),
+        guard version != "ff",
+            Self.isLowercaseHex(version, count: 2),
             Self.isLowercaseHex(traceID, count: 32),
             Self.isLowercaseHex(parentID, count: 16),
             Self.isLowercaseHex(traceFlags, count: 2),
@@ -41,15 +42,28 @@ public struct W3CTraceContext: Sendable, Equatable {
         self.traceFlags = traceFlags
     }
 
-    public init(traceID: String, parentID: String, sampled: Bool = true) {
-        self.version = "00"
-        self.traceID = Self.normalizedHex(traceID, length: 32) ?? Self.makeTraceID()
-        self.parentID = Self.normalizedHex(parentID, length: 16) ?? Self.makeParentID()
-        self.traceFlags = sampled ? "01" : "00"
+    public init?(traceID: String, parentID: String, sampled: Bool = true) {
+        guard
+            let traceID = Self.normalizedHex(traceID, length: 32),
+            let parentID = Self.normalizedHex(parentID, length: 16)
+        else {
+            return nil
+        }
+        self.init(validatedTraceID: traceID, validatedParentID: parentID, traceFlags: sampled ? "01" : "00")
     }
 
     public static func generated(sampled: Bool = true) -> W3CTraceContext {
-        W3CTraceContext(traceID: makeTraceID(), parentID: makeParentID(), sampled: sampled)
+        guard let context = W3CTraceContext(traceID: makeTraceID(), parentID: makeParentID(), sampled: sampled) else {
+            return generated(sampled: sampled)
+        }
+        return context
+    }
+
+    private init(validatedTraceID: String, validatedParentID: String, traceFlags: String) {
+        self.version = "00"
+        self.traceID = validatedTraceID
+        self.parentID = validatedParentID
+        self.traceFlags = traceFlags
     }
 
     private static func makeTraceID() -> String {
@@ -59,7 +73,8 @@ public struct W3CTraceContext: Sendable, Equatable {
 
     private static func makeParentID() -> String {
         let value = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-        return String(value.prefix(16))
+        let parentID = String(value.prefix(16))
+        return parentID == String(repeating: "0", count: 16) ? makeParentID() : parentID
     }
 
     private static func normalizedHex(_ value: String, length: Int) -> String? {
@@ -138,7 +153,8 @@ public struct TraceContextInterceptor: RequestInterceptor {
     }
 
     private static func makeParentID() -> String {
-        String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16))
+        let parentID = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16))
+        return parentID == String(repeating: "0", count: 16) ? makeParentID() : parentID
     }
 
     private static func isValidTraceID(_ value: String) -> Bool {
