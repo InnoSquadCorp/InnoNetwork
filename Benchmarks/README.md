@@ -23,13 +23,16 @@
 
 ## Memory Metrics
 
-각 benchmark는 throughput 외에 **resident memory 풋프린트**도 함께 보고합니다.
-`measure(name:group:iterations:work:)`가 클로저 실행 직전과 직후에
-`mach_task_basic_info`를 호출해 다음 두 값을 캡처합니다.
+각 benchmark는 throughput 외에 **resident memory 풋프린트**도 함께
+보고합니다. `measure(name:group:iterations:work:)`가 클로저 실행 직전과
+직후에 `mach_task_basic_info`를 호출해 다음 두 값을 캡처합니다.
 
-- `peakResidentBytes`: 클로저 종료 직후 프로세스의 resident set size (bytes).
-- `residentDeltaBytes`: `peakResidentBytes - preMeasurementResidentBytes`.
-  양수는 클로저가 새로 점유한 메모리, 음수는 시스템에 반환한 메모리.
+- `peakResidentBytes`: 클로저 종료 직후 프로세스의 high-water resident
+  set size (`resident_size_max`, bytes). 이 값은 프로세스 시작 이후의
+  peak라서 앞서 실행된 benchmark의 영향을 포함할 수 있습니다.
+- `residentDeltaBytes`: 클로저 종료 직후 현재 resident set size에서
+  클로저 시작 직전 현재 resident set size를 뺀 값입니다. 양수는 클로저가
+  새로 점유한 메모리, 음수는 시스템에 반환한 메모리입니다.
 
 Resident 메모리는 페이지 단위(Apple Silicon은 16 KiB)로 반올림되므로,
 같은 페이지 안에서 끝나는 작은 할당은 0으로 보일 수 있습니다.

@@ -666,17 +666,14 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 - 한국어 문서: [docs/ko/README.md](docs/ko/README.md)
 
-## Used In Production By
+## Adoption
 
-InnoNetwork은 다음 환경에서 프로덕션 트래픽을 받고 있습니다.
+Verified production users are listed only after maintainers have explicit
+permission to name the company or team publicly.
 
-- **InnoSquad / Banksalad** — iOS 앱 전반의 멀티 도메인 HTTP / SSE 클라이언트
-  (Core, Download, WebSocket, PersistentCache 모두 사용)
-- *팀을 추가하려면 이 목록에 PR을 보내 주세요.*
-
-> 본 라이브러리를 프로덕션에서 사용하시면 풀 리퀘스트로 알려 주세요.
-> 회사 / 팀 이름, 사용 중인 모듈(Core / Download / WebSocket / PersistentCache),
-> 가능하다면 도입 이후 도움이 된 부분 한 줄을 함께 적어 주시면 다른 팀의 채택 결정에 큰 도움이 됩니다.
+If you use InnoNetwork in production, please open a pull request with the
+company or team name, the modules in use (Core / Download / WebSocket /
+PersistentCache), and one line about what helped your adoption decision.
 
 ## Support
 

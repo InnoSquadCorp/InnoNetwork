@@ -10,17 +10,18 @@ private struct BenchmarkResult: Codable, Sendable {
     let iterations: Int
     let elapsedSeconds: Double
     let operationsPerSecond: Double
-    /// Process resident memory (in bytes) sampled immediately after the
-    /// benchmark closure returned, via `mach_task_basic_info`. `nil` when
-    /// the kernel call failed and on baseline reports captured before
-    /// memory metrics were added (Codable decodes the missing key as
-    /// `nil`, keeping the baseline contract backwards compatible).
+    /// Process high-water resident memory in bytes, sampled immediately
+    /// after the benchmark closure returned via
+    /// `mach_task_basic_info.resident_size_max`. `nil` when the kernel call
+    /// failed and on baseline reports captured before memory metrics were
+    /// added (Codable decodes the missing key as `nil`, keeping the
+    /// baseline contract backwards compatible).
     let peakResidentBytes: UInt64?
-    /// Resident-memory delta (`peakResidentBytes - preMeasurementResidentBytes`)
-    /// in bytes. Positive values surface allocation hot spots that
-    /// throughput-only metrics miss; negative values mean the closure
-    /// released memory back to the system before returning. `nil` for
-    /// the same reasons as ``peakResidentBytes``.
+    /// Current resident-memory delta (`postResidentBytes -
+    /// preResidentBytes`) in bytes. Positive values surface allocation hot
+    /// spots that throughput-only metrics miss; negative values mean the
+    /// closure released memory back to the system before returning. `nil`
+    /// for the same reasons as ``peakResidentBytes``.
     let residentDeltaBytes: Int64?
 }
 
@@ -80,6 +81,11 @@ private struct BenchmarkGuardFailure: Codable, Sendable {
     let identifier: BenchmarkIdentifier
     let deltaPercent: Double
     let maxRegressionPercent: Double
+}
+
+private struct ResidentMemorySnapshot: Sendable {
+    let residentBytes: UInt64
+    let peakResidentBytes: UInt64
 }
 
 private struct BenchmarkOptions: Sendable {
@@ -369,11 +375,11 @@ private enum InnoNetworkBenchmarks {
         work: () async throws -> Void
     ) async throws -> BenchmarkResult {
         let clock = ContinuousClock()
-        let preResident = currentResidentBytes()
+        let preMemory = currentResidentMemorySnapshot()
         let start = clock.now
         try await work()
         let elapsed = start.duration(to: clock.now)
-        let postResident = currentResidentBytes()
+        let postMemory = currentResidentMemorySnapshot()
         let elapsedSeconds = max(
             Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000.0,
             0.000_001
@@ -381,8 +387,8 @@ private enum InnoNetworkBenchmarks {
 
         let residentDeltaBytes: Int64?
         if
-            let post = postResident,
-            let pre = preResident,
+            let post = postMemory?.residentBytes,
+            let pre = preMemory?.residentBytes,
             let postSigned = Int64(exactly: post),
             let preSigned = Int64(exactly: pre)
         {
@@ -397,15 +403,15 @@ private enum InnoNetworkBenchmarks {
             iterations: iterations,
             elapsedSeconds: elapsedSeconds,
             operationsPerSecond: Double(iterations) / elapsedSeconds,
-            peakResidentBytes: postResident,
+            peakResidentBytes: postMemory?.peakResidentBytes,
             residentDeltaBytes: residentDeltaBytes
         )
     }
 
-    /// Current process resident-memory footprint via `mach_task_basic_info`.
+    /// Current process resident-memory snapshot via `mach_task_basic_info`.
     /// Returns `nil` if the Mach call fails for any reason. Used for memory
     /// metrics in ``measure(name:group:iterations:work:)``.
-    private static func currentResidentBytes() -> UInt64? {
+    private static func currentResidentMemorySnapshot() -> ResidentMemorySnapshot? {
         var info = mach_task_basic_info()
         var count = mach_msg_type_number_t(
             MemoryLayout<mach_task_basic_info>.size / MemoryLayout<integer_t>.size
@@ -420,7 +426,11 @@ private enum InnoNetworkBenchmarks {
                 )
             }
         }
-        return result == KERN_SUCCESS ? info.resident_size : nil
+        guard result == KERN_SUCCESS else { return nil }
+        return ResidentMemorySnapshot(
+            residentBytes: info.resident_size,
+            peakResidentBytes: info.resident_size_max
+        )
     }
 
     private static func benchmarkTaskEventHubFanOut(

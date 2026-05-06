@@ -13,7 +13,9 @@ struct GetUser: APIDefinition {
     let login: String
 
     var method: HTTPMethod { .get }
-    var path: String { "/users/\(login)" }
+    var path: String {
+        "/users/\(EndpointPathEncoding.percentEncodedSegment(login))"
+    }
 }
 
 func makeClient() -> DefaultNetworkClient? {

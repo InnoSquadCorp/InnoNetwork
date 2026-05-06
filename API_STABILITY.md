@@ -382,6 +382,11 @@ requires `@_spi` import.
   changelog. Consumers who write exhaustive `switch` statements over
   `NetworkError` should add `@unknown default` to keep their code
   forward-compatible across minor bumps.
+- `NetworkError.errorDescription` localization keys are a provisionally
+  stable behaviour contract for 4.x. The initial catalogue ships English
+  and Korean strings; additional localizations can be added in minor
+  releases, but existing key meanings should not be repurposed without a
+  changelog entry.
 
 ## Deprecation Policy
 

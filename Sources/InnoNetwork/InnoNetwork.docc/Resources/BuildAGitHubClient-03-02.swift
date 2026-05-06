@@ -13,7 +13,9 @@ struct GetUser: APIDefinition {
     let login: String
 
     var method: HTTPMethod { .get }
-    var path: String { "/users/\(login)" }
+    var path: String {
+        "/users/\(EndpointPathEncoding.percentEncodedSegment(login))"
+    }
 }
 
 func makeClient() -> DefaultNetworkClient? {
@@ -29,7 +31,7 @@ func fetchInnoSquad() async {
     guard let client = makeClient() else { return }
     do {
         let user = try await client.request(GetUser(login: "InnoSquadCorp"))
-        print("\(user.login) — id: \(user.id)")
+        print("\(user.login) - id: \(user.id)")
     } catch let error as NetworkError {
         print("Failed: \(error.localizedDescription)")
     } catch {

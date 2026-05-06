@@ -2,7 +2,7 @@
     @Intro(title: "Build a GitHub Client") {
         Define a typed endpoint for the public GitHub user API, wire it up
         through ``DefaultNetworkClient``, and call it with `async`/`await`.
-        At the end of this tutorial you will have a five-line snippet that
+        At the end of this tutorial you will have a small snippet that
         fetches a `User` value from `https://api.github.com/users/{login}`.
     }
 
@@ -42,18 +42,20 @@
 
         @Steps {
             @Step {
-                Declare a `GetUser` struct that conforms to
-                ``APIDefinition``. Set its `APIResponse` to `User` and
-                expose a `login` parameter so the path can be templated
-                per call.
+                Declare a `GetUser` value that stores the `login`
+                parameter. In the next step you will make this value
+                conform to ``APIDefinition`` and map that parameter into
+                the request path.
 
                 @Code(name: "GitHubClient.swift", file: BuildAGitHubClient-02-01.swift)
             }
 
             @Step {
-                Implement `method` and `path`. `Parameter` defaults to
-                ``EmptyParameter`` for simple GET requests, so you do not
-                need to declare it.
+                Implement `method` and `path`. Encode `login` with
+                ``EndpointPathEncoding/percentEncodedSegment(_:)`` so it
+                remains one path segment even if it contains reserved
+                characters. `Parameter` defaults to ``EmptyParameter`` for
+                simple GET requests, so you do not need to declare it.
 
                 @Code(name: "GitHubClient.swift", file: BuildAGitHubClient-02-02.swift)
             }

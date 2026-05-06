@@ -7,9 +7,7 @@ struct User: Decodable, Sendable {
     let name: String?
 }
 
-struct GetUser: APIDefinition {
-    typealias APIResponse = User
-
+struct GetUser {
     let login: String
 
     init(login: String) {
