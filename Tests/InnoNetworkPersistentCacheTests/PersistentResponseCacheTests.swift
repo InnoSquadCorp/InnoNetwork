@@ -335,6 +335,31 @@ struct PersistentResponseCacheTests {
         #expect(try indexEntryCount(in: directory) == 1)
     }
 
+    @Test("Reopen removes unreferenced staged body files")
+    func reopenRemovesUnreferencedStagedBodyFiles() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/orphaned-body")
+        let writer = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        await writer.set(key, CachedResponse(data: Data("indexed".utf8)))
+
+        let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
+        let orphanURL = bodiesURL.appendingPathComponent("\(UUID().uuidString).body", isDirectory: false)
+        try Data("orphan".utf8).write(to: orphanURL, options: .atomic)
+        #expect(FileManager.default.fileExists(atPath: orphanURL.path))
+
+        let reopened = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+
+        #expect(!FileManager.default.fileExists(atPath: orphanURL.path))
+        let cached = try #require(await reopened.get(key))
+        #expect(cached.data == Data("indexed".utf8))
+        #expect(try existingBodyURLs(in: directory).count == 1)
+    }
+
     @Test("get() drops a body that grew past maxEntryBytes after init")
     func getDropsBodyThatExceedsMaxEntryBytesAfterInit() async throws {
         let directory = makeDirectory()

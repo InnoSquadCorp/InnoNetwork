@@ -209,6 +209,11 @@ public actor PersistentResponseCache: ResponseCache {
             bodiesDirectoryURL: bodiesDirectoryURL,
             fileManager: fileManager
         )
+        Self.scrubUnreferencedBodiesOnOpen(
+            finalIndex,
+            bodiesDirectoryURL: bodiesDirectoryURL,
+            fileManager: fileManager
+        )
         self.index = finalIndex
         self.runningTotalBytes = Self.totalBytes(in: finalIndex)
     }
@@ -231,22 +236,27 @@ public actor PersistentResponseCache: ResponseCache {
         // Body reads (potentially up to `maxEntryBytes`, default 5 MB) run on
         // a detached task so the actor can process unrelated requests while
         // slow flash blocks the read. The actor remains the single writer of
-        // `index`, so suspending here does not violate the cache invariants:
-        // a concurrent set/invalidate for this key will queue and observe the
-        // up-to-date state once we resume.
+        // `index`. Because actors are reentrant across the await, the read
+        // result is applied only if the same body file is still the current
+        // entry when the actor resumes.
         let data: Data
         do {
             data = try await Self.readBodyData(at: bodyURL)
         } catch {
-            removeEntry(id: id, entry: entry)
-            try? persistIndex()
+            if isCurrentEntry(id: id, entry: entry) {
+                removeEntry(id: id, entry: entry)
+                try? persistIndex()
+            }
             return nil
         }
         guard data.count <= configuration.maxEntryBytes else {
-            removeEntry(id: id, entry: entry)
-            try? persistIndex()
+            if isCurrentEntry(id: id, entry: entry) {
+                removeEntry(id: id, entry: entry)
+                try? persistIndex()
+            }
             return nil
         }
+        guard isCurrentEntry(id: id, entry: entry) else { return nil }
 
         entry.lastAccessedAt = Date()
         index.entries[id] = entry
@@ -317,32 +327,38 @@ public actor PersistentResponseCache: ResponseCache {
         // for an entry that can be up to `maxEntryBytes`. `.atomic` rename
         // semantics plus a unique body filename let us stage the new bytes
         // without overwriting the previous body. The index is updated only
-        // after the staged body exists; if index persistence fails, the
-        // in-memory snapshot rolls back and the previous body stays valid.
-        let previousIndex = index
-        let previousRunningTotalBytes = runningTotalBytes
+        // after the staged body exists. The actor is reentrant while the
+        // detached write is suspended, so the rollback snapshot is captured
+        // only after the await resumes and includes any intervening mutations.
+        var rollbackIndex: Index?
+        var rollbackRunningTotalBytes: Int?
         do {
             try await Self.writeBodyData(
                 value.data,
                 to: bodyURL,
                 dataProtectionClass: configuration.dataProtectionClass
             )
+            rollbackIndex = index
+            rollbackRunningTotalBytes = runningTotalBytes
+            let replacedBodyFileName = index.entries[id]?.bodyFileName
             if let old = index.entries[id] {
                 runningTotalBytes -= old.byteCost
             }
             index.entries[id] = entry
             runningTotalBytes += entry.byteCost
             var removableBodies = evictIfNeeded()
-            if let old = previousIndex.entries[id], old.bodyFileName != bodyFileName {
-                removableBodies.append(old.bodyFileName)
+            if let replacedBodyFileName, replacedBodyFileName != bodyFileName {
+                removableBodies.append(replacedBodyFileName)
             }
             try persistIndex()
             for fileName in removableBodies {
                 removeBody(fileName: fileName)
             }
         } catch {
-            index = previousIndex
-            runningTotalBytes = previousRunningTotalBytes
+            if let rollbackIndex, let rollbackRunningTotalBytes {
+                index = rollbackIndex
+                runningTotalBytes = rollbackRunningTotalBytes
+            }
             removeBody(fileName: bodyFileName)
             Self.logger.error(
                 "persistent_cache_set_failed url=\(key.url, privacy: .private) error=\(String(describing: error), privacy: .private)"
@@ -413,6 +429,10 @@ public actor PersistentResponseCache: ResponseCache {
             runningTotalBytes -= removed.byteCost
         }
         removeBody(fileName: entry.bodyFileName)
+    }
+
+    private func isCurrentEntry(id: String, entry: Entry) -> Bool {
+        index.entries[id]?.bodyFileName == entry.bodyFileName
     }
 
     private func removeBody(fileName: String) {
@@ -512,6 +532,31 @@ public actor PersistentResponseCache: ResponseCache {
             )
         }
         return budgetedIndex
+    }
+
+    private static func scrubUnreferencedBodiesOnOpen(
+        _ loadedIndex: Index,
+        bodiesDirectoryURL: URL,
+        fileManager: FileManager
+    ) {
+        let referencedBodyFileNames = Set(loadedIndex.entries.values.map(\.bodyFileName))
+        guard
+            let bodyURLs = try? fileManager.contentsOfDirectory(
+                at: bodiesDirectoryURL,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+        else {
+            return
+        }
+
+        for bodyURL in bodyURLs {
+            let isRegularFile =
+                (try? bodyURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false
+            guard isRegularFile, bodyURL.pathExtension == "body" else { continue }
+            guard !referencedBodyFileNames.contains(bodyURL.lastPathComponent) else { continue }
+            try? fileManager.removeItem(at: bodyURL)
+        }
     }
 
     private static func totalBytes(in index: Index) -> Int {
