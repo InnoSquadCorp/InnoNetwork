@@ -11,6 +11,10 @@ public struct NetworkConfiguration: Sendable {
                 baseURL: baseURL,
                 timeout: 30.0,
                 cachePolicy: .useProtocolCachePolicy,
+                requestPriority: .normal,
+                allowsCellularAccess: true,
+                allowsExpensiveNetworkAccess: true,
+                allowsConstrainedNetworkAccess: true,
                 retryPolicy: nil,
                 networkMonitor: NetworkMonitor.shared,
                 metricsReporter: nil,
@@ -22,6 +26,7 @@ public struct NetworkConfiguration: Sendable {
                 requestInterceptors: [],
                 responseInterceptors: [],
                 customExecutionPolicies: [],
+                idempotencyKeyPolicy: .disabled,
                 responseBodyBufferingPolicy: .streaming(),
                 redirectPolicy: DefaultRedirectPolicy()
             )
@@ -32,6 +37,10 @@ public struct NetworkConfiguration: Sendable {
                 baseURL: baseURL,
                 timeout: 60.0,
                 cachePolicy: .reloadIgnoringLocalCacheData,
+                requestPriority: .normal,
+                allowsCellularAccess: true,
+                allowsExpensiveNetworkAccess: true,
+                allowsConstrainedNetworkAccess: true,
                 retryPolicy: nil,
                 networkMonitor: NetworkMonitor.shared,
                 metricsReporter: nil,
@@ -47,6 +56,7 @@ public struct NetworkConfiguration: Sendable {
                 requestInterceptors: [],
                 responseInterceptors: [],
                 customExecutionPolicies: [],
+                idempotencyKeyPolicy: .disabled,
                 responseBodyBufferingPolicy: .streaming(),
                 redirectPolicy: DefaultRedirectPolicy()
             )
@@ -56,6 +66,14 @@ public struct NetworkConfiguration: Sendable {
     public let baseURL: URL
     public let timeout: TimeInterval
     public let cachePolicy: URLRequest.CachePolicy
+    /// Default priority hint applied to requests that do not override it.
+    public let requestPriority: RequestPriority
+    /// Default cellular-access policy applied to built `URLRequest` values.
+    public let allowsCellularAccess: Bool
+    /// Default expensive-network policy applied to built `URLRequest` values.
+    public let allowsExpensiveNetworkAccess: Bool
+    /// Default Low Data Mode policy applied to built `URLRequest` values.
+    public let allowsConstrainedNetworkAccess: Bool
     public let retryPolicy: RetryPolicy?
     public let networkMonitor: (any NetworkMonitoring)?
     public let metricsReporter: (any NetworkMetricsReporting)?
@@ -105,6 +123,9 @@ public struct NetworkConfiguration: Sendable {
     /// attempt after request adaptation/auth application and before response
     /// interceptors, status validation, cache writes, and decoding.
     public let customExecutionPolicies: [any RequestExecutionPolicy]
+    /// Optional policy that attaches one stable idempotency key to every
+    /// retry attempt for the same logical request.
+    public let idempotencyKeyPolicy: IdempotencyKeyPolicy
 
     /// Produces the default `User-Agent` value at request-build time.
     ///
@@ -186,6 +207,10 @@ public struct NetworkConfiguration: Sendable {
         public var baseURL: URL
         public var timeout: TimeInterval
         public var cachePolicy: URLRequest.CachePolicy
+        public var requestPriority: RequestPriority
+        public var allowsCellularAccess: Bool
+        public var allowsExpensiveNetworkAccess: Bool
+        public var allowsConstrainedNetworkAccess: Bool
         public var retryPolicy: RetryPolicy?
         public var networkMonitor: (any NetworkMonitoring)?
         public var metricsReporter: (any NetworkMetricsReporting)?
@@ -210,6 +235,8 @@ public struct NetworkConfiguration: Sendable {
         /// ``RequestExecutionNext/execute(_:)`` for the per-policy calling
         /// contract.
         public var customExecutionPolicies: [any RequestExecutionPolicy]
+        /// See ``NetworkConfiguration/idempotencyKeyPolicy``.
+        public var idempotencyKeyPolicy: IdempotencyKeyPolicy
         /// See ``NetworkConfiguration/userAgentProvider``.
         public var userAgentProvider: @Sendable () -> String
         /// See ``NetworkConfiguration/acceptLanguageProvider``.
@@ -235,6 +262,10 @@ public struct NetworkConfiguration: Sendable {
             self.baseURL = preset.baseURL
             self.timeout = preset.timeout
             self.cachePolicy = preset.cachePolicy
+            self.requestPriority = preset.requestPriority
+            self.allowsCellularAccess = preset.allowsCellularAccess
+            self.allowsExpensiveNetworkAccess = preset.allowsExpensiveNetworkAccess
+            self.allowsConstrainedNetworkAccess = preset.allowsConstrainedNetworkAccess
             self.retryPolicy = preset.retryPolicy
             self.networkMonitor = preset.networkMonitor
             self.metricsReporter = preset.metricsReporter
@@ -252,6 +283,7 @@ public struct NetworkConfiguration: Sendable {
             self.responseCache = preset.responseCache
             self.circuitBreakerPolicy = preset.circuitBreakerPolicy
             self.customExecutionPolicies = preset.customExecutionPolicies
+            self.idempotencyKeyPolicy = preset.idempotencyKeyPolicy
             self.userAgentProvider = preset.userAgentProvider
             self.acceptLanguageProvider = preset.acceptLanguageProvider
             self.captureFailurePayload = preset.captureFailurePayload
@@ -267,6 +299,10 @@ public struct NetworkConfiguration: Sendable {
                 baseURL: baseURL,
                 timeout: timeout,
                 cachePolicy: cachePolicy,
+                requestPriority: requestPriority,
+                allowsCellularAccess: allowsCellularAccess,
+                allowsExpensiveNetworkAccess: allowsExpensiveNetworkAccess,
+                allowsConstrainedNetworkAccess: allowsConstrainedNetworkAccess,
                 retryPolicy: retryPolicy,
                 networkMonitor: networkMonitor,
                 metricsReporter: metricsReporter,
@@ -284,6 +320,7 @@ public struct NetworkConfiguration: Sendable {
                 responseCache: responseCache,
                 circuitBreakerPolicy: circuitBreakerPolicy,
                 customExecutionPolicies: customExecutionPolicies,
+                idempotencyKeyPolicy: idempotencyKeyPolicy,
                 userAgentProvider: userAgentProvider,
                 acceptLanguageProvider: acceptLanguageProvider,
                 captureFailurePayload: captureFailurePayload,
@@ -300,6 +337,38 @@ public struct NetworkConfiguration: Sendable {
         Presets.safeDefaults(baseURL: baseURL)
     }
 
+    /// Production-oriented preset for apps that want conservative resilience
+    /// defaults without hand-wiring every policy.
+    ///
+    /// The preset keeps caching, auth refresh, and custom execution policies
+    /// opt-in, but enables bounded retries for transient failures, a per-host
+    /// circuit breaker, automatic idempotency keys for unsafe methods, and
+    /// streaming response body collection.
+    public static func recommendedForProduction(baseURL: URL) -> NetworkConfiguration {
+        NetworkConfiguration.advanced(baseURL: baseURL) { builder in
+            builder.timeout = 30
+            builder.cachePolicy = .useProtocolCachePolicy
+            builder.retryPolicy = ExponentialBackoffRetryPolicy(
+                maxRetries: 2,
+                maxTotalRetries: 3,
+                retryDelay: 0.5,
+                maxRetryAfterDelay: 30,
+                maxDelay: 8,
+                jitterRatio: 0.2,
+                waitsForNetworkChanges: true,
+                networkChangeTimeout: 10
+            )
+            builder.circuitBreakerPolicy = CircuitBreakerPolicy(
+                failureThreshold: 5,
+                windowSize: 10,
+                resetAfter: .seconds(30),
+                maxResetAfter: .seconds(300)
+            )
+            builder.idempotencyKeyPolicy = .automaticForUnsafeMethods()
+            builder.responseBodyBufferingPolicy = .streaming()
+        }
+    }
+
     public static func advanced(
         baseURL: URL,
         _ configure: (inout AdvancedBuilder) -> Void
@@ -313,6 +382,10 @@ public struct NetworkConfiguration: Sendable {
         baseURL: URL,
         timeout: TimeInterval = 30.0,
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
+        requestPriority: RequestPriority = .normal,
+        allowsCellularAccess: Bool = true,
+        allowsExpensiveNetworkAccess: Bool = true,
+        allowsConstrainedNetworkAccess: Bool = true,
         retryPolicy: RetryPolicy? = nil,
         networkMonitor: (any NetworkMonitoring)? = NetworkMonitor.shared,
         metricsReporter: (any NetworkMetricsReporting)? = nil,
@@ -330,6 +403,7 @@ public struct NetworkConfiguration: Sendable {
         responseCache: (any ResponseCache)? = nil,
         circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
         customExecutionPolicies: [any RequestExecutionPolicy] = [],
+        idempotencyKeyPolicy: IdempotencyKeyPolicy = .disabled,
         userAgentProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultUserAgent.value },
         acceptLanguageProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultAcceptLanguage.value },
         captureFailurePayload: Bool = false,
@@ -345,6 +419,10 @@ public struct NetworkConfiguration: Sendable {
         self.baseURL = baseURL
         self.timeout = timeout
         self.cachePolicy = cachePolicy
+        self.requestPriority = requestPriority
+        self.allowsCellularAccess = allowsCellularAccess
+        self.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
+        self.allowsConstrainedNetworkAccess = allowsConstrainedNetworkAccess
         self.retryPolicy = retryPolicy
         self.networkMonitor = networkMonitor
         self.metricsReporter = metricsReporter
@@ -362,6 +440,7 @@ public struct NetworkConfiguration: Sendable {
         self.responseCache = responseCache
         self.circuitBreakerPolicy = circuitBreakerPolicy
         self.customExecutionPolicies = customExecutionPolicies
+        self.idempotencyKeyPolicy = idempotencyKeyPolicy
         self.userAgentProvider = userAgentProvider
         self.acceptLanguageProvider = acceptLanguageProvider
         self.captureFailurePayload = captureFailurePayload

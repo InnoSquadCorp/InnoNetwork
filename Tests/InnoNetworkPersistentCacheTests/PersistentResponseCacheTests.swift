@@ -489,6 +489,74 @@ struct PersistentResponseCacheTests {
         #expect(cached.data == Data("payload".utf8))
     }
 
+    @Test("set() preserves the old entry when index persistence fails during overwrite")
+    func setPreservesOldEntryWhenIndexPersistenceFailsDuringOverwrite() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/overwrite-persist-fail")
+
+        await cache.set(key, CachedResponse(data: Data("first".utf8)))
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        let persistedIndex = try Data(contentsOf: indexURL)
+        let originalBodyURLs = try existingBodyURLs(in: directory)
+        #expect(originalBodyURLs.count == 1)
+
+        try FileManager.default.removeItem(at: indexURL)
+        try FileManager.default.createDirectory(at: indexURL, withIntermediateDirectories: false)
+
+        await cache.set(key, CachedResponse(data: Data("second".utf8)))
+
+        let cached = try #require(await cache.get(key))
+        #expect(cached.data == Data("first".utf8))
+        #expect(try existingBodyURLs(in: directory) == originalBodyURLs)
+
+        try FileManager.default.removeItem(at: indexURL)
+        try persistedIndex.write(to: indexURL, options: .atomic)
+
+        let reopened = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let reopenedCached = try #require(await reopened.get(key))
+        #expect(reopenedCached.data == Data("first".utf8))
+    }
+
+    @Test("set() preserves eviction candidates when index persistence fails")
+    func setPreservesEvictionCandidatesWhenIndexPersistenceFails() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxBytes: 96,
+                maxEntries: 10,
+                maxEntryBytes: 96
+            )
+        )
+        let first = ResponseCacheKey(method: "GET", url: "https://example.com/eviction-persist-fail-1")
+        let second = ResponseCacheKey(method: "GET", url: "https://example.com/eviction-persist-fail-2")
+        let third = ResponseCacheKey(method: "GET", url: "https://example.com/eviction-persist-fail-3")
+
+        await cache.set(first, CachedResponse(data: Data(repeating: 1, count: 32)))
+        try await Task.sleep(for: .milliseconds(50))
+        await cache.set(second, CachedResponse(data: Data(repeating: 2, count: 32)))
+        let originalBodyURLs = try existingBodyURLs(in: directory)
+        #expect(originalBodyURLs.count == 2)
+
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        try FileManager.default.removeItem(at: indexURL)
+        try FileManager.default.createDirectory(at: indexURL, withIntermediateDirectories: false)
+
+        await cache.set(third, CachedResponse(data: Data(repeating: 3, count: 80)))
+
+        #expect(await cache.get(first) != nil)
+        #expect(await cache.get(second) != nil)
+        #expect(await cache.get(third) == nil)
+        #expect(try existingBodyURLs(in: directory) == originalBodyURLs)
+    }
+
     @Test("persistenceFsyncPolicy=.always still persists across reopen")
     func fsyncAlwaysPersistsAcrossReopen() async throws {
         let directory = makeDirectory()
@@ -635,6 +703,7 @@ struct PersistentResponseCacheTests {
             includingPropertiesForKeys: nil
         )
         .filter { $0.pathExtension == "body" }
+        .sorted { $0.path < $1.path }
     }
 
     private func indexEntryCount(in directory: URL) throws -> Int {

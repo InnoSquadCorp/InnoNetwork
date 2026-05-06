@@ -478,6 +478,38 @@ struct ResiliencePolicyTests {
         #expect(capturedRequests[1].value(forHTTPHeaderField: "Authorization") == "Bearer new")
     }
 
+    @Test("RefreshTokenPolicy appliesTo skips token attachment and replay")
+    func refreshPolicyAppliesToSkipsTokenAttachmentAndReplay() async throws {
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 401),
+            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "unexpected")),
+        ])
+        let refreshCount = Counter()
+        let policy = RefreshTokenPolicy(
+            appliesTo: { $0.url?.host == "auth.example.com" },
+            currentToken: { "old" },
+            refreshToken: {
+                await refreshCount.increment()
+                return "new"
+            }
+        )
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                refreshTokenPolicy: policy
+            ),
+            session: session
+        )
+
+        await #expect(throws: NetworkError.self) {
+            try await client.request(ResilienceGetRequest())
+        }
+
+        #expect(await session.requestCount == 1)
+        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(await refreshCount.count == 0)
+    }
+
     @Test("Concurrent 401 responses share one refresh")
     func refreshPolicySingleFlight() async throws {
         let body = ResilienceUser(id: 1, name: "ok")

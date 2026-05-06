@@ -162,10 +162,11 @@ expected_provisionally=(
 '`InnoNetworkTestSupport` library product and its `public` symbols'
 '`ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
 '`WebSocketCloseDisposition` observation surface'
-'`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces'
+'`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
 '`InnoNetworkCodegen` separate package and macro declarations'
 '`DecodingInterceptor`'
+'`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`'
 )
 
 expected_shipping_public_declarations=(
@@ -175,15 +176,18 @@ expected_shipping_public_declarations=(
   AnyResponseDecoder
   AuthRequiredScope
   CachedResponse
+  CacheRevalidationState
   CancellationTag
   CircuitBreakerOpenError
   CircuitBreakerPolicy
   ContentType
   CorrelationIDInterceptor
+  CurlCommandOptions
   DecodingInterceptor
   DecodingStage
   DefaultNetworkClient
   DefaultNetworkLogger
+  DefaultRedirectPolicy
   DownloadConfiguration
   DownloadError
   DownloadEvent
@@ -212,6 +216,7 @@ expected_shipping_public_declarations=(
   HTTPHeader
   HTTPHeaders
   HTTPMethod
+  IdempotencyKeyPolicy
   InMemoryResponseCache
   MultipartAPIDefinition
   MultipartFormData
@@ -241,6 +246,8 @@ expected_shipping_public_declarations=(
   PersistentResponseCache
   PersistentResponseCacheConfiguration
   PublicKeyPinningPolicy
+  RedirectPolicy
+  RefreshFailureCooldown
   RefreshTokenPolicy
   RequestCoalescingPolicy
   RequestEncodingPolicy
@@ -249,9 +256,12 @@ expected_shipping_public_declarations=(
   RequestExecutionNext
   RequestExecutionPolicy
   RequestInterceptor
+  RequestPriority
+  RFC3986Encoding
   Response
   ResponseBodyBufferingPolicy
   ResponseCache
+  ResponseCacheHeaderPolicy
   ResponseCacheKey
   ResponseCachePolicy
   ResponseDecodingStrategy
@@ -266,17 +276,21 @@ expected_shipping_public_declarations=(
   StateReducer
   StateReduction
   StreamingAPIDefinition
+  StreamingBufferingPolicy
   StreamingResumePolicy
   TimeoutReason
+  TraceContextInterceptor
   TransportPolicy
   TrustEvaluating
   TrustFailureReason
   TrustPolicy
   URLQueryCustomKeyTransform
   URLQueryEncoder
+  URLQueryFloatEncodingStrategy
   URLQueryKeyEncodingStrategy
   URLSessionProtocol
   URLQueryArrayEncodingStrategy
+  W3CTraceContext
   WebSocketCloseCode
   WebSocketCloseDisposition
   WebSocketConfiguration
@@ -347,6 +361,9 @@ validate_benchmark_docs() {
 
 validate_doc_smoke_coverage() {
   local doc_smoke="$repo_root/SmokeTests/InnoNetworkDocSmoke/main.swift"
+  require_contains 'import InnoNetworkPersistentCache' "$doc_smoke"
+  require_contains 'PersistentResponseCacheConfiguration' "$doc_smoke"
+  require_contains '"InnoNetworkPersistentCache"' "$repo_root/Package.swift"
   require_contains 'compileBackgroundDownloadArticleExamples' "$doc_smoke"
   require_contains 'waitForRestoration()' "$doc_smoke"
   require_contains 'persistenceCompactionPolicy' "$doc_smoke"
@@ -374,25 +391,64 @@ validate_test_support_product() {
 validate_resilience_public_api() {
   require_contains 'public struct RefreshTokenPolicy' \
     "$repo_root/Sources/InnoNetwork/Auth/RefreshTokenPolicy.swift"
+  require_contains 'public struct RefreshFailureCooldown' \
+    "$repo_root/Sources/InnoNetwork/Auth/RefreshTokenPolicy.swift"
   require_contains 'public struct RequestCoalescingPolicy' \
     "$repo_root/Sources/InnoNetwork/RequestCoalescing/RequestCoalescingPolicy.swift"
   require_contains 'public enum ResponseCachePolicy' \
     "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
   require_contains 'public protocol ResponseCache' \
     "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
+  require_contains 'public enum ResponseCacheHeaderPolicy' \
+    "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
   require_contains 'public actor InMemoryResponseCache' \
     "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
+  require_contains 'public protocol RedirectPolicy' \
+    "$repo_root/Sources/InnoNetwork/RedirectPolicy.swift"
+  require_contains 'public struct DefaultRedirectPolicy' \
+    "$repo_root/Sources/InnoNetwork/RedirectPolicy.swift"
+  require_contains 'public enum CacheRevalidationState' \
+    "$repo_root/Sources/InnoNetwork/NetworkObservability.swift"
+  require_contains 'public enum RFC3986Encoding' \
+    "$repo_root/Sources/InnoNetwork/RFC3986Encoding.swift"
+  require_contains 'public enum URLQueryFloatEncodingStrategy' \
+    "$repo_root/Sources/InnoNetwork/URLQueryEncoder.swift"
   require_contains 'public struct CircuitBreakerPolicy' \
     "$repo_root/Sources/InnoNetwork/CircuitBreaker/CircuitBreakerPolicy.swift"
   require_contains 'public struct CircuitBreakerOpenError' \
     "$repo_root/Sources/InnoNetwork/CircuitBreaker/CircuitBreakerPolicy.swift"
+  require_contains 'public struct IdempotencyKeyPolicy' \
+    "$repo_root/Sources/InnoNetwork/IdempotencyKeyPolicy.swift"
   require_contains 'refreshTokenPolicy: RefreshTokenPolicy? = nil' \
+    "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+  require_contains 'idempotencyKeyPolicy: IdempotencyKeyPolicy = .disabled' \
     "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
   require_contains 'requestCoalescingPolicy: RequestCoalescingPolicy = .disabled' \
     "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
   require_contains 'responseCachePolicy: ResponseCachePolicy = .disabled' \
     "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
   require_contains 'circuitBreakerPolicy: CircuitBreakerPolicy? = nil' \
+    "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+  require_contains 'redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy()' \
+    "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+}
+
+validate_operational_dx_public_api() {
+  require_contains 'public enum StreamingBufferingPolicy' \
+    "$repo_root/Sources/InnoNetwork/StreamingAPIDefinition.swift"
+  require_contains 'bufferingPolicy: StreamingBufferingPolicy' \
+    "$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+  require_contains 'public struct TraceContextInterceptor: RequestInterceptor' \
+    "$repo_root/Sources/InnoNetwork/TraceContextInterceptor.swift"
+  require_contains 'public struct W3CTraceContext: Sendable, Equatable' \
+    "$repo_root/Sources/InnoNetwork/TraceContextInterceptor.swift"
+  require_contains 'public struct CurlCommandOptions: Sendable, Equatable' \
+    "$repo_root/Sources/InnoNetwork/CurlCommand.swift"
+  require_contains 'func curlCommand(options: CurlCommandOptions = CurlCommandOptions()) -> String' \
+    "$repo_root/Sources/InnoNetwork/CurlCommand.swift"
+  require_contains 'public enum RequestPriority: Sendable, Equatable' \
+    "$repo_root/Sources/InnoNetwork/RequestPriority.swift"
+  require_contains 'public static func recommendedForProduction(baseURL: URL) -> NetworkConfiguration' \
     "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
 }
 
@@ -462,6 +518,15 @@ validate_public_surface_ledger() {
     "${expected_test_support_public_declarations[@]}"; do
     require_contains "\`$declaration\`" "$api_stability"
   done
+
+  while IFS=$'\t' read -r _module kind declaration; do
+    case "$kind" in
+      swift.class|swift.enum|swift.protocol|swift.struct)
+        [[ "$declaration" == *.* ]] && continue
+        require_contains "\`$declaration\`" "$api_stability"
+        ;;
+    esac
+  done < <(awk 'NF && $0 !~ /^#/ { print }' "$public_symbols_allowlist")
 }
 
 validate_oss_readiness_public_api() {
@@ -489,6 +554,14 @@ validate_troubleshooting_and_examples_docs() {
   require_contains '### [CoreSmoke](./CoreSmoke)' "$repo_root/Examples/README.md"
   require_contains '### [TestSupportSmoke](./TestSupportSmoke)' "$repo_root/Examples/README.md"
   require_contains '### [WrapperSmoke](./WrapperSmoke)' "$repo_root/Examples/README.md"
+}
+
+validate_release_quality_gates() {
+  require_contains 'Sources/InnoNetworkPersistentCache' "$repo_root/.github/workflows/ci.yml"
+  require_contains 'bash Scripts/check_production_force_unwraps.sh' "$repo_root/.github/workflows/ci.yml"
+  require_contains 'bash Scripts/check_production_force_unwraps.sh' "$repo_root/docs/CI_DoC.md"
+  [[ -x "$repo_root/Scripts/check_production_force_unwraps.sh" ]] \
+    || fail "production force-unwrap gate is not executable"
 }
 
 documented_provisionally=()
@@ -724,7 +797,7 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseDisposition.swift"
       continue
       ;;
-    '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces')
+    '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces')
       validate_resilience_public_api
       continue
       ;;
@@ -741,6 +814,10 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/DecodingInterceptor.swift"
       continue
       ;;
+    '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`')
+      validate_operational_dx_public_api
+      continue
+      ;;
     *)
       fail "unknown provisionally stable symbol mapping: $symbol"
       ;;
@@ -748,6 +825,7 @@ for symbol in "${expected_provisionally[@]}"; do
 done
 
 validate_public_surface_ledger
+validate_release_quality_gates
 
 require_contains "API Stability" "$readme"
 require_contains ".safeDefaults(" "$readme"

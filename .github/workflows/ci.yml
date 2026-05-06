@@ -157,7 +157,7 @@ jobs:
       - name: Enforce no unchecked sendable in production sources
         run: |
           set -eo pipefail
-          # Scope the check to the three shipping library targets so the
+          # Scope the check to the four shipping library targets so the
           # package-internal `InnoNetworkTestSupport` target (test helpers
           # like TestClock that legitimately use `@unchecked Sendable`) is
           # excluded. No product-library depends on InnoNetworkTestSupport,
@@ -165,6 +165,7 @@ jobs:
           production_paths=(
             Sources/InnoNetwork
             Sources/InnoNetworkDownload
+            Sources/InnoNetworkPersistentCache
             Sources/InnoNetworkWebSocket
           )
           temp_matches="$(mktemp)"
@@ -180,6 +181,9 @@ jobs:
             cat "$temp_matches"
             exit 1
           fi
+
+      - name: Enforce no force unwrap in production sources
+        run: bash Scripts/check_production_force_unwraps.sh
 
   docs-contract-sync:
     name: Docs / Contract Sync

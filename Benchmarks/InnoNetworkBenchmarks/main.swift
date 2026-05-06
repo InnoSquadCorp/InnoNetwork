@@ -10,6 +10,19 @@ private struct BenchmarkResult: Codable, Sendable {
     let iterations: Int
     let elapsedSeconds: Double
     let operationsPerSecond: Double
+    /// Process high-water resident memory in bytes, sampled immediately
+    /// after the benchmark closure returned via
+    /// `mach_task_basic_info.resident_size_max`. `nil` when the kernel call
+    /// failed and on baseline reports captured before memory metrics were
+    /// added (Codable decodes the missing key as `nil`, keeping the
+    /// baseline contract backwards compatible).
+    let peakResidentBytes: UInt64?
+    /// Current resident-memory delta (`postResidentBytes -
+    /// preResidentBytes`) in bytes. Positive values surface allocation hot
+    /// spots that throughput-only metrics miss; negative values mean the
+    /// closure released memory back to the system before returning. `nil`
+    /// for the same reasons as ``peakResidentBytes``.
+    let residentDeltaBytes: Int64?
 }
 
 private struct BenchmarkReport: Codable, Sendable {
@@ -68,6 +81,11 @@ private struct BenchmarkGuardFailure: Codable, Sendable {
     let identifier: BenchmarkIdentifier
     let deltaPercent: Double
     let maxRegressionPercent: Double
+}
+
+private struct ResidentMemorySnapshot: Sendable {
+    let residentBytes: UInt64
+    let peakResidentBytes: UInt64
 }
 
 private struct BenchmarkOptions: Sendable {
@@ -223,10 +241,18 @@ private enum InnoNetworkBenchmarks {
 
         print("InnoNetwork Benchmarks")
         for result in results {
-            print(
-                "- \(result.group)/\(result.name): " + "\(String(format: "%.2f", result.operationsPerSecond)) ops/s "
-                    + "(\(String(format: "%.4f", result.elapsedSeconds))s, n=\(result.iterations))"
-            )
+            var line = "- \(result.group)/\(result.name): "
+                + "\(String(format: "%.2f", result.operationsPerSecond)) ops/s "
+                + "(\(String(format: "%.4f", result.elapsedSeconds))s, n=\(result.iterations))"
+            if let resident = result.peakResidentBytes {
+                let mib = Double(resident) / (1024.0 * 1024.0)
+                line += " · resident \(String(format: "%.1f", mib)) MiB"
+            }
+            if let delta = result.residentDeltaBytes {
+                let kib = Double(delta) / 1024.0
+                line += " (Δ \(String(format: "%+.1f", kib)) KiB)"
+            }
+            print(line)
         }
 
         let encoder = JSONEncoder()
@@ -349,19 +375,61 @@ private enum InnoNetworkBenchmarks {
         work: () async throws -> Void
     ) async throws -> BenchmarkResult {
         let clock = ContinuousClock()
+        let preMemory = currentResidentMemorySnapshot()
         let start = clock.now
         try await work()
         let elapsed = start.duration(to: clock.now)
+        let postMemory = currentResidentMemorySnapshot()
         let elapsedSeconds = max(
             Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1_000_000_000_000_000_000.0,
             0.000_001
         )
+
+        let residentDeltaBytes: Int64?
+        if
+            let post = postMemory?.residentBytes,
+            let pre = preMemory?.residentBytes,
+            let postSigned = Int64(exactly: post),
+            let preSigned = Int64(exactly: pre)
+        {
+            residentDeltaBytes = postSigned - preSigned
+        } else {
+            residentDeltaBytes = nil
+        }
+
         return BenchmarkResult(
             name: name,
             group: group,
             iterations: iterations,
             elapsedSeconds: elapsedSeconds,
-            operationsPerSecond: Double(iterations) / elapsedSeconds
+            operationsPerSecond: Double(iterations) / elapsedSeconds,
+            peakResidentBytes: postMemory?.peakResidentBytes,
+            residentDeltaBytes: residentDeltaBytes
+        )
+    }
+
+    /// Current process resident-memory snapshot via `mach_task_basic_info`.
+    /// Returns `nil` if the Mach call fails for any reason. Used for memory
+    /// metrics in ``measure(name:group:iterations:work:)``.
+    private static func currentResidentMemorySnapshot() -> ResidentMemorySnapshot? {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<mach_task_basic_info>.size / MemoryLayout<integer_t>.size
+        )
+        let result = withUnsafeMutablePointer(to: &info) { infoPtr -> kern_return_t in
+            infoPtr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundPtr in
+                task_info(
+                    mach_task_self_,
+                    task_flavor_t(MACH_TASK_BASIC_INFO),
+                    reboundPtr,
+                    &count
+                )
+            }
+        }
+        guard result == KERN_SUCCESS else { return nil }
+        return ResidentMemorySnapshot(
+            residentBytes: info.resident_size,
+            peakResidentBytes: info.resident_size_max
         )
     }
 

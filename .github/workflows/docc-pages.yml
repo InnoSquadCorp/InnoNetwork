@@ -47,7 +47,7 @@ jobs:
           mkdir -p "$SITE_DIR"
           touch "$SITE_DIR/.nojekyll"
 
-          modules=(InnoNetwork InnoNetworkDownload InnoNetworkWebSocket)
+          modules=(InnoNetwork InnoNetworkDownload InnoNetworkPersistentCache InnoNetworkWebSocket)
           for module in "${modules[@]}"; do
             archive="$(find .build/DocC/Build/Products -type d -path "*/${module}.doccarchive" -print -quit)"
             if [[ -z "$archive" || ! -d "$archive" ]]; then

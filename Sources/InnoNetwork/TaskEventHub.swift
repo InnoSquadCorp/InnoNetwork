@@ -25,7 +25,16 @@ package actor TaskEventHub<Event: Sendable> {
     private struct PendingEvent: Sendable {
         let event: Event
         let enqueuedAt: Date
+        let listenerIDs: [UUID]
+        let streamConsumerIDs: [UUID]
         let completion: DeliveryCompletion?
+        let completionMode: CompletionMode
+    }
+
+    private enum CompletionMode: Sendable {
+        case none
+        case listenerEnqueue
+        case listenerDelivery
     }
 
     private struct StreamConsumerState {
@@ -181,7 +190,18 @@ package actor TaskEventHub<Event: Sendable> {
     }
 
     package func publish(_ event: Event, for taskID: String) {
-        enqueue(event, for: taskID, completion: nil)
+        enqueue(event, for: taskID, completion: nil, completionMode: .none)
+    }
+
+    package func publishAndWaitForEnqueue(_ event: Event, for taskID: String) async {
+        await withCheckedContinuation { continuation in
+            enqueue(
+                event,
+                for: taskID,
+                completion: DeliveryCompletion(continuation),
+                completionMode: .listenerEnqueue
+            )
+        }
     }
 
     package func publishAndWaitForDelivery(_ event: Event, for taskID: String) async {
@@ -189,12 +209,18 @@ package actor TaskEventHub<Event: Sendable> {
             enqueue(
                 event,
                 for: taskID,
-                completion: DeliveryCompletion(continuation)
+                completion: DeliveryCompletion(continuation),
+                completionMode: .listenerDelivery
             )
         }
     }
 
-    private func enqueue(_ event: Event, for taskID: String, completion: DeliveryCompletion?) {
+    private func enqueue(
+        _ event: Event,
+        for taskID: String,
+        completion: DeliveryCompletion?,
+        completionMode: CompletionMode
+    ) {
         var partition = partitions[taskID] ?? PartitionState()
         guard !partition.isClosed else {
             completion?.resume()
@@ -212,7 +238,16 @@ package actor TaskEventHub<Event: Sendable> {
                 return
             }
         }
-        partition.queue.append(PendingEvent(event: event, enqueuedAt: .now, completion: completion))
+        partition.queue.append(
+            PendingEvent(
+                event: event,
+                enqueuedAt: .now,
+                listenerIDs: Array(partition.listeners.keys),
+                streamConsumerIDs: Array(partition.streamConsumers.keys),
+                completion: completion,
+                completionMode: completionMode
+            )
+        )
         partitions[taskID] = partition
         reportPartitionMetric(for: taskID, partition: partition)
         startDrainIfNeeded(taskID: taskID)
@@ -256,7 +291,10 @@ package actor TaskEventHub<Event: Sendable> {
             }
             var removedConsumers: [StreamConsumerState] = []
 
-            for (consumerID, var streamConsumer) in partition.streamConsumers {
+            for consumerID in pendingEvent.streamConsumerIDs {
+                guard var streamConsumer = partition.streamConsumers[consumerID] else {
+                    continue
+                }
                 let result = streamConsumer.continuation.yield(pendingEvent.event)
                 switch result {
                 case .terminated:
@@ -284,12 +322,18 @@ package actor TaskEventHub<Event: Sendable> {
                 }
                 updateStreamMetricsReconciliationTaskState()
             }
-            let listeners = Array(partition.listeners.values)
-            if pendingEvent.completion == nil {
+            let listeners = pendingEvent.listenerIDs.compactMap { partition.listeners[$0] }
+            switch pendingEvent.completionMode {
+            case .none:
                 for listener in listeners {
                     await listener.enqueue(pendingEvent.event, enqueuedAt: pendingEvent.enqueuedAt)
                 }
-            } else {
+            case .listenerEnqueue:
+                for listener in listeners {
+                    await listener.enqueue(pendingEvent.event, enqueuedAt: pendingEvent.enqueuedAt)
+                }
+                pendingEvent.completion?.resume()
+            case .listenerDelivery:
                 await deliverAndWait(
                     event: pendingEvent.event,
                     enqueuedAt: pendingEvent.enqueuedAt,
@@ -353,7 +397,7 @@ package actor TaskEventHub<Event: Sendable> {
         }
 
         for listener in partition.listeners.values {
-            await listener.finish()
+            await listener.finish(deliverQueuedEvents: true)
         }
     }
 

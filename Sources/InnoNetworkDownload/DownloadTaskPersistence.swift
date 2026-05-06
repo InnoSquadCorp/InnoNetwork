@@ -704,7 +704,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             appendIDToIndex(state: &state, url: record.url, id: id)
         }
         for id in records.keys.sorted() where seen.insert(id).inserted {
-            appendIDToIndex(state: &state, url: records[id]!.url, id: id)
+            guard let record = records[id] else { continue }
+            appendIDToIndex(state: &state, url: record.url, id: id)
         }
         return state.urlToID
     }

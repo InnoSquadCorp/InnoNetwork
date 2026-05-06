@@ -46,15 +46,23 @@ struct WebSocketMessagingHappyPathTests {
     func receiveLoopPublishesBinaryAsMessageEvent() async throws {
         let harness = StubMessagingHarness()
         let task = try await harness.connectAndReady()
+        let recorder = WebSocketEventCollector()
+        let subscription = await harness.manager.addEventListener(for: task) { event in
+            recorder.record(event)
+        }
 
         let expected = Data([0xAA, 0xBB, 0xCC, 0xDD])
         harness.stubTask.scriptReceive(.success(.data(expected)))
 
-        let delivered = await harness.waitForEvent(taskID: task.id, timeout: 1.0) { event in
-            if case .message(let data) = event, data == expected { return true }
-            return false
+        let delivered = await waitFor(timeout: 1.0) {
+            recorder.snapshot().contains { event in
+                if case .message(let data) = event, data == expected { return true }
+                return false
+            }
         }
         #expect(delivered)
+
+        await harness.manager.removeEventListener(subscription)
         await harness.tearDown(task: task)
     }
 
@@ -62,14 +70,22 @@ struct WebSocketMessagingHappyPathTests {
     func receiveLoopPublishesStringAsStringEvent() async throws {
         let harness = StubMessagingHarness()
         let task = try await harness.connectAndReady()
+        let recorder = WebSocketEventCollector()
+        let subscription = await harness.manager.addEventListener(for: task) { event in
+            recorder.record(event)
+        }
 
         harness.stubTask.scriptReceive(.success(.string("greetings")))
 
-        let delivered = await harness.waitForEvent(taskID: task.id, timeout: 1.0) { event in
-            if case .string(let text) = event, text == "greetings" { return true }
-            return false
+        let delivered = await waitFor(timeout: 1.0) {
+            recorder.snapshot().contains { event in
+                if case .string(let text) = event, text == "greetings" { return true }
+                return false
+            }
         }
         #expect(delivered)
+
+        await harness.manager.removeEventListener(subscription)
         await harness.tearDown(task: task)
     }
 

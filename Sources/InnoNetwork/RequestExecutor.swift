@@ -92,6 +92,7 @@ package struct RequestExecutor {
                     try? FileManager.default.removeItem(at: cleanupFileURL)
                 }
             }
+            configuration.idempotencyKeyPolicy.apply(to: &request, requestID: requestID)
             await notifyRequestStart(
                 request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
@@ -296,7 +297,7 @@ package struct RequestExecutor {
             }
 
             if let refreshCoordinator = runtime.refreshCoordinator,
-                await refreshCoordinator.shouldRefresh(statusCode: networkResponse.statusCode),
+                await refreshCoordinator.shouldRefresh(statusCode: networkResponse.statusCode, request: request),
                 !replayedAfterRefresh
             {
                 // Replay from the fully adapted request so session and

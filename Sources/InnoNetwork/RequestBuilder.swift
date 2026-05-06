@@ -76,6 +76,13 @@ package struct RequestBuilder {
         }
         request.cachePolicy = executable.cachePolicyOverride ?? configuration.cachePolicy
         request.timeoutInterval = executable.timeoutOverride ?? configuration.timeout
+        request.networkServiceType = (executable.priorityOverride ?? configuration.requestPriority).networkServiceType
+        request.allowsCellularAccess =
+            executable.allowsCellularAccessOverride ?? configuration.allowsCellularAccess
+        request.allowsExpensiveNetworkAccess =
+            executable.allowsExpensiveNetworkAccessOverride ?? configuration.allowsExpensiveNetworkAccess
+        request.allowsConstrainedNetworkAccess =
+            executable.allowsConstrainedNetworkAccessOverride ?? configuration.allowsConstrainedNetworkAccess
         request.httpBody = httpBody
         return BuiltRequest(request: request, bodySource: bodySource)
     }

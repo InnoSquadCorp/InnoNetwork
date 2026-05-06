@@ -464,6 +464,31 @@ struct StreamingAPIDefinitionTests {
         #expect(finishedByteCounts == ["one".utf8.count + "two".utf8.count])
     }
 
+    @Test("stream(bufferingPolicy:) can bound output buffering for slow consumers")
+    func streamBufferingPolicyCanBoundOutputBufferingForSlowConsumers() async throws {
+        let definition = LineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        StreamingURLProtocol.register(
+            url: streamURL,
+            response: .success(statusCode: 200, data: Data("one\ntwo\nthree\n".utf8))
+        )
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(baseURL: baseURL),
+            session: makeStreamingURLSession()
+        )
+
+        let stream = client.stream(definition, bufferingPolicy: .bufferingNewest(1))
+        try await Task.sleep(for: .milliseconds(50))
+
+        var values: [String] = []
+        for try await value in stream {
+            values.append(value)
+        }
+
+        #expect(values == ["three"])
+    }
+
     @Test("stream() response interceptor status rewrite controls validation")
     func streamResponseInterceptorStatusRewriteControlsValidation() async throws {
         let definition = LineCounterStream()

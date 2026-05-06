@@ -63,10 +63,11 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
   `StubNetworkClient`, and `StubRequestKey`)
 - `ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `WebSocketCloseDisposition` observation surface
-- `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and circuit breaker policy surfaces
+- `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
 - `InnoNetworkCodegen` separate package and macro declarations
 - `DecodingInterceptor`
+- `StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`
 
 ## Provisionally Stable Evolution Boundaries
 
@@ -106,16 +107,31 @@ Per-symbol evolution allowances within the 4.x line:
   execution owned by their managers.
 - `WebSocketCloseDisposition` — additional enum cases may appear as new
   close-code classifications are formalized.
-- `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, and
-  circuit breaker policy — built-in knobs may add fields with
-  source-compatible defaults; the generic execution pipeline stays
-  package/internal.
+- `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect,
+  encoding utility, and circuit breaker policy — built-in knobs may add fields,
+  helper cases, or sensitive-header defaults with source-compatible behavior;
+  the generic execution pipeline stays package/internal.
 - `MultipartResponseDecoder` — may evolve as the streaming-multipart
   roadmap progresses.
 - `InnoNetworkCodegen` — macro signatures may add optional arguments.
 - `DecodingInterceptor` — protocol may grow new optional hooks with
   default implementations as additional decode-boundary use cases
   surface.
+- `StreamingBufferingPolicy` — bounded buffering cases may gain additional
+  policy knobs, but `stream(_:)` stays lossless by default for 4.x.
+- `TraceContextInterceptor` and `W3CTraceContext` — W3C header propagation
+  remains additive; future minors may add richer correlation helpers without
+  changing `NetworkEvent` case shape.
+- `CurlCommandOptions` — the default redaction list may expand as additional
+  sensitive headers become common; callers can still provide an explicit set.
+- `IdempotencyKeyPolicy` — retry attempts reuse one request-scoped key for
+  unsafe methods; future minors may add provider hooks without changing the
+  request-ID invariant.
+- `RequestPriority` and network-condition request controls — additional
+  platform mappings may be added while preserving current defaults.
+- `NetworkConfiguration.recommendedForProduction(baseURL:)` — the preset may
+  tune default policy values in minors, but it remains a convenience builder
+  over documented public policies.
 - `HTTPHeader`, `HTTPHeaders`, and default header providers — default
   `User-Agent` / `Accept-Language` values are evaluated at request-build time
   so applications can inject bundle or locale ownership without relying on a
@@ -151,14 +167,15 @@ high-level compatibility classification readable for the 4.x release line.
 
 - `APIDefinition`, `AnyEncodable`, `AnyRequestExecutionPolicy`,
   `AnyResponseDecoder`, `AuthRequiredScope`,
-  `CachedResponse`, `CancellationTag`,
+  `CachedResponse`, `CacheRevalidationState`, `CancellationTag`,
   `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
-  `ContentType`, `CorrelationIDInterceptor`, `DecodingStage`,
-  `DefaultNetworkClient`,
+  `ContentType`, `CorrelationIDInterceptor`, `CurlCommandOptions`,
+  `DecodingStage`,
+  `DefaultNetworkClient`, `DefaultRedirectPolicy`,
   `DefaultNetworkLogger`, `EmptyParameter`, `EmptyResponse`,
   `EndpointAuthScope`, `EndpointPathEncoding`, `EndpointShape`,
   `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
-  `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,
+  `IdempotencyKeyPolicy`, `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,
   `MultipartPart`, `MultipartResponseDecoder`, `MultipartUploadStrategy`,
   `NetworkClient`, `NetworkConfiguration`, `NetworkContext`, `NetworkError`,
   `NetworkEvent`, `NetworkEventObserving`, `NetworkInterfaceType`,
@@ -167,18 +184,24 @@ high-level compatibility classification readable for the 4.x release line.
   `NetworkRequestContext`, `NetworkSnapshot`, `NoOpNetworkEventObserver`,
   `NoOpNetworkLogger`, `OSLogNetworkEventObserver`, `PublicAuthScope`,
   `PublicKeyPinningPolicy`,
-  `RefreshTokenPolicy`, `RequestCoalescingPolicy`, `RequestEncodingPolicy`,
+  `RedirectPolicy`, `RefreshFailureCooldown`, `RefreshTokenPolicy`,
+  `RequestCoalescingPolicy`, `RequestEncodingPolicy`,
+  `RequestPriority`,
   `RequestInterceptor`, `Response`, `ResponseCache`, `ResponseCacheKey`,
   `RequestExecutionContext`, `RequestExecutionInput`, `RequestExecutionNext`,
   `RequestExecutionPolicy`, `ResponseBodyBufferingPolicy`,
-  `ResponseCachePolicy`, `ResponseDecodingStrategy`, `ResponseInterceptor`,
+  `ResponseCacheHeaderPolicy`, `ResponseCachePolicy`,
+  `ResponseDecodingStrategy`, `ResponseInterceptor`,
   `RetryDecision`, `RetryIdempotencyPolicy`, `RetryPolicy`,
-  `ScopedEndpoint`, `SendableUnderlyingError`, `ServerSentEvent`,
+  `RFC3986Encoding`, `ScopedEndpoint`, `SendableUnderlyingError`, `ServerSentEvent`,
   `ServerSentEventDecoder`, `StateReducer`, `StateReduction`,
-  `StreamingAPIDefinition`, `StreamingResumePolicy`, `TimeoutReason`,
+  `StreamingAPIDefinition`, `StreamingBufferingPolicy`,
+  `StreamingResumePolicy`, `TimeoutReason`, `TraceContextInterceptor`,
   `TransportPolicy`, `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
   `URLQueryArrayEncodingStrategy`, `URLQueryCustomKeyTransform`,
-  `URLQueryEncoder`, `URLQueryKeyEncodingStrategy`, and `URLSessionProtocol`.
+  `URLQueryEncoder`, `URLQueryFloatEncodingStrategy`,
+  `URLQueryKeyEncodingStrategy`, `URLSessionProtocol`, and
+  `W3CTraceContext`.
 - Event-pipeline observability declarations: `EventDeliveryPolicy`,
   `EventPipelineAggregateSnapshotMetric`,
   `EventPipelineConsumerDeliveryLatencyMetric`,
@@ -359,6 +382,11 @@ requires `@_spi` import.
   changelog. Consumers who write exhaustive `switch` statements over
   `NetworkError` should add `@unknown default` to keep their code
   forward-compatible across minor bumps.
+- `NetworkError.errorDescription` localization keys are a provisionally
+  stable behaviour contract for 4.x. The initial catalogue ships English
+  and Korean strings; additional localizations can be added in minor
+  releases, but existing key meanings should not be repurposed without a
+  changelog entry.
 
 ## Deprecation Policy
 
