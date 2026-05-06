@@ -1,0 +1,126 @@
+@Tutorial(time: 5) {
+    @Intro(title: "Build a GitHub Client") {
+        Define a typed endpoint for the public GitHub user API, wire it up
+        through ``DefaultNetworkClient``, and call it with `async`/`await`.
+        At the end of this tutorial you will have a five-line snippet that
+        fetches a `User` value from `https://api.github.com/users/{login}`.
+    }
+
+    @Section(title: "Model the response") {
+        @ContentAndMedia {
+            Start with a Swift value that mirrors the JSON GitHub returns.
+            InnoNetwork decodes JSON through `JSONDecoder` by default, so
+            any `Decodable & Sendable` value works.
+        }
+
+        @Steps {
+            @Step {
+                Create an empty file named `GitHubClient.swift`. You will
+                add the model, the endpoint, and the call site in the same
+                file as you progress through the sections.
+
+                @Code(name: "GitHubClient.swift", file: BuildAGitHubClient-01-01.swift)
+            }
+
+            @Step {
+                Declare a `User` struct that conforms to `Decodable` and
+                `Sendable`. Only mirror the fields you need today — you
+                can extend the struct later without breaking decoding.
+
+                @Code(name: "GitHubClient.swift", file: BuildAGitHubClient-01-02.swift)
+            }
+        }
+    }
+
+    @Section(title: "Describe the endpoint") {
+        @ContentAndMedia {
+            Each endpoint is a value type that conforms to
+            ``APIDefinition``. You declare the HTTP method, path, and
+            response type once. The compiler then enforces matching shapes
+            at every call site.
+        }
+
+        @Steps {
+            @Step {
+                Declare a `GetUser` struct that conforms to
+                ``APIDefinition``. Set its `APIResponse` to `User` and
+                expose a `login` parameter so the path can be templated
+                per call.
+
+                @Code(name: "GitHubClient.swift", file: BuildAGitHubClient-02-01.swift)
+            }
+
+            @Step {
+                Implement `method` and `path`. `Parameter` defaults to
+                ``EmptyParameter`` for simple GET requests, so you do not
+                need to declare it.
+
+                @Code(name: "GitHubClient.swift", file: BuildAGitHubClient-02-02.swift)
+            }
+        }
+    }
+
+    @Section(title: "Make the call") {
+        @ContentAndMedia {
+            With the model and endpoint in place, only the client and the
+            call itself remain. Construct a single
+            ``DefaultNetworkClient`` per feature (or per API host) and
+            keep it alive for the lifetime of that feature.
+        }
+
+        @Steps {
+            @Step {
+                Build a ``DefaultNetworkClient`` with the recommended
+                ``NetworkConfiguration/safeDefaults(baseURL:)`` preset.
+
+                @Code(name: "GitHubClient.swift", file: BuildAGitHubClient-03-01.swift)
+            }
+
+            @Step {
+                Call `request` from an `async` context. Errors flow as
+                ``NetworkError`` values that you can switch over for
+                user-facing copy.
+
+                @Code(name: "GitHubClient.swift", file: BuildAGitHubClient-03-02.swift)
+            }
+        }
+    }
+
+    @Assessments {
+        @MultipleChoice {
+            What does ``APIDefinition`` give you that a hand-rolled
+            `URLRequest` does not?
+
+            @Choice(isCorrect: false) {
+                Lower memory usage at runtime.
+
+                @Justification(reaction: "Try again") {
+                    Both approaches allocate the same `URLRequest` under
+                    the hood. ``APIDefinition`` is about contract clarity,
+                    not allocation.
+                }
+            }
+
+            @Choice(isCorrect: true) {
+                Compile-time guarantees that the request shape matches
+                the response type.
+
+                @Justification(reaction: "Right!") {
+                    The associated `APIResponse` type forces every call
+                    site to decode into the type the endpoint declared,
+                    catching shape mismatches before they ship.
+                }
+            }
+
+            @Choice(isCorrect: false) {
+                Automatic retry of every failed request.
+
+                @Justification(reaction: "Try again") {
+                    Retry is opt-in via ``RetryPolicy`` on
+                    ``NetworkConfiguration`` — it is not implied by
+                    ``APIDefinition`` itself.
+                }
+            }
+        }
+    }
+}

@@ -17,6 +17,11 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 
 ## Topics
 
+### Tutorials
+
+- <doc:InnoNetwork-Tutorials>
+- <doc:BuildAGitHubClient>
+
 ### Essentials
 
 - <doc:GettingStarted>

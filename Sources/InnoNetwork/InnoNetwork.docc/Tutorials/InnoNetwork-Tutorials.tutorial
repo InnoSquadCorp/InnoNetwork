@@ -1,0 +1,16 @@
+@Tutorials(name: "InnoNetwork") {
+    @Intro(title: "Hands-on tutorials") {
+        Step-by-step walkthroughs that take a brand-new project to a
+        working InnoNetwork client. Each tutorial assumes Swift 6.2
+        and Apple platform baselines (iOS 18, macOS 15, …) and uses
+        only the public API surface documented in
+        ``InnoNetwork``.
+    }
+
+    @Chapter(name: "Get started") {
+        Create your first type-safe HTTP client and make an
+        authenticated request to the public GitHub API.
+
+        @TutorialReference(tutorial: "doc:BuildAGitHubClient")
+    }
+}
