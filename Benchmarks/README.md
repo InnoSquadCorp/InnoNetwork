@@ -21,6 +21,27 @@
   regressions in the chain shape surface here before reaching production.
 - `cache/response-cache-*` — response cache lookup and conditional revalidation preparation.
 
+## Memory Metrics
+
+각 benchmark는 throughput 외에 **resident memory 풋프린트**도 함께 보고합니다.
+`measure(name:group:iterations:work:)`가 클로저 실행 직전과 직후에
+`mach_task_basic_info`를 호출해 다음 두 값을 캡처합니다.
+
+- `peakResidentBytes`: 클로저 종료 직후 프로세스의 resident set size (bytes).
+- `residentDeltaBytes`: `peakResidentBytes - preMeasurementResidentBytes`.
+  양수는 클로저가 새로 점유한 메모리, 음수는 시스템에 반환한 메모리.
+
+Resident 메모리는 페이지 단위(Apple Silicon은 16 KiB)로 반올림되므로,
+같은 페이지 안에서 끝나는 작은 할당은 0으로 보일 수 있습니다.
+이 지표는 **누수·과사용 시그널 감지용**이며 throughput 회귀 가드와 별도로
+운영합니다 (4.0.0 기준 메모리 회귀 가드는 추가하지 않습니다 — 하드웨어/OS
+사이의 페이지 정책 편차가 커 false positive 위험이 큽니다). 큰 변동이
+관찰되면 Instruments Allocations 트레이스로 후속 분석하세요.
+
+JSON 스키마에서 두 필드는 모두 `null`이 될 수 있고, 이전 baseline 리포트
+(메모리 메트릭 도입 전)는 두 필드 모두 미포함이라도 그대로 디코드됩니다
+(baseline 계약 backwards compatible).
+
 ## Output Schema
 
 Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON은 다음 형식으로 고정합니다.
@@ -35,7 +56,9 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
       "group": "encoding",
       "iterations": 2000,
       "elapsedSeconds": 0.024379875,
-      "operationsPerSecond": 82034.8750762668
+      "operationsPerSecond": 82034.8750762668,
+      "peakResidentBytes": 214777856,
+      "residentDeltaBytes": 1441792
     }
   ],
   "baseline": {
