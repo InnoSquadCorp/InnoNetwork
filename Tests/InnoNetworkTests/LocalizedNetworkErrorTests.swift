@@ -78,7 +78,8 @@ struct LocalizedNetworkErrorTests {
             NetworkError.trustEvaluationFailed(.pinMismatch(host: "api.example.com"))
                 .errorDescription?.contains("api.example.com") == true
         )
-        let big = NetworkError.responseTooLarge(limit: 1024, observed: 4096)
+        let big =
+            NetworkError.responseTooLarge(limit: 1024, observed: 4096)
             .errorDescription ?? ""
         #expect(big.contains("4096"))
         #expect(big.contains("1024"))
@@ -128,6 +129,14 @@ struct LocalizedNetworkErrorTests {
             #expect(value != nil, "missing English string for \(key)")
             #expect(value?.isEmpty == false, "empty English string for \(key)")
         }
+    }
+
+    @Test("English nonHTTPResponse message is user-facing")
+    func englishNonHTTPResponseMessageIsUserFacing() {
+        let value = _localizedNetworkErrorString(forKey: "NetworkError.nonHTTPResponse", localization: "en") ?? ""
+
+        #expect(value.contains("nonHTTPResponse") == false)
+        #expect(value.contains("non-HTTP response"))
     }
 
     @Test("Korean catalogue resolves every documented key")

@@ -120,7 +120,8 @@ public struct URLQueryEncoder: Sendable {
     ) throws -> [URLQueryItem] {
         switch value {
         case .object(let object):
-            return object
+            return
+                object
                 .sorted { $0.key < $1.key }
                 .flatMap { key, value in
                     flatten(key: key, value: value)
@@ -136,7 +137,8 @@ public struct URLQueryEncoder: Sendable {
     private func flatten(key: String, value: QueryValue) -> [URLQueryItem] {
         switch value {
         case .object(let object):
-            return object
+            return
+                object
                 .sorted { $0.key < $1.key }
                 .flatMap { nestedKey, nestedValue in
                     flatten(key: "\(key)[\(nestedKey)]", value: nestedValue)

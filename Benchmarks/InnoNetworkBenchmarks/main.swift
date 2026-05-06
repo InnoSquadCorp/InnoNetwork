@@ -241,7 +241,8 @@ private enum InnoNetworkBenchmarks {
 
         print("InnoNetwork Benchmarks")
         for result in results {
-            var line = "- \(result.group)/\(result.name): "
+            var line =
+                "- \(result.group)/\(result.name): "
                 + "\(String(format: "%.2f", result.operationsPerSecond)) ops/s "
                 + "(\(String(format: "%.4f", result.elapsedSeconds))s, n=\(result.iterations))"
             if let resident = result.peakResidentBytes {
@@ -386,8 +387,7 @@ private enum InnoNetworkBenchmarks {
         )
 
         let residentDeltaBytes: Int64?
-        if
-            let post = postMemory?.residentBytes,
+        if let post = postMemory?.residentBytes,
             let pre = preMemory?.residentBytes,
             let postSigned = Int64(exactly: post),
             let preSigned = Int64(exactly: pre)

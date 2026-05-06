@@ -11,15 +11,20 @@ production_paths=(
   Sources/InnoNetworkWebSocket
 )
 
-pattern='[A-Za-z0-9_)\]}]!'
+pattern='[A-Za-z0-9_)\]}]!(?![=A-Za-z0-9_])'
 temp_matches="$(mktemp)"
 trap 'rm -f "$temp_matches"' EXIT
 
-if command -v rg > /dev/null 2>&1; then
-  rg -n --glob '*.swift' "$pattern" "${production_paths[@]}" > "$temp_matches" || true
+if command -v rg > /dev/null 2>&1 && rg --pcre2-version > /dev/null 2>&1; then
+  rg_status=0
+  rg -n --pcre2 --glob '*.swift' "$pattern" "${production_paths[@]}" > "$temp_matches" || rg_status=$?
+  if [[ "$rg_status" -gt 1 ]]; then
+    exit "$rg_status"
+  fi
 else
-  find "${production_paths[@]}" -name '*.swift' -type f -print0 \
-    | xargs -0 grep -E -n "$pattern" > "$temp_matches" || true
+  find "${production_paths[@]}" -name '*.swift' -type f \
+    -exec perl -ne 'print "$ARGV:$.:$_" if /[A-Za-z0-9_)\]}]!(?![=A-Za-z0-9_])/; close ARGV if eof' {} + \
+    > "$temp_matches"
 fi
 
 if [[ -s "$temp_matches" ]]; then

@@ -7,7 +7,7 @@
 "NetworkError.invalidRequestConfiguration" = "Invalid request configuration: %@";
 "NetworkError.decoding" = "Failed to decode response (%1$@): %2$@";
 "NetworkError.statusCode" = "Status code didn't fall within the given range.";
-"NetworkError.nonHTTPResponse" = "Failed to convert nonHTTPResponse";
+"NetworkError.nonHTTPResponse" = "Received a non-HTTP response.";
 "NetworkError.cancelled" = "Request was cancelled";
 
 "NetworkError.timeout.request" = "The request timed out before the server responded.";
