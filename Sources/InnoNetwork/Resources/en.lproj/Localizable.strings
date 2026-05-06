@@ -1,0 +1,25 @@
+/* English (default) localizations for `NetworkError.errorDescription`.
+   Keys mirror the cases in `Sources/InnoNetwork/NetworkError.swift`.
+   `%@` placeholders correspond to the case payload values; do not reorder
+   them without updating the call sites in `NetworkError.swift`. */
+
+"NetworkError.invalidBaseURL" = "Invalid base URL: %@";
+"NetworkError.invalidRequestConfiguration" = "Invalid request configuration: %@";
+"NetworkError.decoding" = "Failed to decode response (%1$@): %2$@";
+"NetworkError.statusCode" = "Status code didn't fall within the given range.";
+"NetworkError.nonHTTPResponse" = "Failed to convert nonHTTPResponse";
+"NetworkError.cancelled" = "Request was cancelled";
+
+"NetworkError.timeout.request" = "The request timed out before the server responded.";
+"NetworkError.timeout.resource" = "The resource transfer timed out.";
+"NetworkError.timeout.connection" = "The connection to the server timed out.";
+
+"NetworkError.responseTooLarge" = "Response body of %1$@ bytes exceeded the configured limit of %2$@ bytes.";
+
+"NetworkError.trust.unsupportedAuthenticationMethod" = "Unsupported authentication method: %@";
+"NetworkError.trust.missingServerTrust" = "Missing server trust.";
+"NetworkError.trust.systemTrustEvaluationFailedWithReason" = "System trust evaluation failed: %@";
+"NetworkError.trust.systemTrustEvaluationFailed" = "System trust evaluation failed.";
+"NetworkError.trust.hostNotPinned" = "No pin configured for host: %@";
+"NetworkError.trust.publicKeyExtractionFailed" = "Failed to extract public key from certificate chain.";
+"NetworkError.trust.pinMismatch" = "Public key pin mismatch for host: %@";

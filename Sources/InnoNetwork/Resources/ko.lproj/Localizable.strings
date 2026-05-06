@@ -1,0 +1,25 @@
+/* `NetworkError.errorDescription` 한국어 번역.
+   각 키는 `Sources/InnoNetwork/NetworkError.swift`의 case 와 1:1 대응한다.
+   `%1$@`, `%2$@` 위치 인자는 호출부에서 같은 순서로 채워지므로
+   문장 어순이 바뀌면 번호도 함께 바꿔야 한다. */
+
+"NetworkError.invalidBaseURL" = "잘못된 기본 URL입니다: %@";
+"NetworkError.invalidRequestConfiguration" = "요청 구성이 잘못되었습니다: %@";
+"NetworkError.decoding" = "응답을 디코딩하지 못했습니다 (%1$@): %2$@";
+"NetworkError.statusCode" = "응답의 HTTP 상태 코드가 허용 범위를 벗어났습니다.";
+"NetworkError.nonHTTPResponse" = "HTTP 응답으로 해석할 수 없는 응답을 받았습니다.";
+"NetworkError.cancelled" = "요청이 취소되었습니다.";
+
+"NetworkError.timeout.request" = "서버가 응답하기 전에 요청 제한 시간을 초과했습니다.";
+"NetworkError.timeout.resource" = "리소스 전송 제한 시간을 초과했습니다.";
+"NetworkError.timeout.connection" = "서버에 연결하는 동안 시간 초과가 발생했습니다.";
+
+"NetworkError.responseTooLarge" = "응답 본문 %1$@바이트가 허용 크기 %2$@바이트를 초과했습니다.";
+
+"NetworkError.trust.unsupportedAuthenticationMethod" = "지원하지 않는 인증 방식입니다: %@";
+"NetworkError.trust.missingServerTrust" = "서버 신뢰 정보가 없습니다.";
+"NetworkError.trust.systemTrustEvaluationFailedWithReason" = "시스템 신뢰 평가에 실패했습니다: %@";
+"NetworkError.trust.systemTrustEvaluationFailed" = "시스템 신뢰 평가에 실패했습니다.";
+"NetworkError.trust.hostNotPinned" = "이 호스트에 대한 핀이 설정되어 있지 않습니다: %@";
+"NetworkError.trust.publicKeyExtractionFailed" = "인증서 체인에서 공개 키를 추출하지 못했습니다.";
+"NetworkError.trust.pinMismatch" = "호스트의 공개 키 핀이 일치하지 않습니다: %@";
