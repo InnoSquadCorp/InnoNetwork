@@ -70,6 +70,17 @@ Versioning.
 
 ### Changed
 
+- `docs/Migration-5.0.0.md` ships during the 4.x line so adopters
+  can prepare for 5.0 incrementally. Documents the headline changes
+  (Endpoint vocabulary rename, `NetworkConfiguration` packs,
+  `NetworkError` consolidation, platform backport), the 4.x →
+  4.x final → 5.0 → 6.0 compatibility timeline (typealiases ship
+  without deprecation warnings during 4.x, deprecation lands at the
+  4.x final point release, removal at 6.0), a pre-flight checklist
+  for adopters, and explicit notes on what stays unchanged.
+- `CLAUDE.md` updates the project-context platform floors to match
+  the 4.x backport (iOS 16 / macOS 14 / tvOS 16 / watchOS 9 /
+  visionOS 1).
 - 5.0 platform floors backported to iOS 16 / macOS 14 / tvOS 16 /
   watchOS 9 / visionOS 1 (down from the 4.x baseline of iOS 18 /
   macOS 15 / tvOS 18 / watchOS 11 / visionOS 2). The audit confirmed

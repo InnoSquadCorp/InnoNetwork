@@ -46,7 +46,7 @@ InnoNetwork is a type-safe Swift network library:
 
 **Platform:**
 - Swift 6.2+ (package enforces `swiftLanguageMode(.v6)`)
-- iOS 18.0+ / macOS 15.0+ / tvOS 18.0+ / watchOS 11.0+ / visionOS 2.0+
+- iOS 16.0+ / macOS 14.0+ / tvOS 16.0+ / watchOS 9.0+ / visionOS 1.0+
 - Full Sendable compliance
 
 ## Development Commands
