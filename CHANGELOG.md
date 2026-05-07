@@ -120,6 +120,16 @@ Versioning.
 
 ### Added
 
+- `ConcurrencyLimitExecutionPolicy` — executor-integrated
+  counterpart of `ConcurrencyTokenBucket`. Implements
+  `RequestExecutionPolicy` so adopters register the policy on
+  `NetworkConfiguration.AdvancedBuilder.customExecutionPolicies`
+  instead of pairing a request and response interceptor manually.
+  `acquire` is awaited before forwarding to the rest of the chain;
+  the deferred `release` runs even when the chain throws, so
+  transport errors no longer leak tokens. Two unit tests cover the
+  pass-through forwarding and the acquire-mid-chain / release-after
+  observation.
 - `ConcurrencyTokenBucket` — bounded counting-semaphore actor for
   capping in-flight requests. FIFO fairness queue, never
   over-releases past `maxConcurrent`, clamps the cap to ≥1.

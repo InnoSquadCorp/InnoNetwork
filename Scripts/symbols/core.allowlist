@@ -2,6 +2,10 @@
 # Maintained alongside Scripts/check_docs_contract_sync.sh.
 # Format: <module>\t<kind>\t<declaration>
 # All entries in this file must have module = InnoNetwork.
+InnoNetwork	swift.init	ConcurrencyLimitExecutionPolicy.init(bucket:)
+InnoNetwork	swift.method	ConcurrencyLimitExecutionPolicy.execute(input:context:next:)
+InnoNetwork	swift.property	ConcurrencyLimitExecutionPolicy.bucket
+InnoNetwork	swift.struct	ConcurrencyLimitExecutionPolicy
 InnoNetwork	swift.class	ConcurrencyTokenBucket
 InnoNetwork	swift.init	ConcurrencyTokenBucket.init(maxConcurrent:)
 InnoNetwork	swift.method	ConcurrencyTokenBucket.acquire()

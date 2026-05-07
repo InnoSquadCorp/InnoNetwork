@@ -136,6 +136,13 @@ Per-symbol evolution allowances within the 4.x line:
   encoding utility, and circuit breaker policy — built-in knobs may add fields,
   helper cases, or sensitive-header defaults with source-compatible behavior;
   the generic execution pipeline stays package/internal.
+- `ConcurrencyLimitExecutionPolicy` — `RequestExecutionPolicy` that
+  funnels each transport attempt through a `ConcurrencyTokenBucket`
+  with `acquire` / deferred `release` semantics. Registered via
+  `NetworkConfiguration.AdvancedBuilder.customExecutionPolicies`.
+  Surface stays source-compatible across the planned 5.x bucket
+  integration that may move the policy into a built-in pre-flight
+  stage.
 - `ConcurrencyTokenBucket` — bounded counting semaphore actor for
   capping in-flight requests. Currently surfaced as a standalone
   primitive that adopters wire through paired
