@@ -7,7 +7,29 @@ export LC_ALL=C
 
 api_stability="$repo_root/API_STABILITY.md"
 readme="$repo_root/README.md"
-public_symbols_allowlist="$repo_root/Scripts/api_public_symbols.allowlist"
+
+# Per-module public-symbol allowlists. Splitting the legacy single
+# `Scripts/api_public_symbols.allowlist` into one file per shipping
+# module keeps PR diffs readable when only one module's surface
+# changes. The script concatenates them into a single temporary
+# allowlist so the rest of the validation logic stays unchanged.
+public_symbols_dir="$repo_root/Scripts/symbols"
+public_symbols_allowlist="$(mktemp)"
+trap 'rm -f "$public_symbols_allowlist"' EXIT
+
+if [[ ! -d "$public_symbols_dir" ]]; then
+  echo "public symbol allowlist directory is missing: $public_symbols_dir" >&2
+  exit 1
+fi
+
+shopt -s nullglob
+allowlist_parts=("$public_symbols_dir"/*.allowlist)
+shopt -u nullglob
+if (( ${#allowlist_parts[@]} == 0 )); then
+  echo "public symbol allowlist directory $public_symbols_dir contains no *.allowlist files" >&2
+  exit 1
+fi
+cat "${allowlist_parts[@]}" > "$public_symbols_allowlist"
 required_meta_docs=(
   "$repo_root/CONTRIBUTING.md"
   "$repo_root/CODE_OF_CONDUCT.md"

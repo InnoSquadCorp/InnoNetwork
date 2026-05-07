@@ -33,6 +33,21 @@ Versioning.
   per-endpoint interceptors should keep using `ScopedEndpoint` builders or
   a hand-written `APIDefinition`.
 
+### Changed
+
+- `Scripts/api_public_symbols.allowlist` (1,123 lines, single file) is
+  split into `Scripts/symbols/{core,download,websocket,cache,
+  testsupport}.allowlist`, one file per shipping module. The legacy
+  single file is removed and `Scripts/check_docs_contract_sync.sh`
+  concatenates the per-module files into a temporary allowlist before
+  diffing — the validation logic and the entries themselves are
+  unchanged. This keeps PR diffs against module symbol changes
+  readable: editing the WebSocket allowlist only touches
+  `Scripts/symbols/websocket.allowlist` instead of burying the change
+  in the middle of an 1,100-line file. Each split file carries a
+  header comment that documents the module-scope invariant and the
+  expected `<module>\t<kind>\t<declaration>` format.
+
 ### Documentation
 
 - `docs/Cookies.md` documents per-client cookie storage isolation

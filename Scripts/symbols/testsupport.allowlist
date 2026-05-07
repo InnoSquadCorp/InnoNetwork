@@ -1,0 +1,42 @@
+# Public API allowlist — InnoNetworkTestSupport
+# Maintained alongside Scripts/check_docs_contract_sync.sh.
+# Format: <module>\t<kind>\t<declaration>
+# All entries in this file must have module = InnoNetworkTestSupport.
+InnoNetworkTestSupport	swift.class	MockURLSession
+InnoNetworkTestSupport	swift.class	StubNetworkClient
+InnoNetworkTestSupport	swift.class	WebSocketEventRecorder
+InnoNetworkTestSupport	swift.enum	StubBehavior
+InnoNetworkTestSupport	swift.enum.case	StubBehavior.delayed(seconds:)
+InnoNetworkTestSupport	swift.enum.case	StubBehavior.immediate
+InnoNetworkTestSupport	swift.enum.case	StubBehavior.never
+InnoNetworkTestSupport	swift.init	MockURLSession.init()
+InnoNetworkTestSupport	swift.init	StubNetworkClient.init(fallback:)
+InnoNetworkTestSupport	swift.init	StubRequestKey.init(_:)
+InnoNetworkTestSupport	swift.init	StubRequestKey.init(method:path:)
+InnoNetworkTestSupport	swift.init	WebSocketEventRecorder.init()
+InnoNetworkTestSupport	swift.method	MockURLSession.data(for:)
+InnoNetworkTestSupport	swift.method	MockURLSession.setMockJSON(_:statusCode:)
+InnoNetworkTestSupport	swift.method	MockURLSession.setMockResponse(statusCode:data:)
+InnoNetworkTestSupport	swift.method	StubNetworkClient.register(_:for:behavior:)
+InnoNetworkTestSupport	swift.method	StubNetworkClient.request(_:)
+InnoNetworkTestSupport	swift.method	StubNetworkClient.request(_:tag:)
+InnoNetworkTestSupport	swift.method	StubNetworkClient.upload(_:)
+InnoNetworkTestSupport	swift.method	StubNetworkClient.upload(_:tag:)
+InnoNetworkTestSupport	swift.method	WebSocketEventRecorder.record(_:)
+InnoNetworkTestSupport	swift.method	WebSocketEventRecorder.snapshot()
+InnoNetworkTestSupport	swift.method	WebSocketEventRecorder.waitForEvent(timeout:matching:)
+InnoNetworkTestSupport	swift.property	MockURLSession.capturedRequest
+InnoNetworkTestSupport	swift.property	MockURLSession.mockData
+InnoNetworkTestSupport	swift.property	MockURLSession.mockError
+InnoNetworkTestSupport	swift.property	MockURLSession.mockResponse
+InnoNetworkTestSupport	swift.property	StubRequestKey.method
+InnoNetworkTestSupport	swift.property	StubRequestKey.path
+InnoNetworkTestSupport	swift.property	WebSocketEventRecorder.errorEvents
+InnoNetworkTestSupport	swift.property	WebSocketEventRecorder.messageCount
+InnoNetworkTestSupport	swift.property	WebSocketEventRecorder.pingContexts
+InnoNetworkTestSupport	swift.property	WebSocketEventRecorder.pingCount
+InnoNetworkTestSupport	swift.property	WebSocketEventRecorder.pingTimeoutErrorCount
+InnoNetworkTestSupport	swift.property	WebSocketEventRecorder.pongContexts
+InnoNetworkTestSupport	swift.property	WebSocketEventRecorder.pongCount
+InnoNetworkTestSupport	swift.property	WebSocketEventRecorder.stringCount
+InnoNetworkTestSupport	swift.struct	StubRequestKey
