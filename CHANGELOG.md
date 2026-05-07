@@ -70,6 +70,21 @@ Versioning.
 
 ### Changed
 
+- `Sources/InnoNetwork/URLQueryEncoder.swift` (803 lines, single file)
+  is split into three files: `URLQueryEncoder.swift` keeps the public
+  encoder type plus the `URLQueryArrayEncodingStrategy` /
+  `URLQueryFloatEncodingStrategy` enums (167 lines);
+  `URLQueryEncoder+Storage.swift` carries the internal
+  `_URLQueryEncodingOptions`, `QueryValue`, `QueryValueBox`, and
+  `SnakeCaseKeyTransformCache` types; and
+  `URLQueryEncoder+Codable.swift` carries the
+  `_URLQueryValueEncoder` driver, the keyed/unkeyed/single-value
+  containers, and the `encodeQueryValue` dispatch helper. The split
+  required promoting four internal `private` types and several helper
+  functions to file-internal (default `internal` access) so the
+  containers can reach the encoder options across files; symbol
+  surface is unchanged because none of these types are public. No
+  public API change.
 - `Sources/InnoNetwork/HTTPHeader.swift` (642 lines, single file) is
   split into four files for review legibility, no public API change:
   `HTTPHeaders.swift` (collection type and protocol conformances —
