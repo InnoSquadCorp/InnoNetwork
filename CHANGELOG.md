@@ -41,6 +41,13 @@ Versioning.
   The hook itself was already public; the doc closes the discoverability
   gap and the `urlSessionConfigurationOverride` doc comment now points
   callers at the recipe.
+- `docs/HTTP3.md` documents how to opt into HTTP/3 (QUIC) by setting
+  `assumesHTTP3Capable = true` through the same
+  `urlSessionConfigurationOverride` hook, plus the compatibility
+  matrix, when-to-enable checklist, verification recipe via
+  `URLSessionTaskMetrics.networkProtocolName`, and the QUIC-specific
+  caveats (captive portals, background sessions, 0-RTT idempotency).
+  The runtime surface stays unchanged.
 - `Benchmarks/README.md` documents the explicit baseline-update protocol:
   how to re-measure on the hosted runner, replace
   `Benchmarks/Baselines/default.json`, log the change in
