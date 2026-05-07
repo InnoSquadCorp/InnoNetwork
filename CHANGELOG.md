@@ -35,6 +35,12 @@ Versioning.
 
 ### Documentation
 
+- `docs/Cookies.md` documents per-client cookie storage isolation
+  through `urlSessionConfigurationOverride`. Covers the multi-account
+  registry pattern, cookie-free SDK clients, and a verification recipe.
+  The hook itself was already public; the doc closes the discoverability
+  gap and the `urlSessionConfigurationOverride` doc comment now points
+  callers at the recipe.
 - `Benchmarks/README.md` documents the explicit baseline-update protocol:
   how to re-measure on the hosted runner, replace
   `Benchmarks/Baselines/default.json`, log the change in

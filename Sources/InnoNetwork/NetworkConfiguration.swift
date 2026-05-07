@@ -182,8 +182,9 @@ public struct NetworkConfiguration: Sendable {
 
     /// Optional escape hatch for callers that need to customize the
     /// `URLSessionConfiguration` (proxy/HTTP2 tuning, connection pooling,
-    /// `httpAdditionalHeaders`, TLS minimum version, etc.) when materializing
-    /// a `URLSession` for this configuration. The closure receives a fresh
+    /// `httpAdditionalHeaders`, TLS minimum version, **per-client cookie
+    /// storage isolation**, etc.) when materializing a `URLSession` for
+    /// this configuration. The closure receives a fresh
     /// `URLSessionConfiguration.default`-derived instance and must return a
     /// configuration the caller is comfortable shipping. Because
     /// `URLSession.shared` cannot honor this hook, `DefaultNetworkClient`
@@ -191,6 +192,11 @@ public struct NetworkConfiguration: Sendable {
     /// session. Consumers must wire this through
     /// ``makeURLSessionConfiguration()`` and pass the resulting `URLSession`
     /// explicitly.
+    ///
+    /// Multi-account apps that need to isolate `HTTPCookieStorage` across
+    /// clients should swap `httpCookieStorage` and (when desired)
+    /// `httpCookieAcceptPolicy` here. The recipe lives in
+    /// `docs/Cookies.md`.
     public let urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
 
     /// Build a `URLSessionConfiguration` derived from `URLSessionConfiguration.default`,
