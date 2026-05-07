@@ -33,6 +33,18 @@ Versioning.
   per-endpoint interceptors should keep using `ScopedEndpoint` builders or
   a hand-written `APIDefinition`.
 
+### Documentation
+
+- `Benchmarks/README.md` documents the explicit baseline-update protocol:
+  how to re-measure on the hosted runner, replace
+  `Benchmarks/Baselines/default.json`, log the change in
+  `Benchmarks/Baselines/CHANGELOG.md`, and what counts as a "meaningful"
+  regression worth refreshing the baseline for. The benchmark-smoke
+  guard (already enforcing `--enforce-baseline --max-regression-percent
+  20` on guarded entries) stays the runtime gate; the README addition
+  removes the recurring ambiguity around when and how operators should
+  refresh the file.
+
 ## [4.0.0] - 2026-05-02
 
 InnoNetwork's first public release. The package targets Apple platforms only
