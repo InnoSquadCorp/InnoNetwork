@@ -105,6 +105,23 @@ Versioning.
 - `CLAUDE.md` updates the project-context platform floors to match
   the 4.x backport (iOS 16 / macOS 14 / tvOS 16 / watchOS 9 /
   visionOS 1).
+- Five 5.0 forward-compat configuration packs:
+  - `ResiliencePack` (retry, coalescing, circuit breaker,
+    idempotency, body buffering)
+  - `AuthPack` (refresh token, additional signing interceptors)
+  - `ObservabilityPack` (event observers, delivery policy, metrics
+    reporters, network monitor)
+  - `CachePack` (response cache policy, cache backend, failure-
+    payload capture)
+  - `TransportPack` (timeout, cache policy, request priority,
+    cellular/expensive/constrained access toggles, redirect policy,
+    `URLSessionConfiguration` override, insecure-HTTP escape)
+  Each pack exposes `apply(to: inout NetworkConfiguration.AdvancedBuilder)`
+  so adopters can compose the builder additively today; nil pack
+  fields leave the builder untouched. The 5.0 release will accept
+  the same packs as named init arguments. Pack APIs stay
+  source-compatible across 4.x → 5.x; field additions remain
+  non-breaking because every property defaults to `nil`.
 - 5.0 platform floors backported to iOS 16 / macOS 14 / tvOS 16 /
   watchOS 9 / visionOS 1 (down from the 4.x baseline of iOS 18 /
   macOS 15 / tvOS 18 / watchOS 11 / visionOS 2). The audit confirmed

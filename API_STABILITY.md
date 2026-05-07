@@ -136,6 +136,15 @@ Per-symbol evolution allowances within the 4.x line:
   encoding utility, and circuit breaker policy — built-in knobs may add fields,
   helper cases, or sensitive-header defaults with source-compatible behavior;
   the generic execution pipeline stays package/internal.
+- `ResiliencePack`, `AuthPack`, `ObservabilityPack`, `CachePack`,
+  `TransportPack` — 5.0 forward-compat configuration packs that group
+  related `AdvancedBuilder` knobs. The 4.x line ships them as
+  optional structs whose `apply(to:)` method mutates an
+  `AdvancedBuilder` in place; the 5.0 release will accept them as
+  named init arguments directly. The pack APIs themselves stay
+  source-compatible from 4.x → 5.0 → 5.x; the 6.0 cycle may add
+  fields to existing packs without breaking call sites because every
+  field defaults to `nil`.
 - `HMACRequestInterceptor` — reference HMAC body-signing interceptor
   (SHA-256 / SHA-384 / SHA-512). Header names and key id are
   provider-tunable; the streaming-body rejection is intentional, and
