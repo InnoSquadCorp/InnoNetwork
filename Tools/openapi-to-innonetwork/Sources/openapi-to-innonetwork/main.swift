@@ -1,0 +1,231 @@
+import Foundation
+
+// CLI: openapi-to-innonetwork --input <spec.json> --output <dir>
+//      [--module-name MyAPI]
+//
+// 4.x preview scope: parses a JSON-encoded OpenAPI 3 subset
+// (operations with operationId, path, method, optional response
+// schema reference) and emits one Swift file per operation
+// containing an `APIDefinition` conforming struct. YAML input is
+// intentionally out of scope for this preview to keep the tool
+// dependency-free; adopters can convert YAML → JSON via
+// `python -c "import sys, yaml, json; json.dump(yaml.safe_load(sys.stdin), sys.stdout)"`
+// or `yq -o=json` until the 5.0 follow-up adds Yams.
+
+struct CLIOptions {
+    var inputPath: String
+    var outputDirectory: String
+    var moduleName: String
+
+    static func parse(_ args: [String]) throws -> CLIOptions {
+        var input: String?
+        var output: String?
+        var moduleName = "GeneratedAPI"
+        var index = 1
+        while index < args.count {
+            switch args[index] {
+            case "--input", "-i":
+                index += 1
+                input = index < args.count ? args[index] : nil
+            case "--output", "-o":
+                index += 1
+                output = index < args.count ? args[index] : nil
+            case "--module-name":
+                index += 1
+                if index < args.count { moduleName = args[index] }
+            case "--help", "-h":
+                print(usage)
+                exit(0)
+            default:
+                throw GenerationError.invalidArgument(args[index])
+            }
+            index += 1
+        }
+        guard let input, let output else {
+            throw GenerationError.missingArgument("--input and --output are required. Run with --help for usage.")
+        }
+        return CLIOptions(inputPath: input, outputDirectory: output, moduleName: moduleName)
+    }
+
+    static let usage = """
+        openapi-to-innonetwork — InnoNetwork APIDefinition generator (4.x preview)
+
+        USAGE:
+            swift run openapi-to-innonetwork --input <spec.json> --output <dir> [--module-name MyAPI]
+
+        FLAGS:
+            -i, --input         Path to a JSON-encoded OpenAPI 3 subset.
+            -o, --output        Output directory for generated Swift files.
+                --module-name   Module name embedded in the generated files (default: GeneratedAPI).
+            -h, --help          Show this help.
+
+        SCOPE:
+            • JSON input only (use yq or python -c to convert YAML).
+            • One generated Swift file per OpenAPI operation.
+            • Generated structs conform to InnoNetwork.APIDefinition.
+            • SPI imports (@_spi(GeneratedClientSupport)) are not used in this preview.
+        """
+}
+
+enum GenerationError: Error, CustomStringConvertible {
+    case invalidArgument(String)
+    case missingArgument(String)
+    case ioFailure(String)
+    case parseFailure(String)
+
+    var description: String {
+        switch self {
+        case .invalidArgument(let arg): return "Invalid argument: \(arg)"
+        case .missingArgument(let msg): return "Missing argument: \(msg)"
+        case .ioFailure(let msg): return "I/O failure: \(msg)"
+        case .parseFailure(let msg): return "Parse failure: \(msg)"
+        }
+    }
+}
+
+// MARK: - OpenAPI JSON subset model
+
+struct OpenAPIDocument: Decodable {
+    let paths: [String: PathItem]
+}
+
+struct PathItem: Decodable {
+    let get: Operation?
+    let post: Operation?
+    let put: Operation?
+    let patch: Operation?
+    let delete: Operation?
+
+    var operationsByMethod: [(method: String, op: Operation)] {
+        var out: [(String, Operation)] = []
+        if let get { out.append(("GET", get)) }
+        if let post { out.append(("POST", post)) }
+        if let put { out.append(("PUT", put)) }
+        if let patch { out.append(("PATCH", patch)) }
+        if let delete { out.append(("DELETE", delete)) }
+        return out
+    }
+}
+
+struct Operation: Decodable {
+    let operationId: String?
+    let summary: String?
+}
+
+// MARK: - Codegen
+
+struct GeneratedFile {
+    let filename: String
+    let contents: String
+}
+
+struct CodeGenerator {
+    let moduleName: String
+
+    func generate(from document: OpenAPIDocument) -> [GeneratedFile] {
+        var files: [GeneratedFile] = []
+        for (path, item) in document.paths.sorted(by: { $0.key < $1.key }) {
+            for (method, op) in item.operationsByMethod {
+                let typeName = sanitize(op.operationId ?? "\(method.lowercased())\(path)")
+                let file = renderOperation(typeName: typeName, method: method, path: path, summary: op.summary)
+                files.append(GeneratedFile(filename: "\(typeName).swift", contents: file))
+            }
+        }
+        return files
+    }
+
+    private func renderOperation(typeName: String, method: String, path: String, summary: String?) -> String {
+        let summaryDoc =
+            summary.map { "/// \($0)\n" } ?? "/// Generated by openapi-to-innonetwork.\n"
+        return """
+            // Generated by openapi-to-innonetwork. DO NOT EDIT BY HAND.
+            // Module: \(moduleName)
+
+            import Foundation
+            import InnoNetwork
+
+            \(summaryDoc)public struct \(typeName): APIDefinition {
+                public typealias Parameter = EmptyParameter
+                public typealias APIResponse = EmptyResponse
+
+                public var method: HTTPMethod { .\(method.lowercased()) }
+                public var path: String { "\(path)" }
+
+                public init() {}
+            }
+            """
+    }
+
+    private func sanitize(_ raw: String) -> String {
+        let allowed = CharacterSet.alphanumerics
+        var result = ""
+        var capitalizeNext = true
+        for scalar in raw.unicodeScalars {
+            if allowed.contains(scalar) {
+                let char = String(scalar)
+                result += capitalizeNext ? char.uppercased() : char
+                capitalizeNext = false
+            } else {
+                capitalizeNext = true
+            }
+        }
+        return result.isEmpty ? "Operation" : result
+    }
+}
+
+// MARK: - Entry point
+
+func run() throws {
+    let options = try CLIOptions.parse(CommandLine.arguments)
+
+    let inputURL = URL(fileURLWithPath: options.inputPath)
+    let data: Data
+    do {
+        data = try Data(contentsOf: inputURL)
+    } catch {
+        throw GenerationError.ioFailure("cannot read \(options.inputPath): \(error.localizedDescription)")
+    }
+
+    let document: OpenAPIDocument
+    do {
+        document = try JSONDecoder().decode(OpenAPIDocument.self, from: data)
+    } catch {
+        throw GenerationError.parseFailure(
+            "failed to decode OpenAPI subset (only JSON paths/operations are supported in this preview): \(error.localizedDescription)"
+        )
+    }
+
+    let outputDirectory = URL(fileURLWithPath: options.outputDirectory)
+    do {
+        try FileManager.default.createDirectory(
+            at: outputDirectory,
+            withIntermediateDirectories: true
+        )
+    } catch {
+        throw GenerationError.ioFailure("cannot create \(options.outputDirectory): \(error.localizedDescription)")
+    }
+
+    let generator = CodeGenerator(moduleName: options.moduleName)
+    let files = generator.generate(from: document)
+    for file in files {
+        let fileURL = outputDirectory.appendingPathComponent(file.filename)
+        do {
+            try file.contents.write(to: fileURL, atomically: true, encoding: .utf8)
+        } catch {
+            throw GenerationError.ioFailure("cannot write \(fileURL.path): \(error.localizedDescription)")
+        }
+    }
+
+    FileHandle.standardError.write(
+        Data("openapi-to-innonetwork: wrote \(files.count) file(s) to \(outputDirectory.path)\n".utf8)
+    )
+}
+
+do {
+    try run()
+} catch {
+    FileHandle.standardError.write(
+        Data("openapi-to-innonetwork: \(error)\n".utf8)
+    )
+    exit(1)
+}

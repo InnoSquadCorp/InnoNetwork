@@ -18,6 +18,7 @@ TARGETS=(
     SmokeTests
     Benchmarks
     Examples
+    Tools
 )
 
 # Skip directories that contain non-package Swift sources or generated

@@ -33,6 +33,18 @@ Versioning.
   per-endpoint interceptors should keep using `ScopedEndpoint` builders or
   a hand-written `APIDefinition`.
 
+- `Tools/openapi-to-innonetwork` ships a 4.x preview of an OpenAPI 3
+  → `APIDefinition` Swift code generator. Standalone SwiftPM
+  executable living outside the root package so the runtime library
+  never resolves codegen dependencies; reads a JSON-encoded subset of
+  OpenAPI 3 (paths/operations with `operationId` + `summary`), emits
+  one Swift file per operation conforming to `APIDefinition` with
+  `EmptyParameter` / `EmptyResponse` defaults that adopters fill in
+  during integration. `docs/CodeGeneration.md` documents the
+  decision matrix between hand-written endpoints, this preview tool,
+  and the existing `@_spi(GeneratedClientSupport)` SPI route. The
+  CI consumer-smoke job builds and tests the tool to keep regressions
+  visible. `Scripts/format.sh` includes `Tools/` in the lint scope.
 - `Sources/InnoNetwork/InnoNetwork.docc/Articles/OfflineHandling.md`
   documents three offline-aware patterns on top of the existing
   `NetworkMonitoring` protocol: inspect-and-skip for background
