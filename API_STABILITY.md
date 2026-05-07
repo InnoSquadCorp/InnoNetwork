@@ -46,6 +46,30 @@ release line. `4.0.0` is the public baseline for this contract.
 - `EventDeliveryPolicy`
 - `WebSocketCloseCode`
 
+## Stable Examples
+
+A subset of `Examples/` participates in the SemVer-protected stable
+contract. For each entry below the directory must exist, contain at least
+one Swift source file, and ship a `README.md`. The exact wording of the
+example is **not** contractual — only the layout is — so consumers can
+copy these starting points with the same confidence as a Stable public API.
+The `Scripts/check_stable_examples.sh` gate, wired into the docs-contract
+job, fails CI if a stable example is removed, emptied, or loses its README.
+
+- `Examples/BasicRequest` — request/response fundamentals across HTTP verbs
+  and content types.
+- `Examples/Auth` — `RefreshTokenPolicy` wiring with a Keychain-backed
+  token store and single-flight refresh.
+- `Examples/ErrorHandling` — `NetworkError` taxonomy and the
+  `do`/`catch` patterns that surface response payloads.
+
+Every other example (`CustomHeaders`, `RealWorldAPI`, `DownloadManager`,
+`WebSocketChat`, `EventPolicyObserver`, the consumer smoke packages, …)
+stays Provisionally Stable: structure may evolve across minors and they
+are intentionally **not** enforced by the gate above. README/DocC examples
+continue to track the stable APIs they illustrate; their wording is not
+part of the compatibility contract.
+
 ## Provisionally Stable
 
 Symbols in this section are public and supported, but they may grow new

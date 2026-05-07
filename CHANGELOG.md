@@ -18,6 +18,12 @@ Versioning.
   `PersistentResponseCache` size accounting), so the manifest pre-declares
   reason `C617.1`. Consumers no longer have to author this declaration when
   shipping apps that link InnoNetwork.
+- "Stable Examples" contract in `API_STABILITY.md` carving out
+  `Examples/BasicRequest`, `Examples/Auth`, and `Examples/ErrorHandling` as
+  SemVer-protected starting points. Their directory layout (Swift sources +
+  `README.md`) is enforced by the new `Scripts/check_stable_examples.sh`
+  guard, wired into the existing `docs-contract-sync` CI job. Wording is
+  not contractual; only the layout is.
 
 ## [4.0.0] - 2026-05-02
 

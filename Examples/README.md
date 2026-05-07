@@ -6,9 +6,21 @@ This directory contains practical examples demonstrating how to use InnoNetwork 
 
 InnoNetwork is a Swift package for type-safe network communication using async/await and Swift Concurrency. These examples cover common use cases from basic requests to complex workflows.
 
+## Stability Tiers
+
+Examples are categorized into two tiers, mirroring [API_STABILITY.md](../API_STABILITY.md):
+
+- **Stable** — `BasicRequest`, `Auth`, `ErrorHandling`. The directory layout
+  (Swift sources, `README.md`) is part of the 4.x SemVer-protected contract
+  and is enforced by `Scripts/check_stable_examples.sh`. Copy these as a
+  starting point with the same confidence as the Stable public API surface.
+- **Provisionally Stable** — every other example. Their layout tracks the
+  Provisionally Stable APIs they illustrate and may evolve in minor
+  releases. The wording of any example is not contractual.
+
 ## Examples
 
-### 1. [BasicRequest](./BasicRequest)
+### 1. [BasicRequest](./BasicRequest) — Stable
 
 Learn the fundamentals of making HTTP requests with InnoNetwork.
 
@@ -26,7 +38,7 @@ Learn the fundamentals of making HTTP requests with InnoNetwork.
 
 ---
 
-### 2. [ErrorHandling](./ErrorHandling)
+### 2. [ErrorHandling](./ErrorHandling) — Stable
 
 Comprehensive guide to handling network errors gracefully.
 
@@ -58,7 +70,7 @@ Learn how to customize HTTP headers for authentication, content negotiation, and
 
 ---
 
-### 3a. [Auth](./Auth)
+### 3a. [Auth](./Auth) — Stable
 
 Wire `RefreshTokenPolicy` to a Keychain-backed token store with
 single-flight refresh and one-time replay after `401`.

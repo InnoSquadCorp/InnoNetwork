@@ -209,6 +209,9 @@ jobs:
       - name: Verify docs and stability contract
         run: bash Scripts/check_docs_contract_sync.sh
 
+      - name: Verify stable examples contract
+        run: bash Scripts/check_stable_examples.sh
+
       - name: Build documentation smoke target
         run: xcrun swift build --target InnoNetworkDocSmoke
 
