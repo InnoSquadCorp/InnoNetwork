@@ -33,6 +33,24 @@ Versioning.
   per-endpoint interceptors should keep using `ScopedEndpoint` builders or
   a hand-written `APIDefinition`.
 
+- `Tools/openapi-to-innonetwork` expands beyond the 4.x preview:
+  - YAML input (Yams 5.0+) is now supported alongside JSON; the format
+    is inferred from the file extension. The runtime library still
+    pulls in zero codegen dependencies because Yams lives only inside
+    the standalone `Tools/` package.
+  - The schema model now parses `components.schemas`, per-operation
+    `requestBody.content["application/json"].schema`, and
+    `responses["200"|"201"].content["application/json"].schema`.
+  - Generated output adds one Swift file per
+    `components.schemas` entry (Codable struct mirroring the OpenAPI
+    properties — required fields are non-optional, optional fields
+    default to `nil`). Operation files now wire typed `Parameter` and
+    `APIResponse` aliases when the spec uses `$ref`, and fall back to
+    `EmptyParameter` / `EmptyResponse` otherwise. Property types map
+    string / integer / number / boolean / array / `$ref` plus the
+    common format hints (`int64`, `date-time`, `uri`).
+  - The README and CI usage examples now show YAML input directly
+    (no more `yq` workaround).
 - `Tools/openapi-to-innonetwork` ships a 4.x preview of an OpenAPI 3
   → `APIDefinition` Swift code generator. Standalone SwiftPM
   executable living outside the root package so the runtime library

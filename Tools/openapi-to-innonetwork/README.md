@@ -6,36 +6,42 @@ runtime library never resolves codegen dependencies.
 
 ## Status
 
-**Preview**. The 4.x line ships this tool as a starting point so adopters
-with 100+ endpoint backends can avoid hand-rolling `APIDefinition`
-structs. A 5.0 follow-up will broaden coverage:
+**Preview, expanded for 5.0**. The 4.x line ships this tool as a
+starting point so adopters with 100+ endpoint backends can avoid
+hand-rolling `APIDefinition` structs. The current state covers the
+common case (JSON + YAML input, `components.schemas` → Codable
+struct, request/response `$ref` → typed `Parameter` / `APIResponse`)
+and tracks the remaining surface for follow-up work:
 
-| Feature | 4.x preview | 5.0 plan |
-| --- | --- | --- |
-| Input format | JSON subset of OpenAPI 3 | JSON + YAML (Yams) |
-| Operation coverage | `paths.*.get/post/put/patch/delete` with `operationId` and `summary` | full operation object incl. parameters, request body, response schemas |
-| Generated shape | `APIDefinition` struct with `EmptyParameter` / `EmptyResponse` | typed `Parameter` / `APIResponse` from request/response schemas |
-| Auth scope | always `PublicAuthScope` (default) | `AuthScope` mapping from configurable rules |
-| SPI integration | not used | optional `@_spi(GeneratedClientSupport)` for richer hooks |
+| Feature | Status |
+| --- | --- |
+| Input format | ✅ JSON + YAML (Yams) |
+| Operation coverage | ✅ `paths.*.get/post/put/patch/delete` with `operationId`, `summary`, `requestBody`, `responses` |
+| Generated shape | ✅ Typed `Parameter` / `APIResponse` from `$ref`; falls back to `EmptyParameter` / `EmptyResponse` when absent |
+| Schema property types | ✅ string / integer / number / boolean / array / `$ref` (incl. format hints: `int64`, `date-time`, `uri`) |
+| Auth scope | ⚠️ always `PublicAuthScope`; configurable mapping is a follow-up |
+| Schema variants (oneOf / allOf / discriminator / nullable) | ⚠️ unsupported; properties using these decode safely but generate as `AnyCodable` placeholders or are skipped |
+| SPI integration | ⚠️ not used; the standard `APIDefinition` surface is the integration point |
 
-The preview is intentionally narrow so the tool can ship without
-external dependencies. Real production usage waits on the 5.0 work.
+External dependencies live exclusively inside this Tools/ package, so
+adopters who pull in InnoNetwork as a library never resolve Yams.
 
 ## Usage
 
 ```bash
 cd Tools/openapi-to-innonetwork
 
-# 1. Convert YAML → JSON (e.g. via yq) if your spec is YAML.
-yq -o=json eval . openapi.yaml > openapi.json
-
-# 2. Generate.
+# JSON input
 swift run openapi-to-innonetwork \
     --input openapi.json \
     --output ../../Sources/MyAPI \
     --module-name MyAPI
 
-# 3. Add Sources/MyAPI to your Package.swift target if you haven't.
+# YAML input (extension is autodetected)
+swift run openapi-to-innonetwork \
+    --input openapi.yaml \
+    --output ../../Sources/MyAPI \
+    --module-name MyAPI
 ```
 
 The generator prints a one-line summary to stderr on success

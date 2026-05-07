@@ -8,11 +8,11 @@ import PackageDescription
 // running `swift run openapi-to-innonetwork ...`. The companion
 // docs live in `docs/CodeGeneration.md`.
 //
-// External dependencies are deliberately avoided in this 4.x preview
-// — the parser handles a JSON subset of OpenAPI 3 directly through
-// Foundation's JSONDecoder so adopters can try it without adding a
-// YAML parser dependency. A 5.0 follow-up may add Yams support
-// behind a flag for full OpenAPI YAML compatibility.
+// External dependencies live here, not in the root package, so the
+// InnoNetwork library itself never has to resolve a YAML parser
+// or schema generator. Yams is the only runtime dependency for the
+// 5.0 expansion that adds YAML input + typed Parameter / Response
+// generation.
 
 let package = Package(
     name: "openapi-to-innonetwork",
@@ -22,10 +22,15 @@ let package = Package(
     products: [
         .executable(name: "openapi-to-innonetwork", targets: ["openapi-to-innonetwork"])
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.6")
+    ],
     targets: [
         .executableTarget(
             name: "openapi-to-innonetwork",
+            dependencies: [
+                .product(name: "Yams", package: "Yams")
+            ],
             path: "Sources/openapi-to-innonetwork"
         ),
         .testTarget(
