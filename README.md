@@ -90,7 +90,7 @@ dependencies: [
 > resilience policy surfaces, …) may change in any minor release.
 >
 > InnoNetwork also intentionally requires Swift 6.2+ and current Apple OS
-> baselines (iOS 18, macOS 15, tvOS 18, watchOS 11, visionOS 2). That keeps
+> baselines (iOS 16, macOS 14, tvOS 16, watchOS 9, visionOS 1). That keeps
 > the package aligned with strict concurrency and modern URLSession behavior,
 > but apps with older deployment targets should keep a thin compatibility
 > client until they can raise their platform floor.
@@ -298,11 +298,11 @@ for await event in await manager.events(for: task) {
 
 ## Platform Matrix
 
-- iOS 18.0+
-- macOS 15.0+
-- tvOS 18.0+
-- watchOS 11.0+
-- visionOS 2.0+
+- iOS 16.0+
+- macOS 14.0+
+- tvOS 16.0+
+- watchOS 9.0+
+- visionOS 1.0+
 - Swift 6.2+
 
 The package intentionally targets current Apple platform releases. That lets the codebase rely on modern Swift Concurrency semantics, stricter Sendable checking, and the latest URLSession and platform APIs without compatibility shims.
