@@ -70,6 +70,14 @@ Versioning.
 
 ### Changed
 
+- 5.0 platform floors backported to iOS 16 / macOS 14 / tvOS 16 /
+  watchOS 9 / visionOS 1 (down from the 4.x baseline of iOS 18 /
+  macOS 15 / tvOS 18 / watchOS 11 / visionOS 2). The audit confirmed
+  no iOS 17+ / macOS 15+ Required Reason or strict-concurrency
+  feature is on the public API surface; the only platform-pinned
+  dependency is `NWPathMonitor.Sendable` which forces macOS 14+.
+  Apps targeting iOS 16+ can now adopt InnoNetwork without an
+  OS bump, opening B2C deployment paths that were previously blocked.
 - Forward-compatibility typealiases for the upcoming 5.0 rename:
   `Endpoint = EndpointShape`, `AuthScope = EndpointAuthScope`,
   `EndpointBuilder<R, S> = ScopedEndpoint<R, S>`. New code may adopt

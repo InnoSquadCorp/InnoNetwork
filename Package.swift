@@ -21,11 +21,19 @@ let package = Package(
     name: "InnoNetwork",
     defaultLocalization: "en",
     platforms: [
-        .iOS(.v18),
-        .macOS(.v15),
-        .tvOS(.v18),
-        .watchOS(.v11),
-        .visionOS(.v2)
+        // 4.x bumped to iOS 18 / macOS 15 / tvOS 18 / watchOS 11 /
+        // visionOS 2 because the original release shipped without an
+        // availability audit. The 5.0 line backports to the floor
+        // documented here. macOS sits at 14 (and not 13 alongside
+        // iOS 16) because `NWPathMonitor`'s `Sendable` conformance
+        // is only available on macOS 14+; the rest of the surface
+        // works on macOS 13 but the network reachability path needs
+        // the newer SDK guarantee.
+        .iOS(.v16),
+        .macOS(.v14),
+        .tvOS(.v16),
+        .watchOS(.v9),
+        .visionOS(.v1)
     ],
     products: [
         .library(
