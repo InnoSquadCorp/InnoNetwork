@@ -116,6 +116,14 @@ changes are intentional and are called out below; migration recipes live in
 - Supply-chain CI: Dependabot now watches SwiftPM and GitHub Actions, every
   workflow action is pinned to a full commit SHA, and CI runs
   `actions/dependency-review-action` on pull requests.
+- `NetworkError.errorDescription` now resolves through bundled English and
+  Korean localization catalogues while preserving the existing English
+  fallback strings.
+- DocC includes a "Build a GitHub Client" tutorial that walks from
+  `APIDefinition` modeling to `DefaultNetworkClient.request(_:)`.
+- Benchmarks now report process resident memory snapshots alongside
+  throughput. Memory metrics are observational only in 4.0.0 and are not
+  part of the regression guard threshold.
 
 ### Hardening Pass — Fixed
 

@@ -12,12 +12,15 @@ public struct RefreshTokenPolicy: Sendable {
     package let tokenApplicator: @Sendable (String, URLRequest) -> URLRequest
     package let refreshStatusCodes: Set<Int>
     package let failureCooldown: RefreshFailureCooldown
+    package let appliesToRequest: @Sendable (URLRequest) -> Bool
 
     /// Creates a token refresh policy.
     ///
     /// - Parameters:
     ///   - refreshStatusCodes: Status codes that should trigger a refresh
     ///     and one request replay. Defaults to `401`.
+    ///   - appliesTo: Returns whether this policy should attach tokens and
+    ///     refresh for a request. Defaults to every request.
     ///   - failureCooldown: Throttle policy used after a refresh failure to
     ///     suppress thundering-herd retries against a known-bad refresh
     ///     token. Default is exponential backoff (1s base, 30s cap).
@@ -29,6 +32,7 @@ public struct RefreshTokenPolicy: Sendable {
     ///     `Authorization` header.
     public init(
         refreshStatusCodes: Set<Int> = [401],
+        appliesTo: @escaping @Sendable (URLRequest) -> Bool = { _ in true },
         failureCooldown: RefreshFailureCooldown = .exponentialBackoff(base: 1.0, max: 30.0),
         currentToken: @escaping @Sendable () async throws -> String?,
         refreshToken: @escaping @Sendable () async throws -> String,
@@ -40,6 +44,7 @@ public struct RefreshTokenPolicy: Sendable {
     ) {
         self.refreshStatusCodes = refreshStatusCodes
         self.failureCooldown = failureCooldown
+        self.appliesToRequest = appliesTo
         self.currentTokenProvider = currentToken
         self.refreshTokenProvider = refreshToken
         self.tokenApplicator = applyToken
@@ -110,12 +115,14 @@ package actor RefreshTokenCoordinator {
     }
 
     package func applyCurrentToken(to request: URLRequest) async throws -> URLRequest {
+        guard policy.appliesToRequest(request) else { return request }
         guard let token = try await policy.currentTokenProvider() else { return request }
         return policy.tokenApplicator(token, request)
     }
 
     package func refreshAndApply(to request: URLRequest) async throws -> URLRequest {
         try Task.checkCancellation()
+        guard policy.appliesToRequest(request) else { return request }
         let token = try await refreshedToken()
         try Task.checkCancellation()
         // Strip every existing `Authorization` header — case-insensitively —
@@ -132,8 +139,8 @@ package actor RefreshTokenCoordinator {
         return policy.tokenApplicator(token, sanitized)
     }
 
-    package func shouldRefresh(statusCode: Int) -> Bool {
-        policy.refreshStatusCodes.contains(statusCode)
+    package func shouldRefresh(statusCode: Int, request: URLRequest) -> Bool {
+        policy.appliesToRequest(request) && policy.refreshStatusCodes.contains(statusCode)
     }
 
     private func refreshedToken() async throws -> String {

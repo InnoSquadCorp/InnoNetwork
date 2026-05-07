@@ -19,6 +19,7 @@ let strictSettings: [SwiftSetting] = [
 
 let package = Package(
     name: "InnoNetwork",
+    defaultLocalization: "en",
     platforms: [
         .iOS(.v18),
         .macOS(.v15),
@@ -61,6 +62,11 @@ let package = Package(
         .target(
             name: "InnoNetwork",
             path: "Sources/InnoNetwork",
+            // Bundles the `Resources/{en,ko}.lproj/Localizable.strings`
+            // catalogues that back ``NetworkError.errorDescription``. The
+            // catalogue ships en + ko today; additional locales can be added
+            // by dropping new `<lang>.lproj/Localizable.strings` siblings.
+            resources: [.process("Resources")],
             swiftSettings: strictSettings
         ),
         .target(
@@ -92,6 +98,7 @@ let package = Package(
             dependencies: [
                 "InnoNetwork",
                 "InnoNetworkDownload",
+                "InnoNetworkPersistentCache",
                 "InnoNetworkWebSocket",
             ],
             path: "Sources/InnoNetworkTestSupport",
@@ -112,6 +119,7 @@ let package = Package(
             dependencies: [
                 "InnoNetwork",
                 "InnoNetworkDownload",
+                "InnoNetworkPersistentCache",
                 "InnoNetworkWebSocket",
             ],
             path: "SmokeTests/InnoNetworkDocSmoke",

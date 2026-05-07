@@ -213,6 +213,91 @@ struct EventHubTests {
         #expect(await gate.hasReturned())
     }
 
+    @Test("TaskEventHub publishAndWaitForEnqueue does not wait for listener completion")
+    func taskEventHubPublishAndWaitForEnqueueDoesNotWaitForListenerCompletion() async {
+        let hub = TaskEventHub<Int>()
+        let gate = DeliveryGate()
+
+        _ = await hub.addListener(taskID: "enqueue") { _ in
+            await gate.markStarted()
+            await gate.waitForRelease()
+        }
+
+        await hub.publishAndWaitForEnqueue(1, for: "enqueue")
+
+        await gate.waitUntilStarted()
+        #expect(await gate.hasReturned() == false)
+
+        await gate.release()
+    }
+
+    @Test("TaskEventHub publishAndWaitForEnqueue is not blocked by older listener deliveries")
+    func taskEventHubPublishAndWaitForEnqueueIgnoresOlderBlockedListenerDelivery() async throws {
+        let hub = TaskEventHub<Int>()
+        let gate = DeliveryGate()
+        let store = IntEventStore()
+
+        _ = await hub.addListener(taskID: "enqueue-backlog") { value in
+            if value == 0 {
+                await gate.markStarted()
+                await gate.waitForRelease()
+            }
+            await store.append(value)
+        }
+
+        await hub.publish(0, for: "enqueue-backlog")
+        await gate.waitUntilStarted()
+
+        let publishTask = Task {
+            await hub.publishAndWaitForEnqueue(1, for: "enqueue-backlog")
+            await gate.markReturned()
+        }
+
+        let returned = await waitForEventHubCondition(timeout: 1.0) {
+            await gate.hasReturned()
+        }
+        #expect(returned)
+
+        await gate.release()
+        _ = await publishTask.result
+        let values = try await waitForValues(store: store, expectedCount: 2)
+        #expect(values == [0, 1])
+    }
+
+    @Test("TaskEventHub snapshots listeners when an event is enqueued")
+    func taskEventHubDoesNotDeliverQueuedEventsToLaterListeners() async throws {
+        let hub = TaskEventHub<Int>()
+        let gate = DeliveryGate()
+        let firstStore = IntEventStore()
+        let secondStore = IntEventStore()
+
+        _ = await hub.addListener(taskID: "snapshot") { value in
+            await firstStore.append(value)
+            if value == 0 {
+                await gate.markStarted()
+                await gate.waitForRelease()
+            }
+        }
+
+        let blockingPublish = Task {
+            await hub.publishAndWaitForDelivery(0, for: "snapshot")
+        }
+        await gate.waitUntilStarted()
+
+        await hub.publish(1, for: "snapshot")
+        _ = await hub.addListener(taskID: "snapshot") { value in
+            await secondStore.append(value)
+        }
+
+        await gate.release()
+        _ = await blockingPublish.result
+
+        let firstValues = try await waitForValues(store: firstStore, expectedCount: 2)
+        #expect(firstValues == [0, 1])
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(await secondStore.snapshot().isEmpty)
+    }
+
     @Test("TaskEventHub publishAndWaitForDelivery completes when finish races delivery")
     func taskEventHubPublishAndWaitForDeliveryCompletesWhenFinishRacesDelivery() async {
         let hub = TaskEventHub<Int>()

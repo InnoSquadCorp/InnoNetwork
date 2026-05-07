@@ -183,6 +183,36 @@ struct IdempotencyRetryIntegrationTests {
         #expect(await session.requestCount == 1, "POST without Idempotency-Key must not retry")
     }
 
+    @Test("IdempotencyKeyPolicy attaches one stable key across retries")
+    func idempotencyKeyPolicyAttachesOneStableKeyAcrossRetries() async throws {
+        let session = try SequenceSession(queue: [
+            queued(statusCode: 503, headers: ["Retry-After": "0"]),
+            queued(statusCode: 200, body: CreatedUser(id: 100, name: "policy-created")),
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                retryPolicy: ExponentialBackoffRetryPolicy(
+                    maxRetries: 1,
+                    retryDelay: 0,
+                    jitterRatio: 0
+                ),
+                idempotencyKeyPolicy: .automaticForUnsafeMethods { "stable-\($0.uuidString)" }
+            ),
+            session: session
+        )
+
+        let user = try await client.request(PlainPost())
+
+        #expect(user == CreatedUser(id: 100, name: "policy-created"))
+        let captured = await session.capturedRequests
+        #expect(captured.count == 2)
+        let firstKey = captured.first?.value(forHTTPHeaderField: "Idempotency-Key")
+        let secondKey = captured.last?.value(forHTTPHeaderField: "Idempotency-Key")
+        #expect(firstKey != nil)
+        #expect(firstKey == secondKey)
+    }
+
     @Test("POST 503 with no Retry-After but Idempotency-Key → exponential backoff retry")
     func postWith503ButNoRetryAfterFallsBackToBackoff() async throws {
         let session = try SequenceSession(queue: [

@@ -116,55 +116,121 @@ public enum NetworkError: Error, Sendable {
 
 
 extension NetworkError: LocalizedError {
+    /// Localized human-readable summary of the failure.
+    ///
+    /// Strings are loaded from
+    /// `Sources/InnoNetwork/Resources/<lang>.lproj/Localizable.strings`
+    /// (currently `en` and `ko`). New locales can be added by dropping a
+    /// sibling `<lang>.lproj/Localizable.strings` file with the same keys.
+    /// Keys are stable and treated as part of the
+    /// ``InnoNetwork`` Provisionally Stable contract — see
+    /// `API_STABILITY.md`.
     public var errorDescription: String? {
         switch self {
         case .invalidBaseURL(let string):
-            return "Invalid base URL: \(string)"
+            return localizedFormat("NetworkError.invalidBaseURL", string)
         case .invalidRequestConfiguration(let message):
-            return "Invalid request configuration: \(message)"
+            return localizedFormat("NetworkError.invalidRequestConfiguration", message)
         case .decoding(let stage, let error, _):
-            return "Failed to decode response (\(stage)): \(error.message)"
+            return localizedFormat(
+                "NetworkError.decoding",
+                String(describing: stage),
+                error.message
+            )
         case .statusCode:
-            return "Status code didn't fall within the given range."
+            return localized("NetworkError.statusCode")
         case .underlying(let error, _):
             return error.message
         case .nonHTTPResponse:
-            return "Failed to convert nonHTTPResponse"
+            return localized("NetworkError.nonHTTPResponse")
         case .trustEvaluationFailed(let reason):
-            switch reason {
-            case .unsupportedAuthenticationMethod(let method):
-                return "Unsupported authentication method: \(method)"
-            case .missingServerTrust:
-                return "Missing server trust."
-            case .systemTrustEvaluationFailed(let reason):
-                if let reason {
-                    return "System trust evaluation failed: \(reason)"
-                }
-                return "System trust evaluation failed."
-            case .hostNotPinned(let host):
-                return "No pin configured for host: \(host)"
-            case .publicKeyExtractionFailed:
-                return "Failed to extract public key from certificate chain."
-            case .pinMismatch(let host):
-                return "Public key pin mismatch for host: \(host)"
-            case .custom(let message):
-                return message
-            }
+            return localizedTrustFailureDescription(for: reason)
         case .cancelled:
-            return "Request was cancelled"
+            return localized("NetworkError.cancelled")
         case .timeout(let reason, _):
             switch reason {
             case .requestTimeout:
-                return "The request timed out before the server responded."
+                return localized("NetworkError.timeout.request")
             case .resourceTimeout:
-                return "The resource transfer timed out."
+                return localized("NetworkError.timeout.resource")
             case .connectionTimeout:
-                return "The connection to the server timed out."
+                return localized("NetworkError.timeout.connection")
             }
         case .responseTooLarge(let limit, let observed):
-            return "Response body of \(observed) bytes exceeded the configured limit of \(limit) bytes."
+            return localizedFormat(
+                "NetworkError.responseTooLarge",
+                "\(observed)",
+                "\(limit)"
+            )
         }
     }
+}
+
+
+// MARK: - Localization helpers
+
+@inline(__always)
+private func localized(_ key: String) -> String {
+    NSLocalizedString(key, bundle: .module, comment: "NetworkError description")
+}
+
+@inline(__always)
+private func localizedFormat(_ key: String, _ arguments: CVarArg...) -> String {
+    String(format: localized(key), locale: Locale.current, arguments: arguments)
+}
+
+private func localizedTrustFailureDescription(for reason: TrustFailureReason) -> String {
+    switch reason {
+    case .unsupportedAuthenticationMethod(let method):
+        return localizedFormat(
+            "NetworkError.trust.unsupportedAuthenticationMethod",
+            method
+        )
+    case .missingServerTrust:
+        return localized("NetworkError.trust.missingServerTrust")
+    case .systemTrustEvaluationFailed(let reason):
+        if let reason {
+            return localizedFormat(
+                "NetworkError.trust.systemTrustEvaluationFailedWithReason",
+                reason
+            )
+        }
+        return localized("NetworkError.trust.systemTrustEvaluationFailed")
+    case .hostNotPinned(let host):
+        return localizedFormat("NetworkError.trust.hostNotPinned", host)
+    case .publicKeyExtractionFailed:
+        return localized("NetworkError.trust.publicKeyExtractionFailed")
+    case .pinMismatch(let host):
+        return localizedFormat("NetworkError.trust.pinMismatch", host)
+    case .custom(let message):
+        return message
+    }
+}
+
+// MARK: - Package-internal localization probe
+
+/// Looks up the raw localized string for `key` in the InnoNetwork resource
+/// bundle, restricted to the localization identified by `localization`
+/// (for example `"en"` or `"ko"`). Returns `nil` when either the
+/// localization sub-bundle or the key itself is missing.
+///
+/// This helper exists for the package's own test targets. Production
+/// callers should rely on ``NetworkError/errorDescription`` and let
+/// `Foundation` resolve the active localization. Listed as
+/// `package`-scope so it never crosses the public API surface.
+package func _localizedNetworkErrorString(
+    forKey key: String,
+    localization: String
+) -> String? {
+    guard
+        let path = Bundle.module.path(forResource: localization, ofType: "lproj"),
+        let bundle = Bundle(path: path)
+    else {
+        return nil
+    }
+    let sentinel = "<<missing>>"
+    let value = bundle.localizedString(forKey: key, value: sentinel, table: nil)
+    return value == sentinel ? nil : value
 }
 
 public extension NetworkError {

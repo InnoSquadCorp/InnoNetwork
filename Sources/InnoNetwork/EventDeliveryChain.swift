@@ -25,7 +25,7 @@ package actor EventDeliveryChain<Event: Sendable> {
     private struct QueuedEvent: Sendable {
         let event: Event
         let enqueuedAt: Date
-        let completion: DeliveryCompletion?
+        let deliveryCompletion: DeliveryCompletion?
     }
 
     private let handler: Handler
@@ -53,7 +53,11 @@ package actor EventDeliveryChain<Event: Sendable> {
     }
 
     package func enqueue(_ event: Event, enqueuedAt: Date = .now) {
-        enqueue(event, enqueuedAt: enqueuedAt, completion: nil)
+        enqueue(
+            event,
+            enqueuedAt: enqueuedAt,
+            deliveryCompletion: nil
+        )
     }
 
     package func enqueueAndWaitForDelivery(_ event: Event, enqueuedAt: Date = .now) async {
@@ -61,7 +65,7 @@ package actor EventDeliveryChain<Event: Sendable> {
             enqueue(
                 event,
                 enqueuedAt: enqueuedAt,
-                completion: DeliveryCompletion(continuation)
+                deliveryCompletion: DeliveryCompletion(continuation)
             )
         }
     }
@@ -69,33 +73,48 @@ package actor EventDeliveryChain<Event: Sendable> {
     private func enqueue(
         _ event: Event,
         enqueuedAt: Date,
-        completion: DeliveryCompletion?
+        deliveryCompletion: DeliveryCompletion?
     ) {
         guard !isClosed else {
-            completion?.resume()
+            deliveryCompletion?.resume()
             return
         }
         if queue.count >= policy.maxBufferedEventsPerConsumer {
             droppedEventCount += 1
             switch policy.overflowPolicy {
             case .dropOldest:
-                queue.popFirst()?.completion?.resume()
+                if let droppedEvent = queue.popFirst() {
+                    droppedEvent.deliveryCompletion?.resume()
+                }
             case .dropNewest:
                 reportQueueState()
-                completion?.resume()
+                deliveryCompletion?.resume()
                 return
             }
         }
 
-        queue.append(QueuedEvent(event: event, enqueuedAt: enqueuedAt, completion: completion))
+        queue.append(
+            QueuedEvent(
+                event: event,
+                enqueuedAt: enqueuedAt,
+                deliveryCompletion: deliveryCompletion
+            )
+        )
         reportQueueState()
         startDrainIfNeeded()
     }
 
-    package func finish() async {
+    package func finish(deliverQueuedEvents: Bool = false) async {
         isClosed = true
+        guard !deliverQueuedEvents else {
+            if !queue.isEmpty {
+                startDrainIfNeeded()
+            }
+            return
+        }
+
         while let queuedEvent = queue.popFirst() {
-            queuedEvent.completion?.resume()
+            queuedEvent.deliveryCompletion?.resume()
         }
         // `finish()` can be called by the active handler while self-removing;
         // leave the drain task alive so in-flight delivery is not cancelled.
@@ -114,7 +133,7 @@ package actor EventDeliveryChain<Event: Sendable> {
             reportQueueState()
             await handler(queuedEvent.event)
             reportDeliveryLatency(Date.now.timeIntervalSince(queuedEvent.enqueuedAt))
-            queuedEvent.completion?.resume()
+            queuedEvent.deliveryCompletion?.resume()
         }
 
         drainTask = nil

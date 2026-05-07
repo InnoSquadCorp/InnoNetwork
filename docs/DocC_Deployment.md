@@ -10,7 +10,8 @@ The workflow builds DocC archives for all public library products:
 
 1. `InnoNetwork`
 2. `InnoNetworkDownload`
-3. `InnoNetworkWebSocket`
+3. `InnoNetworkPersistentCache`
+4. `InnoNetworkWebSocket`
 
 ## Triggers
 
@@ -23,6 +24,7 @@ The workflow deploys a static site to GitHub Pages with module-specific entry po
 
 - `/<repo>/InnoNetwork/documentation/innonetwork`
 - `/<repo>/InnoNetworkDownload/documentation/innonetworkdownload`
+- `/<repo>/InnoNetworkPersistentCache/documentation/innonetworkpersistentcache`
 - `/<repo>/InnoNetworkWebSocket/documentation/innonetworkwebsocket`
 
 It also publishes a root index page linking to those module docs.
@@ -45,7 +47,13 @@ xcrun docc process-archive transform-for-static-hosting \
   --hosting-base-path InnoNetwork/InnoNetwork
 ```
 
-Repeat the `process-archive` step for `InnoNetworkDownload` and `InnoNetworkWebSocket` if needed.
+Repeat the `process-archive` step for `InnoNetworkDownload`,
+`InnoNetworkPersistentCache`, and `InnoNetworkWebSocket` if needed.
+
+For local CPU stability, run DocC archive transforms sequentially. Avoid running
+symbol graph generation for other Swift packages at the same time; DocC and
+SwiftPM symbol extraction are CPU-heavy and can saturate local developer
+machines.
 
 ## Operational Notes
 

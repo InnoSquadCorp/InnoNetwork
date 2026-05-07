@@ -464,6 +464,62 @@ struct StreamingAPIDefinitionTests {
         #expect(finishedByteCounts == ["one".utf8.count + "two".utf8.count])
     }
 
+    @Test("stream(bufferingPolicy:) can bound output buffering for slow consumers")
+    func streamBufferingPolicyCanBoundOutputBufferingForSlowConsumers() async throws {
+        let definition = LineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        StreamingURLProtocol.register(
+            url: streamURL,
+            response: .success(statusCode: 200, data: Data("one\ntwo\nthree\n".utf8))
+        )
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(baseURL: baseURL),
+            session: makeStreamingURLSession()
+        )
+
+        let stream = client.stream(definition, bufferingPolicy: .bufferingNewest(1))
+        try await Task.sleep(for: .milliseconds(50))
+
+        var values: [String] = []
+        for try await value in stream {
+            values.append(value)
+        }
+
+        #expect(values == ["three"])
+    }
+
+    @Test("stream(bufferingPolicy:) rejects bounded buffers with Last-Event-ID resume")
+    func streamBufferingPolicyRejectsBoundedResumeCombination() async throws {
+        let baseURL = uniqueStreamingBaseURL()
+        let definition = ResumableStream(resumePolicy: .lastEventID(maxAttempts: 2, retryDelay: 0))
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 200, data: Data("1|alpha\n".utf8))
+            ])
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(baseURL: baseURL, timeout: 5),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var iterator = client.stream(definition, bufferingPolicy: .bufferingNewest(1)).makeAsyncIterator()
+        do {
+            _ = try await iterator.next()
+            Issue.record("Expected invalid request configuration for bounded resumable stream")
+        } catch let error as NetworkError {
+            switch error {
+            case .invalidRequestConfiguration(let message):
+                #expect(message.contains("StreamingResumePolicy.lastEventID"))
+            default:
+                Issue.record("Expected invalidRequestConfiguration, got \(error)")
+            }
+        }
+
+        #expect(SequencedStreamingURLProtocol.capturedRequests(for: streamURL).isEmpty)
+    }
+
     @Test("stream() response interceptor status rewrite controls validation")
     func streamResponseInterceptorStatusRewriteControlsValidation() async throws {
         let definition = LineCounterStream()

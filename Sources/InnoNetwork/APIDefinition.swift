@@ -26,7 +26,7 @@ import Foundation
 /// ``EndpointShape``; `APIDefinition` adds only the body-strategy
 /// surface (`parameters`).
 public protocol APIDefinition: EndpointShape {
-    associatedtype Parameter: Encodable & Sendable
+    associatedtype Parameter: Encodable & Sendable = EmptyParameter
     /// Authentication scope marker for the endpoint. Defaults to
     /// ``PublicAuthScope``. Set ``Auth`` to ``AuthRequiredScope`` to opt
     /// into the configured ``RefreshTokenPolicy`` and require an

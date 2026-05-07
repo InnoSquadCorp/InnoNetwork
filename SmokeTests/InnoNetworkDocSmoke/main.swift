@@ -1,6 +1,7 @@
 import Foundation
 import InnoNetwork
 import InnoNetworkDownload
+import InnoNetworkPersistentCache
 import InnoNetworkWebSocket
 
 private struct SmokeUser: Decodable, Sendable {
@@ -114,6 +115,17 @@ private func runDocSmoke() {
         builder.trustPolicy = .systemDefault
     }
     _ = networkAdvanced
+
+    let production = NetworkConfiguration.recommendedForProduction(
+        baseURL: URL(string: "https://api.example.com/v1")!
+    )
+    _ = production
+
+    let persistentCacheConfiguration = PersistentResponseCacheConfiguration(
+        directoryURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent("innonetwork-docsmoke-cache", isDirectory: true)
+    )
+    _ = persistentCacheConfiguration
 
     let downloadDefaults = DownloadConfiguration.safeDefaults(
         sessionIdentifier: "com.example.docsmoke.downloads"

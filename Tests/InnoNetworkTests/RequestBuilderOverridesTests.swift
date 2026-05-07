@@ -15,6 +15,10 @@ struct RequestBuilderOverridesTests {
         var path: String { "/users/1" }
         var timeoutOverride: TimeInterval? { 7.5 }
         var cachePolicyOverride: URLRequest.CachePolicy? { .reloadIgnoringLocalCacheData }
+        var priorityOverride: RequestPriority? { .userInitiated }
+        var allowsCellularAccessOverride: Bool? { false }
+        var allowsExpensiveNetworkAccessOverride: Bool? { false }
+        var allowsConstrainedNetworkAccessOverride: Bool? { false }
     }
 
     private struct InheritsClientDefaultsEndpoint: APIDefinition {
@@ -66,6 +70,10 @@ struct RequestBuilderOverridesTests {
         let captured = mockSession.capturedRequest
         #expect(captured?.timeoutInterval == 7.5)
         #expect(captured?.cachePolicy == .reloadIgnoringLocalCacheData)
+        #expect(captured?.networkServiceType == .responsiveData)
+        #expect(captured?.allowsCellularAccess == false)
+        #expect(captured?.allowsExpensiveNetworkAccess == false)
+        #expect(captured?.allowsConstrainedNetworkAccess == false)
     }
 
     @Test("Endpoints without overrides inherit the client defaults")
@@ -82,6 +90,10 @@ struct RequestBuilderOverridesTests {
         // makeTestNetworkConfiguration uses safeDefaults — timeout 30, useProtocolCachePolicy.
         #expect(captured?.timeoutInterval == 30.0)
         #expect(captured?.cachePolicy == .useProtocolCachePolicy)
+        #expect(captured?.networkServiceType == .default)
+        #expect(captured?.allowsCellularAccess == true)
+        #expect(captured?.allowsExpensiveNetworkAccess == true)
+        #expect(captured?.allowsConstrainedNetworkAccess == true)
     }
 
     @Test("GET requests with a body throw invalidRequestConfiguration")
