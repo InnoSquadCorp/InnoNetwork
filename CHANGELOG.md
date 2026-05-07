@@ -33,6 +33,18 @@ Versioning.
   per-endpoint interceptors should keep using `ScopedEndpoint` builders or
   a hand-written `APIDefinition`.
 
+- `Sources/InnoNetwork/InnoNetwork.docc/Articles/OfflineHandling.md`
+  documents three offline-aware patterns on top of the existing
+  `NetworkMonitoring` protocol: inspect-and-skip for background
+  prefetch, fail-fast `RequestInterceptor` for interactive flows,
+  and wait-for-recovery wrapping around an existing `RetryPolicy`
+  for non-interactive batch traffic. Explains why the library
+  intentionally does not ship a built-in `OfflineQueuePolicy`
+  (idempotency / cookie scoping / quota / TTL are
+  backend-shaped) and pairs each pattern with the cellular vs
+  reachability decision via `NetworkSnapshot.interfaceTypes`.
+  Linked from the topic group between `<doc:RequestSigning>` and
+  `<doc:CachingStrategies>`.
 - `Sources/InnoNetwork/InnoNetwork.docc/Articles/RequestSigning.md`
   walks through wiring `HMACRequestInterceptor` and building a custom
   canonical signer (timestamp + nonce + body hash + URL path) on top

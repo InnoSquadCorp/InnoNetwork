@@ -72,6 +72,7 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - <doc:RetryDecisions>
 - <doc:AuthRefresh>
 - <doc:RequestSigning>
+- <doc:OfflineHandling>
 - <doc:CachingStrategies>
 - <doc:AppNetworkingCookbook>
 - <doc:MigrationFromAlamofire>
