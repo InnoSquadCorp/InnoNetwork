@@ -179,12 +179,14 @@ public struct WebSocketConfiguration: Sendable {
     /// platform default is 1 MiB; values lower than `1` are clamped to `1`.
     public let maximumMessageSize: Int
 
-    /// Configuration intent for `permessage-deflate`. `URLSessionWebSocketTask`
-    /// does not currently advertise `permessage-deflate`, so this property is
-    /// **purely advisory** — it is recorded for upstream tooling and surfaces
-    /// the user's preference but does not change wire negotiation. Custom
-    /// transports may opt in to honour it. See
-    /// `<doc:WebSocketProtocolPolicy>` for migration notes.
+    /// Configuration intent for `permessage-deflate`.
+    ///
+    /// `URLSessionWebSocketTask` does not advertise `permessage-deflate`.
+    /// When this flag is `true` on the built-in URLSession transport,
+    /// ``WebSocketManager`` fails the connection with
+    /// ``WebSocketError/unsupportedProtocolFeature(_:)`` instead of opening
+    /// a silently uncompressed socket. Optional transports may honour the
+    /// flag. See `<doc:WebSocketProtocolPolicy>` for migration notes.
     public let permessageDeflateEnabled: Bool
 
     public struct AdvancedBuilder: Sendable {

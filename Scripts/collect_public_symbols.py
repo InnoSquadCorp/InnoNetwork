@@ -16,6 +16,7 @@ def main() -> None:
     included_modules = {
         "InnoNetwork",
         "InnoNetworkDownload",
+        "InnoNetworkOpenAPI",
         "InnoNetworkPersistentCache",
         "InnoNetworkWebSocket",
         "InnoNetworkTestSupport",

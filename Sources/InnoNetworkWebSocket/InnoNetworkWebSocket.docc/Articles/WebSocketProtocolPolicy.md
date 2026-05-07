@@ -56,14 +56,20 @@ distinguish "transient transport hiccup, reconnect" from "application
 protocol mismatch, do not reconnect". See <doc:CloseCodes> for the full
 disposition mapping the manager uses to gate reconnect.
 
-## Compression (deflate) is not supported
+## Compression (deflate) on URLSession
 
 `URLSessionWebSocketTask` does not implement `permessage-deflate`
 (RFC 7692). Do not advertise compression in `Sec-WebSocket-Extensions`;
 the server will either reject the handshake or assume frames are
-deflated and corrupt them. If a deployment requires compression, the
-underlying transport must be replaced. That transport/product is explicitly
-out of scope for the 4.0.0 implementation PR.
+deflated and corrupt them.
+
+If ``WebSocketConfiguration/permessageDeflateEnabled`` is set on the built-in
+URLSession transport, ``WebSocketManager`` fails the connection before creating
+a socket and publishes ``WebSocketError/unsupportedProtocolFeature(_:)`` through
+the normal error callback/event path. That makes compression misconfiguration
+visible during rollout instead of silently opening an uncompressed connection.
+Deployments that require compression should move to an optional transport that
+can negotiate RFC 7692 end to end.
 
 ## Heartbeat tuning
 

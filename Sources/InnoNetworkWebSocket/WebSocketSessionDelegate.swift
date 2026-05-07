@@ -69,6 +69,11 @@ package final class WebSocketSessionDelegate: NSObject, URLSessionWebSocketDeleg
             }
         }
     }
+
+    package func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
+        _ = session
+        callbacks.handleInvalidation(error.map(SendableUnderlyingError.init))
+    }
 }
 
 
@@ -76,10 +81,12 @@ package final class WebSocketSessionDelegateCallbacks: Sendable {
     package typealias ConnectedHandler = @Sendable (Int, String?) -> Void
     package typealias DisconnectedHandler = @Sendable (Int, WebSocketCloseCode, String?) -> Void
     package typealias ErrorHandler = @Sendable (Int, SendableUnderlyingError, Int?) -> Void
+    package typealias InvalidationHandler = @Sendable (SendableUnderlyingError?) -> Void
 
     private let connectedHandlerLock = OSAllocatedUnfairLock<ConnectedHandler?>(initialState: nil)
     private let disconnectedHandlerLock = OSAllocatedUnfairLock<DisconnectedHandler?>(initialState: nil)
     private let errorHandlerLock = OSAllocatedUnfairLock<ErrorHandler?>(initialState: nil)
+    private let invalidationHandlerLock = OSAllocatedUnfairLock<InvalidationHandler?>(initialState: nil)
 
     package init() {}
 
@@ -93,6 +100,10 @@ package final class WebSocketSessionDelegateCallbacks: Sendable {
         errorHandlerLock.withLock { $0 = onError }
     }
 
+    package func setInvalidationHandler(_ callback: @escaping InvalidationHandler) {
+        invalidationHandlerLock.withLock { $0 = callback }
+    }
+
     package func handleConnected(taskIdentifier: Int, protocolName: String?) {
         connectedHandlerLock.withLock { $0 }?(taskIdentifier, protocolName)
     }
@@ -103,6 +114,10 @@ package final class WebSocketSessionDelegateCallbacks: Sendable {
 
     package func handleError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int?) {
         errorHandlerLock.withLock { $0 }?(taskIdentifier, error, statusCode)
+    }
+
+    package func handleInvalidation(_ error: SendableUnderlyingError?) {
+        invalidationHandlerLock.withLock { $0 }?(error)
     }
 }
 

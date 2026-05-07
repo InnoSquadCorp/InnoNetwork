@@ -89,6 +89,65 @@ struct PersistentResponseCacheTests {
         #expect(await cache.get(key) == nil)
     }
 
+    @Test("Authenticated persistent keys are HMAC protected on disk")
+    func authenticatedPersistentKeysAreHMACProtectedOnDisk() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            storesAuthenticatedResponses: true
+        )
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Authorization": "Bearer low-entropy-secret"]
+        )
+        let cache = try PersistentResponseCache(configuration: configuration)
+
+        await cache.set(key, CachedResponse(data: Data("private".utf8)))
+
+        let cached = try #require(await cache.get(key))
+        #expect(cached.data == Data("private".utf8))
+        let indexText = try String(contentsOf: indexURL(in: directory), encoding: .utf8)
+        #expect(!indexText.contains("Bearer low-entropy-secret"))
+        #expect(!indexText.contains("authorization:sha256:"))
+        #expect(indexText.contains("hmac-sha256:"))
+        #expect(FileManager.default.fileExists(atPath: hmacKeyURL(in: directory).path))
+    }
+
+    @Test("Legacy v1 sensitive disk keys migrate to HMAC v2")
+    func legacySensitiveDiskKeysMigrateToHMACVersionTwo() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            storesAuthenticatedResponses: true
+        )
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Authorization": "Bearer legacy-secret"]
+        )
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("legacy-private".utf8)))
+        try rewriteFirstIndexEntryAsLegacyV1(in: directory, keyHeaders: key.headers)
+
+        let reader = try PersistentResponseCache(configuration: configuration)
+        let cached = try #require(await reader.get(key))
+
+        #expect(cached.data == Data("legacy-private".utf8))
+        #expect(
+            await reader.drainTelemetryEvents()
+                .contains(.migratedIndex(fromVersion: 1, toVersion: 2, entryCount: 1))
+        )
+        let index = try indexObject(in: directory)
+        #expect(index["version"] as? Int == 2)
+        let indexText = try String(contentsOf: indexURL(in: directory), encoding: .utf8)
+        #expect(!indexText.contains("Bearer legacy-secret"))
+        #expect(!indexText.contains("authorization:sha256:"))
+        #expect(indexText.contains("hmac-sha256:"))
+    }
+
     @Test("Cache-Control private responses are rejected")
     func rejectsCacheControlPrivateResponses() async throws {
         let directory = makeDirectory()
@@ -128,11 +187,15 @@ struct PersistentResponseCacheTests {
         #expect(await permissive.get(key) != nil)
         #expect(try existingBodyURLs(in: directory).isEmpty == false)
 
-        _ = try PersistentResponseCache(
+        let scrubber = try PersistentResponseCache(
             configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
         )
         #expect(try existingBodyURLs(in: directory).isEmpty)
         #expect(try indexEntryCount(in: directory) == 0)
+        #expect(
+            await scrubber.drainTelemetryEvents()
+                .contains(.scrubbedEntries(reason: .policyRejected, count: 1, byteCount: 6))
+        )
 
         let reopened = try PersistentResponseCache(
             configuration: PersistentResponseCacheConfiguration(
@@ -220,6 +283,12 @@ struct PersistentResponseCacheTests {
 
         #expect(await cache.get(first) == nil)
         #expect(await cache.get(second) != nil)
+        #expect(
+            await cache.telemetrySnapshot()
+                .contains(.scrubbedEntries(reason: .storageBudget, count: 1, byteCount: 24))
+        )
+        #expect(await cache.drainTelemetryEvents().isEmpty == false)
+        #expect(await cache.telemetrySnapshot().isEmpty)
     }
 
     @Test("Reopen drops entries that exceed a stricter maxEntryBytes")
@@ -245,6 +314,10 @@ struct PersistentResponseCacheTests {
         #expect(await reopened.get(key) == nil)
         #expect(try existingBodyURLs(in: directory).isEmpty)
         #expect(try indexEntryCount(in: directory) == 0)
+        #expect(
+            await reopened.drainTelemetryEvents()
+                .contains(.scrubbedEntries(reason: .entryTooLarge, count: 1, byteCount: 32))
+        )
     }
 
     @Test("Reopen enforces stricter entry count budget")
@@ -358,6 +431,33 @@ struct PersistentResponseCacheTests {
         let cached = try #require(await reopened.get(key))
         #expect(cached.data == Data("indexed".utf8))
         #expect(try existingBodyURLs(in: directory).count == 1)
+        #expect(
+            await reopened.drainTelemetryEvents()
+                .contains(.scrubbedEntries(reason: .unreferencedBody, count: 1, byteCount: 0))
+        )
+    }
+
+    @Test("statistics snapshot exposes entry and byte budgets")
+    func statisticsSnapshotExposesBudgets() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxBytes: 128,
+                maxEntries: 3,
+                maxEntryBytes: 64
+            )
+        )
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/stats")
+
+        await cache.set(key, CachedResponse(data: Data("stats".utf8), headers: ["ETag": "v1"]))
+
+        let stats = await cache.statistics()
+        #expect(stats.entryCount == 1)
+        #expect(stats.byteCount == 11)
+        #expect(stats.maxEntries == 3)
+        #expect(stats.maxBytes == 128)
     }
 
     @Test("get() drops a body that grew past maxEntryBytes after init")
@@ -625,7 +725,7 @@ struct PersistentResponseCacheTests {
         #expect(configuration.dataProtectionClass == .completeUnlessOpen)
     }
 
-    @Test("Reopen reapplies data protection to existing index and body files")
+    @Test("Reopen reapplies data protection to existing index, HMAC key, and body files")
     func reopenReappliesDataProtectionToExistingCacheFiles() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -642,7 +742,9 @@ struct PersistentResponseCacheTests {
         _ = try PersistentResponseCache(configuration: configuration, fileManager: fileManager)
 
         let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        let hmacKeyURL = hmacKeyURL(in: directory)
         #expect(recorder.protectionWrites(for: indexURL.path).contains(.completeUnlessOpen))
+        #expect(recorder.protectionWrites(for: hmacKeyURL.path).contains(.completeUnlessOpen))
         for bodyURL in bodyURLs {
             #expect(recorder.protectionWrites(for: bodyURL.path).contains(.completeUnlessOpen))
         }
@@ -672,9 +774,11 @@ struct PersistentResponseCacheTests {
 
         let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
         let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
+        let hmacKeyURL = hmacKeyURL(in: directory)
         #expect(recorder.protectionWrites(for: directory.path).contains(.none))
         #expect(recorder.protectionWrites(for: bodiesURL.path).contains(.none))
         #expect(recorder.protectionWrites(for: indexURL.path).contains(.none))
+        #expect(recorder.protectionWrites(for: hmacKeyURL.path).contains(.none))
         for bodyURL in bodyURLs {
             #expect(recorder.protectionWrites(for: bodyURL.path).contains(.none))
         }
@@ -757,6 +861,26 @@ struct PersistentResponseCacheTests {
         try data.write(to: indexURL, options: .atomic)
     }
 
+    private func rewriteFirstIndexEntryAsLegacyV1(in directory: URL, keyHeaders: [String]) throws {
+        var index = try indexObject(in: directory)
+        guard var entries = index["entries"] as? [String: Any],
+            let entryID = entries.keys.sorted().first,
+            var entry = entries[entryID] as? [String: Any],
+            var key = entry["key"] as? [String: Any]
+        else {
+            throw testFixtureError("Missing persistent cache entry to rewrite as v1")
+        }
+
+        index["version"] = 1
+        key["headers"] = keyHeaders
+        entry["key"] = key
+        entries[entryID] = entry
+        index["entries"] = entries
+
+        let data = try JSONSerialization.data(withJSONObject: index, options: [.sortedKeys])
+        try data.write(to: indexURL(in: directory), options: .atomic)
+    }
+
     private func rewriteIndexEntryAccessTime(
         in directory: URL,
         url: String,
@@ -791,12 +915,19 @@ struct PersistentResponseCacheTests {
     }
 
     private func indexObject(in directory: URL) throws -> [String: Any] {
-        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
-        let data = try Data(contentsOf: indexURL)
+        let data = try Data(contentsOf: indexURL(in: directory))
         guard let index = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw testFixtureError("Persistent cache index is not a JSON object")
         }
         return index
+    }
+
+    private func indexURL(in directory: URL) -> URL {
+        directory.appendingPathComponent("index.json", isDirectory: false)
+    }
+
+    private func hmacKeyURL(in directory: URL) -> URL {
+        directory.appendingPathComponent("cache-key-hmac.key", isDirectory: false)
     }
 
     private func testFixtureError(_ message: String) -> NSError {

@@ -1,12 +1,18 @@
 import Foundation
 import InnoNetwork
 import InnoNetworkDownload
+import InnoNetworkOpenAPI
 import InnoNetworkPersistentCache
 import InnoNetworkWebSocket
 
 private struct SmokeUser: Decodable, Sendable {
     let id: Int
     let name: String
+}
+
+private struct SmokePost: Decodable, Sendable {
+    let id: Int
+    let title: String
 }
 
 private struct SmokeAuthResponse: Decodable, Sendable {
@@ -58,6 +64,48 @@ private struct SmokeUploadImage: MultipartAPIDefinition {
 
     var method: HTTPMethod { .post }
     var path: String { "/upload" }
+}
+
+private struct SmokeOpenAPIListUsers: OpenAPIRestOperation {
+    typealias Response = [SmokeUser]
+
+    var method: HTTPMethod { .get }
+    var path: String { "/openapi/users" }
+}
+
+private struct SmokeAlamofireStyleAdapter: RequestInterceptor {
+    func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
+        var request = urlRequest
+        request.setValue("smoke", forHTTPHeaderField: "X-Request-ID")
+        return request
+    }
+}
+
+private enum SmokeMoyaStyleTarget {
+    case posts(userID: String, page: Int)
+
+    func endpoint() -> SmokeUserPosts {
+        switch self {
+        case .posts(let userID, let page):
+            SmokeUserPosts(userID: userID, page: page)
+        }
+    }
+}
+
+private struct SmokeUserPosts: APIDefinition {
+    struct Parameter: Encodable, Sendable {
+        let page: Int
+    }
+
+    typealias APIResponse = [SmokePost]
+
+    let userID: String
+    let page: Int
+
+    var method: HTTPMethod { .get }
+    var path: String { "/users/\(userID)/posts" }
+    var parameters: Parameter? { Parameter(page: page) }
+    var transport: TransportPolicy<[SmokePost]> { .query() }
 }
 
 private func compileBackgroundDownloadArticleExamples() async throws {
@@ -148,9 +196,15 @@ private func runDocSmoke() {
     let request = SmokeGetUser()
     let login = SmokeLoginRequest(email: "user@example.com", password: "password123")
     let upload = SmokeUploadImage(imageData: Data([0x00, 0x01, 0x02]))
+    let openAPIRequest = OpenAPIRequest(SmokeOpenAPIListUsers())
+    let alamofireStyleAdapter = SmokeAlamofireStyleAdapter()
+    let moyaStyleEndpoint = SmokeMoyaStyleTarget.posts(userID: "1", page: 2).endpoint()
     _ = request
     _ = login
     _ = upload
+    _ = openAPIRequest
+    _ = alamofireStyleAdapter
+    _ = moyaStyleEndpoint
 }
 
 _ = compileBackgroundDownloadArticleExamples

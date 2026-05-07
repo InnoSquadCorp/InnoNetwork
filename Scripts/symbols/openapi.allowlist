@@ -1,0 +1,23 @@
+# Public API allowlist — InnoNetworkOpenAPI
+# Maintained alongside Scripts/check_docs_contract_sync.sh.
+# Format: <module>\t<kind>\t<declaration>
+# All entries in this file must have module = InnoNetworkOpenAPI.
+InnoNetworkOpenAPI	swift.associatedtype	OpenAPIRestOperation.Parameters
+InnoNetworkOpenAPI	swift.associatedtype	OpenAPIRestOperation.Response
+InnoNetworkOpenAPI	swift.init	OpenAPIRequest.init(_:)
+InnoNetworkOpenAPI	swift.property	OpenAPIRequest.acceptableStatusCodes
+InnoNetworkOpenAPI	swift.property	OpenAPIRequest.headers
+InnoNetworkOpenAPI	swift.property	OpenAPIRequest.method
+InnoNetworkOpenAPI	swift.property	OpenAPIRequest.parameters
+InnoNetworkOpenAPI	swift.property	OpenAPIRequest.path
+InnoNetworkOpenAPI	swift.property	OpenAPIRequest.transport
+InnoNetworkOpenAPI	swift.property	OpenAPIRestOperation.acceptableStatusCodes
+InnoNetworkOpenAPI	swift.property	OpenAPIRestOperation.headers
+InnoNetworkOpenAPI	swift.property	OpenAPIRestOperation.method
+InnoNetworkOpenAPI	swift.property	OpenAPIRestOperation.parameters
+InnoNetworkOpenAPI	swift.property	OpenAPIRestOperation.path
+InnoNetworkOpenAPI	swift.property	OpenAPIRestOperation.transport
+InnoNetworkOpenAPI	swift.protocol	OpenAPIRestOperation
+InnoNetworkOpenAPI	swift.struct	OpenAPIRequest
+InnoNetworkOpenAPI	swift.typealias	OpenAPIRequest.APIResponse
+InnoNetworkOpenAPI	swift.typealias	OpenAPIRequest.Parameter

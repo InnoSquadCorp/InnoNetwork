@@ -22,27 +22,28 @@ into one release line:
 - Public `RequestExecutionPolicy` extension points for custom transport-attempt
   policies.
 - Shared `StateReducer` / `StateReduction` vocabulary plus reducer-driven
-  Download and WebSocket lifecycle decisions.
-- New `InnoNetworkPersistentCache` companion product.
+  Download, WebSocket, and refresh-token lifecycle decisions.
+- `InnoNetworkPersistentCache` companion product with HMAC disk keys, App Group
+  directory helper, statistics, and migration/scrub/eviction telemetry.
+- `MultipartStreamingResponseDecoder` for large multipart response streams.
+- `InnoNetworkOpenAPI` companion product and VCR-style test support helpers.
 - Compile-time macro diagnostics for optional path placeholders.
 - Phantom auth scopes through `AuthScope`, `PublicAuthScope`,
   `AuthRequiredScope`, and `EndpointBuilder`.
 
 ## Explicitly Deferred
 
-- WebSocket `permessage-deflate` (RFC 7692) remains out of this PR.
-  `URLSessionWebSocketTask` does not expose deflate negotiation, so the
-  natural path is a separate optional transport product with a non-zero
+- Full WebSocket `permessage-deflate` (RFC 7692) negotiation remains out of
+  the URLSession product. 4.0.0 now emits a terminal unsupported-feature
+  diagnostic when the flag is enabled on URLSession; the natural path for real
+  compression is a separate optional transport product with a non-zero
   dependency budget.
-- Refresh lifecycle reducer expansion and broader Download side-effect
-  ownership remain out of this PR; Download already owns reducer-driven state
-  decisions in 4.0.0.
+- Broader Download side-effect ownership remains out of this PR; Download
+  already owns reducer-driven state decisions in 4.0.0.
 - An NIO-backed WebSocket/HTTP transport product remains out of this PR so the
   root runtime products keep their zero-dependency shape.
 - Pulse/Sentry/OpenTelemetry adapter examples remain separate companion
   examples rather than core dependencies.
-- Streaming multipart response decoding remains a separate design item; 4.0.0
-  keeps `MultipartResponseDecoder` buffered.
 - Hummingbird or other server-side Swift in-process integration tests stay out
   of the Apple-client validation matrix.
 - Full `StreamingRetryPolicy` beyond Last-Event-ID resume remains deferred.
@@ -51,10 +52,10 @@ into one release line:
 - Multiple refresh-policy chains are deferred. 4.0.0 adds
   `RefreshTokenPolicy.appliesTo` for request-level routing while keeping one
   coordinator per client configuration.
-- Header/query result-builder DSLs, VCR-style recording, mutation testing,
-  full SwiftUI sample app, HTTPTypes/OpenAPI companion packages, Linux-safe
-  contracts, and iOS 17 LTS evaluation remain post-4.0 adoption work rather
-  than GA blockers.
+- Header/query result-builder DSLs, mutation testing, full SwiftUI sample app,
+  richer HTTPTypes/OpenAPI adapters that pin external generator versions,
+  Linux-safe contracts, and iOS 17 LTS evaluation remain post-4.0 adoption work
+  rather than GA blockers.
 
 ## Continuing Operations
 
@@ -64,7 +65,7 @@ into one release line:
   symbol drift, DocC smoke coverage, and docs/API promises.
 - Keep `@unchecked Sendable` out of production sources; test-only exceptions
   should live in test or TestSupport targets.
-- Revisit WebSocket compression and alternate transports only after the
+- Revisit full WebSocket compression and alternate transports only after the
   URLSession-based products have a tagged 4.0.0 baseline.
 - Continue hardening persistent cache operations with production feedback on
   eviction policy, data-protection defaults, app-group deployment, and privacy

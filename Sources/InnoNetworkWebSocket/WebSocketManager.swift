@@ -1,6 +1,7 @@
 import Foundation
 import InnoNetwork
 import OSLog
+import os
 
 public enum WebSocketEvent: Sendable {
     case connected(String?)
@@ -130,6 +131,8 @@ public final class WebSocketManager: NSObject, Sendable {
 
     package let runtimeRegistry = WebSocketRuntimeRegistry()
     private let eventHub: TaskEventHub<WebSocketEvent>
+    private let shutdownLock = OSAllocatedUnfairLock<Bool>(initialState: false)
+    private let invalidationBarrier: WebSocketInvalidationBarrier
 
     /// One-shot serialized event channel for URLSession delegate callbacks.
     /// `WebSocketSessionDelegate` invokes the four `handle*` entry points
@@ -220,6 +223,8 @@ public final class WebSocketManager: NSObject, Sendable {
             hubKind: .webSocketTask
         )
         self.session = urlSession
+        let invalidationBarrier = WebSocketInvalidationBarrier()
+        self.invalidationBarrier = invalidationBarrier
 
         let (stream, continuation) = AsyncStream.makeStream(
             of: DelegateEvent.self,
@@ -234,6 +239,12 @@ public final class WebSocketManager: NSObject, Sendable {
         self.delegateEventContinuation = continuation
 
         super.init()
+
+        callbacks.setInvalidationHandler { [invalidationBarrier] _ in
+            Task {
+                await invalidationBarrier.complete()
+            }
+        }
 
         // After `super.init()` `self` is fully formed, so the consumer
         // Task can capture it weakly. Each loop iteration drains exactly
@@ -273,6 +284,12 @@ public final class WebSocketManager: NSObject, Sendable {
 
     deinit {
         delegateEventContinuation.finish()
+        if !isShutdown {
+            webSocketManagerLogger.fault(
+                "WebSocketManager deinit reached without shutdown() — call shutdown() explicitly for bounded teardown"
+            )
+            session.invalidateAndCancel()
+        }
     }
 
     private func processDelegateEvent(_ event: DelegateEvent) async {
@@ -345,7 +362,23 @@ public final class WebSocketManager: NSObject, Sendable {
     @discardableResult
     public func connect(url: URL, subprotocols: [String]? = nil) async -> WebSocketTask {
         let task = WebSocketTask(url: url, subprotocols: subprotocols)
+        guard !isShutdown else {
+            let error = Self.managerShutdownError()
+            _ = await task.applyLifecycleEvent(
+                .failure(
+                    generation: nil,
+                    disposition: .transportFailure(error),
+                    error: error
+                ),
+                context: .init(reconnectAction: .terminal)
+            )
+            return task
+        }
         await runtimeRegistry.add(task)
+        if isShutdown {
+            await finishTaskBecauseManagerIsShutdown(task)
+            return task
+        }
         await startConnection(task)
         return task
     }
@@ -386,11 +419,60 @@ public final class WebSocketManager: NSObject, Sendable {
         }
     }
 
+    /// Tears down the manager, cancels active sockets, finishes event streams,
+    /// and invalidates the underlying URLSession.
+    ///
+    /// After `shutdown()` returns, the manager is terminal. Create a fresh
+    /// instance for new socket work; diagnostic getters can still return their
+    /// last-known values while terminal cleanup drains. Calling `shutdown()`
+    /// multiple times is safe.
+    public func shutdown() async {
+        guard markShutdownIfNeeded() else {
+            await invalidationBarrier.wait()
+            return
+        }
+
+        delegateEventContinuation.finish()
+        await runtimeRegistry.clearCallbacks()
+
+        let shutdownError = Self.managerShutdownError()
+        for task in await runtimeRegistry.allTasks() {
+            let state = await task.state
+            if !state.isTerminal {
+                let transition = await task.applyLifecycleEvent(
+                    .failure(
+                        generation: await task.connectionGeneration,
+                        disposition: .transportFailure(shutdownError),
+                        error: shutdownError
+                    ),
+                    context: .init(reconnectAction: .terminal)
+                )
+                await executeLifecycleEffects(transition.effects, for: task)
+            }
+            await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+            await eventHub.finish(taskID: task.id)
+            await runtimeRegistry.remove(task)
+        }
+
+        session.invalidateAndCancel()
+        await invalidationBarrier.wait()
+    }
+
     public func retry(_ task: WebSocketTask) async {
+        guard !isShutdown else { return }
         let state = await task.state
         guard state == .failed || state == .disconnected else { return }
-        await task.reset()
         await runtimeRegistry.add(task)
+        guard !isShutdown else {
+            await finishTaskBecauseManagerIsShutdown(task)
+            return
+        }
+        await task.setAutoReconnectEnabled(true)
+        await task.reset()
+        guard !isShutdown else {
+            await finishTaskBecauseManagerIsShutdown(task)
+            return
+        }
         await startConnection(task)
     }
 
@@ -522,14 +604,52 @@ public final class WebSocketManager: NSObject, Sendable {
     }
 
     private func startConnection(_ task: WebSocketTask) async {
+        guard !isShutdown else { return }
         let transition = await task.applyLifecycleEvent(.connect)
         await executeLifecycleEffects(transition.effects, for: task)
     }
 
+    private func finishTaskBecauseManagerIsShutdown(_ task: WebSocketTask) async {
+        let error = Self.managerShutdownError()
+        let transition = await task.applyLifecycleEvent(
+            .failure(
+                generation: await task.connectionGeneration,
+                disposition: .transportFailure(error),
+                error: error
+            ),
+            context: .init(reconnectAction: .terminal)
+        )
+        await executeLifecycleEffects(transition.effects, for: task)
+        await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+        await eventHub.finish(taskID: task.id)
+        await runtimeRegistry.remove(task)
+    }
+
     private func startTransportConnection(_ task: WebSocketTask) async {
+        guard !isShutdown else { return }
+        if configuration.permessageDeflateEnabled {
+            await failUnsupportedURLSessionFeature(.permessageDeflate, for: task)
+            return
+        }
         await connectionCoordinator.startConnection(task) { [weak self] taskIdentifier, error in
             self?.handleError(taskIdentifier: taskIdentifier, error: error)
         }
+    }
+
+    private func failUnsupportedURLSessionFeature(
+        _ feature: WebSocketProtocolFeature,
+        for task: WebSocketTask
+    ) async {
+        let error = WebSocketError.unsupportedProtocolFeature(feature)
+        let transition = await task.applyLifecycleEvent(
+            .failure(
+                generation: await task.connectionGeneration,
+                disposition: .transportFailure(error),
+                error: error
+            ),
+            context: .init(reconnectAction: .terminal)
+        )
+        await executeLifecycleEffects(transition.effects, for: task)
     }
 
     private func executeLifecycleEffects(
@@ -1020,5 +1140,53 @@ public final class WebSocketManager: NSObject, Sendable {
         webSocketManagerLogger.debug(
             "Ignoring background completion identifier for WebSocket runtime: \(identifier, privacy: .public)")
         completion()
+    }
+
+    private var isShutdown: Bool {
+        shutdownLock.withLock { $0 }
+    }
+
+    private func markShutdownIfNeeded() -> Bool {
+        shutdownLock.withLock { state in
+            guard !state else { return false }
+            state = true
+            return true
+        }
+    }
+
+    private static func managerShutdownError() -> WebSocketError {
+        .connectionFailed(
+            SendableUnderlyingError(
+                domain: "InnoNetworkWebSocket.Manager",
+                code: 1,
+                message: "WebSocketManager has been shut down."
+            )
+        )
+    }
+}
+
+
+private actor WebSocketInvalidationBarrier {
+    private var isCompleted = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isCompleted else { return }
+        await withCheckedContinuation { continuation in
+            if isCompleted {
+                continuation.resume()
+            } else {
+                waiters.append(continuation)
+            }
+        }
+    }
+
+    func complete() {
+        guard !isCompleted else { return }
+        isCompleted = true
+        for waiter in waiters {
+            waiter.resume()
+        }
+        waiters.removeAll(keepingCapacity: false)
     }
 }

@@ -22,6 +22,7 @@ def main() -> int:
     baseline = report.get("baseline") or {}
     deltas = baseline.get("deltas") or []
     failures = baseline.get("guardFailures") or []
+    regression_reason = baseline.get("regressionReason")
 
     lines: list[str] = [
         "## InnoNetwork benchmark summary",
@@ -34,6 +35,8 @@ def main() -> int:
         lines.append(
             f"- Guard failures: `{len(failures)}`"
         )
+        if regression_reason:
+            lines.append(f"- Regression reason: {regression_reason}")
     else:
         lines.append("- Baseline: not loaded")
 
@@ -46,8 +49,8 @@ def main() -> int:
         lines.extend(
             [
                 "",
-                "| Benchmark | Delta | Current ops/s | Baseline ops/s |",
-                "|---|---:|---:|---:|",
+                "| Benchmark | Delta | Threshold | Current ops/s | Baseline ops/s |",
+                "|---|---:|---:|---:|---:|",
             ]
         )
         for item in ordered[:12]:
@@ -57,9 +60,11 @@ def main() -> int:
             delta = item.get("deltaPercent", 0.0)
             current = item.get("currentOperationsPerSecond", 0.0)
             baseline_ops = item.get("baselineOperationsPerSecond", 0.0)
+            threshold = item.get("maxRegressionPercent")
+            threshold_text = f"{threshold:.2f}%" if threshold is not None else "-"
             guard = " (guard)" if item.get("isGuarded") else ""
             lines.append(
-                f"| `{name}`{guard} | {delta:+.2f}% | {current:.2f} | {baseline_ops:.2f} |"
+                f"| `{name}`{guard} | {delta:+.2f}% | {threshold_text} | {current:.2f} | {baseline_ops:.2f} |"
             )
 
     if failures:
@@ -71,9 +76,11 @@ def main() -> int:
             name = f"{group}/{bench_name}"
             delta = abs(failure.get("deltaPercent", 0.0))
             limit = failure.get("maxRegressionPercent", 0.0)
+            reason = failure.get("regressionReason") or regression_reason
+            reason_text = f" Reason: {reason}" if reason else ""
             lines.append(
                 f"- `{name}` regressed by {delta:.2f}% "
-                f"(limit {limit:.2f}%)."
+                f"(limit {limit:.2f}%).{reason_text}"
             )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

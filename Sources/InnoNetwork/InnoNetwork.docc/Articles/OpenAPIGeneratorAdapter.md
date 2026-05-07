@@ -1,37 +1,28 @@
 # Swift OpenAPI Generator Adapter
 
 Use Swift OpenAPI Generator beside InnoNetwork without adding generator-specific
-dependencies to this package.
+dependencies to the core runtime products.
 
-## Stable path: wrap operations as `APIDefinition`
+## Companion path: wrap operations as `APIDefinition`
 
 Prefer this path when the generated operation already exposes `Encodable`
-input and `Decodable` output. The wrapper stays on the 4.0.0 stable API
-contract because it only depends on ``APIDefinition`` and
-``NetworkClient/request(_:)``.
+input and `Decodable` output. The `InnoNetworkOpenAPI` companion product
+contains the small wrapper surface while `InnoNetwork`, `InnoNetworkDownload`,
+`InnoNetworkWebSocket`, and `InnoNetworkPersistentCache` remain free of
+generator or HTTPTypes dependencies.
 
 ```swift
 import InnoNetwork
+import InnoNetworkOpenAPI
 
-protocol OpenAPIRestOperation: Sendable {
-    associatedtype Input: Encodable & Sendable
-    associatedtype Output: Decodable & Sendable
+struct ListUsersOperation: OpenAPIRestOperation {
+    typealias Response = [User]
 
-    var method: HTTPMethod { get }
-    var path: String { get }
-    var input: Input? { get }
+    var method: HTTPMethod { .get }
+    var path: String { "/users" }
 }
 
-struct OpenAPIRequest<Operation: OpenAPIRestOperation>: APIDefinition {
-    typealias Parameter = Operation.Input
-    typealias APIResponse = Operation.Output
-
-    let operation: Operation
-
-    var method: HTTPMethod { operation.method }
-    var path: String { operation.path }
-    var parameters: Parameter? { operation.input }
-}
+let users = try await client.request(OpenAPIRequest(ListUsersOperation()))
 ```
 
 Generated clients can keep their own public surface and delegate the transport
@@ -42,7 +33,7 @@ struct UsersGeneratedClient: Sendable {
     let networkClient: any NetworkClient
 
     func listUsers(_ operation: ListUsersOperation) async throws -> [User] {
-        try await networkClient.request(OpenAPIRequest(operation: operation))
+        try await networkClient.request(OpenAPIRequest(operation))
     }
 }
 ```
@@ -95,11 +86,9 @@ The repository's `Examples/GeneratedClientRecipe` target is a compile-smoke
 sample for this SPI import shape without tying InnoNetwork to a specific
 OpenAPI generator version.
 
-## Roadmap boundary
+## Dependency boundary
 
-InnoNetwork 4.0.0 does not ship a dedicated Swift OpenAPI Generator adapter
-product. Keep generated clients in their own package or target, use the
-``APIDefinition`` wrapper path as the stable integration, and reserve the SPI
-hook for revision-pinned wrappers that need custom serialization. A separate
-adapter package/product remains a post-4.0.0 candidate once the public
-contract is tagged.
+`InnoNetworkOpenAPI` is intentionally thin: it adapts operation descriptors to
+``APIDefinition`` and leaves generator-specific model, operation, and HTTPTypes
+packages in the caller's target. Reserve the SPI hook for revision-pinned
+wrappers that need custom serialization.

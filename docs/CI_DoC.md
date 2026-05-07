@@ -39,7 +39,10 @@ The `CI` workflow must pass all of the following:
    sample even in `--quick` mode so the CI smoke gate is not dominated by
    sub-second hosted-runner scheduling noise. The scheduled/manual
    benchmark workflow uses the same guarded benchmarks with a stricter 10%
-   threshold.
+   threshold. Use `--guard-threshold group/name=percent` for benchmark-specific
+   exceptions and `--regression-reason` when a PR intentionally updates or
+   accepts a baseline movement; both values appear in the JSON artifact and PR
+   comment.
 
 ## Pass/Fail Policy
 

@@ -99,6 +99,55 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
         self.persistenceFsyncPolicy = persistenceFsyncPolicy
         self.dataProtectionClass = dataProtectionClass
     }
+
+    /// Standard subdirectory for storing persistent cache files in an App Group container.
+    public static func appGroupDirectoryURL(
+        groupIdentifier: String,
+        fileManager: FileManager = .default
+    ) throws -> URL {
+        guard
+            let container = fileManager.containerURL(
+                forSecurityApplicationGroupIdentifier: groupIdentifier
+            )
+        else {
+            throw NetworkError.configuration(reason: .invalidRequest(
+                "App Group container '\(groupIdentifier)' is unavailable."
+            ))
+        }
+        return container.appendingPathComponent("InnoNetworkPersistentCache", isDirectory: true)
+    }
+}
+
+
+/// Snapshot of persistent response cache storage pressure and entry count.
+public struct PersistentResponseCacheStatistics: Sendable, Equatable {
+    public let entryCount: Int
+    public let byteCount: Int
+    public let maxEntries: Int
+    public let maxBytes: Int
+
+    public init(entryCount: Int, byteCount: Int, maxEntries: Int, maxBytes: Int) {
+        self.entryCount = entryCount
+        self.byteCount = byteCount
+        self.maxEntries = maxEntries
+        self.maxBytes = maxBytes
+    }
+}
+
+/// Reason a persistent cache entry was evicted or scrubbed.
+public enum PersistentResponseCacheEvictionReason: String, Sendable, Equatable {
+    case storageBudget
+    case policyRejected
+    case missingBody
+    case entryTooLarge
+    case unreferencedBody
+    case formatMigration
+}
+
+/// Operational event emitted by ``PersistentResponseCache``.
+public enum PersistentResponseCacheTelemetryEvent: Sendable, Equatable {
+    case migratedIndex(fromVersion: Int, toVersion: Int, entryCount: Int)
+    case scrubbedEntries(reason: PersistentResponseCacheEvictionReason, count: Int, byteCount: Int)
 }
 
 /// Persistent on-disk implementation of ``ResponseCache``.
@@ -111,18 +160,25 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
 /// The cache enforces a synchronous LRU bound on every write so the disk
 /// footprint stays within the configured byte and entry budgets.
 public actor PersistentResponseCache: ResponseCache {
-    private static let formatVersion = 1
+    private static let formatVersion = 2
+    private static let legacyFormatVersion = 1
     private static let logger = Logger(subsystem: "innosquad.network", category: "PersistentResponseCache")
 
-    private struct DiskKey: Codable, Hashable, Sendable {
+    fileprivate struct DiskKey: Codable, Hashable, Sendable {
         let method: String
         let url: String
         let headers: [String]
 
-        init(_ key: ResponseCacheKey) {
+        init(_ key: ResponseCacheKey, normalizer: PersistentCacheDiskKeyNormalizer) {
             self.method = key.method
             self.url = key.url
-            self.headers = key.headers
+            self.headers = normalizer.normalizeHeaders(key.headers)
+        }
+
+        init(method: String, url: String, headers: [String]) {
+            self.method = method
+            self.url = url
+            self.headers = headers
         }
     }
 
@@ -132,7 +188,7 @@ public actor PersistentResponseCache: ResponseCache {
     }
 
     private struct Entry: Codable, Sendable {
-        let key: DiskKey
+        var key: DiskKey
         let statusCode: Int
         let headers: [String: String]
         let storedAt: Date
@@ -143,13 +199,20 @@ public actor PersistentResponseCache: ResponseCache {
         var lastAccessedAt: Date
     }
 
+    private struct OpenResult: Sendable {
+        var index: Index
+        var telemetryEvents: [PersistentResponseCacheTelemetryEvent]
+    }
+
     private let configuration: PersistentResponseCacheConfiguration
     private let fileManager: FileManager
     private let bodiesDirectoryURL: URL
     private let indexURL: URL
+    private let keyNormalizer: PersistentCacheDiskKeyNormalizer
     private let identifierEncoder = JSONEncoder.persistentCache
     private var index: Index
     private var runningTotalBytes: Int
+    private var telemetryEvents: [PersistentResponseCacheTelemetryEvent]
     /// Number of read-path `lastAccessedAt` updates that have not yet been
     /// flushed to disk. Reads are buffered to amortize the JSON-encode +
     /// atomic-write cost across many hits; insertions/deletions still flush
@@ -183,11 +246,18 @@ public actor PersistentResponseCache: ResponseCache {
             fileManager: fileManager
         )
         Self.applyDataProtection(configuration.dataProtectionClass, to: bodiesDirectoryURL, fileManager: fileManager)
-        let loadedIndex = try Self.loadIndex(
-            from: indexURL,
+        let keyNormalizer = try PersistentCacheDiskKeyNormalizer.loadOrCreate(
             directoryURL: configuration.directoryURL,
             dataProtectionClass: configuration.dataProtectionClass,
             fileManager: fileManager
+        )
+        self.keyNormalizer = keyNormalizer
+        let loadResult = try Self.loadIndex(
+            from: indexURL,
+            directoryURL: configuration.directoryURL,
+            dataProtectionClass: configuration.dataProtectionClass,
+            fileManager: fileManager,
+            keyNormalizer: keyNormalizer
         )
         Self.applyDataProtectionToExistingCacheFiles(
             dataProtectionClass: configuration.dataProtectionClass,
@@ -195,27 +265,34 @@ public actor PersistentResponseCache: ResponseCache {
             bodiesDirectoryURL: bodiesDirectoryURL,
             fileManager: fileManager
         )
-        let policyScrubbedIndex = try Self.scrubPolicyRejectedEntriesOnOpen(
-            loadedIndex,
+        let policyScrubResult = try Self.scrubPolicyRejectedEntriesOnOpen(
+            loadResult.index,
             configuration: configuration,
             indexURL: indexURL,
             bodiesDirectoryURL: bodiesDirectoryURL,
             fileManager: fileManager
         )
-        let finalIndex = try Self.enforceBudgetsOnOpen(
-            policyScrubbedIndex,
+        let budgetResult = try Self.enforceBudgetsOnOpen(
+            policyScrubResult.index,
             configuration: configuration,
             indexURL: indexURL,
             bodiesDirectoryURL: bodiesDirectoryURL,
             fileManager: fileManager
         )
-        Self.scrubUnreferencedBodiesOnOpen(
-            finalIndex,
+        let scrubbedBodies = Self.scrubUnreferencedBodiesOnOpen(
+            budgetResult.index,
             bodiesDirectoryURL: bodiesDirectoryURL,
             fileManager: fileManager
         )
-        self.index = finalIndex
-        self.runningTotalBytes = Self.totalBytes(in: finalIndex)
+        self.index = budgetResult.index
+        self.runningTotalBytes = Self.totalBytes(in: budgetResult.index)
+        var telemetry = loadResult.telemetryEvents
+        telemetry.append(contentsOf: policyScrubResult.telemetryEvents)
+        telemetry.append(contentsOf: budgetResult.telemetryEvents)
+        if scrubbedBodies > 0 {
+            telemetry.append(.scrubbedEntries(reason: .unreferencedBody, count: scrubbedBodies, byteCount: 0))
+        }
+        self.telemetryEvents = telemetry
     }
 
     /// Look up a cached response for `key`. Returns `nil` on miss or when the
@@ -223,7 +300,7 @@ public actor PersistentResponseCache: ResponseCache {
     /// `lastAccessedAt` is best-effort persisted; a failure to write the
     /// index never demotes a successful read to a miss.
     public func get(_ key: ResponseCacheKey) async -> CachedResponse? {
-        let diskKey = DiskKey(key)
+        let diskKey = DiskKey(key, normalizer: keyNormalizer)
         let id = identifier(for: diskKey)
         guard var entry = index.entries[id] else { return nil }
         guard shouldStore(key: entry.key, responseHeaders: entry.headers) else {
@@ -304,7 +381,7 @@ public actor PersistentResponseCache: ResponseCache {
             return
         }
 
-        let diskKey = DiskKey(key)
+        let diskKey = DiskKey(key, normalizer: keyNormalizer)
         let id = identifier(for: diskKey)
         let bodyFileName = "\(id)-\(UUID().uuidString).body"
         let bodyURL = bodiesDirectoryURL.appendingPathComponent(bodyFileName, isDirectory: false)
@@ -347,11 +424,21 @@ public actor PersistentResponseCache: ResponseCache {
             index.entries[id] = entry
             runningTotalBytes += entry.byteCost
             var removableBodies = evictIfNeeded()
+            let evictedBytes = removableBodies.reduce(0) { $0 + $1.byteCost }
+            if !removableBodies.isEmpty {
+                telemetryEvents.append(
+                    .scrubbedEntries(
+                        reason: .storageBudget,
+                        count: removableBodies.count,
+                        byteCount: evictedBytes
+                    )
+                )
+            }
             if let replacedBodyFileName, replacedBodyFileName != bodyFileName {
-                removableBodies.append(replacedBodyFileName)
+                removableBodies.append((fileName: replacedBodyFileName, byteCost: 0))
             }
             try persistIndex()
-            for fileName in removableBodies {
+            for fileName in removableBodies.map(\.fileName) {
                 removeBody(fileName: fileName)
             }
         } catch {
@@ -368,7 +455,7 @@ public actor PersistentResponseCache: ResponseCache {
 
     /// Remove the entry for `key` from the index and delete its body file.
     public func invalidate(_ key: ResponseCacheKey) async {
-        let id = identifier(for: DiskKey(key))
+        let id = identifier(for: DiskKey(key, normalizer: keyNormalizer))
         if let entry = index.entries[id] {
             removeEntry(id: id, entry: entry)
             try? persistIndex()
@@ -387,18 +474,40 @@ public actor PersistentResponseCache: ResponseCache {
     }
 
     private func shouldStore(key: ResponseCacheKey, response: CachedResponse) -> Bool {
-        shouldStore(key: DiskKey(key), responseHeaders: response.headers)
+        shouldStore(key: DiskKey(key, normalizer: keyNormalizer), responseHeaders: response.headers)
+    }
+
+    /// Current storage pressure snapshot.
+    public func statistics() -> PersistentResponseCacheStatistics {
+        PersistentResponseCacheStatistics(
+            entryCount: index.entries.count,
+            byteCount: runningTotalBytes,
+            maxEntries: configuration.maxEntries,
+            maxBytes: configuration.maxBytes
+        )
+    }
+
+    /// Returns accumulated operational events without clearing them.
+    public func telemetrySnapshot() -> [PersistentResponseCacheTelemetryEvent] {
+        telemetryEvents
+    }
+
+    /// Returns accumulated operational events and clears the in-memory buffer.
+    public func drainTelemetryEvents() -> [PersistentResponseCacheTelemetryEvent] {
+        let events = telemetryEvents
+        telemetryEvents.removeAll(keepingCapacity: true)
+        return events
     }
 
     private func shouldStore(key: DiskKey, responseHeaders: [String: String]) -> Bool {
         Self.shouldStore(key: key, responseHeaders: responseHeaders, configuration: configuration)
     }
 
-    private func evictIfNeeded() -> [String] {
+    private func evictIfNeeded() -> [(fileName: String, byteCost: Int)] {
         guard index.entries.count > configuration.maxEntries || runningTotalBytes > configuration.maxBytes else {
             return []
         }
-        var removedBodyFileNames: [String] = []
+        var removedBodies: [(fileName: String, byteCost: Int)] = []
         // Single sort then drain in LRU order via index advance. The previous
         // implementation re-scanned `entries` for `min(by:)` on every step
         // (O(N²)); using `removeFirst` would still pay an O(N) shift per
@@ -418,10 +527,10 @@ public actor PersistentResponseCache: ResponseCache {
             guard let victim = index.entries[victimID] else { continue }
             if let removed = index.entries.removeValue(forKey: victimID) {
                 runningTotalBytes -= removed.byteCost
-                removedBodyFileNames.append(victim.bodyFileName)
+                removedBodies.append((fileName: victim.bodyFileName, byteCost: victim.byteCost))
             }
         }
-        return removedBodyFileNames
+        return removedBodies
     }
 
     private func removeEntry(id: String, entry: Entry) {
@@ -460,15 +569,19 @@ public actor PersistentResponseCache: ResponseCache {
         indexURL: URL,
         bodiesDirectoryURL: URL,
         fileManager: FileManager
-    ) throws -> Index {
+    ) throws -> OpenResult {
         var scrubbedIndex = loadedIndex
         let rejectedEntries = loadedIndex.entries.filter { _, entry in
             !shouldStore(key: entry.key, responseHeaders: entry.headers, configuration: configuration)
         }
-        guard !rejectedEntries.isEmpty else { return loadedIndex }
+        guard !rejectedEntries.isEmpty else {
+            return OpenResult(index: loadedIndex, telemetryEvents: [])
+        }
 
+        var removedBytes = 0
         for (id, entry) in rejectedEntries {
             scrubbedIndex.entries.removeValue(forKey: id)
+            removedBytes += entry.byteCost
             removeBody(fileName: entry.bodyFileName, in: bodiesDirectoryURL, fileManager: fileManager)
         }
         try persistIndex(
@@ -478,7 +591,16 @@ public actor PersistentResponseCache: ResponseCache {
             configuration: configuration,
             fileManager: fileManager
         )
-        return scrubbedIndex
+        return OpenResult(
+            index: scrubbedIndex,
+            telemetryEvents: [
+                .scrubbedEntries(
+                    reason: .policyRejected,
+                    count: rejectedEntries.count,
+                    byteCount: removedBytes
+                )
+            ]
+        )
     }
 
     private static func enforceBudgetsOnOpen(
@@ -487,20 +609,30 @@ public actor PersistentResponseCache: ResponseCache {
         indexURL: URL,
         bodiesDirectoryURL: URL,
         fileManager: FileManager
-    ) throws -> Index {
+    ) throws -> OpenResult {
         var budgetedIndex = loadedIndex
         var didMutate = false
+        var scrubbedMissingCount = 0
+        var scrubbedMissingBytes = 0
+        var scrubbedOversizedCount = 0
+        var scrubbedOversizedBytes = 0
+        var evictedCount = 0
+        var evictedBytes = 0
 
         for (id, entry) in loadedIndex.entries {
             let bodyURL = bodiesDirectoryURL.appendingPathComponent(entry.bodyFileName, isDirectory: false)
             guard let bodySize = fileSize(at: bodyURL, fileManager: fileManager) else {
                 budgetedIndex.entries.removeValue(forKey: id)
+                scrubbedMissingCount += 1
+                scrubbedMissingBytes += entry.byteCost
                 didMutate = true
                 continue
             }
             if bodySize > configuration.maxEntryBytes {
                 budgetedIndex.entries.removeValue(forKey: id)
                 removeBody(fileName: entry.bodyFileName, in: bodiesDirectoryURL, fileManager: fileManager)
+                scrubbedOversizedCount += 1
+                scrubbedOversizedBytes += entry.byteCost
                 didMutate = true
             }
         }
@@ -519,6 +651,8 @@ public actor PersistentResponseCache: ResponseCache {
             cursor = sortedIDs.index(after: cursor)
             guard let victim = budgetedIndex.entries.removeValue(forKey: victimID) else { continue }
             removeBody(fileName: victim.bodyFileName, in: bodiesDirectoryURL, fileManager: fileManager)
+            evictedCount += 1
+            evictedBytes += victim.byteCost
             didMutate = true
         }
 
@@ -531,14 +665,43 @@ public actor PersistentResponseCache: ResponseCache {
                 fileManager: fileManager
             )
         }
-        return budgetedIndex
+        var telemetry: [PersistentResponseCacheTelemetryEvent] = []
+        if scrubbedMissingCount > 0 {
+            telemetry.append(
+                .scrubbedEntries(
+                    reason: .missingBody,
+                    count: scrubbedMissingCount,
+                    byteCount: scrubbedMissingBytes
+                )
+            )
+        }
+        if scrubbedOversizedCount > 0 {
+            telemetry.append(
+                .scrubbedEntries(
+                    reason: .entryTooLarge,
+                    count: scrubbedOversizedCount,
+                    byteCount: scrubbedOversizedBytes
+                )
+            )
+        }
+        if evictedCount > 0 {
+            telemetry.append(
+                .scrubbedEntries(
+                    reason: .storageBudget,
+                    count: evictedCount,
+                    byteCount: evictedBytes
+                )
+            )
+        }
+        return OpenResult(index: budgetedIndex, telemetryEvents: telemetry)
     }
 
+    @discardableResult
     private static func scrubUnreferencedBodiesOnOpen(
         _ loadedIndex: Index,
         bodiesDirectoryURL: URL,
         fileManager: FileManager
-    ) {
+    ) -> Int {
         let referencedBodyFileNames = Set(loadedIndex.entries.values.map(\.bodyFileName))
         guard
             let bodyURLs = try? fileManager.contentsOfDirectory(
@@ -547,16 +710,23 @@ public actor PersistentResponseCache: ResponseCache {
                 options: [.skipsHiddenFiles]
             )
         else {
-            return
+            return 0
         }
 
+        var scrubbedCount = 0
         for bodyURL in bodyURLs {
             let isRegularFile =
                 (try? bodyURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false
             guard isRegularFile, bodyURL.pathExtension == "body" else { continue }
             guard !referencedBodyFileNames.contains(bodyURL.lastPathComponent) else { continue }
-            try? fileManager.removeItem(at: bodyURL)
+            do {
+                try fileManager.removeItem(at: bodyURL)
+                scrubbedCount += 1
+            } catch {
+                continue
+            }
         }
+        return scrubbedCount
     }
 
     private static func totalBytes(in index: Index) -> Int {
@@ -704,7 +874,7 @@ public actor PersistentResponseCache: ResponseCache {
         )
     }
 
-    private static func applyDataProtection(
+    fileprivate static func applyDataProtection(
         _ dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
         to url: URL,
         fileManager: FileManager
@@ -747,26 +917,57 @@ public actor PersistentResponseCache: ResponseCache {
         from indexURL: URL,
         directoryURL: URL,
         dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
-        fileManager: FileManager
-    ) throws -> Index {
+        fileManager: FileManager,
+        keyNormalizer: PersistentCacheDiskKeyNormalizer
+    ) throws -> OpenResult {
         guard fileManager.fileExists(atPath: indexURL.path) else {
-            return Index(version: formatVersion, entries: [:])
+            return OpenResult(index: Index(version: formatVersion, entries: [:]), telemetryEvents: [])
         }
 
         let bodiesDirectoryURL = directoryURL.appendingPathComponent("bodies", isDirectory: true)
 
         do {
             let index = try JSONDecoder.persistentCache.decode(Index.self, from: Data(contentsOf: indexURL))
-            guard index.version == formatVersion else {
-                try resetCacheStorage(
-                    indexURL: indexURL,
-                    bodiesDirectoryURL: bodiesDirectoryURL,
-                    dataProtectionClass: dataProtectionClass,
+            if index.version == formatVersion {
+                return OpenResult(index: index, telemetryEvents: [])
+            }
+            if index.version == legacyFormatVersion {
+                let migrated = migrateLegacyIndex(index, keyNormalizer: keyNormalizer)
+                try persistIndex(
+                    migrated,
+                    to: indexURL,
+                    directoryURL: directoryURL,
+                    configuration: .init(directoryURL: directoryURL, dataProtectionClass: dataProtectionClass),
                     fileManager: fileManager
                 )
-                return Index(version: formatVersion, entries: [:])
+                return OpenResult(
+                    index: migrated,
+                    telemetryEvents: [
+                        .migratedIndex(
+                            fromVersion: legacyFormatVersion,
+                            toVersion: formatVersion,
+                            entryCount: migrated.entries.count
+                        )
+                    ]
+                )
             }
-            return index
+
+            try resetCacheStorage(
+                indexURL: indexURL,
+                bodiesDirectoryURL: bodiesDirectoryURL,
+                dataProtectionClass: dataProtectionClass,
+                fileManager: fileManager
+            )
+            return OpenResult(
+                index: Index(version: formatVersion, entries: [:]),
+                telemetryEvents: [
+                    .scrubbedEntries(
+                        reason: .formatMigration,
+                        count: index.entries.count,
+                        byteCount: totalBytes(in: index)
+                    )
+                ]
+            )
         } catch {
             try resetCacheStorage(
                 indexURL: indexURL,
@@ -774,8 +975,25 @@ public actor PersistentResponseCache: ResponseCache {
                 dataProtectionClass: dataProtectionClass,
                 fileManager: fileManager
             )
-            return Index(version: formatVersion, entries: [:])
+            return OpenResult(index: Index(version: formatVersion, entries: [:]), telemetryEvents: [])
         }
+    }
+
+    private static func migrateLegacyIndex(
+        _ index: Index,
+        keyNormalizer: PersistentCacheDiskKeyNormalizer
+    ) -> Index {
+        var migrated = Index(version: formatVersion, entries: [:])
+        for entry in index.entries.values {
+            var migratedEntry = entry
+            migratedEntry.key = keyNormalizer.migrateLegacyDiskKey(entry.key)
+            let id = identifier(for: migratedEntry.key, encoder: JSONEncoder.persistentCache)
+            if let existing = migrated.entries[id], existing.lastAccessedAt > migratedEntry.lastAccessedAt {
+                continue
+            }
+            migrated.entries[id] = migratedEntry
+        }
+        return migrated
     }
 
     private static func resetCacheStorage(
@@ -791,9 +1009,65 @@ public actor PersistentResponseCache: ResponseCache {
     }
 
     private func identifier(for key: DiskKey) -> String {
-        let data = try? identifierEncoder.encode(key)
+        Self.identifier(for: key, encoder: identifierEncoder)
+    }
+
+    private static func identifier(for key: DiskKey, encoder: JSONEncoder) -> String {
+        let data = try? encoder.encode(key)
         let digest = SHA256.hash(data: data ?? Data())
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+private struct PersistentCacheDiskKeyNormalizer: Sendable {
+    private static let keyFileName = "cache-key-hmac.key"
+    private let key: SymmetricKey
+
+    static func loadOrCreate(
+        directoryURL: URL,
+        dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
+        fileManager: FileManager
+    ) throws -> Self {
+        let keyURL = directoryURL.appendingPathComponent(keyFileName, isDirectory: false)
+        if fileManager.fileExists(atPath: keyURL.path) {
+            let data = try Data(contentsOf: keyURL)
+            PersistentResponseCache.applyDataProtection(dataProtectionClass, to: keyURL, fileManager: fileManager)
+            return PersistentCacheDiskKeyNormalizer(key: SymmetricKey(data: data))
+        }
+
+        let key = SymmetricKey(size: .bits256)
+        let data = key.withUnsafeBytes { Data($0) }
+        try data.write(to: keyURL, options: .atomic)
+        PersistentResponseCache.applyDataProtection(dataProtectionClass, to: keyURL, fileManager: fileManager)
+        return PersistentCacheDiskKeyNormalizer(key: key)
+    }
+
+    func normalizeHeaders(_ headers: [String]) -> [String] {
+        headers.map(normalizeHeader).sorted()
+    }
+
+    func migrateLegacyDiskKey(_ key: PersistentResponseCache.DiskKey) -> PersistentResponseCache.DiskKey {
+        PersistentResponseCache.DiskKey(
+            method: key.method,
+            url: key.url,
+            headers: normalizeHeaders(key.headers)
+        )
+    }
+
+    private func normalizeHeader(_ header: String) -> String {
+        guard let separator = header.firstIndex(of: ":") else { return header }
+        let name = String(header[..<separator]).lowercased()
+        let valueStart = header.index(after: separator)
+        let value = String(header[valueStart...])
+        guard ResponseCacheHeaderPolicy.sensitiveHeaderNames.contains(name) else {
+            return "\(name):\(value)"
+        }
+        return "\(name):hmac-sha256:\(authenticationCodeHex(for: value))"
+    }
+
+    private func authenticationCodeHex(for value: String) -> String {
+        let code = HMAC<SHA256>.authenticationCode(for: Data(value.utf8), using: key)
+        return code.map { String(format: "%02x", $0) }.joined()
     }
 }
 

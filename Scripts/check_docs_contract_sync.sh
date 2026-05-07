@@ -133,6 +133,7 @@ expected_stable=(
 '`WebSocketHandshakeRequestAdapter`'
 '`DownloadManager`'
 '`WebSocketManager`'
+'`WebSocketManager.shutdown()`'
 '`WebSocketEvent.ping`'
 '`WebSocketEvent.pong`'
 '`WebSocketEvent.error(.pingTimeout)`'
@@ -187,7 +188,12 @@ expected_provisionally=(
 '`WebSocketCloseDisposition` observation surface'
 '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
+'`MultipartStreamingResponseDecoder` streaming multipart response parsing surface'
+'`InnoNetworkOpenAPI` companion product'
 '`InnoNetworkCodegen` separate package and macro declarations'
+'`PersistentResponseCache` statistics and telemetry surfaces'
+'`WebSocketError.unsupportedProtocolFeature`'
+'`WebSocketProtocolFeature`'
 '`DecodingInterceptor`'
 '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`'
 )
@@ -245,6 +251,8 @@ expected_shipping_public_declarations=(
   MultipartFormData
   MultipartPart
   MultipartResponseDecoder
+  MultipartStreamingEvent
+  MultipartStreamingResponseDecoder
   MultipartUploadStrategy
   NetworkClient
   NetworkConfiguration
@@ -268,6 +276,11 @@ expected_shipping_public_declarations=(
   PublicAuthScope
   PersistentResponseCache
   PersistentResponseCacheConfiguration
+  PersistentResponseCacheEvictionReason
+  PersistentResponseCacheStatistics
+  PersistentResponseCacheTelemetryEvent
+  OpenAPIRestOperation
+  OpenAPIRequest
   PublicKeyPinningPolicy
   RedirectPolicy
   RefreshFailureCooldown
@@ -324,6 +337,7 @@ expected_shipping_public_declarations=(
   WebSocketManager
   WebSocketPingContext
   WebSocketPongContext
+  WebSocketProtocolFeature
   WebSocketSendOverflowPolicy
   WebSocketState
   WebSocketTask
@@ -340,6 +354,13 @@ expected_test_support_public_declarations=(
   StubBehavior
   StubNetworkClient
   StubRequestKey
+  VCRCassette
+  VCRInteraction
+  VCRMode
+  VCRRedactionPolicy
+  VCRRequest
+  VCRResponse
+  VCRURLSession
   WebSocketEventRecorder
 )
 
@@ -385,8 +406,10 @@ validate_benchmark_docs() {
 validate_doc_smoke_coverage() {
   local doc_smoke="$repo_root/SmokeTests/InnoNetworkDocSmoke/main.swift"
   require_contains 'import InnoNetworkPersistentCache' "$doc_smoke"
+  require_contains 'import InnoNetworkOpenAPI' "$doc_smoke"
   require_contains 'PersistentResponseCacheConfiguration' "$doc_smoke"
   require_contains '"InnoNetworkPersistentCache"' "$repo_root/Package.swift"
+  require_contains '"InnoNetworkOpenAPI"' "$repo_root/Package.swift"
   require_contains 'compileBackgroundDownloadArticleExamples' "$doc_smoke"
   require_contains 'waitForRestoration()' "$doc_smoke"
   require_contains 'persistenceCompactionPolicy' "$doc_smoke"
@@ -409,6 +432,10 @@ validate_test_support_product() {
     "$repo_root/Sources/InnoNetworkTestSupport/StubNetworkClient.swift"
   require_contains 'public final class MockURLSession' \
     "$repo_root/Sources/InnoNetworkTestSupport/MockURLSession.swift"
+  require_contains 'public final class VCRURLSession' \
+    "$repo_root/Sources/InnoNetworkTestSupport/VCRURLSession.swift"
+  require_contains 'public struct VCRCassette' \
+    "$repo_root/Sources/InnoNetworkTestSupport/VCRURLSession.swift"
 }
 
 validate_resilience_public_api() {
@@ -480,6 +507,31 @@ validate_multipart_response_api() {
     "$repo_root/Sources/InnoNetwork/Multipart/MultipartResponseDecoder.swift"
   require_contains 'public struct MultipartResponseDecoder' \
     "$repo_root/Sources/InnoNetwork/Multipart/MultipartResponseDecoder.swift"
+}
+
+validate_multipart_streaming_api() {
+  require_contains 'public enum MultipartStreamingEvent' \
+    "$repo_root/Sources/InnoNetwork/Multipart/MultipartStreamingResponseDecoder.swift"
+  require_contains 'public struct MultipartStreamingResponseDecoder' \
+    "$repo_root/Sources/InnoNetwork/Multipart/MultipartStreamingResponseDecoder.swift"
+}
+
+validate_openapi_companion_product() {
+  require_contains 'name: "InnoNetworkOpenAPI"' "$repo_root/Package.swift"
+  require_contains 'targets: ["InnoNetworkOpenAPI"]' "$repo_root/Package.swift"
+  require_contains 'public protocol OpenAPIRestOperation' \
+    "$repo_root/Sources/InnoNetworkOpenAPI/OpenAPIAdapter.swift"
+  require_contains 'public struct OpenAPIRequest' \
+    "$repo_root/Sources/InnoNetworkOpenAPI/OpenAPIAdapter.swift"
+}
+
+validate_persistent_cache_operations_api() {
+  require_contains 'public struct PersistentResponseCacheStatistics' \
+    "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCache.swift"
+  require_contains 'public enum PersistentResponseCacheTelemetryEvent' \
+    "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCache.swift"
+  require_contains 'public static func appGroupDirectoryURL' \
+    "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCache.swift"
 }
 
 validate_codegen_product() {
@@ -701,6 +753,10 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public final class WebSocketManager'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
       ;;
+    '`WebSocketManager.shutdown()`')
+      pattern='public func shutdown() async'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      ;;
     '`WebSocketEvent.ping`')
       pattern='case ping(WebSocketPingContext)'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
@@ -832,8 +888,30 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_multipart_response_api
       continue
       ;;
+    '`MultipartStreamingResponseDecoder` streaming multipart response parsing surface')
+      validate_multipart_streaming_api
+      continue
+      ;;
+    '`InnoNetworkOpenAPI` companion product')
+      validate_openapi_companion_product
+      continue
+      ;;
     '`InnoNetworkCodegen` separate package and macro declarations')
       validate_codegen_product
+      continue
+      ;;
+    '`PersistentResponseCache` statistics and telemetry surfaces')
+      validate_persistent_cache_operations_api
+      continue
+      ;;
+    '`WebSocketError.unsupportedProtocolFeature`')
+      require_contains 'case unsupportedProtocolFeature(WebSocketProtocolFeature)' \
+        "$repo_root/Sources/InnoNetworkWebSocket/WebSocketState.swift"
+      continue
+      ;;
+    '`WebSocketProtocolFeature`')
+      require_contains 'public enum WebSocketProtocolFeature' \
+        "$repo_root/Sources/InnoNetworkWebSocket/WebSocketState.swift"
       continue
       ;;
     '`DecodingInterceptor`')

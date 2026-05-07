@@ -93,6 +93,11 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
 - `--enforce-baseline`를 주면 guarded benchmark가 지정 threshold보다 느려질 때 non-zero exit로 실패합니다.
 - `--guard-benchmark group/name`는 회귀 판정 대상을 고정합니다. 지정하지 않으면 현재 실행된 전체 benchmark를 검사합니다.
 - `--max-regression-percent <Double>`는 허용 가능한 최대 성능 저하 폭을 정합니다.
+- `--guard-threshold group/name=<Double>`는 특정 guarded benchmark의
+  threshold를 global 값과 다르게 지정합니다.
+- `--regression-reason "<text>"` 또는 `INNO_BENCHMARK_REGRESSION_REASON`은
+  JSON summary, PR comment, trend log에 사람이 남긴 회귀/기준선 판단 사유를
+  싣습니다.
 - baseline은 의미 있는 성능 변화가 확인된 경우에만 사람이 갱신합니다.
 - baseline을 갱신하는 PR은 [Baselines/CHANGELOG.md](Baselines/CHANGELOG.md)에
   runner, 변경 이유, 검증 결과를 남깁니다.
@@ -171,7 +176,7 @@ function dispatch.
   안팎으로 끝나 PR smoke가 scheduling noise에 과민해지는 것을 막기 위한
   안정화 설정입니다.
 - PR benchmark workflow는 JSON summary에서 Markdown comment를 렌더링해 guarded
-  benchmark delta를 PR에 남깁니다.
+  benchmark delta, per-benchmark threshold, regression reason을 PR에 남깁니다.
 - scheduled/manual benchmark workflow는 같은 guard 항목을 `10%` threshold로 검사하는 strict regression gate입니다.
 - scheduled/manual benchmark 결과는 `benchmark-trends` branch의
   `trends/benchmark-results.jsonl`에 누적됩니다.

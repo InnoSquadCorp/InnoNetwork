@@ -67,6 +67,10 @@ package actor WebSocketRuntimeRegistry {
         Array(tasks.values)
     }
 
+    package func removeAllTasks() {
+        tasks.removeAll(keepingCapacity: false)
+    }
+
     package func setMapping(webSocketTask: WebSocketTask, for identifier: Int, generation: Int) {
         identifierToTask[identifier] = webSocketTask
         identifierToGeneration[identifier] = generation
@@ -196,5 +200,14 @@ package actor WebSocketRuntimeRegistry {
 
     package func clearCloseHandshakeTask(for taskId: String) {
         closeHandshakeTasks.removeValue(forKey: taskId)
+    }
+
+    package func clearCallbacks() {
+        _onConnected = nil
+        _onDisconnected = nil
+        _onMessage = nil
+        _onString = nil
+        _onError = nil
+        _onPong = nil
     }
 }
