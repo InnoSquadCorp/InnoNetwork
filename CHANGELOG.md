@@ -24,6 +24,14 @@ Versioning.
   `README.md`) is enforced by the new `Scripts/check_stable_examples.sh`
   guard, wired into the existing `docs-contract-sync` CI job. Wording is
   not contractual; only the layout is.
+- `NetworkClient.request(_:method:tag:)` convenience overload that infers
+  the response type from the call-site annotation. Builds a default
+  `ScopedEndpoint` on the fly with `PublicAuthScope` and the method's
+  default `TransportPolicy`, so simple GETs read like
+  `let user: User = try await client.request("/users/\(id)")`. Endpoints
+  that need authenticated scopes, custom headers, body parameters, or
+  per-endpoint interceptors should keep using `ScopedEndpoint` builders or
+  a hand-written `APIDefinition`.
 
 ## [4.0.0] - 2026-05-02
 

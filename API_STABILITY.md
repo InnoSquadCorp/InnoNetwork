@@ -15,6 +15,7 @@ release line. `4.0.0` is the public baseline for this contract.
 - `DefaultNetworkClient`
 - `NetworkClient.request(_:)`
 - `NetworkClient.request(_:tag:)`
+- `NetworkClient.request(_:method:tag:)`
 - `NetworkClient.upload(_:)`
 - `NetworkClient.upload(_:tag:)`
 - `NetworkConfiguration.safeDefaults(baseURL:)`
