@@ -70,6 +70,20 @@ Versioning.
 
 ### Changed
 
+- `Sources/InnoNetwork/HTTPHeader.swift` (642 lines, single file) is
+  split into four files for review legibility, no public API change:
+  `HTTPHeaders.swift` (collection type and protocol conformances —
+  `Sequence`, `Collection`, `ExpressibleByArrayLiteral`,
+  `ExpressibleByDictionaryLiteral`, `CustomStringConvertible`),
+  `HTTPHeader.swift` (single-pair struct plus `accept(_:)` /
+  `authorization(_:)` / `userAgent(_:)` / etc. well-known factories),
+  `HTTPHeader+Defaults.swift` (`HTTPHeaders.default`,
+  `defaultAcceptEncoding`, `defaultAcceptLanguage`, `defaultUserAgent`,
+  and the `qualityEncoded()` helper), and `HTTPHeader+SystemTypes.swift`
+  (`URLRequest.headers`, `HTTPURLResponse.headers`,
+  `URLSessionConfiguration.headers`, single-value request header
+  enforcement). Symbol surface is byte-identical; only file boundaries
+  change.
 - `Scripts/api_public_symbols.allowlist` (1,123 lines, single file) is
   split into `Scripts/symbols/{core,download,websocket,cache,
   testsupport}.allowlist`, one file per shipping module. The legacy
