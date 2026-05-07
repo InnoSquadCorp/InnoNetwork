@@ -33,6 +33,19 @@ Versioning.
   per-endpoint interceptors should keep using `ScopedEndpoint` builders or
   a hand-written `APIDefinition`.
 
+### CI / Tooling
+
+- `Scripts/check_no_print_in_production.sh` enforces a `print()` ban
+  across the four shipping library targets (`InnoNetwork`,
+  `InnoNetworkDownload`, `InnoNetworkPersistentCache`,
+  `InnoNetworkWebSocket`). Operational logging stays on
+  `NetworkLogger` / `OSLogNetworkEventObserver`; smoke targets,
+  tests, examples, benchmarks, and DocC tutorial code snippets keep
+  their `print()` calls (they live outside the production source
+  tree or under `*.docc/Resources/`). Wired into the existing
+  `build-and-test` CI job alongside the
+  `check_production_force_unwraps.sh` gate.
+
 ### Changed
 
 - `Scripts/api_public_symbols.allowlist` (1,123 lines, single file) is

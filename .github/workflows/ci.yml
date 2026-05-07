@@ -185,6 +185,9 @@ jobs:
       - name: Enforce no force unwrap in production sources
         run: bash Scripts/check_production_force_unwraps.sh
 
+      - name: Enforce no print() in production sources
+        run: bash Scripts/check_no_print_in_production.sh
+
   docs-contract-sync:
     name: Docs / Contract Sync
     runs-on: macos-15
