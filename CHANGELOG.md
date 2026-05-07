@@ -120,6 +120,17 @@ Versioning.
 
 ### Added
 
+- `ReachabilityCheckExecutionPolicy` — executor-integrated
+  reachability gate. Reads `NetworkMonitoring.currentSnapshot()`
+  before each transport attempt and throws
+  `NetworkError.invalidRequestConfiguration` when the path is
+  `.unsatisfied`, so requests fail fast instead of burning
+  URLSession's timeout on a known-offline path. Two modes:
+  `.requireOnline` rejects, `.warnOnly` lets the request proceed
+  for staged rollouts that want telemetry first.
+  `.requiresConnection` and unobserved snapshots fall through.
+  Four unit tests cover the four state transitions
+  (offline / online / warn-only / nil snapshot).
 - `ConcurrencyLimitExecutionPolicy` — executor-integrated
   counterpart of `ConcurrencyTokenBucket`. Implements
   `RequestExecutionPolicy` so adopters register the policy on

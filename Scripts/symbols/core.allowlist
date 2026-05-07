@@ -2,6 +2,14 @@
 # Maintained alongside Scripts/check_docs_contract_sync.sh.
 # Format: <module>\t<kind>\t<declaration>
 # All entries in this file must have module = InnoNetwork.
+InnoNetwork	swift.enum	ReachabilityCheckExecutionPolicy.Mode
+InnoNetwork	swift.enum.case	ReachabilityCheckExecutionPolicy.Mode.requireOnline
+InnoNetwork	swift.enum.case	ReachabilityCheckExecutionPolicy.Mode.warnOnly
+InnoNetwork	swift.init	ReachabilityCheckExecutionPolicy.init(monitor:mode:)
+InnoNetwork	swift.method	ReachabilityCheckExecutionPolicy.execute(input:context:next:)
+InnoNetwork	swift.property	ReachabilityCheckExecutionPolicy.mode
+InnoNetwork	swift.property	ReachabilityCheckExecutionPolicy.monitor
+InnoNetwork	swift.struct	ReachabilityCheckExecutionPolicy
 InnoNetwork	swift.init	ConcurrencyLimitExecutionPolicy.init(bucket:)
 InnoNetwork	swift.method	ConcurrencyLimitExecutionPolicy.execute(input:context:next:)
 InnoNetwork	swift.property	ConcurrencyLimitExecutionPolicy.bucket

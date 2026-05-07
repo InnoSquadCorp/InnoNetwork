@@ -136,6 +136,13 @@ Per-symbol evolution allowances within the 4.x line:
   encoding utility, and circuit breaker policy — built-in knobs may add fields,
   helper cases, or sensitive-header defaults with source-compatible behavior;
   the generic execution pipeline stays package/internal.
+- `ReachabilityCheckExecutionPolicy` — `RequestExecutionPolicy` that
+  consults a `NetworkMonitoring` source and short-circuits requests
+  when the path is `.unsatisfied`. `.requiresConnection` and
+  unobserved snapshots fall through. The 5.0 release introduces a
+  dedicated `NetworkError.offline` case as part of the ledger
+  consolidation; the policy will swap the error case at that point
+  with a deprecated alias preserving source compatibility.
 - `ConcurrencyLimitExecutionPolicy` — `RequestExecutionPolicy` that
   funnels each transport attempt through a `ConcurrencyTokenBucket`
   with `acquire` / deferred `release` semantics. Registered via
