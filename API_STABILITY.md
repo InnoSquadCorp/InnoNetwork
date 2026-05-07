@@ -136,6 +136,15 @@ Per-symbol evolution allowances within the 4.x line:
   encoding utility, and circuit breaker policy — built-in knobs may add fields,
   helper cases, or sensitive-header defaults with source-compatible behavior;
   the generic execution pipeline stays package/internal.
+- `ConcurrencyTokenBucket` — bounded counting semaphore actor for
+  capping in-flight requests. Currently surfaced as a standalone
+  primitive that adopters wire through paired
+  `RequestInterceptor` / `ResponseInterceptor`; the 5.x roadmap
+  threads it through the request executor's pre-flight stage so
+  the integration is automatic. The actor's API
+  (`acquire()` / `release()` / `available` / `maxConcurrent` /
+  `queuedWaitersCount`) stays source-compatible across that
+  transition.
 - `ResiliencePack`, `AuthPack`, `ObservabilityPack`, `CachePack`,
   `TransportPack` — 5.0 forward-compat configuration packs that group
   related `AdvancedBuilder` knobs. The 4.x line ships them as

@@ -120,6 +120,14 @@ Versioning.
 
 ### Added
 
+- `ConcurrencyTokenBucket` — bounded counting-semaphore actor for
+  capping in-flight requests. FIFO fairness queue, never
+  over-releases past `maxConcurrent`, clamps the cap to ≥1.
+  Currently a standalone primitive that adopters wire through
+  paired request/response interceptors; the upcoming 5.x
+  request-executor integration will make this automatic. Five
+  unit tests cover acquire-under-capacity, release-refill,
+  bounded-release, FIFO waiter resume, and cap clamping.
 - Five 5.0 forward-compat configuration packs:
   - `ResiliencePack` (retry, coalescing, circuit breaker,
     idempotency, body buffering)

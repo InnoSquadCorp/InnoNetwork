@@ -2,6 +2,13 @@
 # Maintained alongside Scripts/check_docs_contract_sync.sh.
 # Format: <module>\t<kind>\t<declaration>
 # All entries in this file must have module = InnoNetwork.
+InnoNetwork	swift.class	ConcurrencyTokenBucket
+InnoNetwork	swift.init	ConcurrencyTokenBucket.init(maxConcurrent:)
+InnoNetwork	swift.method	ConcurrencyTokenBucket.acquire()
+InnoNetwork	swift.method	ConcurrencyTokenBucket.release()
+InnoNetwork	swift.property	ConcurrencyTokenBucket.available
+InnoNetwork	swift.property	ConcurrencyTokenBucket.maxConcurrent
+InnoNetwork	swift.property	ConcurrencyTokenBucket.queuedWaitersCount
 InnoNetwork	swift.init	AuthPack.init(refreshToken:additionalSigners:)
 InnoNetwork	swift.init	CachePack.init(responseCachePolicy:responseCache:captureFailurePayload:)
 InnoNetwork	swift.init	ObservabilityPack.init(eventObservers:eventDeliveryPolicy:eventMetricsReporter:networkMonitor:metricsReporter:)
