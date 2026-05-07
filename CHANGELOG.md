@@ -163,6 +163,19 @@ Versioning.
   aliases, and remove them in 6.0. This commit is intentionally
   additive — no deprecation warnings, no semantic changes — so the
   4.x experience for existing call sites stays identical.
+- `Sources/InnoNetwork/RequestExecutor.swift` shrinks again by
+  extracting all cache-stage methods (`cachedResponseIfAvailable`,
+  `revalidateInBackground`, `prepareConditionalCacheHeaders`,
+  `convertNotModifiedIfNeeded`, `refreshCachedFreshness`,
+  `mergedCachedHeaders`, `storeCacheIfNeeded`, `cacheControlDirectives`,
+  `cachedRespectingVary`) plus the `NotModifiedSubstitution` envelope
+  type into `Sources/InnoNetwork/RequestExecutor+Cache.swift`. Three
+  call-target helpers (`enforceResponseBodyLimit` overloads,
+  `performTransportResult`, `mapTransportError`) lose their `private`
+  modifier so the cache extension can reach them through the
+  package-internal access level; nothing crosses the public boundary
+  because `RequestExecutor` itself is `package`-scoped. The central
+  pipeline file drops from ~1,045 to ~602 lines.
 - `Sources/InnoNetwork/RequestExecutor.swift` shrinks further by
   extracting the three event publication helpers
   (`notifyRequestStart`, `notifyRequestAdapted`, `notifyFailure`)
