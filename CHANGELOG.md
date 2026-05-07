@@ -33,6 +33,13 @@ Versioning.
   per-endpoint interceptors should keep using `ScopedEndpoint` builders or
   a hand-written `APIDefinition`.
 
+- `Sources/InnoNetwork/InnoNetwork.docc/Articles/RequestSigning.md`
+  walks through wiring `HMACRequestInterceptor` and building a custom
+  canonical signer (timestamp + nonce + body hash + URL path) on top
+  of the same `RequestInterceptor` contract, including the streaming-
+  upload alternatives (hash during multipart construction, signed
+  manifest, chunk-signed protocol). Linked from the main DocC topic
+  group between `<doc:AuthRefresh>` and `<doc:CachingStrategies>`.
 - `HMACRequestInterceptor` — reference HMAC body-signing
   `RequestInterceptor` for backends that authenticate requests with a
   shared secret (webhooks, internal RPC gateways, lightweight API

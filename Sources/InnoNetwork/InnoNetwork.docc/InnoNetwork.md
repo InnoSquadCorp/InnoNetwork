@@ -71,6 +71,7 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``CircuitBreakerOpenError``
 - <doc:RetryDecisions>
 - <doc:AuthRefresh>
+- <doc:RequestSigning>
 - <doc:CachingStrategies>
 - <doc:AppNetworkingCookbook>
 - <doc:MigrationFromAlamofire>
