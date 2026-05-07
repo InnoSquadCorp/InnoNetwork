@@ -2,6 +2,9 @@
 # Maintained alongside Scripts/check_docs_contract_sync.sh.
 # Format: <module>\t<kind>\t<declaration>
 # All entries in this file must have module = InnoNetwork.
+InnoNetwork	swift.typealias	AuthScope
+InnoNetwork	swift.typealias	Endpoint
+InnoNetwork	swift.typealias	EndpointBuilder
 InnoNetwork	swift.associatedtype	APIDefinition.Auth
 InnoNetwork	swift.associatedtype	APIDefinition.Parameter
 InnoNetwork	swift.associatedtype	EndpointShape.APIResponse

@@ -70,6 +70,16 @@ Versioning.
 
 ### Changed
 
+- Forward-compatibility typealiases for the upcoming 5.0 rename:
+  `Endpoint = EndpointShape`, `AuthScope = EndpointAuthScope`,
+  `EndpointBuilder<R, S> = ScopedEndpoint<R, S>`. New code may adopt
+  the 5.0 names today; existing `EndpointShape` /
+  `EndpointAuthScope` / `ScopedEndpoint` references keep compiling
+  through the 5.x line. The 5.0 release will swap primary and
+  alias, demote the legacy names to `@available(*, deprecated)`
+  aliases, and remove them in 6.0. This commit is intentionally
+  additive — no deprecation warnings, no semantic changes — so the
+  4.x experience for existing call sites stays identical.
 - `Sources/InnoNetwork/RequestExecutor.swift` (1,093 lines) shrinks
   by extracting the internal `BufferedAsyncBytes` AsyncSequence wrapper
   into its own file (`Sources/InnoNetwork/BufferedAsyncBytes.swift`).
