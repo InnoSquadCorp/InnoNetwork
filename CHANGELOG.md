@@ -163,6 +163,18 @@ Versioning.
   aliases, and remove them in 6.0. This commit is intentionally
   additive — no deprecation warnings, no semantic changes — so the
   4.x experience for existing call sites stays identical.
+- `Sources/InnoNetwork/RequestExecutor.swift` shrinks further by
+  extracting the three event publication helpers
+  (`notifyRequestStart`, `notifyRequestAdapted`, `notifyFailure`)
+  into `Sources/InnoNetwork/RequestExecutor+Events.swift` as a
+  package-internal extension. The helpers were `private` and
+  consumed only the executor's `eventHub` property; promoting
+  `eventHub` from `private` to package-default visibility (still
+  invisible to consumers because the parent type is
+  `package struct RequestExecutor`) lets the extension call the
+  same publication shims without changing the call sites in the
+  central pipeline. Symbol surface is unchanged because none of
+  these declarations cross the public boundary.
 - `Sources/InnoNetwork/RequestExecutor.swift` (1,093 lines) shrinks
   by extracting the internal `BufferedAsyncBytes` AsyncSequence wrapper
   into its own file (`Sources/InnoNetwork/BufferedAsyncBytes.swift`).

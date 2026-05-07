@@ -10,7 +10,7 @@ private struct NotModifiedSubstitution {
 
 package struct RequestExecutor {
     private let session: URLSessionProtocol
-    private let eventHub: NetworkEventHub
+    let eventHub: NetworkEventHub
 
     package init(session: URLSessionProtocol, eventHub: NetworkEventHub) {
         self.session = session
@@ -975,59 +975,6 @@ package struct RequestExecutor {
     ) async -> CachedResponse? {
         guard let cached = await cache.get(key) else { return nil }
         return cachedResponseMatchesVary(cached, request: request) ? cached : nil
-    }
-
-    private func notifyRequestStart(
-        _ request: URLRequest,
-        retryIndex: Int,
-        requestID: UUID,
-        configuration: NetworkConfiguration
-    ) async {
-        await eventHub.publish(
-            .requestStart(
-                requestID: requestID,
-                method: request.httpMethod ?? "UNKNOWN",
-                url: request.url?.absoluteString ?? "",
-                retryIndex: retryIndex
-            ),
-            requestID: requestID,
-            observers: configuration.eventObservers
-        )
-    }
-
-    private func notifyRequestAdapted(
-        _ request: URLRequest,
-        retryIndex: Int,
-        requestID: UUID,
-        configuration: NetworkConfiguration
-    ) async {
-        await eventHub.publish(
-            .requestAdapted(
-                requestID: requestID,
-                method: request.httpMethod ?? "UNKNOWN",
-                url: request.url?.absoluteString ?? "",
-                retryIndex: retryIndex
-            ),
-            requestID: requestID,
-            observers: configuration.eventObservers
-        )
-    }
-
-    private func notifyFailure(
-        _ networkError: NetworkError,
-        requestID: UUID,
-        configuration: NetworkConfiguration
-    ) async {
-        let nsError = networkError as NSError
-        await eventHub.publish(
-            .requestFailed(
-                requestID: requestID,
-                errorCode: nsError.code,
-                message: networkError.localizedDescription
-            ),
-            requestID: requestID,
-            observers: configuration.eventObservers
-        )
     }
 
     private static func mapTransportError(
