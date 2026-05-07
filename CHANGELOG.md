@@ -163,6 +163,19 @@ Versioning.
   aliases, and remove them in 6.0. This commit is intentionally
   additive — no deprecation warnings, no semantic changes — so the
   4.x experience for existing call sites stays identical.
+- `Sources/InnoNetwork/RequestExecutor.swift` shrinks to ~286 lines
+  (down from ~1,045 at the start of Phase 3) by extracting the
+  transport stage (`performTransport`, `executeCustomPolicies`,
+  `refreshLaneIfInProgress`, `performTransportResult`,
+  `transportAndRecordCircuit`, `transport`, `inlineData`,
+  `collect`, `mapTransportError`) into
+  `Sources/InnoNetwork/RequestExecutor+Transport.swift`. The
+  `session` property loses its `private` modifier so the transport
+  extension can reach it; consumer-visible surface stays unchanged
+  because `RequestExecutor` is `package`-scoped. The central file
+  now contains only `execute`, `validateAuthScope`,
+  `executeWithPolicies`, and the two `enforceResponseBodyLimit`
+  overloads — the request-pipeline core in isolation.
 - `Sources/InnoNetwork/RequestExecutor.swift` shrinks again by
   extracting all cache-stage methods (`cachedResponseIfAvailable`,
   `revalidateInBackground`, `prepareConditionalCacheHeaders`,
