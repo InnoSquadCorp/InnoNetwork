@@ -33,6 +33,21 @@ Versioning.
   per-endpoint interceptors should keep using `ScopedEndpoint` builders or
   a hand-written `APIDefinition`.
 
+- `HMACRequestInterceptor` — reference HMAC body-signing
+  `RequestInterceptor` for backends that authenticate requests with a
+  shared secret (webhooks, internal RPC gateways, lightweight API
+  gateways). Supports SHA-256 / SHA-384 / SHA-512 over the request
+  body and emits the signature plus a key identifier into
+  caller-tunable headers (`X-Signature` / `X-Signature-Key-Id` by
+  default). Streaming bodies (`URLRequest.httpBodyStream`) are
+  rejected with `NetworkError.invalidRequestConfiguration(...)` rather
+  than silently signing an empty payload — production protocols
+  needing AWS SigV4, OAuth1, or similar canonicalization should ship
+  as a dedicated interceptor on top of the same `RequestInterceptor`
+  contract. Composes through `NetworkConfiguration.requestInterceptors`
+  alongside any existing auth chain (`RefreshTokenPolicy`, custom
+  adapters).
+
 ### CI / Tooling
 
 - `Scripts/check_no_print_in_production.sh` enforces a `print()` ban

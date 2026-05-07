@@ -136,6 +136,11 @@ Per-symbol evolution allowances within the 4.x line:
   encoding utility, and circuit breaker policy — built-in knobs may add fields,
   helper cases, or sensitive-header defaults with source-compatible behavior;
   the generic execution pipeline stays package/internal.
+- `HMACRequestInterceptor` — reference HMAC body-signing interceptor
+  (SHA-256 / SHA-384 / SHA-512). Header names and key id are
+  provider-tunable; the streaming-body rejection is intentional, and
+  future minors may add a streaming-aware integration without breaking
+  source compatibility for the existing initializer signature.
 - `MultipartResponseDecoder` — may evolve as the streaming-multipart
   roadmap progresses.
 - `InnoNetworkCodegen` — macro signatures may add optional arguments.
