@@ -2,6 +2,11 @@
 # Maintained alongside Scripts/check_docs_contract_sync.sh.
 # Format: <module>\t<kind>\t<declaration>
 # All entries in this file must have module = InnoNetwork.
+InnoNetwork	swift.enum	NetworkConfigurationFailureReason
+InnoNetwork	swift.enum.case	NetworkConfigurationFailureReason.invalidBaseURL(_:)
+InnoNetwork	swift.enum.case	NetworkConfigurationFailureReason.invalidRequest(_:)
+InnoNetwork	swift.enum.case	NetworkConfigurationFailureReason.offline(_:)
+InnoNetwork	swift.enum.case	NetworkError.configuration(reason:)
 InnoNetwork	swift.enum	ReachabilityCheckExecutionPolicy.Mode
 InnoNetwork	swift.enum.case	ReachabilityCheckExecutionPolicy.Mode.requireOnline
 InnoNetwork	swift.enum.case	ReachabilityCheckExecutionPolicy.Mode.warnOnly

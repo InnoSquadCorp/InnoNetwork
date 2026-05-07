@@ -106,10 +106,47 @@ public enum DecodingStage: Sendable, Equatable {
 /// merge in detail; the 4.x → 5.0 transition stays source-compatible
 /// because the existing cases will become deprecated aliases that
 /// resolve to the new shape.
+/// Configuration-shaped failure reason carried by ``NetworkError/configuration(reason:)``.
+///
+/// The 5.0 ledger consolidation introduces this case so two existing
+/// configuration-shaped failures (`invalidBaseURL` and
+/// `invalidRequestConfiguration`) and one new failure mode
+/// (`offline`, raised by ``ReachabilityCheckExecutionPolicy`` when the
+/// device is known to be offline) share a single switch arm.
+///
+/// The 4.x line keeps the existing top-level cases without
+/// deprecation so adopters can migrate at their own pace; the 5.0
+/// release will mark the legacy cases `@available(*, deprecated, renamed:)`
+/// and resolve them to the corresponding `.configuration(reason:)`
+/// reason. See `docs/Migration-5.0.0.md`.
+public enum NetworkConfigurationFailureReason: Sendable, Equatable {
+    /// The base URL the request would resolve against is malformed or
+    /// missing a scheme. Equivalent to legacy
+    /// ``NetworkError/invalidBaseURL(_:)``.
+    case invalidBaseURL(String)
+    /// The request configuration cannot be assembled (for example,
+    /// missing refresh-token policy for an auth-required endpoint).
+    /// Equivalent to legacy
+    /// ``NetworkError/invalidRequestConfiguration(_:)``.
+    case invalidRequest(String)
+    /// The device is known to be offline (the configured
+    /// ``NetworkMonitoring`` snapshot reports `.unsatisfied`). New in
+    /// the 5.0 ledger; surfaced today by
+    /// ``ReachabilityCheckExecutionPolicy``.
+    case offline(String)
+}
+
 public enum NetworkError: Error, Sendable {
     case invalidBaseURL(String)
     /// Indicates an invalid request configuration
     case invalidRequestConfiguration(String)
+    /// Consolidated configuration-shaped failure (5.0 forward-compat).
+    /// Adopters can switch on the typed
+    /// ``NetworkConfigurationFailureReason`` payload instead of the
+    /// individual legacy cases. The 4.x line keeps both shapes
+    /// available; the 5.0 release will mark the legacy cases as
+    /// deprecated aliases that resolve to this case.
+    case configuration(reason: NetworkConfigurationFailureReason)
     /// Indicates a response failed with an invalid HTTP status code.
     case statusCode(Response)
     /// Indicates a response failed to decode into the declared `APIResponse`
@@ -161,6 +198,15 @@ extension NetworkError: LocalizedError {
             return localizedFormat("NetworkError.invalidBaseURL", string)
         case .invalidRequestConfiguration(let message):
             return localizedFormat("NetworkError.invalidRequestConfiguration", message)
+        case .configuration(let reason):
+            switch reason {
+            case .invalidBaseURL(let s):
+                return localizedFormat("NetworkError.invalidBaseURL", s)
+            case .invalidRequest(let s):
+                return localizedFormat("NetworkError.invalidRequestConfiguration", s)
+            case .offline(let s):
+                return localizedFormat("NetworkError.offline", s)
+            }
         case .decoding(let stage, let error, _):
             return localizedFormat(
                 "NetworkError.decoding",
@@ -269,6 +315,7 @@ public extension NetworkError {
         switch self {
         case .invalidBaseURL: return nil
         case .invalidRequestConfiguration: return nil
+        case .configuration: return nil
         case .decoding(_, _, let response): return response
         case .statusCode(let response): return response
         case .underlying(_, let response): return response
@@ -285,6 +332,7 @@ public extension NetworkError {
         switch self {
         case .invalidBaseURL: return nil
         case .invalidRequestConfiguration: return nil
+        case .configuration: return nil
         case .decoding(_, let error, _): return error
         case .statusCode: return nil
         case .underlying(let error, _): return error
@@ -323,6 +371,12 @@ extension NetworkError: CustomNSError {
             return 1001
         case .invalidRequestConfiguration:
             return 1002
+        case .configuration(let reason):
+            switch reason {
+            case .invalidBaseURL: return 1001
+            case .invalidRequest: return 1002
+            case .offline: return 1003
+            }
         case .decoding:
             return 2002
         case .statusCode:
@@ -371,6 +425,7 @@ public extension NetworkError {
             return .underlying(err, response.redactingData())
         case .invalidBaseURL,
             .invalidRequestConfiguration,
+            .configuration,
             .nonHTTPResponse,
             .underlying(_, nil),
             .trustEvaluationFailed,

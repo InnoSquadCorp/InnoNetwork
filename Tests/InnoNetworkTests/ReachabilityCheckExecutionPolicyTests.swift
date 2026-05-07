@@ -29,8 +29,10 @@ struct ReachabilityCheckExecutionPolicyTests {
             )
             Issue.record("Expected throw, got success")
         } catch let error as NetworkError {
-            guard case .invalidRequestConfiguration = error else {
-                Issue.record("Expected .invalidRequestConfiguration, got \(error)")
+            guard case .configuration(let reason) = error,
+                case .offline = reason
+            else {
+                Issue.record("Expected .configuration(.offline), got \(error)")
                 return
             }
         }

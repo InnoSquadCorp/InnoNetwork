@@ -136,6 +136,15 @@ Per-symbol evolution allowances within the 4.x line:
   encoding utility, and circuit breaker policy — built-in knobs may add fields,
   helper cases, or sensitive-header defaults with source-compatible behavior;
   the generic execution pipeline stays package/internal.
+- `NetworkConfigurationFailureReason` — typed payload for
+  ``NetworkError/configuration(reason:)``. Carries
+  `invalidBaseURL` / `invalidRequest` / `offline` cases. The 5.0
+  ledger consolidation will demote the standalone
+  `NetworkError.invalidBaseURL` and
+  `NetworkError.invalidRequestConfiguration` cases to
+  `@available(*, deprecated)` aliases that resolve to the
+  corresponding reason; `offline` is new in 5.0 and is already
+  surfaced by ``ReachabilityCheckExecutionPolicy``.
 - `ReachabilityCheckExecutionPolicy` — `RequestExecutionPolicy` that
   consults a `NetworkMonitoring` source and short-circuits requests
   when the path is `.unsatisfied`. `.requiresConnection` and

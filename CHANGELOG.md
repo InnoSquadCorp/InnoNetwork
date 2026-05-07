@@ -138,6 +138,19 @@ Versioning.
 
 ### Added
 
+- `NetworkError.configuration(reason:)` and the matching
+  `NetworkConfigurationFailureReason` enum (`invalidBaseURL`,
+  `invalidRequest`, `offline`). Adopters can now switch on the
+  consolidated 5.0 ledger shape directly. The legacy
+  `NetworkError.invalidBaseURL` and
+  `NetworkError.invalidRequestConfiguration` cases stay available
+  in 4.x without deprecation; the 5.0 release will mark them
+  `@available(*, deprecated, renamed:)` aliases that resolve to the
+  corresponding reason. `ReachabilityCheckExecutionPolicy` already
+  emits `.configuration(reason: .offline(_:))` so the new offline
+  failure mode surfaces through the consolidated case from day one.
+  English/Korean Localizable.strings ship a new
+  `NetworkError.offline` key shared by the offline reason.
 - `ReachabilityCheckExecutionPolicy` — executor-integrated
   reachability gate. Reads `NetworkMonitoring.currentSnapshot()`
   before each transport attempt and throws

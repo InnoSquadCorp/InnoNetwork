@@ -28,11 +28,13 @@ import Foundation
 /// states are not definitively offline. Only `.unsatisfied`
 /// triggers the rejection.
 ///
-/// The policy reports `NetworkError.invalidRequestConfiguration` for
-/// rejected requests in the 4.x line. The 5.0 release introduces a
-/// dedicated `.offline` case as part of the `NetworkError` ledger
-/// consolidation; the policy will swap the case at that point with
-/// a deprecated alias preserving source compatibility.
+/// The policy reports
+/// `NetworkError.configuration(reason: .offline(_:))` for rejected
+/// requests, taking the consolidated 5.0 ledger shape directly. The
+/// legacy `.invalidRequestConfiguration` case stays available for
+/// adopters who still switch on it; the
+/// `NetworkConfigurationFailureReason.offline` payload is the
+/// recommended target.
 public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
     /// Behaviour switch for offline observations.
     public enum Mode: Sendable, Equatable {
@@ -60,8 +62,8 @@ public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
         if mode == .requireOnline {
             let snapshot = await monitor.currentSnapshot()
             if let snapshot, snapshot.status == .unsatisfied {
-                throw NetworkError.invalidRequestConfiguration(
-                    "Network is not reachable; refusing to dispatch."
+                throw NetworkError.configuration(
+                    reason: .offline("device path is .unsatisfied")
                 )
             }
         }
