@@ -48,6 +48,15 @@ Versioning.
   `URLSessionTaskMetrics.networkProtocolName`, and the QUIC-specific
   caveats (captive portals, background sessions, 0-RTT idempotency).
   The runtime surface stays unchanged.
+- `docs/AppGroupSharedSession.md` covers App Group / extension
+  scenarios: Pattern A wires a fully isolated extension client (cookie
+  jar scoped to the extension's group container), Pattern B reuses a
+  background `sessionIdentifier` across host app and extension to keep
+  a single OS-managed download queue. The article also explicitly
+  flags `URLSessionConfiguration.background(...).sharedContainerIdentifier`
+  as a known gap on `DownloadConfiguration` (currently treated as an
+  implementation detail) and recommends Pattern A as the default
+  pending the follow-up that exposes the knob.
 - `Benchmarks/README.md` documents the explicit baseline-update protocol:
   how to re-measure on the hosted runner, replace
   `Benchmarks/Baselines/default.json`, log the change in
