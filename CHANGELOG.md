@@ -105,6 +105,21 @@ Versioning.
 - `CLAUDE.md` updates the project-context platform floors to match
   the 4.x backport (iOS 16 / macOS 14 / tvOS 16 / watchOS 9 /
   visionOS 1).
+### Documentation (continued)
+
+- `NetworkError`'s top-level doc comment now explicitly states that
+  the enum is intentionally non-`@frozen`, names the upcoming 5.0
+  `configuration(reason:)` merge of `invalidBaseURL(_:)` and
+  `invalidRequestConfiguration(_:)`, and includes a worked
+  `@unknown default` switch pattern. The 4.x → 5.0 transition
+  stays source-compatible (the legacy cases will become deprecated
+  aliases that resolve to the new shape) but exhaustive switches
+  without the `@unknown default` arm will surface a warning when
+  the new case lands; the doc-comment update lets consumers
+  prepare today.
+
+### Added
+
 - Five 5.0 forward-compat configuration packs:
   - `ResiliencePack` (retry, coalescing, circuit breaker,
     idempotency, body buffering)

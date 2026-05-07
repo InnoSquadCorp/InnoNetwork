@@ -76,6 +76,36 @@ public enum DecodingStage: Sendable, Equatable {
 }
 
 
+/// All execution-level failures the library surfaces to callers.
+///
+/// `NetworkError` is **not** `@frozen` and the project does not promise
+/// to keep that constant: the resilience and observability features in
+/// the roadmap will introduce new failure modes (notably circuit-breaker
+/// trips and richer rate-limit / reachability diagnostics). To stay
+/// forward-compatible against the 4.x line and the upcoming 5.0
+/// consolidation that merges ``invalidBaseURL(_:)`` and
+/// ``invalidRequestConfiguration(_:)`` into a typed
+/// `configuration(reason:)` case, every exhaustive `switch` over a
+/// `NetworkError` value should include a `@unknown default` arm:
+///
+/// ```swift
+/// catch let error as NetworkError {
+///     switch error {
+///     case .statusCode(let response):           handleStatus(response)
+///     case .timeout(let reason, _):             handleTimeout(reason)
+///     case .invalidBaseURL,
+///          .invalidRequestConfiguration:        handleConfigurationError()
+///     // ... other cases
+///     @unknown default:
+///         assertionFailure("Unhandled NetworkError case — update the switch.")
+///     }
+/// }
+/// ```
+///
+/// `docs/Migration-5.0.0.md` documents the planned `configuration(reason:)`
+/// merge in detail; the 4.x → 5.0 transition stays source-compatible
+/// because the existing cases will become deprecated aliases that
+/// resolve to the new shape.
 public enum NetworkError: Error, Sendable {
     case invalidBaseURL(String)
     /// Indicates an invalid request configuration
