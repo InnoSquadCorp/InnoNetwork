@@ -66,6 +66,9 @@ let package = Package(
             // catalogues that back ``NetworkError.errorDescription``. The
             // catalogue ships en + ko today; additional locales can be added
             // by dropping new `<lang>.lproj/Localizable.strings` siblings.
+            // Also bundles `Resources/PrivacyInfo.xcprivacy` declaring the
+            // File Timestamp Required Reason API used by
+            // `MultipartFormData.attributesOfItem(...)`.
             resources: [.process("Resources")],
             swiftSettings: strictSettings
         ),
@@ -73,6 +76,10 @@ let package = Package(
             name: "InnoNetworkDownload",
             dependencies: ["InnoNetwork"],
             path: "Sources/InnoNetworkDownload",
+            // Bundles `Resources/PrivacyInfo.xcprivacy` declaring the
+            // File Timestamp Required Reason API used by
+            // `DownloadTaskPersistence.attributesOfItem(...)`.
+            resources: [.process("Resources")],
             swiftSettings: strictSettings
         ),
         .target(
@@ -85,6 +92,10 @@ let package = Package(
             name: "InnoNetworkPersistentCache",
             dependencies: ["InnoNetwork"],
             path: "Sources/InnoNetworkPersistentCache",
+            // Bundles `Resources/PrivacyInfo.xcprivacy` declaring the
+            // File Timestamp Required Reason API used by
+            // `PersistentResponseCache.attributesOfItem(...)`.
+            resources: [.process("Resources")],
             swiftSettings: strictSettings
         ),
         // Test helpers. Public symbols here form a Provisionally Stable

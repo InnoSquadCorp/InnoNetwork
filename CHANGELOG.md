@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and the project follows Semantic
 Versioning.
 
+## [Unreleased]
+
+### Added
+
+- Privacy manifests (`PrivacyInfo.xcprivacy`) declaring the
+  `NSPrivacyAccessedAPICategoryFileTimestamp` Required Reason API for the
+  `InnoNetwork`, `InnoNetworkDownload`, and `InnoNetworkPersistentCache`
+  targets. The library inspects file metadata via
+  `FileManager.attributesOfItem(...)` on app-container files
+  (`MultipartFormData` part sizing, `DownloadTaskPersistence` resume metadata,
+  `PersistentResponseCache` size accounting), so the manifest pre-declares
+  reason `C617.1`. Consumers no longer have to author this declaration when
+  shipping apps that link InnoNetwork.
+
 ## [4.0.0] - 2026-05-02
 
 InnoNetwork's first public release. The package targets Apple platforms only
