@@ -70,6 +70,16 @@ Versioning.
 
 ### Changed
 
+- `Sources/InnoNetwork/RequestExecutor.swift` (1,093 lines) shrinks
+  by extracting the internal `BufferedAsyncBytes` AsyncSequence wrapper
+  into its own file (`Sources/InnoNetwork/BufferedAsyncBytes.swift`).
+  The wrapper is referenced by both `RequestExecutor` (response-body
+  buffering) and the test target (chunk-size and max-bytes coverage),
+  so the dedicated file keeps the responsibility self-documenting and
+  trims the executor file to ~1,045 lines. A deeper executor-stage
+  split is intentionally deferred to a follow-up PR because it
+  requires reclassifying private members across new extension files
+  and is high-risk for the central request pipeline.
 - `Sources/InnoNetwork/URLQueryEncoder.swift` (803 lines, single file)
   is split into three files: `URLQueryEncoder.swift` keeps the public
   encoder type plus the `URLQueryArrayEncodingStrategy` /
