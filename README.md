@@ -21,11 +21,28 @@ root runtime package provides six public products:
 - `InnoNetworkTestSupport` for consumer test targets
 - `InnoNetworkOpenAPI` for generated-client transport support
 
-Optional Swift macro endpoint helpers live in the separate
-`Packages/InnoNetworkCodegen` package so runtime-only consumers do not resolve
-`swift-syntax`. The packages are built around Swift Concurrency, explicit
-transport policies, and operational visibility that can scale from app
-prototypes to production clients.
+For the **shortest path to a typed client**, opt in to the macro
+helpers in `InnoNetworkCodegen`:
+
+```swift
+@APIDefinition(method: .get, path: "/users/{id}")
+struct GetUser {
+    @PathParameter let id: Int
+    typealias APIResponse = User
+}
+
+let user = try await client.request(GetUser(id: 1))
+```
+
+The `@APIDefinition` and `#endpoint` macros expand into the same value
+types you would write by hand. They live in a separate `Packages/
+InnoNetworkCodegen` package so runtime-only consumers never resolve
+`swift-syntax`; opt in by adding the codegen package alongside the
+runtime package, then `import InnoNetworkCodegen`.
+
+The packages are built around Swift Concurrency, explicit transport
+policies, and operational visibility that can scale from app prototypes
+to production clients.
 
 > ⚠️ **Apple platforms only by design.** InnoNetwork builds on URLSession, `OSAllocatedUnfairLock`, OSLog, and Network.framework, none of which match Apple-platform behaviour on Linux. Linux/server-side Swift is **not** a supported target. See [docs/PlatformSupport.md](docs/PlatformSupport.md) for the rationale and for guidance on sharing models with Linux server code (e.g. Vapor).
 
@@ -38,9 +55,11 @@ InnoNetwork ships several layers. Pick the highest one that matches your
 situation — most apps never need anything below `APIDefinition`.
 
 ```text
-Are you generating clients from an OpenAPI / IDL spec at build time?
+Want the shortest typed-client surface and tolerate a swift-syntax
+build-time dependency?
 ├─ yes ─► @APIDefinition / #endpoint macros from InnoNetworkCodegen
-│        (separate package; runtime-only consumers do not resolve swift-syntax)
+│        (separate package; runtime-only consumers do not resolve
+│         swift-syntax — see "Optional Macros" below)
 └─ no
    │
    Does the endpoint own interceptors, custom transport, multipart, or streaming?
