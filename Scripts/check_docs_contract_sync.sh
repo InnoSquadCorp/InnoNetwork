@@ -113,7 +113,7 @@ require_line "## Internal/Operational" "$api_stability"
 expected_stable=(
 '`APIDefinition`'
 '`CancellationTag`'
-'`EndpointShape`'
+'`Endpoint`'
 '`MultipartAPIDefinition`'
 '`TransportPolicy`'
 '`RequestEncodingPolicy`'
@@ -146,7 +146,7 @@ expected_stable=(
 '`URLQueryArrayEncodingStrategy`'
 '`ResponseBodyBufferingPolicy`'
 '`RequestExecutionPolicy`'
-'`EndpointAuthScope`'
+'`AuthScope`'
 '`PublicAuthScope`'
 '`AuthRequiredScope`'
 '`StateReducer`'
@@ -183,7 +183,7 @@ expected_provisionally=(
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
-'`ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
+'`EndpointBuilder`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
 '`WebSocketCloseDisposition` observation surface'
 '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
@@ -222,9 +222,9 @@ expected_shipping_public_declarations=(
   DownloadTask
   EmptyParameter
   EmptyResponse
-  EndpointAuthScope
+  AuthScope
   EndpointPathEncoding
-  EndpointShape
+  Endpoint
   EventDeliveryPolicy
   EventPipelineAggregateSnapshotMetric
   EventPipelineConsumerDeliveryLatencyMetric
@@ -292,7 +292,7 @@ expected_shipping_public_declarations=(
   RetryDecision
   RetryIdempotencyPolicy
   RetryPolicy
-  ScopedEndpoint
+  EndpointBuilder
   SendableUnderlyingError
   ServerSentEvent
   ServerSentEventDecoder
@@ -553,7 +553,7 @@ validate_public_surface_ledger() {
 }
 
 validate_oss_readiness_public_api() {
-  require_contains 'public struct ScopedEndpoint<Response: Decodable & Sendable, AuthScope: EndpointAuthScope>: APIDefinition' \
+  require_contains 'public struct EndpointBuilder<Response: Decodable & Sendable, Scope: AuthScope>: APIDefinition' \
     "$repo_root/Sources/InnoNetwork/Endpoint.swift"
   require_contains 'public enum EndpointPathEncoding' \
     "$repo_root/Sources/InnoNetwork/EndpointPathEncoding.swift"
@@ -621,8 +621,8 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public struct CancellationTag'
       target="$repo_root/Sources/InnoNetwork/CancellationTag.swift"
       ;;
-    '`EndpointShape`')
-      pattern='public protocol EndpointShape: Sendable'
+    '`Endpoint`')
+      pattern='public protocol Endpoint: Sendable'
       target="$repo_root/Sources/InnoNetwork/EndpointShape.swift"
       ;;
     '`MultipartAPIDefinition`')
@@ -753,8 +753,8 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public protocol RequestExecutionPolicy'
       target="$repo_root/Sources/InnoNetwork/RequestExecutionPolicy.swift"
       ;;
-    '`EndpointAuthScope`')
-      pattern='public protocol EndpointAuthScope'
+    '`AuthScope`')
+      pattern='public protocol AuthScope'
       target="$repo_root/Sources/InnoNetwork/Endpoint.swift"
       ;;
     '`PublicAuthScope`')
@@ -815,7 +815,7 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_test_support_product
       continue
       ;;
-    '`ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
+    '`EndpointBuilder`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
       validate_oss_readiness_public_api
       continue
       ;;

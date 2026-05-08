@@ -1,7 +1,7 @@
 import Foundation
 
 extension NetworkClient {
-    /// Convenience overload that builds a default ``ScopedEndpoint`` on the fly
+    /// Convenience overload that builds a default ``EndpointBuilder`` on the fly
     /// so the response type can be inferred from the call-site annotation.
     ///
     /// ```swift
@@ -14,10 +14,10 @@ extension NetworkClient {
     ///
     /// The endpoint is materialized with ``PublicAuthScope`` and the default
     /// ``TransportPolicy`` for the chosen method (`.query()` for GET,
-    /// `.json()` otherwise) — the same defaults `ScopedEndpoint` would
+    /// `.json()` otherwise) — the same defaults `EndpointBuilder` would
     /// pick for the equivalent builder chain. Endpoints that need
     /// authenticated scopes, custom headers, body parameters, or
-    /// per-endpoint interceptors should keep using ``ScopedEndpoint``
+    /// per-endpoint interceptors should keep using ``EndpointBuilder``
     /// builders or a hand-written ``APIDefinition``.
     ///
     /// - Parameters:
@@ -34,7 +34,7 @@ extension NetworkClient {
         tag: CancellationTag? = nil
     ) async throws -> T {
         try await self.request(
-            ScopedEndpoint<T, PublicAuthScope>(method: method, path: path),
+            EndpointBuilder<T, PublicAuthScope>(method: method, path: path),
             tag: tag
         )
     }

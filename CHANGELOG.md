@@ -140,6 +140,18 @@ Versioning.
 
 ### Removed (BREAKING)
 
+- `EndpointShape` is renamed to `Endpoint` (the protocol), removing
+  the legacy spelling outright. `EndpointAuthScope` is renamed to
+  `AuthScope`. `ScopedEndpoint<R, S>` is renamed to
+  `EndpointBuilder<Response, Scope>`. `Sources/InnoNetwork/RenamedAliases.swift`
+  (the 4.x forward-compat typealias bundle) is deleted; there is no
+  deprecated alias path. Every in-tree call site (Sources, Tests,
+  Examples, smoke targets) is migrated to the new names in this
+  commit. The two concrete auth scopes (`PublicAuthScope`,
+  `AuthRequiredScope`) keep their names. Generic-parameter shadowing
+  on `EndpointBuilder` (the old `AuthScope` generic param colliding
+  with the renamed protocol) is fixed by renaming the generic
+  parameter to `Scope`.
 - `NetworkError.invalidBaseURL(_:)` and
   `NetworkError.invalidRequestConfiguration(_:)` are removed. Adopters
   switch on `NetworkError.configuration(reason:)` and the matching

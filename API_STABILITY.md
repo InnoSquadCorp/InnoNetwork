@@ -7,7 +7,7 @@ release line. `4.0.0` is the public baseline for this contract.
 
 - `APIDefinition`
 - `CancellationTag`
-- `EndpointShape`
+- `Endpoint`
 - `MultipartAPIDefinition`
 - `TransportPolicy`
 - `RequestEncodingPolicy`
@@ -40,7 +40,7 @@ release line. `4.0.0` is the public baseline for this contract.
 - `URLQueryArrayEncodingStrategy`
 - `ResponseBodyBufferingPolicy`
 - `RequestExecutionPolicy`
-- `EndpointAuthScope`
+- `AuthScope`
 - `PublicAuthScope`
 - `AuthRequiredScope`
 - `StateReducer`
@@ -86,7 +86,7 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `InnoNetworkTestSupport` library product and its `public` symbols
   (currently `MockURLSession`, `WebSocketEventRecorder`, `StubBehavior`,
   `StubNetworkClient`, and `StubRequestKey`)
-- `ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
+- `EndpointBuilder`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `WebSocketCloseDisposition` observation surface
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
@@ -105,7 +105,7 @@ Per-symbol evolution allowances within the 4.x line:
   exact wording is not part of the compatibility contract.
 - `InnoNetworkTestSupport` — additional helpers may be added; existing
   symbols stay source-compatible within 4.x.
-- `ScopedEndpoint`, `AnyEncodable`, `NetworkContext`, `CorrelationIDInterceptor` —
+- `EndpointBuilder`, `AnyEncodable`, `NetworkContext`, `CorrelationIDInterceptor` —
   builder shape may grow new chainable methods.
 - `EndpointPathEncoding` — may add new helpers for placeholder encoding;
   existing entry points remain source-compatible. The set of percent-encoded
@@ -120,10 +120,10 @@ Per-symbol evolution allowances within the 4.x line:
 - `RequestExecutionPolicy` — custom policies may wrap raw transport attempts;
   built-in retry, refresh, cache, coalescing, and circuit breaker behavior
   remains provided by `NetworkConfiguration`.
-- `EndpointAuthScope` — marker scopes can be added in future minors; the
+- `AuthScope` — marker scopes can be added in future minors; the
   public/auth-required split remains source-compatible for 4.0.0.
 - `MultipartAPIDefinition.Auth` — the multipart protocol carries the same
-  `Auth: EndpointAuthScope` associated type as `APIDefinition`, defaulted to
+  `Auth: AuthScope` associated type as `APIDefinition`, defaulted to
   `PublicAuthScope`. Existing multipart endpoints stay source-compatible;
   authenticated multipart uploads must declare `typealias Auth = AuthRequiredScope`
   to participate in `RefreshTokenPolicy` validation.
@@ -245,7 +245,7 @@ high-level compatibility classification readable for the 4.x release line.
   `DecodingStage`,
   `DefaultNetworkClient`, `DefaultRedirectPolicy`,
   `DefaultNetworkLogger`, `EmptyParameter`, `EmptyResponse`,
-  `EndpointAuthScope`, `EndpointPathEncoding`, `EndpointShape`,
+  `AuthScope`, `EndpointPathEncoding`, `Endpoint`,
   `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
   `IdempotencyKeyPolicy`, `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,
   `MultipartPart`, `MultipartResponseDecoder`, `MultipartUploadStrategy`,
@@ -265,7 +265,7 @@ high-level compatibility classification readable for the 4.x release line.
   `ResponseCacheHeaderPolicy`, `ResponseCachePolicy`,
   `ResponseDecodingStrategy`, `ResponseInterceptor`,
   `RetryDecision`, `RetryIdempotencyPolicy`, `RetryPolicy`,
-  `RFC3986Encoding`, `ScopedEndpoint`, `SendableUnderlyingError`, `ServerSentEvent`,
+  `RFC3986Encoding`, `EndpointBuilder`, `SendableUnderlyingError`, `ServerSentEvent`,
   `ServerSentEventDecoder`, `StateReducer`, `StateReduction`,
   `StreamingAPIDefinition`, `StreamingBufferingPolicy`,
   `StreamingResumePolicy`, `TimeoutReason`, `TraceContextInterceptor`,
@@ -526,27 +526,27 @@ entries live under `[4.0.0]`.
   forward to their untagged path, but wrappers around another
   `NetworkClient` should preserve the tag when delegating.
 
-### `EndpointShape` extracted from endpoint protocols
+### `Endpoint` extracted from endpoint protocols
 
-- **What changed.** A new `EndpointShape` protocol now captures the
+- **What changed.** A new `Endpoint` protocol now captures the
   HTTP envelope surface (`method`, `path`, `headers`, `logger`,
   `requestInterceptors`, `responseInterceptors`,
   `acceptableStatusCodes`, `transport`) shared by `APIDefinition` and
-  `MultipartAPIDefinition`. Both protocols inherit from `EndpointShape`
+  `MultipartAPIDefinition`. Both protocols inherit from `Endpoint`
   and only declare their body-strategy surface (`parameters` /
   `multipartFormData` + `uploadStrategy`).
 - **Why.** The two endpoint protocols duplicated identical
   requirements and identical default implementations. Consolidating
-  them onto `EndpointShape` removes a class of drift bugs (defaults
+  them onto `Endpoint` removes a class of drift bugs (defaults
   silently diverging on one protocol but not the other) and gives
   generated clients a single vocabulary for "the envelope" without
   reaching for two parallel protocols.
 - **Migration.** Endpoint conformances do not need to change. The
-  shared defaults moved to an `EndpointShape` extension, so any
+  shared defaults moved to an `Endpoint` extension, so any
   `APIDefinition` or `MultipartAPIDefinition` written against 4.x
   compiles unchanged. Only code that explicitly enumerated the parent
   protocol's requirements (for example, library-internal generic
-  helpers) needs to redirect to `EndpointShape`.
+  helpers) needs to redirect to `Endpoint`.
 
 ### `NetworkError.objectMapping` split into `decoding(stage:)`
 
