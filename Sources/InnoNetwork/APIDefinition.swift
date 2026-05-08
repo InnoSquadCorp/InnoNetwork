@@ -74,12 +74,25 @@ public enum MultipartUploadStrategy: Sendable, Equatable {
     /// - macOS, visionOS: 50 MiB. Desktop and spatial environments have
     ///   significantly more headroom and can amortize the larger
     ///   in-memory window in exchange for fewer temp-file writes.
+    /// - Other Apple targets fall back to the conservative 16 MiB ceiling
+    ///   so a future platform audit cannot silently regress to a higher
+    ///   limit.
     public static var platformDefault: MultipartUploadStrategy {
         #if os(iOS) || os(watchOS) || os(tvOS)
         return .streamingThreshold(bytes: 16 * 1024 * 1024)
-        #else
+        #elseif os(macOS) || os(visionOS)
         return .streamingThreshold(bytes: 50 * 1024 * 1024)
+        #else
+        return .streamingThreshold(bytes: 16 * 1024 * 1024)
         #endif
+    }
+
+    /// Returns a strategy with a callsite-supplied byte threshold, treating
+    /// the value as the boundary between in-memory encoding and streamed
+    /// uploads. Centralises the clamp-to-1-byte invariant so individual
+    /// endpoints do not have to defend against zero / negative values.
+    public static func threshold(bytes: Int64) -> MultipartUploadStrategy {
+        .streamingThreshold(bytes: max(1, bytes))
     }
 }
 
