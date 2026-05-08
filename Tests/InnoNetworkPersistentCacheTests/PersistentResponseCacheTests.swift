@@ -522,6 +522,56 @@ struct PersistentResponseCacheTests {
         #expect(stats.maxBytes == 128)
     }
 
+    @Test("statistics tracks hit and miss counts across get() calls")
+    func statisticsTracksHitAndMissCounts() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxBytes: 1024,
+                maxEntries: 8,
+                maxEntryBytes: 512
+            )
+        )
+        let storedKey = ResponseCacheKey(method: "GET", url: "https://example.com/hit")
+        let missingKey = ResponseCacheKey(method: "GET", url: "https://example.com/miss")
+        await cache.set(storedKey, CachedResponse(data: Data("hit-body".utf8)))
+
+        _ = await cache.get(storedKey)
+        _ = await cache.get(storedKey)
+        _ = await cache.get(missingKey)
+
+        let stats = await cache.statistics()
+        #expect(stats.hitCount == 2)
+        #expect(stats.missCount == 1)
+    }
+
+    @Test("statistics tracks eviction counts when budget enforcement fires")
+    func statisticsTracksEvictionCounts() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxBytes: 1024,
+                maxEntries: 2,
+                maxEntryBytes: 512
+            )
+        )
+        let key1 = ResponseCacheKey(method: "GET", url: "https://example.com/a")
+        let key2 = ResponseCacheKey(method: "GET", url: "https://example.com/b")
+        let key3 = ResponseCacheKey(method: "GET", url: "https://example.com/c")
+        await cache.set(key1, CachedResponse(data: Data("a".utf8)))
+        await cache.set(key2, CachedResponse(data: Data("b".utf8)))
+        let priorEvictions = await cache.statistics().evictionCount
+        await cache.set(key3, CachedResponse(data: Data("c".utf8)))
+
+        let stats = await cache.statistics()
+        #expect(stats.entryCount == 2)
+        #expect(stats.evictionCount == priorEvictions + 1)
+    }
+
     @Test("get() drops a body that grew past maxEntryBytes after init")
     func getDropsBodyThatExceedsMaxEntryBytesAfterInit() async throws {
         let directory = makeDirectory()

@@ -14,19 +14,52 @@ public struct PersistentResponseCacheStatistics: Sendable, Equatable {
     public let maxEntries: Int
     /// Configured upper bound on `byteCount`.
     public let maxBytes: Int
+    /// Cumulative count of ``PersistentResponseCache/get(_:)`` calls that
+    /// returned a cached body in this process. Resets when the cache actor
+    /// is reconstructed; not persisted to disk.
+    public let hitCount: Int
+    /// Cumulative count of ``PersistentResponseCache/get(_:)`` calls that
+    /// returned `nil` in this process (no entry, body unreadable, body
+    /// rejected by privacy policy, or body exceeded `maxEntryBytes`).
+    public let missCount: Int
+    /// Cumulative count of evictions or scrubs the actor has performed in
+    /// this process across all reasons (`storageBudget`, `policyRejected`,
+    /// `missingBody`, `entryTooLarge`, `unreferencedBody`). The drained
+    /// ``PersistentResponseCacheTelemetryEvent/scrubbedEntries`` events
+    /// retain the per-reason breakdown.
+    public let evictionCount: Int
 
-    /// Builds a statistics snapshot from the four scalar values.
+    /// Builds a statistics snapshot.
     ///
     /// - Parameters:
     ///   - entryCount: Number of indexed entries.
     ///   - byteCount: Total stored body bytes.
     ///   - maxEntries: Configured entry cap.
     ///   - maxBytes: Configured byte cap.
-    public init(entryCount: Int, byteCount: Int, maxEntries: Int, maxBytes: Int) {
+    ///   - hitCount: In-process count of cache hits since the actor was
+    ///     constructed. Defaults to `0` for source compatibility with
+    ///     callers that built statistics by hand before the metric existed.
+    ///   - missCount: In-process count of cache misses since the actor was
+    ///     constructed. Defaults to `0` for source compatibility.
+    ///   - evictionCount: In-process count of evicted/scrubbed entries
+    ///     since the actor was constructed. Defaults to `0` for source
+    ///     compatibility.
+    public init(
+        entryCount: Int,
+        byteCount: Int,
+        maxEntries: Int,
+        maxBytes: Int,
+        hitCount: Int = 0,
+        missCount: Int = 0,
+        evictionCount: Int = 0
+    ) {
         self.entryCount = entryCount
         self.byteCount = byteCount
         self.maxEntries = maxEntries
         self.maxBytes = maxBytes
+        self.hitCount = hitCount
+        self.missCount = missCount
+        self.evictionCount = evictionCount
     }
 }
 

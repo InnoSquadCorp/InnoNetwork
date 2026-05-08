@@ -71,6 +71,17 @@ public actor PersistentResponseCache: ResponseCache {
     private var index: Index
     private var runningTotalBytes: Int
     private var telemetryEvents: [PersistentResponseCacheTelemetryEvent]
+    /// Cumulative cache hits since this actor was constructed.
+    /// Saturates at `Int.max` rather than overflowing.
+    private var hitCount: Int = 0
+    /// Cumulative cache misses since this actor was constructed.
+    /// Saturates at `Int.max` rather than overflowing.
+    private var missCount: Int = 0
+    /// Cumulative evicted/scrubbed entries since this actor was
+    /// constructed, summed across every reason in
+    /// ``PersistentResponseCacheEvictionReason``. Saturates at
+    /// `Int.max` rather than overflowing.
+    private var evictionCount: Int = 0
     /// Number of read-path `lastAccessedAt` updates that have not yet been
     /// flushed to disk. Reads are buffered to amortize the JSON-encode +
     /// atomic-write cost across many hits; insertions/deletions still flush
@@ -164,6 +175,19 @@ public actor PersistentResponseCache: ResponseCache {
             telemetry.append(.scrubbedEntries(reason: .unreferencedBody, count: scrubbedBodies, byteCount: 0))
         }
         self.telemetryEvents = telemetry
+        // Seed the eviction counter from any scrubs the open-time pipeline
+        // already performed so `statistics().evictionCount` reflects the
+        // entire actor lifetime rather than only post-init activity.
+        self.evictionCount = telemetry.reduce(into: 0) { partial, event in
+            switch event {
+            case .scrubbedEntries(_, let count, _):
+                if partial > Int.max - count {
+                    partial = .max
+                } else {
+                    partial += count
+                }
+            }
+        }
     }
 
     /// Look up a cached response for `key`. Returns `nil` on miss or when the
@@ -173,10 +197,14 @@ public actor PersistentResponseCache: ResponseCache {
     public func get(_ key: ResponseCacheKey) async -> CachedResponse? {
         let diskKey = DiskKey(key, normalizer: keyNormalizer)
         let id = identifier(for: diskKey)
-        guard var entry = index.entries[id] else { return nil }
+        guard var entry = index.entries[id] else {
+            recordMiss()
+            return nil
+        }
         guard shouldStore(key: entry.key, responseHeaders: entry.headers) else {
             removeEntry(id: id, entry: entry)
             try? persistIndex()
+            recordMiss()
             return nil
         }
         let bodyURL = bodiesDirectoryURL.appendingPathComponent(entry.bodyFileName, isDirectory: false)
@@ -195,6 +223,7 @@ public actor PersistentResponseCache: ResponseCache {
                 removeEntry(id: id, entry: entry)
                 try? persistIndex()
             }
+            recordMiss()
             return nil
         }
         guard data.count <= configuration.maxEntryBytes else {
@@ -202,9 +231,13 @@ public actor PersistentResponseCache: ResponseCache {
                 removeEntry(id: id, entry: entry)
                 try? persistIndex()
             }
+            recordMiss()
             return nil
         }
-        guard isCurrentEntry(id: id, entry: entry) else { return nil }
+        guard isCurrentEntry(id: id, entry: entry) else {
+            recordMiss()
+            return nil
+        }
 
         entry.lastAccessedAt = Date()
         index.entries[id] = entry
@@ -231,6 +264,7 @@ public actor PersistentResponseCache: ResponseCache {
             }
         }
 
+        recordHit()
         return CachedResponse(
             data: data,
             statusCode: entry.statusCode,
@@ -239,6 +273,35 @@ public actor PersistentResponseCache: ResponseCache {
             requiresRevalidation: entry.requiresRevalidation,
             varyHeaders: entry.varyHeaders
         )
+    }
+
+    /// Saturating-add a cache hit to the metric counter. Wrapping at
+    /// ``Int/max`` keeps the counter monotonic even for long-lived cache
+    /// actors.
+    private func recordHit() {
+        if hitCount < .max {
+            hitCount += 1
+        }
+    }
+
+    /// Saturating-add a cache miss to the metric counter.
+    private func recordMiss() {
+        if missCount < .max {
+            missCount += 1
+        }
+    }
+
+    /// Saturating-add `count` evictions to the metric counter. Used by
+    /// every code path that emits a
+    /// ``PersistentResponseCacheTelemetryEvent/scrubbedEntries`` event, so
+    /// the eviction count stays in sync with the per-reason telemetry log.
+    private func recordEviction(count: Int) {
+        guard count > 0 else { return }
+        if evictionCount > Int.max - count {
+            evictionCount = .max
+        } else {
+            evictionCount += count
+        }
     }
 
     /// Store `value` under `key`. Drops the entry instead of storing it when
@@ -304,6 +367,7 @@ public actor PersistentResponseCache: ResponseCache {
                         byteCount: evictedBytes
                     )
                 )
+                recordEviction(count: removableBodies.count)
             }
             if let replacedBodyFileName, replacedBodyFileName != bodyFileName {
                 removableBodies.append((fileName: replacedBodyFileName, byteCost: 0))
@@ -348,13 +412,17 @@ public actor PersistentResponseCache: ResponseCache {
         shouldStore(key: DiskKey(key, normalizer: keyNormalizer), responseHeaders: response.headers)
     }
 
-    /// Current storage pressure snapshot.
+    /// Current storage pressure snapshot, including in-process hit, miss,
+    /// and eviction counts.
     public func statistics() -> PersistentResponseCacheStatistics {
         PersistentResponseCacheStatistics(
             entryCount: index.entries.count,
             byteCount: runningTotalBytes,
             maxEntries: configuration.maxEntries,
-            maxBytes: configuration.maxBytes
+            maxBytes: configuration.maxBytes,
+            hitCount: hitCount,
+            missCount: missCount,
+            evictionCount: evictionCount
         )
     }
 
