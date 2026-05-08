@@ -27,6 +27,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+      issues: write
       pull-requests: write
 
     steps:
@@ -117,6 +118,7 @@ jobs:
 
       - name: Comment benchmark summary on PR (sticky)
         if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
         with:
           comment-id: ${{ steps.find-benchmark-comment.outputs.comment-id }}

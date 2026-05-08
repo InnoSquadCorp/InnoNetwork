@@ -98,6 +98,18 @@ Versioning.
   dedicated interceptor on top of the same `RequestInterceptor` contract.
   Composes through `NetworkConfiguration.requestInterceptors` alongside any
   existing auth chain (`RefreshTokenPolicy`, custom adapters).
+- `NetworkError.configuration(reason:)` and the matching
+  `NetworkConfigurationFailureReason` enum (`invalidBaseURL`,
+  `invalidRequest`, `offline`). Adopters can now switch on the
+  consolidated ledger shape directly. The legacy
+  `NetworkError.invalidBaseURL` and
+  `NetworkError.invalidRequestConfiguration` cases are not available in
+  `4.0.0`; switch on the reason payload instead.
+  `ReachabilityCheckExecutionPolicy` emits
+  `.configuration(reason: .offline(_:))` so the offline failure mode surfaces
+  through the consolidated case from day one. English/Korean
+  Localizable.strings ship a new `NetworkError.offline` key shared by the
+  offline reason.
 
 ### CI / Tooling
 
@@ -128,8 +140,6 @@ Versioning.
   `configuration(reason:)` shape, and includes a worked `@unknown default`
   switch pattern for future failure modes.
 
-### Added
-
 ### Removed (BREAKING)
 
 - `EndpointShape` is renamed to `Endpoint` (the protocol), removing
@@ -155,20 +165,8 @@ Versioning.
   deprecated alias path; consumer code that pattern-matched the
   removed cases needs to switch to the reason-based shape directly.
 
-### Added
+### Added (continued)
 
-- `NetworkError.configuration(reason:)` and the matching
-  `NetworkConfigurationFailureReason` enum (`invalidBaseURL`,
-  `invalidRequest`, `offline`). Adopters can now switch on the
-  consolidated ledger shape directly. The legacy
-  `NetworkError.invalidBaseURL` and
-  `NetworkError.invalidRequestConfiguration` cases are not available in
-  `4.0.0`; switch on the reason payload instead.
-  `ReachabilityCheckExecutionPolicy` emits
-  `.configuration(reason: .offline(_:))` so the offline failure mode surfaces
-  through the consolidated case from day one. English/Korean
-  Localizable.strings ship a new `NetworkError.offline` key shared by the
-  offline reason.
 - `ReachabilityCheckExecutionPolicy` — executor-integrated
   reachability gate. Reads `NetworkMonitoring.currentSnapshot()`
   before each transport attempt and throws

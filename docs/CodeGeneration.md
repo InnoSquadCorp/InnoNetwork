@@ -28,16 +28,15 @@ swift run openapi-to-innonetwork \
     --module-name MyAPI
 ```
 
-The generator emits one Swift file per OpenAPI operation, each
-containing an `APIDefinition`-conforming struct with
-`EmptyParameter` and `EmptyResponse`. Adopters typically swap
-those defaults with their own typed parameters / responses
-during the first integration pass.
+The generator emits one Swift file per `components.schemas` entry
+before emitting operation files. Operations with `$ref` request or
+response shapes receive typed `Parameter` / `APIResponse` aliases;
+operations without them fall back to `EmptyParameter` /
+`EmptyResponse` so adopters can fill gaps during integration.
 
-YAML input is out of scope for the 4.x preview to keep the tool
-dependency-free. Convert with `yq -o=json` or
-`python -c "import sys, yaml, json; json.dump(yaml.safe_load(sys.stdin), sys.stdout)"`
-in the meantime.
+JSON and YAML inputs are both supported. YAML decoding uses Yams
+inside the standalone `Tools/` package, so the root runtime package
+still resolves no code generation dependencies.
 
 For the full README and roadmap see
 [Tools/openapi-to-innonetwork/README.md](../Tools/openapi-to-innonetwork/README.md).

@@ -189,6 +189,8 @@ actor ErrorHandlingExample {
                 } else {
                     print("❌ Error: \(error)")
                 }
+            } catch is CancellationError {
+                print("⚠️  Request was cancelled")
             } catch {
                 print("❌ Error: \(error)")
             }
@@ -197,6 +199,7 @@ actor ErrorHandlingExample {
         // Cancel the task after a short delay
         try? await Task.sleep(nanoseconds: 10_000_000)  // 0.01 seconds
         task.cancel()
+        _ = await task.result
     }
 
     // Helper method to handle different network errors

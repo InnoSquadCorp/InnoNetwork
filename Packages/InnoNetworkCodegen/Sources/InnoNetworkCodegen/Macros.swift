@@ -59,7 +59,7 @@ public macro endpoint<Response: Decodable & Sendable>(
 ///   - path: Endpoint path string.
 ///   - responseType: Response metatype passed with the `as:` label.
 ///   - scope: Concrete ``AuthScope`` metatype (e.g.
-///     ``AuthRequiredScope/self`` or ``PublicAuthScope/self``).
+///     `AuthRequiredScope.self` or `PublicAuthScope.self`).
 /// - Returns: An ``EndpointBuilder`` parameterised by `scope` and decoding
 ///   `responseType`.
 @freestanding(expression)
