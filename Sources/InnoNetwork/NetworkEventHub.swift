@@ -5,6 +5,10 @@ package actor NetworkEventHub {
         let event: NetworkEvent
         let observers: [any NetworkEventObserving]
         let enqueuedAt: Date
+        /// Allocated by ``allocateSequenceID()`` at publish time. Carried
+        /// to every observer chain so a correlated trace can rebuild the
+        /// publish order even after events fan out across actor hops.
+        let sequenceID: UInt64
     }
 
     private struct PartitionState {
@@ -81,12 +85,13 @@ package actor NetworkEventHub {
     /// the awaiting consumer has already cleaned up.
     package func publish(_ event: NetworkEvent, requestID: UUID, observers: [any NetworkEventObserving]) {
         guard !observers.isEmpty else { return }
-        // Advance the per-hub sequence counter so subsequent enqueues land
-        // with a strictly increasing tag. The 4.0.0 ordered-event-queue
-        // change consumes this value in `EventDeliveryChain` to break ties
-        // when two observers race the actor scheduler; for now the result
-        // is intentionally discarded.
-        _ = allocateSequenceID()
+        // Allocate the sequence ID *before* the buffer cap check so a
+        // dropped event still consumes a slot in the publish order. The
+        // ID is carried on the pending entry and forwarded to every
+        // observer chain on drain, giving consumers a monotonic publish
+        // tag even when the partition's drain task fans events out across
+        // actor hops.
+        let sequenceID = allocateSequenceID()
         var partition = partitions[requestID] ?? PartitionState()
         guard !partition.isClosed else { return }
         if partition.queue.count >= policy.maxBufferedEventsPerPartition {
@@ -100,7 +105,14 @@ package actor NetworkEventHub {
                 return
             }
         }
-        partition.queue.append(PendingEvent(event: event, observers: observers, enqueuedAt: .now))
+        partition.queue.append(
+            PendingEvent(
+                event: event,
+                observers: observers,
+                enqueuedAt: .now,
+                sequenceID: sequenceID
+            )
+        )
         partitions[requestID] = partition
         reportPartitionMetric(for: requestID, partition: partition)
         startDrainIfNeeded(requestID: requestID)
@@ -126,7 +138,11 @@ package actor NetworkEventHub {
         while let pending = popNextEvent(requestID: requestID) {
             for (index, observer) in pending.observers.enumerated() {
                 let chain = observerChain(for: requestID, index: index, observer: observer)
-                await chain.enqueue(pending.event, enqueuedAt: pending.enqueuedAt)
+                await chain.enqueue(
+                    pending.event,
+                    enqueuedAt: pending.enqueuedAt,
+                    sequenceID: pending.sequenceID
+                )
             }
         }
 
