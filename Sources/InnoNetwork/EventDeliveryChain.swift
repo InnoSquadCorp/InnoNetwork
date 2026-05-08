@@ -26,13 +26,6 @@ package actor EventDeliveryChain<Event: Sendable> {
         let event: Event
         let enqueuedAt: Date
         let deliveryCompletion: DeliveryCompletion?
-        /// Monotonic identifier handed out by ``NetworkEventHub`` (and any
-        /// other producer that uses a `package` allocator). Stored so the
-        /// chain can correlate diagnostic metrics with the producer-side
-        /// publish order; the chain itself still drains FIFO so events
-        /// observed on the same producer reach the consumer in the same
-        /// order they were enqueued.
-        let sequenceID: UInt64
     }
 
     private let handler: Handler
@@ -59,26 +52,23 @@ package actor EventDeliveryChain<Event: Sendable> {
         self.handler = handler
     }
 
-    package func enqueue(_ event: Event, enqueuedAt: Date = .now, sequenceID: UInt64 = 0) {
+    package func enqueue(_ event: Event, enqueuedAt: Date = .now) {
         enqueue(
             event,
             enqueuedAt: enqueuedAt,
-            deliveryCompletion: nil,
-            sequenceID: sequenceID
+            deliveryCompletion: nil
         )
     }
 
     package func enqueueAndWaitForDelivery(
         _ event: Event,
-        enqueuedAt: Date = .now,
-        sequenceID: UInt64 = 0
+        enqueuedAt: Date = .now
     ) async {
         await withCheckedContinuation { continuation in
             enqueue(
                 event,
                 enqueuedAt: enqueuedAt,
-                deliveryCompletion: DeliveryCompletion(continuation),
-                sequenceID: sequenceID
+                deliveryCompletion: DeliveryCompletion(continuation)
             )
         }
     }
@@ -86,8 +76,7 @@ package actor EventDeliveryChain<Event: Sendable> {
     private func enqueue(
         _ event: Event,
         enqueuedAt: Date,
-        deliveryCompletion: DeliveryCompletion?,
-        sequenceID: UInt64
+        deliveryCompletion: DeliveryCompletion?
     ) {
         guard !isClosed else {
             deliveryCompletion?.resume()
@@ -111,8 +100,7 @@ package actor EventDeliveryChain<Event: Sendable> {
             QueuedEvent(
                 event: event,
                 enqueuedAt: enqueuedAt,
-                deliveryCompletion: deliveryCompletion,
-                sequenceID: sequenceID
+                deliveryCompletion: deliveryCompletion
             )
         )
         reportQueueState()

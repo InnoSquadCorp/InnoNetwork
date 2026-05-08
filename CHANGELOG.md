@@ -10,9 +10,10 @@ Versioning.
 ### Added (release/4.0.0-batch)
 
 - **Download lifecycle epoch tracking.** `DownloadTask` exposes
-  `generation` / `attempt` accessors and a
-  `startAttempt(generation:attempt:)` method that reduces through
-  `DownloadLifecycleReducer` and applies an `.advancedEpoch` effect.
+  `generation` / `attempt` accessors for observing manager-maintained
+  retry/resume epochs. The internal download lifecycle bookkeeping
+  reduces through `DownloadLifecycleReducer` and applies an
+  `.advancedEpoch` effect.
   The reducer gains a `.startAttempt` event and an `.advancedEpoch`
   effect; epoch advancement is orthogonal to the state-transition
   table so retries can begin from any pre-attempt state without
@@ -78,6 +79,8 @@ Versioning.
   release exercises that contract for the first time. Adopters that
   ignored the recommendation see a "Switch must be exhaustive" warning
   until they add the new arms or wrap with `@unknown default`.
+  `.transportSuspended` is emitted when `.requiresConnection` persists
+  through the reachability policy wait.
   Localized strings ship in `en` and `ko`.
 
 - **Streaming bounded-buffer guard message.** Runtime guard moved
@@ -258,8 +261,10 @@ Versioning.
   `.unsatisfied`, so requests fail fast instead of burning URLSession's
   timeout on a known-offline path. Two modes:
   `.requireOnline` rejects, `.warnOnly` lets the request proceed
-  for staged rollouts that want telemetry first.
-  `.requiresConnection` and unobserved snapshots fall through.
+  for staged rollouts that want telemetry first. `.requiresConnection`
+  waits up to `suspensionWaitTimeout` before forwarding, surfacing
+  offline, or throwing `.transportSuspended`; unobserved snapshots fall
+  through.
   Four unit tests cover the four state transitions
   (offline / online / warn-only / nil snapshot).
 - `ConcurrencyLimitExecutionPolicy` — executor-integrated

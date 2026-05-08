@@ -197,12 +197,12 @@ expected_provisionally=(
 '`DecodingInterceptor`'
 '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`'
 '`NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface'
-'`HTTPHeaderName<Variant>` phantom-typed header key surface and its'
+'`HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)'
 '`MultipartUploadStrategy.threshold(bytes:)`'
-'`StreamingResumeStrategy` protocol and the `isCompatible(with:)`'
+'`StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance'
 '`PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`'
-'`DownloadTask.generation` / `attempt` accessors and'
-'`NetworkError.transportSuspended` and'
+'`DownloadTask.generation` / `attempt` observation accessors'
+'`NetworkError.transportSuspended` and `NetworkError.cacheRevalidationFailed(underlying:cached:)` cases. Localizable.strings keys (`NetworkError.transportSuspended`, `NetworkError.cacheRevalidationFailed`) ship in `en` and `ko` and are treated as the Provisionally Stable contract for the messages.'
 )
 
 expected_shipping_public_declarations=(
@@ -933,13 +933,21 @@ for symbol in "${expected_provisionally[@]}"; do
     '`NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface')
       require_contains 'func with(retry retryPolicy: RetryPolicy?)' \
         "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+      require_contains 'func with(cache responseCache: (any ResponseCache)?)' \
+        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+      require_contains 'func with(circuitBreaker circuitBreakerPolicy: CircuitBreakerPolicy?)' \
+        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+      require_contains 'func with(refresh refreshTokenPolicy: RefreshTokenPolicy?)' \
+        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
       require_contains 'func with(coalescing requestCoalescingPolicy: RequestCoalescingPolicy)' \
         "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
       require_contains 'func with(executionPolicies customExecutionPolicies' \
         "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+      require_contains 'func with(eventObservers: [any NetworkEventObserving])' \
+        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
       continue
       ;;
-    '`HTTPHeaderName<Variant>` phantom-typed header key surface and its')
+    '`HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)')
       require_contains 'public struct HTTPHeaderName<Variant: HTTPHeaderVariant>' \
         "$repo_root/Sources/InnoNetwork/HTTPHeaders.swift"
       require_contains 'public enum SingleValueHeader: HTTPHeaderVariant' \
@@ -953,7 +961,7 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/APIDefinition.swift"
       continue
       ;;
-    '`StreamingResumeStrategy` protocol and the `isCompatible(with:)`')
+    '`StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance')
       require_contains 'public protocol StreamingResumeStrategy' \
         "$repo_root/Sources/InnoNetwork/StreamingAPIDefinition.swift"
       require_contains 'extension StreamingResumePolicy: StreamingResumeStrategy' \
@@ -969,16 +977,14 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCacheTelemetry.swift"
       continue
       ;;
-    '`DownloadTask.generation` / `attempt` accessors and')
+    '`DownloadTask.generation` / `attempt` observation accessors')
       require_contains 'public var generation: Int' \
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
       require_contains 'public var attempt: Int' \
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
-      require_contains 'func startAttempt(generation: Int, attempt: Int)' \
-        "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
       continue
       ;;
-    '`NetworkError.transportSuspended` and')
+    '`NetworkError.transportSuspended` and `NetworkError.cacheRevalidationFailed(underlying:cached:)` cases. Localizable.strings keys (`NetworkError.transportSuspended`, `NetworkError.cacheRevalidationFailed`) ship in `en` and `ko` and are treated as the Provisionally Stable contract for the messages.')
       require_contains 'case transportSuspended' \
         "$repo_root/Sources/InnoNetwork/NetworkError.swift"
       require_contains 'case cacheRevalidationFailed(underlying: SendableUnderlyingError, cached: Response)' \

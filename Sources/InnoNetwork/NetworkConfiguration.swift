@@ -461,7 +461,7 @@ public struct NetworkConfiguration: Sendable {
 
 // MARK: - Fluent modifiers
 //
-// Five additive modifier helpers that wrap the existing
+// Seven additive modifier helpers that wrap the existing
 // ``AdvancedBuilder`` plumbing so callers can override one policy at a
 // time without re-typing every other field. Equivalent to threading the
 // override through `advanced(baseURL:)`; preserved here so adopting one

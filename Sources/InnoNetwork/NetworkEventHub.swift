@@ -5,10 +5,6 @@ package actor NetworkEventHub {
         let event: NetworkEvent
         let observers: [any NetworkEventObserving]
         let enqueuedAt: Date
-        /// Allocated by ``allocateSequenceID()`` at publish time. Carried
-        /// to every observer chain so a correlated trace can rebuild the
-        /// publish order even after events fan out across actor hops.
-        let sequenceID: UInt64
     }
 
     private struct PartitionState {
@@ -23,37 +19,6 @@ package actor NetworkEventHub {
     private let policy: EventDeliveryPolicy
     private let metricsProxy: EventPipelineMetricsReporterProxy?
     private var metricsReporter: (any EventPipelineMetricsReporting)? { metricsProxy }
-
-    /// Monotonically increasing per-hub sequence counter, allocated through
-    /// ``allocateSequenceID()``. Held inside the hub actor so increments are
-    /// totally ordered with respect to publish calls. Currently advisory —
-    /// the 4.0.0 ordered-event-queue change wires it into the delivery
-    /// chain so consumers can correlate observed events with the publish
-    /// order that produced them.
-    private var nextSequenceID: UInt64 = 0
-
-    /// Returns the next monotonic sequence ID and advances the counter.
-    /// Wrap-around on `UInt64.max` is treated as a 0-restart; callers that
-    /// store sequence IDs across very-long-running hubs should not assume
-    /// strict monotonicity beyond the wrap point. In practice the counter
-    /// only needs to be unique within a single request lifecycle.
-    private func allocateSequenceID() -> UInt64 {
-        if nextSequenceID == .max {
-            nextSequenceID = 0
-        } else {
-            nextSequenceID += 1
-        }
-        return nextSequenceID
-    }
-
-    /// Returns the most recently allocated sequence ID. Exposed to the
-    /// package's own test target (and only the test target) so the prep
-    /// counter introduced ahead of the ordered-event-queue change can be
-    /// verified to advance on every publish call. Production code does
-    /// not read this value.
-    package func currentSequenceIDForTesting() -> UInt64 {
-        nextSequenceID
-    }
 
     package init(
         policy: EventDeliveryPolicy = .default,
@@ -85,13 +50,6 @@ package actor NetworkEventHub {
     /// the awaiting consumer has already cleaned up.
     package func publish(_ event: NetworkEvent, requestID: UUID, observers: [any NetworkEventObserving]) {
         guard !observers.isEmpty else { return }
-        // Allocate the sequence ID *before* the buffer cap check so a
-        // dropped event still consumes a slot in the publish order. The
-        // ID is carried on the pending entry and forwarded to every
-        // observer chain on drain, giving consumers a monotonic publish
-        // tag even when the partition's drain task fans events out across
-        // actor hops.
-        let sequenceID = allocateSequenceID()
         var partition = partitions[requestID] ?? PartitionState()
         guard !partition.isClosed else { return }
         if partition.queue.count >= policy.maxBufferedEventsPerPartition {
@@ -109,8 +67,7 @@ package actor NetworkEventHub {
             PendingEvent(
                 event: event,
                 observers: observers,
-                enqueuedAt: .now,
-                sequenceID: sequenceID
+                enqueuedAt: .now
             )
         )
         partitions[requestID] = partition
@@ -140,8 +97,7 @@ package actor NetworkEventHub {
                 let chain = observerChain(for: requestID, index: index, observer: observer)
                 await chain.enqueue(
                     pending.event,
-                    enqueuedAt: pending.enqueuedAt,
-                    sequenceID: pending.sequenceID
+                    enqueuedAt: pending.enqueuedAt
                 )
             }
         }

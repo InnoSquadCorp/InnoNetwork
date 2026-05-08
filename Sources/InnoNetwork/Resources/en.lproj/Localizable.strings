@@ -5,6 +5,7 @@
 
 "NetworkError.invalidBaseURL" = "Invalid base URL: %@";
 "NetworkError.invalidRequestConfiguration" = "Invalid request configuration: %@";
+"NetworkError.offline" = "Network is offline: %@";
 "NetworkError.decoding" = "Failed to decode response (%1$@): %2$@";
 "NetworkError.statusCode" = "Status code didn't fall within the given range.";
 "NetworkError.nonHTTPResponse" = "Received a non-HTTP response.";
@@ -16,7 +17,7 @@
 
 "NetworkError.responseTooLarge" = "Response body of %1$@ bytes exceeded the configured limit of %2$@ bytes.";
 
-"NetworkError.transportSuspended" = "Network transport is currently suspended; the request was held back instead of dispatching into a sure-to-fail socket.";
+"NetworkError.transportSuspended" = "The network connection is still being restored. Please wait a moment and try the request again.";
 "NetworkError.cacheRevalidationFailed" = "Cache revalidation against the stored response failed: %@";
 
 "NetworkError.trust.unsupportedAuthenticationMethod" = "Unsupported authentication method: %@";

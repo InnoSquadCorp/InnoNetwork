@@ -293,14 +293,14 @@ public extension HTTPHeaderName where Variant == SingleValueHeader {
     static var cookie: HTTPHeaderName<SingleValueHeader> { .init("Cookie") }
     static var ifNoneMatch: HTTPHeaderName<SingleValueHeader> { .init("If-None-Match") }
     static var ifModifiedSince: HTTPHeaderName<SingleValueHeader> { .init("If-Modified-Since") }
+    static var accept: HTTPHeaderName<SingleValueHeader> { .init("Accept") }
+    static var acceptEncoding: HTTPHeaderName<SingleValueHeader> { .init("Accept-Encoding") }
+    static var acceptLanguage: HTTPHeaderName<SingleValueHeader> { .init("Accept-Language") }
 }
 
 public extension HTTPHeaderName where Variant == RepeatableHeader {
     static var setCookie: HTTPHeaderName<RepeatableHeader> { .init("Set-Cookie") }
     static var wwwAuthenticate: HTTPHeaderName<RepeatableHeader> { .init("WWW-Authenticate") }
-    static var accept: HTTPHeaderName<RepeatableHeader> { .init("Accept") }
-    static var acceptEncoding: HTTPHeaderName<RepeatableHeader> { .init("Accept-Encoding") }
-    static var acceptLanguage: HTTPHeaderName<RepeatableHeader> { .init("Accept-Language") }
 }
 
 public extension HTTPHeaders {

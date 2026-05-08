@@ -20,7 +20,7 @@ struct NetworkConfigurationPresetTests {
     // MARK: - Fluent modifiers
 
     @Test("with(retry:) replaces only the retry policy and keeps every other field")
-    func withRetryReplacesOnlyRetryPolicy() {
+    func withRetryReplacesOnlyRetryPolicy() async {
         let baseURL = URL(string: "https://api.example.com")!
         let original = NetworkConfiguration.safeDefaults(baseURL: baseURL)
         let policy = ExponentialBackoffRetryPolicy(maxRetries: 7)
@@ -33,7 +33,7 @@ struct NetworkConfigurationPresetTests {
     }
 
     @Test("with(retry: nil) detaches an existing retry policy")
-    func withRetryNilDetachesPolicy() {
+    func withRetryNilDetachesPolicy() async {
         let baseURL = URL(string: "https://api.example.com")!
         let production = NetworkConfiguration.recommendedForProduction(baseURL: baseURL)
         #expect(production.retryPolicy != nil)
@@ -44,9 +44,10 @@ struct NetworkConfigurationPresetTests {
     }
 
     @Test("Modifiers chain compositionally")
-    func modifiersChainCompositionally() {
+    func modifiersChainCompositionally() async {
         let baseURL = URL(string: "https://api.example.com")!
-        let configuration = NetworkConfiguration
+        let configuration =
+            NetworkConfiguration
             .safeDefaults(baseURL: baseURL)
             .with(retry: ExponentialBackoffRetryPolicy())
             .with(circuitBreaker: CircuitBreakerPolicy(failureThreshold: 3))
@@ -58,7 +59,7 @@ struct NetworkConfigurationPresetTests {
     }
 
     @Test("with(circuitBreaker:) replaces only the breaker policy")
-    func withCircuitBreakerReplacesOnlyBreaker() {
+    func withCircuitBreakerReplacesOnlyBreaker() async {
         let baseURL = URL(string: "https://api.example.com")!
         let original = NetworkConfiguration.safeDefaults(baseURL: baseURL)
         let breaker = CircuitBreakerPolicy(failureThreshold: 9)
@@ -68,5 +69,73 @@ struct NetworkConfigurationPresetTests {
         #expect(updated.circuitBreakerPolicy != nil)
         #expect(updated.retryPolicy == nil)
         #expect(updated.refreshTokenPolicy == nil)
+    }
+
+    @Test("with(cache:) replaces only the response cache")
+    func withCacheReplacesOnlyResponseCache() {
+        let baseURL = URL(string: "https://api.example.com")!
+        let original = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+        let cache = InMemoryResponseCache()
+
+        let updated = original.with(cache: cache)
+
+        #expect(updated.responseCache != nil)
+        #expect(updated.baseURL == original.baseURL)
+        #expect(updated.retryPolicy == nil)
+        #expect(updated.circuitBreakerPolicy == nil)
+    }
+
+    @Test("with(refresh:) replaces only the refresh token policy")
+    func withRefreshReplacesOnlyRefreshTokenPolicy() {
+        let baseURL = URL(string: "https://api.example.com")!
+        let original = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+        let refresh = RefreshTokenPolicy(
+            currentToken: { "old" },
+            refreshToken: { "new" }
+        )
+
+        let updated = original.with(refresh: refresh)
+
+        #expect(updated.refreshTokenPolicy != nil)
+        #expect(updated.baseURL == original.baseURL)
+        #expect(updated.retryPolicy == nil)
+        #expect(updated.circuitBreakerPolicy == nil)
+    }
+
+    @Test("with(executionPolicies:) replaces only the custom policy chain")
+    func withExecutionPoliciesReplacesOnlyCustomPolicyChain() {
+        let baseURL = URL(string: "https://api.example.com")!
+        let original = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+
+        let updated = original.with(executionPolicies: [PassthroughExecutionPolicy()])
+
+        #expect(updated.customExecutionPolicies.count == 1)
+        #expect(updated.baseURL == original.baseURL)
+        #expect(updated.retryPolicy == nil)
+        #expect(updated.circuitBreakerPolicy == nil)
+    }
+
+    @Test("with(eventObservers:) replaces only network event observers")
+    func withEventObserversReplacesOnlyEventObservers() {
+        let baseURL = URL(string: "https://api.example.com")!
+        let original = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+
+        let updated = original.with(eventObservers: [NoOpNetworkEventObserver()])
+
+        #expect(updated.eventObservers.count == 1)
+        #expect(updated.baseURL == original.baseURL)
+        #expect(updated.retryPolicy == nil)
+        #expect(updated.circuitBreakerPolicy == nil)
+    }
+}
+
+private struct PassthroughExecutionPolicy: RequestExecutionPolicy {
+    func execute(
+        input: RequestExecutionInput,
+        context: RequestExecutionContext,
+        next: RequestExecutionNext
+    ) async throws -> Response {
+        _ = context
+        return try await next.execute(input.request)
     }
 }

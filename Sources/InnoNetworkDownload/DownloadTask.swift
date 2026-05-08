@@ -17,9 +17,9 @@ public actor DownloadTask: Identifiable {
     /// Outer epoch counter. Bumped each time the download is fully
     /// re-driven (for example, after a hard reset that drops resume
     /// data). Inner `attempt` counters are scoped to one generation.
-    /// Used by ``startAttempt(generation:attempt:)`` to disambiguate
-    /// in-flight callbacks across retry cycles, mirroring the
-    /// `WebSocketTask` pattern.
+    /// Maintained by `DownloadManager` to disambiguate in-flight
+    /// callbacks across retry cycles, mirroring the `WebSocketTask`
+    /// pattern.
     private var _generation: Int = 0
     /// Per-generation attempt counter. Reset to `0` whenever
     /// `_generation` advances; otherwise increments by one for each
@@ -32,7 +32,7 @@ public actor DownloadTask: Identifiable {
     public var totalRetryCount: Int { _totalRetryCount }
     public var resumeData: Data? { _resumeData }
     public var error: DownloadError? { _error }
-    /// Current generation epoch. See ``startAttempt(generation:attempt:)``.
+    /// Current generation epoch maintained by `DownloadManager`.
     public var generation: Int { _generation }
     /// Current attempt index within the active generation.
     public var attempt: Int { _attempt }
@@ -133,17 +133,19 @@ public actor DownloadTask: Identifiable {
         _attempt = 0
     }
 
+    func startNextAttemptInCurrentGeneration() {
+        startAttempt(generation: _generation, attempt: _attempt + 1)
+    }
+
     /// Record the start of a new download attempt by reducing through
     /// ``DownloadLifecycleReducer`` and applying any emitted
     /// ``DownloadLifecycleEffect/advancedEpoch`` effect.
     ///
     /// The reducer keeps the visible ``state`` unchanged on this path —
     /// epoch advancement is orthogonal to the transition table — so this
-    /// method only updates `_generation` / `_attempt`. Callers that drive
-    /// retry logic should issue this before any callback that should be
-    /// observed under the new epoch, then check the epoch when a delayed
-    /// callback arrives so stale results from the previous attempt can be
-    /// dropped.
+    /// method only updates `_generation` / `_attempt`. This is internal
+    /// lifecycle bookkeeping; public callers should observe
+    /// ``generation`` and ``attempt`` instead of trying to drive them.
     func startAttempt(generation: Int, attempt: Int) {
         let reduction = DownloadLifecycleReducer.reduce(
             state: _state,

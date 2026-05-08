@@ -6,7 +6,7 @@ import Testing
 @Suite("MultipartUploadStrategy threshold helpers")
 struct MultipartUploadStrategyThresholdTests {
     @Test("platformDefault picks the documented threshold for the host platform")
-    func platformDefaultPicksDocumentedThreshold() {
+    func platformDefaultPicksDocumentedThreshold() async {
         guard case .streamingThreshold(let bytes) = MultipartUploadStrategy.platformDefault else {
             Issue.record("platformDefault must resolve to streamingThreshold")
             return
@@ -21,7 +21,7 @@ struct MultipartUploadStrategyThresholdTests {
     }
 
     @Test("threshold(bytes:) clamps zero and negative values to 1 byte")
-    func thresholdClampsBelowZero() {
+    func thresholdClampsBelowZero() async {
         if case .streamingThreshold(let zero) = MultipartUploadStrategy.threshold(bytes: 0) {
             #expect(zero == 1)
         } else {
@@ -35,7 +35,7 @@ struct MultipartUploadStrategyThresholdTests {
     }
 
     @Test("threshold(bytes:) preserves positive byte counts")
-    func thresholdPreservesPositiveValues() {
+    func thresholdPreservesPositiveValues() async {
         if case .streamingThreshold(let value) = MultipartUploadStrategy.threshold(bytes: 1_234_567) {
             #expect(value == 1_234_567)
         } else {

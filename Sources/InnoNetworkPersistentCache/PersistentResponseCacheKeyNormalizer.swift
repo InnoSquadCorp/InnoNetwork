@@ -15,8 +15,10 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
     ///
     /// `regenerated` is `true` when an existing key file was discarded due to
     /// a read failure (corruption, partial write, file protection edge case)
-    /// or an invalid length. Callers must reset any cached entries that were
-    /// keyed under the prior HMAC so the cache stays self-consistent.
+    /// or an invalid length, or when the key file is missing while persisted
+    /// cache metadata/body files remain. Callers must reset any cached entries
+    /// that were keyed under the prior HMAC so the cache stays
+    /// self-consistent.
     struct LoadOrCreateResult {
         let normalizer: PersistentCacheDiskKeyNormalizer
         let regenerated: Bool
@@ -31,7 +33,7 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
         if fileManager.fileExists(atPath: keyURL.path) {
             // Best-effort read with length validation. Any failure mode
             // (unreadable, truncated, oversized) routes through the same
-            // regenerate-and-reset recovery as a missing key.
+            // regenerate-and-reset recovery.
             if let data = try? Data(contentsOf: keyURL), data.count == expectedKeyByteCount {
                 PersistentResponseCache.applyDataProtection(
                     dataProtectionClass,
@@ -43,25 +45,65 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
                     regenerated: false
                 )
             }
+            // Best-effort cleanup: if fileManager.removeItem(at: keyURL)
+            // fails, the following .atomic write will either replace keyURL
+            // or leave the existing copy untouched.
             try? fileManager.removeItem(at: keyURL)
-            let key = SymmetricKey(size: .bits256)
-            let bytes = key.withUnsafeBytes { Data($0) }
-            try bytes.write(to: keyURL, options: .atomic)
-            PersistentResponseCache.applyDataProtection(dataProtectionClass, to: keyURL, fileManager: fileManager)
-            return LoadOrCreateResult(
-                normalizer: PersistentCacheDiskKeyNormalizer(key: key),
+            return try createAndStoreKey(
+                at: keyURL,
+                dataProtectionClass: dataProtectionClass,
+                fileManager: fileManager,
                 regenerated: true
             )
         }
 
+        let regenerated = hasPersistedCacheWithoutKey(directoryURL: directoryURL, fileManager: fileManager)
+        return try createAndStoreKey(
+            at: keyURL,
+            dataProtectionClass: dataProtectionClass,
+            fileManager: fileManager,
+            regenerated: regenerated
+        )
+    }
+
+    private static func createAndStoreKey(
+        at keyURL: URL,
+        dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
+        fileManager: FileManager,
+        regenerated: Bool
+    ) throws -> LoadOrCreateResult {
         let key = SymmetricKey(size: .bits256)
         let data = key.withUnsafeBytes { Data($0) }
         try data.write(to: keyURL, options: .atomic)
         PersistentResponseCache.applyDataProtection(dataProtectionClass, to: keyURL, fileManager: fileManager)
         return LoadOrCreateResult(
             normalizer: PersistentCacheDiskKeyNormalizer(key: key),
-            regenerated: false
+            regenerated: regenerated
         )
+    }
+
+    private static func hasPersistedCacheWithoutKey(directoryURL: URL, fileManager: FileManager) -> Bool {
+        let indexURL = directoryURL.appendingPathComponent("index.json", isDirectory: false)
+        if fileManager.fileExists(atPath: indexURL.path) {
+            return true
+        }
+
+        let bodiesURL = directoryURL.appendingPathComponent("bodies", isDirectory: true)
+        guard
+            let bodyURLs = try? fileManager.contentsOfDirectory(
+                at: bodiesURL,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+        else {
+            return false
+        }
+
+        return bodyURLs.contains { bodyURL in
+            let isRegularFile =
+                (try? bodyURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false
+            return isRegularFile
+        }
     }
 
     func normalizeHeaders(_ headers: [String]) -> [String] {

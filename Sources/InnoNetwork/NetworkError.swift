@@ -159,19 +159,19 @@ public enum NetworkError: Error, Sendable {
     ///   - observed: The actual body size in bytes returned by the transport.
     case responseTooLarge(limit: Int64, observed: Int64)
 
-    /// The reachability monitor reports the transport is currently
-    /// suspended (interface flap, Wi-Fi captive portal redirect, VPN
-    /// reconfiguration) and the request was held back instead of
-    /// dispatching into a sure-to-fail socket. Distinct from
-    /// ``configuration(reason:)`` `.offline`, which is raised before
-    /// the connection attempt; `.transportSuspended` is raised when
-    /// the path was good a moment ago and the policy decided to wait
-    /// for a fresh signal rather than fail fast.
+    /// The reachability monitor reports `.requiresConnection`
+    /// (interface flap, Wi-Fi captive portal redirect, VPN
+    /// reconfiguration) for longer than the configured short wait, so
+    /// the request was held back instead of dispatching into a likely
+    /// failing socket. Distinct from ``configuration(reason:)``
+    /// `.offline`, which is raised when the monitor reports
+    /// `.unsatisfied`.
     ///
-    /// Surfaced by the resilience layer when a configured network
-    /// monitor produces a `.suspended` status while a request is
-    /// queued; consumers typically map this to a "network coming back"
-    /// UI affordance that does not need the offline copy.
+    /// Surfaced by ``ReachabilityCheckExecutionPolicy`` when
+    /// `.requiresConnection` does not recover to `.satisfied` before
+    /// ``ReachabilityCheckExecutionPolicy/suspensionWaitTimeout``.
+    /// Consumers typically map this to a "network coming back" UI
+    /// affordance that does not need the offline copy.
     case transportSuspended
 
     /// A 304 Not Modified revalidation against the cached response
@@ -186,7 +186,7 @@ public enum NetworkError: Error, Sendable {
     ///   - underlying: The error raised by the revalidation pipeline.
     ///   - cached: The previously-stored response that the revalidation
     ///     attempt was working from. The bytes have already been
-    ///     redacted via ``Response/redactingFailurePayload()`` unless
+    ///     redacted via ``NetworkError/redactingFailurePayload()`` unless
     ///     ``NetworkConfiguration/captureFailurePayload`` is set.
     case cacheRevalidationFailed(underlying: SendableUnderlyingError, cached: Response)
 }

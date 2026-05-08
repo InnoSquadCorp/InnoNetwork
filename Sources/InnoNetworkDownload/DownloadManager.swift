@@ -377,6 +377,7 @@ public actor DownloadManager {
                 await transferCoordinator.markTaskFailedForPersistence(task, error: error)
                 return
             }
+            await task.startNextAttemptInCurrentGeneration()
             let urlTask = session.makeDownloadTask(withResumeData: resumeData)
             await transferCoordinator.register(urlTask: urlTask, for: task)
             await task.updateState(.downloading)
@@ -395,6 +396,7 @@ public actor DownloadManager {
             await eventHub.publish(.stateChanged(.downloading), for: task.id)
             urlTask.resume()
         } else {
+            await task.startNextAttemptInCurrentGeneration()
             await transferCoordinator.startDownload(task)
         }
     }
@@ -538,7 +540,9 @@ public actor DownloadManager {
     public func retry(_ task: DownloadTask) async {
         guard await waitForRestore() else { return }
         guard await task.state == .failed else { return }
+        let nextGeneration = await task.generation + 1
         await task.reset()
+        await task.startAttempt(generation: nextGeneration, attempt: 0)
         await transferCoordinator.startDownload(task)
     }
 

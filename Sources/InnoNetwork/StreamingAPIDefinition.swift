@@ -51,9 +51,9 @@ public enum StreamingResumePolicy: Sendable, Equatable {
 /// itself; consumers should keep building the policy through that enum
 /// and rely on the protocol surface for compatibility checks. The next
 /// stage of the release wires the ``isCompatible(with:)`` decision into
-/// the executor's type-level guard so a bounded buffer paired with a
-/// non-disabled resume strategy is rejected at compile time, not at the
-/// first dropped frame.
+/// `DefaultNetworkClient.stream(_:bufferingPolicy:)`, where a bounded
+/// buffer paired with a non-disabled resume strategy is rejected before
+/// the transport starts.
 public protocol StreamingResumeStrategy: Sendable {
     /// Returns whether the strategy is compatible with the supplied
     /// buffering policy.

@@ -82,6 +82,8 @@ struct DownloadPauseResumeTests {
 
         await harness.manager.pause(task)
         #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .paused })
+        #expect(await task.generation == 0)
+        #expect(await task.attempt == 0)
 
         await harness.manager.resume(task)
 
@@ -92,6 +94,8 @@ struct DownloadPauseResumeTests {
             })
         let secondIdentifier = await harness.manager.runtimeTaskIdentifier(for: task)
         #expect(secondIdentifier == resumedStub.taskIdentifier)
+        #expect(await task.generation == 0)
+        #expect(await task.attempt == 1)
         await harness.manager.cancel(task)
     }
 
@@ -116,6 +120,8 @@ struct DownloadPauseResumeTests {
         await harness.manager.pause(task)
         #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .paused })
         await task.setResumeData(nil)
+        #expect(await task.generation == 0)
+        #expect(await task.attempt == 0)
 
         await harness.manager.resume(task)
 
@@ -126,6 +132,8 @@ struct DownloadPauseResumeTests {
             })
         let secondIdentifier = await harness.manager.runtimeTaskIdentifier(for: task)
         #expect(secondIdentifier == freshStub.taskIdentifier)
+        #expect(await task.generation == 0)
+        #expect(await task.attempt == 1)
         await harness.manager.cancel(task)
     }
 

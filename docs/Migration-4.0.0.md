@@ -52,10 +52,11 @@ keeps compiling unchanged.
 ## NetworkError new cases
 
 `NetworkError` adds two cases:
-- `.transportSuspended` — the reachability monitor reports `.suspended` and
-  the request was held back instead of dispatched into a sure-to-fail
-  socket. Distinct from `.configuration(reason: .offline(...))`, which is
-  raised before the connection attempt.
+- `.transportSuspended` — `ReachabilityCheckExecutionPolicy` observed
+  `.requiresConnection` for the full `suspensionWaitTimeout`, so the
+  request was held back instead of dispatched into a likely failing socket.
+  Distinct from `.configuration(reason: .offline(...))`, which is raised
+  when the monitor reports `.unsatisfied`.
 - `.cacheRevalidationFailed(underlying:, cached:)` — a 304 revalidation
   pipeline failure. The cached `Response` payload is redacted by
   `redactingFailurePayload()` unless `captureFailurePayload` is set.
@@ -122,10 +123,11 @@ without touching them:
   statistics struct. The struct's initializer keeps the original
   parameter list with default `0` values for the new fields, so call
   sites that build the struct by hand do not need to change.
-- **`DownloadTask.generation` / `attempt`** — two new accessors plus
-  `startAttempt(generation:attempt:)` for retry-cycle bookkeeping.
-  Existing download lifecycles never call into the new method, so the
-  counters stay at `0`.
+- **`DownloadTask.generation` / `attempt`** — two new observation
+  accessors for retry-cycle bookkeeping. The manager updates them
+  internally: automatic retry and resume advance `attempt` within the
+  same generation, while manual `retry(_:)` starts a new generation at
+  attempt `0`.
 
 ## URLQueryEncoder
 

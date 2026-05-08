@@ -102,6 +102,98 @@ struct DownloadRetryTests {
         await harness.manager.cancel(task)
     }
 
+    @Test("Automatic retry advances attempt within the same generation")
+    func automaticRetryAdvancesAttemptWithinSameGeneration() async throws {
+        let retryStub = StubDownloadURLTask()
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 1,
+            maxTotalRetries: 1,
+            retryDelay: 0,
+            label: "retry-epoch",
+            prequeuedStubs: [retryStub]
+        )
+        let task = await harness.startDownload()
+
+        #expect(await task.generation == 0)
+        #expect(await task.attempt == 0)
+        let firstIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: nil,
+                timeout: 2.0
+            ))
+
+        await harness.injectCompletion(
+            taskIdentifier: firstIdentifier,
+            location: nil,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.networkConnectionLost.rawValue,
+                message: "network lost"
+            )
+        )
+
+        let secondIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: firstIdentifier,
+                timeout: 2.0
+            ))
+        #expect(secondIdentifier == retryStub.taskIdentifier)
+        #expect(await task.generation == 0)
+        #expect(await task.attempt == 1)
+
+        await harness.manager.cancel(task)
+    }
+
+    @Test("Manual retry starts a new generation at attempt zero")
+    func manualRetryStartsNewGenerationAtAttemptZero() async throws {
+        let retryStub = StubDownloadURLTask()
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 0,
+            maxTotalRetries: 1,
+            retryDelay: 0,
+            label: "manual-retry-epoch",
+            prequeuedStubs: [retryStub]
+        )
+        let task = await harness.startDownload()
+        let firstIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: nil,
+                timeout: 2.0
+            ))
+
+        await harness.injectCompletion(
+            taskIdentifier: firstIdentifier,
+            location: nil,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.networkConnectionLost.rawValue,
+                message: "network lost"
+            )
+        )
+        #expect(await waitForTaskState(task, timeout: 2.0) { $0 == .failed })
+
+        await harness.manager.retry(task)
+
+        let secondIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: firstIdentifier,
+                timeout: 2.0
+            ))
+        #expect(secondIdentifier == retryStub.taskIdentifier)
+        #expect(await task.generation == 1)
+        #expect(await task.attempt == 0)
+
+        await harness.manager.cancel(task)
+    }
+
     @Test("Network change resets retry count when waitsForNetworkChanges is enabled")
     func networkChangeResetsRetryCount() async throws {
         let initialSnapshot = NetworkSnapshot(status: .satisfied, interfaceTypes: [.wifi])

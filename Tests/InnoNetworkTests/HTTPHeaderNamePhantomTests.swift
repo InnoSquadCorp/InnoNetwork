@@ -6,7 +6,7 @@ import Testing
 @Suite("HTTPHeaderName phantom typing")
 struct HTTPHeaderNamePhantomTests {
     @Test("Single-value subscript replaces an existing header rather than appending")
-    func singleValueSubscriptReplaces() {
+    func singleValueSubscriptReplaces() async {
         var headers = HTTPHeaders()
         headers[.authorization] = "Bearer first"
         headers[.authorization] = "Bearer second"
@@ -15,7 +15,7 @@ struct HTTPHeaderNamePhantomTests {
     }
 
     @Test("Single-value subscript getter returns the canonical value")
-    func singleValueSubscriptGetterReturnsValue() {
+    func singleValueSubscriptGetterReturnsValue() async {
         var headers = HTTPHeaders()
         headers[.contentType] = "application/json"
 
@@ -24,7 +24,7 @@ struct HTTPHeaderNamePhantomTests {
     }
 
     @Test("Single-value subscript with nil removes the header")
-    func singleValueSubscriptNilRemoves() {
+    func singleValueSubscriptNilRemoves() async {
         var headers = HTTPHeaders()
         headers[.host] = "api.example.com"
         headers[.host] = nil
@@ -34,7 +34,7 @@ struct HTTPHeaderNamePhantomTests {
     }
 
     @Test("Repeatable append accumulates values")
-    func repeatableAppendAccumulates() {
+    func repeatableAppendAccumulates() async {
         var headers = HTTPHeaders()
         headers.append(.setCookie, value: "session=abc")
         headers.append(.setCookie, value: "tracking=xyz")
@@ -44,7 +44,7 @@ struct HTTPHeaderNamePhantomTests {
     }
 
     @Test("Phantom-typed remove drops every matching entry")
-    func phantomRemoveDropsAllMatching() {
+    func phantomRemoveDropsAllMatching() async {
         var headers = HTTPHeaders()
         headers.append(.setCookie, value: "a")
         headers.append(.setCookie, value: "b")

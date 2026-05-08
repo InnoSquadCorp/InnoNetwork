@@ -244,7 +244,7 @@ InnoNetwork	swift.init	NoOpNetworkLogger.init()
 InnoNetwork	swift.init	OSLogNetworkEventObserver.init()
 InnoNetwork	swift.init	ObservabilityPack.init(eventObservers:eventDeliveryPolicy:eventMetricsReporter:networkMonitor:metricsReporter:)
 InnoNetwork	swift.init	PublicKeyPinningPolicy.init(pinsByHost:includesSubdomains:allowDefaultEvaluationForUnpinnedHosts:hostMatchingStrategy:)
-InnoNetwork	swift.init	ReachabilityCheckExecutionPolicy.init(monitor:mode:)
+InnoNetwork	swift.init	ReachabilityCheckExecutionPolicy.init(monitor:mode:suspensionWaitTimeout:)
 InnoNetwork	swift.init	RefreshTokenPolicy.init(refreshStatusCodes:appliesTo:failureCooldown:currentToken:refreshToken:applyToken:)
 InnoNetwork	swift.init	RequestCoalescingPolicy.init(methods:excludedHeaderNames:)
 InnoNetwork	swift.init	RequestExecutionContext.init(requestID:retryIndex:metricsReporter:trustPolicy:eventObservers:)
@@ -606,6 +606,7 @@ InnoNetwork	swift.property	PublicKeyPinningPolicy.includesSubdomains
 InnoNetwork	swift.property	PublicKeyPinningPolicy.pinsByHost
 InnoNetwork	swift.property	ReachabilityCheckExecutionPolicy.mode
 InnoNetwork	swift.property	ReachabilityCheckExecutionPolicy.monitor
+InnoNetwork	swift.property	ReachabilityCheckExecutionPolicy.suspensionWaitTimeout
 InnoNetwork	swift.property	RequestCoalescingPolicy.excludedHeaderNames
 InnoNetwork	swift.property	RequestCoalescingPolicy.isEnabled
 InnoNetwork	swift.property	RequestCoalescingPolicy.methods

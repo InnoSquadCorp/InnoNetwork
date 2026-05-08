@@ -13,11 +13,7 @@ actor WebSocketInvalidationBarrier {
     func wait() async {
         guard !isCompleted else { return }
         await withCheckedContinuation { continuation in
-            if isCompleted {
-                continuation.resume()
-            } else {
-                waiters.append(continuation)
-            }
+            waiters.append(continuation)
         }
     }
 

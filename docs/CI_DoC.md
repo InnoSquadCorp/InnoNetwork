@@ -18,19 +18,21 @@ The `CI` workflow must pass all of the following:
 4. `rg -n "@unchecked Sendable" Sources/InnoNetwork Sources/InnoNetworkDownload Sources/InnoNetworkPersistentCache Sources/InnoNetworkWebSocket` returns no matches
 5. `bash Scripts/check_production_force_unwraps.sh` returns no matches in
    production source targets. Tests and smoke fixtures are excluded.
-6. Coverage report is generated under `.build/coverage/` and uploaded as a
+6. `bash Scripts/check_no_print_in_production.sh` returns no matches in
+   production source targets. Tests and smoke fixtures are excluded.
+7. Coverage report is generated under `.build/coverage/` and uploaded as a
    workflow artifact. When the `CODECOV_TOKEN` secret is configured the
    `lcov` payload is also uploaded to Codecov; without the token the upload
    step is skipped (the artifact alone is enough for manual review).
-7. `apple-platform-build-smoke` runs `xcodebuild ... build` for macOS, iOS,
+8. `apple-platform-build-smoke` runs `xcodebuild ... build` for macOS, iOS,
    tvOS, watchOS, and visionOS destinations. Simulator destinations are
    build-only; SwiftPM test+coverage remains the runtime test gate.
-8. Consumer smoke first asserts that the root package dependency graph does not
+9. Consumer smoke first asserts that the root package dependency graph does not
    contain `swift-syntax`, then builds separate core-only, aggregate,
    download-only, websocket-only, test-support, generated-client, and codegen
    usage packages. Macro tests run from `Packages/InnoNetworkCodegen` so the
    codegen dependency graph stays isolated from runtime-only consumers.
-9. The benchmark smoke guard runs `swift run InnoNetworkBenchmarks --quick`
+10. The benchmark smoke guard runs `swift run InnoNetworkBenchmarks --quick`
    with `--enforce-baseline --max-regression-percent 20`. A regression
    beyond 20% on the guarded request pipeline, request coalescing, response
    cache, event hub delivery, download persistence restore/compaction,
@@ -74,6 +76,7 @@ rg -n "@unchecked Sendable" \
   Sources/InnoNetworkPersistentCache \
   Sources/InnoNetworkWebSocket
 bash Scripts/check_production_force_unwraps.sh
+bash Scripts/check_no_print_in_production.sh
 
 # Optional: render the same coverage artifacts CI uploads.
 profdata="$(find .build -name 'default.profdata' -type f | head -n 1)"

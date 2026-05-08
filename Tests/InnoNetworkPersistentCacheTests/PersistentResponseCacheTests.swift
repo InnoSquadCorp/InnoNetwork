@@ -210,6 +210,47 @@ struct PersistentResponseCacheTests {
         #expect(regeneratedKey.count == 32)
     }
 
+    @Test("Missing HMAC key with existing entries resets index and bodies")
+    func missingHMACKeyWithExistingEntriesResetsCacheOnReopen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            storesAuthenticatedResponses: true
+        )
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Authorization": "Bearer secret"]
+        )
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("first".utf8)))
+        #expect(try existingBodyURLs(in: directory).isEmpty == false)
+
+        try FileManager.default.removeItem(at: hmacKeyURL(in: directory))
+
+        let reader = try PersistentResponseCache(configuration: configuration)
+
+        #expect(await reader.get(key) == nil)
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(await reader.statistics().entryCount == 0)
+        let regeneratedKey = try Data(contentsOf: hmacKeyURL(in: directory))
+        #expect(regeneratedKey.count == 32)
+    }
+
+    @Test("Fresh cache directory key creation is not counted as eviction")
+    func freshCacheDirectoryKeyCreationIsNotCountedAsEviction() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+
+        #expect(await cache.statistics().evictionCount == 0)
+        #expect(await cache.telemetrySnapshot().isEmpty)
+    }
+
     @Test("Cache-Control private responses are rejected")
     func rejectsCacheControlPrivateResponses() async throws {
         let directory = makeDirectory()
@@ -572,6 +613,29 @@ struct PersistentResponseCacheTests {
         #expect(stats.evictionCount == priorEvictions + 1)
     }
 
+    @Test("get() missing body records scrub telemetry and eviction count")
+    func getMissingBodyRecordsTelemetryAndEvictionCount() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/missing-body")
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        await cache.set(key, CachedResponse(data: Data("missing".utf8)))
+        let bodyURL = try #require(existingBodyURLs(in: directory).first)
+        try FileManager.default.removeItem(at: bodyURL)
+        let priorEvictions = await cache.statistics().evictionCount
+
+        #expect(await cache.get(key) == nil)
+
+        let stats = await cache.statistics()
+        #expect(stats.evictionCount == priorEvictions + 1)
+        #expect(
+            await cache.telemetrySnapshot()
+                .contains(.scrubbedEntries(reason: .missingBody, count: 1, byteCount: 7))
+        )
+    }
+
     @Test("get() drops a body that grew past maxEntryBytes after init")
     func getDropsBodyThatExceedsMaxEntryBytesAfterInit() async throws {
         let directory = makeDirectory()
@@ -587,10 +651,16 @@ struct PersistentResponseCacheTests {
         let bodyURL = try #require(existingBodyURLs(in: directory).first)
 
         try Data(repeating: 9, count: 128).write(to: bodyURL, options: .atomic)
+        let priorEvictions = await cache.statistics().evictionCount
 
         #expect(await cache.get(key) == nil)
         #expect(try existingBodyURLs(in: directory).isEmpty)
         #expect(try indexEntryCount(in: directory) == 0)
+        #expect(await cache.statistics().evictionCount == priorEvictions + 1)
+        #expect(
+            await cache.telemetrySnapshot()
+                .contains(.scrubbedEntries(reason: .entryTooLarge, count: 1, byteCount: 8))
+        )
     }
 
     @Test("Unknown index version is evicted and startup continues")

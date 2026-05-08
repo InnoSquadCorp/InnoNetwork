@@ -202,7 +202,7 @@ public actor PersistentResponseCache: ResponseCache {
             return nil
         }
         guard shouldStore(key: entry.key, responseHeaders: entry.headers) else {
-            removeEntry(id: id, entry: entry)
+            scrubEntry(id: id, entry: entry, reason: .policyRejected)
             try? persistIndex()
             recordMiss()
             return nil
@@ -220,7 +220,7 @@ public actor PersistentResponseCache: ResponseCache {
             data = try await Self.readBodyData(at: bodyURL)
         } catch {
             if isCurrentEntry(id: id, entry: entry) {
-                removeEntry(id: id, entry: entry)
+                scrubEntry(id: id, entry: entry, reason: .missingBody)
                 try? persistIndex()
             }
             recordMiss()
@@ -228,7 +228,7 @@ public actor PersistentResponseCache: ResponseCache {
         }
         guard data.count <= configuration.maxEntryBytes else {
             if isCurrentEntry(id: id, entry: entry) {
-                removeEntry(id: id, entry: entry)
+                scrubEntry(id: id, entry: entry, reason: .entryTooLarge)
                 try? persistIndex()
             }
             recordMiss()
@@ -302,6 +302,22 @@ public actor PersistentResponseCache: ResponseCache {
         } else {
             evictionCount += count
         }
+    }
+
+    private func recordScrub(
+        reason: PersistentResponseCacheEvictionReason,
+        count: Int = 1,
+        byteCount: Int
+    ) {
+        guard count > 0 else { return }
+        telemetryEvents.append(
+            .scrubbedEntries(
+                reason: reason,
+                count: count,
+                byteCount: byteCount
+            )
+        )
+        recordEviction(count: count)
     }
 
     /// Store `value` under `key`. Drops the entry instead of storing it when
@@ -477,6 +493,15 @@ public actor PersistentResponseCache: ResponseCache {
             runningTotalBytes -= removed.byteCost
         }
         removeBody(fileName: entry.bodyFileName)
+    }
+
+    private func scrubEntry(
+        id: String,
+        entry: Entry,
+        reason: PersistentResponseCacheEvictionReason
+    ) {
+        removeEntry(id: id, entry: entry)
+        recordScrub(reason: reason, byteCount: entry.byteCost)
     }
 
     private func isCurrentEntry(id: String, entry: Entry) -> Bool {

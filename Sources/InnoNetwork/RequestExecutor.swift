@@ -11,6 +11,13 @@ struct NotModifiedSubstitution {
     let cached: CachedResponse
 }
 
+/// Cached snapshot that produced conditional request headers for the
+/// transport attempt. A later 304 is valid only while this entry still
+/// exists; otherwise the executor has no representation to substitute.
+struct ConditionalRevalidationContext {
+    let cached: CachedResponse
+}
+
 package struct RequestExecutor {
     let session: URLSessionProtocol
     let eventHub: NetworkEventHub
@@ -199,7 +206,7 @@ package struct RequestExecutor {
                 return cachedResponse
             }
 
-            try await prepareConditionalCacheHeaders(
+            let revalidation = try await prepareConditionalCacheHeaders(
                 request: &request,
                 cacheKey: cacheKey,
                 configuration: configuration
@@ -214,11 +221,12 @@ package struct RequestExecutor {
                 requestID: requestID
             )
 
-            if let substitution = await convertNotModifiedIfNeeded(
+            if let substitution = try await convertNotModifiedIfNeeded(
                 networkResponse,
                 cacheKey: cacheKey,
                 request: request,
-                configuration: configuration
+                configuration: configuration,
+                revalidation: revalidation
             ) {
                 if notModifiedRevisesVary(
                     cached: substitution.cached,
@@ -366,8 +374,12 @@ extension RequestExecutor {
                     try Task.checkCancellation()
 
                     var revalidationRequest = request
+                    let revalidation: ConditionalRevalidationContext?
                     if let etag = cached.etag {
                         revalidationRequest.setValue(etag, forHTTPHeaderField: "If-None-Match")
+                        revalidation = ConditionalRevalidationContext(cached: cached)
+                    } else {
+                        revalidation = nil
                     }
 
                     revalidationStartedAt = Date()
@@ -387,11 +399,12 @@ extension RequestExecutor {
                         response: result.response
                     )
                     let terminalState: CacheRevalidationState
-                    if let substitution = await convertNotModifiedIfNeeded(
+                    if let substitution = try await convertNotModifiedIfNeeded(
                         response,
                         cacheKey: cacheKey,
                         request: revalidationRequest,
-                        configuration: configuration
+                        configuration: configuration,
+                        revalidation: revalidation
                     ) {
                         try Task.checkCancellation()
                         if notModifiedRevisesVary(
@@ -492,7 +505,7 @@ extension RequestExecutor {
         request: inout URLRequest,
         cacheKey: ResponseCacheKey?,
         configuration: NetworkConfiguration
-    ) async throws {
+    ) async throws -> ConditionalRevalidationContext? {
         guard let cacheKey,
             request.httpMethod?.uppercased() == "GET",
             let cache = configuration.responseCache,
@@ -501,47 +514,117 @@ extension RequestExecutor {
             let cached = await cachedRespectingVary(cache, key: cacheKey, request: request),
             let etag = cached.etag
         else {
-            return
+            return nil
         }
         request.setValue(etag, forHTTPHeaderField: "If-None-Match")
+        return ConditionalRevalidationContext(cached: cached)
     }
 
     func convertNotModifiedIfNeeded(
         _ response: Response,
         cacheKey: ResponseCacheKey?,
         request: URLRequest,
-        configuration: NetworkConfiguration
-    ) async -> NotModifiedSubstitution? {
-        guard response.statusCode == 304,
-            configuration.responseCachePolicy.allowsConditionalRevalidation,
+        configuration: NetworkConfiguration,
+        revalidation: ConditionalRevalidationContext?
+    ) async throws -> NotModifiedSubstitution? {
+        guard response.statusCode == 304 else {
+            return nil
+        }
+        guard configuration.responseCachePolicy.allowsConditionalRevalidation,
             let cacheKey,
-            let cache = configuration.responseCache,
-            let cached = await cachedRespectingVary(cache, key: cacheKey, request: request),
-            let url = request.url,
-            let preservedHTTPResponse = cached.response(for: request),
-            let httpResponse = HTTPURLResponse(
-                url: url,
-                statusCode: cached.statusCode,
-                httpVersion: nil,
-                headerFields: mergedCachedHeaders(cached.headers, notModifiedResponse: response.response)
-            )
+            let cache = configuration.responseCache
         else {
             return nil
         }
+        guard let revalidation else {
+            return nil
+        }
+        let preparedCached = revalidation.cached
+        guard let cached = await cachedRespectingVary(cache, key: cacheKey, request: request) else {
+            throw cacheRevalidationFailed(
+                "Cached response disappeared before 304 Not Modified substitution.",
+                cached: preparedCached,
+                request: request
+            )
+        }
+        guard cached.matchesRepresentation(of: preparedCached) else {
+            throw cacheRevalidationFailed(
+                "Cached response changed before 304 Not Modified substitution.",
+                cached: preparedCached,
+                request: request
+            )
+        }
+        guard let url = request.url else {
+            throw cacheRevalidationFailed(
+                "Request URL was unavailable during 304 Not Modified substitution.",
+                cached: preparedCached,
+                request: request
+            )
+        }
+        guard let preservedHTTPResponse = preparedCached.response(for: request) else {
+            throw cacheRevalidationFailed(
+                "Cached response headers could not be reconstructed during 304 Not Modified substitution.",
+                cached: preparedCached,
+                request: request
+            )
+        }
+        guard
+            let httpResponse = HTTPURLResponse(
+                url: url,
+                statusCode: preparedCached.statusCode,
+                httpVersion: nil,
+                headerFields: mergedCachedHeaders(preparedCached.headers, notModifiedResponse: response.response)
+            )
+        else {
+            throw cacheRevalidationFailed(
+                "Merged 304 Not Modified headers could not be reconstructed.",
+                cached: preparedCached,
+                request: request
+            )
+        }
         return NotModifiedSubstitution(
             mergedResponse: Response(
-                statusCode: cached.statusCode,
-                data: cached.data,
+                statusCode: preparedCached.statusCode,
+                data: preparedCached.data,
                 request: request,
                 response: httpResponse
             ),
             preservedResponse: Response(
-                statusCode: cached.statusCode,
-                data: cached.data,
+                statusCode: preparedCached.statusCode,
+                data: preparedCached.data,
                 request: request,
                 response: preservedHTTPResponse
             ),
-            cached: cached
+            cached: preparedCached
+        )
+    }
+
+    private func cacheRevalidationFailed(
+        _ message: String,
+        cached: CachedResponse,
+        request: URLRequest
+    ) -> NetworkError {
+        let fallbackURL = request.url ?? URL(fileURLWithPath: "/")
+        let httpResponse =
+            cached.response(for: request)
+            ?? HTTPURLResponse(
+                url: fallbackURL,
+                mimeType: nil,
+                expectedContentLength: cached.data.count,
+                textEncodingName: nil
+            )
+        return .cacheRevalidationFailed(
+            underlying: SendableUnderlyingError(
+                domain: "InnoNetwork.ResponseCache",
+                code: 304,
+                message: message
+            ),
+            cached: Response(
+                statusCode: cached.statusCode,
+                data: cached.data,
+                request: request,
+                response: httpResponse
+            )
         )
     }
 
@@ -683,6 +766,16 @@ extension RequestExecutor {
     ) async -> CachedResponse? {
         guard let cached = await cache.get(key) else { return nil }
         return cachedResponseMatchesVary(cached, request: request) ? cached : nil
+    }
+}
+
+private extension CachedResponse {
+    func matchesRepresentation(of other: CachedResponse) -> Bool {
+        data == other.data
+            && statusCode == other.statusCode
+            && headers == other.headers
+            && requiresRevalidation == other.requiresRevalidation
+            && varyHeaders == other.varyHeaders
     }
 }
 

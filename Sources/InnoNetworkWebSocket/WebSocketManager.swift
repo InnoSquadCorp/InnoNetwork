@@ -763,13 +763,6 @@ public actor WebSocketManager {
         error: SendableUnderlyingError,
         statusCode: Int?
     ) async {
-        if Self.isCancelledTransportError(error),
-            let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
-            await task.isClientInitiatedCloseFlow()
-        {
-            return
-        }
-
         guard !Self.isCancelledTransportError(error) else { return }
         guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
 
@@ -1051,15 +1044,21 @@ public actor WebSocketManager {
         reconnectCount <= maxReconnectAttempts
     }
 
+    /// Completes AppDelegate-style background URLSession callbacks immediately.
+    ///
+    /// `WebSocketManager` does not own background URLSession processing, so the
+    /// identifier is intentionally ignored. The method is `nonisolated` so it
+    /// can be called without `await`, mirroring
+    /// `handleEventsForBackgroundURLSession` callback semantics.
+    ///
+    /// - Parameters:
+    ///   - identifier: Accepted for API compatibility with background session
+    ///     completion callbacks.
+    ///   - completion: Called immediately to satisfy the callback contract.
     nonisolated public func handleBackgroundSessionCompletion(
         _ identifier: String,
         completion: @escaping @Sendable () -> Void
     ) {
-        // WebSocketManager does not own background URLSession processing.
-        // `identifier` is accepted for API compatibility and intentionally completed immediately.
-        // Marked `nonisolated` so AppDelegate-style callbacks can call it
-        // without an `await`, mirroring the URLSession delegate-queue
-        // contract Apple documents for `handleEventsForBackgroundURLSession`.
         webSocketManagerLogger.debug(
             "Ignoring background completion identifier for WebSocket runtime: \(identifier, privacy: .public)")
         completion()
