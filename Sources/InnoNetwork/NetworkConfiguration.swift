@@ -198,6 +198,14 @@ public struct NetworkConfiguration: Sendable {
     /// clients should swap `httpCookieStorage` and (when desired)
     /// `httpCookieAcceptPolicy` here. The recipe lives in
     /// `docs/Cookies.md`.
+    ///
+    /// > Discouraged for new code beyond the cookie-isolation recipe and
+    /// > similarly narrow scenarios. The hook is a leaky abstraction over
+    /// > raw `URLSessionConfiguration` and bypasses the policy-axis design
+    /// > that the rest of the configuration surface enforces. If you find
+    /// > yourself reaching for it, please file an issue describing the
+    /// > use case so a first-class policy axis can be considered.
+    /// > See [`docs/UrlSessionEscapeHatchAlternatives.md`](../../../../docs/UrlSessionEscapeHatchAlternatives.md).
     public let urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
 
     /// Build a `URLSessionConfiguration` derived from `URLSessionConfiguration.default`,
@@ -263,6 +271,9 @@ public struct NetworkConfiguration: Sendable {
         /// See ``NetworkConfiguration/allowsInsecureHTTP``.
         public var allowsInsecureHTTP: Bool
         /// See ``NetworkConfiguration/urlSessionConfigurationOverride``.
+        /// Discouraged outside the cookie-isolation recipe; prefer first-
+        /// class policy axes when one is available, and file an issue
+        /// when one is not.
         public var urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
 
         fileprivate init(preset: NetworkConfiguration) {

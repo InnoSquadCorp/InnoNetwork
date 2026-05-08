@@ -147,6 +147,12 @@ public struct TransportPack: Sendable {
     public var allowsExpensiveNetworkAccess: Bool?
     public var allowsConstrainedNetworkAccess: Bool?
     public var redirectPolicy: (any RedirectPolicy)?
+    /// Raw URLSessionConfiguration escape hatch. Discouraged outside the
+    /// cookie-isolation recipe (see `docs/Cookies.md`); prefer first-class
+    /// policy axes such as `redirectPolicy`, `requestPriority`, and the
+    /// reachability/cellular toggles when an axis exists. File an issue
+    /// describing the use case when no axis covers it. See
+    /// `docs/UrlSessionEscapeHatchAlternatives.md`.
     public var urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
     public var allowsInsecureHTTP: Bool?
 
