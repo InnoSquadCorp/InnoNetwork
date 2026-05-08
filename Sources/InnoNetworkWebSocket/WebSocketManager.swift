@@ -8,14 +8,40 @@ private let webSocketManagerLogger = Logger(
     category: "websocket-manager"
 )
 
-public final class WebSocketManager: NSObject, Sendable {
+/// Actor-isolated WebSocket connection manager.
+///
+/// 4.0.0 converts ``WebSocketManager`` from a `final class` (held
+/// together with manual `OSAllocatedUnfairLock` synchronisation) into a
+/// Swift actor. Callers must now `await` every public method:
+///
+/// ```swift
+/// let manager = WebSocketManager(configuration: .default)
+/// let task = await manager.connect(url: url)
+/// for await event in await manager.events(for: task) { ... }
+/// await manager.disconnect(task)
+/// ```
+///
+/// The `URLSessionWebSocketDelegate` callback bridge is preserved as
+/// nonisolated entry points (`handleConnected`, `handleDisconnected`,
+/// `handleError`, `handleSessionError`) so synchronous URLSession
+/// delegate-queue invocations keep working without a Task hop. Those
+/// entry points only `yield` to the lossless `delegateEventContinuation`
+/// stream, whose single consumer Task drains in arrival order back
+/// through actor-isolated state.
+public actor WebSocketManager {
     private let configuration: WebSocketConfiguration
     private let session: any WebSocketURLSession
     private let delegate: WebSocketSessionDelegate
 
     package let runtimeRegistry = WebSocketRuntimeRegistry()
     private let eventHub: TaskEventHub<WebSocketEvent>
-    private let shutdownLock = OSAllocatedUnfairLock<Bool>(initialState: false)
+    /// `OSAllocatedUnfairLock` is preserved here even after the actor
+    /// conversion: the shutdown flag has to stay readable from the
+    /// nonisolated ``deinit`` and from synchronous URLSession delegate
+    /// callbacks, neither of which can hop onto the actor executor. The
+    /// lock is internally `Sendable`, so a `nonisolated let` field is
+    /// safe.
+    nonisolated private let shutdownLock = OSAllocatedUnfairLock<Bool>(initialState: false)
     private let invalidationBarrier: WebSocketInvalidationBarrier
 
     /// One-shot serialized event channel for URLSession delegate callbacks.
@@ -26,7 +52,7 @@ public final class WebSocketManager: NSObject, Sendable {
     /// executor and (rarely) reorder the lifecycle observed by a single
     /// task. The single consumer Task drains in arrival order so each
     /// task identifier observes a strict FIFO of its own callbacks.
-    private let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
+    nonisolated private let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
 
     private enum DelegateEvent: Sendable {
         case connected(taskIdentifier: Int, protocolName: String?)
@@ -67,7 +93,7 @@ public final class WebSocketManager: NSObject, Sendable {
         )
     }
 
-    public convenience init(configuration: WebSocketConfiguration = .default) {
+    public init(configuration: WebSocketConfiguration = .default) {
         let callbacks = WebSocketSessionDelegateCallbacks()
         let backgroundCompletionStore = BackgroundCompletionStore()
         let delegate = WebSocketSessionDelegate(
@@ -122,22 +148,20 @@ public final class WebSocketManager: NSObject, Sendable {
         )
         self.delegateEventContinuation = continuation
 
-        super.init()
-
         callbacks.setInvalidationHandler { [invalidationBarrier] _ in
             Task {
                 await invalidationBarrier.complete()
             }
         }
 
-        // After `super.init()` `self` is fully formed, so the consumer
-        // Task can capture it weakly. Each loop iteration drains exactly
-        // one event before awaiting the next, which is what gives us the
-        // strict per-task FIFO ordering the prior per-callback `Task`
-        // spawning could not guarantee. The Task is intentionally not
-        // stored: `deinit` finishes the continuation, the for-await loop
-        // exits, and the Task self-completes — no retain cycle is
-        // possible because the closure captures `self` weakly.
+        // The consumer Task captures `self` weakly. Each loop iteration
+        // drains exactly one event before awaiting the next, which is
+        // what gives us the strict per-task FIFO ordering the prior
+        // per-callback `Task` spawning could not guarantee. The Task is
+        // intentionally not stored: `deinit` finishes the continuation,
+        // the for-await loop exits, and the Task self-completes — no
+        // retain cycle is possible because the closure captures `self`
+        // weakly.
         Task { [weak self] in
             for await event in stream {
                 guard let self else { return }
@@ -432,7 +456,7 @@ public final class WebSocketManager: NSObject, Sendable {
             )
             await publishPong(task: task, context: pongContext)
         } catch {
-            let wsError = mapWebSocketError(error)
+            let wsError = Self.mapWebSocketError(error)
             await eventHub.publish(.error(wsError), for: task.id)
             throw wsError
         }
@@ -617,26 +641,26 @@ public final class WebSocketManager: NSObject, Sendable {
         await eventHub.publish(.pong(context), for: task.id)
     }
 
-    func handleConnected(taskIdentifier: Int, protocolName: String?) {
+    nonisolated func handleConnected(taskIdentifier: Int, protocolName: String?) {
         delegateEventContinuation.yield(
             .connected(taskIdentifier: taskIdentifier, protocolName: protocolName)
         )
     }
 
-    func handleDisconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?) {
+    nonisolated func handleDisconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?) {
         delegateEventContinuation.yield(
             .disconnected(taskIdentifier: taskIdentifier, closeCode: closeCode, reason: reason)
         )
     }
 
-    func handleError(taskIdentifier: Int, error: Error) {
-        let wsError = mapWebSocketError(error)
+    nonisolated func handleError(taskIdentifier: Int, error: Error) {
+        let wsError = Self.mapWebSocketError(error)
         delegateEventContinuation.yield(
             .mappedError(taskIdentifier: taskIdentifier, error: wsError)
         )
     }
 
-    func handleSessionError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int? = nil) {
+    nonisolated func handleSessionError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int? = nil) {
         delegateEventContinuation.yield(
             .sessionError(taskIdentifier: taskIdentifier, error: error, statusCode: statusCode)
         )
@@ -739,14 +763,14 @@ public final class WebSocketManager: NSObject, Sendable {
         error: SendableUnderlyingError,
         statusCode: Int?
     ) async {
-        if isCancelledTransportError(error),
+        if Self.isCancelledTransportError(error),
             let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
             await task.isClientInitiatedCloseFlow()
         {
             return
         }
 
-        guard !isCancelledTransportError(error) else { return }
+        guard !Self.isCancelledTransportError(error) else { return }
         guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
 
         let state = await task.state
@@ -767,7 +791,7 @@ public final class WebSocketManager: NSObject, Sendable {
             return
         }
 
-        let wsError: WebSocketError = isTimeoutTransportError(error) ? .pingTimeout : .connectionFailed(error)
+        let wsError: WebSocketError = Self.isTimeoutTransportError(error) ? .pingTimeout : .connectionFailed(error)
         await handleFailure(
             task: task,
             generation: await callbackGeneration(
@@ -778,7 +802,7 @@ public final class WebSocketManager: NSObject, Sendable {
         )
     }
 
-    private func mapWebSocketError(_ error: Error) -> WebSocketError {
+    nonisolated static func mapWebSocketError(_ error: Error) -> WebSocketError {
         if let internalError = error as? WebSocketInternalError {
             switch internalError {
             case .pingTimeout:
@@ -804,11 +828,11 @@ public final class WebSocketManager: NSObject, Sendable {
         return .connectionFailed(SendableUnderlyingError(error))
     }
 
-    private func isCancelledTransportError(_ error: SendableUnderlyingError) -> Bool {
+    nonisolated static func isCancelledTransportError(_ error: SendableUnderlyingError) -> Bool {
         error.domain == NSURLErrorDomain && error.code == URLError.cancelled.rawValue
     }
 
-    private func isTimeoutTransportError(_ error: SendableUnderlyingError) -> Bool {
+    nonisolated static func isTimeoutTransportError(_ error: SendableUnderlyingError) -> Bool {
         error.domain == NSURLErrorDomain && error.code == URLError.timedOut.rawValue
     }
 
@@ -1027,19 +1051,25 @@ public final class WebSocketManager: NSObject, Sendable {
         reconnectCount <= maxReconnectAttempts
     }
 
-    public func handleBackgroundSessionCompletion(_ identifier: String, completion: @escaping @Sendable () -> Void) {
+    nonisolated public func handleBackgroundSessionCompletion(
+        _ identifier: String,
+        completion: @escaping @Sendable () -> Void
+    ) {
         // WebSocketManager does not own background URLSession processing.
         // `identifier` is accepted for API compatibility and intentionally completed immediately.
+        // Marked `nonisolated` so AppDelegate-style callbacks can call it
+        // without an `await`, mirroring the URLSession delegate-queue
+        // contract Apple documents for `handleEventsForBackgroundURLSession`.
         webSocketManagerLogger.debug(
             "Ignoring background completion identifier for WebSocket runtime: \(identifier, privacy: .public)")
         completion()
     }
 
-    private var isShutdown: Bool {
+    nonisolated private var isShutdown: Bool {
         shutdownLock.withLock { $0 }
     }
 
-    private func markShutdownIfNeeded() -> Bool {
+    nonisolated private func markShutdownIfNeeded() -> Bool {
         shutdownLock.withLock { state in
             guard !state else { return false }
             state = true
