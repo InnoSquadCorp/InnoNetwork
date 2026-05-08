@@ -31,6 +31,38 @@ into one release line:
 - Phantom auth scopes through `AuthScope`, `PublicAuthScope`,
   `AuthRequiredScope`, and `EndpointBuilder`.
 
+## 4.x Configuration Convergence — Packs over AdvancedBuilder
+
+`NetworkConfiguration.AdvancedBuilder` exposes 33 mutable fields for
+backwards compatibility with the 3.x configuration shape. Five
+`Configuration*Pack` value types (`ResiliencePack`, `AuthPack`,
+`ObservabilityPack`, `CachePack`, `TransportPack`) ship alongside as
+forward-compat building blocks; they currently apply themselves to a
+builder via `apply(to:)`, so today they are syntactic sugar over the
+flat builder rather than an independent configuration model.
+
+The 4.x line **prefers Packs as the documented entry point** and treats
+the flat builder as a legacy ramp:
+
+- New code, examples, and DocC tutorials should compose configurations
+  out of Packs (`NetworkConfiguration.advanced(baseURL:) { builder in
+  ResiliencePack(...).apply(to: &builder); AuthPack(...).apply(to: &builder)
+  }`) rather than mutating the builder directly.
+- `AdvancedBuilder` itself is **not** marked `@available(*, deprecated)`
+  in 4.x; doing so today would warn on every Pack `apply(to:)` call
+  because Packs internally mutate the same builder. The convergence
+  plan is to introduce a Packs-only configuration init in a later 4.x
+  minor (no major bump), once each axis has a dedicated Pack and the
+  builder can be retired without losing expressiveness.
+- Adopters who only mutate a handful of fields can keep using the
+  builder; the targeted `@available(*, deprecated)` pass will land
+  alongside the Packs-only init.
+
+This is a documentation-level commitment, not a contract change.
+`API_STABILITY.md` continues to list the builder as part of the
+Provisionally Stable surface so existing call sites compile without
+changes for the rest of the 4.x line.
+
 ## Explicitly Deferred
 
 - Full WebSocket `permessage-deflate` (RFC 7692) negotiation remains out of
