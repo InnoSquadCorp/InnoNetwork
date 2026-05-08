@@ -8,6 +8,7 @@ InnoNetworkWebSocket	swift.enum	WebSocketCloseCode
 InnoNetworkWebSocket	swift.enum	WebSocketCloseDisposition
 InnoNetworkWebSocket	swift.enum	WebSocketError
 InnoNetworkWebSocket	swift.enum	WebSocketEvent
+InnoNetworkWebSocket	swift.enum	WebSocketProtocolFeature
 InnoNetworkWebSocket	swift.enum	WebSocketSendOverflowPolicy
 InnoNetworkWebSocket	swift.enum	WebSocketState
 InnoNetworkWebSocket	swift.enum.case	WebSocketCloseCode.abnormalClosure
@@ -48,6 +49,7 @@ InnoNetworkWebSocket	swift.enum.case	WebSocketError.pingTimeout
 InnoNetworkWebSocket	swift.enum.case	WebSocketError.reconnectWindowExceeded
 InnoNetworkWebSocket	swift.enum.case	WebSocketError.sendQueueOverflow(limit:)
 InnoNetworkWebSocket	swift.enum.case	WebSocketError.unknown
+InnoNetworkWebSocket	swift.enum.case	WebSocketError.unsupportedProtocolFeature(_:)
 InnoNetworkWebSocket	swift.enum.case	WebSocketEvent.connected(_:)
 InnoNetworkWebSocket	swift.enum.case	WebSocketEvent.disconnected(_:)
 InnoNetworkWebSocket	swift.enum.case	WebSocketEvent.error(_:)
@@ -56,6 +58,7 @@ InnoNetworkWebSocket	swift.enum.case	WebSocketEvent.ping(_:)
 InnoNetworkWebSocket	swift.enum.case	WebSocketEvent.pong(_:)
 InnoNetworkWebSocket	swift.enum.case	WebSocketEvent.sendDropped(limit:)
 InnoNetworkWebSocket	swift.enum.case	WebSocketEvent.string(_:)
+InnoNetworkWebSocket	swift.enum.case	WebSocketProtocolFeature.permessageDeflate
 InnoNetworkWebSocket	swift.enum.case	WebSocketSendOverflowPolicy.dropNewest
 InnoNetworkWebSocket	swift.enum.case	WebSocketSendOverflowPolicy.fail
 InnoNetworkWebSocket	swift.enum.case	WebSocketState.connected
@@ -69,6 +72,7 @@ InnoNetworkWebSocket	swift.init	WebSocketCloseCode.init(rawValue:)
 InnoNetworkWebSocket	swift.init	WebSocketConfiguration.init(maxConnectionsPerHost:connectionTimeout:heartbeatInterval:pongTimeout:maxMissedPongs:reconnectDelay:reconnectJitterRatio:maxReconnectDelay:maxReconnectAttempts:reconnectMaxTotalDuration:allowsCellularAccess:sessionIdentifier:requestHeaders:handshakeRequestAdapters:eventDeliveryPolicy:eventMetricsReporter:sendQueueLimit:sendQueueOverflowPolicy:closeHandshakeTimeout:maximumMessageSize:permessageDeflateEnabled:)
 InnoNetworkWebSocket	swift.init	WebSocketHandshakeRequestAdapter.init(_:)
 InnoNetworkWebSocket	swift.init	WebSocketManager.init(configuration:)
+InnoNetworkWebSocket	swift.init	WebSocketProtocolFeature.init(rawValue:)
 InnoNetworkWebSocket	swift.init	WebSocketState.init(rawValue:)
 InnoNetworkWebSocket	swift.init	WebSocketTask.init(url:subprotocols:id:)
 InnoNetworkWebSocket	swift.method	WebSocketHandshakeRequestAdapter.adapt(_:)
@@ -91,6 +95,7 @@ InnoNetworkWebSocket	swift.method	WebSocketManager.setOnErrorHandler(_:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.setOnMessageHandler(_:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.setOnPongHandler(_:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.setOnStringHandler(_:)
+InnoNetworkWebSocket	swift.method	WebSocketManager.shutdown()
 InnoNetworkWebSocket	swift.method	WebSocketManager.task(withId:)
 InnoNetworkWebSocket	swift.method	WebSocketState.canTransition(to:)
 InnoNetworkWebSocket	swift.method	WebSocketTask.hash(into:)
@@ -144,6 +149,7 @@ InnoNetworkWebSocket	swift.property	WebSocketPingContext.attemptNumber
 InnoNetworkWebSocket	swift.property	WebSocketPingContext.dispatchedAt
 InnoNetworkWebSocket	swift.property	WebSocketPongContext.attemptNumber
 InnoNetworkWebSocket	swift.property	WebSocketPongContext.roundTrip
+InnoNetworkWebSocket	swift.property	WebSocketProtocolFeature.description
 InnoNetworkWebSocket	swift.property	WebSocketState.isTerminal
 InnoNetworkWebSocket	swift.property	WebSocketState.nextStates
 InnoNetworkWebSocket	swift.property	WebSocketTask.attemptedReconnectCount

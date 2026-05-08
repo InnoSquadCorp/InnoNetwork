@@ -83,17 +83,9 @@ public struct RefreshFailureCooldown: Sendable {
 
 
 package actor RefreshTokenCoordinator {
-
-    private enum RefreshState {
-        case idle
-        case inFlight(id: UUID, task: Task<String, Error>)
-        case cooldown(until: Date, lastError: any Error & Sendable)
-    }
-
     private let policy: RefreshTokenPolicy
     private let now: @Sendable () -> Date
-    private var state: RefreshState = .idle
-    private var consecutiveFailures: Int = 0
+    private var state: RefreshLifecycleState = .initial
 
     package init(
         policy: RefreshTokenPolicy,
@@ -110,8 +102,7 @@ package actor RefreshTokenCoordinator {
     /// window so a stale 401 result cannot leak across callers when
     /// `Authorization` is excluded from the dedup key.
     package var isRefreshInProgress: Bool {
-        if case .inFlight = state { return true }
-        return false
+        state.isRefreshInProgress
     }
 
     package func applyCurrentToken(to request: URLRequest) async throws -> URLRequest {
@@ -144,10 +135,16 @@ package actor RefreshTokenCoordinator {
     }
 
     private func refreshedToken() async throws -> String {
-        switch state {
+        state =
+            RefreshLifecycleReducer.reduce(
+                state: state,
+                event: .expireCooldownIfNeeded,
+                context: lifecycleContext()
+            ).state
+
+        switch state.phase {
         case .cooldown(let until, let lastError):
             if now() < until { throw lastError }
-            state = .idle
         case .inFlight(_, let task):
             return try await task.value
         case .idle:
@@ -182,32 +179,185 @@ package actor RefreshTokenCoordinator {
                 throw error
             }
         }
-        state = .inFlight(id: id, task: task)
+        state =
+            RefreshLifecycleReducer.reduce(
+                state: state,
+                event: .start(id: id, task: task),
+                context: lifecycleContext()
+            ).state
         return try await task.value
     }
 
     private func refreshDidSucceed(id: UUID) {
-        guard case .inFlight(let currentId, _) = state, currentId == id else { return }
-        consecutiveFailures = 0
-        state = .idle
+        state =
+            RefreshLifecycleReducer.reduce(
+                state: state,
+                event: .succeed(id: id),
+                context: lifecycleContext()
+            ).state
     }
 
     private func refreshDidCancel(id: UUID) {
-        guard case .inFlight(let currentId, _) = state, currentId == id else { return }
-        state = .idle
+        state =
+            RefreshLifecycleReducer.reduce(
+                state: state,
+                event: .cancel(id: id),
+                context: lifecycleContext()
+            ).state
     }
 
     private func refreshDidFail(id: UUID, error: any Error & Sendable) {
-        guard case .inFlight(let currentId, _) = state, currentId == id else { return }
-        consecutiveFailures += 1
-        let cooldown = policy.failureCooldown.cooldown(afterConsecutiveFailures: consecutiveFailures)
-        if cooldown > 0 {
-            state = .cooldown(
-                until: now().addingTimeInterval(cooldown),
-                lastError: error
+        state =
+            RefreshLifecycleReducer.reduce(
+                state: state,
+                event: .fail(id: id, error: error),
+                context: lifecycleContext()
+            ).state
+    }
+
+    private func lifecycleContext() -> RefreshLifecycleContext {
+        RefreshLifecycleContext(now: now(), failureCooldown: policy.failureCooldown)
+    }
+}
+
+
+package struct RefreshLifecycleState: Sendable {
+    package var phase: RefreshLifecyclePhase
+    package var consecutiveFailures: Int
+
+    package static var initial: Self {
+        RefreshLifecycleState(phase: .idle, consecutiveFailures: 0)
+    }
+
+    package var isRefreshInProgress: Bool {
+        if case .inFlight = phase { return true }
+        return false
+    }
+}
+
+
+package enum RefreshLifecyclePhase: Sendable {
+    case idle
+    case inFlight(id: UUID, task: Task<String, Error>)
+    case cooldown(until: Date, lastError: any Error & Sendable)
+}
+
+
+package enum RefreshLifecycleEvent: Sendable {
+    case expireCooldownIfNeeded
+    case start(id: UUID, task: Task<String, Error>)
+    case succeed(id: UUID)
+    case cancel(id: UUID)
+    case fail(id: UUID, error: any Error & Sendable)
+}
+
+
+package struct RefreshLifecycleContext: Sendable {
+    package let now: Date
+    package let failureCooldown: RefreshFailureCooldown
+
+    package init(now: Date, failureCooldown: RefreshFailureCooldown) {
+        self.now = now
+        self.failureCooldown = failureCooldown
+    }
+}
+
+
+package enum RefreshLifecycleEffect: Sendable, Equatable {
+    case ignoreStaleCompletion
+}
+
+
+package enum RefreshLifecycleReducer: StateReducer {
+    package static func reduce(
+        state: RefreshLifecycleState,
+        event: RefreshLifecycleEvent,
+        context: RefreshLifecycleContext
+    ) -> StateReduction<RefreshLifecycleState, RefreshLifecycleEffect> {
+        switch event {
+        case .expireCooldownIfNeeded:
+            return expireCooldownIfNeeded(state: state, now: context.now)
+        case .start(let id, let task):
+            return start(state: state, id: id, task: task)
+        case .succeed(let id):
+            return complete(state: state, id: id, result: .success(()), context: context)
+        case .cancel(let id):
+            return cancel(state: state, id: id)
+        case .fail(let id, let error):
+            return complete(state: state, id: id, result: .failure(error), context: context)
+        }
+    }
+
+    private static func expireCooldownIfNeeded(
+        state: RefreshLifecycleState,
+        now: Date
+    ) -> StateReduction<RefreshLifecycleState, RefreshLifecycleEffect> {
+        guard case .cooldown(let until, _) = state.phase, now >= until else {
+            return StateReduction(state: state)
+        }
+        return StateReduction(
+            state: RefreshLifecycleState(
+                phase: .idle,
+                consecutiveFailures: state.consecutiveFailures
             )
-        } else {
-            state = .idle
+        )
+    }
+
+    private static func start(
+        state: RefreshLifecycleState,
+        id: UUID,
+        task: Task<String, Error>
+    ) -> StateReduction<RefreshLifecycleState, RefreshLifecycleEffect> {
+        guard case .idle = state.phase else { return StateReduction(state: state) }
+        return StateReduction(
+            state: RefreshLifecycleState(
+                phase: .inFlight(id: id, task: task),
+                consecutiveFailures: state.consecutiveFailures
+            )
+        )
+    }
+
+    private static func cancel(
+        state: RefreshLifecycleState,
+        id: UUID
+    ) -> StateReduction<RefreshLifecycleState, RefreshLifecycleEffect> {
+        guard case .inFlight(let currentId, _) = state.phase, currentId == id else {
+            return StateReduction(state: state, effects: [.ignoreStaleCompletion])
+        }
+        return StateReduction(
+            state: RefreshLifecycleState(
+                phase: .idle,
+                consecutiveFailures: state.consecutiveFailures
+            )
+        )
+    }
+
+    private static func complete(
+        state: RefreshLifecycleState,
+        id: UUID,
+        result: Result<Void, any Error & Sendable>,
+        context: RefreshLifecycleContext
+    ) -> StateReduction<RefreshLifecycleState, RefreshLifecycleEffect> {
+        guard case .inFlight(let currentId, _) = state.phase, currentId == id else {
+            return StateReduction(state: state, effects: [.ignoreStaleCompletion])
+        }
+
+        switch result {
+        case .success:
+            return StateReduction(state: .initial)
+        case .failure(let error):
+            let failures = state.consecutiveFailures + 1
+            let cooldown = context.failureCooldown.cooldown(afterConsecutiveFailures: failures)
+            let phase: RefreshLifecyclePhase =
+                cooldown > 0
+                ? .cooldown(until: context.now.addingTimeInterval(cooldown), lastError: error)
+                : .idle
+            return StateReduction(
+                state: RefreshLifecycleState(
+                    phase: phase,
+                    consecutiveFailures: failures
+                )
+            )
         }
     }
 }

@@ -10,6 +10,11 @@ package actor WebSocketRuntimeRegistry {
     private var messageListenerTasks: [String: Task<Void, Never>] = [:]
     private var reconnectTasks: [String: Task<Void, Never>] = [:]
     private var closeHandshakeTasks: [String: Task<Void, Never>] = [:]
+    /// Set when ``markShutdownStartedAndSnapshot()`` runs. Once true, ``add(_:)``
+    /// refuses new task registrations so concurrent `connect()`/`retry()` callers
+    /// cannot leak orphan tasks past the terminal cleanup sweep performed by
+    /// `WebSocketManager.shutdown()`.
+    private var shutdownStarted = false
 
     private var _onConnected: (@Sendable (WebSocketTask, String?) async -> Void)?
     private var _onDisconnected: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?
@@ -51,8 +56,17 @@ package actor WebSocketRuntimeRegistry {
         _onPong = callback
     }
 
-    package func add(_ task: WebSocketTask) {
+    /// Adds `task` to the registry unless shutdown has started, in which case
+    /// the registration is refused and the caller is responsible for failing
+    /// the task with a manager-shutdown error.
+    ///
+    /// - Returns: `true` if the task was registered, `false` if shutdown has
+    ///   already started.
+    @discardableResult
+    package func add(_ task: WebSocketTask) -> Bool {
+        guard !shutdownStarted else { return false }
         tasks[task.id] = task
+        return true
     }
 
     package func remove(_ task: WebSocketTask) {
@@ -65,6 +79,36 @@ package actor WebSocketRuntimeRegistry {
 
     package func allTasks() -> [WebSocketTask] {
         Array(tasks.values)
+    }
+
+    /// Marks the registry as shutting down and returns the current task
+    /// snapshot in a single actor hop, so subsequent `add(_:)` calls cannot
+    /// race past the snapshot.
+    package func markShutdownStartedAndSnapshot() -> [WebSocketTask] {
+        shutdownStarted = true
+        return Array(tasks.values)
+    }
+
+    /// Resets every task-scoped collection so no phantom mappings or
+    /// background coordinators outlive the wipe. Background coordinator
+    /// tasks (heartbeat / message listener / reconnect / close handshake)
+    /// are dropped without awaiting cancellation; callers that need
+    /// awaited cleanup must use `removeTaskRuntime(taskId:)` per task
+    /// before this method.
+    package func removeAllTasks() {
+        tasks.removeAll(keepingCapacity: false)
+        identifierToTask.removeAll(keepingCapacity: false)
+        identifierToGeneration.removeAll(keepingCapacity: false)
+        taskIdToIdentifier.removeAll(keepingCapacity: false)
+        taskIdToURLTask.removeAll(keepingCapacity: false)
+        for task in heartbeatTasks.values { task.cancel() }
+        heartbeatTasks.removeAll(keepingCapacity: false)
+        for task in messageListenerTasks.values { task.cancel() }
+        messageListenerTasks.removeAll(keepingCapacity: false)
+        for task in reconnectTasks.values { task.cancel() }
+        reconnectTasks.removeAll(keepingCapacity: false)
+        for task in closeHandshakeTasks.values { task.cancel() }
+        closeHandshakeTasks.removeAll(keepingCapacity: false)
     }
 
     package func setMapping(webSocketTask: WebSocketTask, for identifier: Int, generation: Int) {
@@ -196,5 +240,14 @@ package actor WebSocketRuntimeRegistry {
 
     package func clearCloseHandshakeTask(for taskId: String) {
         closeHandshakeTasks.removeValue(forKey: taskId)
+    }
+
+    package func clearCallbacks() {
+        _onConnected = nil
+        _onDisconnected = nil
+        _onMessage = nil
+        _onString = nil
+        _onError = nil
+        _onPong = nil
     }
 }

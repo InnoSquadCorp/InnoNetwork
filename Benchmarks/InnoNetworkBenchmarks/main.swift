@@ -36,8 +36,55 @@ private struct BenchmarkBaselineSummary: Codable, Sendable {
     let baselinePath: String
     let enforceBaseline: Bool
     let maxRegressionPercent: Double
+    let guardThresholds: [BenchmarkGuardThreshold]
+    let regressionReason: String?
     let deltas: [BenchmarkBaselineDelta]
     let guardFailures: [BenchmarkGuardFailure]
+
+    private enum CodingKeys: String, CodingKey {
+        case baselinePath, enforceBaseline, maxRegressionPercent, guardThresholds,
+            regressionReason, deltas, guardFailures
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        baselinePath = try container.decode(String.self, forKey: .baselinePath)
+        enforceBaseline = try container.decode(Bool.self, forKey: .enforceBaseline)
+        maxRegressionPercent = try container.decode(Double.self, forKey: .maxRegressionPercent)
+        // `guardThresholds` was introduced after the original baseline format.
+        // Older baseline JSONs that lack the key still decode cleanly with an
+        // empty default so `--enforce-baseline` continues to work against
+        // captured-before-the-field reports.
+        guardThresholds =
+            try container.decodeIfPresent([BenchmarkGuardThreshold].self, forKey: .guardThresholds)
+            ?? []
+        regressionReason = try container.decodeIfPresent(String.self, forKey: .regressionReason)
+        deltas = try container.decode([BenchmarkBaselineDelta].self, forKey: .deltas)
+        guardFailures = try container.decode([BenchmarkGuardFailure].self, forKey: .guardFailures)
+    }
+
+    init(
+        baselinePath: String,
+        enforceBaseline: Bool,
+        maxRegressionPercent: Double,
+        guardThresholds: [BenchmarkGuardThreshold],
+        regressionReason: String?,
+        deltas: [BenchmarkBaselineDelta],
+        guardFailures: [BenchmarkGuardFailure]
+    ) {
+        self.baselinePath = baselinePath
+        self.enforceBaseline = enforceBaseline
+        self.maxRegressionPercent = maxRegressionPercent
+        self.guardThresholds = guardThresholds
+        self.regressionReason = regressionReason
+        self.deltas = deltas
+        self.guardFailures = guardFailures
+    }
+}
+
+private struct BenchmarkGuardThreshold: Codable, Sendable {
+    let identifier: BenchmarkIdentifier
+    let maxRegressionPercent: Double
 }
 
 private struct BenchmarkBaselineDelta: Codable, Sendable {
@@ -47,6 +94,7 @@ private struct BenchmarkBaselineDelta: Codable, Sendable {
     let currentOperationsPerSecond: Double
     let deltaPercent: Double
     let isGuarded: Bool
+    let maxRegressionPercent: Double?
 }
 
 private struct BenchmarkIdentifier: Codable, Hashable, Sendable {
@@ -75,12 +123,14 @@ private struct BaselineComparison: Sendable {
     let identifier: BenchmarkIdentifier
     let deltaPercent: Double
     let isGuarded: Bool
+    let maxRegressionPercent: Double?
 }
 
 private struct BenchmarkGuardFailure: Codable, Sendable {
     let identifier: BenchmarkIdentifier
     let deltaPercent: Double
     let maxRegressionPercent: Double
+    let regressionReason: String?
 }
 
 private struct ResidentMemorySnapshot: Sendable {
@@ -95,6 +145,8 @@ private struct BenchmarkOptions: Sendable {
     let enforceBaseline: Bool
     let guardBenchmarks: Set<BenchmarkIdentifier>
     let maxRegressionPercent: Double
+    let guardThresholds: [BenchmarkIdentifier: Double]
+    let regressionReason: String?
 
     static func parse(arguments: [String]) throws -> BenchmarkOptions {
         let defaultBaseline = URL(fileURLWithPath: #filePath)
@@ -109,6 +161,8 @@ private struct BenchmarkOptions: Sendable {
         var enforceBaseline = false
         var guardBenchmarks: Set<BenchmarkIdentifier> = []
         var maxRegressionPercent = 0.0
+        var guardThresholds: [BenchmarkIdentifier: Double] = [:]
+        var regressionReason = ProcessInfo.processInfo.environment["INNO_BENCHMARK_REGRESSION_REASON"]
 
         var iterator = arguments.makeIterator()
         func requiredValue(
@@ -167,6 +221,32 @@ private struct BenchmarkOptions: Sendable {
                     )
                 }
                 maxRegressionPercent = percent
+            case "--guard-threshold":
+                let rawThreshold = try requiredValue(
+                    code: 14,
+                    description: "Missing benchmark threshold after --guard-threshold."
+                )
+                let parts = rawThreshold.split(separator: "=", maxSplits: 1).map(String.init)
+                guard parts.count == 2,
+                    let percent = Double(parts[1]),
+                    percent >= 0
+                else {
+                    throw NSError(
+                        domain: "InnoNetworkBenchmarks",
+                        code: 14,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Invalid --guard-threshold '\(rawThreshold)'. Use group/name=percent."
+                        ]
+                    )
+                }
+                guardThresholds[try BenchmarkIdentifier.parse(parts[0])] = percent
+            case "--regression-reason":
+                let reason = try requiredValue(
+                    code: 15,
+                    description: "Missing text after --regression-reason."
+                )
+                regressionReason = reason
             default:
                 throw NSError(
                     domain: "InnoNetworkBenchmarks",
@@ -185,8 +265,14 @@ private struct BenchmarkOptions: Sendable {
             baselinePath: baselinePath,
             enforceBaseline: enforceBaseline,
             guardBenchmarks: guardBenchmarks,
-            maxRegressionPercent: maxRegressionPercent
+            maxRegressionPercent: maxRegressionPercent,
+            guardThresholds: guardThresholds,
+            regressionReason: regressionReason
         )
+    }
+
+    func guardThreshold(for identifier: BenchmarkIdentifier) -> Double {
+        guardThresholds[identifier] ?? maxRegressionPercent
     }
 }
 
@@ -892,13 +978,20 @@ private enum InnoNetworkBenchmarks {
                 ((result.operationsPerSecond - baseline.operationsPerSecond)
                     / max(baseline.operationsPerSecond, 0.000_001)) * 100.0
             let isGuarded = guardedIdentifiers.contains(identifier)
-            let guardLabel = isGuarded ? " [guard]" : ""
+            let threshold = isGuarded ? options.guardThreshold(for: identifier) : nil
+            let guardLabel: String
+            if let threshold {
+                guardLabel = " [guard <= \(String(format: "%.2f", threshold))%]"
+            } else {
+                guardLabel = isGuarded ? " [guard]" : ""
+            }
             print("- \(identifier.displayName): \(String(format: "%+.2f", delta))% vs baseline\(guardLabel)")
             comparisons.append(
                 BaselineComparison(
                     identifier: identifier,
                     deltaPercent: delta,
-                    isGuarded: isGuarded
+                    isGuarded: isGuarded,
+                    maxRegressionPercent: threshold
                 )
             )
             deltas.append(
@@ -908,7 +1001,8 @@ private enum InnoNetworkBenchmarks {
                     baselineOperationsPerSecond: baseline.operationsPerSecond,
                     currentOperationsPerSecond: result.operationsPerSecond,
                     deltaPercent: delta,
-                    isGuarded: isGuarded
+                    isGuarded: isGuarded,
+                    maxRegressionPercent: threshold
                 )
             )
         }
@@ -938,11 +1032,13 @@ private enum InnoNetworkBenchmarks {
                 guard comparison.isGuarded else { return nil }
                 guard comparison.deltaPercent < 0 else { return nil }
                 let regression = abs(comparison.deltaPercent)
-                guard regression > options.maxRegressionPercent else { return nil }
+                let threshold = comparison.maxRegressionPercent ?? options.maxRegressionPercent
+                guard regression > threshold else { return nil }
                 return BenchmarkGuardFailure(
                     identifier: comparison.identifier,
                     deltaPercent: comparison.deltaPercent,
-                    maxRegressionPercent: options.maxRegressionPercent
+                    maxRegressionPercent: threshold,
+                    regressionReason: options.regressionReason
                 )
             }
         } else {
@@ -964,6 +1060,17 @@ private enum InnoNetworkBenchmarks {
             baselinePath: options.baselinePath,
             enforceBaseline: options.enforceBaseline,
             maxRegressionPercent: options.maxRegressionPercent,
+            guardThresholds: options.guardThresholds
+                .map {
+                    BenchmarkGuardThreshold(
+                        identifier: $0.key,
+                        maxRegressionPercent: $0.value
+                    )
+                }
+                .sorted { lhs, rhs in
+                    lhs.identifier.displayName < rhs.identifier.displayName
+                },
+            regressionReason: options.regressionReason,
             deltas: deltas,
             guardFailures: failures
         )

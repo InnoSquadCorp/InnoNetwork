@@ -560,6 +560,11 @@ changes are intentional and are called out below; migration recipes live in
 - `InnoNetworkPersistentCache` product with `PersistentResponseCache` and
   `PersistentResponseCacheConfiguration` for conservative on-disk GET
   response caching.
+- `PersistentResponseCache` format v2 protects sensitive cache-key header
+  components with managed HMAC-SHA256, exposes an App Group directory helper,
+  self-heals from corrupt or unknown-version on-disk indexes by resetting the
+  cache's own subtree, and surfaces statistics plus scrub/eviction telemetry
+  for production operations.
 - `RefreshTokenPolicy` for current-token application, single-flight refresh,
   and one-time replay after configured auth status codes.
 - `RequestCoalescingPolicy` for raw transport fan-out among identical in-flight
@@ -572,6 +577,18 @@ changes are intentional and are called out below; migration recipes live in
   `NetworkError` enum case was added.
 - `MultipartResponseDecoder` and `MultipartPart` for buffered multipart
   response parsing.
+- `MultipartStreamingResponseDecoder` and `MultipartStreamingEvent` for
+  large or long-lived multipart response streams. The streaming parser emits
+  `partStarted`, `bodyChunk`, and `partEnded` events while preserving
+  boundary-like payload bytes.
+- `InnoNetworkOpenAPI` companion product with `OpenAPIRestOperation` and
+  `OpenAPIRequest`, allowing generated or hand-written OpenAPI operation
+  descriptors to run through `NetworkClient` without adding dependencies to
+  the core runtime products.
+- VCR-style `InnoNetworkTestSupport` helpers (`VCRURLSession`,
+  `VCRCassette`, `VCRRequest`, `VCRResponse`, and redaction policy types) for
+  deterministic record/replay tests with credential/query redaction and
+  unmatched-request failures.
 - Optional `InnoNetworkCodegen` product with `@APIDefinition` and `#endpoint`
   macros. The core runtime targets do not link `swift-syntax`; SwiftPM may
   still resolve package-level macro dependencies while loading the package
@@ -612,6 +629,14 @@ changes are intentional and are called out below; migration recipes live in
   `WebSocketError.sendQueueOverflow(limit:)` and
   `WebSocketEvent.sendDropped(limit:)` surface back-pressure outcomes.
   `WebSocketTask.inFlightSendCount` reports the live counter.
+- `WebSocketManager.shutdown() async` as the canonical WebSocket lifecycle
+  teardown. Shutdown is idempotent, terminal, cancels active runtime tasks,
+  finishes event streams, clears listeners, and waits for URLSession
+  invalidation before returning.
+- `WebSocketError.unsupportedProtocolFeature` and `WebSocketProtocolFeature`
+  for explicit protocol-negotiation diagnostics. The URLSession transport now
+  rejects `permessageDeflateEnabled` instead of silently opening an
+  uncompressed socket.
 - `PublicKeyPinningPolicy.HostMatchingStrategy` lets security operators choose
   host pin matching semantics. The default `.unionAllMatches` covers exact and
   parent-domain pins as a union, while `.mostSpecificHost` uses only
@@ -712,8 +737,9 @@ changes are intentional and are called out below; migration recipes live in
   thresholds.
 - `@APIDefinition` now rejects optional path-placeholder properties at macro
   expansion time.
-- Benchmark JSON summary version 2 includes baseline deltas and guard
-  failures. The benchmark workflow renders a PR comment and appends
+- Benchmark JSON summary version 2 includes baseline deltas, guarded
+  benchmark failures, per-benchmark thresholds, and optional regression
+  rationale. The benchmark workflow renders a PR comment and appends
   scheduled/manual results to the `benchmark-trends` branch.
 
 ### Changed

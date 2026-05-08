@@ -52,6 +52,10 @@ let package = Package(
             name: "InnoNetworkPersistentCache",
             targets: ["InnoNetworkPersistentCache"]
         ),
+        .library(
+            name: "InnoNetworkOpenAPI",
+            targets: ["InnoNetworkOpenAPI"]
+        ),
         // Test helpers that consumers can pull into *their* test targets to
         // assert on InnoNetwork integrations (for example
         // ``MockURLSession``, ``StubNetworkClient``, and
@@ -106,6 +110,12 @@ let package = Package(
             resources: [.process("Resources")],
             swiftSettings: strictSettings
         ),
+        .target(
+            name: "InnoNetworkOpenAPI",
+            dependencies: ["InnoNetwork"],
+            path: "Sources/InnoNetworkOpenAPI",
+            swiftSettings: strictSettings
+        ),
         // Test helpers. Public symbols here form a Provisionally Stable
         // contract; the library is intended for *consumer* test targets and
         // should not be linked into production binaries. Internal helpers
@@ -138,6 +148,7 @@ let package = Package(
             dependencies: [
                 "InnoNetwork",
                 "InnoNetworkDownload",
+                "InnoNetworkOpenAPI",
                 "InnoNetworkPersistentCache",
                 "InnoNetworkWebSocket",
             ],
@@ -155,7 +166,7 @@ let package = Package(
         ),
         .testTarget(
             name: "InnoNetworkTests",
-            dependencies: ["InnoNetwork", "InnoNetworkTestSupport"],
+            dependencies: ["InnoNetwork", "InnoNetworkOpenAPI", "InnoNetworkTestSupport"],
             path: "Tests/InnoNetworkTests",
             swiftSettings: strictSettings
         ),

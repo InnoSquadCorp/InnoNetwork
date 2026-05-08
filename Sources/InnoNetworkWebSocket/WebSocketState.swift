@@ -56,6 +56,7 @@ public enum WebSocketError: Error, Sendable, Equatable {
     case invalidURL(String)
     case connectionFailed(SendableUnderlyingError)
     case disconnected(SendableUnderlyingError?)
+    case unsupportedProtocolFeature(WebSocketProtocolFeature)
     case pingTimeout
     case maxReconnectAttemptsExceeded
     /// Reconnect was attempted but the configured
@@ -86,6 +87,8 @@ extension WebSocketError: LocalizedError {
                 return "WebSocket disconnected with error: \(error.message)"
             }
             return "WebSocket disconnected"
+        case .unsupportedProtocolFeature(let feature):
+            return "\(feature.description) is not supported by the active WebSocket transport"
         case .pingTimeout:
             return "WebSocket ping timed out"
         case .maxReconnectAttemptsExceeded:
@@ -100,4 +103,14 @@ extension WebSocketError: LocalizedError {
             return "Unknown WebSocket error occurred"
         }
     }
+}
+
+
+/// WebSocket protocol extension or feature mentioned in transport diagnostics.
+public enum WebSocketProtocolFeature: String, Sendable, Equatable, CustomStringConvertible {
+    /// RFC 7692 per-message compression.
+    case permessageDeflate = "permessage-deflate"
+
+    /// Wire-format feature name.
+    public var description: String { rawValue }
 }

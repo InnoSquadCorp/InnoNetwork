@@ -193,6 +193,166 @@ struct WebSocketReconnectHardeningTests {
 }
 
 
+@Suite("WebSocket Manager Shutdown Tests")
+struct WebSocketManagerShutdownTests {
+
+    @Test("shutdown() invalidates the URLSession and cancels active sockets")
+    func shutdownInvalidatesSessionAndCancelsActiveSockets() async throws {
+        let harness = makeShutdownHarness()
+        let urlTask = StubWebSocketURLTask(taskIdentifier: 9001)
+        harness.session.enqueue(urlTask)
+        let task = await harness.manager.connect(url: URL(string: "wss://example.invalid/shutdown")!)
+        _ = try #require(await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: task))
+
+        async let shutdown: Void = harness.manager.shutdown()
+        #expect(await waitForCondition(timeout: 1.0) { harness.session.didInvalidateAndCancel })
+        #expect(urlTask.didCancelUnconditionally)
+        #expect(await harness.manager.task(withId: task.id) == nil)
+        #expect(await harness.manager.listenerCount(for: task) == 0)
+
+        harness.callbacks.handleInvalidation(nil)
+        await shutdown
+    }
+
+    @Test("shutdown() is idempotent and concurrent callers wait for invalidation")
+    func shutdownIsIdempotentAndWaitsForInvalidation() async {
+        let harness = makeShutdownHarness()
+        let completedCount = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+        let first = Task {
+            await harness.manager.shutdown()
+            completedCount.withLock { $0 += 1 }
+        }
+        let second = Task {
+            await harness.manager.shutdown()
+            completedCount.withLock { $0 += 1 }
+        }
+
+        _ = await waitForCondition(timeout: 1.0) { harness.session.didInvalidateAndCancel }
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        #expect(completedCount.withLock { $0 } == 0)
+
+        harness.callbacks.handleInvalidation(nil)
+        await first.value
+        await second.value
+        #expect(completedCount.withLock { $0 } == 2)
+    }
+
+    @Test("shutdown() finishes per-task event streams")
+    func shutdownFinishesEventStreams() async throws {
+        let harness = makeShutdownHarness()
+        let task = await harness.manager.connect(url: URL(string: "wss://example.invalid/events")!)
+        let stream = await harness.manager.events(for: task)
+        var iterator = stream.makeAsyncIterator()
+
+        async let shutdown: Void = harness.manager.shutdown()
+        harness.callbacks.handleInvalidation(nil)
+        await shutdown
+
+        // Shutdown contract: a terminal `.error(.connectionFailed)` must be
+        // published before the stream ends. A nil first event would mean the
+        // stream finished without any terminal signal, which silently passed
+        // before; require a real event here.
+        let firstEvent = try #require(await iterator.next())
+        guard case .error(.connectionFailed) = firstEvent else {
+            Issue.record("expected shutdown terminal error before end-of-stream, got \(firstEvent)")
+            return
+        }
+        #expect(await iterator.next() == nil)
+    }
+
+    @Test("connect after shutdown does not create a URLSession task")
+    func connectAfterShutdownIsTerminalGuarded() async {
+        let harness = makeShutdownHarness()
+        async let shutdown: Void = harness.manager.shutdown()
+        _ = await waitForCondition(timeout: 1.0) { harness.session.didInvalidateAndCancel }
+        harness.callbacks.handleInvalidation(nil)
+        await shutdown
+
+        let task = await harness.manager.connect(url: URL(string: "wss://example.invalid/post-shutdown")!)
+        #expect(await task.state == .failed)
+        #expect(harness.session.createdTasks.isEmpty)
+    }
+
+    @Test("URLSession transport rejects permessage-deflate with an unsupported diagnostic")
+    func urlSessionTransportRejectsUnsupportedCompression() async {
+        let harness = makeShutdownHarness(
+            configuration: WebSocketConfiguration(
+                heartbeatInterval: 0,
+                reconnectDelay: 0,
+                maxReconnectAttempts: 0,
+                sessionIdentifier: makeWebSocketTestSessionIdentifier("deflate"),
+                permessageDeflateEnabled: true
+            )
+        )
+        let observedError = OSAllocatedUnfairLock<WebSocketError?>(initialState: nil)
+        await harness.manager.setOnErrorHandler { _, error in
+            observedError.withLock { $0 = error }
+        }
+
+        let task = await harness.manager.connect(url: URL(string: "wss://example.invalid/deflate")!)
+
+        let observed = await waitForCondition(timeout: 1.0) {
+            observedError.withLock { $0 == .unsupportedProtocolFeature(.permessageDeflate) }
+        }
+        #expect(observed)
+        #expect(await task.state == .failed)
+        #expect(await task.error == .unsupportedProtocolFeature(.permessageDeflate))
+        #expect(harness.session.createdTasks.isEmpty)
+
+        async let shutdown: Void = harness.manager.shutdown()
+        _ = await waitForCondition(timeout: 1.0) { harness.session.didInvalidateAndCancel }
+        harness.callbacks.handleInvalidation(nil)
+        await shutdown
+    }
+
+    @Test("Registry refuses task registration after shutdown begins")
+    func registryRefusesAddAfterShutdownStarted() async {
+        let registry = WebSocketRuntimeRegistry()
+        let prior = WebSocketTask(url: URL(string: "wss://example.invalid/prior")!)
+
+        #expect(await registry.add(prior))
+        let snapshot = await registry.markShutdownStartedAndSnapshot()
+        #expect(snapshot.contains { $0.id == prior.id })
+
+        let racingTask = WebSocketTask(url: URL(string: "wss://example.invalid/racing")!)
+        #expect(!(await registry.add(racingTask)))
+        let allTasks = await registry.allTasks()
+        #expect(allTasks.count == 1)
+        #expect(allTasks.first?.id == prior.id)
+    }
+
+    private func makeShutdownHarness(
+        configuration: WebSocketConfiguration = WebSocketConfiguration(
+            heartbeatInterval: 0,
+            reconnectDelay: 0,
+            maxReconnectAttempts: 0,
+            sessionIdentifier: makeWebSocketTestSessionIdentifier("shutdown")
+        )
+    ) -> ShutdownHarness {
+        let session = StubWebSocketURLSession()
+        let callbacks = WebSocketSessionDelegateCallbacks()
+        let delegate = WebSocketSessionDelegate(
+            callbacks: callbacks,
+            backgroundCompletionStore: BackgroundCompletionStore()
+        )
+        let manager = WebSocketManager(
+            configuration: configuration,
+            urlSession: session,
+            delegate: delegate,
+            callbacks: callbacks
+        )
+        return ShutdownHarness(manager: manager, session: session, callbacks: callbacks)
+    }
+
+    private struct ShutdownHarness {
+        let manager: WebSocketManager
+        let session: StubWebSocketURLSession
+        let callbacks: WebSocketSessionDelegateCallbacks
+    }
+}
+
+
 /// Historical reference suite — exercises the *policy* under which a
 /// transport failure should (have) trigger `.error(.pingTimeout)`. Production
 /// heartbeat now publishes `.pingTimeout` unconditionally on ANY send-ping

@@ -220,7 +220,10 @@ instance drops out of scope.
 - **`Response.HTTPURLResponse` value-type extraction.** Tracked as a
   v5 backlog item. The 4.0.x line keeps the existing `URLResponse?`
   surface; treat it as read-only across tasks.
-- **WebSocket `permessage-deflate` real negotiation.** The configuration
-  flag is wired through, but the underlying `URLSessionWebSocketTask`
-  still does not negotiate compression. Use the flag as a forward-
-  compatibility hint; revisit in v5.
+- **WebSocket `permessage-deflate` real negotiation.** The underlying
+  `URLSessionWebSocketTask` still does not negotiate compression. If
+  `permessageDeflateEnabled` is set on the URLSession transport, 4.0.0 fails
+  before opening the socket with
+  `WebSocketError.unsupportedProtocolFeature(.permessageDeflate)` so the
+  misconfiguration is visible. Revisit true negotiation in an optional
+  transport package.

@@ -21,6 +21,7 @@ def main() -> int:
     report_path = Path(sys.argv[1])
     trend_path = Path(sys.argv[2])
     report = json.loads(report_path.read_text(encoding="utf-8"))
+    baseline = report.get("baseline") or {}
     record = {
         "recordedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "repository": os.environ.get("GITHUB_REPOSITORY"),
@@ -30,6 +31,8 @@ def main() -> int:
         "sha": os.environ.get("GITHUB_SHA"),
         "ref": os.environ.get("GITHUB_REF"),
         "eventName": os.environ.get("GITHUB_EVENT_NAME"),
+        "regressionReason": baseline.get("regressionReason")
+        or os.environ.get("INNO_BENCHMARK_REGRESSION_REASON"),
         "report": report,
     }
 

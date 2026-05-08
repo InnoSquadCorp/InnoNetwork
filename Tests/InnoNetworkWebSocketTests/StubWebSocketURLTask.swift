@@ -230,4 +230,6 @@ final class StubWebSocketURLSession: WebSocketURLSession, @unchecked Sendable {
     var lastRequest: URLRequest? { stateLock.withLock { $0.lastRequest } }
     var requests: [URLRequest] { stateLock.withLock { $0.requests } }
     var createdTasks: [StubWebSocketURLTask] { stateLock.withLock { $0.createdTasks } }
+    var didFinishTasksAndInvalidate: Bool { stateLock.withLock { $0.didFinishTasksAndInvalidate } }
+    var didInvalidateAndCancel: Bool { stateLock.withLock { $0.didInvalidateAndCancel } }
 }

@@ -27,6 +27,7 @@ release line. `4.0.0` is the public baseline for this contract.
 - `WebSocketHandshakeRequestAdapter`
 - `DownloadManager`
 - `WebSocketManager`
+- `WebSocketManager.shutdown()`
 - `WebSocketEvent.ping`
 - `WebSocketEvent.pong`
 - `WebSocketEvent.error(.pingTimeout)`
@@ -92,7 +93,12 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `WebSocketCloseDisposition` observation surface
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
+- `MultipartStreamingResponseDecoder` streaming multipart response parsing surface
+- `InnoNetworkOpenAPI` companion product
 - `InnoNetworkCodegen` separate package and macro declarations
+- `PersistentResponseCache` statistics and telemetry surfaces
+- `WebSocketError.unsupportedProtocolFeature`
+- `WebSocketProtocolFeature`
 - `DecodingInterceptor`
 - `StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`
 
@@ -106,7 +112,8 @@ Per-symbol evolution allowances within the 4.x line:
 - README/DocC examples — track the stable APIs they illustrate; their
   exact wording is not part of the compatibility contract.
 - `InnoNetworkTestSupport` — additional helpers may be added; existing
-  symbols stay source-compatible within 4.x.
+  symbols stay source-compatible within 4.x. VCR-style cassette helpers are
+  intended for test targets and may gain new matching/redaction knobs.
 - `EndpointBuilder`, `AnyEncodable`, `NetworkContext`, `CorrelationIDInterceptor` —
   builder shape may grow new chainable methods.
 - `EndpointPathEncoding` — may add new helpers for placeholder encoding;
@@ -180,8 +187,18 @@ Per-symbol evolution allowances within the 4.x line:
   provider-tunable; the streaming-body rejection is intentional, and
   future minors may add a streaming-aware integration without breaking
   source compatibility for the existing initializer signature.
-- `MultipartResponseDecoder` — may evolve as the streaming-multipart
-  roadmap progresses.
+- `MultipartResponseDecoder` and `MultipartStreamingResponseDecoder` — the
+  buffered API remains source-compatible; the streaming event vocabulary may
+  gain additive diagnostic events as more long-lived multipart deployments are
+  exercised.
+- `InnoNetworkOpenAPI` — adapter protocols may add optional requirements with
+  default implementations to track Swift OpenAPI Generator and HTTPTypes
+  conventions without pulling those packages into the core runtime.
+- `PersistentResponseCache` statistics and telemetry — event reasons may grow
+  as additional scrub cases are surfaced.
+- `WebSocketError.unsupportedProtocolFeature` and `WebSocketProtocolFeature`
+  — feature cases may grow as optional transports add or reject more protocol
+  extensions.
 - `InnoNetworkCodegen` — macro signatures may add optional arguments.
 - `DecodingInterceptor` — protocol may grow new optional hooks with
   default implementations as additional decode-boundary use cases
@@ -246,7 +263,9 @@ high-level compatibility classification readable for the 4.x release line.
   `AuthScope`, `EndpointPathEncoding`, `Endpoint`,
   `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
   `IdempotencyKeyPolicy`, `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,
-  `MultipartPart`, `MultipartResponseDecoder`, `MultipartUploadStrategy`,
+  `MultipartPart`, `MultipartResponseDecoder`,
+  `MultipartStreamingEvent`, `MultipartStreamingResponseDecoder`,
+  `MultipartUploadStrategy`,
   `NetworkClient`, `NetworkConfiguration`, `NetworkContext`, `NetworkError`,
   `NetworkEvent`, `NetworkEventObserving`, `NetworkInterfaceType`,
   `NetworkLoggingOptions`, `NetworkLogger`, `NetworkMetricsReporting`,
@@ -291,12 +310,25 @@ high-level compatibility classification readable for the 4.x release line.
 - `WebSocketCloseCode`, `WebSocketCloseDisposition`, `WebSocketConfiguration`,
   `WebSocketError`, `WebSocketEvent`, `WebSocketEventSubscription`,
   `WebSocketHandshakeRequestAdapter`, `WebSocketManager`,
-  `WebSocketPingContext`, `WebSocketPongContext`, `WebSocketSendOverflowPolicy`,
-  `WebSocketState`, and `WebSocketTask`.
+  `WebSocketPingContext`, `WebSocketPongContext`, `WebSocketProtocolFeature`,
+  `WebSocketSendOverflowPolicy`, `WebSocketState`, and `WebSocketTask`.
 
 ### InnoNetworkPersistentCache
 
-- `PersistentResponseCache` and `PersistentResponseCacheConfiguration`.
+- `PersistentResponseCache`, `PersistentResponseCacheConfiguration`,
+  `PersistentResponseCacheEvictionReason`, `PersistentResponseCacheStatistics`,
+  and `PersistentResponseCacheTelemetryEvent`.
+
+### InnoNetworkOpenAPI
+
+- `OpenAPIRestOperation` and `OpenAPIRequest`.
+
+### InnoNetworkTestSupport
+
+- `MockURLSession`, `StubBehavior`, `StubNetworkClient`, `StubRequestKey`,
+  `VCRCassette`, `VCRInteraction`, `VCRMode`, `VCRRedactionPolicy`,
+  `VCRRequest`, `VCRResponse`, `VCRURLSession`, and
+  `WebSocketEventRecorder`.
 
 ### InnoNetworkCodegen Package
 
@@ -394,11 +426,6 @@ If your generator does not need to own custom serialization or decoding,
 prefer the stable `APIDefinition` / `MultipartAPIDefinition` wrapper
 path. That path follows the standard `Stable` SemVer contract and never
 requires `@_spi` import.
-
-### InnoNetworkTestSupport
-
-- `MockURLSession`, `StubBehavior`, `StubNetworkClient`, `StubRequestKey`, and
-  `WebSocketEventRecorder`.
 
 ## Internal/Operational
 
