@@ -193,11 +193,11 @@ Versioning.
 - `ConcurrencyTokenBucket` — bounded counting-semaphore actor for
   capping in-flight requests. FIFO fairness queue, never
   over-releases past `maxConcurrent`, clamps the cap to ≥1.
-  Currently a standalone primitive that adopters wire through
-  paired request/response interceptors; the upcoming 5.x
-  request-executor integration will make this automatic. Five
-  unit tests cover acquire-under-capacity, release-refill,
-  bounded-release, FIFO waiter resume, and cap clamping.
+  Adopters can use it directly for custom scheduling, or register
+  `ConcurrencyLimitExecutionPolicy` when the limit should run inside
+  the request-executor chain. Five unit tests cover
+  acquire-under-capacity, release-refill, bounded-release, FIFO waiter
+  resume, and cap clamping.
 - Five 5.0 forward-compat configuration packs:
   - `ResiliencePack` (retry, coalescing, circuit breaker,
     idempotency, body buffering)
@@ -553,8 +553,8 @@ changes are intentional and are called out below; migration recipes live in
   `AnyRequestExecutionPolicy` for custom transport-attempt policies.
 - `ResponseBodyBufferingPolicy`; inline requests now prefer
   `URLSession.bytes(for:)` with bounded collection before decoder handoff.
-- `EndpointAuthScope`, `PublicAuthScope`, `AuthRequiredScope`, and
-  `ScopedEndpoint` for type-level auth
+- `AuthScope`, `PublicAuthScope`, `AuthRequiredScope`, and
+  `EndpointBuilder` for type-level auth
   boundaries. Auth-required endpoints fail before transport when no
   `RefreshTokenPolicy` is configured.
 - `StateReducer` and `StateReduction` as the shared reducer vocabulary for
@@ -730,13 +730,13 @@ changes are intentional and are called out below; migration recipes live in
   (`.json`, `.query`, `.formURLEncoded`, `.multipart`, `.custom`) that
   automatically pick empty-tolerant decoders for
   `HTTPEmptyResponseDecodable` outputs.
-- `ScopedEndpoint` replaces `.contentType(_:)` with `.transport(_:)`. The
+- `EndpointBuilder` replaces `.contentType(_:)` with `.transport(_:)`. The
   `Content-Type` header is derived from the transport's request encoding,
   and `decoding(_:)` carries the request encoding into the new response
   generic instead of resetting it.
 - Fluent endpoint aliases are removed. Use
-  `ScopedEndpoint<Response, PublicAuthScope>` for public fluent endpoints and
-  `ScopedEndpoint<Response, AuthRequiredScope>` for auth-required fluent
+  `EndpointBuilder<Response, PublicAuthScope>` for public fluent endpoints and
+  `EndpointBuilder<Response, AuthRequiredScope>` for auth-required fluent
   endpoints.
 - `WebSocketManager.shared` has been removed. Construct
   `WebSocketManager(configuration:)` per feature.
@@ -861,7 +861,7 @@ changes are intentional and are called out below; migration recipes live in
   to the buffered `data(for:)` path. The configured byte cap is honoured —
   the request fails fast instead of silently buffering an unbounded body.
 - **Multipart auth scope (PR #39)**: `MultipartAPIDefinition` now declares
-  `associatedtype Auth: EndpointAuthScope = PublicAuthScope`, so a multipart
+  `associatedtype Auth: AuthScope = PublicAuthScope`, so a multipart
   endpoint conforming to `AuthRequiredScope` participates in the configured
   `RefreshTokenPolicy` exactly like a non-multipart authenticated endpoint.
   Default behaviour is unchanged (`PublicAuthScope`).

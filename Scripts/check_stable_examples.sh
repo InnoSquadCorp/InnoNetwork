@@ -55,10 +55,13 @@ manifest_targets=""
 for example in "${stable_examples[@]}"; do
     example_name="$(basename "$example")"
     target_name="${example_name}Smoke"
-    source_file="$(find "$repo_root/$example" -name '*.swift' -type f -print -quit)"
 
     mkdir -p "$smoke_root/Sources/$target_name"
-    cp "$source_file" "$smoke_root/Sources/$target_name/main.swift"
+    while IFS= read -r source_file; do
+        relative_source="${source_file#"$repo_root/$example/"}"
+        mkdir -p "$smoke_root/Sources/$target_name/$(dirname "$relative_source")"
+        cp "$source_file" "$smoke_root/Sources/$target_name/$relative_source"
+    done < <(find "$repo_root/$example" -name '*.swift' -type f | sort)
 
     manifest_products="${manifest_products}        .executable(name: \"$target_name\", targets: [\"$target_name\"]),"$'\n'
     manifest_targets="${manifest_targets}        .executableTarget(name: \"$target_name\", dependencies: [.product(name: \"InnoNetwork\", package: \"InnoNetwork\")]),"$'\n'

@@ -90,8 +90,8 @@ public enum DecodingStage: Sendable, Equatable {
 ///     switch error {
 ///     case .statusCode(let response):           handleStatus(response)
 ///     case .timeout(let reason, _):             handleTimeout(reason)
-///     case .configuration(reason: .invalidBaseURL),
-///          .configuration(reason: .invalidRequest):
+///     case .configuration(reason: .invalidBaseURL(_)),
+///          .configuration(reason: .invalidRequest(_)):
 ///                                                handleConfigurationError()
 ///     // ... other cases
 ///     @unknown default:
@@ -116,8 +116,7 @@ public enum NetworkConfigurationFailureReason: Sendable, Equatable {
     /// missing refresh-token policy for an auth-required endpoint).
     case invalidRequest(String)
     /// The device is known to be offline (the configured
-    /// ``NetworkMonitoring`` snapshot reports `.unsatisfied`). New in
-    /// the 5.0 ledger; surfaced today by
+    /// ``NetworkMonitoring`` snapshot reports `.unsatisfied`). Surfaced by
     /// ``ReachabilityCheckExecutionPolicy``.
     case offline(String)
 }
