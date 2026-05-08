@@ -367,6 +367,48 @@ struct EventHubTests {
         }
     }
 
+    @Test("NetworkEventHub advances its sequence counter on every publish call")
+    func networkEventHubAdvancesSequenceCounterOnEachPublish() async {
+        let hub = NetworkEventHub()
+        let observer = RecordingObserver(recorder: NetworkEventRecorder())
+        let requestID = UUID()
+
+        let initial = await hub.currentSequenceIDForTesting()
+        for retryIndex in 0..<3 {
+            await hub.publish(
+                .requestStart(
+                    requestID: requestID,
+                    method: "GET",
+                    url: "https://example.com/seq",
+                    retryIndex: retryIndex
+                ),
+                requestID: requestID,
+                observers: [observer]
+            )
+        }
+
+        let after = await hub.currentSequenceIDForTesting()
+        #expect(after == initial &+ 3)
+        await hub.finish(requestID: requestID)
+    }
+
+    @Test("NetworkEventHub does not advance the sequence counter when no observers are bound")
+    func networkEventHubSkipsSequenceCounterWithoutObservers() async {
+        let hub = NetworkEventHub()
+        let requestID = UUID()
+        let initial = await hub.currentSequenceIDForTesting()
+
+        await hub.publish(
+            .requestStart(requestID: requestID, method: "GET", url: "https://example.com/none", retryIndex: 0),
+            requestID: requestID,
+            observers: []
+        )
+
+        let after = await hub.currentSequenceIDForTesting()
+        #expect(after == initial)
+        await hub.finish(requestID: requestID)
+    }
+
     @Test("NetworkEventHub isolates slow observers across requests")
     func networkEventHubIsolatesSlowObserversAcrossRequests() async throws {
         let hub = NetworkEventHub()

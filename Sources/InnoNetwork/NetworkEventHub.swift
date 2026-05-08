@@ -42,6 +42,15 @@ package actor NetworkEventHub {
         return nextSequenceID
     }
 
+    /// Returns the most recently allocated sequence ID. Exposed to the
+    /// package's own test target (and only the test target) so the prep
+    /// counter introduced ahead of the ordered-event-queue change can be
+    /// verified to advance on every publish call. Production code does
+    /// not read this value.
+    package func currentSequenceIDForTesting() -> UInt64 {
+        nextSequenceID
+    }
+
     package init(
         policy: EventDeliveryPolicy = .default,
         metricsReporter: (any EventPipelineMetricsReporting)? = nil,
