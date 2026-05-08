@@ -519,4 +519,23 @@ public extension NetworkConfiguration {
         builder.requestCoalescingPolicy = requestCoalescingPolicy
         return builder.build()
     }
+
+    /// Returns a new configuration with ``customExecutionPolicies`` replaced.
+    /// The 4.0.0 line keeps both the direct field (still readable) and this
+    /// modifier; the 5.0 line is expected to relocate the field into a
+    /// protocol-bag and route every assignment through this modifier so the
+    /// configuration struct's surface stops growing one slot per policy.
+    func with(executionPolicies customExecutionPolicies: [any RequestExecutionPolicy]) -> NetworkConfiguration {
+        var builder = AdvancedBuilder(preset: self)
+        builder.customExecutionPolicies = customExecutionPolicies
+        return builder.build()
+    }
+
+    /// Returns a new configuration with ``eventObservers`` replaced. Same
+    /// 4.0.0 -> 5.0 migration expectation as ``with(executionPolicies:)``.
+    func with(eventObservers: [any NetworkEventObserving]) -> NetworkConfiguration {
+        var builder = AdvancedBuilder(preset: self)
+        builder.eventObservers = eventObservers
+        return builder.build()
+    }
 }
