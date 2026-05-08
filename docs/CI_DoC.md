@@ -53,6 +53,9 @@ The `CI` workflow must pass all of the following:
 - Concurrency regressions and `@unchecked Sendable` additions in production sources are blocking failures.
 - Force unwrap additions in production sources are blocking failures; fixture
   force unwraps belong in tests or smoke-only targets.
+- Adding `print()` to production sources is a blocking failure. The rule is
+  enforced by `bash Scripts/check_no_print_in_production.sh`, matching required
+  check 6 above.
 
 ## Integration Tests Policy
 

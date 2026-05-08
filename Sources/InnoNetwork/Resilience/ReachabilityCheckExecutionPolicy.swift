@@ -50,8 +50,25 @@ public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
 
     public let monitor: any NetworkMonitoring
     public let mode: Mode
+    /// Maximum time, in seconds, to wait while reachability remains
+    /// `.requiresConnection` before surfacing
+    /// ``NetworkError/transportSuspended``.
+    ///
+    /// Negative values passed to the initializer are clamped to `0`.
     public let suspensionWaitTimeout: TimeInterval
 
+    /// Creates a reachability gate for request execution.
+    ///
+    /// - Parameters:
+    ///   - monitor: Reachability source used to read the current network path
+    ///     and wait for path changes.
+    ///   - mode: Whether `.unsatisfied` and persistent `.requiresConnection`
+    ///     snapshots reject requests or are observed without blocking.
+    ///     Defaults to `.requireOnline`.
+    ///   - suspensionWaitTimeout: TimeInterval, in seconds, to wait for
+    ///     `.requiresConnection` to recover before throwing
+    ///     ``NetworkError/transportSuspended``. Defaults to `1.0` and is
+    ///     clamped with `max(0, suspensionWaitTimeout)`.
     public init(
         monitor: any NetworkMonitoring,
         mode: Mode = .requireOnline,

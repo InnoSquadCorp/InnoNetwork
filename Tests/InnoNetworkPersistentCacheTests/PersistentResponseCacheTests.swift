@@ -115,6 +115,27 @@ struct PersistentResponseCacheTests {
         #expect(FileManager.default.fileExists(atPath: hmacKeyURL(in: directory).path))
     }
 
+    @Test("Persistent cache key normalizer trims optional header whitespace")
+    func persistentCacheKeyNormalizerTrimsOptionalHeaderWhitespace() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let result = try PersistentCacheDiskKeyNormalizer.loadOrCreate(
+            directoryURL: directory,
+            dataProtectionClass: .completeUnlessOpen,
+            fileManager: .default
+        )
+
+        #expect(
+            result.normalizer.normalizeHeaders(["Accept-Language:ko"])
+                == result.normalizer.normalizeHeaders(["Accept-Language: ko"])
+        )
+        #expect(
+            result.normalizer.normalizeHeaders(["Authorization:Bearer token"])
+                == result.normalizer.normalizeHeaders(["Authorization: Bearer token"])
+        )
+    }
+
     @Test("Zero-byte HMAC key file self-heals on reopen")
     func zeroByteHMACKeyFileSelfHealsOnReopen() async throws {
         let directory = makeDirectory()

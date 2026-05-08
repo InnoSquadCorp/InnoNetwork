@@ -114,11 +114,11 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
         guard let separator = header.firstIndex(of: ":") else { return header }
         let name = String(header[..<separator]).lowercased()
         let valueStart = header.index(after: separator)
-        let value = String(header[valueStart...])
+        let trimmedValue = String(header[valueStart...]).trimmingCharacters(in: .whitespaces)
         guard ResponseCacheHeaderPolicy.sensitiveHeaderNames.contains(name) else {
-            return "\(name):\(value)"
+            return "\(name):\(trimmedValue)"
         }
-        return "\(name):hmac-sha256:\(authenticationCodeHex(for: value))"
+        return "\(name):hmac-sha256:\(authenticationCodeHex(for: trimmedValue))"
     }
 
     private func authenticationCodeHex(for value: String) -> String {

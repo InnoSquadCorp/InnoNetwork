@@ -964,6 +964,8 @@ for symbol in "${expected_provisionally[@]}"; do
     '`StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance')
       require_contains 'public protocol StreamingResumeStrategy' \
         "$repo_root/Sources/InnoNetwork/StreamingAPIDefinition.swift"
+      require_contains 'func isCompatible(with bufferingPolicy: StreamingBufferingPolicy) -> Bool' \
+        "$repo_root/Sources/InnoNetwork/StreamingAPIDefinition.swift"
       require_contains 'extension StreamingResumePolicy: StreamingResumeStrategy' \
         "$repo_root/Sources/InnoNetwork/StreamingAPIDefinition.swift"
       continue
@@ -989,6 +991,14 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/NetworkError.swift"
       require_contains 'case cacheRevalidationFailed(underlying: SendableUnderlyingError, cached: Response)' \
         "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+      require_contains '"NetworkError.transportSuspended"' \
+        "$repo_root/Sources/InnoNetwork/Resources/en.lproj/Localizable.strings"
+      require_contains '"NetworkError.cacheRevalidationFailed"' \
+        "$repo_root/Sources/InnoNetwork/Resources/en.lproj/Localizable.strings"
+      require_contains '"NetworkError.transportSuspended"' \
+        "$repo_root/Sources/InnoNetwork/Resources/ko.lproj/Localizable.strings"
+      require_contains '"NetworkError.cacheRevalidationFailed"' \
+        "$repo_root/Sources/InnoNetwork/Resources/ko.lproj/Localizable.strings"
       continue
       ;;
     *)
