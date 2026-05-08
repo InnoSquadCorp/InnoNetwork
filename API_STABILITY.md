@@ -104,6 +104,8 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface
 - `HTTPHeaderName<Variant>` phantom-typed header key surface and its
   predefined `SingleValueHeader` / `RepeatableHeader` markers
+  (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for
+  contract-sync purposes)
 - `MultipartUploadStrategy.threshold(bytes:)`
 - `StreamingResumeStrategy` protocol and the `isCompatible(with:)`
   requirement; `StreamingResumePolicy` retroactive conformance

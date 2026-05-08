@@ -196,6 +196,13 @@ expected_provisionally=(
 '`WebSocketProtocolFeature`'
 '`DecodingInterceptor`'
 '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`'
+'`NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface'
+'`HTTPHeaderName<Variant>` phantom-typed header key surface and its'
+'`MultipartUploadStrategy.threshold(bytes:)`'
+'`StreamingResumeStrategy` protocol and the `isCompatible(with:)`'
+'`PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`'
+'`DownloadTask.generation` / `attempt` accessors and'
+'`NetworkError.transportSuspended` and'
 )
 
 expected_shipping_public_declarations=(
@@ -527,11 +534,11 @@ validate_openapi_companion_product() {
 
 validate_persistent_cache_operations_api() {
   require_contains 'public struct PersistentResponseCacheStatistics' \
-    "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCache.swift"
+    "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCacheTelemetry.swift"
   require_contains 'public enum PersistentResponseCacheTelemetryEvent' \
-    "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCache.swift"
+    "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCacheTelemetry.swift"
   require_contains 'public static func appGroupDirectoryURL' \
-    "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCache.swift"
+    "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCacheConfiguration.swift"
 }
 
 validate_codegen_product() {
@@ -750,7 +757,7 @@ for symbol in "${expected_stable[@]}"; do
       target="$repo_root/Sources/InnoNetworkDownload/DownloadManager.swift"
       ;;
     '`WebSocketManager`')
-      pattern='public final class WebSocketManager'
+      pattern='public actor WebSocketManager'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
       ;;
     '`WebSocketManager.shutdown()`')
@@ -759,23 +766,23 @@ for symbol in "${expected_stable[@]}"; do
       ;;
     '`WebSocketEvent.ping`')
       pattern='case ping(WebSocketPingContext)'
-      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketEventTypes.swift"
       ;;
     '`WebSocketEvent.pong`')
       pattern='case pong(WebSocketPongContext)'
-      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketEventTypes.swift"
       ;;
     '`WebSocketEvent.error(.pingTimeout)`')
       pattern='case error(WebSocketError)'
-      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketEventTypes.swift"
       ;;
     '`WebSocketPingContext`')
       pattern='public struct WebSocketPingContext'
-      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketEventTypes.swift"
       ;;
     '`WebSocketPongContext`')
       pattern='public struct WebSocketPongContext'
-      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketEventTypes.swift"
       ;;
     '`TrustPolicy`')
       pattern='public enum TrustPolicy'
@@ -921,6 +928,61 @@ for symbol in "${expected_provisionally[@]}"; do
       ;;
     '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`')
       validate_operational_dx_public_api
+      continue
+      ;;
+    '`NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface')
+      require_contains 'func with(retry retryPolicy: RetryPolicy?)' \
+        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+      require_contains 'func with(coalescing requestCoalescingPolicy: RequestCoalescingPolicy)' \
+        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+      require_contains 'func with(executionPolicies customExecutionPolicies' \
+        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+      continue
+      ;;
+    '`HTTPHeaderName<Variant>` phantom-typed header key surface and its')
+      require_contains 'public struct HTTPHeaderName<Variant: HTTPHeaderVariant>' \
+        "$repo_root/Sources/InnoNetwork/HTTPHeaders.swift"
+      require_contains 'public enum SingleValueHeader: HTTPHeaderVariant' \
+        "$repo_root/Sources/InnoNetwork/HTTPHeaders.swift"
+      require_contains 'public enum RepeatableHeader: HTTPHeaderVariant' \
+        "$repo_root/Sources/InnoNetwork/HTTPHeaders.swift"
+      continue
+      ;;
+    '`MultipartUploadStrategy.threshold(bytes:)`')
+      require_contains 'public static func threshold(bytes: Int64)' \
+        "$repo_root/Sources/InnoNetwork/APIDefinition.swift"
+      continue
+      ;;
+    '`StreamingResumeStrategy` protocol and the `isCompatible(with:)`')
+      require_contains 'public protocol StreamingResumeStrategy' \
+        "$repo_root/Sources/InnoNetwork/StreamingAPIDefinition.swift"
+      require_contains 'extension StreamingResumePolicy: StreamingResumeStrategy' \
+        "$repo_root/Sources/InnoNetwork/StreamingAPIDefinition.swift"
+      continue
+      ;;
+    '`PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`')
+      require_contains 'public let hitCount: Int' \
+        "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCacheTelemetry.swift"
+      require_contains 'public let missCount: Int' \
+        "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCacheTelemetry.swift"
+      require_contains 'public let evictionCount: Int' \
+        "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCacheTelemetry.swift"
+      continue
+      ;;
+    '`DownloadTask.generation` / `attempt` accessors and')
+      require_contains 'public var generation: Int' \
+        "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
+      require_contains 'public var attempt: Int' \
+        "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
+      require_contains 'func startAttempt(generation: Int, attempt: Int)' \
+        "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
+      continue
+      ;;
+    '`NetworkError.transportSuspended` and')
+      require_contains 'case transportSuspended' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+      require_contains 'case cacheRevalidationFailed(underlying: SendableUnderlyingError, cached: Response)' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
       continue
       ;;
     *)
