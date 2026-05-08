@@ -54,9 +54,7 @@ required_feature_docs=(
 )
 example_docs=(
   "$repo_root/Examples/BasicRequest/README.md"
-  "$repo_root/Examples/CustomHeaders/README.md"
   "$repo_root/Examples/ErrorHandling/README.md"
-  "$repo_root/Examples/RealWorldAPI/README.md"
   "$repo_root/Examples/README.md"
 )
 
@@ -630,8 +628,7 @@ validate_troubleshooting_and_examples_docs() {
   require_contains 'Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)' "$readme"
   require_contains '### 1. [BasicRequest](./BasicRequest)' "$repo_root/Examples/README.md"
   require_contains '### 2. [ErrorHandling](./ErrorHandling)' "$repo_root/Examples/README.md"
-  require_contains '### 3. [CustomHeaders](./CustomHeaders)' "$repo_root/Examples/README.md"
-  require_contains '### 4. [RealWorldAPI](./RealWorldAPI)' "$repo_root/Examples/README.md"
+  require_contains '### 3. [Auth](./Auth)' "$repo_root/Examples/README.md"
   require_contains '### [ConsumerSmoke](./ConsumerSmoke)' "$repo_root/Examples/README.md"
   require_contains '### [CoreSmoke](./CoreSmoke)' "$repo_root/Examples/README.md"
   require_contains '### [TestSupportSmoke](./TestSupportSmoke)' "$repo_root/Examples/README.md"
@@ -639,11 +636,14 @@ validate_troubleshooting_and_examples_docs() {
 }
 
 validate_release_quality_gates() {
-  require_contains 'Sources/InnoNetworkPersistentCache' "$repo_root/.github/workflows/ci.yml"
+  require_contains 'Sources/InnoNetworkPersistentCache' "$repo_root/Scripts/check_unchecked_sendable.sh"
+  require_contains 'bash Scripts/check_unchecked_sendable.sh' "$repo_root/.github/workflows/ci.yml"
   require_contains 'bash Scripts/check_production_force_unwraps.sh' "$repo_root/.github/workflows/ci.yml"
   require_contains 'bash Scripts/check_production_force_unwraps.sh' "$repo_root/docs/CI_DoC.md"
   [[ -x "$repo_root/Scripts/check_production_force_unwraps.sh" ]] \
     || fail "production force-unwrap gate is not executable"
+  [[ -x "$repo_root/Scripts/check_unchecked_sendable.sh" ]] \
+    || fail "unchecked-sendable gate is not executable"
 }
 
 documented_provisionally=()

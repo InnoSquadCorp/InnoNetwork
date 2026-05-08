@@ -55,23 +55,7 @@ Comprehensive guide to handling network errors gracefully.
 
 ---
 
-### 3. [CustomHeaders](./CustomHeaders)
-
-Learn how to customize HTTP headers for authentication, content negotiation, and more.
-
-**Covers:**
-- Basic authentication
-- Bearer token authentication
-- Custom Content-Type headers
-- User-Agent customization
-- Accept-Language and Accept-Encoding
-- Multiple custom headers in a single request
-
-**Best for:** Working with APIs that require specific headers, authentication
-
----
-
-### 3a. [Auth](./Auth) — Stable
+### 3. [Auth](./Auth) — Stable
 
 Wire `RefreshTokenPolicy` to a Keychain-backed token store with
 single-flight refresh and one-time replay after `401`.
@@ -86,23 +70,7 @@ single-flight refresh and one-time replay after `401`.
 
 ---
 
-### 4. [RealWorldAPI](./RealWorldAPI)
-
-Real-world scenarios you'll encounter in actual application development.
-
-**Covers:**
-- User authentication flow
-- Paginated data fetching
-- CRUD operations (Create, Read, Update, Delete)
-- Fetching related data (post + comments)
-- User profile management
-- Batch processing multiple requests
-
-**Best for:** Learning complete application workflows, building full-featured apps
-
----
-
-### 5. [DownloadManager](./DownloadManager)
+### 4. [DownloadManager](./DownloadManager)
 
 Background-capable download sample with progress events and restore-oriented
 manager setup.
@@ -117,7 +85,7 @@ manager setup.
 
 ---
 
-### 6. [WebSocketChat](./WebSocketChat)
+### 5. [WebSocketChat](./WebSocketChat)
 
 CLI chat-style sample for opening a WebSocket, sending text, and observing
 server events.
@@ -132,7 +100,7 @@ server events.
 
 ---
 
-### 7. [EventPolicyObserver](./EventPolicyObserver)
+### 6. [EventPolicyObserver](./EventPolicyObserver)
 
 Observability sample for event delivery metrics and custom reporting.
 
@@ -148,7 +116,7 @@ Observability sample for event delivery metrics and custom reporting.
 ## Feature Recipes
 
 - Auth refresh: [Auth](./Auth)
-- Pagination and CRUD: [RealWorldAPI](./RealWorldAPI)
+- Custom headers / pagination / CRUD walkthroughs: [App Networking Cookbook](../Sources/InnoNetwork/InnoNetwork.docc/Articles/AppNetworkingCookbook.md)
 - Response cache: [Caching Strategies](../Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md)
 - Background download: [DownloadManager](./DownloadManager)
 - WebSocket chat: [WebSocketChat](./WebSocketChat)
