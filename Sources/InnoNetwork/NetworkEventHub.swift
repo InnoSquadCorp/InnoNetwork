@@ -20,6 +20,28 @@ package actor NetworkEventHub {
     private let metricsProxy: EventPipelineMetricsReporterProxy?
     private var metricsReporter: (any EventPipelineMetricsReporting)? { metricsProxy }
 
+    /// Monotonically increasing per-hub sequence counter, allocated through
+    /// ``allocateSequenceID()``. Held inside the hub actor so increments are
+    /// totally ordered with respect to publish calls. Currently advisory —
+    /// the 4.0.0 ordered-event-queue change wires it into the delivery
+    /// chain so consumers can correlate observed events with the publish
+    /// order that produced them.
+    private var nextSequenceID: UInt64 = 0
+
+    /// Returns the next monotonic sequence ID and advances the counter.
+    /// Wrap-around on `UInt64.max` is treated as a 0-restart; callers that
+    /// store sequence IDs across very-long-running hubs should not assume
+    /// strict monotonicity beyond the wrap point. In practice the counter
+    /// only needs to be unique within a single request lifecycle.
+    private func allocateSequenceID() -> UInt64 {
+        if nextSequenceID == .max {
+            nextSequenceID = 0
+        } else {
+            nextSequenceID += 1
+        }
+        return nextSequenceID
+    }
+
     package init(
         policy: EventDeliveryPolicy = .default,
         metricsReporter: (any EventPipelineMetricsReporting)? = nil,
@@ -50,6 +72,12 @@ package actor NetworkEventHub {
     /// the awaiting consumer has already cleaned up.
     package func publish(_ event: NetworkEvent, requestID: UUID, observers: [any NetworkEventObserving]) {
         guard !observers.isEmpty else { return }
+        // Advance the per-hub sequence counter so subsequent enqueues land
+        // with a strictly increasing tag. The 4.0.0 ordered-event-queue
+        // change consumes this value in `EventDeliveryChain` to break ties
+        // when two observers race the actor scheduler; for now the result
+        // is intentionally discarded.
+        _ = allocateSequenceID()
         var partition = partitions[requestID] ?? PartitionState()
         guard !partition.isClosed else { return }
         if partition.queue.count >= policy.maxBufferedEventsPerPartition {
