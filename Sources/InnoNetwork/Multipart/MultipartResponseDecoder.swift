@@ -47,9 +47,10 @@ public struct MultipartResponseDecoder: Sendable {
     ///   - contentType: Response `Content-Type` header containing a
     ///     `boundary` parameter, unless a boundary override was supplied.
     /// - Returns: Decoded parts in response order.
-    /// - Throws: ``NetworkError/invalidRequestConfiguration(_:)`` when the
-    ///   boundary is missing, a part is malformed, or the closing boundary is
-    ///   absent.
+    /// - Throws: ``NetworkError/configuration(reason:)`` with
+    ///   ``NetworkConfigurationFailureReason/invalidRequest(_:)`` when the
+    ///   boundary is missing, a part is malformed, or the closing boundary
+    ///   is absent.
     public func decode(_ data: Data, contentType: String) throws -> [MultipartPart] {
         guard let boundary = boundaryOverride ?? Self.boundary(from: contentType), !boundary.isEmpty else {
             throw NetworkError.configuration(reason: .invalidRequest("Missing multipart boundary."))

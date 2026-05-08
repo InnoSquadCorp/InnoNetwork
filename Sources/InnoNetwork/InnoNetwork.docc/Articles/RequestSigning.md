@@ -71,11 +71,11 @@ struct CanonicalSigner: RequestInterceptor {
 
     func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
         guard let url = urlRequest.url else {
-            throw NetworkError.invalidRequestConfiguration("Missing URL for signing")
+            throw NetworkError.configuration(reason: .invalidRequest("Missing URL for signing"))
         }
         if urlRequest.httpBodyStream != nil {
-            throw NetworkError.invalidRequestConfiguration(
-                "Streaming bodies require a streaming-aware signer"
+            throw NetworkError.configuration(
+                reason: .invalidRequest("Streaming bodies require a streaming-aware signer")
             )
         }
 

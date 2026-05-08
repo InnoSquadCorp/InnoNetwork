@@ -13,9 +13,9 @@ to the user, or escalate to crash reporting.
 
 | Case | Cause | Typical recovery |
 |------|-------|------------------|
-| ``NetworkError/invalidBaseURL(_:)`` | Misconfigured client. | Treat as a programmer error; assert in DEBUG. |
-| ``NetworkError/invalidRequestConfiguration(_:)`` | Request shape and policy mismatch. | Fix the API definition; never retry. |
-| ``NetworkError/jsonMapping(_:)`` | Request body could not be encoded. | Programmer error; do not retry. |
+| ``NetworkError/configuration(reason:)`` with ``NetworkConfigurationFailureReason/invalidBaseURL(_:)`` | Misconfigured client. | Treat as a programmer error; assert in DEBUG. |
+| ``NetworkError/configuration(reason:)`` with ``NetworkConfigurationFailureReason/invalidRequest(_:)`` | Request shape and policy mismatch. | Fix the API definition; never retry. |
+| ``NetworkError/configuration(reason:)`` with ``NetworkConfigurationFailureReason/offline(_:)`` | The configured reachability policy knows the device is offline. | Surface offline state or defer non-interactive work. |
 | ``NetworkError/statusCode(_:)`` | Server returned a non-acceptable status. | Branch on `.response.statusCode`; let `RetryPolicy` decide retries. |
 | ``NetworkError/decoding(stage:underlying:response:)`` | Response failed to decode at a tagged pipeline stage (`.responseBody` for buffered bodies, `.streamFrame` for per-frame streaming decoders). | Surface to the user; consider feature flagging the endpoint. Decoding failures are terminal — `isDecodingFailure` makes the rule explicit in custom retry policies. |
 | ``NetworkError/nonHTTPResponse`` | Got a non-`HTTPURLResponse` (rare; usually misconfigured `URLSession`). | Treat as transport bug. |
@@ -23,7 +23,7 @@ to the user, or escalate to crash reporting.
 | ``NetworkError/trustEvaluationFailed(_:)`` | TLS pinning or custom trust evaluator rejected the chain. | Surface to the user; do not auto-retry. |
 | ``NetworkError/cancelled`` | `Task` cancellation or `cancelAll()`. | Honour silently — caller wanted to stop. |
 | ``NetworkError/timeout(_:)`` | Request, resource, or connection timed out. | Apply retry policy if budget allows. |
-| ``NetworkError/undefined`` | Catch-all for unmapped errors. | File a bug with the underlying error captured. |
+| ``NetworkError/responseTooLarge(limit:observed:)`` | Response body exceeded the configured buffering limit. | Raise the limit intentionally, switch to streaming, or page the endpoint. |
 
 ## Recipe: branch on classification, not raw code
 
@@ -47,6 +47,9 @@ do {
 
     case .statusCode(let response) where response.statusCode == 401:
         return .reauthenticate
+
+    case .configuration(reason: .offline):
+        return .offline
 
     case .trustEvaluationFailed:
         return .securityFailure  // never retry automatically

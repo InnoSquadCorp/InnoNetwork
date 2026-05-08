@@ -8,18 +8,15 @@ covers the two supported paths.
 
 | Scenario | Recommendation |
 | --- | --- |
-| 5–30 endpoints, frequent ad-hoc tweaks | Hand-write `APIDefinition` structs or `ScopedEndpoint` builders. |
+| 5–30 endpoints, frequent ad-hoc tweaks | Hand-write `APIDefinition` structs or `EndpointBuilder` calls. |
 | 30+ endpoints, OpenAPI spec is the source of truth | Use `Tools/openapi-to-innonetwork` (4.x preview). |
 | Custom envelope or auth shape upstream of `APIDefinition` | Use the `@_spi(GeneratedClientSupport)` SPI surface. See `Examples/GeneratedClientRecipe`. |
 | Apollo / GraphQL operations | Stay with Apollo iOS or `swift-openapi-generator`; an InnoNetwork adapter on top of either is on the 5.0+ roadmap. |
 
-The 4.x preview tool is intentionally narrow: JSON input, no
-parameter / response type derivation, always emits
-`PublicAuthScope`. It exists so 100+ endpoint backends can
-generate stubs in seconds rather than days, with the explicit
-expectation that consumers either fill in the typed
-`Parameter` / `APIResponse` shapes by hand or wait for the 5.0
-follow-up.
+The 4.x preview tool accepts JSON or YAML input, emits Codable schema
+structs for `components.schemas`, and wires typed `Parameter` /
+`APIResponse` aliases when operations use `$ref`. It still always emits
+`PublicAuthScope`; authenticated OpenAPI mapping is a follow-up.
 
 ## `Tools/openapi-to-innonetwork`
 

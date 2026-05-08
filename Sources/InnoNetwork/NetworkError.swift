@@ -82,10 +82,7 @@ public enum DecodingStage: Sendable, Equatable {
 /// to keep that constant: the resilience and observability features in
 /// the roadmap will introduce new failure modes (notably circuit-breaker
 /// trips and richer rate-limit / reachability diagnostics). To stay
-/// forward-compatible against the 4.x line and the upcoming 5.0
-/// consolidation that merges ``invalidBaseURL(_:)`` and
-/// ``invalidRequestConfiguration(_:)`` into a typed
-/// `configuration(reason:)` case, every exhaustive `switch` over a
+/// forward-compatible against the 4.x line, every exhaustive `switch` over a
 /// `NetworkError` value should include a `@unknown default` arm:
 ///
 /// ```swift
@@ -94,40 +91,29 @@ public enum DecodingStage: Sendable, Equatable {
 ///     case .statusCode(let response):           handleStatus(response)
 ///     case .timeout(let reason, _):             handleTimeout(reason)
 ///     case .configuration(reason: .invalidBaseURL),
-///          .invalidRequestConfiguration:        handleConfigurationError()
+///          .configuration(reason: .invalidRequest):
+///                                                handleConfigurationError()
 ///     // ... other cases
 ///     @unknown default:
 ///         assertionFailure("Unhandled NetworkError case — update the switch.")
 ///     }
 /// }
 /// ```
-///
-/// `docs/Migration-5.0.0.md` documents the planned `configuration(reason:)`
-/// merge in detail; the 4.x → 5.0 transition stays source-compatible
-/// because the existing cases will become deprecated aliases that
-/// resolve to the new shape.
 /// Configuration-shaped failure reason carried by ``NetworkError/configuration(reason:)``.
 ///
-/// The 5.0 ledger consolidation introduces this case so two existing
-/// configuration-shaped failures (`invalidBaseURL` and
-/// `invalidRequestConfiguration`) and one new failure mode
-/// (`offline`, raised by ``ReachabilityCheckExecutionPolicy`` when the
-/// device is known to be offline) share a single switch arm.
-///
-/// The 4.x line keeps the existing top-level cases without
-/// deprecation so adopters can migrate at their own pace; the 5.0
-/// release will mark the legacy cases `@available(*, deprecated, renamed:)`
-/// and resolve them to the corresponding `.configuration(reason:)`
-/// reason. See `docs/Migration-5.0.0.md`.
+/// The 4.0.0 API uses this payload so configuration-shaped failures
+/// (`invalidBaseURL`, `invalidRequest`, and `offline`, raised by
+/// ``ReachabilityCheckExecutionPolicy`` when the device is known to be
+/// offline) share a single switch arm. The old standalone
+/// `NetworkError.invalidBaseURL` and
+/// `NetworkError.invalidRequestConfiguration` cases are not available in
+/// the 4.0.0 surface.
 public enum NetworkConfigurationFailureReason: Sendable, Equatable {
     /// The base URL the request would resolve against is malformed or
-    /// missing a scheme. Equivalent to legacy
-    /// ``NetworkError/invalidBaseURL(_:)``.
+    /// missing a scheme.
     case invalidBaseURL(String)
     /// The request configuration cannot be assembled (for example,
     /// missing refresh-token policy for an auth-required endpoint).
-    /// Equivalent to legacy
-    /// ``NetworkError/invalidRequestConfiguration(_:)``.
     case invalidRequest(String)
     /// The device is known to be offline (the configured
     /// ``NetworkMonitoring`` snapshot reports `.unsatisfied`). New in

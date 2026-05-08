@@ -49,7 +49,8 @@ public struct MultipartFormData: Sendable {
 
     /// Appends a numeric form field.
     ///
-    /// - Throws: ``NetworkError/invalidRequestConfiguration(_:)`` when
+    /// - Throws: ``NetworkError/configuration(reason:)`` with
+    ///   ``NetworkConfigurationFailureReason/invalidRequest(_:)`` when
     ///   `value` is `NaN` or infinite. Such values would otherwise
     ///   serialize as `"nan"` or `"inf"` and silently misrepresent the
     ///   caller's intent on the wire — a strict server typically rejects
@@ -83,7 +84,8 @@ public struct MultipartFormData: Sendable {
     ///   - name: Form field name.
     ///   - mimeType: Optional MIME override; otherwise inferred from the
     ///     file extension.
-    /// - Throws: ``NetworkError/invalidRequestConfiguration(_:)`` when the
+    /// - Throws: ``NetworkError/configuration(reason:)`` with
+    ///   ``NetworkConfigurationFailureReason/invalidRequest(_:)`` when the
     ///   URL does not point at a regular readable file.
     public mutating func appendFile(at url: URL, name: String, mimeType: String? = nil) throws {
         guard url.isFileURL else {
@@ -135,7 +137,8 @@ public struct MultipartFormData: Sendable {
     ///   ``writeEncodedData(to:)`` for unbounded payloads. Pass
     ///   `Int.max` to disable the guard.
     /// - Throws:
-    ///   - ``NetworkError/invalidRequestConfiguration(_:)`` when the
+    ///   - ``NetworkError/configuration(reason:)`` with
+    ///     ``NetworkConfigurationFailureReason/invalidRequest(_:)`` when the
     ///     estimated size exceeds `maxInMemoryBytes`.
     ///   - Any I/O error encountered while reading a file part. Earlier
     ///     versions silently skipped unreadable file parts; that masked

@@ -20,7 +20,7 @@ and tracks the remaining surface for follow-up work:
 | Generated shape | ✅ Typed `Parameter` / `APIResponse` from `$ref`; falls back to `EmptyParameter` / `EmptyResponse` when absent |
 | Schema property types | ✅ string / integer / number / boolean / array / `$ref` (incl. format hints: `int64`, `date-time`, `uri`) |
 | Auth scope | ⚠️ always `PublicAuthScope`; configurable mapping is a follow-up |
-| Schema variants (oneOf / allOf / discriminator / nullable) | ⚠️ unsupported; properties using these decode safely but generate as `AnyCodable` placeholders or are skipped |
+| Schema variants (oneOf / allOf / discriminator / nullable) | ⚠️ unsupported; properties using these generate compileable `AnyCodable` placeholders |
 | SPI integration | ⚠️ not used; the standard `APIDefinition` surface is the integration point |
 
 External dependencies live exclusively inside this Tools/ package, so
@@ -94,7 +94,9 @@ swift test
 
 Covers operation expansion across HTTP verbs, sanitization of
 non-alphanumeric `operationId` values, and the
-method-plus-path fallback when `operationId` is absent.
+method-plus-path fallback when `operationId` is absent. Schema tests also
+lock required vs. optional property rendering and `AnyCodable` fallback
+generation for unsupported property shapes.
 
 ## See also
 

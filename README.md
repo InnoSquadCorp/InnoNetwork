@@ -5,7 +5,7 @@
 [![DocC](https://img.shields.io/badge/docs-DocC-blue)](https://innosquadcorp.github.io/InnoNetwork/)
 [![Swift](https://img.shields.io/badge/Swift-6.2-orange)](https://swift.org)
 [![SwiftPM](https://img.shields.io/badge/SwiftPM-compatible-brightgreen)](https://swift.org/package-manager)
-[![Platforms](https://img.shields.io/badge/platforms-iOS%2018%20%7C%20macOS%2015%20%7C%20tvOS%2018%20%7C%20watchOS%2011%20%7C%20visionOS%202-lightgrey)](#platform-matrix)
+[![Platforms](https://img.shields.io/badge/platforms-iOS%2016%20%7C%20macOS%2014%20%7C%20tvOS%2016%20%7C%20watchOS%209%20%7C%20visionOS%201-lightgrey)](#platform-matrix)
 [![Supply Chain](https://img.shields.io/badge/supply%20chain-SHA--pinned%20Actions%20%2B%20Dependabot-blue)](#production-checklist)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -46,8 +46,8 @@ Are you generating clients from an OpenAPI / IDL spec at build time?
    └─ no
       │
       Do you just need method + path + headers + query/body + decoding?
-      ├─ yes ─► ScopedEndpoint builder
-      │          (e.g. ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/users").decoding(User.self))
+      ├─ yes ─► EndpointBuilder
+      │          (e.g. EndpointBuilder<EmptyResponse, PublicAuthScope>.get("/users").decoding(User.self))
       └─ no
          │
          Are you building an SDK or library wrapper that needs raw
@@ -86,7 +86,7 @@ dependencies: [
 
 > Use `from: "4.0.0"` (`.upToNextMajor`) only if you exclusively call
 > the **Stable** ledger in `API_STABILITY.md`. Provisionally stable
-> APIs (`ScopedEndpoint`, `WebSocketCloseDisposition`, `DecodingInterceptor`,
+> APIs (`EndpointBuilder`, `WebSocketCloseDisposition`, `DecodingInterceptor`,
 > resilience policy surfaces, …) may change in any minor release.
 >
 > InnoNetwork also intentionally requires Swift 6.2+ and current Apple OS
@@ -126,18 +126,18 @@ print(user)
 
 For simple endpoints that only need method, path, query/body parameters,
 headers, transport, and response decoding, use the builder-style
-`ScopedEndpoint` API. Keep a dedicated `APIDefinition` type when an endpoint owns interceptors,
+`EndpointBuilder` API. Keep a dedicated `APIDefinition` type when an endpoint owns interceptors,
 custom transport, multipart uploads, or streaming.
 
 ```swift
 let user = try await client.request(
-    ScopedEndpoint<EmptyResponse, PublicAuthScope>
+    EndpointBuilder<EmptyResponse, PublicAuthScope>
         .get("/users/1")
         .decoding(User.self)
 )
 
 let users = try await client.request(
-    ScopedEndpoint<EmptyResponse, PublicAuthScope>
+    EndpointBuilder<EmptyResponse, PublicAuthScope>
         .get("/users")
         .query(["limit": 20])
         .decoding([User].self)
@@ -145,7 +145,7 @@ let users = try await client.request(
 
 // form-url-encoded body
 let token = try await client.request(
-    ScopedEndpoint<EmptyResponse, PublicAuthScope>
+    EndpointBuilder<EmptyResponse, PublicAuthScope>
         .post("/login")
         .body(credentials)
         .transport(.formURLEncoded())
@@ -153,7 +153,7 @@ let token = try await client.request(
 )
 
 let me = try await client.request(
-    ScopedEndpoint<EmptyResponse, AuthRequiredScope>
+    EndpointBuilder<EmptyResponse, AuthRequiredScope>
         .get("/me")
         .decoding(User.self)
 )
@@ -256,7 +256,7 @@ for await event in await manager.events(for: task) {
 - retry coordination, stable idempotency keys, auth refresh, request coalescing, response cache, and circuit breaker policies
 - streaming-by-default inline response buffering and public `RequestExecutionPolicy` hooks
 - W3C `traceparent` propagation and curl command export helpers
-- phantom auth scopes through `ScopedEndpoint`, `PublicAuthScope`, and `AuthRequiredScope`
+- phantom auth scopes through `EndpointBuilder`, `PublicAuthScope`, and `AuthRequiredScope`
 - trust policy support and request lifecycle observability
 
 ### `InnoNetworkDownload`
@@ -474,10 +474,12 @@ do {
     print(user)
 } catch let error as NetworkError {
     switch error {
-    case .invalidBaseURL(let url):
+    case .configuration(reason: .invalidBaseURL(let url)):
         print("Invalid base URL: \(url)")
-    case .invalidRequestConfiguration(let message):
+    case .configuration(reason: .invalidRequest(let message)):
         print("Invalid request configuration: \(message)")
+    case .configuration(reason: .offline(let message)):
+        print("Offline: \(message)")
     case .statusCode(let response):
         print("Unexpected status code: \(response.statusCode)")
     case .decoding(let stage, let underlying, _):
@@ -492,7 +494,7 @@ do {
 }
 ```
 
-`invalidRequestConfiguration` usually means request shape and policy do not match. Common examples are:
+`.configuration(reason: .invalidRequest(...))` usually means request shape and policy do not match. Common examples are:
 
 - sending a top-level scalar or array query without `queryRootKey`
 - mismatching `contentType` and request payload semantics

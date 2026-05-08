@@ -40,10 +40,11 @@ import Foundation
 /// either require buffering the entire payload (defeating the streaming
 /// contract) or rebuilding the stream from the consumed bytes. When the
 /// request carries a streaming body the interceptor throws
-/// ``NetworkError/invalidRequestConfiguration(_:)`` so the failure is
-/// surfaced before the bytes hit the wire. Use a custom signing
-/// interceptor that integrates with the upload-side streaming hook in
-/// these cases.
+/// ``NetworkError/configuration(reason:)`` with
+/// ``NetworkConfigurationFailureReason/invalidRequest(_:)`` so the failure
+/// is surfaced before the bytes hit the wire. Use a custom signing
+/// interceptor that integrates with the upload-side streaming hook in these
+/// cases.
 ///
 /// ## Header defaults
 ///

@@ -66,7 +66,7 @@ storage are not fully visible at the cache abstraction boundary.
 
 ## Typed Auth Boundary
 
-Use `ScopedEndpoint<EmptyResponse, AuthRequiredScope>` for requests that must
+Use `EndpointBuilder<EmptyResponse, AuthRequiredScope>` for requests that must
 not run unless the client has a refresh policy.
 
 ```swift
@@ -76,17 +76,17 @@ struct Profile: Decodable, Sendable {
 }
 
 let profile = try await networking.api.request(
-    ScopedEndpoint<EmptyResponse, AuthRequiredScope>
+    EndpointBuilder<EmptyResponse, AuthRequiredScope>
         .get("/me")
         .decoding(Profile.self)
 )
 ```
 
-Public calls use `ScopedEndpoint<EmptyResponse, PublicAuthScope>`:
+Public calls use `EndpointBuilder<EmptyResponse, PublicAuthScope>`:
 
 ```swift
 let catalog = try await networking.api.request(
-    ScopedEndpoint<EmptyResponse, PublicAuthScope>
+    EndpointBuilder<EmptyResponse, PublicAuthScope>
         .get("/catalog")
         .decoding(Catalog.self)
 )

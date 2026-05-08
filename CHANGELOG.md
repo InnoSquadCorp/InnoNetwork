@@ -23,14 +23,15 @@ Versioning.
   SemVer-protected starting points. Their directory layout (Swift sources +
   `README.md`) is enforced by the new `Scripts/check_stable_examples.sh`
   guard, wired into the existing `docs-contract-sync` CI job. Wording is
-  not contractual; only the layout is.
+  not contractual, but the copyable Swift examples now compile against the
+  current public package in CI.
 - `NetworkClient.request(_:method:tag:)` convenience overload that infers
   the response type from the call-site annotation. Builds a default
-  `ScopedEndpoint` on the fly with `PublicAuthScope` and the method's
+  `EndpointBuilder` on the fly with `PublicAuthScope` and the method's
   default `TransportPolicy`, so simple GETs read like
   `let user: User = try await client.request("/users/\(id)")`. Endpoints
   that need authenticated scopes, custom headers, body parameters, or
-  per-endpoint interceptors should keep using `ScopedEndpoint` builders or
+  per-endpoint interceptors should keep using `EndpointBuilder` or
   a hand-written `APIDefinition`.
 
 - `Tools/openapi-to-innonetwork` expands beyond the 4.x preview:
@@ -48,7 +49,9 @@ Versioning.
     `APIResponse` aliases when the spec uses `$ref`, and fall back to
     `EmptyParameter` / `EmptyResponse` otherwise. Property types map
     string / integer / number / boolean / array / `$ref` plus the
-    common format hints (`int64`, `date-time`, `uri`).
+    common format hints (`int64`, `date-time`, `uri`); unsupported schema
+    properties generate a companion `AnyCodable` fallback so the emitted
+    module still compiles.
   - The README and CI usage examples now show YAML input directly
     (no more `yq` workaround).
 - `Tools/openapi-to-innonetwork` ships a 4.x preview of an OpenAPI 3
@@ -89,13 +92,12 @@ Versioning.
   body and emits the signature plus a key identifier into
   caller-tunable headers (`X-Signature` / `X-Signature-Key-Id` by
   default). Streaming bodies (`URLRequest.httpBodyStream`) are
-  rejected with `NetworkError.invalidRequestConfiguration(...)` rather
-  than silently signing an empty payload — production protocols
-  needing AWS SigV4, OAuth1, or similar canonicalization should ship
-  as a dedicated interceptor on top of the same `RequestInterceptor`
-  contract. Composes through `NetworkConfiguration.requestInterceptors`
-  alongside any existing auth chain (`RefreshTokenPolicy`, custom
-  adapters).
+  rejected with `NetworkError.configuration(reason: .invalidRequest(...))`
+  rather than silently signing an empty payload — production protocols
+  needing AWS SigV4, OAuth1, or similar canonicalization should ship as a
+  dedicated interceptor on top of the same `RequestInterceptor` contract.
+  Composes through `NetworkConfiguration.requestInterceptors` alongside any
+  existing auth chain (`RefreshTokenPolicy`, custom adapters).
 
 ### CI / Tooling
 
@@ -112,29 +114,19 @@ Versioning.
 
 ### Changed
 
-- `docs/Migration-5.0.0.md` ships during the 4.x line so adopters
-  can prepare for 5.0 incrementally. Documents the headline changes
-  (Endpoint vocabulary rename, `NetworkConfiguration` packs,
-  `NetworkError` consolidation, platform backport), the 4.x →
-  4.x final → 5.0 → 6.0 compatibility timeline (typealiases ship
-  without deprecation warnings during 4.x, deprecation lands at the
-  4.x final point release, removal at 6.0), a pre-flight checklist
-  for adopters, and explicit notes on what stays unchanged.
+- `docs/Migration-5.0.0.md` now reflects that the endpoint vocabulary and
+  `NetworkError` ledger reset landed in `4.0.0`. It keeps the future 5.0
+  notes focused on remaining pack/codegen evolution and directs consumers to
+  migrate old endpoint/error spellings before adopting this release.
 - `CLAUDE.md` updates the project-context platform floors to match
   the 4.x backport (iOS 16 / macOS 14 / tvOS 16 / watchOS 9 /
   visionOS 1).
 ### Documentation (continued)
 
-- `NetworkError`'s top-level doc comment now explicitly states that
-  the enum is intentionally non-`@frozen`, names the upcoming 5.0
-  `configuration(reason:)` merge of `invalidBaseURL(_:)` and
-  `invalidRequestConfiguration(_:)`, and includes a worked
-  `@unknown default` switch pattern. The 4.x → 5.0 transition
-  stays source-compatible (the legacy cases will become deprecated
-  aliases that resolve to the new shape) but exhaustive switches
-  without the `@unknown default` arm will surface a warning when
-  the new case lands; the doc-comment update lets consumers
-  prepare today.
+- `NetworkError`'s top-level doc comment now states that the enum is
+  intentionally non-`@frozen`, documents the current
+  `configuration(reason:)` shape, and includes a worked `@unknown default`
+  switch pattern for future failure modes.
 
 ### Added
 
@@ -168,22 +160,21 @@ Versioning.
 - `NetworkError.configuration(reason:)` and the matching
   `NetworkConfigurationFailureReason` enum (`invalidBaseURL`,
   `invalidRequest`, `offline`). Adopters can now switch on the
-  consolidated 5.0 ledger shape directly. The legacy
+  consolidated ledger shape directly. The legacy
   `NetworkError.invalidBaseURL` and
-  `NetworkError.invalidRequestConfiguration` cases stay available
-  in 4.x without deprecation; the 5.0 release will mark them
-  `@available(*, deprecated, renamed:)` aliases that resolve to the
-  corresponding reason. `ReachabilityCheckExecutionPolicy` already
-  emits `.configuration(reason: .offline(_:))` so the new offline
-  failure mode surfaces through the consolidated case from day one.
-  English/Korean Localizable.strings ship a new
-  `NetworkError.offline` key shared by the offline reason.
+  `NetworkError.invalidRequestConfiguration` cases are not available in
+  `4.0.0`; switch on the reason payload instead.
+  `ReachabilityCheckExecutionPolicy` emits
+  `.configuration(reason: .offline(_:))` so the offline failure mode surfaces
+  through the consolidated case from day one. English/Korean
+  Localizable.strings ship a new `NetworkError.offline` key shared by the
+  offline reason.
 - `ReachabilityCheckExecutionPolicy` — executor-integrated
   reachability gate. Reads `NetworkMonitoring.currentSnapshot()`
   before each transport attempt and throws
-  `NetworkError.invalidRequestConfiguration` when the path is
-  `.unsatisfied`, so requests fail fast instead of burning
-  URLSession's timeout on a known-offline path. Two modes:
+  `NetworkError.configuration(reason: .offline(...))` when the path is
+  `.unsatisfied`, so requests fail fast instead of burning URLSession's
+  timeout on a known-offline path. Two modes:
   `.requireOnline` rejects, `.warnOnly` lets the request proceed
   for staged rollouts that want telemetry first.
   `.requiresConnection` and unobserved snapshots fall through.
@@ -232,16 +223,6 @@ Versioning.
   dependency is `NWPathMonitor.Sendable` which forces macOS 14+.
   Apps targeting iOS 16+ can now adopt InnoNetwork without an
   OS bump, opening B2C deployment paths that were previously blocked.
-- Forward-compatibility typealiases for the upcoming 5.0 rename:
-  `Endpoint = EndpointShape`, `AuthScope = EndpointAuthScope`,
-  `EndpointBuilder<R, S> = ScopedEndpoint<R, S>`. New code may adopt
-  the 5.0 names today; existing `EndpointShape` /
-  `EndpointAuthScope` / `ScopedEndpoint` references keep compiling
-  through the 5.x line. The 5.0 release will swap primary and
-  alias, demote the legacy names to `@available(*, deprecated)`
-  aliases, and remove them in 6.0. This commit is intentionally
-  additive — no deprecation warnings, no semantic changes — so the
-  4.x experience for existing call sites stays identical.
 - `Sources/InnoNetwork/RequestExecutor.swift` shrinks to ~286 lines
   (down from ~1,045 at the start of Phase 3) by extracting the
   transport stage (`performTransport`, `executeCustomPolicies`,
@@ -412,8 +393,8 @@ changes are intentional and are called out below; migration recipes live in
   failures rather than silently dropping parts. RFC 5987 `filename*=UTF-8''…`
   is emitted for non-ASCII filenames; ASCII fallback is preserved.
 - `MultipartResponseDecoder`: missing/invalid boundary raises
-  `NetworkError.invalidRequestConfiguration(...)` instead of returning an
-  empty array.
+  `NetworkError.configuration(reason: .invalidRequest(...))` instead of
+  returning an empty array.
 - `RetryPolicy.init`: gains `jitterFactor` and `maxTotalRetryDuration`
   parameters with safe defaults. The `cancelled` event now fires even when
   the surrounding task is cancelled.
@@ -440,8 +421,8 @@ changes are intentional and are called out below; migration recipes live in
   and per-task event partitions finish. `deinit` retains
   `finishTasksAndInvalidate()` as a fallback.
 - `Endpoint<Response>` and `AuthenticatedEndpoint<Response>` fluent aliases
-  are removed. Use `ScopedEndpoint<Response, PublicAuthScope>` or
-  `ScopedEndpoint<Response, AuthRequiredScope>` explicitly.
+  are removed. Use `EndpointBuilder<Response, PublicAuthScope>` or
+  `EndpointBuilder<Response, AuthRequiredScope>` explicitly.
 - `WebSocketManager.shared` is removed. Construct and inject a
   feature-owned `WebSocketManager(configuration:)`.
 

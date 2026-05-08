@@ -29,7 +29,7 @@ let profile = try await client.request(GetProfile())
 
 Migration notes:
 
-- Move request construction into endpoint types or `ScopedEndpoint` builder calls.
+- Move request construction into endpoint types or `EndpointBuilder` calls.
 - Keep app-specific token storage outside the library and wire it through
   `RefreshTokenPolicy`.
 - Replace ad hoc retry loops with `RetryPolicy` / `ExponentialBackoffRetryPolicy`.
@@ -66,20 +66,20 @@ caller moves to typed endpoints.
 
 ## From Moya
 
-Moya's `TargetType` maps cleanly to a small `APIDefinition` or `ScopedEndpoint`
+Moya's `TargetType` maps cleanly to a small `APIDefinition` or `EndpointBuilder`
 factory. Keep target-style enums if they are useful to the app, but make the
 network boundary return typed endpoint definitions instead of generic tasks.
 
 ```swift
 enum UserEndpoints {
-    static func profile(id: String) -> ScopedEndpoint<UserDTO, PublicAuthScope> {
-        ScopedEndpoint<EmptyResponse, PublicAuthScope>
+    static func profile(id: String) -> EndpointBuilder<UserDTO, PublicAuthScope> {
+        EndpointBuilder<EmptyResponse, PublicAuthScope>
             .get("/users/\(id)")
             .decoding(UserDTO.self)
     }
 
-    static func posts(id: String, page: Int) -> ScopedEndpoint<[PostDTO], PublicAuthScope> {
-        ScopedEndpoint<EmptyResponse, PublicAuthScope>
+    static func posts(id: String, page: Int) -> EndpointBuilder<[PostDTO], PublicAuthScope> {
+        EndpointBuilder<EmptyResponse, PublicAuthScope>
             .get("/users/\(id)/posts")
             .query(["page": page])
             .decoding([PostDTO].self)
@@ -93,27 +93,28 @@ Migration notes:
   interceptors, or explicit app services.
 - Replace stubbing with `InnoNetworkTestSupport` in test targets.
 - Keep pagination as app/domain logic that repeatedly calls typed endpoints.
-- Prefer `ScopedEndpoint` for simple targets and `APIDefinition` when an endpoint
+- Prefer `EndpointBuilder` for simple targets and `APIDefinition` when an endpoint
   owns custom transport, multipart upload, streaming, or interceptors.
 
-## Removed Fluent Endpoint Aliases
+## Removed Fluent Endpoint Names
 
-The 4.0.0 public surface removes the pre-release fluent endpoint aliases so
-auth scope is visible in source:
+The 4.0.0 public surface uses the final builder vocabulary so auth scope is
+visible in source:
 
-| Removed alias | Replacement |
+| Previous usage | Replacement |
 | --- | --- |
-| `Endpoint<Response>` | `ScopedEndpoint<Response, PublicAuthScope>` |
-| `AuthenticatedEndpoint<Response>` | `ScopedEndpoint<Response, AuthRequiredScope>` |
+| `Endpoint<Response>` | `EndpointBuilder<Response, PublicAuthScope>` |
+| `AuthenticatedEndpoint<Response>` | `EndpointBuilder<Response, AuthRequiredScope>` |
+| `ScopedEndpoint<Response, Scope>` | `EndpointBuilder<Response, Scope>` |
 
 Builder entry points move to the empty-response scoped type:
 
 ```swift
-let publicEndpoint = ScopedEndpoint<EmptyResponse, PublicAuthScope>
+let publicEndpoint = EndpointBuilder<EmptyResponse, PublicAuthScope>
     .get("/catalog")
     .decoding(Catalog.self)
 
-let authEndpoint = ScopedEndpoint<EmptyResponse, AuthRequiredScope>
+let authEndpoint = EndpointBuilder<EmptyResponse, AuthRequiredScope>
     .get("/me")
     .decoding(Profile.self)
 ```

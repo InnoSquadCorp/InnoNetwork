@@ -51,11 +51,13 @@ release line. `4.0.0` is the public baseline for this contract.
 
 A subset of `Examples/` participates in the SemVer-protected stable
 contract. For each entry below the directory must exist, contain at least
-one Swift source file, and ship a `README.md`. The exact wording of the
-example is **not** contractual — only the layout is — so consumers can
-copy these starting points with the same confidence as a Stable public API.
+one Swift source file, ship a `README.md`, and compile against the current
+public package. The exact wording of the example is **not** contractual, but
+the copyable Swift starting points must stay source-compatible with the
+4.0.0 public API.
 The `Scripts/check_stable_examples.sh` gate, wired into the docs-contract
-job, fails CI if a stable example is removed, emptied, or loses its README.
+job, fails CI if a stable example is removed, emptied, loses its README, or
+stops compiling.
 
 - `Examples/BasicRequest` — request/response fundamentals across HTTP verbs
   and content types.
@@ -138,20 +140,16 @@ Per-symbol evolution allowances within the 4.x line:
   the generic execution pipeline stays package/internal.
 - `NetworkConfigurationFailureReason` — typed payload for
   ``NetworkError/configuration(reason:)``. Carries
-  `invalidBaseURL` / `invalidRequest` / `offline` cases. The 5.0
-  ledger consolidation will demote the standalone
+  `invalidBaseURL` / `invalidRequest` / `offline` cases. The standalone
   `NetworkError.invalidBaseURL` and
-  `NetworkError.invalidRequestConfiguration` cases to
-  `@available(*, deprecated)` aliases that resolve to the
-  corresponding reason; `offline` is new in 5.0 and is already
-  surfaced by ``ReachabilityCheckExecutionPolicy``.
+  `NetworkError.invalidRequestConfiguration` cases are not part of the
+  4.0.0 surface; adopters switch on this reason payload directly.
 - `ReachabilityCheckExecutionPolicy` — `RequestExecutionPolicy` that
   consults a `NetworkMonitoring` source and short-circuits requests
   when the path is `.unsatisfied`. `.requiresConnection` and
-  unobserved snapshots fall through. The 5.0 release introduces a
-  dedicated `NetworkError.offline` case as part of the ledger
-  consolidation; the policy will swap the error case at that point
-  with a deprecated alias preserving source compatibility.
+  unobserved snapshots fall through. Offline rejections surface as
+  ``NetworkError/configuration(reason:)`` with
+  ``NetworkConfigurationFailureReason/offline(_:)``.
 - `ConcurrencyLimitExecutionPolicy` — `RequestExecutionPolicy` that
   funnels each transport attempt through a `ConcurrencyTokenBucket`
   with `acquire` / deferred `release` semantics. Registered via

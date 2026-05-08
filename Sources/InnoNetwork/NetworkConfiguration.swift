@@ -171,7 +171,8 @@ public struct NetworkConfiguration: Sendable {
     public let redirectPolicy: any RedirectPolicy
 
     /// When `false` (default), a `baseURL` with `http://` scheme is rejected
-    /// at request-build time with ``NetworkError/invalidBaseURL(_:)``. App
+    /// at request-build time with ``NetworkError/configuration(reason:)`` and
+    /// ``NetworkConfigurationFailureReason/invalidBaseURL(_:)``. App
     /// Transport Security blocks plain-HTTP traffic at the Apple platform
     /// level for App Store submissions; this flag adds a defense-in-depth
     /// guard for callers that may have ATS exemptions or run in macOS/CLI

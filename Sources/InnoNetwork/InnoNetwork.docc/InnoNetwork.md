@@ -28,7 +28,7 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``DefaultNetworkClient``
 - ``NetworkClient``
 - ``APIDefinition``
-- ``ScopedEndpoint``
+- ``EndpointBuilder``
 - ``MultipartAPIDefinition``
 
 ### Configuration

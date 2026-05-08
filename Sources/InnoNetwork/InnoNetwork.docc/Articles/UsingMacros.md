@@ -41,10 +41,10 @@ type. Do not declare a nested type named `InnoNetwork` in scopes where
 generated path expression.
 
 The ``endpoint(_:_:as:)`` expression macro expands to the fluent
-``ScopedEndpoint`` API:
+``EndpointBuilder`` API:
 
 ```swift
-ScopedEndpoint<EmptyResponse, PublicAuthScope>(method: .get, path: "/users/1")
+EndpointBuilder<EmptyResponse, PublicAuthScope>(method: .get, path: "/users/1")
     .decoding(User.self)
 ```
 

@@ -30,16 +30,15 @@ import Foundation
 ///
 /// The policy reports
 /// `NetworkError.configuration(reason: .offline(_:))` for rejected
-/// requests, taking the consolidated 5.0 ledger shape directly. The
-/// legacy `.invalidRequestConfiguration` case stays available for
-/// adopters who still switch on it; the
-/// `NetworkConfigurationFailureReason.offline` payload is the
-/// recommended target.
+/// requests. Switch on the `NetworkConfigurationFailureReason.offline`
+/// payload to distinguish this from malformed base URLs or invalid request
+/// shapes.
 public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
     /// Behaviour switch for offline observations.
     public enum Mode: Sendable, Equatable {
-        /// Rejects requests with `NetworkError.invalidRequestConfiguration`
-        /// when the snapshot reports `.unsatisfied`. Default.
+        /// Rejects requests with
+        /// `NetworkError.configuration(reason: .offline(...))` when the
+        /// snapshot reports `.unsatisfied`. Default.
         case requireOnline
         /// Lets the request continue regardless. Useful for early
         /// rollouts that want telemetry without altering behaviour.

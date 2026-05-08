@@ -128,7 +128,7 @@ struct UpdateProfile: APIDefinition {
 
 // form-url-encoded 로그인
 let token = try await client.request(
-    ScopedEndpoint<EmptyResponse, PublicAuthScope>
+    EndpointBuilder<EmptyResponse, PublicAuthScope>
         .post("/login")
         .body(credentials)
         .transport(.formURLEncoded())
@@ -136,7 +136,7 @@ let token = try await client.request(
 )
 
 let profile = try await client.request(
-    ScopedEndpoint<EmptyResponse, AuthRequiredScope>
+    EndpointBuilder<EmptyResponse, AuthRequiredScope>
         .get("/me")
         .decoding(Profile.self)
 )

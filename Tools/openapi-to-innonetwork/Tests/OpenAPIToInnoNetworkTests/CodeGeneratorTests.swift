@@ -84,4 +84,41 @@ struct CodeGeneratorTests {
         #expect(filename?.hasPrefix("Post") == true)
         #expect(filename?.hasSuffix(".swift") == true)
     }
+
+    @Test
+    func generatesSchemaPropertiesWithoutOptionalInterpolation() throws {
+        let document = OpenAPIDocument(
+            paths: [:],
+            components: Components(schemas: [
+                "User": Schema(
+                    type: "object",
+                    properties: [
+                        "id": Schema(type: "integer", format: "int64"),
+                        "metadata": Schema(type: "object"),
+                        "name": Schema(type: "string"),
+                        "profile": Schema(ref: "#/components/schemas/Profile"),
+                        "tags": Schema(type: "array", items: Box(Schema(type: "string"))),
+                    ],
+                    required: ["id", "name", "profile"]
+                )
+            ])
+        )
+        let generator = CodeGenerator(moduleName: "API")
+
+        let files = generator.generate(from: document)
+        let user = try #require(files.first(where: { $0.filename == "User.swift" })?.contents)
+        let anyCodable = try #require(files.first(where: { $0.filename == "AnyCodable.swift" })?.contents)
+
+        #expect(user.contains("public var id: Int64"))
+        #expect(user.contains("public var metadata: AnyCodable?"))
+        #expect(user.contains("public var name: String"))
+        #expect(user.contains("public var profile: Profile"))
+        #expect(user.contains("public var tags: [String]?"))
+        #expect(
+            user.contains(
+                "public init(id: Int64, metadata: AnyCodable? = nil, name: String, profile: Profile, tags: [String]? = nil)"
+            ))
+        #expect(!user.contains("Optional("))
+        #expect(anyCodable.contains("public indirect enum AnyCodable: Codable, Sendable, Equatable"))
+    }
 }

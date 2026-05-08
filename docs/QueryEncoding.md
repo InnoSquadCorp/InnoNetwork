@@ -34,8 +34,8 @@ across runs (important for cache-key reproducibility and snapshot-style tests).
 
 Endpoint `path` values are path-only values. Do not include query or fragment
 components in `APIDefinition.path`, `MultipartAPIDefinition.path`, or
-`ScopedEndpoint` builder paths; a literal `?` or `#` is rejected with
-`NetworkError.invalidRequestConfiguration`.
+`EndpointBuilder` paths; a literal `?` or `#` is rejected with
+`NetworkError.configuration(reason: .invalidRequest(...))`.
 
 The base URL path is preserved and endpoint paths are appended after it. A
 leading slash in the endpoint path does not reset the base path:
@@ -47,10 +47,10 @@ leading slash in the endpoint path does not reset the base path:
 
 Already percent-encoded path segments are preserved. Query values must be
 provided through `parameters` plus `URLQueryEncoder`, or through
-`ScopedEndpoint.query(_:)` for builder-style endpoints. Raw spaces and non-ASCII
+`EndpointBuilder.query(_:)` for builder-style endpoints. Raw spaces and non-ASCII
 characters in literal paths are percent-encoded before the request is sent;
 malformed percent escapes such as `%`, `%2`, or `%ZZ` are rejected with
-`NetworkError.invalidRequestConfiguration`.
+`NetworkError.configuration(reason: .invalidRequest(...))`.
 
 ## Comparison with OpenAPI / RFC 6570
 

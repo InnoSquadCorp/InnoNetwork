@@ -241,10 +241,15 @@ struct CodeGenerator {
 
     func generate(from document: OpenAPIDocument) -> [GeneratedFile] {
         var files: [GeneratedFile] = []
+        var needsAnyCodable = false
         if let schemas = document.components?.schemas {
             for (name, schema) in schemas.sorted(by: { $0.key < $1.key }) {
                 files.append(renderSchema(name: sanitize(name), schema: schema))
+                needsAnyCodable = needsAnyCodable || schemaNeedsAnyCodable(schema)
             }
+        }
+        if needsAnyCodable {
+            files.append(renderAnyCodable())
         }
         for (path, item) in document.paths.sorted(by: { $0.key < $1.key }) {
             for (method, op) in item.operationsByMethod {
@@ -269,14 +274,14 @@ struct CodeGenerator {
             let sortedProps = properties.sorted(by: { $0.key < $1.key })
             for (propName, propSchema) in sortedProps {
                 let optional = !required.contains(propName)
-                let swiftType = swiftTypeName(for: propSchema, fallback: "AnyCodable")
+                let swiftType = swiftTypeName(for: propSchema, fallback: "AnyCodable") ?? "AnyCodable"
                 let typeAnnotation = optional ? "\(swiftType)?" : swiftType
                 lines.append("    public var \(safeIdentifier(propName)): \(typeAnnotation)")
             }
             lines.append("")
             let initParams = sortedProps.map { propName, propSchema -> String in
                 let optional = !required.contains(propName)
-                let swiftType = swiftTypeName(for: propSchema, fallback: "AnyCodable")
+                let swiftType = swiftTypeName(for: propSchema, fallback: "AnyCodable") ?? "AnyCodable"
                 let typeAnnotation = optional ? "\(swiftType)? = nil" : swiftType
                 return "\(safeIdentifier(propName)): \(typeAnnotation)"
             }
@@ -291,6 +296,70 @@ struct CodeGenerator {
         }
         lines.append("}")
         return GeneratedFile(filename: "\(name).swift", contents: lines.joined(separator: "\n") + "\n")
+    }
+
+    private func renderAnyCodable() -> GeneratedFile {
+        let contents = """
+            \(generatedHeader(comment: "Fallback type for unsupported schema properties"))
+
+            import Foundation
+
+            public indirect enum AnyCodable: Codable, Sendable, Equatable {
+                case array([AnyCodable])
+                case bool(Bool)
+                case double(Double)
+                case int(Int64)
+                case null
+                case object([String: AnyCodable])
+                case string(String)
+
+                public init(from decoder: Decoder) throws {
+                    let container = try decoder.singleValueContainer()
+                    if container.decodeNil() {
+                        self = .null
+                    } else if let value = try? container.decode(Bool.self) {
+                        self = .bool(value)
+                    } else if let value = try? container.decode(Int64.self) {
+                        self = .int(value)
+                    } else if let value = try? container.decode(Double.self) {
+                        self = .double(value)
+                    } else if let value = try? container.decode(String.self) {
+                        self = .string(value)
+                    } else if let value = try? container.decode([AnyCodable].self) {
+                        self = .array(value)
+                    } else if let value = try? container.decode([String: AnyCodable].self) {
+                        self = .object(value)
+                    } else {
+                        throw DecodingError.dataCorruptedError(
+                            in: container,
+                            debugDescription: "Unsupported JSON value for AnyCodable."
+                        )
+                    }
+                }
+
+                public func encode(to encoder: Encoder) throws {
+                    var container = encoder.singleValueContainer()
+                    switch self {
+                    case .array(let value):
+                        try container.encode(value)
+                    case .bool(let value):
+                        try container.encode(value)
+                    case .double(let value):
+                        try container.encode(value)
+                    case .int(let value):
+                        try container.encode(value)
+                    case .null:
+                        try container.encodeNil()
+                    case .object(let value):
+                        try container.encode(value)
+                    case .string(let value):
+                        try container.encode(value)
+                    }
+                }
+            }
+            """
+
+        return GeneratedFile(filename: "AnyCodable.swift", contents: contents + "\n")
     }
 
     // MARK: Operation → APIDefinition struct
@@ -373,6 +442,24 @@ struct CodeGenerator {
             return fallback
         default:
             return fallback
+        }
+    }
+
+    private func schemaNeedsAnyCodable(_ schema: Schema) -> Bool {
+        if schema.ref != nil {
+            return false
+        }
+        if let properties = schema.properties {
+            return properties.values.contains(where: schemaNeedsAnyCodable)
+        }
+        switch schema.type {
+        case "string", "integer", "number", "boolean":
+            return false
+        case "array":
+            guard let item = schema.items?.value else { return true }
+            return schemaNeedsAnyCodable(item)
+        default:
+            return true
         }
     }
 

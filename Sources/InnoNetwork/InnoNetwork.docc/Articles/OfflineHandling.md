@@ -50,8 +50,8 @@ struct RequireOnlineInterceptor: RequestInterceptor {
     func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
         let snapshot = await monitor.currentSnapshot()
         if let snapshot, snapshot.status == .unsatisfied {
-            throw NetworkError.invalidRequestConfiguration(
-                "Network is not reachable; refusing to dispatch."
+            throw NetworkError.configuration(
+                reason: .offline("Network is not reachable; refusing to dispatch.")
             )
         }
         // .requiresConnection (VPN/proxy needed) and nil (no
