@@ -101,6 +101,13 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `WebSocketProtocolFeature`
 - `DecodingInterceptor`
 - `StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`
+- `NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface
+- `HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)
+- `MultipartUploadStrategy.threshold(bytes:)`
+- `StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance
+- `PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`
+- `DownloadTask.generation` / `attempt` observation accessors
+- `NetworkError.transportSuspended` and `NetworkError.cacheRevalidationFailed(underlying:cached:)` cases. Localizable.strings keys (`NetworkError.transportSuspended`, `NetworkError.cacheRevalidationFailed`) ship in `en` and `ko` and are treated as the Provisionally Stable contract for the messages.
 
 ## Provisionally Stable Evolution Boundaries
 
@@ -153,8 +160,10 @@ Per-symbol evolution allowances within the 4.x line:
   4.0.0 surface; adopters switch on this reason payload directly.
 - `ReachabilityCheckExecutionPolicy` — `RequestExecutionPolicy` that
   consults a `NetworkMonitoring` source and short-circuits requests
-  when the path is `.unsatisfied`. `.requiresConnection` and
-  unobserved snapshots fall through. Offline rejections surface as
+  when the path is `.unsatisfied`. `.requiresConnection` waits up to
+  `suspensionWaitTimeout` before forwarding, surfacing offline, or
+  throwing ``NetworkError/transportSuspended``; unobserved snapshots fall
+  through. Offline rejections surface as
   ``NetworkError/configuration(reason:)`` with
   ``NetworkConfigurationFailureReason/offline(_:)``.
 - `ConcurrencyLimitExecutionPolicy` — `RequestExecutionPolicy` that

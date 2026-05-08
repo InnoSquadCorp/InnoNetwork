@@ -23,6 +23,7 @@ struct LocalizedNetworkErrorTests {
         let cases: [NetworkError] = [
             .configuration(reason: .invalidBaseURL("ftp://example.com")),
             .configuration(reason: .invalidRequest("missing path")),
+            .configuration(reason: .offline("device path is .unsatisfied")),
             .decoding(
                 stage: .responseBody,
                 underlying: SendableUnderlyingError(
@@ -51,6 +52,15 @@ struct LocalizedNetworkErrorTests {
             .timeout(reason: .resourceTimeout),
             .timeout(reason: .connectionTimeout),
             .responseTooLarge(limit: 1024, observed: 4096),
+            .transportSuspended,
+            .cacheRevalidationFailed(
+                underlying: SendableUnderlyingError(
+                    domain: "test",
+                    code: 3,
+                    message: "stale cache"
+                ),
+                cached: response
+            ),
         ]
 
         for error in cases {
@@ -105,6 +115,7 @@ struct LocalizedNetworkErrorTests {
     private static let translatedKeys: [String] = [
         "NetworkError.invalidBaseURL",
         "NetworkError.invalidRequestConfiguration",
+        "NetworkError.offline",
         "NetworkError.decoding",
         "NetworkError.statusCode",
         "NetworkError.nonHTTPResponse",
@@ -113,6 +124,8 @@ struct LocalizedNetworkErrorTests {
         "NetworkError.timeout.resource",
         "NetworkError.timeout.connection",
         "NetworkError.responseTooLarge",
+        "NetworkError.transportSuspended",
+        "NetworkError.cacheRevalidationFailed",
         "NetworkError.trust.unsupportedAuthenticationMethod",
         "NetworkError.trust.missingServerTrust",
         "NetworkError.trust.systemTrustEvaluationFailedWithReason",

@@ -115,6 +115,27 @@ struct PersistentResponseCacheTests {
         #expect(FileManager.default.fileExists(atPath: hmacKeyURL(in: directory).path))
     }
 
+    @Test("Persistent cache key normalizer trims optional header whitespace")
+    func persistentCacheKeyNormalizerTrimsOptionalHeaderWhitespace() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let result = try PersistentCacheDiskKeyNormalizer.loadOrCreate(
+            directoryURL: directory,
+            dataProtectionClass: .completeUnlessOpen,
+            fileManager: .default
+        )
+
+        #expect(
+            result.normalizer.normalizeHeaders(["Accept-Language:ko"])
+                == result.normalizer.normalizeHeaders(["Accept-Language: ko"])
+        )
+        #expect(
+            result.normalizer.normalizeHeaders(["Authorization:Bearer token"])
+                == result.normalizer.normalizeHeaders(["Authorization: Bearer token"])
+        )
+    }
+
     @Test("Zero-byte HMAC key file self-heals on reopen")
     func zeroByteHMACKeyFileSelfHealsOnReopen() async throws {
         let directory = makeDirectory()
@@ -208,6 +229,47 @@ struct PersistentResponseCacheTests {
         #expect(cached.data == Data("second".utf8))
         let regeneratedKey = try Data(contentsOf: hmacKeyURL(in: directory))
         #expect(regeneratedKey.count == 32)
+    }
+
+    @Test("Missing HMAC key with existing entries resets index and bodies")
+    func missingHMACKeyWithExistingEntriesResetsCacheOnReopen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            storesAuthenticatedResponses: true
+        )
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Authorization": "Bearer secret"]
+        )
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("first".utf8)))
+        #expect(try existingBodyURLs(in: directory).isEmpty == false)
+
+        try FileManager.default.removeItem(at: hmacKeyURL(in: directory))
+
+        let reader = try PersistentResponseCache(configuration: configuration)
+
+        #expect(await reader.get(key) == nil)
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(await reader.statistics().entryCount == 0)
+        let regeneratedKey = try Data(contentsOf: hmacKeyURL(in: directory))
+        #expect(regeneratedKey.count == 32)
+    }
+
+    @Test("Fresh cache directory key creation is not counted as eviction")
+    func freshCacheDirectoryKeyCreationIsNotCountedAsEviction() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+
+        #expect(await cache.statistics().evictionCount == 0)
+        #expect(await cache.telemetrySnapshot().isEmpty)
     }
 
     @Test("Cache-Control private responses are rejected")
@@ -522,6 +584,79 @@ struct PersistentResponseCacheTests {
         #expect(stats.maxBytes == 128)
     }
 
+    @Test("statistics tracks hit and miss counts across get() calls")
+    func statisticsTracksHitAndMissCounts() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxBytes: 1024,
+                maxEntries: 8,
+                maxEntryBytes: 512
+            )
+        )
+        let storedKey = ResponseCacheKey(method: "GET", url: "https://example.com/hit")
+        let missingKey = ResponseCacheKey(method: "GET", url: "https://example.com/miss")
+        await cache.set(storedKey, CachedResponse(data: Data("hit-body".utf8)))
+
+        _ = await cache.get(storedKey)
+        _ = await cache.get(storedKey)
+        _ = await cache.get(missingKey)
+
+        let stats = await cache.statistics()
+        #expect(stats.hitCount == 2)
+        #expect(stats.missCount == 1)
+    }
+
+    @Test("statistics tracks eviction counts when budget enforcement fires")
+    func statisticsTracksEvictionCounts() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                maxBytes: 1024,
+                maxEntries: 2,
+                maxEntryBytes: 512
+            )
+        )
+        let key1 = ResponseCacheKey(method: "GET", url: "https://example.com/a")
+        let key2 = ResponseCacheKey(method: "GET", url: "https://example.com/b")
+        let key3 = ResponseCacheKey(method: "GET", url: "https://example.com/c")
+        await cache.set(key1, CachedResponse(data: Data("a".utf8)))
+        await cache.set(key2, CachedResponse(data: Data("b".utf8)))
+        let priorEvictions = await cache.statistics().evictionCount
+        await cache.set(key3, CachedResponse(data: Data("c".utf8)))
+
+        let stats = await cache.statistics()
+        #expect(stats.entryCount == 2)
+        #expect(stats.evictionCount == priorEvictions + 1)
+    }
+
+    @Test("get() missing body records scrub telemetry and eviction count")
+    func getMissingBodyRecordsTelemetryAndEvictionCount() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/missing-body")
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        await cache.set(key, CachedResponse(data: Data("missing".utf8)))
+        let bodyURL = try #require(existingBodyURLs(in: directory).first)
+        try FileManager.default.removeItem(at: bodyURL)
+        let priorEvictions = await cache.statistics().evictionCount
+
+        #expect(await cache.get(key) == nil)
+
+        let stats = await cache.statistics()
+        #expect(stats.evictionCount == priorEvictions + 1)
+        #expect(
+            await cache.telemetrySnapshot()
+                .contains(.scrubbedEntries(reason: .missingBody, count: 1, byteCount: 7))
+        )
+    }
+
     @Test("get() drops a body that grew past maxEntryBytes after init")
     func getDropsBodyThatExceedsMaxEntryBytesAfterInit() async throws {
         let directory = makeDirectory()
@@ -537,10 +672,16 @@ struct PersistentResponseCacheTests {
         let bodyURL = try #require(existingBodyURLs(in: directory).first)
 
         try Data(repeating: 9, count: 128).write(to: bodyURL, options: .atomic)
+        let priorEvictions = await cache.statistics().evictionCount
 
         #expect(await cache.get(key) == nil)
         #expect(try existingBodyURLs(in: directory).isEmpty)
         #expect(try indexEntryCount(in: directory) == 0)
+        #expect(await cache.statistics().evictionCount == priorEvictions + 1)
+        #expect(
+            await cache.telemetrySnapshot()
+                .contains(.scrubbedEntries(reason: .entryTooLarge, count: 1, byteCount: 8))
+        )
     }
 
     @Test("Unknown index version is evicted and startup continues")

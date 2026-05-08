@@ -3,135 +3,45 @@ import InnoNetwork
 import OSLog
 import os
 
-public enum WebSocketEvent: Sendable {
-    case connected(String?)
-    case disconnected(WebSocketError?)
-    case message(Data)
-    case string(String)
-    /// Emitted just before a ping frame is issued, from either the heartbeat
-    /// loop or ``WebSocketManager/ping(_:)``.
-    ///
-    /// A successful ping is followed by `.pong`. Public
-    /// ``WebSocketManager/ping(_:)`` failures publish a paired `.error(_:)`
-    /// before throwing. Heartbeat timeouts publish `.error(.pingTimeout)`,
-    /// while non-timeout transport failures surface through the surrounding
-    /// disconnect / error lifecycle.
-    ///
-    /// The associated ``WebSocketPingContext`` carries the attempt number
-    /// within the current connection plus a dispatch timestamp, letting
-    /// consumers compute per-cycle RTT without maintaining their own
-    /// bookkeeping.
-    case ping(WebSocketPingContext)
-    /// Emitted when a ping frame's paired pong is received.
-    ///
-    /// The associated ``WebSocketPongContext`` carries the matching
-    /// ``WebSocketPingContext/attemptNumber`` and the library-computed
-    /// `roundTrip: Duration`. Consumers can observe this either through the
-    /// event stream (pattern-bind the context) or through the convenience
-    /// callback ``WebSocketManager/setOnPongHandler(_:)``; **both paths
-    /// receive the same `WebSocketPongContext` value** at the same logical
-    /// point in the heartbeat / public-ping cycle.
-    case pong(WebSocketPongContext)
-    case error(WebSocketError)
-    /// Emitted when a `send(_:message:)` / `send(_:string:)` call is dropped
-    /// because the per-task in-flight count is at
-    /// ``WebSocketConfiguration/sendQueueLimit`` and the configured
-    /// ``WebSocketSendOverflowPolicy`` is ``WebSocketSendOverflowPolicy/dropNewest``.
-    /// Drops do not throw; observers can use this event to surface back-
-    /// pressure or report telemetry.
-    case sendDropped(limit: Int)
-}
-
-
-/// Metadata that accompanies every ``WebSocketEvent/ping(_:)`` emission.
-///
-/// - ``attemptNumber`` is a monotonically increasing counter that starts at
-///   1 for the first ping of a given connection (heartbeat or public
-///   ``WebSocketManager/ping(_:)``) and resets to 0 when a new connection
-///   becomes ready or the task is manually reset. Use it to correlate
-///   `.ping(_:)` with the paired `.pong` or `.error(_:)` that follow.
-/// - ``dispatchedAt`` is captured with `ContinuousClock.now` immediately
-///   before the `.ping` event is published. Consumers typically pair it with
-///   a `ContinuousClock.now` snapshot at `.pong` receipt to compute RTT.
-///
-/// This struct is designed to gain fields in minor releases without breaking
-/// existing consumers — the public initializer is package-scoped so the
-/// library controls construction.
-public struct WebSocketPingContext: Sendable, Hashable {
-    /// Sequence number of this ping attempt within the current connection.
-    /// 1-indexed; resets when a new connection becomes ready or on task reset.
-    public let attemptNumber: Int
-
-    /// `ContinuousClock.now` snapshot at the moment `.ping(_:)` is
-    /// published, captured immediately before the actual ping frame is
-    /// dispatched.
-    public let dispatchedAt: ContinuousClock.Instant
-
-    package init(attemptNumber: Int, dispatchedAt: ContinuousClock.Instant) {
-        self.attemptNumber = attemptNumber
-        self.dispatchedAt = dispatchedAt
-    }
-}
-
-
-/// Metadata delivered to ``WebSocketManager/setOnPongHandler(_:)`` for each
-/// successful pong observation.
-///
-/// - ``attemptNumber`` matches the ``WebSocketPingContext/attemptNumber``
-///   of the paired ping, so consumers can correlate ping/pong pairs
-///   without bookkeeping a timestamp map keyed on the ping dispatch time.
-/// - ``roundTrip`` is the library-computed duration between the
-///   `.ping(_:)` event emission and the pong handler callback. It is measured
-///   as `ContinuousClock.now - pingContext.dispatchedAt` just before the
-///   `.pong` event is published, so it includes the library's own ping-send +
-///   pong-handler dispatch but excludes consumer-side scheduler jitter.
-///   Heartbeat scheduling still uses the injected `InnoNetworkClock`; RTT
-///   measurement always uses wall-clock `ContinuousClock`.
-///
-/// This struct is designed to gain fields in minor releases without
-/// breaking existing consumers — the public initializer is package-scoped
-/// so the library controls construction.
-public struct WebSocketPongContext: Sendable, Hashable {
-    /// Sequence number of the paired ping attempt. Matches the
-    /// `.ping(_:)` event's ``WebSocketPingContext/attemptNumber``.
-    public let attemptNumber: Int
-
-    /// Elapsed time between the paired `.ping(_:)` dispatch and this
-    /// pong-handler callback, computed as
-    /// `ContinuousClock.now - pingContext.dispatchedAt`. This value is not
-    /// derived from the injected heartbeat scheduling clock.
-    public let roundTrip: Duration
-
-    package init(attemptNumber: Int, roundTrip: Duration) {
-        self.attemptNumber = attemptNumber
-        self.roundTrip = roundTrip
-    }
-}
-
-public struct WebSocketEventSubscription: Hashable, Sendable {
-    fileprivate let taskId: String
-    fileprivate let listenerID: UUID
-
-    public var id: UUID { listenerID }
-}
-
-enum WebSocketInternalError: Error {
-    case pingTimeout
-}
-
 private let webSocketManagerLogger = Logger(
     subsystem: "com.innosquad.innonetwork",
     category: "websocket-manager"
 )
 
-public final class WebSocketManager: NSObject, Sendable {
+/// Actor-isolated WebSocket connection manager.
+///
+/// 4.0.0 converts ``WebSocketManager`` from a `final class` (held
+/// together with manual `OSAllocatedUnfairLock` synchronisation) into a
+/// Swift actor. Callers must now `await` every public method:
+///
+/// ```swift
+/// let manager = WebSocketManager(configuration: .default)
+/// let task = await manager.connect(url: url)
+/// for await event in await manager.events(for: task) { ... }
+/// await manager.disconnect(task)
+/// ```
+///
+/// The `URLSessionWebSocketDelegate` callback bridge is preserved as
+/// nonisolated entry points (`handleConnected`, `handleDisconnected`,
+/// `handleError`, `handleSessionError`) so synchronous URLSession
+/// delegate-queue invocations keep working without a Task hop. Those
+/// entry points only `yield` to the lossless `delegateEventContinuation`
+/// stream, whose single consumer Task drains in arrival order back
+/// through actor-isolated state.
+public actor WebSocketManager {
     private let configuration: WebSocketConfiguration
     private let session: any WebSocketURLSession
     private let delegate: WebSocketSessionDelegate
 
     package let runtimeRegistry = WebSocketRuntimeRegistry()
     private let eventHub: TaskEventHub<WebSocketEvent>
-    private let shutdownLock = OSAllocatedUnfairLock<Bool>(initialState: false)
+    /// `OSAllocatedUnfairLock` is preserved here even after the actor
+    /// conversion: the shutdown flag has to stay readable from the
+    /// nonisolated ``deinit`` and from synchronous URLSession delegate
+    /// callbacks, neither of which can hop onto the actor executor. The
+    /// lock is internally `Sendable`, so a `nonisolated let` field is
+    /// safe.
+    nonisolated private let shutdownLock = OSAllocatedUnfairLock<Bool>(initialState: false)
     private let invalidationBarrier: WebSocketInvalidationBarrier
 
     /// One-shot serialized event channel for URLSession delegate callbacks.
@@ -142,7 +52,7 @@ public final class WebSocketManager: NSObject, Sendable {
     /// executor and (rarely) reorder the lifecycle observed by a single
     /// task. The single consumer Task drains in arrival order so each
     /// task identifier observes a strict FIFO of its own callbacks.
-    private let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
+    nonisolated private let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
 
     private enum DelegateEvent: Sendable {
         case connected(taskIdentifier: Int, protocolName: String?)
@@ -183,7 +93,18 @@ public final class WebSocketManager: NSObject, Sendable {
         )
     }
 
-    public convenience init(configuration: WebSocketConfiguration = .default) {
+    /// Creates a WebSocket manager backed by a URLSession WebSocket runtime.
+    ///
+    /// The initializer builds a `WebSocketSessionDelegate` with
+    /// `WebSocketSessionDelegateCallbacks` and `BackgroundCompletionStore`,
+    /// then creates a `URLSession` from
+    /// ``WebSocketConfiguration/makeURLSessionConfiguration()``. The manager
+    /// owns that delegate and uses its background-completion store to satisfy
+    /// URLSession-style completion callbacks.
+    ///
+    /// - Parameter configuration: WebSocket runtime configuration. Defaults to
+    ///   ``WebSocketConfiguration/default``.
+    public init(configuration: WebSocketConfiguration = .default) {
         let callbacks = WebSocketSessionDelegateCallbacks()
         let backgroundCompletionStore = BackgroundCompletionStore()
         let delegate = WebSocketSessionDelegate(
@@ -238,22 +159,20 @@ public final class WebSocketManager: NSObject, Sendable {
         )
         self.delegateEventContinuation = continuation
 
-        super.init()
-
         callbacks.setInvalidationHandler { [invalidationBarrier] _ in
             Task {
                 await invalidationBarrier.complete()
             }
         }
 
-        // After `super.init()` `self` is fully formed, so the consumer
-        // Task can capture it weakly. Each loop iteration drains exactly
-        // one event before awaiting the next, which is what gives us the
-        // strict per-task FIFO ordering the prior per-callback `Task`
-        // spawning could not guarantee. The Task is intentionally not
-        // stored: `deinit` finishes the continuation, the for-await loop
-        // exits, and the Task self-completes — no retain cycle is
-        // possible because the closure captures `self` weakly.
+        // The consumer Task captures `self` weakly. Each loop iteration
+        // drains exactly one event before awaiting the next, which is
+        // what gives us the strict per-task FIFO ordering the prior
+        // per-callback `Task` spawning could not guarantee. The Task is
+        // intentionally not stored: `deinit` finishes the continuation,
+        // the for-await loop exits, and the Task self-completes — no
+        // retain cycle is possible because the closure captures `self`
+        // weakly.
         Task { [weak self] in
             for await event in stream {
                 guard let self else { return }
@@ -548,7 +467,7 @@ public final class WebSocketManager: NSObject, Sendable {
             )
             await publishPong(task: task, context: pongContext)
         } catch {
-            let wsError = mapWebSocketError(error)
+            let wsError = Self.mapWebSocketError(error)
             await eventHub.publish(.error(wsError), for: task.id)
             throw wsError
         }
@@ -733,26 +652,26 @@ public final class WebSocketManager: NSObject, Sendable {
         await eventHub.publish(.pong(context), for: task.id)
     }
 
-    func handleConnected(taskIdentifier: Int, protocolName: String?) {
+    nonisolated func handleConnected(taskIdentifier: Int, protocolName: String?) {
         delegateEventContinuation.yield(
             .connected(taskIdentifier: taskIdentifier, protocolName: protocolName)
         )
     }
 
-    func handleDisconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?) {
+    nonisolated func handleDisconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?) {
         delegateEventContinuation.yield(
             .disconnected(taskIdentifier: taskIdentifier, closeCode: closeCode, reason: reason)
         )
     }
 
-    func handleError(taskIdentifier: Int, error: Error) {
-        let wsError = mapWebSocketError(error)
+    nonisolated func handleError(taskIdentifier: Int, error: Error) {
+        let wsError = Self.mapWebSocketError(error)
         delegateEventContinuation.yield(
             .mappedError(taskIdentifier: taskIdentifier, error: wsError)
         )
     }
 
-    func handleSessionError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int? = nil) {
+    nonisolated func handleSessionError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int? = nil) {
         delegateEventContinuation.yield(
             .sessionError(taskIdentifier: taskIdentifier, error: error, statusCode: statusCode)
         )
@@ -855,14 +774,7 @@ public final class WebSocketManager: NSObject, Sendable {
         error: SendableUnderlyingError,
         statusCode: Int?
     ) async {
-        if isCancelledTransportError(error),
-            let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
-            await task.isClientInitiatedCloseFlow()
-        {
-            return
-        }
-
-        guard !isCancelledTransportError(error) else { return }
+        guard !Self.isCancelledTransportError(error) else { return }
         guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
 
         let state = await task.state
@@ -883,7 +795,7 @@ public final class WebSocketManager: NSObject, Sendable {
             return
         }
 
-        let wsError: WebSocketError = isTimeoutTransportError(error) ? .pingTimeout : .connectionFailed(error)
+        let wsError: WebSocketError = Self.isTimeoutTransportError(error) ? .pingTimeout : .connectionFailed(error)
         await handleFailure(
             task: task,
             generation: await callbackGeneration(
@@ -894,7 +806,7 @@ public final class WebSocketManager: NSObject, Sendable {
         )
     }
 
-    private func mapWebSocketError(_ error: Error) -> WebSocketError {
+    nonisolated static func mapWebSocketError(_ error: Error) -> WebSocketError {
         if let internalError = error as? WebSocketInternalError {
             switch internalError {
             case .pingTimeout:
@@ -920,11 +832,11 @@ public final class WebSocketManager: NSObject, Sendable {
         return .connectionFailed(SendableUnderlyingError(error))
     }
 
-    private func isCancelledTransportError(_ error: SendableUnderlyingError) -> Bool {
+    nonisolated static func isCancelledTransportError(_ error: SendableUnderlyingError) -> Bool {
         error.domain == NSURLErrorDomain && error.code == URLError.cancelled.rawValue
     }
 
-    private func isTimeoutTransportError(_ error: SendableUnderlyingError) -> Bool {
+    nonisolated static func isTimeoutTransportError(_ error: SendableUnderlyingError) -> Bool {
         error.domain == NSURLErrorDomain && error.code == URLError.timedOut.rawValue
     }
 
@@ -1143,19 +1055,31 @@ public final class WebSocketManager: NSObject, Sendable {
         reconnectCount <= maxReconnectAttempts
     }
 
-    public func handleBackgroundSessionCompletion(_ identifier: String, completion: @escaping @Sendable () -> Void) {
-        // WebSocketManager does not own background URLSession processing.
-        // `identifier` is accepted for API compatibility and intentionally completed immediately.
+    /// Completes AppDelegate-style background URLSession callbacks immediately.
+    ///
+    /// `WebSocketManager` does not own background URLSession processing, so the
+    /// identifier is intentionally ignored. The method is `nonisolated` so it
+    /// can be called without `await`, mirroring
+    /// `handleEventsForBackgroundURLSession` callback semantics.
+    ///
+    /// - Parameters:
+    ///   - identifier: Accepted for API compatibility with background session
+    ///     completion callbacks.
+    ///   - completion: Called immediately to satisfy the callback contract.
+    nonisolated public func handleBackgroundSessionCompletion(
+        _ identifier: String,
+        completion: @escaping @Sendable () -> Void
+    ) {
         webSocketManagerLogger.debug(
             "Ignoring background completion identifier for WebSocket runtime: \(identifier, privacy: .public)")
         completion()
     }
 
-    private var isShutdown: Bool {
+    nonisolated private var isShutdown: Bool {
         shutdownLock.withLock { $0 }
     }
 
-    private func markShutdownIfNeeded() -> Bool {
+    nonisolated private func markShutdownIfNeeded() -> Bool {
         shutdownLock.withLock { state in
             guard !state else { return false }
             state = true
@@ -1171,31 +1095,5 @@ public final class WebSocketManager: NSObject, Sendable {
                 message: "WebSocketManager has been shut down."
             )
         )
-    }
-}
-
-
-private actor WebSocketInvalidationBarrier {
-    private var isCompleted = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    func wait() async {
-        guard !isCompleted else { return }
-        await withCheckedContinuation { continuation in
-            if isCompleted {
-                continuation.resume()
-            } else {
-                waiters.append(continuation)
-            }
-        }
-    }
-
-    func complete() {
-        guard !isCompleted else { return }
-        isCompleted = true
-        for waiter in waiters {
-            waiter.resume()
-        }
-        waiters.removeAll(keepingCapacity: false)
     }
 }

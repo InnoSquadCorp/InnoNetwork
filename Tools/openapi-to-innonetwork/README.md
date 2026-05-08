@@ -104,3 +104,7 @@ generation for unsupported property shapes.
   use this tool vs handwriting `APIDefinition` structs.
 - [Examples/GeneratedClientRecipe](../../Examples/GeneratedClientRecipe)
   — the Provisionally Stable SPI surface for richer codegen.
+- [SwiftOpenAPIGeneratorPath.md](SwiftOpenAPIGeneratorPath.md) — 5.0
+  design note for the optional `apple/swift-openapi-generator`
+  transport adapter. The 4.0.0 line ships only the document; the
+  implementation lands on the 5.0 line.

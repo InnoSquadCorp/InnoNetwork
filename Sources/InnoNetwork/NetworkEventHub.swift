@@ -63,7 +63,13 @@ package actor NetworkEventHub {
                 return
             }
         }
-        partition.queue.append(PendingEvent(event: event, observers: observers, enqueuedAt: .now))
+        partition.queue.append(
+            PendingEvent(
+                event: event,
+                observers: observers,
+                enqueuedAt: .now
+            )
+        )
         partitions[requestID] = partition
         reportPartitionMetric(for: requestID, partition: partition)
         startDrainIfNeeded(requestID: requestID)
@@ -89,7 +95,10 @@ package actor NetworkEventHub {
         while let pending = popNextEvent(requestID: requestID) {
             for (index, observer) in pending.observers.enumerated() {
                 let chain = observerChain(for: requestID, index: index, observer: observer)
-                await chain.enqueue(pending.event, enqueuedAt: pending.enqueuedAt)
+                await chain.enqueue(
+                    pending.event,
+                    enqueuedAt: pending.enqueuedAt
+                )
             }
         }
 

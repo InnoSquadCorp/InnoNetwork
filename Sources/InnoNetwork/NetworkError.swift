@@ -158,6 +158,37 @@ public enum NetworkError: Error, Sendable {
     ///   - limit: The configured byte limit that was exceeded.
     ///   - observed: The actual body size in bytes returned by the transport.
     case responseTooLarge(limit: Int64, observed: Int64)
+
+    /// The reachability monitor reports `.requiresConnection`
+    /// (interface flap, Wi-Fi captive portal redirect, VPN
+    /// reconfiguration) for longer than the configured short wait, so
+    /// the request was held back instead of dispatching into a likely
+    /// failing socket. Distinct from ``configuration(reason:)``
+    /// `.offline`, which is raised when the monitor reports
+    /// `.unsatisfied`.
+    ///
+    /// Surfaced by ``ReachabilityCheckExecutionPolicy`` when
+    /// `.requiresConnection` does not recover to `.satisfied` before
+    /// ``ReachabilityCheckExecutionPolicy/suspensionWaitTimeout``.
+    /// Consumers typically map this to a "network coming back" UI
+    /// affordance that does not need the offline copy.
+    case transportSuspended
+
+    /// A 304 Not Modified revalidation against the cached response
+    /// failed at the conditional-request layer (header merge produced
+    /// an unparseable response, the cached body was unreadable, or the
+    /// stored `Vary` snapshot disagreed with what the server returned).
+    /// Carries the underlying error and the cached entry so consumers
+    /// can choose to fall through to a fresh transport attempt or
+    /// surface the failure.
+    ///
+    /// - Parameters:
+    ///   - underlying: The error raised by the revalidation pipeline.
+    ///   - cached: The previously-stored response that the revalidation
+    ///     attempt was working from. The bytes have already been
+    ///     redacted via ``NetworkError/redactingFailurePayload()`` unless
+    ///     ``NetworkConfiguration/captureFailurePayload`` is set.
+    case cacheRevalidationFailed(underlying: SendableUnderlyingError, cached: Response)
 }
 
 
@@ -212,6 +243,13 @@ extension NetworkError: LocalizedError {
                 "NetworkError.responseTooLarge",
                 "\(observed)",
                 "\(limit)"
+            )
+        case .transportSuspended:
+            return localized("NetworkError.transportSuspended")
+        case .cacheRevalidationFailed(let underlying, _):
+            return localizedFormat(
+                "NetworkError.cacheRevalidationFailed",
+                underlying.message
             )
         }
     }
@@ -297,6 +335,8 @@ public extension NetworkError {
         case .cancelled: return nil
         case .timeout: return nil
         case .responseTooLarge: return nil
+        case .transportSuspended: return nil
+        case .cacheRevalidationFailed(_, let response): return response
         }
     }
 
@@ -312,6 +352,8 @@ public extension NetworkError {
         case .cancelled: return nil
         case .timeout(_, let underlying): return underlying
         case .responseTooLarge: return nil
+        case .transportSuspended: return nil
+        case .cacheRevalidationFailed(let underlying, _): return underlying
         }
     }
 
@@ -360,6 +402,10 @@ extension NetworkError: CustomNSError {
             return NSURLErrorTimedOut
         case .responseTooLarge:
             return 4002
+        case .transportSuspended:
+            return 6001
+        case .cacheRevalidationFailed:
+            return 6002
         }
     }
 
@@ -390,13 +436,16 @@ public extension NetworkError {
             return .statusCode(response.redactingData())
         case .underlying(let err, let response?):
             return .underlying(err, response.redactingData())
+        case .cacheRevalidationFailed(let underlying, let cached):
+            return .cacheRevalidationFailed(underlying: underlying, cached: cached.redactingData())
         case .configuration,
             .nonHTTPResponse,
             .underlying(_, nil),
             .trustEvaluationFailed,
             .cancelled,
             .timeout,
-            .responseTooLarge:
+            .responseTooLarge,
+            .transportSuspended:
             return self
         }
     }

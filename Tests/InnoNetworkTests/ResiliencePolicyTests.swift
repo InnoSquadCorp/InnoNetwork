@@ -252,6 +252,28 @@ private final class SequenceURLSession: URLSessionProtocol, Sendable {
     }
 }
 
+private final class CacheInvalidatingURLSession: URLSessionProtocol, Sendable {
+    private let cache: InMemoryResponseCache
+    private let cacheKey: ResponseCacheKey
+    private let queuedResponse: QueuedHTTPResponse
+
+    init(
+        cache: InMemoryResponseCache,
+        cacheKey: ResponseCacheKey,
+        queuedResponse: QueuedHTTPResponse
+    ) {
+        self.cache = cache
+        self.cacheKey = cacheKey
+        self.queuedResponse = queuedResponse
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        _ = request
+        await cache.invalidate(cacheKey)
+        return (queuedResponse.data, queuedResponse.response)
+    }
+}
+
 
 private actor CancellationFirstURLSessionState {
     private var queue: [QueuedHTTPResponse]
@@ -928,6 +950,44 @@ struct ResiliencePolicyTests {
             refreshed.headers.first { $0.key.caseInsensitiveCompare("Cache-Control") == .orderedSame }?.value
                 == "max-age=60")
         #expect(refreshed.storedAt > storedAt)
+    }
+
+    @Test("304 after cached entry disappears throws cacheRevalidationFailed")
+    func etagNotModifiedThrowsWhenCachedEntryDisappears() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
+        await cache.set(
+            key,
+            CachedResponse(
+                data: body,
+                headers: ["ETag": "v1"],
+                storedAt: Date(timeIntervalSinceNow: -60)
+            )
+        )
+        let session = CacheInvalidatingURLSession(
+            cache: cache,
+            cacheKey: key,
+            queuedResponse: try queuedResponse(statusCode: 304, headers: ["ETag": "v2"])
+        )
+        let client = DefaultNetworkClient(
+            configuration: makeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        do {
+            _ = try await client.request(ResilienceGetRequest())
+            Issue.record("Expected cacheRevalidationFailed, got success")
+        } catch let error as NetworkError {
+            guard case .cacheRevalidationFailed(_, let cached) = error else {
+                Issue.record("Expected .cacheRevalidationFailed, got \(error)")
+                return
+            }
+            #expect(cached.statusCode == 200)
+        }
     }
 
     @Test("304 carrying a different Vary header preserves the stored vary snapshot")

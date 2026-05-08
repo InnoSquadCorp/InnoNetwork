@@ -123,6 +123,49 @@ struct DownloadTaskStateTransitionTests {
         #expect(await task.state == .downloading)
     }
 
+    // MARK: - Epoch tracking
+
+    @Test("DownloadLifecycleReducer .startAttempt emits .advancedEpoch and preserves state")
+    func lifecycleReducerStartAttemptEmitsAdvancedEpoch() async {
+        let reduction = DownloadLifecycleReducer.reduce(
+            state: .downloading,
+            event: .startAttempt(generation: 2, attempt: 5)
+        )
+
+        #expect(reduction.state == .downloading)
+        #expect(reduction.effects == [.advancedEpoch(generation: 2, attempt: 5)])
+    }
+
+    @Test("startAttempt updates DownloadTask generation and attempt without changing state")
+    func startAttemptUpdatesEpochOnTask() async {
+        let task = makeTask()
+        await task.updateState(.downloading)
+        let priorState = await task.state
+        let priorGeneration = await task.generation
+        let priorAttempt = await task.attempt
+
+        await task.startAttempt(generation: priorGeneration + 1, attempt: 0)
+
+        #expect(await task.state == priorState)
+        #expect(await task.generation == priorGeneration + 1)
+        #expect(await task.attempt == 0)
+        #expect(priorGeneration == 0)
+        #expect(priorAttempt == 0)
+    }
+
+    @Test("reset() resets generation and attempt counters")
+    func resetClearsEpochCounters() async {
+        let task = makeTask()
+        await task.startAttempt(generation: 7, attempt: 3)
+        #expect(await task.generation == 7)
+        #expect(await task.attempt == 3)
+
+        await task.reset()
+
+        #expect(await task.generation == 0)
+        #expect(await task.attempt == 0)
+    }
+
     // MARK: - restoreState escape hatch
 
     @Test("restoreState bypasses guard for every illegal pair")

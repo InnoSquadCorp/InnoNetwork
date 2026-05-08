@@ -10,13 +10,14 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 InnoNetwork is a Swift package for type-safe networking on Apple platforms. The
-root runtime package provides five public products:
+root runtime package provides six public products:
 
 - `InnoNetwork` for request/response APIs
 - `InnoNetworkDownload` for download lifecycle management
 - `InnoNetworkWebSocket` for connection-oriented realtime flows
 - `InnoNetworkPersistentCache` for a conservative on-disk response cache
 - `InnoNetworkTestSupport` for consumer test targets
+- `InnoNetworkOpenAPI` for generated-client transport support
 
 Optional Swift macro endpoint helpers live in the separate
 `Packages/InnoNetworkCodegen` package so runtime-only consumers do not resolve

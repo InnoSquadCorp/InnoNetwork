@@ -304,17 +304,18 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
         resumePolicy: StreamingResumePolicy,
         bufferingPolicy: StreamingBufferingPolicy
     ) -> NetworkError? {
-        guard case .lastEventID = resumePolicy else { return nil }
-        switch bufferingPolicy {
-        case .unbounded:
-            return nil
-        case .bufferingNewest, .bufferingOldest:
-            return .configuration(
-                reason: .invalidRequest(
-                    "StreamingResumePolicy.lastEventID requires unbounded output buffering. Use stream(_:) or disable resume before choosing a bounded buffering policy."
-                )
+        // The compatibility decision now flows through the
+        // ``StreamingResumeStrategy`` protocol so a future strategy
+        // (byte-offset replay, NDJSON cursor windows) can answer the
+        // same question without the executor learning a new case.
+        // `StreamingResumePolicy` conforms to the protocol, so the call
+        // site stays a single line of policy code.
+        guard !resumePolicy.isCompatible(with: bufferingPolicy) else { return nil }
+        return .configuration(
+            reason: .invalidRequest(
+                "StreamingResumePolicy requires unbounded output buffering for the configured resume strategy. Use stream(_:) or disable resume before choosing a bounded buffering policy."
             )
-        }
+        )
     }
 
     /// Cancels every request currently dispatched through this client.

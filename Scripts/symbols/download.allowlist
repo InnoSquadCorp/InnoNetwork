@@ -111,8 +111,10 @@ InnoNetworkDownload	swift.property	DownloadProgress.totalBytesExpectedToWrite
 InnoNetworkDownload	swift.property	DownloadProgress.totalBytesWritten
 InnoNetworkDownload	swift.property	DownloadState.isTerminal
 InnoNetworkDownload	swift.property	DownloadState.nextStates
+InnoNetworkDownload	swift.property	DownloadTask.attempt
 InnoNetworkDownload	swift.property	DownloadTask.destinationURL
 InnoNetworkDownload	swift.property	DownloadTask.error
+InnoNetworkDownload	swift.property	DownloadTask.generation
 InnoNetworkDownload	swift.property	DownloadTask.id
 InnoNetworkDownload	swift.property	DownloadTask.progress
 InnoNetworkDownload	swift.property	DownloadTask.resumeData

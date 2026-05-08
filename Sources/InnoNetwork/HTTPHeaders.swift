@@ -241,3 +241,105 @@ extension [HTTPHeader] {
         return firstIndex { $0.name.lowercased() == lowercasedName }
     }
 }
+
+// MARK: - Phantom-typed header names
+//
+// The `String`-keyed surface above is preserved verbatim — the new
+// `HTTPHeaderName<Variant>` type only adds a parallel, type-safe path.
+// `Variant` is a phantom marker that decides whether the name takes
+// `add` (repeatable) or `update` (single-value) semantics. Mixing the
+// two at the call site becomes a compile error instead of a runtime
+// "this Authorization shows up twice" surprise.
+
+/// Marker protocol that distinguishes single-value HTTP header names
+/// from repeatable ones at the type level. Library callers do not need
+/// to conform new types — use the two predefined variants
+/// (``SingleValueHeader`` and ``RepeatableHeader``) supplied below.
+public protocol HTTPHeaderVariant: Sendable {}
+
+/// Phantom marker for headers that take a single canonical value
+/// (``Authorization``, ``Content-Type``, ``User-Agent``, ``Host``,
+/// ``Cookie``). Subscripting an `HTTPHeaders` value with a name of
+/// this variant routes through ``HTTPHeaders/update(_:)`` so a retry
+/// or interceptor pass cannot accumulate duplicates.
+public enum SingleValueHeader: HTTPHeaderVariant {}
+
+/// Phantom marker for headers that may legitimately repeat
+/// (``Set-Cookie``, ``WWW-Authenticate``, ``Accept`` for content
+/// negotiation). Names of this variant only support the append-style
+/// API, mirroring ``HTTPHeaders/add(name:value:)``.
+public enum RepeatableHeader: HTTPHeaderVariant {}
+
+/// Type-safe HTTP header name. The `Variant` phantom parameter records
+/// whether the name's value semantics are single-value (overwrite) or
+/// repeatable (append). Strongly-typed predefined names live in the
+/// ``HTTPHeaderName`` extensions below.
+public struct HTTPHeaderName<Variant: HTTPHeaderVariant>: Sendable, Hashable {
+    /// The wire-format header name, preserved exactly as written. The
+    /// `HTTPHeaders` API still matches names case-insensitively, so the
+    /// raw value is stable for diagnostics.
+    public let rawValue: String
+
+    public init(_ rawValue: String) {
+        self.rawValue = rawValue
+    }
+}
+
+public extension HTTPHeaderName where Variant == SingleValueHeader {
+    static var authorization: HTTPHeaderName<SingleValueHeader> { .init("Authorization") }
+    static var contentType: HTTPHeaderName<SingleValueHeader> { .init("Content-Type") }
+    static var userAgent: HTTPHeaderName<SingleValueHeader> { .init("User-Agent") }
+    static var host: HTTPHeaderName<SingleValueHeader> { .init("Host") }
+    static var cookie: HTTPHeaderName<SingleValueHeader> { .init("Cookie") }
+    static var ifNoneMatch: HTTPHeaderName<SingleValueHeader> { .init("If-None-Match") }
+    static var ifModifiedSince: HTTPHeaderName<SingleValueHeader> { .init("If-Modified-Since") }
+    static var accept: HTTPHeaderName<SingleValueHeader> { .init("Accept") }
+    static var acceptEncoding: HTTPHeaderName<SingleValueHeader> { .init("Accept-Encoding") }
+    static var acceptLanguage: HTTPHeaderName<SingleValueHeader> { .init("Accept-Language") }
+}
+
+public extension HTTPHeaderName where Variant == RepeatableHeader {
+    static var setCookie: HTTPHeaderName<RepeatableHeader> { .init("Set-Cookie") }
+    static var wwwAuthenticate: HTTPHeaderName<RepeatableHeader> { .init("WWW-Authenticate") }
+}
+
+public extension HTTPHeaders {
+    /// Single-value subscript: routes through ``update(_:)`` semantics.
+    /// Setting `nil` removes every entry that case-insensitively matches.
+    /// The same `Authorization` name cannot accidentally be added twice
+    /// because there is no `add` overload for ``SingleValueHeader``.
+    subscript(name: HTTPHeaderName<SingleValueHeader>) -> String? {
+        get { value(for: name.rawValue) }
+        set {
+            if let newValue {
+                update(name: name.rawValue, value: newValue)
+            } else {
+                remove(name: name.rawValue)
+            }
+        }
+    }
+
+    /// Returns every value associated with a repeatable header, in the
+    /// order they were added. Mirrors ``values(for:)`` but takes a typed
+    /// name so callers cannot accidentally read repeatable values
+    /// through the comma-joined `value(for:)` accessor.
+    func values(for name: HTTPHeaderName<RepeatableHeader>) -> [String] {
+        values(for: name.rawValue)
+    }
+
+    /// Appends a value to a repeatable header. Mirrors
+    /// ``add(name:value:)`` but is only available for repeatable
+    /// variants, so a misuse of `Authorization` (single-value) cannot
+    /// reach the append path.
+    mutating func append(_ name: HTTPHeaderName<RepeatableHeader>, value: String) {
+        add(name: name.rawValue, value: value)
+    }
+
+    /// Removes every entry that case-insensitively matches `name`.
+    /// Equivalent to assigning `nil` through the single-value subscript
+    /// for ``SingleValueHeader`` names; provided as an explicit method
+    /// for ``RepeatableHeader`` names so all known values are dropped.
+    mutating func remove<Variant>(_ name: HTTPHeaderName<Variant>) {
+        remove(name: name.rawValue)
+    }
+}

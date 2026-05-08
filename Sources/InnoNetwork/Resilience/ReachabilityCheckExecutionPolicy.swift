@@ -9,7 +9,10 @@ import Foundation
 /// the ``RequestExecutionPolicy`` chain. If the snapshot reports
 /// `.unsatisfied`, the policy throws an early
 /// ``NetworkError`` so the caller sees an immediate failure
-/// instead of a 30-second timeout. The ``Mode`` switch lets the
+/// instead of a 30-second timeout. If the snapshot reports
+/// `.requiresConnection`, the policy waits briefly for a fresh
+/// signal before either forwarding, surfacing offline, or throwing
+/// ``NetworkError/transportSuspended``. The ``Mode`` switch lets the
 /// policy log-only without rejecting — useful for staged
 /// rollouts where the team wants telemetry before tightening the
 /// gate.
@@ -23,10 +26,10 @@ import Foundation
 /// }
 /// ```
 ///
-/// `.requiresConnection` (VPN / proxy still negotiating) and a
-/// `nil` snapshot (no path observed yet) fall through — those
-/// states are not definitively offline. Only `.unsatisfied`
-/// triggers the rejection.
+/// `nil` snapshots (no path observed yet) fall through because they
+/// are not definitively offline. `.requiresConnection` is treated as
+/// temporarily suspended only when it persists through
+/// ``suspensionWaitTimeout``.
 ///
 /// The policy reports
 /// `NetworkError.configuration(reason: .offline(_:))` for rejected
@@ -47,10 +50,33 @@ public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
 
     public let monitor: any NetworkMonitoring
     public let mode: Mode
+    /// Maximum time, in seconds, to wait while reachability remains
+    /// `.requiresConnection` before surfacing
+    /// ``NetworkError/transportSuspended``.
+    ///
+    /// Negative values passed to the initializer are clamped to `0`.
+    public let suspensionWaitTimeout: TimeInterval
 
-    public init(monitor: any NetworkMonitoring, mode: Mode = .requireOnline) {
+    /// Creates a reachability gate for request execution.
+    ///
+    /// - Parameters:
+    ///   - monitor: Reachability source used to read the current network path
+    ///     and wait for path changes.
+    ///   - mode: Whether `.unsatisfied` and persistent `.requiresConnection`
+    ///     snapshots reject requests or are observed without blocking.
+    ///     Defaults to `.requireOnline`.
+    ///   - suspensionWaitTimeout: TimeInterval, in seconds, to wait for
+    ///     `.requiresConnection` to recover before throwing
+    ///     ``NetworkError/transportSuspended``. Defaults to `1.0` and is
+    ///     clamped with `max(0, suspensionWaitTimeout)`.
+    public init(
+        monitor: any NetworkMonitoring,
+        mode: Mode = .requireOnline,
+        suspensionWaitTimeout: TimeInterval = 1.0
+    ) {
         self.monitor = monitor
         self.mode = mode
+        self.suspensionWaitTimeout = max(0, suspensionWaitTimeout)
     }
 
     public func execute(
@@ -58,13 +84,33 @@ public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
         context: RequestExecutionContext,
         next: RequestExecutionNext
     ) async throws -> Response {
-        if mode == .requireOnline {
-            let snapshot = await monitor.currentSnapshot()
-            if let snapshot, snapshot.status == .unsatisfied {
+        guard mode == .requireOnline else {
+            return try await next.execute(input.request)
+        }
+
+        let snapshot = await monitor.currentSnapshot()
+        switch snapshot?.status {
+        case .unsatisfied:
+            throw NetworkError.configuration(
+                reason: .offline("device path is .unsatisfied")
+            )
+        case .requiresConnection:
+            let updated = await monitor.waitForChange(
+                from: snapshot,
+                timeout: suspensionWaitTimeout
+            )
+            switch updated?.status {
+            case .satisfied:
+                break
+            case .unsatisfied:
                 throw NetworkError.configuration(
-                    reason: .offline("device path is .unsatisfied")
+                    reason: .offline("device path became .unsatisfied")
                 )
+            case .requiresConnection, nil:
+                throw NetworkError.transportSuspended
             }
+        case .satisfied, nil:
+            break
         }
         return try await next.execute(input.request)
     }

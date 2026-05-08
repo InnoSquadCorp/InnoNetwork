@@ -60,7 +60,10 @@ package actor EventDeliveryChain<Event: Sendable> {
         )
     }
 
-    package func enqueueAndWaitForDelivery(_ event: Event, enqueuedAt: Date = .now) async {
+    package func enqueueAndWaitForDelivery(
+        _ event: Event,
+        enqueuedAt: Date = .now
+    ) async {
         await withCheckedContinuation { continuation in
             enqueue(
                 event,

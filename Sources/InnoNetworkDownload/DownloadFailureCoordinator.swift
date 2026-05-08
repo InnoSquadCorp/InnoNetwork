@@ -77,6 +77,7 @@ package struct DownloadFailureCoordinator {
         if Task.isCancelled { return }
         let state = await task.state
         if state != .cancelled {
+            await task.startNextAttemptInCurrentGeneration()
             await restart(task)
         }
     }

@@ -17,6 +17,9 @@
 
 "NetworkError.responseTooLarge" = "응답 본문 %1$@바이트가 허용 크기 %2$@바이트를 초과했습니다.";
 
+"NetworkError.transportSuspended" = "네트워크 연결 준비 상태가 지속되어 요청을 보류했습니다.";
+"NetworkError.cacheRevalidationFailed" = "캐시된 응답에 대한 재검증에 실패했습니다: %@";
+
 "NetworkError.trust.unsupportedAuthenticationMethod" = "지원하지 않는 인증 방식입니다: %@";
 "NetworkError.trust.missingServerTrust" = "서버 신뢰 정보가 없습니다.";
 "NetworkError.trust.systemTrustEvaluationFailedWithReason" = "시스템 신뢰 평가에 실패했습니다: %@";

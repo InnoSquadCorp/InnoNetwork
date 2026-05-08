@@ -9,187 +9,6 @@ import Darwin
 import Glibc
 #endif
 
-/// Configuration for ``PersistentResponseCache``.
-///
-/// `directoryURL` is the only required parameter; the remaining knobs default
-/// to the values documented in the 4.0.0 RFC (50 MB total, 1,000 entries,
-/// 5 MB per entry, no authenticated responses, no `Cache-Control: private`
-/// responses, no `Set-Cookie` responses, `.completeUnlessOpen` data protection).
-public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
-    /// File protection class applied to the cache directory, index, and body files.
-    public enum DataProtectionClass: Sendable, Equatable {
-        /// File content is accessible only while the device is unlocked.
-        case complete
-        /// File content stays accessible while an already-open descriptor remains open.
-        case completeUnlessOpen
-        /// File content is accessible after the first device unlock.
-        case completeUntilFirstUserAuthentication
-        /// Request unprotected storage for cache-owned files.
-        case none
-    }
-
-    /// Durability policy for the on-disk index file.
-    ///
-    /// `.always` opens an fd on the renamed index after the atomic write and,
-    /// on Darwin, first asks the filesystem for `F_FULLFSYNC` durability
-    /// before falling back to `fsync(_:)` only when unsupported. It also
-    /// flushes the parent directory so the renamed index survives a hard
-    /// crash. `.onCheckpoint`/`.never` retain the historic
-    /// `data.write(to:options:.atomic)` semantics where the rename is
-    /// linearized but the bytes are not necessarily flushed to stable storage.
-    public enum PersistenceFsyncPolicy: Sendable, Equatable {
-        /// Fully synchronize the index file and parent directory after every write.
-        case always
-        /// Same as ``never`` for the persistent response cache: the cache
-        /// rewrites the entire index on every change, so there is no
-        /// distinct checkpoint boundary. Provided for API parity with
-        /// ``DownloadConfiguration/PersistenceFsyncPolicy``.
-        case onCheckpoint
-        /// Rely on the OS to flush dirty pages on its own cadence.
-        case never
-    }
-
-    /// Directory the cache uses for its `index.json` and SHA-256-addressed
-    /// body files. The directory is created on first use. The cache writes
-    /// only to its own subtree (`index.json` and `bodies/`); other files
-    /// inside the directory are never deleted.
-    public let directoryURL: URL
-    /// Total byte budget across all body files. Eviction fires synchronously
-    /// when this is exceeded.
-    public let maxBytes: Int
-    /// Maximum number of entries kept on disk. Eviction fires synchronously
-    /// when this is exceeded.
-    public let maxEntries: Int
-    /// Per-entry hard cap. Responses larger than this are not stored.
-    public let maxEntryBytes: Int
-    /// When `true`, responses to requests carrying credential-like key headers
-    /// are eligible for storage. Defaults to `false` for privacy.
-    public let storesAuthenticatedResponses: Bool
-    /// When `true`, responses with `Set-Cookie` headers are eligible for
-    /// storage. Defaults to `false` for privacy.
-    public let storesSetCookieResponses: Bool
-    /// Durability policy for the index file. Defaults to ``PersistenceFsyncPolicy/onCheckpoint``.
-    public let persistenceFsyncPolicy: PersistenceFsyncPolicy
-    /// File protection class applied after cache directory and file creation.
-    ///
-    /// Defaults to ``DataProtectionClass/completeUnlessOpen``. Platforms that do
-    /// not support Foundation file-protection attributes treat this as a no-op.
-    /// ``DataProtectionClass/none`` requests `NSFileProtectionNone` for
-    /// cache-owned paths instead of skipping existing protection updates.
-    public let dataProtectionClass: DataProtectionClass
-
-    /// Build a configuration. Only `directoryURL` is required; defaults match
-    /// the 4.0.0 RFC ("Implementation decisions" table).
-    public init(
-        directoryURL: URL,
-        maxBytes: Int = 50 * 1024 * 1024,
-        maxEntries: Int = 1_000,
-        maxEntryBytes: Int = 5 * 1024 * 1024,
-        storesAuthenticatedResponses: Bool = false,
-        storesSetCookieResponses: Bool = false,
-        persistenceFsyncPolicy: PersistenceFsyncPolicy = .onCheckpoint,
-        dataProtectionClass: DataProtectionClass = .completeUnlessOpen
-    ) {
-        self.directoryURL = directoryURL
-        self.maxBytes = max(1, maxBytes)
-        self.maxEntries = max(1, maxEntries)
-        self.maxEntryBytes = max(1, maxEntryBytes)
-        self.storesAuthenticatedResponses = storesAuthenticatedResponses
-        self.storesSetCookieResponses = storesSetCookieResponses
-        self.persistenceFsyncPolicy = persistenceFsyncPolicy
-        self.dataProtectionClass = dataProtectionClass
-    }
-
-    /// Standard subdirectory for storing persistent cache files in an App Group container.
-    ///
-    /// App Group containers are only available on Apple platforms (Darwin).
-    /// Calling this on other platforms throws
-    /// ``NetworkError/configuration(reason:)`` with `.invalidRequest`.
-    public static func appGroupDirectoryURL(
-        groupIdentifier: String,
-        fileManager: FileManager = .default
-    ) throws -> URL {
-        #if canImport(Darwin)
-        guard
-            let container = fileManager.containerURL(
-                forSecurityApplicationGroupIdentifier: groupIdentifier
-            )
-        else {
-            throw NetworkError.configuration(
-                reason: .invalidRequest(
-                    "App Group container '\(groupIdentifier)' is unavailable."
-                ))
-        }
-        return container.appendingPathComponent("InnoNetworkPersistentCache", isDirectory: true)
-        #else
-        throw NetworkError.configuration(
-            reason: .invalidRequest(
-                "App Group containers are not available on this platform."
-            ))
-        #endif
-    }
-}
-
-
-/// Snapshot of persistent response cache storage pressure and entry count.
-///
-/// Returned from ``PersistentResponseCache/statistics()`` so callers can
-/// surface dashboards or back-pressure decisions without inspecting the
-/// on-disk index directly.
-public struct PersistentResponseCacheStatistics: Sendable, Equatable {
-    /// Number of cached entries currently present in the index.
-    public let entryCount: Int
-    /// Sum of body byte counts across all currently indexed entries.
-    public let byteCount: Int
-    /// Configured upper bound on `entryCount`.
-    public let maxEntries: Int
-    /// Configured upper bound on `byteCount`.
-    public let maxBytes: Int
-
-    /// Builds a statistics snapshot from the four scalar values.
-    ///
-    /// - Parameters:
-    ///   - entryCount: Number of indexed entries.
-    ///   - byteCount: Total stored body bytes.
-    ///   - maxEntries: Configured entry cap.
-    ///   - maxBytes: Configured byte cap.
-    public init(entryCount: Int, byteCount: Int, maxEntries: Int, maxBytes: Int) {
-        self.entryCount = entryCount
-        self.byteCount = byteCount
-        self.maxEntries = maxEntries
-        self.maxBytes = maxBytes
-    }
-}
-
-/// Reason a persistent cache entry was evicted or scrubbed.
-public enum PersistentResponseCacheEvictionReason: String, Sendable, Equatable {
-    /// Entry removed because the cache exceeded `maxBytes` or `maxEntries`.
-    case storageBudget
-    /// Entry removed because it no longer satisfies the active privacy
-    /// policy (for example, an authenticated response in a configuration
-    /// that disables `storesAuthenticatedResponses`).
-    case policyRejected
-    /// Entry removed because its body file is missing from disk.
-    case missingBody
-    /// Entry removed because its body exceeds `maxEntryBytes`.
-    case entryTooLarge
-    /// Entry removed because a body file on disk was not referenced by any
-    /// surviving index entry.
-    case unreferencedBody
-}
-
-/// Operational event emitted by ``PersistentResponseCache``.
-public enum PersistentResponseCacheTelemetryEvent: Sendable, Equatable {
-    /// One or more entries were scrubbed during cache open, write, or
-    /// budget enforcement.
-    ///
-    /// - Parameters:
-    ///   - reason: Why the entries were removed.
-    ///   - count: Number of entries scrubbed in this batch.
-    ///   - byteCount: Sum of body bytes reclaimed in this batch.
-    case scrubbedEntries(reason: PersistentResponseCacheEvictionReason, count: Int, byteCount: Int)
-}
-
 /// Persistent on-disk implementation of ``ResponseCache``.
 ///
 /// Stores response bodies in a flat directory keyed by SHA-256 hashes of the
@@ -252,6 +71,17 @@ public actor PersistentResponseCache: ResponseCache {
     private var index: Index
     private var runningTotalBytes: Int
     private var telemetryEvents: [PersistentResponseCacheTelemetryEvent]
+    /// Cumulative cache hits since this actor was constructed.
+    /// Saturates at `Int.max` rather than overflowing.
+    private var hitCount: Int = 0
+    /// Cumulative cache misses since this actor was constructed.
+    /// Saturates at `Int.max` rather than overflowing.
+    private var missCount: Int = 0
+    /// Cumulative evicted/scrubbed entries since this actor was
+    /// constructed, summed across every reason in
+    /// ``PersistentResponseCacheEvictionReason``. Saturates at
+    /// `Int.max` rather than overflowing.
+    private var evictionCount: Int = 0
     /// Number of read-path `lastAccessedAt` updates that have not yet been
     /// flushed to disk. Reads are buffered to amortize the JSON-encode +
     /// atomic-write cost across many hits; insertions/deletions still flush
@@ -345,6 +175,19 @@ public actor PersistentResponseCache: ResponseCache {
             telemetry.append(.scrubbedEntries(reason: .unreferencedBody, count: scrubbedBodies, byteCount: 0))
         }
         self.telemetryEvents = telemetry
+        // Seed the eviction counter from any scrubs the open-time pipeline
+        // already performed so `statistics().evictionCount` reflects the
+        // entire actor lifetime rather than only post-init activity.
+        self.evictionCount = telemetry.reduce(into: 0) { partial, event in
+            switch event {
+            case .scrubbedEntries(_, let count, _):
+                if partial > Int.max - count {
+                    partial = .max
+                } else {
+                    partial += count
+                }
+            }
+        }
     }
 
     /// Look up a cached response for `key`. Returns `nil` on miss or when the
@@ -354,10 +197,14 @@ public actor PersistentResponseCache: ResponseCache {
     public func get(_ key: ResponseCacheKey) async -> CachedResponse? {
         let diskKey = DiskKey(key, normalizer: keyNormalizer)
         let id = identifier(for: diskKey)
-        guard var entry = index.entries[id] else { return nil }
+        guard var entry = index.entries[id] else {
+            recordMiss()
+            return nil
+        }
         guard shouldStore(key: entry.key, responseHeaders: entry.headers) else {
-            removeEntry(id: id, entry: entry)
+            scrubEntry(id: id, entry: entry, reason: .policyRejected)
             try? persistIndex()
+            recordMiss()
             return nil
         }
         let bodyURL = bodiesDirectoryURL.appendingPathComponent(entry.bodyFileName, isDirectory: false)
@@ -373,19 +220,24 @@ public actor PersistentResponseCache: ResponseCache {
             data = try await Self.readBodyData(at: bodyURL)
         } catch {
             if isCurrentEntry(id: id, entry: entry) {
-                removeEntry(id: id, entry: entry)
+                scrubEntry(id: id, entry: entry, reason: .missingBody)
                 try? persistIndex()
             }
+            recordMiss()
             return nil
         }
         guard data.count <= configuration.maxEntryBytes else {
             if isCurrentEntry(id: id, entry: entry) {
-                removeEntry(id: id, entry: entry)
+                scrubEntry(id: id, entry: entry, reason: .entryTooLarge)
                 try? persistIndex()
             }
+            recordMiss()
             return nil
         }
-        guard isCurrentEntry(id: id, entry: entry) else { return nil }
+        guard isCurrentEntry(id: id, entry: entry) else {
+            recordMiss()
+            return nil
+        }
 
         entry.lastAccessedAt = Date()
         index.entries[id] = entry
@@ -412,6 +264,7 @@ public actor PersistentResponseCache: ResponseCache {
             }
         }
 
+        recordHit()
         return CachedResponse(
             data: data,
             statusCode: entry.statusCode,
@@ -420,6 +273,51 @@ public actor PersistentResponseCache: ResponseCache {
             requiresRevalidation: entry.requiresRevalidation,
             varyHeaders: entry.varyHeaders
         )
+    }
+
+    /// Saturating-add a cache hit to the metric counter. Wrapping at
+    /// ``Int/max`` keeps the counter monotonic even for long-lived cache
+    /// actors.
+    private func recordHit() {
+        if hitCount < .max {
+            hitCount += 1
+        }
+    }
+
+    /// Saturating-add a cache miss to the metric counter.
+    private func recordMiss() {
+        if missCount < .max {
+            missCount += 1
+        }
+    }
+
+    /// Saturating-add `count` evictions to the metric counter. Used by
+    /// every code path that emits a
+    /// ``PersistentResponseCacheTelemetryEvent/scrubbedEntries`` event, so
+    /// the eviction count stays in sync with the per-reason telemetry log.
+    private func recordEviction(count: Int) {
+        guard count > 0 else { return }
+        if evictionCount > Int.max - count {
+            evictionCount = .max
+        } else {
+            evictionCount += count
+        }
+    }
+
+    private func recordScrub(
+        reason: PersistentResponseCacheEvictionReason,
+        count: Int = 1,
+        byteCount: Int
+    ) {
+        guard count > 0 else { return }
+        telemetryEvents.append(
+            .scrubbedEntries(
+                reason: reason,
+                count: count,
+                byteCount: byteCount
+            )
+        )
+        recordEviction(count: count)
     }
 
     /// Store `value` under `key`. Drops the entry instead of storing it when
@@ -485,6 +383,7 @@ public actor PersistentResponseCache: ResponseCache {
                         byteCount: evictedBytes
                     )
                 )
+                recordEviction(count: removableBodies.count)
             }
             if let replacedBodyFileName, replacedBodyFileName != bodyFileName {
                 removableBodies.append((fileName: replacedBodyFileName, byteCost: 0))
@@ -529,13 +428,17 @@ public actor PersistentResponseCache: ResponseCache {
         shouldStore(key: DiskKey(key, normalizer: keyNormalizer), responseHeaders: response.headers)
     }
 
-    /// Current storage pressure snapshot.
+    /// Current storage pressure snapshot, including in-process hit, miss,
+    /// and eviction counts.
     public func statistics() -> PersistentResponseCacheStatistics {
         PersistentResponseCacheStatistics(
             entryCount: index.entries.count,
             byteCount: runningTotalBytes,
             maxEntries: configuration.maxEntries,
-            maxBytes: configuration.maxBytes
+            maxBytes: configuration.maxBytes,
+            hitCount: hitCount,
+            missCount: missCount,
+            evictionCount: evictionCount
         )
     }
 
@@ -590,6 +493,15 @@ public actor PersistentResponseCache: ResponseCache {
             runningTotalBytes -= removed.byteCost
         }
         removeBody(fileName: entry.bodyFileName)
+    }
+
+    private func scrubEntry(
+        id: String,
+        entry: Entry,
+        reason: PersistentResponseCacheEvictionReason
+    ) {
+        removeEntry(id: id, entry: entry)
+        recordScrub(reason: reason, byteCount: entry.byteCost)
     }
 
     private func isCurrentEntry(id: String, entry: Entry) -> Bool {
@@ -926,7 +838,11 @@ public actor PersistentResponseCache: ResponseCache {
         )
     }
 
-    fileprivate static func applyDataProtection(
+    /// Apply the configured data-protection class to `url`. Promoted from
+    /// `fileprivate` to module-internal so ``PersistentCacheDiskKeyNormalizer``
+    /// — which lives in its own file — can request the same protection on the
+    /// HMAC key it manages alongside the cache.
+    static func applyDataProtection(
         _ dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
         to url: URL,
         fileManager: FileManager
@@ -946,7 +862,6 @@ public actor PersistentResponseCache: ResponseCache {
         if fileManager.fileExists(atPath: indexURL.path) {
             applyDataProtection(dataProtectionClass, to: indexURL, fileManager: fileManager)
         }
-
         guard
             let bodyURLs = try? fileManager.contentsOfDirectory(
                 at: bodiesDirectoryURL,
@@ -1017,116 +932,5 @@ public actor PersistentResponseCache: ResponseCache {
         let data = try? encoder.encode(key)
         let digest = SHA256.hash(data: data ?? Data())
         return digest.map { String(format: "%02x", $0) }.joined()
-    }
-}
-
-private struct PersistentCacheDiskKeyNormalizer: Sendable {
-    private static let keyFileName = "cache-key-hmac.key"
-    private static let expectedKeyByteCount = 32  // SymmetricKeySize.bits256
-    private let key: SymmetricKey
-
-    /// Result of opening or creating the on-disk HMAC key.
-    ///
-    /// `regenerated` is `true` when an existing key file was discarded due to
-    /// a read failure (corruption, partial write, file protection edge case)
-    /// or an invalid length. Callers must reset any cached entries that were
-    /// keyed under the prior HMAC so the cache stays self-consistent.
-    struct LoadOrCreateResult {
-        let normalizer: PersistentCacheDiskKeyNormalizer
-        let regenerated: Bool
-    }
-
-    static func loadOrCreate(
-        directoryURL: URL,
-        dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
-        fileManager: FileManager
-    ) throws -> LoadOrCreateResult {
-        let keyURL = directoryURL.appendingPathComponent(keyFileName, isDirectory: false)
-        if fileManager.fileExists(atPath: keyURL.path) {
-            // Best-effort read with length validation. Any failure mode
-            // (unreadable, truncated, oversized) routes through the same
-            // regenerate-and-reset recovery as a missing key.
-            if let data = try? Data(contentsOf: keyURL), data.count == expectedKeyByteCount {
-                PersistentResponseCache.applyDataProtection(
-                    dataProtectionClass,
-                    to: keyURL,
-                    fileManager: fileManager
-                )
-                return LoadOrCreateResult(
-                    normalizer: PersistentCacheDiskKeyNormalizer(key: SymmetricKey(data: data)),
-                    regenerated: false
-                )
-            }
-            try? fileManager.removeItem(at: keyURL)
-            let key = SymmetricKey(size: .bits256)
-            let bytes = key.withUnsafeBytes { Data($0) }
-            try bytes.write(to: keyURL, options: .atomic)
-            PersistentResponseCache.applyDataProtection(dataProtectionClass, to: keyURL, fileManager: fileManager)
-            return LoadOrCreateResult(
-                normalizer: PersistentCacheDiskKeyNormalizer(key: key),
-                regenerated: true
-            )
-        }
-
-        let key = SymmetricKey(size: .bits256)
-        let data = key.withUnsafeBytes { Data($0) }
-        try data.write(to: keyURL, options: .atomic)
-        PersistentResponseCache.applyDataProtection(dataProtectionClass, to: keyURL, fileManager: fileManager)
-        return LoadOrCreateResult(
-            normalizer: PersistentCacheDiskKeyNormalizer(key: key),
-            regenerated: false
-        )
-    }
-
-    func normalizeHeaders(_ headers: [String]) -> [String] {
-        headers.map(normalizeHeader).sorted()
-    }
-
-    private func normalizeHeader(_ header: String) -> String {
-        guard let separator = header.firstIndex(of: ":") else { return header }
-        let name = String(header[..<separator]).lowercased()
-        let valueStart = header.index(after: separator)
-        let value = String(header[valueStart...])
-        guard ResponseCacheHeaderPolicy.sensitiveHeaderNames.contains(name) else {
-            return "\(name):\(value)"
-        }
-        return "\(name):hmac-sha256:\(authenticationCodeHex(for: value))"
-    }
-
-    private func authenticationCodeHex(for value: String) -> String {
-        let code = HMAC<SHA256>.authenticationCode(for: Data(value.utf8), using: key)
-        return code.map { String(format: "%02x", $0) }.joined()
-    }
-}
-
-private extension JSONEncoder {
-    static var persistentCache: JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.sortedKeys]
-        return encoder
-    }
-}
-
-private extension PersistentResponseCacheConfiguration.DataProtectionClass {
-    var fileProtectionType: FileProtectionType {
-        switch self {
-        case .complete:
-            return .complete
-        case .completeUnlessOpen:
-            return .completeUnlessOpen
-        case .completeUntilFirstUserAuthentication:
-            return .completeUntilFirstUserAuthentication
-        case .none:
-            return .none
-        }
-    }
-}
-
-private extension JSONDecoder {
-    static var persistentCache: JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
     }
 }

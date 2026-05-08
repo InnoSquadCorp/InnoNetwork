@@ -21,6 +21,113 @@ behavior review.
 | Plain `http://` API base URLs | They fail by default. Use HTTPS, or set `allowsInsecureHTTP = true` only for a scoped local/dev client. |
 | Base URLs with `user:password@host` or `#fragment` | Move credentials to `Authorization` / request interceptors and remove fragments from `baseURL`. |
 | `urlSessionConfigurationOverride` with the default client initializer | Build a `URLSession` from `configuration.makeURLSessionConfiguration()` and pass it to `DefaultNetworkClient(configuration:session:)`. |
+| Synchronous calls on `WebSocketManager` (e.g. `manager.connect(...)`) | Add `await`: `WebSocketManager` is now an `actor`. See "WebSocketManager actor conversion" below. |
+| Exhaustive `switch` over `NetworkError` | Add an `@unknown default` arm. The 4.0.0 release adds `.transportSuspended` and `.cacheRevalidationFailed(underlying:cached:)` cases. See "NetworkError new cases" below. |
+| `StreamingResumePolicy.lastEventID` paired with a bounded buffering policy | Either drop the bounded buffer or disable resume. The runtime guard now routes through `StreamingResumeStrategy.isCompatible(with:)` and emits a generic "unbounded output buffering" error message. |
+
+## WebSocketManager actor conversion
+
+`WebSocketManager` was a `final class` in earlier drafts of the 4.x line and is
+now an `actor`. The two URLSession delegate-bridge entry points
+(`handleBackgroundSessionCompletion`, the `handle*` URLSessionWebSocketDelegate
+callbacks) stay `nonisolated`, so synchronous URLSession runtime callbacks
+keep working without a Task hop. Every other public entry point now requires
+`await` from the call site:
+
+```swift
+// 4.x earlier drafts
+let task = manager.connect(url: url)
+manager.disconnect(task)
+manager.send(task, message: data)
+
+// 4.0.0
+let task = await manager.connect(url: url)
+await manager.disconnect(task)
+try await manager.send(task, message: data)
+```
+
+`WebSocketTask` was already an `actor`, so any code that `await`-ed it before
+keeps compiling unchanged.
+
+## NetworkError new cases
+
+`NetworkError` adds two cases:
+- `.transportSuspended` — `ReachabilityCheckExecutionPolicy` observed
+  `.requiresConnection` for the full `suspensionWaitTimeout`, so the
+  request was held back instead of dispatched into a likely failing socket.
+  Distinct from `.configuration(reason: .offline(...))`, which is raised
+  when the monitor reports `.unsatisfied`.
+- `.cacheRevalidationFailed(underlying:, cached:)` — a 304 revalidation
+  pipeline failure. The cached `Response` payload is redacted by
+  `redactingFailurePayload()` unless `captureFailurePayload` is set.
+
+`NetworkError` has been documented as non-`@frozen` since the type was
+introduced; the README's error-handling section recommends ending exhaustive
+switches with `@unknown default`. The 4.0.0 release exercises that contract
+for the first time, so adopters that ignored the recommendation see a
+"Switch must be exhaustive" warning. Add the new arms or wrap with
+`@unknown default`:
+
+```swift
+catch let error as NetworkError {
+    switch error {
+    case .statusCode(let response):           handleStatus(response)
+    case .timeout(let reason, _):             handleTimeout(reason)
+    case .transportSuspended:                 handleSuspended()
+    case .cacheRevalidationFailed(let underlying, let cached):
+        handleRevalidationFailure(underlying, cached: cached)
+    // ...
+    @unknown default:
+        assertionFailure("Unhandled NetworkError case — update the switch.")
+    }
+}
+```
+
+## NetworkConfiguration fluent modifiers
+
+`NetworkConfiguration` gains seven `.with(...)` modifiers in 4.0.0. Existing
+`NetworkConfiguration.advanced(baseURL:)` callers keep compiling; the
+modifiers are an additive surface that lets adopting one new policy avoid
+re-typing every other knob. The 5.0 line is expected to relocate
+`customExecutionPolicies` and `eventObservers` into a protocol-bag, so new
+code should prefer:
+
+```swift
+NetworkConfiguration
+    .safeDefaults(baseURL: api)
+    .with(retry: ExponentialBackoffRetryPolicy())
+    .with(circuitBreaker: CircuitBreakerPolicy(failureThreshold: 3))
+    .with(executionPolicies: [MyTracingPolicy()])
+    .with(eventObservers: [MyOSLogObserver()])
+```
+
+over hand-rolling an `AdvancedBuilder` closure.
+
+## Optional adoption
+
+The following surfaces are new but opt-in; existing call sites keep working
+without touching them:
+
+- **`HTTPHeaderName<Variant>`** — phantom-typed header keys for
+  single-value (`.authorization`, `.contentType`, etc.) versus repeatable
+  (`.setCookie`, `.accept`, etc.) headers. The `String`-keyed
+  `add` / `update` / subscript surface is unchanged.
+- **`MultipartUploadStrategy.threshold(bytes:)`** — clamping factory for
+  the `streamingThreshold` case. `MultipartAPIDefinition.uploadStrategy`
+  default remains `.platformDefault`.
+- **`StreamingResumeStrategy` protocol** — marker conformed by
+  `StreamingResumePolicy`. Adopters who wanted to grow their own resume
+  strategy now have a single extension point.
+- **`PersistentResponseCacheStatistics.hitCount` / `missCount` /
+  `evictionCount`** — three new in-process counters on the existing
+  statistics struct. The struct's initializer keeps the original
+  parameter list with default `0` values for the new fields, so call
+  sites that build the struct by hand do not need to change.
+- **`DownloadTask.generation` / `attempt`** — two new observation
+  accessors for retry-cycle bookkeeping. The manager updates them
+  internally: automatic retry and resume advance `attempt` within the
+  same generation, while manual `retry(_:)` starts a new generation at
+  attempt `0`.
 
 ## URLQueryEncoder
 
