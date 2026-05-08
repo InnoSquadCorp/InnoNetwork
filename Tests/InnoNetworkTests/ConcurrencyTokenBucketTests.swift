@@ -46,17 +46,17 @@ struct ConcurrencyTokenBucketTests {
         await bucket.acquire()
 
         let order = OrderRecorder()
-        let first = Swift.Task<Void, Never>(operation: {
+        async let first: Void = {
             await bucket.acquire()
             await order.append(1)
-        })
+        }()
         await waitForQueuedWaiters(1, in: bucket)
         #expect(await bucket.queuedWaitersCount == 1)
 
-        let second = Swift.Task<Void, Never>(operation: {
+        async let second: Void = {
             await bucket.acquire()
             await order.append(2)
-        })
+        }()
         await waitForQueuedWaiters(2, in: bucket)
         #expect(await bucket.queuedWaitersCount == 2)
 
@@ -64,7 +64,7 @@ struct ConcurrencyTokenBucketTests {
         try? await Task.sleep(for: .milliseconds(20))
         await bucket.release()
 
-        _ = await (first.value, second.value)
+        _ = await (first, second)
 
         let recorded = await order.values
         #expect(recorded == [1, 2])

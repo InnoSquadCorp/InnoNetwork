@@ -474,13 +474,17 @@ struct StreamingAPIDefinitionTests {
             url: streamURL,
             response: .success(statusCode: 200, data: Data("one\ntwo\nthree\n".utf8))
         )
+        let store = StreamingEventStore()
         let client = DefaultNetworkClient(
-            configuration: NetworkConfiguration(baseURL: baseURL),
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                eventObservers: [StreamingEventObserver(store: store)]
+            ),
             session: makeStreamingURLSession()
         )
 
         let stream = client.stream(definition, bufferingPolicy: .bufferingNewest(1))
-        try await Task.sleep(for: .milliseconds(50))
+        _ = await waitForStreamingEvents(store: store, minimumCount: 4)
 
         var values: [String] = []
         for try await value in stream {
