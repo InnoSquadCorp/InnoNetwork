@@ -47,6 +47,26 @@ public protocol NetworkClient: Sendable {
     func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse
 }
 
+extension NetworkClient {
+    /// Default forwarder that calls ``request(_:tag:)`` with `tag: nil`.
+    ///
+    /// Conformers that need explicit observation of ungrouped requests may
+    /// override this overload, but most mocks and stubs only need to
+    /// implement the tag-aware path. The forwarder eliminates the boiler-
+    /// plate of mirroring two methods in every test double — there is no
+    /// silent-fallback risk because the implementation explicitly passes
+    /// `tag: nil`, the same value the caller would have to pass anyway.
+    public func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
+        try await self.request(request, tag: nil)
+    }
+
+    /// Default forwarder that calls ``upload(_:tag:)`` with `tag: nil`. See
+    /// ``request(_:)`` for the rationale.
+    public func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse {
+        try await self.upload(request, tag: nil)
+    }
+}
+
 /// Low-level typed execution contract for framework authors and policy layers.
 ///
 /// Application integrations should continue to depend on ``NetworkClient`` and use
