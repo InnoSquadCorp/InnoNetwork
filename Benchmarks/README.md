@@ -144,8 +144,8 @@ baseline 갱신은 사람이 명시적으로 수행하는 운영 작업입니다
   재기록하고, `Baselines/CHANGELOG.md`에 환경 변경을 명시합니다.
 
 일시적인 hosted-runner noise (단발 -8%) 는 갱신 사유가 아닙니다.
-`benchmark-smoke` job이 이미 3회 재시도하므로, 단발 noise는 자동으로
-흡수됩니다.
+`benchmark-smoke`와 PR `Benchmarks` workflow의 guarded run은 3회
+재시도하므로, 단발 noise는 자동으로 흡수됩니다.
 
 ## Initial Baseline (4.0.0)
 

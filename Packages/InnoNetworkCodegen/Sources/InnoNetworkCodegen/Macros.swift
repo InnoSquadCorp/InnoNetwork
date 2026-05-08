@@ -23,11 +23,11 @@ import InnoNetwork
 public macro APIDefinition(method: HTTPMethod, path: String) =
     #externalMacro(module: "InnoNetworkMacros", type: "APIDefinitionMacro")
 
-/// Creates a fluent ``ScopedEndpoint`` expression from method, path, and response type.
+/// Creates a fluent ``EndpointBuilder`` expression from method, path, and response type.
 ///
 /// The third argument must be labeled `as:` and passed a response metatype,
 /// for example `#endpoint(.get, "/users", as: User.self)`. The expansion
-/// returns a ``ScopedEndpoint`` parameterised by ``PublicAuthScope`` —
+/// returns an ``EndpointBuilder`` parameterised by ``PublicAuthScope`` —
 /// callers that need the authenticated executor must use the four-argument
 /// overload below and pass `scope: AuthRequiredScope.self`.
 ///
@@ -35,18 +35,18 @@ public macro APIDefinition(method: HTTPMethod, path: String) =
 ///   - method: HTTP method used to create the endpoint.
 ///   - path: Endpoint path string.
 ///   - responseType: Response metatype passed with the `as:` label.
-/// - Returns: A public-scope ``ScopedEndpoint`` configured with `method` and
+/// - Returns: A public-scope ``EndpointBuilder`` configured with `method` and
 ///   `path`, then converted to decode `responseType`.
 @freestanding(expression)
 public macro endpoint<Response: Decodable & Sendable>(
     _ method: HTTPMethod,
     _ path: String,
     as responseType: Response.Type
-) -> ScopedEndpoint<Response, PublicAuthScope> =
+) -> EndpointBuilder<Response, PublicAuthScope> =
     #externalMacro(module: "InnoNetworkMacros", type: "EndpointMacro")
 
-/// Creates a fluent ``ScopedEndpoint`` expression with an explicit
-/// ``EndpointAuthScope``, e.g.
+/// Creates a fluent ``EndpointBuilder`` expression with an explicit
+/// ``AuthScope``, e.g.
 /// `#endpoint(.get, "/me", as: User.self, scope: AuthRequiredScope.self)`.
 ///
 /// Use this overload when the endpoint requires the authenticated executor
@@ -58,15 +58,15 @@ public macro endpoint<Response: Decodable & Sendable>(
 ///   - method: HTTP method used to create the endpoint.
 ///   - path: Endpoint path string.
 ///   - responseType: Response metatype passed with the `as:` label.
-///   - scope: Concrete ``EndpointAuthScope`` metatype (e.g.
+///   - scope: Concrete ``AuthScope`` metatype (e.g.
 ///     ``AuthRequiredScope/self`` or ``PublicAuthScope/self``).
-/// - Returns: A ``ScopedEndpoint`` parameterised by `scope` and decoding
+/// - Returns: An ``EndpointBuilder`` parameterised by `scope` and decoding
 ///   `responseType`.
 @freestanding(expression)
-public macro endpoint<Response: Decodable & Sendable, Scope: EndpointAuthScope>(
+public macro endpoint<Response: Decodable & Sendable, Scope: AuthScope>(
     _ method: HTTPMethod,
     _ path: String,
     as responseType: Response.Type,
     scope: Scope.Type
-) -> ScopedEndpoint<Response, Scope> =
+) -> EndpointBuilder<Response, Scope> =
     #externalMacro(module: "InnoNetworkMacros", type: "EndpointMacro")
