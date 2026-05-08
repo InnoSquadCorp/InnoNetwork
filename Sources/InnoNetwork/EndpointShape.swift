@@ -3,22 +3,22 @@ import Foundation
 /// Common request-shape surface shared by ``APIDefinition`` and
 /// ``MultipartAPIDefinition``.
 ///
-/// `EndpointShape` is the protocol that captures everything an endpoint
+/// `Endpoint` is the protocol that captures everything an endpoint
 /// describes about its HTTP envelope independent of the body strategy:
 /// method, path, headers, observability hooks, status-code acceptance,
 /// and the response-side ``TransportPolicy``. Concrete endpoint
-/// protocols inherit from `EndpointShape` and add only the body-shape
+/// protocols inherit from `Endpoint` and add only the body-shape
 /// requirements they actually own — `parameters` for
 /// ``APIDefinition``, `multipartFormData` and `uploadStrategy` for
 /// ``MultipartAPIDefinition``.
 ///
-/// `EndpointShape` is not intended as a direct conformance target for
+/// `Endpoint` is not intended as a direct conformance target for
 /// app code; conform to ``APIDefinition`` or ``MultipartAPIDefinition``
 /// instead. The protocol is exposed publicly because both
 /// ``DefaultNetworkClient`` and the SPI execution pipeline read this
 /// surface and external generated clients can document against the
 /// same vocabulary.
-public protocol EndpointShape: Sendable {
+public protocol Endpoint: Sendable {
     /// Decoded response type produced by this endpoint.
     ///
     /// The response must be safe to cross concurrency boundaries because the
@@ -95,7 +95,7 @@ public protocol EndpointShape: Sendable {
 
 // MARK: - Shared default implementations
 
-public extension EndpointShape {
+public extension Endpoint {
     /// Default headers for endpoints that do not need custom envelope headers.
     var headers: HTTPHeaders { HTTPHeaders.default }
 

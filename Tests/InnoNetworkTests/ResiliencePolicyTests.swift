@@ -208,7 +208,7 @@ private actor SequenceURLSessionState {
 
     func dequeue() throws -> (Data, URLResponse) {
         guard !queue.isEmpty else {
-            throw NetworkError.invalidRequestConfiguration("No queued response.")
+            throw NetworkError.configuration(reason: .invalidRequest("No queued response."))
         }
         let next = queue.removeFirst()
         return (next.data, next.response)
@@ -273,7 +273,7 @@ private actor CancellationFirstURLSessionState {
 
     func dequeue() throws -> (Data, URLResponse) {
         guard !queue.isEmpty else {
-            throw NetworkError.invalidRequestConfiguration("No queued response.")
+            throw NetworkError.configuration(reason: .invalidRequest("No queued response."))
         }
         let next = queue.removeFirst()
         return (next.data, next.response)
@@ -318,7 +318,8 @@ private final class CancellationFirstURLSession: URLSessionProtocol, Sendable {
                 await state.recordCancellation()
                 throw error
             }
-            throw NetworkError.invalidRequestConfiguration("Expected the first queued request to be cancelled.")
+            throw NetworkError.configuration(
+                reason: .invalidRequest("Expected the first queued request to be cancelled."))
         }
 
         return try await state.dequeue()
@@ -608,7 +609,7 @@ struct ResiliencePolicyTests {
             refreshToken: {
                 await refreshCount.increment()
                 try await Task.sleep(for: .milliseconds(50))
-                throw NetworkError.invalidRequestConfiguration("refresh failed")
+                throw NetworkError.configuration(reason: .invalidRequest("refresh failed"))
             }
         )
         let client = DefaultNetworkClient(
@@ -1553,7 +1554,7 @@ struct ResiliencePolicyTests {
             func next() async throws -> String {
                 calls += 1
                 if calls == 1 {
-                    throw NetworkError.invalidRequestConfiguration("first refresh fails")
+                    throw NetworkError.configuration(reason: .invalidRequest("first refresh fails"))
                 }
                 return "fresh"
             }
@@ -1583,7 +1584,7 @@ struct ResiliencePolicyTests {
             var calls = 0
             func next() async throws -> String {
                 calls += 1
-                throw NetworkError.invalidRequestConfiguration("refresh keeps failing")
+                throw NetworkError.configuration(reason: .invalidRequest("refresh keeps failing"))
             }
         }
         let script = RefreshScript()

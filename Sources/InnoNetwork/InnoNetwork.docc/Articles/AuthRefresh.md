@@ -52,7 +52,7 @@ struct Profile: Decodable, Sendable {
     let id: String
 }
 
-let endpoint = ScopedEndpoint<EmptyResponse, AuthRequiredScope>
+let endpoint = EndpointBuilder<EmptyResponse, AuthRequiredScope>
     .get("/me")
     .decoding(Profile.self)
 
@@ -73,6 +73,7 @@ struct GetProfile: APIDefinition {
 ```
 
 If the client has no ``NetworkConfiguration/refreshTokenPolicy``, the request
-fails before transport with ``NetworkError/invalidRequestConfiguration(_:)``.
+fails before transport with ``NetworkError/configuration(reason:)`` and
+``NetworkConfigurationFailureReason/invalidRequest(_:)``.
 Public endpoints use ``PublicAuthScope`` by default and do not require a
 refresh policy.

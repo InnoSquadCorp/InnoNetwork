@@ -185,6 +185,9 @@ jobs:
       - name: Enforce no force unwrap in production sources
         run: bash Scripts/check_production_force_unwraps.sh
 
+      - name: Enforce no print() in production sources
+        run: bash Scripts/check_no_print_in_production.sh
+
   docs-contract-sync:
     name: Docs / Contract Sync
     runs-on: macos-15
@@ -208,6 +211,9 @@ jobs:
 
       - name: Verify docs and stability contract
         run: bash Scripts/check_docs_contract_sync.sh
+
+      - name: Verify stable examples contract
+        run: bash Scripts/check_stable_examples.sh
 
       - name: Build documentation smoke target
         run: xcrun swift build --target InnoNetworkDocSmoke
@@ -372,6 +378,14 @@ jobs:
 
       - name: Test codegen package
         run: xcrun swift test --package-path Packages/InnoNetworkCodegen --filter MacroExpansionTests
+
+      - name: Build openapi-to-innonetwork CLI
+        working-directory: Tools/openapi-to-innonetwork
+        run: xcrun swift build
+
+      - name: Test openapi-to-innonetwork CLI
+        working-directory: Tools/openapi-to-innonetwork
+        run: xcrun swift test
 
       - name: Build macro usage package
         working-directory: Examples/MacroUsage

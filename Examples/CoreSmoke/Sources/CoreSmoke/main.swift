@@ -22,7 +22,7 @@ let client = DefaultNetworkClient(
 
 _ = client
 _ = CoreRequest()
-_ = ScopedEndpoint<EmptyResponse, PublicAuthScope>.get("/users")
+_ = EndpointBuilder<EmptyResponse, PublicAuthScope>.get("/users")
     .query(["limit": 20])
     .decoding([CoreUser].self)
 _ = NetworkConfiguration.advanced(baseURL: URL(string: "https://api.example.com")!) { builder in

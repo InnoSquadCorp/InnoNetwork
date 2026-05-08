@@ -36,7 +36,7 @@ struct RetryDecisionTests {
     func contextualReturnsPolicyVerdict() {
         let policy = ContextualPolicy(returnedDecision: .retryAfter(5))
         let decision = policy.shouldRetry(
-            error: .invalidRequestConfiguration("fixture"),
+            error: .configuration(reason: .invalidRequest("fixture")),
             retryIndex: 0,
             request: URLRequest(url: URL(string: "https://example.com")!),
             response: nil

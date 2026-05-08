@@ -28,7 +28,7 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``DefaultNetworkClient``
 - ``NetworkClient``
 - ``APIDefinition``
-- ``ScopedEndpoint``
+- ``EndpointBuilder``
 - ``MultipartAPIDefinition``
 
 ### Configuration
@@ -71,6 +71,8 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``CircuitBreakerOpenError``
 - <doc:RetryDecisions>
 - <doc:AuthRefresh>
+- <doc:RequestSigning>
+- <doc:OfflineHandling>
 - <doc:CachingStrategies>
 - <doc:AppNetworkingCookbook>
 - <doc:MigrationFromAlamofire>

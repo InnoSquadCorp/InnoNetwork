@@ -41,15 +41,15 @@ let user = try await client.request(GetUser())
 print(user.name)
 ```
 
-## Use `ScopedEndpoint` for simple calls
+## Use `EndpointBuilder` for simple calls
 
-Use ``ScopedEndpoint`` when a request only needs method, path, query/body
+Use ``EndpointBuilder`` when a request only needs method, path, query/body
 parameters, headers, content type, acceptable status codes, and response
 decoding:
 
 ```swift
 let users = try await client.request(
-    ScopedEndpoint<EmptyResponse, PublicAuthScope>
+    EndpointBuilder<EmptyResponse, PublicAuthScope>
         .get("/users")
         .query(["limit": 20])
         .decoding([User].self)
@@ -61,8 +61,9 @@ interceptors, encoders/decoders, multipart upload behavior, or streaming.
 
 Endpoint paths are appended after the configured base URL path even when they
 start with `/`. Keep query values in `parameters`/``URLQueryEncoder`` or
-``ScopedEndpoint/query(_:)``; a literal `?` or `#` in the endpoint path is
-rejected as ``NetworkError/invalidRequestConfiguration(_:)``.
+``EndpointBuilder/query(_:)``; a literal `?` or `#` in the endpoint path is
+rejected as ``NetworkError/configuration(reason:)`` with
+``NetworkConfigurationFailureReason/invalidRequest(_:)``.
 
 ## Request execution contract
 

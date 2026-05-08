@@ -5,6 +5,7 @@
 
 "NetworkError.invalidBaseURL" = "잘못된 기본 URL입니다: %@";
 "NetworkError.invalidRequestConfiguration" = "요청 구성이 잘못되었습니다: %@";
+"NetworkError.offline" = "네트워크에 연결되지 않았습니다: %@";
 "NetworkError.decoding" = "응답을 디코딩하지 못했습니다 (%1$@): %2$@";
 "NetworkError.statusCode" = "응답의 HTTP 상태 코드가 허용 범위를 벗어났습니다.";
 "NetworkError.nonHTTPResponse" = "HTTP 응답으로 해석할 수 없는 응답을 받았습니다.";

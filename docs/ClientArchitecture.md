@@ -56,15 +56,15 @@ metrics, and cache semantics stay consistent.
 `APIDefinition` now carries an auth marker:
 
 ```swift
-associatedtype Auth: EndpointAuthScope = PublicAuthScope
+associatedtype Auth: AuthScope = PublicAuthScope
 ```
 
-Fluent public endpoints use `ScopedEndpoint<Response, PublicAuthScope>`.
-Authenticated fluent calls use `ScopedEndpoint<Response, AuthRequiredScope>`,
+Fluent public endpoints use `EndpointBuilder<Response, PublicAuthScope>`.
+Authenticated fluent calls use `EndpointBuilder<Response, AuthRequiredScope>`,
 or a custom `APIDefinition` with `typealias Auth = AuthRequiredScope`.
 Auth-required requests fail before transport with
-`NetworkError.invalidRequestConfiguration` when the client configuration has no
-`RefreshTokenPolicy`.
+`NetworkError.configuration(reason: .invalidRequest(...))` when the client
+configuration has no `RefreshTokenPolicy`.
 
 ## Optional Codegen
 

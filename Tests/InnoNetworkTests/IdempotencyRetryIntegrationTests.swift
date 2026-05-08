@@ -74,7 +74,7 @@ private actor SequenceState {
 
     func dequeue() throws -> (Data, URLResponse) {
         guard !queue.isEmpty else {
-            throw NetworkError.invalidRequestConfiguration("No queued response.")
+            throw NetworkError.configuration(reason: .invalidRequest("No queued response."))
         }
         let next = queue.removeFirst()
         return (next.data, next.response)

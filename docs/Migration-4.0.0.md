@@ -12,8 +12,9 @@ behavior review.
 
 | Previous usage | 4.0.0 replacement / action |
 | --- | --- |
-| `Endpoint<Response>` | Use `ScopedEndpoint<Response, PublicAuthScope>`. Builder roots become `ScopedEndpoint<EmptyResponse, PublicAuthScope>.get(...)`, `.post(...)`, etc. |
-| `AuthenticatedEndpoint<Response>` | Use `ScopedEndpoint<Response, AuthRequiredScope>` and configure `NetworkConfiguration.refreshTokenPolicy`. |
+| `Endpoint<Response>` | Use `EndpointBuilder<Response, PublicAuthScope>`. Builder roots become `EndpointBuilder<EmptyResponse, PublicAuthScope>.get(...)`, `.post(...)`, etc. |
+| `AuthenticatedEndpoint<Response>` | Use `EndpointBuilder<Response, AuthRequiredScope>` and configure `NetworkConfiguration.refreshTokenPolicy`. |
+| `ScopedEndpoint<Response, Scope>` / `EndpointAuthScope` | Use `EndpointBuilder<Response, Scope>` / `AuthScope`; the legacy spellings are not available in 4.0.0. |
 | `WebSocketManager.shared` | Own and inject a manager per feature: `WebSocketManager(configuration:)`. |
 | `DownloadManager.shared` | Use `try DownloadManager.make(configuration:)` with a unique `sessionIdentifier`; handle `DownloadManagerError` where the owning feature can recover. |
 | Relying on `SendableUnderlyingError ==` comparing messages | Equality is now stable code identity only (`domain` + `code`). Compare descriptions separately if UI text matters. |
@@ -58,8 +59,8 @@ the individual entries matter.
   parts. Wrap call sites in `do/catch` if you previously relied on
   silent skipping.
 - `MultipartResponseDecoder` raises
-  `NetworkError.invalidRequestConfiguration(...)` on missing or invalid
-  boundary instead of returning an empty array.
+  `NetworkError.configuration(reason: .invalidRequest(...))` on missing or
+  invalid boundary instead of returning an empty array.
 - For non-ASCII filenames the encoder emits both `filename=` (ASCII
   fallback) and `filename*=UTF-8''<percent>` per RFC 5987. No caller
   changes required.

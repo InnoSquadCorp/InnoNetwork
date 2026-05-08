@@ -38,9 +38,9 @@ package struct RequestBuilder {
         // dropped by others; reject them so the caller is forced to use a
         // body-bearing method instead of getting non-deterministic behaviour.
         if payload.hasBody, executable.method == .get {
-            throw NetworkError.invalidRequestConfiguration(
-                "HTTP GET requests must not carry a request body. Use POST or PUT for body-bearing endpoints."
-            )
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "HTTP GET requests must not carry a request body. Use POST or PUT for body-bearing endpoints."))
         }
 
         var targetURL = try EndpointPathBuilder.makeURL(

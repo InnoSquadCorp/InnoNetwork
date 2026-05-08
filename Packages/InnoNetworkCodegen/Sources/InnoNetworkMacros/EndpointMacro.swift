@@ -5,14 +5,14 @@ import SwiftSyntaxMacros
 /// Implements the freestanding ``endpoint`` macro expansion.
 public struct EndpointMacro: ExpressionMacro {
     /// Expands `#endpoint(_:_:as:)` (or `#endpoint(_:_:as:scope:)`) into a
-    /// fluent `ScopedEndpoint` builder expression.
+    /// fluent `EndpointBuilder` builder expression.
     ///
     /// - Parameters:
     ///   - node: Freestanding macro expansion syntax containing method, path,
     ///     `as:` response type, and optionally `scope:` auth-scope arguments.
     ///   - context: Macro expansion context used by SwiftSyntax.
     /// - Returns: An expression equivalent to
-    ///   `ScopedEndpoint<EmptyResponse, Scope>(method:path:).decoding(Response.self)`,
+    ///   `EndpointBuilder<EmptyResponse, Scope>(method:path:).decoding(Response.self)`,
     ///   where `Scope` is `PublicAuthScope` for the three-argument form or
     ///   the concrete metatype passed via `scope:` for the four-argument form.
     /// - Throws: ``InnoNetworkMacroDiagnostic`` when the argument count is
@@ -69,7 +69,7 @@ public struct EndpointMacro: ExpressionMacro {
             }
             // The argument is a metatype expression like `AuthRequiredScope.self`.
             // Strip the trailing `.self` so the result interpolates as a
-            // generic parameter inside `ScopedEndpoint<EmptyResponse, _>`.
+            // generic parameter inside `EndpointBuilder<EmptyResponse, _>`.
             let scopeExpression = scopeArgument.expression.trimmedDescription
             guard scopeExpression.hasSuffix(".self") else {
                 throw InnoNetworkMacroDiagnostic(
@@ -82,7 +82,7 @@ public struct EndpointMacro: ExpressionMacro {
             scopeName = "PublicAuthScope"
         }
 
-        let builder = "ScopedEndpoint<EmptyResponse, \(scopeName)>"
+        let builder = "EndpointBuilder<EmptyResponse, \(scopeName)>"
         return "\(raw: builder)(method: \(raw: method), path: \(raw: path)).decoding(\(raw: responseType))"
     }
 }

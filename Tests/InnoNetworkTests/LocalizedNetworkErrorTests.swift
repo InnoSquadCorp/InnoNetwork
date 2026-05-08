@@ -21,8 +21,8 @@ struct LocalizedNetworkErrorTests {
     func everyCaseProducesNonEmptyDescription() throws {
         let response = try makeResponse(statusCode: 500)
         let cases: [NetworkError] = [
-            .invalidBaseURL("ftp://example.com"),
-            .invalidRequestConfiguration("missing path"),
+            .configuration(reason: .invalidBaseURL("ftp://example.com")),
+            .configuration(reason: .invalidRequest("missing path")),
             .decoding(
                 stage: .responseBody,
                 underlying: SendableUnderlyingError(
@@ -63,11 +63,11 @@ struct LocalizedNetworkErrorTests {
     @Test("payload values are interpolated into the rendered description")
     func payloadValuesAreInterpolated() {
         #expect(
-            NetworkError.invalidBaseURL("ftp://example.com")
+            NetworkError.configuration(reason: .invalidBaseURL("ftp://example.com"))
                 .errorDescription?.contains("ftp://example.com") == true
         )
         #expect(
-            NetworkError.invalidRequestConfiguration("missing path")
+            NetworkError.configuration(reason: .invalidRequest("missing path"))
                 .errorDescription?.contains("missing path") == true
         )
         #expect(

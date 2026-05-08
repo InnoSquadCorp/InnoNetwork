@@ -25,8 +25,8 @@ into one release line:
   Download and WebSocket lifecycle decisions.
 - New `InnoNetworkPersistentCache` companion product.
 - Compile-time macro diagnostics for optional path placeholders.
-- Phantom auth scopes through `EndpointAuthScope`, `PublicAuthScope`,
-  `AuthRequiredScope`, and `ScopedEndpoint`.
+- Phantom auth scopes through `AuthScope`, `PublicAuthScope`,
+  `AuthRequiredScope`, and `EndpointBuilder`.
 
 ## Explicitly Deferred
 

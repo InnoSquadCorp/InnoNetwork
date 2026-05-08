@@ -228,7 +228,7 @@ struct RequestExecutionPolicyTests {
             Issue.record("Expected NetworkError.invalidRequestConfiguration")
         } catch let error as NetworkError {
             switch error {
-            case .invalidRequestConfiguration:
+            case .configuration(reason: .invalidRequest):
                 // Expected: streaming bytes() not supported, no buffered fallback.
                 break
             default:

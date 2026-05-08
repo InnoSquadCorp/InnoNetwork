@@ -4,11 +4,11 @@
 
 InnoNetwork ships against the current Apple platforms only:
 
-- iOS 18.0+
-- macOS 15.0+
-- tvOS 18.0+
-- watchOS 11.0+
-- visionOS 2.0+
+- iOS 16.0+
+- macOS 14.0+
+- tvOS 16.0+
+- watchOS 9.0+
+- visionOS 1.0+
 
 The package targets these versions intentionally so the codebase can rely on
 modern Swift Concurrency semantics, strict Sendable checking, and the latest

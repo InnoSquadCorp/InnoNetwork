@@ -222,8 +222,8 @@ struct NetworkErrorRedactionTests {
     @Test("Cases without an attached payload are unchanged by redaction")
     func nonPayloadCasesPassThrough() {
         let cases: [NetworkError] = [
-            .invalidBaseURL("https://example.com"),
-            .invalidRequestConfiguration("missing"),
+            .configuration(reason: .invalidBaseURL("https://example.com")),
+            .configuration(reason: .invalidRequest("missing")),
             .cancelled,
             .timeout(reason: .requestTimeout, underlying: nil),
         ]

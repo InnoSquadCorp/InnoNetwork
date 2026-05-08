@@ -14,16 +14,20 @@ let configuration = NetworkConfiguration.safeDefaults(
 
 ## Error Types
 
-InnoNetwork provides the following error types:
+InnoNetwork provides the following error families:
 
-- `NetworkError.invalidBaseURL`: Invalid base URL configuration
-- `NetworkError.jsonMapping`: Failed to parse JSON response
-- `NetworkError.statusCode`: HTTP status code outside 200-299 range
-- `NetworkError.decoding`: Failed to decode response (carries `DecodingStage` tag)
-- `NetworkError.nonHTTPResponse`: Response is not HTTPURLResponse
-- `NetworkError.underlying`: Underlying network error (URLError, etc.)
-- `NetworkError.undefined`: Undefined error
-- `NetworkError.cancelled`: Request was cancelled
+- `NetworkError.configuration(reason:)`: Invalid base URL, invalid request
+  shape, or an offline preflight rejection.
+- `NetworkError.statusCode`: HTTP status code outside the configured
+  acceptable range.
+- `NetworkError.decoding`: Failed to decode a response at a specific
+  `DecodingStage`.
+- `NetworkError.nonHTTPResponse`: Response is not an `HTTPURLResponse`.
+- `NetworkError.underlying`: Underlying transport or adapter error.
+- `NetworkError.trustEvaluationFailed`: TLS pinning or trust evaluation failure.
+- `NetworkError.cancelled`: Request was cancelled.
+- `NetworkError.timeout`: Request, resource, or connection timeout.
+- `NetworkError.responseTooLarge`: Response body exceeded the configured limit.
 
 ## Running the Examples
 
@@ -36,7 +40,7 @@ swift ErrorHandlingExample.swift
 ## Covered Scenarios
 
 1. **Basic Error Handling**: Do-catch pattern for network errors
-2. **Invalid URL**: Handling invalid base URLs
+2. **Invalid Request**: Handling request configuration failures
 3. **Not Found**: Handling 404 errors
 4. **Successful Request**: Handling successful responses
 5. **Error with Response Data**: Accessing response data from errors
@@ -51,11 +55,15 @@ do {
     print("Success: \(response)")
 } catch let error as NetworkError {
     switch error {
-    case .invalidBaseURL(let urlString):
-        print("Invalid Base URL: \(urlString)")
-    case .jsonMapping(let response):
-        print("JSON Mapping Error")
-        print("Status Code: \(response.statusCode)")
+    case .configuration(let reason):
+        switch reason {
+        case .invalidBaseURL(let message):
+            print("Invalid Base URL: \(message)")
+        case .invalidRequest(let message):
+            print("Invalid Request: \(message)")
+        case .offline(let message):
+            print("Offline: \(message)")
+        }
     case .statusCode(let response):
         print("Status Code Error: \(response.statusCode)")
         if response.statusCode == 404 {
@@ -75,10 +83,16 @@ do {
         if let response = response {
             print("Status Code: \(response.statusCode)")
         }
-    case .undefined:
-        print("Undefined Error")
+    case .trustEvaluationFailed(let reason):
+        print("Trust Evaluation Failed: \(reason)")
     case .cancelled:
         print("Request Cancelled")
+    case .timeout(let reason, let underlying):
+        print("Timeout: \(reason), underlying: \(String(describing: underlying))")
+    case .responseTooLarge(let limit, let observed):
+        print("Response too large: \(observed) bytes exceeded \(limit)")
+    @unknown default:
+        print("Unhandled NetworkError: \(error)")
     }
 } catch {
     print("Unknown error: \(error)")
@@ -102,7 +116,7 @@ do {
             print("Response Body: \(jsonString)")
         }
     }
-    print("Error Description: \(error.localizedDescription))
+    print("Error Description: \(error.localizedDescription)")
 }
 ```
 

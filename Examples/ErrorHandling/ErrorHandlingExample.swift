@@ -33,7 +33,7 @@ struct User: Decodable {
 // MARK: - 3. API Definitions
 
 // Valid API request
-actor ValidRequest: APIDefinition {
+struct ValidRequest: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = Post
 
@@ -43,7 +43,7 @@ actor ValidRequest: APIDefinition {
 }
 
 // Request that will fail with 404
-actor NotFoundRequest: APIDefinition {
+struct NotFoundRequest: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = Post
 
@@ -52,18 +52,18 @@ actor NotFoundRequest: APIDefinition {
 
 }
 
-// Invalid URL request
-actor InvalidURLRequest: APIDefinition {
+// Invalid request configuration: endpoint paths must not include query strings.
+struct InvalidRequestConfigurationRequest: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = Post
 
     var method: HTTPMethod { .get }
-    var path: String { "/posts/1" }
+    var path: String { "/posts/1?illegal=query" }
 
 }
 
 // Request with custom headers (for testing)
-actor PostWithBody: APIDefinition {
+struct PostWithBody: APIDefinition {
     struct PostParameter: Encodable {
         let title: String
         let body: String
@@ -105,11 +105,11 @@ actor ErrorHandlingExample {
         }
     }
 
-    // Example 2: Handling invalid URL error
-    func invalidURLHandling() async {
-        print("\n=== Example 2: Invalid URL Handling ===")
+    // Example 2: Handling request-configuration errors
+    func invalidRequestConfigurationHandling() async {
+        print("\n=== Example 2: Invalid Request Configuration Handling ===")
         do {
-            let post = try await client.request(InvalidURLRequest())
+            let post = try await client.request(InvalidRequestConfigurationRequest())
             print("✅ Success: \(post.title)")
         } catch let error as NetworkError {
             handleNetworkError(error)
@@ -152,6 +152,8 @@ actor ErrorHandlingExample {
                 }
             }
             print("Error Description: \(error.localizedDescription)")
+        } catch {
+            print("❌ Unknown error: \(error)")
         }
     }
 
@@ -181,7 +183,13 @@ actor ErrorHandlingExample {
             do {
                 let post = try await client.request(ValidRequest())
                 print("✅ Success: \(post.title)")
-            } catch let error as NetworkError where error == .cancelled {
+            } catch let error as NetworkError {
+                if case .cancelled = error {
+                    print("⚠️  Request was cancelled")
+                } else {
+                    print("❌ Error: \(error)")
+                }
+            } catch is CancellationError {
                 print("⚠️  Request was cancelled")
             } catch {
                 print("❌ Error: \(error)")
@@ -191,18 +199,22 @@ actor ErrorHandlingExample {
         // Cancel the task after a short delay
         try? await Task.sleep(nanoseconds: 10_000_000)  // 0.01 seconds
         task.cancel()
+        _ = await task.result
     }
 
     // Helper method to handle different network errors
     func handleNetworkError(_ error: NetworkError) {
         switch error {
-        case .invalidBaseURL(let urlString):
-            print("❌ Invalid Base URL: \(urlString)")
-
-        case .jsonMapping(let response):
-            print("❌ JSON Mapping Error")
-            print("   Status Code: \(response.statusCode)")
-            print("   Data: \(String(data: response.data, encoding: .utf8) ?? "N/A")")
+        case .configuration(let reason):
+            print("❌ Configuration Error")
+            switch reason {
+            case .invalidBaseURL(let message):
+                print("   Invalid Base URL: \(message)")
+            case .invalidRequest(let message):
+                print("   Invalid Request: \(message)")
+            case .offline(let message):
+                print("   Offline: \(message)")
+            }
 
         case .statusCode(let response):
             print("❌ Status Code Error: \(response.statusCode)")
@@ -227,11 +239,25 @@ actor ErrorHandlingExample {
                 print("   Status Code: \(response.statusCode)")
             }
 
-        case .undefined:
-            print("❌ Undefined Error")
+        case .trustEvaluationFailed(let reason):
+            print("❌ Trust Evaluation Failed: \(reason)")
 
         case .cancelled:
             print("⚠️  Request Cancelled")
+
+        case .timeout(let reason, let underlying):
+            print("❌ Timeout: \(reason)")
+            if let underlying {
+                print("   Underlying Error: \(underlying)")
+            }
+
+        case .responseTooLarge(let limit, let observed):
+            print("❌ Response Too Large")
+            print("   Limit: \(limit) bytes")
+            print("   Observed: \(observed) bytes")
+
+        @unknown default:
+            print("❌ Unhandled NetworkError: \(error)")
         }
     }
 
@@ -239,7 +265,7 @@ actor ErrorHandlingExample {
     func runAllExamples() async {
         await successfulRequest()
         await basicErrorHandling()
-        await invalidURLHandling()
+        await invalidRequestConfigurationHandling()
         await errorWithResponseData()
         await postRequest()
         await cancellationHandling()
@@ -253,11 +279,7 @@ actor ErrorHandlingExample {
 @main
 struct ErrorHandlingApp {
     static func main() async {
-        do {
-            let example = try ErrorHandlingExample()
-            await example.runAllExamples()
-        } catch {
-            print("Failed to create network client: \(error)")
-        }
+        let example = ErrorHandlingExample()
+        await example.runAllExamples()
     }
 }

@@ -47,26 +47,26 @@ public struct MultipartResponseDecoder: Sendable {
     ///   - contentType: Response `Content-Type` header containing a
     ///     `boundary` parameter, unless a boundary override was supplied.
     /// - Returns: Decoded parts in response order.
-    /// - Throws: ``NetworkError/invalidRequestConfiguration(_:)`` when the
-    ///   boundary is missing, a part is malformed, or the closing boundary is
-    ///   absent.
+    /// - Throws: ``NetworkError/configuration(reason:)`` with
+    ///   ``NetworkConfigurationFailureReason/invalidRequest(_:)`` when the
+    ///   boundary is missing, a part is malformed, or the closing boundary
+    ///   is absent.
     public func decode(_ data: Data, contentType: String) throws -> [MultipartPart] {
         guard let boundary = boundaryOverride ?? Self.boundary(from: contentType), !boundary.isEmpty else {
-            throw NetworkError.invalidRequestConfiguration("Missing multipart boundary.")
+            throw NetworkError.configuration(reason: .invalidRequest("Missing multipart boundary."))
         }
 
         let delimiter = Data("--\(boundary)".utf8)
         guard var currentBoundary = nextBoundary(in: data, delimiter: delimiter, after: data.startIndex) else {
-            throw NetworkError.invalidRequestConfiguration(
-                "Multipart response body did not contain the boundary delimiter."
-            )
+            throw NetworkError.configuration(
+                reason: .invalidRequest("Multipart response body did not contain the boundary delimiter."))
         }
 
         var parts: [MultipartPart] = []
         while !currentBoundary.isClosing {
             let partStart = currentBoundary.contentStart
             guard let nextBoundary = nextBoundary(in: data, delimiter: delimiter, after: partStart) else {
-                throw NetworkError.invalidRequestConfiguration("Missing multipart closing boundary.")
+                throw NetworkError.configuration(reason: .invalidRequest("Missing multipart closing boundary."))
             }
 
             var partEnd = nextBoundary.delimiterStart
@@ -130,13 +130,13 @@ public struct MultipartResponseDecoder: Sendable {
     private func decodePart(_ rawPart: Data.SubSequence) throws -> MultipartPart {
         let part = Data(rawPart)
         guard let separator = part.headerSeparatorRange else {
-            throw NetworkError.invalidRequestConfiguration("Malformed multipart part.")
+            throw NetworkError.configuration(reason: .invalidRequest("Malformed multipart part."))
         }
         let headerData = part[..<separator.lowerBound]
         let bodyStart = separator.upperBound
         let body = part[bodyStart..<part.endIndex]
         guard let headerBlock = String(data: headerData, encoding: .utf8) else {
-            throw NetworkError.invalidRequestConfiguration("Multipart headers are not UTF-8 decodable.")
+            throw NetworkError.configuration(reason: .invalidRequest("Multipart headers are not UTF-8 decodable."))
         }
 
         var headers: [String: String] = [:]

@@ -7,7 +7,29 @@ export LC_ALL=C
 
 api_stability="$repo_root/API_STABILITY.md"
 readme="$repo_root/README.md"
-public_symbols_allowlist="$repo_root/Scripts/api_public_symbols.allowlist"
+
+# Per-module public-symbol allowlists. Splitting the legacy single
+# `Scripts/api_public_symbols.allowlist` into one file per shipping
+# module keeps PR diffs readable when only one module's surface
+# changes. The script concatenates them into a single temporary
+# allowlist so the rest of the validation logic stays unchanged.
+public_symbols_dir="$repo_root/Scripts/symbols"
+public_symbols_allowlist="$(mktemp)"
+trap 'rm -f "$public_symbols_allowlist"' EXIT
+
+if [[ ! -d "$public_symbols_dir" ]]; then
+  echo "public symbol allowlist directory is missing: $public_symbols_dir" >&2
+  exit 1
+fi
+
+shopt -s nullglob
+allowlist_parts=("$public_symbols_dir"/*.allowlist)
+shopt -u nullglob
+if (( ${#allowlist_parts[@]} == 0 )); then
+  echo "public symbol allowlist directory $public_symbols_dir contains no *.allowlist files" >&2
+  exit 1
+fi
+cat "${allowlist_parts[@]}" > "$public_symbols_allowlist"
 required_meta_docs=(
   "$repo_root/CONTRIBUTING.md"
   "$repo_root/CODE_OF_CONDUCT.md"
@@ -91,7 +113,7 @@ require_line "## Internal/Operational" "$api_stability"
 expected_stable=(
 '`APIDefinition`'
 '`CancellationTag`'
-'`EndpointShape`'
+'`Endpoint`'
 '`MultipartAPIDefinition`'
 '`TransportPolicy`'
 '`RequestEncodingPolicy`'
@@ -99,6 +121,7 @@ expected_stable=(
 '`DefaultNetworkClient`'
 '`NetworkClient.request(_:)`'
 '`NetworkClient.request(_:tag:)`'
+'`NetworkClient.request(_:method:tag:)`'
 '`NetworkClient.upload(_:)`'
 '`NetworkClient.upload(_:tag:)`'
 '`NetworkConfiguration.safeDefaults(baseURL:)`'
@@ -123,7 +146,7 @@ expected_stable=(
 '`URLQueryArrayEncodingStrategy`'
 '`ResponseBodyBufferingPolicy`'
 '`RequestExecutionPolicy`'
-'`EndpointAuthScope`'
+'`AuthScope`'
 '`PublicAuthScope`'
 '`AuthRequiredScope`'
 '`StateReducer`'
@@ -160,7 +183,7 @@ expected_provisionally=(
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
-'`ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
+'`EndpointBuilder`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
 '`WebSocketCloseDisposition` observation surface'
 '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
@@ -199,9 +222,9 @@ expected_shipping_public_declarations=(
   DownloadTask
   EmptyParameter
   EmptyResponse
-  EndpointAuthScope
+  AuthScope
   EndpointPathEncoding
-  EndpointShape
+  Endpoint
   EventDeliveryPolicy
   EventPipelineAggregateSnapshotMetric
   EventPipelineConsumerDeliveryLatencyMetric
@@ -269,7 +292,7 @@ expected_shipping_public_declarations=(
   RetryDecision
   RetryIdempotencyPolicy
   RetryPolicy
-  ScopedEndpoint
+  EndpointBuilder
   SendableUnderlyingError
   ServerSentEvent
   ServerSentEventDecoder
@@ -530,7 +553,7 @@ validate_public_surface_ledger() {
 }
 
 validate_oss_readiness_public_api() {
-  require_contains 'public struct ScopedEndpoint<Response: Decodable & Sendable, AuthScope: EndpointAuthScope>: APIDefinition' \
+  require_contains 'public struct EndpointBuilder<Response: Decodable & Sendable, Scope: AuthScope>: APIDefinition' \
     "$repo_root/Sources/InnoNetwork/Endpoint.swift"
   require_contains 'public enum EndpointPathEncoding' \
     "$repo_root/Sources/InnoNetwork/EndpointPathEncoding.swift"
@@ -598,8 +621,8 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public struct CancellationTag'
       target="$repo_root/Sources/InnoNetwork/CancellationTag.swift"
       ;;
-    '`EndpointShape`')
-      pattern='public protocol EndpointShape: Sendable'
+    '`Endpoint`')
+      pattern='public protocol Endpoint: Sendable'
       target="$repo_root/Sources/InnoNetwork/EndpointShape.swift"
       ;;
     '`MultipartAPIDefinition`')
@@ -629,6 +652,10 @@ for symbol in "${expected_stable[@]}"; do
     '`NetworkClient.request(_:tag:)`')
       pattern='    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`NetworkClient.request(_:method:tag:)`')
+      pattern='    public func request<T: Decodable & Sendable>('
+      target="$repo_root/Sources/InnoNetwork/NetworkClient+PathConvenience.swift"
       ;;
     '`NetworkClient.upload(_:)`')
       pattern='    func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse'
@@ -726,8 +753,8 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public protocol RequestExecutionPolicy'
       target="$repo_root/Sources/InnoNetwork/RequestExecutionPolicy.swift"
       ;;
-    '`EndpointAuthScope`')
-      pattern='public protocol EndpointAuthScope'
+    '`AuthScope`')
+      pattern='public protocol AuthScope'
       target="$repo_root/Sources/InnoNetwork/Endpoint.swift"
       ;;
     '`PublicAuthScope`')
@@ -788,7 +815,7 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_test_support_product
       continue
       ;;
-    '`ScopedEndpoint`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
+    '`EndpointBuilder`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
       validate_oss_readiness_public_api
       continue
       ;;

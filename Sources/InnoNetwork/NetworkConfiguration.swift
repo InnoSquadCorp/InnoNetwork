@@ -171,7 +171,8 @@ public struct NetworkConfiguration: Sendable {
     public let redirectPolicy: any RedirectPolicy
 
     /// When `false` (default), a `baseURL` with `http://` scheme is rejected
-    /// at request-build time with ``NetworkError/invalidBaseURL(_:)``. App
+    /// at request-build time with ``NetworkError/configuration(reason:)`` and
+    /// ``NetworkConfigurationFailureReason/invalidBaseURL(_:)``. App
     /// Transport Security blocks plain-HTTP traffic at the Apple platform
     /// level for App Store submissions; this flag adds a defense-in-depth
     /// guard for callers that may have ATS exemptions or run in macOS/CLI
@@ -182,8 +183,9 @@ public struct NetworkConfiguration: Sendable {
 
     /// Optional escape hatch for callers that need to customize the
     /// `URLSessionConfiguration` (proxy/HTTP2 tuning, connection pooling,
-    /// `httpAdditionalHeaders`, TLS minimum version, etc.) when materializing
-    /// a `URLSession` for this configuration. The closure receives a fresh
+    /// `httpAdditionalHeaders`, TLS minimum version, **per-client cookie
+    /// storage isolation**, etc.) when materializing a `URLSession` for
+    /// this configuration. The closure receives a fresh
     /// `URLSessionConfiguration.default`-derived instance and must return a
     /// configuration the caller is comfortable shipping. Because
     /// `URLSession.shared` cannot honor this hook, `DefaultNetworkClient`
@@ -191,6 +193,11 @@ public struct NetworkConfiguration: Sendable {
     /// session. Consumers must wire this through
     /// ``makeURLSessionConfiguration()`` and pass the resulting `URLSession`
     /// explicitly.
+    ///
+    /// Multi-account apps that need to isolate `HTTPCookieStorage` across
+    /// clients should swap `httpCookieStorage` and (when desired)
+    /// `httpCookieAcceptPolicy` here. The recipe lives in
+    /// `docs/Cookies.md`.
     public let urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
 
     /// Build a `URLSessionConfiguration` derived from `URLSessionConfiguration.default`,

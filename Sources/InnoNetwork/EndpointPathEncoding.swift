@@ -67,9 +67,10 @@ public enum EndpointPathEncoding {
 
     package static func percentEncodedPathLiteral(_ path: String) throws -> String {
         guard !path.contains("?"), !path.contains("#") else {
-            throw NetworkError.invalidRequestConfiguration(
-                "Endpoint path must not contain query or fragment components. Use parameters/queryEncoder for query values."
-            )
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "Endpoint path must not contain query or fragment components. Use parameters/queryEncoder for query values."
+                ))
         }
         return try percentEncodePathLiteral(path)
     }
@@ -129,9 +130,9 @@ public enum EndpointPathEncoding {
     }
 
     private static func invalidPercentEscape(in path: String) -> NetworkError {
-        NetworkError.invalidRequestConfiguration(
-            "Endpoint path must be a valid percent-encoded URL path. Invalid percent escape found in '\(path)'."
-        )
+        NetworkError.configuration(
+            reason: .invalidRequest(
+                "Endpoint path must be a valid percent-encoded URL path. Invalid percent escape found in '\(path)'."))
     }
 
     private static func optionalSegment(_ value: String?) -> String {
@@ -187,24 +188,24 @@ package enum EndpointPathBuilder {
         allowsInsecureHTTP: Bool = false
     ) throws -> URL {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
-            throw NetworkError.invalidBaseURL(baseURL.absoluteString)
+            throw NetworkError.configuration(reason: .invalidBaseURL(baseURL.absoluteString))
         }
 
         if let scheme = components.scheme?.lowercased(), scheme == "http", !allowsInsecureHTTP {
-            throw NetworkError.invalidBaseURL(
-                "Plain HTTP base URL is rejected by default. Pass allowsInsecureHTTP: true on NetworkConfiguration to opt in."
-            )
+            throw NetworkError.configuration(
+                reason: .invalidBaseURL(
+                    "Plain HTTP base URL is rejected by default. Pass allowsInsecureHTTP: true on NetworkConfiguration to opt in."
+                ))
         }
 
         if components.user != nil || components.password != nil {
-            throw NetworkError.invalidBaseURL(
-                "Base URL must not contain userinfo (user:password@). Use a request interceptor or Authorization header instead."
-            )
+            throw NetworkError.configuration(
+                reason: .invalidBaseURL(
+                    "Base URL must not contain userinfo (user:password@). Use a request interceptor or Authorization header instead."
+                ))
         }
         if components.fragment != nil {
-            throw NetworkError.invalidBaseURL(
-                "Base URL must not contain a fragment."
-            )
+            throw NetworkError.configuration(reason: .invalidBaseURL("Base URL must not contain a fragment."))
         }
 
         let basePath = components.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -222,9 +223,8 @@ package enum EndpointPathBuilder {
         }
 
         guard let url = components.url else {
-            throw NetworkError.invalidRequestConfiguration(
-                "Endpoint path must be a valid percent-encoded URL path."
-            )
+            throw NetworkError.configuration(
+                reason: .invalidRequest("Endpoint path must be a valid percent-encoded URL path."))
         }
         return url
     }

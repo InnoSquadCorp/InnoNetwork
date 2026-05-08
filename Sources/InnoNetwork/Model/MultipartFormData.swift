@@ -49,7 +49,8 @@ public struct MultipartFormData: Sendable {
 
     /// Appends a numeric form field.
     ///
-    /// - Throws: ``NetworkError/invalidRequestConfiguration(_:)`` when
+    /// - Throws: ``NetworkError/configuration(reason:)`` with
+    ///   ``NetworkConfigurationFailureReason/invalidRequest(_:)`` when
     ///   `value` is `NaN` or infinite. Such values would otherwise
     ///   serialize as `"nan"` or `"inf"` and silently misrepresent the
     ///   caller's intent on the wire — a strict server typically rejects
@@ -58,9 +59,9 @@ public struct MultipartFormData: Sendable {
     ///   appending.
     public mutating func append(_ value: Double, name: String) throws {
         guard value.isFinite else {
-            throw NetworkError.invalidRequestConfiguration(
-                "MultipartFormData.append cannot serialize a non-finite Double for field \"\(name)\"."
-            )
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "MultipartFormData.append cannot serialize a non-finite Double for field \"\(name)\"."))
         }
         append(String(value), name: name)
     }
@@ -83,12 +84,15 @@ public struct MultipartFormData: Sendable {
     ///   - name: Form field name.
     ///   - mimeType: Optional MIME override; otherwise inferred from the
     ///     file extension.
-    /// - Throws: ``NetworkError/invalidRequestConfiguration(_:)`` when the
+    /// - Throws: ``NetworkError/configuration(reason:)`` with
+    ///   ``NetworkConfigurationFailureReason/invalidRequest(_:)`` when the
     ///   URL does not point at a regular readable file.
     public mutating func appendFile(at url: URL, name: String, mimeType: String? = nil) throws {
         guard url.isFileURL else {
-            throw NetworkError.invalidRequestConfiguration(
-                "MultipartFormData.appendFile expects a file URL; got \(url.scheme ?? "non-file")."
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "MultipartFormData.appendFile expects a file URL; got \(url.scheme ?? "non-file")."
+                )
             )
         }
         // `attributesOfItem` surfaces the underlying POSIX/permission error
@@ -100,14 +104,17 @@ public struct MultipartFormData: Sendable {
         do {
             attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         } catch {
-            throw NetworkError.invalidRequestConfiguration(
-                "MultipartFormData.appendFile could not read attributes at \(url.path): \(error.localizedDescription)"
-            )
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "MultipartFormData.appendFile could not read attributes at \(url.path): \(error.localizedDescription)"
+                ))
         }
         let fileType = attributes[.type] as? FileAttributeType
         guard fileType == .typeRegular || fileType == .typeSymbolicLink else {
-            throw NetworkError.invalidRequestConfiguration(
-                "MultipartFormData.appendFile expects a regular file at \(url.path); got \(fileType?.rawValue ?? "unknown")."
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "MultipartFormData.appendFile expects a regular file at \(url.path); got \(fileType?.rawValue ?? "unknown")."
+                )
             )
         }
         let fileName = url.lastPathComponent
@@ -130,7 +137,8 @@ public struct MultipartFormData: Sendable {
     ///   ``writeEncodedData(to:)`` for unbounded payloads. Pass
     ///   `Int.max` to disable the guard.
     /// - Throws:
-    ///   - ``NetworkError/invalidRequestConfiguration(_:)`` when the
+    ///   - ``NetworkError/configuration(reason:)`` with
+    ///     ``NetworkConfigurationFailureReason/invalidRequest(_:)`` when the
     ///     estimated size exceeds `maxInMemoryBytes`.
     ///   - Any I/O error encountered while reading a file part. Earlier
     ///     versions silently skipped unreadable file parts; that masked
@@ -140,9 +148,10 @@ public struct MultipartFormData: Sendable {
     public func encode(maxInMemoryBytes: Int = 16 << 20) throws -> Data {
         let estimated = estimatedEncodedSize
         if estimated > Int64(maxInMemoryBytes) {
-            throw NetworkError.invalidRequestConfiguration(
-                "MultipartFormData.encode produces ~\(estimated) bytes which exceeds the \(maxInMemoryBytes)-byte in-memory cap; use writeEncodedData(to:) for large payloads."
-            )
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "MultipartFormData.encode produces ~\(estimated) bytes which exceeds the \(maxInMemoryBytes)-byte in-memory cap; use writeEncodedData(to:) for large payloads."
+                ))
         }
         var body = Data()
         let boundaryPrefix = "--\(boundary)\r\n"

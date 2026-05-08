@@ -17,9 +17,10 @@ public protocol URLSessionProtocol: Sendable {
     /// Implementations that do not support streaming (typed test stubs,
     /// the instant in-memory benchmark mock, and so on) can leave the
     /// default extension in place — it throws
-    /// ``NetworkError/invalidRequestConfiguration(_:)`` so streaming-aware
-    /// callers see a clear error instead of a confusing fallback to a
-    /// buffered response.
+    /// ``NetworkError/configuration(reason:)`` with
+    /// ``NetworkConfigurationFailureReason/invalidRequest(_:)`` so
+    /// streaming-aware callers see a clear error instead of a confusing
+    /// fallback to a buffered response.
     func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
         URLSession.AsyncBytes, URLResponse
     )
@@ -29,8 +30,9 @@ public protocol URLSessionProtocol: Sendable {
     /// ``MultipartFormData/writeEncodedData(to:)``).
     ///
     /// The default extension throws
-    /// ``NetworkError/invalidRequestConfiguration(_:)`` so non-streaming
-    /// stubs do not need to provide an upload path.
+    /// ``NetworkError/configuration(reason:)`` with
+    /// ``NetworkConfigurationFailureReason/invalidRequest(_:)`` so
+    /// non-streaming stubs do not need to provide an upload path.
     func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (
         Data, URLResponse
     )
@@ -46,18 +48,16 @@ public extension URLSessionProtocol {
         URLSession.AsyncBytes, URLResponse
     ) {
         _ = (request, context)
-        throw NetworkError.invalidRequestConfiguration(
-            "Streaming bytes are not supported by this URLSessionProtocol implementation."
-        )
+        throw NetworkError.configuration(
+            reason: .invalidRequest("Streaming bytes are not supported by this URLSessionProtocol implementation."))
     }
 
     func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (
         Data, URLResponse
     ) {
         _ = (request, fileURL, context)
-        throw NetworkError.invalidRequestConfiguration(
-            "File-based upload is not supported by this URLSessionProtocol implementation."
-        )
+        throw NetworkError.configuration(
+            reason: .invalidRequest("File-based upload is not supported by this URLSessionProtocol implementation."))
     }
 }
 

@@ -57,8 +57,9 @@ Two rules follow from that:
   policy to treat the failure like a server-side rejection it might
   retry. For permanent rejections, throw a category the policy
   classifies as `.noRetry` (for example
-  ``NetworkError/invalidRequestConfiguration(_:)`` for a missing
-  signing key).
+  ``NetworkError/configuration(reason:)`` with
+  ``NetworkConfigurationFailureReason/invalidRequest(_:)`` for a
+  missing signing key).
 - Errors that are *not* ``NetworkError`` are wrapped into
   ``NetworkError/underlying(_:_:)`` for you, so the policy still sees a
   uniform error shape. Conform domain-specific errors to your own

@@ -204,7 +204,7 @@ private func expectNoneEncodingConfigurationError(
         try await operation()
         Issue.record("Expected NetworkError.invalidRequestConfiguration")
     } catch let error as NetworkError {
-        guard case .invalidRequestConfiguration(let message) = error else {
+        guard case .configuration(reason: .invalidRequest(let message)) = error else {
             Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
             return
         }

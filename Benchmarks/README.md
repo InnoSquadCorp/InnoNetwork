@@ -98,6 +98,55 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
   runner, 변경 이유, 검증 결과를 남깁니다.
 - baseline 자동 업데이트는 하지 않습니다.
 
+## Updating the Baseline
+
+baseline 갱신은 사람이 명시적으로 수행하는 운영 작업입니다. CI는
+회귀를 차단할 뿐 baseline 파일을 자동으로 다시 쓰지 않습니다. 다음
+절차를 그대로 따라가면 hosted runner 기준의 reproducible baseline을
+얻을 수 있습니다.
+
+1. **재측정 트리거**: `benchmarks` workflow를 `workflow_dispatch`로
+   실행합니다 (또는 nightly schedule을 그대로 사용해도 무방). 이 job은
+   `macos-15-arm64` hosted runner에서 `--quick` runner를 호출해
+   `innonetwork-benchmark-smoke` artifact에 JSON summary를 업로드합니다.
+   로컬 개발 장비에서 측정한 결과를 직접 commit하지 마세요. CPU 모델/
+   thermal/scheduling 차이로 baseline이 비대칭적으로 흔들립니다.
+2. **artifact 다운로드 후 `Benchmarks/Baselines/default.json` 교체**:
+   ```bash
+   gh run download <RUN_ID> --name innonetwork-benchmark-smoke -D /tmp/inb
+   cp /tmp/inb/results.json Benchmarks/Baselines/default.json
+   ```
+   workflow가 출력하는 JSON 스키마는 baseline 파일과 동일합니다.
+3. **변경 검증**: 같은 commit에서 `swift run InnoNetworkBenchmarks --quick
+   --json-path .build/benchmarks/results.json --enforce-baseline
+   --max-regression-percent 20` 을 다시 돌려 가드를 통과하는지 확인합니다.
+   통과해야 PR을 올립니다.
+4. **`Benchmarks/Baselines/CHANGELOG.md`** 갱신:
+   - 새로운 entry에 runner 식별자 (예: `macos-15-arm64, GitHub Actions
+     run #123`), 변경 사유 (의미 있는 회귀가 무엇이었는지 / 의도한
+     개선이 무엇이었는지), 그리고 변경된 benchmark의 before/after ops/s
+     diff을 한 줄씩 적습니다.
+   - 자동 갱신이 아니라는 점을 명시적으로 남기는 추적 채널입니다.
+5. **PR 본문**: "왜 baseline을 갱신해야 하는가"를 1-2문장으로 적고
+   `--enforce-baseline` 통과 로그 또는 nightly run 링크를 첨부합니다.
+   리뷰어는 코드 변경에 대응하는 baseline 변동인지를 확인합니다.
+
+### "의미 있는 성능 변화"의 기준
+
+다음 중 하나에 해당하면 baseline 갱신을 시작합니다.
+
+- guarded benchmark의 ops/s 가 ±10% 이상 지속적으로 변동하고
+  (PR smoke 3회 + nightly 1회 이상에서 동일한 방향), 그 원인이
+  의도된 코드 변경에 매핑됨.
+- 새 guarded benchmark를 추가했고 baseline 파일에 entry가 없음.
+- runner 환경 (Xcode major / hosted SDK 등)이 바뀌어 전체 ops/s가
+  체계적으로 이동함. 이 경우는 단일 PR에서 모든 baseline을 함께
+  재기록하고, `Baselines/CHANGELOG.md`에 환경 변경을 명시합니다.
+
+일시적인 hosted-runner noise (단발 -8%) 는 갱신 사유가 아닙니다.
+`benchmark-smoke`와 PR `Benchmarks` workflow의 guarded run은 3회
+재시도하므로, 단발 noise는 자동으로 흡수됩니다.
+
 ## Initial Baseline (4.0.0)
 
 `decoding-interceptor-chain-{1,3,8}` baseline numbers from a single

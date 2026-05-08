@@ -2,19 +2,19 @@ import Foundation
 
 /// Marker protocol used to describe whether an endpoint requires the
 /// configured refresh-token lane before it can execute.
-public protocol EndpointAuthScope: Sendable {}
+public protocol AuthScope: Sendable {}
 
 /// Default auth scope for public endpoints that can execute without a
 /// ``RefreshTokenPolicy``.
-public enum PublicAuthScope: EndpointAuthScope {}
+public enum PublicAuthScope: AuthScope {}
 
 /// Auth scope for endpoints that require ``NetworkConfiguration`` to include
 /// a ``RefreshTokenPolicy``.
-public enum AuthRequiredScope: EndpointAuthScope {}
+public enum AuthRequiredScope: AuthScope {}
 
 /// Fluent, builder-style alternative to declaring a custom ``APIDefinition``.
 ///
-/// `ScopedEndpoint` is intended for the simple-case ergonomics gap in the
+/// `EndpointBuilder` is intended for the simple-case ergonomics gap in the
 /// existing protocol: when a call site just needs `GET /users/42` decoding
 /// `User`, declaring a dedicated `struct GetUser: APIDefinition` is overkill.
 /// The builder lets the same call collapse to a single expression while still
@@ -23,13 +23,13 @@ public enum AuthRequiredScope: EndpointAuthScope {}
 ///
 /// ```swift
 /// let user = try await client.request(
-///     ScopedEndpoint<EmptyResponse, PublicAuthScope>
+///     EndpointBuilder<EmptyResponse, PublicAuthScope>
 ///         .get("/users/\(id)")
 ///         .decoding(User.self)
 /// )
 ///
 /// let post = try await client.request(
-///     ScopedEndpoint<EmptyResponse, PublicAuthScope>
+///     EndpointBuilder<EmptyResponse, PublicAuthScope>
 ///         .post("/posts")
 ///         .body(CreatePost(title: "Hello", body: "World"))
 ///         .header("Idempotency-Key", value: idempotencyKey)
@@ -38,7 +38,7 @@ public enum AuthRequiredScope: EndpointAuthScope {}
 ///
 /// // form-url-encoded login
 /// let token = try await client.request(
-///     ScopedEndpoint<EmptyResponse, PublicAuthScope>
+///     EndpointBuilder<EmptyResponse, PublicAuthScope>
 ///         .post("/login")
 ///         .body(credentials)
 ///         .transport(.formURLEncoded())
@@ -46,7 +46,7 @@ public enum AuthRequiredScope: EndpointAuthScope {}
 /// )
 /// ```
 ///
-/// `ScopedEndpoint` deliberately exposes only request-shape concerns (method,
+/// `EndpointBuilder` deliberately exposes only request-shape concerns (method,
 /// path, query/body parameters, headers, transport, acceptable status codes).
 /// Cross-cutting behaviour — interceptors, retry policy, trust evaluation —
 /// stays on ``NetworkConfiguration`` so endpoints written this way pick up the
@@ -55,10 +55,10 @@ public enum AuthRequiredScope: EndpointAuthScope {}
 /// For multipart uploads, streaming requests, or per-endpoint interceptor
 /// chains, keep using a dedicated type that conforms to ``APIDefinition``,
 /// ``MultipartAPIDefinition``, or ``StreamingAPIDefinition``.
-public struct ScopedEndpoint<Response: Decodable & Sendable, AuthScope: EndpointAuthScope>: APIDefinition {
+public struct EndpointBuilder<Response: Decodable & Sendable, Scope: AuthScope>: APIDefinition {
     public typealias Parameter = AnyEncodable
     public typealias APIResponse = Response
-    public typealias Auth = AuthScope
+    public typealias Auth = Scope
 
     public let method: HTTPMethod
     public let path: String
@@ -93,7 +93,7 @@ public struct ScopedEndpoint<Response: Decodable & Sendable, AuthScope: Endpoint
 
 // MARK: - Builder entry points
 
-extension ScopedEndpoint where Response == EmptyResponse {
+extension EndpointBuilder where Response == EmptyResponse {
     public static func get(_ path: String) -> Self {
         Self(method: .get, path: path)
     }
@@ -118,7 +118,7 @@ extension ScopedEndpoint where Response == EmptyResponse {
 
 // MARK: - Fluent modifiers (preserve Response type)
 
-extension ScopedEndpoint {
+extension EndpointBuilder {
     /// Returns a copy of this endpoint with query parameters attached. This is
     /// intended for `GET` endpoints; non-`GET` methods still follow the normal
     /// ``APIDefinition`` encoding rules for their method and transport.
@@ -209,8 +209,8 @@ extension ScopedEndpoint {
 
 // MARK: - Decoding promotion
 
-extension ScopedEndpoint where Response == EmptyResponse {
-    /// Promotes a `ScopedEndpoint<EmptyResponse, AuthScope>` (the result of
+extension EndpointBuilder where Response == EmptyResponse {
+    /// Promotes a `EndpointBuilder<EmptyResponse, Scope>` (the result of
     /// `.get(_:)`, `.post(_:)`, etc.) into an endpoint that decodes the
     /// supplied type.
     /// This is the terminal step of the builder; the returned value can be
@@ -219,8 +219,8 @@ extension ScopedEndpoint where Response == EmptyResponse {
     /// The current request-encoding shape (set via ``query(_:)``, ``body(_:)``,
     /// or ``transport(_:)``) is carried over. Response decoding is reset to
     /// the default JSON decoder for the new response type.
-    public func decoding<T: Decodable & Sendable>(_ type: T.Type) -> ScopedEndpoint<T, AuthScope> {
-        ScopedEndpoint<T, AuthScope>(
+    public func decoding<T: Decodable & Sendable>(_ type: T.Type) -> EndpointBuilder<T, Scope> {
+        EndpointBuilder<T, Scope>(
             method: method,
             path: path,
             parameters: parameters,

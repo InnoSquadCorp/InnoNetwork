@@ -47,7 +47,7 @@ private struct ResponseRewritingInterceptor: ResponseInterceptor {
 
     func adapt(_ urlResponse: Response, request: URLRequest) async throws -> Response {
         guard let httpResponse = urlResponse.response else {
-            throw NetworkError.invalidRequestConfiguration("Missing HTTPURLResponse for response rewrite.")
+            throw NetworkError.configuration(reason: .invalidRequest("Missing HTTPURLResponse for response rewrite."))
         }
         return Response(
             statusCode: statusCode,

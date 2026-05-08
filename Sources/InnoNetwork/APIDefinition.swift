@@ -23,17 +23,17 @@ import Foundation
 ///
 /// HTTP envelope requirements (method, path, headers, interceptors,
 /// status-code acceptance, transport) are inherited from
-/// ``EndpointShape``; `APIDefinition` adds only the body-strategy
+/// ``Endpoint``; `APIDefinition` adds only the body-strategy
 /// surface (`parameters`).
-public protocol APIDefinition: EndpointShape {
+public protocol APIDefinition: Endpoint {
     associatedtype Parameter: Encodable & Sendable = EmptyParameter
     /// Authentication scope marker for the endpoint. Defaults to
     /// ``PublicAuthScope``. Set ``Auth`` to ``AuthRequiredScope`` to opt
     /// into the configured ``RefreshTokenPolicy`` and require an
-    /// authenticated executor. ``EndpointAuthScope`` is a marker
+    /// authenticated executor. ``AuthScope`` is a marker
     /// protocol — assign one of its concrete implementations rather than
     /// declaring conformance on the endpoint itself.
-    associatedtype Auth: EndpointAuthScope = PublicAuthScope
+    associatedtype Auth: AuthScope = PublicAuthScope
 
     var parameters: Parameter? { get }
 }
@@ -93,16 +93,16 @@ public enum MultipartUploadStrategy: Sendable, Equatable {
 ///
 /// HTTP envelope requirements (method, path, headers, interceptors,
 /// status-code acceptance, transport) are inherited from
-/// ``EndpointShape``; `MultipartAPIDefinition` adds only the body-strategy
+/// ``Endpoint``; `MultipartAPIDefinition` adds only the body-strategy
 /// surface (`multipartFormData`, `uploadStrategy`).
-public protocol MultipartAPIDefinition: EndpointShape {
+public protocol MultipartAPIDefinition: Endpoint {
     /// Authentication scope marker for the endpoint. Defaults to
     /// ``PublicAuthScope``. Set ``Auth`` to ``AuthRequiredScope`` to opt
     /// into the configured ``RefreshTokenPolicy`` for multipart uploads
-    /// (e.g. authenticated photo uploads). ``EndpointAuthScope`` is a
+    /// (e.g. authenticated photo uploads). ``AuthScope`` is a
     /// marker protocol — assign one of its concrete implementations
     /// rather than declaring conformance on the endpoint itself.
-    associatedtype Auth: EndpointAuthScope = PublicAuthScope
+    associatedtype Auth: AuthScope = PublicAuthScope
 
     var multipartFormData: MultipartFormData { get }
 

@@ -5,6 +5,346 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog and the project follows Semantic
 Versioning.
 
+## [Unreleased]
+
+### Added
+
+- Privacy manifests (`PrivacyInfo.xcprivacy`) declaring the
+  `NSPrivacyAccessedAPICategoryFileTimestamp` Required Reason API for the
+  `InnoNetwork`, `InnoNetworkDownload`, and `InnoNetworkPersistentCache`
+  targets. The library inspects file metadata via
+  `FileManager.attributesOfItem(...)` on app-container files
+  (`MultipartFormData` part sizing, `DownloadTaskPersistence` resume metadata,
+  `PersistentResponseCache` size accounting), so the manifest pre-declares
+  reason `C617.1`. Consumers no longer have to author this declaration when
+  shipping apps that link InnoNetwork.
+- "Stable Examples" contract in `API_STABILITY.md` carving out
+  `Examples/BasicRequest`, `Examples/Auth`, and `Examples/ErrorHandling` as
+  SemVer-protected starting points. Their directory layout (Swift sources +
+  `README.md`) is enforced by the new `Scripts/check_stable_examples.sh`
+  guard, wired into the existing `docs-contract-sync` CI job. Wording is
+  not contractual, but the copyable Swift examples now compile against the
+  current public package in CI.
+- `NetworkClient.request(_:method:tag:)` convenience overload that infers
+  the response type from the call-site annotation. Builds a default
+  `EndpointBuilder` on the fly with `PublicAuthScope` and the method's
+  default `TransportPolicy`, so simple GETs read like
+  `let user: User = try await client.request("/users/\(id)")`. Endpoints
+  that need authenticated scopes, custom headers, body parameters, or
+  per-endpoint interceptors should keep using `EndpointBuilder` or
+  a hand-written `APIDefinition`.
+
+- `Tools/openapi-to-innonetwork` expands beyond the 4.x preview:
+  - YAML input (Yams 5.0+) is now supported alongside JSON; the format
+    is inferred from the file extension. The runtime library still
+    pulls in zero codegen dependencies because Yams lives only inside
+    the standalone `Tools/` package.
+  - The schema model now parses `components.schemas`, per-operation
+    `requestBody.content["application/json"].schema`, and
+    `responses["200"|"201"].content["application/json"].schema`.
+  - Generated output adds one Swift file per
+    `components.schemas` entry (Codable struct mirroring the OpenAPI
+    properties — required fields are non-optional, optional fields
+    default to `nil`). Operation files now wire typed `Parameter` and
+    `APIResponse` aliases when the spec uses `$ref`, and fall back to
+    `EmptyParameter` / `EmptyResponse` otherwise. Property types map
+    string / integer / number / boolean / array / `$ref` plus the
+    common format hints (`int64`, `date-time`, `uri`); unsupported schema
+    properties generate a companion `AnyCodable` fallback so the emitted
+    module still compiles.
+  - The README and CI usage examples now show YAML input directly
+    (no more `yq` workaround).
+- `Tools/openapi-to-innonetwork` ships a 4.x preview of an OpenAPI 3
+  → `APIDefinition` Swift code generator. Standalone SwiftPM
+  executable living outside the root package so the runtime library
+  never resolves codegen dependencies; reads a JSON-encoded subset of
+  OpenAPI 3 (paths/operations with `operationId` + `summary`), emits
+  one Swift file per operation conforming to `APIDefinition` with
+  `EmptyParameter` / `EmptyResponse` defaults that adopters fill in
+  during integration. `docs/CodeGeneration.md` documents the
+  decision matrix between hand-written endpoints, this preview tool,
+  and the existing `@_spi(GeneratedClientSupport)` SPI route. The
+  CI consumer-smoke job builds and tests the tool to keep regressions
+  visible. `Scripts/format.sh` includes `Tools/` in the lint scope.
+- `Sources/InnoNetwork/InnoNetwork.docc/Articles/OfflineHandling.md`
+  documents three offline-aware patterns on top of the existing
+  `NetworkMonitoring` protocol: inspect-and-skip for background
+  prefetch, fail-fast `RequestInterceptor` for interactive flows,
+  and wait-for-recovery wrapping around an existing `RetryPolicy`
+  for non-interactive batch traffic. Explains why the library
+  intentionally does not ship a built-in `OfflineQueuePolicy`
+  (idempotency / cookie scoping / quota / TTL are
+  backend-shaped) and pairs each pattern with the cellular vs
+  reachability decision via `NetworkSnapshot.interfaceTypes`.
+  Linked from the topic group between `<doc:RequestSigning>` and
+  `<doc:CachingStrategies>`.
+- `Sources/InnoNetwork/InnoNetwork.docc/Articles/RequestSigning.md`
+  walks through wiring `HMACRequestInterceptor` and building a custom
+  canonical signer (timestamp + nonce + body hash + URL path) on top
+  of the same `RequestInterceptor` contract, including the streaming-
+  upload alternatives (hash during multipart construction, signed
+  manifest, chunk-signed protocol). Linked from the main DocC topic
+  group between `<doc:AuthRefresh>` and `<doc:CachingStrategies>`.
+- `HMACRequestInterceptor` — reference HMAC body-signing
+  `RequestInterceptor` for backends that authenticate requests with a
+  shared secret (webhooks, internal RPC gateways, lightweight API
+  gateways). Supports SHA-256 / SHA-384 / SHA-512 over the request
+  body and emits the signature plus a key identifier into
+  caller-tunable headers (`X-Signature` / `X-Signature-Key-Id` by
+  default). Streaming bodies (`URLRequest.httpBodyStream`) are
+  rejected with `NetworkError.configuration(reason: .invalidRequest(...))`
+  rather than silently signing an empty payload — production protocols
+  needing AWS SigV4, OAuth1, or similar canonicalization should ship as a
+  dedicated interceptor on top of the same `RequestInterceptor` contract.
+  Composes through `NetworkConfiguration.requestInterceptors` alongside any
+  existing auth chain (`RefreshTokenPolicy`, custom adapters).
+- `NetworkError.configuration(reason:)` and the matching
+  `NetworkConfigurationFailureReason` enum (`invalidBaseURL`,
+  `invalidRequest`, `offline`). Adopters can now switch on the
+  consolidated ledger shape directly. The legacy
+  `NetworkError.invalidBaseURL` and
+  `NetworkError.invalidRequestConfiguration` cases are not available in
+  `4.0.0`; switch on the reason payload instead.
+  `ReachabilityCheckExecutionPolicy` emits
+  `.configuration(reason: .offline(_:))` so the offline failure mode surfaces
+  through the consolidated case from day one. English/Korean
+  Localizable.strings ship a new `NetworkError.offline` key shared by the
+  offline reason.
+
+### CI / Tooling
+
+- `Scripts/check_no_print_in_production.sh` enforces a `print()` ban
+  across the four shipping library targets (`InnoNetwork`,
+  `InnoNetworkDownload`, `InnoNetworkPersistentCache`,
+  `InnoNetworkWebSocket`). Operational logging stays on
+  `NetworkLogger` / `OSLogNetworkEventObserver`; smoke targets,
+  tests, examples, benchmarks, and DocC tutorial code snippets keep
+  their `print()` calls (they live outside the production source
+  tree or under `*.docc/Resources/`). Wired into the existing
+  `build-and-test` CI job alongside the
+  `check_production_force_unwraps.sh` gate.
+
+### Changed
+
+- `docs/Migration-5.0.0.md` now reflects that the endpoint vocabulary and
+  `NetworkError` ledger reset landed in `4.0.0`. It keeps the future 5.0
+  notes focused on remaining pack/codegen evolution and directs consumers to
+  migrate old endpoint/error spellings before adopting this release.
+- `CLAUDE.md` updates the project-context platform floors to match
+  the 4.x backport (iOS 16 / macOS 14 / tvOS 16 / watchOS 9 /
+  visionOS 1).
+### Documentation (continued)
+
+- `NetworkError`'s top-level doc comment now states that the enum is
+  intentionally non-`@frozen`, documents the current
+  `configuration(reason:)` shape, and includes a worked `@unknown default`
+  switch pattern for future failure modes.
+
+### Removed (BREAKING)
+
+- `EndpointShape` is renamed to `Endpoint` (the protocol), removing
+  the legacy spelling outright. `EndpointAuthScope` is renamed to
+  `AuthScope`. `ScopedEndpoint<R, S>` is renamed to
+  `EndpointBuilder<Response, Scope>`. `Sources/InnoNetwork/RenamedAliases.swift`
+  (the 4.x forward-compat typealias bundle) is deleted; there is no
+  deprecated alias path. Every in-tree call site (Sources, Tests,
+  Examples, smoke targets) is migrated to the new names in this
+  commit. The two concrete auth scopes (`PublicAuthScope`,
+  `AuthRequiredScope`) keep their names. Generic-parameter shadowing
+  on `EndpointBuilder` (the old `AuthScope` generic param colliding
+  with the renamed protocol) is fixed by renaming the generic
+  parameter to `Scope`.
+- `NetworkError.invalidBaseURL(_:)` and
+  `NetworkError.invalidRequestConfiguration(_:)` are removed. Adopters
+  switch on `NetworkError.configuration(reason:)` and the matching
+  `NetworkConfigurationFailureReason` cases
+  (`.invalidBaseURL` / `.invalidRequest` / `.offline`) instead. Every
+  in-tree call site (28 files: throw sites, catch blocks, doc smoke
+  targets, tests) is migrated to the consolidated shape in this
+  release. The legacy spelling is no longer available — there is no
+  deprecated alias path; consumer code that pattern-matched the
+  removed cases needs to switch to the reason-based shape directly.
+
+### Added (continued)
+
+- `ReachabilityCheckExecutionPolicy` — executor-integrated
+  reachability gate. Reads `NetworkMonitoring.currentSnapshot()`
+  before each transport attempt and throws
+  `NetworkError.configuration(reason: .offline(...))` when the path is
+  `.unsatisfied`, so requests fail fast instead of burning URLSession's
+  timeout on a known-offline path. Two modes:
+  `.requireOnline` rejects, `.warnOnly` lets the request proceed
+  for staged rollouts that want telemetry first.
+  `.requiresConnection` and unobserved snapshots fall through.
+  Four unit tests cover the four state transitions
+  (offline / online / warn-only / nil snapshot).
+- `ConcurrencyLimitExecutionPolicy` — executor-integrated
+  counterpart of `ConcurrencyTokenBucket`. Implements
+  `RequestExecutionPolicy` so adopters register the policy on
+  `NetworkConfiguration.AdvancedBuilder.customExecutionPolicies`
+  instead of pairing a request and response interceptor manually.
+  `acquire` is awaited before forwarding to the rest of the chain;
+  the deferred `release` runs even when the chain throws, so
+  transport errors no longer leak tokens. Two unit tests cover the
+  pass-through forwarding and the acquire-mid-chain / release-after
+  observation.
+- `ConcurrencyTokenBucket` — bounded counting-semaphore actor for
+  capping in-flight requests. FIFO fairness queue, never
+  over-releases past `maxConcurrent`, clamps the cap to ≥1.
+  Adopters can use it directly for custom scheduling, or register
+  `ConcurrencyLimitExecutionPolicy` when the limit should run inside
+  the request-executor chain. Five unit tests cover
+  acquire-under-capacity, release-refill, bounded-release, FIFO waiter
+  resume, and cap clamping.
+- Five 5.0 forward-compat configuration packs:
+  - `ResiliencePack` (retry, coalescing, circuit breaker,
+    idempotency, body buffering)
+  - `AuthPack` (refresh token, additional signing interceptors)
+  - `ObservabilityPack` (event observers, delivery policy, metrics
+    reporters, network monitor)
+  - `CachePack` (response cache policy, cache backend, failure-
+    payload capture)
+  - `TransportPack` (timeout, cache policy, request priority,
+    cellular/expensive/constrained access toggles, redirect policy,
+    `URLSessionConfiguration` override, insecure-HTTP escape)
+  Each pack exposes `apply(to: inout NetworkConfiguration.AdvancedBuilder)`
+  so adopters can compose the builder additively today; nil pack
+  fields leave the builder untouched. The 5.0 release will accept
+  the same packs as named init arguments. Pack APIs stay
+  source-compatible across 4.x → 5.x; field additions remain
+  non-breaking because every property defaults to `nil`.
+- 5.0 platform floors backported to iOS 16 / macOS 14 / tvOS 16 /
+  watchOS 9 / visionOS 1 (down from the 4.x baseline of iOS 18 /
+  macOS 15 / tvOS 18 / watchOS 11 / visionOS 2). The audit confirmed
+  no iOS 17+ / macOS 15+ Required Reason or strict-concurrency
+  feature is on the public API surface; the only platform-pinned
+  dependency is `NWPathMonitor.Sendable` which forces macOS 14+.
+  Apps targeting iOS 16+ can now adopt InnoNetwork without an
+  OS bump, opening B2C deployment paths that were previously blocked.
+- `Sources/InnoNetwork/RequestExecutor.swift` shrinks to ~286 lines
+  (down from ~1,045 at the start of Phase 3) by extracting the
+  transport stage (`performTransport`, `executeCustomPolicies`,
+  `refreshLaneIfInProgress`, `performTransportResult`,
+  `transportAndRecordCircuit`, `transport`, `inlineData`,
+  `collect`, `mapTransportError`) into
+  `Sources/InnoNetwork/RequestExecutor+Transport.swift`. The
+  `session` property loses its `private` modifier so the transport
+  extension can reach it; consumer-visible surface stays unchanged
+  because `RequestExecutor` is `package`-scoped. The central file
+  now contains only `execute`, `validateAuthScope`,
+  `executeWithPolicies`, and the two `enforceResponseBodyLimit`
+  overloads — the request-pipeline core in isolation.
+- `Sources/InnoNetwork/RequestExecutor.swift` shrinks again by
+  extracting all cache-stage methods (`cachedResponseIfAvailable`,
+  `revalidateInBackground`, `prepareConditionalCacheHeaders`,
+  `convertNotModifiedIfNeeded`, `refreshCachedFreshness`,
+  `mergedCachedHeaders`, `storeCacheIfNeeded`, `cacheControlDirectives`,
+  `cachedRespectingVary`) plus the `NotModifiedSubstitution` envelope
+  type into `Sources/InnoNetwork/RequestExecutor+Cache.swift`. Three
+  call-target helpers (`enforceResponseBodyLimit` overloads,
+  `performTransportResult`, `mapTransportError`) lose their `private`
+  modifier so the cache extension can reach them through the
+  package-internal access level; nothing crosses the public boundary
+  because `RequestExecutor` itself is `package`-scoped. The central
+  pipeline file drops from ~1,045 to ~602 lines.
+- `Sources/InnoNetwork/RequestExecutor.swift` shrinks further by
+  extracting the three event publication helpers
+  (`notifyRequestStart`, `notifyRequestAdapted`, `notifyFailure`)
+  into `Sources/InnoNetwork/RequestExecutor+Events.swift` as a
+  package-internal extension. The helpers were `private` and
+  consumed only the executor's `eventHub` property; promoting
+  `eventHub` from `private` to package-default visibility (still
+  invisible to consumers because the parent type is
+  `package struct RequestExecutor`) lets the extension call the
+  same publication shims without changing the call sites in the
+  central pipeline. Symbol surface is unchanged because none of
+  these declarations cross the public boundary.
+- `Sources/InnoNetwork/RequestExecutor.swift` (1,093 lines) shrinks
+  by extracting the internal `BufferedAsyncBytes` AsyncSequence wrapper
+  into its own file (`Sources/InnoNetwork/BufferedAsyncBytes.swift`).
+  The wrapper is referenced by both `RequestExecutor` (response-body
+  buffering) and the test target (chunk-size and max-bytes coverage),
+  so the dedicated file keeps the responsibility self-documenting and
+  trims the executor file to ~1,045 lines. A deeper executor-stage
+  split is intentionally deferred to a follow-up PR because it
+  requires reclassifying private members across new extension files
+  and is high-risk for the central request pipeline.
+- `Sources/InnoNetwork/URLQueryEncoder.swift` (803 lines, single file)
+  is split into three files: `URLQueryEncoder.swift` keeps the public
+  encoder type plus the `URLQueryArrayEncodingStrategy` /
+  `URLQueryFloatEncodingStrategy` enums (167 lines);
+  `URLQueryEncoder+Storage.swift` carries the internal
+  `_URLQueryEncodingOptions`, `QueryValue`, `QueryValueBox`, and
+  `SnakeCaseKeyTransformCache` types; and
+  `URLQueryEncoder+Codable.swift` carries the
+  `_URLQueryValueEncoder` driver, the keyed/unkeyed/single-value
+  containers, and the `encodeQueryValue` dispatch helper. The split
+  required promoting four internal `private` types and several helper
+  functions to file-internal (default `internal` access) so the
+  containers can reach the encoder options across files; symbol
+  surface is unchanged because none of these types are public. No
+  public API change.
+- `Sources/InnoNetwork/HTTPHeader.swift` (642 lines, single file) is
+  split into four files for review legibility, no public API change:
+  `HTTPHeaders.swift` (collection type and protocol conformances —
+  `Sequence`, `Collection`, `ExpressibleByArrayLiteral`,
+  `ExpressibleByDictionaryLiteral`, `CustomStringConvertible`),
+  `HTTPHeader.swift` (single-pair struct plus `accept(_:)` /
+  `authorization(_:)` / `userAgent(_:)` / etc. well-known factories),
+  `HTTPHeader+Defaults.swift` (`HTTPHeaders.default`,
+  `defaultAcceptEncoding`, `defaultAcceptLanguage`, `defaultUserAgent`,
+  and the `qualityEncoded()` helper), and `HTTPHeader+SystemTypes.swift`
+  (`URLRequest.headers`, `HTTPURLResponse.headers`,
+  `URLSessionConfiguration.headers`, single-value request header
+  enforcement). Symbol surface is byte-identical; only file boundaries
+  change.
+- `Scripts/api_public_symbols.allowlist` (1,123 lines, single file) is
+  split into `Scripts/symbols/{core,download,websocket,cache,
+  testsupport}.allowlist`, one file per shipping module. The legacy
+  single file is removed and `Scripts/check_docs_contract_sync.sh`
+  concatenates the per-module files into a temporary allowlist before
+  diffing — the validation logic and the entries themselves are
+  unchanged. This keeps PR diffs against module symbol changes
+  readable: editing the WebSocket allowlist only touches
+  `Scripts/symbols/websocket.allowlist` instead of burying the change
+  in the middle of an 1,100-line file. Each split file carries a
+  header comment that documents the module-scope invariant and the
+  expected `<module>\t<kind>\t<declaration>` format.
+
+### Documentation
+
+- `docs/Cookies.md` documents per-client cookie storage isolation
+  through `urlSessionConfigurationOverride`. Covers the multi-account
+  registry pattern, cookie-free SDK clients, and a verification recipe.
+  The hook itself was already public; the doc closes the discoverability
+  gap and the `urlSessionConfigurationOverride` doc comment now points
+  callers at the recipe.
+- `docs/HTTP3.md` documents how to opt into HTTP/3 (QUIC) by setting
+  `assumesHTTP3Capable = true` through the same
+  `urlSessionConfigurationOverride` hook, plus the compatibility
+  matrix, when-to-enable checklist, verification recipe via
+  `URLSessionTaskMetrics.networkProtocolName`, and the QUIC-specific
+  caveats (captive portals, background sessions, 0-RTT idempotency).
+  The runtime surface stays unchanged.
+- `docs/AppGroupSharedSession.md` covers App Group / extension
+  scenarios: Pattern A wires a fully isolated extension client (cookie
+  jar scoped to the extension's group container), Pattern B reuses a
+  background `sessionIdentifier` across host app and extension to keep
+  a single OS-managed download queue. The article also explicitly
+  flags `URLSessionConfiguration.background(...).sharedContainerIdentifier`
+  as a known gap on `DownloadConfiguration` (currently treated as an
+  implementation detail) and recommends Pattern A as the default
+  pending the follow-up that exposes the knob.
+- `Benchmarks/README.md` documents the explicit baseline-update protocol:
+  how to re-measure on the hosted runner, replace
+  `Benchmarks/Baselines/default.json`, log the change in
+  `Benchmarks/Baselines/CHANGELOG.md`, and what counts as a "meaningful"
+  regression worth refreshing the baseline for. The benchmark-smoke
+  guard (already enforcing `--enforce-baseline --max-regression-percent
+  20` on guarded entries) stays the runtime gate; the README addition
+  removes the recurring ambiguity around when and how operators should
+  refresh the file.
+
 ## [4.0.0] - 2026-05-02
 
 InnoNetwork's first public release. The package targets Apple platforms only
@@ -51,8 +391,8 @@ changes are intentional and are called out below; migration recipes live in
   failures rather than silently dropping parts. RFC 5987 `filename*=UTF-8''…`
   is emitted for non-ASCII filenames; ASCII fallback is preserved.
 - `MultipartResponseDecoder`: missing/invalid boundary raises
-  `NetworkError.invalidRequestConfiguration(...)` instead of returning an
-  empty array.
+  `NetworkError.configuration(reason: .invalidRequest(...))` instead of
+  returning an empty array.
 - `RetryPolicy.init`: gains `jitterFactor` and `maxTotalRetryDuration`
   parameters with safe defaults. The `cancelled` event now fires even when
   the surrounding task is cancelled.
@@ -79,8 +419,8 @@ changes are intentional and are called out below; migration recipes live in
   and per-task event partitions finish. `deinit` retains
   `finishTasksAndInvalidate()` as a fallback.
 - `Endpoint<Response>` and `AuthenticatedEndpoint<Response>` fluent aliases
-  are removed. Use `ScopedEndpoint<Response, PublicAuthScope>` or
-  `ScopedEndpoint<Response, AuthRequiredScope>` explicitly.
+  are removed. Use `EndpointBuilder<Response, PublicAuthScope>` or
+  `EndpointBuilder<Response, AuthRequiredScope>` explicitly.
 - `WebSocketManager.shared` is removed. Construct and inject a
   feature-owned `WebSocketManager(configuration:)`.
 
@@ -211,8 +551,8 @@ changes are intentional and are called out below; migration recipes live in
   `AnyRequestExecutionPolicy` for custom transport-attempt policies.
 - `ResponseBodyBufferingPolicy`; inline requests now prefer
   `URLSession.bytes(for:)` with bounded collection before decoder handoff.
-- `EndpointAuthScope`, `PublicAuthScope`, `AuthRequiredScope`, and
-  `ScopedEndpoint` for type-level auth
+- `AuthScope`, `PublicAuthScope`, `AuthRequiredScope`, and
+  `EndpointBuilder` for type-level auth
   boundaries. Auth-required endpoints fail before transport when no
   `RefreshTokenPolicy` is configured.
 - `StateReducer` and `StateReduction` as the shared reducer vocabulary for
@@ -388,13 +728,13 @@ changes are intentional and are called out below; migration recipes live in
   (`.json`, `.query`, `.formURLEncoded`, `.multipart`, `.custom`) that
   automatically pick empty-tolerant decoders for
   `HTTPEmptyResponseDecodable` outputs.
-- `ScopedEndpoint` replaces `.contentType(_:)` with `.transport(_:)`. The
+- `EndpointBuilder` replaces `.contentType(_:)` with `.transport(_:)`. The
   `Content-Type` header is derived from the transport's request encoding,
   and `decoding(_:)` carries the request encoding into the new response
   generic instead of resetting it.
 - Fluent endpoint aliases are removed. Use
-  `ScopedEndpoint<Response, PublicAuthScope>` for public fluent endpoints and
-  `ScopedEndpoint<Response, AuthRequiredScope>` for auth-required fluent
+  `EndpointBuilder<Response, PublicAuthScope>` for public fluent endpoints and
+  `EndpointBuilder<Response, AuthRequiredScope>` for auth-required fluent
   endpoints.
 - `WebSocketManager.shared` has been removed. Construct
   `WebSocketManager(configuration:)` per feature.
@@ -519,7 +859,7 @@ changes are intentional and are called out below; migration recipes live in
   to the buffered `data(for:)` path. The configured byte cap is honoured —
   the request fails fast instead of silently buffering an unbounded body.
 - **Multipart auth scope (PR #39)**: `MultipartAPIDefinition` now declares
-  `associatedtype Auth: EndpointAuthScope = PublicAuthScope`, so a multipart
+  `associatedtype Auth: AuthScope = PublicAuthScope`, so a multipart
   endpoint conforming to `AuthRequiredScope` participates in the configured
   `RefreshTokenPolicy` exactly like a non-multipart authenticated endpoint.
   Default behaviour is unchanged (`PublicAuthScope`).
