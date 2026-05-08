@@ -75,10 +75,12 @@ let package = Package(
         .target(
             name: "InnoNetwork",
             path: "Sources/InnoNetwork",
-            // Bundles the `Resources/{en,ko}.lproj/Localizable.strings`
-            // catalogues that back ``NetworkError.errorDescription``. The
-            // catalogue ships en + ko today; additional locales can be added
-            // by dropping new `<lang>.lproj/Localizable.strings` siblings.
+            // Bundles the `Resources/en.lproj/Localizable.strings`
+            // catalogue that backs ``NetworkError.errorDescription``.
+            // Additional locales can be added by dropping new
+            // `<lang>.lproj/Localizable.strings` siblings; consumers that
+            // need other languages should localize at the application
+            // layer rather than wait for library-side translations.
             // Also bundles `Resources/PrivacyInfo.xcprivacy` declaring the
             // File Timestamp Required Reason API used by
             // `MultipartFormData.attributesOfItem(...)`.

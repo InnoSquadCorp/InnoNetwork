@@ -5,7 +5,7 @@ import Testing
 
 /// Verifies that `NetworkError.errorDescription` is wired through the
 /// `Sources/InnoNetwork/Resources/<lang>.lproj/Localizable.strings`
-/// catalogues that ship with the package (currently `en` and `ko`).
+/// catalogue that ships with the package (`en` only as of 4.x).
 ///
 /// The runtime locale of XCTest/Swift Testing is host-dependent, so the
 /// black-box assertions below check only that the description is
@@ -110,7 +110,7 @@ struct LocalizedNetworkErrorTests {
 
     // MARK: - Catalogue probe
 
-    /// Every key in the Korean catalogue must also resolve in English so a
+    /// Every documented key must resolve in the English catalogue so a
     /// missing translation never silently falls back to the key itself.
     private static let translatedKeys: [String] = [
         "NetworkError.invalidBaseURL",
@@ -150,34 +150,6 @@ struct LocalizedNetworkErrorTests {
 
         #expect(value.contains("nonHTTPResponse") == false)
         #expect(value.contains("non-HTTP response"))
-    }
-
-    @Test("Korean catalogue resolves every documented key")
-    func koreanCatalogueHasEveryKey() {
-        for key in Self.translatedKeys {
-            let value = _localizedNetworkErrorString(forKey: key, localization: "ko")
-            #expect(value != nil, "missing Korean string for \(key)")
-            #expect(value?.isEmpty == false, "empty Korean string for \(key)")
-        }
-    }
-
-    @Test("Korean strings contain Hangul code points")
-    func koreanStringsAreHangul() {
-        // Sample a handful of representative keys; every Korean translation
-        // must include at least one Hangul Syllable (U+AC00…U+D7A3).
-        let sampledKeys = [
-            "NetworkError.statusCode",
-            "NetworkError.cancelled",
-            "NetworkError.timeout.request",
-            "NetworkError.trust.missingServerTrust",
-        ]
-        for key in sampledKeys {
-            let value = _localizedNetworkErrorString(forKey: key, localization: "ko") ?? ""
-            let hasHangul = value.unicodeScalars.contains { scalar in
-                (0xAC00...0xD7A3).contains(scalar.value)
-            }
-            #expect(hasHangul, "Korean string for \(key) lacks Hangul: \(value)")
-        }
     }
 
     // MARK: - Helpers

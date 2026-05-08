@@ -200,7 +200,7 @@ expected_provisionally=(
 '`StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance'
 '`PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`'
 '`DownloadTask.generation` / `attempt` observation accessors'
-'`NetworkError.transportSuspended` and `NetworkError.cacheRevalidationFailed(underlying:cached:)` cases. Localizable.strings keys (`NetworkError.transportSuspended`, `NetworkError.cacheRevalidationFailed`) ship in `en` and `ko` and are treated as the Provisionally Stable contract for the messages.'
+'`NetworkError.transportSuspended` and `NetworkError.cacheRevalidationFailed(underlying:cached:)` cases. Localizable.strings keys (`NetworkError.transportSuspended`, `NetworkError.cacheRevalidationFailed`) ship in `en` and are treated as the Provisionally Stable contract for the messages.'
 )
 
 expected_shipping_public_declarations=(
@@ -986,7 +986,7 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
       continue
       ;;
-    '`NetworkError.transportSuspended` and `NetworkError.cacheRevalidationFailed(underlying:cached:)` cases. Localizable.strings keys (`NetworkError.transportSuspended`, `NetworkError.cacheRevalidationFailed`) ship in `en` and `ko` and are treated as the Provisionally Stable contract for the messages.')
+    '`NetworkError.transportSuspended` and `NetworkError.cacheRevalidationFailed(underlying:cached:)` cases. Localizable.strings keys (`NetworkError.transportSuspended`, `NetworkError.cacheRevalidationFailed`) ship in `en` and are treated as the Provisionally Stable contract for the messages.')
       require_contains 'case transportSuspended' \
         "$repo_root/Sources/InnoNetwork/NetworkError.swift"
       require_contains 'case cacheRevalidationFailed(underlying: SendableUnderlyingError, cached: Response)' \
@@ -995,10 +995,6 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/Resources/en.lproj/Localizable.strings"
       require_contains '"NetworkError.cacheRevalidationFailed"' \
         "$repo_root/Sources/InnoNetwork/Resources/en.lproj/Localizable.strings"
-      require_contains '"NetworkError.transportSuspended"' \
-        "$repo_root/Sources/InnoNetwork/Resources/ko.lproj/Localizable.strings"
-      require_contains '"NetworkError.cacheRevalidationFailed"' \
-        "$repo_root/Sources/InnoNetwork/Resources/ko.lproj/Localizable.strings"
       continue
       ;;
     *)

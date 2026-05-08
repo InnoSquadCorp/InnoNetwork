@@ -7,6 +7,18 @@ Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- `NetworkError.errorDescription` no longer ships a Korean
+  (`ko.lproj/Localizable.strings`) translation. Only the English
+  catalogue remains. The library scope makes per-language translations
+  difficult to keep complete and aligned across releases, so the
+  recommendation is for adopters to localize error messages in their
+  own application layer where they already control copy review.
+  Korean-language adopters lose the localized `errorDescription` text;
+  the keys themselves are unchanged so any per-app localization that
+  reads from the catalogue continues to compile.
+
 ### Added (release/4.0.0-batch)
 
 - **Download lifecycle epoch tracking.** `DownloadTask` exposes
