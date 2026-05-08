@@ -458,3 +458,65 @@ public struct NetworkConfiguration: Sendable {
         self.allowsInsecureHTTP = allowsInsecureHTTP
     }
 }
+
+// MARK: - Fluent modifiers
+//
+// Five additive modifier helpers that wrap the existing
+// ``AdvancedBuilder`` plumbing so callers can override one policy at a
+// time without re-typing every other field. Equivalent to threading the
+// override through `advanced(baseURL:)`; preserved here so adopting one
+// new policy does not require touching the configuration construction
+// site.
+//
+// Each modifier mutates a fresh builder seeded from `self` and returns the
+// rebuilt configuration. Composition is chainable:
+//
+// ```swift
+// let configuration = NetworkConfiguration
+//     .safeDefaults(baseURL: api)
+//     .with(retry: ExponentialBackoffRetryPolicy())
+//     .with(circuitBreaker: CircuitBreakerPolicy(failureThreshold: 3))
+// ```
+public extension NetworkConfiguration {
+    /// Returns a new configuration with ``retryPolicy`` replaced.
+    /// Pass `nil` to disable retries on a configuration that previously
+    /// had a retry policy attached.
+    func with(retry retryPolicy: RetryPolicy?) -> NetworkConfiguration {
+        var builder = AdvancedBuilder(preset: self)
+        builder.retryPolicy = retryPolicy
+        return builder.build()
+    }
+
+    /// Returns a new configuration with ``responseCache`` replaced.
+    /// Pass `nil` to detach the cache. Caller is responsible for setting
+    /// a compatible ``responseCachePolicy`` separately when enabling cache
+    /// reads/writes; this modifier only swaps the storage backend.
+    func with(cache responseCache: (any ResponseCache)?) -> NetworkConfiguration {
+        var builder = AdvancedBuilder(preset: self)
+        builder.responseCache = responseCache
+        return builder.build()
+    }
+
+    /// Returns a new configuration with ``circuitBreakerPolicy`` replaced.
+    /// Pass `nil` to remove the breaker.
+    func with(circuitBreaker circuitBreakerPolicy: CircuitBreakerPolicy?) -> NetworkConfiguration {
+        var builder = AdvancedBuilder(preset: self)
+        builder.circuitBreakerPolicy = circuitBreakerPolicy
+        return builder.build()
+    }
+
+    /// Returns a new configuration with ``refreshTokenPolicy`` replaced.
+    /// Pass `nil` to remove auth refresh.
+    func with(refresh refreshTokenPolicy: RefreshTokenPolicy?) -> NetworkConfiguration {
+        var builder = AdvancedBuilder(preset: self)
+        builder.refreshTokenPolicy = refreshTokenPolicy
+        return builder.build()
+    }
+
+    /// Returns a new configuration with ``requestCoalescingPolicy`` replaced.
+    func with(coalescing requestCoalescingPolicy: RequestCoalescingPolicy) -> NetworkConfiguration {
+        var builder = AdvancedBuilder(preset: self)
+        builder.requestCoalescingPolicy = requestCoalescingPolicy
+        return builder.build()
+    }
+}
