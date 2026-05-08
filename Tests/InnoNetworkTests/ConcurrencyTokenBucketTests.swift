@@ -46,23 +46,25 @@ struct ConcurrencyTokenBucketTests {
         await bucket.acquire()
 
         let order = OrderRecorder()
-        async let first: Void = {
+        let first = Swift.Task<Void, Never>(operation: {
             await bucket.acquire()
             await order.append(1)
-        }()
-        async let second: Void = {
+        })
+        await waitForQueuedWaiters(1, in: bucket)
+        #expect(await bucket.queuedWaitersCount == 1)
+
+        let second = Swift.Task<Void, Never>(operation: {
             await bucket.acquire()
             await order.append(2)
-        }()
-
-        // Yield once so both tasks reach the queued state.
-        try? await Task.sleep(for: .milliseconds(20))
+        })
+        await waitForQueuedWaiters(2, in: bucket)
+        #expect(await bucket.queuedWaitersCount == 2)
 
         await bucket.release()
         try? await Task.sleep(for: .milliseconds(20))
         await bucket.release()
 
-        _ = await (first, second)
+        _ = await (first.value, second.value)
 
         let recorded = await order.values
         #expect(recorded == [1, 2])
@@ -85,5 +87,17 @@ private actor OrderRecorder {
     private(set) var values: [Int] = []
     func append(_ value: Int) {
         values.append(value)
+    }
+}
+
+private func waitForQueuedWaiters(
+    _ expectedCount: Int,
+    in bucket: ConcurrencyTokenBucket
+) async {
+    for _ in 0..<100 {
+        if await bucket.queuedWaitersCount >= expectedCount {
+            return
+        }
+        await Task.yield()
     }
 }

@@ -91,6 +91,7 @@ jobs:
               echo "::warning::Guarded benchmark attempt ${attempt} failed with exit code ${status}; retrying to smooth hosted-runner microbenchmark noise."
             fi
           done
+          echo "::error::Guarded benchmark all 3 attempts failed with final exit code ${status}."
           exit "$status"
 
       - name: Render benchmark PR comment
