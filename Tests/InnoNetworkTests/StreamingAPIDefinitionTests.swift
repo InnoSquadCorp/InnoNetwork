@@ -516,7 +516,7 @@ struct StreamingAPIDefinitionTests {
         } catch let error as NetworkError {
             switch error {
             case .configuration(reason: .invalidRequest(let message)):
-                #expect(message.contains("StreamingResumePolicy.lastEventID"))
+                #expect(message.contains("unbounded output buffering"))
             default:
                 Issue.record("Expected invalidRequestConfiguration, got \(error)")
             }

@@ -16,6 +16,9 @@
 
 "NetworkError.responseTooLarge" = "Response body of %1$@ bytes exceeded the configured limit of %2$@ bytes.";
 
+"NetworkError.transportSuspended" = "Network transport is currently suspended; the request was held back instead of dispatching into a sure-to-fail socket.";
+"NetworkError.cacheRevalidationFailed" = "Cache revalidation against the stored response failed: %@";
+
 "NetworkError.trust.unsupportedAuthenticationMethod" = "Unsupported authentication method: %@";
 "NetworkError.trust.missingServerTrust" = "Missing server trust.";
 "NetworkError.trust.systemTrustEvaluationFailedWithReason" = "System trust evaluation failed: %@";
