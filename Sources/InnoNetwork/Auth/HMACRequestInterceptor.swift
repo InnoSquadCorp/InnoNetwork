@@ -103,9 +103,10 @@ public struct HMACRequestInterceptor: RequestInterceptor {
 
     public func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
         if urlRequest.httpBodyStream != nil {
-            throw NetworkError.invalidRequestConfiguration(
-                "HMACRequestInterceptor cannot sign streaming bodies; provide an in-memory httpBody or implement a custom interceptor."
-            )
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "HMACRequestInterceptor cannot sign streaming bodies; provide an in-memory httpBody or implement a custom interceptor."
+                ))
         }
 
         var mutable = urlRequest

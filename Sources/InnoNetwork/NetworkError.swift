@@ -93,7 +93,7 @@ public enum DecodingStage: Sendable, Equatable {
 ///     switch error {
 ///     case .statusCode(let response):           handleStatus(response)
 ///     case .timeout(let reason, _):             handleTimeout(reason)
-///     case .invalidBaseURL,
+///     case .configuration(reason: .invalidBaseURL),
 ///          .invalidRequestConfiguration:        handleConfigurationError()
 ///     // ... other cases
 ///     @unknown default:
@@ -137,15 +137,9 @@ public enum NetworkConfigurationFailureReason: Sendable, Equatable {
 }
 
 public enum NetworkError: Error, Sendable {
-    case invalidBaseURL(String)
-    /// Indicates an invalid request configuration
-    case invalidRequestConfiguration(String)
-    /// Consolidated configuration-shaped failure (5.0 forward-compat).
-    /// Adopters can switch on the typed
-    /// ``NetworkConfigurationFailureReason`` payload instead of the
-    /// individual legacy cases. The 4.x line keeps both shapes
-    /// available; the 5.0 release will mark the legacy cases as
-    /// deprecated aliases that resolve to this case.
+    /// Consolidated configuration-shaped failure. Carries a typed
+    /// ``NetworkConfigurationFailureReason`` payload distinguishing
+    /// invalidBaseURL / invalidRequest / offline failures.
     case configuration(reason: NetworkConfigurationFailureReason)
     /// Indicates a response failed with an invalid HTTP status code.
     case statusCode(Response)
@@ -194,10 +188,6 @@ extension NetworkError: LocalizedError {
     /// `API_STABILITY.md`.
     public var errorDescription: String? {
         switch self {
-        case .invalidBaseURL(let string):
-            return localizedFormat("NetworkError.invalidBaseURL", string)
-        case .invalidRequestConfiguration(let message):
-            return localizedFormat("NetworkError.invalidRequestConfiguration", message)
         case .configuration(let reason):
             switch reason {
             case .invalidBaseURL(let s):
@@ -313,8 +303,6 @@ public extension NetworkError {
     /// Depending on error type, returns a `Response` object.
     var response: Response? {
         switch self {
-        case .invalidBaseURL: return nil
-        case .invalidRequestConfiguration: return nil
         case .configuration: return nil
         case .decoding(_, _, let response): return response
         case .statusCode(let response): return response
@@ -330,8 +318,6 @@ public extension NetworkError {
     /// Depending on error type, returns an underlying `Error`.
     internal var underlyingError: SendableUnderlyingError? {
         switch self {
-        case .invalidBaseURL: return nil
-        case .invalidRequestConfiguration: return nil
         case .configuration: return nil
         case .decoding(_, let error, _): return error
         case .statusCode: return nil
@@ -367,10 +353,6 @@ extension NetworkError: CustomNSError {
 
     public var errorCode: Int {
         switch self {
-        case .invalidBaseURL:
-            return 1001
-        case .invalidRequestConfiguration:
-            return 1002
         case .configuration(let reason):
             switch reason {
             case .invalidBaseURL: return 1001
@@ -423,9 +405,7 @@ public extension NetworkError {
             return .statusCode(response.redactingData())
         case .underlying(let err, let response?):
             return .underlying(err, response.redactingData())
-        case .invalidBaseURL,
-            .invalidRequestConfiguration,
-            .configuration,
+        case .configuration,
             .nonHTTPResponse,
             .underlying(_, nil),
             .trustEvaluationFailed,

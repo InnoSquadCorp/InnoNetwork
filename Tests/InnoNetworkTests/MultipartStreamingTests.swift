@@ -352,7 +352,7 @@ struct MultipartUploadStrategyTests {
                 try formData.append(value, name: "score")
                 Issue.record("Expected throw for non-finite Double \(value)")
             } catch let error as NetworkError {
-                if case .invalidRequestConfiguration = error {
+                if case .configuration(reason: .invalidRequest) = error {
                     continue
                 }
                 Issue.record("Expected .invalidRequestConfiguration, got \(error)")
@@ -375,7 +375,7 @@ struct MultipartUploadStrategyTests {
             try formData.appendFile(at: missing, name: "image")
             Issue.record("Expected throw for missing file")
         } catch let error as NetworkError {
-            if case .invalidRequestConfiguration(let message) = error {
+            if case .configuration(reason: .invalidRequest(let message)) = error {
                 #expect(message.contains(missing.path))
             } else {
                 Issue.record("Expected .invalidRequestConfiguration, got \(error)")
@@ -397,7 +397,7 @@ struct MultipartUploadStrategyTests {
             try formData.appendFile(at: directory, name: "image")
             Issue.record("Expected throw for directory URL")
         } catch let error as NetworkError {
-            if case .invalidRequestConfiguration(let message) = error {
+            if case .configuration(reason: .invalidRequest(let message)) = error {
                 #expect(message.contains("regular file"))
             } else {
                 Issue.record("Expected .invalidRequestConfiguration, got \(error)")
@@ -416,7 +416,7 @@ struct MultipartUploadStrategyTests {
             _ = try formData.encode(maxInMemoryBytes: 1024)
             Issue.record("Expected encode to throw when payload exceeds the cap")
         } catch let error as NetworkError {
-            if case .invalidRequestConfiguration(let message) = error {
+            if case .configuration(reason: .invalidRequest(let message)) = error {
                 #expect(message.contains("in-memory cap"))
                 #expect(message.contains("writeEncodedData"))
             } else {

@@ -157,8 +157,6 @@ InnoNetwork	swift.enum.case	MultipartUploadStrategy.inMemory
 InnoNetwork	swift.enum.case	MultipartUploadStrategy.streamingThreshold(bytes:)
 InnoNetwork	swift.enum.case	NetworkError.cancelled
 InnoNetwork	swift.enum.case	NetworkError.decoding(stage:underlying:response:)
-InnoNetwork	swift.enum.case	NetworkError.invalidBaseURL(_:)
-InnoNetwork	swift.enum.case	NetworkError.invalidRequestConfiguration(_:)
 InnoNetwork	swift.enum.case	NetworkError.nonHTTPResponse(_:)
 InnoNetwork	swift.enum.case	NetworkError.responseTooLarge(limit:observed:)
 InnoNetwork	swift.enum.case	NetworkError.statusCode(_:)

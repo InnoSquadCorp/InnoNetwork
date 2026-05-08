@@ -138,6 +138,21 @@ Versioning.
 
 ### Added
 
+### Removed (BREAKING)
+
+- `NetworkError.invalidBaseURL(_:)` and
+  `NetworkError.invalidRequestConfiguration(_:)` are removed. Adopters
+  switch on `NetworkError.configuration(reason:)` and the matching
+  `NetworkConfigurationFailureReason` cases
+  (`.invalidBaseURL` / `.invalidRequest` / `.offline`) instead. Every
+  in-tree call site (28 files: throw sites, catch blocks, doc smoke
+  targets, tests) is migrated to the consolidated shape in this
+  release. The legacy spelling is no longer available — there is no
+  deprecated alias path; consumer code that pattern-matched the
+  removed cases needs to switch to the reason-based shape directly.
+
+### Added
+
 - `NetworkError.configuration(reason:)` and the matching
   `NetworkConfigurationFailureReason` enum (`invalidBaseURL`,
   `invalidRequest`, `offline`). Adopters can now switch on the

@@ -189,7 +189,7 @@ struct NetworkErrorTimeoutTests {
     func nsErrorBridgeUsesStableDomainAndCodes() {
         let timeout = NetworkError.timeout(reason: .requestTimeout) as NSError
         let cancelled = NetworkError.cancelled as NSError
-        let invalidRequest = NetworkError.invalidRequestConfiguration("bad") as NSError
+        let invalidRequest = NetworkError.configuration(reason: .invalidRequest("bad")) as NSError
 
         #expect(timeout.domain == NetworkError.errorDomain)
         #expect(timeout.code == NSURLErrorTimedOut)
@@ -391,9 +391,9 @@ struct NetworkErrorTimeoutTests {
 
     @Test("mapTransportError: existing NetworkError flows through unchanged")
     func mapPassesThroughExistingNetworkError() {
-        let original = NetworkError.invalidRequestConfiguration("seed")
+        let original = NetworkError.configuration(reason: .invalidRequest("seed"))
         let mapped = NetworkError.mapTransportError(original)
-        guard case .invalidRequestConfiguration(let message) = mapped else {
+        guard case .configuration(reason: .invalidRequest(let message)) = mapped else {
             Issue.record("Expected pass-through, got \(mapped)")
             return
         }

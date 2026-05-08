@@ -88,9 +88,8 @@ public final class StubNetworkClient: NetworkClient, Sendable {
             return try await fallback.request(request)
         }
 
-        throw NetworkError.invalidRequestConfiguration(
-            "No stub registered for \(request.method.rawValue) \(request.path)."
-        )
+        throw NetworkError.configuration(
+            reason: .invalidRequest("No stub registered for \(request.method.rawValue) \(request.path)."))
     }
 
     public func request<Request: APIDefinition>(
@@ -120,9 +119,8 @@ public final class StubNetworkClient: NetworkClient, Sendable {
             return try await fallback.request(request, tag: tag)
         }
 
-        throw NetworkError.invalidRequestConfiguration(
-            "No stub registered for \(request.method.rawValue) \(request.path)."
-        )
+        throw NetworkError.configuration(
+            reason: .invalidRequest("No stub registered for \(request.method.rawValue) \(request.path)."))
     }
 
     public func upload<Request: MultipartAPIDefinition>(_ request: Request) async throws -> Request.APIResponse {
@@ -130,9 +128,9 @@ public final class StubNetworkClient: NetworkClient, Sendable {
             return try await fallback.upload(request)
         }
 
-        throw NetworkError.invalidRequestConfiguration(
-            "StubNetworkClient does not provide multipart upload stubs without a fallback client."
-        )
+        throw NetworkError.configuration(
+            reason: .invalidRequest(
+                "StubNetworkClient does not provide multipart upload stubs without a fallback client."))
     }
 
     public func upload<Request: MultipartAPIDefinition>(
@@ -143,9 +141,9 @@ public final class StubNetworkClient: NetworkClient, Sendable {
             return try await fallback.upload(request, tag: tag)
         }
 
-        throw NetworkError.invalidRequestConfiguration(
-            "StubNetworkClient does not provide multipart upload stubs without a fallback client."
-        )
+        throw NetworkError.configuration(
+            reason: .invalidRequest(
+                "StubNetworkClient does not provide multipart upload stubs without a fallback client."))
     }
 
     private func cast<Response: Decodable & Sendable>(
@@ -153,9 +151,8 @@ public final class StubNetworkClient: NetworkClient, Sendable {
         for key: StubRequestKey
     ) throws -> Response {
         guard let typed = response as? Response else {
-            throw NetworkError.invalidRequestConfiguration(
-                "Registered stub for \(key.method) \(key.path) has the wrong response type."
-            )
+            throw NetworkError.configuration(
+                reason: .invalidRequest("Registered stub for \(key.method) \(key.path) has the wrong response type."))
         }
         return typed
     }

@@ -1,7 +1,6 @@
 import Foundation
 import OSLog
 
-
 package struct RequestExecutor {
     let session: URLSessionProtocol
     let eventHub: NetworkEventHub
@@ -161,9 +160,8 @@ package struct RequestExecutor {
         guard executable.requiresRefreshTokenPolicy, configuration.refreshTokenPolicy == nil else {
             return
         }
-        throw NetworkError.invalidRequestConfiguration(
-            "Auth-required endpoints require NetworkConfiguration.refreshTokenPolicy."
-        )
+        throw NetworkError.configuration(
+            reason: .invalidRequest("Auth-required endpoints require NetworkConfiguration.refreshTokenPolicy."))
     }
 
     private func executeWithPolicies(

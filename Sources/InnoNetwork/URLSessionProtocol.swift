@@ -46,18 +46,16 @@ public extension URLSessionProtocol {
         URLSession.AsyncBytes, URLResponse
     ) {
         _ = (request, context)
-        throw NetworkError.invalidRequestConfiguration(
-            "Streaming bytes are not supported by this URLSessionProtocol implementation."
-        )
+        throw NetworkError.configuration(
+            reason: .invalidRequest("Streaming bytes are not supported by this URLSessionProtocol implementation."))
     }
 
     func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (
         Data, URLResponse
     ) {
         _ = (request, fileURL, context)
-        throw NetworkError.invalidRequestConfiguration(
-            "File-based upload is not supported by this URLSessionProtocol implementation."
-        )
+        throw NetworkError.configuration(
+            reason: .invalidRequest("File-based upload is not supported by this URLSessionProtocol implementation."))
     }
 }
 

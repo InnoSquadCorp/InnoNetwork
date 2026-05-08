@@ -322,7 +322,8 @@ private struct StreamingStatusRewritingInterceptor: ResponseInterceptor {
 
     func adapt(_ urlResponse: Response, request: URLRequest) async throws -> Response {
         guard let httpResponse = urlResponse.response else {
-            throw NetworkError.invalidRequestConfiguration("Missing HTTPURLResponse for stream response rewrite.")
+            throw NetworkError.configuration(
+                reason: .invalidRequest("Missing HTTPURLResponse for stream response rewrite."))
         }
         return Response(
             statusCode: statusCode,
@@ -510,7 +511,7 @@ struct StreamingAPIDefinitionTests {
             Issue.record("Expected invalid request configuration for bounded resumable stream")
         } catch let error as NetworkError {
             switch error {
-            case .invalidRequestConfiguration(let message):
+            case .configuration(reason: .invalidRequest(let message)):
                 #expect(message.contains("StreamingResumePolicy.lastEventID"))
             default:
                 Issue.record("Expected invalidRequestConfiguration, got \(error)")

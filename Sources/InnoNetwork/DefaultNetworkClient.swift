@@ -309,8 +309,10 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
         case .unbounded:
             return nil
         case .bufferingNewest, .bufferingOldest:
-            return .invalidRequestConfiguration(
-                "StreamingResumePolicy.lastEventID requires unbounded output buffering. Use stream(_:) or disable resume before choosing a bounded buffering policy."
+            return .configuration(
+                reason: .invalidRequest(
+                    "StreamingResumePolicy.lastEventID requires unbounded output buffering. Use stream(_:) or disable resume before choosing a bounded buffering policy."
+                )
             )
         }
     }

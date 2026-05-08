@@ -265,7 +265,7 @@ extension RequestExecutor {
                 return (data, response)
             } catch let error as NetworkError {
                 switch error {
-                case .invalidRequestConfiguration:
+                case .configuration(reason: .invalidRequest):
                     // Falling back to a buffered transport silently bypasses
                     // the configured `maxBytes` ceiling, so honour the bound
                     // by surfacing the original error instead of collecting

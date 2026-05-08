@@ -76,7 +76,7 @@ struct EndpointBuilderTests {
             _ = try await client.request(endpoint)
             Issue.record("Expected auth-required endpoint to reject a public client configuration")
         } catch let error as NetworkError {
-            guard case .invalidRequestConfiguration(let message) = error else {
+            guard case .configuration(reason: .invalidRequest(let message)) = error else {
                 Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
                 return
             }
@@ -170,7 +170,8 @@ struct EndpointBuilderTests {
             .transport(
                 .custom(encoding: .none) { _, response in
                     guard response.response?.value(forHTTPHeaderField: "X-Promoted-Decode") == "allowed" else {
-                        throw NetworkError.invalidRequestConfiguration("custom .none transport was not preserved")
+                        throw NetworkError.configuration(
+                            reason: .invalidRequest("custom .none transport was not preserved"))
                     }
                     return EmptyResponse()
                 }
@@ -188,7 +189,7 @@ struct EndpointBuilderTests {
             _ = try await client.request(endpoint)
             Issue.record("Expected promoted custom .none transport validation to run")
         } catch let error as NetworkError {
-            guard case .invalidRequestConfiguration(let message) = error else {
+            guard case .configuration(reason: .invalidRequest(let message)) = error else {
                 Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
                 return
             }

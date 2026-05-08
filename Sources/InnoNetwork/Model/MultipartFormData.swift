@@ -58,9 +58,9 @@ public struct MultipartFormData: Sendable {
     ///   appending.
     public mutating func append(_ value: Double, name: String) throws {
         guard value.isFinite else {
-            throw NetworkError.invalidRequestConfiguration(
-                "MultipartFormData.append cannot serialize a non-finite Double for field \"\(name)\"."
-            )
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "MultipartFormData.append cannot serialize a non-finite Double for field \"\(name)\"."))
         }
         append(String(value), name: name)
     }
@@ -87,8 +87,10 @@ public struct MultipartFormData: Sendable {
     ///   URL does not point at a regular readable file.
     public mutating func appendFile(at url: URL, name: String, mimeType: String? = nil) throws {
         guard url.isFileURL else {
-            throw NetworkError.invalidRequestConfiguration(
-                "MultipartFormData.appendFile expects a file URL; got \(url.scheme ?? "non-file")."
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "MultipartFormData.appendFile expects a file URL; got \(url.scheme ?? "non-file")."
+                )
             )
         }
         // `attributesOfItem` surfaces the underlying POSIX/permission error
@@ -100,14 +102,17 @@ public struct MultipartFormData: Sendable {
         do {
             attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         } catch {
-            throw NetworkError.invalidRequestConfiguration(
-                "MultipartFormData.appendFile could not read attributes at \(url.path): \(error.localizedDescription)"
-            )
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "MultipartFormData.appendFile could not read attributes at \(url.path): \(error.localizedDescription)"
+                ))
         }
         let fileType = attributes[.type] as? FileAttributeType
         guard fileType == .typeRegular || fileType == .typeSymbolicLink else {
-            throw NetworkError.invalidRequestConfiguration(
-                "MultipartFormData.appendFile expects a regular file at \(url.path); got \(fileType?.rawValue ?? "unknown")."
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "MultipartFormData.appendFile expects a regular file at \(url.path); got \(fileType?.rawValue ?? "unknown")."
+                )
             )
         }
         let fileName = url.lastPathComponent
@@ -140,9 +145,10 @@ public struct MultipartFormData: Sendable {
     public func encode(maxInMemoryBytes: Int = 16 << 20) throws -> Data {
         let estimated = estimatedEncodedSize
         if estimated > Int64(maxInMemoryBytes) {
-            throw NetworkError.invalidRequestConfiguration(
-                "MultipartFormData.encode produces ~\(estimated) bytes which exceeds the \(maxInMemoryBytes)-byte in-memory cap; use writeEncodedData(to:) for large payloads."
-            )
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "MultipartFormData.encode produces ~\(estimated) bytes which exceeds the \(maxInMemoryBytes)-byte in-memory cap; use writeEncodedData(to:) for large payloads."
+                ))
         }
         var body = Data()
         let boundaryPrefix = "--\(boundary)\r\n"

@@ -74,7 +74,7 @@ struct HMACRequestInterceptorTests {
             _ = try await interceptor.adapt(request)
             Issue.record("Expected streaming body to be rejected")
         } catch let error as NetworkError {
-            guard case .invalidRequestConfiguration = error else {
+            guard case .configuration(reason: .invalidRequest) = error else {
                 Issue.record("Expected .invalidRequestConfiguration, got \(error)")
                 return
             }
