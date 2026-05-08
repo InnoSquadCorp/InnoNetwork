@@ -3,25 +3,23 @@
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import json  # noqa: E402  imported after sys.path tweak so JSON helpers stay visible
+from _benchmark_report import baseline_section, load_report, parse_two_paths
+
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print(
-            "Usage: append_benchmark_trend.py [results.json] [trend.jsonl]",
-            file=sys.stderr,
-        )
-        return 2
-
-    report_path = Path(sys.argv[1])
-    trend_path = Path(sys.argv[2])
-    report = json.loads(report_path.read_text(encoding="utf-8"))
-    baseline = report.get("baseline") or {}
+    report_path, trend_path = parse_two_paths(
+        sys.argv,
+        usage="Usage: append_benchmark_trend.py [results.json] [trend.jsonl]",
+    )
+    report = load_report(report_path)
+    baseline = baseline_section(report)
     record = {
         "recordedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "repository": os.environ.get("GITHUB_REPOSITORY"),

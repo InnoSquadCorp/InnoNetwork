@@ -3,23 +3,20 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _benchmark_report import baseline_section, load_report, parse_two_paths  # noqa: E402
+
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print(
-            "Usage: render_benchmark_comment.py [results.json] [comment.md]",
-            file=sys.stderr,
-        )
-        return 2
-
-    report_path = Path(sys.argv[1])
-    output_path = Path(sys.argv[2])
-    report = json.loads(report_path.read_text(encoding="utf-8"))
-    baseline = report.get("baseline") or {}
+    report_path, output_path = parse_two_paths(
+        sys.argv,
+        usage="Usage: render_benchmark_comment.py [results.json] [comment.md]",
+    )
+    report = load_report(report_path)
+    baseline = baseline_section(report)
     deltas = baseline.get("deltas") or []
     failures = baseline.get("guardFailures") or []
     regression_reason = baseline.get("regressionReason")
