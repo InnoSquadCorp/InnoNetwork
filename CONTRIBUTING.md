@@ -37,6 +37,33 @@ swift run InnoNetworkBenchmarks --quick --json-path /tmp/innonetwork-bench.json
 - `Provisionally Stable` APIs can evolve more quickly, but still require documentation updates.
 - `Internal/Operational` items should not be relied on by downstream consumers.
 
+## Maintainer Escalation
+
+InnoNetwork is maintained by a single primary maintainer. Response is
+best-effort and there is no SLA — see [SUPPORT.md](SUPPORT.md) for the
+triage priority order.
+
+If you need an urgent path:
+
+- **Security vulnerabilities** — do **not** open a public issue. Follow the
+  private disclosure flow in [SECURITY.md](SECURITY.md). Tag the report as
+  `severity: critical` if exploitation is trivial; the maintainer prioritizes
+  these above all other work.
+- **Production regression on a `Stable` ledger entry** — open a GitHub issue
+  prefixed with `[regression]` and include (a) the affected version range,
+  (b) a minimal reproducer, and (c) the previous-version behaviour. These
+  are triaged immediately.
+- **Critical CVE in a transitive dependency** — InnoNetwork itself ships
+  zero runtime dependencies, so this rarely applies, but report via the
+  same private security flow if you spot one in development tooling
+  (`swift-syntax`, action SHAs).
+
+If the primary maintainer is unreachable for more than two weeks on a
+critical-severity report, contact `InnoSquadCorp` org owners through the
+GitHub org page so a co-maintainer can be temporarily granted access. The
+org owner list is the documented fall-back; this prevents critical patches
+from being blocked indefinitely on a single keyholder.
+
 ## Commit / PR Checklist
 
 - Tests pass locally.

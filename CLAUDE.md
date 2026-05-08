@@ -14,15 +14,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Focus on async/await patterns, thread safety, and type safety.
 - Avoid UI-related considerations (main thread for UI updates, etc.).
 
+### Root Cause First Approach
+- Value fundamental problem solving.
+- When addressing an issue, identify root cause before proposing changes.
+- Consider network-specific issues: connectivity, timeouts, SSL, response parsing.
+
 ### Code Quality Standards
 - **Type Safety**: Never use `as any`, `@ts-ignore`, or similar type suppression
 - **Error Handling**: No empty catch blocks
 - **Concurrency**: Use actors for shared state, make types Sendable where appropriate
 - **Testing**: Write tests using Swift Testing framework
 
+### Coding Style
+- Swift 6.2 API Design Guidelines
+- 4-space indentation
+- Public APIs documented with `///`
+- Actor-based thread safety for shared mutable state
+- Protocol-based design for flexibility
+
 ### Git and Version Control
 - Branch name in English
 - Commit message in English
+- PR description in Korean
+- Run `swift test` before submitting PR
 - DO NOT git add unstaged changes unless specified
 - Keep commits focused and logically grouped
 

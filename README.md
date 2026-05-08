@@ -53,7 +53,7 @@ Are you generating clients from an OpenAPI / IDL spec at build time?
          │
          Are you building an SDK or library wrapper that needs raw
          transport hooks (no decoding, no interceptors)?
-         └─ yes ─► LowLevelNetworkClient (@_spi(LowLevel))
+         └─ yes ─► LowLevelNetworkClient (@_spi(GeneratedClientSupport))
                    — minor-version-mutable surface, see API_STABILITY.md
 ```
 
