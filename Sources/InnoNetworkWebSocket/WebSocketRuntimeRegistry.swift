@@ -10,6 +10,11 @@ package actor WebSocketRuntimeRegistry {
     private var messageListenerTasks: [String: Task<Void, Never>] = [:]
     private var reconnectTasks: [String: Task<Void, Never>] = [:]
     private var closeHandshakeTasks: [String: Task<Void, Never>] = [:]
+    /// Set when ``markShutdownStartedAndSnapshot()`` runs. Once true, ``add(_:)``
+    /// refuses new task registrations so concurrent `connect()`/`retry()` callers
+    /// cannot leak orphan tasks past the terminal cleanup sweep performed by
+    /// `WebSocketManager.shutdown()`.
+    private var shutdownStarted = false
 
     private var _onConnected: (@Sendable (WebSocketTask, String?) async -> Void)?
     private var _onDisconnected: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?
@@ -51,8 +56,17 @@ package actor WebSocketRuntimeRegistry {
         _onPong = callback
     }
 
-    package func add(_ task: WebSocketTask) {
+    /// Adds `task` to the registry unless shutdown has started, in which case
+    /// the registration is refused and the caller is responsible for failing
+    /// the task with a manager-shutdown error.
+    ///
+    /// - Returns: `true` if the task was registered, `false` if shutdown has
+    ///   already started.
+    @discardableResult
+    package func add(_ task: WebSocketTask) -> Bool {
+        guard !shutdownStarted else { return false }
         tasks[task.id] = task
+        return true
     }
 
     package func remove(_ task: WebSocketTask) {
@@ -65,6 +79,14 @@ package actor WebSocketRuntimeRegistry {
 
     package func allTasks() -> [WebSocketTask] {
         Array(tasks.values)
+    }
+
+    /// Marks the registry as shutting down and returns the current task
+    /// snapshot in a single actor hop, so subsequent `add(_:)` calls cannot
+    /// race past the snapshot.
+    package func markShutdownStartedAndSnapshot() -> [WebSocketTask] {
+        shutdownStarted = true
+        return Array(tasks.values)
     }
 
     package func removeAllTasks() {

@@ -186,17 +186,19 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
                 return state.cassette.interactions[index]
             }
             guard let interaction else {
-                throw NetworkError.configuration(reason: .invalidRequest(
-                    "No VCR cassette interaction matched \(sanitizedRequest.method) \(sanitizedRequest.url)."
-                ))
+                throw NetworkError.configuration(
+                    reason: .invalidRequest(
+                        "No VCR cassette interaction matched \(sanitizedRequest.method) \(sanitizedRequest.url)."
+                    ))
             }
             return try makeURLResponse(from: interaction.response, url: request.url)
 
         case .record:
             guard let recordingSession else {
-                throw NetworkError.configuration(reason: .invalidRequest(
-                    "VCRURLSession record mode requires a recordingSession."
-                ))
+                throw NetworkError.configuration(
+                    reason: .invalidRequest(
+                        "VCRURLSession record mode requires a recordingSession."
+                    ))
             }
             let (data, response) = try await recordingSession.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
@@ -217,7 +219,8 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
 
     private func makeURLResponse(from response: VCRResponse, url: URL?) throws -> (Data, URLResponse) {
         guard let url else {
-            throw NetworkError.configuration(reason: .invalidRequest("Cannot replay VCR response without a request URL."))
+            throw NetworkError.configuration(
+                reason: .invalidRequest("Cannot replay VCR response without a request URL."))
         }
         guard
             let http = HTTPURLResponse(
@@ -227,11 +230,20 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
                 headerFields: response.headers
             )
         else {
-            throw NetworkError.configuration(reason: .invalidRequest("Recorded VCR response is not a valid HTTP response."))
+            throw NetworkError.configuration(
+                reason: .invalidRequest("Recorded VCR response is not a valid HTTP response."))
         }
         return (response.body, http)
     }
 
+    /// Builds the cassette-shape ``VCRRequest`` used for matching. The body
+    /// is reduced to a SHA-256 hex digest so cassettes never persist raw
+    /// payloads — sensitive request bodies stay out of recording files.
+    ///
+    /// - Important: `URLRequest.httpBodyStream`-based uploads have a `nil`
+    ///   `httpBody`, so stream uploads are matched only by method, URL, and
+    ///   headers. Cassettes targeting stream-uploaded requests should not
+    ///   rely on body-content matching for replay disambiguation.
     private func sanitize(_ request: URLRequest) -> VCRRequest {
         VCRRequest(
             method: request.httpMethod ?? "GET",

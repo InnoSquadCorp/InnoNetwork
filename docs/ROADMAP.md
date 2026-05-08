@@ -24,7 +24,7 @@ into one release line:
 - Shared `StateReducer` / `StateReduction` vocabulary plus reducer-driven
   Download, WebSocket, and refresh-token lifecycle decisions.
 - `InnoNetworkPersistentCache` companion product with HMAC disk keys, App Group
-  directory helper, statistics, and migration/scrub/eviction telemetry.
+  directory helper, statistics, and scrub/eviction telemetry.
 - `MultipartStreamingResponseDecoder` for large multipart response streams.
 - `InnoNetworkOpenAPI` companion product and VCR-style test support helpers.
 - Compile-time macro diagnostics for optional path placeholders.

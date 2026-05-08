@@ -110,9 +110,10 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
                 forSecurityApplicationGroupIdentifier: groupIdentifier
             )
         else {
-            throw NetworkError.configuration(reason: .invalidRequest(
-                "App Group container '\(groupIdentifier)' is unavailable."
-            ))
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "App Group container '\(groupIdentifier)' is unavailable."
+                ))
         }
         return container.appendingPathComponent("InnoNetworkPersistentCache", isDirectory: true)
     }
@@ -141,12 +142,10 @@ public enum PersistentResponseCacheEvictionReason: String, Sendable, Equatable {
     case missingBody
     case entryTooLarge
     case unreferencedBody
-    case formatMigration
 }
 
 /// Operational event emitted by ``PersistentResponseCache``.
 public enum PersistentResponseCacheTelemetryEvent: Sendable, Equatable {
-    case migratedIndex(fromVersion: Int, toVersion: Int, entryCount: Int)
     case scrubbedEntries(reason: PersistentResponseCacheEvictionReason, count: Int, byteCount: Int)
 }
 
@@ -161,7 +160,6 @@ public enum PersistentResponseCacheTelemetryEvent: Sendable, Equatable {
 /// footprint stays within the configured byte and entry budgets.
 public actor PersistentResponseCache: ResponseCache {
     private static let formatVersion = 2
-    private static let legacyFormatVersion = 1
     private static let logger = Logger(subsystem: "innosquad.network", category: "PersistentResponseCache")
 
     fileprivate struct DiskKey: Codable, Hashable, Sendable {
@@ -246,18 +244,31 @@ public actor PersistentResponseCache: ResponseCache {
             fileManager: fileManager
         )
         Self.applyDataProtection(configuration.dataProtectionClass, to: bodiesDirectoryURL, fileManager: fileManager)
-        let keyNormalizer = try PersistentCacheDiskKeyNormalizer.loadOrCreate(
+        let keyResult = try PersistentCacheDiskKeyNormalizer.loadOrCreate(
             directoryURL: configuration.directoryURL,
             dataProtectionClass: configuration.dataProtectionClass,
             fileManager: fileManager
         )
-        self.keyNormalizer = keyNormalizer
+        // If the existing HMAC key was unreadable or had the wrong length we
+        // had to regenerate it. Any prior on-disk entries are now keyed under
+        // a different HMAC and would never lookup-match again, so we reset the
+        // index and bodies together to keep the cache self-consistent. This
+        // mirrors the recovery policy used for corrupt or unknown-version
+        // indexes.
+        if keyResult.regenerated {
+            try Self.resetCacheStorage(
+                indexURL: indexURL,
+                bodiesDirectoryURL: bodiesDirectoryURL,
+                dataProtectionClass: configuration.dataProtectionClass,
+                fileManager: fileManager
+            )
+        }
+        self.keyNormalizer = keyResult.normalizer
         let loadResult = try Self.loadIndex(
             from: indexURL,
             directoryURL: configuration.directoryURL,
             dataProtectionClass: configuration.dataProtectionClass,
-            fileManager: fileManager,
-            keyNormalizer: keyNormalizer
+            fileManager: fileManager
         )
         Self.applyDataProtectionToExistingCacheFiles(
             dataProtectionClass: configuration.dataProtectionClass,
@@ -917,8 +928,7 @@ public actor PersistentResponseCache: ResponseCache {
         from indexURL: URL,
         directoryURL: URL,
         dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
-        fileManager: FileManager,
-        keyNormalizer: PersistentCacheDiskKeyNormalizer
+        fileManager: FileManager
     ) throws -> OpenResult {
         guard fileManager.fileExists(atPath: indexURL.path) else {
             return OpenResult(index: Index(version: formatVersion, entries: [:]), telemetryEvents: [])
@@ -926,74 +936,24 @@ public actor PersistentResponseCache: ResponseCache {
 
         let bodiesDirectoryURL = directoryURL.appendingPathComponent("bodies", isDirectory: true)
 
-        do {
-            let index = try JSONDecoder.persistentCache.decode(Index.self, from: Data(contentsOf: indexURL))
-            if index.version == formatVersion {
-                return OpenResult(index: index, telemetryEvents: [])
-            }
-            if index.version == legacyFormatVersion {
-                let migrated = migrateLegacyIndex(index, keyNormalizer: keyNormalizer)
-                try persistIndex(
-                    migrated,
-                    to: indexURL,
-                    directoryURL: directoryURL,
-                    configuration: .init(directoryURL: directoryURL, dataProtectionClass: dataProtectionClass),
-                    fileManager: fileManager
-                )
-                return OpenResult(
-                    index: migrated,
-                    telemetryEvents: [
-                        .migratedIndex(
-                            fromVersion: legacyFormatVersion,
-                            toVersion: formatVersion,
-                            entryCount: migrated.entries.count
-                        )
-                    ]
-                )
-            }
-
-            try resetCacheStorage(
-                indexURL: indexURL,
-                bodiesDirectoryURL: bodiesDirectoryURL,
-                dataProtectionClass: dataProtectionClass,
-                fileManager: fileManager
-            )
-            return OpenResult(
-                index: Index(version: formatVersion, entries: [:]),
-                telemetryEvents: [
-                    .scrubbedEntries(
-                        reason: .formatMigration,
-                        count: index.entries.count,
-                        byteCount: totalBytes(in: index)
-                    )
-                ]
-            )
-        } catch {
-            try resetCacheStorage(
-                indexURL: indexURL,
-                bodiesDirectoryURL: bodiesDirectoryURL,
-                dataProtectionClass: dataProtectionClass,
-                fileManager: fileManager
-            )
-            return OpenResult(index: Index(version: formatVersion, entries: [:]), telemetryEvents: [])
+        // The cache is best-effort durable: corrupt indexes and unknown
+        // index versions both fall through to the same self-healing reset
+        // path. There is no inter-version migration: the 4.0.0 format is
+        // the first published one.
+        if let data = try? Data(contentsOf: indexURL),
+            let index = try? JSONDecoder.persistentCache.decode(Index.self, from: data),
+            index.version == formatVersion
+        {
+            return OpenResult(index: index, telemetryEvents: [])
         }
-    }
 
-    private static func migrateLegacyIndex(
-        _ index: Index,
-        keyNormalizer: PersistentCacheDiskKeyNormalizer
-    ) -> Index {
-        var migrated = Index(version: formatVersion, entries: [:])
-        for entry in index.entries.values {
-            var migratedEntry = entry
-            migratedEntry.key = keyNormalizer.migrateLegacyDiskKey(entry.key)
-            let id = identifier(for: migratedEntry.key, encoder: JSONEncoder.persistentCache)
-            if let existing = migrated.entries[id], existing.lastAccessedAt > migratedEntry.lastAccessedAt {
-                continue
-            }
-            migrated.entries[id] = migratedEntry
-        }
-        return migrated
+        try resetCacheStorage(
+            indexURL: indexURL,
+            bodiesDirectoryURL: bodiesDirectoryURL,
+            dataProtectionClass: dataProtectionClass,
+            fileManager: fileManager
+        )
+        return OpenResult(index: Index(version: formatVersion, entries: [:]), telemetryEvents: [])
     }
 
     private static func resetCacheStorage(
@@ -1021,37 +981,64 @@ public actor PersistentResponseCache: ResponseCache {
 
 private struct PersistentCacheDiskKeyNormalizer: Sendable {
     private static let keyFileName = "cache-key-hmac.key"
+    private static let expectedKeyByteCount = 32  // SymmetricKeySize.bits256
     private let key: SymmetricKey
+
+    /// Result of opening or creating the on-disk HMAC key.
+    ///
+    /// `regenerated` is `true` when an existing key file was discarded due to
+    /// a read failure (corruption, partial write, file protection edge case)
+    /// or an invalid length. Callers must reset any cached entries that were
+    /// keyed under the prior HMAC so the cache stays self-consistent.
+    struct LoadOrCreateResult {
+        let normalizer: PersistentCacheDiskKeyNormalizer
+        let regenerated: Bool
+    }
 
     static func loadOrCreate(
         directoryURL: URL,
         dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
         fileManager: FileManager
-    ) throws -> Self {
+    ) throws -> LoadOrCreateResult {
         let keyURL = directoryURL.appendingPathComponent(keyFileName, isDirectory: false)
         if fileManager.fileExists(atPath: keyURL.path) {
-            let data = try Data(contentsOf: keyURL)
+            // Best-effort read with length validation. Any failure mode
+            // (unreadable, truncated, oversized) routes through the same
+            // regenerate-and-reset recovery as a missing key.
+            if let data = try? Data(contentsOf: keyURL), data.count == expectedKeyByteCount {
+                PersistentResponseCache.applyDataProtection(
+                    dataProtectionClass,
+                    to: keyURL,
+                    fileManager: fileManager
+                )
+                return LoadOrCreateResult(
+                    normalizer: PersistentCacheDiskKeyNormalizer(key: SymmetricKey(data: data)),
+                    regenerated: false
+                )
+            }
+            try? fileManager.removeItem(at: keyURL)
+            let key = SymmetricKey(size: .bits256)
+            let bytes = key.withUnsafeBytes { Data($0) }
+            try bytes.write(to: keyURL, options: .atomic)
             PersistentResponseCache.applyDataProtection(dataProtectionClass, to: keyURL, fileManager: fileManager)
-            return PersistentCacheDiskKeyNormalizer(key: SymmetricKey(data: data))
+            return LoadOrCreateResult(
+                normalizer: PersistentCacheDiskKeyNormalizer(key: key),
+                regenerated: true
+            )
         }
 
         let key = SymmetricKey(size: .bits256)
         let data = key.withUnsafeBytes { Data($0) }
         try data.write(to: keyURL, options: .atomic)
         PersistentResponseCache.applyDataProtection(dataProtectionClass, to: keyURL, fileManager: fileManager)
-        return PersistentCacheDiskKeyNormalizer(key: key)
+        return LoadOrCreateResult(
+            normalizer: PersistentCacheDiskKeyNormalizer(key: key),
+            regenerated: false
+        )
     }
 
     func normalizeHeaders(_ headers: [String]) -> [String] {
         headers.map(normalizeHeader).sorted()
-    }
-
-    func migrateLegacyDiskKey(_ key: PersistentResponseCache.DiskKey) -> PersistentResponseCache.DiskKey {
-        PersistentResponseCache.DiskKey(
-            method: key.method,
-            url: key.url,
-            headers: normalizeHeaders(key.headers)
-        )
     }
 
     private func normalizeHeader(_ header: String) -> String {

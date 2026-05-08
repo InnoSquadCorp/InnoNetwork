@@ -195,7 +195,7 @@ Per-symbol evolution allowances within the 4.x line:
   default implementations to track Swift OpenAPI Generator and HTTPTypes
   conventions without pulling those packages into the core runtime.
 - `PersistentResponseCache` statistics and telemetry — event reasons may grow
-  as additional scrub or migration cases are surfaced.
+  as additional scrub cases are surfaced.
 - `WebSocketError.unsupportedProtocolFeature` and `WebSocketProtocolFeature`
   — feature cases may grow as optional transports add or reject more protocol
   extensions.

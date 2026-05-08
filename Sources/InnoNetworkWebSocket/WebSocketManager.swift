@@ -374,8 +374,10 @@ public final class WebSocketManager: NSObject, Sendable {
             )
             return task
         }
-        await runtimeRegistry.add(task)
-        if isShutdown {
+        // The registry is the canonical guard: `add` refuses new tasks once
+        // `shutdown()` has marked the registry as shutting down, so a concurrent
+        // shutdown cannot leave this task as an orphan past the terminal sweep.
+        guard await runtimeRegistry.add(task) else {
             await finishTaskBecauseManagerIsShutdown(task)
             return task
         }
@@ -436,7 +438,11 @@ public final class WebSocketManager: NSObject, Sendable {
         await runtimeRegistry.clearCallbacks()
 
         let shutdownError = Self.managerShutdownError()
-        for task in await runtimeRegistry.allTasks() {
+        // Atomically flip the registry into a "no new tasks" state and capture
+        // the live snapshot in a single actor hop. Any concurrent
+        // `connect()`/`retry()` past this point will be refused at `add(_:)`
+        // and routed through `finishTaskBecauseManagerIsShutdown`.
+        for task in await runtimeRegistry.markShutdownStartedAndSnapshot() {
             let state = await task.state
             if !state.isTerminal {
                 let transition = await task.applyLifecycleEvent(
@@ -462,14 +468,17 @@ public final class WebSocketManager: NSObject, Sendable {
         guard !isShutdown else { return }
         let state = await task.state
         guard state == .failed || state == .disconnected else { return }
-        await runtimeRegistry.add(task)
-        guard !isShutdown else {
-            await finishTaskBecauseManagerIsShutdown(task)
-            return
-        }
-        await task.setAutoReconnectEnabled(true)
+        // Reset before re-registering: this transitions the task out of its
+        // terminal lifecycle state (`.failed`/`.disconnected`) into `.idle`,
+        // which prevents an in-flight `finishTerminal` effect from racing with
+        // the registry add and removing this task on its way to a new
+        // connection. `reset()` itself emits no lifecycle effects, so it does
+        // not interleave with the executor that is processing `.didClose`.
         await task.reset()
-        guard !isShutdown else {
+        // Registry refuses new tasks once shutdown has started, so this single
+        // guard handles the shutdown-vs-retry race in the same way as
+        // `connect(url:)`.
+        guard await runtimeRegistry.add(task) else {
             await finishTaskBecauseManagerIsShutdown(task)
             return
         }
@@ -658,7 +667,7 @@ public final class WebSocketManager: NSObject, Sendable {
     ) async {
         for effect in effects {
             switch effect {
-            case .startConnection:
+            case .startConnection(generation: _):
                 await startTransportConnection(task)
             case .startHeartbeat:
                 await heartbeatCoordinator.startHeartbeat(for: task) { [weak self] taskIdentifier in

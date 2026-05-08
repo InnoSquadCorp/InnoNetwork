@@ -15,14 +15,15 @@ file protection on supported Apple platforms.
 
 Sensitive request-header values that participate in disk cache keys are stored
 as managed HMAC-SHA256 values instead of raw text or unsalted fingerprints.
-Legacy v1 indexes are re-keyed on open. Entries that cannot satisfy the active
-privacy policy or storage budget are treated as misses and scrubbed from the
-cache's own files.
+Entries that cannot satisfy the active privacy policy or storage budget are
+treated as misses and scrubbed from the cache's own files. Corrupt or
+unknown-version on-disk indexes are recovered automatically by resetting the
+cache's own subtree (never the user-supplied directory root).
 
 Use ``PersistentResponseCache/statistics()`` for storage-pressure snapshots and
 ``PersistentResponseCache/telemetrySnapshot()`` or
-``PersistentResponseCache/drainTelemetryEvents()`` to inspect migration, scrub,
-and eviction events during rollout.
+``PersistentResponseCache/drainTelemetryEvents()`` to inspect scrub and
+eviction events during rollout.
 
 ## Topics
 

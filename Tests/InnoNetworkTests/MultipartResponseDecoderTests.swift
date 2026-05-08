@@ -147,6 +147,22 @@ struct MultipartStreamingResponseDecoderTests {
         }
     }
 
+    @Test("Unbounded part headers fail before exhausting memory")
+    func unboundedPartHeadersThrow() async {
+        // Open the first part normally, then keep streaming header bytes
+        // without ever reaching the `\r\n\r\n` separator. The decoder should
+        // bail out once the buffered header region exceeds 1 MiB.
+        var chunks: [Data] = [Data("--boundary\r\nX-Filler: ".utf8)]
+        let chunk = Data(repeating: UInt8(ascii: "A"), count: 64 * 1024)
+        // 18 × 64 KiB = ~1.1 MiB of header bytes — comfortably past the cap.
+        for _ in 0..<18 {
+            chunks.append(chunk)
+        }
+        await #expect(throws: NetworkError.self) {
+            _ = try await collectStreamingEvents(chunks)
+        }
+    }
+
     private func collectStreamingEvents(_ chunks: [Data]) async throws -> [MultipartStreamingEvent] {
         let stream = AsyncStream<Data> { continuation in
             for chunk in chunks {

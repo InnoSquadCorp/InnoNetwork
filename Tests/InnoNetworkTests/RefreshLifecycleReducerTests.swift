@@ -61,7 +61,7 @@ struct RefreshLifecycleReducerTests {
 
         let failed = RefreshLifecycleReducer.reduce(
             state: inFlight,
-            event: .fail(id: id, error: NetworkError.invalidRequestConfiguration("nope")),
+            event: .fail(id: id, error: NetworkError.configuration(reason: .invalidRequest("nope"))),
             context: context(now: now, cooldown: .exponentialBackoff(base: 5, max: 60))
         ).state
 
@@ -100,7 +100,7 @@ struct RefreshLifecycleReducerTests {
         let state = RefreshLifecycleState(
             phase: .cooldown(
                 until: now.addingTimeInterval(-1),
-                lastError: NetworkError.invalidRequestConfiguration("cooldown")
+                lastError: NetworkError.configuration(reason: .invalidRequest("cooldown"))
             ),
             consecutiveFailures: 3
         )

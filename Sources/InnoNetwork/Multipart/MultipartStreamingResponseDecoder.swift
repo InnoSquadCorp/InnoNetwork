@@ -108,6 +108,13 @@ private struct MultipartStreamingParser {
         case finished
     }
 
+    /// Hard upper bound on per-part header bytes the decoder will buffer
+    /// before the closing `\r\n\r\n` delimiter. Real-world multipart parts
+    /// have headers measured in hundreds of bytes; 1 MiB is a generous
+    /// safety net against malformed or hostile peers that never close the
+    /// header block, which would otherwise grow `buffer` without bound.
+    static let maxPartHeaderBytes = 1 * 1024 * 1024
+
     private let delimiter: Data
     private var buffer = Data()
     private var state: State = .seekingFirstBoundary
@@ -132,9 +139,10 @@ private struct MultipartStreamingParser {
         case .finished:
             return
         case .seekingFirstBoundary:
-            throw NetworkError.configuration(reason: .invalidRequest(
-                "Multipart response body did not contain the boundary delimiter."
-            ))
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "Multipart response body did not contain the boundary delimiter."
+                ))
         case .readingHeaders, .readingBody:
             throw NetworkError.configuration(reason: .invalidRequest("Missing multipart closing boundary."))
         }
@@ -156,6 +164,13 @@ private struct MultipartStreamingParser {
                 if boundary.isClosing { return }
 
             case .readingHeaders:
+                if buffer.count > Self.maxPartHeaderBytes {
+                    throw NetworkError.configuration(
+                        reason: .invalidRequest(
+                            "Multipart part headers exceed \(Self.maxPartHeaderBytes) bytes without a closing delimiter."
+                        )
+                    )
+                }
                 guard let separator = buffer.headerSeparatorRange else { return }
                 let headerData = buffer[..<separator.lowerBound]
                 let headers = try parseHeaders(headerData)

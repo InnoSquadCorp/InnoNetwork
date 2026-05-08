@@ -115,8 +115,8 @@ struct PersistentResponseCacheTests {
         #expect(FileManager.default.fileExists(atPath: hmacKeyURL(in: directory).path))
     }
 
-    @Test("Legacy v1 sensitive disk keys migrate to HMAC v2")
-    func legacySensitiveDiskKeysMigrateToHMACVersionTwo() async throws {
+    @Test("Zero-byte HMAC key file self-heals on reopen")
+    func zeroByteHMACKeyFileSelfHealsOnReopen() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let configuration = PersistentResponseCacheConfiguration(
@@ -126,26 +126,88 @@ struct PersistentResponseCacheTests {
         let key = ResponseCacheKey(
             method: "GET",
             url: "https://example.com/me",
-            headers: ["Authorization": "Bearer legacy-secret"]
+            headers: ["Authorization": "Bearer secret"]
         )
         let writer = try PersistentResponseCache(configuration: configuration)
-        await writer.set(key, CachedResponse(data: Data("legacy-private".utf8)))
-        try rewriteFirstIndexEntryAsLegacyV1(in: directory, keyHeaders: key.headers)
+        await writer.set(key, CachedResponse(data: Data("first".utf8)))
+
+        // Truncate the on-disk HMAC key. Existing entries are now keyed under
+        // a key the cache will no longer recognize.
+        try Data().write(to: hmacKeyURL(in: directory), options: .atomic)
 
         let reader = try PersistentResponseCache(configuration: configuration)
-        let cached = try #require(await reader.get(key))
+        // Prior entry is gone (cache reset together with the key).
+        #expect(await reader.get(key) == nil)
 
-        #expect(cached.data == Data("legacy-private".utf8))
-        #expect(
-            await reader.drainTelemetryEvents()
-                .contains(.migratedIndex(fromVersion: 1, toVersion: 2, entryCount: 1))
+        // New writes work end to end.
+        await reader.set(key, CachedResponse(data: Data("second".utf8)))
+        let cached = try #require(await reader.get(key))
+        #expect(cached.data == Data("second".utf8))
+
+        // Key file is regenerated to the expected size.
+        let regeneratedKey = try Data(contentsOf: hmacKeyURL(in: directory))
+        #expect(regeneratedKey.count == 32)
+    }
+
+    @Test("Wrong-length HMAC key file self-heals on reopen")
+    func wrongLengthHMACKeyFileSelfHealsOnReopen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            storesAuthenticatedResponses: true
         )
-        let index = try indexObject(in: directory)
-        #expect(index["version"] as? Int == 2)
-        let indexText = try String(contentsOf: indexURL(in: directory), encoding: .utf8)
-        #expect(!indexText.contains("Bearer legacy-secret"))
-        #expect(!indexText.contains("authorization:sha256:"))
-        #expect(indexText.contains("hmac-sha256:"))
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Authorization": "Bearer secret"]
+        )
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("first".utf8)))
+
+        // Replace the HMAC key with a 16-byte payload — wrong length but
+        // structurally readable. Self-healing should still kick in.
+        try Data(repeating: 0xAB, count: 16).write(to: hmacKeyURL(in: directory), options: .atomic)
+
+        let reader = try PersistentResponseCache(configuration: configuration)
+        #expect(await reader.get(key) == nil)
+        await reader.set(key, CachedResponse(data: Data("second".utf8)))
+        let cached = try #require(await reader.get(key))
+        #expect(cached.data == Data("second".utf8))
+        let regeneratedKey = try Data(contentsOf: hmacKeyURL(in: directory))
+        #expect(regeneratedKey.count == 32)
+    }
+
+    @Test("Unreadable HMAC key file self-heals on reopen")
+    func unreadableHMACKeyFileSelfHealsOnReopen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            storesAuthenticatedResponses: true
+        )
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Authorization": "Bearer secret"]
+        )
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("first".utf8)))
+
+        // Replace the key file with a directory at the same path so
+        // `Data(contentsOf:)` throws — simulating corruption / file-protection
+        // edge cases. The cache must still self-heal.
+        let keyPath = hmacKeyURL(in: directory)
+        try FileManager.default.removeItem(at: keyPath)
+        try FileManager.default.createDirectory(at: keyPath, withIntermediateDirectories: false)
+
+        let reader = try PersistentResponseCache(configuration: configuration)
+        #expect(await reader.get(key) == nil)
+        await reader.set(key, CachedResponse(data: Data("second".utf8)))
+        let cached = try #require(await reader.get(key))
+        #expect(cached.data == Data("second".utf8))
+        let regeneratedKey = try Data(contentsOf: hmacKeyURL(in: directory))
+        #expect(regeneratedKey.count == 32)
     }
 
     @Test("Cache-Control private responses are rejected")
@@ -859,26 +921,6 @@ struct PersistentResponseCacheTests {
         let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
         let data = try JSONSerialization.data(withJSONObject: index, options: [.sortedKeys])
         try data.write(to: indexURL, options: .atomic)
-    }
-
-    private func rewriteFirstIndexEntryAsLegacyV1(in directory: URL, keyHeaders: [String]) throws {
-        var index = try indexObject(in: directory)
-        guard var entries = index["entries"] as? [String: Any],
-            let entryID = entries.keys.sorted().first,
-            var entry = entries[entryID] as? [String: Any],
-            var key = entry["key"] as? [String: Any]
-        else {
-            throw testFixtureError("Missing persistent cache entry to rewrite as v1")
-        }
-
-        index["version"] = 1
-        key["headers"] = keyHeaders
-        entry["key"] = key
-        entries[entryID] = entry
-        index["entries"] = entries
-
-        let data = try JSONSerialization.data(withJSONObject: index, options: [.sortedKeys])
-        try data.write(to: indexURL(in: directory), options: .atomic)
     }
 
     private func rewriteIndexEntryAccessTime(

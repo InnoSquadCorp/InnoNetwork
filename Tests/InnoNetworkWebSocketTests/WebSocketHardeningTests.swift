@@ -304,6 +304,22 @@ struct WebSocketManagerShutdownTests {
         await shutdown
     }
 
+    @Test("Registry refuses task registration after shutdown begins")
+    func registryRefusesAddAfterShutdownStarted() async {
+        let registry = WebSocketRuntimeRegistry()
+        let prior = WebSocketTask(url: URL(string: "wss://example.invalid/prior")!)
+
+        #expect(await registry.add(prior))
+        let snapshot = await registry.markShutdownStartedAndSnapshot()
+        #expect(snapshot.contains { $0.id == prior.id })
+
+        let racingTask = WebSocketTask(url: URL(string: "wss://example.invalid/racing")!)
+        #expect(!(await registry.add(racingTask)))
+        let allTasks = await registry.allTasks()
+        #expect(allTasks.count == 1)
+        #expect(allTasks.first?.id == prior.id)
+    }
+
     private func makeShutdownHarness(
         configuration: WebSocketConfiguration = WebSocketConfiguration(
             heartbeatInterval: 0,

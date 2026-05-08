@@ -561,9 +561,10 @@ changes are intentional and are called out below; migration recipes live in
   `PersistentResponseCacheConfiguration` for conservative on-disk GET
   response caching.
 - `PersistentResponseCache` format v2 protects sensitive cache-key header
-  components with managed HMAC-SHA256, migrates legacy v1 indexes on open,
-  exposes an App Group directory helper, and surfaces statistics plus
-  migration/scrub/eviction telemetry for production operations.
+  components with managed HMAC-SHA256, exposes an App Group directory helper,
+  self-heals from corrupt or unknown-version on-disk indexes by resetting the
+  cache's own subtree, and surfaces statistics plus scrub/eviction telemetry
+  for production operations.
 - `RefreshTokenPolicy` for current-token application, single-flight refresh,
   and one-time replay after configured auth status codes.
 - `RequestCoalescingPolicy` for raw transport fan-out among identical in-flight
