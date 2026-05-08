@@ -59,18 +59,157 @@ struct RefreshLifecycleReducerTests {
             context: context(now: now)
         ).state
 
+        let originalError = NetworkError.configuration(reason: .invalidRequest("nope"))
         let failed = RefreshLifecycleReducer.reduce(
             state: inFlight,
-            event: .fail(id: id, error: NetworkError.configuration(reason: .invalidRequest("nope"))),
+            event: .fail(id: id, error: originalError),
             context: context(now: now, cooldown: .exponentialBackoff(base: 5, max: 60))
         ).state
 
         #expect(failed.consecutiveFailures == 1)
-        if case .cooldown(let until, _) = failed.phase {
-            #expect(until == now.addingTimeInterval(5))
-        } else {
+        guard case .cooldown(let until, let lastError) = failed.phase else {
             Issue.record("failure should enter cooldown")
+            return
         }
+        #expect(until == now.addingTimeInterval(5))
+        // The cooldown phase carries the original error untouched so callers
+        // can surface the actual transport / decode failure to consumers.
+        guard
+            let stored = lastError as? NetworkError,
+            case .configuration(let reason) = stored,
+            case .invalidRequest(let message) = reason
+        else {
+            Issue.record("expected stored lastError to be NetworkError.configuration(.invalidRequest)")
+            return
+        }
+        #expect(message == "nope")
+    }
+
+    @Test("failure with disabled cooldown stays idle but counts the failure")
+    func failureWithDisabledCooldownStaysIdle() {
+        let id = UUID()
+        let task = Task<String, Error> { "token" }
+        defer { task.cancel() }
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let inFlight = RefreshLifecycleReducer.reduce(
+            state: .initial,
+            event: .start(id: id, task: task),
+            context: context(now: now)
+        ).state
+
+        let failed = RefreshLifecycleReducer.reduce(
+            state: inFlight,
+            event: .fail(id: id, error: NetworkError.configuration(reason: .invalidRequest("nope"))),
+            context: context(now: now, cooldown: .disabled)
+        ).state
+
+        #expect(failed.consecutiveFailures == 1)
+        if case .idle = failed.phase {
+            // expected — disabled cooldown collapses straight back to idle
+        } else {
+            Issue.record("disabled cooldown should leave the reducer in .idle")
+        }
+    }
+
+    @Test("cancel for the matching id returns to idle and emits no effects")
+    func cancelMatchingIdReturnsToIdle() {
+        let id = UUID()
+        let task = Task<String, Error> { "token" }
+        defer { task.cancel() }
+        let inFlight = RefreshLifecycleReducer.reduce(
+            state: RefreshLifecycleState(phase: .idle, consecutiveFailures: 4),
+            event: .start(id: id, task: task),
+            context: context()
+        ).state
+
+        let cancelled = RefreshLifecycleReducer.reduce(
+            state: inFlight,
+            event: .cancel(id: id),
+            context: context()
+        )
+
+        #expect(!cancelled.state.isRefreshInProgress)
+        #expect(cancelled.state.consecutiveFailures == 4)
+        if case .idle = cancelled.state.phase {
+            // expected
+        } else {
+            Issue.record("cancel should return to idle")
+        }
+        #expect(cancelled.effects.isEmpty)
+    }
+
+    @Test("cancel for a stale id keeps the in-flight phase")
+    func cancelStaleIdIsNoOp() {
+        let id = UUID()
+        let task = Task<String, Error> { "token" }
+        defer { task.cancel() }
+        let inFlight = RefreshLifecycleReducer.reduce(
+            state: .initial,
+            event: .start(id: id, task: task),
+            context: context()
+        ).state
+
+        let stale = RefreshLifecycleReducer.reduce(
+            state: inFlight,
+            event: .cancel(id: UUID()),
+            context: context()
+        )
+
+        #expect(stale.state.isRefreshInProgress)
+        #expect(stale.effects == [.ignoreStaleCompletion])
+    }
+
+    @Test("stale failure preserves phase and failure count")
+    func staleFailureIsNoOp() {
+        let id = UUID()
+        let task = Task<String, Error> { "token" }
+        defer { task.cancel() }
+        let inFlight = RefreshLifecycleReducer.reduce(
+            state: RefreshLifecycleState(phase: .idle, consecutiveFailures: 2),
+            event: .start(id: id, task: task),
+            context: context()
+        ).state
+
+        let stale = RefreshLifecycleReducer.reduce(
+            state: inFlight,
+            event: .fail(id: UUID(), error: NetworkError.configuration(reason: .invalidRequest("late"))),
+            context: context()
+        )
+
+        #expect(stale.state.isRefreshInProgress)
+        #expect(stale.state.consecutiveFailures == 2)
+        #expect(stale.effects == [.ignoreStaleCompletion])
+    }
+
+    @Test("start while non-idle is a no-op")
+    func startWhileNonIdleIsNoOp() {
+        let id = UUID()
+        let task = Task<String, Error> { "token" }
+        defer { task.cancel() }
+        let inFlight = RefreshLifecycleReducer.reduce(
+            state: .initial,
+            event: .start(id: id, task: task),
+            context: context()
+        ).state
+
+        let secondId = UUID()
+        let secondTask = Task<String, Error> { "second" }
+        defer { secondTask.cancel() }
+        let attempted = RefreshLifecycleReducer.reduce(
+            state: inFlight,
+            event: .start(id: secondId, task: secondTask),
+            context: context()
+        )
+
+        // The non-idle guard short-circuits without stashing the new task or
+        // emitting any effects, so the original in-flight task is preserved.
+        guard case .inFlight(let preservedID, _) = attempted.state.phase else {
+            Issue.record("non-idle .start should keep the reducer in-flight")
+            return
+        }
+        #expect(preservedID == id)
+        #expect(attempted.state.consecutiveFailures == inFlight.consecutiveFailures)
+        #expect(attempted.effects.isEmpty)
     }
 
     @Test("stale completions keep the current in-flight state")

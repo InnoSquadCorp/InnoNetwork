@@ -175,15 +175,21 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
         let sanitizedRequest = sanitize(request)
         switch mode {
         case .replay:
+            // Strictly sequential replay: only the interaction at the cursor
+            // is eligible. A request that doesn't match the next-expected
+            // entry is a cassette mismatch — the decoder must not skip ahead
+            // and silently consume a later interaction.
             let interaction: VCRInteraction? = state.withLock { state -> VCRInteraction? in
-                guard
-                    let index = state.cassette.interactions[state.replayCursor...]
-                        .firstIndex(where: { $0.request == sanitizedRequest })
-                else {
+                let cursor = state.replayCursor
+                guard cursor < state.cassette.interactions.endIndex else {
                     return nil
                 }
-                state.replayCursor = state.cassette.interactions.index(after: index)
-                return state.cassette.interactions[index]
+                let expected = state.cassette.interactions[cursor]
+                guard expected.request == sanitizedRequest else {
+                    return nil
+                }
+                state.replayCursor = state.cassette.interactions.index(after: cursor)
+                return expected
             }
             guard let interaction else {
                 throw NetworkError.configuration(

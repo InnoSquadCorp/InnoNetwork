@@ -21,7 +21,7 @@ struct OpenAPICompanionTests {
     }
 
     @Test("OpenAPIRequest forwards operation shape")
-    func openAPIRequestForwardsOperationShape() {
+    func openAPIRequestForwardsOperationShape() async {
         let request = OpenAPIRequest(GetUserOperation())
 
         #expect(request.method == .get)

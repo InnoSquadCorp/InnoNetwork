@@ -40,6 +40,46 @@ private struct BenchmarkBaselineSummary: Codable, Sendable {
     let regressionReason: String?
     let deltas: [BenchmarkBaselineDelta]
     let guardFailures: [BenchmarkGuardFailure]
+
+    private enum CodingKeys: String, CodingKey {
+        case baselinePath, enforceBaseline, maxRegressionPercent, guardThresholds,
+            regressionReason, deltas, guardFailures
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        baselinePath = try container.decode(String.self, forKey: .baselinePath)
+        enforceBaseline = try container.decode(Bool.self, forKey: .enforceBaseline)
+        maxRegressionPercent = try container.decode(Double.self, forKey: .maxRegressionPercent)
+        // `guardThresholds` was introduced after the original baseline format.
+        // Older baseline JSONs that lack the key still decode cleanly with an
+        // empty default so `--enforce-baseline` continues to work against
+        // captured-before-the-field reports.
+        guardThresholds =
+            try container.decodeIfPresent([BenchmarkGuardThreshold].self, forKey: .guardThresholds)
+            ?? []
+        regressionReason = try container.decodeIfPresent(String.self, forKey: .regressionReason)
+        deltas = try container.decode([BenchmarkBaselineDelta].self, forKey: .deltas)
+        guardFailures = try container.decode([BenchmarkGuardFailure].self, forKey: .guardFailures)
+    }
+
+    init(
+        baselinePath: String,
+        enforceBaseline: Bool,
+        maxRegressionPercent: Double,
+        guardThresholds: [BenchmarkGuardThreshold],
+        regressionReason: String?,
+        deltas: [BenchmarkBaselineDelta],
+        guardFailures: [BenchmarkGuardFailure]
+    ) {
+        self.baselinePath = baselinePath
+        self.enforceBaseline = enforceBaseline
+        self.maxRegressionPercent = maxRegressionPercent
+        self.guardThresholds = guardThresholds
+        self.regressionReason = regressionReason
+        self.deltas = deltas
+        self.guardFailures = guardFailures
+    }
 }
 
 private struct BenchmarkGuardThreshold: Codable, Sendable {

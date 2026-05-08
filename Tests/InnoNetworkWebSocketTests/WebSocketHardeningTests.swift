@@ -249,12 +249,14 @@ struct WebSocketManagerShutdownTests {
         harness.callbacks.handleInvalidation(nil)
         await shutdown
 
-        if let event = await iterator.next() {
-            if case .error(.connectionFailed) = event {
-                // shutdown publishes a terminal error before closing the stream
-            } else {
-                Issue.record("expected shutdown terminal error before end-of-stream, got \(event)")
-            }
+        // Shutdown contract: a terminal `.error(.connectionFailed)` must be
+        // published before the stream ends. A nil first event would mean the
+        // stream finished without any terminal signal, which silently passed
+        // before; require a real event here.
+        let firstEvent = try #require(await iterator.next())
+        guard case .error(.connectionFailed) = firstEvent else {
+            Issue.record("expected shutdown terminal error before end-of-stream, got \(firstEvent)")
+            return
         }
         #expect(await iterator.next() == nil)
     }

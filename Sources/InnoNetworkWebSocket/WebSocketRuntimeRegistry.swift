@@ -89,8 +89,26 @@ package actor WebSocketRuntimeRegistry {
         return Array(tasks.values)
     }
 
+    /// Resets every task-scoped collection so no phantom mappings or
+    /// background coordinators outlive the wipe. Background coordinator
+    /// tasks (heartbeat / message listener / reconnect / close handshake)
+    /// are dropped without awaiting cancellation; callers that need
+    /// awaited cleanup must use `removeTaskRuntime(taskId:)` per task
+    /// before this method.
     package func removeAllTasks() {
         tasks.removeAll(keepingCapacity: false)
+        identifierToTask.removeAll(keepingCapacity: false)
+        identifierToGeneration.removeAll(keepingCapacity: false)
+        taskIdToIdentifier.removeAll(keepingCapacity: false)
+        taskIdToURLTask.removeAll(keepingCapacity: false)
+        for task in heartbeatTasks.values { task.cancel() }
+        heartbeatTasks.removeAll(keepingCapacity: false)
+        for task in messageListenerTasks.values { task.cancel() }
+        messageListenerTasks.removeAll(keepingCapacity: false)
+        for task in reconnectTasks.values { task.cancel() }
+        reconnectTasks.removeAll(keepingCapacity: false)
+        for task in closeHandshakeTasks.values { task.cancel() }
+        closeHandshakeTasks.removeAll(keepingCapacity: false)
     }
 
     package func setMapping(webSocketTask: WebSocketTask, for identifier: Int, generation: Int) {

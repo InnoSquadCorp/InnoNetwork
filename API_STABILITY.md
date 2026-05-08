@@ -427,12 +427,6 @@ prefer the stable `APIDefinition` / `MultipartAPIDefinition` wrapper
 path. That path follows the standard `Stable` SemVer contract and never
 requires `@_spi` import.
 
-### InnoNetworkTestSupport
-
-- `MockURLSession`, `StubBehavior`, `StubNetworkClient`, `StubRequestKey`, and
-  `VCRCassette`, `VCRInteraction`, `VCRMode`, `VCRRedactionPolicy`,
-  `VCRRequest`, `VCRResponse`, `VCRURLSession`, and `WebSocketEventRecorder`.
-
 ## Internal/Operational
 
 - event pipeline metric payload and aggregation format
