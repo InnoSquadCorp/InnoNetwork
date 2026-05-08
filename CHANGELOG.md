@@ -7,6 +7,90 @@ Versioning.
 
 ## [Unreleased]
 
+### Added (release/4.0.0-batch)
+
+- **Download lifecycle epoch tracking.** `DownloadTask` exposes
+  `generation` / `attempt` accessors and a
+  `startAttempt(generation:attempt:)` method that reduces through
+  `DownloadLifecycleReducer` and applies an `.advancedEpoch` effect.
+  The reducer gains a `.startAttempt` event and an `.advancedEpoch`
+  effect; epoch advancement is orthogonal to the state-transition
+  table so retries can begin from any pre-attempt state without
+  widening `canTransition`.
+- **Persistent cache hit/miss/eviction metrics.**
+  `PersistentResponseCacheStatistics` adds three monotonic in-process
+  counters: `hitCount`, `missCount`, and `evictionCount`. The cache
+  actor seeds the eviction counter from the open-time scrub pipeline.
+- **NetworkConfiguration fluent modifiers.** Seven additive
+  modifiers — `with(retry:)`, `with(cache:)`, `with(circuitBreaker:)`,
+  `with(refresh:)`, `with(coalescing:)`, `with(executionPolicies:)`,
+  `with(eventObservers:)` — wrap the existing `AdvancedBuilder`.
+- **`StreamingResumeStrategy` protocol.** Marker protocol with a
+  single `isCompatible(with bufferingPolicy:)` requirement;
+  `StreamingResumePolicy` retroactively conforms. The streaming
+  executor's bounded-buffer guard now flows through the protocol.
+- **Ordered event sequence ID.** `NetworkEventHub` allocates a
+  monotonic `UInt64` sequence ID on every publish call and threads it
+  through partition queues and observer chains.
+- **`MultipartUploadStrategy.threshold(bytes:)`** clamping factory and
+  explicit visionOS branch on `platformDefault`.
+- **`HTTPHeaderName<Variant>` phantom-typed keys.** Parallel
+  type-safe header API alongside the existing `String`-keyed surface;
+  `SingleValueHeader` names route through `update`,
+  `RepeatableHeader` names expose only the append helper.
+- **5.0 design note for `apple/swift-openapi-generator`** at
+  `Tools/openapi-to-innonetwork/SwiftOpenAPIGeneratorPath.md`.
+- **Five-policy compatibility matrix** in `docs/PolicyInteractions.md`.
+- **RFC 9111 compliance matrix** at
+  `docs/rfcs/RFC9111-Compliance.md`.
+
+### Changed (release/4.0.0-batch)
+
+- **`RequestExecutor` consolidation.** Four lifecycle-stage extension
+  files merged into a single `RequestExecutor.swift` with MARK-
+  divided sections. Public/package surface unchanged.
+- **`PersistentResponseCache` split** into five focused files; actor
+  body shrinks 1,132 -> 843 lines. `applyDataProtection` is promoted
+  from `fileprivate` to module-internal so the relocated KeyNormalizer
+  can request the same protection class.
+- **`WebSocketManager` helper extraction.** Top-level public DTOs and
+  the file-private `WebSocketInvalidationBarrier` actor move to
+  dedicated files; manager body shrinks 1,201 -> 1,059 lines as a
+  prep for the actor conversion below.
+
+### Breaking (release/4.0.0-batch)
+
+- **`WebSocketManager` is now an `actor`.** Every public entry point
+  requires `await` from the call site:
+
+  ```swift
+  let task = await manager.connect(url: url)
+  for await event in await manager.events(for: task) { ... }
+  await manager.disconnect(task)
+  ```
+
+  The four URLSession delegate-bridge methods and
+  `handleBackgroundSessionCompletion` stay `nonisolated`.
+
+- **`NetworkError` adds `.transportSuspended` and
+  `.cacheRevalidationFailed(underlying:cached:)`.** The enum has been
+  documented as non-`@frozen` since the type was introduced; this
+  release exercises that contract for the first time. Adopters that
+  ignored the recommendation see a "Switch must be exhaustive" warning
+  until they add the new arms or wrap with `@unknown default`.
+  Localized strings ship in `en` and `ko`.
+
+- **Streaming bounded-buffer guard message.** Runtime guard moved
+  from a hardcoded `StreamingResumePolicy.lastEventID` switch to the
+  new `StreamingResumeStrategy.isCompatible(with:)` protocol method.
+  The thrown `NetworkError.configuration(.invalidRequest(...))` now
+  reads "StreamingResumePolicy requires unbounded output buffering ...".
+
+- **Package.swift platform-floor comment correction.** No code
+  change; the comment claimed `4.x bumped to iOS 18 / macOS 15 / ...`
+  while the declared values were always iOS 16 / macOS 14 / .... The
+  comment was a stale draft.
+
 ### Added
 
 - Privacy manifests (`PrivacyInfo.xcprivacy`) declaring the
