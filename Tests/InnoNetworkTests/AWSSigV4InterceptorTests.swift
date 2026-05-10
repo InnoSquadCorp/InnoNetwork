@@ -154,6 +154,58 @@ struct AWSSigV4InterceptorTests {
     }
 
     @Test
+    func nonDefaultPortIsPreservedInHostHeader() async throws {
+        let interceptor = AWSSigV4Interceptor(
+            accessKeyID: "AKIDEXAMPLE",
+            secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "s3",
+            now: { Self.fixedDate }
+        )
+        var request = URLRequest(url: URL(string: "https://localhost:9000/bucket")!)
+        request.httpMethod = "GET"
+
+        let signed = try await interceptor.adapt(request)
+        #expect(signed.value(forHTTPHeaderField: "Host") == "localhost:9000")
+
+        var requestDefaultPort = URLRequest(url: URL(string: "https://example.amazonaws.com:443/")!)
+        requestDefaultPort.httpMethod = "GET"
+        let signedDefault = try await interceptor.adapt(requestDefaultPort)
+        #expect(signedDefault.value(forHTTPHeaderField: "Host") == "example.amazonaws.com")
+    }
+
+    @Test
+    func nonS3ServicesDoubleEncodeCanonicalPath() async throws {
+        let nonS3 = AWSSigV4Interceptor(
+            accessKeyID: "AKIDEXAMPLE",
+            secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "execute-api",
+            now: { Self.fixedDate }
+        )
+        var request = URLRequest(url: URL(string: "https://example.amazonaws.com/hello%20world")!)
+        request.httpMethod = "GET"
+        request.setValue("example.amazonaws.com", forHTTPHeaderField: "Host")
+        request.setValue("20150830T123600Z", forHTTPHeaderField: "X-Amz-Date")
+
+        let canonical = nonS3.canonicalRequest(for: request)
+        // URL.path decodes %20 → " ". First encode → "/hello%20world".
+        // Second encode (non-S3) → "/hello%2520world".
+        #expect(canonical.contains("/hello%2520world"))
+
+        let s3 = AWSSigV4Interceptor(
+            accessKeyID: "AKIDEXAMPLE",
+            secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "s3",
+            now: { Self.fixedDate }
+        )
+        let s3Canonical = s3.canonicalRequest(for: request)
+        #expect(s3Canonical.contains("/hello%20world"))
+        #expect(!s3Canonical.contains("/hello%2520world"))
+    }
+
+    @Test
     func streamingBodyIsRejected() async throws {
         let interceptor = Self.makeInterceptor()
         var request = URLRequest(url: URL(string: "https://example.amazonaws.com/")!)

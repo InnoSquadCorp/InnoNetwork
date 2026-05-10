@@ -160,7 +160,7 @@ Versioning.
   deprecated earlier in this PR; it is removed in the same PR per the
   maintainer's "no zombie deprecations" cleanup pass.
 
-### Changed
+### Localization
 
 - `NetworkError.errorDescription` no longer ships a Korean
   (`ko.lproj/Localizable.strings`) translation. Only the English

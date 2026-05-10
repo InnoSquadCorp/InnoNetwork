@@ -30,11 +30,10 @@ import Foundation
 /// > target service with the published AWS SigV4 test vectors before
 /// > shipping; the interceptor exposes ``canonicalRequest(for:)``
 /// > and ``stringToSign(canonicalRequest:date:)`` for that purpose.
-/// > Non-S3 AWS services (API Gateway, Elasticsearch, …) additionally
-/// > expect a **double URI-encoded** canonical path; this reference
-/// > implementation performs a single encoding and is therefore
-/// > correct for S3 but may need a second encoding pass on the
-/// > canonical path before signing for those services.
+/// > The canonical path is single-encoded for `service == "s3"` and
+/// > double-encoded for every other service to match the SigV4 rule
+/// > that non-S3 services (API Gateway, Elasticsearch, SQS, …)
+/// > re-encode percent sequences when computing the canonical URI.
 public struct AWSSigV4Interceptor: RequestInterceptor {
     public let accessKeyID: String
     /// Holds the long-term IAM secret used to derive the signing key.
@@ -87,9 +86,11 @@ public struct AWSSigV4Interceptor: RequestInterceptor {
             request.setValue(sessionToken, forHTTPHeaderField: "X-Amz-Security-Token")
         }
         if request.value(forHTTPHeaderField: "Host") == nil,
-            let host = request.url?.host
+            let url = request.url,
+            let host = url.host
         {
-            request.setValue(host, forHTTPHeaderField: "Host")
+            request.setValue(
+                Self.canonicalHostValue(host: host, scheme: url.scheme, port: url.port), forHTTPHeaderField: "Host")
         }
 
         let canonicalRequest = canonicalRequest(for: request)
@@ -116,12 +117,31 @@ public struct AWSSigV4Interceptor: RequestInterceptor {
         let method = request.httpMethod ?? "GET"
         let url = request.url
         let urlPath = url?.path ?? ""
-        let path = urlPath.isEmpty ? "/" : Self.uriEncode(urlPath, allowSlash: true)
+        let firstPass = urlPath.isEmpty ? "/" : Self.uriEncode(urlPath, allowSlash: true)
+        // SigV4: S3 uses single-encoded paths; every other service expects
+        // the canonical URI to be encoded *again* (percent signs re-escaped).
+        let path = service.lowercased() == "s3" ? firstPass : Self.uriEncode(firstPass, allowSlash: true)
         let query = canonicalQueryString(from: url)
         let (headers, signed) = canonicalHeaders(of: request)
         let body = request.httpBody ?? Data()
         let payloadHash = Self.hex(Self.sha256(body))
         return "\(method)\n\(path)\n\(query)\n\(headers)\n\(signed)\n\(payloadHash)"
+    }
+
+    /// Computes the value to send in the `Host` header so it matches what
+    /// URLSession will actually put on the wire. Default ports (443 for
+    /// `https`, 80 for `http`) are stripped because URLSession omits them;
+    /// any other port is preserved so the value used during SigV4 signing
+    /// equals the value the service will receive.
+    static func canonicalHostValue(host: String, scheme: String?, port: Int?) -> String {
+        guard let port else { return host }
+        let isDefault: Bool
+        switch scheme?.lowercased() {
+        case "https": isDefault = port == 443
+        case "http": isDefault = port == 80
+        default: isDefault = false
+        }
+        return isDefault ? host : "\(host):\(port)"
     }
 
     /// Exposes the string-to-sign for the supplied canonical request.
