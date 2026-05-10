@@ -100,7 +100,8 @@ public struct AWSSigV4Interceptor: RequestInterceptor {
     public func canonicalRequest(for request: URLRequest) -> String {
         let method = request.httpMethod ?? "GET"
         let url = request.url
-        let path = url?.path.isEmpty == false ? Self.uriEncode(url!.path, allowSlash: true) : "/"
+        let urlPath = url?.path ?? ""
+        let path = urlPath.isEmpty ? "/" : Self.uriEncode(urlPath, allowSlash: true)
         let query = canonicalQueryString(from: url)
         let (headers, signed) = canonicalHeaders(of: request)
         let body = request.httpBody ?? Data()
