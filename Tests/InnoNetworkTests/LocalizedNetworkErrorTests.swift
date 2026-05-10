@@ -51,7 +51,6 @@ struct LocalizedNetworkErrorTests {
             .timeout(reason: .resourceTimeout),
             .timeout(reason: .connectionTimeout),
             .responseTooLarge(limit: 1024, observed: 4096),
-            .transportSuspended,
             .cacheRevalidationFailed(
                 underlying: SendableUnderlyingError(
                     domain: "test",
@@ -122,7 +121,6 @@ struct LocalizedNetworkErrorTests {
         "NetworkError.timeout.resource",
         "NetworkError.timeout.connection",
         "NetworkError.responseTooLarge",
-        "NetworkError.transportSuspended",
         "NetworkError.cacheRevalidationFailed",
         "NetworkError.trust.unsupportedAuthenticationMethod",
         "NetworkError.trust.missingServerTrust",

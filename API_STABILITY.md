@@ -117,7 +117,7 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance
 - `PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`
 - `DownloadTask.generation` / `attempt` observation accessors
-- `NetworkError.transportSuspended` and `NetworkError.cacheRevalidationFailed(underlying:cached:)` cases. Localizable.strings keys (`NetworkError.transportSuspended`, `NetworkError.cacheRevalidationFailed`) ship in `en` and are treated as the Provisionally Stable contract for the messages.
+- `NetworkError.cacheRevalidationFailed(underlying:cached:)` case. The `NetworkError.cacheRevalidationFailed` Localizable.strings key ships in `en` and is treated as the Provisionally Stable contract for the message.
 
 ## Provisionally Stable Evolution Boundaries
 

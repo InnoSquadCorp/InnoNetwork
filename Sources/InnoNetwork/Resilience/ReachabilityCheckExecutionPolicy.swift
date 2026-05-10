@@ -12,7 +12,7 @@ import Foundation
 /// instead of a 30-second timeout. If the snapshot reports
 /// `.requiresConnection`, the policy waits briefly for a fresh
 /// signal before either forwarding, surfacing offline, or throwing
-/// ``NetworkError/transportSuspended``. The ``Mode`` switch lets the
+/// ``NetworkError/underlying(_:_:)`` (with `code = 4002`). The ``Mode`` switch lets the
 /// policy log-only without rejecting — useful for staged
 /// rollouts where the team wants telemetry before tightening the
 /// gate.
@@ -52,7 +52,7 @@ public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
     public let mode: Mode
     /// Maximum time, in seconds, to wait while reachability remains
     /// `.requiresConnection` before surfacing
-    /// ``NetworkError/transportSuspended``.
+    /// ``NetworkError/underlying(_:_:)`` (with `code = 4002`).
     ///
     /// Negative values passed to the initializer are clamped to `0`.
     public let suspensionWaitTimeout: TimeInterval
@@ -67,7 +67,7 @@ public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
     ///     Defaults to `.requireOnline`.
     ///   - suspensionWaitTimeout: TimeInterval, in seconds, to wait for
     ///     `.requiresConnection` to recover before throwing
-    ///     ``NetworkError/transportSuspended``. Defaults to `1.0` and is
+    ///     ``NetworkError/underlying(_:_:)`` (with `code = 4002`). Defaults to `1.0` and is
     ///     clamped with `max(0, suspensionWaitTimeout)`.
     public init(
         monitor: any NetworkMonitoring,
@@ -107,7 +107,14 @@ public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
                     reason: .offline("device path became .unsatisfied")
                 )
             case .requiresConnection, nil:
-                throw NetworkError.transportSuspended
+                throw NetworkError.underlying(
+                    SendableUnderlyingError(
+                        domain: NetworkError.errorDomain,
+                        code: 4002,
+                        message: "The network connection is still being restored. Please wait a moment and try the request again."
+                    ),
+                    nil
+                )
             }
         case .satisfied, nil:
             break

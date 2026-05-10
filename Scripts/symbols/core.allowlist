@@ -112,7 +112,6 @@ InnoNetwork	swift.enum.case	NetworkError.decoding(stage:underlying:response:)
 InnoNetwork	swift.enum.case	NetworkError.responseTooLarge(limit:observed:)
 InnoNetwork	swift.enum.case	NetworkError.statusCode(_:)
 InnoNetwork	swift.enum.case	NetworkError.timeout(reason:underlying:)
-InnoNetwork	swift.enum.case	NetworkError.transportSuspended
 InnoNetwork	swift.enum.case	NetworkError.trustEvaluationFailed(_:)
 InnoNetwork	swift.enum.case	NetworkError.underlying(_:_:)
 InnoNetwork	swift.enum.case	NetworkEvent.cacheRevalidation(originalID:state:)

@@ -45,6 +45,17 @@ Versioning.
 
 ### Removed
 
+- **Breaking.** `NetworkError.transportSuspended` has been removed.
+  `ReachabilityCheckExecutionPolicy` now throws
+  `NetworkError.underlying(SendableUnderlyingError(domain:, code: 4002, message:), nil)`
+  for the same condition (`.requiresConnection` persisting past
+  `suspensionWaitTimeout`); pattern match on `.underlying(let underlying, _)`
+  with `underlying.code == 4002` to detect it. The dedicated
+  `NetworkError.transportSuspended` Localizable.strings key, the
+  matching API_STABILITY ledger entry, and the allowlist entry are
+  removed alongside the case. The 4.0.0 migration document and the
+  4.0.0 release note retain their historical mentions; only the
+  current contract loses the case.
 - **Breaking.** `NetworkConfiguration.urlSessionConfigurationOverride`,
   the matching field on `AdvancedBuilder`, and the `urlSessionConfigura
   tionOverride` parameter on `NetworkConfiguration.init(...)` and

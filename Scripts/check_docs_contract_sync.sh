@@ -203,7 +203,7 @@ expected_provisionally=(
 '`StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance'
 '`PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`'
 '`DownloadTask.generation` / `attempt` observation accessors'
-'`NetworkError.transportSuspended` and `NetworkError.cacheRevalidationFailed(underlying:cached:)` cases. Localizable.strings keys (`NetworkError.transportSuspended`, `NetworkError.cacheRevalidationFailed`) ship in `en` and are treated as the Provisionally Stable contract for the messages.'
+'`NetworkError.cacheRevalidationFailed(underlying:cached:)` case. The `NetworkError.cacheRevalidationFailed` Localizable.strings key ships in `en` and is treated as the Provisionally Stable contract for the message.'
 )
 
 expected_shipping_public_declarations=(
@@ -1006,13 +1006,9 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
       continue
       ;;
-    '`NetworkError.transportSuspended` and `NetworkError.cacheRevalidationFailed(underlying:cached:)` cases. Localizable.strings keys (`NetworkError.transportSuspended`, `NetworkError.cacheRevalidationFailed`) ship in `en` and are treated as the Provisionally Stable contract for the messages.')
-      require_contains 'case transportSuspended' \
-        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+    '`NetworkError.cacheRevalidationFailed(underlying:cached:)` case. The `NetworkError.cacheRevalidationFailed` Localizable.strings key ships in `en` and is treated as the Provisionally Stable contract for the message.')
       require_contains 'case cacheRevalidationFailed(underlying: SendableUnderlyingError, cached: Response)' \
         "$repo_root/Sources/InnoNetwork/NetworkError.swift"
-      require_contains '"NetworkError.transportSuspended"' \
-        "$repo_root/Sources/InnoNetwork/Resources/en.lproj/Localizable.strings"
       require_contains '"NetworkError.cacheRevalidationFailed"' \
         "$repo_root/Sources/InnoNetwork/Resources/en.lproj/Localizable.strings"
       continue
