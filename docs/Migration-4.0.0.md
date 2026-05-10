@@ -85,12 +85,11 @@ catch let error as NetworkError {
 
 ## NetworkConfiguration fluent modifiers
 
-`NetworkConfiguration` gains seven `.with(...)` modifiers in 4.0.0. Existing
-`NetworkConfiguration.advanced(baseURL:)` callers keep compiling; the
+`NetworkConfiguration` gains seven `.with(...)` modifiers in 4.0.0. New code
+should compose the pack-based `NetworkConfiguration.advanced(
+baseURL:resilience:auth:observability:cache:transport:)` factory; the
 modifiers are an additive surface that lets adopting one new policy avoid
-re-typing every other knob. The 5.0 line is expected to relocate
-`customExecutionPolicies` and `eventObservers` into a protocol-bag, so new
-code should prefer:
+re-typing every other knob:
 
 ```swift
 NetworkConfiguration
@@ -101,7 +100,9 @@ NetworkConfiguration
     .with(eventObservers: [MyOSLogObserver()])
 ```
 
-over hand-rolling an `AdvancedBuilder` closure.
+The closure-based `advanced(baseURL:_:)` factory has been removed; pass the
+five named packs (`ResiliencePack`, `AuthPack`, `ObservabilityPack`,
+`CachePack`, `TransportPack`) instead.
 
 ## Optional adoption
 
@@ -275,10 +276,9 @@ scope the opt-in to that client:
 
 ```swift
 let config = NetworkConfiguration.advanced(
-    baseURL: URL(string: "http://localhost:8080")!
-) {
-    $0.allowsInsecureHTTP = true
-}
+    baseURL: URL(string: "http://localhost:8080")!,
+    transport: TransportPack(allowsInsecureHTTP: true)
+)
 ```
 
 ## PersistentResponseCacheConfiguration

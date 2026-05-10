@@ -43,10 +43,9 @@ let policy = PublicKeyPinningPolicy(
 let evaluator = PublicKeyPinningEvaluator(policy: policy)
 
 let configuration = NetworkConfiguration.advanced(
-    baseURL: URL(string: "https://api.example.com/v1")!
-) { builder in
-    builder.trustPolicy = .custom(evaluator)
-}
+    baseURL: URL(string: "https://api.example.com/v1")!,
+    transport: TransportPack(trustPolicy: .custom(evaluator))
+)
 ```
 
 ### Rotation policy

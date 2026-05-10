@@ -583,8 +583,8 @@ collect_public_symbols() {
 
 validate_public_surface_ledger() {
   [[ -f "$public_symbols_allowlist" ]] || fail "public symbol allowlist is missing: $public_symbols_allowlist"
-  require_line $'InnoNetwork\tswift.struct\tNetworkConfiguration.AdvancedBuilder' "$public_symbols_allowlist"
-  require_line $'InnoNetwork\tswift.property\tNetworkConfiguration.AdvancedBuilder.requestInterceptors' "$public_symbols_allowlist"
+  require_line $'InnoNetwork\tswift.type.method\tNetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)' "$public_symbols_allowlist"
+  require_line $'InnoNetwork\tswift.struct\tAuthPack' "$public_symbols_allowlist"
 
   local expected_file
   local actual_file

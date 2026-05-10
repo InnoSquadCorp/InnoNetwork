@@ -38,15 +38,20 @@ struct BaseURLConfigurationTests {
     @Test("advanced builder overrides tuning without changing required base URL")
     func advancedBuilderOverrides() {
         let baseURL = URL(string: "https://api.example.com/v1")!
-        let config = NetworkConfiguration.advanced(baseURL: baseURL) {
-            $0.timeout = 45
-            $0.cachePolicy = .reloadIgnoringLocalCacheData
-            $0.eventDeliveryPolicy = EventDeliveryPolicy(
-                maxBufferedEventsPerPartition: 256,
-                maxBufferedEventsPerConsumer: 128,
-                overflowPolicy: .dropNewest
+        let config = NetworkConfiguration.advanced(
+            baseURL: baseURL,
+            observability: ObservabilityPack(
+                eventDeliveryPolicy: EventDeliveryPolicy(
+                    maxBufferedEventsPerPartition: 256,
+                    maxBufferedEventsPerConsumer: 128,
+                    overflowPolicy: .dropNewest
+                )
+            ),
+            transport: TransportPack(
+                timeout: 45,
+                cachePolicy: .reloadIgnoringLocalCacheData
             )
-        }
+        )
 
         #expect(config.baseURL == baseURL)
         #expect(config.timeout == 45)

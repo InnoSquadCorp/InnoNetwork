@@ -196,59 +196,45 @@ public struct NetworkConfiguration: Sendable {
         URLSessionConfiguration.default
     }
 
-    public struct AdvancedBuilder: Sendable {
-        public var baseURL: URL
-        public var timeout: TimeInterval
-        public var cachePolicy: URLRequest.CachePolicy
-        public var requestPriority: RequestPriority
-        public var allowsCellularAccess: Bool
-        public var allowsExpensiveNetworkAccess: Bool
-        public var allowsConstrainedNetworkAccess: Bool
-        public var retryPolicy: RetryPolicy?
-        public var networkMonitor: (any NetworkMonitoring)?
-        public var metricsReporter: (any NetworkMetricsReporting)?
-        public var trustPolicy: TrustPolicy
-        public var eventObservers: [any NetworkEventObserving]
-        public var eventDeliveryPolicy: EventDeliveryPolicy
-        public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
-        public var acceptableStatusCodes: Set<Int>
-        public var requestInterceptors: [RequestInterceptor]
-        public var responseInterceptors: [ResponseInterceptor]
-        public var decodingInterceptors: [DecodingInterceptor]
-        public var refreshTokenPolicy: RefreshTokenPolicy?
-        public var requestCoalescingPolicy: RequestCoalescingPolicy
-        public var responseCachePolicy: ResponseCachePolicy
-        public var responseCache: (any ResponseCache)?
-        public var circuitBreakerPolicy: CircuitBreakerPolicy?
-        /// Custom ``RequestExecutionPolicy`` instances inserted around the
-        /// single transport attempt. Policies execute in array order — the
-        /// first element wraps the next policy and ultimately the transport
-        /// call for that attempt. Cache lookup/substitution, auth-refresh
-        /// replay, and outer retry scheduling remain outside this chain. See
-        /// ``RequestExecutionNext/execute(_:)`` for the per-policy calling
-        /// contract.
-        public var customExecutionPolicies: [any RequestExecutionPolicy]
-        /// See ``NetworkConfiguration/idempotencyKeyPolicy``.
-        public var idempotencyKeyPolicy: IdempotencyKeyPolicy
-        /// See ``NetworkConfiguration/userAgentProvider``.
-        public var userAgentProvider: @Sendable () -> String
-        /// See ``NetworkConfiguration/acceptLanguageProvider``.
-        public var acceptLanguageProvider: @Sendable () -> String
-        public var captureFailurePayload: Bool
-        /// Whether request bodies are streamed or buffered before decoding.
-        /// `URLSession` transports collect `bytes(for:)` with an optional
-        /// memory bound before cache writes or decoder handoff. Test doubles
-        /// that only implement `data(for:)` fall back to buffered transport.
-        public var responseBodyBufferingPolicy: ResponseBodyBufferingPolicy
-        /// Compatibility alias for the optional maximum body size in
-        /// ``responseBodyBufferingPolicy``. New code should set
-        /// ``responseBodyBufferingPolicy`` directly.
-        public var responseBodyLimit: Int64?
-        /// See ``NetworkConfiguration/redirectPolicy``.
-        public var redirectPolicy: any RedirectPolicy
-        /// See ``NetworkConfiguration/allowsInsecureHTTP``.
-        public var allowsInsecureHTTP: Bool
-        fileprivate init(preset: NetworkConfiguration) {
+    /// Internal builder used by the pack-based `advanced(...)` factory
+    /// and the chainable `with(...)` modifiers. Adopters compose
+    /// configurations through ``advanced(baseURL:resilience:auth:observability:cache:transport:)``
+    /// or the full ``init(baseURL:...)``; the builder type is not part
+    /// of the public API.
+    package struct AdvancedBuilder: Sendable {
+        package var baseURL: URL
+        package var timeout: TimeInterval
+        package var cachePolicy: URLRequest.CachePolicy
+        package var requestPriority: RequestPriority
+        package var allowsCellularAccess: Bool
+        package var allowsExpensiveNetworkAccess: Bool
+        package var allowsConstrainedNetworkAccess: Bool
+        package var retryPolicy: RetryPolicy?
+        package var networkMonitor: (any NetworkMonitoring)?
+        package var metricsReporter: (any NetworkMetricsReporting)?
+        package var trustPolicy: TrustPolicy
+        package var eventObservers: [any NetworkEventObserving]
+        package var eventDeliveryPolicy: EventDeliveryPolicy
+        package var eventMetricsReporter: (any EventPipelineMetricsReporting)?
+        package var acceptableStatusCodes: Set<Int>
+        package var requestInterceptors: [RequestInterceptor]
+        package var responseInterceptors: [ResponseInterceptor]
+        package var decodingInterceptors: [DecodingInterceptor]
+        package var refreshTokenPolicy: RefreshTokenPolicy?
+        package var requestCoalescingPolicy: RequestCoalescingPolicy
+        package var responseCachePolicy: ResponseCachePolicy
+        package var responseCache: (any ResponseCache)?
+        package var circuitBreakerPolicy: CircuitBreakerPolicy?
+        package var customExecutionPolicies: [any RequestExecutionPolicy]
+        package var idempotencyKeyPolicy: IdempotencyKeyPolicy
+        package var userAgentProvider: @Sendable () -> String
+        package var acceptLanguageProvider: @Sendable () -> String
+        package var captureFailurePayload: Bool
+        package var responseBodyBufferingPolicy: ResponseBodyBufferingPolicy
+        package var responseBodyLimit: Int64?
+        package var redirectPolicy: any RedirectPolicy
+        package var allowsInsecureHTTP: Bool
+        package init(preset: NetworkConfiguration) {
             self.baseURL = preset.baseURL
             self.timeout = preset.timeout
             self.cachePolicy = preset.cachePolicy
@@ -283,7 +269,7 @@ public struct NetworkConfiguration: Sendable {
             self.allowsInsecureHTTP = preset.allowsInsecureHTTP
         }
 
-        fileprivate func build() -> NetworkConfiguration {
+        package func build() -> NetworkConfiguration {
             NetworkConfiguration(
                 baseURL: baseURL,
                 timeout: timeout,
@@ -333,36 +319,52 @@ public struct NetworkConfiguration: Sendable {
     /// circuit breaker, automatic idempotency keys for unsafe methods, and
     /// streaming response body collection.
     public static func recommendedForProduction(baseURL: URL) -> NetworkConfiguration {
-        NetworkConfiguration.advanced(baseURL: baseURL) { builder in
-            builder.timeout = 30
-            builder.cachePolicy = .useProtocolCachePolicy
-            builder.retryPolicy = ExponentialBackoffRetryPolicy(
-                maxRetries: 2,
-                maxTotalRetries: 3,
-                retryDelay: 0.5,
-                maxRetryAfterDelay: 30,
-                maxDelay: 8,
-                jitterRatio: 0.2,
-                waitsForNetworkChanges: true,
-                networkChangeTimeout: 10
+        NetworkConfiguration.advanced(
+            baseURL: baseURL,
+            resilience: ResiliencePack(
+                retry: ExponentialBackoffRetryPolicy(
+                    maxRetries: 2,
+                    maxTotalRetries: 3,
+                    retryDelay: 0.5,
+                    maxRetryAfterDelay: 30,
+                    maxDelay: 8,
+                    jitterRatio: 0.2,
+                    waitsForNetworkChanges: true,
+                    networkChangeTimeout: 10
+                ),
+                circuitBreaker: CircuitBreakerPolicy(
+                    failureThreshold: 5,
+                    windowSize: 10,
+                    resetAfter: .seconds(30),
+                    maxResetAfter: .seconds(300)
+                ),
+                idempotency: .automaticForUnsafeMethods(),
+                bodyBuffering: .streaming()
+            ),
+            transport: TransportPack(
+                timeout: 30,
+                cachePolicy: .useProtocolCachePolicy
             )
-            builder.circuitBreakerPolicy = CircuitBreakerPolicy(
-                failureThreshold: 5,
-                windowSize: 10,
-                resetAfter: .seconds(30),
-                maxResetAfter: .seconds(300)
-            )
-            builder.idempotencyKeyPolicy = .automaticForUnsafeMethods()
-            builder.responseBodyBufferingPolicy = .streaming()
-        }
+        )
     }
 
+    /// Composes a configuration from the five thematic packs. Each
+    /// pack is optional; omitted packs leave the underlying tuned
+    /// defaults from `Presets.advancedTuning(baseURL:)` untouched.
     public static func advanced(
         baseURL: URL,
-        _ configure: (inout AdvancedBuilder) -> Void
+        resilience: ResiliencePack = ResiliencePack(),
+        auth: AuthPack = AuthPack(),
+        observability: ObservabilityPack = ObservabilityPack(),
+        cache: CachePack = CachePack(),
+        transport: TransportPack = TransportPack()
     ) -> NetworkConfiguration {
         var builder = AdvancedBuilder(preset: Presets.advancedTuning(baseURL: baseURL))
-        configure(&builder)
+        resilience.apply(to: &builder)
+        auth.apply(to: &builder)
+        observability.apply(to: &builder)
+        cache.apply(to: &builder)
+        transport.apply(to: &builder)
         return builder.build()
     }
 

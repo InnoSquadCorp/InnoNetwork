@@ -34,12 +34,17 @@ struct AppNetworking: Sendable {
             configuration: .init(directoryURL: cacheDirectory)
         )
 
-        let apiConfiguration = NetworkConfiguration.advanced(baseURL: baseURL) { builder in
-            builder.refreshTokenPolicy = refresh
-            builder.responseCachePolicy = .cacheFirst(maxAge: .seconds(300))
-            builder.responseCache = cache
-            builder.responseBodyBufferingPolicy = .streaming(maxBytes: 5 * 1024 * 1024)
-        }
+        let apiConfiguration = NetworkConfiguration.advanced(
+            baseURL: baseURL,
+            resilience: ResiliencePack(
+                bodyBuffering: .streaming(maxBytes: 5 * 1024 * 1024)
+            ),
+            auth: AuthPack(refreshToken: refresh),
+            cache: CachePack(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(300)),
+                responseCache: cache
+            )
+        )
 
         let downloadConfiguration = DownloadConfiguration.advanced { builder in
             builder.sessionIdentifier = "com.example.app.downloads.media"

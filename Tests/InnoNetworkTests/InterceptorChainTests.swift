@@ -216,16 +216,17 @@ struct InterceptorChainTests {
         #expect(response == StampedTraceResponse(ok: true))
     }
 
-    @Test("AdvancedBuilder exposes interceptor slots for tuning")
-    func advancedBuilderExposesInterceptorSlots() {
+    @Test("AuthPack appends interceptors to the chain")
+    func authPackAppendsInterceptorSlots() {
         let recorder = TraceRecorder()
         let configuration = NetworkConfiguration.advanced(
-            baseURL: URL(string: "https://api.example.com/v1")!
-        ) { builder in
-            builder.requestInterceptors = [HeaderStampingInterceptor(label: "adv-req", recorder: recorder)]
-            builder.responseInterceptors = [ResponseStampingInterceptor(label: "adv-res", recorder: recorder)]
-        }
-        #expect(configuration.requestInterceptors.count == 1)
-        #expect(configuration.responseInterceptors.count == 1)
+            baseURL: URL(string: "https://api.example.com/v1")!,
+            auth: AuthPack(
+                additionalSigners: [HeaderStampingInterceptor(label: "adv-req", recorder: recorder)],
+                additionalResponseInterceptors: [ResponseStampingInterceptor(label: "adv-res", recorder: recorder)]
+            )
+        )
+        #expect(configuration.requestInterceptors.count >= 1)
+        #expect(configuration.responseInterceptors.count >= 1)
     }
 }

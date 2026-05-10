@@ -55,9 +55,10 @@ public struct SentryNetworkEventObserver: NetworkEventObserving {
 The caller plugs the observer into ``NetworkConfiguration``:
 
 ```swift
-let configuration = NetworkConfiguration.advanced(baseURL: apiBaseURL) { builder in
-    builder.eventObservers.append(SentryNetworkEventObserver())
-}
+let configuration = NetworkConfiguration.advanced(
+    baseURL: apiBaseURL,
+    observability: ObservabilityPack(eventObservers: [SentryNetworkEventObserver()])
+)
 ```
 
 The adapter owns:

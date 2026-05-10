@@ -367,16 +367,21 @@ let download = DownloadConfiguration.safeDefaults(
 let socket = WebSocketConfiguration.safeDefaults()
 
 let tunedNetwork = NetworkConfiguration.advanced(
-    baseURL: URL(string: "https://api.example.com")!
-) { builder in
-    builder.timeout = 30
-    builder.redirectPolicy = DefaultRedirectPolicy()
-    builder.retryPolicy = ExponentialBackoffRetryPolicy()
-    builder.trustPolicy = .systemDefault
-    builder.requestCoalescingPolicy = .getOnly
-    builder.responseCache = InMemoryResponseCache()
-    builder.responseCachePolicy = .cacheFirst(maxAge: .seconds(60))
-}
+    baseURL: URL(string: "https://api.example.com")!,
+    resilience: ResiliencePack(
+        retry: ExponentialBackoffRetryPolicy(),
+        coalescing: .getOnly
+    ),
+    cache: CachePack(
+        responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+        responseCache: InMemoryResponseCache()
+    ),
+    transport: TransportPack(
+        timeout: 30,
+        redirectPolicy: DefaultRedirectPolicy(),
+        trustPolicy: .systemDefault
+    )
+)
 ```
 
 Auth refresh, coalescing, caching, and circuit breaking are opt-in. The
@@ -400,10 +405,9 @@ client:
 
 ```swift
 let local = NetworkConfiguration.advanced(
-    baseURL: URL(string: "http://localhost:8080")!
-) { builder in
-    builder.allowsInsecureHTTP = true
-}
+    baseURL: URL(string: "http://localhost:8080")!,
+    transport: TransportPack(allowsInsecureHTTP: true)
+)
 ```
 
 ```swift
@@ -414,11 +418,12 @@ let refreshPolicy = RefreshTokenPolicy(
 
 let client = DefaultNetworkClient(
     configuration: .advanced(
-        baseURL: URL(string: "https://api.example.com")!
-    ) { builder in
-        builder.refreshTokenPolicy = refreshPolicy
-        builder.circuitBreakerPolicy = CircuitBreakerPolicy(failureThreshold: 3)
-    }
+        baseURL: URL(string: "https://api.example.com")!,
+        resilience: ResiliencePack(
+            circuitBreaker: CircuitBreakerPolicy(failureThreshold: 3)
+        ),
+        auth: AuthPack(refreshToken: refreshPolicy)
+    )
 )
 ```
 

@@ -61,11 +61,12 @@ struct RequireOnlineInterceptor: RequestInterceptor {
     }
 }
 
-let configuration = NetworkConfiguration.advanced(baseURL: baseURL) { builder in
-    builder.requestInterceptors.append(
-        RequireOnlineInterceptor(monitor: networkMonitor)
+let configuration = NetworkConfiguration.advanced(
+    baseURL: baseURL,
+    auth: AuthPack(
+        additionalSigners: [RequireOnlineInterceptor(monitor: networkMonitor)]
     )
-}
+)
 ```
 
 The interceptor runs on every retry attempt by ``RequestInterceptor``

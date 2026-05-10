@@ -21,9 +21,10 @@ import Foundation
 /// let monitor = NetworkMonitor.shared
 /// let reachability = ReachabilityCheckExecutionPolicy(monitor: monitor)
 ///
-/// let configuration = NetworkConfiguration.advanced(baseURL: baseURL) { builder in
-///     builder.customExecutionPolicies.append(reachability)
-/// }
+/// let configuration = NetworkConfiguration.advanced(
+///     baseURL: baseURL,
+///     resilience: ResiliencePack(customExecutionPolicies: [reachability])
+/// )
 /// ```
 ///
 /// `nil` snapshots (no path observed yet) fall through because they

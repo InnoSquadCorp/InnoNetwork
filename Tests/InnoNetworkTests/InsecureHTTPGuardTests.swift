@@ -53,9 +53,10 @@ struct InsecureHTTPGuardTests {
 
     @Test("NetworkConfiguration.advanced can opt into HTTP")
     func advancedBuilderOptIn() {
-        let config = NetworkConfiguration.advanced(baseURL: URL(string: "http://localhost")!) {
-            $0.allowsInsecureHTTP = true
-        }
+        let config = NetworkConfiguration.advanced(
+            baseURL: URL(string: "http://localhost")!,
+            transport: TransportPack(allowsInsecureHTTP: true)
+        )
         #expect(config.allowsInsecureHTTP == true)
     }
 }

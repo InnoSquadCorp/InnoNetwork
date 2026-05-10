@@ -45,6 +45,22 @@ Versioning.
 
 ### Changed
 
+- **Breaking.** `NetworkConfiguration.AdvancedBuilder` is no longer
+  public. The closure-based factory
+  `NetworkConfiguration.advanced(baseURL:_:)` was removed; the new
+  public entry point is
+  `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`,
+  composing the five `ResiliencePack` / `AuthPack` / `ObservabilityPack`
+  / `CachePack` / `TransportPack` value types as named arguments. The
+  packs now carry the full configuration surface — `TransportPack`
+  gained `trustPolicy`, `acceptableStatusCodes`, `userAgentProvider`,
+  `acceptLanguageProvider`; `ResiliencePack` gained
+  `customExecutionPolicies`; `AuthPack` gained
+  `additionalResponseInterceptors` and `additionalDecodingInterceptors`.
+  Adopters who used the closure-form factory migrate by replacing each
+  `builder.<field> = value` mutation with the equivalent named pack
+  field. The seven `NetworkConfiguration.with(...)` chainable modifiers
+  are unchanged.
 - **Breaking.** Public-key pinning moved out of `InnoNetwork` into a
   dedicated `InnoNetworkTrust` companion product. `PublicKeyPinningPolicy`,
   `PublicKeyPinningPolicy.HostMatchingStrategy`, and the new

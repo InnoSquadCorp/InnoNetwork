@@ -26,9 +26,10 @@ import Foundation
 ///     try await auth.mintJWT(for: request)
 /// }
 /// // Attach to the configuration's request interceptors:
-/// let config = NetworkConfiguration.advanced(baseURL: baseURL) {
-///     $0.requestInterceptors.append(signer)
-/// }
+/// let config = NetworkConfiguration.advanced(
+///     baseURL: baseURL,
+///     auth: AuthPack(additionalSigners: [signer])
+/// )
 /// ```
 ///
 /// The interceptor does **not** mint, encode, or sign the JWT. That work

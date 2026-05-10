@@ -44,10 +44,9 @@ struct EnvelopeUnwrapper: DecodingInterceptor {
 }
 
 let configuration = NetworkConfiguration.advanced(
-    baseURL: URL(string: "https://api.example.com")!
-) { builder in
-    builder.decodingInterceptors = [EnvelopeUnwrapper()]
-}
+    baseURL: URL(string: "https://api.example.com")!,
+    auth: AuthPack(additionalDecodingInterceptors: [EnvelopeUnwrapper()])
+)
 ```
 
 The decoder downstream sees the inner payload and `APIDefinition` types stay

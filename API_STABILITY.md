@@ -180,10 +180,9 @@ Per-symbol evolution allowances within the 4.x line:
 - `ConcurrencyLimitExecutionPolicy` — `RequestExecutionPolicy` that
   funnels each transport attempt through a `ConcurrencyTokenBucket`
   with `acquire` / deferred `release` semantics. Registered via
-  `NetworkConfiguration.AdvancedBuilder.customExecutionPolicies`.
-  Surface stays source-compatible across the planned 5.x bucket
-  integration that may move the policy into a built-in pre-flight
-  stage.
+  `ResiliencePack.customExecutionPolicies`. Surface stays
+  source-compatible across the planned 5.x bucket integration that may
+  move the policy into a built-in pre-flight stage.
 - `ConcurrencyTokenBucket` — bounded counting semaphore actor for
   capping in-flight requests. Currently surfaced as a standalone
   primitive that adopters wire through paired
@@ -194,14 +193,12 @@ Per-symbol evolution allowances within the 4.x line:
   `queuedWaitersCount`) stays source-compatible across that
   transition.
 - `ResiliencePack`, `AuthPack`, `ObservabilityPack`, `CachePack`,
-  `TransportPack` — 5.0 forward-compat configuration packs that group
-  related `AdvancedBuilder` knobs. The 4.x line ships them as
-  optional structs whose `apply(to:)` method mutates an
-  `AdvancedBuilder` in place; the 5.0 release will accept them as
-  named init arguments directly. The pack APIs themselves stay
-  source-compatible from 4.x → 5.0 → 5.x; the 6.0 cycle may add
-  fields to existing packs without breaking call sites because every
-  field defaults to `nil`.
+  `TransportPack` — configuration packs accepted as named arguments by
+  `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`.
+  Each pack groups a thematic axis of options; the underlying builder
+  is now `package`-only. The pack APIs stay source-compatible from
+  4.x → 5.x; future minors may add fields to existing packs without
+  breaking call sites because every field defaults to `nil`.
 - `HMACRequestInterceptor` — reference HMAC body-signing interceptor
   (SHA-256 / SHA-384 / SHA-512). Header names and key id are
   provider-tunable; the streaming-body rejection is intentional, and
@@ -265,10 +262,10 @@ minor releases.
 ## Public Declaration Ledger
 
 The docs-contract gate extracts public symbols from Swift symbol graphs and
-compares them with `Scripts/api_public_symbols.allowlist`. That catches nested
-public types and members such as `NetworkConfiguration.AdvancedBuilder` in
-addition to top-level declarations. The grouped ledger below keeps the
-high-level compatibility classification readable for the 4.x release line.
+compares them with `Scripts/symbols/*.allowlist`. That catches nested public
+types and members in addition to top-level declarations. The grouped ledger
+below keeps the high-level compatibility classification readable for the 4.x
+release line.
 
 ### InnoNetwork
 

@@ -41,9 +41,10 @@ let signer = HMACRequestInterceptor(
     algorithm: .sha256
 )
 
-let configuration = NetworkConfiguration.advanced(baseURL: baseURL) { builder in
-    builder.requestInterceptors.append(signer)
-}
+let configuration = NetworkConfiguration.advanced(
+    baseURL: baseURL,
+    auth: AuthPack(additionalSigners: [signer])
+)
 
 let client = DefaultNetworkClient(configuration: configuration)
 ```
