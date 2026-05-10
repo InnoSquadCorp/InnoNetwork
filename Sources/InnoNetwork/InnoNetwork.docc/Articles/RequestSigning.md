@@ -134,6 +134,97 @@ prefer one of the following:
    protocol-specific interceptor; the shared
    `RequestInterceptor` surface stays the same.
 
+## AWS SigV4 (interceptor recipe)
+
+AWS SigV4 layers a canonical-request hash, a signing key derived from
+the secret access key plus date/region/service, and a header-based
+authorization carrier on top of every request. There is no in-package
+reference implementation today (`HMACRequestInterceptor` is the only
+shipped signer), but the `RequestInterceptor` contract is enough to
+host one. Skeleton:
+
+```swift
+public struct AWSSigV4Interceptor: RequestInterceptor {
+    public let accessKeyID: String
+    public let secretAccessKey: SymmetricKey
+    public let region: String
+    public let service: String
+    public let clock: any InnoNetworkClock
+    public init(accessKeyID: String,
+                secretAccessKey: Data,
+                region: String,
+                service: String,
+                clock: any InnoNetworkClock = SystemClock()) {
+        self.accessKeyID = accessKeyID
+        self.secretAccessKey = SymmetricKey(data: secretAccessKey)
+        self.region = region
+        self.service = service
+        self.clock = clock
+    }
+
+    public func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
+        // 1. Build the canonical request: HTTP method, canonical URI,
+        //    canonical query string, canonical headers, signed headers
+        //    list, and SHA-256 of the (already in-memory) body.
+        // 2. Build the string-to-sign using the credential scope
+        //    "<date>/<region>/<service>/aws4_request".
+        // 3. Derive the signing key with HMAC-SHA256 chain over date,
+        //    region, service, and the literal "aws4_request".
+        // 4. Compute the signature, attach `Authorization: AWS4-HMAC-SHA256
+        //    Credential=..., SignedHeaders=..., Signature=...`
+        //    plus `X-Amz-Date` and (for STS sessions) `X-Amz-Security-Token`.
+        fatalError("Implementation lives in your application or a future\n"
+            + "    InnoNetworkAWS companion package; this article documents the shape.")
+    }
+}
+```
+
+A built-in reference signer is on the 4.x roadmap; for now the
+expected adoption pattern is to ship `AWSSigV4Interceptor` (or
+equivalent) inside the application code and feed it via the same
+`requestInterceptors` chain that `HMACRequestInterceptor` lives on.
+
+> Important: SigV4 over a streaming body needs the chunk-signed
+> variant (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`). The interceptor
+> contract delivers the request before the upload pipeline owns the
+> body, so a streaming signer needs deeper integration than this
+> recipe — file an issue if your use case requires it.
+
+## JWT bearer with auto-refresh (interceptor recipe)
+
+For long-lived JWT bearer tokens (HS256 / RS256 / ES256), prefer
+``RefreshTokenPolicy``: that surface already coalesces single-flight
+refresh, replays one in-flight request after a 401, and routes around
+public endpoints via `appliesTo`. A custom JWT interceptor only adds
+value when the token is **minted on every request** (claims include
+the request method/path) rather than rotated by the auth server.
+
+For request-minted JWTs, the interceptor shape is:
+
+```swift
+public struct JWTRequestInterceptor: RequestInterceptor {
+    public let header: [String: String]   // { "alg": "ES256", "typ": "JWT" }
+    public let claimsBuilder: @Sendable (URLRequest) -> [String: any Encodable & Sendable]
+    public let signer: @Sendable (Data) async throws -> Data
+    public let scheme: String             // typically "Bearer"
+
+    public func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
+        // Encode header + claims as JSON, base64url, join with ".",
+        // hand off to `signer`, append base64url(signature),
+        // and set Authorization: <scheme> <jwt>.
+        var request = urlRequest
+        let token = try await mint(for: urlRequest)
+        request.setValue("\(scheme) \(token)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+}
+```
+
+Keep the signing key out of the interceptor itself — pass it as a
+closure (`signer`) so the actual key material can live in Keychain or
+Secure Enclave. The reference implementation will follow this shape
+when it lands in 4.x.
+
 ## Testing your interceptor
 
 For HMAC-style signers, derive the expected signature with the same

@@ -31,6 +31,29 @@ into one release line:
 - Phantom auth scopes through `AuthScope`, `PublicAuthScope`,
   `AuthRequiredScope`, and `EndpointBuilder`.
 
+## 4.x Reference Signers — AWS SigV4 and JWT Bearer
+
+`HMACRequestInterceptor` is the only request signer shipped in 4.0. The
+4.x roadmap adds two more reference implementations so the most common
+external-API conventions are covered without every adopter writing
+their own:
+
+- **AWS SigV4** — canonical-request signer for AWS APIs and any service
+  that adopts the same authorization scheme. Ships as
+  `AWSSigV4Interceptor` in a follow-up minor; the wire shape is
+  documented today in [`RequestSigning.md`](../Sources/InnoNetwork/InnoNetwork.docc/Articles/RequestSigning.md).
+- **JWT Bearer (request-minted)** — interceptor shape for backends that
+  expect a JWT computed per request (claims include method/path).
+  `RefreshTokenPolicy` already covers session-rotated bearer tokens, so
+  this signer targets the request-minted lane only.
+
+Both signers will keep key material outside the interceptor (closure
+injection so adopters can use Keychain or Secure Enclave); both ride
+on the existing `RequestInterceptor` contract. Streaming-body variants
+(SigV4 chunk-signed) are explicitly deferred — the interceptor surface
+runs before the upload pipeline owns the body, so chunk signing needs
+a deeper hook that is not yet planned.
+
 ## 4.x Configuration Convergence — Packs over AdvancedBuilder
 
 `NetworkConfiguration.AdvancedBuilder` exposes 33 mutable fields for
