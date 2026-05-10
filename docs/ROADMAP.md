@@ -31,6 +31,40 @@ into one release line:
 - Phantom auth scopes through `AuthScope`, `PublicAuthScope`,
   `AuthRequiredScope`, and `EndpointBuilder`.
 
+## 4.x Trust Pinning Module Split
+
+`TrustPolicy.swift` (~376 lines) and the seven-case `TrustFailureReason`
+enum cover certificate pinning, public-key pinning, and custom trust
+evaluation. Every adopter pays the binary and review cost of that
+surface today, even apps that are happy with Apple's ATS defaults
+(probably 90% of consumers — pinning is operationally heavy and a
+common cause of self-inflicted outages when a cert rotates).
+
+The 4.x roadmap moves the trust surface into a dedicated
+`InnoNetworkTrust` companion product so the cost is opt-in:
+
+- `TrustPolicy`, `TrustFailureReason`, and the underlying evaluator
+  move into `Sources/InnoNetworkTrust/`. Adopters who want pinning
+  add the new product alongside `InnoNetwork` and `import
+  InnoNetworkTrust`.
+- The current `InnoNetwork` re-exports the symbols (`@_exported import
+  InnoNetworkTrust`) for the first 4.x minor after the split so
+  existing call sites keep compiling without import changes; the
+  re-export is `@available(*, deprecated, renamed: "InnoNetworkTrust")`
+  so adopters get a heads-up to migrate their imports.
+- `NetworkConfiguration.trustPolicy` keeps its public type. The
+  configuration value continues to flow through the same execution
+  pipeline (`RequestExecutionPolicy`, `NetworkObservability`); only
+  the declaration site moves.
+- Apps that only need ATS get the surface reduction without any
+  source change because they never touched the trust types.
+
+Lift-and-shift carries 23 internal call sites today, plus the public
+ledger entries in `API_STABILITY.md` and the `TrustPolicies.md` DocC
+article. Landing the move in a single PR alongside the re-export
+shim is the safer path; this PR documents the intent so reviewers
+of a future trust-split PR have a contemporaneous design rationale.
+
 ## 4.x Reference Signers — AWS SigV4 and JWT Bearer
 
 `HMACRequestInterceptor` is the only request signer shipped in 4.0. The
