@@ -225,6 +225,7 @@ InnoNetwork	swift.init	HTTPHeaders.init(arrayLiteral:)
 InnoNetwork	swift.init	HTTPHeaders.init(dictionaryLiteral:)
 InnoNetwork	swift.init	HTTPMethod.init(rawValue:)
 InnoNetwork	swift.init	IdempotencyKeyPolicy.init(headerName:methods:keyProvider:)
+InnoNetwork	swift.init	JWTBearerInterceptor.init(scheme:headerName:tokenProvider:)
 InnoNetwork	swift.init	InMemoryResponseCache.init(maxBytes:)
 InnoNetwork	swift.init	MultipartFormData.init(boundary:includesPartContentLength:synchronizesEncodedFile:)
 InnoNetwork	swift.init	MultipartPart.init(headers:data:)
@@ -303,6 +304,7 @@ InnoNetwork	swift.method	ExponentialBackoffRetryPolicy.retryDelay(for:)
 InnoNetwork	swift.method	ExponentialBackoffRetryPolicy.shouldResetAttempts(afterNetworkChangeFrom:to:)
 InnoNetwork	swift.method	ExponentialBackoffRetryPolicy.shouldRetry(error:retryIndex:request:response:)
 InnoNetwork	swift.method	HMACRequestInterceptor.adapt(_:)
+InnoNetwork	swift.method	JWTBearerInterceptor.adapt(_:)
 InnoNetwork	swift.method	HTTPHeaders.add(_:)
 InnoNetwork	swift.method	HTTPHeaders.add(name:value:)
 InnoNetwork	swift.method	HTTPHeaders.append(_:value:)
@@ -497,6 +499,9 @@ InnoNetwork	swift.property	HTTPHeaders.startIndex
 InnoNetwork	swift.property	IdempotencyKeyPolicy.headerName
 InnoNetwork	swift.property	IdempotencyKeyPolicy.keyProvider
 InnoNetwork	swift.property	IdempotencyKeyPolicy.methods
+InnoNetwork	swift.property	JWTBearerInterceptor.headerName
+InnoNetwork	swift.property	JWTBearerInterceptor.scheme
+InnoNetwork	swift.property	JWTBearerInterceptor.tokenProvider
 InnoNetwork	swift.property	MultipartAPIDefinition.multipartFormData
 InnoNetwork	swift.property	MultipartAPIDefinition.transport
 InnoNetwork	swift.property	MultipartAPIDefinition.uploadStrategy
@@ -760,6 +765,7 @@ InnoNetwork	swift.struct	HTTPHeader
 InnoNetwork	swift.struct	HTTPHeaderName
 InnoNetwork	swift.struct	HTTPHeaders
 InnoNetwork	swift.struct	IdempotencyKeyPolicy
+InnoNetwork	swift.struct	JWTBearerInterceptor
 InnoNetwork	swift.struct	MultipartFormData
 InnoNetwork	swift.struct	MultipartPart
 InnoNetwork	swift.struct	MultipartResponseDecoder

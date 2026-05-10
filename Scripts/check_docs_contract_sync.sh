@@ -194,6 +194,7 @@ expected_provisionally=(
 '`PersistentResponseCache` statistics and telemetry surfaces'
 '`WebSocketError.unsupportedProtocolFeature`'
 '`WebSocketProtocolFeature`'
+'`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens'
 '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`'
 '`NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface'
 '`HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)'
@@ -927,6 +928,11 @@ for symbol in "${expected_provisionally[@]}"; do
     '`WebSocketProtocolFeature`')
       require_contains 'public enum WebSocketProtocolFeature' \
         "$repo_root/Sources/InnoNetworkWebSocket/WebSocketState.swift"
+      continue
+      ;;
+    '`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens')
+      require_contains 'public struct JWTBearerInterceptor: RequestInterceptor' \
+        "$repo_root/Sources/InnoNetwork/Auth/JWTBearerInterceptor.swift"
       continue
       ;;
     '`DecodingInterceptor`')
