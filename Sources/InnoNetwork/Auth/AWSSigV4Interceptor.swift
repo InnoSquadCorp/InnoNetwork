@@ -16,9 +16,10 @@ import Foundation
 /// - **Presigned URLs** (query-string signing). Use the AWS SDK or a
 ///   purpose-built signer; the SigV4 flow for that variant differs
 ///   meaningfully (no body, signature in query params).
-/// - **STS session tokens** are honoured when supplied via
-///   ``sessionToken`` — the interceptor adds `X-Amz-Security-Token`
-///   automatically — but the rotation is the caller's responsibility.
+/// - **STS session tokens** are honoured when supplied via the
+///   `sessionToken` init argument — the interceptor adds
+///   `X-Amz-Security-Token` automatically — but rotation is the
+///   caller's responsibility.
 ///
 /// The interceptor recomputes the signature on every attempt because
 /// the canonical request includes `X-Amz-Date`, which advances every
@@ -27,12 +28,23 @@ import Foundation
 /// > Important: This is a **reference implementation**, not a
 /// > drop-in replacement for the AWS SDK. Validate it against your
 /// > target service with the published AWS SigV4 test vectors before
-/// > shipping; the interceptor exposes ``canonicalRequest(for:date:)``
+/// > shipping; the interceptor exposes ``canonicalRequest(for:)``
 /// > and ``stringToSign(canonicalRequest:date:)`` for that purpose.
+/// > Non-S3 AWS services (API Gateway, Elasticsearch, …) additionally
+/// > expect a **double URI-encoded** canonical path; this reference
+/// > implementation performs a single encoding and is therefore
+/// > correct for S3 but may need a second encoding pass on the
+/// > canonical path before signing for those services.
 public struct AWSSigV4Interceptor: RequestInterceptor {
     public let accessKeyID: String
-    public let secretAccessKey: String
-    public let sessionToken: String?
+    /// Holds the long-term IAM secret used to derive the signing key.
+    /// Kept `internal` so it cannot be read back through the public
+    /// surface — adopters wire the value through `init` once and the
+    /// interceptor uses it internally for HMAC derivation only.
+    let secretAccessKey: String
+    /// Optional STS session token; same visibility rationale as
+    /// `secretAccessKey`.
+    let sessionToken: String?
     public let region: String
     public let service: String
 

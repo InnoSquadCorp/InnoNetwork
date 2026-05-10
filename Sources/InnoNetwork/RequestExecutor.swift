@@ -1030,7 +1030,7 @@ extension RequestExecutor {
                         domain: NetworkError.errorDomain,
                         code: 3002,
                         message:
-                            "Received a non-HTTP response from \(request.url?.absoluteString ?? "<unknown>"); response was \(type(of: response))."
+                            "Received a non-HTTP response from \(NetworkError.diagnosticURLString(for: request.url)); response was \(type(of: response))."
                     ),
                     nil
                 )

@@ -476,9 +476,10 @@ requires `@_spi` import.
   existing host pin lookup behavior. `mostSpecificHost` is stable as an
   opt-in stricter matching mode for operators who separate parent and
   subdomain pins.
-- `WebSocketCloseDisposition` is provisionally stable; the observation property
-  stays public, while classification policy and additional enum cases may evolve
-  in minor releases.
+- `WebSocketCloseDisposition` is **Stable**; the observation property is
+  SemVer-protected. Additional enum cases may be added in minor releases
+  as new close-code classifications are formalised, but existing cases
+  remain source-compatible.
 - `WebSocketPingContext` and `WebSocketPongContext` public fields are stable
   because they are payloads of stable heartbeat events; their package-scoped
   initializers are construction details owned by the library.

@@ -133,9 +133,10 @@ Versioning.
   4.0.0 release note retain their historical mentions; only the
   current contract loses the case.
 - **Breaking.** `NetworkConfiguration.urlSessionConfigurationOverride`,
-  the matching field on `AdvancedBuilder`, and the `urlSessionConfigura
-  tionOverride` parameter on `NetworkConfiguration.init(...)` and
-  `TransportPack.init(...)` have been removed. The hook was a leaky
+  the matching field on `AdvancedBuilder`, and the
+  `urlSessionConfigurationOverride` parameter on
+  `NetworkConfiguration.init(...)` and `TransportPack.init(...)` have
+  been removed. The hook was a leaky
   abstraction over raw `URLSessionConfiguration` and overlapped with
   the existing explicit-session path. Migration: build a configuration
   from `NetworkConfiguration.makeURLSessionConfiguration()`, mutate it

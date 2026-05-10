@@ -21,7 +21,7 @@ on:
   # suite is 5–10× slower; this label gives reviewers a low-friction way
   # to opt in.
   pull_request:
-    types: [labeled]
+    types: [labeled, synchronize, reopened]
 
 concurrency:
   group: tsan-${{ github.ref }}

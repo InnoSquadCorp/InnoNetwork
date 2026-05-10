@@ -110,11 +110,12 @@ struct TrustEvaluationTests {
             policy: .custom(AcceptingTrustEvaluator())
         )
         switch accepted {
-        case .performDefaultHandling:
+        case .cancel(.missingServerTrust):
             #expect(Bool(true))
         default:
             Issue.record(
-                "Expected custom evaluator acceptance to continue with default handling when trust is unavailable.")
+                "Expected custom evaluator acceptance to fail-secure with .missingServerTrust when serverTrust is absent."
+            )
         }
     }
 

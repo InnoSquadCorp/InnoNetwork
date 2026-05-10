@@ -89,7 +89,7 @@ enum TrustEvaluator {
                 if let trust = challenge.protectionSpace.serverTrust {
                     return .useCredential(URLCredential(trust: trust))
                 }
-                return .performDefaultHandling
+                return .cancel(.missingServerTrust)
             case .cancel(let reason):
                 return .cancel(reason)
             }

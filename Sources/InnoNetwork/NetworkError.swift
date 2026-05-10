@@ -421,6 +421,22 @@ extension NetworkError {
         mapTransportError(error, metrics: nil, resourceTimeoutInterval: nil)
     }
 
+    /// Returns a redacted URL string suitable for inclusion in
+    /// diagnostic error messages. The query string and fragment — the
+    /// pieces most likely to carry secrets (tokens, emails, OAuth state
+    /// parameters) — are stripped so a non-HTTP response or other
+    /// boundary failure does not leak them through `localizedDescription`
+    /// or downstream event sinks.
+    public static func diagnosticURLString(for url: URL?) -> String {
+        guard let url else { return "<unknown>" }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return "\(url.scheme ?? "")://\(url.host ?? "<unknown>")\(url.path)"
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.string ?? "\(components.scheme ?? "")://\(components.host ?? "<unknown>")\(components.path)"
+    }
+
     /// Metrics-aware variant of ``mapTransportError(_:)`` that can
     /// distinguish ``TimeoutReason/resourceTimeout`` from
     /// ``TimeoutReason/requestTimeout`` when the caller has the

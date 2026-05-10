@@ -213,7 +213,7 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
                         domain: NetworkError.errorDomain,
                         code: 3002,
                         message:
-                            "VCRURLSession received a non-HTTP response while recording \(request.url?.absoluteString ?? "<unknown>")."
+                            "VCRURLSession received a non-HTTP response while recording \(NetworkError.diagnosticURLString(for: request.url))."
                     ),
                     nil
                 )

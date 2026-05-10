@@ -149,18 +149,18 @@ public struct PublicKeyPinningEvaluator: TrustEvaluating {
             return .cancel(.missingServerTrust)
         }
 
-        var trustError: CFError?
-        if !SecTrustEvaluateWithError(serverTrust, &trustError) {
-            let reason = (trustError as Error?)?.localizedDescription
-            return .cancel(.systemTrustEvaluationFailed(reason: reason))
-        }
-
         let host = challenge.protectionSpace.host.lowercased()
         guard let expectedPins = policy.pins(forHost: host) else {
             if policy.allowDefaultEvaluationForUnpinnedHosts {
                 return .performDefaultHandling
             }
             return .cancel(.hostNotPinned(host))
+        }
+
+        var trustError: CFError?
+        if !SecTrustEvaluateWithError(serverTrust, &trustError) {
+            let reason = (trustError as Error?)?.localizedDescription
+            return .cancel(.systemTrustEvaluationFailed(reason: reason))
         }
 
         let extractedPins = Self.extractPublicKeyPins(from: serverTrust)

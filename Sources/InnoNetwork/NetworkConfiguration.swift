@@ -189,9 +189,9 @@ public struct NetworkConfiguration: Sendable {
     /// Adopters that need to swap `httpCookieStorage` for multi-account
     /// isolation, configure proxy/HTTP2/TLS settings, or otherwise mutate
     /// `URLSessionConfiguration` should call this method, mutate the
-    /// returned value, and pass the resulting `URLSession` directly to
-    /// `DefaultNetworkClient(session:)`. See `docs/Cookies.md` for the
-    /// canonical cookie-isolation recipe.
+    /// returned value, and pass the resulting `URLSession` to
+    /// `DefaultNetworkClient(configuration:session:)`. See
+    /// `docs/Cookies.md` for the canonical cookie-isolation recipe.
     public func makeURLSessionConfiguration() -> URLSessionConfiguration {
         URLSessionConfiguration.default
     }

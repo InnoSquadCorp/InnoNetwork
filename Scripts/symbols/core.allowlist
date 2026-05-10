@@ -219,8 +219,8 @@ InnoNetwork	swift.init	HTTPHeaders.init(arrayLiteral:)
 InnoNetwork	swift.init	HTTPHeaders.init(dictionaryLiteral:)
 InnoNetwork	swift.init	HTTPMethod.init(rawValue:)
 InnoNetwork	swift.init	IdempotencyKeyPolicy.init(headerName:methods:keyProvider:)
-InnoNetwork	swift.init	JWTBearerInterceptor.init(scheme:headerName:tokenProvider:)
 InnoNetwork	swift.init	InMemoryResponseCache.init(maxBytes:)
+InnoNetwork	swift.init	JWTBearerInterceptor.init(scheme:headerName:tokenProvider:)
 InnoNetwork	swift.init	MultipartFormData.init(boundary:includesPartContentLength:synchronizesEncodedFile:)
 InnoNetwork	swift.init	MultipartPart.init(headers:data:)
 InnoNetwork	swift.init	MultipartResponseDecoder.init(boundary:)
@@ -298,7 +298,6 @@ InnoNetwork	swift.method	ExponentialBackoffRetryPolicy.retryDelay(for:)
 InnoNetwork	swift.method	ExponentialBackoffRetryPolicy.shouldResetAttempts(afterNetworkChangeFrom:to:)
 InnoNetwork	swift.method	ExponentialBackoffRetryPolicy.shouldRetry(error:retryIndex:request:response:)
 InnoNetwork	swift.method	HMACRequestInterceptor.adapt(_:)
-InnoNetwork	swift.method	JWTBearerInterceptor.adapt(_:)
 InnoNetwork	swift.method	HTTPHeaders.add(_:)
 InnoNetwork	swift.method	HTTPHeaders.add(name:value:)
 InnoNetwork	swift.method	HTTPHeaders.append(_:value:)
@@ -315,6 +314,7 @@ InnoNetwork	swift.method	HTTPHeaders.values(for:)
 InnoNetwork	swift.method	InMemoryResponseCache.get(_:)
 InnoNetwork	swift.method	InMemoryResponseCache.invalidate(_:)
 InnoNetwork	swift.method	InMemoryResponseCache.set(_:_:)
+InnoNetwork	swift.method	JWTBearerInterceptor.adapt(_:)
 InnoNetwork	swift.method	LowLevelNetworkClient.perform(_:)
 InnoNetwork	swift.method	LowLevelNetworkClient.perform(_:tag:)
 InnoNetwork	swift.method	LowLevelNetworkClient.perform(executable:)
@@ -391,9 +391,7 @@ InnoNetwork	swift.property	APIDefinition.transport
 InnoNetwork	swift.property	AWSSigV4Interceptor.accessKeyID
 InnoNetwork	swift.property	AWSSigV4Interceptor.now
 InnoNetwork	swift.property	AWSSigV4Interceptor.region
-InnoNetwork	swift.property	AWSSigV4Interceptor.secretAccessKey
 InnoNetwork	swift.property	AWSSigV4Interceptor.service
-InnoNetwork	swift.property	AWSSigV4Interceptor.sessionToken
 InnoNetwork	swift.property	AuthPack.additionalDecodingInterceptors
 InnoNetwork	swift.property	AuthPack.additionalResponseInterceptors
 InnoNetwork	swift.property	AuthPack.additionalSigners
@@ -799,6 +797,7 @@ InnoNetwork	swift.type.method	MultipartUploadStrategy.threshold(bytes:)
 InnoNetwork	swift.type.method	NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)
 InnoNetwork	swift.type.method	NetworkConfiguration.recommendedForProduction(baseURL:)
 InnoNetwork	swift.type.method	NetworkConfiguration.safeDefaults(baseURL:)
+InnoNetwork	swift.type.method	NetworkError.diagnosticURLString(for:)
 InnoNetwork	swift.type.method	NetworkError.mapTransportError(_:)
 InnoNetwork	swift.type.method	RFC3986Encoding.encode(_:)
 InnoNetwork	swift.type.method	RefreshFailureCooldown.exponentialBackoff(base:max:)
