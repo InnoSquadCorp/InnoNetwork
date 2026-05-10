@@ -7,6 +7,21 @@ Versioning.
 
 ## [Unreleased]
 
+### Stability ledger
+
+- Promoted from Provisionally Stable to Stable in 4.x.x:
+  `EndpointBuilder` and `EndpointPathEncoding`, `DecodingInterceptor`,
+  and `WebSocketCloseDisposition`. These surfaces have been shipping
+  unchanged since 4.0.0 and now carry the SemVer-protected contract;
+  consumers can pin `.upToNextMajor(from: "4.0.0")` and rely on them
+  remaining source-compatible across the 4.x line.
+- Added an explicit "no 5.0 major bump is planned in the 4.x line"
+  callout to API_STABILITY.md. The Stable ledger only grows over the
+  rest of 4.x; entries do not move back into Provisionally Stable.
+- Removed stale Stable Examples wording referencing
+  `Examples/CustomHeaders` and `Examples/RealWorldAPI`, which were
+  deleted earlier in this PR.
+
 ### Deprecated
 
 - `NetworkError.nonHTTPResponse(URLResponse)` is now marked

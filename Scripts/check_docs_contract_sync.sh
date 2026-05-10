@@ -151,6 +151,9 @@ expected_stable=(
 '`StateReducer`'
 '`EventDeliveryPolicy`'
 '`WebSocketCloseCode`'
+'`EndpointBuilder`, `EndpointPathEncoding` (promoted from Provisionally Stable in 4.x.x; the path-encoding shape and decoding helpers are SemVer-protected)'
+'`DecodingInterceptor` (promoted from Provisionally Stable in 4.x.x)'
+'`WebSocketCloseDisposition` (promoted from Provisionally Stable in 4.x.x)'
 )
 
 documented_stable=()
@@ -182,8 +185,7 @@ expected_provisionally=(
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
-'`EndpointBuilder`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
-'`WebSocketCloseDisposition` observation surface'
+'`AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
 '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
 '`MultipartStreamingResponseDecoder` streaming multipart response parsing surface'
@@ -192,7 +194,6 @@ expected_provisionally=(
 '`PersistentResponseCache` statistics and telemetry surfaces'
 '`WebSocketError.unsupportedProtocolFeature`'
 '`WebSocketProtocolFeature`'
-'`DecodingInterceptor`'
 '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`'
 '`NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface'
 '`HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)'
@@ -840,6 +841,18 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public enum WebSocketCloseCode'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseCode.swift"
       ;;
+    '`EndpointBuilder`, `EndpointPathEncoding` (promoted from Provisionally Stable in 4.x.x; the path-encoding shape and decoding helpers are SemVer-protected)')
+      pattern='public struct EndpointBuilder<Response: Decodable & Sendable, Scope: AuthScope>: APIDefinition'
+      target="$repo_root/Sources/InnoNetwork/Endpoint.swift"
+      ;;
+    '`DecodingInterceptor` (promoted from Provisionally Stable in 4.x.x)')
+      pattern='public protocol DecodingInterceptor'
+      target="$repo_root/Sources/InnoNetwork/DecodingInterceptor.swift"
+      ;;
+    '`WebSocketCloseDisposition` (promoted from Provisionally Stable in 4.x.x)')
+      pattern='public enum WebSocketCloseDisposition: Sendable, Equatable'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseDisposition.swift"
+      ;;
     *)
       fail "unknown stable symbol mapping: $symbol"
       ;;
@@ -878,13 +891,8 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_test_support_product
       continue
       ;;
-    '`EndpointBuilder`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
+    '`AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
       validate_oss_readiness_public_api
-      continue
-      ;;
-    '`WebSocketCloseDisposition` observation surface')
-      require_contains 'public enum WebSocketCloseDisposition: Sendable, Equatable' \
-        "$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseDisposition.swift"
       continue
       ;;
     '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces')

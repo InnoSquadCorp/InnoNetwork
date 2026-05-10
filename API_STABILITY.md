@@ -47,6 +47,16 @@ release line. `4.0.0` is the public baseline for this contract.
 - `StateReducer`
 - `EventDeliveryPolicy`
 - `WebSocketCloseCode`
+- `EndpointBuilder`, `EndpointPathEncoding` (promoted from Provisionally Stable in 4.x.x; the path-encoding shape and decoding helpers are SemVer-protected)
+- `DecodingInterceptor` (promoted from Provisionally Stable in 4.x.x)
+- `WebSocketCloseDisposition` (promoted from Provisionally Stable in 4.x.x)
+
+> **No 5.0 major bump is planned in the 4.x line.** The Stable
+> ledger only grows over the rest of 4.x; entries do not move
+> back into Provisionally Stable. Surfaces that need a breaking
+> change wait until a future major. Adopters can pin
+> `.upToNextMajor(from: "4.0.0")` and rely on the entries above
+> remaining source-compatible across the entire 4.x line.
 
 ## Stable Examples
 
@@ -67,10 +77,10 @@ stops compiling.
 - `Examples/ErrorHandling` — `NetworkError` taxonomy and the
   `do`/`catch` patterns that surface response payloads.
 
-Every other example (`CustomHeaders`, `RealWorldAPI`, `DownloadManager`,
-`WebSocketChat`, `EventPolicyObserver`, the consumer smoke packages, …)
-stays Provisionally Stable: structure may evolve across minors and they
-are intentionally **not** enforced by the gate above. README/DocC examples
+Every other example (`DownloadManager`, `WebSocketChat`,
+`EventPolicyObserver`, the consumer smoke packages, …) stays
+Provisionally Stable: structure may evolve across minors and they are
+intentionally **not** enforced by the gate above. README/DocC examples
 continue to track the stable APIs they illustrate; their wording is not
 part of the compatibility contract.
 
@@ -89,8 +99,7 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `InnoNetworkTestSupport` library product and its `public` symbols
   (currently `MockURLSession`, `WebSocketEventRecorder`, `StubBehavior`,
   `StubNetworkClient`, and `StubRequestKey`)
-- `EndpointBuilder`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
-- `WebSocketCloseDisposition` observation surface
+- `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
 - `MultipartStreamingResponseDecoder` streaming multipart response parsing surface
@@ -99,7 +108,6 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `PersistentResponseCache` statistics and telemetry surfaces
 - `WebSocketError.unsupportedProtocolFeature`
 - `WebSocketProtocolFeature`
-- `DecodingInterceptor`
 - `StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`
 - `NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface
 - `HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)
