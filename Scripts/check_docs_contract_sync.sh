@@ -195,6 +195,7 @@ expected_provisionally=(
 '`WebSocketError.unsupportedProtocolFeature`'
 '`WebSocketProtocolFeature`'
 '`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens'
+'`AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing'
 '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`'
 '`NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface'
 '`HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)'
@@ -933,6 +934,11 @@ for symbol in "${expected_provisionally[@]}"; do
     '`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens')
       require_contains 'public struct JWTBearerInterceptor: RequestInterceptor' \
         "$repo_root/Sources/InnoNetwork/Auth/JWTBearerInterceptor.swift"
+      continue
+      ;;
+    '`AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing')
+      require_contains 'public struct AWSSigV4Interceptor: RequestInterceptor' \
+        "$repo_root/Sources/InnoNetwork/Auth/AWSSigV4Interceptor.swift"
       continue
       ;;
     '`DecodingInterceptor`')

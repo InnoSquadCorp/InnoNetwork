@@ -16,6 +16,17 @@ Versioning.
   request-minted JWT lane only — session-rotated bearer tokens are
   still better served by `RefreshTokenPolicy`'s single-flight refresh.
   Listed as Provisionally Stable in API_STABILITY.md.
+- `AWSSigV4Interceptor` reference signer in `Sources/InnoNetwork/Auth/`.
+  Targets the single-shot, in-memory body flow that covers most AWS
+  service calls (DynamoDB, S3 GET, CloudWatch, SQS). Streaming SigV4
+  (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`) and presigned URL signing are
+  out of scope and intentionally not implemented; adopters that need
+  them should fall back to the AWS SDK or a purpose-built signer. The
+  interceptor exposes `canonicalRequest(for:)` and
+  `stringToSign(canonicalRequest:date:)` as test probes so the
+  implementation can be validated against the published AWS SigV4
+  test vectors before shipping to production. Listed as Provisionally
+  Stable in API_STABILITY.md.
 
 ### Stability ledger
 
