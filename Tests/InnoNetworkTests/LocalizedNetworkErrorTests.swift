@@ -38,7 +38,6 @@ struct LocalizedNetworkErrorTests {
                 SendableUnderlyingError(domain: "test", code: 2, message: "boom"),
                 nil
             ),
-            .nonHTTPResponse(URLResponse()),
             .trustEvaluationFailed(.missingServerTrust),
             .trustEvaluationFailed(.unsupportedAuthenticationMethod("custom")),
             .trustEvaluationFailed(.systemTrustEvaluationFailed(reason: nil)),
@@ -118,7 +117,6 @@ struct LocalizedNetworkErrorTests {
         "NetworkError.offline",
         "NetworkError.decoding",
         "NetworkError.statusCode",
-        "NetworkError.nonHTTPResponse",
         "NetworkError.cancelled",
         "NetworkError.timeout.request",
         "NetworkError.timeout.resource",
@@ -142,14 +140,6 @@ struct LocalizedNetworkErrorTests {
             #expect(value != nil, "missing English string for \(key)")
             #expect(value?.isEmpty == false, "empty English string for \(key)")
         }
-    }
-
-    @Test("English nonHTTPResponse message is user-facing")
-    func englishNonHTTPResponseMessageIsUserFacing() {
-        let value = _localizedNetworkErrorString(forKey: "NetworkError.nonHTTPResponse", localization: "en") ?? ""
-
-        #expect(value.contains("nonHTTPResponse") == false)
-        #expect(value.contains("non-HTTP response"))
     }
 
     // MARK: - Helpers

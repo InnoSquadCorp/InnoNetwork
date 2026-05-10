@@ -327,7 +327,7 @@ package actor CircuitBreakerRegistry {
         }
         if let networkError = error as? NetworkError {
             switch networkError {
-            case .timeout, .nonHTTPResponse:
+            case .timeout:
                 return true
             case .trustEvaluationFailed:
                 return policy.countsTransportSecurityFailures

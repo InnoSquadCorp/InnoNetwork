@@ -230,9 +230,6 @@ actor ErrorHandlingExample {
             print("❌ Decoding Error (\(stage)): \(decodingError)")
             print("   Status Code: \(response.statusCode)")
 
-        case .nonHTTPResponse(let response):
-            print("❌ Non-HTTP Response: \(response)")
-
         case .underlying(let underlyingError, let response):
             print("❌ Underlying Error: \(underlyingError)")
             if let response = response {

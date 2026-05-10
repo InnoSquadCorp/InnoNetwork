@@ -22,16 +22,18 @@ Versioning.
   `Examples/CustomHeaders` and `Examples/RealWorldAPI`, which were
   deleted earlier in this PR.
 
-### Deprecated
+### Removed
 
-- `NetworkError.nonHTTPResponse(URLResponse)` is now marked
-  `@available(*, deprecated, ...)`. The case is retained in 4.x for
-  source compatibility; new code should throw
-  `.underlying(SendableUnderlyingError(...), nil)` wrapping the bare
-  `URLResponse`. The case will be removed in a future major when the
-  `NetworkError` surface is consolidated. Internal call sites still
-  use the deprecated case; consumers will only see a deprecation
-  warning if their own code constructs the case directly.
+- **Breaking.** `NetworkError.nonHTTPResponse(URLResponse)` has been
+  removed. Adopters that pattern-matched on `.nonHTTPResponse` should
+  match on `.underlying(let underlying, _)` and inspect
+  `underlying.code == 3002` (the dedicated non-HTTP-response code).
+  All built-in throw sites (`RequestExecutor`, `StreamingExecutor`,
+  `VCRURLSession`) now wrap the bare `URLResponse` into a
+  `SendableUnderlyingError` with code `3002` and a diagnostic message
+  carrying the request URL and response type. The case was marked
+  deprecated earlier in this PR; it is removed in the same PR per the
+  maintainer's "no zombie deprecations" cleanup pass.
 
 ### Changed
 

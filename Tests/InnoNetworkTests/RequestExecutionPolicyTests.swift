@@ -181,8 +181,8 @@ struct RequestExecutionPolicyTests {
         }
     }
 
-    @Test("Non-HTTP response surfaces as NetworkError.nonHTTPResponse")
-    func nonHTTPResponseSurfacesAsNetworkError() async throws {
+    @Test("Non-HTTP response surfaces as NetworkError.underlying with the diagnostic message")
+    func nonHTTPResponseSurfacesAsUnderlyingError() async throws {
         let mockSession = MockURLSession()
         mockSession.mockResponse = URLResponse(
             url: URL(string: "https://example.com")!,
@@ -200,13 +200,13 @@ struct RequestExecutionPolicyTests {
 
         do {
             _ = try await client.request(DataEcho())
-            Issue.record("Expected NetworkError.nonHTTPResponse")
+            Issue.record("Expected NetworkError.underlying for non-HTTP response")
         } catch let error as NetworkError {
             switch error {
-            case .nonHTTPResponse:
-                break
+            case .underlying(let underlying, _):
+                #expect(underlying.message.contains("non-HTTP response"))
             default:
-                Issue.record("Expected NetworkError.nonHTTPResponse, got \(error)")
+                Issue.record("Expected NetworkError.underlying, got \(error)")
             }
         }
     }

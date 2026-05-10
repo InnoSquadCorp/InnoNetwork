@@ -134,9 +134,6 @@ public enum NetworkError: Error, Sendable {
     /// body decode error.
     case decoding(stage: DecodingStage, underlying: SendableUnderlyingError, response: Response)
 
-    @available(*, deprecated, message: "Prefer .underlying(SendableUnderlyingError(...), nil) wrapping the bare URLResponse. The .nonHTTPResponse case is retained for source compatibility in 4.x and will be removed in a future major when the NetworkError surface is consolidated.")
-    case nonHTTPResponse(URLResponse)
-
     case underlying(SendableUnderlyingError, Response?)
     case trustEvaluationFailed(TrustFailureReason)
 
@@ -224,8 +221,6 @@ extension NetworkError: LocalizedError {
             return localized("NetworkError.statusCode")
         case .underlying(let error, _):
             return error.message
-        case .nonHTTPResponse:
-            return localized("NetworkError.nonHTTPResponse")
         case .trustEvaluationFailed(let reason):
             return localizedTrustFailureDescription(for: reason)
         case .cancelled:
@@ -331,7 +326,6 @@ public extension NetworkError {
         case .decoding(_, _, let response): return response
         case .statusCode(let response): return response
         case .underlying(_, let response): return response
-        case .nonHTTPResponse: return nil
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout: return nil
@@ -348,7 +342,6 @@ public extension NetworkError {
         case .decoding(_, let error, _): return error
         case .statusCode: return nil
         case .underlying(let error, _): return error
-        case .nonHTTPResponse: return nil
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout(_, let underlying): return underlying
@@ -391,8 +384,6 @@ extension NetworkError: CustomNSError {
             return 2002
         case .statusCode:
             return 3001
-        case .nonHTTPResponse:
-            return 3002
         case .underlying:
             return 4001
         case .trustEvaluationFailed:
@@ -440,7 +431,6 @@ public extension NetworkError {
         case .cacheRevalidationFailed(let underlying, let cached):
             return .cacheRevalidationFailed(underlying: underlying, cached: cached.redactingData())
         case .configuration,
-            .nonHTTPResponse,
             .underlying(_, nil),
             .trustEvaluationFailed,
             .cancelled,

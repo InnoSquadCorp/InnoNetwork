@@ -96,7 +96,14 @@ package struct StreamingExecutor: Sendable {
                 attemptStartedAt = Date()
                 let (bytes, response) = try await session.bytes(for: urlRequest, context: context)
                 guard let httpResponse = response as? HTTPURLResponse else {
-                    throw NetworkError.nonHTTPResponse(response)
+                    throw NetworkError.underlying(
+                        SendableUnderlyingError(
+                            domain: NetworkError.errorDomain,
+                            code: 3002,
+                            message: "Received a non-HTTP response on streaming request to \(urlRequest.url?.absoluteString ?? "<unknown>"); response was \(type(of: response))."
+                        ),
+                        nil
+                    )
                 }
                 await eventHub.publish(
                     .responseReceived(

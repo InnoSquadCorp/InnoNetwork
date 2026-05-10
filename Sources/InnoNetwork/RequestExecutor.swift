@@ -1018,7 +1018,14 @@ extension RequestExecutor {
             try Task.checkCancellation()
 
             guard let httpResponse = response as? HTTPURLResponse else {
-                throw NetworkError.nonHTTPResponse(response)
+                throw NetworkError.underlying(
+                    SendableUnderlyingError(
+                        domain: NetworkError.errorDomain,
+                        code: 3002,
+                        message: "Received a non-HTTP response from \(request.url?.absoluteString ?? "<unknown>"); response was \(type(of: response))."
+                    ),
+                    nil
+                )
             }
             return TransportResult(data: data, response: httpResponse)
         } catch {

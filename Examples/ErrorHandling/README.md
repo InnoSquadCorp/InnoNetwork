@@ -22,8 +22,8 @@ InnoNetwork provides the following error families:
   acceptable range.
 - `NetworkError.decoding`: Failed to decode a response at a specific
   `DecodingStage`.
-- `NetworkError.nonHTTPResponse`: Response is not an `HTTPURLResponse`.
-- `NetworkError.underlying`: Underlying transport or adapter error.
+- `NetworkError.underlying`: Underlying transport or adapter error
+  (also surfaces the rare non-`HTTPURLResponse` path with code `3002`).
 - `NetworkError.trustEvaluationFailed`: TLS pinning or trust evaluation failure.
 - `NetworkError.cancelled`: Request was cancelled.
 - `NetworkError.timeout`: Request, resource, or connection timeout.
@@ -76,8 +76,6 @@ do {
     case .decoding(let stage, let decodingError, let response):
         print("Decoding Error (\(stage)): \(decodingError)")
         print("Status Code: \(response.statusCode)")
-    case .nonHTTPResponse(let response):
-        print("Non-HTTP Response: \(response)")
     case .underlying(let underlyingError, let response):
         print("Underlying Error: \(underlyingError)")
         if let response = response {
