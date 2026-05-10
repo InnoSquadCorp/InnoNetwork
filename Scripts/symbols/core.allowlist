@@ -105,7 +105,6 @@ InnoNetwork	swift.enum.case	MultipartUploadStrategy.streamingThreshold(bytes:)
 InnoNetwork	swift.enum.case	NetworkConfigurationFailureReason.invalidBaseURL(_:)
 InnoNetwork	swift.enum.case	NetworkConfigurationFailureReason.invalidRequest(_:)
 InnoNetwork	swift.enum.case	NetworkConfigurationFailureReason.offline(_:)
-InnoNetwork	swift.enum.case	NetworkError.cacheRevalidationFailed(underlying:cached:)
 InnoNetwork	swift.enum.case	NetworkError.cancelled
 InnoNetwork	swift.enum.case	NetworkError.configuration(reason:)
 InnoNetwork	swift.enum.case	NetworkError.decoding(stage:underlying:response:)

@@ -14,7 +14,6 @@
 "NetworkError.timeout.resource" = "The resource transfer timed out.";
 "NetworkError.timeout.connection" = "The connection to the server timed out.";
 
-"NetworkError.cacheRevalidationFailed" = "Cache revalidation against the stored response failed: %@";
 
 "NetworkError.trust.unsupportedAuthenticationMethod" = "Unsupported authentication method: %@";
 "NetworkError.trust.missingServerTrust" = "Missing server trust.";

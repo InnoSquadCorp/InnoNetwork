@@ -980,10 +980,11 @@ struct ResiliencePolicyTests {
 
         do {
             _ = try await client.request(ResilienceGetRequest())
-            Issue.record("Expected cacheRevalidationFailed, got success")
+            Issue.record("Expected cache-revalidation-failed underlying error, got success")
         } catch let error as NetworkError {
-            guard case .cacheRevalidationFailed(_, let cached) = error else {
-                Issue.record("Expected .cacheRevalidationFailed, got \(error)")
+            guard case .underlying(let underlying, let cached?) = error,
+                  underlying.domain == "InnoNetwork.ResponseCache" else {
+                Issue.record("Expected .underlying with InnoNetwork.ResponseCache domain, got \(error)")
                 return
             }
             #expect(cached.statusCode == 200)

@@ -620,13 +620,13 @@ extension RequestExecutor {
                 expectedContentLength: cached.data.count,
                 textEncodingName: nil
             )
-        return .cacheRevalidationFailed(
-            underlying: SendableUnderlyingError(
+        return .underlying(
+            SendableUnderlyingError(
                 domain: "InnoNetwork.ResponseCache",
                 code: 304,
-                message: message
+                message: "Cache revalidation against the stored response failed: \(message)"
             ),
-            cached: Response(
+            Response(
                 statusCode: cached.statusCode,
                 data: cached.data,
                 request: request,

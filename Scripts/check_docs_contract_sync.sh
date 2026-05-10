@@ -203,7 +203,6 @@ expected_provisionally=(
 '`StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance'
 '`PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`'
 '`DownloadTask.generation` / `attempt` observation accessors'
-'`NetworkError.cacheRevalidationFailed(underlying:cached:)` case. The `NetworkError.cacheRevalidationFailed` Localizable.strings key ships in `en` and is treated as the Provisionally Stable contract for the message.'
 )
 
 expected_shipping_public_declarations=(
@@ -1004,13 +1003,6 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
       require_contains 'public var attempt: Int' \
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
-      continue
-      ;;
-    '`NetworkError.cacheRevalidationFailed(underlying:cached:)` case. The `NetworkError.cacheRevalidationFailed` Localizable.strings key ships in `en` and is treated as the Provisionally Stable contract for the message.')
-      require_contains 'case cacheRevalidationFailed(underlying: SendableUnderlyingError, cached: Response)' \
-        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
-      require_contains '"NetworkError.cacheRevalidationFailed"' \
-        "$repo_root/Sources/InnoNetwork/Resources/en.lproj/Localizable.strings"
       continue
       ;;
     *)

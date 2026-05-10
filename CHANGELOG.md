@@ -45,6 +45,16 @@ Versioning.
 
 ### Removed
 
+- **Breaking.** `NetworkError.cacheRevalidationFailed(underlying:cached:)`
+  has been removed. The internal `RequestExecutor.cacheRevalidationFailed`
+  helper now returns
+  `.underlying(SendableUnderlyingError(domain: "InnoNetwork.ResponseCache", code: 304, message: "Cache revalidation against the stored response failed: \(message)"), cachedResponse)`
+  for the same conditions; pattern-match on `.underlying(let underlying, let cached?)`
+  with `underlying.domain == "InnoNetwork.ResponseCache"`. The
+  Localizable.strings key, the API_STABILITY ledger entry, the
+  allowlist entry, and the docs-contract-sync mapping are removed
+  alongside the case. NetworkError surface is now **7 cases** —
+  the original plan E target (11 → 7) is complete.
 - **Breaking.** `NetworkError.responseTooLarge(limit:observed:)` has
   been removed. The buffer-overflow throw sites in `BufferedAsyncBytes`
   and `RequestExecutor` now throw

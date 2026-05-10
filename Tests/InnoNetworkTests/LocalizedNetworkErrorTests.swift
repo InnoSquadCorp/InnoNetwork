@@ -50,14 +50,6 @@ struct LocalizedNetworkErrorTests {
             .timeout(reason: .requestTimeout),
             .timeout(reason: .resourceTimeout),
             .timeout(reason: .connectionTimeout),
-            .cacheRevalidationFailed(
-                underlying: SendableUnderlyingError(
-                    domain: "test",
-                    code: 3,
-                    message: "stale cache"
-                ),
-                cached: response
-            ),
         ]
 
         for error in cases {
@@ -114,7 +106,6 @@ struct LocalizedNetworkErrorTests {
         "NetworkError.timeout.request",
         "NetworkError.timeout.resource",
         "NetworkError.timeout.connection",
-        "NetworkError.cacheRevalidationFailed",
         "NetworkError.trust.unsupportedAuthenticationMethod",
         "NetworkError.trust.missingServerTrust",
         "NetworkError.trust.systemTrustEvaluationFailedWithReason",

@@ -145,28 +145,6 @@ public enum NetworkError: Error, Sendable {
     /// associated value directly or use `NSError.userInfo[NSUnderlyingErrorKey]`
     /// after bridging.
     case timeout(reason: TimeoutReason, underlying: SendableUnderlyingError? = nil)
-    /// The transport completed but produced a response body larger than
-    /// ``NetworkConfiguration/responseBodyLimit``. Raised so the executor can
-    /// short-circuit decoding and so callers can choose a recovery strategy
-    /// (raise the limit, fall back to streaming, or surface a paged retry)
-    /// rather than silently OOM the process or pass an oversized payload to
-    /// `JSONDecoder`.
-    ///
-    /// A 304 Not Modified revalidation against the cached response
-    /// failed at the conditional-request layer (header merge produced
-    /// an unparseable response, the cached body was unreadable, or the
-    /// stored `Vary` snapshot disagreed with what the server returned).
-    /// Carries the underlying error and the cached entry so consumers
-    /// can choose to fall through to a fresh transport attempt or
-    /// surface the failure.
-    ///
-    /// - Parameters:
-    ///   - underlying: The error raised by the revalidation pipeline.
-    ///   - cached: The previously-stored response that the revalidation
-    ///     attempt was working from. The bytes have already been
-    ///     redacted via ``NetworkError/redactingFailurePayload()`` unless
-    ///     ``NetworkConfiguration/captureFailurePayload`` is set.
-    case cacheRevalidationFailed(underlying: SendableUnderlyingError, cached: Response)
 }
 
 
@@ -214,11 +192,6 @@ extension NetworkError: LocalizedError {
             case .connectionTimeout:
                 return localized("NetworkError.timeout.connection")
             }
-        case .cacheRevalidationFailed(let underlying, _):
-            return localizedFormat(
-                "NetworkError.cacheRevalidationFailed",
-                underlying.message
-            )
         }
     }
 }
@@ -301,7 +274,6 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout: return nil
-        case .cacheRevalidationFailed(_, let response): return response
         }
     }
 
@@ -315,7 +287,6 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout(_, let underlying): return underlying
-        case .cacheRevalidationFailed(let underlying, _): return underlying
         }
     }
 
@@ -360,8 +331,6 @@ extension NetworkError: CustomNSError {
             return NSURLErrorCancelled
         case .timeout:
             return NSURLErrorTimedOut
-        case .cacheRevalidationFailed:
-            return 6002
         }
     }
 
@@ -392,8 +361,6 @@ public extension NetworkError {
             return .statusCode(response.redactingData())
         case .underlying(let err, let response?):
             return .underlying(err, response.redactingData())
-        case .cacheRevalidationFailed(let underlying, let cached):
-            return .cacheRevalidationFailed(underlying: underlying, cached: cached.redactingData())
         case .configuration,
             .underlying(_, nil),
             .trustEvaluationFailed,
