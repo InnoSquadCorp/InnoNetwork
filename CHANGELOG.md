@@ -45,6 +45,20 @@ Versioning.
 
 ### Changed
 
+- **Breaking.** `NetworkClient.request(_:)`, `request(_:tag:)`,
+  `upload(_:)`, and `upload(_:tag:)` now declare `throws(NetworkError)`
+  instead of untyped `throws`. The four methods only ever surfaced
+  `NetworkError` in practice (`RetryCoordinator` normalises every
+  classified failure, foreign errors are mapped at the
+  `DefaultNetworkClient` boundary), so the new typed-throws clause makes
+  that contract explicit and lets adopters catch with
+  `catch let error as NetworkError` (no `@unknown default` cast) or
+  `catch` to handle the typed value directly. Existing call sites that
+  used `try await client.request(...)` continue to compile; conforming
+  mocks must update their method signatures to
+  `async throws(NetworkError)`. `NetworkError.mapTransportError(_:)` is
+  now `public` so out-of-package conformers can map raw
+  `URLError`/`CancellationError` to the canonical `NetworkError` case.
 - **Breaking.** `NetworkConfiguration.AdvancedBuilder` is no longer
   public. The closure-based factory
   `NetworkConfiguration.advanced(baseURL:_:)` was removed; the new

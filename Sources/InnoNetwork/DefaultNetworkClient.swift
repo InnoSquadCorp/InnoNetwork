@@ -7,9 +7,11 @@ public protocol NetworkClient: Sendable {
     ///
     /// - Parameter request: The typed request definition to execute.
     /// - Returns: The decoded `APIResponse` produced by the request definition.
-    /// - Throws: A ``NetworkError`` or another execution error produced while encoding,
-    ///   sending, validating, or decoding the request.
-    func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse
+    /// - Throws: A ``NetworkError`` produced while encoding, sending,
+    ///   validating, or decoding the request. Foreign errors (e.g. raw
+    ///   `URLError`, `CancellationError`) are mapped to the closest
+    ///   ``NetworkError`` case at the client boundary.
+    func request<T: APIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse
 
     /// Executes a typed request and registers it under the supplied
     /// ``CancellationTag`` so it can later be cancelled together with other
@@ -25,9 +27,9 @@ public protocol NetworkClient: Sendable {
     ///   - request: The typed request definition to execute.
     ///   - tag: Optional cancellation tag; pass `nil` for ungrouped requests.
     /// - Returns: The decoded `APIResponse` produced by the request definition.
-    /// - Throws: A ``NetworkError`` or another execution error produced while encoding,
-    ///   sending, validating, or decoding the request.
-    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse
+    /// - Throws: A ``NetworkError`` produced while encoding, sending,
+    ///   validating, or decoding the request.
+    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError) -> T.APIResponse
 
     /// Executes a multipart request modeled with ``MultipartAPIDefinition``.
     ///
@@ -35,16 +37,16 @@ public protocol NetworkClient: Sendable {
     ///
     /// - Parameter request: The multipart request definition to execute.
     /// - Returns: The decoded `APIResponse` produced by the multipart request.
-    /// - Throws: A ``NetworkError`` or another execution error produced while building,
-    ///   sending, validating, or decoding the multipart request.
-    func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse
+    /// - Throws: A ``NetworkError`` produced while building, sending,
+    ///   validating, or decoding the multipart request.
+    func upload<T: MultipartAPIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse
 
     /// Executes a multipart upload and registers it under the supplied
     /// ``CancellationTag``. See ``request(_:tag:)`` for semantics.
     ///
     /// Conformers must implement this overload explicitly; see
     /// ``request(_:tag:)`` for the grouped-cancellation contract.
-    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse
+    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError) -> T.APIResponse
 }
 
 extension NetworkClient {
@@ -56,13 +58,13 @@ extension NetworkClient {
     /// plate of mirroring two methods in every test double — there is no
     /// silent-fallback risk because the implementation explicitly passes
     /// `tag: nil`, the same value the caller would have to pass anyway.
-    public func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
+    public func request<T: APIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse {
         try await self.request(request, tag: nil)
     }
 
     /// Default forwarder that calls ``upload(_:tag:)`` with `tag: nil`. See
     /// ``request(_:)`` for the rationale.
-    public func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse {
+    public func upload<T: MultipartAPIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse {
         try await self.upload(request, tag: nil)
     }
 }
@@ -341,8 +343,10 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
         inFlight.cancelAll(matching: tag)
     }
 
-    public func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse {
-        return try await perform(request, tag: nil)
+    public func request<T: APIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse {
+        try await Self.mappingTransportErrors {
+            try await self.perform(request, tag: nil)
+        }
     }
 
     /// Executes a typed request and registers it under the supplied
@@ -351,12 +355,16 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     public func request<T: APIDefinition>(
         _ request: T,
         tag: CancellationTag?
-    ) async throws -> T.APIResponse {
-        try await perform(request, tag: tag)
+    ) async throws(NetworkError) -> T.APIResponse {
+        try await Self.mappingTransportErrors {
+            try await self.perform(request, tag: tag)
+        }
     }
 
-    public func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse {
-        try await perform(executable: MultipartSingleRequestExecutable(base: request), tag: nil)
+    public func upload<T: MultipartAPIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse {
+        try await Self.mappingTransportErrors {
+            try await self.perform(executable: MultipartSingleRequestExecutable(base: request), tag: nil)
+        }
     }
 
     /// Executes a multipart upload and registers it under the supplied
@@ -364,8 +372,29 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     public func upload<T: MultipartAPIDefinition>(
         _ request: T,
         tag: CancellationTag?
-    ) async throws -> T.APIResponse {
-        try await perform(executable: MultipartSingleRequestExecutable(base: request), tag: tag)
+    ) async throws(NetworkError) -> T.APIResponse {
+        try await Self.mappingTransportErrors {
+            try await self.perform(executable: MultipartSingleRequestExecutable(base: request), tag: tag)
+        }
+    }
+
+    /// Funnels an untyped-throwing pipeline call into a typed
+    /// `NetworkError` boundary. The retry coordinator already publishes
+    /// `NetworkError` for every classified failure; this trap only catches
+    /// foreign errors that bypass that normalization (e.g. raw
+    /// `CancellationError` from a custom `RequestExecutionPolicy`) and
+    /// maps them via ``NetworkError/mapTransportError(_:)``.
+    @Sendable
+    private static func mappingTransportErrors<Response: Sendable>(
+        _ work: @Sendable () async throws -> Response
+    ) async throws(NetworkError) -> Response {
+        do {
+            return try await work()
+        } catch let error as NetworkError {
+            throw error
+        } catch {
+            throw NetworkError.mapTransportError(error)
+        }
     }
 
     /// Low-level typed execution entry point for standard ``APIDefinition`` requests.

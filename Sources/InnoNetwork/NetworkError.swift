@@ -417,7 +417,7 @@ extension NetworkError {
     /// > group). Do not widen the `.timeout` arm without a paired test
     /// > update; collapsing additional `URLError` codes into `.timeout`
     /// > silently changes consumer retry semantics.
-    static func mapTransportError(_ error: Error) -> NetworkError {
+    public static func mapTransportError(_ error: Error) -> NetworkError {
         mapTransportError(error, metrics: nil, resourceTimeoutInterval: nil)
     }
 

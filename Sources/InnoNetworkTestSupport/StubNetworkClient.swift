@@ -64,7 +64,7 @@ public final class StubNetworkClient: NetworkClient, Sendable {
         register(response, for: StubRequestKey(request), behavior: behavior)
     }
 
-    public func request<Request: APIDefinition>(_ request: Request) async throws -> Request.APIResponse {
+    public func request<Request: APIDefinition>(_ request: Request) async throws(NetworkError) -> Request.APIResponse {
         let key = StubRequestKey(request)
         if let entry = stubs.withLock({ $0[key] }) {
             switch entry.behavior {
@@ -78,6 +78,8 @@ public final class StubNetworkClient: NetworkClient, Sendable {
                         try await Task.sleep(for: .seconds(seconds))
                     } catch is CancellationError {
                         throw NetworkError.cancelled
+                    } catch {
+                        throw NetworkError.mapTransportError(error)
                     }
                 }
                 return try cast(entry.response, for: key)
@@ -95,7 +97,7 @@ public final class StubNetworkClient: NetworkClient, Sendable {
     public func request<Request: APIDefinition>(
         _ request: Request,
         tag: CancellationTag?
-    ) async throws -> Request.APIResponse {
+    ) async throws(NetworkError) -> Request.APIResponse {
         let key = StubRequestKey(request)
         if let entry = stubs.withLock({ $0[key] }) {
             switch entry.behavior {
@@ -109,6 +111,8 @@ public final class StubNetworkClient: NetworkClient, Sendable {
                         try await Task.sleep(for: .seconds(seconds))
                     } catch is CancellationError {
                         throw NetworkError.cancelled
+                    } catch {
+                        throw NetworkError.mapTransportError(error)
                     }
                 }
                 return try cast(entry.response, for: key)
@@ -123,7 +127,7 @@ public final class StubNetworkClient: NetworkClient, Sendable {
             reason: .invalidRequest("No stub registered for \(request.method.rawValue) \(request.path)."))
     }
 
-    public func upload<Request: MultipartAPIDefinition>(_ request: Request) async throws -> Request.APIResponse {
+    public func upload<Request: MultipartAPIDefinition>(_ request: Request) async throws(NetworkError) -> Request.APIResponse {
         if let fallback {
             return try await fallback.upload(request)
         }
@@ -136,7 +140,7 @@ public final class StubNetworkClient: NetworkClient, Sendable {
     public func upload<Request: MultipartAPIDefinition>(
         _ request: Request,
         tag: CancellationTag?
-    ) async throws -> Request.APIResponse {
+    ) async throws(NetworkError) -> Request.APIResponse {
         if let fallback {
             return try await fallback.upload(request, tag: tag)
         }
@@ -149,7 +153,7 @@ public final class StubNetworkClient: NetworkClient, Sendable {
     private func cast<Response: Decodable & Sendable>(
         _ response: any Sendable,
         for key: StubRequestKey
-    ) throws -> Response {
+    ) throws(NetworkError) -> Response {
         guard let typed = response as? Response else {
             throw NetworkError.configuration(
                 reason: .invalidRequest("Registered stub for \(key.method) \(key.path) has the wrong response type."))

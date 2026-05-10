@@ -553,6 +553,29 @@ entries live under `[4.0.0]`.
   with a UUID-suffixed session identifier to avoid cross-test
   collisions.
 
+### `NetworkClient` migrates to `throws(NetworkError)`
+
+- **What changed.** Every `NetworkClient` primitive
+  (`request(_:)`, `request(_:tag:)`, `upload(_:)`, `upload(_:tag:)`) now
+  declares `async throws(NetworkError)`. The default forwarders in the
+  protocol extension match. `NetworkError.mapTransportError(_:)` is
+  promoted from `internal` to `public` so out-of-package conformers can
+  map foreign errors (`URLError`, `CancellationError`, custom transport
+  failures) to the canonical `NetworkError` representation.
+- **Why.** `RetryCoordinator` already normalises every classified
+  failure into `NetworkError`, and `DefaultNetworkClient` maps the
+  remaining foreign errors at the boundary. The untyped `throws` was
+  the only thing forcing callers to write `catch let error as
+  NetworkError` plus a redundant `default` arm; making the contract
+  explicit collapses the boilerplate without changing observable
+  semantics.
+- **Migration.** Call sites using `try await client.request(...)`
+  compile unchanged. Conformers (mocks, fakes, decorators) must update
+  the four method signatures to `async throws(NetworkError) -> ...`
+  and convert any `throw error` that re-throws an arbitrary `Error`
+  into either a `NetworkError` case or
+  `NetworkError.mapTransportError(error)`.
+
 ### `NetworkClient` gains `tag:` overloads
 
 - **What changed.** `NetworkClient` now declares

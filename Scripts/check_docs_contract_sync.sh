@@ -711,11 +711,11 @@ for symbol in "${expected_stable[@]}"; do
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.request(_:)`')
-      pattern='    func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse'
+      pattern='    func request<T: APIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.request(_:tag:)`')
-      pattern='    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse'
+      pattern='    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError) -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.request(_:method:tag:)`')
@@ -723,11 +723,11 @@ for symbol in "${expected_stable[@]}"; do
       target="$repo_root/Sources/InnoNetwork/NetworkClient+PathConvenience.swift"
       ;;
     '`NetworkClient.upload(_:)`')
-      pattern='    func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse'
+      pattern='    func upload<T: MultipartAPIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.upload(_:tag:)`')
-      pattern='    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse'
+      pattern='    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError) -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkConfiguration.safeDefaults(baseURL:)`')
