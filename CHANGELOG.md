@@ -24,6 +24,22 @@ Versioning.
 
 ### Removed
 
+- **Breaking.** `NetworkConfiguration.urlSessionConfigurationOverride`,
+  the matching field on `AdvancedBuilder`, and the `urlSessionConfigura
+  tionOverride` parameter on `NetworkConfiguration.init(...)` and
+  `TransportPack.init(...)` have been removed. The hook was a leaky
+  abstraction over raw `URLSessionConfiguration` and overlapped with
+  the existing explicit-session path. Migration: build a configuration
+  from `NetworkConfiguration.makeURLSessionConfiguration()`, mutate it
+  directly (`httpCookieStorage` for cookie isolation, `assumesHTTP3
+  Capable` for HTTP/3 opt-in, `tlsMinimumSupportedProtocolVersion`
+  for TLS, etc.), and inject the resulting `URLSession` via
+  `DefaultNetworkClient(configuration:session:)`. The pattern is the
+  same one already documented in `docs/Cookies.md`,
+  `docs/HTTP3.md`, and `docs/AppGroupSharedSession.md`. The dedicated
+  `docs/UrlSessionEscapeHatchAlternatives.md` cookbook is removed
+  alongside the surface; its content is now folded into the
+  configuration articles.
 - **Breaking.** `NetworkError.nonHTTPResponse(URLResponse)` has been
   removed. Adopters that pattern-matched on `.nonHTTPResponse` should
   match on `.underlying(let underlying, _)` and inspect

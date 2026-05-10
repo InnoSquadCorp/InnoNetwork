@@ -177,13 +177,6 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
         configuration: NetworkConfiguration,
         session: URLSessionProtocol = URLSession.shared
     ) {
-        precondition(
-            !Self.requiresExplicitSessionForConfigurationOverride(
-                configuration: configuration,
-                session: session
-            ),
-            "[InnoNetwork] urlSessionConfigurationOverride is set but DefaultNetworkClient was constructed with URLSession.shared; pass an explicit `session:` built from `configuration.makeURLSessionConfiguration()` to honor the hook."
-        )
         self.configuration = configuration
         self.session = session
         self.executionRuntime = RequestExecutionRuntime(
@@ -203,13 +196,6 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
         session: URLSessionProtocol = URLSession.shared,
         clock: any InnoNetworkClock
     ) {
-        precondition(
-            !Self.requiresExplicitSessionForConfigurationOverride(
-                configuration: configuration,
-                session: session
-            ),
-            "[InnoNetwork] urlSessionConfigurationOverride is set but DefaultNetworkClient was constructed with URLSession.shared; pass an explicit `session:` built from `configuration.makeURLSessionConfiguration()` to honor the hook."
-        )
         self.configuration = configuration
         self.session = session
         self.executionRuntime = RequestExecutionRuntime(
@@ -222,14 +208,6 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
             metricsReporter: configuration.eventMetricsReporter,
             hubKind: .networkRequest
         )
-    }
-
-    static func requiresExplicitSessionForConfigurationOverride(
-        configuration: NetworkConfiguration,
-        session: URLSessionProtocol
-    ) -> Bool {
-        configuration.urlSessionConfigurationOverride != nil
-            && session as AnyObject === URLSession.shared as AnyObject
     }
 
     /// Begins a long-lived streaming request and returns an

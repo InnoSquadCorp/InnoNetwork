@@ -147,13 +147,6 @@ public struct TransportPack: Sendable {
     public var allowsExpensiveNetworkAccess: Bool?
     public var allowsConstrainedNetworkAccess: Bool?
     public var redirectPolicy: (any RedirectPolicy)?
-    /// Raw URLSessionConfiguration escape hatch. Discouraged outside the
-    /// cookie-isolation recipe (see `docs/Cookies.md`); prefer first-class
-    /// policy axes such as `redirectPolicy`, `requestPriority`, and the
-    /// reachability/cellular toggles when an axis exists. File an issue
-    /// describing the use case when no axis covers it. See
-    /// `docs/UrlSessionEscapeHatchAlternatives.md`.
-    public var urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
     public var allowsInsecureHTTP: Bool?
 
     public init(
@@ -164,7 +157,6 @@ public struct TransportPack: Sendable {
         allowsExpensiveNetworkAccess: Bool? = nil,
         allowsConstrainedNetworkAccess: Bool? = nil,
         redirectPolicy: (any RedirectPolicy)? = nil,
-        urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)? = nil,
         allowsInsecureHTTP: Bool? = nil
     ) {
         self.timeout = timeout
@@ -174,7 +166,6 @@ public struct TransportPack: Sendable {
         self.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
         self.allowsConstrainedNetworkAccess = allowsConstrainedNetworkAccess
         self.redirectPolicy = redirectPolicy
-        self.urlSessionConfigurationOverride = urlSessionConfigurationOverride
         self.allowsInsecureHTTP = allowsInsecureHTTP
     }
 
@@ -190,9 +181,6 @@ public struct TransportPack: Sendable {
             builder.allowsConstrainedNetworkAccess = allowsConstrainedNetworkAccess
         }
         if let redirectPolicy { builder.redirectPolicy = redirectPolicy }
-        if let urlSessionConfigurationOverride {
-            builder.urlSessionConfigurationOverride = urlSessionConfigurationOverride
-        }
         if let allowsInsecureHTTP { builder.allowsInsecureHTTP = allowsInsecureHTTP }
     }
 }

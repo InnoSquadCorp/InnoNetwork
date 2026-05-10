@@ -14,40 +14,34 @@ clients in three common scenarios:
 - An **embedded SDK** that talks to a side channel and should not
   contaminate the host app's session — or vice versa.
 
-The library exposes the override surface needed to isolate cookie
-storage explicitly. This article documents the pattern; the underlying
-hook lives on
-``NetworkConfiguration/urlSessionConfigurationOverride``.
+The library does not ship a cookie-isolation hook on
+`NetworkConfiguration` itself; `URLSessionConfiguration` is the
+right place to set cookie storage, and `DefaultNetworkClient` already
+accepts an injected `URLSession`. The pattern below uses the
+configuration's `makeURLSessionConfiguration()` as a starting point,
+mutates the cookie surface directly, and hands the resulting session
+to `DefaultNetworkClient(configuration:session:)`.
 
 ## Per-client cookie jar
-
-Inject a dedicated `HTTPCookieStorage` instance through
-`urlSessionConfigurationOverride`, then build the matching
-`URLSession` from
-``NetworkConfiguration/makeURLSessionConfiguration()``:
 
 ```swift
 let isolatedCookies = HTTPCookieStorage.sharedCookieStorage(
     forGroupContainerIdentifier: "group.com.example.app.tenant-a"
 )
 
-let config = NetworkConfiguration.advanced(baseURL: baseURL) { builder in
-    builder.urlSessionConfigurationOverride = { sessionConfig in
-        sessionConfig.httpCookieStorage = isolatedCookies
-        sessionConfig.httpCookieAcceptPolicy = .onlyFromMainDocumentDomain
-        return sessionConfig
-    }
-}
+let config = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+let sessionConfig = config.makeURLSessionConfiguration()
+sessionConfig.httpCookieStorage = isolatedCookies
+sessionConfig.httpCookieAcceptPolicy = .onlyFromMainDocumentDomain
 
-let session = URLSession(configuration: config.makeURLSessionConfiguration())
+let session = URLSession(configuration: sessionConfig)
 let client = DefaultNetworkClient(configuration: config, session: session)
 ```
 
-> Important: `URLSession.shared` cannot honour
-> `urlSessionConfigurationOverride` because the system manages its
-> configuration. `DefaultNetworkClient` rejects the combination of a
-> non-`nil` override and the default shared session at initialization
-> time, so the failure mode is loud rather than silent.
+`URLSession.shared` cannot honour a custom `httpCookieStorage` because
+the system manages its configuration; always pass an explicit
+`URLSession` built from `makeURLSessionConfiguration()` when cookie
+isolation matters.
 
 ## Cookie-free clients
 
@@ -55,12 +49,10 @@ For SDKs or RPC-style clients that should not persist cookies at all,
 disable the storage entirely instead of swapping it out:
 
 ```swift
-builder.urlSessionConfigurationOverride = { sessionConfig in
-    sessionConfig.httpCookieAcceptPolicy = .never
-    sessionConfig.httpCookieStorage = nil
-    sessionConfig.httpShouldSetCookies = false
-    return sessionConfig
-}
+let sessionConfig = config.makeURLSessionConfiguration()
+sessionConfig.httpCookieAcceptPolicy = .never
+sessionConfig.httpCookieStorage = nil
+sessionConfig.httpShouldSetCookies = false
 ```
 
 This is the right default for service-to-service traffic where any
@@ -87,13 +79,10 @@ actor AccountSessionRegistry {
         let storage = HTTPCookieStorage.sharedCookieStorage(
             forGroupContainerIdentifier: "group.com.example.app.\(accountID.rawValue)"
         )
-        let config = NetworkConfiguration.advanced(baseURL: baseURL) { builder in
-            builder.urlSessionConfigurationOverride = { sessionConfig in
-                sessionConfig.httpCookieStorage = storage
-                return sessionConfig
-            }
-        }
-        let session = URLSession(configuration: config.makeURLSessionConfiguration())
+        let config = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+        let sessionConfig = config.makeURLSessionConfiguration()
+        sessionConfig.httpCookieStorage = storage
+        let session = URLSession(configuration: sessionConfig)
         let client = DefaultNetworkClient(configuration: config, session: session)
         clients[accountID] = client
         return client
@@ -122,7 +111,7 @@ A leak surfaces immediately as a non-empty intersection.
 
 ## See also
 
-- ``NetworkConfiguration/urlSessionConfigurationOverride``
+
 - ``NetworkConfiguration/makeURLSessionConfiguration()``
 - [Background Session Sharing](AppGroupSharedSession.md) for the
   cross-process variant (Share Extension, Widget Extension).

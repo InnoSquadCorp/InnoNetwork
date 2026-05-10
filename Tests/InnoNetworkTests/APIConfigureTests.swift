@@ -54,56 +54,10 @@ struct BaseURLConfigurationTests {
         #expect(config.eventDeliveryPolicy.overflowPolicy == .dropNewest)
     }
 
-    @Test("urlSessionConfigurationOverride is applied by makeURLSessionConfiguration()")
-    func urlSessionConfigurationOverrideIsApplied() {
-        let baseURL = URL(string: "https://api.example.com/v1")!
-        let config = NetworkConfiguration.advanced(baseURL: baseURL) {
-            $0.urlSessionConfigurationOverride = { sessionConfig in
-                sessionConfig.httpAdditionalHeaders = ["X-Override": "applied"]
-                sessionConfig.timeoutIntervalForRequest = 99
-                return sessionConfig
-            }
-        }
-
-        let resolved = config.makeURLSessionConfiguration()
-        #expect(resolved.httpAdditionalHeaders?["X-Override"] as? String == "applied")
-        #expect(resolved.timeoutIntervalForRequest == 99)
-    }
-
-    @Test("urlSessionConfigurationOverride requires explicit non-shared session")
-    func urlSessionConfigurationOverrideRequiresExplicitSession() {
-        let baseURL = URL(string: "https://api.example.com/v1")!
-        let config = NetworkConfiguration.advanced(baseURL: baseURL) {
-            $0.urlSessionConfigurationOverride = { sessionConfig in
-                sessionConfig.httpMaximumConnectionsPerHost = 8
-                return sessionConfig
-            }
-        }
-
-        #expect(
-            DefaultNetworkClient.requiresExplicitSessionForConfigurationOverride(
-                configuration: config,
-                session: URLSession.shared
-            )
-        )
-
-        let session = URLSession(configuration: config.makeURLSessionConfiguration())
-        defer { session.invalidateAndCancel() }
-
-        #expect(
-            !DefaultNetworkClient.requiresExplicitSessionForConfigurationOverride(
-                configuration: config,
-                session: session
-            )
-        )
-        _ = DefaultNetworkClient(configuration: config, session: session)
-    }
-
-    @Test("makeURLSessionConfiguration() returns default when no override set")
-    func makeURLSessionConfigurationDefaults() {
+    @Test("makeURLSessionConfiguration() returns the system default")
+    func makeURLSessionConfigurationReturnsDefault() {
         let baseURL = URL(string: "https://api.example.com/v1")!
         let config = NetworkConfiguration.safeDefaults(baseURL: baseURL)
-        #expect(config.urlSessionConfigurationOverride == nil)
         let resolved = config.makeURLSessionConfiguration()
         // The default URLSessionConfiguration honors the system default request timeout (60s).
         #expect(resolved.timeoutIntervalForRequest > 0)

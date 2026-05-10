@@ -181,41 +181,19 @@ public struct NetworkConfiguration: Sendable {
     /// staging).
     public let allowsInsecureHTTP: Bool
 
-    /// Optional escape hatch for callers that need to customize the
-    /// `URLSessionConfiguration` (proxy/HTTP2 tuning, connection pooling,
-    /// `httpAdditionalHeaders`, TLS minimum version, **per-client cookie
-    /// storage isolation**, etc.) when materializing a `URLSession` for
-    /// this configuration. The closure receives a fresh
-    /// `URLSessionConfiguration.default`-derived instance and must return a
-    /// configuration the caller is comfortable shipping. Because
-    /// `URLSession.shared` cannot honor this hook, `DefaultNetworkClient`
-    /// rejects the combination of a non-nil override and the default shared
-    /// session. Consumers must wire this through
-    /// ``makeURLSessionConfiguration()`` and pass the resulting `URLSession`
-    /// explicitly.
+    /// Build a `URLSessionConfiguration` derived from `URLSessionConfiguration.default`.
+    /// Provided as a convenience for callers that construct their own
+    /// `URLSession` and want a starting point that matches the rest of the
+    /// configuration surface.
     ///
-    /// Multi-account apps that need to isolate `HTTPCookieStorage` across
-    /// clients should swap `httpCookieStorage` and (when desired)
-    /// `httpCookieAcceptPolicy` here. The recipe lives in
-    /// `docs/Cookies.md`.
-    ///
-    /// > Discouraged for new code beyond the cookie-isolation recipe and
-    /// > similarly narrow scenarios. The hook is a leaky abstraction over
-    /// > raw `URLSessionConfiguration` and bypasses the policy-axis design
-    /// > that the rest of the configuration surface enforces. If you find
-    /// > yourself reaching for it, please file an issue describing the
-    /// > use case so a first-class policy axis can be considered.
-    /// > See [`docs/UrlSessionEscapeHatchAlternatives.md`](../../../../docs/UrlSessionEscapeHatchAlternatives.md).
-    public let urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
-
-    /// Build a `URLSessionConfiguration` derived from `URLSessionConfiguration.default`,
-    /// applying ``urlSessionConfigurationOverride`` when set. Provided as a
-    /// convenience for callers that construct their own `URLSession` and want
-    /// the override hook honored without re-implementing the wiring.
+    /// Adopters that need to swap `httpCookieStorage` for multi-account
+    /// isolation, configure proxy/HTTP2/TLS settings, or otherwise mutate
+    /// `URLSessionConfiguration` should call this method, mutate the
+    /// returned value, and pass the resulting `URLSession` directly to
+    /// `DefaultNetworkClient(session:)`. See `docs/Cookies.md` for the
+    /// canonical cookie-isolation recipe.
     public func makeURLSessionConfiguration() -> URLSessionConfiguration {
-        let base = URLSessionConfiguration.default
-        guard let override = urlSessionConfigurationOverride else { return base }
-        return override(base)
+        URLSessionConfiguration.default
     }
 
     public struct AdvancedBuilder: Sendable {
@@ -270,12 +248,6 @@ public struct NetworkConfiguration: Sendable {
         public var redirectPolicy: any RedirectPolicy
         /// See ``NetworkConfiguration/allowsInsecureHTTP``.
         public var allowsInsecureHTTP: Bool
-        /// See ``NetworkConfiguration/urlSessionConfigurationOverride``.
-        /// Discouraged outside the cookie-isolation recipe; prefer first-
-        /// class policy axes when one is available, and file an issue
-        /// when one is not.
-        public var urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
-
         fileprivate init(preset: NetworkConfiguration) {
             self.baseURL = preset.baseURL
             self.timeout = preset.timeout
@@ -309,7 +281,6 @@ public struct NetworkConfiguration: Sendable {
             self.responseBodyLimit = preset.responseBodyLimit
             self.redirectPolicy = preset.redirectPolicy
             self.allowsInsecureHTTP = preset.allowsInsecureHTTP
-            self.urlSessionConfigurationOverride = preset.urlSessionConfigurationOverride
         }
 
         fileprivate func build() -> NetworkConfiguration {
@@ -344,7 +315,6 @@ public struct NetworkConfiguration: Sendable {
                 captureFailurePayload: captureFailurePayload,
                 responseBodyBufferingPolicy: responseBodyBufferingPolicy,
                 responseBodyLimit: responseBodyLimit,
-                urlSessionConfigurationOverride: urlSessionConfigurationOverride,
                 redirectPolicy: redirectPolicy,
                 allowsInsecureHTTP: allowsInsecureHTTP
             )
@@ -427,7 +397,6 @@ public struct NetworkConfiguration: Sendable {
         captureFailurePayload: Bool = false,
         responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(),
         responseBodyLimit: Int64? = nil,
-        urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)? = nil,
         redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy(),
         allowsInsecureHTTP: Bool = false
     ) {
@@ -464,7 +433,6 @@ public struct NetworkConfiguration: Sendable {
         self.captureFailurePayload = captureFailurePayload
         self.responseBodyBufferingPolicy = resolvedBufferingPolicy
         self.responseBodyLimit = resolvedBufferingPolicy.maxBytes
-        self.urlSessionConfigurationOverride = urlSessionConfigurationOverride
         self.redirectPolicy = redirectPolicy
         self.allowsInsecureHTTP = allowsInsecureHTTP
     }

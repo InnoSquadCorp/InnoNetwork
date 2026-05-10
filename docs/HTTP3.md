@@ -7,8 +7,10 @@ the platform default — HTTP/2 over TLS 1.3 — so callers who want
 QUIC must enable it explicitly.
 
 This article shows the pattern. The runtime hook is the same
-`urlSessionConfigurationOverride` exposed on
-``NetworkConfiguration`` for cookie isolation and TLS tuning.
+`URLSessionConfiguration` surface used for cookie isolation and TLS
+tuning: build the configuration via
+``NetworkConfiguration/makeURLSessionConfiguration()``, mutate it,
+and inject the resulting `URLSession` into `DefaultNetworkClient`.
 
 ## When to enable HTTP/3
 
@@ -47,18 +49,15 @@ not supported — see `docs/PlatformSupport.md`.
 
 ## Enabling HTTP/3
 
-Use the same `urlSessionConfigurationOverride` hook documented in
+Use the same `URLSessionConfiguration` injection pattern documented in
 `docs/Cookies.md`:
 
 ```swift
-let config = NetworkConfiguration.advanced(baseURL: baseURL) { builder in
-    builder.urlSessionConfigurationOverride = { sessionConfig in
-        sessionConfig.assumesHTTP3Capable = true
-        return sessionConfig
-    }
-}
+let config = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+let sessionConfig = config.makeURLSessionConfiguration()
+sessionConfig.assumesHTTP3Capable = true
 
-let session = URLSession(configuration: config.makeURLSessionConfiguration())
+let session = URLSession(configuration: sessionConfig)
 let client = DefaultNetworkClient(configuration: config, session: session)
 ```
 
@@ -74,20 +73,18 @@ win does not materialize.
 
 ## Combining with other overrides
 
-Override closures compose by mutating the same
-`URLSessionConfiguration`. The most common pairing is HTTP/3 + a
-private cookie jar:
+The configuration mutates a single `URLSessionConfiguration`. The most
+common pairing is HTTP/3 + a private cookie jar:
 
 ```swift
-builder.urlSessionConfigurationOverride = { sessionConfig in
-    sessionConfig.assumesHTTP3Capable = true
-    sessionConfig.httpCookieStorage = isolatedCookies
-    return sessionConfig
-}
+let sessionConfig = config.makeURLSessionConfiguration()
+sessionConfig.assumesHTTP3Capable = true
+sessionConfig.httpCookieStorage = isolatedCookies
+let session = URLSession(configuration: sessionConfig)
 ```
 
-There is no need to nest multiple closures; mutate the configuration
-in one shot and return it.
+Mutate the configuration in one place rather than threading multiple
+closures through the configuration surface.
 
 ## Verifying HTTP/3 negotiation
 
@@ -132,7 +129,7 @@ InnoNetwork side.
 
 ## See also
 
-- ``NetworkConfiguration/urlSessionConfigurationOverride``
+
 - [Cookie Storage Isolation](Cookies.md) for the same hook applied
   to per-client cookie jars.
 - [Apple URLSession Programming Guide — Networking Protocols](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/3997491-assumeshttp3capable)
