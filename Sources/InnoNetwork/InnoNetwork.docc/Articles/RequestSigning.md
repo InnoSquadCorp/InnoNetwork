@@ -65,10 +65,16 @@ versioning the algorithm. The library's contract is intentionally
 narrow so consumers can extend it without forking. The skeleton:
 
 ```swift
+import CryptoKit
+import Foundation
+import InnoNetwork
+
 struct CanonicalSigner: RequestInterceptor {
     let keyID: String
     let secret: SymmetricKey
-    let clock: any InnoNetworkClock
+    /// Inject a clock closure so tests can pin the timestamp.
+    /// Production callers leave the default `{ Date() }`.
+    let now: @Sendable () -> Date
 
     func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
         guard let url = urlRequest.url else {
@@ -80,7 +86,7 @@ struct CanonicalSigner: RequestInterceptor {
             )
         }
 
-        let timestamp = String(Int(clock.now.timeIntervalSince1970))
+        let timestamp = String(Int(now().timeIntervalSince1970))
         let nonce = UUID().uuidString
         let body = urlRequest.httpBody ?? Data()
         let bodyHash = SHA256.hash(data: body)
@@ -111,10 +117,9 @@ struct CanonicalSigner: RequestInterceptor {
 }
 ```
 
-Inject your own `InnoNetworkClock` so tests can pin the timestamp.
-The pattern composes with retries because `adapt(_:)` is called once
-per attempt — every retry produces a fresh `timestamp` / `nonce`
-pair, side-stepping replay protection on the backend.
+`adapt(_:)` runs once per attempt, so every retry produces a fresh
+`timestamp` / `nonce` pair, side-stepping replay protection on the
+backend.
 
 ## Streaming uploads
 
@@ -135,61 +140,46 @@ prefer one of the following:
    protocol-specific interceptor; the shared
    `RequestInterceptor` surface stays the same.
 
-## AWS SigV4 (interceptor recipe)
+## AWS SigV4 (built-in reference signer)
 
-AWS SigV4 layers a canonical-request hash, a signing key derived from
-the secret access key plus date/region/service, and a header-based
-authorization carrier on top of every request. There is no in-package
-reference implementation today (`HMACRequestInterceptor` is the only
-shipped signer), but the `RequestInterceptor` contract is enough to
-host one. Skeleton:
+``AWSSigV4Interceptor`` ships as a reference implementation for the
+single-shot, in-memory body flow that covers most AWS service calls
+(DynamoDB, S3 GET / small PUT, CloudWatch, SQS, …). Wire it into the
+`requestInterceptors` chain the same way you would `HMACRequestInterceptor`:
 
 ```swift
-public struct AWSSigV4Interceptor: RequestInterceptor {
-    public let accessKeyID: String
-    public let secretAccessKey: SymmetricKey
-    public let region: String
-    public let service: String
-    public let clock: any InnoNetworkClock
-    public init(accessKeyID: String,
-                secretAccessKey: Data,
-                region: String,
-                service: String,
-                clock: any InnoNetworkClock = SystemClock()) {
-        self.accessKeyID = accessKeyID
-        self.secretAccessKey = SymmetricKey(data: secretAccessKey)
-        self.region = region
-        self.service = service
-        self.clock = clock
-    }
+import InnoNetwork
 
-    public func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
-        // 1. Build the canonical request: HTTP method, canonical URI,
-        //    canonical query string, canonical headers, signed headers
-        //    list, and SHA-256 of the (already in-memory) body.
-        // 2. Build the string-to-sign using the credential scope
-        //    "<date>/<region>/<service>/aws4_request".
-        // 3. Derive the signing key with HMAC-SHA256 chain over date,
-        //    region, service, and the literal "aws4_request".
-        // 4. Compute the signature, attach `Authorization: AWS4-HMAC-SHA256
-        //    Credential=..., SignedHeaders=..., Signature=...`
-        //    plus `X-Amz-Date` and (for STS sessions) `X-Amz-Security-Token`.
-        fatalError("Implementation lives in your application or a future\n"
-            + "    InnoNetworkAWS companion package; this article documents the shape.")
-    }
-}
+let signer = AWSSigV4Interceptor(
+    accessKeyID: accessKey,
+    secretAccessKey: secret,
+    region: "us-east-1",
+    service: "execute-api"
+)
+
+let configuration = NetworkConfiguration.advanced(
+    baseURL: baseURL,
+    auth: AuthPack(additionalSigners: [signer])
+)
 ```
 
-A built-in reference signer is on the 4.x roadmap; for now the
-expected adoption pattern is to ship `AWSSigV4Interceptor` (or
-equivalent) inside the application code and feed it via the same
-`requestInterceptors` chain that `HMACRequestInterceptor` lives on.
+The interceptor recomputes the signature on every attempt because the
+canonical request includes `X-Amz-Date`. The canonical path is
+single-encoded for `service == "s3"` and double-encoded for every
+other service to match the SigV4 rule.
+
+For deterministic tests, inject a `now: @Sendable () -> Date` closure
+that returns a fixed timestamp; ``AWSSigV4Interceptor`` exposes
+``canonicalRequest(for:)`` and ``stringToSign(canonicalRequest:date:)``
+so you can validate against the published AWS test vectors.
 
 > Important: SigV4 over a streaming body needs the chunk-signed
 > variant (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`). The interceptor
 > contract delivers the request before the upload pipeline owns the
 > body, so a streaming signer needs deeper integration than this
-> recipe — file an issue if your use case requires it.
+> recipe — file an issue if your use case requires it. Likewise,
+> presigned URLs (query-string signing) and IAM role rotation are out
+> of scope; use the AWS SDK for those.
 
 ## JWT bearer with auto-refresh (interceptor recipe)
 
@@ -200,31 +190,35 @@ public endpoints via `appliesTo`. A custom JWT interceptor only adds
 value when the token is **minted on every request** (claims include
 the request method/path) rather than rotated by the auth server.
 
-For request-minted JWTs, the interceptor shape is:
+For request-minted JWTs, use the shipped ``JWTBearerInterceptor``:
+it owns the `Authorization` header carry-out and delegates the actual
+token production to a `tokenProvider` closure, so the signing key
+material lives in Keychain or Secure Enclave rather than inside the
+interceptor.
 
 ```swift
-public struct JWTRequestInterceptor: RequestInterceptor {
-    public let header: [String: String]   // { "alg": "ES256", "typ": "JWT" }
-    public let claimsBuilder: @Sendable (URLRequest) -> [String: any Encodable & Sendable]
-    public let signer: @Sendable (Data) async throws -> Data
-    public let scheme: String             // typically "Bearer"
+import InnoNetwork
 
-    public func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
-        // Encode header + claims as JSON, base64url, join with ".",
-        // hand off to `signer`, append base64url(signature),
-        // and set Authorization: <scheme> <jwt>.
-        var request = urlRequest
-        let token = try await mint(for: urlRequest)
-        request.setValue("\(scheme) \(token)", forHTTPHeaderField: "Authorization")
-        return request
+let jwt = JWTBearerInterceptor(
+    tokenProvider: { request in
+        // Construct header + claims as JSON, base64url-encode each,
+        // join with ".", hand off to your signer (CryptoKit, CryptoSwift,
+        // or a Keychain-backed helper), append base64url(signature).
+        try await mintRequestScopedJWT(for: request)
     }
-}
+)
+
+let configuration = NetworkConfiguration.advanced(
+    baseURL: baseURL,
+    auth: AuthPack(additionalSigners: [jwt])
+)
 ```
 
-Keep the signing key out of the interceptor itself — pass it as a
-closure (`signer`) so the actual key material can live in Keychain or
-Secure Enclave. The reference implementation will follow this shape
-when it lands in 4.x.
+The default `scheme` is `"Bearer"` and the default `headerName` is
+`"Authorization"`; pass overrides at init time if your backend uses a
+different scheme. The `tokenProvider` closure receives the outgoing
+`URLRequest` so claims like `htu` / `htm` (DPoP) can include the
+request URL and method.
 
 ## Testing your interceptor
 
