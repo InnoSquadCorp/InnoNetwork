@@ -100,7 +100,8 @@ package struct StreamingExecutor: Sendable {
                         SendableUnderlyingError(
                             domain: NetworkError.errorDomain,
                             code: 3002,
-                            message: "Received a non-HTTP response on streaming request to \(urlRequest.url?.absoluteString ?? "<unknown>"); response was \(type(of: response))."
+                            message:
+                                "Received a non-HTTP response on streaming request to \(urlRequest.url?.absoluteString ?? "<unknown>"); response was \(type(of: response))."
                         ),
                         nil
                     )

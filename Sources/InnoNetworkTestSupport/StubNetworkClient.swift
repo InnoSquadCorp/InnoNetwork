@@ -127,7 +127,9 @@ public final class StubNetworkClient: NetworkClient, Sendable {
             reason: .invalidRequest("No stub registered for \(request.method.rawValue) \(request.path)."))
     }
 
-    public func upload<Request: MultipartAPIDefinition>(_ request: Request) async throws(NetworkError) -> Request.APIResponse {
+    public func upload<Request: MultipartAPIDefinition>(_ request: Request) async throws(NetworkError)
+        -> Request.APIResponse
+    {
         if let fallback {
             return try await fallback.upload(request)
         }

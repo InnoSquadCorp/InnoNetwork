@@ -1029,7 +1029,8 @@ extension RequestExecutor {
                     SendableUnderlyingError(
                         domain: NetworkError.errorDomain,
                         code: 3002,
-                        message: "Received a non-HTTP response from \(request.url?.absoluteString ?? "<unknown>"); response was \(type(of: response))."
+                        message:
+                            "Received a non-HTTP response from \(request.url?.absoluteString ?? "<unknown>"); response was \(type(of: response))."
                     ),
                     nil
                 )
@@ -1088,7 +1089,8 @@ extension RequestExecutor {
                 SendableUnderlyingError(
                     domain: NetworkError.errorDomain,
                     code: 4003,
-                    message: "Response body of \(response.expectedContentLength) bytes exceeded the configured limit of \(normalizedLimit) bytes."
+                    message:
+                        "Response body of \(response.expectedContentLength) bytes exceeded the configured limit of \(normalizedLimit) bytes."
                 ),
                 nil
             )

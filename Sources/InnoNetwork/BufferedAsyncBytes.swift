@@ -52,7 +52,8 @@ struct BufferedAsyncBytes<Base: AsyncSequence>: AsyncSequence where Base.Element
                         SendableUnderlyingError(
                             domain: NetworkError.errorDomain,
                             code: 4003,
-                            message: "Response body of \(observedBytes) bytes exceeded the configured limit of \(maxBytes) bytes."
+                            message:
+                                "Response body of \(observedBytes) bytes exceeded the configured limit of \(maxBytes) bytes."
                         ),
                         nil
                     )

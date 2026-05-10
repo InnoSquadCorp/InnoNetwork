@@ -112,7 +112,8 @@ public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
                     SendableUnderlyingError(
                         domain: NetworkError.errorDomain,
                         code: 4002,
-                        message: "The network connection is still being restored. Please wait a moment and try the request again."
+                        message:
+                            "The network connection is still being restored. Please wait a moment and try the request again."
                     ),
                     nil
                 )

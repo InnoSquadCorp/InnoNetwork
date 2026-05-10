@@ -391,13 +391,14 @@ validate_protocol_symbol() {
       sub(/ $/, "", s)
       return s
     }
-    BEGIN { norm_expected = normalize(expected) }
+    BEGIN { norm_expected = normalize(expected); body = "" }
     $0 ~ "^public protocol " protocol_name ": Sendable \\{$" { in_protocol = 1; next }
-    in_protocol && /^\}$/ { exit }
-    in_protocol {
-      norm_line = normalize($0)
-      if (norm_line == norm_expected) { found = 1; exit }
+    in_protocol && /^\}$/ {
+      norm_body = normalize(body)
+      if (index(norm_body, norm_expected) > 0) { found = 1 }
+      exit
     }
+    in_protocol { body = body " " $0 }
     END { exit found ? 0 : 1 }
   ' "$target" || fail "symbol '$expected' is not present in $protocol_name protocol"
 }

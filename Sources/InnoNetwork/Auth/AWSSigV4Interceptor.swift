@@ -75,18 +75,21 @@ public struct AWSSigV4Interceptor: RequestInterceptor {
             request.setValue(sessionToken, forHTTPHeaderField: "X-Amz-Security-Token")
         }
         if request.value(forHTTPHeaderField: "Host") == nil,
-           let host = request.url?.host {
+            let host = request.url?.host
+        {
             request.setValue(host, forHTTPHeaderField: "Host")
         }
 
         let canonicalRequest = canonicalRequest(for: request)
         let scope = "\(dateStamp)/\(region)/\(service)/aws4_request"
-        let stringToSign = "AWS4-HMAC-SHA256\n\(amzDate)\n\(scope)\n" + Self.hex(Self.sha256(Data(canonicalRequest.utf8)))
+        let stringToSign =
+            "AWS4-HMAC-SHA256\n\(amzDate)\n\(scope)\n" + Self.hex(Self.sha256(Data(canonicalRequest.utf8)))
         let signingKey = derivedSigningKey(dateStamp: dateStamp)
         let signature = Self.hex(Self.hmacSHA256(Data(stringToSign.utf8), key: signingKey))
 
         let signedHeaders = self.signedHeaders(of: request)
-        let authorization = "AWS4-HMAC-SHA256 Credential=\(accessKeyID)/\(scope), SignedHeaders=\(signedHeaders), Signature=\(signature)"
+        let authorization =
+            "AWS4-HMAC-SHA256 Credential=\(accessKeyID)/\(scope), SignedHeaders=\(signedHeaders), Signature=\(signature)"
         request.setValue(authorization, forHTTPHeaderField: "Authorization")
 
         return request

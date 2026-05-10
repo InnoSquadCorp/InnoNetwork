@@ -46,7 +46,8 @@ public protocol NetworkClient: Sendable {
     ///
     /// Conformers must implement this overload explicitly; see
     /// ``request(_:tag:)`` for the grouped-cancellation contract.
-    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError) -> T.APIResponse
+    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError)
+        -> T.APIResponse
 }
 
 extension NetworkClient {
