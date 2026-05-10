@@ -296,7 +296,14 @@ package struct RequestExecutor {
         guard let limit = configuration.responseBodyBufferingPolicy.maxBytes else { return }
         let observed = Int64(data.count)
         if observed > limit {
-            throw NetworkError.responseTooLarge(limit: limit, observed: observed)
+            throw NetworkError.underlying(
+                SendableUnderlyingError(
+                    domain: NetworkError.errorDomain,
+                    code: 4003,
+                    message: "Response body of \(observed) bytes exceeded the configured limit of \(limit) bytes."
+                ),
+                nil
+            )
         }
     }
 }
@@ -1077,9 +1084,13 @@ extension RequestExecutor {
         if let normalizedLimit,
             response.expectedContentLength > normalizedLimit
         {
-            throw NetworkError.responseTooLarge(
-                limit: normalizedLimit,
-                observed: response.expectedContentLength
+            throw NetworkError.underlying(
+                SendableUnderlyingError(
+                    domain: NetworkError.errorDomain,
+                    code: 4003,
+                    message: "Response body of \(response.expectedContentLength) bytes exceeded the configured limit of \(normalizedLimit) bytes."
+                ),
+                nil
             )
         }
 

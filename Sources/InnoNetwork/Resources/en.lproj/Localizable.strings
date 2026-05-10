@@ -14,8 +14,6 @@
 "NetworkError.timeout.resource" = "The resource transfer timed out.";
 "NetworkError.timeout.connection" = "The connection to the server timed out.";
 
-"NetworkError.responseTooLarge" = "Response body of %1$@ bytes exceeded the configured limit of %2$@ bytes.";
-
 "NetworkError.cacheRevalidationFailed" = "Cache revalidation against the stored response failed: %@";
 
 "NetworkError.trust.unsupportedAuthenticationMethod" = "Unsupported authentication method: %@";

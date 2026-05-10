@@ -22,7 +22,6 @@ to the user, or escalate to crash reporting.
 | ``NetworkError/trustEvaluationFailed(_:)`` | TLS pinning or custom trust evaluator rejected the chain. | Surface to the user; do not auto-retry. |
 | ``NetworkError/cancelled`` | `Task` cancellation or `cancelAll()`. | Honour silently — caller wanted to stop. |
 | ``NetworkError/timeout(_:)`` | Request, resource, or connection timed out. | Apply retry policy if budget allows. |
-| ``NetworkError/responseTooLarge(limit:observed:)`` | Response body exceeded the configured buffering limit. | Raise the limit intentionally, switch to streaming, or page the endpoint. |
 
 ## Recipe: branch on classification, not raw code
 

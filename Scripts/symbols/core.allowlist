@@ -109,7 +109,6 @@ InnoNetwork	swift.enum.case	NetworkError.cacheRevalidationFailed(underlying:cach
 InnoNetwork	swift.enum.case	NetworkError.cancelled
 InnoNetwork	swift.enum.case	NetworkError.configuration(reason:)
 InnoNetwork	swift.enum.case	NetworkError.decoding(stage:underlying:response:)
-InnoNetwork	swift.enum.case	NetworkError.responseTooLarge(limit:observed:)
 InnoNetwork	swift.enum.case	NetworkError.statusCode(_:)
 InnoNetwork	swift.enum.case	NetworkError.timeout(reason:underlying:)
 InnoNetwork	swift.enum.case	NetworkError.trustEvaluationFailed(_:)

@@ -152,11 +152,6 @@ public enum NetworkError: Error, Sendable {
     /// rather than silently OOM the process or pass an oversized payload to
     /// `JSONDecoder`.
     ///
-    /// - Parameters:
-    ///   - limit: The configured byte limit that was exceeded.
-    ///   - observed: The actual body size in bytes returned by the transport.
-    case responseTooLarge(limit: Int64, observed: Int64)
-
     /// A 304 Not Modified revalidation against the cached response
     /// failed at the conditional-request layer (header merge produced
     /// an unparseable response, the cached body was unreadable, or the
@@ -219,12 +214,6 @@ extension NetworkError: LocalizedError {
             case .connectionTimeout:
                 return localized("NetworkError.timeout.connection")
             }
-        case .responseTooLarge(let limit, let observed):
-            return localizedFormat(
-                "NetworkError.responseTooLarge",
-                "\(observed)",
-                "\(limit)"
-            )
         case .cacheRevalidationFailed(let underlying, _):
             return localizedFormat(
                 "NetworkError.cacheRevalidationFailed",
@@ -312,7 +301,6 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout: return nil
-        case .responseTooLarge: return nil
         case .cacheRevalidationFailed(_, let response): return response
         }
     }
@@ -327,7 +315,6 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout(_, let underlying): return underlying
-        case .responseTooLarge: return nil
         case .cacheRevalidationFailed(let underlying, _): return underlying
         }
     }
@@ -373,8 +360,6 @@ extension NetworkError: CustomNSError {
             return NSURLErrorCancelled
         case .timeout:
             return NSURLErrorTimedOut
-        case .responseTooLarge:
-            return 4002
         case .cacheRevalidationFailed:
             return 6002
         }
@@ -413,8 +398,7 @@ public extension NetworkError {
             .underlying(_, nil),
             .trustEvaluationFailed,
             .cancelled,
-            .timeout,
-            .responseTooLarge:
+            .timeout:
             return self
         }
     }

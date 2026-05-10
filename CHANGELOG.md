@@ -45,6 +45,15 @@ Versioning.
 
 ### Removed
 
+- **Breaking.** `NetworkError.responseTooLarge(limit:observed:)` has
+  been removed. The buffer-overflow throw sites in `BufferedAsyncBytes`
+  and `RequestExecutor` now throw
+  `.underlying(SendableUnderlyingError(domain:, code: 4003, message:), nil)`
+  with the limit and observed byte counts in the message; pattern-
+  match on `.underlying(let underlying, _)` with
+  `underlying.code == 4003`. The dedicated Localizable.strings key,
+  the corresponding allowlist entry, and the ErrorClassification.md
+  row are removed alongside the case.
 - **Breaking.** `NetworkError.transportSuspended` has been removed.
   `ReachabilityCheckExecutionPolicy` now throws
   `NetworkError.underlying(SendableUnderlyingError(domain:, code: 4002, message:), nil)`

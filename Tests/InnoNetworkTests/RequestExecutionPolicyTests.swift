@@ -256,14 +256,14 @@ struct RequestExecutionPolicyTests {
 
         do {
             while try await iterator.next() != nil {}
-            Issue.record("Expected NetworkError.responseTooLarge")
+            Issue.record("Expected response-too-large NetworkError.underlying")
         } catch let error as NetworkError {
             switch error {
-            case .responseTooLarge(let limit, let observed):
-                #expect(limit == 1_024)
-                #expect(observed == 1_025)
+            case .underlying(let underlying, _) where underlying.code == 4003:
+                #expect(underlying.message.contains("1024"))
+                #expect(underlying.message.contains("1025"))
             default:
-                Issue.record("Expected NetworkError.responseTooLarge, got \(error)")
+                Issue.record("Expected NetworkError.underlying with code 4003, got \(error)")
             }
         }
     }

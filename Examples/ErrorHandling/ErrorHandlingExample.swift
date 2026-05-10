@@ -248,11 +248,6 @@ actor ErrorHandlingExample {
                 print("   Underlying Error: \(underlying)")
             }
 
-        case .responseTooLarge(let limit, let observed):
-            print("❌ Response Too Large")
-            print("   Limit: \(limit) bytes")
-            print("   Observed: \(observed) bytes")
-
         @unknown default:
             print("❌ Unhandled NetworkError: \(error)")
         }

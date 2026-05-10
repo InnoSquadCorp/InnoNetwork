@@ -27,7 +27,6 @@ InnoNetwork provides the following error families:
 - `NetworkError.trustEvaluationFailed`: TLS pinning or trust evaluation failure.
 - `NetworkError.cancelled`: Request was cancelled.
 - `NetworkError.timeout`: Request, resource, or connection timeout.
-- `NetworkError.responseTooLarge`: Response body exceeded the configured limit.
 
 ## Running the Examples
 
@@ -87,8 +86,6 @@ do {
         print("Request Cancelled")
     case .timeout(let reason, let underlying):
         print("Timeout: \(reason), underlying: \(String(describing: underlying))")
-    case .responseTooLarge(let limit, let observed):
-        print("Response too large: \(observed) bytes exceeded \(limit)")
     @unknown default:
         print("Unhandled NetworkError: \(error)")
     }

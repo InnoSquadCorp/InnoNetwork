@@ -50,7 +50,6 @@ struct LocalizedNetworkErrorTests {
             .timeout(reason: .requestTimeout),
             .timeout(reason: .resourceTimeout),
             .timeout(reason: .connectionTimeout),
-            .responseTooLarge(limit: 1024, observed: 4096),
             .cacheRevalidationFailed(
                 underlying: SendableUnderlyingError(
                     domain: "test",
@@ -86,11 +85,6 @@ struct LocalizedNetworkErrorTests {
             NetworkError.trustEvaluationFailed(.pinMismatch(host: "api.example.com"))
                 .errorDescription?.contains("api.example.com") == true
         )
-        let big =
-            NetworkError.responseTooLarge(limit: 1024, observed: 4096)
-            .errorDescription ?? ""
-        #expect(big.contains("4096"))
-        #expect(big.contains("1024"))
     }
 
     @Test(".underlying surfaces the underlying error message verbatim")
@@ -120,7 +114,6 @@ struct LocalizedNetworkErrorTests {
         "NetworkError.timeout.request",
         "NetworkError.timeout.resource",
         "NetworkError.timeout.connection",
-        "NetworkError.responseTooLarge",
         "NetworkError.cacheRevalidationFailed",
         "NetworkError.trust.unsupportedAuthenticationMethod",
         "NetworkError.trust.missingServerTrust",
