@@ -116,17 +116,17 @@ final class SlowNetworkEventObserver: NetworkEventObserving, Sendable {
 
 
 struct AcceptingTrustEvaluator: TrustEvaluating {
-    func evaluate(challenge: URLAuthenticationChallenge) -> Bool {
+    func evaluate(challenge: URLAuthenticationChallenge) -> TrustChallengeOutcome {
         _ = challenge
-        return true
+        return .useCredential
     }
 }
 
 
 struct RejectingTrustEvaluator: TrustEvaluating {
-    func evaluate(challenge: URLAuthenticationChallenge) -> Bool {
+    func evaluate(challenge: URLAuthenticationChallenge) -> TrustChallengeOutcome {
         _ = challenge
-        return false
+        return .cancel(.custom("Custom trust evaluator rejected the challenge."))
     }
 }
 

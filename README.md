@@ -584,10 +584,10 @@ Operational items to verify before shipping a client built on InnoNetwork.
 
 ### Trust & Transport Security
 
-- **TLS pinning rotation.** When using `TrustPolicy.publicKeyPinning(...)`, ship at least two
-  pins (current + next) and document the rotation cadence so the app keeps validating after
-  certificate replacement. Consider feature-gated rollback to `.systemDefault` for emergency
-  recovery.
+- **TLS pinning rotation.** When using `TrustPolicy.custom(PublicKeyPinningEvaluator(...))`
+  (from `import InnoNetworkTrust`), ship at least two pins (current + next) and document the
+  rotation cadence so the app keeps validating after certificate replacement. Consider
+  feature-gated rollback to `.systemDefault` for emergency recovery.
 - **Redirect credential leakage.** Keep the default `DefaultRedirectPolicy`
   unless you have a stricter allowlist. Any custom policy must preserve the
   cross-origin stripping of `Authorization`, `Cookie`, and

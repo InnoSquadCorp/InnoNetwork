@@ -57,6 +57,16 @@ let package = Package(
             name: "InnoNetworkOpenAPI",
             targets: ["InnoNetworkOpenAPI"]
         ),
+        // Optional public-key pinning evaluator. Split out of the core
+        // module in PR-1 so apps that don't pin (the common case) don't
+        // pay the SPKI/DER surface cost. To pin, link this product and
+        // wrap your `PublicKeyPinningPolicy` with
+        // `PublicKeyPinningEvaluator(policy:)`, then pass it via
+        // `TrustPolicy.custom(_:)`.
+        .library(
+            name: "InnoNetworkTrust",
+            targets: ["InnoNetworkTrust"]
+        ),
         // Test helpers that consumers can pull into *their* test targets to
         // assert on InnoNetwork integrations (for example
         // ``MockURLSession``, ``StubNetworkClient``, and
@@ -119,6 +129,12 @@ let package = Package(
             path: "Sources/InnoNetworkOpenAPI",
             swiftSettings: strictSettings
         ),
+        .target(
+            name: "InnoNetworkTrust",
+            dependencies: ["InnoNetwork"],
+            path: "Sources/InnoNetworkTrust",
+            swiftSettings: strictSettings
+        ),
         // Test helpers. Public symbols here form a Provisionally Stable
         // contract; the library is intended for *consumer* test targets and
         // should not be linked into production binaries. Internal helpers
@@ -169,7 +185,12 @@ let package = Package(
         ),
         .testTarget(
             name: "InnoNetworkTests",
-            dependencies: ["InnoNetwork", "InnoNetworkOpenAPI", "InnoNetworkTestSupport"],
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkOpenAPI",
+                "InnoNetworkTestSupport",
+                "InnoNetworkTrust",
+            ],
             path: "Tests/InnoNetworkTests",
             swiftSettings: strictSettings
         ),

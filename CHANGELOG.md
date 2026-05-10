@@ -43,6 +43,33 @@ Versioning.
   `Examples/CustomHeaders` and `Examples/RealWorldAPI`, which were
   deleted earlier in this PR.
 
+### Changed
+
+- **Breaking.** Public-key pinning moved out of `InnoNetwork` into a
+  dedicated `InnoNetworkTrust` companion product. `PublicKeyPinningPolicy`,
+  `PublicKeyPinningPolicy.HostMatchingStrategy`, and the new
+  `PublicKeyPinningEvaluator: TrustEvaluating` (which carries the SPKI
+  hashing, host-match, and `SecTrustEvaluateWithError` machinery) now
+  live in `Sources/InnoNetworkTrust/`. Apps relying on Apple's ATS
+  defaults link only `InnoNetwork` and no longer pay the
+  `Security`/`CryptoKit` symbol cost. Adopters that pin migrate by
+  adding the `InnoNetworkTrust` product to their target dependencies,
+  `import InnoNetworkTrust`, and feeding the evaluator into
+  `TrustPolicy.custom(_:)`.
+- **Breaking.** `TrustPolicy.publicKeyPinning(_:)` was removed in the
+  same change. The replacement is
+  `TrustPolicy.custom(PublicKeyPinningEvaluator(policy: ...))`. There is
+  no `@_exported` re-export shim — callers who used the old enum case
+  must update their construction site.
+- **Breaking.** `TrustEvaluating.evaluate(challenge:)` now returns
+  `TrustChallengeOutcome` (a new public enum: `.performDefaultHandling`,
+  `.useCredential`, `.cancel(TrustFailureReason)`) instead of `Bool`.
+  This preserves the granular pinning failure reasons
+  (`.pinMismatch`, `.hostNotPinned`, `.publicKeyExtractionFailed`,
+  `.systemTrustEvaluationFailed`) when custom evaluators run, so
+  observability/telemetry consumers see the same `NetworkError.
+  trustEvaluationFailed` taxonomy after the split.
+
 ### Removed
 
 - **Breaking.** `NetworkError.cacheRevalidationFailed(underlying:cached:)`

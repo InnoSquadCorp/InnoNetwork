@@ -82,39 +82,37 @@ throw `NetworkError` (or to wrap their own errors before exiting the
 interceptor chain). The CHANGELOG entry that introduces 5.0 will spell
 out the catch-block migration.
 
-## 4.x Trust Pinning Module Split
+## 4.x Trust Pinning Module Split (shipped)
 
-`TrustPolicy.swift` (~376 lines) and the seven-case `TrustFailureReason`
-enum cover certificate pinning, public-key pinning, and custom trust
-evaluation. Every adopter pays the binary and review cost of that
-surface today, even apps that are happy with Apple's ATS defaults
-(probably 90% of consumers — pinning is operationally heavy and a
-common cause of self-inflicted outages when a cert rotates).
+The pinning surface — `PublicKeyPinningPolicy`, the SPKI/DER helpers,
+and the per-host evaluation logic — moved into a dedicated
+`InnoNetworkTrust` companion product so apps that rely on Apple's ATS
+defaults (probably 90% of consumers — pinning is operationally heavy
+and a common cause of self-inflicted outages when a cert rotates) no
+longer pay for the binary or review cost.
 
-The 4.x roadmap moves the trust surface into a dedicated
-`InnoNetworkTrust` companion product so the cost is opt-in:
+What shipped:
 
-- `TrustPolicy`, `TrustFailureReason`, and the underlying evaluator
-  move into `Sources/InnoNetworkTrust/`. Adopters who want pinning
-  add the new product alongside `InnoNetwork` and `import
-  InnoNetworkTrust`.
-- The current `InnoNetwork` re-exports the symbols (`@_exported import
-  InnoNetworkTrust`) for the first 4.x minor after the split so
-  existing call sites keep compiling without import changes; the
-  re-export is `@available(*, deprecated, renamed: "InnoNetworkTrust")`
-  so adopters get a heads-up to migrate their imports.
+- `PublicKeyPinningPolicy`, `PublicKeyPinningPolicy.HostMatchingStrategy`,
+  and the new `PublicKeyPinningEvaluator: TrustEvaluating` live in
+  `Sources/InnoNetworkTrust/`. Adopters opt in with `import
+  InnoNetworkTrust` and feed the evaluator into
+  `TrustPolicy.custom(...)`.
+- Core `InnoNetwork` keeps `TrustPolicy`, `TrustEvaluating`,
+  `TrustFailureReason`, and the new `TrustChallengeOutcome` enum.
+  `TrustEvaluating.evaluate(challenge:)` now returns the rich
+  `TrustChallengeOutcome` so granular failure reasons (`.pinMismatch`,
+  `.hostNotPinned`, `.publicKeyExtractionFailed`,
+  `.systemTrustEvaluationFailed`) survive the split without telemetry
+  regression.
+- `TrustPolicy.publicKeyPinning(_:)` was removed outright. Adopters
+  migrate by constructing `PublicKeyPinningEvaluator(policy:)` and
+  passing it to `TrustPolicy.custom(_:)`. No re-export shim; the
+  hard rename is announced in `CHANGELOG.md`.
 - `NetworkConfiguration.trustPolicy` keeps its public type. The
   configuration value continues to flow through the same execution
   pipeline (`RequestExecutionPolicy`, `NetworkObservability`); only
-  the declaration site moves.
-- Apps that only need ATS get the surface reduction without any
-  source change because they never touched the trust types.
-
-Lift-and-shift carries 23 internal call sites today, plus the public
-ledger entries in `API_STABILITY.md` and the `TrustPolicies.md` DocC
-article. Landing the move in a single PR alongside the re-export
-shim is the safer path; this PR documents the intent so reviewers
-of a future trust-split PR have a contemporaneous design rationale.
+  the declaration site of the pinning evaluator moves.
 
 ## 4.x Reference Signers — AWS SigV4 and JWT Bearer
 

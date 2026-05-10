@@ -36,7 +36,6 @@ InnoNetwork	swift.enum	NetworkEvent
 InnoNetwork	swift.enum	NetworkInterfaceType
 InnoNetwork	swift.enum	NetworkReachabilityStatus
 InnoNetwork	swift.enum	PublicAuthScope
-InnoNetwork	swift.enum	PublicKeyPinningPolicy.HostMatchingStrategy
 InnoNetwork	swift.enum	RFC3986Encoding
 InnoNetwork	swift.enum	ReachabilityCheckExecutionPolicy.Mode
 InnoNetwork	swift.enum	RepeatableHeader
@@ -52,6 +51,7 @@ InnoNetwork	swift.enum	SingleValueHeader
 InnoNetwork	swift.enum	StreamingBufferingPolicy
 InnoNetwork	swift.enum	StreamingResumePolicy
 InnoNetwork	swift.enum	TimeoutReason
+InnoNetwork	swift.enum	TrustChallengeOutcome
 InnoNetwork	swift.enum	TrustFailureReason
 InnoNetwork	swift.enum	TrustPolicy
 InnoNetwork	swift.enum	URLQueryArrayEncodingStrategy
@@ -127,8 +127,6 @@ InnoNetwork	swift.enum.case	NetworkInterfaceType.wiredEthernet
 InnoNetwork	swift.enum.case	NetworkReachabilityStatus.requiresConnection
 InnoNetwork	swift.enum.case	NetworkReachabilityStatus.satisfied
 InnoNetwork	swift.enum.case	NetworkReachabilityStatus.unsatisfied
-InnoNetwork	swift.enum.case	PublicKeyPinningPolicy.HostMatchingStrategy.mostSpecificHost
-InnoNetwork	swift.enum.case	PublicKeyPinningPolicy.HostMatchingStrategy.unionAllMatches
 InnoNetwork	swift.enum.case	ReachabilityCheckExecutionPolicy.Mode.requireOnline
 InnoNetwork	swift.enum.case	ReachabilityCheckExecutionPolicy.Mode.warnOnly
 InnoNetwork	swift.enum.case	RequestEncodingPolicy.formURLEncoded(_:rootKey:)
@@ -163,6 +161,9 @@ InnoNetwork	swift.enum.case	StreamingResumePolicy.lastEventID(maxAttempts:retryD
 InnoNetwork	swift.enum.case	TimeoutReason.connectionTimeout
 InnoNetwork	swift.enum.case	TimeoutReason.requestTimeout
 InnoNetwork	swift.enum.case	TimeoutReason.resourceTimeout
+InnoNetwork	swift.enum.case	TrustChallengeOutcome.cancel(_:)
+InnoNetwork	swift.enum.case	TrustChallengeOutcome.performDefaultHandling
+InnoNetwork	swift.enum.case	TrustChallengeOutcome.useCredential
 InnoNetwork	swift.enum.case	TrustFailureReason.custom(_:)
 InnoNetwork	swift.enum.case	TrustFailureReason.hostNotPinned(_:)
 InnoNetwork	swift.enum.case	TrustFailureReason.missingServerTrust
@@ -171,7 +172,6 @@ InnoNetwork	swift.enum.case	TrustFailureReason.publicKeyExtractionFailed
 InnoNetwork	swift.enum.case	TrustFailureReason.systemTrustEvaluationFailed(reason:)
 InnoNetwork	swift.enum.case	TrustFailureReason.unsupportedAuthenticationMethod(_:)
 InnoNetwork	swift.enum.case	TrustPolicy.custom(_:)
-InnoNetwork	swift.enum.case	TrustPolicy.publicKeyPinning(_:)
 InnoNetwork	swift.enum.case	TrustPolicy.systemDefault
 InnoNetwork	swift.enum.case	URLQueryArrayEncodingStrategy.bracketed
 InnoNetwork	swift.enum.case	URLQueryArrayEncodingStrategy.indexed
@@ -241,7 +241,6 @@ InnoNetwork	swift.init	NoOpNetworkEventObserver.init()
 InnoNetwork	swift.init	NoOpNetworkLogger.init()
 InnoNetwork	swift.init	OSLogNetworkEventObserver.init()
 InnoNetwork	swift.init	ObservabilityPack.init(eventObservers:eventDeliveryPolicy:eventMetricsReporter:networkMonitor:metricsReporter:)
-InnoNetwork	swift.init	PublicKeyPinningPolicy.init(pinsByHost:includesSubdomains:allowDefaultEvaluationForUnpinnedHosts:hostMatchingStrategy:)
 InnoNetwork	swift.init	ReachabilityCheckExecutionPolicy.init(monitor:mode:suspensionWaitTimeout:)
 InnoNetwork	swift.init	RefreshTokenPolicy.init(refreshStatusCodes:appliesTo:failureCooldown:currentToken:refreshToken:applyToken:)
 InnoNetwork	swift.init	RequestCoalescingPolicy.init(methods:excludedHeaderNames:)
@@ -609,10 +608,6 @@ InnoNetwork	swift.property	ObservabilityPack.eventMetricsReporter
 InnoNetwork	swift.property	ObservabilityPack.eventObservers
 InnoNetwork	swift.property	ObservabilityPack.metricsReporter
 InnoNetwork	swift.property	ObservabilityPack.networkMonitor
-InnoNetwork	swift.property	PublicKeyPinningPolicy.allowDefaultEvaluationForUnpinnedHosts
-InnoNetwork	swift.property	PublicKeyPinningPolicy.hostMatchingStrategy
-InnoNetwork	swift.property	PublicKeyPinningPolicy.includesSubdomains
-InnoNetwork	swift.property	PublicKeyPinningPolicy.pinsByHost
 InnoNetwork	swift.property	ReachabilityCheckExecutionPolicy.mode
 InnoNetwork	swift.property	ReachabilityCheckExecutionPolicy.monitor
 InnoNetwork	swift.property	ReachabilityCheckExecutionPolicy.suspensionWaitTimeout
@@ -789,7 +784,6 @@ InnoNetwork	swift.struct	NoOpNetworkEventObserver
 InnoNetwork	swift.struct	NoOpNetworkLogger
 InnoNetwork	swift.struct	OSLogNetworkEventObserver
 InnoNetwork	swift.struct	ObservabilityPack
-InnoNetwork	swift.struct	PublicKeyPinningPolicy
 InnoNetwork	swift.struct	ReachabilityCheckExecutionPolicy
 InnoNetwork	swift.struct	RefreshFailureCooldown
 InnoNetwork	swift.struct	RefreshTokenPolicy

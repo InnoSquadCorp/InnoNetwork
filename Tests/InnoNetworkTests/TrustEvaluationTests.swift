@@ -3,6 +3,7 @@ import Security
 import Testing
 
 @testable import InnoNetwork
+@testable import InnoNetworkTrust
 
 @Suite("Trust Evaluation Tests")
 struct TrustEvaluationTests {
@@ -70,14 +71,14 @@ struct TrustEvaluationTests {
             host: "api.example.com",
             authenticationMethod: NSURLAuthenticationMethodHTTPBasic
         )
-        let policy = TrustPolicy.publicKeyPinning(
-            PublicKeyPinningPolicy(
+        let evaluator = PublicKeyPinningEvaluator(
+            policy: PublicKeyPinningPolicy(
                 pinsByHost: ["api.example.com": ["sha256/primary-pin"]],
                 allowDefaultEvaluationForUnpinnedHosts: false
             )
         )
 
-        let result = TrustEvaluator.evaluate(challenge: challenge, policy: policy)
+        let result = TrustEvaluator.evaluate(challenge: challenge, policy: .custom(evaluator))
         switch result {
         case .cancel(.unsupportedAuthenticationMethod(let method)):
             #expect(method == NSURLAuthenticationMethodHTTPBasic)
@@ -121,7 +122,7 @@ struct TrustEvaluationTests {
     func spkiEncodingHelperSupportsCommonKeyTypes() {
         let keyData = Data([0x01, 0x02, 0x03, 0x04, 0x05])
 
-        let rsa = TrustEvaluator.spkiData(
+        let rsa = PublicKeyPinningEvaluator.spkiData(
             publicKeyData: keyData,
             keyType: kSecAttrKeyTypeRSA as String,
             keySizeInBits: 2048
@@ -129,7 +130,7 @@ struct TrustEvaluationTests {
         #expect(rsa != nil)
         #expect((rsa?.count ?? 0) > keyData.count)
 
-        let p256 = TrustEvaluator.spkiData(
+        let p256 = PublicKeyPinningEvaluator.spkiData(
             publicKeyData: keyData,
             keyType: kSecAttrKeyTypeECSECPrimeRandom as String,
             keySizeInBits: 256
@@ -137,7 +138,7 @@ struct TrustEvaluationTests {
         #expect(p256 != nil)
         #expect((p256?.count ?? 0) > keyData.count)
 
-        let unsupported = TrustEvaluator.spkiData(
+        let unsupported = PublicKeyPinningEvaluator.spkiData(
             publicKeyData: keyData,
             keyType: "com.innonetwork.unsupported",
             keySizeInBits: 0
@@ -153,7 +154,7 @@ struct TrustEvaluationTests {
         // Ed25519 public keys are always 32 bytes per RFC 8032; use a fixed
         // test vector so the SPKI bytes are deterministic.
         let publicKey = Data(repeating: 0x00, count: 32)
-        let spki = TrustEvaluator.spkiData(
+        let spki = PublicKeyPinningEvaluator.spkiData(
             publicKeyData: publicKey,
             keyType: keyType,
             keySizeInBits: 256
@@ -173,7 +174,7 @@ struct TrustEvaluationTests {
     @Test("SPKI helper still returns nil for unknown algorithm strings")
     func spkiEncodingHelperRejectsUnknownAlgorithm() {
         let publicKey = Data(repeating: 0x00, count: 32)
-        let unsupported = TrustEvaluator.spkiData(
+        let unsupported = PublicKeyPinningEvaluator.spkiData(
             publicKeyData: publicKey,
             keyType: "rsa-pss-pq-future-curve",
             keySizeInBits: 2048

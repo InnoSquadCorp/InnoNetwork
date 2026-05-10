@@ -138,8 +138,10 @@ expected_stable=(
 '`WebSocketPingContext`'
 '`WebSocketPongContext`'
 '`TrustPolicy`'
+'`TrustChallengeOutcome`'
 '`PublicKeyPinningPolicy`'
 '`PublicKeyPinningPolicy.HostMatchingStrategy`'
+'`PublicKeyPinningEvaluator`'
 '`AnyResponseDecoder`'
 '`URLQueryEncoder`'
 '`URLQueryArrayEncodingStrategy`'
@@ -324,9 +326,11 @@ expected_shipping_public_declarations=(
   TimeoutReason
   TraceContextInterceptor
   TransportPolicy
+  TrustChallengeOutcome
   TrustEvaluating
   TrustFailureReason
   TrustPolicy
+  PublicKeyPinningEvaluator
   URLQueryCustomKeyTransform
   URLQueryEncoder
   URLQueryFloatEncodingStrategy
@@ -790,13 +794,21 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public enum TrustPolicy'
       target="$repo_root/Sources/InnoNetwork/TrustPolicy.swift"
       ;;
+    '`TrustChallengeOutcome`')
+      pattern='public enum TrustChallengeOutcome'
+      target="$repo_root/Sources/InnoNetwork/TrustPolicy.swift"
+      ;;
     '`PublicKeyPinningPolicy`')
       pattern='public struct PublicKeyPinningPolicy'
-      target="$repo_root/Sources/InnoNetwork/TrustPolicy.swift"
+      target="$repo_root/Sources/InnoNetworkTrust/PublicKeyPinning.swift"
       ;;
     '`PublicKeyPinningPolicy.HostMatchingStrategy`')
       pattern='public enum HostMatchingStrategy: Sendable, Equatable'
-      target="$repo_root/Sources/InnoNetwork/TrustPolicy.swift"
+      target="$repo_root/Sources/InnoNetworkTrust/PublicKeyPinning.swift"
+      ;;
+    '`PublicKeyPinningEvaluator`')
+      pattern='public struct PublicKeyPinningEvaluator'
+      target="$repo_root/Sources/InnoNetworkTrust/PublicKeyPinning.swift"
       ;;
     '`AnyResponseDecoder`')
       pattern='public struct AnyResponseDecoder'

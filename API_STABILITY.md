@@ -34,8 +34,10 @@ release line. `4.0.0` is the public baseline for this contract.
 - `WebSocketPingContext`
 - `WebSocketPongContext`
 - `TrustPolicy`
+- `TrustChallengeOutcome`
 - `PublicKeyPinningPolicy`
 - `PublicKeyPinningPolicy.HostMatchingStrategy`
+- `PublicKeyPinningEvaluator`
 - `AnyResponseDecoder`
 - `URLQueryEncoder`
 - `URLQueryArrayEncodingStrategy`
@@ -290,7 +292,6 @@ high-level compatibility classification readable for the 4.x release line.
   `NetworkMonitor`, `NetworkMonitoring`, `NetworkReachabilityStatus`,
   `NetworkRequestContext`, `NetworkSnapshot`, `NoOpNetworkEventObserver`,
   `NoOpNetworkLogger`, `OSLogNetworkEventObserver`, `PublicAuthScope`,
-  `PublicKeyPinningPolicy`,
   `RedirectPolicy`, `RefreshFailureCooldown`, `RefreshTokenPolicy`,
   `RequestCoalescingPolicy`, `RequestEncodingPolicy`,
   `RequestPriority`,
@@ -304,7 +305,7 @@ high-level compatibility classification readable for the 4.x release line.
   `ServerSentEventDecoder`, `StateReducer`, `StateReduction`,
   `StreamingAPIDefinition`, `StreamingBufferingPolicy`,
   `StreamingResumePolicy`, `TimeoutReason`, `TraceContextInterceptor`,
-  `TransportPolicy`, `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
+  `TransportPolicy`, `TrustChallengeOutcome`, `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
   `URLQueryArrayEncodingStrategy`, `URLQueryCustomKeyTransform`,
   `URLQueryEncoder`, `URLQueryFloatEncodingStrategy`,
   `URLQueryKeyEncodingStrategy`, `URLSessionProtocol`, and
@@ -330,6 +331,11 @@ high-level compatibility classification readable for the 4.x release line.
   `WebSocketHandshakeRequestAdapter`, `WebSocketManager`,
   `WebSocketPingContext`, `WebSocketPongContext`, `WebSocketProtocolFeature`,
   `WebSocketSendOverflowPolicy`, `WebSocketState`, and `WebSocketTask`.
+
+### InnoNetworkTrust
+
+- `PublicKeyPinningEvaluator`, `PublicKeyPinningPolicy`, and
+  `PublicKeyPinningPolicy.HostMatchingStrategy`.
 
 ### InnoNetworkPersistentCache
 

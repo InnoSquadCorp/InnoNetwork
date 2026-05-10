@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTrust
 import Testing
 
 @testable import InnoNetwork
@@ -73,13 +74,14 @@ struct ObservabilityLifecycleTests {
     @Test("Network request context forwards trust policy and retry index")
     func requestContextForwarding() async throws {
         let session = FlakyContextSession(failuresBeforeSuccess: 0)
-        let trustPolicy = TrustPolicy.publicKeyPinning(
-            PublicKeyPinningPolicy(
+        let pinningEvaluator = PublicKeyPinningEvaluator(
+            policy: PublicKeyPinningPolicy(
                 pinsByHost: ["api.example.com": ["sha256/primary-pin", "sha256/backup-pin"]],
                 includesSubdomains: false,
                 allowDefaultEvaluationForUnpinnedHosts: false
             )
         )
+        let trustPolicy = TrustPolicy.custom(pinningEvaluator)
         let networkConfiguration = NetworkConfiguration(
             baseURL: URL(string: "https://api.example.com/v2")!,
             retryPolicy: nil,
@@ -101,10 +103,11 @@ struct ObservabilityLifecycleTests {
         #expect(forwardedContext.retryIndex == 0)
 
         switch forwardedContext.trustPolicy {
-        case .publicKeyPinning(let policy):
-            #expect(policy.pinsByHost["api.example.com"] == Set(["sha256/primary-pin", "sha256/backup-pin"]))
-            #expect(policy.includesSubdomains == false)
-            #expect(policy.allowDefaultEvaluationForUnpinnedHosts == false)
+        case .custom(let evaluator):
+            let pinning = try #require(evaluator as? PublicKeyPinningEvaluator)
+            #expect(pinning.policy.pinsByHost["api.example.com"] == Set(["sha256/primary-pin", "sha256/backup-pin"]))
+            #expect(pinning.policy.includesSubdomains == false)
+            #expect(pinning.policy.allowDefaultEvaluationForUnpinnedHosts == false)
         default:
             Issue.record("Expected forwarded trust policy to be public key pinning.")
         }
