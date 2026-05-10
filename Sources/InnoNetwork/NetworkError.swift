@@ -134,6 +134,7 @@ public enum NetworkError: Error, Sendable {
     /// body decode error.
     case decoding(stage: DecodingStage, underlying: SendableUnderlyingError, response: Response)
 
+    @available(*, deprecated, message: "Prefer .underlying(SendableUnderlyingError(...), nil) wrapping the bare URLResponse. The .nonHTTPResponse case is retained for source compatibility in 4.x and will be removed in a future major when the NetworkError surface is consolidated.")
     case nonHTTPResponse(URLResponse)
 
     case underlying(SendableUnderlyingError, Response?)

@@ -7,6 +7,17 @@ Versioning.
 
 ## [Unreleased]
 
+### Deprecated
+
+- `NetworkError.nonHTTPResponse(URLResponse)` is now marked
+  `@available(*, deprecated, ...)`. The case is retained in 4.x for
+  source compatibility; new code should throw
+  `.underlying(SendableUnderlyingError(...), nil)` wrapping the bare
+  `URLResponse`. The case will be removed in a future major when the
+  `NetworkError` surface is consolidated. Internal call sites still
+  use the deprecated case; consumers will only see a deprecation
+  warning if their own code constructs the case directly.
+
 ### Changed
 
 - `NetworkError.errorDescription` no longer ships a Korean
