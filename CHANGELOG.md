@@ -7,6 +7,16 @@ Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `JWTBearerInterceptor` reference signer in `Sources/InnoNetwork/Auth/`.
+  Wraps an `async throws -> String` token-mint closure and writes the
+  resulting token into `Authorization: Bearer <token>` (or any
+  scheme/header pair the caller supplies). Use this for the
+  request-minted JWT lane only — session-rotated bearer tokens are
+  still better served by `RefreshTokenPolicy`'s single-flight refresh.
+  Listed as Provisionally Stable in API_STABILITY.md.
+
 ### Stability ledger
 
 - Promoted from Provisionally Stable to Stable in 4.x.x:
