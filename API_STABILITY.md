@@ -34,8 +34,10 @@ release line. `4.0.0` is the public baseline for this contract.
 - `WebSocketPingContext`
 - `WebSocketPongContext`
 - `TrustPolicy`
+- `TrustChallengeOutcome`
 - `PublicKeyPinningPolicy`
 - `PublicKeyPinningPolicy.HostMatchingStrategy`
+- `PublicKeyPinningEvaluator`
 - `AnyResponseDecoder`
 - `URLQueryEncoder`
 - `URLQueryArrayEncodingStrategy`
@@ -47,6 +49,16 @@ release line. `4.0.0` is the public baseline for this contract.
 - `StateReducer`
 - `EventDeliveryPolicy`
 - `WebSocketCloseCode`
+- `EndpointBuilder`, `EndpointPathEncoding` (promoted from Provisionally Stable in 4.x.x; the path-encoding shape and decoding helpers are SemVer-protected)
+- `DecodingInterceptor` (promoted from Provisionally Stable in 4.x.x)
+- `WebSocketCloseDisposition` (promoted from Provisionally Stable in 4.x.x)
+
+> **No 5.0 major bump is planned in the 4.x line.** The Stable
+> ledger only grows over the rest of 4.x; entries do not move
+> back into Provisionally Stable. Surfaces that need a breaking
+> change wait until a future major. Adopters can pin
+> `.upToNextMajor(from: "4.0.0")` and rely on the entries above
+> remaining source-compatible across the entire 4.x line.
 
 ## Stable Examples
 
@@ -67,10 +79,10 @@ stops compiling.
 - `Examples/ErrorHandling` — `NetworkError` taxonomy and the
   `do`/`catch` patterns that surface response payloads.
 
-Every other example (`CustomHeaders`, `RealWorldAPI`, `DownloadManager`,
-`WebSocketChat`, `EventPolicyObserver`, the consumer smoke packages, …)
-stays Provisionally Stable: structure may evolve across minors and they
-are intentionally **not** enforced by the gate above. README/DocC examples
+Every other example (`DownloadManager`, `WebSocketChat`,
+`EventPolicyObserver`, the consumer smoke packages, …) stays
+Provisionally Stable: structure may evolve across minors and they are
+intentionally **not** enforced by the gate above. README/DocC examples
 continue to track the stable APIs they illustrate; their wording is not
 part of the compatibility contract.
 
@@ -89,8 +101,7 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `InnoNetworkTestSupport` library product and its `public` symbols
   (currently `MockURLSession`, `WebSocketEventRecorder`, `StubBehavior`,
   `StubNetworkClient`, and `StubRequestKey`)
-- `EndpointBuilder`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
-- `WebSocketCloseDisposition` observation surface
+- `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
 - `MultipartStreamingResponseDecoder` streaming multipart response parsing surface
@@ -99,7 +110,8 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `PersistentResponseCache` statistics and telemetry surfaces
 - `WebSocketError.unsupportedProtocolFeature`
 - `WebSocketProtocolFeature`
-- `DecodingInterceptor`
+- `JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens
+- `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing
 - `StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`
 - `NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface
 - `HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)
@@ -107,7 +119,6 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance
 - `PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`
 - `DownloadTask.generation` / `attempt` observation accessors
-- `NetworkError.transportSuspended` and `NetworkError.cacheRevalidationFailed(underlying:cached:)` cases. Localizable.strings keys (`NetworkError.transportSuspended`, `NetworkError.cacheRevalidationFailed`) ship in `en` and `ko` and are treated as the Provisionally Stable contract for the messages.
 
 ## Provisionally Stable Evolution Boundaries
 
@@ -169,10 +180,9 @@ Per-symbol evolution allowances within the 4.x line:
 - `ConcurrencyLimitExecutionPolicy` — `RequestExecutionPolicy` that
   funnels each transport attempt through a `ConcurrencyTokenBucket`
   with `acquire` / deferred `release` semantics. Registered via
-  `NetworkConfiguration.AdvancedBuilder.customExecutionPolicies`.
-  Surface stays source-compatible across the planned 5.x bucket
-  integration that may move the policy into a built-in pre-flight
-  stage.
+  `ResiliencePack.customExecutionPolicies`. Surface stays
+  source-compatible across the planned 5.x bucket integration that may
+  move the policy into a built-in pre-flight stage.
 - `ConcurrencyTokenBucket` — bounded counting semaphore actor for
   capping in-flight requests. Currently surfaced as a standalone
   primitive that adopters wire through paired
@@ -183,14 +193,12 @@ Per-symbol evolution allowances within the 4.x line:
   `queuedWaitersCount`) stays source-compatible across that
   transition.
 - `ResiliencePack`, `AuthPack`, `ObservabilityPack`, `CachePack`,
-  `TransportPack` — 5.0 forward-compat configuration packs that group
-  related `AdvancedBuilder` knobs. The 4.x line ships them as
-  optional structs whose `apply(to:)` method mutates an
-  `AdvancedBuilder` in place; the 5.0 release will accept them as
-  named init arguments directly. The pack APIs themselves stay
-  source-compatible from 4.x → 5.0 → 5.x; the 6.0 cycle may add
-  fields to existing packs without breaking call sites because every
-  field defaults to `nil`.
+  `TransportPack` — configuration packs accepted as named arguments by
+  `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`.
+  Each pack groups a thematic axis of options; the underlying builder
+  is now `package`-only. The pack APIs stay source-compatible from
+  4.x → 5.x; future minors may add fields to existing packs without
+  breaking call sites because every field defaults to `nil`.
 - `HMACRequestInterceptor` — reference HMAC body-signing interceptor
   (SHA-256 / SHA-384 / SHA-512). Header names and key id are
   provider-tunable; the streaming-body rejection is intentional, and
@@ -254,10 +262,10 @@ minor releases.
 ## Public Declaration Ledger
 
 The docs-contract gate extracts public symbols from Swift symbol graphs and
-compares them with `Scripts/api_public_symbols.allowlist`. That catches nested
-public types and members such as `NetworkConfiguration.AdvancedBuilder` in
-addition to top-level declarations. The grouped ledger below keeps the
-high-level compatibility classification readable for the 4.x release line.
+compares them with `Scripts/symbols/*.allowlist`. That catches nested public
+types and members in addition to top-level declarations. The grouped ledger
+below keeps the high-level compatibility classification readable for the 4.x
+release line.
 
 ### InnoNetwork
 
@@ -281,7 +289,6 @@ high-level compatibility classification readable for the 4.x release line.
   `NetworkMonitor`, `NetworkMonitoring`, `NetworkReachabilityStatus`,
   `NetworkRequestContext`, `NetworkSnapshot`, `NoOpNetworkEventObserver`,
   `NoOpNetworkLogger`, `OSLogNetworkEventObserver`, `PublicAuthScope`,
-  `PublicKeyPinningPolicy`,
   `RedirectPolicy`, `RefreshFailureCooldown`, `RefreshTokenPolicy`,
   `RequestCoalescingPolicy`, `RequestEncodingPolicy`,
   `RequestPriority`,
@@ -295,7 +302,7 @@ high-level compatibility classification readable for the 4.x release line.
   `ServerSentEventDecoder`, `StateReducer`, `StateReduction`,
   `StreamingAPIDefinition`, `StreamingBufferingPolicy`,
   `StreamingResumePolicy`, `TimeoutReason`, `TraceContextInterceptor`,
-  `TransportPolicy`, `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
+  `TransportPolicy`, `TrustChallengeOutcome`, `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
   `URLQueryArrayEncodingStrategy`, `URLQueryCustomKeyTransform`,
   `URLQueryEncoder`, `URLQueryFloatEncodingStrategy`,
   `URLQueryKeyEncodingStrategy`, `URLSessionProtocol`, and
@@ -321,6 +328,11 @@ high-level compatibility classification readable for the 4.x release line.
   `WebSocketHandshakeRequestAdapter`, `WebSocketManager`,
   `WebSocketPingContext`, `WebSocketPongContext`, `WebSocketProtocolFeature`,
   `WebSocketSendOverflowPolicy`, `WebSocketState`, and `WebSocketTask`.
+
+### InnoNetworkTrust
+
+- `PublicKeyPinningEvaluator`, `PublicKeyPinningPolicy`, and
+  `PublicKeyPinningPolicy.HostMatchingStrategy`.
 
 ### InnoNetworkPersistentCache
 
@@ -464,9 +476,10 @@ requires `@_spi` import.
   existing host pin lookup behavior. `mostSpecificHost` is stable as an
   opt-in stricter matching mode for operators who separate parent and
   subdomain pins.
-- `WebSocketCloseDisposition` is provisionally stable; the observation property
-  stays public, while classification policy and additional enum cases may evolve
-  in minor releases.
+- `WebSocketCloseDisposition` is **Stable**; the observation property is
+  SemVer-protected. Additional enum cases may be added in minor releases
+  as new close-code classifications are formalised, but existing cases
+  remain source-compatible.
 - `WebSocketPingContext` and `WebSocketPongContext` public fields are stable
   because they are payloads of stable heartbeat events; their package-scoped
   initializers are construction details owned by the library.
@@ -540,6 +553,29 @@ entries live under `[4.0.0]`.
   (typically via initializer injection). For tests, construct a manager
   with a UUID-suffixed session identifier to avoid cross-test
   collisions.
+
+### `NetworkClient` migrates to `throws(NetworkError)`
+
+- **What changed.** Every `NetworkClient` primitive
+  (`request(_:)`, `request(_:tag:)`, `upload(_:)`, `upload(_:tag:)`) now
+  declares `async throws(NetworkError)`. The default forwarders in the
+  protocol extension match. `NetworkError.mapTransportError(_:)` is
+  promoted from `internal` to `public` so out-of-package conformers can
+  map foreign errors (`URLError`, `CancellationError`, custom transport
+  failures) to the canonical `NetworkError` representation.
+- **Why.** `RetryCoordinator` already normalises every classified
+  failure into `NetworkError`, and `DefaultNetworkClient` maps the
+  remaining foreign errors at the boundary. The untyped `throws` was
+  the only thing forcing callers to write `catch let error as
+  NetworkError` plus a redundant `default` arm; making the contract
+  explicit collapses the boilerplate without changing observable
+  semantics.
+- **Migration.** Call sites using `try await client.request(...)`
+  compile unchanged. Conformers (mocks, fakes, decorators) must update
+  the four method signatures to `async throws(NetworkError) -> ...`
+  and convert any `throw error` that re-throws an arbitrary `Error`
+  into either a `NetworkError` case or
+  `NetworkError.mapTransportError(error)`.
 
 ### `NetworkClient` gains `tag:` overloads
 

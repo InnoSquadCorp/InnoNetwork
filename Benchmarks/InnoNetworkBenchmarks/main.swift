@@ -767,10 +767,9 @@ private enum InnoNetworkBenchmarks {
         try await measure(name: "request-coalescing-shared-get", group: "client", iterations: iterations) {
             let client = DefaultNetworkClient(
                 configuration: NetworkConfiguration.advanced(
-                    baseURL: URL(string: "https://benchmark.invalid")!
-                ) { builder in
-                    builder.requestCoalescingPolicy = .getOnly
-                },
+                    baseURL: URL(string: "https://benchmark.invalid")!,
+                    resilience: ResiliencePack(coalescing: .getOnly)
+                ),
                 session: DelayedMockSession(delayNanoseconds: 100_000)
             )
             let parallelism = 20
@@ -844,10 +843,9 @@ private enum InnoNetworkBenchmarks {
                 Array(repeating: PassiveDecodingInterceptor(), count: depth)
             let client = DefaultNetworkClient(
                 configuration: NetworkConfiguration.advanced(
-                    baseURL: URL(string: "https://benchmark.invalid")!
-                ) { builder in
-                    builder.decodingInterceptors = interceptors
-                },
+                    baseURL: URL(string: "https://benchmark.invalid")!,
+                    auth: AuthPack(additionalDecodingInterceptors: interceptors)
+                ),
                 session: InstantMockSession.shared
             )
             for _ in 0..<iterations {

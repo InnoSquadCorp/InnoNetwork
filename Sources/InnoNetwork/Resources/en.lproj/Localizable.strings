@@ -8,17 +8,12 @@
 "NetworkError.offline" = "Network is offline: %@";
 "NetworkError.decoding" = "Failed to decode response (%1$@): %2$@";
 "NetworkError.statusCode" = "Status code didn't fall within the given range.";
-"NetworkError.nonHTTPResponse" = "Received a non-HTTP response.";
 "NetworkError.cancelled" = "Request was cancelled";
 
 "NetworkError.timeout.request" = "The request timed out before the server responded.";
 "NetworkError.timeout.resource" = "The resource transfer timed out.";
 "NetworkError.timeout.connection" = "The connection to the server timed out.";
 
-"NetworkError.responseTooLarge" = "Response body of %1$@ bytes exceeded the configured limit of %2$@ bytes.";
-
-"NetworkError.transportSuspended" = "The network connection is still being restored. Please wait a moment and try the request again.";
-"NetworkError.cacheRevalidationFailed" = "Cache revalidation against the stored response failed: %@";
 
 "NetworkError.trust.unsupportedAuthenticationMethod" = "Unsupported authentication method: %@";
 "NetworkError.trust.missingServerTrust" = "Missing server trust.";

@@ -9,9 +9,10 @@ import Foundation
 /// ``APIDefinition`` re-implementing the wiring:
 ///
 /// ```swift
-/// let configuration = NetworkConfiguration.advanced(baseURL: baseURL) {
-///     $0.requestInterceptors = [CorrelationIDInterceptor()]
-/// }
+/// let configuration = NetworkConfiguration.advanced(
+///     baseURL: baseURL,
+///     auth: AuthPack(additionalSigners: [CorrelationIDInterceptor()])
+/// )
 ///
 /// NetworkContext.$current.withValue(
 ///     NetworkContext(

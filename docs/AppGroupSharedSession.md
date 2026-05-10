@@ -26,11 +26,13 @@ the ones that need explicit `URLSession` wiring around the library.
   identifier will share that queue (the OS reattaches both to the
   same transfer); processes that pass **different** identifiers stay
   fully isolated.
-- `urlSessionConfigurationOverride` on `NetworkConfiguration`
-  (described in [Cookies.md](Cookies.md) and [HTTP3.md](HTTP3.md))
-  composes with the host-app/extension split: each binary builds its
-  own `NetworkConfiguration` and its own `URLSession`, so cookies and
-  caches stay on the right side of the boundary by default.
+- A per-process `URLSessionConfiguration` (built from
+  `NetworkConfiguration.makeURLSessionConfiguration()`, see
+  [Cookies.md](Cookies.md) and [HTTP3.md](HTTP3.md)) composes with the
+  host-app/extension split: each binary builds its own session and
+  passes it to `DefaultNetworkClient(configuration:session:)`, so
+  cookies and caches stay on the right side of the boundary by
+  default.
 
 ## Pattern A — Isolated extension client (recommended default)
 
@@ -40,15 +42,12 @@ not reach for the host app's storage.
 
 ```swift
 // inside the Share Extension target
-let extensionConfig = NetworkConfiguration.advanced(baseURL: baseURL) { builder in
-    builder.urlSessionConfigurationOverride = { sessionConfig in
-        sessionConfig.httpCookieStorage = .sharedCookieStorage(
-            forGroupContainerIdentifier: "group.com.example.app.share-extension"
-        )
-        return sessionConfig
-    }
-}
-let session = URLSession(configuration: extensionConfig.makeURLSessionConfiguration())
+let extensionConfig = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+let sessionConfig = extensionConfig.makeURLSessionConfiguration()
+sessionConfig.httpCookieStorage = .sharedCookieStorage(
+    forGroupContainerIdentifier: "group.com.example.app.share-extension"
+)
+let session = URLSession(configuration: sessionConfig)
 let extensionClient = DefaultNetworkClient(configuration: extensionConfig, session: session)
 ```
 

@@ -7,6 +7,12 @@ import os
 // locking. These types are `package`-scoped so they remain confined to the
 // InnoNetwork package and never leak into the public test-support API.
 
+/// Clock that throws a configurable error from `sleep(for:)` to drive failure
+/// paths through code that owns timing-sensitive retry/coalescing logic.
+///
+/// `@unchecked Sendable` is sound here because all mutable state is held
+/// behind an `OSAllocatedUnfairLock`; every read and write path passes
+/// through `state.withLock { ... }`, so cross-task access is serialised.
 package final class ClockFailureInjector: InnoNetworkClock, @unchecked Sendable {
 
     package enum FailureMode: Sendable {

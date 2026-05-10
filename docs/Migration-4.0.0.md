@@ -20,7 +20,7 @@ behavior review.
 | Relying on `SendableUnderlyingError ==` comparing messages | Equality is now stable code identity only (`domain` + `code`). Compare descriptions separately if UI text matters. |
 | Plain `http://` API base URLs | They fail by default. Use HTTPS, or set `allowsInsecureHTTP = true` only for a scoped local/dev client. |
 | Base URLs with `user:password@host` or `#fragment` | Move credentials to `Authorization` / request interceptors and remove fragments from `baseURL`. |
-| `urlSessionConfigurationOverride` with the default client initializer | Build a `URLSession` from `configuration.makeURLSessionConfiguration()` and pass it to `DefaultNetworkClient(configuration:session:)`. |
+| `urlSessionConfigurationOverride` (removed in 4.x) | Build a `URLSession` from `configuration.makeURLSessionConfiguration()`, mutate it directly (`httpCookieStorage`, `assumesHTTP3Capable`, etc.), and pass it to `DefaultNetworkClient(configuration:session:)`. |
 | Synchronous calls on `WebSocketManager` (e.g. `manager.connect(...)`) | Add `await`: `WebSocketManager` is now an `actor`. See "WebSocketManager actor conversion" below. |
 | Exhaustive `switch` over `NetworkError` | Add an `@unknown default` arm. The 4.0.0 release adds `.transportSuspended` and `.cacheRevalidationFailed(underlying:cached:)` cases. See "NetworkError new cases" below. |
 | `StreamingResumePolicy.lastEventID` paired with a bounded buffering policy | Either drop the bounded buffer or disable resume. The runtime guard now routes through `StreamingResumeStrategy.isCompatible(with:)` and emits a generic "unbounded output buffering" error message. |
@@ -85,12 +85,11 @@ catch let error as NetworkError {
 
 ## NetworkConfiguration fluent modifiers
 
-`NetworkConfiguration` gains seven `.with(...)` modifiers in 4.0.0. Existing
-`NetworkConfiguration.advanced(baseURL:)` callers keep compiling; the
+`NetworkConfiguration` gains seven `.with(...)` modifiers in 4.0.0. New code
+should compose the pack-based `NetworkConfiguration.advanced(
+baseURL:resilience:auth:observability:cache:transport:)` factory; the
 modifiers are an additive surface that lets adopting one new policy avoid
-re-typing every other knob. The 5.0 line is expected to relocate
-`customExecutionPolicies` and `eventObservers` into a protocol-bag, so new
-code should prefer:
+re-typing every other knob:
 
 ```swift
 NetworkConfiguration
@@ -101,7 +100,9 @@ NetworkConfiguration
     .with(eventObservers: [MyOSLogObserver()])
 ```
 
-over hand-rolling an `AdvancedBuilder` closure.
+The closure-based `advanced(baseURL:_:)` factory has been removed; pass the
+five named packs (`ResiliencePack`, `AuthPack`, `ObservabilityPack`,
+`CachePack`, `TransportPack`) instead.
 
 ## Optional adoption
 
@@ -244,18 +245,18 @@ that asserted on `.cancelled` absence need to update.
 
 ## NetworkConfiguration
 
-`urlSessionConfigurationOverride` is a new opt-in hook for proxy,
-HTTP/2, connection pool, or TLS tuning:
+`URLSessionConfiguration` tuning (proxy, HTTP/2, connection pool,
+TLS) flows through explicit-session injection. Build a configuration
+from `makeURLSessionConfiguration()`, mutate it, and inject the
+resulting `URLSession`:
 
 ```swift
-let config = NetworkConfiguration.advanced(baseURL: url) {
-    $0.urlSessionConfigurationOverride = { sessionConfig in
-        sessionConfig.httpMaximumConnectionsPerHost = 8
-        sessionConfig.tlsMinimumSupportedProtocolVersion = .TLSv13
-        return sessionConfig
-    }
-}
-let session = URLSession(configuration: config.makeURLSessionConfiguration())
+let config = NetworkConfiguration.safeDefaults(baseURL: url)
+let sessionConfig = config.makeURLSessionConfiguration()
+sessionConfig.httpMaximumConnectionsPerHost = 8
+sessionConfig.tlsMinimumSupportedProtocolVersion = .TLSv13
+
+let session = URLSession(configuration: sessionConfig)
 let client = DefaultNetworkClient(configuration: config, session: session)
 ```
 
@@ -275,10 +276,9 @@ scope the opt-in to that client:
 
 ```swift
 let config = NetworkConfiguration.advanced(
-    baseURL: URL(string: "http://localhost:8080")!
-) {
-    $0.allowsInsecureHTTP = true
-}
+    baseURL: URL(string: "http://localhost:8080")!,
+    transport: TransportPack(allowsInsecureHTTP: true)
+)
 ```
 
 ## PersistentResponseCacheConfiguration

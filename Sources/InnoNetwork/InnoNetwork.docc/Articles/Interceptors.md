@@ -84,10 +84,9 @@ struct TraceHeaders: RequestInterceptor {
 }
 
 let configuration = NetworkConfiguration.advanced(
-    baseURL: URL(string: "https://api.example.com")!
-) { builder in
-    builder.requestInterceptors = [TraceHeaders(traceStore: traceStore)]
-}
+    baseURL: URL(string: "https://api.example.com")!,
+    auth: AuthPack(additionalSigners: [TraceHeaders(traceStore: traceStore)])
+)
 let client = DefaultNetworkClient(configuration: configuration)
 ```
 

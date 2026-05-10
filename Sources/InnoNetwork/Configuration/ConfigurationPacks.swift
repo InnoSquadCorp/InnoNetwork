@@ -1,80 +1,98 @@
 import Foundation
 
-// MARK: - Configuration packs (5.0 forward-compat)
+// MARK: - Configuration packs
 //
-// The 5.0 release will replace `NetworkConfiguration.AdvancedBuilder`'s
-// flat parameter list with five thematic packs that group related
-// knobs. Ship the packs additively in 4.x so adopters can prepare
-// composition helpers and migration touch points before the
-// primary swap. Each pack is a Sendable struct whose fields are all
-// optional with `nil` defaults; calling `apply(to:)` mutates an
-// `AdvancedBuilder` in place, leaving fields the pack does not
-// carry untouched.
+// `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
+// composes the five thematic packs below. Each pack is a Sendable
+// struct whose fields are all optional (or empty-array) with `nil`/`[]`
+// defaults; the pack mutates the internal builder, leaving fields it
+// does not carry untouched.
 //
-// 4.x usage:
+// Usage:
 //
 // ```swift
-// NetworkConfiguration.advanced(baseURL: baseURL) { builder in
-//     ResiliencePack(retry: ..., circuitBreaker: ...).apply(to: &builder)
-//     AuthPack(refreshToken: ..., additionalSigners: [signer]).apply(to: &builder)
-// }
+// let configuration = NetworkConfiguration.advanced(
+//     baseURL: baseURL,
+//     resilience: ResiliencePack(retry: retry, circuitBreaker: breaker),
+//     auth: AuthPack(refreshToken: refresh, additionalSigners: [signer]),
+//     transport: TransportPack(timeout: 30, trustPolicy: .custom(pinning))
+// )
 // ```
-//
-// 5.0 usage will accept the packs as named init arguments directly.
 
 /// Groups retry, request coalescing, circuit breaker, idempotency,
-/// and response-body buffering policies.
+/// response-body buffering, and custom execution policies.
 public struct ResiliencePack: Sendable {
     public var retry: RetryPolicy?
     public var coalescing: RequestCoalescingPolicy?
     public var circuitBreaker: CircuitBreakerPolicy?
     public var idempotency: IdempotencyKeyPolicy?
     public var bodyBuffering: ResponseBodyBufferingPolicy?
+    /// Custom ``RequestExecutionPolicy`` instances inserted around the
+    /// single transport attempt. Replaces the builder slot wholesale;
+    /// pass `nil` (the default) to leave the underlying value alone.
+    public var customExecutionPolicies: [any RequestExecutionPolicy]?
 
     public init(
         retry: RetryPolicy? = nil,
         coalescing: RequestCoalescingPolicy? = nil,
         circuitBreaker: CircuitBreakerPolicy? = nil,
         idempotency: IdempotencyKeyPolicy? = nil,
-        bodyBuffering: ResponseBodyBufferingPolicy? = nil
+        bodyBuffering: ResponseBodyBufferingPolicy? = nil,
+        customExecutionPolicies: [any RequestExecutionPolicy]? = nil
     ) {
         self.retry = retry
         self.coalescing = coalescing
         self.circuitBreaker = circuitBreaker
         self.idempotency = idempotency
         self.bodyBuffering = bodyBuffering
+        self.customExecutionPolicies = customExecutionPolicies
     }
 
-    public func apply(to builder: inout NetworkConfiguration.AdvancedBuilder) {
+    package func apply(to builder: inout NetworkConfiguration.AdvancedBuilder) {
         if let retry { builder.retryPolicy = retry }
         if let coalescing { builder.requestCoalescingPolicy = coalescing }
         if let circuitBreaker { builder.circuitBreakerPolicy = circuitBreaker }
         if let idempotency { builder.idempotencyKeyPolicy = idempotency }
         if let bodyBuffering { builder.responseBodyBufferingPolicy = bodyBuffering }
+        if let customExecutionPolicies { builder.customExecutionPolicies = customExecutionPolicies }
     }
 }
 
-/// Groups refresh-token policy and any signing interceptors.
+/// Groups refresh-token policy and the interceptor chains.
 ///
-/// Adding a `RequestInterceptor` to `additionalSigners` appends it
-/// to the builder's existing `requestInterceptors`; the pack does
-/// not replace the chain.
+/// `additionalSigners`, `additionalResponseInterceptors`, and
+/// `additionalDecodingInterceptors` are **appended** to the builder's
+/// existing chains rather than replacing them, so the pack composes
+/// cleanly with `recommendedForProduction(baseURL:)` and other presets
+/// that already populate these slots.
 public struct AuthPack: Sendable {
     public var refreshToken: RefreshTokenPolicy?
     public var additionalSigners: [RequestInterceptor]
+    public var additionalResponseInterceptors: [ResponseInterceptor]
+    public var additionalDecodingInterceptors: [DecodingInterceptor]
 
     public init(
         refreshToken: RefreshTokenPolicy? = nil,
-        additionalSigners: [RequestInterceptor] = []
+        additionalSigners: [RequestInterceptor] = [],
+        additionalResponseInterceptors: [ResponseInterceptor] = [],
+        additionalDecodingInterceptors: [DecodingInterceptor] = []
     ) {
         self.refreshToken = refreshToken
         self.additionalSigners = additionalSigners
+        self.additionalResponseInterceptors = additionalResponseInterceptors
+        self.additionalDecodingInterceptors = additionalDecodingInterceptors
     }
 
-    public func apply(to builder: inout NetworkConfiguration.AdvancedBuilder) {
+    package func apply(to builder: inout NetworkConfiguration.AdvancedBuilder) {
         if let refreshToken { builder.refreshTokenPolicy = refreshToken }
         if !additionalSigners.isEmpty {
             builder.requestInterceptors.append(contentsOf: additionalSigners)
+        }
+        if !additionalResponseInterceptors.isEmpty {
+            builder.responseInterceptors.append(contentsOf: additionalResponseInterceptors)
+        }
+        if !additionalDecodingInterceptors.isEmpty {
+            builder.decodingInterceptors.append(contentsOf: additionalDecodingInterceptors)
         }
     }
 }
@@ -102,7 +120,7 @@ public struct ObservabilityPack: Sendable {
         self.metricsReporter = metricsReporter
     }
 
-    public func apply(to builder: inout NetworkConfiguration.AdvancedBuilder) {
+    package func apply(to builder: inout NetworkConfiguration.AdvancedBuilder) {
         if !eventObservers.isEmpty {
             builder.eventObservers.append(contentsOf: eventObservers)
         }
@@ -130,7 +148,7 @@ public struct CachePack: Sendable {
         self.captureFailurePayload = captureFailurePayload
     }
 
-    public func apply(to builder: inout NetworkConfiguration.AdvancedBuilder) {
+    package func apply(to builder: inout NetworkConfiguration.AdvancedBuilder) {
         if let responseCachePolicy { builder.responseCachePolicy = responseCachePolicy }
         if let responseCache { builder.responseCache = responseCache }
         if let captureFailurePayload { builder.captureFailurePayload = captureFailurePayload }
@@ -138,7 +156,8 @@ public struct CachePack: Sendable {
 }
 
 /// Groups timeout, cache policy, network access toggles, redirect
-/// policy, URLSession customization, and the insecure-HTTP escape.
+/// policy, the insecure-HTTP escape, trust policy, acceptable status
+/// codes, and the default `User-Agent` / `Accept-Language` providers.
 public struct TransportPack: Sendable {
     public var timeout: TimeInterval?
     public var cachePolicy: URLRequest.CachePolicy?
@@ -147,8 +166,11 @@ public struct TransportPack: Sendable {
     public var allowsExpensiveNetworkAccess: Bool?
     public var allowsConstrainedNetworkAccess: Bool?
     public var redirectPolicy: (any RedirectPolicy)?
-    public var urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)?
     public var allowsInsecureHTTP: Bool?
+    public var trustPolicy: TrustPolicy?
+    public var acceptableStatusCodes: Set<Int>?
+    public var userAgentProvider: (@Sendable () -> String)?
+    public var acceptLanguageProvider: (@Sendable () -> String)?
 
     public init(
         timeout: TimeInterval? = nil,
@@ -158,8 +180,11 @@ public struct TransportPack: Sendable {
         allowsExpensiveNetworkAccess: Bool? = nil,
         allowsConstrainedNetworkAccess: Bool? = nil,
         redirectPolicy: (any RedirectPolicy)? = nil,
-        urlSessionConfigurationOverride: (@Sendable (URLSessionConfiguration) -> URLSessionConfiguration)? = nil,
-        allowsInsecureHTTP: Bool? = nil
+        allowsInsecureHTTP: Bool? = nil,
+        trustPolicy: TrustPolicy? = nil,
+        acceptableStatusCodes: Set<Int>? = nil,
+        userAgentProvider: (@Sendable () -> String)? = nil,
+        acceptLanguageProvider: (@Sendable () -> String)? = nil
     ) {
         self.timeout = timeout
         self.cachePolicy = cachePolicy
@@ -168,11 +193,14 @@ public struct TransportPack: Sendable {
         self.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
         self.allowsConstrainedNetworkAccess = allowsConstrainedNetworkAccess
         self.redirectPolicy = redirectPolicy
-        self.urlSessionConfigurationOverride = urlSessionConfigurationOverride
         self.allowsInsecureHTTP = allowsInsecureHTTP
+        self.trustPolicy = trustPolicy
+        self.acceptableStatusCodes = acceptableStatusCodes
+        self.userAgentProvider = userAgentProvider
+        self.acceptLanguageProvider = acceptLanguageProvider
     }
 
-    public func apply(to builder: inout NetworkConfiguration.AdvancedBuilder) {
+    package func apply(to builder: inout NetworkConfiguration.AdvancedBuilder) {
         if let timeout { builder.timeout = timeout }
         if let cachePolicy { builder.cachePolicy = cachePolicy }
         if let requestPriority { builder.requestPriority = requestPriority }
@@ -184,9 +212,10 @@ public struct TransportPack: Sendable {
             builder.allowsConstrainedNetworkAccess = allowsConstrainedNetworkAccess
         }
         if let redirectPolicy { builder.redirectPolicy = redirectPolicy }
-        if let urlSessionConfigurationOverride {
-            builder.urlSessionConfigurationOverride = urlSessionConfigurationOverride
-        }
         if let allowsInsecureHTTP { builder.allowsInsecureHTTP = allowsInsecureHTTP }
+        if let trustPolicy { builder.trustPolicy = trustPolicy }
+        if let acceptableStatusCodes { builder.acceptableStatusCodes = acceptableStatusCodes }
+        if let userAgentProvider { builder.userAgentProvider = userAgentProvider }
+        if let acceptLanguageProvider { builder.acceptLanguageProvider = acceptLanguageProvider }
     }
 }

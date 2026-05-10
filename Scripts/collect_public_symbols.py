@@ -18,6 +18,7 @@ def main() -> None:
         "InnoNetworkDownload",
         "InnoNetworkOpenAPI",
         "InnoNetworkPersistentCache",
+        "InnoNetworkTrust",
         "InnoNetworkWebSocket",
         "InnoNetworkTestSupport",
     }

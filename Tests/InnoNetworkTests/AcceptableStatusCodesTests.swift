@@ -85,13 +85,12 @@ struct AcceptableStatusCodesTests {
         }
     }
 
-    @Test("AdvancedBuilder exposes acceptableStatusCodes for tuning")
-    func advancedBuilderExposesProperty() {
+    @Test("TransportPack exposes acceptableStatusCodes for tuning")
+    func transportPackExposesProperty() {
         let configuration = NetworkConfiguration.advanced(
-            baseURL: URL(string: "https://api.example.com/v1")!
-        ) { builder in
-            builder.acceptableStatusCodes = [200, 201, 304]
-        }
+            baseURL: URL(string: "https://api.example.com/v1")!,
+            transport: TransportPack(acceptableStatusCodes: [200, 201, 304])
+        )
         #expect(configuration.acceptableStatusCodes == [200, 201, 304])
     }
 

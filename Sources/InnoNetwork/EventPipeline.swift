@@ -43,7 +43,7 @@ public struct EventPipelinePartitionStateMetric: Sendable {
     public let droppedEventCount: Int
     public let oldestQueuedEventAge: TimeInterval?
 
-    public init(
+    package init(
         partitionID: String,
         queueDepth: Int,
         droppedEventCount: Int,
@@ -63,7 +63,7 @@ public struct EventPipelineConsumerStateMetric: Sendable {
     public let droppedEventCount: Int
     public let oldestQueuedEventAge: TimeInterval?
 
-    public init(
+    package init(
         partitionID: String,
         consumerID: String,
         queueDepth: Int,
@@ -83,7 +83,7 @@ public struct EventPipelineConsumerDeliveryLatencyMetric: Sendable {
     public let consumerID: String
     public let latency: TimeInterval
 
-    public init(partitionID: String, consumerID: String, latency: TimeInterval) {
+    package init(partitionID: String, consumerID: String, latency: TimeInterval) {
         self.partitionID = partitionID
         self.consumerID = consumerID
         self.latency = latency
@@ -112,7 +112,7 @@ public struct EventPipelineAggregateSnapshotMetric: Sendable {
     /// Count of reporter-proxy input or output overflows observed since the previous aggregate snapshot.
     public let metricsOverflowCount: Int
 
-    public init(
+    package init(
         hubKind: EventPipelineHubKind,
         activePartitionCount: Int,
         activeConsumerCount: Int,

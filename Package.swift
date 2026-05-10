@@ -57,6 +57,16 @@ let package = Package(
             name: "InnoNetworkOpenAPI",
             targets: ["InnoNetworkOpenAPI"]
         ),
+        // Optional public-key pinning evaluator. Split out of the core
+        // module in PR-1 so apps that don't pin (the common case) don't
+        // pay the SPKI/DER surface cost. To pin, link this product and
+        // wrap your `PublicKeyPinningPolicy` with
+        // `PublicKeyPinningEvaluator(policy:)`, then pass it via
+        // `TrustPolicy.custom(_:)`.
+        .library(
+            name: "InnoNetworkTrust",
+            targets: ["InnoNetworkTrust"]
+        ),
         // Test helpers that consumers can pull into *their* test targets to
         // assert on InnoNetwork integrations (for example
         // ``MockURLSession``, ``StubNetworkClient``, and
@@ -75,10 +85,12 @@ let package = Package(
         .target(
             name: "InnoNetwork",
             path: "Sources/InnoNetwork",
-            // Bundles the `Resources/{en,ko}.lproj/Localizable.strings`
-            // catalogues that back ``NetworkError.errorDescription``. The
-            // catalogue ships en + ko today; additional locales can be added
-            // by dropping new `<lang>.lproj/Localizable.strings` siblings.
+            // Bundles the `Resources/en.lproj/Localizable.strings`
+            // catalogue that backs ``NetworkError.errorDescription``.
+            // Additional locales can be added by dropping new
+            // `<lang>.lproj/Localizable.strings` siblings; consumers that
+            // need other languages should localize at the application
+            // layer rather than wait for library-side translations.
             // Also bundles `Resources/PrivacyInfo.xcprivacy` declaring the
             // File Timestamp Required Reason API used by
             // `MultipartFormData.attributesOfItem(...)`.
@@ -115,6 +127,12 @@ let package = Package(
             name: "InnoNetworkOpenAPI",
             dependencies: ["InnoNetwork"],
             path: "Sources/InnoNetworkOpenAPI",
+            swiftSettings: strictSettings
+        ),
+        .target(
+            name: "InnoNetworkTrust",
+            dependencies: ["InnoNetwork"],
+            path: "Sources/InnoNetworkTrust",
             swiftSettings: strictSettings
         ),
         // Test helpers. Public symbols here form a Provisionally Stable
@@ -167,7 +185,12 @@ let package = Package(
         ),
         .testTarget(
             name: "InnoNetworkTests",
-            dependencies: ["InnoNetwork", "InnoNetworkOpenAPI", "InnoNetworkTestSupport"],
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkOpenAPI",
+                "InnoNetworkTestSupport",
+                "InnoNetworkTrust",
+            ],
             path: "Tests/InnoNetworkTests",
             swiftSettings: strictSettings
         ),

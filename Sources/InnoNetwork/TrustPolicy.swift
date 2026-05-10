@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 public enum TrustFailureReason: Sendable, Equatable {
@@ -18,116 +17,42 @@ public enum TrustFailureReason: Sendable, Equatable {
     case custom(String)
 }
 
-public protocol TrustEvaluating: Sendable {
-    /// Return true when the challenge is trusted.
-    func evaluate(challenge: URLAuthenticationChallenge) -> Bool
+/// Outcome of a custom trust challenge evaluation.
+///
+/// Returned by ``TrustEvaluating/evaluate(challenge:)`` so custom
+/// evaluators can surface granular failure reasons (e.g. pin mismatch
+/// vs. host not pinned) instead of collapsing every reject onto a
+/// single ``TrustFailureReason/custom(_:)`` string.
+public enum TrustChallengeOutcome: Sendable {
+    /// Defer to URLSession's default trust evaluation.
+    case performDefaultHandling
+    /// Accept the challenge and use the credential built from the
+    /// challenge's `serverTrust`. If `serverTrust` is `nil`, the
+    /// evaluator falls through to default handling.
+    case useCredential
+    /// Cancel the challenge with the supplied reason. The reason is
+    /// surfaced through ``NetworkError/trustEvaluationFailed(_:)``.
+    case cancel(TrustFailureReason)
 }
 
-public struct PublicKeyPinningPolicy: Sendable {
-    /// Controls how pin sets are selected when exact and parent-domain pins
-    /// both match a host.
-    public enum HostMatchingStrategy: Sendable, Equatable {
-        /// Preserve the existing behavior by unioning every exact and
-        /// parent-domain match.
-        case unionAllMatches
-
-        /// Prefer the exact host's pins. If no exact host is configured, use
-        /// only the longest matching parent-domain entry.
-        case mostSpecificHost
-    }
-
-    public let pinsByHost: [String: Set<String>]
-    public let includesSubdomains: Bool
-    public let allowDefaultEvaluationForUnpinnedHosts: Bool
-    public let hostMatchingStrategy: HostMatchingStrategy
-
-    public init(
-        pinsByHost: [String: Set<String>],
-        includesSubdomains: Bool = true,
-        allowDefaultEvaluationForUnpinnedHosts: Bool = true,
-        hostMatchingStrategy: HostMatchingStrategy = .unionAllMatches
-    ) {
-        self.pinsByHost = pinsByHost
-        self.includesSubdomains = includesSubdomains
-        self.allowDefaultEvaluationForUnpinnedHosts = allowDefaultEvaluationForUnpinnedHosts
-        self.hostMatchingStrategy = hostMatchingStrategy
-    }
-
-    func pins(forHost host: String) -> Set<String>? {
-        let normalizedHost = host.lowercased()
-        switch hostMatchingStrategy {
-        case .unionAllMatches:
-            return unionPins(for: normalizedHost)
-        case .mostSpecificHost:
-            return mostSpecificPins(for: normalizedHost)
-        }
-    }
-
-    private func unionPins(for normalizedHost: String) -> Set<String>? {
-        let matches = matchingPinSets(for: normalizedHost)
-            .map { $0.pins }
-
-        guard !matches.isEmpty else { return nil }
-        return matches.reduce(into: Set<String>()) { partialResult, next in
-            partialResult.formUnion(next)
-        }
-    }
-
-    private func mostSpecificPins(for normalizedHost: String) -> Set<String>? {
-        let matches = matchingPinSets(for: normalizedHost)
-        let exactMatches =
-            matches
-            .filter { $0.isExact }
-            .map { $0.pins }
-        if !exactMatches.isEmpty {
-            return union(exactMatches)
-        }
-
-        guard includesSubdomains else { return nil }
-
-        let parentMatches =
-            matches
-            .filter { !$0.isExact }
-        guard let longestMatchLength = parentMatches.map({ $0.host.count }).max() else {
-            return nil
-        }
-
-        return union(
-            parentMatches
-                .filter { $0.host.count == longestMatchLength }
-                .map { $0.pins }
-        )
-    }
-
-    private func matchingPinSets(
-        for normalizedHost: String
-    ) -> [(host: String, pins: Set<String>, isExact: Bool)] {
-        var matches: [(host: String, pins: Set<String>, isExact: Bool)] = []
-        for (configuredHost, configuredPins) in pinsByHost {
-            let normalizedConfiguredHost = configuredHost.lowercased()
-            if normalizedHost == normalizedConfiguredHost {
-                matches.append((normalizedConfiguredHost, configuredPins, true))
-                continue
-            }
-            if includesSubdomains, normalizedHost.hasSuffix(".\(normalizedConfiguredHost)") {
-                matches.append((normalizedConfiguredHost, configuredPins, false))
-            }
-        }
-
-        return matches
-    }
-
-    private func union(_ matches: [Set<String>]) -> Set<String> {
-        return matches.reduce(into: Set<String>()) { partialResult, next in
-            partialResult.formUnion(next)
-        }
-    }
+public protocol TrustEvaluating: Sendable {
+    /// Evaluate a TLS authentication challenge.
+    ///
+    /// Returning ``TrustChallengeOutcome/cancel(_:)`` with a structured
+    /// ``TrustFailureReason`` is preferred over collapsing failures onto
+    /// ``TrustFailureReason/custom(_:)`` so that telemetry can distinguish
+    /// trust failure modes.
+    func evaluate(challenge: URLAuthenticationChallenge) -> TrustChallengeOutcome
 }
 
 /// Controls how TLS trust challenges are evaluated for outbound requests.
+///
+/// Public-key pinning evaluators live in the ``InnoNetworkTrust`` product
+/// — `import InnoNetworkTrust` and wrap the policy with
+/// `PublicKeyPinningEvaluator(policy:)` then pass it via
+/// ``TrustPolicy/custom(_:)``.
 public enum TrustPolicy: Sendable {
     case systemDefault
-    case publicKeyPinning(PublicKeyPinningPolicy)
     case custom(any TrustEvaluating)
 
     var isSystemDefault: Bool {
@@ -157,220 +82,17 @@ enum TrustEvaluator {
         case .systemDefault:
             return .performDefaultHandling
         case .custom(let evaluator):
-            let trusted = evaluator.evaluate(challenge: challenge)
-            if trusted {
+            switch evaluator.evaluate(challenge: challenge) {
+            case .performDefaultHandling:
+                return .performDefaultHandling
+            case .useCredential:
                 if let trust = challenge.protectionSpace.serverTrust {
                     return .useCredential(URLCredential(trust: trust))
                 }
-                return .performDefaultHandling
-            }
-            return .cancel(.custom("Custom trust evaluator rejected the challenge."))
-        case .publicKeyPinning(let pinningPolicy):
-            return evaluatePublicKeyPinning(challenge: challenge, policy: pinningPolicy)
-        }
-    }
-
-    private static func evaluatePublicKeyPinning(
-        challenge: URLAuthenticationChallenge,
-        policy: PublicKeyPinningPolicy
-    ) -> TrustChallengeDisposition {
-        let method = challenge.protectionSpace.authenticationMethod
-        guard method == NSURLAuthenticationMethodServerTrust else {
-            return .cancel(.unsupportedAuthenticationMethod(method))
-        }
-
-        guard let serverTrust = challenge.protectionSpace.serverTrust else {
-            return .cancel(.missingServerTrust)
-        }
-
-        var trustError: CFError?
-        if !SecTrustEvaluateWithError(serverTrust, &trustError) {
-            let reason = (trustError as Error?)?.localizedDescription
-            return .cancel(.systemTrustEvaluationFailed(reason: reason))
-        }
-
-        let host = challenge.protectionSpace.host.lowercased()
-        guard let expectedPins = policy.pins(forHost: host) else {
-            if policy.allowDefaultEvaluationForUnpinnedHosts {
-                return .performDefaultHandling
-            }
-            return .cancel(.hostNotPinned(host))
-        }
-
-        let extractedPins = extractPublicKeyPins(from: serverTrust)
-        guard !extractedPins.isEmpty else {
-            return .cancel(.publicKeyExtractionFailed)
-        }
-
-        let hasMatch = !expectedPins.isDisjoint(with: extractedPins)
-        if hasMatch {
-            return .useCredential(URLCredential(trust: serverTrust))
-        }
-
-        return .cancel(.pinMismatch(host: host))
-    }
-
-    private static func extractPublicKeyPins(from trust: SecTrust) -> Set<String> {
-        var pins = Set<String>()
-        guard let certificateChain = SecTrustCopyCertificateChain(trust) as? [SecCertificate] else {
-            return pins
-        }
-
-        for certificate in certificateChain {
-            guard let key = SecCertificateCopyKey(certificate),
-                let keyData = SecKeyCopyExternalRepresentation(key, nil) as Data?
-            else { continue }
-
-            pins.formUnion(pinHashes(for: keyData))
-
-            let keyAttributes = (SecKeyCopyAttributes(key) as? [CFString: Any]) ?? [:]
-            let keyType = (keyAttributes[kSecAttrKeyType] as? String) ?? ""
-            let keySizeInBits = (keyAttributes[kSecAttrKeySizeInBits] as? Int) ?? 0
-            if let spkiData = spkiData(
-                publicKeyData: keyData,
-                keyType: keyType,
-                keySizeInBits: keySizeInBits
-            ) {
-                pins.formUnion(pinHashes(for: spkiData))
+                return .cancel(.missingServerTrust)
+            case .cancel(let reason):
+                return .cancel(reason)
             }
         }
-        return pins
-    }
-
-    static func spkiData(
-        publicKeyData: Data,
-        keyType: String,
-        keySizeInBits: Int
-    ) -> Data? {
-        guard
-            let algorithmIdentifier = algorithmIdentifierData(
-                keyType: keyType,
-                keySizeInBits: keySizeInBits
-            )
-        else {
-            return nil
-        }
-
-        let subjectPublicKey = derBitString(publicKeyData)
-        return derSequence(algorithmIdentifier + subjectPublicKey)
-    }
-
-    /// Computes the SHA-256 pin set for the given bytes in both common
-    /// representations.
-    ///
-    /// Two strings are returned per input so consumers can register pins in
-    /// whichever representation their tooling produces:
-    ///
-    /// - The bare base64 digest (e.g. Apple's `Network.framework` examples
-    ///   and many security audit reports).
-    /// - The `sha256/`-prefixed digest (e.g. Mozilla `pin-sha256` directives,
-    ///   Chromium HSTS preload entries, and most "openssl + sed" recipes).
-    ///
-    /// Matching against ``PublicKeyPinningPolicy/pinsByHost`` is performed as
-    /// a set intersection, so registering either representation is sufficient
-    /// for a successful pin check.
-    private static func pinHashes(for bytes: Data) -> Set<String> {
-        let digest = SHA256.hash(data: bytes)
-        let hashValue = Data(digest).base64EncodedString()
-        return [hashValue, "sha256/\(hashValue)"]
-    }
-
-    /// Returns the SPKI `AlgorithmIdentifier` DER bytes for the supplied
-    /// public-key parameters, or `nil` when the algorithm cannot be matched.
-    ///
-    /// Currently recognized algorithms:
-    /// - **RSA** (`kSecAttrKeyTypeRSA`): rsaEncryption, OID 1.2.840.113549.1.1.1 with NULL params.
-    /// - **EC NIST curves** (`kSecAttrKeyTypeEC` / `kSecAttrKeyTypeECSECPrimeRandom`):
-    ///   id-ecPublicKey + named curve OID for P-256, P-384, P-521 (size-bucketed).
-    /// - **Ed25519**: id-Ed25519, OID 1.3.101.112 per RFC 8410. Matched by
-    ///   keyType string (`"ed25519"` case-insensitive, or the raw OID
-    ///   `"1.3.101.112"`) because Security.framework does not currently expose
-    ///   a public `kSecAttrKeyTypeEd25519` constant — once Apple ships one, the
-    ///   string match keeps working unchanged.
-    ///
-    /// When `nil` is returned, the caller still computes a fallback hash from
-    /// the raw public key bytes via ``pinHashes(for:)``. That covers
-    /// alternate algorithms (RSA-PSS, post-quantum, etc.) at the cost of
-    /// requiring consumers to register pins computed from the same raw bytes.
-    private static func algorithmIdentifierData(
-        keyType: String,
-        keySizeInBits: Int
-    ) -> Data? {
-        let rsaKeyType = kSecAttrKeyTypeRSA as String
-        let ecPrimeRandomKeyType = kSecAttrKeyTypeECSECPrimeRandom as String
-        let ecKeyType = kSecAttrKeyTypeEC as String
-
-        switch keyType {
-        case rsaKeyType:
-            // rsaEncryption OID (1.2.840.113549.1.1.1) + NULL params
-            return Data([0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00])
-        case ecPrimeRandomKeyType, ecKeyType:
-            // id-ecPublicKey OID (1.2.840.10045.2.1) + named curve OID
-            if keySizeInBits <= 256 {
-                // prime256v1 (1.2.840.10045.3.1.7)
-                return Data([
-                    0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48,
-                    0xce, 0x3d, 0x03, 0x01, 0x07,
-                ])
-            } else if keySizeInBits <= 384 {
-                // secp384r1 (1.3.132.0.34)
-                return Data([
-                    0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b, 0x81, 0x04,
-                    0x00, 0x22,
-                ])
-            } else {
-                // secp521r1 (1.3.132.0.35)
-                return Data([
-                    0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b, 0x81, 0x04,
-                    0x00, 0x23,
-                ])
-            }
-        default:
-            // RFC 8410 — Ed25519 is matched by keyType string until Security.framework
-            // exposes a public constant. The OID string fallback covers Apple SDKs that
-            // surface the algorithm via its OID rather than a name.
-            let lower = keyType.lowercased()
-            if lower == "ed25519" || keyType == "1.3.101.112" {
-                // id-Ed25519 OID (1.3.101.112), no params
-                return Data([0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70])
-            }
-            return nil
-        }
-    }
-
-    private static func derSequence(_ payload: Data) -> Data {
-        derWrap(tag: 0x30, payload: payload)
-    }
-
-    private static func derBitString(_ payload: Data) -> Data {
-        // First byte is the number of unused bits in the final octet (0 for full bytes).
-        var bitPayload = Data([0x00])
-        bitPayload.append(payload)
-        return derWrap(tag: 0x03, payload: bitPayload)
-    }
-
-    private static func derWrap(tag: UInt8, payload: Data) -> Data {
-        var result = Data([tag])
-        result.append(derLength(payload.count))
-        result.append(payload)
-        return result
-    }
-
-    private static func derLength(_ count: Int) -> Data {
-        precondition(count >= 0)
-        if count < 0x80 {
-            return Data([UInt8(count)])
-        }
-
-        var value = count
-        var bytes: [UInt8] = []
-        while value > 0 {
-            bytes.insert(UInt8(value & 0xff), at: 0)
-            value >>= 8
-        }
-
-        var result = Data([0x80 | UInt8(bytes.count)])
-        result.append(contentsOf: bytes)
-        return result
     }
 }

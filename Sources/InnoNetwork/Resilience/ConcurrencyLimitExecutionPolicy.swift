@@ -9,7 +9,7 @@ import Foundation
 /// token is available. This is the executor-integrated form of the
 /// raw ``ConcurrencyTokenBucket`` primitive: instead of pairing a
 /// request and a response interceptor manually, callers register the
-/// policy on ``NetworkConfiguration/AdvancedBuilder/customExecutionPolicies``
+/// policy on ``ResiliencePack/customExecutionPolicies``
 /// and the surrounding execution machinery handles the token lifecycle
 /// — including transport errors, where the `defer` arm guarantees a
 /// release even if the chain throws.
@@ -18,9 +18,10 @@ import Foundation
 /// let bucket = ConcurrencyTokenBucket(maxConcurrent: 4)
 /// let limit = ConcurrencyLimitExecutionPolicy(bucket: bucket)
 ///
-/// let configuration = NetworkConfiguration.advanced(baseURL: baseURL) { builder in
-///     builder.customExecutionPolicies.append(limit)
-/// }
+/// let configuration = NetworkConfiguration.advanced(
+///     baseURL: baseURL,
+///     resilience: ResiliencePack(customExecutionPolicies: [limit])
+/// )
 /// ```
 ///
 /// Because `RequestExecutionPolicy` runs around each transport

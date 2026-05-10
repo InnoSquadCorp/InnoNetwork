@@ -48,7 +48,15 @@ struct BufferedAsyncBytes<Base: AsyncSequence>: AsyncSequence where Base.Element
                 guard let byte = try await iterator.next() else { break }
                 observedBytes += 1
                 if let maxBytes, observedBytes > maxBytes {
-                    throw NetworkError.responseTooLarge(limit: maxBytes, observed: observedBytes)
+                    throw NetworkError.underlying(
+                        SendableUnderlyingError(
+                            domain: NetworkError.errorDomain,
+                            code: 4003,
+                            message:
+                                "Response body of \(observedBytes) bytes exceeded the configured limit of \(maxBytes) bytes."
+                        ),
+                        nil
+                    )
                 }
                 chunk.append(byte)
             }

@@ -54,9 +54,7 @@ required_feature_docs=(
 )
 example_docs=(
   "$repo_root/Examples/BasicRequest/README.md"
-  "$repo_root/Examples/CustomHeaders/README.md"
   "$repo_root/Examples/ErrorHandling/README.md"
-  "$repo_root/Examples/RealWorldAPI/README.md"
   "$repo_root/Examples/README.md"
 )
 
@@ -140,8 +138,10 @@ expected_stable=(
 '`WebSocketPingContext`'
 '`WebSocketPongContext`'
 '`TrustPolicy`'
+'`TrustChallengeOutcome`'
 '`PublicKeyPinningPolicy`'
 '`PublicKeyPinningPolicy.HostMatchingStrategy`'
+'`PublicKeyPinningEvaluator`'
 '`AnyResponseDecoder`'
 '`URLQueryEncoder`'
 '`URLQueryArrayEncodingStrategy`'
@@ -153,6 +153,9 @@ expected_stable=(
 '`StateReducer`'
 '`EventDeliveryPolicy`'
 '`WebSocketCloseCode`'
+'`EndpointBuilder`, `EndpointPathEncoding` (promoted from Provisionally Stable in 4.x.x; the path-encoding shape and decoding helpers are SemVer-protected)'
+'`DecodingInterceptor` (promoted from Provisionally Stable in 4.x.x)'
+'`WebSocketCloseDisposition` (promoted from Provisionally Stable in 4.x.x)'
 )
 
 documented_stable=()
@@ -184,8 +187,7 @@ expected_provisionally=(
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
-'`EndpointBuilder`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
-'`WebSocketCloseDisposition` observation surface'
+'`AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
 '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
 '`MultipartStreamingResponseDecoder` streaming multipart response parsing surface'
@@ -194,7 +196,8 @@ expected_provisionally=(
 '`PersistentResponseCache` statistics and telemetry surfaces'
 '`WebSocketError.unsupportedProtocolFeature`'
 '`WebSocketProtocolFeature`'
-'`DecodingInterceptor`'
+'`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens'
+'`AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing'
 '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`'
 '`NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface'
 '`HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)'
@@ -202,7 +205,6 @@ expected_provisionally=(
 '`StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance'
 '`PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`'
 '`DownloadTask.generation` / `attempt` observation accessors'
-'`NetworkError.transportSuspended` and `NetworkError.cacheRevalidationFailed(underlying:cached:)` cases. Localizable.strings keys (`NetworkError.transportSuspended`, `NetworkError.cacheRevalidationFailed`) ship in `en` and `ko` and are treated as the Provisionally Stable contract for the messages.'
 )
 
 expected_shipping_public_declarations=(
@@ -324,9 +326,11 @@ expected_shipping_public_declarations=(
   TimeoutReason
   TraceContextInterceptor
   TransportPolicy
+  TrustChallengeOutcome
   TrustEvaluating
   TrustFailureReason
   TrustPolicy
+  PublicKeyPinningEvaluator
   URLQueryCustomKeyTransform
   URLQueryEncoder
   URLQueryFloatEncodingStrategy
@@ -387,13 +391,14 @@ validate_protocol_symbol() {
       sub(/ $/, "", s)
       return s
     }
-    BEGIN { norm_expected = normalize(expected) }
+    BEGIN { norm_expected = normalize(expected); body = "" }
     $0 ~ "^public protocol " protocol_name ": Sendable \\{$" { in_protocol = 1; next }
-    in_protocol && /^\}$/ { exit }
-    in_protocol {
-      norm_line = normalize($0)
-      if (norm_line == norm_expected) { found = 1; exit }
+    in_protocol && /^\}$/ {
+      norm_body = normalize(body)
+      if (index(norm_body, norm_expected) > 0) { found = 1 }
+      exit
     }
+    in_protocol { body = body " " $0 }
     END { exit found ? 0 : 1 }
   ' "$target" || fail "symbol '$expected' is not present in $protocol_name protocol"
 }
@@ -579,8 +584,8 @@ collect_public_symbols() {
 
 validate_public_surface_ledger() {
   [[ -f "$public_symbols_allowlist" ]] || fail "public symbol allowlist is missing: $public_symbols_allowlist"
-  require_line $'InnoNetwork\tswift.struct\tNetworkConfiguration.AdvancedBuilder' "$public_symbols_allowlist"
-  require_line $'InnoNetwork\tswift.property\tNetworkConfiguration.AdvancedBuilder.requestInterceptors' "$public_symbols_allowlist"
+  require_line $'InnoNetwork\tswift.type.method\tNetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)' "$public_symbols_allowlist"
+  require_line $'InnoNetwork\tswift.struct\tAuthPack' "$public_symbols_allowlist"
 
   local expected_file
   local actual_file
@@ -630,8 +635,7 @@ validate_troubleshooting_and_examples_docs() {
   require_contains 'Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)' "$readme"
   require_contains '### 1. [BasicRequest](./BasicRequest)' "$repo_root/Examples/README.md"
   require_contains '### 2. [ErrorHandling](./ErrorHandling)' "$repo_root/Examples/README.md"
-  require_contains '### 3. [CustomHeaders](./CustomHeaders)' "$repo_root/Examples/README.md"
-  require_contains '### 4. [RealWorldAPI](./RealWorldAPI)' "$repo_root/Examples/README.md"
+  require_contains '### 3. [Auth](./Auth)' "$repo_root/Examples/README.md"
   require_contains '### [ConsumerSmoke](./ConsumerSmoke)' "$repo_root/Examples/README.md"
   require_contains '### [CoreSmoke](./CoreSmoke)' "$repo_root/Examples/README.md"
   require_contains '### [TestSupportSmoke](./TestSupportSmoke)' "$repo_root/Examples/README.md"
@@ -639,11 +643,14 @@ validate_troubleshooting_and_examples_docs() {
 }
 
 validate_release_quality_gates() {
-  require_contains 'Sources/InnoNetworkPersistentCache' "$repo_root/.github/workflows/ci.yml"
+  require_contains 'Sources/InnoNetworkPersistentCache' "$repo_root/Scripts/check_unchecked_sendable.sh"
+  require_contains 'bash Scripts/check_unchecked_sendable.sh' "$repo_root/.github/workflows/ci.yml"
   require_contains 'bash Scripts/check_production_force_unwraps.sh' "$repo_root/.github/workflows/ci.yml"
   require_contains 'bash Scripts/check_production_force_unwraps.sh' "$repo_root/docs/CI_DoC.md"
   [[ -x "$repo_root/Scripts/check_production_force_unwraps.sh" ]] \
     || fail "production force-unwrap gate is not executable"
+  [[ -x "$repo_root/Scripts/check_unchecked_sendable.sh" ]] \
+    || fail "unchecked-sendable gate is not executable"
 }
 
 documented_provisionally=()
@@ -705,11 +712,11 @@ for symbol in "${expected_stable[@]}"; do
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.request(_:)`')
-      pattern='    func request<T: APIDefinition>(_ request: T) async throws -> T.APIResponse'
+      pattern='    func request<T: APIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.request(_:tag:)`')
-      pattern='    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse'
+      pattern='    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError) -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.request(_:method:tag:)`')
@@ -717,11 +724,11 @@ for symbol in "${expected_stable[@]}"; do
       target="$repo_root/Sources/InnoNetwork/NetworkClient+PathConvenience.swift"
       ;;
     '`NetworkClient.upload(_:)`')
-      pattern='    func upload<T: MultipartAPIDefinition>(_ request: T) async throws -> T.APIResponse'
+      pattern='    func upload<T: MultipartAPIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkClient.upload(_:tag:)`')
-      pattern='    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws -> T.APIResponse'
+      pattern='    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError) -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`NetworkConfiguration.safeDefaults(baseURL:)`')
@@ -788,13 +795,21 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public enum TrustPolicy'
       target="$repo_root/Sources/InnoNetwork/TrustPolicy.swift"
       ;;
+    '`TrustChallengeOutcome`')
+      pattern='public enum TrustChallengeOutcome'
+      target="$repo_root/Sources/InnoNetwork/TrustPolicy.swift"
+      ;;
     '`PublicKeyPinningPolicy`')
       pattern='public struct PublicKeyPinningPolicy'
-      target="$repo_root/Sources/InnoNetwork/TrustPolicy.swift"
+      target="$repo_root/Sources/InnoNetworkTrust/PublicKeyPinning.swift"
       ;;
     '`PublicKeyPinningPolicy.HostMatchingStrategy`')
       pattern='public enum HostMatchingStrategy: Sendable, Equatable'
-      target="$repo_root/Sources/InnoNetwork/TrustPolicy.swift"
+      target="$repo_root/Sources/InnoNetworkTrust/PublicKeyPinning.swift"
+      ;;
+    '`PublicKeyPinningEvaluator`')
+      pattern='public struct PublicKeyPinningEvaluator'
+      target="$repo_root/Sources/InnoNetworkTrust/PublicKeyPinning.swift"
       ;;
     '`AnyResponseDecoder`')
       pattern='public struct AnyResponseDecoder'
@@ -840,6 +855,18 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public enum WebSocketCloseCode'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseCode.swift"
       ;;
+    '`EndpointBuilder`, `EndpointPathEncoding` (promoted from Provisionally Stable in 4.x.x; the path-encoding shape and decoding helpers are SemVer-protected)')
+      pattern='public struct EndpointBuilder<Response: Decodable & Sendable, Scope: AuthScope>: APIDefinition'
+      target="$repo_root/Sources/InnoNetwork/Endpoint.swift"
+      ;;
+    '`DecodingInterceptor` (promoted from Provisionally Stable in 4.x.x)')
+      pattern='public protocol DecodingInterceptor'
+      target="$repo_root/Sources/InnoNetwork/DecodingInterceptor.swift"
+      ;;
+    '`WebSocketCloseDisposition` (promoted from Provisionally Stable in 4.x.x)')
+      pattern='public enum WebSocketCloseDisposition: Sendable, Equatable'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseDisposition.swift"
+      ;;
     *)
       fail "unknown stable symbol mapping: $symbol"
       ;;
@@ -878,13 +905,8 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_test_support_product
       continue
       ;;
-    '`EndpointBuilder`, `EndpointPathEncoding`, `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
+    '`AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`')
       validate_oss_readiness_public_api
-      continue
-      ;;
-    '`WebSocketCloseDisposition` observation surface')
-      require_contains 'public enum WebSocketCloseDisposition: Sendable, Equatable' \
-        "$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseDisposition.swift"
       continue
       ;;
     '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces')
@@ -919,6 +941,16 @@ for symbol in "${expected_provisionally[@]}"; do
     '`WebSocketProtocolFeature`')
       require_contains 'public enum WebSocketProtocolFeature' \
         "$repo_root/Sources/InnoNetworkWebSocket/WebSocketState.swift"
+      continue
+      ;;
+    '`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens')
+      require_contains 'public struct JWTBearerInterceptor: RequestInterceptor' \
+        "$repo_root/Sources/InnoNetwork/Auth/JWTBearerInterceptor.swift"
+      continue
+      ;;
+    '`AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing')
+      require_contains 'public struct AWSSigV4Interceptor: RequestInterceptor' \
+        "$repo_root/Sources/InnoNetwork/Auth/AWSSigV4Interceptor.swift"
       continue
       ;;
     '`DecodingInterceptor`')
@@ -984,21 +1016,6 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
       require_contains 'public var attempt: Int' \
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
-      continue
-      ;;
-    '`NetworkError.transportSuspended` and `NetworkError.cacheRevalidationFailed(underlying:cached:)` cases. Localizable.strings keys (`NetworkError.transportSuspended`, `NetworkError.cacheRevalidationFailed`) ship in `en` and `ko` and are treated as the Provisionally Stable contract for the messages.')
-      require_contains 'case transportSuspended' \
-        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
-      require_contains 'case cacheRevalidationFailed(underlying: SendableUnderlyingError, cached: Response)' \
-        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
-      require_contains '"NetworkError.transportSuspended"' \
-        "$repo_root/Sources/InnoNetwork/Resources/en.lproj/Localizable.strings"
-      require_contains '"NetworkError.cacheRevalidationFailed"' \
-        "$repo_root/Sources/InnoNetwork/Resources/en.lproj/Localizable.strings"
-      require_contains '"NetworkError.transportSuspended"' \
-        "$repo_root/Sources/InnoNetwork/Resources/ko.lproj/Localizable.strings"
-      require_contains '"NetworkError.cacheRevalidationFailed"' \
-        "$repo_root/Sources/InnoNetwork/Resources/ko.lproj/Localizable.strings"
       continue
       ;;
     *)

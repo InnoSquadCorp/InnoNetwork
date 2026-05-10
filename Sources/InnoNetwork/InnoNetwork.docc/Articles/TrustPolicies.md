@@ -7,23 +7,29 @@ become a security bug.
 
 ``TrustPolicy`` decides what counts as a trustworthy server certificate chain. The default
 ``TrustPolicy/systemDefault`` delegates to the OS — fine for most apps. Production clients
-that hold sensitive credentials or transact value should consider public-key pinning.
+that hold sensitive credentials or transact value should consider public-key pinning, which
+ships in the dedicated `InnoNetworkTrust` companion product.
 
 ## Policies
 
 | Policy | When to use |
 |--------|-------------|
 | ``TrustPolicy/systemDefault`` | Any host that follows public CA distribution. The OS trust store is the source of truth. |
-| ``TrustPolicy/publicKeyPinning(_:)`` | High-risk hosts where you want defence-in-depth against a compromised CA issuing for your domain. |
-| ``TrustPolicy/custom(_:)`` | Bespoke evaluation (corporate roots, time-bound exceptions, or layered checks). Implements ``TrustEvaluating``. |
+| ``TrustPolicy/custom(_:)`` (with `PublicKeyPinningEvaluator` from `InnoNetworkTrust`) | High-risk hosts where you want defence-in-depth against a compromised CA issuing for your domain. |
+| ``TrustPolicy/custom(_:)`` (with a custom ``TrustEvaluating``) | Bespoke evaluation (corporate roots, time-bound exceptions, or layered checks). |
 
 ## Public-key pinning
 
 Pin the leaf or intermediate's public key (not the certificate itself). Public keys survive
-certificate rotation as long as you reuse the same key material.
+certificate rotation as long as you reuse the same key material. Add the
+`InnoNetworkTrust` product to your target dependencies and `import InnoNetworkTrust` to
+reach `PublicKeyPinningPolicy` and `PublicKeyPinningEvaluator`.
 
 ```swift
-let pinning = PublicKeyPinningPolicy(
+import InnoNetwork
+import InnoNetworkTrust
+
+let policy = PublicKeyPinningPolicy(
     pinsByHost: [
         "api.example.com": [
             "sha256/AAAAB3NzaC1yc2E...currentKey...",
@@ -34,12 +40,12 @@ let pinning = PublicKeyPinningPolicy(
     allowDefaultEvaluationForUnpinnedHosts: false,
     hostMatchingStrategy: .mostSpecificHost
 )
+let evaluator = PublicKeyPinningEvaluator(policy: policy)
 
 let configuration = NetworkConfiguration.advanced(
-    baseURL: URL(string: "https://api.example.com/v1")!
-) { builder in
-    builder.trustPolicy = .publicKeyPinning(pinning)
-}
+    baseURL: URL(string: "https://api.example.com/v1")!,
+    transport: TransportPack(trustPolicy: .custom(evaluator))
+)
 ```
 
 ### Rotation policy
@@ -76,9 +82,9 @@ For evaluators that need full chain inspection, time-of-day rules, or fallback t
 struct CorporateRootTrust: TrustEvaluating {
     let corporateRoot: SecCertificate
 
-    func evaluate(challenge: URLAuthenticationChallenge) -> Bool {
+    func evaluate(challenge: URLAuthenticationChallenge) -> TrustChallengeOutcome {
         guard let serverTrust = challenge.protectionSpace.serverTrust else {
-            return false
+            return .cancel(.missingServerTrust)
         }
 
         // Append the corporate root to the trust object before delegating to the OS.
@@ -88,13 +94,20 @@ struct CorporateRootTrust: TrustEvaluating {
         SecTrustSetAnchorCertificates(serverTrust, [corporateRoot] as CFArray)
         SecTrustSetAnchorCertificatesOnly(serverTrust, true)
 
-        return SecTrustEvaluateWithError(serverTrust, nil)
+        var error: CFError?
+        if SecTrustEvaluateWithError(serverTrust, &error) {
+            return .useCredential
+        }
+        let reason = (error as Error?).map(String.init(describing:)) ?? "trust evaluation failed"
+        return .cancel(.systemTrustEvaluationFailed(reason: reason))
     }
 }
 ```
 
-A `false` result turns into ``NetworkError/trustEvaluationFailed(_:)`` — surface it to the user
-and do not auto-retry.
+A ``TrustChallengeOutcome/cancel(_:)`` outcome turns into
+``NetworkError/trustEvaluationFailed(_:)`` — surface it to the user and do not auto-retry.
+Return ``TrustChallengeOutcome/performDefaultHandling`` to fall back to the OS evaluator
+or ``TrustChallengeOutcome/useCredential`` to accept the trust object directly.
 
 ## What pinning does not protect against
 
@@ -110,4 +123,5 @@ server-side controls.
 
 - ``TrustPolicy``
 - ``TrustEvaluating``
+- ``TrustChallengeOutcome``
 - ``NetworkError/trustEvaluationFailed(_:)``

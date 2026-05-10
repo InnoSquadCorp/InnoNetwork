@@ -149,9 +149,10 @@ func makeAuthenticatedConfiguration(baseURL: URL) -> NetworkConfiguration {
         refreshToken: { try await auth.refreshAccessToken() }
     )
 
-    return NetworkConfiguration.advanced(baseURL: baseURL) { builder in
-        builder.refreshTokenPolicy = policy
-    }
+    return NetworkConfiguration.advanced(
+        baseURL: baseURL,
+        auth: AuthPack(refreshToken: policy)
+    )
 }
 
 // MARK: - 4. Use the configured client

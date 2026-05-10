@@ -230,9 +230,6 @@ actor ErrorHandlingExample {
             print("❌ Decoding Error (\(stage)): \(decodingError)")
             print("   Status Code: \(response.statusCode)")
 
-        case .nonHTTPResponse(let response):
-            print("❌ Non-HTTP Response: \(response)")
-
         case .underlying(let underlyingError, let response):
             print("❌ Underlying Error: \(underlyingError)")
             if let response = response {
@@ -250,11 +247,6 @@ actor ErrorHandlingExample {
             if let underlying {
                 print("   Underlying Error: \(underlying)")
             }
-
-        case .responseTooLarge(let limit, let observed):
-            print("❌ Response Too Large")
-            print("   Limit: \(limit) bytes")
-            print("   Observed: \(observed) bytes")
 
         @unknown default:
             print("❌ Unhandled NetworkError: \(error)")

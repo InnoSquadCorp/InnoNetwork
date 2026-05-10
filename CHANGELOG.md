@@ -7,6 +7,171 @@ Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `JWTBearerInterceptor` reference signer in `Sources/InnoNetwork/Auth/`.
+  Wraps an `async throws -> String` token-mint closure and writes the
+  resulting token into `Authorization: Bearer <token>` (or any
+  scheme/header pair the caller supplies). Use this for the
+  request-minted JWT lane only — session-rotated bearer tokens are
+  still better served by `RefreshTokenPolicy`'s single-flight refresh.
+  Listed as Provisionally Stable in API_STABILITY.md.
+- `AWSSigV4Interceptor` reference signer in `Sources/InnoNetwork/Auth/`.
+  Targets the single-shot, in-memory body flow that covers most AWS
+  service calls (DynamoDB, S3 GET, CloudWatch, SQS). Streaming SigV4
+  (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`) and presigned URL signing are
+  out of scope and intentionally not implemented; adopters that need
+  them should fall back to the AWS SDK or a purpose-built signer. The
+  interceptor exposes `canonicalRequest(for:)` and
+  `stringToSign(canonicalRequest:date:)` as test probes so the
+  implementation can be validated against the published AWS SigV4
+  test vectors before shipping to production. Listed as Provisionally
+  Stable in API_STABILITY.md.
+
+### Stability ledger
+
+- Promoted from Provisionally Stable to Stable in 4.x.x:
+  `EndpointBuilder` and `EndpointPathEncoding`, `DecodingInterceptor`,
+  and `WebSocketCloseDisposition`. These surfaces have been shipping
+  unchanged since 4.0.0 and now carry the SemVer-protected contract;
+  consumers can pin `.upToNextMajor(from: "4.0.0")` and rely on them
+  remaining source-compatible across the 4.x line.
+- Added an explicit "no 5.0 major bump is planned in the 4.x line"
+  callout to API_STABILITY.md. The Stable ledger only grows over the
+  rest of 4.x; entries do not move back into Provisionally Stable.
+- Removed stale Stable Examples wording referencing
+  `Examples/CustomHeaders` and `Examples/RealWorldAPI`, which were
+  deleted earlier in this PR.
+
+### Changed
+
+- **Breaking.** `NetworkClient.request(_:)`, `request(_:tag:)`,
+  `upload(_:)`, and `upload(_:tag:)` now declare `throws(NetworkError)`
+  instead of untyped `throws`. The four methods only ever surfaced
+  `NetworkError` in practice (`RetryCoordinator` normalises every
+  classified failure, foreign errors are mapped at the
+  `DefaultNetworkClient` boundary), so the new typed-throws clause makes
+  that contract explicit and lets adopters catch with
+  `catch let error as NetworkError` (no `@unknown default` cast) or
+  `catch` to handle the typed value directly. Existing call sites that
+  used `try await client.request(...)` continue to compile; conforming
+  mocks must update their method signatures to
+  `async throws(NetworkError)`. `NetworkError.mapTransportError(_:)` is
+  now `public` so out-of-package conformers can map raw
+  `URLError`/`CancellationError` to the canonical `NetworkError` case.
+- **Breaking.** `NetworkConfiguration.AdvancedBuilder` is no longer
+  public. The closure-based factory
+  `NetworkConfiguration.advanced(baseURL:_:)` was removed; the new
+  public entry point is
+  `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`,
+  composing the five `ResiliencePack` / `AuthPack` / `ObservabilityPack`
+  / `CachePack` / `TransportPack` value types as named arguments. The
+  packs now carry the full configuration surface — `TransportPack`
+  gained `trustPolicy`, `acceptableStatusCodes`, `userAgentProvider`,
+  `acceptLanguageProvider`; `ResiliencePack` gained
+  `customExecutionPolicies`; `AuthPack` gained
+  `additionalResponseInterceptors` and `additionalDecodingInterceptors`.
+  Adopters who used the closure-form factory migrate by replacing each
+  `builder.<field> = value` mutation with the equivalent named pack
+  field. The seven `NetworkConfiguration.with(...)` chainable modifiers
+  are unchanged.
+- **Breaking.** Public-key pinning moved out of `InnoNetwork` into a
+  dedicated `InnoNetworkTrust` companion product. `PublicKeyPinningPolicy`,
+  `PublicKeyPinningPolicy.HostMatchingStrategy`, and the new
+  `PublicKeyPinningEvaluator: TrustEvaluating` (which carries the SPKI
+  hashing, host-match, and `SecTrustEvaluateWithError` machinery) now
+  live in `Sources/InnoNetworkTrust/`. Apps relying on Apple's ATS
+  defaults link only `InnoNetwork` and no longer pay the
+  `Security`/`CryptoKit` symbol cost. Adopters that pin migrate by
+  adding the `InnoNetworkTrust` product to their target dependencies,
+  `import InnoNetworkTrust`, and feeding the evaluator into
+  `TrustPolicy.custom(_:)`.
+- **Breaking.** `TrustPolicy.publicKeyPinning(_:)` was removed in the
+  same change. The replacement is
+  `TrustPolicy.custom(PublicKeyPinningEvaluator(policy: ...))`. There is
+  no `@_exported` re-export shim — callers who used the old enum case
+  must update their construction site.
+- **Breaking.** `TrustEvaluating.evaluate(challenge:)` now returns
+  `TrustChallengeOutcome` (a new public enum: `.performDefaultHandling`,
+  `.useCredential`, `.cancel(TrustFailureReason)`) instead of `Bool`.
+  This preserves the granular pinning failure reasons
+  (`.pinMismatch`, `.hostNotPinned`, `.publicKeyExtractionFailed`,
+  `.systemTrustEvaluationFailed`) when custom evaluators run, so
+  observability/telemetry consumers see the same `NetworkError.
+  trustEvaluationFailed` taxonomy after the split.
+
+### Removed
+
+- **Breaking.** `NetworkError.cacheRevalidationFailed(underlying:cached:)`
+  has been removed. The internal `RequestExecutor.cacheRevalidationFailed`
+  helper now returns
+  `.underlying(SendableUnderlyingError(domain: "InnoNetwork.ResponseCache", code: 304, message: "Cache revalidation against the stored response failed: \(message)"), cachedResponse)`
+  for the same conditions; pattern-match on `.underlying(let underlying, let cached?)`
+  with `underlying.domain == "InnoNetwork.ResponseCache"`. The
+  Localizable.strings key, the API_STABILITY ledger entry, the
+  allowlist entry, and the docs-contract-sync mapping are removed
+  alongside the case. NetworkError surface is now **7 cases** —
+  the original plan E target (11 → 7) is complete.
+- **Breaking.** `NetworkError.responseTooLarge(limit:observed:)` has
+  been removed. The buffer-overflow throw sites in `BufferedAsyncBytes`
+  and `RequestExecutor` now throw
+  `.underlying(SendableUnderlyingError(domain:, code: 4003, message:), nil)`
+  with the limit and observed byte counts in the message; pattern-
+  match on `.underlying(let underlying, _)` with
+  `underlying.code == 4003`. The dedicated Localizable.strings key,
+  the corresponding allowlist entry, and the ErrorClassification.md
+  row are removed alongside the case.
+- **Breaking.** `NetworkError.transportSuspended` has been removed.
+  `ReachabilityCheckExecutionPolicy` now throws
+  `NetworkError.underlying(SendableUnderlyingError(domain:, code: 4002, message:), nil)`
+  for the same condition (`.requiresConnection` persisting past
+  `suspensionWaitTimeout`); pattern match on `.underlying(let underlying, _)`
+  with `underlying.code == 4002` to detect it. The dedicated
+  `NetworkError.transportSuspended` Localizable.strings key, the
+  matching API_STABILITY ledger entry, and the allowlist entry are
+  removed alongside the case. The 4.0.0 migration document and the
+  4.0.0 release note retain their historical mentions; only the
+  current contract loses the case.
+- **Breaking.** `NetworkConfiguration.urlSessionConfigurationOverride`,
+  the matching field on `AdvancedBuilder`, and the
+  `urlSessionConfigurationOverride` parameter on
+  `NetworkConfiguration.init(...)` and `TransportPack.init(...)` have
+  been removed. The hook was a leaky
+  abstraction over raw `URLSessionConfiguration` and overlapped with
+  the existing explicit-session path. Migration: build a configuration
+  from `NetworkConfiguration.makeURLSessionConfiguration()`, mutate it
+  directly (`httpCookieStorage` for cookie isolation, `assumesHTTP3
+  Capable` for HTTP/3 opt-in, `tlsMinimumSupportedProtocolVersion`
+  for TLS, etc.), and inject the resulting `URLSession` via
+  `DefaultNetworkClient(configuration:session:)`. The pattern is the
+  same one already documented in `docs/Cookies.md`,
+  `docs/HTTP3.md`, and `docs/AppGroupSharedSession.md`. The dedicated
+  `docs/UrlSessionEscapeHatchAlternatives.md` cookbook is removed
+  alongside the surface; its content is now folded into the
+  configuration articles.
+- **Breaking.** `NetworkError.nonHTTPResponse(URLResponse)` has been
+  removed. Adopters that pattern-matched on `.nonHTTPResponse` should
+  match on `.underlying(let underlying, _)` and inspect
+  `underlying.code == 3002` (the dedicated non-HTTP-response code).
+  All built-in throw sites (`RequestExecutor`, `StreamingExecutor`,
+  `VCRURLSession`) now wrap the bare `URLResponse` into a
+  `SendableUnderlyingError` with code `3002` and a diagnostic message
+  carrying the request URL and response type. The case was marked
+  deprecated earlier in this PR; it is removed in the same PR per the
+  maintainer's "no zombie deprecations" cleanup pass.
+
+### Localization
+
+- `NetworkError.errorDescription` no longer ships a Korean
+  (`ko.lproj/Localizable.strings`) translation. Only the English
+  catalogue remains. The library scope makes per-language translations
+  difficult to keep complete and aligned across releases, so the
+  recommendation is for adopters to localize error messages in their
+  own application layer where they already control copy review.
+  Korean-language adopters lose the localized `errorDescription` text;
+  the keys themselves are unchanged so any per-app localization that
+  reads from the catalogue continues to compile.
+
 ### Added (release/4.0.0-batch)
 
 - **Download lifecycle epoch tracking.** `DownloadTask` exposes

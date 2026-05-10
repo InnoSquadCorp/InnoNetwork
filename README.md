@@ -1,6 +1,8 @@
 # InnoNetwork
 
 [![CI](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/ci.yml)
+[![TSAN Nightly](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/tsan.yml/badge.svg?branch=main)](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/tsan.yml)
+[![Nightly Live Smoke](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/nightly-live.yml/badge.svg?branch=main)](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/nightly-live.yml)
 [![codecov](https://codecov.io/gh/InnoSquadCorp/InnoNetwork/branch/main/graph/badge.svg)](https://codecov.io/gh/InnoSquadCorp/InnoNetwork)
 [![DocC](https://img.shields.io/badge/docs-DocC-blue)](https://innosquadcorp.github.io/InnoNetwork/)
 [![Swift](https://img.shields.io/badge/Swift-6.2-orange)](https://swift.org)
@@ -19,11 +21,28 @@ root runtime package provides six public products:
 - `InnoNetworkTestSupport` for consumer test targets
 - `InnoNetworkOpenAPI` for generated-client transport support
 
-Optional Swift macro endpoint helpers live in the separate
-`Packages/InnoNetworkCodegen` package so runtime-only consumers do not resolve
-`swift-syntax`. The packages are built around Swift Concurrency, explicit
-transport policies, and operational visibility that can scale from app
-prototypes to production clients.
+For the **shortest path to a typed client**, opt in to the macro
+helpers in `InnoNetworkCodegen`:
+
+```swift
+@APIDefinition(method: .get, path: "/users/{id}")
+struct GetUser {
+    @PathParameter let id: Int
+    typealias APIResponse = User
+}
+
+let user = try await client.request(GetUser(id: 1))
+```
+
+The `@APIDefinition` and `#endpoint` macros expand into the same value
+types you would write by hand. They live in a separate `Packages/
+InnoNetworkCodegen` package so runtime-only consumers never resolve
+`swift-syntax`; opt in by adding the codegen package alongside the
+runtime package, then `import InnoNetworkCodegen`.
+
+The packages are built around Swift Concurrency, explicit transport
+policies, and operational visibility that can scale from app prototypes
+to production clients.
 
 > ⚠️ **Apple platforms only by design.** InnoNetwork builds on URLSession, `OSAllocatedUnfairLock`, OSLog, and Network.framework, none of which match Apple-platform behaviour on Linux. Linux/server-side Swift is **not** a supported target. See [docs/PlatformSupport.md](docs/PlatformSupport.md) for the rationale and for guidance on sharing models with Linux server code (e.g. Vapor).
 
@@ -36,9 +55,11 @@ InnoNetwork ships several layers. Pick the highest one that matches your
 situation — most apps never need anything below `APIDefinition`.
 
 ```text
-Are you generating clients from an OpenAPI / IDL spec at build time?
+Want the shortest typed-client surface and tolerate a swift-syntax
+build-time dependency?
 ├─ yes ─► @APIDefinition / #endpoint macros from InnoNetworkCodegen
-│        (separate package; runtime-only consumers do not resolve swift-syntax)
+│        (separate package; runtime-only consumers do not resolve
+│         swift-syntax — see "Optional Macros" below)
 └─ no
    │
    Does the endpoint own interceptors, custom transport, multipart, or streaming?
@@ -53,7 +74,7 @@ Are you generating clients from an OpenAPI / IDL spec at build time?
          │
          Are you building an SDK or library wrapper that needs raw
          transport hooks (no decoding, no interceptors)?
-         └─ yes ─► LowLevelNetworkClient (@_spi(LowLevel))
+         └─ yes ─► LowLevelNetworkClient (@_spi(GeneratedClientSupport))
                    — minor-version-mutable surface, see API_STABILITY.md
 ```
 
@@ -346,16 +367,21 @@ let download = DownloadConfiguration.safeDefaults(
 let socket = WebSocketConfiguration.safeDefaults()
 
 let tunedNetwork = NetworkConfiguration.advanced(
-    baseURL: URL(string: "https://api.example.com")!
-) { builder in
-    builder.timeout = 30
-    builder.redirectPolicy = DefaultRedirectPolicy()
-    builder.retryPolicy = ExponentialBackoffRetryPolicy()
-    builder.trustPolicy = .systemDefault
-    builder.requestCoalescingPolicy = .getOnly
-    builder.responseCache = InMemoryResponseCache()
-    builder.responseCachePolicy = .cacheFirst(maxAge: .seconds(60))
-}
+    baseURL: URL(string: "https://api.example.com")!,
+    resilience: ResiliencePack(
+        retry: ExponentialBackoffRetryPolicy(),
+        coalescing: .getOnly
+    ),
+    cache: CachePack(
+        responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+        responseCache: InMemoryResponseCache()
+    ),
+    transport: TransportPack(
+        timeout: 30,
+        redirectPolicy: DefaultRedirectPolicy(),
+        trustPolicy: .systemDefault
+    )
+)
 ```
 
 Auth refresh, coalescing, caching, and circuit breaking are opt-in. The
@@ -379,10 +405,9 @@ client:
 
 ```swift
 let local = NetworkConfiguration.advanced(
-    baseURL: URL(string: "http://localhost:8080")!
-) { builder in
-    builder.allowsInsecureHTTP = true
-}
+    baseURL: URL(string: "http://localhost:8080")!,
+    transport: TransportPack(allowsInsecureHTTP: true)
+)
 ```
 
 ```swift
@@ -393,11 +418,12 @@ let refreshPolicy = RefreshTokenPolicy(
 
 let client = DefaultNetworkClient(
     configuration: .advanced(
-        baseURL: URL(string: "https://api.example.com")!
-    ) { builder in
-        builder.refreshTokenPolicy = refreshPolicy
-        builder.circuitBreakerPolicy = CircuitBreakerPolicy(failureThreshold: 3)
-    }
+        baseURL: URL(string: "https://api.example.com")!,
+        resilience: ResiliencePack(
+            circuitBreaker: CircuitBreakerPolicy(failureThreshold: 3)
+        ),
+        auth: AuthPack(refreshToken: refreshPolicy)
+    )
 )
 ```
 
@@ -563,10 +589,10 @@ Operational items to verify before shipping a client built on InnoNetwork.
 
 ### Trust & Transport Security
 
-- **TLS pinning rotation.** When using `TrustPolicy.publicKeyPinning(...)`, ship at least two
-  pins (current + next) and document the rotation cadence so the app keeps validating after
-  certificate replacement. Consider feature-gated rollback to `.systemDefault` for emergency
-  recovery.
+- **TLS pinning rotation.** When using `TrustPolicy.custom(PublicKeyPinningEvaluator(...))`
+  (from `import InnoNetworkTrust`), ship at least two pins (current + next) and document the
+  rotation cadence so the app keeps validating after certificate replacement. Consider
+  feature-gated rollback to `.systemDefault` for emergency recovery.
 - **Redirect credential leakage.** Keep the default `DefaultRedirectPolicy`
   unless you have a stricter allowlist. Any custom policy must preserve the
   cross-origin stripping of `Authorization`, `Cookie`, and

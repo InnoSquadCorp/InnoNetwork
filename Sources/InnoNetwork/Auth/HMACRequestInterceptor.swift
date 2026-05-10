@@ -20,9 +20,10 @@ import Foundation
 ///     secret: Data(secretString.utf8)
 /// )
 ///
-/// let configuration = NetworkConfiguration.advanced(baseURL: baseURL) { builder in
-///     builder.requestInterceptors.append(signer)
-/// }
+/// let configuration = NetworkConfiguration.advanced(
+///     baseURL: baseURL,
+///     auth: AuthPack(additionalSigners: [signer])
+/// )
 /// ```
 ///
 /// The interceptor reads ``URLRequest/httpBody`` (which may be `nil` for

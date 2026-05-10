@@ -50,9 +50,10 @@ let refresh = RefreshTokenPolicy(
     refreshToken: { try await authService.refreshAccessToken() }
 )
 
-let configuration = NetworkConfiguration.advanced(baseURL: apiBaseURL) { builder in
-    builder.refreshTokenPolicy = refresh
-}
+let configuration = NetworkConfiguration.advanced(
+    baseURL: apiBaseURL,
+    auth: AuthPack(refreshToken: refresh)
+)
 let client = DefaultNetworkClient(configuration: configuration)
 ```
 

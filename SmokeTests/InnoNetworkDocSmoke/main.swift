@@ -157,11 +157,9 @@ private func runDocSmoke() {
     _ = client
 
     let networkAdvanced = NetworkConfiguration.advanced(
-        baseURL: URL(string: "https://api.example.com/v1")!
-    ) { builder in
-        builder.timeout = 45
-        builder.trustPolicy = .systemDefault
-    }
+        baseURL: URL(string: "https://api.example.com/v1")!,
+        transport: TransportPack(timeout: 45, trustPolicy: .systemDefault)
+    )
     _ = networkAdvanced
 
     let production = NetworkConfiguration.recommendedForProduction(

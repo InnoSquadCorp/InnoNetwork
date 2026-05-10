@@ -183,7 +183,7 @@ struct RetryOncePolicy: RetryPolicy {
     ) -> RetryDecision {
         guard retryIndex < maxRetries else { return .noRetry }
         switch error {
-        case .underlying, .nonHTTPResponse, .timeout:
+        case .underlying, .timeout:
             return .retry
         default:
             return .noRetry

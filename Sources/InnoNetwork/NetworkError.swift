@@ -134,8 +134,6 @@ public enum NetworkError: Error, Sendable {
     /// body decode error.
     case decoding(stage: DecodingStage, underlying: SendableUnderlyingError, response: Response)
 
-    case nonHTTPResponse(URLResponse)
-
     case underlying(SendableUnderlyingError, Response?)
     case trustEvaluationFailed(TrustFailureReason)
 
@@ -147,48 +145,6 @@ public enum NetworkError: Error, Sendable {
     /// associated value directly or use `NSError.userInfo[NSUnderlyingErrorKey]`
     /// after bridging.
     case timeout(reason: TimeoutReason, underlying: SendableUnderlyingError? = nil)
-    /// The transport completed but produced a response body larger than
-    /// ``NetworkConfiguration/responseBodyLimit``. Raised so the executor can
-    /// short-circuit decoding and so callers can choose a recovery strategy
-    /// (raise the limit, fall back to streaming, or surface a paged retry)
-    /// rather than silently OOM the process or pass an oversized payload to
-    /// `JSONDecoder`.
-    ///
-    /// - Parameters:
-    ///   - limit: The configured byte limit that was exceeded.
-    ///   - observed: The actual body size in bytes returned by the transport.
-    case responseTooLarge(limit: Int64, observed: Int64)
-
-    /// The reachability monitor reports `.requiresConnection`
-    /// (interface flap, Wi-Fi captive portal redirect, VPN
-    /// reconfiguration) for longer than the configured short wait, so
-    /// the request was held back instead of dispatching into a likely
-    /// failing socket. Distinct from ``configuration(reason:)``
-    /// `.offline`, which is raised when the monitor reports
-    /// `.unsatisfied`.
-    ///
-    /// Surfaced by ``ReachabilityCheckExecutionPolicy`` when
-    /// `.requiresConnection` does not recover to `.satisfied` before
-    /// ``ReachabilityCheckExecutionPolicy/suspensionWaitTimeout``.
-    /// Consumers typically map this to a "network coming back" UI
-    /// affordance that does not need the offline copy.
-    case transportSuspended
-
-    /// A 304 Not Modified revalidation against the cached response
-    /// failed at the conditional-request layer (header merge produced
-    /// an unparseable response, the cached body was unreadable, or the
-    /// stored `Vary` snapshot disagreed with what the server returned).
-    /// Carries the underlying error and the cached entry so consumers
-    /// can choose to fall through to a fresh transport attempt or
-    /// surface the failure.
-    ///
-    /// - Parameters:
-    ///   - underlying: The error raised by the revalidation pipeline.
-    ///   - cached: The previously-stored response that the revalidation
-    ///     attempt was working from. The bytes have already been
-    ///     redacted via ``NetworkError/redactingFailurePayload()`` unless
-    ///     ``NetworkConfiguration/captureFailurePayload`` is set.
-    case cacheRevalidationFailed(underlying: SendableUnderlyingError, cached: Response)
 }
 
 
@@ -223,8 +179,6 @@ extension NetworkError: LocalizedError {
             return localized("NetworkError.statusCode")
         case .underlying(let error, _):
             return error.message
-        case .nonHTTPResponse:
-            return localized("NetworkError.nonHTTPResponse")
         case .trustEvaluationFailed(let reason):
             return localizedTrustFailureDescription(for: reason)
         case .cancelled:
@@ -238,19 +192,6 @@ extension NetworkError: LocalizedError {
             case .connectionTimeout:
                 return localized("NetworkError.timeout.connection")
             }
-        case .responseTooLarge(let limit, let observed):
-            return localizedFormat(
-                "NetworkError.responseTooLarge",
-                "\(observed)",
-                "\(limit)"
-            )
-        case .transportSuspended:
-            return localized("NetworkError.transportSuspended")
-        case .cacheRevalidationFailed(let underlying, _):
-            return localizedFormat(
-                "NetworkError.cacheRevalidationFailed",
-                underlying.message
-            )
         }
     }
 }
@@ -330,13 +271,9 @@ public extension NetworkError {
         case .decoding(_, _, let response): return response
         case .statusCode(let response): return response
         case .underlying(_, let response): return response
-        case .nonHTTPResponse: return nil
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout: return nil
-        case .responseTooLarge: return nil
-        case .transportSuspended: return nil
-        case .cacheRevalidationFailed(_, let response): return response
         }
     }
 
@@ -347,13 +284,9 @@ public extension NetworkError {
         case .decoding(_, let error, _): return error
         case .statusCode: return nil
         case .underlying(let error, _): return error
-        case .nonHTTPResponse: return nil
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout(_, let underlying): return underlying
-        case .responseTooLarge: return nil
-        case .transportSuspended: return nil
-        case .cacheRevalidationFailed(let underlying, _): return underlying
         }
     }
 
@@ -390,8 +323,6 @@ extension NetworkError: CustomNSError {
             return 2002
         case .statusCode:
             return 3001
-        case .nonHTTPResponse:
-            return 3002
         case .underlying:
             return 4001
         case .trustEvaluationFailed:
@@ -400,12 +331,6 @@ extension NetworkError: CustomNSError {
             return NSURLErrorCancelled
         case .timeout:
             return NSURLErrorTimedOut
-        case .responseTooLarge:
-            return 4002
-        case .transportSuspended:
-            return 6001
-        case .cacheRevalidationFailed:
-            return 6002
         }
     }
 
@@ -436,16 +361,11 @@ public extension NetworkError {
             return .statusCode(response.redactingData())
         case .underlying(let err, let response?):
             return .underlying(err, response.redactingData())
-        case .cacheRevalidationFailed(let underlying, let cached):
-            return .cacheRevalidationFailed(underlying: underlying, cached: cached.redactingData())
         case .configuration,
-            .nonHTTPResponse,
             .underlying(_, nil),
             .trustEvaluationFailed,
             .cancelled,
-            .timeout,
-            .responseTooLarge,
-            .transportSuspended:
+            .timeout:
             return self
         }
     }
@@ -497,8 +417,24 @@ extension NetworkError {
     /// > group). Do not widen the `.timeout` arm without a paired test
     /// > update; collapsing additional `URLError` codes into `.timeout`
     /// > silently changes consumer retry semantics.
-    static func mapTransportError(_ error: Error) -> NetworkError {
+    public static func mapTransportError(_ error: Error) -> NetworkError {
         mapTransportError(error, metrics: nil, resourceTimeoutInterval: nil)
+    }
+
+    /// Returns a redacted URL string suitable for inclusion in
+    /// diagnostic error messages. The query string and fragment — the
+    /// pieces most likely to carry secrets (tokens, emails, OAuth state
+    /// parameters) — are stripped so a non-HTTP response or other
+    /// boundary failure does not leak them through `localizedDescription`
+    /// or downstream event sinks.
+    public static func diagnosticURLString(for url: URL?) -> String {
+        guard let url else { return "<unknown>" }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return "\(url.scheme ?? "")://\(url.host ?? "<unknown>")\(url.path)"
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.string ?? "\(components.scheme ?? "")://\(components.host ?? "<unknown>")\(components.path)"
     }
 
     /// Metrics-aware variant of ``mapTransportError(_:)`` that can

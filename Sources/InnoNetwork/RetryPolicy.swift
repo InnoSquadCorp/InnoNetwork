@@ -196,8 +196,6 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
             return response.statusCode == 408
                 || response.statusCode == 429
                 || (500...599).contains(response.statusCode)
-        case .nonHTTPResponse:
-            return true
         case .underlying(let error, _):
             return !NetworkError.isCancellation(error)
         case .timeout:

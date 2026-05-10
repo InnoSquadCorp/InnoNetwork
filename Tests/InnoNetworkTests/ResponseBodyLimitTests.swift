@@ -76,7 +76,7 @@ struct ResponseBodyLimitTests {
         #expect(received.count == 4_096)
     }
 
-    @Test("Body above the limit throws responseTooLarge with limit and observed bytes")
+    @Test("Body above the limit throws underlying error with limit and observed bytes")
     func overLimitThrows() async throws {
         let payload = Data(repeating: 0xCC, count: 5 * 1_024)
         let mockSession = MockURLSession()
@@ -92,14 +92,14 @@ struct ResponseBodyLimitTests {
 
         do {
             _ = try await client.request(DataEcho())
-            Issue.record("Expected NetworkError.responseTooLarge")
+            Issue.record("Expected response-too-large NetworkError.underlying")
         } catch let error as NetworkError {
             switch error {
-            case .responseTooLarge(let limit, let observed):
-                #expect(limit == 1_024)
-                #expect(observed == Int64(payload.count))
+            case .underlying(let underlying, _) where underlying.code == 4003:
+                #expect(underlying.message.contains("\(payload.count)"))
+                #expect(underlying.message.contains("1024"))
             default:
-                Issue.record("Expected NetworkError.responseTooLarge, got \(error)")
+                Issue.record("Expected NetworkError.underlying with code 4003, got \(error)")
             }
         }
     }
@@ -149,7 +149,7 @@ struct ResponseBodyLimitTests {
 
         do {
             _ = try await client.request(DataEcho())
-            Issue.record("Expected NetworkError.responseTooLarge")
+            Issue.record("Expected response-too-large NetworkError.underlying")
         } catch is NetworkError {
             // Expected.
         }
@@ -272,13 +272,6 @@ struct ResponseBodyLimitTests {
         #expect(compatibilityAlias.responseBodyLimit == 1_024)
     }
 
-    @Test("NSError bridge for responseTooLarge uses stable code")
-    func nsErrorCodeIsStable() {
-        let error = NetworkError.responseTooLarge(limit: 100, observed: 500) as NSError
-        #expect(error.domain == NetworkError.errorDomain)
-        #expect(error.code == 4002)
-    }
-
     private func expectResponseTooLarge(
         limit: Int64 = 1_024,
         observed: Int64,
@@ -286,17 +279,17 @@ struct ResponseBodyLimitTests {
     ) async {
         do {
             try await operation()
-            Issue.record("Expected NetworkError.responseTooLarge")
+            Issue.record("Expected response-too-large NetworkError.underlying")
         } catch let error as NetworkError {
             switch error {
-            case .responseTooLarge(let actualLimit, let actualObserved):
-                #expect(actualLimit == limit)
-                #expect(actualObserved == observed)
+            case .underlying(let underlying, _) where underlying.code == 4003:
+                #expect(underlying.message.contains("\(observed)"))
+                #expect(underlying.message.contains("\(limit)"))
             default:
-                Issue.record("Expected NetworkError.responseTooLarge, got \(error)")
+                Issue.record("Expected NetworkError.underlying with code 4003, got \(error)")
             }
         } catch {
-            Issue.record("Expected NetworkError.responseTooLarge, got \(error)")
+            Issue.record("Expected NetworkError.underlying with code 4003, got \(error)")
         }
     }
 
