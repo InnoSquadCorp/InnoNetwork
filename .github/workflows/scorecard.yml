@@ -1,0 +1,60 @@
+name: OpenSSF Scorecard
+
+on:
+  # Run on every push to main so the published score never lags the
+  # default branch's posture, and weekly to pick up scorer changes.
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+# The scorecard action needs write permission for the security tab to
+# publish SARIF, and id-token for the publish-results option below.
+permissions: read-all
+
+concurrency:
+  group: scorecard-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # Needed for SARIF upload to the Security tab.
+      security-events: write
+      # Needed to publish results & sign attestations.
+      id-token: write
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@05b42c624433fc40578a4040d5cf5e36ddca8cde # v2.4.2
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # `publish_results: true` posts the score to the public
+          # scorecard.dev dashboard so the README badge stays in sync
+          # without an external scheduled refresh.
+          publish_results: true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scorecard-sarif
+          path: results.sarif
+          retention-days: 7
+
+      - name: Upload to code-scanning
+        uses: github/codeql-action/upload-sarif@5c3320246d903a417c83de31d72dac0b6c95431f # v3.30.0
+        with:
+          sarif_file: results.sarif

@@ -1,0 +1,68 @@
+name: CodeQL
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    # Weekly scan on Mondays at 06:00 UTC (~15:00 KST). Catches new
+    # query versions that ship between PRs without forcing a per-PR
+    # full analysis.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: CodeQL / Swift
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      # CodeQL needs to publish results into the security tab and read
+      # action metadata to discover queries.
+      actions: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [swift]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@5c3320246d903a417c83de31d72dac0b6c95431f # v3.30.0
+        with:
+          languages: ${{ matrix.language }}
+          # `security-extended` adds higher-signal queries beyond the default
+          # `security-and-quality` pack. Swift coverage in CodeQL is still
+          # maturing, so we run both packs and rely on triage to suppress
+          # false positives via per-issue dismissals.
+          queries: security-extended,security-and-quality
+
+      - name: Build
+        run: |
+          set -eo pipefail
+          xcrun swift --version
+          xcrun swift build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@5c3320246d903a417c83de31d72dac0b6c95431f # v3.30.0
+        with:
+          category: "/language:${{ matrix.language }}"
