@@ -161,12 +161,16 @@ public struct MultipartFormData: Sendable {
         }
         var body = Data()
         let boundaryPrefix = "--\(boundary)\r\n"
+        let collisionMarker = Self.boundaryCollisionMarker(for: boundary)
 
         for part in parts {
             let partData: Data
             switch part.source {
             case .data(let data):
                 partData = data
+                if Self.partContains(collisionMarker, in: data) {
+                    throw Self.boundaryCollisionError(boundary: boundary, partName: part.name)
+                }
             case .file(let url):
                 // Stat the file *before* allocating the buffer so a grown file
                 // cannot transiently OOM the process between the estimator and
@@ -187,6 +191,9 @@ public struct MultipartFormData: Sendable {
                     }
                 }
                 partData = try Data(contentsOf: url)
+                if Self.partContains(collisionMarker, in: partData) {
+                    throw Self.boundaryCollisionError(boundary: boundary, partName: part.name)
+                }
             }
             body.append(Data(boundaryPrefix.utf8))
             let contentLength: Int64? = includesPartContentLength ? Int64(partData.count) : nil
@@ -256,6 +263,7 @@ public struct MultipartFormData: Sendable {
         let boundaryPrefix = Data("--\(boundary)\r\n".utf8)
         let crlf = Data("\r\n".utf8)
         let chunkSize = 64 * 1024
+        let collisionMarker = Self.boundaryCollisionMarker(for: boundary)
 
         for part in parts {
             try handle.write(contentsOf: boundaryPrefix)
@@ -275,14 +283,31 @@ public struct MultipartFormData: Sendable {
 
             switch part.source {
             case .data(let data):
+                if Self.partContains(collisionMarker, in: data) {
+                    throw Self.boundaryCollisionError(boundary: boundary, partName: part.name)
+                }
                 try handle.write(contentsOf: data)
             case .file(let url):
                 let source = try FileHandle(forReadingFrom: url)
                 defer { try? source.close() }
+                // Maintain a tail-overlap so the boundary marker can be
+                // detected even when it straddles two consecutive chunks.
+                var tail = Data()
+                let overlap = collisionMarker.count - 1
                 while true {
                     let chunk = try source.read(upToCount: chunkSize) ?? Data()
                     if chunk.isEmpty { break }
+                    var window = tail
+                    window.append(chunk)
+                    if Self.partContains(collisionMarker, in: window) {
+                        throw Self.boundaryCollisionError(boundary: boundary, partName: part.name)
+                    }
                     try handle.write(contentsOf: chunk)
+                    if window.count > overlap {
+                        tail = window.suffix(overlap)
+                    } else {
+                        tail = window
+                    }
                 }
             }
             try handle.write(contentsOf: crlf)
@@ -376,6 +401,27 @@ public struct MultipartFormData: Sendable {
         default:
             return false
         }
+    }
+
+    /// The byte sequence that would let a part body terminate or interleave
+    /// the multipart frame: `\r\n--<boundary>`. Detecting this inside a
+    /// part means the chosen boundary is unsafe — the receiver would see
+    /// the part body close itself prematurely and treat the next bytes
+    /// as headers of a fabricated part.
+    static func boundaryCollisionMarker(for boundary: String) -> Data {
+        Data("\r\n--\(boundary)".utf8)
+    }
+
+    static func partContains(_ marker: Data, in payload: Data) -> Bool {
+        guard !marker.isEmpty, payload.count >= marker.count else { return false }
+        return payload.range(of: marker) != nil
+    }
+
+    static func boundaryCollisionError(boundary: String, partName: String) -> NetworkError {
+        NetworkError.configuration(
+            reason: .invalidRequest(
+                "MultipartFormData detected the boundary token '\(boundary)' inside the body of part '\(partName)'. The boundary must not appear in any part. Construct the form with the default initializer to receive an auto-generated random boundary, or pick a longer/more-unique boundary string."
+            ))
     }
 }
 
