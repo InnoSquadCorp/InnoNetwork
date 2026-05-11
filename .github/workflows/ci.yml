@@ -88,9 +88,30 @@ jobs:
           periphery scan --config .periphery.yml
 
   build-and-test:
-    name: Build and Test (SwiftPM)
+    name: Build and Test (SwiftPM) — Xcode ${{ matrix.xcode.label }}
     runs-on: macos-15
     timeout-minutes: 45
+    # Run the toolchain matrix in parallel so a green / red signal is
+    # available per Xcode without serializing wall-clock time.
+    strategy:
+      fail-fast: false
+      matrix:
+        xcode:
+          # Pinned canonical toolchain — the source of truth for `swift
+          # build` reproducibility and the version benchmarked / signed
+          # in the release workflow.
+          - label: "26.0.1"
+            path: /Applications/Xcode_26.0.1.app
+            required: true
+          # Runner-default Xcode (symlinked at /Applications/Xcode.app).
+          # Treated as an early-warning channel — when GitHub bumps the
+          # default past 26.0.1 we want a build signal before adoption,
+          # not a surprise at upgrade time. Failures are non-blocking
+          # until the team pins the next canonical version.
+          - label: "runner-default"
+            path: /Applications/Xcode.app
+            required: false
+    continue-on-error: ${{ !matrix.xcode.required }}
 
     steps:
       - name: Checkout
@@ -98,7 +119,7 @@ jobs:
 
       - name: Select Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+          sudo xcode-select -s ${{ matrix.xcode.path }}
 
       - name: Cache SwiftPM artifacts
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -106,9 +127,9 @@ jobs:
           path: |
             .build/checkouts
             .build/repositories
-          key: ${{ runner.os }}-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          key: ${{ runner.os }}-xcode-${{ matrix.xcode.label }}-${{ hashFiles('Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-xcode-26.0.1-
+            ${{ runner.os }}-xcode-${{ matrix.xcode.label }}-
 
       - name: Show Xcode and Swift versions
         run: |
@@ -175,7 +196,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: innonetwork-coverage
+          # Suffix the artifact name with the matrix label so the
+          # parallel toolchain runs do not race on a shared upload
+          # slot.
+          name: innonetwork-coverage-${{ matrix.xcode.label }}
           path: .build/coverage/
 
       # Codecov uploads run on every CI build. For pushes/PRs from the
@@ -184,7 +208,11 @@ jobs:
       # Forked PRs cannot access secrets, so we still allow the upload to
       # be skipped in that single case.
       - name: Require Codecov token on canonical builds
-        if: github.event.pull_request.head.repo.fork != true
+        # Only the pinned canonical toolchain uploads coverage. The
+        # runner-default matrix entry exists for an early-warning
+        # signal on toolchain bumps; doubling its coverage upload
+        # against the same commit would skew the Codecov report.
+        if: matrix.xcode.required && github.event.pull_request.head.repo.fork != true
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
@@ -197,7 +225,7 @@ jobs:
           fi
 
       - name: Upload coverage to Codecov
-        if: env.CODECOV_TOKEN != ''
+        if: matrix.xcode.required && env.CODECOV_TOKEN != ''
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
