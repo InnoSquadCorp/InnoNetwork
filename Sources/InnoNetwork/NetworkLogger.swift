@@ -32,6 +32,23 @@ public struct NetworkLoggingOptions: Sendable {
             "set-cookie",
             "x-api-key",
             "proxy-authorization",
+            // Server-issued challenges carry realm/scheme metadata that's
+            // typically benign, but commonly co-emit a Bearer error
+            // descriptor that reflects the *attempted* token back to the
+            // caller. Redact by default; opt-out by overriding
+            // `sensitiveHeaderNames`.
+            "www-authenticate",
+            "proxy-authenticate",
+            // Common bespoke auth carriers seen across iOS clients and
+            // gateways: refresh-token endpoints, vendor token mirrors,
+            // session-rotation handshakes. The names are not standardised,
+            // so the allowlist has to be defensive about variants.
+            "x-access-token",
+            "x-refresh-token",
+            "x-token",
+            "x-auth-token",
+            "x-csrf-token",
+            "x-session-token",
         ],
         releaseLogging: Bool = false
     ) {
