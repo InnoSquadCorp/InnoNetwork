@@ -274,6 +274,72 @@ public struct MultipartFormData: Sendable {
         }
     }
 
+    /// Encodes the form into a temporary file, invokes `body` with the
+    /// file's URL, and removes the temporary file before returning —
+    /// regardless of whether `body` returned normally or threw.
+    ///
+    /// `writeEncodedData(to:)` leaves cleanup to the caller, which is
+    /// the right contract for the network executor (it hands the
+    /// staged file to URLSession and disposes of it after the upload
+    /// completes). For ad-hoc callers — tests, scripts, one-off
+    /// inspection — that ergonomics is a footgun: a thrown error or
+    /// an early `return` from the block strands the staged bytes in
+    /// `NSTemporaryDirectory()` indefinitely. This helper closes that
+    /// gap by tying the file's lifetime to the block.
+    ///
+    /// The temporary file is created via
+    /// `FileManager.default.url(for: .itemReplacementDirectory, ...)`
+    /// to land on the same volume as `inheritingDirectoryFrom`, so the
+    /// eventual `URLSession` move (which only succeeds within a single
+    /// volume) does not have to cross filesystems. When the inheritance
+    /// URL is `nil` the file is placed in `NSTemporaryDirectory()`.
+    ///
+    /// - Parameters:
+    ///   - inheritingDirectoryFrom: A URL whose containing volume the
+    ///     staged file should share. Pass the eventual upload
+    ///     destination, or `nil` to use `NSTemporaryDirectory()`.
+    ///   - body: Receives the URL of the encoded file. The file is
+    ///     readable until `body` returns; do not retain the URL beyond
+    ///     the call.
+    /// - Returns: The value returned by `body`.
+    /// - Throws: Any error thrown by `writeEncodedData(to:)` or by
+    ///   `body`. Cleanup failures from `FileManager.removeItem` are
+    ///   swallowed because they would otherwise mask the caller's
+    ///   primary error.
+    public func withEncodedData<R>(
+        inheritingDirectoryFrom: URL? = nil,
+        _ body: (URL) throws -> R
+    ) throws -> R {
+        let manager = FileManager.default
+        let baseDirectory: URL
+        if let inheritingDirectoryFrom {
+            do {
+                baseDirectory = try manager.url(
+                    for: .itemReplacementDirectory,
+                    in: .userDomainMask,
+                    appropriateFor: inheritingDirectoryFrom,
+                    create: true
+                )
+            } catch {
+                baseDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            }
+        } else {
+            baseDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        }
+        let stagedURL = baseDirectory.appendingPathComponent(
+            "InnoNetwork.multipart.\(UUID().uuidString)",
+            isDirectory: false
+        )
+        try writeEncodedData(to: stagedURL)
+        defer {
+            try? manager.removeItem(at: stagedURL)
+            if inheritingDirectoryFrom != nil, baseDirectory.lastPathComponent.hasPrefix("(A Document Being Saved") {
+                try? manager.removeItem(at: baseDirectory)
+            }
+        }
+        return try body(stagedURL)
+    }
+
     private func writeBody(to handle: FileHandle) throws {
         let boundaryPrefix = Data("--\(boundary)\r\n".utf8)
         let crlf = Data("\r\n".utf8)
