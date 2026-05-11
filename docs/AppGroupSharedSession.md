@@ -13,8 +13,8 @@ or App Intents target often want one of two related things:
    extension should run with its own client and its own storage so
    the host app's session boundary stays clean.
 
-This article documents the patterns InnoNetwork supports today and
-the ones that need explicit `URLSession` wiring around the library.
+This article documents the patterns InnoNetwork supports for shared
+download sessions and for isolated extension HTTP clients.
 
 ## What InnoNetwork supports out of the box
 
@@ -26,6 +26,10 @@ the ones that need explicit `URLSession` wiring around the library.
   identifier will share that queue (the OS reattaches both to the
   same transfer); processes that pass **different** identifiers stay
   fully isolated.
+- ``DownloadConfiguration/sharedContainerIdentifier`` maps directly to
+  `URLSessionConfiguration.sharedContainerIdentifier`, so the system can
+  place background-session state inside the App Group container when both
+  targets participate in the same group.
 - A per-process `URLSessionConfiguration` (built from
   `NetworkConfiguration.makeURLSessionConfiguration()`, see
   [Cookies.md](Cookies.md) and [HTTP3.md](HTTP3.md)) composes with the
@@ -64,10 +68,13 @@ and an extension that wakes up later, both binaries must:
 1. Pass the same `sessionIdentifier` to
    `DownloadConfiguration.safeDefaults(sessionIdentifier:)`. The OS
    keys the background queue off this string.
-2. Be members of the same App Group (declared in `Info.plist`
+2. Set the same `sharedContainerIdentifier` on the download
+   configuration when the OS-managed session state itself must live in
+   the App Group container.
+3. Be members of the same App Group (declared in `Info.plist`
    entitlements) so they can read the destination file from the
    shared container path.
-3. Forward `application(_:handleEventsForBackgroundURLSession:completionHandler:)`
+4. Forward `application(_:handleEventsForBackgroundURLSession:completionHandler:)`
    in the host app target so the OS can deliver "transfer finished
    while you were dead" callbacks. `DownloadManager` exposes a
    `BackgroundCompletionStore` for stashing the completion handler;
@@ -88,27 +95,30 @@ await manager.download(url: source, to: destination)
 Otherwise the extension cannot read the file even though the
 download completed successfully.
 
-## Known gap — `sharedContainerIdentifier`
+## App Group session storage
 
-`URLSessionConfiguration.background(withIdentifier:)` exposes a
-`sharedContainerIdentifier` knob that lets the system store
-in-flight transfer state inside an App Group container directly.
-That value is **not currently exposed on `DownloadConfiguration`**
-because the library builds the background configuration internally
-and treats it as an implementation detail.
+Use `sharedContainerIdentifier` when the background session itself must
+persist in-flight transfer state in the App Group container:
 
-If you need that knob today, the workaround is to construct the
-`URLSession` yourself and inject it into a custom
-`URLSessionDownloadDelegate`-shaped wrapper. The cleaner fix —
-exposing `sharedContainerIdentifier` on `DownloadConfiguration` and
-threading it through `makeURLSessionConfiguration()` — is a
-follow-up enhancement tracked on the InnoNetwork roadmap.
+```swift
+let configuration = DownloadConfiguration.advanced { builder in
+    builder.sessionIdentifier = "com.example.app.downloads.shared"
+    builder.sharedContainerIdentifier = "group.com.example.app.media"
+}
 
-Interim recommendation: prefer Pattern A (isolated extension
-client) unless the OS-resumable shared-queue contract in Pattern B
-is genuinely required. Most apps' extensions only need to make a
-few opportunistic requests, and a fully isolated client is simpler
-to reason about.
+let manager = try DownloadManager.make(configuration: configuration)
+```
+
+`DownloadConfiguration.safeDefaults(...)` keeps
+`sharedContainerIdentifier == nil`, so existing app-private background
+sessions remain unchanged. Setting the value does not replace the
+destination-file rule above: files the extension must read still need to
+be written under `FileManager.containerURL(forSecurityApplicationGroupIdentifier:)`.
+
+Prefer Pattern A (isolated extension client) unless the OS-resumable
+shared-queue contract in Pattern B is genuinely required. Most apps'
+extensions only need to make a few opportunistic requests, and a fully
+isolated client is simpler to reason about.
 
 ## Troubleshooting
 

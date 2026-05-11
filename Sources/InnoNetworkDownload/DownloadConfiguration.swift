@@ -23,6 +23,7 @@ public struct DownloadConfiguration: Sendable {
                 // cellular call ``DownloadConfiguration/cellularEnabled()``.
                 allowsCellularAccess: false,
                 sessionIdentifier: sessionIdentifier,
+                sharedContainerIdentifier: nil,
                 networkMonitor: NetworkMonitor.shared,
                 waitsForNetworkChanges: false,
                 networkChangeTimeout: 10.0,
@@ -48,6 +49,7 @@ public struct DownloadConfiguration: Sendable {
                 taskInactivityTimeout: nil,
                 allowsCellularAccess: false,
                 sessionIdentifier: sessionIdentifier,
+                sharedContainerIdentifier: nil,
                 networkMonitor: NetworkMonitor.shared,
                 waitsForNetworkChanges: true,
                 networkChangeTimeout: 20.0,
@@ -113,6 +115,13 @@ public struct DownloadConfiguration: Sendable {
     /// The preset factories use a shared identifier intended for a single download manager per process.
     /// Override this value when you need multiple independent managers or persistence domains.
     public let sessionIdentifier: String
+    /// Optional App Group container identifier used by the background
+    /// `URLSession` to store in-flight transfer state in a shared container.
+    ///
+    /// Mirrors `URLSessionConfiguration.sharedContainerIdentifier`. Leave `nil`
+    /// for app-private background sessions; set this when an app extension must
+    /// observe or continue the same background download session.
+    public let sharedContainerIdentifier: String?
     public let networkMonitor: (any NetworkMonitoring)?
     /// When true, waits for network changes before retrying on download failure.
     public let waitsForNetworkChanges: Bool
@@ -228,6 +237,9 @@ public struct DownloadConfiguration: Sendable {
         ///
         /// Override this when you need more than one download manager in the same process.
         public var sessionIdentifier: String
+        /// Optional App Group container identifier threaded to
+        /// `URLSessionConfiguration.sharedContainerIdentifier`.
+        public var sharedContainerIdentifier: String?
         /// Optional network monitor used for retry and restore coordination.
         public var networkMonitor: (any NetworkMonitoring)?
         /// Whether retry logic waits for a network change before retrying. Defaults to `true`.
@@ -261,6 +273,7 @@ public struct DownloadConfiguration: Sendable {
             self.taskInactivityTimeout = preset.taskInactivityTimeout
             self.allowsCellularAccess = preset.allowsCellularAccess
             self.sessionIdentifier = preset.sessionIdentifier
+            self.sharedContainerIdentifier = preset.sharedContainerIdentifier
             self.networkMonitor = preset.networkMonitor
             self.waitsForNetworkChanges = preset.waitsForNetworkChanges
             self.networkChangeTimeout = preset.networkChangeTimeout
@@ -285,6 +298,7 @@ public struct DownloadConfiguration: Sendable {
                 taskInactivityTimeout: taskInactivityTimeout,
                 allowsCellularAccess: allowsCellularAccess,
                 sessionIdentifier: sessionIdentifier,
+                sharedContainerIdentifier: sharedContainerIdentifier,
                 networkMonitor: networkMonitor,
                 waitsForNetworkChanges: waitsForNetworkChanges,
                 networkChangeTimeout: networkChangeTimeout,
@@ -349,6 +363,7 @@ public struct DownloadConfiguration: Sendable {
         taskInactivityTimeout: Duration? = nil,
         allowsCellularAccess: Bool = true,
         sessionIdentifier: String = "com.innonetwork.download",
+        sharedContainerIdentifier: String? = nil,
         networkMonitor: (any NetworkMonitoring)? = NetworkMonitor.shared,
         waitsForNetworkChanges: Bool = false,
         networkChangeTimeout: TimeInterval? = 10.0,
@@ -373,6 +388,7 @@ public struct DownloadConfiguration: Sendable {
         self.taskInactivityTimeout = taskInactivityTimeout.map { max($0, .milliseconds(100)) }
         self.allowsCellularAccess = allowsCellularAccess
         self.sessionIdentifier = sessionIdentifier
+        self.sharedContainerIdentifier = sharedContainerIdentifier
         self.networkMonitor = networkMonitor
         self.waitsForNetworkChanges = waitsForNetworkChanges
         self.networkChangeTimeout = networkChangeTimeout.map { max(0, $0) }
@@ -402,6 +418,7 @@ public struct DownloadConfiguration: Sendable {
             taskInactivityTimeout: taskInactivityTimeout,
             allowsCellularAccess: true,
             sessionIdentifier: sessionIdentifier,
+            sharedContainerIdentifier: sharedContainerIdentifier,
             networkMonitor: networkMonitor,
             waitsForNetworkChanges: waitsForNetworkChanges,
             networkChangeTimeout: networkChangeTimeout,
@@ -420,6 +437,7 @@ public struct DownloadConfiguration: Sendable {
         config.isDiscretionary = false
         config.sessionSendsLaunchEvents = true
         config.allowsCellularAccess = allowsCellularAccess
+        config.sharedContainerIdentifier = sharedContainerIdentifier
         config.timeoutIntervalForRequest = timeoutForRequest
         config.timeoutIntervalForResource = timeoutForResource
         config.httpMaximumConnectionsPerHost = maxConnectionsPerHost

@@ -6,11 +6,14 @@ but the negotiation is **opt-in per session**. InnoNetwork inherits
 the platform default — HTTP/2 over TLS 1.3 — so callers who want
 QUIC must enable it explicitly.
 
-This article shows the pattern. The runtime hook is the same
-`URLSessionConfiguration` surface used for cookie isolation and TLS
-tuning: build the configuration via
-``NetworkConfiguration/makeURLSessionConfiguration()``, mutate it,
-and inject the resulting `URLSession` into `DefaultNetworkClient`.
+This article shows the pattern. Build the starting
+`URLSessionConfiguration` via
+``NetworkConfiguration/makeURLSessionConfiguration()`` so timeout, cache,
+and network-access defaults stay aligned with ``NetworkConfiguration``.
+Then mutate `URLSessionConfiguration` directly for HTTP/3, cookie
+isolation, TLS protocol bounds, proxies, or other Foundation-owned
+session behavior before injecting the resulting `URLSession` into
+`DefaultNetworkClient`.
 
 ## When to enable HTTP/3
 

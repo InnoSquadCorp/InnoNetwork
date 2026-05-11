@@ -1,6 +1,4 @@
 import Foundation
-import os
-
 /// Retry verdict returned by ``RetryPolicy/shouldRetry(error:retryIndex:request:response:)``.
 ///
 /// - `noRetry`: do not retry; surface the error to the caller.
@@ -66,8 +64,8 @@ public struct RetryIdempotencyPolicy: Sendable, Equatable {
     public let retriesUnsafeMethodsWithIdempotencyKey: Bool
     public let retriesAllMethods: Bool
 
-    /// Retries safe methods (`GET`, `HEAD`) and unsafe methods only when an
-    /// idempotency key header is present.
+    /// Retries safe methods (`GET`, `HEAD`, `OPTIONS`, `TRACE`) and unsafe
+    /// methods only when an idempotency key header is present.
     public static let safeMethodsAndIdempotencyKey = RetryIdempotencyPolicy()
 
     /// Preserves pre-4.x method-agnostic retry behaviour for consumers that
@@ -75,7 +73,7 @@ public struct RetryIdempotencyPolicy: Sendable, Equatable {
     public static let methodAgnostic = RetryIdempotencyPolicy(retriesAllMethods: true)
 
     public init(
-        safeMethods: Set<String> = ["GET", "HEAD"],
+        safeMethods: Set<String> = ["GET", "HEAD", "OPTIONS", "TRACE"],
         idempotencyHeaderName: String = "Idempotency-Key",
         retriesUnsafeMethodsWithIdempotencyKey: Bool = true,
         retriesAllMethods: Bool = false
@@ -139,20 +137,6 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
     public let waitsForNetworkChanges: Bool
     public let networkChangeTimeout: TimeInterval?
     public let idempotencyPolicy: RetryIdempotencyPolicy
-
-    private static let retryAfterDateFormats = [
-        "EEE, dd MMM yyyy HH:mm:ss zzz",  // IMF-fixdate
-        "EEEE, dd-MMM-yy HH:mm:ss zzz",  // RFC 850
-        "EEE MMM d HH:mm:ss yyyy",  // asctime (no zone — uses formatter.timeZone)
-    ]
-    private static let retryAfterFormatter = OSAllocatedUnfairLock<DateFormatter>(
-        initialState: {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            return formatter
-        }()
-    )
 
     /// - Parameters:
     ///   - maxRetries: Maximum number of retries.
@@ -303,37 +287,11 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
         if let seconds = Int(trimmed), seconds >= 0 {
             return min(TimeInterval(seconds), maxSeconds)
         }
-        // Try the canonical RFC 1123 `IMF-fixdate` form first; that is the
-        // only form servers are required to use, but accept the looser
-        // RFC 850 / asctime variants RFC 9110 keeps for backwards compat.
-        // Note: the asctime form has no timezone field, so the parsed date
-        // takes its zone from `formatter.timeZone` (GMT below) — RFC 9110
-        // §5.6.7 specifies that all HTTP-date forms are interpreted in GMT
-        // regardless of how they spell it, so this is intentional.
-        let normalizedWhitespace =
-            trimmed
-            .split(whereSeparator: { $0 == " " || $0 == "\t" })
-            .joined(separator: " ")
-        let candidates = normalizedWhitespace == trimmed ? [trimmed] : [trimmed, normalizedWhitespace]
-        for candidate in candidates {
-            if let date = Self.parseRetryAfterHTTPDate(candidate) {
-                let delta = date.timeIntervalSince(now)
-                guard delta > 0 else { return nil }
-                return min(delta, maxSeconds)
-            }
+        if let date = HTTPDateParser.parse(trimmed) {
+            let delta = date.timeIntervalSince(now)
+            guard delta > 0 else { return nil }
+            return min(delta, maxSeconds)
         }
         return nil
-    }
-
-    private static func parseRetryAfterHTTPDate(_ value: String) -> Date? {
-        retryAfterFormatter.withLock { formatter in
-            for format in retryAfterDateFormats {
-                formatter.dateFormat = format
-                if let date = formatter.date(from: value) {
-                    return date
-                }
-            }
-            return nil
-        }
     }
 }

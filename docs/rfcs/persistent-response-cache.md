@@ -15,7 +15,9 @@ The 4.0.0 implementation uses a conservative flat-file store:
 
 - versioned `index.json` plus SHA-256-addressed body files
 - max 50 MB total, max 1000 entries, max 5 MB per entry
-- authenticated responses are not stored by default
+- authenticated responses are not stored by default; `Authorization` entries
+  also require `Cache-Control: public`, `must-revalidate`, or `s-maxage` even
+  after opt-in
 - `Cache-Control: private` responses are not stored
 - responses with `Set-Cookie` are not stored by default
 - unknown index versions and corrupt entries are evicted and startup continues
@@ -44,10 +46,9 @@ Open questions:
   them gives per-user separation but inflates the keyspace and risks
   pinning per-token entries that will never be reused after refresh.
   Excluding them requires the persistent store to refuse to write
-  entries whose response carries `Cache-Control: private` or an
-  authenticated request — which mirrors RFC 9111 §3.5 shared-cache
-  rules but is a meaningful behaviour change vs. the in-memory
-  default.
+  entries whose response carries `Cache-Control: private` or whose
+  authenticated request lacks RFC 9111 §3.5 permission directives
+  (`public`, `must-revalidate`, or `s-maxage`).
 - How are vary dimensions canonicalized? (header name lowercased,
   value trimmed, `*` short-circuits to "do not store"). The
   in-memory cache already normalizes; the persistent store must
@@ -67,13 +68,17 @@ are present:
 - `must-revalidate` and `no-cache` directives — does the persistent
   store honour them by forcing a 304 round-trip on every read, or
   refuse to store them at all?
-- `Expires` (HTTP/1.0 absolute date) as a fallback when no
-  `Cache-Control` is present.
+- `Expires` (HTTP/1.0 absolute date) as a fallback when no valid
+  `Cache-Control: max-age` is present.
+- `Last-Modified` heuristic freshness when neither valid `max-age` nor
+  `Expires` is present.
 
-Recommendation: the executor's existing precedence (caller-declared
-window > origin `max-age` > store-defined fallback) should be the
-default, with an override on the companion's configuration for callers
-who want strict origin-driven freshness.
+Resolution: default policies remain caller-window driven. Callers who want
+strict origin-driven freshness wrap the policy with
+``ResponseCachePolicy/rfc9111Compliant(wrapping:)``, which consumes
+`max-age`, falls back to `Expires - Date` or `Expires - storedAt`, and
+then applies the RFC 9111 §4.2.2 `Last-Modified` 10% heuristic capped at
+24 hours.
 
 ### 3. Eviction policy
 
@@ -149,9 +154,10 @@ historical discussion above is preserved for context only.
 | Policy | 4.0.0 decision |
 |---|---|
 | Cache key | `(canonical method, URL, vary dimensions)` hashed into a SHA-256 body filename. Vary dimensions reuse `InMemoryResponseCache`'s normalization (lowercased header name, trimmed value; `*` ⇒ do-not-store). |
-| Freshness | Executor precedence preserved: caller-declared `freshnessWindow` > origin `max-age` > store fallback. `no-store` and `private` short-circuit to do-not-store. |
+| Freshness | Default executor precedence remains caller-declared `ResponseCachePolicy`; `ResponseCachePolicy.rfc9111Compliant(wrapping:)` clamps with origin `max-age`, uses `Expires` fallback when no valid `max-age` exists, and uses `Last-Modified` heuristic freshness when both are absent. `no-store` and `private` short-circuit to do-not-store. |
+| Target URI invalidation | Unsafe methods with 2xx/3xx origin responses call `ResponseCache.invalidateTargetURI(_:)`, removing every stored method/header variant for the normalized request target URI. |
 | Eviction | LRU with both 50 MB total byte budget and 1,000-entry budget, whichever fires first. Per-entry hard cap 5 MB. Eviction is synchronous on write. |
-| Privacy | Authenticated requests are not stored unless the caller opts in via configuration. `Cache-Control: private` short-circuits to do-not-store. Responses with `Set-Cookie` are rejected unless the caller opts in. Persisted request metadata fingerprints credential-like headers. |
+| Privacy | Credential-like request keys are not stored unless the caller opts in via configuration. `Authorization` entries also require RFC 9111 §3.5 permission (`public`, `must-revalidate`, or `s-maxage`). `Cache-Control: private` short-circuits to do-not-store. Responses with `Set-Cookie` are rejected unless the caller opts in. Persisted request metadata fingerprints credential-like headers. |
 | Data protection | Configurable; default `.completeUnlessOpen`. App-group integrators may select `.completeUntilFirstUserAuthentication`; `.none` requests `NSFileProtectionNone` for cache-owned paths. |
 | Migration | Versioned `index.json`. Unknown index versions and decode failures evict only the index and bodies subtree, leaving the user-supplied directory root untouched, and the store starts fresh. |
 

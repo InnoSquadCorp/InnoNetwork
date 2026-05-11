@@ -123,4 +123,20 @@ extension PersistentResponseCache {
         let digest = SHA256.hash(data: data)
         return digest.map { String(format: "%02x", $0) }.joined()
     }
+
+    static func identifier(
+        for key: DiskKey,
+        varyHeaders: [String: String?]?,
+        encoder: JSONEncoder
+    ) throws -> String {
+        guard let varyHeaders else {
+            return try identifier(for: key, encoder: encoder)
+        }
+        let normalizedVaryHeaders = varyHeaders.reduce(into: [String: String?]()) { result, entry in
+            result[entry.key.lowercased()] = entry.value
+        }
+        let data = try encoder.encode(VariantDiskKey(key: key, varyHeaders: normalizedVaryHeaders))
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
 }

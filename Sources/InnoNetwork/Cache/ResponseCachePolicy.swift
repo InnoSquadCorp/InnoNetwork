@@ -21,9 +21,8 @@ public enum ResponseCachePolicy: Sendable, Equatable {
     /// revalidation on every request even within `maxAge`.
     case staleWhileRevalidate(maxAge: Duration, staleWindow: Duration)
     /// RFC 9111 directive-aware adapter that wraps another policy. The
-    /// adapter inspects three `Cache-Control` directives on the cached
-    /// response and overrides the inner policy's read-side decision when
-    /// they apply:
+    /// adapter inspects cache freshness directives on the cached response
+    /// and overrides the inner policy's read-side decision when they apply:
     ///
     /// - `no-store` — the entry is treated as absent; reads fall through
     ///   to a network revalidation even though the default writer already
@@ -34,6 +33,13 @@ public enum ResponseCachePolicy: Sendable, Equatable {
     /// - `max-age=N` — the effective freshness window becomes
     ///   `min(server.maxAge, inner.maxAge)`. The server can shorten the
     ///   caller's freshness ceiling but never extend it.
+    /// - `Expires` — when no valid `max-age` is present, the effective
+    ///   freshness window is derived from `Expires - Date`, or
+    ///   `Expires - storedAt` when the response has no valid `Date` header.
+    ///   Invalid freshness information is treated as stale.
+    /// - `Last-Modified` — when neither valid `max-age` nor `Expires`
+    ///   exists, the adapter applies the RFC 9111 §4.2.2 heuristic
+    ///   freshness calculation (10% of apparent age, capped at 24 hours).
     ///
     /// Wrapping is the only way to opt into directive enforcement; the
     /// other cases remain RFC-agnostic by design so the default
@@ -58,12 +64,12 @@ public struct ResponseCacheKey: Hashable, Sendable {
 
     public init(method: String, url: String, headers: [String: String] = [:]) {
         self.method = method.uppercased()
-        self.url = Self.normalizedURLString(URL(string: url)) ?? url
+        self.url = Self.normalizedTargetURI(url)
         self.headers = Self.normalizedHeaders(headers)
     }
 
     package init?(request: URLRequest) {
-        guard let url = Self.normalizedURLString(request.url) else { return nil }
+        guard let url = Self.normalizedTargetURI(request.url) else { return nil }
         // `Authorization` is intentionally part of the cache key so that
         // user-scoped responses are not shared across identities. Token
         // rotations therefore produce new keys and the cache acts per-identity.
@@ -91,6 +97,14 @@ public struct ResponseCacheKey: Hashable, Sendable {
                 return "\(name):\(value)"
             }
             .sorted()
+    }
+
+    package static func normalizedTargetURI(_ targetURI: String) -> String {
+        normalizedURLString(URL(string: targetURI)) ?? targetURI
+    }
+
+    package static func normalizedTargetURI(_ url: URL?) -> String? {
+        normalizedURLString(url)
     }
 
     private static func normalizedURLString(_ url: URL?) -> String? {
@@ -281,10 +295,30 @@ package extension ResponseCacheKey {
 
 
 /// Async response cache abstraction used by the built-in cache policy.
+///
+/// Implementations store entries under ``ResponseCacheKey`` and should remove
+/// every method/header variant for a target URI when
+/// ``invalidateTargetURI(_:)`` is called. The target URI uses the same
+/// normalization as ``ResponseCacheKey``: lowercase scheme/host, stripped
+/// fragment, and stable-sorted query items.
 public protocol ResponseCache: Sendable {
     func get(_ key: ResponseCacheKey) async -> CachedResponse?
     func set(_ key: ResponseCacheKey, _ value: CachedResponse) async
     func invalidate(_ key: ResponseCacheKey) async
+    func invalidateTargetURI(_ targetURI: String) async
+}
+
+
+public extension ResponseCache {
+    /// Best-effort target URI invalidation for custom caches.
+    ///
+    /// This default removes only the canonical `GET` key with no header
+    /// variants. Built-in caches override it to remove all variants whose
+    /// normalized target URI matches. Custom caches that persist Vary/header
+    /// dimensions should provide their own implementation.
+    func invalidateTargetURI(_ targetURI: String) async {
+        await invalidate(ResponseCacheKey(method: "GET", url: targetURI))
+    }
 }
 
 
@@ -345,6 +379,18 @@ public actor InMemoryResponseCache: ResponseCache {
     }
 
     public func invalidate(_ key: ResponseCacheKey) async {
+        remove(key)
+    }
+
+    public func invalidateTargetURI(_ targetURI: String) async {
+        let normalizedTargetURI = ResponseCacheKey.normalizedTargetURI(targetURI)
+        let keys = nodes.keys.filter { $0.url == normalizedTargetURI }
+        for key in keys {
+            remove(key)
+        }
+    }
+
+    private func remove(_ key: ResponseCacheKey) {
         guard let node = nodes.removeValue(forKey: key) else { return }
         currentBytes -= node.cost
         unlink(node)

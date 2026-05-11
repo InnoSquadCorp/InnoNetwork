@@ -19,11 +19,13 @@ Versioning.
 
 - `NetworkErrorCode` SSOT enum in `Sources/InnoNetwork/NetworkErrorCode.swift`.
   Owns every `NetworkError.errorCode` raw value (`1001`/`1002`/`1003`,
-  `2002`, `3001`/`3002`, `4001`/`4002`/`4003`, `5001`) — the inline
+  `2002`/`2003`, `3001`/`3002`, `4001`/`4002`/`4003`/`4004`/`4005`, `5001`) — the inline
   literals previously sprinkled across `RequestExecutor`,
   `BufferedAsyncBytes`, `StreamingExecutor`, and `VCRURLSession` now
-  route through the enum. The `2001` slot is intentionally vacant for
-  historical compatibility (documented in a comment on the enum).
+  route through the enum. `.cancelled` and `.timeout` now also return
+  InnoNetwork-owned codes instead of borrowing Foundation `URLError`
+  constants. The `2001` slot is intentionally vacant for historical
+  compatibility (documented in a comment on the enum).
 - `NetworkError.reachability(ReachabilityReason, SendableUnderlyingError, Response?)`
   case classifying `URLError.notConnectedToInternet`,
   `.dnsLookupFailed`, `.cannotFindHost`, and `.networkConnectionLost`.
@@ -47,13 +49,29 @@ Versioning.
   emits) whenever no progress has been reported for the configured
   window. `DownloadTask.lastProgressAt: ContinuousClock.Instant?`
   exposes the most recent progress timestamp for diagnostics.
+- `DownloadConfiguration` gained `sharedContainerIdentifier: String?`
+  and the matching `AdvancedBuilder` field. The value maps to
+  `URLSessionConfiguration.sharedContainerIdentifier` for App Group
+  background sessions; defaults stay `nil`, and existing construction
+  sites continue to compile.
 - `ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware
   adapter. Wraps any existing policy and adds opt-in support for
-  three RFC 9111 directives on top of the inner freshness window:
+  RFC 9111 directives on top of the inner freshness window:
   `Cache-Control: no-store` forces revalidation, `must-revalidate`
   demotes `.returnStaleAndRevalidate` to `.revalidate`, and
-  `max-age=N` clamps freshness to `min(server, inner)`. Documented in
-  `docs/rfcs/RFC9111-Compliance.md`.
+  `max-age=N` clamps freshness to `min(server, inner)`. When no valid
+  `max-age` exists, `Expires` falls back to `Expires - Date` or
+  `Expires - storedAt`; when neither exists, `Last-Modified` applies the
+  RFC 9111 §4.2.2 10% heuristic capped at 24 hours. Invalid freshness
+  metadata is stale. Documented in `docs/rfcs/RFC9111-Compliance.md`.
+- `ResponseCache.invalidateTargetURI(_:)` requirement with a default
+  implementation for custom caches. The built-in in-memory and
+  persistent caches override it to remove every method/header variant
+  whose normalized target URI matches.
+- `NetworkConfiguration.streamingLineByteLimit` and
+  `TransportPack.streamingLineByteLimit` configure the maximum UTF-8 byte
+  length for one line-delimited streaming frame. The default remains
+  1 MiB and values below 1 clamp to 1.
 - OpenAPI generator now emits explicit `APIResponse = EmptyResponse`
   for operations declaring `202` or `204` responses (previously
   collapsed onto a generic fallback).
@@ -82,6 +100,26 @@ Versioning.
   window: previously a file part whose size grew between estimate and
   read could exceed the configured ceiling; the new per-write
   accumulator guard refuses the encode as soon as the cap is breached.
+- `ResponseCache` now follows RFC 9111 §4.4 for unsafe-method
+  invalidation: `POST` / `PUT` / `PATCH` / `DELETE` and safety-unknown
+  methods invalidate stored responses for the request target URI after
+  2xx/3xx origin responses when cache writes are enabled. `.disabled`
+  and `.networkOnly` still leave cache metadata untouched.
+- Responses to requests carrying `Authorization` are no longer stored unless
+  the origin explicitly permits it with `Cache-Control: public`,
+  `must-revalidate`, or `s-maxage`. `storesAuthenticatedResponses: true`
+  remains the persistent-cache privacy opt-in, but it does not bypass the
+  RFC 9111 §3.5 permission gate.
+- `RetryIdempotencyPolicy.safeMethodsAndIdempotencyKey` now includes
+  `OPTIONS` and `TRACE` alongside `GET` and `HEAD`. `PUT` and `DELETE`
+  remain protected by `Idempotency-Key` or explicit method-agnostic retry.
+- `RefreshTokenCoordinator` awaiters now observe caller cancellation promptly
+  without cancelling a shared refresh for other waiters. If the coordinator is
+  released while a refresh is still in flight, the orphan refresh task is
+  cancelled.
+- `DownloadManager` now stores its transfer, restore, and failure
+  coordinators once during initialization instead of recreating them through
+  computed properties on every access.
 - `DownloadManager.shutdown()` is now race-safe under concurrent calls.
   The shutdown flag moved from actor-isolated state to a
   `nonisolated OSAllocatedUnfairLock<Bool>` mirroring the
@@ -152,6 +190,26 @@ Versioning.
   streaming response body collection at 5 MiB by default. Callers that
   need larger inline bodies can still override the policy through
   `advanced(baseURL:resilience:...)` or the `responseBodyLimit` alias.
+- `NetworkConfiguration` now has `makeURLSessionConfiguration()` mirror
+  its session-level timeout, cache policy, cellular, expensive-network,
+  and constrained-network defaults. Trust policy remains a per-task
+  delegate concern and is not representable on `URLSessionConfiguration`.
+- `InnoNetworkClientTransport` now returns generated-client response
+  bodies as streaming `HTTPBody` values backed by `URLSession.bytes(for:)`.
+  `Content-Length` can fail the `responseBodyByteLimit` guard before the
+  body is returned; unknown-length responses enforce the same limit while
+  the generated client consumes the stream. Request bodies remain bounded
+  collected payloads.
+- `PersistentResponseCache` now stores `Vary` variants under separate
+  disk identifiers instead of letting later variants overwrite earlier
+  ones for the same method and target URI. Existing single-variant entries
+  keep their legacy identifiers and are re-indexed on open when a concrete
+  `Vary` snapshot is present.
+- `WebSocketCloseCode.noStatusReceived` (`1005`) now maps to
+  `.peerRetryable` because it represents an absent close status rather
+  than a peer protocol violation. Heartbeat ping timeout handling now
+  enters the same delegate-event queue as Foundation callbacks, preserving
+  FIFO ordering with connect, close, and error events.
 - **Breaking.** `NetworkClient.request(_:)`, `request(_:tag:)`,
   `upload(_:)`, and `upload(_:tag:)` now declare `throws(NetworkError)`
   instead of untyped `throws`. The four methods only ever surfaced

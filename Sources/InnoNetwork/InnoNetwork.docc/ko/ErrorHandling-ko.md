@@ -85,7 +85,9 @@ opt-in 한 경우에만 보존됩니다. 프로덕션에서는 PII 가 크래시
 됩니다. 4.x 라인은 숫자 코드를 안정적으로 유지하므로, 관측 가능성 파이프라인이
 지역화 문자열을 파싱하지 않고도 실패를 그룹화할 수 있습니다. 기저 Foundation
 오류는 `.underlying` / timeout case 안에 ``SendableUnderlyingError`` 로
-보존되며, status code 실패는 구조화된 ``Response`` 메타데이터를 유지합니다.
+보존되지만, ``NetworkError/errorCode`` 는 Foundation `URLError.Code` 가 아니라
+항상 InnoNetwork 소유 ``NetworkErrorCode`` 값을 반환합니다. status code 실패는
+구조화된 ``Response`` 메타데이터를 유지합니다.
 
 ## cancellation 은 실패가 아닙니다
 

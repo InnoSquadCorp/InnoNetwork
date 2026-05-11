@@ -102,6 +102,26 @@ struct WebSocketCloseDispositionObservationTests {
         #expect(disposition?.shouldReconnect == true)
     }
 
+    @Test("Peer close with 1005 no status received is retryable")
+    func noStatusReceivedCloseRecordsRetryableDisposition() async throws {
+        let harness = StubMessagingHarness()
+        let task = try await harness.connectAndReady()
+
+        harness.manager.handleDisconnected(
+            taskIdentifier: harness.stubTaskIdentifier,
+            closeCode: .noStatusReceived,
+            reason: nil
+        )
+
+        let disposition = await waitForCloseDisposition(task: task, timeout: .seconds(2))
+        guard case .peerRetryable(let code, _) = disposition else {
+            Issue.record("expected .peerRetryable, got \(String(describing: disposition))")
+            return
+        }
+        #expect(code == .noStatusReceived)
+        #expect(disposition?.shouldReconnect == true)
+    }
+
     @Test("Peer close with RFC terminal code records .peerProtocolFailure disposition")
     func peerProtocolFailureCloseRecordsDisposition() async throws {
         let harness = StubMessagingHarness()

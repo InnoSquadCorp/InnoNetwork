@@ -19,6 +19,8 @@ extension WebSocketManager {
             await processMappedError(taskIdentifier: taskIdentifier, error: error)
         case .sessionError(let taskIdentifier, let error, let statusCode):
             await processSessionError(taskIdentifier: taskIdentifier, error: error, statusCode: statusCode)
+        case .pingTimeout(let taskIdentifier):
+            await processPingTimeout(taskIdentifier: taskIdentifier)
         }
     }
 
@@ -45,6 +47,10 @@ extension WebSocketManager {
         delegateEventContinuation.yield(
             .sessionError(taskIdentifier: taskIdentifier, error: error, statusCode: statusCode)
         )
+    }
+
+    nonisolated func handlePingTimeout(taskIdentifier: Int) {
+        delegateEventContinuation.yield(.pingTimeout(taskIdentifier: taskIdentifier))
     }
 
     func processConnected(taskIdentifier: Int, protocolName: String?) async {
@@ -131,6 +137,10 @@ extension WebSocketManager {
             return
         }
         await handleMappedError(taskIdentifier: taskIdentifier, error: wsError)
+    }
+
+    func processPingTimeout(taskIdentifier: Int) async {
+        await handleMappedError(taskIdentifier: taskIdentifier, error: .pingTimeout)
     }
 
     func processSessionError(

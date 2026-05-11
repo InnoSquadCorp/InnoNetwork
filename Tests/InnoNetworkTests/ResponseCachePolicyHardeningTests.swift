@@ -225,6 +225,39 @@ struct InMemoryResponseCacheLRUTests {
         #expect(a == nil)
         #expect(b != nil)
     }
+
+    @Test("Target URI invalidation removes every method and header variant")
+    func invalidateTargetURIRemovesVariants() async {
+        let cache = InMemoryResponseCache(maxBytes: 5_000)
+        let first = ResponseCacheKey(
+            method: "GET",
+            url: "HTTPS://EXAMPLE.COM/items?b=2&a=1#one",
+            headers: ["Accept-Language": "en-US"]
+        )
+        let second = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/items?a=1&b=2#two",
+            headers: ["Accept-Language": "ko-KR"]
+        )
+        let third = ResponseCacheKey(
+            method: "HEAD",
+            url: "https://example.com/items?a=1&b=2",
+            headers: ["X-Variant": "metadata"]
+        )
+        let other = makeKey("https://example.com/items?a=1&b=3")
+
+        await cache.set(first, makeResponse(byteSize: 128))
+        await cache.set(second, makeResponse(byteSize: 128))
+        await cache.set(third, makeResponse(byteSize: 128))
+        await cache.set(other, makeResponse(byteSize: 128))
+
+        await cache.invalidateTargetURI("https://EXAMPLE.com/items?b=2&a=1#latest")
+
+        #expect(await cache.get(first) == nil)
+        #expect(await cache.get(second) == nil)
+        #expect(await cache.get(third) == nil)
+        #expect(await cache.get(other) != nil)
+    }
 }
 
 

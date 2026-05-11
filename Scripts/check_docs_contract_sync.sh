@@ -202,7 +202,7 @@ expected_provisionally=(
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
 '`AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`'
-'`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces'
+'`RefreshTokenPolicy`, `RequestCoalescingPolicy`, retry, response cache, redirect, encoding utility, and circuit breaker policy surfaces'
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
 '`MultipartStreamingResponseDecoder` streaming multipart response parsing surface'
 '`InnoNetworkOpenAPI` companion product'
@@ -224,6 +224,9 @@ expected_provisionally=(
 '`MultipartUploadStrategy.inMemory(maxBytes:)` (4.1.0) — replaces the zero-arg `.inMemory` form (4.0.x); the encoder'\''s accumulator guard is part of the contract'
 '`DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.1.0)'
 '`ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.1.0)'
+'`DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.1.0)'
+'`ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.1.0)'
+'`NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.1.0)'
 )
 
 expected_shipping_public_declarations=(
@@ -487,6 +490,14 @@ validate_resilience_public_api() {
     "$repo_root/Sources/InnoNetwork/Auth/RefreshTokenPolicy.swift"
   require_contains 'public struct RequestCoalescingPolicy' \
     "$repo_root/Sources/InnoNetwork/RequestCoalescing/RequestCoalescingPolicy.swift"
+  require_contains 'public protocol RetryPolicy' \
+    "$repo_root/Sources/InnoNetwork/RetryPolicy.swift"
+  require_contains 'public struct RetryIdempotencyPolicy' \
+    "$repo_root/Sources/InnoNetwork/RetryPolicy.swift"
+  require_contains 'public struct ExponentialBackoffRetryPolicy' \
+    "$repo_root/Sources/InnoNetwork/RetryPolicy.swift"
+  require_contains 'safeMethods: Set<String> = ["GET", "HEAD", "OPTIONS", "TRACE"]' \
+    "$repo_root/Sources/InnoNetwork/RetryPolicy.swift"
   require_contains 'public enum ResponseCachePolicy' \
     "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
   require_contains 'public protocol ResponseCache' \
@@ -1120,7 +1131,7 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_oss_readiness_public_api
       continue
       ;;
-    '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces')
+    '`RefreshTokenPolicy`, `RequestCoalescingPolicy`, retry, response cache, redirect, encoding utility, and circuit breaker policy surfaces')
       validate_resilience_public_api
       continue
       ;;
@@ -1234,6 +1245,18 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/NetworkErrorCode.swift"
       require_contains 'return NetworkErrorCode.reachability.rawValue' \
         "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+      require_contains 'case cancelled = 4004' \
+        "$repo_root/Sources/InnoNetwork/NetworkErrorCode.swift"
+      require_contains 'case timeout = 4005' \
+        "$repo_root/Sources/InnoNetwork/NetworkErrorCode.swift"
+      require_contains 'return NetworkErrorCode.cancelled.rawValue' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+      require_contains 'return NetworkErrorCode.timeout.rawValue' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+      require_not_contains 'NSURLErrorCancelled' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+      require_not_contains 'NSURLErrorTimedOut' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
       continue
       ;;
     '`NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.1.0)')
@@ -1264,6 +1287,45 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
       require_contains 'func prepareWithRFC9111' \
         "$repo_root/Sources/InnoNetwork/Cache/RFC9111CompliantCachePolicy.swift"
+      require_contains 'HTTPDateParser.parse(expiresValue, requiresGMTZone: true)' \
+        "$repo_root/Sources/InnoNetwork/Cache/RFC9111CompliantCachePolicy.swift"
+      require_contains '`Expires` — when no valid `max-age` is present' \
+        "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
+      require_contains '`Last-Modified` — when neither valid `max-age` nor `Expires`' \
+        "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
+      require_contains 'age * 0.1' \
+        "$repo_root/Sources/InnoNetwork/Cache/RFC9111CompliantCachePolicy.swift"
+      continue
+      ;;
+    '`DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.1.0)')
+      require_contains 'public let sharedContainerIdentifier: String?' \
+        "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+      require_contains 'public var sharedContainerIdentifier: String?' \
+        "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+      require_contains 'config.sharedContainerIdentifier = sharedContainerIdentifier' \
+        "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+      continue
+      ;;
+    '`ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.1.0)')
+      require_contains 'func invalidateTargetURI(_ targetURI: String) async' \
+        "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
+      require_contains 'public func invalidateTargetURI(_ targetURI: String) async' \
+        "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
+      require_contains 'public func invalidateTargetURI(_ targetURI: String) async' \
+        "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCache.swift"
+      require_contains 'invalidateUnsafeTargetURIIfNeeded' \
+        "$repo_root/Sources/InnoNetwork/RequestExecutor+Cache.swift"
+      continue
+      ;;
+    '`NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.1.0)')
+      require_contains 'public static let defaultStreamingLineByteLimit' \
+        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+      require_contains 'public let streamingLineByteLimit: Int' \
+        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+      require_contains 'public var streamingLineByteLimit: Int?' \
+        "$repo_root/Sources/InnoNetwork/Configuration/ConfigurationPacks.swift"
+      require_contains 'configuration.streamingLineByteLimit' \
+        "$repo_root/Sources/InnoNetwork/StreamingExecutor.swift"
       continue
       ;;
     *)
@@ -1283,6 +1345,30 @@ require_contains "CONTRIBUTING.md" "$readme"
 require_contains "SECURITY.md" "$readme"
 require_contains "SUPPORT.md" "$readme"
 require_contains "docs/RELEASE_POLICY.md" "$readme"
+require_contains 'Responses to requests carrying `Authorization` are stored only when the' "$readme"
+require_contains '`GET`, `HEAD`, `OPTIONS`, and `TRACE` retry by default' "$readme"
+require_contains '`Expires` fallback' "$readme"
+require_contains '`Last-Modified` heuristic freshness' "$readme"
+require_contains '`Expires` |' "$repo_root/docs/rfcs/RFC9111-Compliance.md"
+require_contains '`Last-Modified` |' "$repo_root/docs/rfcs/RFC9111-Compliance.md"
+require_contains 'Persistent cache disk keys now include the `Vary`' \
+  "$repo_root/docs/releases/4.0.0.md"
+require_contains '.noStatusReceived:' \
+  "$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseDisposition.swift"
+require_contains '1005`' \
+  "$repo_root/docs/WebSocketLifecycle.md"
+require_contains 'delegate-event queue so callback ordering stays FIFO' \
+  "$repo_root/docs/TaskOwnership.md"
+require_contains 'Authorization` entries also require RFC 9111 §3.5 permission' \
+  "$repo_root/docs/rfcs/persistent-response-cache.md"
+require_contains 'ResponseCacheStoragePolicy.responsePermitsAuthenticatedStorage' \
+  "$repo_root/Sources/InnoNetwork/RequestExecutor+Cache.swift"
+require_contains 'ResponseCacheStoragePolicy.responsePermitsAuthenticatedStorage' \
+  "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCache+Policy.swift"
+require_contains 'deinit {' \
+  "$repo_root/Sources/InnoNetwork/Auth/RefreshTokenPolicy.swift"
+require_contains 'coordinator deinit cancels any orphaned in-flight refresh' \
+  "$repo_root/docs/TaskOwnership.md"
 
 for doc in "${required_meta_docs[@]}"; do
   [[ -f "$doc" ]] || fail "required OSS document is missing: $doc"

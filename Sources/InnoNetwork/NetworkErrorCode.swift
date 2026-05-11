@@ -31,6 +31,8 @@ public enum NetworkErrorCode: Int, Sendable {
     case underlying = 4001
     case reachability = 4002
     case responseBodyLimitExceeded = 4003
+    case cancelled = 4004
+    case timeout = 4005
 
     // 5xxx — trust evaluation failures.
     case trustEvaluationFailed = 5001

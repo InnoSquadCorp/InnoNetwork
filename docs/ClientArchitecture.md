@@ -28,7 +28,8 @@ Built-in policies occupy the preflight and post-transport slots:
 - `RequestCoalescingPolicy` shares one raw `(Data, HTTPURLResponse)` result
   among identical in-flight requests.
 - `ResponseCachePolicy` can return cached GET responses, revalidate with ETag,
-  substitute `304` bodies, and refresh stale entries in the background.
+  substitute `304` bodies, refresh stale entries in the background, and
+  invalidate cached target URIs after successful unsafe methods.
 - `CircuitBreakerPolicy` short-circuits repeated per-host failures before
   transport and surfaces open-circuit failures through `NetworkError.underlying`.
 - `RequestExecutionPolicy` wraps one raw transport attempt when applications

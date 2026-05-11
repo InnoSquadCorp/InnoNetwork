@@ -127,6 +127,57 @@ struct CircuitBreakerRegistryHardeningTests {
         try await registry.prepare(request: request, policy: policy)
     }
 
+    @Test("Half-open admits only one probe under concurrent herd")
+    func halfOpenAdmitsOnlyOneConcurrentProbe() async throws {
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(
+            failureThreshold: 1,
+            windowSize: 1,
+            resetAfter: .zero,
+            maxResetAfter: .seconds(60)
+        )
+        let request = URLRequest(url: URL(string: "https://api.example.com/herd")!)
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+
+        let results = await withTaskGroup(of: Bool.self) { group in
+            for _ in 0..<32 {
+                group.addTask {
+                    do {
+                        try await registry.prepare(request: request, policy: policy)
+                        return true
+                    } catch let error as NetworkError {
+                        guard case .underlying(let underlying, _) = error,
+                            underlying.domain == CircuitBreakerOpenError.errorDomain
+                        else {
+                            Issue.record("Expected CircuitBreakerOpenError, got \(error)")
+                            return false
+                        }
+                        return false
+                    } catch {
+                        Issue.record("Expected NetworkError, got \(error)")
+                        return false
+                    }
+                }
+            }
+
+            var admitted = 0
+            var rejected = 0
+            for await result in group {
+                if result {
+                    admitted += 1
+                } else {
+                    rejected += 1
+                }
+            }
+            return (admitted, rejected)
+        }
+
+        #expect(results.0 == 1)
+        #expect(results.1 == 31)
+        await registry.recordStatus(request: request, policy: policy, statusCode: 200)
+        try await registry.prepare(request: request, policy: policy)
+    }
+
     @Test("4xx response closes half-open circuit without waiting for hysteresis probes")
     func clientErrorClosesHalfOpenCircuit() async throws {
         let registry = CircuitBreakerRegistry()

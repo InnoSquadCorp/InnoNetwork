@@ -2,8 +2,8 @@
 
 Use `InnoNetworkClientTransport` to dispatch generated
 `swift-openapi-generator` clients through a URLSession that the host
-application has already configured (timeouts, cookie storage, trust
-policy, HTTP/3, etc.).
+application has already configured (timeouts, cache policy, cookie
+storage, HTTP/3, etc.).
 
 > Note: `InnoNetworkClientTransport`, `InnoNetworkClientTransportError`,
 > `OpenAPIRequest`, `OpenAPIRestOperation`, and `OpenAPIAdapter` are
@@ -47,17 +47,33 @@ let client = Client(
 let response = try await client.getUser(.init(path: .init(id: 42)))
 ```
 
-`makeURLSessionConfiguration()` pulls timeout, TLS, and cookie defaults
-from the existing ``NetworkConfiguration``, so the generated client lands
-on the same network posture as the rest of the application. Drop in any
-`URLSession` you build yourself instead when the generated client needs
-its own delegate or session ID.
+`makeURLSessionConfiguration()` carries the session-level timeout, cache,
+and network-access defaults from ``NetworkConfiguration``. Cookie storage,
+HTTP/3, TLS protocol bounds, proxy settings, and delegate-owned behavior
+remain direct `URLSessionConfiguration` / `URLSession` choices:
+
+```swift
+let networkConfig = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+let sessionConfig = networkConfig.makeURLSessionConfiguration()
+sessionConfig.httpCookieStorage = isolatedCookies
+sessionConfig.assumesHTTP3Capable = true
+sessionConfig.tlsMinimumSupportedProtocolVersion = .TLSv13
+
+let session = URLSession(configuration: sessionConfig)
+```
+
+`NetworkConfiguration.trustPolicy` is evaluated by InnoNetwork's request
+pipeline; it is not representable on `URLSessionConfiguration` and is not
+copied into this bare generated-client transport. Use `OpenAPIRequest` +
+``DefaultNetworkClient`` when a generated operation must use the full
+InnoNetwork pipeline.
 
 ## Byte limits
 
-The transport collects request and response bodies in memory before
-forwarding them. Limits default to 50 MiB in each direction; raise or
-lower them at the construction site:
+The transport still collects outgoing request bodies before forwarding
+them to URLSession. Incoming response bodies are returned as a streaming
+`HTTPBody` backed by `URLSession.bytes(for:)`. Limits default to 50 MiB
+in each direction; raise or lower them at the construction site:
 
 ```swift
 let transport = InnoNetworkClientTransport(
@@ -67,8 +83,10 @@ let transport = InnoNetworkClientTransport(
 )
 ```
 
-For genuinely streaming operations, prefer a URLSession-based streaming
-transport at the boundary instead of pushing the limit upward.
+For response bodies with a known oversized `Content-Length`, `send(...)`
+throws before returning the `HTTPBody`. For unknown-length responses, the
+same `.responseBodyTooLarge(limit:received:)` error can be thrown later
+while the generated client consumes the body stream.
 
 ## Error mapping
 
@@ -87,9 +105,9 @@ The transport surfaces four transport-only failures via
   unwraps the status itself for normal 1xx/2xx/3xx/4xx/5xx responses.
 - `.responseBodyTooLarge(limit:received:)` — the origin returned more
   bytes than `responseBodyByteLimit` permits. The transport raises this
-  at the boundary so the downstream decode short-circuits and the
-  generated client surfaces a typed transport failure instead of an
-  opaque crash from a massive in-memory payload.
+  before returning the body when `Content-Length` proves the limit will be
+  exceeded, or from the returned `HTTPBody` stream when the body length is
+  only known during consumption.
 
 Every other transport failure flows through as the underlying
 `URLError` so the generated client's own error handling can branch on

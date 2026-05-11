@@ -79,6 +79,7 @@ public actor WebSocketManager {
         case disconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?)
         case mappedError(taskIdentifier: Int, error: WebSocketError)
         case sessionError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int?)
+        case pingTimeout(taskIdentifier: Int)
     }
 
     var receiveLoop: WebSocketReceiveLoop {

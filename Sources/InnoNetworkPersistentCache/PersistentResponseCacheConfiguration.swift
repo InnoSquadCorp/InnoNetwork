@@ -84,7 +84,9 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     /// Per-entry hard cap. Responses larger than this are not stored.
     public let maxEntryBytes: Int
     /// When `true`, responses to requests carrying credential-like key headers
-    /// are eligible for storage. Defaults to `false` for privacy.
+    /// are eligible for storage. Defaults to `false` for privacy. Responses to
+    /// requests carrying `Authorization` still require an RFC 9111 §3.5
+    /// permission directive (`public`, `must-revalidate`, or `s-maxage`).
     public let storesAuthenticatedResponses: Bool
     /// When `true`, responses with `Set-Cookie` headers are eligible for
     /// storage. Defaults to `false` for privacy.

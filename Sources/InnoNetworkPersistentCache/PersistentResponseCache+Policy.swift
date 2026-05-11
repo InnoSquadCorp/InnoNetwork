@@ -19,6 +19,11 @@ extension PersistentResponseCache {
         }
 
         let cacheControl = cacheControlDirectives(in: responseHeaders)
+        if containsAuthorizationRequestHeader(key.headers),
+            !ResponseCacheStoragePolicy.responsePermitsAuthenticatedStorage(cacheControlDirectives: cacheControl)
+        {
+            return false
+        }
         // RFC 9111 §5.2.2.5: `no-store` forbids any cache from storing
         // any part of the response. The `RFC9111CompliantCachePolicy`
         // wrapper already filters this at the request gate, but when a
@@ -58,6 +63,10 @@ extension PersistentResponseCache {
         }
     }
 
+    static func containsAuthorizationRequestHeader(_ headers: [String]) -> Bool {
+        ResponseCacheStoragePolicy.containsAuthorizationKeyHeader(headers)
+    }
+
     static func cacheControlDirectives(in headers: [String: String]) -> Set<String> {
         let combined =
             headers
@@ -70,5 +79,55 @@ extension PersistentResponseCache {
                 .map(HTTPListParser.directiveName(of:))
                 .filter { !$0.isEmpty }
         )
+    }
+
+    static func varySnapshot(_ varyHeaders: [String: String?]?, matches key: DiskKey) -> Bool {
+        guard let varyHeaders else { return true }
+        let requestHeaders = key.headers.reduce(into: [String: String]()) { result, header in
+            guard let separator = header.firstIndex(of: ":") else { return }
+            let name = String(header[..<separator]).lowercased()
+            let value = String(header[header.index(after: separator)...])
+            result[name] = value
+        }
+        for (rawName, storedValue) in varyHeaders {
+            let name = rawName.lowercased()
+            let currentValue = requestHeaders[name]
+            switch (storedValue, currentValue) {
+            case (nil, nil):
+                continue
+            case (nil, _), (_, nil):
+                return false
+            case (let stored?, let current?):
+                if current.hasPrefix("hmac-sha256:"), stored.hasPrefix("sha256:") {
+                    continue
+                }
+                if !varyValuesEqualForPersistentLookup(stored: stored, current: current, headerName: name) {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    private static func varyValuesEqualForPersistentLookup(
+        stored: String,
+        current: String,
+        headerName: String
+    ) -> Bool {
+        if isMultiTokenPersistentVaryHeader(headerName) {
+            return Set(HTTPListParser.split(stored).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+                == Set(HTTPListParser.split(current).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+        }
+        return stored.trimmingCharacters(in: .whitespacesAndNewlines)
+            == current.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func isMultiTokenPersistentVaryHeader(_ name: String) -> Bool {
+        switch name.lowercased() {
+        case "accept", "accept-encoding", "accept-language", "accept-charset":
+            return true
+        default:
+            return false
+        }
     }
 }

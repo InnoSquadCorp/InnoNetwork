@@ -67,7 +67,7 @@ extension WebSocketManager {
                 await startTransportConnection(task)
             case .startHeartbeat:
                 await heartbeatCoordinator.startHeartbeat(for: task) { [weak self] taskIdentifier in
-                    await self?.handleMappedError(taskIdentifier: taskIdentifier, error: .pingTimeout)
+                    self?.handlePingTimeout(taskIdentifier: taskIdentifier)
                 }
             case .cancelHeartbeat:
                 await runtimeRegistry.cancelHeartbeatTask(for: task.id)

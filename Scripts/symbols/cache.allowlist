@@ -30,6 +30,7 @@ InnoNetworkPersistentCache	swift.init	PersistentResponseCacheStatistics.init(ent
 InnoNetworkPersistentCache	swift.method	PersistentResponseCache.drainTelemetryEvents()
 InnoNetworkPersistentCache	swift.method	PersistentResponseCache.get(_:)
 InnoNetworkPersistentCache	swift.method	PersistentResponseCache.invalidate(_:)
+InnoNetworkPersistentCache	swift.method	PersistentResponseCache.invalidateTargetURI(_:)
 InnoNetworkPersistentCache	swift.method	PersistentResponseCache.removeAll()
 InnoNetworkPersistentCache	swift.method	PersistentResponseCache.set(_:_:)
 InnoNetworkPersistentCache	swift.method	PersistentResponseCache.statistics()

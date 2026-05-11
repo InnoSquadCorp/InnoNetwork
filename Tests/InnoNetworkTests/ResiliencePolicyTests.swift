@@ -126,6 +126,24 @@ private struct ResiliencePostRequest: APIDefinition {
 }
 
 
+private struct ResilienceMutationRequest: APIDefinition {
+    typealias Parameter = EmptyParameter
+    typealias APIResponse = ResilienceUser
+
+    let mutationMethod: HTTPMethod
+    let acceptedStatusCodes: Set<Int>?
+
+    var method: HTTPMethod { mutationMethod }
+    var path: String { "/users/1" }
+    var acceptableStatusCodes: Set<Int>? { acceptedStatusCodes }
+
+    init(method: HTTPMethod, acceptedStatusCodes: Set<Int>? = nil) {
+        self.mutationMethod = method
+        self.acceptedStatusCodes = acceptedStatusCodes
+    }
+}
+
+
 private struct IdempotentResiliencePostRequest: APIDefinition {
     struct Body: Encodable, Sendable {
         let name: String
@@ -156,6 +174,17 @@ private struct HeaderSettingInterceptor: RequestInterceptor {
     func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
         var request = urlRequest
         request.setValue(value, forHTTPHeaderField: field)
+        return request
+    }
+}
+
+
+private struct HTTPMethodOverrideInterceptor: RequestInterceptor {
+    let method: String
+
+    func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
+        var request = urlRequest
+        request.httpMethod = method
         return request
     }
 }
@@ -375,6 +404,17 @@ private func resilienceUserCacheKey() -> ResponseCacheKey {
         method: "GET",
         url: "https://api.example.com/users/1",
         headers: ["Accept-Language": cacheFixtureAcceptLanguage]
+    )
+}
+
+private func authorizedResilienceUserCacheKey(token: String) -> ResponseCacheKey {
+    ResponseCacheKey(
+        method: "GET",
+        url: "https://api.example.com/users/1",
+        headers: [
+            "Accept-Language": cacheFixtureAcceptLanguage,
+            "Authorization": "Bearer \(token)",
+        ]
     )
 }
 
@@ -1240,6 +1280,67 @@ struct ResiliencePolicyTests {
         #expect(await session.requestCount == 2)
     }
 
+    @Test("Authorization responses without explicit RFC 9111 permission are not cached")
+    func responseCacheRejectsAuthorizedResponseWithoutPermissionDirective() async throws {
+        let cache = InMemoryResponseCache()
+        let cacheKey = authorizedResilienceUserCacheKey(token: "one")
+        await cache.set(
+            cacheKey,
+            CachedResponse(
+                data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "legacy")),
+                headers: ["Cache-Control": "public"],
+                storedAt: Date(timeIntervalSinceNow: -60)
+            )
+        )
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "fresh"))
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache,
+                acceptLanguageProvider: { cacheFixtureAcceptLanguage }
+            ),
+            session: session
+        )
+
+        let user = try await client.request(AuthorizedResilienceGetRequest(token: "one"))
+
+        #expect(user == ResilienceUser(id: 1, name: "fresh"))
+        #expect(await cache.get(cacheKey) == nil)
+    }
+
+    @Test(
+        "Authorization responses are cached only with RFC 9111 permission directives",
+        arguments: ["public", "must-revalidate", "s-maxage=60"])
+    func responseCacheStoresAuthorizedResponsesWithPermissionDirective(cacheControl: String) async throws {
+        let cache = InMemoryResponseCache()
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(
+                statusCode: 200,
+                body: ResilienceUser(id: 1, name: cacheControl),
+                headers: ["Cache-Control": cacheControl]
+            )
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+                responseCache: cache,
+                acceptLanguageProvider: { cacheFixtureAcceptLanguage }
+            ),
+            session: session
+        )
+
+        _ = try await client.request(AuthorizedResilienceGetRequest(token: "one"))
+
+        let cacheKey = authorizedResilienceUserCacheKey(token: "one")
+        let cached = try #require(await cache.get(cacheKey))
+        let decoded = try JSONDecoder().decode(ResilienceUser.self, from: cached.data)
+        #expect(decoded == ResilienceUser(id: 1, name: cacheControl))
+    }
+
     @Test("Response cache key fingerprints Authorization header values")
     func responseCacheKeyFingerprintsAuthorizationHeaderValues() {
         let first = ResponseCacheKey(
@@ -1427,6 +1528,194 @@ struct ResiliencePolicyTests {
 
         #expect(user == fresh)
         #expect(await cache.get(key) == nil)
+    }
+
+    @Test("Unsafe successful methods invalidate cached target URI before the next GET")
+    func unsafeSuccessInvalidatesTargetURIBeforeNextGet() async throws {
+        let cache = InMemoryResponseCache()
+        let configuration = makeLocalizedCacheConfiguration(
+            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+            responseCache: cache
+        )
+        let firstBody = ResilienceUser(id: 1, name: "cached")
+        let firstSession = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: firstBody)
+        ])
+        let firstClient = DefaultNetworkClient(configuration: configuration, session: firstSession)
+
+        let first = try await firstClient.request(ResilienceGetRequest())
+        #expect(first == firstBody)
+        #expect(await cache.get(resilienceUserCacheKey()) != nil)
+
+        let mutationSession = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "mutated"))
+        ])
+        let mutationClient = DefaultNetworkClient(configuration: configuration, session: mutationSession)
+
+        _ = try await mutationClient.request(ResilienceMutationRequest(method: .post))
+
+        #expect(await cache.get(resilienceUserCacheKey()) == nil)
+
+        let refreshedBody = ResilienceUser(id: 1, name: "refreshed")
+        let refreshedSession = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: refreshedBody)
+        ])
+        let refreshedClient = DefaultNetworkClient(configuration: configuration, session: refreshedSession)
+        let refreshed = try await refreshedClient.request(ResilienceGetRequest())
+
+        #expect(refreshed == refreshedBody)
+        #expect(await refreshedSession.requestCount == 1)
+    }
+
+    @Test("PUT PATCH DELETE and 3xx successes invalidate cached target URI")
+    func unsafeMethodsAndRedirectSuccessInvalidateTargetURI() async throws {
+        let cases: [(HTTPMethod, Int)] = [
+            (.put, 200),
+            (.patch, 201),
+            (.delete, 302),
+        ]
+
+        for (method, statusCode) in cases {
+            let cache = InMemoryResponseCache()
+            let key = resilienceUserCacheKey()
+            await cache.set(
+                key,
+                CachedResponse(
+                    data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale")),
+                    headers: ["ETag": "old"]
+                )
+            )
+            let configuration = makeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+                responseCache: cache
+            )
+            let session = try SequenceURLSession(queue: [
+                queuedResponse(
+                    statusCode: statusCode,
+                    body: ResilienceUser(id: statusCode, name: method.rawValue.lowercased())
+                )
+            ])
+            let client = DefaultNetworkClient(configuration: configuration, session: session)
+
+            _ = try await client.request(
+                ResilienceMutationRequest(
+                    method: method,
+                    acceptedStatusCodes: Set(200..<400)
+                )
+            )
+
+            #expect(await cache.get(key) == nil)
+        }
+    }
+
+    @Test("Unknown successful method is treated as unsafe for target URI invalidation")
+    func unknownSuccessfulMethodInvalidatesTargetURI() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        await cache.set(
+            key,
+            CachedResponse(
+                data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale")),
+                headers: ["ETag": "old"]
+            )
+        )
+        let configuration = makeLocalizedCacheConfiguration(
+            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+            responseCache: cache
+        )
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "purged"))
+        ])
+        let client = DefaultNetworkClient(configuration: configuration, session: session)
+
+        _ = try await client.request(
+            InterceptedResilienceGetRequest(
+                interceptors: [HTTPMethodOverrideInterceptor(method: "PURGE")]
+            )
+        )
+
+        #expect(await cache.get(key) == nil)
+    }
+
+    @Test("Unsafe error responses and transport failures keep cached target URI")
+    func unsafeErrorsAndTransportFailuresKeepTargetURI() async throws {
+        for statusCode in [400, 500] {
+            let cache = InMemoryResponseCache()
+            let key = resilienceUserCacheKey()
+            await cache.set(
+                key,
+                CachedResponse(
+                    data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale")),
+                    headers: ["ETag": "old"]
+                )
+            )
+            let configuration = makeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+                responseCache: cache
+            )
+            let session = try SequenceURLSession(queue: [
+                queuedResponse(statusCode: statusCode, body: ResilienceUser(id: statusCode, name: "error"))
+            ])
+            let client = DefaultNetworkClient(configuration: configuration, session: session)
+
+            _ = try await client.request(
+                ResilienceMutationRequest(
+                    method: .delete,
+                    acceptedStatusCodes: [statusCode]
+                )
+            )
+
+            #expect(await cache.get(key) != nil)
+        }
+
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        await cache.set(
+            key,
+            CachedResponse(
+                data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale")),
+                headers: ["ETag": "old"]
+            )
+        )
+        let configuration = makeLocalizedCacheConfiguration(
+            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+            responseCache: cache
+        )
+        let client = DefaultNetworkClient(configuration: configuration, session: SequenceURLSession(queue: []))
+
+        do {
+            _ = try await client.request(ResilienceMutationRequest(method: .delete))
+            Issue.record("Expected transport failure")
+        } catch {
+            #expect(await cache.get(key) != nil)
+        }
+    }
+
+    @Test("Network-only and disabled cache policies do not invalidate unsafe successes")
+    func metadataUntouchedPoliciesSkipUnsafeInvalidation() async throws {
+        for policy in [ResponseCachePolicy.networkOnly, .disabled] {
+            let cache = InMemoryResponseCache()
+            let key = resilienceUserCacheKey()
+            await cache.set(
+                key,
+                CachedResponse(
+                    data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale")),
+                    headers: ["ETag": "old"]
+                )
+            )
+            let configuration = makeLocalizedCacheConfiguration(
+                responseCachePolicy: policy,
+                responseCache: cache
+            )
+            let session = try SequenceURLSession(queue: [
+                queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "mutated"))
+            ])
+            let client = DefaultNetworkClient(configuration: configuration, session: session)
+
+            _ = try await client.request(ResilienceMutationRequest(method: .post))
+
+            #expect(await cache.get(key) != nil)
+        }
     }
 
     @Test("Cache-Control no-cache entries are stored but always revalidated")

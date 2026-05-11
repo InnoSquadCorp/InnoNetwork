@@ -26,13 +26,6 @@ package struct StreamingExecutor: Sendable {
     package let session: URLSessionProtocol
     package let eventHub: NetworkEventHub
 
-    /// Hard ceiling on the per-line UTF-8 length the executor will accept
-    /// before decoding a frame. Exceeding the budget surfaces as a
-    /// ``NetworkError/decoding`` with stage ``DecodingStage/streamFrame`` so
-    /// retry policies can act on the shape before one oversized line can pin
-    /// unbounded memory.
-    package static let maxStreamLineByteCount: Int = 1 << 20  // 1 MiB
-
     package init(session: URLSessionProtocol, eventHub: NetworkEventHub) {
         self.session = session
         self.eventHub = eventHub
@@ -145,19 +138,21 @@ package struct StreamingExecutor: Sendable {
 
                 var streamedByteCount = 0
                 var streamError: Error?
+                let streamingLineByteLimit = max(1, configuration.streamingLineByteLimit)
                 var iterator = bytes.makeAsyncIterator()
                 while true {
                     let frame: BoundedStreamLine?
                     do {
                         frame = try await Self.nextBoundedLine(
                             from: &iterator,
-                            maxBytes: Self.maxStreamLineByteCount
+                            maxBytes: streamingLineByteLimit
                         )
                     } catch is CancellationError {
                         throw NetworkError.cancelled
                     } catch let error as StreamingLineTooLargeError {
                         throw Self.streamFrameTooLargeError(
                             byteCount: error.byteCount,
+                            maxBytes: streamingLineByteLimit,
                             networkResponse: networkResponse,
                             fallbackResponse: httpResponse
                         )
@@ -315,6 +310,7 @@ package struct StreamingExecutor: Sendable {
 
     private static func streamFrameTooLargeError(
         byteCount: Int,
+        maxBytes: Int,
         networkResponse: Response,
         fallbackResponse: HTTPURLResponse
     ) -> NetworkError {
@@ -324,7 +320,7 @@ package struct StreamingExecutor: Sendable {
                 domain: NetworkError.errorDomain,
                 code: NetworkErrorCode.streamFrameTooLarge.rawValue,
                 message:
-                    "Streaming line exceeded \(Self.maxStreamLineByteCount) bytes (saw \(byteCount))."
+                    "Streaming line exceeded \(maxBytes) bytes (saw \(byteCount))."
             ),
             response: Response(
                 statusCode: networkResponse.statusCode,

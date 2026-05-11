@@ -71,9 +71,10 @@ wrapper or Alamofire-style helper:
   refreshes for endpoints that opted in.
 - **Single-flight refresh + idempotency-aware retry** — concurrent 401s
   coalesce into one refresh call (`RefreshTokenCoordinator`). Retries
-  follow RFC 9110: unsafe methods retry only when an `Idempotency-Key`
-  header is present, and `Retry-After` is parsed for all three RFC 9110
-  formats with a maximum-clamp against malicious headers.
+  follow RFC 9110: `GET`, `HEAD`, `OPTIONS`, and `TRACE` retry by default;
+  unsafe methods retry only when an `Idempotency-Key` header is present.
+  `Retry-After` is parsed for all three RFC 9110 formats with a
+  maximum-clamp against malicious headers.
 - **RFC 9111 cache + first-class test support** — opt into
   `rfc9111Compliant(wrapping:)` to get directive-aware persistence, or
   drop in `MockURLSession` / `VCRURLSession` / `StubNetworkClient` from
@@ -497,8 +498,8 @@ automatically (RFC 9111 §4.1):
   named request headers when the response is stored. The next lookup matches
   only when those same header values are present, so two clients with
   different `Accept-Language` values do not see each other's payloads.
-- Responses without a `Vary` header are stored as before, with the existing
-  per-identity key (Authorization, etc.).
+- Responses without a `Vary` header use the existing per-identity key
+  (Authorization, etc.) when the response is eligible for storage.
 - GET responses with whole-response cacheable status codes (`200`, `203`,
   `204`, `300`, `301`, `308`, `404`, `405`, `410`, `414`, and `501`) can be
   stored; `206 Partial Content` is excluded.
@@ -506,13 +507,21 @@ automatically (RFC 9111 §4.1):
   cache key and skip writes, including quoted directives such as
   `private="Set-Cookie, Authorization"`. `Cache-Control: no-cache` stores the
   response but forces revalidation before every reuse.
+- Responses to requests carrying `Authorization` are stored only when the
+  origin explicitly permits it with `Cache-Control: public`, `must-revalidate`,
+  or `s-maxage`.
+- Successful unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`, and unknown
+  methods) invalidate every cached variant for the normalized target URI per
+  RFC 9111 §4.4. `.disabled` and `.networkOnly` still leave cache metadata
+  untouched.
 
 `InnoNetworkPersistentCache` is **not** a full RFC 9111 cache by
-default — `Cache-Control` directives beyond the row above are ignored
-and the freshness window is driven by `ResponseCachePolicy`
+default — storage directives are enforced by the executor, while
+the freshness window is normally driven by `ResponseCachePolicy`
 (`cacheFirst(maxAge:)` etc.). Clients that need directive-aware
 behavior (`no-store` suppression, `must-revalidate` stale denial,
-server `max-age` clamping) should wrap their policy with
+server `max-age` clamping, `Expires` fallback, and `Last-Modified` heuristic freshness)
+should wrap their policy with
 `ResponseCachePolicy.rfc9111Compliant(wrapping:)`:
 
 ```swift

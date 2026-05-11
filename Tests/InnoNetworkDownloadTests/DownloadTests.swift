@@ -16,6 +16,7 @@ struct DownloadConfigurationTests {
         #expect(config.retryDelay == 1.0)
         // Cellular is opt-in in 4.0.x — see `cellularEnabled()`.
         #expect(config.allowsCellularAccess == false)
+        #expect(config.sharedContainerIdentifier == nil)
     }
 
     @Test("cellularEnabled() returns a copy with cellular access on")
@@ -26,6 +27,7 @@ struct DownloadConfigurationTests {
         #expect(cellular.allowsCellularAccess == true)
         // Other fields should be preserved unchanged.
         #expect(cellular.sessionIdentifier == base.sessionIdentifier)
+        #expect(cellular.sharedContainerIdentifier == base.sharedContainerIdentifier)
         #expect(cellular.maxRetryCount == base.maxRetryCount)
     }
 
@@ -36,6 +38,14 @@ struct DownloadConfigurationTests {
             builder.persistenceBaseDirectoryURL = custom
         }
         #expect(config.persistenceBaseDirectoryURL == custom)
+    }
+
+    @Test("sharedContainerIdentifier flows through the AdvancedBuilder")
+    func sharedContainerIdentifierRoundtripsThroughAdvancedBuilder() {
+        let config = DownloadConfiguration.advanced { builder in
+            builder.sharedContainerIdentifier = "group.com.example.downloads"
+        }
+        #expect(config.sharedContainerIdentifier == "group.com.example.downloads")
     }
 
     @Test("safeDefaults matches default configuration")
@@ -84,7 +94,8 @@ struct DownloadConfigurationTests {
         let config = DownloadConfiguration(
             maxConnectionsPerHost: 4,
             allowsCellularAccess: false,
-            sessionIdentifier: "test.session"
+            sessionIdentifier: "test.session",
+            sharedContainerIdentifier: "group.com.example.downloads"
         )
 
         let sessionConfig = config.makeURLSessionConfiguration()
@@ -92,6 +103,7 @@ struct DownloadConfigurationTests {
         #expect(sessionConfig.identifier == "test.session")
         #expect(sessionConfig.allowsCellularAccess == false)
         #expect(sessionConfig.httpMaximumConnectionsPerHost == 4)
+        #expect(sessionConfig.sharedContainerIdentifier == "group.com.example.downloads")
     }
 
     @Test("Negative values are clamped to safe bounds")

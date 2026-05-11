@@ -36,6 +36,9 @@ headers that affect privacy or request identity. Credential-like headers such as
 `Authorization` and `Cookie` are included as SHA-256 fingerprints rather than raw
 values, and `Accept-Language` is included so locale-specific responses do not
 cross-pollute. URL fragments are ignored because they are not sent to the server.
+Responses to requests carrying `Authorization` are stored only when the origin
+explicitly permits it with `Cache-Control: public`, `must-revalidate`, or
+`s-maxage`.
 
 ## Scope and offline storage
 
@@ -74,6 +77,15 @@ reuse:
   executor and the persistent companion cache.
 - `Cache-Control: no-cache` responses may be stored, but every lookup must
   revalidate before reuse even inside the caller-provided freshness window.
+- `ResponseCachePolicy.rfc9111Compliant(wrapping:)` additionally consumes
+  `Cache-Control: max-age`, `Expires`, and `Last-Modified` as freshness
+  signals, using `Expires - Date` or `Expires - storedAt` when no valid
+  `max-age` exists and applying the RFC 9111 §4.2.2 10% heuristic when only
+  `Last-Modified` is available.
+- Successful unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`, and unknown
+  methods) invalidate all cached variants for the normalized target URI. This
+  implements the RFC 9111 §4.4 target-URI requirement; `Location` and
+  `Content-Location` candidate invalidation remains out of scope.
 
 The response `Vary` header is processed automatically. `Vary: *` responses are
 not stored, while concrete `Vary` headers capture a snapshot of the named request

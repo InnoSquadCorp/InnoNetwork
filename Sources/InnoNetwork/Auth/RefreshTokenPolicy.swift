@@ -95,6 +95,12 @@ package actor RefreshTokenCoordinator {
         self.now = now
     }
 
+    deinit {
+        if case .inFlight(_, let task) = state.phase {
+            task.cancel()
+        }
+    }
+
     /// Whether a refresh task is currently in flight.
     ///
     /// Reads are point-in-time. The intended consumer is
@@ -146,7 +152,7 @@ package actor RefreshTokenCoordinator {
         case .cooldown(let until, let lastError):
             if now() < until { throw lastError }
         case .inFlight(_, let task):
-            return try await task.value
+            return try await RefreshTokenTaskAwaitBridge().value(of: task)
         case .idle:
             break
         }
@@ -155,11 +161,11 @@ package actor RefreshTokenCoordinator {
         let id = UUID()
         // State transitions are driven by the detached task's own completion
         // (success/failure/cancel) rather than by the awaiter's catch arms.
-        // If the *caller* of `refreshedToken()` is cancelled while awaiting
-        // `task.value`, the detached task keeps running, so resetting state
-        // here would let a follow-up caller launch a duplicate refresh.
-        // Routing the transition through the task itself preserves
-        // single-flight even under aggressive caller cancellation.
+        // If the *caller* of `refreshedToken()` is cancelled while awaiting the
+        // detached task, the task keeps running, so resetting state here would
+        // let a follow-up caller launch a duplicate refresh. Routing the
+        // transition through the task itself preserves single-flight even under
+        // aggressive caller cancellation.
         //
         // The task body awaits `refreshDidSucceed`/`refreshDidCancel`/
         // `refreshDidFail` *before* re-throwing or returning. That ordering
@@ -194,7 +200,7 @@ package actor RefreshTokenCoordinator {
                 event: .start(id: id, task: task),
                 context: lifecycleContext()
             ).state
-        return try await task.value
+        return try await RefreshTokenTaskAwaitBridge().value(of: task)
     }
 
     private func refreshDidSucceed(id: UUID) {
@@ -226,6 +232,80 @@ package actor RefreshTokenCoordinator {
 
     private func lifecycleContext() -> RefreshLifecycleContext {
         RefreshLifecycleContext(now: now(), failureCooldown: policy.failureCooldown)
+    }
+}
+
+
+private final class RefreshTokenTaskAwaitBridge: @unchecked Sendable {
+    private enum Outcome {
+        case success(String)
+        case failure(any Error)
+    }
+
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<String, any Error>?
+    private var outcome: Outcome?
+
+    func value(of task: Task<String, any Error>) async throws -> String {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if install(continuation) {
+                    Task {
+                        do {
+                            finish(.success(try await task.value))
+                        } catch {
+                            finish(.failure(error))
+                        }
+                    }
+                }
+            }
+        } onCancel: {
+            finish(.failure(CancellationError()))
+        }
+    }
+
+    private func install(_ continuation: CheckedContinuation<String, any Error>) -> Bool {
+        let existing: Outcome?
+        lock.lock()
+        if let outcome {
+            existing = outcome
+        } else {
+            self.continuation = continuation
+            existing = nil
+        }
+        lock.unlock()
+
+        if let existing {
+            resume(continuation, with: existing)
+            return false
+        }
+        return true
+    }
+
+    private func finish(_ outcome: Outcome) {
+        let continuation: CheckedContinuation<String, any Error>?
+        lock.lock()
+        if self.outcome != nil {
+            continuation = nil
+        } else {
+            self.outcome = outcome
+            continuation = self.continuation
+            self.continuation = nil
+        }
+        lock.unlock()
+
+        if let continuation {
+            resume(continuation, with: outcome)
+        }
+    }
+
+    private func resume(_ continuation: CheckedContinuation<String, any Error>, with outcome: Outcome) {
+        switch outcome {
+        case .success(let value):
+            continuation.resume(returning: value)
+        case .failure(let error):
+            continuation.resume(throwing: error)
+        }
     }
 }
 

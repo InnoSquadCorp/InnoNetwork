@@ -94,6 +94,7 @@ struct WebSocketCloseDispositionClassificationTests {
             .tryAgainLater,
             .badGateway,
             .tlsHandshakeFailure,
+            .noStatusReceived,
         ]
     )
     func retryableClassification(code: WebSocketCloseCode) {
@@ -115,7 +116,6 @@ struct WebSocketCloseDispositionClassificationTests {
             .messageTooBig,
             .mandatoryExtensionMissing,
             .protocolError,
-            .noStatusReceived,
         ]
     )
     func terminalClassification(code: WebSocketCloseCode) {
