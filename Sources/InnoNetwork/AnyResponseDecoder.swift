@@ -39,7 +39,12 @@ extension AnyResponseDecoder where Output: Decodable & Sendable {
         case .custom(let closure):
             self = .init(closure)
         default:
-            self = .json(decoder: JSONDecoder())
+            // Use the cached, canonical decoder instead of a bare
+            // `JSONDecoder()` — the bare initializer omits InnoNetwork's
+            // configured `dateDecodingStrategy`, so a fallback into this
+            // branch would silently decode dates with a different shape
+            // from every other transport path.
+            self = .json(decoder: SharedCoders.responseDecoder)
         }
     }
 }
