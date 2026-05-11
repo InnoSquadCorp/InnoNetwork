@@ -25,6 +25,13 @@ root runtime package provides seven public products:
 For the **shortest path to a typed client**, opt in to the macro
 helpers in `InnoNetworkCodegen`:
 
+> ℹ️ **Stability — Provisionally Stable.** `@APIDefinition` and
+> `#endpoint` are *Provisionally Stable* per `API_STABILITY.md`: the
+> spelling, argument labels, and expansion shape will not break in
+> patch releases, but diagnostic messages and FixIts may evolve as we
+> harden the macro. The runtime types they expand into
+> (`APIDefinition`, `HTTPMethod`, `EmptyParameter`) are *Stable*.
+
 ```swift
 @APIDefinition(method: .get, path: "/users/{id}")
 struct GetUser {
