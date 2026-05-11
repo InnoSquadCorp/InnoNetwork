@@ -95,6 +95,47 @@ struct DownloadRetryTimingTests {
         #expect(await task.retryCount == 1)
     }
 
+    @Test("Deterministic filesystem errors fail with the original filesystem reason")
+    func deterministicFilesystemErrorFailsWithFilesystemReason() async throws {
+        let clock = TestClock()
+        let configuration = DownloadConfiguration(
+            maxRetryCount: 3,
+            maxTotalRetries: 3,
+            retryDelay: 0,
+            sessionIdentifier: "test.retry-filesystem.\(UUID().uuidString)"
+        )
+        let (coordinator, task) = await makeCoordinator(
+            configuration: configuration,
+            clock: clock
+        )
+        await task.restoreState(.downloading)
+
+        let restarted = OSAllocatedUnfairLock<Bool>(initialState: false)
+        let filesystemError = SendableUnderlyingError(
+            domain: NSCocoaErrorDomain,
+            code: CocoaError.fileWriteNoPermission.rawValue,
+            message: "permission denied"
+        )
+
+        await coordinator.handleError(
+            task: task,
+            error: filesystemError,
+            restart: { _ in
+                restarted.withLock { $0 = true }
+            }
+        )
+
+        #expect(restarted.withLock { $0 } == false)
+        #expect(await task.state == .failed)
+        let actualError = await task.error
+        guard case .fileSystemError(let underlying)? = actualError else {
+            Issue.record("Expected fileSystemError, got \(String(describing: actualError))")
+            return
+        }
+        #expect(underlying.domain == filesystemError.domain)
+        #expect(underlying.code == filesystemError.code)
+    }
+
     @Test("Cancelled task skips restart after clock advance")
     func cancelledTaskSuppressesRestartAfterDelay() async throws {
         let clock = TestClock()

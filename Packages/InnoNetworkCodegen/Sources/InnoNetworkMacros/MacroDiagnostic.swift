@@ -16,9 +16,33 @@ struct InnoNetworkMacroDiagnostic: DiagnosticMessage, Error {
     /// points at `node`. Throwing this from a macro expansion makes the IDE
     /// underline the offending argument or token instead of dropping the
     /// diagnostic on the macro attribute as a whole.
-    func error(at node: some SyntaxProtocol) -> DiagnosticsError {
+    ///
+    /// `fixIts` lets a call site attach actionable corrections so the IDE
+    /// surfaces them as one-click "Fix" suggestions instead of leaving the
+    /// author to interpret the error message and edit the source by hand.
+    /// Pass an empty array (the default) when no machine-applicable fix is
+    /// available — emitting a placeholder FixIt with unparseable text is
+    /// worse than no FixIt at all.
+    func error(
+        at node: some SyntaxProtocol,
+        fixIts: [FixIt] = []
+    ) -> DiagnosticsError {
         DiagnosticsError(diagnostics: [
-            Diagnostic(node: Syntax(node), message: self)
+            Diagnostic(
+                node: Syntax(node),
+                message: self,
+                fixIts: fixIts
+            )
         ])
+    }
+}
+
+struct InnoNetworkMacroFixItMessage: FixItMessage {
+    let message: String
+    let fixItID: MessageID
+
+    init(_ message: String, id: String) {
+        self.message = message
+        self.fixItID = MessageID(domain: "InnoNetworkMacros", id: id)
     }
 }

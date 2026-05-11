@@ -34,21 +34,47 @@ public struct PublicKeyPinningPolicy: Sendable {
         case mostSpecificHost
     }
 
+    /// Selects which certificates contribute pin material during evaluation.
+    ///
+    /// Pin scope is independent of host matching: `pinsByHost` decides
+    /// *which* pin set is consulted for a host, while `PinScope` decides
+    /// *which keys* in the presented chain are hashed and intersected with
+    /// that pin set.
+    public enum PinScope: Sendable, Equatable {
+        /// Hash every certificate in the chain — leaf, intermediates, and
+        /// root. A pin pinned to any link in the chain matches. This is the
+        /// historical behaviour and the safest default for callers who want
+        /// the freedom to rotate the leaf without re-pinning, at the cost
+        /// of trusting an intermediate (and therefore every leaf it can
+        /// issue).
+        case anyInChain
+
+        /// Hash only the leaf certificate (`certificateChain[0]`). Pins
+        /// must match the actual end-entity public key — rotating the
+        /// leaf without updating the pin set fails closed. Use when the
+        /// threat model includes a compromised intermediate that can mint
+        /// arbitrary leaves under your zone.
+        case leafOnly
+    }
+
     public let pinsByHost: [String: Set<String>]
     public let includesSubdomains: Bool
     public let allowDefaultEvaluationForUnpinnedHosts: Bool
     public let hostMatchingStrategy: HostMatchingStrategy
+    public let pinScope: PinScope
 
     public init(
         pinsByHost: [String: Set<String>],
         includesSubdomains: Bool = true,
         allowDefaultEvaluationForUnpinnedHosts: Bool = true,
-        hostMatchingStrategy: HostMatchingStrategy = .unionAllMatches
+        hostMatchingStrategy: HostMatchingStrategy = .unionAllMatches,
+        pinScope: PinScope = .anyInChain
     ) {
         self.pinsByHost = pinsByHost
         self.includesSubdomains = includesSubdomains
         self.allowDefaultEvaluationForUnpinnedHosts = allowDefaultEvaluationForUnpinnedHosts
         self.hostMatchingStrategy = hostMatchingStrategy
+        self.pinScope = pinScope
     }
 
     func pins(forHost host: String) -> Set<String>? {
@@ -163,7 +189,7 @@ public struct PublicKeyPinningEvaluator: TrustEvaluating {
             return .cancel(.systemTrustEvaluationFailed(reason: reason))
         }
 
-        let extractedPins = Self.extractPublicKeyPins(from: serverTrust)
+        let extractedPins = Self.extractPublicKeyPins(from: serverTrust, scope: policy.pinScope)
         guard !extractedPins.isEmpty else {
             return .cancel(.publicKeyExtractionFailed)
         }
@@ -176,13 +202,29 @@ public struct PublicKeyPinningEvaluator: TrustEvaluating {
         return .cancel(.pinMismatch(host: host))
     }
 
-    private static func extractPublicKeyPins(from trust: SecTrust) -> Set<String> {
+    private static func extractPublicKeyPins(
+        from trust: SecTrust,
+        scope: PublicKeyPinningPolicy.PinScope
+    ) -> Set<String> {
         var pins = Set<String>()
         guard let certificateChain = SecTrustCopyCertificateChain(trust) as? [SecCertificate] else {
             return pins
         }
 
-        for certificate in certificateChain {
+        // `SecTrustCopyCertificateChain` orders the chain leaf-first.
+        // For `.leafOnly` we therefore intentionally hash only the
+        // first entry — intermediates and the root must not contribute
+        // pin material, otherwise a compromised intermediate retains
+        // the ability to authenticate under our zone.
+        let certificatesToHash: [SecCertificate]
+        switch scope {
+        case .anyInChain:
+            certificatesToHash = certificateChain
+        case .leafOnly:
+            certificatesToHash = certificateChain.first.map { [$0] } ?? []
+        }
+
+        for certificate in certificatesToHash {
             guard let key = SecCertificateCopyKey(certificate),
                 let keyData = SecKeyCopyExternalRepresentation(key, nil) as Data?
             else { continue }

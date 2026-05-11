@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Opt-in policy for coalescing identical in-flight transport requests.
 ///
@@ -108,6 +109,18 @@ package actor RequestCoalescer {
     /// is honoured—each `run` call always triggers exactly one `register`.
     private var cancelledWaiters: [RequestDedupKey: Set<UUID>] = [:]
 
+    /// Synchronously-marked cancellation flags. ``withTaskCancellationHandler``'s
+    /// `onCancel` closure executes outside actor isolation, so reaching the
+    /// actor for the existing `cancelWaiter(...)` path requires a `Task` hop
+    /// whose scheduling latency leaves a window during which the now-cancelled
+    /// waiter can still observe a success result. Mark the cancellation under
+    /// an `OSAllocatedUnfairLock` first so `register(...)` and `finish(...)`
+    /// — both already actor-isolated — can short-circuit synchronously without
+    /// waiting for the trailing actor hop to land. The lock is private to the
+    /// actor and held only for the constant-time set update, so contention is
+    /// negligible.
+    private let cancelMarks = OSAllocatedUnfairLock<Set<UUID>>(initialState: [])
+
     package init() {}
 
     package func run(
@@ -126,7 +139,25 @@ package actor RequestCoalescer {
                 )
             }
         } onCancel: {
-            Task { await self.cancelWaiter(key: key, waiterID: waiterID) }
+            // Mark cancellation synchronously so any concurrent
+            // `register(...)` / `finish(...)` running on the actor observes
+            // the cancel before the trailing actor hop lands. The Task
+            // below still drives the per-entry cleanup (removing the
+            // waiter from `entries`, optionally cancelling the operation
+            // task) — the unfair-lock mark only closes the scheduling
+            // window so a continuation can't be resumed with success
+            // after cancellation has been requested. The cleanup hop
+            // inherits the current priority rather than asserting
+            // `.userInitiated` so it does not preempt sibling waiters'
+            // pending `register(...)` hops; that preemption would let an
+            // about-to-join waiter miss the in-flight entry and trigger
+            // a duplicate transport request.
+            self.cancelMarks.withLock { marks in
+                _ = marks.insert(waiterID)
+            }
+            Task {
+                await self.cancelWaiter(key: key, waiterID: waiterID)
+            }
         }
         try Task.checkCancellation()
         return result
@@ -138,7 +169,7 @@ package actor RequestCoalescer {
         continuation: CheckedContinuation<TransportResult, Error>,
         operation: @escaping @Sendable () async throws -> TransportResult
     ) {
-        if removeCancelledWaiter(key: key, waiterID: waiterID) {
+        if consumeCancelMark(for: waiterID) || removeCancelledWaiter(key: key, waiterID: waiterID) {
             continuation.resume(throwing: CancellationError())
             return
         }
@@ -172,14 +203,36 @@ package actor RequestCoalescer {
         guard let entry = entries[key], entry.id == entryID else { return }
         entries.removeValue(forKey: key)
         cancelledWaiters.removeValue(forKey: key)
-        for continuation in entry.waiters.values {
-            continuation.resume(with: result)
+        // Snapshot any cancellation marks that arrived while the operation
+        // was in flight so waiters whose `onCancel` raced past `finish`'s
+        // resume site still observe a `CancellationError` instead of the
+        // operation's success result.
+        let cancelledIDs = cancelMarks.withLock { marks -> Set<UUID> in
+            let intersection = marks.intersection(entry.waiters.keys)
+            marks.subtract(intersection)
+            return intersection
+        }
+        for (waiterID, continuation) in entry.waiters {
+            if cancelledIDs.contains(waiterID) {
+                continuation.resume(throwing: CancellationError())
+            } else {
+                continuation.resume(with: result)
+            }
         }
     }
 
     private func cancelWaiter(key: RequestDedupKey, waiterID: UUID) {
+        // If `finish(...)` has already resumed this waiter's continuation
+        // (in success or failure) it cleared the cancel mark for us.
+        // Otherwise we are the side responsible for actually delivering
+        // the cancellation, so consume the mark — if no mark is present
+        // here, an earlier `register(...)` already short-circuited the
+        // continuation and there is nothing left to do.
+        let hadMark = consumeCancelMark(for: waiterID)
         guard var entry = entries[key] else {
-            cancelledWaiters[key, default: []].insert(waiterID)
+            if hadMark {
+                cancelledWaiters[key, default: []].insert(waiterID)
+            }
             return
         }
         guard let continuation = entry.waiters.removeValue(forKey: waiterID) else { return }
@@ -190,6 +243,10 @@ package actor RequestCoalescer {
         } else {
             entries[key] = entry
         }
+    }
+
+    private func consumeCancelMark(for waiterID: UUID) -> Bool {
+        cancelMarks.withLock { $0.remove(waiterID) != nil }
     }
 
     private func removeCancelledWaiter(key: RequestDedupKey, waiterID: UUID) -> Bool {

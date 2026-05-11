@@ -29,6 +29,17 @@ public struct MultipartFormData: Sendable {
         self.parts = []
     }
 
+    /// Appends an in-memory part.
+    ///
+    /// `mimeType` is written verbatim into the `Content-Type` header
+    /// after CR/LF/control characters are neutralised. Structural
+    /// punctuation (`;`, `=`, `"`) is **not** escaped — passing
+    /// `"application/json; charset=utf-8"` deliberately preserves the
+    /// `charset` parameter on the wire. The contract is: the caller
+    /// owns parameter syntax and quoting, and must not feed untrusted
+    /// strings here. CR/LF stripping guards against header-smuggling
+    /// regressions but is not a substitute for treating `mimeType` as
+    /// trusted input.
     public mutating func append(_ data: Data, name: String, fileName: String? = nil, mimeType: String? = nil) {
         parts.append(Part(source: .data(data), name: name, fileName: fileName, mimeType: mimeType))
     }
@@ -83,7 +94,11 @@ public struct MultipartFormData: Sendable {
     ///   - url: Local file URL.
     ///   - name: Form field name.
     ///   - mimeType: Optional MIME override; otherwise inferred from the
-    ///     file extension.
+    ///     file extension. The provided string is written verbatim into
+    ///     `Content-Type` after CR/LF/control bytes are neutralised —
+    ///     `;`/`=`/`"` are **not** escaped, so callers retain control
+    ///     over `charset` / `boundary` parameter syntax. Treat this
+    ///     parameter as trusted input.
     /// - Throws: ``NetworkError/configuration(reason:)`` with
     ///   ``NetworkConfigurationFailureReason/invalidRequest(_:)`` when the
     ///   URL does not point at a regular readable file.
@@ -161,12 +176,16 @@ public struct MultipartFormData: Sendable {
         }
         var body = Data()
         let boundaryPrefix = "--\(boundary)\r\n"
+        let collisionMarker = Self.boundaryCollisionMarker(for: boundary)
 
         for part in parts {
             let partData: Data
             switch part.source {
             case .data(let data):
                 partData = data
+                if Self.partContains(collisionMarker, in: data) {
+                    throw Self.boundaryCollisionError(boundary: boundary, partName: part.name)
+                }
             case .file(let url):
                 // Stat the file *before* allocating the buffer so a grown file
                 // cannot transiently OOM the process between the estimator and
@@ -187,6 +206,9 @@ public struct MultipartFormData: Sendable {
                     }
                 }
                 partData = try Data(contentsOf: url)
+                if Self.partContains(collisionMarker, in: partData) {
+                    throw Self.boundaryCollisionError(boundary: boundary, partName: part.name)
+                }
             }
             body.append(Data(boundaryPrefix.utf8))
             let contentLength: Int64? = includesPartContentLength ? Int64(partData.count) : nil
@@ -252,10 +274,81 @@ public struct MultipartFormData: Sendable {
         }
     }
 
+    /// Encodes the form into a temporary file, invokes `body` with the
+    /// file's URL, and removes the temporary file before returning —
+    /// regardless of whether `body` returned normally or threw.
+    ///
+    /// `writeEncodedData(to:)` leaves cleanup to the caller, which is
+    /// the right contract for the network executor (it hands the
+    /// staged file to URLSession and disposes of it after the upload
+    /// completes). For ad-hoc callers — tests, scripts, one-off
+    /// inspection — that ergonomics is a footgun: a thrown error or
+    /// an early `return` from the block strands the staged bytes in
+    /// `NSTemporaryDirectory()` indefinitely. This helper closes that
+    /// gap by tying the file's lifetime to the block.
+    ///
+    /// The temporary file is created via
+    /// `FileManager.default.url(for: .itemReplacementDirectory, ...)`
+    /// to land on the same volume as `inheritingDirectoryFrom`, so the
+    /// eventual `URLSession` move (which only succeeds within a single
+    /// volume) does not have to cross filesystems. When the inheritance
+    /// URL is `nil` the file is placed in `NSTemporaryDirectory()`.
+    ///
+    /// - Parameters:
+    ///   - inheritingDirectoryFrom: A URL whose containing volume the
+    ///     staged file should share. Pass the eventual upload
+    ///     destination, or `nil` to use `NSTemporaryDirectory()`.
+    ///   - body: Receives the URL of the encoded file. The file is
+    ///     readable until `body` returns; do not retain the URL beyond
+    ///     the call.
+    /// - Returns: The value returned by `body`.
+    /// - Throws: Any error thrown by `writeEncodedData(to:)` or by
+    ///   `body`. Cleanup failures from `FileManager.removeItem` are
+    ///   swallowed because they would otherwise mask the caller's
+    ///   primary error.
+    public func withEncodedData<R>(
+        inheritingDirectoryFrom: URL? = nil,
+        _ body: (URL) throws -> R
+    ) throws -> R {
+        let manager = FileManager.default
+        let baseDirectory: URL
+        let createdReplacementDirectory: Bool
+        if let inheritingDirectoryFrom {
+            do {
+                baseDirectory = try manager.url(
+                    for: .itemReplacementDirectory,
+                    in: .userDomainMask,
+                    appropriateFor: inheritingDirectoryFrom,
+                    create: true
+                )
+                createdReplacementDirectory = true
+            } catch {
+                baseDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+                createdReplacementDirectory = false
+            }
+        } else {
+            baseDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            createdReplacementDirectory = false
+        }
+        let stagedURL = baseDirectory.appendingPathComponent(
+            "InnoNetwork.multipart.\(UUID().uuidString)",
+            isDirectory: false
+        )
+        try writeEncodedData(to: stagedURL)
+        defer {
+            try? manager.removeItem(at: stagedURL)
+            if createdReplacementDirectory {
+                try? manager.removeItem(at: baseDirectory)
+            }
+        }
+        return try body(stagedURL)
+    }
+
     private func writeBody(to handle: FileHandle) throws {
         let boundaryPrefix = Data("--\(boundary)\r\n".utf8)
         let crlf = Data("\r\n".utf8)
         let chunkSize = 64 * 1024
+        let collisionMarker = Self.boundaryCollisionMarker(for: boundary)
 
         for part in parts {
             try handle.write(contentsOf: boundaryPrefix)
@@ -275,14 +368,31 @@ public struct MultipartFormData: Sendable {
 
             switch part.source {
             case .data(let data):
+                if Self.partContains(collisionMarker, in: data) {
+                    throw Self.boundaryCollisionError(boundary: boundary, partName: part.name)
+                }
                 try handle.write(contentsOf: data)
             case .file(let url):
                 let source = try FileHandle(forReadingFrom: url)
                 defer { try? source.close() }
+                // Maintain a tail-overlap so the boundary marker can be
+                // detected even when it straddles two consecutive chunks.
+                var tail = Data()
+                let overlap = collisionMarker.count - 1
                 while true {
                     let chunk = try source.read(upToCount: chunkSize) ?? Data()
                     if chunk.isEmpty { break }
+                    var window = tail
+                    window.append(chunk)
+                    if Self.partContains(collisionMarker, in: window) {
+                        throw Self.boundaryCollisionError(boundary: boundary, partName: part.name)
+                    }
                     try handle.write(contentsOf: chunk)
+                    if window.count > overlap {
+                        tail = window.suffix(overlap)
+                    } else {
+                        tail = window
+                    }
                 }
             }
             try handle.write(contentsOf: crlf)
@@ -377,6 +487,27 @@ public struct MultipartFormData: Sendable {
             return false
         }
     }
+
+    /// The byte sequence that would let a part body terminate or interleave
+    /// the multipart frame: `\r\n--<boundary>`. Detecting this inside a
+    /// part means the chosen boundary is unsafe — the receiver would see
+    /// the part body close itself prematurely and treat the next bytes
+    /// as headers of a fabricated part.
+    static func boundaryCollisionMarker(for boundary: String) -> Data {
+        Data("\r\n--\(boundary)".utf8)
+    }
+
+    static func partContains(_ marker: Data, in payload: Data) -> Bool {
+        guard !marker.isEmpty, payload.count >= marker.count else { return false }
+        return payload.range(of: marker) != nil
+    }
+
+    static func boundaryCollisionError(boundary: String, partName: String) -> NetworkError {
+        NetworkError.configuration(
+            reason: .invalidRequest(
+                "MultipartFormData detected the boundary token '\(boundary)' inside the body of part '\(partName)'. The boundary must not appear in any part. Construct the form with the default initializer to receive an auto-generated random boundary, or pick a longer/more-unique boundary string."
+            ))
+    }
 }
 
 
@@ -405,16 +536,27 @@ extension MultipartFormData {
             // to suppress emission. The companion is only added when the
             // name actually contains non-ASCII scalars; pure-ASCII names
             // keep wire-format unchanged.
-            let asciiName = Self.asciiFallbackFilename(name)
+            // Normalise once at the boundary so the ASCII fallback,
+            // `requiresExtendedFilename` decision, and `filename*` /
+            // `name*` payload all see the same scalar sequence. Without
+            // this, APFS-style NFD inputs would route through one form
+            // for the ASCII fallback (where every combining mark
+            // collapses to `_`) and a *different* NFC form for the
+            // extended companion produced by `rfc5987EncodedFilename`,
+            // leaving the two parameters describing visually distinct
+            // names for the same upload.
+            let normalizedName = name.precomposedStringWithCanonicalMapping
+            let asciiName = Self.asciiFallbackFilename(normalizedName)
             var disposition = "Content-Disposition: form-data; name=\"\(asciiName)\""
-            if Self.requiresExtendedFilename(name) {
-                disposition += "; name*=UTF-8''\(Self.rfc5987EncodedFilename(name))"
+            if Self.requiresExtendedFilename(normalizedName) {
+                disposition += "; name*=UTF-8''\(Self.rfc5987EncodedFilename(normalizedName))"
             }
             if let fileName {
-                let asciiFallback = Self.asciiFallbackFilename(fileName)
+                let normalizedFileName = fileName.precomposedStringWithCanonicalMapping
+                let asciiFallback = Self.asciiFallbackFilename(normalizedFileName)
                 disposition += "; filename=\"\(asciiFallback)\""
-                if Self.requiresExtendedFilename(fileName) {
-                    disposition += "; filename*=UTF-8''\(Self.rfc5987EncodedFilename(fileName))"
+                if Self.requiresExtendedFilename(normalizedFileName) {
+                    disposition += "; filename*=UTF-8''\(Self.rfc5987EncodedFilename(normalizedFileName))"
                 }
             }
             disposition += "\r\n"
@@ -440,9 +582,24 @@ extension MultipartFormData {
 
         /// Builds the RFC 5987 `value-chars` representation of the filename:
         /// each byte that is not in the unreserved set gets percent-encoded.
+        ///
+        /// Filenames arriving from different sources can use different
+        /// Unicode normalisation forms — APFS yields NFD-decomposed
+        /// paths (`e` + combining acute) while pasteboards and most
+        /// user-typed names use NFC-precomposed scalars (`é` as a
+        /// single scalar). Emitting the raw UTF-8 would mean two
+        /// uploads of the *same* user-facing filename produce different
+        /// `filename*` byte streams, which downstream key-based dedup
+        /// (e.g. S3 `Content-MD5`, object storage idempotency keys)
+        /// treats as distinct objects. Normalise to NFC up front so the
+        /// wire representation is stable regardless of the host
+        /// filesystem's chosen form, and so any surrogate/combining
+        /// sequence resolves to its canonical composition before
+        /// percent-encoding.
         static func rfc5987EncodedFilename(_ value: String) -> String {
+            let normalized = value.precomposedStringWithCanonicalMapping
             var encoded = ""
-            for byte in value.utf8 {
+            for byte in normalized.utf8 {
                 if Self.isRFC5987Unreserved(byte) {
                     encoded.append(Character(UnicodeScalar(byte)))
                 } else {
@@ -504,6 +661,14 @@ extension MultipartFormData {
             return escaped
         }
 
+        /// Neutralises CR/LF/control bytes in a header *value* so a part's
+        /// MIME type cannot terminate the field early or smuggle a sibling
+        /// header. Parameter syntax (`;`, `=`, `"`) and non-ASCII bytes
+        /// pass through unchanged — the public `append(... mimeType:)`
+        /// surfaces document that callers own quoting and must not pass
+        /// untrusted strings here. The function is therefore a defensive
+        /// floor against regression, not full RFC 7231 §3.1.1
+        /// `media-type` validation.
         private static func escapedHeaderValue(_ value: String) -> String {
             var escaped = ""
             escaped.reserveCapacity(value.utf8.count)

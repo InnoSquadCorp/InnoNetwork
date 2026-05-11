@@ -38,6 +38,10 @@ private func expectKeyDecodingStrategy(
     }
 }
 
+private struct SnakeCasePayload: Decodable, Equatable, Sendable {
+    let createdAt: String
+}
+
 
 @Suite("Coding Defaults Tests")
 struct CodingDefaultsTests {
@@ -146,5 +150,27 @@ struct CodingDefaultsTests {
         // Equality on Date hits sub-second precision; the canonical formatter
         // serializes milliseconds so a round trip preserves the value.
         #expect(decoded == body)
+    }
+
+    @Test("jsonAllowingEmpty keeps custom decoder for non-empty outputs")
+    func jsonAllowingEmptyPreservesCustomDecoderForNonEmptyOutput() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let responseDecoder = AnyResponseDecoder<SnakeCasePayload>(
+            strategy: .jsonAllowingEmpty(decoder)
+        )
+        let url = URL(string: "https://api.example.com/payload")!
+        let response = Response(
+            statusCode: 200,
+            data: Data(),
+            response: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        )
+
+        let payload = try responseDecoder.decode(
+            data: Data(#"{"created_at":"now"}"#.utf8),
+            response: response
+        )
+
+        #expect(payload == SnakeCasePayload(createdAt: "now"))
     }
 }

@@ -80,7 +80,17 @@ let package = Package(
             targets: ["InnoNetworkTestSupport"]
         ),
     ],
-    dependencies: [],
+    dependencies: [
+        // The root package resolves `swift-openapi-runtime` because it ships
+        // the optional `InnoNetworkOpenAPI` companion product. Codegen remains
+        // isolated in Packages/InnoNetworkCodegen so root package consumers do
+        // not resolve `swift-syntax`. The 1.x range keeps the runtime's
+        // `ClientTransport` surface under explicit major-version review.
+        .package(
+            url: "https://github.com/apple/swift-openapi-runtime",
+            .upToNextMajor(from: "1.0.0")
+        ),
+    ],
     targets: [
         .target(
             name: "InnoNetwork",
@@ -125,7 +135,10 @@ let package = Package(
         ),
         .target(
             name: "InnoNetworkOpenAPI",
-            dependencies: ["InnoNetwork"],
+            dependencies: [
+                "InnoNetwork",
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+            ],
             path: "Sources/InnoNetworkOpenAPI",
             swiftSettings: strictSettings
         ),
@@ -181,6 +194,33 @@ let package = Package(
                 "InnoNetworkDownload",
             ],
             path: "SmokeTests/InnoNetworkDownloadSmoke",
+            swiftSettings: strictSettings
+        ),
+        .executableTarget(
+            name: "InnoNetworkWebSocketSmoke",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkWebSocket",
+            ],
+            path: "SmokeTests/InnoNetworkWebSocketSmoke",
+            swiftSettings: strictSettings
+        ),
+        .executableTarget(
+            name: "InnoNetworkCacheSmoke",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkPersistentCache",
+            ],
+            path: "SmokeTests/InnoNetworkCacheSmoke",
+            swiftSettings: strictSettings
+        ),
+        .executableTarget(
+            name: "InnoNetworkOpenAPISmoke",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkOpenAPI",
+            ],
+            path: "SmokeTests/InnoNetworkOpenAPISmoke",
             swiftSettings: strictSettings
         ),
         .testTarget(

@@ -31,7 +31,7 @@ The `CI` workflow must pass all of the following:
    contain `swift-syntax`, then builds separate core-only, aggregate,
    download-only, websocket-only, test-support, generated-client, and codegen
    usage packages. Macro tests run from `Packages/InnoNetworkCodegen` so the
-   codegen dependency graph stays isolated from runtime-only consumers.
+   codegen dependency graph stays isolated from root package consumers.
 10. The CI benchmark smoke job runs `swift run InnoNetworkBenchmarks --quick`
     and uploads the JSON summary to prove the benchmark CLI still builds and
     emits parseable results. Regression enforcement lives in the dedicated

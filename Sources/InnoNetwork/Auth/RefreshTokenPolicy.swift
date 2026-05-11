@@ -161,6 +161,15 @@ package actor RefreshTokenCoordinator {
         // Routing the transition through the task itself preserves
         // single-flight even under aggressive caller cancellation.
         //
+        // The task body awaits `refreshDidSucceed`/`refreshDidCancel`/
+        // `refreshDidFail` *before* re-throwing or returning. That ordering
+        // guarantees that by the time any awaiter on `task.value` observes
+        // the result, the actor's state has already been reconciled
+        // through the reducer — so a follow-up caller entering
+        // `refreshedToken()` after the failed/cancelled refresh sees
+        // `.idle` (or `.cooldown`) and can start a fresh refresh without
+        // racing the prior task's terminal callback.
+        //
         // No explicit priority: `Task.currentPriority` previously hard-coded
         // the actor's caller priority into the detached task, which inverted
         // priority when a low-priority caller forced a high-priority refresh

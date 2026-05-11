@@ -81,6 +81,7 @@ enum GenerationError: Error, CustomStringConvertible {
     case ioFailure(String)
     case parseFailure(String)
     case unsupportedPath(String)
+    case unsupportedSchema(String)
 
     var description: String {
         switch self {
@@ -89,6 +90,7 @@ enum GenerationError: Error, CustomStringConvertible {
         case .ioFailure(let msg): return "I/O failure: \(msg)"
         case .parseFailure(let msg): return "Parse failure: \(msg)"
         case .unsupportedPath(let msg): return "Unsupported OpenAPI feature: \(msg)"
+        case .unsupportedSchema(let msg): return "Unsupported OpenAPI feature: \(msg)"
         }
     }
 }
@@ -241,12 +243,28 @@ struct GeneratedFile {
 struct CodeGenerator {
     let moduleName: String
 
+    private static let swiftReservedIdentifiers: Set<String> = [
+        "Any", "Protocol", "Self", "Type", "actor", "as", "associatedtype",
+        "associativity", "async", "await", "break", "case", "catch", "class",
+        "continue", "convenience", "default", "defer", "deinit", "didSet",
+        "do", "dynamic", "each", "else", "enum", "extension", "fallthrough",
+        "false", "fileprivate", "final", "for", "func", "get", "guard", "if",
+        "import", "in", "indirect", "infix", "init", "inout", "internal", "is",
+        "isolated", "lazy", "left", "let", "macro", "mutating", "nil", "none",
+        "nonisolated", "nonmutating", "open", "operator", "optional", "override",
+        "package", "postfix", "precedence", "precedencegroup", "prefix", "private",
+        "protocol", "public", "repeat", "required", "rethrows", "return", "right",
+        "self", "set", "some", "static", "struct", "subscript", "super", "switch",
+        "throw", "throws", "true", "try", "typealias", "unowned", "var", "weak",
+        "where", "while", "willSet",
+    ]
+
     func generate(from document: OpenAPIDocument) throws -> [GeneratedFile] {
         var files: [GeneratedFile] = []
         var needsAnyCodable = false
         if let schemas = document.components?.schemas {
             for (name, schema) in schemas.sorted(by: { $0.key < $1.key }) {
-                files.append(renderSchema(name: sanitize(name), schema: schema))
+                files.append(try renderSchema(name: sanitize(name), schema: schema))
                 needsAnyCodable = needsAnyCodable || schemaNeedsAnyCodable(schema)
             }
         }
@@ -264,7 +282,7 @@ struct CodeGenerator {
 
     // MARK: Schema → Codable struct
 
-    private func renderSchema(name: String, schema: Schema) -> GeneratedFile {
+    private func renderSchema(name: String, schema: Schema) throws -> GeneratedFile {
         var lines: [String] = []
         lines.append(generatedHeader(comment: "Schema for \(name)"))
         lines.append("")
@@ -273,31 +291,63 @@ struct CodeGenerator {
         lines.append("public struct \(name): Codable, Sendable, Equatable {")
         if let properties = schema.properties, !properties.isEmpty {
             let required = Set(schema.required ?? [])
-            let sortedProps = properties.sorted(by: { $0.key < $1.key })
-            for (propName, propSchema) in sortedProps {
+            let sortedProps = try schemaPropertyMappings(schemaName: name, properties: properties)
+            for (propName, id, propSchema) in sortedProps {
                 let optional = !required.contains(propName)
                 let swiftType = swiftTypeName(for: propSchema, fallback: "AnyCodable") ?? "AnyCodable"
                 let typeAnnotation = optional ? "\(swiftType)?" : swiftType
-                lines.append("    public var \(safeIdentifier(propName)): \(typeAnnotation)")
+                lines.append("    public var \(id): \(typeAnnotation)")
             }
             lines.append("")
-            let initParams = sortedProps.map { propName, propSchema -> String in
-                let optional = !required.contains(propName)
-                let swiftType = swiftTypeName(for: propSchema, fallback: "AnyCodable") ?? "AnyCodable"
+            let initParams = sortedProps.map { prop -> String in
+                let optional = !required.contains(prop.name)
+                let swiftType = swiftTypeName(for: prop.schema, fallback: "AnyCodable") ?? "AnyCodable"
                 let typeAnnotation = optional ? "\(swiftType)? = nil" : swiftType
-                return "\(safeIdentifier(propName)): \(typeAnnotation)"
+                return "\(prop.id): \(typeAnnotation)"
             }
             lines.append("    public init(\(initParams.joined(separator: ", "))) {")
-            for (propName, _) in sortedProps {
-                let id = safeIdentifier(propName)
+            for (_, id, _) in sortedProps {
                 lines.append("        self.\(id) = \(id)")
             }
             lines.append("    }")
+            if sortedProps.contains(where: { $0.id != $0.name }) {
+                lines.append("")
+                lines.append("    private enum CodingKeys: String, CodingKey {")
+                for (propName, id, _) in sortedProps {
+                    if id == propName {
+                        lines.append("        case \(id)")
+                    } else {
+                        lines.append("        case \(id) = \"\(swiftStringLiteralContent(propName))\"")
+                    }
+                }
+                lines.append("    }")
+            }
         } else {
             lines.append("    public init() {}")
         }
         lines.append("}")
         return GeneratedFile(filename: "\(name).swift", contents: lines.joined(separator: "\n") + "\n")
+    }
+
+    private func schemaPropertyMappings(
+        schemaName: String,
+        properties: [String: Schema]
+    ) throws -> [(name: String, id: String, schema: Schema)] {
+        var seenIdentifiers: [String: String] = [:]
+        var mappings: [(name: String, id: String, schema: Schema)] = []
+        for (propName, propSchema) in properties.sorted(by: { $0.key < $1.key }) {
+            let id = safeIdentifier(propName)
+            if let existingName = seenIdentifiers[id] {
+                throw GenerationError.unsupportedSchema(
+                    "schema '\(schemaName)' has properties '\(existingName)' and '\(propName)' "
+                        + "that both map to Swift identifier '\(id)'. Rename one property or "
+                        + "provide a hand-written model for this schema."
+                )
+            }
+            seenIdentifiers[id] = propName
+            mappings.append((name: propName, id: id, schema: propSchema))
+        }
+        return mappings
     }
 
     private func renderAnyCodable() -> GeneratedFile {
@@ -562,7 +612,36 @@ struct CodeGenerator {
         if let first = result.first, first.isNumber {
             result = "_" + result
         }
-        return result.isEmpty ? "field" : result
+        if result.isEmpty {
+            result = "field"
+        }
+        if Self.swiftReservedIdentifiers.contains(result) {
+            result += "_"
+        }
+        return result
+    }
+
+    private func swiftStringLiteralContent(_ raw: String) -> String {
+        var result = ""
+        for scalar in raw.unicodeScalars {
+            switch scalar.value {
+            case 0x22:
+                result += "\\\""
+            case 0x5C:
+                result += "\\\\"
+            case 0x0A:
+                result += "\\n"
+            case 0x0D:
+                result += "\\r"
+            case 0x09:
+                result += "\\t"
+            case 0x00...0x1F:
+                result += "\\u{\(String(scalar.value, radix: 16))}"
+            default:
+                result.unicodeScalars.append(scalar)
+            }
+        }
+        return result
     }
 }
 

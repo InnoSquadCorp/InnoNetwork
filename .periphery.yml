@@ -1,0 +1,43 @@
+# Periphery configuration for InnoNetwork.
+#
+# `swift scan` analyses every target in the SwiftPM project for unused
+# Swift declarations. The library ships a number of intentionally
+# `public` symbols that are addressed dynamically (DocC examples, macro
+# expansions, generated allowlist parity, etc.), so we tune the report
+# to surface real dead code without drowning maintainers in false
+# positives.
+
+# This is a library package with a separately guarded public surface; public
+# declarations are contract, not local dead code. Keep them retained so
+# Periphery's report stays focused on implementation-only declarations.
+retain_public: true
+
+# Retain auxiliary trees that contain entry points or fixtures Periphery
+# cannot reach from SwiftPM target roots (resources, examples, smoke targets,
+# benchmarks, tests). Keeping them in `retain_files` prevents false positives
+# for symbols only referenced from these locations.
+retain_files:
+  - Sources/InnoNetwork/Resources/**/*
+  - Examples/**/*
+  - SmokeTests/**/*
+  - Benchmarks/**/*
+  - Tests/**/*
+
+# Test targets are not interesting for the dead-code report.
+exclude_targets:
+  - InnoNetworkTests
+  - InnoNetworkDownloadTests
+  - InnoNetworkPersistentCacheTests
+  - InnoNetworkTrustTests
+  - InnoNetworkWebSocketTests
+
+# Emit annotations without failing the CI job while the current internal
+# baseline is still being curated.
+strict: false
+
+# `github-actions` emits ::warning/::error annotations directly on the PR diff.
+# Periphery requires relative paths for this formatter, so keep
+# `relative_results` in the config rather than relying on every caller to pass
+# the CLI flag.
+format: github-actions
+relative_results: true

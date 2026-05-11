@@ -41,3 +41,35 @@ jobs:
           xcrun swift test \
             --filter InnoNetworkLiveTests \
             --parallel
+
+      - name: WebSocket smoke (live)
+        timeout-minutes: 10
+        continue-on-error: true
+        env:
+          INNONETWORK_RUN_INTEGRATION: '1'
+          INNONETWORK_WEBSOCKET_SMOKE_URL: ${{ vars.INNONETWORK_WEBSOCKET_SMOKE_URL || 'wss://echo.websocket.events' }}
+        run: |
+          set -eo pipefail
+          curl --connect-timeout 5 --max-time 10 -fsS -o /dev/null \
+            "$INNONETWORK_WEBSOCKET_SMOKE_URL"
+          xcrun swift run -c release InnoNetworkWebSocketSmoke \
+            "$INNONETWORK_WEBSOCKET_SMOKE_URL"
+
+      - name: Persistent cache smoke (offline)
+        timeout-minutes: 10
+        run: |
+          set -eo pipefail
+          xcrun swift run -c release InnoNetworkCacheSmoke
+
+      - name: OpenAPI adapter smoke (live)
+        timeout-minutes: 10
+        continue-on-error: true
+        env:
+          INNONETWORK_RUN_INTEGRATION: '1'
+          INNONETWORK_OPENAPI_SMOKE_BASE_URL: ${{ vars.INNONETWORK_OPENAPI_SMOKE_BASE_URL || 'https://jsonplaceholder.typicode.com' }}
+        run: |
+          set -eo pipefail
+          curl --connect-timeout 5 --max-time 10 -fsSI \
+            "$INNONETWORK_OPENAPI_SMOKE_BASE_URL"
+          xcrun swift run -c release InnoNetworkOpenAPISmoke \
+            "$INNONETWORK_OPENAPI_SMOKE_BASE_URL"

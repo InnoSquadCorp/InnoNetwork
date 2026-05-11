@@ -42,12 +42,24 @@ package struct DownloadFailureCoordinator {
             // permanent failures.
             return
         }
+        if Self.isDeterministicFilesystemError(error) {
+            // EACCES/EPERM/ENOSPC/EROFS and the matching Cocoa file-write
+            // errors describe writer-side conditions that will not heal
+            // with another network attempt — the destination directory is
+            // unwritable, the volume is full, or the filesystem is
+            // read-only. Retrying just burns the configured budget while
+            // re-downloading bytes we cannot persist. Mark the task
+            // failed immediately so callers see the actionable error
+            // instead of a timeout-style retry-exhausted trail.
+            await markTaskFailed(task, reason: .fileSystemError(error))
+            return
+        }
         let totalRetryCount = await task.totalRetryCount
         let retryCount = await task.retryCount
         guard totalRetryCount < configuration.maxTotalRetries,
             retryCount < configuration.maxRetryCount
         else {
-            await markTaskFailed(task)
+            await markTaskFailed(task, reason: .maxRetriesExceeded)
             return
         }
         _ = await task.incrementTotalRetryCount()
@@ -154,13 +166,13 @@ package struct DownloadFailureCoordinator {
         return log2(initialDelay) + Double(exponent) >= log2(cap)
     }
 
-    package func markTaskFailed(_ task: DownloadTask) async {
+    package func markTaskFailed(_ task: DownloadTask, reason: DownloadError) async {
         await task.updateState(.failed)
-        await task.setError(.maxRetriesExceeded)
+        await task.setError(reason)
         await runtimeRegistry.onStateChanged?(task, .failed)
-        await runtimeRegistry.onFailed?(task, .maxRetriesExceeded)
+        await runtimeRegistry.onFailed?(task, reason)
         await eventHub.publish(.stateChanged(.failed), for: task.id)
-        await eventHub.publish(.failed(.maxRetriesExceeded), for: task.id)
+        await eventHub.publish(.failed(reason), for: task.id)
         do {
             try await persistence.remove(id: task.id)
         } catch {
@@ -176,5 +188,56 @@ package struct DownloadFailureCoordinator {
 
     private func isCancelledTransportError(_ error: SendableUnderlyingError) -> Bool {
         error.domain == NSURLErrorDomain && error.code == URLError.cancelled.rawValue
+    }
+
+    /// Returns `true` when the underlying error encodes a writer-side
+    /// filesystem condition that cannot be cleared by re-attempting the
+    /// transport: no permission to write at the destination, no space on
+    /// the volume, the volume is read-only, or the Cocoa file-write layer
+    /// already reported the equivalent classification.
+    static func isDeterministicFilesystemError(_ error: SendableUnderlyingError) -> Bool {
+        #if canImport(Darwin)
+        if error.domain == NSPOSIXErrorDomain {
+            switch Int32(error.code) {
+            case EACCES, EPERM, ENOSPC, EROFS:
+                return true
+            default:
+                break
+            }
+        }
+        #endif
+        if error.domain == NSCocoaErrorDomain {
+            switch error.code {
+            case CocoaError.fileWriteOutOfSpace.rawValue,
+                CocoaError.fileWriteNoPermission.rawValue,
+                CocoaError.fileWriteVolumeReadOnly.rawValue,
+                CocoaError.fileWriteFileExists.rawValue,
+                CocoaError.fileWriteInapplicableStringEncoding.rawValue:
+                return true
+            default:
+                return false
+            }
+        }
+        // URLSession surfaces destination-side filesystem failures through
+        // its own domain (`NSURLErrorDomain`) when the background daemon
+        // cannot finalize the downloaded payload — e.g. the destination
+        // path is no longer writable, the volume is full, or the payload
+        // exceeds a configured ceiling. These describe writer-side state
+        // that another network attempt cannot improve, so classify them
+        // as fatal alongside the POSIX / Cocoa cases above.
+        if error.domain == NSURLErrorDomain {
+            switch error.code {
+            case URLError.cannotCreateFile.rawValue,
+                URLError.cannotWriteToFile.rawValue,
+                URLError.cannotMoveFile.rawValue,
+                URLError.cannotRemoveFile.rawValue,
+                URLError.noPermissionsToReadFile.rawValue,
+                URLError.dataLengthExceedsMaximum.rawValue:
+                return true
+            default:
+                return false
+            }
+        }
+        return false
     }
 }

@@ -87,6 +87,20 @@ require_contains() {
   fi
 }
 
+require_not_contains() {
+  local needle="$1"
+  local file="$2"
+  if has_rg; then
+    if rg -Fq "$needle" "$file"; then
+      fail "unexpected '$needle' in $file"
+    fi
+  else
+    if grep -Fq "$needle" "$file"; then
+      fail "unexpected '$needle' in $file"
+    fi
+  fi
+}
+
 forbidden_pattern() {
   local pattern="$1"
   shift
@@ -547,6 +561,8 @@ validate_multipart_streaming_api() {
 validate_openapi_companion_product() {
   require_contains 'name: "InnoNetworkOpenAPI"' "$repo_root/Package.swift"
   require_contains 'targets: ["InnoNetworkOpenAPI"]' "$repo_root/Package.swift"
+  require_contains 'https://github.com/apple/swift-openapi-runtime' "$repo_root/Package.swift"
+  require_contains '.product(name: "OpenAPIRuntime", package: "swift-openapi-runtime")' "$repo_root/Package.swift"
   require_contains 'public protocol OpenAPIRestOperation' \
     "$repo_root/Sources/InnoNetworkOpenAPI/OpenAPIAdapter.swift"
   require_contains 'public struct OpenAPIRequest' \
@@ -565,7 +581,7 @@ validate_persistent_cache_operations_api() {
 validate_codegen_product() {
   local codegen_package="$repo_root/Packages/InnoNetworkCodegen/Package.swift"
   local codegen_macros="$repo_root/Packages/InnoNetworkCodegen/Sources/InnoNetworkCodegen/Macros.swift"
-  require_contains 'dependencies: []' "$repo_root/Package.swift"
+  require_not_contains 'https://github.com/swiftlang/swift-syntax.git' "$repo_root/Package.swift"
   require_contains 'name: "InnoNetworkCodegen"' "$codegen_package"
   require_contains 'targets: ["InnoNetworkCodegen"]' "$codegen_package"
   require_contains 'name: "InnoNetworkMacros"' "$codegen_package"
@@ -635,6 +651,146 @@ validate_spi_allowlist_drift() {
   fi
 
   rm -f "$actual_file" "$actual_raw_file" "$expected_file"
+}
+
+validate_ledger_to_allowlist_parity() {
+  # Reverse-direction parity gate: every backtick-quoted type name listed
+  # under `## Public Declaration Ledger` in API_STABILITY.md must
+  # correspond to a real entry in `Scripts/symbols/*.allowlist`. The
+  # forward direction (allowlist → ledger) is already enforced by
+  # `validate_public_surface_ledger`. Adding this reverse check closes
+  # the loop so a ledger entry cannot drift past a renamed or deleted
+  # public type without surfacing in CI.
+  local ledger_file allowed_types
+  ledger_file="$(mktemp)"
+  allowed_types="$(mktemp)"
+
+  # Extract the bullet-list body of the ledger section. Stops at the
+  # next `## ` heading. `### SPI` and `### …Package` headings inside
+  # the section are preserved as plain content — their bullets are
+  # parsed identically.
+  awk '
+    /^## Public Declaration Ledger$/ { in_section = 1; next }
+    /^## / { if (in_section) exit }
+    in_section { print }
+  ' "$api_stability" > "$ledger_file"
+
+  # Pull every `BacktickedName` token that appears inside a bullet item
+  # (`- … `) under a `### <Module>` subsection. The ledger contains
+  # explanatory prose between subsection headings — file paths, version
+  # specifiers, and attribute spellings — that is not a symbol claim
+  # and must be filtered out to keep the parity check signal-only.
+  python3 - "$ledger_file" > "$allowed_types".raw <<'PYEOF'
+import re
+import sys
+
+lines = open(sys.argv[1], "r", encoding="utf-8").read().splitlines()
+in_subsection = False
+buffered = []   # accumulate continuation lines of the current bullet
+
+def flush(buffered, out):
+    if not buffered:
+        return
+    bullet_text = " ".join(buffered)
+    for match in re.findall(r"`([^`]+)`", bullet_text):
+        token = match.strip()
+        if not token:
+            continue
+        # Strip trailing parenthesized signature so `endpoint(_:_:as:)`
+        # collapses to `endpoint`. The allowlist tracks the type-level
+        # name; macro/function shape is owned by validate_codegen_product.
+        token = re.sub(r"\(.*\)$", "", token)
+        token = token.rstrip(".,;:")
+        out.append(token)
+
+out = []
+for line in lines:
+    if line.startswith("### "):
+        flush(buffered, out)
+        buffered = []
+        in_subsection = True
+        continue
+    if not in_subsection:
+        continue
+    stripped = line.lstrip()
+    if stripped.startswith("- "):
+        flush(buffered, out)
+        buffered = [stripped[2:]]
+    elif buffered and stripped and not stripped.startswith("#"):
+        # Wrapped continuation of the current bullet (Markdown allows
+        # bullets to span multiple indented lines).
+        buffered.append(stripped)
+    else:
+        flush(buffered, out)
+        buffered = []
+
+flush(buffered, out)
+print("\n".join(out))
+PYEOF
+  sort -u "$allowed_types".raw > "$allowed_types"
+  rm -f "$allowed_types".raw "$ledger_file"
+
+  # Build the set of acceptable identifiers from the allowlist. Both
+  # bare type names (`Foo`) and dotted member names (`Foo.Bar`) count
+  # — the ledger embeds either form.
+  local accepted_file
+  accepted_file="$(mktemp)"
+  awk -F'\t' 'NF >= 3 && $0 !~ /^#/ { print $3 }' "$public_symbols_allowlist" \
+    | sed -E 's/\(.*\)$//' \
+    | sort -u > "$accepted_file"
+
+  # Allowlist of ledger tokens that are intentionally prose, not symbols.
+  # Keep this list small — every entry here is a place where the gate
+  # cannot catch drift, so add only terms that have no allowlist
+  # representative and would otherwise be removed from documentation.
+  local prose_tokens=(
+    'default'
+    'public'
+    'package'
+    'open'
+    'internal'
+    'fileprivate'
+    'private'
+    'some'
+    'any'
+    'static let'
+    'static var'
+    'typealias'
+    'where'
+    'AuthPack'
+    'EmptyResponse'
+    # Macro identifiers live in the InnoNetworkCodegen sub-package and
+    # are validated by validate_codegen_product, not by the runtime
+    # allowlist. Listing them here exempts them from the parity gate.
+    'endpoint'
+    'APIDefinition'
+    # Swift attribute / SwiftPM / file-path references appear in
+    # explanatory bullets within the ledger and have no symbol-graph
+    # counterpart.
+    '@_spi'
+    '.exact'
+    '.upToNextMinor'
+    'Sources/InnoNetwork/'
+  )
+  local prose_file
+  prose_file="$(mktemp)"
+  printf '%s\n' "${prose_tokens[@]}" | sort -u > "$prose_file"
+
+  local missing_file
+  missing_file="$(mktemp)"
+  comm -23 "$allowed_types" "$accepted_file" \
+    | comm -23 - "$prose_file" \
+    | grep -v '^$' > "$missing_file" || true
+
+  if [[ -s "$missing_file" ]]; then
+    echo "API_STABILITY.md Public Declaration Ledger lists names with no matching public symbol in Scripts/symbols/*.allowlist:" >&2
+    sed 's/^/  - /' "$missing_file" >&2
+    echo "Either add the missing symbols to the appropriate allowlist file, or remove the ledger entries." >&2
+    rm -f "$allowed_types" "$accepted_file" "$prose_file" "$missing_file"
+    exit 1
+  fi
+
+  rm -f "$allowed_types" "$accepted_file" "$prose_file" "$missing_file"
 }
 
 validate_public_surface_ledger() {
@@ -1118,6 +1274,7 @@ done
 
 validate_spi_allowlist_drift
 validate_public_surface_ledger
+validate_ledger_to_allowlist_parity
 validate_release_quality_gates
 
 require_contains "API Stability" "$readme"

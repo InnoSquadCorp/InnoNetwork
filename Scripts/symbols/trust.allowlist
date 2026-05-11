@@ -2,18 +2,20 @@
 # the core module in PR-1: apps that don't pin no longer pay the SPKI/DER
 # surface cost, but the granular failure reasons (`pinMismatch`,
 # `hostNotPinned`, `publicKeyExtractionFailed`,
-# `systemTrustEvaluationFailed`) stay reachable via
-# `PublicKeyPinningEvaluator` -> `TrustPolicy.custom(_:)`.
 InnoNetworkTrust	swift.enum	PublicKeyPinningPolicy.HostMatchingStrategy
+InnoNetworkTrust	swift.enum	PublicKeyPinningPolicy.PinScope
 InnoNetworkTrust	swift.enum.case	PublicKeyPinningPolicy.HostMatchingStrategy.mostSpecificHost
 InnoNetworkTrust	swift.enum.case	PublicKeyPinningPolicy.HostMatchingStrategy.unionAllMatches
+InnoNetworkTrust	swift.enum.case	PublicKeyPinningPolicy.PinScope.anyInChain
+InnoNetworkTrust	swift.enum.case	PublicKeyPinningPolicy.PinScope.leafOnly
 InnoNetworkTrust	swift.init	PublicKeyPinningEvaluator.init(policy:)
-InnoNetworkTrust	swift.init	PublicKeyPinningPolicy.init(pinsByHost:includesSubdomains:allowDefaultEvaluationForUnpinnedHosts:hostMatchingStrategy:)
+InnoNetworkTrust	swift.init	PublicKeyPinningPolicy.init(pinsByHost:includesSubdomains:allowDefaultEvaluationForUnpinnedHosts:hostMatchingStrategy:pinScope:)
 InnoNetworkTrust	swift.method	PublicKeyPinningEvaluator.evaluate(challenge:)
 InnoNetworkTrust	swift.property	PublicKeyPinningEvaluator.policy
 InnoNetworkTrust	swift.property	PublicKeyPinningPolicy.allowDefaultEvaluationForUnpinnedHosts
 InnoNetworkTrust	swift.property	PublicKeyPinningPolicy.hostMatchingStrategy
 InnoNetworkTrust	swift.property	PublicKeyPinningPolicy.includesSubdomains
+InnoNetworkTrust	swift.property	PublicKeyPinningPolicy.pinScope
 InnoNetworkTrust	swift.property	PublicKeyPinningPolicy.pinsByHost
 InnoNetworkTrust	swift.struct	PublicKeyPinningEvaluator
 InnoNetworkTrust	swift.struct	PublicKeyPinningPolicy

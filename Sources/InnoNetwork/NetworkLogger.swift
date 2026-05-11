@@ -13,6 +13,13 @@ public struct NetworkLoggingOptions: Sendable {
     public let includeCookies: Bool
     public let redactSensitiveData: Bool
     public let sensitiveHeaderNames: Set<String>
+    /// When `true`, ``DefaultNetworkLogger`` emits logs in release builds as
+    /// well as debug. Defaults to `false`, preserving the historical
+    /// debug-only behaviour. Opt-in for production-grade observability —
+    /// when enabling, ensure `redactSensitiveData` remains `true` and the
+    /// hosting `Logger` subsystem is configured for an appropriate
+    /// retention/privacy policy.
+    public let releaseLogging: Bool
 
     public init(
         includeRequestBody: Bool = false,
@@ -25,7 +32,25 @@ public struct NetworkLoggingOptions: Sendable {
             "set-cookie",
             "x-api-key",
             "proxy-authorization",
-        ]
+            // Server-issued challenges carry realm/scheme metadata that's
+            // typically benign, but commonly co-emit a Bearer error
+            // descriptor that reflects the *attempted* token back to the
+            // caller. Redact by default; opt-out by overriding
+            // `sensitiveHeaderNames`.
+            "www-authenticate",
+            "proxy-authenticate",
+            // Common bespoke auth carriers seen across iOS clients and
+            // gateways: refresh-token endpoints, vendor token mirrors,
+            // session-rotation handshakes. The names are not standardised,
+            // so the allowlist has to be defensive about variants.
+            "x-access-token",
+            "x-refresh-token",
+            "x-token",
+            "x-auth-token",
+            "x-csrf-token",
+            "x-session-token",
+        ],
+        releaseLogging: Bool = false
     ) {
         self.includeRequestBody = includeRequestBody
         self.includeResponseBody = includeResponseBody
@@ -36,6 +61,7 @@ public struct NetworkLoggingOptions: Sendable {
         // `Authorization`. The comparison site uses `key.lowercased()`, so
         // an upper-cased entry in the set would silently never match.
         self.sensitiveHeaderNames = Set(sensitiveHeaderNames.map { $0.lowercased() })
+        self.releaseLogging = releaseLogging
     }
 
     /// Safe defaults for development logs.
@@ -62,8 +88,49 @@ public struct DefaultNetworkLogger: NetworkLogger {
         self.cookieStorage = cookieStorage
     }
 
-    public func log(request: URLRequest) {
+    /// Returns `true` when the logger should emit for the current build
+    /// configuration. Debug builds always emit; release builds honour
+    /// ``NetworkLoggingOptions/releaseLogging``.
+    private var shouldEmit: Bool {
         #if DEBUG
+        return true
+        #else
+        return options.releaseLogging
+        #endif
+    }
+
+    /// In debug builds, route through `.debug` so the OS keeps emissions
+    /// out of the persisted log store by default and Console.app surfaces
+    /// them under the debug filter. In release builds — only reachable when
+    /// the caller explicitly enabled ``NetworkLoggingOptions/releaseLogging``
+    /// — promote to `.notice` so the entry actually lands in the unified
+    /// log without requiring a `log config --mode level:debug` opt-in.
+    private func emitRequestLog(_ message: String) {
+        #if DEBUG
+        Logger.API.debug("\(message, privacy: .auto)")
+        #else
+        Logger.API.notice("\(message, privacy: .auto)")
+        #endif
+    }
+
+    private func emitResponseLog(_ message: String) {
+        #if DEBUG
+        Logger.API.info("\(message, privacy: .auto)")
+        #else
+        Logger.API.notice("\(message, privacy: .auto)")
+        #endif
+    }
+
+    private func emitErrorLog(_ message: String) {
+        #if DEBUG
+        Logger.API.debug("\(message, privacy: .auto)")
+        #else
+        Logger.API.error("\(message, privacy: .auto)")
+        #endif
+    }
+
+    public func log(request: URLRequest) {
+        guard shouldEmit else { return }
         let url: String = sanitize(url: request.url, nilFallback: "")
         let method: String = request.httpMethod ?? "unknown method"
 
@@ -84,12 +151,11 @@ public struct DefaultNetworkLogger: NetworkLogger {
             log.append("[REQ] body: <omitted>\n")
         }
         log.append("[REQ] END \(method)")
-        Logger.API.debug("\(log, privacy: .auto)")
-        #endif
+        emitRequestLog(log)
     }
 
     public func log(response: Response, isError: Bool) {
-        #if DEBUG
+        guard shouldEmit else { return }
         let request = response.request
         let url: String = sanitize(url: request?.url, nilFallback: "nil")
         let statusCode: Int = response.statusCode
@@ -110,12 +176,11 @@ public struct DefaultNetworkLogger: NetworkLogger {
             log.append("\(prefix) body: <omitted>\n")
         }
         log.append("\(prefix) END HTTP (\(response.data.count)-byte body)")
-        Logger.API.info("\(log, privacy: .auto)")
-        #endif
+        emitResponseLog(log)
     }
 
     public func log(error: NetworkError) {
-        #if DEBUG
+        guard shouldEmit else { return }
         if let response = error.response {
             log(response: response, isError: true)
             return
@@ -125,8 +190,7 @@ public struct DefaultNetworkLogger: NetworkLogger {
         log.append("\n[ERR] code: \(error.errorCode)\n")
         log.append("[ERR] \(error.errorDescription ?? "unknown error")\n")
         log.append("[ERR] END HTTP")
-        Logger.API.debug("\(log, privacy: .auto)")
-        #endif
+        emitErrorLog(log)
     }
 
     func sanitize(headers: [String: String]) -> [String: String] {
@@ -171,41 +235,123 @@ public struct DefaultNetworkLogger: NetworkLogger {
     /// Compiled JWT-like pattern. Cached because `NSRegularExpression`
     /// compilation is non-trivial relative to the regex apply itself, and
     /// `maskJWTLikeTokens` runs on every emitted log string.
+    ///
+    /// The pattern accepts the base64url alphabet (`A-Z`, `a-z`, `0-9`,
+    /// `_`, `-`) per segment, with optional trailing standard-base64
+    /// padding (`=`, 0–2 chars) only at segment end so JWTs re-encoded
+    /// by legacy tooling that emits standard base64 still match. The
+    /// stricter trailing-only padding closes a false-positive band where
+    /// random strings interspersed with `=` would have matched as a
+    /// segment under the previous `[A-Za-z0-9_=-]{12,}` class.
+    ///
+    /// Segment minimum length is 12 bytes — a real JWT header alone
+    /// (the shortest possible segment, holding only `{"alg":"HS256"}` in
+    /// base64url) is 24 chars, but high false-negative cost outweighs
+    /// the tiny false-positive risk of flagging a 12-char base64url
+    /// blob; lowering bounds reduces the chance that an attacker-known
+    /// short header escapes redaction.
     private static let jwtPattern: NSRegularExpression? = {
         do {
-            return try NSRegularExpression(pattern: "ey[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}")
+            let segment = "[A-Za-z0-9_-]{12,}={0,2}"
+            return try NSRegularExpression(
+                pattern: "ey\(segment)\\.\(segment)\\.\(segment)"
+            )
         } catch {
             assertionFailure("JWT redaction pattern failed to compile: \(error)")
             return nil
         }
     }()
 
-    /// Replaces JWT-like tokens (`eyXXX.YYY.ZZZ` with base64url-safe segments)
-    /// in a free-form string with `<redacted-jwt>`. Used as a defence-in-depth
-    /// pass on log strings that escape the structured `header`/`body` paths —
-    /// for example error descriptions that interpolate raw response bodies or
-    /// custom diagnostic suffixes appended by interceptors.
+    /// Compiled AWS SigV4 `Credential=` pattern. Matches the credential
+    /// scope component of `Authorization: AWS4-HMAC-SHA256 Credential=AKIA…/…`
+    /// so callers logging the raw `Authorization` value through paths
+    /// that bypass the structured header allowlist still see the access
+    /// key redacted. The pattern targets `AKIA`/`ASIA`/`AGPA` etc.
+    /// 16+ char identifiers in the Credential field.
+    private static let awsSigV4Pattern: NSRegularExpression? = {
+        do {
+            return try NSRegularExpression(
+                pattern: "(AWS4-HMAC-SHA256\\s+Credential=)[A-Z0-9]{16,}(/[^,\\s]+)?",
+                options: [.caseInsensitive]
+            )
+        } catch {
+            assertionFailure("AWS SigV4 redaction pattern failed to compile: \(error)")
+            return nil
+        }
+    }()
+
+    /// Replaces JWT-like tokens (`eyXXX.YYY.ZZZ` with base64url-safe segments,
+    /// optionally padded with `=`) and AWS SigV4 `Credential=...` access keys
+    /// in a free-form string with redaction placeholders. Used as a
+    /// defence-in-depth pass on log strings that escape the structured
+    /// `header`/`body` paths — for example error descriptions that interpolate
+    /// raw response bodies or custom diagnostic suffixes appended by
+    /// interceptors.
     static func maskJWTLikeTokens(in string: String) -> String {
-        if !string.contains("ey") { return string }
-        guard let jwtPattern else { return string }
-        let range = NSRange(string.startIndex..., in: string)
-        return jwtPattern.stringByReplacingMatches(
-            in: string,
-            options: [],
-            range: range,
-            withTemplate: "<redacted-jwt>"
-        )
+        var current = string
+        if current.contains("ey"), let jwtPattern {
+            let range = NSRange(current.startIndex..., in: current)
+            current = jwtPattern.stringByReplacingMatches(
+                in: current,
+                options: [],
+                range: range,
+                withTemplate: "<redacted-jwt>"
+            )
+        }
+        if current.range(of: "AWS4-HMAC-SHA256", options: .caseInsensitive) != nil,
+            let awsSigV4Pattern
+        {
+            let range = NSRange(current.startIndex..., in: current)
+            current = awsSigV4Pattern.stringByReplacingMatches(
+                in: current,
+                options: [],
+                range: range,
+                withTemplate: "$1<redacted-aws-credential>"
+            )
+        }
+        return current
     }
 
+    /// Redacts an outgoing/incoming URL for logging.
+    ///
+    /// **User-info**: `https://user:pass@host/...` user-info segments
+    /// always leak credentials, so they are stripped unconditionally
+    /// whenever `redactSensitiveData` is on.
+    ///
+    /// **Fragment**: OAuth 2.0 implicit-flow callback URLs carry
+    /// `access_token` / `id_token` in the fragment; the entire
+    /// fragment is dropped under redaction so those tokens cannot
+    /// land in logs.
+    ///
+    /// **Query string**: this implementation replaces *every* query
+    /// value with `<redacted>` rather than maintaining a key allowlist.
+    /// The reasoning is asymmetry of harm — a list of well-known
+    /// sensitive keys (`access_token`, `refresh_token`, `code`,
+    /// `state`, `api_key`, `password`, signed-URL parameters) is easy
+    /// to enumerate, but the long tail of *vendor-specific* sensitive
+    /// keys (`sig`, `auth`, `idToken`, partner-prefixed names) means
+    /// any allowlist will leak something in practice. A blanket value
+    /// redaction makes the logger fail closed; key names remain
+    /// visible so request-shape debugging is still useful. Callers
+    /// that need raw query values for local development can disable
+    /// redaction with `NetworkLoggingOptions.verbose`.
     func sanitize(url: URL?, nilFallback: String = "") -> String {
         guard let url else { return nilFallback }
         guard options.redactSensitiveData else { return url.absoluteString }
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return url.absoluteString
+            // `URLComponents` parse failure on a `URL` is rare but possible
+            // for malformed origins. Fall back to a manually-composed
+            // `scheme://host/path` string rather than `absoluteString`, which
+            // would still carry the userinfo and fragment the logger has
+            // promised to strip.
+            let scheme = url.scheme ?? "http"
+            let host = url.host ?? ""
+            return "\(scheme)://\(host)\(url.path)"
         }
 
         if components.user != nil { components.user = nil }
         if components.password != nil { components.password = nil }
+        components.fragment = nil
 
         if let queryItems = components.queryItems, !queryItems.isEmpty {
             components.queryItems = queryItems.map {
@@ -213,7 +359,7 @@ public struct DefaultNetworkLogger: NetworkLogger {
             }
         }
 
-        return components.string ?? url.absoluteString
+        return components.string ?? "\(url.scheme ?? "http")://\(url.host ?? "")\(url.path)"
     }
 }
 

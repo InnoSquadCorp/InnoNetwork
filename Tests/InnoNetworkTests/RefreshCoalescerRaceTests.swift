@@ -264,6 +264,51 @@ struct RefreshCoalescerRaceTests {
         #expect(observedCount == 2, "fresh coordinator must drive its own refresh — got \(observedCount)")
     }
 
+    @Test("Refresh that throws CancellationError returns coordinator to idle, allowing a fresh restart")
+    func cancelledRefreshReturnsToIdleAndPermitsRestart() async throws {
+        actor InvocationLog {
+            private(set) var attempts: Int = 0
+            func bump() -> Int {
+                attempts += 1
+                return attempts
+            }
+        }
+        let log = InvocationLog()
+        let policy = RefreshTokenPolicy(
+            currentToken: { "old" },
+            refreshToken: {
+                let attempt = await log.bump()
+                if attempt == 1 {
+                    // Simulate an upstream cancellation inside the refresh
+                    // provider — the detached task body must funnel this
+                    // through the actor's reducer and reset state to `.idle`
+                    // before re-throwing, so the next caller is not blocked
+                    // observing a stale `.inFlight` phase.
+                    throw CancellationError()
+                }
+                return "new"
+            }
+        )
+        let coordinator = RefreshTokenCoordinator(policy: policy)
+        let request = URLRequest(url: URL(string: "https://api.example.com/me")!)
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await coordinator.refreshAndApply(to: request)
+        }
+
+        // Once the cancelled refresh finishes, the coordinator must report
+        // no in-flight refresh and must accept a new refresh that drives a
+        // second `refreshTokenProvider` invocation — verifying the cancel
+        // → idle → restart transition is wired end-to-end.
+        for _ in 0..<10 { await Task.yield() }
+        #expect(await coordinator.isRefreshInProgress == false)
+
+        let applied = try await coordinator.refreshAndApply(to: request)
+        #expect(applied.value(forHTTPHeaderField: "Authorization") == "Bearer new")
+        let attempts = await log.attempts
+        #expect(attempts == 2, "second call must trigger a fresh refresh (got \(attempts) total)")
+    }
+
     @Test("RequestDedupKey distinguishes refreshLane suffix")
     func dedupKeyDistinguishesRefreshLane() throws {
         var request = URLRequest(url: URL(string: "https://api.example.com/me")!)

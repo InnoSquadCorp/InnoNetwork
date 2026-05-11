@@ -236,6 +236,13 @@ public struct CachedResponse: Sendable, Equatable {
         headers.first { $0.key.caseInsensitiveCompare("ETag") == .orderedSame }?.value
     }
 
+    /// Origin-supplied `Last-Modified` timestamp from the cached response,
+    /// suitable for the `If-Modified-Since` conditional-request header when
+    /// no `ETag` is available.
+    public var lastModified: String? {
+        headers.first { $0.key.caseInsensitiveCompare("Last-Modified") == .orderedSame }?.value
+    }
+
     package func response(for request: URLRequest) -> HTTPURLResponse? {
         guard let url = request.url else { return nil }
         return HTTPURLResponse(
@@ -594,6 +601,16 @@ private func varyValuesEqual(stored: String?, current: String?, headerName: Stri
         return false
     case (let storedValue?, let currentValue?):
         if isMultiTokenVaryHeader(headerName) {
+            // Wildcard tokens (`*`, optionally with a q-value) participate
+            // in the comparison as ordinary tokens: a stored entry whose
+            // original request advertised `*;q=0.5` only re-matches a
+            // request that *also* advertises `*` with the same weight. We
+            // deliberately do not treat `*` as "matches any future
+            // request" — doing so would let an authenticated request with
+            // narrow language coverage serve a cached body to a broader
+            // wildcard request (or vice-versa) under semantically
+            // different content negotiation. The conservative rule trades
+            // a small hit-rate cost for guaranteed-correct vary matching.
             return varyTokenSet(storedValue) == varyTokenSet(currentValue)
         }
         // Trim RFC 7230 OWS so byte-for-byte differences in incidental
@@ -613,11 +630,49 @@ private func isMultiTokenVaryHeader(_ name: String) -> Bool {
 }
 
 private func varyTokenSet(_ raw: String) -> Set<String> {
-    Set(
-        raw.split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-            .filter { !$0.isEmpty }
-    )
+    // RFC 9110 §12.5.1/§12.5.3/§12.5.4: `Accept`, `Accept-Encoding`,
+    // `Accept-Language`, and `Accept-Charset` carry q-value weights that
+    // determine server-side preference. Two requests with the same token
+    // *set* but different priorities (`gzip;q=0.5, br` vs `gzip, br;q=0.5`)
+    // ask the origin for different representations and must produce
+    // distinct cache keys. In addition, `Accept` media-range parameters
+    // appearing *before* `q=` (e.g. `application/json;charset=utf-8`) are
+    // part of the media-type identity per §12.5.1 — two requests that
+    // differ only in such parameters can legitimately receive different
+    // representations. Preserve every non-`q=` parameter in the
+    // normalized form, sorted for deterministic comparison, so cache
+    // lookups distinguish them. Tokens without an explicit `q=` default
+    // to `1.000` per the spec.
+    var result: Set<String> = []
+    for rawElement in raw.split(separator: ",") {
+        let element = rawElement.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if element.isEmpty { continue }
+        let parts = element.split(separator: ";", omittingEmptySubsequences: false)
+        guard let token = parts.first.map(String.init)?.trimmingCharacters(in: .whitespaces),
+            !token.isEmpty
+        else { continue }
+        var qValue: String = "1.000"
+        var mediaParams: [String] = []
+        for param in parts.dropFirst() {
+            let trimmed = param.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            if trimmed.hasPrefix("q=") {
+                let value = trimmed.dropFirst(2)
+                if let parsed = Double(value) {
+                    let clamped = max(0.0, min(1.0, parsed))
+                    qValue = String(format: "%.3f", clamped)
+                }
+                continue
+            }
+            mediaParams.append(trimmed)
+        }
+        let paramSuffix =
+            mediaParams.isEmpty
+            ? ""
+            : ";" + mediaParams.sorted().joined(separator: ";")
+        result.insert("\(token)\(paramSuffix);q=\(qValue)")
+    }
+    return result
 }
 
 

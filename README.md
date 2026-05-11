@@ -25,10 +25,17 @@ root runtime package provides seven public products:
 For the **shortest path to a typed client**, opt in to the macro
 helpers in `InnoNetworkCodegen`:
 
+> ℹ️ **Stability — Provisionally Stable.** `@APIDefinition` and
+> `#endpoint` are *Provisionally Stable* per `API_STABILITY.md`: the
+> spelling, argument labels, and expansion shape will not break in
+> patch releases, but diagnostic messages and FixIts may evolve as we
+> harden the macro. The runtime types they expand into
+> (`APIDefinition`, `HTTPMethod`, `EmptyParameter`) are *Stable*.
+
 ```swift
 @APIDefinition(method: .get, path: "/users/{id}")
 struct GetUser {
-    @PathParameter let id: Int
+    let id: Int
     typealias APIResponse = User
 }
 
@@ -37,9 +44,9 @@ let user = try await client.request(GetUser(id: 1))
 
 The `@APIDefinition` and `#endpoint` macros expand into the same value
 types you would write by hand. They live in a separate `Packages/
-InnoNetworkCodegen` package so runtime-only consumers never resolve
-`swift-syntax`; opt in by adding the codegen package alongside the
-runtime package, then `import InnoNetworkCodegen`.
+InnoNetworkCodegen` package so root package consumers do not resolve
+`swift-syntax`; opt in by adding the codegen package alongside the root
+package, then `import InnoNetworkCodegen`.
 
 The packages are built around Swift Concurrency, explicit transport
 policies, and operational visibility that can scale from app prototypes
@@ -346,8 +353,9 @@ for await event in await manager.events(for: task) {
 
 - optional `@APIDefinition` and `#endpoint` macros
 - depends on `swift-syntax` from `Packages/InnoNetworkCodegen` only
-- keeps the root `InnoNetwork` package free of external dependencies during
-  runtime-only package resolution
+- keeps `swift-syntax` out of the root `InnoNetwork` package dependency graph
+- has a newer compile-time package floor: iOS 18, macOS 15, tvOS 18,
+  watchOS 11, and visionOS 2
 
 ## Platform Matrix
 
@@ -532,8 +540,8 @@ import InnoNetworkCodegen
 
 @APIDefinition(method: .get, path: "/users/{id}")
 struct GetUser {
-    typealias APIResponse = User
     let id: Int
+    typealias APIResponse = User
 }
 
 let endpoint = #endpoint(.get, "/users/1", as: User.self)

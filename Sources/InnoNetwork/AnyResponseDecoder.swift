@@ -38,8 +38,10 @@ extension AnyResponseDecoder where Output: Decodable & Sendable {
             }
         case .custom(let closure):
             self = .init(closure)
-        default:
-            self = .json(decoder: JSONDecoder())
+        case .jsonAllowingEmpty(let decoder):
+            // Non-empty-decodable outputs cannot synthesize an empty response,
+            // but the caller's JSONDecoder customisation still matters.
+            self = .json(decoder: decoder)
         }
     }
 }

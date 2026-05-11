@@ -46,6 +46,24 @@ jobs:
       - name: Verify docs and stability contract
         run: bash Scripts/check_docs_contract_sync.sh
 
+      - name: Verify stable examples contract
+        run: bash Scripts/check_stable_examples.sh
+
+      - name: Verify migration guide code blocks compile
+        run: bash Scripts/check_migration_examples.sh
+
+      - name: Verify CHANGELOG Unreleased section
+        run: bash Scripts/check_changelog_sync.sh
+
+      - name: Enforce @unchecked Sendable policy
+        run: bash Scripts/check_unchecked_sendable.sh
+
+      - name: Enforce no force unwrap in production sources
+        run: bash Scripts/check_production_force_unwraps.sh
+
+      - name: Enforce no print() in production sources
+        run: bash Scripts/check_no_print_in_production.sh
+
       - name: Build and run documentation smoke target
         run: |
           xcrun swift build --target InnoNetworkDocSmoke

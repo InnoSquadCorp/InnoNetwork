@@ -38,12 +38,13 @@ InnoNetwork	swift.enum	NetworkInterfaceType
 InnoNetwork	swift.enum	NetworkReachabilityStatus
 InnoNetwork	swift.enum	PublicAuthScope
 InnoNetwork	swift.enum	RFC3986Encoding
-InnoNetwork	swift.enum	ReachabilityReason
 InnoNetwork	swift.enum	ReachabilityCheckExecutionPolicy.Mode
+InnoNetwork	swift.enum	ReachabilityReason
 InnoNetwork	swift.enum	RepeatableHeader
 InnoNetwork	swift.enum	RequestEncodingPolicy
 InnoNetwork	swift.enum	RequestPayload
 InnoNetwork	swift.enum	RequestPriority
+InnoNetwork	swift.enum	Response.Kind
 InnoNetwork	swift.enum	ResponseBodyBufferingPolicy
 InnoNetwork	swift.enum	ResponseCacheHeaderPolicy
 InnoNetwork	swift.enum	ResponseCachePolicy
@@ -123,6 +124,7 @@ InnoNetwork	swift.enum.case	NetworkErrorCode.nonHTTPResponse
 InnoNetwork	swift.enum.case	NetworkErrorCode.reachability
 InnoNetwork	swift.enum.case	NetworkErrorCode.responseBodyLimitExceeded
 InnoNetwork	swift.enum.case	NetworkErrorCode.statusCode
+InnoNetwork	swift.enum.case	NetworkErrorCode.streamFrameTooLarge
 InnoNetwork	swift.enum.case	NetworkErrorCode.trustEvaluationFailed
 InnoNetwork	swift.enum.case	NetworkErrorCode.underlying
 InnoNetwork	swift.enum.case	NetworkEvent.cacheRevalidation(originalID:state:)
@@ -140,12 +142,12 @@ InnoNetwork	swift.enum.case	NetworkInterfaceType.wiredEthernet
 InnoNetwork	swift.enum.case	NetworkReachabilityStatus.requiresConnection
 InnoNetwork	swift.enum.case	NetworkReachabilityStatus.satisfied
 InnoNetwork	swift.enum.case	NetworkReachabilityStatus.unsatisfied
+InnoNetwork	swift.enum.case	ReachabilityCheckExecutionPolicy.Mode.requireOnline
+InnoNetwork	swift.enum.case	ReachabilityCheckExecutionPolicy.Mode.warnOnly
 InnoNetwork	swift.enum.case	ReachabilityReason.cannotFindHost
 InnoNetwork	swift.enum.case	ReachabilityReason.dnsLookupFailed
 InnoNetwork	swift.enum.case	ReachabilityReason.networkConnectionLost
 InnoNetwork	swift.enum.case	ReachabilityReason.notConnectedToInternet
-InnoNetwork	swift.enum.case	ReachabilityCheckExecutionPolicy.Mode.requireOnline
-InnoNetwork	swift.enum.case	ReachabilityCheckExecutionPolicy.Mode.warnOnly
 InnoNetwork	swift.enum.case	RequestEncodingPolicy.formURLEncoded(_:rootKey:)
 InnoNetwork	swift.enum.case	RequestEncodingPolicy.json(_:)
 InnoNetwork	swift.enum.case	RequestEncodingPolicy.none
@@ -158,6 +160,8 @@ InnoNetwork	swift.enum.case	RequestPayload.temporaryFileURL(_:contentType:)
 InnoNetwork	swift.enum.case	RequestPriority.background
 InnoNetwork	swift.enum.case	RequestPriority.normal
 InnoNetwork	swift.enum.case	RequestPriority.userInitiated
+InnoNetwork	swift.enum.case	Response.Kind.body
+InnoNetwork	swift.enum.case	Response.Kind.headersOnly
 InnoNetwork	swift.enum.case	ResponseBodyBufferingPolicy.buffered(maxBytes:)
 InnoNetwork	swift.enum.case	ResponseBodyBufferingPolicy.streaming(maxBytes:)
 InnoNetwork	swift.enum.case	ResponseCachePolicy.cacheFirst(maxAge:)
@@ -247,7 +251,7 @@ InnoNetwork	swift.init	NetworkConfiguration.init(baseURL:timeout:cachePolicy:req
 InnoNetwork	swift.init	NetworkContext.init(traceID:correlationID:baggage:)
 InnoNetwork	swift.init	NetworkErrorCode.init(rawValue:)
 InnoNetwork	swift.init	NetworkInterfaceType.init(rawValue:)
-InnoNetwork	swift.init	NetworkLoggingOptions.init(includeRequestBody:includeResponseBody:includeCookies:redactSensitiveData:sensitiveHeaderNames:)
+InnoNetwork	swift.init	NetworkLoggingOptions.init(includeRequestBody:includeResponseBody:includeCookies:redactSensitiveData:sensitiveHeaderNames:releaseLogging:)
 InnoNetwork	swift.init	NetworkMonitor.init()
 InnoNetwork	swift.init	NetworkRequestContext.init(requestID:retryIndex:metricsReporter:trustPolicy:eventObservers:redirectPolicy:)
 InnoNetwork	swift.init	NetworkSnapshot.init(status:interfaceTypes:)
@@ -263,7 +267,7 @@ InnoNetwork	swift.init	RequestExecutionContext.init(requestID:retryIndex:metrics
 InnoNetwork	swift.init	RequestExecutionInput.init(request:requestID:retryIndex:)
 InnoNetwork	swift.init	RequestExecutionNext.init(_:)
 InnoNetwork	swift.init	ResiliencePack.init(retry:coalescing:circuitBreaker:idempotency:bodyBuffering:customExecutionPolicies:)
-InnoNetwork	swift.init	Response.init(statusCode:data:request:response:)
+InnoNetwork	swift.init	Response.init(statusCode:data:request:response:kind:)
 InnoNetwork	swift.init	ResponseCacheKey.init(method:url:headers:)
 InnoNetwork	swift.init	RetryIdempotencyPolicy.init(safeMethods:idempotencyHeaderName:retriesUnsafeMethodsWithIdempotencyKey:retriesAllMethods:)
 InnoNetwork	swift.init	SendableUnderlyingError.Frame.init(domain:code:message:failureReason:recoverySuggestion:)
@@ -342,6 +346,7 @@ InnoNetwork	swift.method	MultipartFormData.append(_:name:)
 InnoNetwork	swift.method	MultipartFormData.append(_:name:fileName:mimeType:)
 InnoNetwork	swift.method	MultipartFormData.appendFile(at:name:mimeType:)
 InnoNetwork	swift.method	MultipartFormData.encode(maxInMemoryBytes:)
+InnoNetwork	swift.method	MultipartFormData.withEncodedData(inheritingDirectoryFrom:_:)
 InnoNetwork	swift.method	MultipartFormData.writeEncodedData(to:)
 InnoNetwork	swift.method	MultipartResponseDecoder.decode(_:contentType:)
 InnoNetwork	swift.method	MultipartStreamingResponseDecoder.decode(_:contentType:)
@@ -421,6 +426,7 @@ InnoNetwork	swift.property	CachePack.responseCachePolicy
 InnoNetwork	swift.property	CachedResponse.data
 InnoNetwork	swift.property	CachedResponse.etag
 InnoNetwork	swift.property	CachedResponse.headers
+InnoNetwork	swift.property	CachedResponse.lastModified
 InnoNetwork	swift.property	CachedResponse.requiresRevalidation
 InnoNetwork	swift.property	CachedResponse.statusCode
 InnoNetwork	swift.property	CachedResponse.storedAt
@@ -572,6 +578,7 @@ InnoNetwork	swift.property	NetworkLoggingOptions.includeCookies
 InnoNetwork	swift.property	NetworkLoggingOptions.includeRequestBody
 InnoNetwork	swift.property	NetworkLoggingOptions.includeResponseBody
 InnoNetwork	swift.property	NetworkLoggingOptions.redactSensitiveData
+InnoNetwork	swift.property	NetworkLoggingOptions.releaseLogging
 InnoNetwork	swift.property	NetworkLoggingOptions.sensitiveHeaderNames
 InnoNetwork	swift.property	NetworkRequestContext.eventObservers
 InnoNetwork	swift.property	NetworkRequestContext.metricsReporter
@@ -609,6 +616,7 @@ InnoNetwork	swift.property	ResiliencePack.retry
 InnoNetwork	swift.property	Response.data
 InnoNetwork	swift.property	Response.debugDescription
 InnoNetwork	swift.property	Response.description
+InnoNetwork	swift.property	Response.kind
 InnoNetwork	swift.property	Response.request
 InnoNetwork	swift.property	Response.response
 InnoNetwork	swift.property	Response.statusCode
@@ -855,7 +863,10 @@ InnoNetwork	swift.type.property	MultipartUploadStrategy.platformDefault
 InnoNetwork	swift.type.property	NetworkConfiguration.defaultAcceptableStatusCodes
 InnoNetwork	swift.type.property	NetworkContext.$current
 InnoNetwork	swift.type.property	NetworkContext.current
+InnoNetwork	swift.type.property	NetworkError.errorCodeUserInfoKey
 InnoNetwork	swift.type.property	NetworkError.errorDomain
+InnoNetwork	swift.type.property	NetworkError.statusCodeUserInfoKey
+InnoNetwork	swift.type.property	NetworkError.urlUserInfoKey
 InnoNetwork	swift.type.property	NetworkLoggingOptions.secureDefault
 InnoNetwork	swift.type.property	NetworkLoggingOptions.verbose
 InnoNetwork	swift.type.property	NetworkMonitor.shared

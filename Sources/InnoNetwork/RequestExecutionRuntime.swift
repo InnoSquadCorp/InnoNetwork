@@ -14,7 +14,7 @@ package final class RequestExecutionRuntime: Sendable {
     ) {
         self.refreshCoordinator = configuration.refreshTokenPolicy.map { RefreshTokenCoordinator(policy: $0) }
         self.requestCoalescer = RequestCoalescer()
-        self.circuitBreakers = CircuitBreakerRegistry()
+        self.circuitBreakers = CircuitBreakerRegistry(clock: clock)
         self.inFlight = inFlight
         self.clock = clock
     }

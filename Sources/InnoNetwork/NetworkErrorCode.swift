@@ -21,6 +21,7 @@ public enum NetworkErrorCode: Int, Sendable {
     // 2xxx — decoding failures.
     // 2001 intentionally unused (retired before this enum existed).
     case decoding = 2002
+    case streamFrameTooLarge = 2003
 
     // 3xxx — protocol-level response failures.
     case statusCode = 3001

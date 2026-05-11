@@ -99,8 +99,9 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - benchmark runner CLI flags and JSON summary presentation details
 - troubleshooting guidance and examples in README/DocC
 - `InnoNetworkTestSupport` library product and its `public` symbols
-  (currently `MockURLSession`, `WebSocketEventRecorder`, `StubBehavior`,
-  `StubNetworkClient`, and `StubRequestKey`)
+  (currently `MockURLSession`, `MockURLSessionResponse`,
+  `WebSocketEventRecorder`, `StubBehavior`, `StubNetworkClient`, and
+  `StubRequestKey`)
 - `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
@@ -348,13 +349,14 @@ release line.
 
 ### InnoNetworkOpenAPI
 
-- `OpenAPIRestOperation` and `OpenAPIRequest`.
+- `OpenAPIRestOperation`, `OpenAPIRequest`, `InnoNetworkClientTransport`,
+  and `InnoNetworkClientTransportError`.
 
 ### InnoNetworkTestSupport
 
 - `MockURLSession`, `StubBehavior`, `StubNetworkClient`, `StubRequestKey`,
-  `VCRCassette`, `VCRInteraction`, `VCRMode`, `VCRRedactionPolicy`,
-  `VCRRequest`, `VCRResponse`, `VCRURLSession`, and
+  `MockURLSessionResponse`, `VCRCassette`, `VCRInteraction`, `VCRMode`,
+  `VCRRedactionPolicy`, `VCRRequest`, `VCRResponse`, `VCRURLSession`, and
   `WebSocketEventRecorder`.
 
 ### InnoNetworkCodegen Package

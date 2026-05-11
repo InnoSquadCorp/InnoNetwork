@@ -9,6 +9,11 @@ package protocol InnoNetworkClock: Sendable {
     /// task cancellation so coordinators can exit promptly when their enclosing
     /// task is cancelled.
     func sleep(for duration: Duration) async throws
+
+    /// Returns the clock's notion of "now" as a `Date`. Production clocks
+    /// return the system wall clock; tests can return a virtual time so
+    /// timestamp-dependent assertions stay deterministic.
+    func now() -> Date
 }
 
 
@@ -19,5 +24,9 @@ package struct SystemClock: InnoNetworkClock {
 
     package func sleep(for duration: Duration) async throws {
         try await Task.sleep(for: duration)
+    }
+
+    package func now() -> Date {
+        Date()
     }
 }

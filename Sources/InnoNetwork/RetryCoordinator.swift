@@ -149,7 +149,30 @@ package struct RetryCoordinator {
                 if NetworkError.isCancellation(error) {
                     throw NetworkError.cancelled
                 }
-                throw NetworkError.underlying(SendableUnderlyingError(error), nil)
+                // Raw transport errors (e.g. a `URLError` that escaped the
+                // executor pipeline without being wrapped) used to be
+                // re-thrown as ``NetworkError/underlying`` here, which retry
+                // policies treat opaquely. Route the error through
+                // ``NetworkError/mapTransportError(_:)`` so the resulting
+                // classification (`.reachability`, `.timeout`, etc.) reaches
+                // ``processRetryDecision(...)`` and can be acted upon — this
+                // matches the path taken by the typed `NetworkError` catch
+                // arm above.
+                let normalized = NetworkError.mapTransportError(error)
+                let outcome = try await processRetryDecision(
+                    error: normalized,
+                    request: normalized.underlyingRequest,
+                    retryPolicy: retryPolicy,
+                    networkMonitor: networkMonitor,
+                    requestID: requestID,
+                    eventObservers: eventObservers,
+                    retryIndex: retryIndex,
+                    totalRetries: totalRetries,
+                    snapshot: snapshot
+                )
+                retryIndex = outcome.nextRetryIndex
+                totalRetries = outcome.nextTotalRetries
+                snapshot = outcome.snapshot
             }
         }
     }
@@ -249,11 +272,18 @@ package struct RetryCoordinator {
     ) -> RetryDecision {
         if case .noRetry = decision { return decision }
         guard case .timeout = error else { return decision }
-        guard let request else { return decision }
         // `.methodAgnostic` (or any custom policy that retries every method)
         // means the caller owns duplicate-write protection above
         // InnoNetwork — never override the policy decision.
         if idempotency.retriesAllMethods { return decision }
+        // The retry coordinator's raw-`URLError` catch arm normalises into a
+        // `.timeout` classification without a Response attached, so
+        // `error.underlyingRequest` is `nil`. Without the request we cannot
+        // prove the method is safe; defaulting to `.noRetry` preserves the
+        // duplicate-write protection that the policy decision tried to grant.
+        // Callers that need to retry transport-only timeouts for safe methods
+        // can switch to `.methodAgnostic` and own the safety contract.
+        guard let request else { return .noRetry }
         let method = (request.httpMethod ?? "GET").uppercased()
         // Methods explicitly considered safe by the active policy (e.g.
         // GET/HEAD by default) are never converted to `.noRetry`.

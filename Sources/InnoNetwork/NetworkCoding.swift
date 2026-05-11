@@ -54,3 +54,25 @@ package func makeDefaultResponseDecoder(
     decoder.keyDecodingStrategy = keyDecodingStrategy
     return decoder
 }
+
+/// Shared, *non-mutated* coder/decoder used by InnoNetwork's internal hot
+/// paths (e.g., the promoted-empty-JSON response decoder) where a fresh
+/// instance allocation on every call adds measurable overhead.
+///
+/// The public ``defaultRequestEncoder``/``defaultResponseDecoder``
+/// accessors continue to return fresh instances — caller mutation is part
+/// of the documented contract. These shared instances are package-private
+/// and must **never** be mutated; treat their configuration as frozen
+/// after module load. `JSONEncoder`/`JSONDecoder` are documented as
+/// concurrency-safe for read-only use once configured.
+///
+/// Enforcement: the cached coder instances stay private. Internal call sites
+/// can only reach them through wrapper methods that perform a single
+/// `decode` operation, so property mutation cannot compile.
+package enum SharedCoders {
+    private static let responseDecoder: JSONDecoder = makeDefaultResponseDecoder()
+
+    package static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        try responseDecoder.decode(type, from: data)
+    }
+}

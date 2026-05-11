@@ -14,6 +14,7 @@ InnoNetworkTestSupport	swift.enum.case	StubBehavior.never
 InnoNetworkTestSupport	swift.enum.case	VCRMode.record
 InnoNetworkTestSupport	swift.enum.case	VCRMode.replay
 InnoNetworkTestSupport	swift.init	MockURLSession.init()
+InnoNetworkTestSupport	swift.init	MockURLSessionResponse.init(data:response:error:)
 InnoNetworkTestSupport	swift.init	StubNetworkClient.init(fallback:)
 InnoNetworkTestSupport	swift.init	StubRequestKey.init(_:)
 InnoNetworkTestSupport	swift.init	StubRequestKey.init(method:path:)
@@ -29,8 +30,10 @@ InnoNetworkTestSupport	swift.init	VCRResponse.init(statusCode:headers:body:)
 InnoNetworkTestSupport	swift.init	VCRURLSession.init(cassette:mode:recordingSession:redactionPolicy:)
 InnoNetworkTestSupport	swift.init	WebSocketEventRecorder.init()
 InnoNetworkTestSupport	swift.method	MockURLSession.data(for:)
+InnoNetworkTestSupport	swift.method	MockURLSession.enqueueScriptedResponse(_:)
 InnoNetworkTestSupport	swift.method	MockURLSession.setMockJSON(_:statusCode:)
 InnoNetworkTestSupport	swift.method	MockURLSession.setMockResponse(statusCode:data:)
+InnoNetworkTestSupport	swift.method	MockURLSession.setScriptedResponses(_:)
 InnoNetworkTestSupport	swift.method	StubNetworkClient.register(_:for:behavior:)
 InnoNetworkTestSupport	swift.method	StubNetworkClient.request(_:)
 InnoNetworkTestSupport	swift.method	StubNetworkClient.request(_:tag:)
@@ -43,9 +46,13 @@ InnoNetworkTestSupport	swift.method	WebSocketEventRecorder.record(_:)
 InnoNetworkTestSupport	swift.method	WebSocketEventRecorder.snapshot()
 InnoNetworkTestSupport	swift.method	WebSocketEventRecorder.waitForEvent(timeout:matching:)
 InnoNetworkTestSupport	swift.property	MockURLSession.capturedRequest
+InnoNetworkTestSupport	swift.property	MockURLSession.capturedRequestsInOrder
 InnoNetworkTestSupport	swift.property	MockURLSession.mockData
 InnoNetworkTestSupport	swift.property	MockURLSession.mockError
 InnoNetworkTestSupport	swift.property	MockURLSession.mockResponse
+InnoNetworkTestSupport	swift.property	MockURLSessionResponse.data
+InnoNetworkTestSupport	swift.property	MockURLSessionResponse.error
+InnoNetworkTestSupport	swift.property	MockURLSessionResponse.response
 InnoNetworkTestSupport	swift.property	StubRequestKey.method
 InnoNetworkTestSupport	swift.property	StubRequestKey.path
 InnoNetworkTestSupport	swift.property	VCRCassette.interactions
@@ -70,11 +77,14 @@ InnoNetworkTestSupport	swift.property	WebSocketEventRecorder.pingTimeoutErrorCou
 InnoNetworkTestSupport	swift.property	WebSocketEventRecorder.pongContexts
 InnoNetworkTestSupport	swift.property	WebSocketEventRecorder.pongCount
 InnoNetworkTestSupport	swift.property	WebSocketEventRecorder.stringCount
+InnoNetworkTestSupport	swift.struct	MockURLSessionResponse
 InnoNetworkTestSupport	swift.struct	StubRequestKey
 InnoNetworkTestSupport	swift.struct	VCRCassette
 InnoNetworkTestSupport	swift.struct	VCRInteraction
 InnoNetworkTestSupport	swift.struct	VCRRedactionPolicy
 InnoNetworkTestSupport	swift.struct	VCRRequest
 InnoNetworkTestSupport	swift.struct	VCRResponse
+InnoNetworkTestSupport	swift.type.method	MockURLSessionResponse.failure(_:)
+InnoNetworkTestSupport	swift.type.method	MockURLSessionResponse.http(statusCode:data:headers:url:)
 InnoNetworkTestSupport	swift.type.method	VCRCassette.load(from:decoder:)
 InnoNetworkTestSupport	swift.type.property	VCRRedactionPolicy.default

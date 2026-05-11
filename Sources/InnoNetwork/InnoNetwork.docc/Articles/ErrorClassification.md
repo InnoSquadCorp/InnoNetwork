@@ -73,7 +73,7 @@ to avoid leaking PII into crash reports, analytics, or logs.
 
 ## NSError bridging
 
-`NetworkError` bridges through the stable `InnoNetwork.NetworkError` NSError
+`NetworkError` bridges through the stable `com.innosquad.innonetwork` NSError
 domain. The 4.x line keeps numeric codes stable so observability pipelines can
 group failures without parsing localized strings. Underlying Foundation errors
 are preserved inside ``SendableUnderlyingError`` for `.underlying` and timeout

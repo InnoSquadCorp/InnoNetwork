@@ -54,10 +54,15 @@ jobs:
       - name: Run swift-format lint
         run: bash Scripts/format.sh --lint
 
-  build-and-test:
-    name: Build and Test (SwiftPM)
+  dead-code:
+    name: Lint (Periphery)
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 25
+    # Periphery's Swift coverage is still maturing for macro-heavy
+    # packages, so the job runs but does not block PRs while the
+    # baseline is being curated. Remove `continue-on-error` once the
+    # report converges to zero unused declarations on main.
+    continue-on-error: true
 
     steps:
       - name: Checkout
@@ -67,25 +72,108 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode_26.0.1.app
 
+      - name: Install Periphery
+        run: |
+          set -eo pipefail
+          brew tap peripheryapp/periphery
+          brew install periphery
+          periphery version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Run Periphery scan
+        run: |
+          set -eo pipefail
+          periphery scan --config .periphery.yml
+
+  build-and-test:
+    name: Build and Test (SwiftPM) — Xcode ${{ matrix.xcode.label }}
+    runs-on: macos-15
+    timeout-minutes: 45
+    # Run the toolchain matrix in parallel so a green / red signal is
+    # available per Xcode without serializing wall-clock time.
+    strategy:
+      fail-fast: false
+      matrix:
+        xcode:
+          # Pinned canonical toolchain — the source of truth for `swift
+          # build` reproducibility and the version benchmarked / signed
+          # in the release workflow.
+          - label: "26.0.1"
+            path: /Applications/Xcode_26.0.1.app
+            required: true
+          # Runner-default Xcode (symlinked at /Applications/Xcode.app).
+          # Treated as an early-warning channel — when GitHub bumps the
+          # default past 26.0.1 we want a build signal before adoption,
+          # not a surprise at upgrade time. Failures are non-blocking
+          # until the team pins the next canonical version.
+          - label: "runner-default"
+            path: /Applications/Xcode.app
+            required: false
+    continue-on-error: ${{ !matrix.xcode.required }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s ${{ matrix.xcode.path }}
+
       - name: Cache SwiftPM artifacts
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             .build/checkouts
             .build/repositories
-          key: ${{ runner.os }}-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          key: ${{ runner.os }}-xcode-${{ matrix.xcode.label }}-${{ hashFiles('Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-xcode-26.0.1-
+            ${{ runner.os }}-xcode-${{ matrix.xcode.label }}-
 
       - name: Show Xcode and Swift versions
         run: |
           xcodebuild -version
           xcrun swift --version
 
+      - name: Check Swift tools compatibility
+        id: toolchain-compatibility
+        env:
+          REQUIRED_TOOLCHAIN: ${{ matrix.xcode.required }}
+        run: |
+          set -eo pipefail
+
+          package_tools="$(sed -nE 's#^// swift-tools-version: *([0-9]+)\.([0-9]+).*#\1.\2#p' Package.swift | head -n 1)"
+          swift_version="$(xcrun swift --version | sed -nE 's/^Apple Swift version ([0-9]+)\.([0-9]+).*/\1.\2/p' | head -n 1)"
+
+          if [[ -z "$package_tools" || -z "$swift_version" ]]; then
+            echo "::error::Unable to determine Package.swift tools version or active Swift version."
+            exit 1
+          fi
+
+          tools_major="${package_tools%%.*}"
+          tools_minor="${package_tools##*.}"
+          swift_major="${swift_version%%.*}"
+          swift_minor="${swift_version##*.}"
+
+          if (( swift_major > tools_major || (swift_major == tools_major && swift_minor >= tools_minor) )); then
+            echo "compatible=true" >> "$GITHUB_OUTPUT"
+            echo "Active Swift ${swift_version} supports Package.swift tools ${package_tools}."
+          elif [[ "$REQUIRED_TOOLCHAIN" == "true" ]]; then
+            echo "compatible=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Required toolchain Swift ${swift_version} cannot load Package.swift tools ${package_tools}."
+            exit 1
+          else
+            echo "compatible=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping non-required ${GITHUB_JOB} matrix leg because Swift ${swift_version} cannot load Package.swift tools ${package_tools}."
+          fi
+
       - name: Resolve dependencies
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: xcrun swift package resolve
 
       - name: Build (Swift 6 language mode)
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: |
           set -eo pipefail
           echo "🔨 Building InnoNetwork..."
@@ -96,6 +184,7 @@ jobs:
           echo "✅ Build completed successfully!"
 
       - name: Test (with code coverage)
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: |
           set -eo pipefail
           echo "🧪 Running tests with --enable-code-coverage..."
@@ -106,6 +195,7 @@ jobs:
           echo "✅ Tests completed successfully!"
 
       - name: Generate coverage report
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: |
           set -eo pipefail
           # Resolve all .xctest binaries and the merged profdata under the
@@ -139,28 +229,59 @@ jobs:
             "${llvm_cov_objects[@]}" > .build/coverage/coverage.lcov
 
       - name: Upload coverage artifact
-        if: always()
+        if: always() && steps.toolchain-compatibility.outputs.compatible == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: innonetwork-coverage
+          # Suffix the artifact name with the matrix label so the
+          # parallel toolchain runs do not race on a shared upload
+          # slot.
+          name: innonetwork-coverage-${{ matrix.xcode.label }}
           path: .build/coverage/
 
+      # Codecov uploads run on every CI build. For pushes/PRs from the
+      # canonical repository the token must be present — a missing token
+      # there is a misconfiguration we want to surface, not paper over.
+      # Forked PRs cannot access secrets, so we still allow the upload to
+      # be skipped in that single case.
+      - name: Require Codecov token on canonical builds
+        # Only the pinned canonical toolchain uploads coverage. The
+        # runner-default matrix entry exists for an early-warning
+        # signal on toolchain bumps; doubling its coverage upload
+        # against the same commit would skew the Codecov report.
+        if: matrix.xcode.required && steps.toolchain-compatibility.outputs.compatible == 'true' && github.event.pull_request.head.repo.fork != true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [[ -z "${CODECOV_TOKEN:-}" ]]; then
+            echo "::error::CODECOV_TOKEN secret is missing on a canonical build." \
+              "Codecov uploads are required so the badge and project gate stay" \
+              "trustworthy. Configure the secret or, if intentional, gate this" \
+              "step explicitly."
+            exit 1
+          fi
+
       - name: Upload coverage to Codecov
-        if: env.CODECOV_TOKEN != ''
+        if: matrix.xcode.required && steps.toolchain-compatibility.outputs.compatible == 'true' && env.CODECOV_TOKEN != ''
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         with:
           files: .build/coverage/coverage.lcov
-          fail_ci_if_error: false
+          # Fail the build when the upload itself fails on canonical builds
+          # so a Codecov outage does not silently drop coverage from the
+          # project gate. Fork PRs skip this step entirely (see above).
+          fail_ci_if_error: true
 
       - name: Enforce @unchecked Sendable policy
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: bash Scripts/check_unchecked_sendable.sh
 
       - name: Enforce no force unwrap in production sources
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: bash Scripts/check_production_force_unwraps.sh
 
       - name: Enforce no print() in production sources
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: bash Scripts/check_no_print_in_production.sh
 
   docs-contract-sync:
@@ -189,6 +310,12 @@ jobs:
 
       - name: Verify stable examples contract
         run: bash Scripts/check_stable_examples.sh
+
+      - name: Verify migration guide code blocks compile
+        run: bash Scripts/check_migration_examples.sh
+
+      - name: Verify CHANGELOG Unreleased section
+        run: bash Scripts/check_changelog_sync.sh
 
       - name: Build documentation smoke target
         run: xcrun swift build --target InnoNetworkDocSmoke
@@ -313,7 +440,7 @@ jobs:
           xcodebuild -version
           xcrun swift --version
 
-      - name: Verify root package stays runtime-only
+      - name: Verify root package does not resolve swift-syntax
         run: |
           set -eo pipefail
           mkdir -p .build

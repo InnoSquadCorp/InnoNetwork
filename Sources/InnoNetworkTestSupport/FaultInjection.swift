@@ -58,6 +58,10 @@ package final class ClockFailureInjector: InnoNetworkClock, @unchecked Sendable 
         }
         try await inner.sleep(for: duration)
     }
+
+    package func now() -> Date {
+        inner.now()
+    }
 }
 
 

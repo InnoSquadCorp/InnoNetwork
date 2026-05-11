@@ -60,6 +60,20 @@ public actor WebSocketManager {
     /// task identifier observes a strict FIFO of its own callbacks.
     nonisolated let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
 
+    /// Handle for the consumer Task that drains `delegateEventContinuation`.
+    /// `shutdown()` cancels and awaits this task so the delegate channel
+    /// fully unwinds before the manager returns control — mirroring the
+    /// symmetric task lifetime used by `DownloadManager`. Without this
+    /// handle the consumer was orphaned: `delegateEventContinuation.finish()`
+    /// would let the for-await loop fall through, but `shutdown()` could
+    /// not await the loop's completion, so any straggling `processDelegateEvent`
+    /// could still mutate state past the public shutdown boundary.
+    ///
+    /// Stored behind a `nonisolated` lock so the init body (itself
+    /// `nonisolated`) can assign the task while the actor's isolated
+    /// `shutdown()` reads and clears it.
+    nonisolated let delegateConsumerTaskLock = OSAllocatedUnfairLock<Task<Void, Never>?>(initialState: nil)
+
     enum DelegateEvent: Sendable {
         case connected(taskIdentifier: Int, protocolName: String?)
         case disconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?)
@@ -174,17 +188,18 @@ public actor WebSocketManager {
         // The consumer Task captures `self` weakly. Each loop iteration
         // drains exactly one event before awaiting the next, which is
         // what gives us the strict per-task FIFO ordering the prior
-        // per-callback `Task` spawning could not guarantee. The Task is
-        // intentionally not stored: `deinit` finishes the continuation,
-        // the for-await loop exits, and the Task self-completes — no
-        // retain cycle is possible because the closure captures `self`
-        // weakly.
-        Task { [weak self] in
+        // per-callback `Task` spawning could not guarantee. The Task
+        // handle is stored so `shutdown()` can cancel and await it
+        // alongside `invalidationBarrier.wait()`, matching the symmetric
+        // lifetime used by `DownloadManager` and guaranteeing no
+        // straggling `processDelegateEvent` runs past shutdown.
+        let consumerTask = Task { [weak self] in
             for await event in stream {
                 guard let self else { return }
                 await self.processDelegateEvent(event)
             }
         }
+        delegateConsumerTaskLock.withLock { $0 = consumerTask }
 
         callbacks.setHandlers(
             onConnected: { [weak self] taskIdentifier, protocolName in
@@ -374,6 +389,22 @@ public actor WebSocketManager {
 
         session.invalidateAndCancel()
         await invalidationBarrier.wait()
+
+        // Symmetric task lifetime: with the delegate stream finished and
+        // the URLSession invalidated, the consumer's for-await loop has
+        // already exited. Cancel defensively in case of a stuck
+        // synchronous reducer hop, then await completion so the manager
+        // never returns while a `processDelegateEvent` invocation is
+        // still in flight.
+        let consumerTask = delegateConsumerTaskLock.withLock { task -> Task<Void, Never>? in
+            let snapshot = task
+            task = nil
+            return snapshot
+        }
+        if let consumerTask {
+            consumerTask.cancel()
+            await consumerTask.value
+        }
     }
 
     public func retry(_ task: WebSocketTask) async {

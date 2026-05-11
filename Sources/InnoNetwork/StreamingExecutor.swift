@@ -26,6 +26,13 @@ package struct StreamingExecutor: Sendable {
     package let session: URLSessionProtocol
     package let eventHub: NetworkEventHub
 
+    /// Hard ceiling on the per-line UTF-8 length the executor will accept
+    /// before decoding a frame. Exceeding the budget surfaces as a
+    /// ``NetworkError/decoding`` with stage ``DecodingStage/streamFrame`` so
+    /// retry policies can act on the shape before one oversized line can pin
+    /// unbounded memory.
+    package static let maxStreamLineByteCount: Int = 1 << 20  // 1 MiB
+
     package init(session: URLSessionProtocol, eventHub: NetworkEventHub) {
         self.session = session
         self.eventHub = eventHub
@@ -120,7 +127,8 @@ package struct StreamingExecutor: Sendable {
                     statusCode: httpResponse.statusCode,
                     data: Data(),
                     request: urlRequest,
-                    response: httpResponse
+                    response: httpResponse,
+                    kind: .headersOnly
                 )
                 for interceptor in configuration.responseInterceptors {
                     networkResponse = try await interceptor.adapt(networkResponse, request: urlRequest)
@@ -137,21 +145,31 @@ package struct StreamingExecutor: Sendable {
 
                 var streamedByteCount = 0
                 var streamError: Error?
-                var iterator = bytes.lines.makeAsyncIterator()
+                var iterator = bytes.makeAsyncIterator()
                 while true {
-                    let line: String?
+                    let frame: BoundedStreamLine?
                     do {
-                        line = try await iterator.next()
+                        frame = try await Self.nextBoundedLine(
+                            from: &iterator,
+                            maxBytes: Self.maxStreamLineByteCount
+                        )
                     } catch is CancellationError {
                         throw NetworkError.cancelled
+                    } catch let error as StreamingLineTooLargeError {
+                        throw Self.streamFrameTooLargeError(
+                            byteCount: error.byteCount,
+                            networkResponse: networkResponse,
+                            fallbackResponse: httpResponse
+                        )
                     } catch {
                         streamError = error
                         break
                     }
 
-                    guard let line else { break }
+                    guard let frame else { break }
+                    let line = frame.line
                     try Task.checkCancellation()
-                    streamedByteCount += line.utf8.count
+                    streamedByteCount += frame.byteCount
                     let decoded: T.Output?
                     do {
                         decoded = try request.decode(line: line)
@@ -175,8 +193,16 @@ package struct StreamingExecutor: Sendable {
                         )
                     }
                     if let output = decoded {
-                        continuation.yield(output)
+                        // Record the resume id *before* yielding so a
+                        // mid-yield cancellation (or back-pressure stall
+                        // on a buffered continuation) cannot drop the
+                        // event id we'd need to send `Last-Event-ID` on
+                        // a subsequent reconnect. `yield` is the
+                        // suspension point an attacker on the wire (or a
+                        // slow consumer) can stretch; the id assignment
+                        // is local and synchronous.
                         resumeState.observe(eventID: request.eventID(from: output))
+                        continuation.yield(output)
                     }
                 }
 
@@ -253,6 +279,63 @@ package struct StreamingExecutor: Sendable {
         try await executionRuntime.clock.sleep(for: .seconds(delay))
     }
 
+    private static func nextBoundedLine<Iterator: AsyncIteratorProtocol>(
+        from iterator: inout Iterator,
+        maxBytes: Int
+    ) async throws -> BoundedStreamLine? where Iterator.Element == UInt8 {
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(min(maxBytes, 4 * 1024))
+
+        while let byte = try await iterator.next() {
+            if byte == 0x0A {
+                if bytes.last == 0x0D {
+                    bytes.removeLast()
+                }
+                return BoundedStreamLine(
+                    line: String(decoding: bytes, as: UTF8.self),
+                    byteCount: bytes.count
+                )
+            }
+
+            bytes.append(byte)
+            if bytes.count > maxBytes {
+                throw StreamingLineTooLargeError(byteCount: bytes.count)
+            }
+        }
+
+        guard !bytes.isEmpty else { return nil }
+        if bytes.last == 0x0D {
+            bytes.removeLast()
+        }
+        return BoundedStreamLine(
+            line: String(decoding: bytes, as: UTF8.self),
+            byteCount: bytes.count
+        )
+    }
+
+    private static func streamFrameTooLargeError(
+        byteCount: Int,
+        networkResponse: Response,
+        fallbackResponse: HTTPURLResponse
+    ) -> NetworkError {
+        NetworkError.decoding(
+            stage: .streamFrame,
+            underlying: SendableUnderlyingError(
+                domain: NetworkError.errorDomain,
+                code: NetworkErrorCode.streamFrameTooLarge.rawValue,
+                message:
+                    "Streaming line exceeded \(Self.maxStreamLineByteCount) bytes (saw \(byteCount))."
+            ),
+            response: Response(
+                statusCode: networkResponse.statusCode,
+                data: Data(),
+                request: networkResponse.request,
+                response: networkResponse.response ?? fallbackResponse,
+                kind: .headersOnly
+            )
+        )
+    }
+
     private static func makeURLRequest<T: StreamingAPIDefinition>(
         for request: T,
         configuration: NetworkConfiguration,
@@ -309,4 +392,13 @@ package struct StreamingExecutor: Sendable {
             resourceTimeoutInterval: nil
         )
     }
+}
+
+private struct BoundedStreamLine {
+    let line: String
+    let byteCount: Int
+}
+
+private struct StreamingLineTooLargeError: Error {
+    let byteCount: Int
 }
