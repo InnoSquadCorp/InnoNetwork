@@ -114,6 +114,29 @@ struct NetworkLoggerTests {
         #expect(!sanitizedCookies.contains(token))
     }
 
+    @Test("Custom sensitiveHeaderNames with mixed case still redact")
+    func customSensitiveHeaderNamesAreCaseInsensitive() {
+        // Callers passing mixed-case header names should still trigger
+        // redaction — the comparison site lowercases the request header
+        // key, so the stored set has to be lowercased at init.
+        let options = NetworkLoggingOptions(
+            sensitiveHeaderNames: [
+                "X-Custom-Token",
+                "X-INTERNAL-AUTH",
+            ]
+        )
+        let logger = DefaultNetworkLogger(options: options)
+        let sanitizedHeaders = logger.sanitize(headers: [
+            "x-custom-token": "abc",
+            "X-Internal-Auth": "def",
+            "X-Other": "kept",
+        ])
+
+        #expect(sanitizedHeaders["x-custom-token"] == "<redacted>")
+        #expect(sanitizedHeaders["X-Internal-Auth"] == "<redacted>")
+        #expect(sanitizedHeaders["X-Other"] == "kept")
+    }
+
     @Test("Logger accepts a non-shared cookie storage at init")
     func loggerHonorsInjectedCookieStorage() throws {
         // Use a uniquely-named storage so the test cannot accidentally read
