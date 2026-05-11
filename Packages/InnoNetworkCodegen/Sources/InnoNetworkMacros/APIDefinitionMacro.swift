@@ -1,3 +1,4 @@
+import SwiftDiagnostics
 import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
@@ -86,14 +87,52 @@ public struct APIDefinitionMacro: ExtensionMacro {
         var value = ""
         for segment in literal.segments {
             guard let stringSegment = segment.as(StringSegmentSyntax.self) else {
+                let fixIts = interpolationToPlaceholderFixIts(segment)
                 throw InnoNetworkMacroDiagnostic(
                     "@APIDefinition \(name): does not support string interpolation.",
                     id: "api-definition-interpolated-\(name)"
-                ).error(at: segment)
+                ).error(at: segment, fixIts: fixIts)
             }
             value += stringSegment.content.text
         }
         return value
+    }
+
+    /// Produces a machine-applicable FixIt that rewrites a single-identifier
+    /// interpolation segment (`\(foo)`) into the `{foo}` placeholder syntax
+    /// that the macro understands. Non-trivial interpolations (member access,
+    /// expressions, multiple arguments) deliberately have no FixIt — the
+    /// fix is not mechanically obvious, and emitting a wrong suggestion is
+    /// worse than asking the author to rewrite by hand.
+    private static func interpolationToPlaceholderFixIts(
+        _ segment: StringLiteralSegmentListSyntax.Element
+    ) -> [FixIt] {
+        guard let expressionSegment = segment.as(ExpressionSegmentSyntax.self),
+            expressionSegment.expressions.count == 1,
+            let onlyExpression = expressionSegment.expressions.first,
+            onlyExpression.label == nil,
+            let identifier = onlyExpression.expression.as(DeclReferenceExprSyntax.self)?
+                .baseName.text
+        else {
+            return []
+        }
+        let replacement = StringSegmentSyntax(
+            content: .stringSegment("{\(identifier)}")
+        )
+        return [
+            FixIt(
+                message: InnoNetworkMacroFixItMessage(
+                    "Replace string interpolation with '{\(identifier)}' path placeholder.",
+                    id: "api-definition-replace-interpolation"
+                ),
+                changes: [
+                    .replace(
+                        oldNode: Syntax(segment),
+                        newNode: Syntax(replacement)
+                    )
+                ]
+            )
+        ]
     }
 
     private struct StoredProperty {
