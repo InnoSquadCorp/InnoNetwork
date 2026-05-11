@@ -5,7 +5,7 @@ import Testing
 
 /// Verifies that `NetworkError.errorDescription` is wired through the
 /// `Sources/InnoNetwork/Resources/<lang>.lproj/Localizable.strings`
-/// catalogue that ships with the package (`en` only as of 4.x).
+/// catalogue that ships with the package (`en` and `ko` as of 4.x).
 ///
 /// The runtime locale of XCTest/Swift Testing is host-dependent, so the
 /// black-box assertions below check only that the description is
@@ -50,6 +50,42 @@ struct LocalizedNetworkErrorTests {
             .timeout(reason: .requestTimeout),
             .timeout(reason: .resourceTimeout),
             .timeout(reason: .connectionTimeout),
+            .reachability(
+                .notConnectedToInternet,
+                SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: NSURLErrorNotConnectedToInternet,
+                    message: "offline"
+                ),
+                nil
+            ),
+            .reachability(
+                .dnsLookupFailed,
+                SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: NSURLErrorDNSLookupFailed,
+                    message: "dns failed"
+                ),
+                nil
+            ),
+            .reachability(
+                .cannotFindHost,
+                SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: NSURLErrorCannotFindHost,
+                    message: "no host"
+                ),
+                nil
+            ),
+            .reachability(
+                .networkConnectionLost,
+                SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: NSURLErrorNetworkConnectionLost,
+                    message: "connection lost"
+                ),
+                nil
+            ),
         ]
 
         for error in cases {
@@ -106,6 +142,10 @@ struct LocalizedNetworkErrorTests {
         "NetworkError.timeout.request",
         "NetworkError.timeout.resource",
         "NetworkError.timeout.connection",
+        "NetworkError.reachability.notConnectedToInternet",
+        "NetworkError.reachability.dnsLookupFailed",
+        "NetworkError.reachability.cannotFindHost",
+        "NetworkError.reachability.networkConnectionLost",
         "NetworkError.trust.unsupportedAuthenticationMethod",
         "NetworkError.trust.missingServerTrust",
         "NetworkError.trust.systemTrustEvaluationFailedWithReason",
@@ -121,6 +161,15 @@ struct LocalizedNetworkErrorTests {
             let value = _localizedNetworkErrorString(forKey: key, localization: "en")
             #expect(value != nil, "missing English string for \(key)")
             #expect(value?.isEmpty == false, "empty English string for \(key)")
+        }
+    }
+
+    @Test("Korean catalogue resolves every documented key")
+    func koreanCatalogueHasEveryKey() {
+        for key in Self.translatedKeys {
+            let value = _localizedNetworkErrorString(forKey: key, localization: "ko")
+            #expect(value != nil, "missing Korean string for \(key)")
+            #expect(value?.isEmpty == false, "empty Korean string for \(key)")
         }
     }
 
@@ -159,6 +208,23 @@ struct LocalizedNetworkErrorTests {
                 (0xAC00...0xD7A3).contains(scalar.value)
             }
             #expect(!hasHangul, "English string for \(key) contains Hangul: \(value)")
+        }
+    }
+
+    @Test("Korean strings contain Hangul (catalogue swap guard)")
+    func koreanStringsContainHangul() {
+        let sampledKeys = [
+            "NetworkError.statusCode",
+            "NetworkError.cancelled",
+            "NetworkError.timeout.request",
+            "NetworkError.reachability.notConnectedToInternet",
+        ]
+        for key in sampledKeys {
+            let value = _localizedNetworkErrorString(forKey: key, localization: "ko") ?? ""
+            let hasHangul = value.unicodeScalars.contains { scalar in
+                (0xAC00...0xD7A3).contains(scalar.value)
+            }
+            #expect(hasHangul, "Korean string for \(key) has no Hangul: \(value)")
         }
     }
 }
