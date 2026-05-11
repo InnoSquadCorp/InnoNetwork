@@ -19,7 +19,13 @@ extension PersistentResponseCache {
         }
 
         let cacheControl = cacheControlDirectives(in: responseHeaders)
-        if cacheControl.contains("private") {
+        // RFC 9111 §5.2.2.5: `no-store` forbids any cache from storing
+        // any part of the response. The `RFC9111CompliantCachePolicy`
+        // wrapper already filters this at the request gate, but when a
+        // consumer wires `PersistentResponseCache` directly (or composes
+        // it under a different policy), this disk-layer guard prevents
+        // a `no-store` response from ever touching the filesystem.
+        if cacheControl.contains("no-store") || cacheControl.contains("private") {
             return false
         }
 
