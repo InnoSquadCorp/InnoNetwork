@@ -108,8 +108,8 @@ struct NetworkErrorTimeoutTests {
         }
     }
 
-    @Test("URLError.cannotFindHost remains an underlying transport error")
-    func urlErrorCannotFindHostStaysUnderlying() async throws {
+    @Test("URLError.cannotFindHost classifies as .reachability(.cannotFindHost)")
+    func urlErrorCannotFindHostMapsToReachability() async throws {
         let mockSession = MockURLSession()
         mockSession.mockError = URLError(.cannotFindHost)
         let client = DefaultNetworkClient(
@@ -118,14 +118,14 @@ struct NetworkErrorTimeoutTests {
         )
         do {
             _ = try await client.request(TimingOutAPIRequest())
-            Issue.record("Expected underlying DNS error")
+            Issue.record("Expected reachability DNS error")
         } catch let error as NetworkError {
             switch error {
-            case .underlying(let underlying, nil):
+            case .reachability(.cannotFindHost, let underlying, nil):
                 #expect(underlying.domain == NSURLErrorDomain)
                 #expect(underlying.code == URLError.Code.cannotFindHost.rawValue)
             default:
-                Issue.record("Expected NetworkError.underlying for cannotFindHost, got \(error)")
+                Issue.record("Expected NetworkError.reachability(.cannotFindHost), got \(error)")
             }
         }
     }
@@ -216,8 +216,8 @@ struct NetworkErrorTimeoutTests {
         }
     }
 
-    @Test("URLError.networkConnectionLost stays underlying (mid-flight drop is not a timeout)")
-    func urlErrorNetworkConnectionLostStaysUnderlying() async throws {
+    @Test("URLError.networkConnectionLost classifies as .reachability(.networkConnectionLost)")
+    func urlErrorNetworkConnectionLostMapsToReachability() async throws {
         let mockSession = MockURLSession()
         mockSession.mockError = URLError(.networkConnectionLost)
         let client = DefaultNetworkClient(
@@ -226,13 +226,13 @@ struct NetworkErrorTimeoutTests {
         )
         do {
             _ = try await client.request(TimingOutAPIRequest())
-            Issue.record("Expected underlying error")
+            Issue.record("Expected reachability error")
         } catch let error as NetworkError {
             switch error {
-            case .underlying(let underlying, nil):
+            case .reachability(.networkConnectionLost, let underlying, nil):
                 #expect(underlying.code == URLError.Code.networkConnectionLost.rawValue)
             default:
-                Issue.record("Expected NetworkError.underlying for networkConnectionLost, got \(error)")
+                Issue.record("Expected NetworkError.reachability(.networkConnectionLost), got \(error)")
             }
         }
     }
@@ -264,41 +264,41 @@ struct NetworkErrorTimeoutTests {
         #expect(underlying?.code == URLError.Code.cannotConnectToHost.rawValue)
     }
 
-    @Test("mapTransportError: URLError.cannotFindHost → .underlying (DNS, not a timeout)")
+    @Test("mapTransportError: URLError.cannotFindHost → .reachability(.cannotFindHost) (DNS, not a timeout)")
     func mapCannotFindHostContract() {
         let error = NetworkError.mapTransportError(URLError(.cannotFindHost))
-        guard case .underlying(let underlying, nil) = error else {
-            Issue.record("Expected .underlying for cannotFindHost, got \(error)")
+        guard case .reachability(.cannotFindHost, let underlying, nil) = error else {
+            Issue.record("Expected .reachability(.cannotFindHost) for cannotFindHost, got \(error)")
             return
         }
         #expect(underlying.code == URLError.Code.cannotFindHost.rawValue)
     }
 
-    @Test("mapTransportError: URLError.dnsLookupFailed → .underlying (DNS, not a timeout)")
+    @Test("mapTransportError: URLError.dnsLookupFailed → .reachability(.dnsLookupFailed) (DNS, not a timeout)")
     func mapDNSLookupFailedContract() {
         let error = NetworkError.mapTransportError(URLError(.dnsLookupFailed))
-        guard case .underlying(let underlying, nil) = error else {
-            Issue.record("Expected .underlying for dnsLookupFailed, got \(error)")
+        guard case .reachability(.dnsLookupFailed, let underlying, nil) = error else {
+            Issue.record("Expected .reachability(.dnsLookupFailed) for dnsLookupFailed, got \(error)")
             return
         }
         #expect(underlying.code == URLError.Code.dnsLookupFailed.rawValue)
     }
 
-    @Test("mapTransportError: URLError.networkConnectionLost → .underlying (mid-flight drop, not a timeout)")
+    @Test("mapTransportError: URLError.networkConnectionLost → .reachability(.networkConnectionLost) (mid-flight drop, not a timeout)")
     func mapNetworkConnectionLostContract() {
         let error = NetworkError.mapTransportError(URLError(.networkConnectionLost))
-        guard case .underlying(let underlying, nil) = error else {
-            Issue.record("Expected .underlying for networkConnectionLost, got \(error)")
+        guard case .reachability(.networkConnectionLost, let underlying, nil) = error else {
+            Issue.record("Expected .reachability(.networkConnectionLost) for networkConnectionLost, got \(error)")
             return
         }
         #expect(underlying.code == URLError.Code.networkConnectionLost.rawValue)
     }
 
-    @Test("mapTransportError: URLError.notConnectedToInternet → .underlying (reachability, not a timeout)")
+    @Test("mapTransportError: URLError.notConnectedToInternet → .reachability(.notConnectedToInternet) (reachability, not a timeout)")
     func mapNotConnectedContract() {
         let error = NetworkError.mapTransportError(URLError(.notConnectedToInternet))
-        guard case .underlying(let underlying, nil) = error else {
-            Issue.record("Expected .underlying for notConnectedToInternet, got \(error)")
+        guard case .reachability(.notConnectedToInternet, let underlying, nil) = error else {
+            Issue.record("Expected .reachability(.notConnectedToInternet) for notConnectedToInternet, got \(error)")
             return
         }
         #expect(underlying.code == URLError.Code.notConnectedToInternet.rawValue)
@@ -400,8 +400,8 @@ struct NetworkErrorTimeoutTests {
         #expect(message == "seed")
     }
 
-    @Test("URLError.notConnectedToInternet stays underlying (reachability is not a timeout)")
-    func urlErrorNotConnectedStaysUnderlying() async throws {
+    @Test("URLError.notConnectedToInternet classifies as .reachability(.notConnectedToInternet) (not a timeout)")
+    func urlErrorNotConnectedMapsToReachability() async throws {
         let mockSession = MockURLSession()
         mockSession.mockError = URLError(.notConnectedToInternet)
         let client = DefaultNetworkClient(
@@ -410,13 +410,13 @@ struct NetworkErrorTimeoutTests {
         )
         do {
             _ = try await client.request(TimingOutAPIRequest())
-            Issue.record("Expected underlying error")
+            Issue.record("Expected reachability error")
         } catch let error as NetworkError {
             switch error {
-            case .underlying(let underlying, nil):
+            case .reachability(.notConnectedToInternet, let underlying, nil):
                 #expect(underlying.code == URLError.Code.notConnectedToInternet.rawValue)
             default:
-                Issue.record("Expected NetworkError.underlying for notConnectedToInternet, got \(error)")
+                Issue.record("Expected NetworkError.reachability(.notConnectedToInternet), got \(error)")
             }
         }
     }

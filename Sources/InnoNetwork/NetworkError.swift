@@ -17,10 +17,13 @@ import Foundation
 /// Mapping behaviour (see ``NetworkError/mapTransportError(_:)``):
 /// - `URLError.timedOut` → ``requestTimeout``.
 /// - `URLError.cannotConnectToHost` → ``connectionTimeout``.
-/// - Other `URLError` codes (`cannotFindHost`, `dnsLookupFailed`,
-///   `networkConnectionLost`, `notConnectedToInternet`, …) intentionally
-///   stay as ``NetworkError/underlying(_:_:)`` so callers can tell a real
-///   timeout from a name-resolution or reachability failure.
+/// - `URLError.cannotFindHost`, `URLError.dnsLookupFailed`,
+///   `URLError.networkConnectionLost`, and `URLError.notConnectedToInternet`
+///   classify into ``NetworkError/reachability(_:_:_:)`` with a
+///   ``ReachabilityReason`` tag instead of remaining as
+///   ``NetworkError/underlying(_:_:)``. They are not timeouts: name
+///   resolution and reachability failures must be distinguishable from a
+///   server that simply took too long.
 /// - ``resourceTimeout`` is produced by the metrics-aware or
 ///   attempt-interval overloads only when the caller also supplies a true
 ///   `URLSessionConfiguration.timeoutIntervalForResource` budget.
@@ -49,9 +52,37 @@ public enum TimeoutReason: Sendable, Equatable {
     /// blocking the TCP handshake or the server actively refusing the
     /// socket). Produced from `URLError.cannotConnectToHost`. Name
     /// resolution and reachability failures (`cannotFindHost`,
-    /// `dnsLookupFailed`, `notConnectedToInternet`, …) stay as
-    /// ``NetworkError/underlying(_:_:)`` instead of mapping here.
+    /// `dnsLookupFailed`, `notConnectedToInternet`, …) classify into
+    /// ``NetworkError/reachability(_:_:_:)`` instead of mapping here.
     case connectionTimeout
+}
+
+
+/// Specific reachability fault that produced a
+/// ``NetworkError/reachability(_:_:_:)``.
+///
+/// These four `URLError` codes were historically surfaced as a generic
+/// ``NetworkError/underlying(_:_:)``, which forced callers to pattern-match
+/// the embedded `URLError` value to recognize a name-resolution or
+/// link-availability failure. The dedicated tag pulls that classification
+/// up to the public surface so retry policies, UI copy, and observability
+/// pipelines can branch on the reason without inspecting the underlying
+/// error.
+public enum ReachabilityReason: Sendable, Equatable {
+    /// The device reports no usable network interface. Produced from
+    /// `URLError.notConnectedToInternet`.
+    case notConnectedToInternet
+    /// DNS resolution failed before the request could open a socket.
+    /// Produced from `URLError.dnsLookupFailed`.
+    case dnsLookupFailed
+    /// The host name could not be resolved to an address. Produced from
+    /// `URLError.cannotFindHost`. Often indicates a typo or that the
+    /// server's DNS record has not yet propagated.
+    case cannotFindHost
+    /// An established connection was dropped mid-flight. Produced from
+    /// `URLError.networkConnectionLost`. Treat as transient — the user
+    /// briefly lost connectivity (Wi-Fi handoff, cellular gap, …).
+    case networkConnectionLost
 }
 
 
@@ -135,6 +166,13 @@ public enum NetworkError: Error, Sendable {
     case decoding(stage: DecodingStage, underlying: SendableUnderlyingError, response: Response)
 
     case underlying(SendableUnderlyingError, Response?)
+    /// The transport classified the failure as a reachability fault — DNS
+    /// resolution failed, the device reports no link, or an established
+    /// connection dropped. Distinguished from
+    /// ``NetworkError/underlying(_:_:)`` so retry policies and UI copy
+    /// can branch on the reason without inspecting the underlying
+    /// `URLError`.
+    case reachability(ReachabilityReason, SendableUnderlyingError, Response?)
     case trustEvaluationFailed(TrustFailureReason)
 
     case cancelled
@@ -179,6 +217,17 @@ extension NetworkError: LocalizedError {
             return localized("NetworkError.statusCode")
         case .underlying(let error, _):
             return error.message
+        case .reachability(let reason, _, _):
+            switch reason {
+            case .notConnectedToInternet:
+                return localized("NetworkError.reachability.notConnectedToInternet")
+            case .dnsLookupFailed:
+                return localized("NetworkError.reachability.dnsLookupFailed")
+            case .cannotFindHost:
+                return localized("NetworkError.reachability.cannotFindHost")
+            case .networkConnectionLost:
+                return localized("NetworkError.reachability.networkConnectionLost")
+            }
         case .trustEvaluationFailed(let reason):
             return localizedTrustFailureDescription(for: reason)
         case .cancelled:
@@ -271,6 +320,7 @@ public extension NetworkError {
         case .decoding(_, _, let response): return response
         case .statusCode(let response): return response
         case .underlying(_, let response): return response
+        case .reachability(_, _, let response): return response
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout: return nil
@@ -284,6 +334,7 @@ public extension NetworkError {
         case .decoding(_, let error, _): return error
         case .statusCode: return nil
         case .underlying(let error, _): return error
+        case .reachability(_, let error, _): return error
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout(_, let underlying): return underlying
@@ -325,6 +376,8 @@ extension NetworkError: CustomNSError {
             return NetworkErrorCode.statusCode.rawValue
         case .underlying:
             return NetworkErrorCode.underlying.rawValue
+        case .reachability:
+            return NetworkErrorCode.reachability.rawValue
         case .trustEvaluationFailed:
             return NetworkErrorCode.trustEvaluationFailed.rawValue
         case .cancelled:
@@ -361,8 +414,11 @@ public extension NetworkError {
             return .statusCode(response.redactingData())
         case .underlying(let err, let response?):
             return .underlying(err, response.redactingData())
+        case .reachability(let reason, let err, let response?):
+            return .reachability(reason, err, response.redactingData())
         case .configuration,
             .underlying(_, nil),
+            .reachability(_, _, nil),
             .trustEvaluationFailed,
             .cancelled,
             .timeout:
@@ -397,14 +453,16 @@ extension NetworkError {
     /// - `URLError.cannotConnectToHost` → `.timeout` with
     ///   ``TimeoutReason/connectionTimeout`` (the TCP handshake failed
     ///   inside the connect budget — a captive portal or refused socket).
-    /// - All other `URLError` codes — including `cannotFindHost`,
-    ///   `dnsLookupFailed`, `networkConnectionLost`, and
-    ///   `notConnectedToInternet` — stay as ``NetworkError/underlying(_:_:)``.
-    ///   These are *not* timeouts: name resolution and reachability
-    ///   failures must be distinguishable from a server that simply took
-    ///   too long, because the right user-facing copy and retry policy
-    ///   diverges between the two. Callers that need to recognize them
-    ///   should pattern-match the underlying `URLError` from
+    /// - `URLError.notConnectedToInternet`, `URLError.dnsLookupFailed`,
+    ///   `URLError.cannotFindHost`, and `URLError.networkConnectionLost`
+    ///   classify into ``NetworkError/reachability(_:_:_:)`` with a
+    ///   ``ReachabilityReason`` tag. These are *not* timeouts: name
+    ///   resolution and link-availability failures must be distinguishable
+    ///   from a server that simply took too long, because the right
+    ///   user-facing copy and retry policy diverges between the two.
+    /// - All other `URLError` codes stay as
+    ///   ``NetworkError/underlying(_:_:)``. Callers that need to recognize
+    ///   them should pattern-match the underlying `URLError` from
     ///   ``SendableUnderlyingError``.
     ///
     /// `CancellationError` and `URLError.cancelled` collapse to
@@ -514,6 +572,14 @@ extension NetworkError {
 
         if let urlError = error as? URLError {
             switch urlError.code {
+            case .notConnectedToInternet:
+                return .reachability(.notConnectedToInternet, SendableUnderlyingError(urlError), nil)
+            case .dnsLookupFailed:
+                return .reachability(.dnsLookupFailed, SendableUnderlyingError(urlError), nil)
+            case .cannotFindHost:
+                return .reachability(.cannotFindHost, SendableUnderlyingError(urlError), nil)
+            case .networkConnectionLost:
+                return .reachability(.networkConnectionLost, SendableUnderlyingError(urlError), nil)
             case .timedOut:
                 let reason = resolveTimeoutReason(
                     taskInterval: taskInterval,
