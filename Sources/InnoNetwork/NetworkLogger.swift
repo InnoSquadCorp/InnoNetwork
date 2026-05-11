@@ -188,30 +188,76 @@ public struct DefaultNetworkLogger: NetworkLogger {
     /// Compiled JWT-like pattern. Cached because `NSRegularExpression`
     /// compilation is non-trivial relative to the regex apply itself, and
     /// `maskJWTLikeTokens` runs on every emitted log string.
+    ///
+    /// The pattern accepts the base64url alphabet (`A-Z`, `a-z`, `0-9`,
+    /// `_`, `-`) **and** the standard base64 padding (`=`) so JWTs that
+    /// were re-encoded with the non-URL-safe alphabet (legacy tooling,
+    /// some Java/.NET pipelines) are still masked. Segment minimum
+    /// length is raised to 12 bytes — a real JWT header alone (the
+    /// shortest possible segment, holding only `{"alg":"HS256"}` in
+    /// base64url) is 24 chars, but high false-negative cost outweighs
+    /// the tiny false-positive risk of flagging a 12-char base64url
+    /// blob; lowering bounds reduces the chance that an attacker-known
+    /// short header escapes redaction.
     private static let jwtPattern: NSRegularExpression? = {
         do {
-            return try NSRegularExpression(pattern: "ey[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}")
+            return try NSRegularExpression(
+                pattern: "ey[A-Za-z0-9_=-]{12,}\\.[A-Za-z0-9_=-]{12,}\\.[A-Za-z0-9_=-]{12,}"
+            )
         } catch {
             assertionFailure("JWT redaction pattern failed to compile: \(error)")
             return nil
         }
     }()
 
-    /// Replaces JWT-like tokens (`eyXXX.YYY.ZZZ` with base64url-safe segments)
-    /// in a free-form string with `<redacted-jwt>`. Used as a defence-in-depth
-    /// pass on log strings that escape the structured `header`/`body` paths —
-    /// for example error descriptions that interpolate raw response bodies or
-    /// custom diagnostic suffixes appended by interceptors.
+    /// Compiled AWS SigV4 `Credential=` pattern. Matches the credential
+    /// scope component of `Authorization: AWS4-HMAC-SHA256 Credential=AKIA…/…`
+    /// so callers logging the raw `Authorization` value through paths
+    /// that bypass the structured header allowlist still see the access
+    /// key redacted. The pattern targets `AKIA`/`ASIA`/`AGPA` etc.
+    /// 16+ char identifiers in the Credential field.
+    private static let awsSigV4Pattern: NSRegularExpression? = {
+        do {
+            return try NSRegularExpression(
+                pattern: "(AWS4-HMAC-SHA256\\s+Credential=)[A-Z0-9]{16,}(/[^,\\s]+)?",
+                options: [.caseInsensitive]
+            )
+        } catch {
+            assertionFailure("AWS SigV4 redaction pattern failed to compile: \(error)")
+            return nil
+        }
+    }()
+
+    /// Replaces JWT-like tokens (`eyXXX.YYY.ZZZ` with base64url-safe segments,
+    /// optionally padded with `=`) and AWS SigV4 `Credential=...` access keys
+    /// in a free-form string with redaction placeholders. Used as a
+    /// defence-in-depth pass on log strings that escape the structured
+    /// `header`/`body` paths — for example error descriptions that interpolate
+    /// raw response bodies or custom diagnostic suffixes appended by
+    /// interceptors.
     static func maskJWTLikeTokens(in string: String) -> String {
-        if !string.contains("ey") { return string }
-        guard let jwtPattern else { return string }
-        let range = NSRange(string.startIndex..., in: string)
-        return jwtPattern.stringByReplacingMatches(
-            in: string,
-            options: [],
-            range: range,
-            withTemplate: "<redacted-jwt>"
-        )
+        var current = string
+        if current.contains("ey"), let jwtPattern {
+            let range = NSRange(current.startIndex..., in: current)
+            current = jwtPattern.stringByReplacingMatches(
+                in: current,
+                options: [],
+                range: range,
+                withTemplate: "<redacted-jwt>"
+            )
+        }
+        if current.range(of: "AWS4-HMAC-SHA256", options: .caseInsensitive) != nil,
+            let awsSigV4Pattern
+        {
+            let range = NSRange(current.startIndex..., in: current)
+            current = awsSigV4Pattern.stringByReplacingMatches(
+                in: current,
+                options: [],
+                range: range,
+                withTemplate: "$1<redacted-aws-credential>"
+            )
+        }
+        return current
     }
 
     func sanitize(url: URL?, nilFallback: String = "") -> String {
