@@ -221,21 +221,18 @@ package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: S
     package func makePayload() throws -> RequestPayload {
         let formData = base.multipartFormData
         switch base.uploadStrategy {
-        case .inMemory:
-            // The user explicitly opted into in-memory encoding; the
-            // strategy choice is the size budget, so the encoder's
-            // generic 16 MiB safety cap is bypassed.
-            return .data(try formData.encode(maxInMemoryBytes: Int.max))
+        case .inMemory(let cap):
+            return .data(try formData.encode(maxInMemoryBytes: cap))
         case .alwaysStream:
             return try Self.streamPayload(formData: formData)
         case .streamingThreshold(let bytes):
             if formData.estimatedEncodedSize > bytes {
                 return try Self.streamPayload(formData: formData)
             }
-            // The threshold itself is the in-memory cap; passing
-            // `Int.max` to `encode` avoids double-bounding when the
-            // user-chosen threshold exceeds 16 MiB.
-            return .data(try formData.encode(maxInMemoryBytes: Int.max))
+            // The threshold itself is the in-memory cap; reuse it so the
+            // encoder also enforces it part-by-part (TOCTOU guard).
+            let cap = bytes > Int64(Int.max) ? Int.max : Int(bytes)
+            return .data(try formData.encode(maxInMemoryBytes: cap))
         }
     }
 

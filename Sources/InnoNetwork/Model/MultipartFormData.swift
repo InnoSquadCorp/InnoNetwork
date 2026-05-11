@@ -132,22 +132,28 @@ public struct MultipartFormData: Sendable {
     /// - Parameter maxInMemoryBytes: Upper bound on the size of the
     ///   produced `Data`. The estimator runs first and the call throws
     ///   when the encoded body would exceed this cap, before any source
-    ///   files are read. Defaults to 16 MiB; pass a larger value when
-    ///   the caller knows the body is bounded, or call
-    ///   ``writeEncodedData(to:)`` for unbounded payloads. Pass
-    ///   `Int.max` to disable the guard.
+    ///   files are read. The cap is **also** enforced incrementally while
+    ///   writing each part: if a file part has grown between the
+    ///   estimator and the read (TOCTOU), or an inline data part was
+    ///   miscounted, the running byte total is compared against the cap
+    ///   after every part and the encoder throws as soon as the limit is
+    ///   crossed. Defaults to 16 MiB; pass a larger value when the
+    ///   caller knows the body is bounded, or call
+    ///   ``writeEncodedData(to:)`` for unbounded payloads.
     /// - Throws:
     ///   - ``NetworkError/configuration(reason:)`` with
-    ///     ``NetworkConfigurationFailureReason/invalidRequest(_:)`` when the
-    ///     estimated size exceeds `maxInMemoryBytes`.
+    ///     ``NetworkConfigurationFailureReason/invalidRequest(_:)`` when
+    ///     the estimated size or the running byte total exceeds
+    ///     `maxInMemoryBytes`.
     ///   - Any I/O error encountered while reading a file part. Earlier
     ///     versions silently skipped unreadable file parts; that masked
     ///     configuration bugs (typoed paths, files removed between
     ///     ``appendFile(at:name:mimeType:)`` and encoding) so reads now
     ///     surface their underlying error to the caller.
     public func encode(maxInMemoryBytes: Int = 16 << 20) throws -> Data {
+        let cap = Int64(maxInMemoryBytes)
         let estimated = estimatedEncodedSize
-        if estimated > Int64(maxInMemoryBytes) {
+        if estimated > cap {
             throw NetworkError.configuration(
                 reason: .invalidRequest(
                     "MultipartFormData.encode produces ~\(estimated) bytes which exceeds the \(maxInMemoryBytes)-byte in-memory cap; use writeEncodedData(to:) for large payloads."
@@ -169,9 +175,21 @@ public struct MultipartFormData: Sendable {
             body.append(part.headerData(contentLength: contentLength))
             body.append(partData)
             body.append(Data("\r\n".utf8))
+            if Int64(body.count) > cap {
+                throw NetworkError.configuration(
+                    reason: .invalidRequest(
+                        "MultipartFormData.encode exceeded the \(maxInMemoryBytes)-byte in-memory cap after writing \(body.count) bytes; a part likely grew between the estimate and the read."
+                    ))
+            }
         }
 
         body.append(Data("--\(boundary)--\r\n".utf8))
+        if Int64(body.count) > cap {
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "MultipartFormData.encode finalised at \(body.count) bytes which exceeds the \(maxInMemoryBytes)-byte in-memory cap."
+                ))
+        }
         return body
     }
 

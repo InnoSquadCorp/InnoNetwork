@@ -198,8 +198,7 @@ struct MultipartUploadStrategyTests {
         let multipartFormData: MultipartFormData
         var method: HTTPMethod { .post }
         var path: String { "/upload" }
-        // Default uploadStrategy is .inMemory; explicit for clarity.
-        var uploadStrategy: MultipartUploadStrategy { .inMemory }
+        var uploadStrategy: MultipartUploadStrategy { .inMemory(maxBytes: 16 << 20) }
     }
 
     private struct AlwaysStreamUpload: MultipartAPIDefinition {
@@ -225,13 +224,43 @@ struct MultipartUploadStrategyTests {
         return formData
     }
 
-    @Test("Default .inMemory strategy produces RequestPayload.data")
+    @Test(".inMemory(maxBytes:) strategy produces RequestPayload.data")
     func inMemoryProducesData() throws {
         let executable = MultipartSingleRequestExecutable(base: InMemoryUpload(multipartFormData: Self.makeFormData()))
         let payload = try executable.makePayload()
         switch payload {
         case .data: break
         default: Issue.record("Expected .data for .inMemory strategy, got \(payload)")
+        }
+    }
+
+    @Test(".inMemory(maxBytes:) throws when running encoded size exceeds the cap")
+    func inMemoryThrowsWhenCapExceeded() throws {
+        var formData = MultipartFormData(boundary: "cap-boundary")
+        // 4 parts × 1 KiB = ~4 KiB of payload (plus headers/boundaries),
+        // safely above a 1 KiB cap.
+        for index in 0..<4 {
+            formData.append(Data(repeating: 0x41, count: 1024), name: "blob-\(index)")
+        }
+        struct CappedUpload: MultipartAPIDefinition {
+            typealias APIResponse = EmptyResponse
+            let multipartFormData: MultipartFormData
+            var method: HTTPMethod { .post }
+            var path: String { "/upload" }
+            var uploadStrategy: MultipartUploadStrategy { .inMemory(maxBytes: 1024) }
+        }
+        let executable = MultipartSingleRequestExecutable(
+            base: CappedUpload(multipartFormData: formData)
+        )
+        do {
+            _ = try executable.makePayload()
+            Issue.record("Expected makePayload to throw because the body exceeds the 1 KiB cap")
+        } catch let error as NetworkError {
+            guard case .configuration(reason: .invalidRequest(let message)) = error else {
+                Issue.record("Expected .configuration(.invalidRequest), got \(error)")
+                return
+            }
+            #expect(message.contains("1024"))
         }
     }
 
