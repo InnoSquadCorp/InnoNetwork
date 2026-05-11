@@ -80,6 +80,7 @@ enum GenerationError: Error, CustomStringConvertible {
     case missingArgument(String)
     case ioFailure(String)
     case parseFailure(String)
+    case unsupportedPath(String)
 
     var description: String {
         switch self {
@@ -87,6 +88,7 @@ enum GenerationError: Error, CustomStringConvertible {
         case .missingArgument(let msg): return "Missing argument: \(msg)"
         case .ioFailure(let msg): return "I/O failure: \(msg)"
         case .parseFailure(let msg): return "Parse failure: \(msg)"
+        case .unsupportedPath(let msg): return "Unsupported OpenAPI feature: \(msg)"
         }
     }
 }
@@ -239,7 +241,7 @@ struct GeneratedFile {
 struct CodeGenerator {
     let moduleName: String
 
-    func generate(from document: OpenAPIDocument) -> [GeneratedFile] {
+    func generate(from document: OpenAPIDocument) throws -> [GeneratedFile] {
         var files: [GeneratedFile] = []
         var needsAnyCodable = false
         if let schemas = document.components?.schemas {
@@ -254,7 +256,7 @@ struct CodeGenerator {
         for (path, item) in document.paths.sorted(by: { $0.key < $1.key }) {
             for (method, op) in item.operationsByMethod {
                 let typeName = sanitize(op.operationId ?? "\(method.lowercased())\(path)")
-                files.append(renderOperation(typeName: typeName, method: method, path: path, op: op))
+                files.append(try renderOperation(typeName: typeName, method: method, path: path, op: op))
             }
         }
         return files
@@ -364,14 +366,44 @@ struct CodeGenerator {
 
     // MARK: Operation → APIDefinition struct
 
-    private func renderOperation(typeName: String, method: String, path: String, op: Operation) -> GeneratedFile {
-        let parameter = op.requestBody?.content?["application/json"]?.schema
-        let responseSchema =
-            op.responses?["200"]?.content?["application/json"]?.schema
-            ?? op.responses?["201"]?.content?["application/json"]?.schema
+    private func renderOperation(typeName: String, method: String, path: String, op: Operation) throws -> GeneratedFile {
+        // Reject `{name}` style path templates so they cannot be silently
+        // emitted as a literal Swift string — a request hitting the
+        // generated endpoint would post to `/users/{id}` verbatim and the
+        // server would return 404 or a parameter-not-bound error. The
+        // generator does not yet support path parameter substitution; the
+        // user must rewrite the path or post-process the generated code.
+        if let range = path.range(of: #"\{[^/{}]+\}"#, options: .regularExpression) {
+            let placeholder = String(path[range])
+            throw GenerationError.unsupportedPath(
+                "path template '\(placeholder)' in '\(path)' is not supported. "
+                + "Remove path parameters from the OpenAPI spec or generate a stripped variant; "
+                + "the openapi-to-innonetwork subset does not bind {name} placeholders. "
+                + "See Tools/openapi-to-innonetwork/README.md for the supported subset."
+            )
+        }
 
+        let parameter = op.requestBody?.content?["application/json"]?.schema
         let parameterType = parameter.flatMap { swiftTypeName(for: $0, fallback: nil) } ?? "EmptyParameter"
-        let responseType = responseSchema.flatMap { swiftTypeName(for: $0, fallback: nil) } ?? "EmptyResponse"
+
+        // 200/201 carry a body and map to their JSON schema. 202 (Accepted)
+        // and 204 (No Content) — RFC 9110 §15.3.3 / §15.3.5 — expressly do
+        // not, so when only those are declared the operation maps to
+        // `EmptyResponse` without falling through the generic "no schema
+        // found" branch. This keeps async-job / DELETE / PATCH-without-echo
+        // endpoints typed deliberately rather than by accident.
+        let responseType: String
+        if let schema =
+            op.responses?["200"]?.content?["application/json"]?.schema
+            ?? op.responses?["201"]?.content?["application/json"]?.schema,
+            let typed = swiftTypeName(for: schema, fallback: nil)
+        {
+            responseType = typed
+        } else if op.responses?["202"] != nil || op.responses?["204"] != nil {
+            responseType = "EmptyResponse"
+        } else {
+            responseType = "EmptyResponse"
+        }
 
         var lines: [String] = []
         lines.append(generatedHeader(comment: "Operation: \(method) \(path)"))
@@ -547,7 +579,7 @@ func run() throws {
     }
 
     let generator = CodeGenerator(moduleName: options.moduleName)
-    let files = generator.generate(from: document)
+    let files = try generator.generate(from: document)
     for file in files {
         let fileURL = outputDirectory.appendingPathComponent(file.filename)
         do {

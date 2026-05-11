@@ -6,9 +6,9 @@ import Testing
 @Suite
 struct CodeGeneratorTests {
     @Test
-    func generatesOneFilePerOperation() {
+    func generatesOneFilePerOperation() throws {
         let document = OpenAPIDocument(paths: [
-            "/users/{id}": PathItem(
+            "/users": PathItem(
                 get: Operation(operationId: "getUser", summary: "Fetch a user."),
                 post: nil,
                 put: nil,
@@ -18,7 +18,7 @@ struct CodeGeneratorTests {
         ])
         let generator = CodeGenerator(moduleName: "GitHub")
 
-        let files = generator.generate(from: document)
+        let files = try generator.generate(from: document)
 
         #expect(files.count == 2)
         #expect(files.contains(where: { $0.filename == "GetUser.swift" }))
@@ -26,7 +26,7 @@ struct CodeGeneratorTests {
     }
 
     @Test
-    func generatedFileConformsToAPIDefinition() {
+    func generatedFileConformsToAPIDefinition() throws {
         let document = OpenAPIDocument(paths: [
             "/health": PathItem(
                 get: Operation(operationId: "healthCheck", summary: nil),
@@ -38,17 +38,17 @@ struct CodeGeneratorTests {
         ])
         let generator = CodeGenerator(moduleName: "GitHub")
 
-        let files = generator.generate(from: document)
-        let body = try? #require(files.first?.contents)
+        let files = try generator.generate(from: document)
+        let body = try #require(files.first?.contents)
 
-        #expect(body?.contains("import InnoNetwork") == true)
-        #expect(body?.contains("public struct HealthCheck: APIDefinition") == true)
-        #expect(body?.contains("public var path: String { \"/health\" }") == true)
-        #expect(body?.contains("public var method: HTTPMethod { .get }") == true)
+        #expect(body.contains("import InnoNetwork"))
+        #expect(body.contains("public struct HealthCheck: APIDefinition"))
+        #expect(body.contains("public var path: String { \"/health\" }"))
+        #expect(body.contains("public var method: HTTPMethod { .get }"))
     }
 
     @Test
-    func sanitizesNonAlphanumericOperationId() {
+    func sanitizesNonAlphanumericOperationId() throws {
         let document = OpenAPIDocument(paths: [
             "/v1/users": PathItem(
                 get: Operation(operationId: "list-users.v1", summary: nil),
@@ -60,13 +60,13 @@ struct CodeGeneratorTests {
         ])
         let generator = CodeGenerator(moduleName: "API")
 
-        let files = generator.generate(from: document)
+        let files = try generator.generate(from: document)
 
         #expect(files.first?.filename == "ListUsersV1.swift")
     }
 
     @Test
-    func fallsBackToMethodPathWhenOperationIdMissing() {
+    func fallsBackToMethodPathWhenOperationIdMissing() throws {
         let document = OpenAPIDocument(paths: [
             "/posts": PathItem(
                 get: nil,
@@ -78,11 +78,84 @@ struct CodeGeneratorTests {
         ])
         let generator = CodeGenerator(moduleName: "API")
 
-        let files = generator.generate(from: document)
-        let filename = try? #require(files.first?.filename)
+        let files = try generator.generate(from: document)
+        let filename = try #require(files.first?.filename)
 
-        #expect(filename?.hasPrefix("Post") == true)
-        #expect(filename?.hasSuffix(".swift") == true)
+        #expect(filename.hasPrefix("Post"))
+        #expect(filename.hasSuffix(".swift"))
+    }
+
+    @Test
+    func pathTemplatesAreRejected() {
+        let document = OpenAPIDocument(paths: [
+            "/users/{id}": PathItem(
+                get: Operation(operationId: "getUser", summary: nil),
+                post: nil,
+                put: nil,
+                patch: nil,
+                delete: nil
+            )
+        ])
+        let generator = CodeGenerator(moduleName: "API")
+
+        #expect(throws: GenerationError.self) {
+            _ = try generator.generate(from: document)
+        }
+    }
+
+    @Test
+    func pathTemplateErrorIdentifiesPlaceholder() {
+        let document = OpenAPIDocument(paths: [
+            "/users/{userId}/posts/{postId}": PathItem(
+                get: Operation(operationId: "getUserPost", summary: nil),
+                post: nil,
+                put: nil,
+                patch: nil,
+                delete: nil
+            )
+        ])
+        let generator = CodeGenerator(moduleName: "API")
+
+        do {
+            _ = try generator.generate(from: document)
+            Issue.record("expected path template error")
+        } catch let error as GenerationError {
+            // Description must call out the first placeholder so users can
+            // fix the offending path immediately rather than guessing.
+            #expect(error.description.contains("{userId}"))
+            #expect(error.description.contains("/users/{userId}/posts/{postId}"))
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+    }
+
+    @Test
+    func emptyResponseForExplicit202And204() throws {
+        let document = OpenAPIDocument(paths: [
+            "/jobs": PathItem(
+                get: nil,
+                post: Operation(
+                    operationId: "submitJob",
+                    summary: nil,
+                    responses: ["202": ResponseObject(description: nil, content: nil)]
+                ),
+                put: nil,
+                patch: nil,
+                delete: Operation(
+                    operationId: "deleteJob",
+                    summary: nil,
+                    responses: ["204": ResponseObject(description: nil, content: nil)]
+                )
+            )
+        ])
+        let generator = CodeGenerator(moduleName: "API")
+
+        let files = try generator.generate(from: document)
+        let submit = try #require(files.first(where: { $0.filename == "SubmitJob.swift" })?.contents)
+        let delete = try #require(files.first(where: { $0.filename == "DeleteJob.swift" })?.contents)
+
+        #expect(submit.contains("public typealias APIResponse = EmptyResponse"))
+        #expect(delete.contains("public typealias APIResponse = EmptyResponse"))
     }
 
     @Test
@@ -105,7 +178,7 @@ struct CodeGeneratorTests {
         )
         let generator = CodeGenerator(moduleName: "API")
 
-        let files = generator.generate(from: document)
+        let files = try generator.generate(from: document)
         let user = try #require(files.first(where: { $0.filename == "User.swift" })?.contents)
         let anyCodable = try #require(files.first(where: { $0.filename == "AnyCodable.swift" })?.contents)
 
