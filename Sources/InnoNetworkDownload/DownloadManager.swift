@@ -99,6 +99,11 @@ public actor DownloadManager {
     private let eventHub: TaskEventHub<DownloadEvent>
     private let delegateEvents: AsyncStream<DelegateEvent>
     private let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
+    /// Background task that polls in-flight downloads and cancels any that
+    /// have not received a progress callback for at least
+    /// ``DownloadConfiguration/taskInactivityTimeout``. `nil` when the
+    /// configuration disables the watchdog.
+    private var inactivityWatchdogTask: Task<Void, Never>?
 
     private enum DelegateEvent: Sendable {
         case progress(
@@ -275,6 +280,19 @@ public actor DownloadManager {
             let pending = await self.restoreCoordinator.restorePendingDownloads()
             await self.recordPendingRestoreFailures(pending)
             await self.restoreBarrier.complete()
+        }
+
+        if let timeout = configuration.taskInactivityTimeout {
+            Task { [weak self] in
+                await self?.startInactivityWatchdog(timeout: timeout)
+            }
+        }
+    }
+
+    private func startInactivityWatchdog(timeout: Duration) {
+        guard !isShutdown, inactivityWatchdogTask == nil else { return }
+        inactivityWatchdogTask = Task { [weak self] in
+            await self?.runInactivityWatchdog(timeout: timeout)
         }
     }
 
@@ -519,6 +537,9 @@ public actor DownloadManager {
             return
         }
 
+        inactivityWatchdogTask?.cancel()
+        inactivityWatchdogTask = nil
+
         delegateEventContinuation.finish()
 
         // Cancel every in-flight URLSession task before invalidating, then
@@ -663,8 +684,43 @@ public actor DownloadManager {
             totalBytesExpectedToWrite: totalBytesExpectedToWrite
         )
         await task.updateProgress(progress)
+        if configuration.taskInactivityTimeout != nil {
+            await task.setLastProgressAt(ContinuousClock().now)
+        }
         await runtimeRegistry.onProgress?(task, progress)
         await eventHub.publish(.progress(progress), for: task.id)
+    }
+
+    private func runInactivityWatchdog(timeout: Duration) async {
+        // Poll at half the timeout so worst-case detection latency is
+        // bounded by `timeout * 1.5` for any stall.
+        let cadence = max(Duration.milliseconds(50), timeout / 2)
+        while !Task.isCancelled, !isShutdown {
+            do {
+                try await Task.sleep(for: cadence)
+            } catch {
+                return
+            }
+            if Task.isCancelled || isShutdown { return }
+            await cancelInactiveDownloads(timeout: timeout)
+        }
+    }
+
+    private func cancelInactiveDownloads(timeout: Duration) async {
+        let now = ContinuousClock().now
+        let tasks = await runtimeRegistry.allTasks()
+        for task in tasks {
+            guard await task.state == .downloading else { continue }
+            guard let lastProgress = await task.lastProgressAt else { continue }
+            if now - lastProgress > timeout {
+                if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
+                    Self.logger.notice(
+                        "Cancelling stalled download \(task.id, privacy: .private(mask: .hash)) — no progress for \(String(describing: timeout), privacy: .public)"
+                    )
+                    urlTask.cancel()
+                }
+            }
+        }
     }
 
     private func handleDelegateEvent(_ event: DelegateEvent) async {

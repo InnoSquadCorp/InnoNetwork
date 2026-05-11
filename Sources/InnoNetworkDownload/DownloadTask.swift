@@ -25,6 +25,11 @@ public actor DownloadTask: Identifiable {
     /// `_generation` advances; otherwise increments by one for each
     /// retry of the same generation.
     private var _attempt: Int = 0
+    /// Timestamp of the most recent progress callback, set by
+    /// `DownloadManager` while the task is downloading. `nil` until the
+    /// first progress event arrives. Consumed by the optional
+    /// ``DownloadConfiguration/taskInactivityTimeout`` watchdog.
+    private var _lastProgressAt: ContinuousClock.Instant?
 
     public var state: DownloadState { _state }
     public var progress: DownloadProgress { _progress }
@@ -36,6 +41,9 @@ public actor DownloadTask: Identifiable {
     public var generation: Int { _generation }
     /// Current attempt index within the active generation.
     public var attempt: Int { _attempt }
+    /// Timestamp of the most recent progress callback, or `nil` when no
+    /// progress event has been observed yet.
+    public var lastProgressAt: ContinuousClock.Instant? { _lastProgressAt }
 
     /// Construct a download task description.
     ///
@@ -97,6 +105,10 @@ public actor DownloadTask: Identifiable {
         _progress = newProgress
     }
 
+    func setLastProgressAt(_ instant: ContinuousClock.Instant?) {
+        _lastProgressAt = instant
+    }
+
     func incrementRetryCount() -> Int {
         _retryCount += 1
         return _retryCount
@@ -131,6 +143,7 @@ public actor DownloadTask: Identifiable {
         _error = nil
         _generation = 0
         _attempt = 0
+        _lastProgressAt = nil
     }
 
     func startNextAttemptInCurrentGeneration() {
