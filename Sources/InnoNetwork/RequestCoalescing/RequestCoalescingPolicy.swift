@@ -146,11 +146,16 @@ package actor RequestCoalescer {
             // waiter from `entries`, optionally cancelling the operation
             // task) — the unfair-lock mark only closes the scheduling
             // window so a continuation can't be resumed with success
-            // after cancellation has been requested.
+            // after cancellation has been requested. The cleanup hop
+            // inherits the current priority rather than asserting
+            // `.userInitiated` so it does not preempt sibling waiters'
+            // pending `register(...)` hops; that preemption would let an
+            // about-to-join waiter miss the in-flight entry and trigger
+            // a duplicate transport request.
             self.cancelMarks.withLock { marks in
                 _ = marks.insert(waiterID)
             }
-            Task(priority: .userInitiated) {
+            Task {
                 await self.cancelWaiter(key: key, waiterID: waiterID)
             }
         }
