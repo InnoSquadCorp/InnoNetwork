@@ -80,7 +80,18 @@ let package = Package(
             targets: ["InnoNetworkTestSupport"]
         ),
     ],
-    dependencies: [],
+    dependencies: [
+        // `swift-openapi-runtime` is consumed only by the optional
+        // `InnoNetworkOpenAPI` library. Apps that do not link the
+        // OpenAPI product never resolve this dependency. Pinned to
+        // the 1.x range so future major releases must be reviewed
+        // before adoption — the runtime's `ClientTransport` shape is
+        // the surface we depend on directly.
+        .package(
+            url: "https://github.com/apple/swift-openapi-runtime",
+            .upToNextMajor(from: "1.0.0")
+        ),
+    ],
     targets: [
         .target(
             name: "InnoNetwork",
@@ -125,7 +136,10 @@ let package = Package(
         ),
         .target(
             name: "InnoNetworkOpenAPI",
-            dependencies: ["InnoNetwork"],
+            dependencies: [
+                "InnoNetwork",
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
+            ],
             path: "Sources/InnoNetworkOpenAPI",
             swiftSettings: strictSettings
         ),
