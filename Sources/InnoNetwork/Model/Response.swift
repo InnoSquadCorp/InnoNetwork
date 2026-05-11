@@ -9,6 +9,25 @@ import Foundation
 
 public struct Response: CustomDebugStringConvertible, Equatable, Sendable {
 
+    /// Whether the response carries a fully-buffered body or is the
+    /// header-only handshake of a streaming response whose body is
+    /// delivered out-of-band through an `AsyncSequence`.
+    ///
+    /// Response interceptors that inspect ``data`` (e.g. for error-body
+    /// shape detection) should branch on this — for ``Kind/headersOnly``
+    /// the data field is intentionally empty and must not be treated as a
+    /// successfully-decoded empty body.
+    public enum Kind: Sendable, Equatable {
+        /// Standard request/response: ``Response/data`` carries the full
+        /// (possibly empty) body bytes received from the server.
+        case body
+        /// Streaming handshake: ``Response/data`` is empty because the
+        /// body is delivered through an `AsyncSequence` rather than
+        /// buffered. Interceptors must not draw conclusions from
+        /// ``Response/data`` in this case.
+        case headersOnly
+    }
+
     /// The status code of the response.
     public let statusCode: Int
 
@@ -21,11 +40,23 @@ public struct Response: CustomDebugStringConvertible, Equatable, Sendable {
     /// The HTTPURLResponse object.
     public let response: HTTPURLResponse?
 
-    public init(statusCode: Int, data: Data, request: URLRequest? = nil, response: HTTPURLResponse) {
+    /// Whether this response represents a buffered body or a
+    /// streaming-handshake marker. See ``Response/Kind`` for the
+    /// semantics interceptors should follow.
+    public let kind: Kind
+
+    public init(
+        statusCode: Int,
+        data: Data,
+        request: URLRequest? = nil,
+        response: HTTPURLResponse,
+        kind: Kind = .body
+    ) {
         self.statusCode = statusCode
         self.data = data
         self.request = request
         self.response = response
+        self.kind = kind
     }
 
     /// A text description of the `Response`.
@@ -40,6 +71,7 @@ public struct Response: CustomDebugStringConvertible, Equatable, Sendable {
         lhs.statusCode == rhs.statusCode
             && lhs.data == rhs.data
             && lhs.response == rhs.response
+            && lhs.kind == rhs.kind
     }
 
     /// Returns a copy of the response with `data` zeroed out, used by the

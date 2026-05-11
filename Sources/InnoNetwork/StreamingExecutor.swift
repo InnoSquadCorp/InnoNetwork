@@ -120,7 +120,8 @@ package struct StreamingExecutor: Sendable {
                     statusCode: httpResponse.statusCode,
                     data: Data(),
                     request: urlRequest,
-                    response: httpResponse
+                    response: httpResponse,
+                    kind: .headersOnly
                 )
                 for interceptor in configuration.responseInterceptors {
                     networkResponse = try await interceptor.adapt(networkResponse, request: urlRequest)
