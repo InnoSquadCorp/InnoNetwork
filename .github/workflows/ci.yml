@@ -211,6 +211,9 @@ jobs:
       - name: Verify stable examples contract
         run: bash Scripts/check_stable_examples.sh
 
+      - name: Verify migration guide code blocks compile
+        run: bash Scripts/check_migration_examples.sh
+
       - name: Verify CHANGELOG Unreleased section
         run: bash Scripts/check_changelog_sync.sh
 
