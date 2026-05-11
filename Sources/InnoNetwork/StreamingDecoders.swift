@@ -127,7 +127,15 @@ public final class ServerSentEventDecoder: Sendable {
 
             switch field {
             case "id":
-                if !value.contains("\u{0000}") {
+                // SSE id is echoed back to the server as `Last-Event-ID`
+                // on resume. A server (or an upstream proxy) that
+                // injected newlines or other control characters into the
+                // id field could trigger header smuggling on the
+                // reconnect — refuse to accept any id that contains
+                // characters disallowed by the HTTP header grammar
+                // (RFC 9110 §5.5 `field-value`). Bytes outside the
+                // visible ASCII range, plus CR/LF and NUL, are dropped.
+                if Self.isSanitizedSSEID(value) {
                     state.current.id = value
                 }
             case "event":
@@ -147,6 +155,24 @@ public final class ServerSentEventDecoder: Sendable {
             }
             return nil
         }
+    }
+
+    /// Validates an SSE `id` field's contents against the safe subset
+    /// allowed inside the `Last-Event-ID` HTTP header on resume.
+    ///
+    /// Reject `\r`, `\n`, `\u{0000}`, and any byte outside the visible
+    /// ASCII range (`0x20`–`0x7E`). The visible-ASCII bound is stricter
+    /// than RFC 9110 §5.5 strictly requires — but it is the conservative
+    /// subset every HTTP stack we ship against accepts, so we trade off
+    /// permissiveness for guaranteed header transparency.
+    static func isSanitizedSSEID(_ value: String) -> Bool {
+        for scalar in value.unicodeScalars {
+            let codePoint = scalar.value
+            if codePoint < 0x20 || codePoint > 0x7E {
+                return false
+            }
+        }
+        return true
     }
 }
 
