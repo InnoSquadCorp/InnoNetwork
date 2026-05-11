@@ -151,11 +151,12 @@ struct URLProtocolIntegrationTests {
             Issue.record("Expected response-too-large NetworkError.underlying")
         } catch let error as NetworkError {
             switch error {
-            case .underlying(let underlying, _) where underlying.code == 4003:
+            case .underlying(let underlying, _)
+            where underlying.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue:
                 #expect(underlying.message.contains("1024"))
                 #expect(underlying.message.contains("\(payload.count)"))
             default:
-                Issue.record("Expected NetworkError.underlying with code 4003, got \(error)")
+                Issue.record("Expected NetworkError.underlying with responseBodyLimitExceeded code, got \(error)")
             }
         }
     }
