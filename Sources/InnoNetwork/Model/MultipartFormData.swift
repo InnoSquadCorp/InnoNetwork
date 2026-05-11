@@ -29,6 +29,17 @@ public struct MultipartFormData: Sendable {
         self.parts = []
     }
 
+    /// Appends an in-memory part.
+    ///
+    /// `mimeType` is written verbatim into the `Content-Type` header
+    /// after CR/LF/control characters are neutralised. Structural
+    /// punctuation (`;`, `=`, `"`) is **not** escaped — passing
+    /// `"application/json; charset=utf-8"` deliberately preserves the
+    /// `charset` parameter on the wire. The contract is: the caller
+    /// owns parameter syntax and quoting, and must not feed untrusted
+    /// strings here. CR/LF stripping guards against header-smuggling
+    /// regressions but is not a substitute for treating `mimeType` as
+    /// trusted input.
     public mutating func append(_ data: Data, name: String, fileName: String? = nil, mimeType: String? = nil) {
         parts.append(Part(source: .data(data), name: name, fileName: fileName, mimeType: mimeType))
     }
@@ -83,7 +94,11 @@ public struct MultipartFormData: Sendable {
     ///   - url: Local file URL.
     ///   - name: Form field name.
     ///   - mimeType: Optional MIME override; otherwise inferred from the
-    ///     file extension.
+    ///     file extension. The provided string is written verbatim into
+    ///     `Content-Type` after CR/LF/control bytes are neutralised —
+    ///     `;`/`=`/`"` are **not** escaped, so callers retain control
+    ///     over `charset` / `boundary` parameter syntax. Treat this
+    ///     parameter as trusted input.
     /// - Throws: ``NetworkError/configuration(reason:)`` with
     ///   ``NetworkConfigurationFailureReason/invalidRequest(_:)`` when the
     ///   URL does not point at a regular readable file.
@@ -565,6 +580,14 @@ extension MultipartFormData {
             return escaped
         }
 
+        /// Neutralises CR/LF/control bytes in a header *value* so a part's
+        /// MIME type cannot terminate the field early or smuggle a sibling
+        /// header. Parameter syntax (`;`, `=`, `"`) and non-ASCII bytes
+        /// pass through unchanged — the public `append(... mimeType:)`
+        /// surfaces document that callers own quoting and must not pass
+        /// untrusted strings here. The function is therefore a defensive
+        /// floor against regression, not full RFC 7231 §3.1.1
+        /// `media-type` validation.
         private static func escapedHeaderValue(_ value: String) -> String {
             var escaped = ""
             escaped.reserveCapacity(value.utf8.count)
