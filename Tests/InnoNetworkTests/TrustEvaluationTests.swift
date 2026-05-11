@@ -147,17 +147,14 @@ struct TrustEvaluationTests {
         #expect(unsupported == nil)
     }
 
-    @Test(
-        "SPKI helper recognizes Ed25519 by name and by OID",
-        arguments: ["ed25519", "Ed25519", "ED25519", "1.3.101.112"]
-    )
-    func spkiEncodingHelperSupportsEd25519(keyType: String) {
+    @Test("SPKI helper recognizes Ed25519 by OID")
+    func spkiEncodingHelperSupportsEd25519OID() {
         // Ed25519 public keys are always 32 bytes per RFC 8032; use a fixed
         // test vector so the SPKI bytes are deterministic.
         let publicKey = Data(repeating: 0x00, count: 32)
         let spki = PublicKeyPinningEvaluator.spkiData(
             publicKeyData: publicKey,
-            keyType: keyType,
+            keyType: "1.3.101.112",
             keySizeInBits: 256
         )
 
@@ -170,6 +167,26 @@ struct TrustEvaluationTests {
                 0x03, 0x21, 0x00,  // BIT STRING, 33 bytes (0 unused + 32 key)
             ] + Array(repeating: UInt8(0x00), count: 32)
         #expect(spki == Data(expected))
+    }
+
+    /// CONTRACT LOCK — Ed25519 identification is OID-only.
+    ///
+    /// Informal `"ed25519"` / `"Ed25519"` / `"ED25519"` keyType strings
+    /// produced by private CAs must not match: the loose word match was
+    /// dropped to avoid colliding with a future Security.framework
+    /// constant that happens to embed the substring.
+    @Test(
+        "SPKI helper rejects Ed25519 keyword variants",
+        arguments: ["ed25519", "Ed25519", "ED25519", "ed-25519"]
+    )
+    func spkiEncodingHelperRejectsEd25519Keywords(keyType: String) {
+        let publicKey = Data(repeating: 0x00, count: 32)
+        let result = PublicKeyPinningEvaluator.spkiData(
+            publicKeyData: publicKey,
+            keyType: keyType,
+            keySizeInBits: 256
+        )
+        #expect(result == nil, "informal Ed25519 keyword must not be recognised; require the OID")
     }
 
     @Test("SPKI helper still returns nil for unknown algorithm strings")
