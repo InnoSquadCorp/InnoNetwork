@@ -20,6 +20,28 @@ public enum ResponseCachePolicy: Sendable, Equatable {
     /// Entries flagged as `requiresRevalidation` skip the fast path and force
     /// revalidation on every request even within `maxAge`.
     case staleWhileRevalidate(maxAge: Duration, staleWindow: Duration)
+    /// RFC 9111 directive-aware adapter that wraps another policy. The
+    /// adapter inspects three `Cache-Control` directives on the cached
+    /// response and overrides the inner policy's read-side decision when
+    /// they apply:
+    ///
+    /// - `no-store` — the entry is treated as absent; reads fall through
+    ///   to a network revalidation even though the default writer already
+    ///   refuses to persist `no-store` responses.
+    /// - `must-revalidate` — entries past the effective `maxAge` cannot
+    ///   be served from the stale window; a forced conditional
+    ///   revalidation runs instead.
+    /// - `max-age=N` — the effective freshness window becomes
+    ///   `min(server.maxAge, inner.maxAge)`. The server can shorten the
+    ///   caller's freshness ceiling but never extend it.
+    ///
+    /// Wrapping is the only way to opt into directive enforcement; the
+    /// other cases remain RFC-agnostic by design so the default
+    /// `Cache-Control: max-age=...` behaviour stays predictable across
+    /// origins that emit conflicting directives. Wrapping
+    /// `.rfc9111Compliant(_:)` again is a no-op at construction —
+    /// double-wrapping is collapsed.
+    indirect case rfc9111Compliant(wrapping: ResponseCachePolicy)
 }
 
 
@@ -375,6 +397,8 @@ package extension ResponseCachePolicy {
             return false
         case .networkOnly, .cacheFirst, .staleWhileRevalidate:
             return true
+        case .rfc9111Compliant(let inner):
+            return inner.isEnabled
         }
     }
 
@@ -384,6 +408,8 @@ package extension ResponseCachePolicy {
             return true
         case .disabled, .networkOnly:
             return false
+        case .rfc9111Compliant(let inner):
+            return inner.allowsConditionalRevalidation
         }
     }
 
@@ -395,6 +421,8 @@ package extension ResponseCachePolicy {
             return true
         case .disabled, .networkOnly:
             return false
+        case .rfc9111Compliant(let inner):
+            return inner.allowsCacheRead
         }
     }
 
@@ -407,6 +435,8 @@ package extension ResponseCachePolicy {
             return true
         case .disabled, .networkOnly:
             return false
+        case .rfc9111Compliant(let inner):
+            return inner.allowsCacheWrite
         }
     }
 
@@ -431,6 +461,8 @@ package extension ResponseCachePolicy {
                 return .returnStaleAndRevalidate(cached)
             }
             return .revalidate(cached)
+        case .rfc9111Compliant(let inner):
+            return prepareWithRFC9111(inner: inner, cached: cached, now: now)
         }
     }
 }
