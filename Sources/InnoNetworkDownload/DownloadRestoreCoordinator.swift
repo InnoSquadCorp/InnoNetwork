@@ -38,6 +38,16 @@ package struct DownloadRestoreCoordinator {
         var restoredTaskIDs = Set<String>()
 
         for urlTask in downloadTasks {
+            // A system task that is mid-cancel does not produce future
+            // delegate callbacks the runtime registry can act on. Letting
+            // it linger in the registry would leave a phantom entry that
+            // future restarts and pause/resume reconciliation would have
+            // to special-case. Skip the registry hop entirely and let the
+            // cancel finish on its own without surfacing as a restored
+            // task.
+            if urlTask.state == .canceling {
+                continue
+            }
             guard let downloadTask = await restoreTrackedTask(for: urlTask) else {
                 urlTask.cancel()
                 continue
@@ -53,6 +63,8 @@ package struct DownloadRestoreCoordinator {
             case .suspended:
                 state = .paused
             case .canceling:
+                // Defensive — the `.canceling` short-circuit above would
+                // normally route this case away before we reach the switch.
                 state = .cancelled
             case .completed:
                 state = .completed
