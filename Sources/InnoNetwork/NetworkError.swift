@@ -430,8 +430,31 @@ extension NetworkError: CustomNSError {
         if let underlyingError {
             userInfo[NSUnderlyingErrorKey] = underlyingError
         }
+        userInfo[NetworkError.errorCodeUserInfoKey] = errorCode
+        if let response = self.response {
+            userInfo[NetworkError.statusCodeUserInfoKey] = response.statusCode
+            if let urlString = response.request?.url?.absoluteString
+                ?? response.response?.url?.absoluteString
+            {
+                userInfo[NetworkError.urlUserInfoKey] = urlString
+            }
+        }
         return userInfo
     }
+
+    /// `NSError.userInfo` key for the integer ``NetworkError/errorCode``.
+    /// Mirrors the catalog in ``NetworkErrorCode`` and is stable across
+    /// releases — consumers can match on the integer without importing the
+    /// enum type.
+    public static let errorCodeUserInfoKey: String = "InnoNetworkErrorCode"
+    /// `NSError.userInfo` key for the HTTP status code when a `Response` is
+    /// attached. Absent for transport/cancellation failures with no
+    /// response.
+    public static let statusCodeUserInfoKey: String = "InnoNetworkStatusCode"
+    /// `NSError.userInfo` key for the request URL (or response URL fallback)
+    /// when one is attached. Absent for configuration failures that fail
+    /// before a URL is composed.
+    public static let urlUserInfoKey: String = "InnoNetworkURL"
 }
 
 // MARK: - Redaction
