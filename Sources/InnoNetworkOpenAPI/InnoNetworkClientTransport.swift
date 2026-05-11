@@ -80,8 +80,22 @@ public final class InnoNetworkClientTransport: ClientTransport {
             throw InnoNetworkClientTransportError.nonHTTPResponse(urlResponse)
         }
 
+        // Enforce the response ceiling at the boundary so a peer that
+        // ignores the byte limit cannot push a multi-GiB body into the
+        // generated client. URLSession has already buffered the full
+        // payload by the time `session.data(for:)` returns, but failing
+        // here at least short-circuits the downstream decode and signals
+        // the violation to the generated client.
+        if responseData.count > responseBodyByteLimit {
+            throw InnoNetworkClientTransportError.responseBodyTooLarge(
+                limit: responseBodyByteLimit,
+                received: responseData.count
+            )
+        }
+
         let response = try makeHTTPResponse(from: httpResponse)
-        let responseBody = responseData.isEmpty
+        let responseBody =
+            responseData.isEmpty
             ? nil
             : HTTPBody(ArraySlice(responseData))
         return (response, responseBody)
@@ -134,6 +148,14 @@ public final class InnoNetworkClientTransport: ClientTransport {
                 let valueString = value as? String,
                 let fieldName = HTTPField.Name(nameString)
             else { continue }
+            // `HTTPURLResponse.allHeaderFields` collapses repeated headers
+            // (notably `Set-Cookie`, which may include commas in `Expires`)
+            // into a single comma-joined string. Splitting on `, ` for that
+            // case alone produces invalid cookies, but emitting a single
+            // `Set-Cookie` field keeps RFC 6265 parsers that consume the
+            // value as one string working — so we accept the lossy
+            // collapse Foundation has already performed and add a single
+            // field. Other headers are safe under RFC 9110 comma-join.
             headerFields.append(HTTPField(name: fieldName, value: valueString))
         }
         return HTTPResponse(status: status, headerFields: headerFields)
@@ -151,6 +173,9 @@ public enum InnoNetworkClientTransportError: Error, CustomStringConvertible {
     /// The origin returned a status code outside the IANA-recognised
     /// range, so `HTTPResponse.Status(code:)` rejected it.
     case invalidStatusCode(Int)
+    /// The collected response body exceeded
+    /// ``InnoNetworkClientTransport/responseBodyByteLimit``.
+    case responseBodyTooLarge(limit: Int, received: Int)
 
     public var description: String {
         switch self {
@@ -161,6 +186,8 @@ public enum InnoNetworkClientTransportError: Error, CustomStringConvertible {
             "InnoNetworkClientTransport: expected HTTPURLResponse, got \(type(of: response))"
         case .invalidStatusCode(let code):
             "InnoNetworkClientTransport: server returned non-recognised status code \(code)"
+        case .responseBodyTooLarge(let limit, let received):
+            "InnoNetworkClientTransport: response body \(received) bytes exceeded limit \(limit)"
         }
     }
 }
