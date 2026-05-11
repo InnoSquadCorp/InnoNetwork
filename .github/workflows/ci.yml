@@ -190,6 +190,9 @@ jobs:
       - name: Verify stable examples contract
         run: bash Scripts/check_stable_examples.sh
 
+      - name: Verify CHANGELOG Unreleased section
+        run: bash Scripts/check_changelog_sync.sh
+
       - name: Build documentation smoke target
         run: xcrun swift build --target InnoNetworkDocSmoke
 
