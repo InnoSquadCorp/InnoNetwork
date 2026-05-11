@@ -55,7 +55,10 @@ extension DownloadManagerError: LocalizedError {
 /// `application(_:handleEventsForBackgroundURLSession:completionHandler:)`
 /// (a synchronous Foundation entry point) can call it without `await`.
 public actor DownloadManager {
-    private static let logger = Logger(subsystem: "innosquad.network.download", category: "DownloadManager")
+    // Internal so the same-module extension files (DownloadManager+DelegateEvents,
+    // DownloadManager+InactivityWatchdog, DownloadManager+RestorationDrain) can
+    // share the same os.log category. Not part of the public API surface.
+    static let logger = Logger(subsystem: "innosquad.network.download", category: "DownloadManager")
 
     /// Recommended throwing factory for constructing a `DownloadManager`.
     ///
@@ -80,30 +83,34 @@ public actor DownloadManager {
 
     private static let activeSessionIdentifiers = OSAllocatedUnfairLock(initialState: Set<String>())
 
-    private let configuration: DownloadConfiguration
+    // Several stored properties below drop `private` (defaulting to `internal`)
+    // so the same-module extension files split out of this actor can read
+    // them. The actor's public API surface is unchanged — `internal` keeps
+    // them hidden from external modules.
+    let configuration: DownloadConfiguration
     private let session: any DownloadURLSession
     private let delegate: DownloadSessionDelegate
     private let backgroundCompletionStore: BackgroundCompletionStore
     private let persistence: DownloadTaskPersistence
 
-    private let runtimeRegistry = DownloadRuntimeRegistry()
-    private let restoreBarrier = RestoreBarrier()
+    let runtimeRegistry = DownloadRuntimeRegistry()
+    let restoreBarrier = RestoreBarrier()
     private let invalidationBarrier: InvalidationBarrier
-    private var pendingRestoreFailures: Set<String> = []
+    var pendingRestoreFailures: Set<String> = []
     /// Tracks the one-shot shutdown latch. Kept `nonisolated` (and behind
     /// an `OSAllocatedUnfairLock`) so the `deinit` warning path and the
     /// actor-isolated ``shutdown()`` agree on a single state without
     /// requiring re-entry into the actor — mirrors the pattern in
     /// `InnoNetworkWebSocket.WebSocketManager`.
     nonisolated private let shutdownLock = OSAllocatedUnfairLock<Bool>(initialState: false)
-    private let eventHub: TaskEventHub<DownloadEvent>
+    let eventHub: TaskEventHub<DownloadEvent>
     private let delegateEvents: AsyncStream<DelegateEvent>
     private let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
     /// Background task that polls in-flight downloads and cancels any that
     /// have not received a progress callback for at least
     /// ``DownloadConfiguration/taskInactivityTimeout``. `nil` when the
     /// configuration disables the watchdog.
-    private var inactivityWatchdogTask: Task<Void, Never>?
+    var inactivityWatchdogTask: Task<Void, Never>?
     /// Drains delegate events into actor-isolated handlers; cancelled in
     /// ``shutdown()`` so it does not outlive the manager when callers exit
     /// without waiting for the stream to finish naturally. Stored behind a
@@ -115,7 +122,9 @@ public actor DownloadManager {
     nonisolated private let restorationTaskHandle =
         OSAllocatedUnfairLock<Task<Void, Never>?>(initialState: nil)
 
-    private enum DelegateEvent: Sendable {
+    // Internal so extension files in this module can pattern-match on the
+    // payload when implementing the delegate-event consumer.
+    enum DelegateEvent: Sendable {
         case progress(
             taskIdentifier: Int,
             bytesWritten: Int64,
@@ -129,7 +138,7 @@ public actor DownloadManager {
         )
     }
 
-    private var transferCoordinator: DownloadTransferCoordinator {
+    var transferCoordinator: DownloadTransferCoordinator {
         DownloadTransferCoordinator(
             session: session,
             runtimeRegistry: runtimeRegistry,
@@ -138,7 +147,7 @@ public actor DownloadManager {
         )
     }
 
-    private var restoreCoordinator: DownloadRestoreCoordinator {
+    var restoreCoordinator: DownloadRestoreCoordinator {
         DownloadRestoreCoordinator(
             configuration: configuration,
             session: session,
@@ -148,7 +157,7 @@ public actor DownloadManager {
         )
     }
 
-    private var failureCoordinator: DownloadFailureCoordinator {
+    var failureCoordinator: DownloadFailureCoordinator {
         DownloadFailureCoordinator(
             configuration: configuration,
             runtimeRegistry: runtimeRegistry,
@@ -307,13 +316,6 @@ public actor DownloadManager {
             Task { [weak self] in
                 await self?.startInactivityWatchdog(timeout: timeout)
             }
-        }
-    }
-
-    private func startInactivityWatchdog(timeout: Duration) {
-        guard !isShutdown, inactivityWatchdogTask == nil else { return }
-        inactivityWatchdogTask = Task { [weak self] in
-            await self?.runInactivityWatchdog(timeout: timeout)
         }
     }
 
@@ -656,171 +658,6 @@ public actor DownloadManager {
         return stream
     }
 
-    private func recordPendingRestoreFailures(_ taskIDs: [String]) async {
-        pendingRestoreFailures.formUnion(taskIDs)
-        // If callers wired handlers up before restoration completed, flush
-        // immediately so they observe the failure without needing to also
-        // subscribe through `events(for:)`.
-        await drainPendingRestoreFailuresToHandlers()
-    }
-
-    private func flushPendingRestoreFailureIfNeeded(taskID: String) async {
-        guard pendingRestoreFailures.remove(taskID) != nil else { return }
-        await drainRestoreFailure(taskID: taskID)
-    }
-
-    private func drainPendingRestoreFailuresToHandlers() async {
-        let onState = await runtimeRegistry.onStateChanged
-        let onFailed = await runtimeRegistry.onFailed
-        guard onState != nil || onFailed != nil else { return }
-        let ids = pendingRestoreFailures
-        pendingRestoreFailures.removeAll()
-        for id in ids {
-            await drainRestoreFailure(taskID: id)
-        }
-    }
-
-    private func drainRestoreFailure(taskID: String) async {
-        let task = await runtimeRegistry.task(withId: taskID)
-        if let task {
-            await runtimeRegistry.onStateChanged?(task, .failed)
-            await runtimeRegistry.onFailed?(task, .restorationMissingSystemTask)
-        }
-        await eventHub.publish(.stateChanged(.failed), for: taskID)
-        await eventHub.publish(.failed(.restorationMissingSystemTask), for: taskID)
-        await eventHub.finish(taskID: taskID)
-        if let task {
-            await runtimeRegistry.remove(task)
-        }
-    }
-
-    private func waitForRestore() async -> Bool {
-        do {
-            try await restoreBarrier.wait()
-            try Task.checkCancellation()
-            return true
-        } catch {
-            return false
-        }
-    }
-
-    func handleProgress(
-        taskIdentifier: Int, bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
-    ) async {
-        guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else { return }
-
-        let progress = DownloadProgress(
-            bytesWritten: bytesWritten,
-            totalBytesWritten: totalBytesWritten,
-            totalBytesExpectedToWrite: totalBytesExpectedToWrite
-        )
-        await task.updateProgress(progress)
-        if configuration.taskInactivityTimeout != nil {
-            await task.setLastProgressAt(ContinuousClock().now)
-        }
-        await runtimeRegistry.onProgress?(task, progress)
-        await eventHub.publish(.progress(progress), for: task.id)
-    }
-
-    private func runInactivityWatchdog(timeout: Duration) async {
-        // Poll at half the timeout so worst-case detection latency is
-        // bounded by `timeout * 1.5` for any stall.
-        let cadence = max(Duration.milliseconds(50), timeout / 2)
-        while !Task.isCancelled, !isShutdown {
-            do {
-                try await Task.sleep(for: cadence)
-            } catch {
-                return
-            }
-            if Task.isCancelled || isShutdown { return }
-            await cancelInactiveDownloads(timeout: timeout)
-        }
-    }
-
-    private func cancelInactiveDownloads(timeout: Duration) async {
-        let now = ContinuousClock().now
-        let tasks = await runtimeRegistry.allTasks()
-        for task in tasks {
-            guard await task.state == .downloading else { continue }
-            // Seed `lastProgressAt` lazily on first observation of a
-            // `.downloading` task that has never reported progress. This
-            // covers the "server accepted the connection but never sends
-            // bytes" case — the most common real-world stall — so the
-            // watchdog measures from "first observed downloading" rather
-            // than refusing to fire because no progress arrived.
-            let lastProgress: ContinuousClock.Instant
-            if let observed = await task.lastProgressAt {
-                lastProgress = observed
-            } else {
-                await task.setLastProgressAt(now)
-                continue
-            }
-            if now - lastProgress > timeout {
-                // Re-check state right before cancel: the task may have
-                // raced to `.paused` / `.completed` / `.failed` across the
-                // `lastProgressAt` await above.
-                guard await task.state == .downloading else { continue }
-                Self.logger.notice(
-                    "Cancelling stalled download \(task.id, privacy: .private(mask: .hash)) — no progress for \(String(describing: timeout), privacy: .public)"
-                )
-                await cancel(task)
-            }
-        }
-    }
-
-    private func handleDelegateEvent(_ event: DelegateEvent) async {
-        switch event {
-        case .progress(let taskIdentifier, let bytesWritten, let totalBytesWritten, let totalBytesExpectedToWrite):
-            await handleProgress(
-                taskIdentifier: taskIdentifier,
-                bytesWritten: bytesWritten,
-                totalBytesWritten: totalBytesWritten,
-                totalBytesExpectedToWrite: totalBytesExpectedToWrite
-            )
-        case .completion(let taskIdentifier, let location, let error):
-            await handleCompletion(taskIdentifier: taskIdentifier, location: location, error: error)
-        }
-    }
-
-    func handleCompletion(taskIdentifier: Int, location: URL?, error: SendableUnderlyingError?) async {
-        guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else { return }
-
-        if let error {
-            await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
-            await failureCoordinator.handleError(task: task, error: error) { [transferCoordinator] task in
-                await transferCoordinator.startDownload(task)
-            }
-            return
-        }
-
-        guard let location else {
-            await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
-            await failureCoordinator.handleError(
-                task: task,
-                error: SendableUnderlyingError(
-                    domain: "InnoNetworkDownload",
-                    code: -1,
-                    message: "Download completed without temporary file location."
-                )
-            ) { [transferCoordinator] task in
-                await transferCoordinator.startDownload(task)
-            }
-            return
-        }
-
-        do {
-            try await transferCoordinator.completeDownload(task: task, temporaryLocation: location)
-        } catch {
-            await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
-            await failureCoordinator.handleError(
-                task: task,
-                error: SendableUnderlyingError(error)
-            ) { [transferCoordinator] task in
-                await transferCoordinator.startDownload(task)
-            }
-        }
-    }
-
     /// Wired into the host app's
     /// `application(_:handleEventsForBackgroundURLSession:completionHandler:)`
     /// entry point. That method is synchronous, so this entry point is
@@ -880,7 +717,7 @@ public actor DownloadManager {
         }
     }
 
-    nonisolated private var isShutdown: Bool {
+    nonisolated var isShutdown: Bool {
         shutdownLock.withLock { $0 }
     }
 
@@ -899,7 +736,7 @@ public actor DownloadManager {
     }
 }
 
-private actor RestoreBarrier {
+actor RestoreBarrier {
     private var isCompleted = false
     private var waiters: [UUID: CheckedContinuation<Void, Error>] = [:]
     /// Tracks the detached `Task`s spawned by the `withTaskCancellationHandler`
