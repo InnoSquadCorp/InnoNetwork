@@ -1,9 +1,9 @@
 import Foundation
+@_spi(GeneratedClientSupport) import InnoNetwork
 import InnoNetworkTestSupport
 import Testing
 import os
 
-@_spi(GeneratedClientSupport) import InnoNetwork
 @testable import InnoNetwork
 
 @Suite("RetryCoordinator Timing Tests")
