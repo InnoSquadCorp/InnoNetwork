@@ -176,8 +176,16 @@ package struct StreamingExecutor: Sendable {
                         )
                     }
                     if let output = decoded {
-                        continuation.yield(output)
+                        // Record the resume id *before* yielding so a
+                        // mid-yield cancellation (or back-pressure stall
+                        // on a buffered continuation) cannot drop the
+                        // event id we'd need to send `Last-Event-ID` on
+                        // a subsequent reconnect. `yield` is the
+                        // suspension point an attacker on the wire (or a
+                        // slow consumer) can stretch; the id assignment
+                        // is local and synchronous.
                         resumeState.observe(eventID: request.eventID(from: output))
+                        continuation.yield(output)
                     }
                 }
 
