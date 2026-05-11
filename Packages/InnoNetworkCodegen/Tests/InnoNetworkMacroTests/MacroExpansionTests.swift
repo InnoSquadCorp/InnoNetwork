@@ -204,6 +204,64 @@ struct MacroExpansionTests {
         )
     }
 
+    @Test("APIDefinition macro rejects path placeholders bound to generic parameters")
+    func apiDefinitionGenericParameterPlaceholderDiagnostic() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .get, path: "/users/{id}")
+            struct GetUser<T> {
+                let id: T
+                typealias APIResponse = User
+            }
+            """,
+            expandedSource:
+                """
+                struct GetUser<T> {
+                    let id: T
+                    typealias APIResponse = User
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition path placeholder {id} cannot reference a generic parameter. Declare the property with a concrete `LosslessStringConvertible & Sendable` type.",
+                    line: 1,
+                    column: 1
+                )
+            ],
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro rejects path placeholders bound to opaque types")
+    func apiDefinitionOpaqueTypePlaceholderDiagnostic() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .get, path: "/users/{id}")
+            struct GetUser {
+                let id: some LosslessStringConvertible
+                typealias APIResponse = User
+            }
+            """,
+            expandedSource:
+                """
+                struct GetUser {
+                    let id: some LosslessStringConvertible
+                    typealias APIResponse = User
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition path placeholder {id} cannot reference an opaque (`some`) type. Declare the property with a concrete `LosslessStringConvertible & Sendable` type.",
+                    line: 1,
+                    column: 1
+                )
+            ],
+            macros: macros
+        )
+    }
+
     @Test("APIDefinition macro suggests FixIt converting interpolation to placeholder")
     func apiDefinitionInterpolationFixIt() {
         assertMacroExpansion(

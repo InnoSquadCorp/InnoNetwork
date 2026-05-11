@@ -137,9 +137,20 @@ public struct APIDefinitionMacro: ExtensionMacro {
 
     private struct StoredProperty {
         let isOptional: Bool
+        let typeKind: TypeKind
+    }
+
+    /// Coarse classification of a stored property's declared type, used by
+    /// path placeholder validation. The macro only inspects syntax, so any
+    /// classification more precise than this requires the type checker.
+    private enum TypeKind {
+        case concrete
+        case opaque
+        case genericParameter
     }
 
     private static func storedProperties(in declaration: some DeclGroupSyntax) -> [String: StoredProperty] {
+        let genericParameters = genericParameterNames(in: declaration)
         var properties: [String: StoredProperty] = [:]
         for member in declaration.memberBlock.members {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
@@ -149,10 +160,71 @@ public struct APIDefinitionMacro: ExtensionMacro {
                 else {
                     continue
                 }
-                properties[identifier] = StoredProperty(isOptional: isOptionalType(binding.typeAnnotation?.type))
+                let type = binding.typeAnnotation?.type
+                properties[identifier] = StoredProperty(
+                    isOptional: isOptionalType(type),
+                    typeKind: classifyType(type, genericParameters: genericParameters)
+                )
             }
         }
         return properties
+    }
+
+    /// Returns the syntactic generic parameter names declared on the type
+    /// the macro is attached to (e.g. `T`, `Element`). The macro rejects
+    /// these as path placeholder targets because the encoder requires a
+    /// concrete `LosslessStringConvertible & Sendable` type and the macro
+    /// cannot inspect generic constraints at expansion time.
+    private static func genericParameterNames(in declaration: some DeclGroupSyntax) -> Set<String> {
+        let syntax = Syntax(declaration)
+        let clause: GenericParameterClauseSyntax?
+        if let declaration = syntax.as(StructDeclSyntax.self) {
+            clause = declaration.genericParameterClause
+        } else if let declaration = syntax.as(ClassDeclSyntax.self) {
+            clause = declaration.genericParameterClause
+        } else if let declaration = syntax.as(ActorDeclSyntax.self) {
+            clause = declaration.genericParameterClause
+        } else if let declaration = syntax.as(EnumDeclSyntax.self) {
+            clause = declaration.genericParameterClause
+        } else {
+            clause = nil
+        }
+        guard let clause else { return [] }
+        return Set(clause.parameters.map { $0.name.text })
+    }
+
+    /// Syntactic classification. Returns `.opaque` for `some X` types,
+    /// `.genericParameter` when the type is a bare identifier that matches a
+    /// generic parameter on the enclosing declaration, and `.concrete`
+    /// otherwise. Limitations:
+    /// - `nil` (inferred-type bindings) is reported as `.concrete` so that
+    ///   inference-via-initializer keeps working; the compiler still
+    ///   enforces the `LosslessStringConvertible & Sendable` constraint on
+    ///   the generated `percentEncodedSegment` call site.
+    /// - Aliases that resolve to a generic parameter (e.g. `typealias U = T`)
+    ///   are not detected — only direct references to the parameter name are.
+    private static func classifyType(
+        _ type: TypeSyntax?,
+        genericParameters: Set<String>
+    ) -> TypeKind {
+        guard let type else { return .concrete }
+        if type.is(SomeOrAnyTypeSyntax.self) {
+            // `some X` and `any X` share the same syntax node; reject only
+            // `some` because `any X` (where `X: LosslessStringConvertible`)
+            // is a legitimate existential the encoder can still consume.
+            if let constrained = type.as(SomeOrAnyTypeSyntax.self),
+                constrained.someOrAnySpecifier.text == "some"
+            {
+                return .opaque
+            }
+        }
+        if let identifier = type.as(IdentifierTypeSyntax.self),
+            identifier.genericArgumentClause == nil,
+            genericParameters.contains(identifier.name.text)
+        {
+            return .genericParameter
+        }
+        return .concrete
     }
 
     /// Best-effort detection of whether a stored property is declared optional.
@@ -262,6 +334,20 @@ public struct APIDefinitionMacro: ExtensionMacro {
                         "@APIDefinition path placeholder {\(name)} cannot reference an Optional stored property.",
                         id: "api-definition-optional-placeholder"
                     ).error(at: anchor)
+                }
+                switch property.typeKind {
+                case .opaque:
+                    throw InnoNetworkMacroDiagnostic(
+                        "@APIDefinition path placeholder {\(name)} cannot reference an opaque (`some`) type. Declare the property with a concrete `LosslessStringConvertible & Sendable` type.",
+                        id: "api-definition-opaque-placeholder"
+                    ).error(at: anchor)
+                case .genericParameter:
+                    throw InnoNetworkMacroDiagnostic(
+                        "@APIDefinition path placeholder {\(name)} cannot reference a generic parameter. Declare the property with a concrete `LosslessStringConvertible & Sendable` type.",
+                        id: "api-definition-generic-placeholder"
+                    ).error(at: anchor)
+                case .concrete:
+                    break
                 }
                 result += "\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(\(name)))"
                 index = path.index(after: close)
