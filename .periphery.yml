@@ -1,0 +1,62 @@
+# Periphery configuration for InnoNetwork.
+#
+# `swift scan` analyses every target in the SwiftPM project for unused
+# Swift declarations. The library ships a number of intentionally
+# `public` symbols that are addressed dynamically (DocC examples, macro
+# expansions, generated allowlist parity, etc.), so we tune the report
+# to surface real dead code without drowning maintainers in false
+# positives.
+
+project: ./Package.swift
+
+# Treat declarations that are only referenced inside the same target as
+# unused even if they are `public`. Without this flag Periphery keeps
+# every public symbol because something outside the package *could*
+# reference it. With the public-symbol allowlists in `Scripts/symbols/`
+# already enforcing the intentional surface, we want Periphery to focus
+# on truly local dead code.
+retain_public: false
+
+# `package`-scoped symbols are part of an explicit cross-target contract
+# inside the multi-module Package.swift layout — keep them retained so
+# Periphery does not flag legitimate cross-product helpers.
+retain_files:
+  - Sources/InnoNetwork/Resources/**/*
+  - Examples/**/*
+  - SmokeTests/**/*
+  - Benchmarks/**/*
+  - Tests/**/*
+
+# Symbols exposed for SPI consumers ship with explicit `@_spi`
+# annotations. Periphery cannot resolve cross-package SPI usage when
+# the consumer lives outside the package, so we retain them eagerly.
+retain_spi: true
+
+# Codegen / runtime support targets emit declarations that are consumed
+# by macro expansions and generated code; treat them as roots so their
+# entry points are never flagged.
+schemes:
+  - InnoNetwork
+  - InnoNetworkDownload
+  - InnoNetworkWebSocket
+  - InnoNetworkPersistentCache
+  - InnoNetworkOpenAPI
+  - InnoNetworkTrust
+  - InnoNetworkTestSupport
+
+# Test targets are not interesting for the dead-code report.
+exclude_targets:
+  - InnoNetworkTests
+  - InnoNetworkDownloadTests
+  - InnoNetworkPersistentCacheTests
+  - InnoNetworkTrustTests
+  - InnoNetworkWebSocketTests
+
+# Fail the run when any new unused declaration shows up — the lint job
+# in CI inherits this default so a PR cannot silently regress.
+strict: true
+
+# Markdown output is easier to scan in a CI annotation than the default
+# console format; the lint job uploads the rendered report as an
+# artefact.
+format: github-actions
