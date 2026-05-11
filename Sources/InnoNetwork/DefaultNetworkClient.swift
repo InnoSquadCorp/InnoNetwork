@@ -326,6 +326,14 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
 
             let work = Task<Void, Never> {
                 await startGate.wait()
+                // Match the non-streaming path: deregister from
+                // ``InFlightRegistry`` when the executor finishes, no
+                // matter whether the stream completed normally, errored,
+                // or was cancelled. Without this, a streaming request
+                // continues to occupy a slot in the registry after its
+                // backing `Task` is gone, causing `cancelAll()` and the
+                // tagged-cancel variants to hang on a stale handle.
+                defer { inFlight.deregister(id: requestID) }
                 await executor.run(
                     request: request,
                     requestID: requestID,
