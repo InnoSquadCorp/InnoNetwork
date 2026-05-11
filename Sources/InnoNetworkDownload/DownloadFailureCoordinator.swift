@@ -42,6 +42,18 @@ package struct DownloadFailureCoordinator {
             // permanent failures.
             return
         }
+        if Self.isDeterministicFilesystemError(error) {
+            // EACCES/EPERM/ENOSPC/EROFS and the matching Cocoa file-write
+            // errors describe writer-side conditions that will not heal
+            // with another network attempt — the destination directory is
+            // unwritable, the volume is full, or the filesystem is
+            // read-only. Retrying just burns the configured budget while
+            // re-downloading bytes we cannot persist. Mark the task
+            // failed immediately so callers see the actionable error
+            // instead of a timeout-style retry-exhausted trail.
+            await markTaskFailed(task)
+            return
+        }
         let totalRetryCount = await task.totalRetryCount
         let retryCount = await task.retryCount
         guard totalRetryCount < configuration.maxTotalRetries,
@@ -176,5 +188,36 @@ package struct DownloadFailureCoordinator {
 
     private func isCancelledTransportError(_ error: SendableUnderlyingError) -> Bool {
         error.domain == NSURLErrorDomain && error.code == URLError.cancelled.rawValue
+    }
+
+    /// Returns `true` when the underlying error encodes a writer-side
+    /// filesystem condition that cannot be cleared by re-attempting the
+    /// transport: no permission to write at the destination, no space on
+    /// the volume, the volume is read-only, or the Cocoa file-write layer
+    /// already reported the equivalent classification.
+    static func isDeterministicFilesystemError(_ error: SendableUnderlyingError) -> Bool {
+        #if canImport(Darwin)
+        if error.domain == NSPOSIXErrorDomain {
+            switch Int32(error.code) {
+            case EACCES, EPERM, ENOSPC, EROFS:
+                return true
+            default:
+                break
+            }
+        }
+        #endif
+        if error.domain == NSCocoaErrorDomain {
+            switch error.code {
+            case CocoaError.fileWriteOutOfSpace.rawValue,
+                CocoaError.fileWriteNoPermission.rawValue,
+                CocoaError.fileWriteVolumeReadOnly.rawValue,
+                CocoaError.fileWriteFileExists.rawValue,
+                CocoaError.fileWriteInapplicableStringEncoding.rawValue:
+                return true
+            default:
+                return false
+            }
+        }
+        return false
     }
 }
