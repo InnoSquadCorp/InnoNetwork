@@ -205,6 +205,11 @@ expected_provisionally=(
 '`StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance'
 '`PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`'
 '`DownloadTask.generation` / `attempt` observation accessors'
+'`NetworkErrorCode` SSOT enum (4.1.0) — owns every `NetworkError.errorCode` raw value; new cases may be added in 4.x minors when `NetworkError` itself adds a case'
+'`NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.1.0)'
+'`MultipartUploadStrategy.inMemory(maxBytes:)` (4.1.0) — replaces the zero-arg `.inMemory` form (4.0.x); the encoder'\''s accumulator guard is part of the contract'
+'`DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.1.0)'
+'`ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.1.0)'
 )
 
 expected_shipping_public_declarations=(
@@ -266,6 +271,7 @@ expected_shipping_public_declarations=(
   NetworkClient
   NetworkConfiguration
   NetworkContext
+  NetworkErrorCode
   NetworkError
   NetworkEvent
   NetworkEventObserving
@@ -292,6 +298,7 @@ expected_shipping_public_declarations=(
   OpenAPIRequest
   PublicKeyPinningPolicy
   RedirectPolicy
+  ReachabilityReason
   RefreshFailureCooldown
   RefreshTokenPolicy
   RequestCoalescingPolicy
@@ -1016,6 +1023,43 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
       require_contains 'public var attempt: Int' \
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
+      continue
+      ;;
+    '`NetworkErrorCode` SSOT enum (4.1.0) — owns every `NetworkError.errorCode` raw value; new cases may be added in 4.x minors when `NetworkError` itself adds a case')
+      require_contains 'public enum NetworkErrorCode' \
+        "$repo_root/Sources/InnoNetwork/NetworkErrorCode.swift"
+      require_contains 'return NetworkErrorCode.reachability.rawValue' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+      continue
+      ;;
+    '`NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.1.0)')
+      require_contains 'public enum ReachabilityReason' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+      require_contains 'case reachability(ReachabilityReason, SendableUnderlyingError, Response?)' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+      require_contains 'return .reachability(.notConnectedToInternet' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+      continue
+      ;;
+    '`MultipartUploadStrategy.inMemory(maxBytes:)` (4.1.0) — replaces the zero-arg `.inMemory` form (4.0.x); the encoder'\''s accumulator guard is part of the contract')
+      require_contains 'case inMemory(maxBytes: Int)' \
+        "$repo_root/Sources/InnoNetwork/APIDefinition.swift"
+      require_contains 'maxInMemoryBytes' \
+        "$repo_root/Sources/InnoNetwork/Model/MultipartFormData.swift"
+      continue
+      ;;
+    '`DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.1.0)')
+      require_contains 'public let taskInactivityTimeout: Duration?' \
+        "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+      require_contains 'public var lastProgressAt: ContinuousClock.Instant?' \
+        "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
+      continue
+      ;;
+    '`ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.1.0)')
+      require_contains 'indirect case rfc9111Compliant(wrapping: ResponseCachePolicy)' \
+        "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
+      require_contains 'func prepareWithRFC9111' \
+        "$repo_root/Sources/InnoNetwork/Cache/RFC9111CompliantCachePolicy.swift"
       continue
       ;;
     *)

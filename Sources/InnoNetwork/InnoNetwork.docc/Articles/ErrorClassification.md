@@ -18,6 +18,7 @@ to the user, or escalate to crash reporting.
 | ``NetworkError/configuration(reason:)`` with ``NetworkConfigurationFailureReason/offline(_:)`` | The configured reachability policy knows the device is offline. | Surface offline state or defer non-interactive work. |
 | ``NetworkError/statusCode(_:)`` | Server returned a non-acceptable status. | Branch on `.response.statusCode`; let `RetryPolicy` decide retries. |
 | ``NetworkError/decoding(stage:underlying:response:)`` | Response failed to decode at a tagged pipeline stage (`.responseBody` for buffered bodies, `.streamFrame` for per-frame streaming decoders). | Surface to the user; consider feature flagging the endpoint. Decoding failures are terminal — `isDecodingFailure` makes the rule explicit in custom retry policies. |
+| ``NetworkError/reachability(_:_:_:)`` | DNS, offline, or dropped-connection failure classified from `URLError`. | Treat as network reachability; retry when the request is safe and the policy budget allows. |
 | ``NetworkError/underlying(_:)`` | Foundation/URLSession error not classified above (including the rare non-`HTTPURLResponse` path, which is wrapped with code `3002`). | Inspect `SendableUnderlyingError.code` for deeper triage. |
 | ``NetworkError/trustEvaluationFailed(_:)`` | TLS pinning or custom trust evaluator rejected the chain. | Surface to the user; do not auto-retry. |
 | ``NetworkError/cancelled`` | `Task` cancellation or `cancelAll()`. | Honour silently — caller wanted to stop. |
@@ -29,7 +30,7 @@ to the user, or escalate to crash reporting.
 do {
     let user = try await client.request(GetUser())
     return .success(user)
-} catch let error as NetworkError {
+} catch {
     switch error {
     case .cancelled:
         return .cancelled
@@ -37,7 +38,7 @@ do {
     case .timeout:
         return .recoverableNetwork
 
-    case .underlying(let wrapped) where wrapped.code == NSURLErrorNotConnectedToInternet:
+    case .reachability(.notConnectedToInternet, _, _):
         return .offline
 
     case .statusCode(let response) where (500...599).contains(response.statusCode):

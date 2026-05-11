@@ -211,13 +211,19 @@ extension RequestExecutor {
             let cache = configuration.responseCache,
             configuration.responseCachePolicy.isEnabled,
             configuration.responseCachePolicy.allowsConditionalRevalidation,
-            let cached = await cachedRespectingVary(cache, key: cacheKey, request: request),
-            let etag = cached.etag
+            let cached = await cachedRespectingVary(cache, key: cacheKey, request: request)
+        else {
+            return nil
+        }
+        guard case .revalidate(let revalidationCandidate) =
+            configuration.responseCachePolicy.prepare(cached: cached),
+            let candidate = revalidationCandidate,
+            let etag = candidate.etag
         else {
             return nil
         }
         request.setValue(etag, forHTTPHeaderField: "If-None-Match")
-        return ConditionalRevalidationContext(cached: cached)
+        return ConditionalRevalidationContext(cached: candidate)
     }
 
     func convertNotModifiedIfNeeded(

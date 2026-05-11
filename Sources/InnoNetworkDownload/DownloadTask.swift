@@ -25,10 +25,11 @@ public actor DownloadTask: Identifiable {
     /// `_generation` advances; otherwise increments by one for each
     /// retry of the same generation.
     private var _attempt: Int = 0
-    /// Timestamp of the most recent progress callback, set by
-    /// `DownloadManager` while the task is downloading. `nil` until the
-    /// first progress event arrives. Consumed by the optional
-    /// ``DownloadConfiguration/taskInactivityTimeout`` watchdog.
+    /// Timestamp of the most recent download activity observed by
+    /// `DownloadManager`. Progress callbacks update it directly; the
+    /// inactivity watchdog may seed it when a task is downloading but has
+    /// not produced its first progress event yet. Consumed by
+    /// ``DownloadConfiguration/taskInactivityTimeout``.
     private var _lastProgressAt: ContinuousClock.Instant?
 
     public var state: DownloadState { _state }
@@ -41,8 +42,8 @@ public actor DownloadTask: Identifiable {
     public var generation: Int { _generation }
     /// Current attempt index within the active generation.
     public var attempt: Int { _attempt }
-    /// Timestamp of the most recent progress callback, or `nil` when no
-    /// progress event has been observed yet.
+    /// Timestamp of the most recent progress or watchdog-observed download
+    /// activity, or `nil` before a running attempt is observed.
     public var lastProgressAt: ContinuousClock.Instant? { _lastProgressAt }
 
     /// Construct a download task description.

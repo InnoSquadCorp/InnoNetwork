@@ -866,10 +866,14 @@ public actor PersistentResponseCache: ResponseCache {
         to url: URL,
         fileManager: FileManager
     ) {
+        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
         try? fileManager.setAttributes(
             [.protectionKey: dataProtectionClass.fileProtectionType],
             ofItemAtPath: url.path
         )
+        #else
+        _ = (dataProtectionClass, url, fileManager)
+        #endif
     }
 
     private static func applyDataProtectionToExistingCacheFiles(

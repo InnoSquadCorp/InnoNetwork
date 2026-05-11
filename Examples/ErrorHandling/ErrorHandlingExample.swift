@@ -98,10 +98,8 @@ actor ErrorHandlingExample {
         do {
             let post = try await client.request(NotFoundRequest())
             print("✅ Success: \(post.title)")
-        } catch let error as NetworkError {
-            handleNetworkError(error)
         } catch {
-            print("❌ Unknown error: \(error)")
+            handleNetworkError(error)
         }
     }
 
@@ -111,10 +109,8 @@ actor ErrorHandlingExample {
         do {
             let post = try await client.request(InvalidRequestConfigurationRequest())
             print("✅ Success: \(post.title)")
-        } catch let error as NetworkError {
-            handleNetworkError(error)
         } catch {
-            print("❌ Unknown error: \(error)")
+            handleNetworkError(error)
         }
     }
 
@@ -127,10 +123,8 @@ actor ErrorHandlingExample {
             print("Post ID: \(post.id)")
             print("Title: \(post.title)")
             print("Body: \(post.body)")
-        } catch let error as NetworkError {
-            handleNetworkError(error)
         } catch {
-            print("❌ Unknown error: \(error)")
+            handleNetworkError(error)
         }
     }
 
@@ -140,7 +134,7 @@ actor ErrorHandlingExample {
         do {
             let post = try await client.request(NotFoundRequest())
             print("✅ Success: \(post.title)")
-        } catch let error as NetworkError {
+        } catch {
             // Access response data if available
             if let response = error.response {
                 print("Status Code: \(response.statusCode)")
@@ -152,8 +146,6 @@ actor ErrorHandlingExample {
                 }
             }
             print("Error Description: \(error.localizedDescription)")
-        } catch {
-            print("❌ Unknown error: \(error)")
         }
     }
 
@@ -168,10 +160,8 @@ actor ErrorHandlingExample {
                     userId: 1
                 ))
             print("✅ Success! Created post #\(newPost.id)")
-        } catch let error as NetworkError {
-            handleNetworkError(error)
         } catch {
-            print("❌ Unknown error: \(error)")
+            handleNetworkError(error)
         }
     }
 
@@ -183,13 +173,7 @@ actor ErrorHandlingExample {
             do {
                 let post = try await client.request(ValidRequest())
                 print("✅ Success: \(post.title)")
-            } catch let error as NetworkError {
-                if case .cancelled = error {
-                    print("⚠️  Request was cancelled")
-                } else {
-                    print("❌ Error: \(error)")
-                }
-            } catch is CancellationError {
+            } catch NetworkError.cancelled {
                 print("⚠️  Request was cancelled")
             } catch {
                 print("❌ Error: \(error)")
@@ -199,7 +183,7 @@ actor ErrorHandlingExample {
         // Cancel the task after a short delay
         try? await Task.sleep(nanoseconds: 10_000_000)  // 0.01 seconds
         task.cancel()
-        _ = await task.result
+        await task.value
     }
 
     // Helper method to handle different network errors
@@ -232,6 +216,13 @@ actor ErrorHandlingExample {
 
         case .underlying(let underlyingError, let response):
             print("❌ Underlying Error: \(underlyingError)")
+            if let response = response {
+                print("   Status Code: \(response.statusCode)")
+            }
+
+        case .reachability(let reason, let underlyingError, let response):
+            print("❌ Reachability Error: \(reason)")
+            print("   Underlying Error: \(underlyingError)")
             if let response = response {
                 print("   Status Code: \(response.statusCode)")
             }

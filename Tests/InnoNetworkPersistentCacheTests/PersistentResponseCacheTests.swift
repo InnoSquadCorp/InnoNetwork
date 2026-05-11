@@ -754,7 +754,11 @@ struct PersistentResponseCacheTests {
 
         let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
         #expect(FileManager.default.fileExists(atPath: bodiesURL.path))
+        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
         #expect(recorder.protectionWrites(for: bodiesURL.path) == [.completeUnlessOpen, .completeUnlessOpen])
+        #else
+        #expect(recorder.protectionWrites(for: bodiesURL.path).isEmpty)
+        #endif
     }
 
     @Test("Overwriting an entry preserves the freshly written body")
@@ -946,11 +950,19 @@ struct PersistentResponseCacheTests {
 
         let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
         let hmacKeyURL = hmacKeyURL(in: directory)
+        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
         #expect(recorder.protectionWrites(for: indexURL.path).contains(.completeUnlessOpen))
         #expect(recorder.protectionWrites(for: hmacKeyURL.path).contains(.completeUnlessOpen))
         for bodyURL in bodyURLs {
             #expect(recorder.protectionWrites(for: bodyURL.path).contains(.completeUnlessOpen))
         }
+        #else
+        #expect(recorder.protectionWrites(for: indexURL.path).isEmpty)
+        #expect(recorder.protectionWrites(for: hmacKeyURL.path).isEmpty)
+        for bodyURL in bodyURLs {
+            #expect(recorder.protectionWrites(for: bodyURL.path).isEmpty)
+        }
+        #endif
     }
 
     @Test("DataProtectionClass.none requests unprotected cache-owned paths")
@@ -978,6 +990,7 @@ struct PersistentResponseCacheTests {
         let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
         let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
         let hmacKeyURL = hmacKeyURL(in: directory)
+        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
         #expect(recorder.protectionWrites(for: directory.path).contains(.none))
         #expect(recorder.protectionWrites(for: bodiesURL.path).contains(.none))
         #expect(recorder.protectionWrites(for: indexURL.path).contains(.none))
@@ -985,6 +998,15 @@ struct PersistentResponseCacheTests {
         for bodyURL in bodyURLs {
             #expect(recorder.protectionWrites(for: bodyURL.path).contains(.none))
         }
+        #else
+        #expect(recorder.protectionWrites(for: directory.path).isEmpty)
+        #expect(recorder.protectionWrites(for: bodiesURL.path).isEmpty)
+        #expect(recorder.protectionWrites(for: indexURL.path).isEmpty)
+        #expect(recorder.protectionWrites(for: hmacKeyURL.path).isEmpty)
+        for bodyURL in bodyURLs {
+            #expect(recorder.protectionWrites(for: bodyURL.path).isEmpty)
+        }
+        #endif
     }
 
     @Test("Body I/O runs off-actor so concurrent gets overlap")

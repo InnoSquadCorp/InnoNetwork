@@ -31,6 +31,27 @@ struct DownloadInactivityWatchdogTests {
             harness.stubTask.cancelCount >= 1
         }
         #expect(cancelled, "watchdog should cancel the stalled URLSession task")
+        #expect(await task.state == .cancelled, "watchdog cancellation should terminally mark the task as cancelled")
+
+        await harness.manager.shutdown()
+    }
+
+    @Test("Task with no first progress callback is cancelled after timeout")
+    func taskWithoutFirstProgressIsCancelledAfterTimeout() async throws {
+        let harness = try StubDownloadHarness(
+            taskInactivityTimeout: .milliseconds(150),
+            label: "inactivity-no-first-progress"
+        )
+        let task = await harness.startDownload()
+        _ = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task)
+        )
+
+        let cancelled = await waitFor(timeout: 2.0) {
+            harness.stubTask.cancelCount >= 1
+        }
+        #expect(cancelled, "watchdog should cancel a task that never reports initial progress")
+        #expect(await task.state == .cancelled, "watchdog cancellation should not leave the task stuck downloading")
 
         await harness.manager.shutdown()
     }

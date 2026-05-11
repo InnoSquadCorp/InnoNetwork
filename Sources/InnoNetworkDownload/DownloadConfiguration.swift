@@ -93,9 +93,10 @@ public struct DownloadConfiguration: Sendable {
     public let timeoutForRequest: TimeInterval
     public let timeoutForResource: TimeInterval
     /// Optional per-task inactivity watchdog. When set, the manager cancels a
-    /// downloading task if no progress callback has been received for at least
-    /// this duration. `nil` disables the watchdog (default), falling back to
-    /// the URLSession-level ``timeoutForRequest`` and ``timeoutForResource``.
+    /// downloading task if no progress callback or first-observed download
+    /// activity has been seen for at least this duration. `nil` disables the
+    /// watchdog (default), falling back to the URLSession-level
+    /// ``timeoutForRequest`` and ``timeoutForResource``.
     ///
     /// Use this when you want to fail faster than `timeoutForResource` on
     /// mid-transfer stalls — for example when a server stops feeding bytes

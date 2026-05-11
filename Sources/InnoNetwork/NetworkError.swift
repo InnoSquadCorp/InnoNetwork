@@ -117,10 +117,11 @@ public enum DecodingStage: Sendable, Equatable {
 /// `NetworkError` value should include a `@unknown default` arm:
 ///
 /// ```swift
-/// catch let error as NetworkError {
+/// catch {
 ///     switch error {
 ///     case .statusCode(let response):           handleStatus(response)
 ///     case .timeout(let reason, _):             handleTimeout(reason)
+///     case .reachability(let reason, _, _):     handleReachability(reason)
 ///     case .configuration(reason: .invalidBaseURL(_)),
 ///          .configuration(reason: .invalidRequest(_)):
 ///                                                handleConfigurationError()

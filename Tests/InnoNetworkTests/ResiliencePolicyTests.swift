@@ -981,7 +981,7 @@ struct ResiliencePolicyTests {
         do {
             _ = try await client.request(ResilienceGetRequest())
             Issue.record("Expected cache-revalidation-failed underlying error, got success")
-        } catch let error as NetworkError {
+        } catch {
             guard case .underlying(let underlying, let cached?) = error,
                 underlying.domain == "InnoNetwork.ResponseCache"
             else {
@@ -1362,6 +1362,40 @@ struct ResiliencePolicyTests {
 
         #expect(user == fresh)
         #expect(await cache.get(key) == nil)
+    }
+
+    @Test("RFC 9111 no-store cached entries skip conditional revalidation")
+    func rfc9111NoStoreCachedEntrySkipsConditionalRevalidation() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        let staleBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale-no-store"))
+        await cache.set(
+            key,
+            CachedResponse(
+                data: staleBody,
+                headers: ["ETag": "old", "Cache-Control": "no-store"],
+                storedAt: Date(timeIntervalSinceNow: -60)
+            )
+        )
+        let fresh = ResilienceUser(id: 1, name: "fresh")
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: fresh, headers: ["ETag": "new"])
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeLocalizedCacheConfiguration(
+                responseCachePolicy: .rfc9111Compliant(wrapping: .cacheFirst(maxAge: .seconds(60))),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let user = try await client.request(ResilienceGetRequest())
+
+        #expect(user == fresh)
+        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == nil)
+        let refreshed = try #require(await cache.get(key))
+        let decoded = try JSONDecoder().decode(ResilienceUser.self, from: refreshed.data)
+        #expect(decoded == fresh)
     }
 
     @Test("Cache-Control private invalidates existing cached entries and skips writes")
