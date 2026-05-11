@@ -13,13 +13,17 @@ import Foundation
 ///
 /// ## Wiring
 ///
-/// The library does not yet integrate the bucket directly into
-/// ``RequestExecutor``'s pre-flight stage — that integration is on
-/// the 5.x roadmap alongside ``CircuitBreakerPolicy`` and the
-/// reachability work. In the meantime, adopters can wire the bucket
-/// through a paired ``RequestInterceptor`` /
-/// ``ResponseInterceptor`` so request lifecycles still bound the
-/// in-flight count:
+/// For normal request execution, prefer
+/// ``ConcurrencyLimitExecutionPolicy`` in
+/// ``ResiliencePack/customExecutionPolicies``. The policy owns the
+/// acquire/release pair inside the executor chain, so tokens are
+/// released after success, failure, and cancellation before the call
+/// returns to the client.
+///
+/// The raw bucket remains useful for custom work outside the request
+/// pipeline. If you wire it manually through a paired
+/// ``RequestInterceptor`` / ``ResponseInterceptor``, be aware that
+/// transport errors can skip the response interceptor:
 ///
 /// ```swift
 /// let bucket = ConcurrencyTokenBucket(maxConcurrent: 4)
@@ -27,7 +31,7 @@ import Foundation
 /// struct AcquireInterceptor: RequestInterceptor {
 ///     let bucket: ConcurrencyTokenBucket
 ///     func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
-///         await bucket.acquire()
+///         try await bucket.acquire()
 ///         return urlRequest
 ///     }
 /// }
@@ -44,13 +48,13 @@ import Foundation
 /// ```
 ///
 /// > Important: an interceptor pair leaks tokens on transport
-/// > errors (the response interceptor never runs). The pattern is
-/// > acceptable for short-running clients and tests; production
-/// > deployments should wait for the executor-integrated build.
+/// > errors (the response interceptor never runs). Production request
+/// > paths should use ``ConcurrencyLimitExecutionPolicy`` instead.
 ///
 /// ## Fairness and capacity
 ///
-/// `acquire()` resumes pending waiters in insertion order; if no
+/// `acquire()` resumes pending waiters in insertion order; cancelled
+/// waiters are removed before they can consume a future token. If no
 /// waiters are queued and the bucket is below capacity, `release()`
 /// returns the token to the available pool. The bucket never
 /// over-releases past `maxConcurrent`, so a stray double-release
@@ -62,7 +66,12 @@ public actor ConcurrencyTokenBucket {
     /// Tokens currently available for immediate `acquire()`.
     public private(set) var available: Int
 
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private struct Waiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, Error>
+    }
+
+    private var waiters: [Waiter] = []
 
     /// Creates a bucket with the supplied concurrency cap. Values
     /// less than 1 are clamped to 1 so the bucket always permits at
@@ -73,17 +82,35 @@ public actor ConcurrencyTokenBucket {
         self.available = cap
     }
 
-    /// Acquires a token, suspending the caller if the cap is
-    /// reached. Cancellation does not interrupt the wait — the
-    /// caller is expected to release the token in the matching
-    /// `defer` or response interceptor.
-    public func acquire() async {
+    /// Acquires a token, suspending the caller if the cap is reached.
+    /// Cancellation removes the caller from the FIFO queue and throws
+    /// `CancellationError` before a future token can be consumed.
+    public func acquire() async throws {
+        try Task.checkCancellation()
         if available > 0 {
             available -= 1
             return
         }
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            waiters.append(continuation)
+
+        let waiterID = UUID()
+        var acquiredToken = false
+        do {
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    waiters.append(Waiter(id: waiterID, continuation: continuation))
+                }
+            } onCancel: { [weak self] in
+                Task { [weak self] in
+                    await self?.cancelWaiter(id: waiterID)
+                }
+            }
+            acquiredToken = true
+            try Task.checkCancellation()
+        } catch {
+            if acquiredToken {
+                release()
+            }
+            throw error
         }
     }
 
@@ -94,12 +121,18 @@ public actor ConcurrencyTokenBucket {
     public func release() {
         if !waiters.isEmpty {
             let next = waiters.removeFirst()
-            next.resume()
+            next.continuation.resume()
             return
         }
         if available < maxConcurrent {
             available += 1
         }
+    }
+
+    private func cancelWaiter(id: UUID) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+        let waiter = waiters.remove(at: index)
+        waiter.continuation.resume(throwing: CancellationError())
     }
 
     /// Number of acquirers currently queued behind the cap. Useful

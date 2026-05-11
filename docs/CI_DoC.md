@@ -55,7 +55,7 @@ The `CI` workflow must pass all of the following:
 
 ## Integration Tests Policy
 
-- Network-dependent tests should remain opt-in via `INNONETWORK_RUN_INTEGRATION_TESTS=1`.
+- Network-dependent tests should remain opt-in via `INNO_LIVE=1`.
 - Default CI runs deterministic unit tests only.
 
 ## Local Reproduction

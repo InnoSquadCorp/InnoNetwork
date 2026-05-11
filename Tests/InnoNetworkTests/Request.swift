@@ -18,7 +18,7 @@ struct Request {
     )
 
     private var runIntegrationTests: Bool {
-        ProcessInfo.processInfo.environment["INNONETWORK_RUN_INTEGRATION_TESTS"] == "1"
+        ProcessInfo.processInfo.environment["INNO_LIVE"] == "1"
     }
 
     @Test

@@ -412,7 +412,7 @@ actor DownloadStateRecorder {
 @Suite("Download Callback Tests")
 struct DownloadCallbackTests {
     private var runIntegrationTests: Bool {
-        ProcessInfo.processInfo.environment["INNONETWORK_RUN_INTEGRATION_TESTS"] == "1"
+        ProcessInfo.processInfo.environment["INNO_LIVE"] == "1"
     }
 
     @Test("State callback receives waiting and downloading immediately after start")
@@ -977,7 +977,7 @@ struct DownloadPersistenceCleanupTests {
 @Suite("Download Listener Lifecycle Tests")
 struct DownloadListenerLifecycleTests {
     private var runIntegrationTests: Bool {
-        ProcessInfo.processInfo.environment["INNONETWORK_RUN_INTEGRATION_TESTS"] == "1"
+        ProcessInfo.processInfo.environment["INNO_LIVE"] == "1"
     }
 
     @Test("Listener persists across retry and receives completion")

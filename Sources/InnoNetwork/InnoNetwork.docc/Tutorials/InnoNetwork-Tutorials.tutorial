@@ -2,7 +2,7 @@
     @Intro(title: "Hands-on tutorials") {
         Step-by-step walkthroughs that take a brand-new project to a
         working InnoNetwork client. Each tutorial assumes Swift 6.2
-        and Apple platform baselines (iOS 18, macOS 15, and newer) and
+        and Apple platform baselines (iOS 16, macOS 14, and newer) and
         uses only the public API surface documented in ``InnoNetwork``.
     }
 

@@ -45,7 +45,9 @@ extension PersistentResponseCache {
         let sensitiveHeaderNames = ResponseCacheHeaderPolicy.sensitiveHeaderNames
         return headers.contains { header in
             guard let separator = header.firstIndex(of: ":") else { return false }
-            let name = String(header[..<separator]).lowercased()
+            let name = String(header[..<separator])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
             return sensitiveHeaderNames.contains(name)
         }
     }

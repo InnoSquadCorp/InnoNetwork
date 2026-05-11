@@ -213,7 +213,16 @@ public actor PersistentResponseCache: ResponseCache {
     /// index never demotes a successful read to a miss.
     public func get(_ key: ResponseCacheKey) async -> CachedResponse? {
         let diskKey = DiskKey(key, normalizer: keyNormalizer)
-        let id = identifier(for: diskKey)
+        let id: String
+        do {
+            id = try identifier(for: diskKey)
+        } catch {
+            Self.logger.error(
+                "persistent_cache_identifier_failed operation=get url=\(key.url, privacy: .private) error=\(String(describing: error), privacy: .private)"
+            )
+            recordMiss()
+            return nil
+        }
         guard var entry = index.entries[id] else {
             recordMiss()
             return nil
@@ -343,13 +352,21 @@ public actor PersistentResponseCache: ResponseCache {
     /// when the body exceeds ``PersistentResponseCacheConfiguration/maxEntryBytes``. Eviction runs
     /// synchronously to keep the on-disk footprint within budget.
     public func set(_ key: ResponseCacheKey, _ value: CachedResponse) async {
-        guard shouldStore(key: key, response: value), value.data.count <= configuration.maxEntryBytes else {
+        guard evaluateStorePolicy(key: key, response: value), value.data.count <= configuration.maxEntryBytes else {
             await invalidate(key)
             return
         }
 
         let diskKey = DiskKey(key, normalizer: keyNormalizer)
-        let id = identifier(for: diskKey)
+        let id: String
+        do {
+            id = try identifier(for: diskKey)
+        } catch {
+            Self.logger.error(
+                "persistent_cache_identifier_failed operation=set url=\(key.url, privacy: .private) error=\(String(describing: error), privacy: .private)"
+            )
+            return
+        }
         let bodyFileName = "\(id)-\(UUID().uuidString).body"
         let bodyURL = bodiesDirectoryURL.appendingPathComponent(bodyFileName, isDirectory: false)
         let byteCost =
@@ -423,7 +440,15 @@ public actor PersistentResponseCache: ResponseCache {
 
     /// Remove the entry for `key` from the index and delete its body file.
     public func invalidate(_ key: ResponseCacheKey) async {
-        let id = identifier(for: DiskKey(key, normalizer: keyNormalizer))
+        let id: String
+        do {
+            id = try identifier(for: DiskKey(key, normalizer: keyNormalizer))
+        } catch {
+            Self.logger.error(
+                "persistent_cache_identifier_failed operation=invalidate url=\(key.url, privacy: .private) error=\(String(describing: error), privacy: .private)"
+            )
+            return
+        }
         if let entry = index.entries[id] {
             removeEntry(id: id, entry: entry)
             try? persistIndex()
@@ -441,8 +466,12 @@ public actor PersistentResponseCache: ResponseCache {
         try? persistIndex()
     }
 
-    private func shouldStore(key: ResponseCacheKey, response: CachedResponse) -> Bool {
-        shouldStore(key: DiskKey(key, normalizer: keyNormalizer), responseHeaders: response.headers)
+    private func evaluateStorePolicy(key: ResponseCacheKey, response: CachedResponse) -> Bool {
+        Self.shouldStore(
+            key: DiskKey(key, normalizer: keyNormalizer),
+            responseHeaders: response.headers,
+            configuration: configuration
+        )
     }
 
     /// Current storage pressure snapshot, including in-process hit, miss,
@@ -544,7 +573,7 @@ public actor PersistentResponseCache: ResponseCache {
         pendingReadFlushes = 0
     }
 
-    private func identifier(for key: DiskKey) -> String {
-        Self.identifier(for: key, encoder: identifierEncoder)
+    private func identifier(for key: DiskKey) throws -> String {
+        try Self.identifier(for: key, encoder: identifierEncoder)
     }
 }

@@ -207,9 +207,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     /// > Recommended explicit form:
     /// >
     /// > ```swift
-    /// > let urlConfig = URLSessionConfiguration.default
-    /// > urlConfig.httpCookieStorage = nil              // app-scoped cookies
-    /// > urlConfig.urlCredentialStorage = nil           // app-scoped creds
+    /// > let urlConfig = URLSessionConfiguration.ephemeral // isolated in-memory storage
     /// > urlConfig.timeoutIntervalForRequest = 30
     /// > let session = URLSession(
     /// >     configuration: urlConfig,
@@ -487,9 +485,9 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
         // Wrap the work in an unstructured Task so cancelAll() can reach it
         // without the call site having to track individual Task handles.
         // Outer-task cancellation is forwarded via withTaskCancellationHandler.
-        let work = Task<D.APIResponse, Error> { [eventHub, configuration, session, requestBuilder] in
+        let work = Task<D.APIResponse, Error> { [eventHub, configuration, session, requestBuilder, executionRuntime] in
             await startGate.wait()
-            let retryCoordinator = RetryCoordinator(eventHub: eventHub)
+            let retryCoordinator = RetryCoordinator(eventHub: eventHub, clock: executionRuntime.clock)
             return try await retryCoordinator.execute(
                 retryPolicy: configuration.retryPolicy,
                 networkMonitor: configuration.networkMonitor,

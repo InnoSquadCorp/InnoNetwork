@@ -87,6 +87,14 @@ Versioning.
   `nonisolated OSAllocatedUnfairLock<Bool>` mirroring the
   `WebSocketManager` pattern, so a `shutdown()` and a `deinit` racing
   through the cleanup path no longer double-invalidate the session.
+- `DefaultNetworkClient.perform(executable:tag:)` now passes the injected
+  `RequestExecutionRuntime` clock into `RetryCoordinator`, so generated-client
+  retry timing follows the same deterministic test clock as the hand-written
+  request path.
+- `RestoreBarrier` cancellation no longer registers a second detached task
+  after the cancellation task may already have completed. Cancelled restore
+  waiters are removed idempotently by waiter id, preventing stale cancellation
+  handles from accumulating during cancel storms.
 
 ### Stability ledger
 
@@ -130,6 +138,20 @@ Versioning.
   `Security.framework` constants that happen to contain `"ed25519"` as
   a substring; the OID-only path is stable forever. See
   `docs/Migration-4.1.0.md`.
+- **Breaking.** `ConcurrencyTokenBucket.acquire()` is now
+  `async throws`. A queued waiter that is cancelled is removed from
+  the FIFO queue and receives `CancellationError` instead of later
+  consuming a token. Direct callers must migrate from
+  `await bucket.acquire()` to `try await bucket.acquire()`. See
+  `docs/Migration-4.1.0.md`.
+- `ConcurrencyLimitExecutionPolicy` now awaits `bucket.release()` before
+  returning or rethrowing. The previous implementation used an
+  unstructured `Task` from `defer`, which made the release boundary
+  observable only after a scheduler hop.
+- `NetworkConfiguration.recommendedForProduction(baseURL:)` now caps
+  streaming response body collection at 5 MiB by default. Callers that
+  need larger inline bodies can still override the policy through
+  `advanced(baseURL:resilience:...)` or the `responseBodyLimit` alias.
 - **Breaking.** `NetworkClient.request(_:)`, `request(_:tag:)`,
   `upload(_:)`, and `upload(_:tag:)` now declare `throws(NetworkError)`
   instead of untyped `throws`. The four methods only ever surfaced
@@ -553,7 +575,7 @@ Versioning.
   source-compatible across 4.x → 5.x; field additions remain
   non-breaking because every property defaults to `nil`.
 - 5.0 platform floors backported to iOS 16 / macOS 14 / tvOS 16 /
-  watchOS 9 / visionOS 1 (down from the 4.x baseline of iOS 18 /
+  watchOS 9 / visionOS 1 (down from the stale draft baseline of iOS 18 /
   macOS 15 / tvOS 18 / watchOS 11 / visionOS 2). The audit confirmed
   no iOS 17+ / macOS 15+ Required Reason or strict-concurrency
   feature is on the public API surface; the only platform-pinned

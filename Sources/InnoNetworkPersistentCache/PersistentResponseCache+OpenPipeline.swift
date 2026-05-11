@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 // Split out of `PersistentResponseCache.swift` so the open-time recovery
 // pipeline — policy-rejected scrub, budget enforcement, unreferenced-body
@@ -86,6 +87,8 @@ extension PersistentResponseCache {
             return lhsDate < rhsDate
         }
         var cursor = sortedIDs.startIndex
+        // TODO: Mirror `evictIfNeeded()`'s `runningTotalBytes` accounting here
+        // if this open-time budget loop ever becomes hot on large indexes.
         while cursor < sortedIDs.endIndex,
             budgetedIndex.entries.count > configuration.maxEntries
                 || totalBytes(in: budgetedIndex) > configuration.maxBytes
@@ -146,17 +149,22 @@ extension PersistentResponseCache {
         fileManager: FileManager
     ) -> Int {
         let referencedBodyFileNames = Set(loadedIndex.entries.values.map(\.bodyFileName))
-        guard
-            let bodyURLs = try? fileManager.contentsOfDirectory(
+        let bodyURLs: [URL]
+        do {
+            bodyURLs = try fileManager.contentsOfDirectory(
                 at: bodiesDirectoryURL,
                 includingPropertiesForKeys: [.isRegularFileKey],
                 options: [.skipsHiddenFiles]
             )
-        else {
+        } catch {
+            logger.warning(
+                "persistent_cache_body_sweep_enumeration_failed error=\(String(describing: error), privacy: .private)"
+            )
             return 0
         }
 
         var scrubbedCount = 0
+        var deleteFailureCount = 0
         for bodyURL in bodyURLs {
             let isRegularFile =
                 (try? bodyURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false
@@ -166,8 +174,17 @@ extension PersistentResponseCache {
                 try fileManager.removeItem(at: bodyURL)
                 scrubbedCount += 1
             } catch {
+                deleteFailureCount += 1
+                logger.debug(
+                    "persistent_cache_body_sweep_delete_failed file=\(bodyURL.lastPathComponent, privacy: .public) error=\(String(describing: error), privacy: .private)"
+                )
                 continue
             }
+        }
+        if deleteFailureCount > 0 {
+            logger.warning(
+                "persistent_cache_body_sweep_delete_failures count=\(deleteFailureCount, privacy: .public)"
+            )
         }
         return scrubbedCount
     }

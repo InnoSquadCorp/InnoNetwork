@@ -74,6 +74,8 @@ extension WebSocketManager {
     func finishTerminalTaskIfCurrent(_ task: WebSocketTask, generation: Int) async {
         guard await isCurrentTerminalTask(task, generation: generation) else { return }
         await eventHub.finish(taskID: task.id)
+        // Re-check after suspension: a reconnect can revive this task while
+        // `eventHub.finish` is awaiting subscriber cleanup.
         guard await isCurrentTerminalTask(task, generation: generation) else { return }
         await runtimeRegistry.remove(task)
     }

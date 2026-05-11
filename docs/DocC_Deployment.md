@@ -6,7 +6,7 @@ DocC documentation is built and deployed to GitHub Pages via:
 
 - `.github/workflows/docc-pages.yml`
 
-The workflow builds DocC archives for all public library products:
+The workflow builds DocC archives for public products that own a DocC catalog:
 
 1. `InnoNetwork`
 2. `InnoNetworkDownload`
@@ -47,8 +47,9 @@ xcrun docc process-archive transform-for-static-hosting \
   --hosting-base-path InnoNetwork/InnoNetwork
 ```
 
-Repeat the `process-archive` step for `InnoNetworkDownload`,
-`InnoNetworkPersistentCache`, and `InnoNetworkWebSocket` if needed.
+Repeat the `process-archive` step for the other DocC-backed modules:
+`InnoNetworkDownload`, `InnoNetworkPersistentCache`, and
+`InnoNetworkWebSocket`.
 
 For local CPU stability, run DocC archive transforms sequentially. Avoid running
 symbol graph generation for other Swift packages at the same time; DocC and

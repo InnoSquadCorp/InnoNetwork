@@ -165,8 +165,8 @@ extension AppendLogDownloadTaskStore {
         let encoder = JSONEncoder()
         for event in events {
             let data = try encoder.encode(event)
-            handle.write(data)
-            handle.write(Data([0x0A]))
+            try handle.write(contentsOf: data)
+            try handle.write(contentsOf: Data([0x0A]))
         }
 
         // .always policy forces buffered writes through to stable storage

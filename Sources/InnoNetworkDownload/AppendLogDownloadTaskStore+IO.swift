@@ -123,14 +123,15 @@ extension AppendLogDownloadTaskStore {
         timeout: TimeInterval
     ) throws -> Int32 {
         let descriptor = try openLockDescriptor(lockURL: lockURL, fileManager: fileManager)
-        let deadline = Date().addingTimeInterval(timeout)
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(timeout)
         while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
             let lockErrno = errno
             if lockErrno != EWOULDBLOCK && lockErrno != EAGAIN {
                 close(descriptor)
                 throw CocoaError(.fileLocking)
             }
-            if Date() >= deadline {
+            if clock.now >= deadline {
                 close(descriptor)
                 throw CocoaError(.fileLocking)
             }
@@ -147,19 +148,20 @@ extension AppendLogDownloadTaskStore {
         descriptor: Int32,
         timeout: TimeInterval
     ) async throws -> Int32 {
-        let deadline = Date().addingTimeInterval(timeout)
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(timeout)
         while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
             let lockErrno = errno
             if lockErrno != EWOULDBLOCK && lockErrno != EAGAIN {
                 close(descriptor)
                 throw CocoaError(.fileLocking)
             }
-            if Date() >= deadline {
+            if clock.now >= deadline {
                 close(descriptor)
                 throw CocoaError(.fileLocking)
             }
             do {
-                try await Task.sleep(nanoseconds: 50_000_000)
+                try await Task.sleep(for: .milliseconds(50))
             } catch {
                 close(descriptor)
                 throw error

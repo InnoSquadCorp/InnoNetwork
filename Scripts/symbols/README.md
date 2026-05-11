@@ -10,17 +10,18 @@ the source code and these files fails CI.
 
 | Product | Public declarations |
 |---|---:|
-| `InnoNetwork` (core) | 879 |
-| `InnoNetworkWebSocket` | 171 |
-| `InnoNetworkDownload` | 133 |
+| `InnoNetwork` (core) | 867 |
+| `InnoNetworkWebSocket` | 172 |
+| `InnoNetworkDownload` | 136 |
 | `InnoNetworkTestSupport` | 76 |
 | `InnoNetworkPersistentCache` | 47 |
 | `InnoNetworkOpenAPI` | 19 |
-| **Total** | **1,325** |
+| `InnoNetworkTrust` | 13 |
+| **Total** | **1,330** |
 
 ## Why this matters
 
-For a single-maintainer client-side Swift networking library, 1,325 public
+For a single-maintainer client-side Swift networking library, 1,330 public
 declarations is unusually large — roughly 4× `Get`'s surface and ~10× the
 `URLSession`-only "two functions and a `Decoder`" baseline.
 
@@ -46,7 +47,7 @@ DocC link references it, whether any consumer recipe surfaces it).
 
 The roadmap is intentionally not landed here; allowlist edits change the
 public contract, and a measured, reviewable batch is safer than a single
-sweep across all six products.
+sweep across all seven runtime products.
 
 ## Working with the allowlists
 

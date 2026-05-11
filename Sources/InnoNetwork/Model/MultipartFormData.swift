@@ -342,7 +342,7 @@ public struct MultipartFormData: Sendable {
 
     static func mimeType(for pathExtension: String) -> String {
         // UTType is available on every platform InnoNetwork ships against
-        // (iOS 18+, macOS 15+, tvOS 18+, watchOS 11+, visionOS 2+), so it
+        // (iOS 16+, macOS 14+, tvOS 16+, watchOS 9+, visionOS 1+), so it
         // can replace the hand-curated extension table without an
         // availability shim. The fallback matches the previous default of
         // application/octet-stream for unknown extensions.

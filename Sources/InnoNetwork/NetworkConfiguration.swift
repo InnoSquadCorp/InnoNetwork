@@ -317,7 +317,7 @@ public struct NetworkConfiguration: Sendable {
     /// The preset keeps caching, auth refresh, and custom execution policies
     /// opt-in, but enables bounded retries for transient failures, a per-host
     /// circuit breaker, automatic idempotency keys for unsafe methods, and
-    /// streaming response body collection.
+    /// streaming response body collection capped at 5 MiB.
     public static func recommendedForProduction(baseURL: URL) -> NetworkConfiguration {
         NetworkConfiguration.advanced(
             baseURL: baseURL,
@@ -339,7 +339,7 @@ public struct NetworkConfiguration: Sendable {
                     maxResetAfter: .seconds(300)
                 ),
                 idempotency: .automaticForUnsafeMethods(),
-                bodyBuffering: .streaming()
+                bodyBuffering: .streaming(maxBytes: 5 * 1024 * 1024)
             ),
             transport: TransportPack(
                 timeout: 30,

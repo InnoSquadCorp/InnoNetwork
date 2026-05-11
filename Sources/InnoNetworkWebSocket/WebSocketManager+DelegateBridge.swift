@@ -127,12 +127,6 @@ extension WebSocketManager {
     }
 
     func processMappedError(taskIdentifier: Int, error wsError: WebSocketError) async {
-        if case .cancelled = wsError,
-            let task = await runtimeRegistry.webSocketTask(for: taskIdentifier),
-            await task.isClientInitiatedCloseFlow()
-        {
-            return
-        }
         if case .cancelled = wsError {
             return
         }

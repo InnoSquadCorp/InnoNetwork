@@ -12,12 +12,13 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 InnoNetwork is a Swift package for type-safe networking on Apple platforms. The
-root runtime package provides six public products:
+root runtime package provides seven public products:
 
 - `InnoNetwork` for request/response APIs
 - `InnoNetworkDownload` for download lifecycle management
 - `InnoNetworkWebSocket` for connection-oriented realtime flows
 - `InnoNetworkPersistentCache` for a conservative on-disk response cache
+- `InnoNetworkTrust` for optional public-key pinning evaluation
 - `InnoNetworkTestSupport` for consumer test targets
 - `InnoNetworkOpenAPI` for generated-client transport support
 
@@ -58,7 +59,7 @@ wrapper or Alamofire-style helper:
   custom phantom keys). Typos and value/type mismatches fail at build,
   not at runtime.
 - **`AuthScope` marker protocol** — every endpoint declares its auth
-  requirement (`PublicAuthScope`, `AuthenticatedScope`, custom scopes)
+  requirement (`PublicAuthScope`, `AuthRequiredScope`, custom scopes)
   as a compile-time marker. The single-flight `RefreshTokenPolicy` only
   refreshes for endpoints that opted in.
 - **Single-flight refresh + idempotency-aware retry** — concurrent 401s

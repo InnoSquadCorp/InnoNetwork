@@ -111,7 +111,8 @@ extension WebSocketManager {
         // so convert at the Foundation boundary.
         urlTask.cancel(with: closeCode.urlSessionCloseCode, reason: nil)
         let closeHandshakeTimeout = configuration.closeHandshakeTimeout
-        let closeTimeoutTask = Task { [weak self] in
+        let taskID = task.id
+        let closeTimeoutTask = Task { [weak self, taskID] in
             do {
                 try await Task.sleep(for: closeHandshakeTimeout)
             } catch is CancellationError {
@@ -119,9 +120,9 @@ extension WebSocketManager {
             } catch {
                 return
             }
-            await self?.handleCloseHandshakeTimeout(taskID: task.id, closeCode: closeCode)
+            await self?.handleCloseHandshakeTimeout(taskID: taskID, closeCode: closeCode)
         }
-        await runtimeRegistry.setCloseHandshakeTask(closeTimeoutTask, for: task.id)
+        await runtimeRegistry.setCloseHandshakeTask(closeTimeoutTask, for: taskID)
     }
 
     func publishPong(task: WebSocketTask, context: WebSocketPongContext) async {

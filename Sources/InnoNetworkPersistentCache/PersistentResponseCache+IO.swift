@@ -67,7 +67,7 @@ extension PersistentResponseCache {
     static func fsyncFile(at url: URL) {
         let fd = url.withUnsafeFileSystemRepresentation { rep -> Int32 in
             guard let rep else { return -1 }
-            return open(rep, O_RDONLY)
+            return open(rep, O_RDONLY | O_CLOEXEC)
         }
         guard fd >= 0 else { return }
         defer { close(fd) }
@@ -77,7 +77,7 @@ extension PersistentResponseCache {
     static func fsyncDirectory(at url: URL) {
         let fd = url.withUnsafeFileSystemRepresentation { rep -> Int32 in
             guard let rep else { return -1 }
-            return open(rep, O_RDONLY)
+            return open(rep, O_RDONLY | O_CLOEXEC)
         }
         guard fd >= 0 else { return }
         defer { close(fd) }
@@ -90,7 +90,9 @@ extension PersistentResponseCache {
         if fcntl(fd, F_FULLFSYNC, 0) == 0 {
             return 0
         }
-        guard isFullFsyncUnsupported(errno) else {
+        let fullFsyncErrno = errno
+        guard isFullFsyncUnsupported(fullFsyncErrno) else {
+            errno = fullFsyncErrno
             return -1
         }
         #endif
@@ -116,9 +118,9 @@ extension PersistentResponseCache {
         #endif
     }
 
-    static func identifier(for key: DiskKey, encoder: JSONEncoder) -> String {
-        let data = try? encoder.encode(key)
-        let digest = SHA256.hash(data: data ?? Data())
+    static func identifier(for key: DiskKey, encoder: JSONEncoder) throws -> String {
+        let data = try encoder.encode(key)
+        let digest = SHA256.hash(data: data)
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 }

@@ -3,6 +3,7 @@ import InnoNetworkTestSupport
 import Testing
 import os
 
+@_spi(GeneratedClientSupport) import InnoNetwork
 @testable import InnoNetwork
 
 @Suite("RetryCoordinator Timing Tests")
@@ -55,6 +56,34 @@ struct RetryCoordinatorTimingTests {
         let value = try await result
         #expect(value == 42)
         #expect(attemptCounter.withLock { $0 } == 3)
+    }
+
+    @Test("DefaultNetworkClient.perform retry path uses injected clock")
+    func defaultNetworkClientPerformRetryUsesInjectedClock() async throws {
+        let clock = TestClock()
+        let session = RetryClockURLSession(steps: [
+            .failure(URLError(.timedOut)),
+            .success(RetryClockPayload(value: "ok")),
+        ])
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: URL(string: "https://retry.example.com")!,
+                retryPolicy: FixedDelayRetryPolicy(maxRetries: 1, retryDelay: 5)
+            ),
+            session: session,
+            clock: clock
+        )
+
+        async let response: RetryClockPayload = client.perform(RetryClockRequest())
+
+        #expect(await clock.waitForWaiters(count: 1))
+        #expect(await session.requestCount == 1)
+
+        clock.advance(by: .seconds(5))
+
+        let value = try await response
+        #expect(value == RetryClockPayload(value: "ok"))
+        #expect(await session.requestCount == 2)
     }
 
     @Test("retryDelay == 0 skips clock.sleep entirely")
@@ -315,5 +344,74 @@ private struct RetryAfterCapPolicy: RetryPolicy {
         response: HTTPURLResponse?
     ) -> RetryDecision {
         retryIndex < maxRetries ? .retryAfter(serverHint) : .noRetry
+    }
+}
+
+private struct RetryClockPayload: Codable, Sendable, Equatable {
+    let value: String
+}
+
+private struct RetryClockRequest: APIDefinition {
+    typealias Parameter = EmptyParameter
+    typealias APIResponse = RetryClockPayload
+
+    var method: HTTPMethod { .get }
+    var path: String { "/clock" }
+}
+
+private enum RetryClockStep: Sendable {
+    case failure(URLError)
+    case success(RetryClockPayload)
+}
+
+private actor RetryClockURLSessionState {
+    private var steps: [RetryClockStep]
+    private var requests: [URLRequest] = []
+
+    init(steps: [RetryClockStep]) {
+        self.steps = steps
+    }
+
+    func dequeue(for request: URLRequest) throws -> RetryClockStep {
+        requests.append(request)
+        guard !steps.isEmpty else {
+            throw NetworkError.configuration(reason: .invalidRequest("No queued retry-clock response."))
+        }
+        return steps.removeFirst()
+    }
+
+    var requestCount: Int {
+        requests.count
+    }
+}
+
+private final class RetryClockURLSession: URLSessionProtocol, Sendable {
+    private let state: RetryClockURLSessionState
+
+    init(steps: [RetryClockStep]) {
+        self.state = RetryClockURLSessionState(steps: steps)
+    }
+
+    var requestCount: Int {
+        get async {
+            await state.requestCount
+        }
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        switch try await state.dequeue(for: request) {
+        case .failure(let error):
+            throw error
+        case .success(let payload):
+            return (
+                try JSONEncoder().encode(payload),
+                HTTPURLResponse(
+                    url: request.url ?? URL(string: "https://retry.example.com/clock")!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+            )
+        }
     }
 }

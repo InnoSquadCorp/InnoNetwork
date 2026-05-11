@@ -42,8 +42,8 @@ median requests.
 | watchOS | 8.0 | same |
 | visionOS | 1.0 | same |
 
-InnoNetwork's own minimum (iOS 18, macOS 15, tvOS 18, watchOS 11,
-visionOS 2) is well above these floors, so callers can rely on
+InnoNetwork's own minimum (iOS 16, macOS 14, tvOS 16, watchOS 9,
+visionOS 1) is above these floors, so callers can rely on
 `assumesHTTP3Capable` without an `@available` shim. Linux builds are
 not supported — see `docs/PlatformSupport.md`.
 

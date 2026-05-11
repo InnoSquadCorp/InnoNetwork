@@ -174,8 +174,9 @@ public enum NetworkError: Error, Sendable {
     /// `badServerResponse`, `secureConnectionFailed`,
     /// `userAuthenticationRequired`, `clientCertificateRejected`, and
     /// anything outside the curated reachability / timeout maps in
-    /// ``mapTransportError(_:metrics:response:)``. The mapping is part of the
-    /// public API contract and is locked by `NetworkErrorTimeoutTests`.
+    /// ``mapTransportError(_:)`` and the metrics-aware internal overloads. The
+    /// mapping is part of the public API contract and is locked by
+    /// `NetworkErrorTimeoutTests`.
     ///
     /// > Recovering the original `URLError` code:
     /// >
