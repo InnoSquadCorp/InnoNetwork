@@ -139,7 +139,7 @@ package actor CircuitBreakerRegistry {
 
     private enum Mode: Equatable {
         case closed(ClosedState)
-        case open(until: Date, resetAfter: Duration)
+        case open(openedAt: Date, until: Date, resetAfter: Duration)
         case halfOpen(probeInFlight: Bool, successCount: Int, resetAfter: Duration)
     }
 
@@ -163,8 +163,18 @@ package actor CircuitBreakerRegistry {
         switch entry.mode {
         case .closed:
             return
-        case .open(let until, let resetAfter):
-            if now >= until {
+        case .open(let openedAt, let until, let resetAfter):
+            // Defend against system-clock regression (NTP corrections, manual
+            // timezone changes, leap-second walks). `until` was computed at
+            // open time as `openedAt + resetAfter`; if the clock has since
+            // moved backward past `openedAt`, `now >= until` would never
+            // fire and the breaker would stay open for the full skew window.
+            // Trip the half-open transition either when the elapsed time
+            // since open has covered `resetAfter`, or when `now` is now
+            // earlier than `openedAt` — both indicate the open window has
+            // outlived its monotone deadline.
+            let elapsed = now.timeIntervalSince(openedAt)
+            if elapsed < 0 || elapsed >= resetAfter.timeInterval || now >= until {
                 states[key] = Entry(
                     mode: .halfOpen(probeInFlight: true, successCount: 0, resetAfter: resetAfter),
                     lastAccessAt: now
@@ -252,6 +262,7 @@ package actor CircuitBreakerRegistry {
             if isFailure, failureCount >= policy.failureThreshold {
                 states[key] = Entry(
                     mode: .open(
+                        openedAt: now,
                         until: now.addingTimeInterval(policy.resetAfter.timeInterval),
                         resetAfter: policy.resetAfter
                     ),
@@ -270,7 +281,11 @@ package actor CircuitBreakerRegistry {
                 let doubled = min(resetAfter.timeInterval * 2, policy.maxResetAfter.timeInterval)
                 let next = Duration.milliseconds(Int64((doubled * 1000).rounded()))
                 states[key] = Entry(
-                    mode: .open(until: now.addingTimeInterval(next.timeInterval), resetAfter: next),
+                    mode: .open(
+                        openedAt: now,
+                        until: now.addingTimeInterval(next.timeInterval),
+                        resetAfter: next
+                    ),
                     lastAccessAt: now
                 )
             } else {
