@@ -99,6 +99,10 @@ extension PersistentResponseCache {
                 return false
             case (let stored?, let current?):
                 if current.hasPrefix("hmac-sha256:"), stored.hasPrefix("sha256:") {
+                    // Persistent disk keys already include the HMAC-protected
+                    // sensitive request header. A legacy unkeyed Vary snapshot
+                    // can only be considered after that key matched, and the
+                    // HMAC/SHA digest bodies are intentionally incomparable.
                     continue
                 }
                 if !varyValuesEqualForPersistentLookup(stored: stored, current: current, headerName: name) {
@@ -115,6 +119,8 @@ extension PersistentResponseCache {
         headerName: String
     ) -> Bool {
         if isMultiTokenPersistentVaryHeader(headerName) {
+            // Keep parity with core `cachedResponseMatchesVary`: content
+            // negotiation lists are compared as normalized token sets.
             return Set(HTTPListParser.split(stored).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })
                 == Set(HTTPListParser.split(current).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })
         }

@@ -86,7 +86,9 @@ public final class InnoNetworkClientTransport: ClientTransport {
         }
 
         let normalizedResponseLimit = max(0, responseBodyByteLimit)
-        if urlResponse.expectedContentLength > Int64(normalizedResponseLimit) {
+        if !Self.statusCodeMustNotCarryBody(httpResponse.statusCode),
+            urlResponse.expectedContentLength > Int64(normalizedResponseLimit)
+        {
             throw InnoNetworkClientTransportError.responseBodyTooLarge(
                 limit: normalizedResponseLimit,
                 received: Int(clamping: urlResponse.expectedContentLength)

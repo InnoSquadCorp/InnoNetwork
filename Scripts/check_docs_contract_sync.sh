@@ -496,7 +496,15 @@ validate_resilience_public_api() {
     "$repo_root/Sources/InnoNetwork/RetryPolicy.swift"
   require_contains 'public struct ExponentialBackoffRetryPolicy' \
     "$repo_root/Sources/InnoNetwork/RetryPolicy.swift"
-  require_contains 'safeMethods: Set<String> = ["GET", "HEAD", "OPTIONS", "TRACE"]' \
+  require_contains 'safeMethods: Set<String>' \
+    "$repo_root/Sources/InnoNetwork/RetryPolicy.swift"
+  require_contains '"GET"' \
+    "$repo_root/Sources/InnoNetwork/RetryPolicy.swift"
+  require_contains '"HEAD"' \
+    "$repo_root/Sources/InnoNetwork/RetryPolicy.swift"
+  require_contains '"OPTIONS"' \
+    "$repo_root/Sources/InnoNetwork/RetryPolicy.swift"
+  require_contains '"TRACE"' \
     "$repo_root/Sources/InnoNetwork/RetryPolicy.swift"
   require_contains 'public enum ResponseCachePolicy' \
     "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"

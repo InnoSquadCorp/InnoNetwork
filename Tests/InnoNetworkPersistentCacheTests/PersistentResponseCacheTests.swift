@@ -127,6 +127,75 @@ struct PersistentResponseCacheTests {
         #expect(await reopened.statistics().entryCount == 0)
     }
 
+    @Test("Authorization Vary lookup stays scoped by the HMAC disk key")
+    func authorizationVaryLookupRequiresSamePersistentDiskKey() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            storesAuthenticatedResponses: true
+        )
+        let firstKey = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Authorization": "Bearer first"]
+        )
+        let secondKey = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Authorization": "Bearer second"]
+        )
+        var headers = Self.authenticatedCacheHeaders
+        headers["Vary"] = "Authorization"
+        let legacySHA256Fingerprint = "sha256:\(String(repeating: "0", count: 64))"
+        let cache = try PersistentResponseCache(configuration: configuration)
+
+        await cache.set(
+            firstKey,
+            CachedResponse(
+                data: Data("first".utf8),
+                headers: headers,
+                varyHeaders: ["authorization": legacySHA256Fingerprint]
+            )
+        )
+
+        #expect(await cache.get(firstKey)?.data == Data("first".utf8))
+        #expect(await cache.get(secondKey) == nil)
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+        #expect(await reopened.get(firstKey)?.data == Data("first".utf8))
+        #expect(await reopened.get(secondKey) == nil)
+    }
+
+    @Test("Persistent multi-token Vary lookup matches core token-set parity")
+    func persistentMultiTokenVaryLookupMatchesCoreTokenSetParity() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/compressed",
+            headers: ["Accept-Encoding": "deflate, gzip"]
+        )
+        let cached = CachedResponse(
+            data: Data("compressed".utf8),
+            headers: ["Vary": "Accept-Encoding"],
+            varyHeaders: ["accept-encoding": "gzip, deflate"]
+        )
+        var request = URLRequest(url: URL(string: "https://example.com/compressed")!)
+        request.setValue("deflate, gzip", forHTTPHeaderField: "Accept-Encoding")
+        let cache = try PersistentResponseCache(configuration: configuration)
+
+        #expect(cachedResponseMatchesVary(cached, request: request))
+
+        await cache.set(key, cached)
+
+        #expect(await cache.get(key)?.data == Data("compressed".utf8))
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+        #expect(await reopened.get(key)?.data == Data("compressed".utf8))
+    }
+
     @Test("RFC 9111 compliant policy reads heuristic-fresh persistent entries end to end")
     func rfc9111CompliantPolicyReadsHeuristicFreshPersistentEntry() async throws {
         let directory = makeDirectory()

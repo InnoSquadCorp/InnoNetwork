@@ -229,6 +229,34 @@ struct InnoNetworkClientTransportTests {
         }
     }
 
+    @Test("No-body statuses skip oversized Content-Length precheck", arguments: [204, 205, 304])
+    func noBodyStatusesSkipOversizedContentLengthPrecheck(statusCode: Int) async throws {
+        let baseURL = URL(string: "https://api.example.com")!
+        let streamURL = baseURL.appendingPathComponent("no-body-\(statusCode)")
+        OpenAPIClientTransportURLProtocol.register(
+            url: streamURL,
+            response: .http(
+                statusCode: statusCode,
+                headers: ["Content-Length": "4096"],
+                chunks: []
+            )
+        )
+        let transport = InnoNetworkClientTransport(
+            session: makeOpenAPIClientTransportURLSession(),
+            responseBodyByteLimit: 1
+        )
+
+        let (response, responseBody) = try await transport.send(
+            HTTPRequest(method: .get, scheme: nil, authority: nil, path: "/no-body-\(statusCode)"),
+            body: nil,
+            baseURL: baseURL,
+            operationID: "no-body-\(statusCode)"
+        )
+
+        #expect(response.status.code == statusCode)
+        #expect(responseBody == nil)
+    }
+
     @Test("Surfaces typed error for a non-HTTP response")
     func surfacesTypedErrorForNonHTTPResponse() async throws {
         let baseURL = URL(string: "https://api.example.com")!
