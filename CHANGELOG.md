@@ -670,11 +670,9 @@ Versioning.
   how to re-measure on the hosted runner, replace
   `Benchmarks/Baselines/default.json`, log the change in
   `Benchmarks/Baselines/CHANGELOG.md`, and what counts as a "meaningful"
-  regression worth refreshing the baseline for. The benchmark-smoke
-  guard (already enforcing `--enforce-baseline --max-regression-percent
-  20` on guarded entries) stays the runtime gate; the README addition
-  removes the recurring ambiguity around when and how operators should
-  refresh the file.
+  regression worth refreshing the baseline for. The dedicated `Benchmarks`
+  workflow owns guarded regression enforcement; the CI benchmark smoke job
+  only proves the benchmark CLI still builds and emits parseable JSON.
 
 ## [4.0.0] - 2026-05-02
 
