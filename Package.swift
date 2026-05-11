@@ -81,12 +81,11 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // `swift-openapi-runtime` is consumed only by the optional
-        // `InnoNetworkOpenAPI` library. Apps that do not link the
-        // OpenAPI product never resolve this dependency. Pinned to
-        // the 1.x range so future major releases must be reviewed
-        // before adoption — the runtime's `ClientTransport` shape is
-        // the surface we depend on directly.
+        // The root package resolves `swift-openapi-runtime` because it ships
+        // the optional `InnoNetworkOpenAPI` companion product. Codegen remains
+        // isolated in Packages/InnoNetworkCodegen so root package consumers do
+        // not resolve `swift-syntax`. The 1.x range keeps the runtime's
+        // `ClientTransport` surface under explicit major-version review.
         .package(
             url: "https://github.com/apple/swift-openapi-runtime",
             .upToNextMajor(from: "1.0.0")

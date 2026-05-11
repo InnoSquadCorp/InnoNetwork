@@ -4,7 +4,18 @@
 # All entries in this file must have module = InnoNetworkOpenAPI.
 InnoNetworkOpenAPI	swift.associatedtype	OpenAPIRestOperation.Parameters
 InnoNetworkOpenAPI	swift.associatedtype	OpenAPIRestOperation.Response
+InnoNetworkOpenAPI	swift.class	InnoNetworkClientTransport
+InnoNetworkOpenAPI	swift.enum	InnoNetworkClientTransportError
+InnoNetworkOpenAPI	swift.enum.case	InnoNetworkClientTransportError.invalidRequestURL(baseURL:path:)
+InnoNetworkOpenAPI	swift.enum.case	InnoNetworkClientTransportError.invalidStatusCode(_:)
+InnoNetworkOpenAPI	swift.enum.case	InnoNetworkClientTransportError.nonHTTPResponse(_:)
+InnoNetworkOpenAPI	swift.enum.case	InnoNetworkClientTransportError.responseBodyTooLarge(limit:received:)
+InnoNetworkOpenAPI	swift.init	InnoNetworkClientTransport.init(session:requestBodyByteLimit:responseBodyByteLimit:)
 InnoNetworkOpenAPI	swift.init	OpenAPIRequest.init(_:)
+InnoNetworkOpenAPI	swift.method	InnoNetworkClientTransport.send(_:body:baseURL:operationID:)
+InnoNetworkOpenAPI	swift.property	InnoNetworkClientTransport.requestBodyByteLimit
+InnoNetworkOpenAPI	swift.property	InnoNetworkClientTransport.responseBodyByteLimit
+InnoNetworkOpenAPI	swift.property	InnoNetworkClientTransportError.description
 InnoNetworkOpenAPI	swift.property	OpenAPIRequest.acceptableStatusCodes
 InnoNetworkOpenAPI	swift.property	OpenAPIRequest.headers
 InnoNetworkOpenAPI	swift.property	OpenAPIRequest.method

@@ -191,7 +191,70 @@ struct CodeGeneratorTests {
             user.contains(
                 "public init(id: Int64, metadata: AnyCodable? = nil, name: String, profile: Profile, tags: [String]? = nil)"
             ))
+        #expect(!user.contains("CodingKeys"))
         #expect(!user.contains("Optional("))
         #expect(anyCodable.contains("public indirect enum AnyCodable: Codable, Sendable, Equatable"))
+    }
+
+    @Test
+    func generatedSchemaPreservesOriginalKeysForSanitizedProperties() throws {
+        let document = OpenAPIDocument(
+            paths: [:],
+            components: Components(schemas: [
+                "User": Schema(
+                    type: "object",
+                    properties: [
+                        "1st-name": Schema(type: "string"),
+                        "class": Schema(type: "string"),
+                        "display_name": Schema(type: "string"),
+                        "user-id": Schema(type: "integer", format: "int64"),
+                    ],
+                    required: ["1st-name", "class", "display_name", "user-id"]
+                )
+            ])
+        )
+        let generator = CodeGenerator(moduleName: "API")
+
+        let files = try generator.generate(from: document)
+        let user = try #require(files.first(where: { $0.filename == "User.swift" })?.contents)
+
+        #expect(user.contains("public var _1stName: String"))
+        #expect(user.contains("public var class_: String"))
+        #expect(user.contains("public var display_name: String"))
+        #expect(user.contains("public var userId: Int64"))
+        #expect(user.contains("private enum CodingKeys: String, CodingKey"))
+        #expect(user.contains("case _1stName = \"1st-name\""))
+        #expect(user.contains("case class_ = \"class\""))
+        #expect(user.contains("case display_name"))
+        #expect(user.contains("case userId = \"user-id\""))
+    }
+
+    @Test
+    func rejectsSchemaPropertiesThatCollapseToTheSameSwiftIdentifier() {
+        let document = OpenAPIDocument(
+            paths: [:],
+            components: Components(schemas: [
+                "User": Schema(
+                    type: "object",
+                    properties: [
+                        "class": Schema(type: "string"),
+                        "class_": Schema(type: "string"),
+                    ],
+                    required: ["class", "class_"]
+                )
+            ])
+        )
+        let generator = CodeGenerator(moduleName: "API")
+
+        do {
+            _ = try generator.generate(from: document)
+            Issue.record("expected duplicate Swift identifier error")
+        } catch let error as GenerationError {
+            #expect(error.description.contains("class"))
+            #expect(error.description.contains("class_"))
+            #expect(error.description.contains("Swift identifier 'class_'"))
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
     }
 }

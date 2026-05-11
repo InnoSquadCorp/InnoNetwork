@@ -87,6 +87,20 @@ require_contains() {
   fi
 }
 
+require_not_contains() {
+  local needle="$1"
+  local file="$2"
+  if has_rg; then
+    if rg -Fq "$needle" "$file"; then
+      fail "unexpected '$needle' in $file"
+    fi
+  else
+    if grep -Fq "$needle" "$file"; then
+      fail "unexpected '$needle' in $file"
+    fi
+  fi
+}
+
 forbidden_pattern() {
   local pattern="$1"
   shift
@@ -547,6 +561,8 @@ validate_multipart_streaming_api() {
 validate_openapi_companion_product() {
   require_contains 'name: "InnoNetworkOpenAPI"' "$repo_root/Package.swift"
   require_contains 'targets: ["InnoNetworkOpenAPI"]' "$repo_root/Package.swift"
+  require_contains 'https://github.com/apple/swift-openapi-runtime' "$repo_root/Package.swift"
+  require_contains '.product(name: "OpenAPIRuntime", package: "swift-openapi-runtime")' "$repo_root/Package.swift"
   require_contains 'public protocol OpenAPIRestOperation' \
     "$repo_root/Sources/InnoNetworkOpenAPI/OpenAPIAdapter.swift"
   require_contains 'public struct OpenAPIRequest' \
@@ -565,7 +581,7 @@ validate_persistent_cache_operations_api() {
 validate_codegen_product() {
   local codegen_package="$repo_root/Packages/InnoNetworkCodegen/Package.swift"
   local codegen_macros="$repo_root/Packages/InnoNetworkCodegen/Sources/InnoNetworkCodegen/Macros.swift"
-  require_contains 'dependencies: []' "$repo_root/Package.swift"
+  require_not_contains 'https://github.com/swiftlang/swift-syntax.git' "$repo_root/Package.swift"
   require_contains 'name: "InnoNetworkCodegen"' "$codegen_package"
   require_contains 'targets: ["InnoNetworkCodegen"]' "$codegen_package"
   require_contains 'name: "InnoNetworkMacros"' "$codegen_package"

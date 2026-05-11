@@ -349,7 +349,8 @@ release line.
 
 ### InnoNetworkOpenAPI
 
-- `OpenAPIRestOperation` and `OpenAPIRequest`.
+- `OpenAPIRestOperation`, `OpenAPIRequest`, `InnoNetworkClientTransport`,
+  and `InnoNetworkClientTransportError`.
 
 ### InnoNetworkTestSupport
 

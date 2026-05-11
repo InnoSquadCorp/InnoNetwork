@@ -401,7 +401,7 @@ jobs:
           xcodebuild -version
           xcrun swift --version
 
-      - name: Verify root package stays runtime-only
+      - name: Verify root package does not resolve swift-syntax
         run: |
           set -eo pipefail
           mkdir -p .build
