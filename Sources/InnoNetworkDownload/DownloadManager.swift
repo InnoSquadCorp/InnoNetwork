@@ -725,6 +725,13 @@ public actor DownloadManager {
                 continue
             }
             if now - lastProgress > timeout {
+                // Re-check state right before cancel: the task may have
+                // raced to `.paused` / `.completed` / `.failed` across the
+                // `lastProgressAt` await above. URLSession's cancel on a
+                // terminal task is harmless, but emitting a watchdog log
+                // line and touching `urlTask` on a finished task is
+                // diagnostic noise we can avoid cheaply.
+                guard await task.state == .downloading else { continue }
                 if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
                     Self.logger.notice(
                         "Cancelling stalled download \(task.id, privacy: .private(mask: .hash)) — no progress for \(String(describing: timeout), privacy: .public)"

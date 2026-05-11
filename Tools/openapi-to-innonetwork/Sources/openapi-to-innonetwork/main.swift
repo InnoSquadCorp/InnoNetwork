@@ -373,7 +373,11 @@ struct CodeGenerator {
         // server would return 404 or a parameter-not-bound error. The
         // generator does not yet support path parameter substitution; the
         // user must rewrite the path or post-process the generated code.
-        if let range = path.range(of: #"\{[^/{}]+\}"#, options: .regularExpression) {
+        if let range = path.range(of: #"\{[^/{}]*\}"#, options: .regularExpression) {
+            // `*` (not `+`) so `{}` is rejected too. An empty placeholder is
+            // pointless but, before this, slipped past both this gate and
+            // the forbidden-scalar set below — defeating the validator's
+            // stated purpose of refusing any path template.
             let placeholder = String(path[range])
             throw GenerationError.unsupportedPath(
                 "path template '\(placeholder)' in '\(path)' is not supported. "

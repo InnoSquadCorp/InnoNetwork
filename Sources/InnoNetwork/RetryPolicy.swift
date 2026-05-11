@@ -198,6 +198,15 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
                 || (500...599).contains(response.statusCode)
         case .underlying(let error, _):
             return !NetworkError.isCancellation(error)
+        case .reachability:
+            // Connectivity-class URLErrors (`notConnectedToInternet`,
+            // `dnsLookupFailed`, `cannotFindHost`, `networkConnectionLost`)
+            // were `.underlying` before this branch and retried by default;
+            // preserve that contract after the typed-throws refactor. The
+            // outer policy still honours `waitsForNetworkChanges` so an
+            // offline device does not burn its retry budget against a
+            // closed pipe.
+            return true
         case .timeout:
             // Request and connection timeouts are typically transient.
             return true

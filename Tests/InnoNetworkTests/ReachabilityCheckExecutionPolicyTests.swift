@@ -113,10 +113,10 @@ struct ReachabilityCheckExecutionPolicyTests {
             )
             Issue.record("Expected throw, got success")
         } catch let error as NetworkError {
-            guard case .underlying(let underlying, _) = error,
-                underlying.code == NetworkErrorCode.reachability.rawValue
+            guard case .reachability(let reason, _, _) = error,
+                reason == .notConnectedToInternet
             else {
-                Issue.record("Expected .underlying with reachability code (transport suspended), got \(error)")
+                Issue.record("Expected .reachability(.notConnectedToInternet) (transport suspended), got \(error)")
                 return
             }
         }

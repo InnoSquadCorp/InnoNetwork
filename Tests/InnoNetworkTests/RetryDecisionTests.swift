@@ -44,6 +44,38 @@ struct RetryDecisionTests {
         #expect(decision == .retryAfter(5))
     }
 
+    @Test(
+        "ExponentialBackoffRetryPolicy retries every .reachability reason within budget",
+        arguments: [
+            ReachabilityReason.notConnectedToInternet,
+            ReachabilityReason.dnsLookupFailed,
+            ReachabilityReason.cannotFindHost,
+            ReachabilityReason.networkConnectionLost,
+        ]
+    )
+    func reachabilityIsRetryableByDefault(_ reason: ReachabilityReason) {
+        // Round-1 reclassified four URLError codes from `.underlying` into
+        // `.reachability`. Before this contract test, those failures stopped
+        // being retried by the default policy because the typed switch fell
+        // through to `default: return false`. Lock the prior retry behaviour
+        // explicitly so a future enum addition cannot regress it silently.
+        let policy = ExponentialBackoffRetryPolicy(maxRetries: 2, retryDelay: 0)
+        let request = URLRequest(url: URL(string: "https://example.com")!)
+        let underlying = SendableUnderlyingError(
+            domain: NSURLErrorDomain,
+            code: -1,
+            message: "reachability fixture"
+        )
+        let error = NetworkError.reachability(reason, underlying, nil)
+        let decision = policy.shouldRetry(
+            error: error,
+            retryIndex: 0,
+            request: request,
+            response: nil
+        )
+        #expect(decision == .retry, "\(reason) should be retried under the default policy")
+    }
+
     @Test("NetworkError.underlyingRequest exposes URLRequest from .statusCode payload")
     func underlyingRequestExtraction() {
         let request = URLRequest(url: URL(string: "https://example.com/items")!)
