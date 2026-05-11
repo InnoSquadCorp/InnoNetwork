@@ -41,7 +41,7 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
                 dataProtectionClass: dataProtectionClass,
                 fileManager: fileManager
             )
-        case let .keychain(service, accessGroup):
+        case .keychain(let service, let accessGroup):
             #if canImport(Security)
             return try loadOrCreateFromKeychain(
                 directoryURL: directoryURL,
