@@ -2,16 +2,29 @@
 
 ## Reporting a Vulnerability
 
-- Do not open public issues for security reports.
-- Prefer GitHub private vulnerability reporting if it is enabled for this repository.
-- If private reporting is not available, contact the maintainers directly before public disclosure.
+Use the following channels in order of preference. Do **not** open a
+public issue, post on a discussion thread, or share details in a pull
+request before the maintainers have acknowledged the report.
 
-Include:
+1. **Preferred — GitHub Private Vulnerability Reporting (GHSA).**
+   Open a private advisory at
+   <https://github.com/InnoSquadCorp/InnoNetwork/security/advisories/new>.
+   This routes directly to the maintainers and creates a tracking
+   advisory that we can publish alongside the fix.
+2. **Fallback — direct contact.** If GHSA reporting is unavailable or
+   you cannot complete it, email the maintainer listed as the project's
+   primary CODEOWNER. Mark the subject line with `[SECURITY]` so the
+   message is triaged ahead of routine issues.
 
-- affected module and version
-- reproduction steps
-- expected impact
-- proof-of-concept or logs if available
+Whichever channel you use, please include:
+
+- affected module and version (e.g. `InnoNetworkPersistentCache @ 4.0.0`)
+- reproduction steps (minimal failing case if possible)
+- expected impact and threat model (confidentiality / integrity /
+  availability, attacker preconditions)
+- proof-of-concept, logs, or stack traces if available
+- whether you intend to request a CVE or have a coordinated-disclosure
+  timeline you would like us to honor
 
 ## Supported Versions
 

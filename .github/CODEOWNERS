@@ -1,0 +1,27 @@
+# CODEOWNERS — review routing for InnoNetwork.
+#
+# Order matters: later entries win for matching files.
+#
+# Maintainers in this file should be a small, fast-responding group.
+# Add team mentions (e.g. `@InnoSquadCorp/network-core`) once those
+# teams exist; until then, the canonical maintainer handles every
+# path so reviews are never silently unassigned.
+
+# Default ownership — everything routes to the maintainer.
+*                                       @ethan-is
+
+# Security-sensitive surfaces require explicit sign-off so a routine
+# refactor cannot quietly alter the threat model.
+SECURITY.md                             @ethan-is
+Sources/InnoNetworkTrust/**             @ethan-is
+Sources/InnoNetwork/NetworkLogger.swift @ethan-is
+Sources/InnoNetwork/Auth/**             @ethan-is
+
+# Public API contracts. Changes here force a parity check against
+# Scripts/symbols/*.allowlist (enforced by check_docs_contract_sync.sh).
+API_STABILITY.md                        @ethan-is
+Scripts/symbols/**                      @ethan-is
+
+# CI / supply-chain — keep release tooling under maintainer review.
+.github/workflows/**                    @ethan-is
+.github/CODEOWNERS                      @ethan-is
