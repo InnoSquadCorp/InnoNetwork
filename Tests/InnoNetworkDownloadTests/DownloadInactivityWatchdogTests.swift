@@ -79,8 +79,9 @@ struct DownloadInactivityWatchdogTests {
             try await Task.sleep(for: .milliseconds(40))
         }
 
-        #expect(harness.stubTask.cancelCount == 0,
-                "watchdog must not cancel a task that is still making progress")
+        #expect(
+            harness.stubTask.cancelCount == 0,
+            "watchdog must not cancel a task that is still making progress")
 
         await harness.manager.shutdown()
     }
@@ -149,8 +150,9 @@ struct DownloadInactivityWatchdogTests {
         )
         try await Task.sleep(for: .milliseconds(300))
 
-        #expect(harness.stubTask.cancelCount == 0,
-                "no watchdog should run when taskInactivityTimeout is nil")
+        #expect(
+            harness.stubTask.cancelCount == 0,
+            "no watchdog should run when taskInactivityTimeout is nil")
 
         await harness.manager.shutdown()
     }

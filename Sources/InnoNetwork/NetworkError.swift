@@ -369,7 +369,7 @@ extension NetworkError: CustomNSError {
             switch reason {
             case .invalidBaseURL: return NetworkErrorCode.configurationInvalidBaseURL.rawValue
             case .invalidRequest: return NetworkErrorCode.configurationInvalidRequest.rawValue
-            case .offline:        return NetworkErrorCode.configurationOffline.rawValue
+            case .offline: return NetworkErrorCode.configurationOffline.rawValue
             }
         case .decoding:
             return NetworkErrorCode.decoding.rawValue

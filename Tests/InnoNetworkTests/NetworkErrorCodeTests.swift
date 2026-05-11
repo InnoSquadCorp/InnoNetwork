@@ -48,14 +48,18 @@ struct NetworkErrorCodeTests {
     @Test("NetworkError.errorCode routes through SSOT")
     func errorCodeRoutesThroughSSOT() {
         let underlying = SendableUnderlyingError(domain: "test", code: 0, message: "test")
-        #expect(NetworkError.configuration(reason: .invalidBaseURL("x")).errorCode
-            == NetworkErrorCode.configurationInvalidBaseURL.rawValue)
-        #expect(NetworkError.configuration(reason: .invalidRequest("x")).errorCode
-            == NetworkErrorCode.configurationInvalidRequest.rawValue)
-        #expect(NetworkError.configuration(reason: .offline("x")).errorCode
-            == NetworkErrorCode.configurationOffline.rawValue)
-        #expect(NetworkError.underlying(underlying, nil).errorCode
-            == NetworkErrorCode.underlying.rawValue)
+        #expect(
+            NetworkError.configuration(reason: .invalidBaseURL("x")).errorCode
+                == NetworkErrorCode.configurationInvalidBaseURL.rawValue)
+        #expect(
+            NetworkError.configuration(reason: .invalidRequest("x")).errorCode
+                == NetworkErrorCode.configurationInvalidRequest.rawValue)
+        #expect(
+            NetworkError.configuration(reason: .offline("x")).errorCode
+                == NetworkErrorCode.configurationOffline.rawValue)
+        #expect(
+            NetworkError.underlying(underlying, nil).errorCode
+                == NetworkErrorCode.underlying.rawValue)
         #expect(NetworkError.cancelled.errorCode == NSURLErrorCancelled)
     }
 }

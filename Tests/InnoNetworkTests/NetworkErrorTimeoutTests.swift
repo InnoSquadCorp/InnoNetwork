@@ -284,7 +284,9 @@ struct NetworkErrorTimeoutTests {
         #expect(underlying.code == URLError.Code.dnsLookupFailed.rawValue)
     }
 
-    @Test("mapTransportError: URLError.networkConnectionLost → .reachability(.networkConnectionLost) (mid-flight drop, not a timeout)")
+    @Test(
+        "mapTransportError: URLError.networkConnectionLost → .reachability(.networkConnectionLost) (mid-flight drop, not a timeout)"
+    )
     func mapNetworkConnectionLostContract() {
         let error = NetworkError.mapTransportError(URLError(.networkConnectionLost))
         guard case .reachability(.networkConnectionLost, let underlying, nil) = error else {
@@ -294,7 +296,9 @@ struct NetworkErrorTimeoutTests {
         #expect(underlying.code == URLError.Code.networkConnectionLost.rawValue)
     }
 
-    @Test("mapTransportError: URLError.notConnectedToInternet → .reachability(.notConnectedToInternet) (reachability, not a timeout)")
+    @Test(
+        "mapTransportError: URLError.notConnectedToInternet → .reachability(.notConnectedToInternet) (reachability, not a timeout)"
+    )
     func mapNotConnectedContract() {
         let error = NetworkError.mapTransportError(URLError(.notConnectedToInternet))
         guard case .reachability(.notConnectedToInternet, let underlying, nil) = error else {

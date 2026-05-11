@@ -215,8 +215,9 @@ extension RequestExecutor {
         else {
             return nil
         }
-        guard case .revalidate(let revalidationCandidate) =
-            configuration.responseCachePolicy.prepare(cached: cached),
+        guard
+            case .revalidate(let revalidationCandidate) =
+                configuration.responseCachePolicy.prepare(cached: cached),
             let candidate = revalidationCandidate,
             let etag = candidate.etag
         else {
@@ -380,7 +381,8 @@ extension RequestExecutor {
             // NSDate via `String(describing:)` — a synthesised form servers
             // do not emit would silently poison the merged header set.
             guard let key = pair.key as? String,
-                  let value = pair.value as? String else { continue }
+                let value = pair.value as? String
+            else { continue }
             if let existingKey = headers.keys.first(where: { $0.caseInsensitiveCompare(key) == .orderedSame }) {
                 headers.removeValue(forKey: existingKey)
             }

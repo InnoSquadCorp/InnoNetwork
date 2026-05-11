@@ -366,7 +366,8 @@ struct CodeGenerator {
 
     // MARK: Operation → APIDefinition struct
 
-    private func renderOperation(typeName: String, method: String, path: String, op: Operation) throws -> GeneratedFile {
+    private func renderOperation(typeName: String, method: String, path: String, op: Operation) throws -> GeneratedFile
+    {
         // Reject `{name}` style path templates so they cannot be silently
         // emitted as a literal Swift string — a request hitting the
         // generated endpoint would post to `/users/{id}` verbatim and the
@@ -381,9 +382,9 @@ struct CodeGenerator {
             let placeholder = String(path[range])
             throw GenerationError.unsupportedPath(
                 "path template '\(placeholder)' in '\(path)' is not supported. "
-                + "Remove path parameters from the OpenAPI spec or generate a stripped variant; "
-                + "the openapi-to-innonetwork subset does not bind {name} placeholders. "
-                + "See Tools/openapi-to-innonetwork/README.md for the supported subset."
+                    + "Remove path parameters from the OpenAPI spec or generate a stripped variant; "
+                    + "the openapi-to-innonetwork subset does not bind {name} placeholders. "
+                    + "See Tools/openapi-to-innonetwork/README.md for the supported subset."
             )
         }
 
@@ -403,7 +404,7 @@ struct CodeGenerator {
         if let bad = path.unicodeScalars.first(where: { forbiddenScalars.contains($0) }) {
             throw GenerationError.unsupportedPath(
                 "path '\(path)' contains the unsupported character U+\(String(bad.value, radix: 16, uppercase: true)); "
-                + "remove it from the OpenAPI spec before regenerating."
+                    + "remove it from the OpenAPI spec before regenerating."
             )
         }
 

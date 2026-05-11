@@ -16,21 +16,21 @@ public enum NetworkErrorCode: Int, Sendable {
     // 1xxx — request configuration failures (caller-side).
     case configurationInvalidBaseURL = 1001
     case configurationInvalidRequest = 1002
-    case configurationOffline        = 1003
+    case configurationOffline = 1003
 
     // 2xxx — decoding failures.
     // 2001 intentionally unused (retired before this enum existed).
-    case decoding                    = 2002
+    case decoding = 2002
 
     // 3xxx — protocol-level response failures.
-    case statusCode                  = 3001
-    case nonHTTPResponse             = 3002
+    case statusCode = 3001
+    case nonHTTPResponse = 3002
 
     // 4xxx — transport / pipeline failures surfaced through `.underlying`.
-    case underlying                  = 4001
-    case reachability                = 4002
-    case responseBodyLimitExceeded   = 4003
+    case underlying = 4001
+    case reachability = 4002
+    case responseBodyLimitExceeded = 4003
 
     // 5xxx — trust evaluation failures.
-    case trustEvaluationFailed       = 5001
+    case trustEvaluationFailed = 5001
 }

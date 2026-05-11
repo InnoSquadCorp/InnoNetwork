@@ -91,8 +91,9 @@ struct NetworkErrorReachabilityTests {
         )
         let underlying = SendableUnderlyingError(URLError(.networkConnectionLost))
         let original = NetworkError.reachability(.networkConnectionLost, underlying, response)
-        guard case .reachability(let reason, let preservedUnderlying, let redactedResponse) =
-            original.redactingFailurePayload()
+        guard
+            case .reachability(let reason, let preservedUnderlying, let redactedResponse) =
+                original.redactingFailurePayload()
         else {
             Issue.record("Expected redacted .reachability, got something else")
             return
