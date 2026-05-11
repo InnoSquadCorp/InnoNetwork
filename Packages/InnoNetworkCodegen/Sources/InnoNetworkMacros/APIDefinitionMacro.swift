@@ -170,13 +170,28 @@ public struct APIDefinitionMacro: ExtensionMacro {
         return properties
     }
 
-    /// Returns the syntactic generic parameter names declared on the type
-    /// the macro is attached to (e.g. `T`, `Element`). The macro rejects
-    /// these as path placeholder targets because the encoder requires a
+    /// Returns the syntactic generic parameter names visible to the
+    /// declaration the macro is attached to. This includes parameters
+    /// declared directly on the host type (e.g. `T`, `Element`) plus any
+    /// declared on enclosing types — when a `@APIDefinition` struct is
+    /// nested inside `Container<T>`, the inner type's path placeholders
+    /// must reject references to the parent's `T` for the same reason
+    /// they reject the host type's own generics: the encoder requires a
     /// concrete `LosslessStringConvertible & Sendable` type and the macro
-    /// cannot inspect generic constraints at expansion time.
+    /// cannot resolve generic constraints at expansion time.
     private static func genericParameterNames(in declaration: some DeclGroupSyntax) -> Set<String> {
-        let syntax = Syntax(declaration)
+        var names: Set<String> = []
+        var cursor: Syntax? = Syntax(declaration)
+        while let current = cursor {
+            for name in genericParameters(on: current) {
+                names.insert(name)
+            }
+            cursor = current.parent
+        }
+        return names
+    }
+
+    private static func genericParameters(on syntax: Syntax) -> [String] {
         let clause: GenericParameterClauseSyntax?
         if let declaration = syntax.as(StructDeclSyntax.self) {
             clause = declaration.genericParameterClause
@@ -186,11 +201,17 @@ public struct APIDefinitionMacro: ExtensionMacro {
             clause = declaration.genericParameterClause
         } else if let declaration = syntax.as(EnumDeclSyntax.self) {
             clause = declaration.genericParameterClause
+        } else if let declaration = syntax.as(ExtensionDeclSyntax.self) {
+            // Extensions cannot themselves declare generic parameters,
+            // but if the macro is somehow attached on one we still want
+            // to walk further up rather than terminate the search.
+            _ = declaration
+            clause = nil
         } else {
             clause = nil
         }
         guard let clause else { return [] }
-        return Set(clause.parameters.map { $0.name.text })
+        return clause.parameters.map { $0.name.text }
     }
 
     /// Syntactic classification. Returns `.opaque` for `some X` types,
@@ -262,34 +283,56 @@ public struct APIDefinitionMacro: ExtensionMacro {
     /// has to be propagated by the author rather than silently kept
     /// at internal by the macro.
     private static func witnessAccessPrefix(in declaration: some DeclGroupSyntax) -> String {
-        let modifiers = declarationModifiers(in: declaration)
-        if modifiers.contains(where: { $0 == "open" }) {
-            // `open` cannot apply to struct members or extension methods
-            // in the same way it does to a class declaration; the
-            // strongest correctly-applicable witness modifier is
-            // `public`.
-            return "public "
-        }
-        if modifiers.contains("public") {
-            return "public "
-        }
-        if modifiers.contains("package") {
-            return "package "
-        }
-        if modifiers.contains("fileprivate") {
-            return "fileprivate "
-        }
-        if modifiers.contains("private") {
-            // `private` on a top-level type behaves like `fileprivate`;
-            // mirror that on the witness rather than silently widening
-            // visibility to `internal`.
-            return "fileprivate "
-        }
-        return "internal "
+        // A nested type's effective visibility is bounded by the
+        // visibility of every enclosing type — `public struct Inner`
+        // declared inside `internal struct Outer` is effectively
+        // internal because nobody outside the module can reach the
+        // outer name. Generate the witness at the tightest visibility
+        // along the chain so the extension does not advertise a wider
+        // surface than the host type can be referenced through.
+        let levels = collectVisibilityLevels(from: Syntax(declaration))
+        let effective = levels.reduce(VisibilityLevel.internal) { min($0, $1) }
+        return effective.witnessPrefix
     }
 
-    private static func declarationModifiers(in declaration: some DeclGroupSyntax) -> [String] {
-        let syntax = Syntax(declaration)
+    private enum VisibilityLevel: Int, Comparable {
+        case `private` = 0
+        case `fileprivate` = 1
+        case `internal` = 2
+        case `package` = 3
+        case `public` = 4
+
+        static func < (lhs: VisibilityLevel, rhs: VisibilityLevel) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+
+        var witnessPrefix: String {
+            switch self {
+            case .public: return "public "
+            case .package: return "package "
+            case .internal: return "internal "
+            case .fileprivate, .private:
+                // `private` on a top-level type behaves like
+                // `fileprivate`; mirror that on the witness rather than
+                // silently widening visibility to `internal`.
+                return "fileprivate "
+            }
+        }
+    }
+
+    private static func collectVisibilityLevels(from syntax: Syntax) -> [VisibilityLevel] {
+        var levels: [VisibilityLevel] = []
+        var cursor: Syntax? = syntax
+        while let current = cursor {
+            if let level = visibilityLevel(of: current) {
+                levels.append(level)
+            }
+            cursor = current.parent
+        }
+        return levels
+    }
+
+    private static func visibilityLevel(of syntax: Syntax) -> VisibilityLevel? {
         let modifiers: DeclModifierListSyntax?
         if let declaration = syntax.as(StructDeclSyntax.self) {
             modifiers = declaration.modifiers
@@ -299,10 +342,21 @@ public struct APIDefinitionMacro: ExtensionMacro {
             modifiers = declaration.modifiers
         } else if let declaration = syntax.as(EnumDeclSyntax.self) {
             modifiers = declaration.modifiers
+        } else if let declaration = syntax.as(ExtensionDeclSyntax.self) {
+            modifiers = declaration.modifiers
         } else {
-            modifiers = nil
+            return nil
         }
-        return modifiers?.map { $0.name.text } ?? []
+        guard let modifiers else { return .internal }
+        let names = modifiers.map { $0.name.text }
+        // `open` only widens classes; struct/extension members map to
+        // `public` for witness emission purposes.
+        if names.contains("open") { return .public }
+        if names.contains("public") { return .public }
+        if names.contains("package") { return .package }
+        if names.contains("fileprivate") { return .fileprivate }
+        if names.contains("private") { return .private }
+        return .internal
     }
 
     private static func interpolatedPath(
