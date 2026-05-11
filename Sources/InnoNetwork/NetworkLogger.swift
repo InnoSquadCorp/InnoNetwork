@@ -277,6 +277,24 @@ public struct DefaultNetworkLogger: NetworkLogger {
         return current
     }
 
+    /// Redacts an outgoing/incoming URL for logging.
+    ///
+    /// **User-info**: `https://user:pass@host/...` user-info segments
+    /// always leak credentials, so they are stripped unconditionally
+    /// whenever `redactSensitiveData` is on.
+    ///
+    /// **Query string**: this implementation replaces *every* query
+    /// value with `<redacted>` rather than maintaining a key allowlist.
+    /// The reasoning is asymmetry of harm — a list of well-known
+    /// sensitive keys (`access_token`, `refresh_token`, `code`,
+    /// `state`, `api_key`, `password`, signed-URL parameters) is easy
+    /// to enumerate, but the long tail of *vendor-specific* sensitive
+    /// keys (`sig`, `auth`, `idToken`, partner-prefixed names) means
+    /// any allowlist will leak something in practice. A blanket value
+    /// redaction makes the logger fail closed; key names remain
+    /// visible so request-shape debugging is still useful. Callers
+    /// that need raw query values for local development can disable
+    /// redaction with `NetworkLoggingOptions.verbose`.
     func sanitize(url: URL?, nilFallback: String = "") -> String {
         guard let url else { return nilFallback }
         guard options.redactSensitiveData else { return url.absoluteString }
