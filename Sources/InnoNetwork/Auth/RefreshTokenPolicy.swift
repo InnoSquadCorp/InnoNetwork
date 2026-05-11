@@ -236,64 +236,55 @@ package actor RefreshTokenCoordinator {
 }
 
 
-private final class RefreshTokenTaskAwaitBridge: @unchecked Sendable {
-    private enum Outcome {
+private actor RefreshTokenTaskAwaitBridge {
+    private enum Outcome: Sendable {
         case success(String)
-        case failure(any Error)
+        case failure(any Error & Sendable)
     }
 
-    private let lock = NSLock()
     private var continuation: CheckedContinuation<String, any Error>?
     private var outcome: Outcome?
 
     func value(of task: Task<String, any Error>) async throws -> String {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                if install(continuation) {
-                    Task {
-                        do {
-                            finish(.success(try await task.value))
-                        } catch {
-                            finish(.failure(error))
-                        }
-                    }
-                }
+                install(continuation, task: task)
             }
         } onCancel: {
-            finish(.failure(CancellationError()))
+            Task.detached {
+                await self.finish(.failure(CancellationError()))
+            }
         }
     }
 
-    private func install(_ continuation: CheckedContinuation<String, any Error>) -> Bool {
-        let existing: Outcome?
-        lock.lock()
+    private func install(
+        _ continuation: CheckedContinuation<String, any Error>,
+        task: Task<String, any Error>
+    ) {
         if let outcome {
-            existing = outcome
-        } else {
-            self.continuation = continuation
-            existing = nil
+            resume(continuation, with: outcome)
+            return
         }
-        lock.unlock()
 
-        if let existing {
-            resume(continuation, with: existing)
-            return false
+        self.continuation = continuation
+        Task.detached {
+            do {
+                let value = try await task.value
+                await self.finish(.success(value))
+            } catch {
+                await self.finish(.failure(error))
+            }
         }
-        return true
     }
 
     private func finish(_ outcome: Outcome) {
-        let continuation: CheckedContinuation<String, any Error>?
-        lock.lock()
         if self.outcome != nil {
-            continuation = nil
-        } else {
-            self.outcome = outcome
-            continuation = self.continuation
-            self.continuation = nil
+            return
         }
-        lock.unlock()
 
+        self.outcome = outcome
+        let continuation = self.continuation
+        self.continuation = nil
         if let continuation {
             resume(continuation, with: outcome)
         }
