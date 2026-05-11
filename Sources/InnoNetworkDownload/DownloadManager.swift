@@ -104,6 +104,16 @@ public actor DownloadManager {
     /// ``DownloadConfiguration/taskInactivityTimeout``. `nil` when the
     /// configuration disables the watchdog.
     private var inactivityWatchdogTask: Task<Void, Never>?
+    /// Drains delegate events into actor-isolated handlers; cancelled in
+    /// ``shutdown()`` so it does not outlive the manager when callers exit
+    /// without waiting for the stream to finish naturally. Stored behind a
+    /// nonisolated lock because it is assigned from the nonisolated init.
+    nonisolated private let delegateConsumerTaskHandle =
+        OSAllocatedUnfairLock<Task<Void, Never>?>(initialState: nil)
+    /// Runs the one-shot persistence restoration; cancelled in ``shutdown()``
+    /// to prevent late completions from racing the invalidation barrier.
+    nonisolated private let restorationTaskHandle =
+        OSAllocatedUnfairLock<Task<Void, Never>?>(initialState: nil)
 
     private enum DelegateEvent: Sendable {
         case progress(
@@ -273,23 +283,25 @@ public actor DownloadManager {
                     ))
             }
         )
-        Task { [weak self, delegateEvents] in
+        let consumerTask: Task<Void, Never> = Task { [weak self, delegateEvents] in
             for await event in delegateEvents {
                 if Task.isCancelled { break }
                 await self?.handleDelegateEvent(event)
             }
         }
+        delegateConsumerTaskHandle.withLock { $0 = consumerTask }
 
         // Restoration runs on a detached Task so the actor init returns
         // immediately. waitForRestore() gates every public entry point on the
         // restoreBarrier, so callers that issue downloads before restoration
         // completes block until the barrier opens.
-        Task { [weak self] in
+        let restoreTask: Task<Void, Never> = Task { [weak self] in
             guard let self else { return }
             let pending = await self.restoreCoordinator.restorePendingDownloads()
             await self.recordPendingRestoreFailures(pending)
             await self.restoreBarrier.complete()
         }
+        restorationTaskHandle.withLock { $0 = restoreTask }
 
         if let timeout = configuration.taskInactivityTimeout {
             Task { [weak self] in
@@ -548,6 +560,16 @@ public actor DownloadManager {
 
         inactivityWatchdogTask?.cancel()
         inactivityWatchdogTask = nil
+
+        delegateConsumerTaskHandle.withLock { task in
+            task?.cancel()
+            task = nil
+        }
+
+        restorationTaskHandle.withLock { task in
+            task?.cancel()
+            task = nil
+        }
 
         delegateEventContinuation.finish()
 
