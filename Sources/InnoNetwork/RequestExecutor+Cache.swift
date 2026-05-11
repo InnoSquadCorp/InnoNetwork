@@ -93,7 +93,7 @@ extension RequestExecutor {
                         revalidation = nil
                     }
 
-                    revalidationStartedAt = Date()
+                    revalidationStartedAt = runtime.clock.now()
                     let result = try await revalidateInBackground(
                         request: revalidationRequest,
                         bodySource: bodySource,
@@ -129,7 +129,8 @@ extension RequestExecutor {
                             await refreshCachedFreshness(
                                 cached: substitution.cached,
                                 cacheKey: cacheKey,
-                                configuration: configuration
+                                configuration: configuration,
+                                runtime: runtime
                             )
                         } else {
                             try enforceResponseBodyLimit(
@@ -367,7 +368,8 @@ extension RequestExecutor {
     func refreshCachedFreshness(
         cached: CachedResponse,
         cacheKey: ResponseCacheKey?,
-        configuration: NetworkConfiguration
+        configuration: NetworkConfiguration,
+        runtime: RequestExecutionRuntime
     ) async {
         guard let cacheKey,
             let cache = configuration.responseCache,
@@ -381,7 +383,7 @@ extension RequestExecutor {
                 data: cached.data,
                 statusCode: cached.statusCode,
                 headers: cached.headers,
-                storedAt: Date(),
+                storedAt: runtime.clock.now(),
                 requiresRevalidation: cached.requiresRevalidation,
                 varyHeaders: cached.varyHeaders
             )

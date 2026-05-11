@@ -83,7 +83,8 @@ extension RequestExecutor {
                     await refreshCachedFreshness(
                         cached: substitution.cached,
                         cacheKey: cacheKey,
-                        configuration: configuration
+                        configuration: configuration,
+                        runtime: runtime
                     )
                     return substitution.preservedResponse
                 } else {

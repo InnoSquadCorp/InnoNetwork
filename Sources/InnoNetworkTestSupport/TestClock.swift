@@ -74,8 +74,17 @@ package final class TestClock: InnoNetworkClock, @unchecked Sendable {
     }
 
     private let stateLock = OSAllocatedUnfairLock<State>(initialState: State())
+    private let epoch: Date
 
-    package init() {}
+    package init(epoch: Date = Date(timeIntervalSince1970: 0)) {
+        self.epoch = epoch
+    }
+
+    /// Returns the clock's virtual `Date`, equal to `epoch + virtualNow`.
+    package func now() -> Date {
+        let virtualSeconds = stateLock.withLock { $0.virtualNow.timeInterval }
+        return epoch.addingTimeInterval(virtualSeconds)
+    }
 
     package func sleep(for duration: Duration) async throws {
         let id = UUID()

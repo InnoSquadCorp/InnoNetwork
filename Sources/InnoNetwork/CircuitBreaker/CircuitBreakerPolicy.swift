@@ -149,12 +149,15 @@ package actor CircuitBreakerRegistry {
     }
 
     private var states: [String: Entry] = [:]
+    private let clock: any InnoNetworkClock
 
-    package init() {}
+    package init(clock: any InnoNetworkClock = SystemClock()) {
+        self.clock = clock
+    }
 
     package func prepare(request: URLRequest, policy: CircuitBreakerPolicy?) throws {
         guard policy != nil, let key = Self.hostKey(for: request) else { return }
-        let now = Date()
+        let now = clock.now()
         garbageCollect(now: now)
         let entry = states[key] ?? Entry(mode: .closed(ClosedState(window: [])), lastAccessAt: now)
         switch entry.mode {
@@ -207,7 +210,7 @@ package actor CircuitBreakerRegistry {
             // either direction. In half-open they release the probe slot
             // because the transport itself is healthy.
             if case .halfOpen = states[key]?.mode {
-                states[key] = Entry(mode: .closed(ClosedState(window: [])), lastAccessAt: Date())
+                states[key] = Entry(mode: .closed(ClosedState(window: [])), lastAccessAt: clock.now())
             }
         } else {
             // 2xx/3xx and other non-error status families confirm the host is
@@ -226,7 +229,7 @@ package actor CircuitBreakerRegistry {
         case .halfOpen(_, let successCount, let resetAfter):
             states[key] = Entry(
                 mode: .halfOpen(probeInFlight: false, successCount: successCount, resetAfter: resetAfter),
-                lastAccessAt: Date()
+                lastAccessAt: clock.now()
             )
         case .closed, .open:
             // Cancellation in closed/open: preserve state. The cancellation
@@ -237,7 +240,7 @@ package actor CircuitBreakerRegistry {
     }
 
     private func recordOutcome(key: String, isFailure: Bool, policy: CircuitBreakerPolicy) {
-        let now = Date()
+        let now = clock.now()
         let mode = states[key]?.mode ?? .closed(ClosedState(window: []))
         switch mode {
         case .closed(var state):

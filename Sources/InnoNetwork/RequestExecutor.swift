@@ -94,7 +94,7 @@ package struct RequestExecutor {
                 redirectPolicy: configuration.redirectPolicy
             )
 
-            attemptStartedAt = Date()
+            attemptStartedAt = runtime.clock.now()
             var networkResponse = try await executeWithPolicies(
                 request: request,
                 bodySource: built.bodySource,
