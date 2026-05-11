@@ -613,11 +613,37 @@ private func isMultiTokenVaryHeader(_ name: String) -> Bool {
 }
 
 private func varyTokenSet(_ raw: String) -> Set<String> {
-    Set(
-        raw.split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-            .filter { !$0.isEmpty }
-    )
+    // RFC 9110 §12.5.3 / §12.5.4: `Accept-Encoding`, `Accept-Language`,
+    // `Accept`, and `Accept-Charset` carry q-value weights that determine
+    // server-side preference. Two requests with the same token *set* but
+    // different priorities (`gzip;q=0.5, br` vs `gzip, br;q=0.5`) ask the
+    // origin for different representations and must produce distinct
+    // cache keys. Normalize each element to `<token>;q=<weight>` so the
+    // resulting `Set` reflects both the available tokens and their
+    // weights. Tokens without an explicit `q=` default to `1.000` per the
+    // spec.
+    var result: Set<String> = []
+    for rawElement in raw.split(separator: ",") {
+        let element = rawElement.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if element.isEmpty { continue }
+        let parts = element.split(separator: ";", omittingEmptySubsequences: false)
+        guard let token = parts.first.map(String.init)?.trimmingCharacters(in: .whitespaces),
+            !token.isEmpty
+        else { continue }
+        var qValue: String = "1.000"
+        for param in parts.dropFirst() {
+            let trimmed = param.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("q=") else { continue }
+            let value = trimmed.dropFirst(2)
+            if let parsed = Double(value) {
+                let clamped = max(0.0, min(1.0, parsed))
+                qValue = String(format: "%.3f", clamped)
+            }
+            break
+        }
+        result.insert("\(token);q=\(qValue)")
+    }
+    return result
 }
 
 
