@@ -33,7 +33,7 @@ jobs:
         # graph setting to be enabled. Keep the signal visible without
         # blocking PRs until the org-level setting is turned on.
         continue-on-error: true
-        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
 
   lint:
     name: Lint (swift-format)
