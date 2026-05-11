@@ -135,6 +135,7 @@ public actor PersistentResponseCache: ResponseCache {
         let keyResult = try PersistentCacheDiskKeyNormalizer.loadOrCreate(
             directoryURL: configuration.directoryURL,
             dataProtectionClass: configuration.dataProtectionClass,
+            keyStorage: configuration.keyStorage,
             fileManager: fileManager
         )
         // If the existing HMAC key was unreadable or had the wrong length we

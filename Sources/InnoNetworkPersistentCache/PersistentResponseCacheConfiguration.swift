@@ -20,6 +20,35 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
         case none
     }
 
+    /// Storage backend for the per-cache HMAC key that blinds sensitive
+    /// request-header values in cache keys.
+    ///
+    /// `.file` (default) keeps the historic behavior: a 32-byte random key
+    /// is generated on first use and persisted alongside the cache index,
+    /// with the configured ``DataProtectionClass`` applied to the key file.
+    ///
+    /// `.keychain` stores the same 32-byte key as a generic-password
+    /// Keychain item, allowing the key to outlive cache-directory wipes and
+    /// to inherit a stronger accessibility class than file protection alone
+    /// can provide. Only available on Darwin platforms; non-Darwin
+    /// configurations fall back to `.file` at initialization time.
+    public enum KeyStorage: Sendable, Equatable {
+        /// Persist the HMAC key inside the cache directory as
+        /// `cache-key-hmac.key`, protected by the configuration's
+        /// ``DataProtectionClass``.
+        case file
+        /// Persist the HMAC key in the Keychain as a generic password.
+        ///
+        /// - Parameters:
+        ///   - service: `kSecAttrService` value used to scope the item.
+        ///     Combined with the cache directory path so multiple caches
+        ///     in the same process do not collide.
+        ///   - accessGroup: Optional `kSecAttrAccessGroup` for sharing the
+        ///     key across an App Group / Keychain access group. Pass `nil`
+        ///     to keep the key private to the current application.
+        case keychain(service: String, accessGroup: String? = nil)
+    }
+
     /// Durability policy for the on-disk index file.
     ///
     /// `.always` opens an fd on the renamed index after the atomic write and,
@@ -70,6 +99,9 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     /// ``DataProtectionClass/none`` requests `NSFileProtectionNone` for
     /// cache-owned paths instead of skipping existing protection updates.
     public let dataProtectionClass: DataProtectionClass
+    /// Storage backend for the HMAC key that blinds sensitive headers in
+    /// the cache key. Defaults to ``KeyStorage/file``.
+    public let keyStorage: KeyStorage
 
     /// Build a configuration. Only `directoryURL` is required; defaults match
     /// the 4.0.0 RFC ("Implementation decisions" table).
@@ -81,7 +113,8 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
         storesAuthenticatedResponses: Bool = false,
         storesSetCookieResponses: Bool = false,
         persistenceFsyncPolicy: PersistenceFsyncPolicy = .onCheckpoint,
-        dataProtectionClass: DataProtectionClass = .completeUnlessOpen
+        dataProtectionClass: DataProtectionClass = .completeUnlessOpen,
+        keyStorage: KeyStorage = .file
     ) {
         self.directoryURL = directoryURL
         self.maxBytes = max(1, maxBytes)
@@ -91,6 +124,7 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
         self.storesSetCookieResponses = storesSetCookieResponses
         self.persistenceFsyncPolicy = persistenceFsyncPolicy
         self.dataProtectionClass = dataProtectionClass
+        self.keyStorage = keyStorage
     }
 
     /// Standard subdirectory for storing persistent cache files in an App Group container.
