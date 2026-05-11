@@ -71,6 +71,11 @@ public enum WebSocketError: Error, Sendable, Equatable {
     /// The outbound queue reached `sendQueueLimit` while the overflow policy
     /// was configured to fail the send operation.
     case sendQueueOverflow(limit: Int)
+    /// The reconnect coordinator's backoff sleep itself failed for a reason
+    /// other than cancellation. Observers receive this instead of the
+    /// previous generic ``unknown`` so the underlying clock/sleep failure
+    /// (e.g. a misconfigured `TestClock`) is visible in diagnostics.
+    case reconnectSleepFailed(SendableUnderlyingError)
     case unknown
 }
 
@@ -99,6 +104,8 @@ extension WebSocketError: LocalizedError {
             return "WebSocket connection was cancelled"
         case .sendQueueOverflow(let limit):
             return "WebSocket send queue is full (\(limit) in-flight operations)"
+        case .reconnectSleepFailed(let underlying):
+            return "WebSocket reconnect backoff sleep failed: \(underlying.message)"
         case .unknown:
             return "Unknown WebSocket error occurred"
         }

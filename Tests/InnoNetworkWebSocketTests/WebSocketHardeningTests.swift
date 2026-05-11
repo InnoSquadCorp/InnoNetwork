@@ -183,10 +183,16 @@ struct WebSocketReconnectHardeningTests {
 
         var iterator = stream.makeAsyncIterator()
         let observed = await iterator.next()
-        if case .error(.unknown) = observed {
-            // expected
+        if case .error(.reconnectSleepFailed(let underlying)) = observed {
+            // Verify the URLError context survived the typed wrapping so
+            // observers can read the underlying clock/sleep failure instead
+            // of guessing from a generic `.unknown`.
+            #expect(underlying.domain == NSURLErrorDomain)
+            #expect(underlying.code == URLError.timedOut.rawValue)
         } else {
-            Issue.record("expected .error(.unknown), got \(String(describing: observed))")
+            Issue.record(
+                "expected .error(.reconnectSleepFailed), got \(String(describing: observed))"
+            )
         }
         await registry.cancelReconnectTask(for: task.id)
     }

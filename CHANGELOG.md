@@ -9,6 +9,14 @@ Versioning.
 
 ### Added
 
+- `WebSocketError.reconnectSleepFailed(SendableUnderlyingError)` case. The
+  reconnect coordinator previously published `.error(.unknown)` whenever
+  its backoff sleep itself failed for a reason other than cancellation,
+  hiding the underlying clock/sleep failure from observers. The new
+  typed case carries the original error so telemetry can correlate the
+  skipped reconnect attempt with its root cause; `LocalizedError`
+  output now reports `WebSocket reconnect backoff sleep failed: …`.
+
 - `NetworkErrorCode` SSOT enum in `Sources/InnoNetwork/NetworkErrorCode.swift`.
   Owns every `NetworkError.errorCode` raw value (`1001`/`1002`/`1003`,
   `2002`, `3001`/`3002`, `4001`/`4002`/`4003`, `5001`) — the inline

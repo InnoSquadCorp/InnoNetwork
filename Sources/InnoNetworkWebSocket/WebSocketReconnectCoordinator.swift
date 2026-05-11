@@ -120,11 +120,13 @@ package struct WebSocketReconnectCoordinator {
             } catch {
                 // Sleep failed for a reason other than cancellation. The
                 // previous behaviour silently dropped the reconnect attempt;
-                // surface a paired error event so observers can correlate the
-                // skipped retry with their telemetry instead of seeing the
+                // surface a typed error event so observers can correlate the
+                // skipped retry with the underlying clock/sleep failure
+                // instead of seeing a generic `.unknown` or watching the
                 // socket stall in `.reconnecting` forever.
                 if let eventHub {
-                    await eventHub.publish(.error(.unknown), for: task.id)
+                    let wrapped = SendableUnderlyingError(error)
+                    await eventHub.publish(.error(.reconnectSleepFailed(wrapped)), for: task.id)
                 }
                 return
             }
