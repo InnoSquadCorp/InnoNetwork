@@ -136,10 +136,44 @@ jobs:
           xcodebuild -version
           xcrun swift --version
 
+      - name: Check Swift tools compatibility
+        id: toolchain-compatibility
+        env:
+          REQUIRED_TOOLCHAIN: ${{ matrix.xcode.required }}
+        run: |
+          set -eo pipefail
+
+          package_tools="$(sed -nE 's#^// swift-tools-version: *([0-9]+)\.([0-9]+).*#\1.\2#p' Package.swift | head -n 1)"
+          swift_version="$(xcrun swift --version | sed -nE 's/^Apple Swift version ([0-9]+)\.([0-9]+).*/\1.\2/p' | head -n 1)"
+
+          if [[ -z "$package_tools" || -z "$swift_version" ]]; then
+            echo "::error::Unable to determine Package.swift tools version or active Swift version."
+            exit 1
+          fi
+
+          tools_major="${package_tools%%.*}"
+          tools_minor="${package_tools##*.}"
+          swift_major="${swift_version%%.*}"
+          swift_minor="${swift_version##*.}"
+
+          if (( swift_major > tools_major || (swift_major == tools_major && swift_minor >= tools_minor) )); then
+            echo "compatible=true" >> "$GITHUB_OUTPUT"
+            echo "Active Swift ${swift_version} supports Package.swift tools ${package_tools}."
+          elif [[ "$REQUIRED_TOOLCHAIN" == "true" ]]; then
+            echo "compatible=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Required toolchain Swift ${swift_version} cannot load Package.swift tools ${package_tools}."
+            exit 1
+          else
+            echo "compatible=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping non-required ${GITHUB_JOB} matrix leg because Swift ${swift_version} cannot load Package.swift tools ${package_tools}."
+          fi
+
       - name: Resolve dependencies
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: xcrun swift package resolve
 
       - name: Build (Swift 6 language mode)
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: |
           set -eo pipefail
           echo "🔨 Building InnoNetwork..."
@@ -150,6 +184,7 @@ jobs:
           echo "✅ Build completed successfully!"
 
       - name: Test (with code coverage)
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: |
           set -eo pipefail
           echo "🧪 Running tests with --enable-code-coverage..."
@@ -160,6 +195,7 @@ jobs:
           echo "✅ Tests completed successfully!"
 
       - name: Generate coverage report
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: |
           set -eo pipefail
           # Resolve all .xctest binaries and the merged profdata under the
@@ -193,7 +229,7 @@ jobs:
             "${llvm_cov_objects[@]}" > .build/coverage/coverage.lcov
 
       - name: Upload coverage artifact
-        if: always()
+        if: always() && steps.toolchain-compatibility.outputs.compatible == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           # Suffix the artifact name with the matrix label so the
@@ -212,7 +248,7 @@ jobs:
         # runner-default matrix entry exists for an early-warning
         # signal on toolchain bumps; doubling its coverage upload
         # against the same commit would skew the Codecov report.
-        if: matrix.xcode.required && github.event.pull_request.head.repo.fork != true
+        if: matrix.xcode.required && steps.toolchain-compatibility.outputs.compatible == 'true' && github.event.pull_request.head.repo.fork != true
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
@@ -225,7 +261,7 @@ jobs:
           fi
 
       - name: Upload coverage to Codecov
-        if: matrix.xcode.required && env.CODECOV_TOKEN != ''
+        if: matrix.xcode.required && steps.toolchain-compatibility.outputs.compatible == 'true' && env.CODECOV_TOKEN != ''
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
@@ -237,12 +273,15 @@ jobs:
           fail_ci_if_error: true
 
       - name: Enforce @unchecked Sendable policy
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: bash Scripts/check_unchecked_sendable.sh
 
       - name: Enforce no force unwrap in production sources
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: bash Scripts/check_production_force_unwraps.sh
 
       - name: Enforce no print() in production sources
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: bash Scripts/check_no_print_in_production.sh
 
   docs-contract-sync:
