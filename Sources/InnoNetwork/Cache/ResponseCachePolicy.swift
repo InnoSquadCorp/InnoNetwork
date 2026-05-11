@@ -594,6 +594,16 @@ private func varyValuesEqual(stored: String?, current: String?, headerName: Stri
         return false
     case (let storedValue?, let currentValue?):
         if isMultiTokenVaryHeader(headerName) {
+            // Wildcard tokens (`*`, optionally with a q-value) participate
+            // in the comparison as ordinary tokens: a stored entry whose
+            // original request advertised `*;q=0.5` only re-matches a
+            // request that *also* advertises `*` with the same weight. We
+            // deliberately do not treat `*` as "matches any future
+            // request" — doing so would let an authenticated request with
+            // narrow language coverage serve a cached body to a broader
+            // wildcard request (or vice-versa) under semantically
+            // different content negotiation. The conservative rule trades
+            // a small hit-rate cost for guaranteed-correct vary matching.
             return varyTokenSet(storedValue) == varyTokenSet(currentValue)
         }
         // Trim RFC 7230 OWS so byte-for-byte differences in incidental
