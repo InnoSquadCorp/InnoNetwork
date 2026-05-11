@@ -111,7 +111,7 @@ public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
                 throw NetworkError.underlying(
                     SendableUnderlyingError(
                         domain: NetworkError.errorDomain,
-                        code: 4002,
+                        code: NetworkErrorCode.reachability.rawValue,
                         message:
                             "The network connection is still being restored. Please wait a moment and try the request again."
                     ),

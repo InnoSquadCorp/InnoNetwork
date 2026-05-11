@@ -299,7 +299,7 @@ package struct RequestExecutor {
             throw NetworkError.underlying(
                 SendableUnderlyingError(
                     domain: NetworkError.errorDomain,
-                    code: 4003,
+                    code: NetworkErrorCode.responseBodyLimitExceeded.rawValue,
                     message: "Response body of \(observed) bytes exceeded the configured limit of \(limit) bytes."
                 ),
                 nil
@@ -1028,7 +1028,7 @@ extension RequestExecutor {
                 throw NetworkError.underlying(
                     SendableUnderlyingError(
                         domain: NetworkError.errorDomain,
-                        code: 3002,
+                        code: NetworkErrorCode.nonHTTPResponse.rawValue,
                         message:
                             "Received a non-HTTP response from \(NetworkError.diagnosticURLString(for: request.url)); response was \(type(of: response))."
                     ),
@@ -1088,7 +1088,7 @@ extension RequestExecutor {
             throw NetworkError.underlying(
                 SendableUnderlyingError(
                     domain: NetworkError.errorDomain,
-                    code: 4003,
+                    code: NetworkErrorCode.responseBodyLimitExceeded.rawValue,
                     message:
                         "Response body of \(response.expectedContentLength) bytes exceeded the configured limit of \(normalizedLimit) bytes."
                 ),

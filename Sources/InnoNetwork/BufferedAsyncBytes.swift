@@ -51,7 +51,7 @@ struct BufferedAsyncBytes<Base: AsyncSequence>: AsyncSequence where Base.Element
                     throw NetworkError.underlying(
                         SendableUnderlyingError(
                             domain: NetworkError.errorDomain,
-                            code: 4003,
+                            code: NetworkErrorCode.responseBodyLimitExceeded.rawValue,
                             message:
                                 "Response body of \(observedBytes) bytes exceeded the configured limit of \(maxBytes) bytes."
                         ),

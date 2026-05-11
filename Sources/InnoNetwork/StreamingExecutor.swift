@@ -99,7 +99,7 @@ package struct StreamingExecutor: Sendable {
                     throw NetworkError.underlying(
                         SendableUnderlyingError(
                             domain: NetworkError.errorDomain,
-                            code: 3002,
+                            code: NetworkErrorCode.nonHTTPResponse.rawValue,
                             message:
                                 "Received a non-HTTP response on streaming request to \(NetworkError.diagnosticURLString(for: urlRequest.url)); response was \(type(of: response))."
                         ),
