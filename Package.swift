@@ -183,6 +183,33 @@ let package = Package(
             path: "SmokeTests/InnoNetworkDownloadSmoke",
             swiftSettings: strictSettings
         ),
+        .executableTarget(
+            name: "InnoNetworkWebSocketSmoke",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkWebSocket",
+            ],
+            path: "SmokeTests/InnoNetworkWebSocketSmoke",
+            swiftSettings: strictSettings
+        ),
+        .executableTarget(
+            name: "InnoNetworkCacheSmoke",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkPersistentCache",
+            ],
+            path: "SmokeTests/InnoNetworkCacheSmoke",
+            swiftSettings: strictSettings
+        ),
+        .executableTarget(
+            name: "InnoNetworkOpenAPISmoke",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkOpenAPI",
+            ],
+            path: "SmokeTests/InnoNetworkOpenAPISmoke",
+            swiftSettings: strictSettings
+        ),
         .testTarget(
             name: "InnoNetworkTests",
             dependencies: [
