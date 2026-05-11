@@ -437,6 +437,43 @@ public struct NetworkConfiguration: Sendable {
         self.responseBodyLimit = resolvedBufferingPolicy.maxBytes
         self.redirectPolicy = redirectPolicy
         self.allowsInsecureHTTP = allowsInsecureHTTP
+        Self.assertIdempotencyHeaderNamesMatch(
+            keyPolicy: idempotencyKeyPolicy,
+            retryPolicy: retryPolicy
+        )
+    }
+
+    /// Debug-only sanity check that the idempotency header attached by
+    /// ``IdempotencyKeyPolicy`` matches the header consulted by
+    /// ``RetryIdempotencyPolicy``.
+    ///
+    /// A mismatch is a silent footgun: ``IdempotencyKeyPolicy`` writes the
+    /// key under one header, the retry safety net reads from another and
+    /// concludes the non-idempotent request has no anchor — every
+    /// `POST`/`PATCH` timeout is then declined for retry. We assert here
+    /// in debug builds only; release builds keep the original behaviour
+    /// so a mis-configured production app does not crash.
+    private static func assertIdempotencyHeaderNamesMatch(
+        keyPolicy: IdempotencyKeyPolicy,
+        retryPolicy: RetryPolicy?
+    ) {
+        guard let retryPolicy else { return }
+        guard !keyPolicy.methods.isEmpty else { return }
+        let keyHeader = keyPolicy.headerName
+        let retryHeader = retryPolicy.idempotencyPolicy.idempotencyHeaderName
+        // HTTP header names are case-insensitive (RFC 9110 §5.1) — compare
+        // normalised forms so an `idempotency-key`/`Idempotency-Key`
+        // pairing is not flagged as a mismatch.
+        assert(
+            keyHeader.lowercased() == retryHeader.lowercased(),
+            """
+            IdempotencyKeyPolicy.headerName (\(keyHeader)) does not match \
+            RetryIdempotencyPolicy.idempotencyHeaderName (\(retryHeader)). \
+            The retry safety net reads under the retry policy header and \
+            will refuse to retry non-idempotent timeouts when the key is \
+            written under a different name.
+            """
+        )
     }
 }
 
