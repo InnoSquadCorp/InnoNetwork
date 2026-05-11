@@ -90,7 +90,12 @@ public actor DownloadManager {
     private let restoreBarrier = RestoreBarrier()
     private let invalidationBarrier: InvalidationBarrier
     private var pendingRestoreFailures: Set<String> = []
-    private var isShutdown = false
+    /// Tracks the one-shot shutdown latch. Kept `nonisolated` (and behind
+    /// an `OSAllocatedUnfairLock`) so the `deinit` warning path and the
+    /// actor-isolated ``shutdown()`` agree on a single state without
+    /// requiring re-entry into the actor — mirrors the pattern in
+    /// `InnoNetworkWebSocket.WebSocketManager`.
+    nonisolated private let shutdownLock = OSAllocatedUnfairLock<Bool>(initialState: false)
     private let eventHub: TaskEventHub<DownloadEvent>
     private let delegateEvents: AsyncStream<DelegateEvent>
     private let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
@@ -509,11 +514,10 @@ public actor DownloadManager {
     /// session (and thus the manager and its closures) alive until invalidate
     /// completes, which can take longer than the surrounding scope.
     public func shutdown() async {
-        guard !isShutdown else {
+        guard markShutdownIfNeeded() else {
             await invalidationBarrier.wait()
             return
         }
-        isShutdown = true
 
         delegateEventContinuation.finish()
 
@@ -772,6 +776,24 @@ public actor DownloadManager {
     private static func unregisterSessionIdentifier(_ identifier: String) {
         _ = activeSessionIdentifiers.withLock { identifiers in
             identifiers.remove(identifier)
+        }
+    }
+
+    nonisolated private var isShutdown: Bool {
+        shutdownLock.withLock { $0 }
+    }
+
+    /// Atomically flips the shutdown latch. Returns `true` when this call
+    /// is the one that observed the latch transitioning from `false` to
+    /// `true`; returns `false` if another caller (or this one re-entering)
+    /// had already shut the manager down. Callers that get `false` must
+    /// await ``invalidationBarrier`` instead of running the teardown path
+    /// a second time.
+    nonisolated private func markShutdownIfNeeded() -> Bool {
+        shutdownLock.withLock { state in
+            guard !state else { return false }
+            state = true
+            return true
         }
     }
 }
