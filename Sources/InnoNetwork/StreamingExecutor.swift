@@ -26,6 +26,14 @@ package struct StreamingExecutor: Sendable {
     package let session: URLSessionProtocol
     package let eventHub: NetworkEventHub
 
+    /// Hard ceiling on the per-line UTF-8 length the executor will
+    /// accept from the underlying `bytes.lines` iterator. Exceeding the
+    /// budget surfaces as a ``NetworkError/decoding`` with stage
+    /// ``DecodingStage/streamFrame`` so retry policies can act on the
+    /// shape (and so an unbounded line never pins memory inside the
+    /// per-request iterator).
+    package static let maxStreamLineByteCount: Int = 1 << 20  // 1 MiB
+
     package init(session: URLSessionProtocol, eventHub: NetworkEventHub) {
         self.session = session
         self.eventHub = eventHub
@@ -152,7 +160,34 @@ package struct StreamingExecutor: Sendable {
 
                     guard let line else { break }
                     try Task.checkCancellation()
-                    streamedByteCount += line.utf8.count
+                    // Reject any line whose UTF-8 length exceeds the
+                    // configured per-frame budget. `bytes.lines` happily
+                    // buffers until it sees a newline; without this guard
+                    // a server (or proxy) that never emits a newline can
+                    // pin unbounded memory in the per-request iterator.
+                    // The truncated bytes go through the streamFrame
+                    // stage so retry/back-off policies see a uniform
+                    // shape and can act on the budget violation.
+                    let lineByteCount = line.utf8.count
+                    if lineByteCount > Self.maxStreamLineByteCount {
+                        throw NetworkError.decoding(
+                            stage: .streamFrame,
+                            underlying: SendableUnderlyingError(
+                                domain: NetworkError.errorDomain,
+                                code: NetworkErrorCode.streamFrameTooLarge.rawValue,
+                                message:
+                                    "Streaming line exceeded \(Self.maxStreamLineByteCount) bytes (saw \(lineByteCount))."
+                            ),
+                            response: Response(
+                                statusCode: networkResponse.statusCode,
+                                data: Data(),
+                                request: networkResponse.request,
+                                response: networkResponse.response ?? httpResponse,
+                                kind: .headersOnly
+                            )
+                        )
+                    }
+                    streamedByteCount += lineByteCount
                     let decoded: T.Output?
                     do {
                         decoded = try request.decode(line: line)
