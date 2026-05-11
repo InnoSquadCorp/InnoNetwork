@@ -170,11 +170,14 @@ public struct MultipartFormData: Sendable {
             case .file(let url):
                 // Stat the file *before* allocating the buffer so a grown file
                 // cannot transiently OOM the process between the estimator and
-                // the cap check. `attributesOfItem(.size)` is cheap and reflects
-                // the on-disk size at this moment; if it disagrees with what
-                // `Data(contentsOf:)` ultimately reads, the post-write check
-                // below still catches the delta.
-                if let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value {
+                // the cap check. `URLResourceValues.fileSize` follows
+                // symlinks, matching what `Data(contentsOf:)` actually reads —
+                // `FileManager.attributesOfItem(atPath:)` would report the
+                // symlink node's own size and let a symlink pointing at a
+                // large target slip past this guard. The post-write check
+                // below still catches any delta if the stat and the read
+                // disagree (e.g. a file that grew between them).
+                if let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize.map(Int64.init) {
                     let projected = Int64(body.count) + size
                     if projected > cap {
                         throw NetworkError.configuration(

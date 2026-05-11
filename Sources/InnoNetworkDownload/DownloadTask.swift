@@ -169,6 +169,12 @@ public actor DownloadTask: Identifiable {
             case .advancedEpoch(let nextGeneration, let nextAttempt):
                 _generation = nextGeneration
                 _attempt = nextAttempt
+                // A fresh attempt has no real progress timestamp yet. Keeping
+                // the prior epoch's value would let the inactivity watchdog
+                // cancel a freshly resumed/retried `URLSessionDownloadTask`
+                // before its first progress callback arrives — comparing
+                // `now` against a pause-era timestamp.
+                _lastProgressAt = nil
             case .rejectIllegalTransition:
                 continue
             }

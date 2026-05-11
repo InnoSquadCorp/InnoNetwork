@@ -64,6 +64,51 @@ struct DownloadInactivityWatchdogTests {
         await harness.manager.shutdown()
     }
 
+    @Test("Resume after long pause does not trigger watchdog cancel on the fresh attempt")
+    func resumeAfterPauseDoesNotImmediatelyCancel() async throws {
+        let resumedStub = StubDownloadURLTask()
+        let harness = try StubDownloadHarness(
+            taskInactivityTimeout: .milliseconds(150),
+            label: "inactivity-pause-resume",
+            prequeuedStubs: [resumedStub]
+        )
+        let resumeData = Data("resume-payload".utf8)
+        harness.stubTask.scriptCancelResumeData(resumeData)
+
+        let task = await harness.startDownload()
+        let initialIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task)
+        )
+
+        // Seed `lastProgressAt` with a real timestamp, then pause for
+        // *longer than the inactivity timeout*. Without resetting the
+        // timestamp on resume, the next watchdog tick would compare
+        // `now` to the pre-pause instant and cancel the resumed task
+        // before its first progress callback arrives.
+        harness.injectDelegateProgress(
+            taskIdentifier: initialIdentifier,
+            bytesWritten: 32,
+            totalBytesWritten: 32,
+            totalBytesExpectedToWrite: 1024
+        )
+        await harness.manager.pause(task)
+        try await Task.sleep(for: .milliseconds(300))
+
+        await harness.manager.resume(task)
+
+        // Give the watchdog at least one tick post-resume (cadence is
+        // `timeout / 2 == 75ms`) to attempt a stale cancellation.
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(
+            resumedStub.cancelCount == 0,
+            "watchdog must not cancel a freshly resumed task before its first progress callback"
+        )
+
+        await harness.manager.cancel(task)
+        await harness.manager.shutdown()
+    }
+
     @Test("Watchdog is disabled when configuration sets a nil timeout")
     func watchdogStaysOffWhenTimeoutIsNil() async throws {
         let harness = try StubDownloadHarness(

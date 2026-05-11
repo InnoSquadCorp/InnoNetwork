@@ -368,8 +368,13 @@ extension RequestExecutor {
         guard let notModifiedResponse else { return headers }
 
         for pair in notModifiedResponse.allHeaderFields {
-            guard let key = pair.key as? String else { continue }
-            let value = pair.value as? String ?? String(describing: pair.value)
+            // `HTTPURLResponse.allHeaderFields` is documented to return string
+            // values, but Foundation does not enforce it at the type level.
+            // Skip any non-string slot rather than stringifying an NSNumber /
+            // NSDate via `String(describing:)` — a synthesised form servers
+            // do not emit would silently poison the merged header set.
+            guard let key = pair.key as? String,
+                  let value = pair.value as? String else { continue }
             if let existingKey = headers.keys.first(where: { $0.caseInsensitiveCompare(key) == .orderedSame }) {
                 headers.removeValue(forKey: existingKey)
             }
