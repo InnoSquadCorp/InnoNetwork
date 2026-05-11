@@ -31,7 +31,7 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
     static func loadOrCreate(
         directoryURL: URL,
         dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
-        keyStorage: PersistentResponseCacheConfiguration.KeyStorage,
+        keyStorage: PersistentResponseCacheConfiguration.KeyStorage = .file,
         fileManager: FileManager
     ) throws -> LoadOrCreateResult {
         switch keyStorage {
