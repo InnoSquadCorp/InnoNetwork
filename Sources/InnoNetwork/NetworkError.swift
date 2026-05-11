@@ -315,18 +315,18 @@ extension NetworkError: CustomNSError {
         switch self {
         case .configuration(let reason):
             switch reason {
-            case .invalidBaseURL: return 1001
-            case .invalidRequest: return 1002
-            case .offline: return 1003
+            case .invalidBaseURL: return NetworkErrorCode.configurationInvalidBaseURL.rawValue
+            case .invalidRequest: return NetworkErrorCode.configurationInvalidRequest.rawValue
+            case .offline:        return NetworkErrorCode.configurationOffline.rawValue
             }
         case .decoding:
-            return 2002
+            return NetworkErrorCode.decoding.rawValue
         case .statusCode:
-            return 3001
+            return NetworkErrorCode.statusCode.rawValue
         case .underlying:
-            return 4001
+            return NetworkErrorCode.underlying.rawValue
         case .trustEvaluationFailed:
-            return 5001
+            return NetworkErrorCode.trustEvaluationFailed.rawValue
         case .cancelled:
             return NSURLErrorCancelled
         case .timeout:
