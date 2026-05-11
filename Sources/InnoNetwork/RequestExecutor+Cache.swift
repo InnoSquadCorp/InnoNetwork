@@ -77,6 +77,17 @@ extension RequestExecutor {
                     let revalidation: ConditionalRevalidationContext?
                     if let etag = cached.etag {
                         revalidationRequest.setValue(etag, forHTTPHeaderField: "If-None-Match")
+                        // RFC 9110 §13.1.3 permits sending both validators
+                        // together — origins MAY use whichever they have a
+                        // strong preference for.
+                        if let lastModified = cached.lastModified {
+                            revalidationRequest.setValue(
+                                lastModified, forHTTPHeaderField: "If-Modified-Since")
+                        }
+                        revalidation = ConditionalRevalidationContext(cached: cached)
+                    } else if let lastModified = cached.lastModified {
+                        revalidationRequest.setValue(
+                            lastModified, forHTTPHeaderField: "If-Modified-Since")
                         revalidation = ConditionalRevalidationContext(cached: cached)
                     } else {
                         revalidation = nil
@@ -218,12 +229,22 @@ extension RequestExecutor {
         guard
             case .revalidate(let revalidationCandidate) =
                 configuration.responseCachePolicy.prepare(cached: cached),
-            let candidate = revalidationCandidate,
-            let etag = candidate.etag
+            let candidate = revalidationCandidate
         else {
             return nil
         }
-        request.setValue(etag, forHTTPHeaderField: "If-None-Match")
+        var attached = false
+        if let etag = candidate.etag {
+            request.setValue(etag, forHTTPHeaderField: "If-None-Match")
+            attached = true
+        }
+        if let lastModified = candidate.lastModified {
+            request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since")
+            attached = true
+        }
+        guard attached else {
+            return nil
+        }
         return ConditionalRevalidationContext(cached: candidate)
     }
 

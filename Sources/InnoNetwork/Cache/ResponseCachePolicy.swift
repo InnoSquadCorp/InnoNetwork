@@ -236,6 +236,13 @@ public struct CachedResponse: Sendable, Equatable {
         headers.first { $0.key.caseInsensitiveCompare("ETag") == .orderedSame }?.value
     }
 
+    /// Origin-supplied `Last-Modified` timestamp from the cached response,
+    /// suitable for the `If-Modified-Since` conditional-request header when
+    /// no `ETag` is available.
+    public var lastModified: String? {
+        headers.first { $0.key.caseInsensitiveCompare("Last-Modified") == .orderedSame }?.value
+    }
+
     package func response(for request: URLRequest) -> HTTPURLResponse? {
         guard let url = request.url else { return nil }
         return HTTPURLResponse(
