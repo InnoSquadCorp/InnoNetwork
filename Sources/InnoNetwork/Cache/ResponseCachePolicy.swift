@@ -630,15 +630,19 @@ private func isMultiTokenVaryHeader(_ name: String) -> Bool {
 }
 
 private func varyTokenSet(_ raw: String) -> Set<String> {
-    // RFC 9110 §12.5.3 / §12.5.4: `Accept-Encoding`, `Accept-Language`,
-    // `Accept`, and `Accept-Charset` carry q-value weights that determine
-    // server-side preference. Two requests with the same token *set* but
-    // different priorities (`gzip;q=0.5, br` vs `gzip, br;q=0.5`) ask the
-    // origin for different representations and must produce distinct
-    // cache keys. Normalize each element to `<token>;q=<weight>` so the
-    // resulting `Set` reflects both the available tokens and their
-    // weights. Tokens without an explicit `q=` default to `1.000` per the
-    // spec.
+    // RFC 9110 §12.5.1/§12.5.3/§12.5.4: `Accept`, `Accept-Encoding`,
+    // `Accept-Language`, and `Accept-Charset` carry q-value weights that
+    // determine server-side preference. Two requests with the same token
+    // *set* but different priorities (`gzip;q=0.5, br` vs `gzip, br;q=0.5`)
+    // ask the origin for different representations and must produce
+    // distinct cache keys. In addition, `Accept` media-range parameters
+    // appearing *before* `q=` (e.g. `application/json;charset=utf-8`) are
+    // part of the media-type identity per §12.5.1 — two requests that
+    // differ only in such parameters can legitimately receive different
+    // representations. Preserve every non-`q=` parameter in the
+    // normalized form, sorted for deterministic comparison, so cache
+    // lookups distinguish them. Tokens without an explicit `q=` default
+    // to `1.000` per the spec.
     var result: Set<String> = []
     for rawElement in raw.split(separator: ",") {
         let element = rawElement.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -648,17 +652,25 @@ private func varyTokenSet(_ raw: String) -> Set<String> {
             !token.isEmpty
         else { continue }
         var qValue: String = "1.000"
+        var mediaParams: [String] = []
         for param in parts.dropFirst() {
             let trimmed = param.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("q=") else { continue }
-            let value = trimmed.dropFirst(2)
-            if let parsed = Double(value) {
-                let clamped = max(0.0, min(1.0, parsed))
-                qValue = String(format: "%.3f", clamped)
+            if trimmed.isEmpty { continue }
+            if trimmed.hasPrefix("q=") {
+                let value = trimmed.dropFirst(2)
+                if let parsed = Double(value) {
+                    let clamped = max(0.0, min(1.0, parsed))
+                    qValue = String(format: "%.3f", clamped)
+                }
+                continue
             }
-            break
+            mediaParams.append(trimmed)
         }
-        result.insert("\(token);q=\(qValue)")
+        let paramSuffix =
+            mediaParams.isEmpty
+            ? ""
+            : ";" + mediaParams.sorted().joined(separator: ";")
+        result.insert("\(token)\(paramSuffix);q=\(qValue)")
     }
     return result
 }
