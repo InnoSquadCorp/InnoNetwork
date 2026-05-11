@@ -296,19 +296,20 @@ private final class StreamingResumeHTTPServer: @unchecked Sendable {
             self.handledConnectionCount += 1
 
             if self.handledConnectionCount == 1 {
-                var partialResponse = Data((
-                    "HTTP/1.1 200 OK\r\n"
-                    + "Content-Type: text/plain\r\n"
-                    + "Content-Length: 1000000\r\n"
-                    + "\r\n"
-                    + "1|alpha\n"
-                ).utf8)
+                var partialResponse = Data(
+                    ("HTTP/1.1 200 OK\r\n"
+                        + "Content-Type: text/plain\r\n"
+                        + "Content-Length: 1000000\r\n"
+                        + "\r\n"
+                        + "1|alpha\n").utf8)
                 partialResponse.append(contentsOf: repeatElement(UInt8(ascii: "x"), count: 128 * 1024))
-                connection.send(content: partialResponse, completion: .contentProcessed { _ in
-                    self.queue.asyncAfter(deadline: .now() + 0.05) {
-                        connection.cancel()
-                    }
-                })
+                connection.send(
+                    content: partialResponse,
+                    completion: .contentProcessed { _ in
+                        self.queue.asyncAfter(deadline: .now() + 0.05) {
+                            connection.cancel()
+                        }
+                    })
             } else {
                 let response =
                     "HTTP/1.1 200 OK\r\n"
@@ -316,9 +317,11 @@ private final class StreamingResumeHTTPServer: @unchecked Sendable {
                     + "Content-Length: 7\r\n"
                     + "\r\n"
                     + "2|beta\n"
-                connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
-                    connection.cancel()
-                })
+                connection.send(
+                    content: Data(response.utf8),
+                    completion: .contentProcessed { _ in
+                        connection.cancel()
+                    })
             }
         }
     }

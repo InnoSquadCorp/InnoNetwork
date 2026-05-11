@@ -42,12 +42,14 @@ private final class OpenAPIClientTransportURLProtocol: URLProtocol {
 
         switch response {
         case .http(let statusCode, let headers, let chunks):
-            guard let httpResponse = HTTPURLResponse(
-                url: url,
-                statusCode: statusCode,
-                httpVersion: nil,
-                headerFields: headers
-            ) else {
+            guard
+                let httpResponse = HTTPURLResponse(
+                    url: url,
+                    statusCode: statusCode,
+                    httpVersion: nil,
+                    headerFields: headers
+                )
+            else {
                 client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
                 return
             }

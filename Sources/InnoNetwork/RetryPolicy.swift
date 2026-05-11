@@ -1,4 +1,5 @@
 import Foundation
+
 /// Retry verdict returned by ``RetryPolicy/shouldRetry(error:retryIndex:request:response:)``.
 ///
 /// - `noRetry`: do not retry; surface the error to the caller.
