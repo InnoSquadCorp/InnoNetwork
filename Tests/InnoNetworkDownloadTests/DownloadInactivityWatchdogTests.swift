@@ -59,7 +59,7 @@ struct DownloadInactivityWatchdogTests {
     @Test("Watchdog leaves an actively-progressing task alone")
     func activeTaskIsNotCancelledByWatchdog() async throws {
         let harness = try StubDownloadHarness(
-            taskInactivityTimeout: .milliseconds(150),
+            taskInactivityTimeout: .seconds(1),
             label: "inactivity-active"
         )
         let task = await harness.startDownload()
@@ -67,16 +67,17 @@ struct DownloadInactivityWatchdogTests {
             await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task)
         )
 
-        // Keep refreshing lastProgressAt at a cadence well below the
-        // timeout for longer than the timeout itself.
-        for tick in 0..<10 {
+        // Keep refreshing lastProgressAt at a cadence well below the timeout
+        // for longer than the timeout itself. The larger timeout avoids
+        // turning hosted-runner scheduling stalls into false inactivity.
+        for tick in 0..<12 {
             harness.injectDelegateProgress(
                 taskIdentifier: taskIdentifier,
                 bytesWritten: 16,
                 totalBytesWritten: Int64(16 * (tick + 1)),
                 totalBytesExpectedToWrite: 1024
             )
-            try await Task.sleep(for: .milliseconds(40))
+            try await Task.sleep(for: .milliseconds(100))
         }
 
         #expect(
