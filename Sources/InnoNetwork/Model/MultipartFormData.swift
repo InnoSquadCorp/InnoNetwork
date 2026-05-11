@@ -532,16 +532,27 @@ extension MultipartFormData {
             // to suppress emission. The companion is only added when the
             // name actually contains non-ASCII scalars; pure-ASCII names
             // keep wire-format unchanged.
-            let asciiName = Self.asciiFallbackFilename(name)
+            // Normalise once at the boundary so the ASCII fallback,
+            // `requiresExtendedFilename` decision, and `filename*` /
+            // `name*` payload all see the same scalar sequence. Without
+            // this, APFS-style NFD inputs would route through one form
+            // for the ASCII fallback (where every combining mark
+            // collapses to `_`) and a *different* NFC form for the
+            // extended companion produced by `rfc5987EncodedFilename`,
+            // leaving the two parameters describing visually distinct
+            // names for the same upload.
+            let normalizedName = name.precomposedStringWithCanonicalMapping
+            let asciiName = Self.asciiFallbackFilename(normalizedName)
             var disposition = "Content-Disposition: form-data; name=\"\(asciiName)\""
-            if Self.requiresExtendedFilename(name) {
-                disposition += "; name*=UTF-8''\(Self.rfc5987EncodedFilename(name))"
+            if Self.requiresExtendedFilename(normalizedName) {
+                disposition += "; name*=UTF-8''\(Self.rfc5987EncodedFilename(normalizedName))"
             }
             if let fileName {
-                let asciiFallback = Self.asciiFallbackFilename(fileName)
+                let normalizedFileName = fileName.precomposedStringWithCanonicalMapping
+                let asciiFallback = Self.asciiFallbackFilename(normalizedFileName)
                 disposition += "; filename=\"\(asciiFallback)\""
-                if Self.requiresExtendedFilename(fileName) {
-                    disposition += "; filename*=UTF-8''\(Self.rfc5987EncodedFilename(fileName))"
+                if Self.requiresExtendedFilename(normalizedFileName) {
+                    disposition += "; filename*=UTF-8''\(Self.rfc5987EncodedFilename(normalizedFileName))"
                 }
             }
             disposition += "\r\n"
