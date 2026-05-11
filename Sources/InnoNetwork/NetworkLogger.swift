@@ -13,6 +13,13 @@ public struct NetworkLoggingOptions: Sendable {
     public let includeCookies: Bool
     public let redactSensitiveData: Bool
     public let sensitiveHeaderNames: Set<String>
+    /// When `true`, ``DefaultNetworkLogger`` emits logs in release builds as
+    /// well as debug. Defaults to `false`, preserving the historical
+    /// debug-only behaviour. Opt-in for production-grade observability —
+    /// when enabling, ensure `redactSensitiveData` remains `true` and the
+    /// hosting `Logger` subsystem is configured for an appropriate
+    /// retention/privacy policy.
+    public let releaseLogging: Bool
 
     public init(
         includeRequestBody: Bool = false,
@@ -25,7 +32,8 @@ public struct NetworkLoggingOptions: Sendable {
             "set-cookie",
             "x-api-key",
             "proxy-authorization",
-        ]
+        ],
+        releaseLogging: Bool = false
     ) {
         self.includeRequestBody = includeRequestBody
         self.includeResponseBody = includeResponseBody
@@ -36,6 +44,7 @@ public struct NetworkLoggingOptions: Sendable {
         // `Authorization`. The comparison site uses `key.lowercased()`, so
         // an upper-cased entry in the set would silently never match.
         self.sensitiveHeaderNames = Set(sensitiveHeaderNames.map { $0.lowercased() })
+        self.releaseLogging = releaseLogging
     }
 
     /// Safe defaults for development logs.
@@ -62,8 +71,19 @@ public struct DefaultNetworkLogger: NetworkLogger {
         self.cookieStorage = cookieStorage
     }
 
-    public func log(request: URLRequest) {
+    /// Returns `true` when the logger should emit for the current build
+    /// configuration. Debug builds always emit; release builds honour
+    /// ``NetworkLoggingOptions/releaseLogging``.
+    private var shouldEmit: Bool {
         #if DEBUG
+        return true
+        #else
+        return options.releaseLogging
+        #endif
+    }
+
+    public func log(request: URLRequest) {
+        guard shouldEmit else { return }
         let url: String = sanitize(url: request.url, nilFallback: "")
         let method: String = request.httpMethod ?? "unknown method"
 
@@ -85,11 +105,10 @@ public struct DefaultNetworkLogger: NetworkLogger {
         }
         log.append("[REQ] END \(method)")
         Logger.API.debug("\(log, privacy: .auto)")
-        #endif
     }
 
     public func log(response: Response, isError: Bool) {
-        #if DEBUG
+        guard shouldEmit else { return }
         let request = response.request
         let url: String = sanitize(url: request?.url, nilFallback: "nil")
         let statusCode: Int = response.statusCode
@@ -111,11 +130,10 @@ public struct DefaultNetworkLogger: NetworkLogger {
         }
         log.append("\(prefix) END HTTP (\(response.data.count)-byte body)")
         Logger.API.info("\(log, privacy: .auto)")
-        #endif
     }
 
     public func log(error: NetworkError) {
-        #if DEBUG
+        guard shouldEmit else { return }
         if let response = error.response {
             log(response: response, isError: true)
             return
@@ -126,7 +144,6 @@ public struct DefaultNetworkLogger: NetworkLogger {
         log.append("[ERR] \(error.errorDescription ?? "unknown error")\n")
         log.append("[ERR] END HTTP")
         Logger.API.debug("\(log, privacy: .auto)")
-        #endif
     }
 
     func sanitize(headers: [String: String]) -> [String: String] {
