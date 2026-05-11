@@ -22,10 +22,9 @@ let refreshPolicy = RefreshTokenPolicy(
 
 let client = DefaultNetworkClient(
     configuration: .advanced(
-        baseURL: URL(string: "https://api.example.com")!
-    ) { builder in
-        builder.refreshTokenPolicy = refreshPolicy
-    }
+        baseURL: URL(string: "https://api.example.com")!,
+        auth: AuthPack(refreshToken: refreshPolicy)
+    )
 )
 ```
 
@@ -36,7 +35,9 @@ let client = DefaultNetworkClient(
 - 동시에 발생한 갱신은 단일 in-flight 작업으로 합쳐집니다 (single-flight).
 - 완전히 적용된 요청을 최대 한 번 재실행합니다. 세션/엔드포인트 인터셉터가
   추가한 헤더는 보존되며, 이전 `Authorization` 헤더는 제거된 뒤 새 토큰으로
-  다시 추가되어 `addValue` 기반 적용기도 idempotent 하게 동작합니다.
+  다시 적용됩니다 — `setValue` 기반 적용기뿐만 아니라 `addValue` 로 헤더를
+  쌓는 적용기에서도 이 사전 제거 단계 덕분에 토큰 재적용(idempotent
+  reapplication)이 중복 헤더를 만들지 않고 마무리됩니다.
 - 갱신이 실패하면 모든 대기 중인 요청에 동일한 오류가 전파됩니다. **실패한
   갱신은 캐시되지 않습니다** — 다음 `401` 에서는 새로운 갱신을 처음부터
   다시 시도합니다.

@@ -84,3 +84,13 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``EventPipelineOverflowPolicy``
 - ``EventPipelineMetricsReporting``
 - ``EventPipelineAggregateSnapshotMetric``
+
+### OpenAPI Integration
+
+- <doc:OpenAPIRuntimeClientTransport>
+
+### 한국어 문서 (Korean translations)
+
+- <doc:GettingStarted-ko>
+- <doc:Auth-ko>
+- <doc:ErrorHandling-ko>
