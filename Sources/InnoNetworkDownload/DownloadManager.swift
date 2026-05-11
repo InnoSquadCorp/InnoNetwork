@@ -175,6 +175,11 @@ public actor DownloadManager {
         configuration: DownloadConfiguration = .default,
         persistence: DownloadTaskPersistence
     ) throws {
+        // Claim the session identifier before constructing the URLSession so a
+        // duplicate-identifier failure cannot leak a delegate-attached session
+        // (its deinit would otherwise outlive the throwing init).
+        try Self.registerSessionIdentifier(configuration.sessionIdentifier)
+
         let callbacks = DownloadSessionDelegateCallbacks()
         let backgroundCompletionStore = BackgroundCompletionStore()
         let delegate = DownloadSessionDelegate(
@@ -195,7 +200,8 @@ public actor DownloadManager {
             urlSession: urlSession,
             delegate: delegate,
             callbacks: callbacks,
-            backgroundCompletionStore: backgroundCompletionStore
+            backgroundCompletionStore: backgroundCompletionStore,
+            registersSessionIdentifier: false
         )
     }
 
@@ -207,7 +213,8 @@ public actor DownloadManager {
         urlSession: any DownloadURLSession,
         delegate: DownloadSessionDelegate,
         callbacks: DownloadSessionDelegateCallbacks,
-        backgroundCompletionStore: BackgroundCompletionStore
+        backgroundCompletionStore: BackgroundCompletionStore,
+        registersSessionIdentifier: Bool = true
     ) throws {
         // Delegate events drive task lifecycle (suspend/resume/finish); dropping
         // any of them would leave the actor wedged in an intermediate state,
@@ -218,7 +225,9 @@ public actor DownloadManager {
             bufferingPolicy: .unbounded
         )
         let invalidationBarrier = InvalidationBarrier()
-        try Self.registerSessionIdentifier(configuration.sessionIdentifier)
+        if registersSessionIdentifier {
+            try Self.registerSessionIdentifier(configuration.sessionIdentifier)
+        }
         callbacks.setInvalidationHandler { [identifier = configuration.sessionIdentifier, invalidationBarrier] _ in
             Self.unregisterSessionIdentifier(identifier)
             Task {
