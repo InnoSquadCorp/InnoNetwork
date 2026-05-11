@@ -199,4 +199,35 @@ struct TrustEvaluationTests {
         )
         #expect(unsupported == nil)
     }
+
+    /// CONTRACT LOCK — `PinScope` default and surface.
+    ///
+    /// Adopters relying on the historical "match anywhere in the chain"
+    /// behaviour must keep getting `.anyInChain` when they omit
+    /// `pinScope`. Switching the default to `.leafOnly` would silently
+    /// reject every existing pin set whose CA-issued intermediates
+    /// rotate while the leaf remains the same — a behaviour change
+    /// without a code change. Conversely, callers who opt into
+    /// `.leafOnly` must see the value preserved on the policy so the
+    /// extractor narrows the hashed chain accordingly. Lock both
+    /// halves of that contract.
+    @Test("PublicKeyPinningPolicy preserves pinScope and defaults to anyInChain")
+    func pinningPolicyPinScopeRoundTrip() {
+        let defaultScope = PublicKeyPinningPolicy(
+            pinsByHost: ["api.example.com": ["sha256/leaf-pin"]]
+        )
+        #expect(defaultScope.pinScope == .anyInChain)
+
+        let leafOnly = PublicKeyPinningPolicy(
+            pinsByHost: ["api.example.com": ["sha256/leaf-pin"]],
+            pinScope: .leafOnly
+        )
+        #expect(leafOnly.pinScope == .leafOnly)
+
+        let anyInChain = PublicKeyPinningPolicy(
+            pinsByHost: ["api.example.com": ["sha256/leaf-pin"]],
+            pinScope: .anyInChain
+        )
+        #expect(anyInChain.pinScope == .anyInChain)
+    }
 }
