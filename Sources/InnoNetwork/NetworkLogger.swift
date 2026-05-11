@@ -119,7 +119,7 @@ public struct DefaultNetworkLogger: NetworkLogger {
 
         var log: String = "[ERR] ────────────────────────────"
         log.append("\n[ERR] code: \(error.errorCode)\n")
-        log.append("[ERR] \(error.failureReason ?? error.errorDescription ?? "unknown error")\n")
+        log.append("[ERR] \(error.errorDescription ?? "unknown error")\n")
         log.append("[ERR] END HTTP")
         Logger.API.debug("\(log, privacy: .auto)")
         #endif

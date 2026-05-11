@@ -383,6 +383,26 @@ struct CodeGenerator {
             )
         }
 
+        // Reject paths containing characters that would either escape the
+        // generated Swift string literal (`"`, `\`) or imply structured
+        // substitution we don't support (newlines, NUL). RFC 3986 §3.3
+        // forbids these in real URI paths anyway, but the generator reads
+        // untrusted JSON/YAML so refuse them here instead of producing
+        // invalid Swift source.
+        let forbiddenScalars: Set<Unicode.Scalar> = [
+            Unicode.Scalar(0x22)!,  // "
+            Unicode.Scalar(0x5C)!,  // \
+            Unicode.Scalar(0x0A)!,  // \n
+            Unicode.Scalar(0x0D)!,  // \r
+            Unicode.Scalar(0x00)!,  // \0
+        ]
+        if let bad = path.unicodeScalars.first(where: { forbiddenScalars.contains($0) }) {
+            throw GenerationError.unsupportedPath(
+                "path '\(path)' contains the unsupported character U+\(String(bad.value, radix: 16, uppercase: true)); "
+                + "remove it from the OpenAPI spec before regenerating."
+            )
+        }
+
         let parameter = op.requestBody?.content?["application/json"]?.schema
         let parameterType = parameter.flatMap { swiftTypeName(for: $0, fallback: nil) } ?? "EmptyParameter"
 

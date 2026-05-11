@@ -100,6 +100,11 @@ public struct DownloadConfiguration: Sendable {
     /// Use this when you want to fail faster than `timeoutForResource` on
     /// mid-transfer stalls — for example when a server stops feeding bytes
     /// without closing the TCP connection.
+    ///
+    /// The init clamps non-`nil` values up to a 100-millisecond floor so
+    /// `Duration.zero` (or pathologically small values) cannot turn the
+    /// watchdog into a "cancel every task after one poll" generator. Pass
+    /// `nil` if you want the watchdog disabled.
     public let taskInactivityTimeout: Duration?
     public let allowsCellularAccess: Bool
     /// Background `URLSession` identifier and persistence scope.
@@ -361,7 +366,10 @@ public struct DownloadConfiguration: Sendable {
         self.maxRetryDelay = max(0, maxRetryDelay)
         self.timeoutForRequest = max(0, timeoutForRequest)
         self.timeoutForResource = max(0, timeoutForResource)
-        self.taskInactivityTimeout = taskInactivityTimeout.map { max($0, .zero) }
+        // Clamp to a 100ms floor so `.zero` (or pathologically small values
+        // that round to one watchdog tick) cannot turn into a "cancel every
+        // task after one poll" generator. Pass `nil` to disable the watchdog.
+        self.taskInactivityTimeout = taskInactivityTimeout.map { max($0, .milliseconds(100)) }
         self.allowsCellularAccess = allowsCellularAccess
         self.sessionIdentifier = sessionIdentifier
         self.networkMonitor = networkMonitor

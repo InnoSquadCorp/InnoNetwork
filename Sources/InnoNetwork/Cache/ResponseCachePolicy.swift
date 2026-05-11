@@ -38,9 +38,14 @@ public enum ResponseCachePolicy: Sendable, Equatable {
     /// Wrapping is the only way to opt into directive enforcement; the
     /// other cases remain RFC-agnostic by design so the default
     /// `Cache-Control: max-age=...` behaviour stays predictable across
-    /// origins that emit conflicting directives. Wrapping
-    /// `.rfc9111Compliant(_:)` again is a no-op at construction —
-    /// double-wrapping is collapsed.
+    /// origins that emit conflicting directives.
+    ///
+    /// Nesting (``.rfc9111Compliant(wrapping: .rfc9111Compliant(...))``) is
+    /// behaviourally idempotent — each layer reads the same directives
+    /// from the response and recurses into its inner policy — but is
+    /// preserved in the value. Pattern matches over the policy will see
+    /// each layer, so consumers should not assume the case nests at most
+    /// once.
     indirect case rfc9111Compliant(wrapping: ResponseCachePolicy)
 }
 

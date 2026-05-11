@@ -12,7 +12,7 @@ import Foundation
 /// `2001` is intentionally unused. The slot was retired before this enum
 /// existed and is preserved as a gap so historical logs that reference `2001`
 /// remain unambiguous.
-public enum NetworkErrorCode: Int, Sendable, CaseIterable {
+public enum NetworkErrorCode: Int, Sendable {
     // 1xxx — request configuration failures (caller-side).
     case configurationInvalidBaseURL = 1001
     case configurationInvalidRequest = 1002

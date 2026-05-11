@@ -168,6 +168,21 @@ public struct MultipartFormData: Sendable {
             case .data(let data):
                 partData = data
             case .file(let url):
+                // Stat the file *before* allocating the buffer so a grown file
+                // cannot transiently OOM the process between the estimator and
+                // the cap check. `attributesOfItem(.size)` is cheap and reflects
+                // the on-disk size at this moment; if it disagrees with what
+                // `Data(contentsOf:)` ultimately reads, the post-write check
+                // below still catches the delta.
+                if let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value {
+                    let projected = Int64(body.count) + size
+                    if projected > cap {
+                        throw NetworkError.configuration(
+                            reason: .invalidRequest(
+                                "MultipartFormData.encode would exceed the \(maxInMemoryBytes)-byte in-memory cap: file part at \(url.lastPathComponent) is \(size) bytes; running total would reach \(projected). A file part likely grew between estimation and read."
+                            ))
+                    }
+                }
                 partData = try Data(contentsOf: url)
             }
             body.append(Data(boundaryPrefix.utf8))

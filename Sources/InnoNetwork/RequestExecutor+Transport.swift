@@ -209,6 +209,13 @@ extension RequestExecutor {
                 )
             }
             return TransportResult(data: data, response: httpResponse)
+        } catch let networkError as NetworkError {
+            // Already classified by an inner layer (e.g. responseBodyLimitExceeded
+            // from `collect(bytes:response:maxBytes:)`). Rethrow as-is so the
+            // task-interval contextual remap below cannot mis-attribute a
+            // post-headers body-size failure as a transport timeout — the
+            // bytes already arrived before the limit fired.
+            throw networkError
         } catch {
             throw NetworkError.mapTransportError(
                 error,

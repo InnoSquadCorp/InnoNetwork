@@ -27,7 +27,21 @@ struct NetworkErrorCodeTests {
 
     @Test("all known codes are unique")
     func codesAreUnique() {
-        let raws = NetworkErrorCode.allCases.map(\.rawValue)
+        // Enumerated explicitly (not via `.allCases`) so the public surface
+        // does not need `CaseIterable` — adding it would lock in
+        // iteration-order/count as part of the SemVer contract.
+        let raws: [Int] = [
+            NetworkErrorCode.configurationInvalidBaseURL.rawValue,
+            NetworkErrorCode.configurationInvalidRequest.rawValue,
+            NetworkErrorCode.configurationOffline.rawValue,
+            NetworkErrorCode.decoding.rawValue,
+            NetworkErrorCode.statusCode.rawValue,
+            NetworkErrorCode.nonHTTPResponse.rawValue,
+            NetworkErrorCode.underlying.rawValue,
+            NetworkErrorCode.reachability.rawValue,
+            NetworkErrorCode.responseBodyLimitExceeded.rawValue,
+            NetworkErrorCode.trustEvaluationFailed.rawValue,
+        ]
         #expect(Set(raws).count == raws.count)
     }
 

@@ -711,7 +711,19 @@ public actor DownloadManager {
         let tasks = await runtimeRegistry.allTasks()
         for task in tasks {
             guard await task.state == .downloading else { continue }
-            guard let lastProgress = await task.lastProgressAt else { continue }
+            // Seed `lastProgressAt` lazily on first observation of a
+            // `.downloading` task that has never reported progress. This
+            // covers the "server accepted the connection but never sends
+            // bytes" case — the most common real-world stall — so the
+            // watchdog measures from "first observed downloading" rather
+            // than refusing to fire because no progress arrived.
+            let lastProgress: ContinuousClock.Instant
+            if let observed = await task.lastProgressAt {
+                lastProgress = observed
+            } else {
+                await task.setLastProgressAt(now)
+                continue
+            }
             if now - lastProgress > timeout {
                 if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
                     Self.logger.notice(
