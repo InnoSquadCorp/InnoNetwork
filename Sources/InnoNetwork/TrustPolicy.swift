@@ -13,6 +13,15 @@ public enum TrustFailureReason: Sendable, Equatable {
     case systemTrustEvaluationFailed(reason: String?)
     case hostNotPinned(String)
     case publicKeyExtractionFailed
+    /// The chain validated against the system trust store, but no
+    /// extracted public-key pin matched the configured pin set for
+    /// ``host``. The associated value is the **exact lowercased host
+    /// from the TLS challenge** (e.g. `mobile.api.example.com`), never
+    /// a wildcard pattern or the parent domain that owned the matching
+    /// entry in ``PublicKeyPinningPolicy``. Telemetry that joins on the
+    /// configured pin host should normalise via
+    /// ``PublicKeyPinningPolicy/pins(forHost:)`` rather than expecting
+    /// equality.
     case pinMismatch(host: String)
     case custom(String)
 }

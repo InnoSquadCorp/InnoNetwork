@@ -483,6 +483,14 @@ requires `@_spi` import.
 - `WebSocketPingContext` and `WebSocketPongContext` public fields are stable
   because they are payloads of stable heartbeat events; their package-scoped
   initializers are construction details owned by the library.
+- `WebSocketTask.attemptedReconnectCount` may transiently observe
+  `maxReconnectAttempts + 1` during the failure transition that emits
+  `.exceeded(reason: .attempts)`. The counter is bumped **before** the cap
+  check so the rejected attempt itself is counted ("we tried and even this
+  attempt was over the limit"), and the same one-off overshoot applies to
+  the `.duration` exceed path. Observability layers that alert on the
+  counter should treat values up to `max + 1` as in-spec and reach for the
+  emitted `.exceeded` event to disambiguate.
 - Resilience policies are opt-in and provisionally stable.
   `RequestExecutionPolicy` is the stable custom hook for one transport
   attempt; retry scheduling, auth refresh replay, response-cache substitution,

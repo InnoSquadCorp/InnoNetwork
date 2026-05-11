@@ -68,6 +68,33 @@ package struct RetryCoordinator {
         }
     }
 
+    /// Runs `operation` under the retry policy and surfaces a single
+    /// terminal outcome.
+    ///
+    /// ## Cancellation propagation
+    ///
+    /// The loop is a cancellation point at three spots:
+    ///
+    /// 1. `Task.checkCancellation()` at the top of each iteration short-
+    ///    circuits the attempt before the next `operation(...)` runs.
+    /// 2. Cancellation thrown out of `operation(...)` (typically from the
+    ///    transport or its delegates) lands in one of the three `catch`
+    ///    arms below. `RequestExecutionFailure` and `NetworkError` paths
+    ///    let `processRetryDecision(...)` see the cancellation and decide
+    ///    whether to retry — the policy generally refuses, so the error
+    ///    re-throws as-is. The generic `catch` arm normalises any other
+    ///    cancellation type to ``NetworkError/cancelled`` so the outer
+    ///    `execute(...)` chokepoint sees a uniform shape.
+    /// 3. Backoff sleeps inside `processRetryDecision(...)` honour
+    ///    cancellation via `Task.sleep(...)` and propagate
+    ///    `CancellationError` out of the loop.
+    ///
+    /// In every case the cancellation event is published **once**, at
+    /// the outer `execute(...)` chokepoint — this method does not emit
+    /// its own publish. The shape that ultimately re-throws is the type
+    /// the public API contract guarantees: callers can expect either
+    /// `NetworkError.cancelled` or a typed `CancellationError`, never a
+    /// raw `URLError(.cancelled)`.
     private func runRetryLoop<Response>(
         retryPolicy: RetryPolicy?,
         networkMonitor: (any NetworkMonitoring)?,

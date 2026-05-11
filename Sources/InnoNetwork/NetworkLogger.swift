@@ -164,6 +164,17 @@ public struct DefaultNetworkLogger: NetworkLogger {
         return Self.maskJWTLikeTokens(in: body)
     }
 
+    /// Compiled JWT-like pattern. Cached because `NSRegularExpression`
+    /// compilation is non-trivial relative to the regex apply itself, and
+    /// `maskJWTLikeTokens` runs on every emitted log string. The pattern
+    /// is hand-vetted at compile time, so `try!` is safe — a regression
+    /// would fail every log call uniformly and be caught immediately in
+    /// CI.
+    private static let jwtPattern: NSRegularExpression = {
+        // swiftlint:disable:next force_try
+        try! NSRegularExpression(pattern: "ey[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}")
+    }()
+
     /// Replaces JWT-like tokens (`eyXXX.YYY.ZZZ` with base64url-safe segments)
     /// in a free-form string with `<redacted-jwt>`. Used as a defence-in-depth
     /// pass on log strings that escape the structured `header`/`body` paths —
@@ -171,10 +182,8 @@ public struct DefaultNetworkLogger: NetworkLogger {
     /// custom diagnostic suffixes appended by interceptors.
     static func maskJWTLikeTokens(in string: String) -> String {
         if !string.contains("ey") { return string }
-        let pattern = "ey[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return string }
         let range = NSRange(string.startIndex..., in: string)
-        return regex.stringByReplacingMatches(
+        return jwtPattern.stringByReplacingMatches(
             in: string,
             options: [],
             range: range,
