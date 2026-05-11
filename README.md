@@ -12,12 +12,13 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 InnoNetwork is a Swift package for type-safe networking on Apple platforms. The
-root runtime package provides six public products:
+root runtime package provides seven public products:
 
 - `InnoNetwork` for request/response APIs
 - `InnoNetworkDownload` for download lifecycle management
 - `InnoNetworkWebSocket` for connection-oriented realtime flows
 - `InnoNetworkPersistentCache` for a conservative on-disk response cache
+- `InnoNetworkTrust` for optional public-key pinning evaluation
 - `InnoNetworkTestSupport` for consumer test targets
 - `InnoNetworkOpenAPI` for generated-client transport support
 
@@ -43,6 +44,36 @@ runtime package, then `import InnoNetworkCodegen`.
 The packages are built around Swift Concurrency, explicit transport
 policies, and operational visibility that can scale from app prototypes
 to production clients.
+
+## Why InnoNetwork
+
+Five things that differentiate this library from the usual URLSession
+wrapper or Alamofire-style helper:
+
+- **`typed throws` end-to-end** — `NetworkClient.request(_:)` is declared as
+  `async throws(NetworkError)`, so call-sites get a concrete error type
+  in `catch` without losing classification. Foreign errors are mapped at
+  a single narrow boundary so the typed-throws invariant holds.
+- **Phantom-typed HTTP headers** — `HTTPHeader<Value>` keys carry their
+  value type at compile time (e.g. `.contentType`, `.authorization`,
+  custom phantom keys). Typos and value/type mismatches fail at build,
+  not at runtime.
+- **`AuthScope` marker protocol** — every endpoint declares its auth
+  requirement (`PublicAuthScope`, `AuthRequiredScope`, custom scopes)
+  as a compile-time marker. The single-flight `RefreshTokenPolicy` only
+  refreshes for endpoints that opted in.
+- **Single-flight refresh + idempotency-aware retry** — concurrent 401s
+  coalesce into one refresh call (`RefreshTokenCoordinator`). Retries
+  follow RFC 9110: unsafe methods retry only when an `Idempotency-Key`
+  header is present, and `Retry-After` is parsed for all three RFC 9110
+  formats with a maximum-clamp against malicious headers.
+- **RFC 9111 cache + first-class test support** — opt into
+  `rfc9111Compliant(wrapping:)` to get directive-aware persistence, or
+  drop in `MockURLSession` / `VCRURLSession` / `StubNetworkClient` from
+  `InnoNetworkTestSupport` (a top-level product, not a hidden helper).
+
+See `API_STABILITY.md` for the Stable / Provisionally Stable contract
+around each of these.
 
 > ⚠️ **Apple platforms only by design.** InnoNetwork builds on URLSession, `OSAllocatedUnfairLock`, OSLog, and Network.framework, none of which match Apple-platform behaviour on Linux. Linux/server-side Swift is **not** a supported target. See [docs/PlatformSupport.md](docs/PlatformSupport.md) for the rationale and for guidance on sharing models with Linux server code (e.g. Vapor).
 

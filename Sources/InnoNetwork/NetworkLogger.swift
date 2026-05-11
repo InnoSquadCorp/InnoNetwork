@@ -31,7 +31,11 @@ public struct NetworkLoggingOptions: Sendable {
         self.includeResponseBody = includeResponseBody
         self.includeCookies = includeCookies
         self.redactSensitiveData = redactSensitiveData
-        self.sensitiveHeaderNames = sensitiveHeaderNames
+        // Normalise to lowercase up front so the redaction comparison stays
+        // case-insensitive even when callers pass mixed-case names like
+        // `Authorization`. The comparison site uses `key.lowercased()`, so
+        // an upper-cased entry in the set would silently never match.
+        self.sensitiveHeaderNames = Set(sensitiveHeaderNames.map { $0.lowercased() })
     }
 
     /// Safe defaults for development logs.

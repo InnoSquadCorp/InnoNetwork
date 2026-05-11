@@ -2,20 +2,22 @@
 
 [![DocC](https://img.shields.io/badge/docs-DocC-blue)](https://innosquadcorp.github.io/InnoNetwork/)
 [![Swift](https://img.shields.io/badge/Swift-6.2-orange)](https://swift.org)
-[![Platforms](https://img.shields.io/badge/platforms-iOS%2018%20%7C%20macOS%2015%20%7C%20tvOS%2018%20%7C%20watchOS%2011%20%7C%20visionOS%202-lightgrey)](#플랫폼-매트릭스)
+[![Platforms](https://img.shields.io/badge/platforms-iOS%2016%20%7C%20macOS%2014%20%7C%20tvOS%2016%20%7C%20watchOS%209%20%7C%20visionOS%201-lightgrey)](#플랫폼-매트릭스)
 [![License](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
 
 > 이 문서는 [`README.md`](../../README.md) 의 한국어 미러입니다. 정확한 최신 사양은 영문 원본을
 > 우선합니다.
 
 InnoNetwork 는 Apple 플랫폼을 위한 타입 안전한 Swift 네트워킹 패키지입니다. root runtime package 는
-다섯 개의 공개 product 로 구성되어 있습니다.
+일곱 개의 공개 product 로 구성되어 있습니다.
 
 - `InnoNetwork` — 요청/응답 API
 - `InnoNetworkDownload` — 다운로드 생명주기 관리
 - `InnoNetworkWebSocket` — 연결 지향 실시간 흐름
 - `InnoNetworkPersistentCache` — 보수적인 디스크 응답 캐시
+- `InnoNetworkTrust` — 선택형 공개키 pinning 평가
 - `InnoNetworkTestSupport` — consumer test target용 공개 테스트 helper
+- `InnoNetworkOpenAPI` — generated-client transport 지원
 
 선택형 Swift macro endpoint helper 는 별도 `Packages/InnoNetworkCodegen` package 에 있으며,
 runtime-only consumer 는 `swift-syntax` 를 resolve 하지 않습니다.
@@ -179,11 +181,11 @@ await client.cancelAll(matching: feed)  // feed 태그만 취소
 
 ## 플랫폼 매트릭스
 
-- iOS 18.0+
-- macOS 15.0+
-- tvOS 18.0+
-- watchOS 11.0+
-- visionOS 2.0+
+- iOS 16.0+
+- macOS 14.0+
+- tvOS 16.0+
+- watchOS 9.0+
+- visionOS 1.0+
 - Swift 6.2+
 
 본 패키지는 의도적으로 최신 Apple 플랫폼만을 타겟합니다. 이를 통해 모던 Swift Concurrency,

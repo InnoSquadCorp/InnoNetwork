@@ -42,26 +42,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-InnoNetwork is a type-safe Swift network library:
+InnoNetwork is a type-safe Swift network library shipped as **7 products**:
 
-**Core Features:**
-- Async/await based requests
-- Type-safe request/response via generics
-- Content types: JSON, Form URL-encoded, Multipart/Form-data
-- Interceptors for request/response modification
-- Configurable retry policies
+**InnoNetwork (Core):**
+- Async/await + `typed throws` (`async throws(NetworkError)`)
+- Type-safe request/response via generics + `APIDefinition`
+- Content types: JSON, Form URL-encoded, Multipart/Form-data, custom
+- Interceptors (request/response), single-flight refresh token (`AuthScope` marker)
+- RFC 9110 idempotency-aware retry, circuit breaker, request coalescing
+- RFC 9111 cache adapter (`rfc9111Compliant(wrapping:)`)
+- Phantom-typed HTTP headers, observability/metrics/logger with redaction
 
-**Download Module (InnoNetworkDownload):**
-- Background downloads
-- Pause/resume support
-- Automatic retry
-- AsyncSequence event streams
-- Actor-based thread safety
+**InnoNetworkDownload:**
+- Background `URLSession` with restoration barrier
+- Pause/resume + atomic file move + inactivity watchdog
+- AsyncSequence event streams + actor-based persistence
+
+**InnoNetworkWebSocket:**
+- Lifecycle reducer state machine + heartbeat + reconnect with jitter
+- RFC 6455 close-code disposition + handshake error classification
+
+**InnoNetworkPersistentCache:**
+- On-disk RFC 9111-aware cache with HMAC key normalizer
+- LRU + size budgets + data protection class
+
+**InnoNetworkOpenAPI:**
+- Adapter for `swift-openapi-generator` output
+
+**InnoNetworkTrust:**
+- Public Key Pinning (SPKI/DER) — opt-in product so non-pinning apps don't pay binary cost
+
+**InnoNetworkTestSupport:**
+- `MockURLSession`, `StubNetworkClient`, `VCRURLSession`, `FaultInjection`, `TestClock`, `WebSocketEventRecorder`
 
 **Platform:**
 - Swift 6.2+ (package enforces `swiftLanguageMode(.v6)`)
 - iOS 16.0+ / macOS 14.0+ / tvOS 16.0+ / watchOS 9.0+ / visionOS 1.0+
-- Full Sendable compliance
+- Apple-only (intentional). Full Sendable compliance, no `@unchecked Sendable` in production code
 
 ## Development Commands
 
@@ -81,34 +98,65 @@ swift test --list-tests
 
 ## Architecture
 
-### Core Module (InnoNetwork)
+전체 7개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
 
-```
-Sources/InnoNetwork/
-├── API.swift                    # APIConfigure 프로토콜
-├── APIDefinition.swift          # APIDefinition, MultipartAPIDefinition
-├── DefaultNetworkClient.swift   # NetworkClient 구현
-├── Model/
-│   ├── MultipartFormData.swift
-│   ├── EmptyParameter.swift
-│   ├── EmptyResponse.swift
-│   └── Response.swift
-├── RequestInterceptor.swift
-├── ResponseInterceptor.swift
-├── NetworkError.swift
-└── NetworkLogger.swift
-```
+### Sources/InnoNetwork (Core)
+- `APIDefinition.swift` / `APIDefinition+Macros.swift` — endpoint 선언 프로토콜 + `@APIDefinition` 매크로 옵트인
+- `DefaultNetworkClient.swift` — `NetworkClient` 구현 (불변 final class + Sendable)
+- `RequestExecutor.swift` + `RequestExecutor+Pipeline.swift` / `+Cache.swift` / `+Transport.swift` — 요청 실행 파이프라인
+- `NetworkError.swift` / `NetworkErrorCode.swift` / `SendableUnderlyingError.swift` — 에러 모델 (typed throws 대상)
+- `RetryPolicy.swift` / `RetryCoordinator.swift` / `IdempotencyKeyPolicy.swift` — RFC 9110 idempotency-aware retry
+- `Auth/` — refresh token coordinator (`RefreshTokenPolicy`, `RefreshTokenCoordinator`)
+- `Cache/` — response cache abstractions (RFC 9111 compliance adapter)
+- `CircuitBreaker/` / `Resilience/` / `RequestCoalescing/` — failure isolation, single-flight
+- `Multipart/` + `Model/MultipartFormData.swift` — RFC 7578 multipart 인/디코딩 (streaming)
+- `HTTPHeader*.swift` — phantom-typed 헤더 키
+- `TransportPolicy.swift` — endpoint 단위 transport shape (json/query/form/multipart/custom)
+- `NetworkLogger.swift` + `Logger+.swift` — redaction (JWT, Authorization, URL user-info)
+- `StreamingExecutor.swift` / `StreamingDecoders.swift` / `StreamingAPIDefinition.swift` — SSE/JSON-lines streaming
+- `TrustPolicy.swift` — server trust evaluation (Trust 모듈과 연계)
+- `Resources/en.lproj/Localizable.strings` — 사용자 향 에러 메시지
 
-### Download Module (InnoNetworkDownload)
+### Sources/InnoNetworkDownload
+- `DownloadManager.swift` — 메인 actor (async callbacks + AsyncSequence)
+- `DownloadTask.swift` — actor 기반 개별 작업
+- `DownloadLifecycleReducer.swift` — 상태 머신 (illegal transition reject)
+- `DownloadTaskPersistence.swift` — 디스크 영속 (flock + append-log + atomic write)
+- `DownloadTransferCoordinator.swift` / `DownloadRestoreCoordinator.swift` / `DownloadFailureCoordinator.swift` — 책임 분리
+- `DownloadSessionDelegate.swift` — `URLSessionDelegate` bridge
+- `DownloadRuntimeRegistry.swift` — in-memory task ↔ identifier 매핑
+- `DownloadConfiguration.swift` / `DownloadState.swift`
 
-```
-Sources/InnoNetworkDownload/
-├── DownloadManager.swift        # 메인 매니저 (async callbacks + AsyncSequence)
-├── DownloadTask.swift           # actor 기반 개별 작업
-├── DownloadConfiguration.swift
-├── DownloadState.swift
-└── DownloadSessionDelegate.swift
-```
+### Sources/InnoNetworkWebSocket
+- `WebSocketManager.swift` — 메인 actor
+- `WebSocketLifecycleReducer.swift` — 상태 머신
+- `WebSocketConnectionCoordinator.swift` / `WebSocketReceiveLoop.swift` / `WebSocketReconnectCoordinator.swift` / `WebSocketHeartbeatCoordinator.swift` — 책임 분리
+- `WebSocketCloseDisposition.swift` / `WebSocketCloseCode.swift` — RFC 6455 close-code 분류
+- `WebSocketSessionDelegate.swift` / `WebSocketTask.swift` / `WebSocketState.swift`
+- `WebSocketInvalidationBarrier.swift` — shutdown 정합성
+- `WebSocketRuntimeRegistry.swift`
+
+### Sources/InnoNetworkPersistentCache
+- `PersistentResponseCache.swift` — 메인 actor (LRU + budget + data protection)
+- `PersistentResponseCacheCoding.swift` — entry serialization
+- `PersistentResponseCacheKeyNormalizer.swift` — HMAC 기반 key normalization
+- `PersistentResponseCacheConfiguration.swift` / `PersistentResponseCacheTelemetry.swift`
+
+### Sources/InnoNetworkOpenAPI
+- `OpenAPIAdapter.swift` — `swift-openapi-generator` transport adapter
+
+### Sources/InnoNetworkTrust
+- `PublicKeyPinning.swift` — SPKI/DER pinning (별도 product로 옵트인)
+
+### Sources/InnoNetworkTestSupport
+- `MockURLSession.swift` / `StubNetworkClient.swift` / `VCRURLSession.swift` — 1차 시민 테스트 fake
+- `FaultInjection.swift` / `TestClock.swift` — deterministic timing/failure
+- `WebSocketEventRecorder.swift`
+
+### Benchmarks / SmokeTests
+- `Benchmarks/InnoNetworkBenchmarks/` — performance harness
+- `SmokeTests/InnoNetworkDocSmoke/` / `InnoNetworkDownloadSmoke/` — release-time live smoke
+- `Tests/InnoNetworkLiveTests/` — env-gated live (gated by env vars, off by default)
 
 ## Common Patterns
 

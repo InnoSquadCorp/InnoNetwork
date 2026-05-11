@@ -20,7 +20,7 @@
      response cache, download restore, and WebSocket lifecycle/send set
    - DocC build smoke
    - GitHub Release creation with benchmark artifact upload
-5. Re-check `API_STABILITY.md` and `Scripts/api_public_symbols.allowlist`
+5. Re-check `API_STABILITY.md` and `Scripts/symbols/*.allowlist`
    together whenever a release branch changes public or SPI declarations.
 6. Re-run DocC/sample smoke after documentation-only release edits so
    examples, symbol links, and docs-contract wording stay in sync.

@@ -4,15 +4,15 @@ import Foundation
 /// attempt through a ``ConcurrencyTokenBucket``.
 ///
 /// `ConcurrencyLimitExecutionPolicy` wraps the rest of the
-/// ``RequestExecutionPolicy`` chain in an `acquire` / `defer release`
+/// ``RequestExecutionPolicy`` chain in an `acquire` / awaited `release`
 /// pair, so a request only proceeds to the underlying transport once a
 /// token is available. This is the executor-integrated form of the
 /// raw ``ConcurrencyTokenBucket`` primitive: instead of pairing a
 /// request and a response interceptor manually, callers register the
 /// policy on ``ResiliencePack/customExecutionPolicies``
 /// and the surrounding execution machinery handles the token lifecycle
-/// — including transport errors, where the `defer` arm guarantees a
-/// release even if the chain throws.
+/// — including transport errors and cancellation, where the policy awaits
+/// release before returning or rethrowing.
 ///
 /// ```swift
 /// let bucket = ConcurrencyTokenBucket(maxConcurrent: 4)
@@ -43,12 +43,14 @@ public struct ConcurrencyLimitExecutionPolicy: RequestExecutionPolicy {
         context: RequestExecutionContext,
         next: RequestExecutionNext
     ) async throws -> Response {
-        await bucket.acquire()
-        // The defer arm relies on a Task wrapper because release is
-        // an actor-isolated method and `defer` cannot suspend; the
-        // Task hop completes asynchronously without blocking the
-        // caller's release boundary.
-        defer { Task { await bucket.release() } }
-        return try await next.execute(input.request)
+        try await bucket.acquire()
+        do {
+            let response = try await next.execute(input.request)
+            await bucket.release()
+            return response
+        } catch {
+            await bucket.release()
+            throw error
+        }
     }
 }

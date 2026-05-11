@@ -184,19 +184,19 @@ Per-symbol evolution allowances within the 4.x line:
   ``NetworkConfigurationFailureReason/offline(_:)``.
 - `ConcurrencyLimitExecutionPolicy` — `RequestExecutionPolicy` that
   funnels each transport attempt through a `ConcurrencyTokenBucket`
-  with `acquire` / deferred `release` semantics. Registered via
-  `ResiliencePack.customExecutionPolicies`. Surface stays
+  with cancellation-aware `acquire` / awaited `release` semantics.
+  Registered via `ResiliencePack.customExecutionPolicies`. Surface stays
   source-compatible across the planned 5.x bucket integration that may
   move the policy into a built-in pre-flight stage.
 - `ConcurrencyTokenBucket` — bounded counting semaphore actor for
-  capping in-flight requests. Currently surfaced as a standalone
-  primitive that adopters wire through paired
-  `RequestInterceptor` / `ResponseInterceptor`; the 5.x roadmap
-  threads it through the request executor's pre-flight stage so
-  the integration is automatic. The actor's API
-  (`acquire()` / `release()` / `available` / `maxConcurrent` /
-  `queuedWaitersCount`) stays source-compatible across that
-  transition.
+  capping in-flight work. Raw bucket users can still protect custom
+  async work directly, but request execution paths should prefer
+  `ConcurrencyLimitExecutionPolicy` over paired
+  `RequestInterceptor` / `ResponseInterceptor` wiring because the policy
+  owns release on success, failure, and cancellation. `acquire()` is
+  `async throws` in 4.1.0 so queued cancellation removes the waiter
+  before a future token can be consumed; direct callers must use
+  `try await`.
 - `ResiliencePack`, `AuthPack`, `ObservabilityPack`, `CachePack`,
   `TransportPack` — configuration packs accepted as named arguments by
   `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`.
@@ -240,7 +240,8 @@ Per-symbol evolution allowances within the 4.x line:
   platform mappings may be added while preserving current defaults.
 - `NetworkConfiguration.recommendedForProduction(baseURL:)` — the preset may
   tune default policy values in minors, but it remains a convenience builder
-  over documented public policies.
+  over documented public policies. 4.1.0 caps streaming response body
+  collection at 5 MiB by default.
 - `HTTPHeader`, `HTTPHeaders`, and default header providers — default
   `User-Agent` / `Accept-Language` values are evaluated at request-build time
   so applications can inject bundle or locale ownership without relying on a

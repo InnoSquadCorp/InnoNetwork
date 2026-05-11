@@ -72,13 +72,37 @@ struct ConcurrencyLimitExecutionPolicyTests {
             }
         )
 
-        // Allow the deferred release Task to run.
-        try await Task.sleep(for: .milliseconds(20))
-
         let mid = await observedAvailable.value
         let after = await bucket.available
         #expect(mid == 0)
         #expect(after == 1)
+    }
+
+    @Test
+    func policyReleasesBeforeRethrowingChainFailure() async throws {
+        let bucket = ConcurrencyTokenBucket(maxConcurrent: 1)
+        let policy = ConcurrencyLimitExecutionPolicy(bucket: bucket)
+        let url = URL(string: "https://api.example.com/x")!
+
+        do {
+            _ = try await policy.execute(
+                input: RequestExecutionInput(request: URLRequest(url: url), requestID: UUID(), retryIndex: 0),
+                context: RequestExecutionContext(
+                    requestID: UUID(),
+                    retryIndex: 0,
+                    metricsReporter: nil,
+                    trustPolicy: .systemDefault,
+                    eventObservers: []
+                ),
+                next: RequestExecutionNext { _ in
+                    throw PolicyProbeError.failure
+                }
+            )
+            Issue.record("Expected policy to rethrow chain failure")
+        } catch PolicyProbeError.failure {
+        }
+
+        #expect(await bucket.available == 1)
     }
 }
 
@@ -87,4 +111,8 @@ private actor ObservedAvailable {
     func set(_ v: Int) {
         value = v
     }
+}
+
+private enum PolicyProbeError: Error {
+    case failure
 }

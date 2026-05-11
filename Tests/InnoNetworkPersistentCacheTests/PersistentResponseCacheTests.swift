@@ -89,6 +89,15 @@ struct PersistentResponseCacheTests {
         #expect(await cache.get(key) == nil)
     }
 
+    @Test("Sensitive request header detection trims field-name whitespace")
+    func sensitiveRequestHeaderDetectionTrimsFieldNameWhitespace() {
+        #expect(
+            PersistentResponseCache.containsSensitiveRequestHeader([
+                " Authorization \t: Bearer secret"
+            ])
+        )
+    }
+
     @Test("Authenticated persistent keys are HMAC protected on disk")
     func authenticatedPersistentKeysAreHMACProtectedOnDisk() async throws {
         let directory = makeDirectory()

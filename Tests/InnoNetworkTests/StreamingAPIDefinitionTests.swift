@@ -708,12 +708,10 @@ struct StreamingAPIDefinitionTests {
 
     // MARK: - Last-Event-ID resume policy
 
-    // The end-to-end resume behavior (mid-stream disconnect, retry with
-    // Last-Event-ID header) is exercised by the live-endpoint smoke tests
-    // because URLSession.AsyncBytes buffers data deeply enough that
-    // URLProtocol-driven partial delivery is unreliable in unit tests. The
-    // checks below pin down the public surface and the policy accessors so a
-    // future refactor cannot silently change the contract.
+    // URLSession.AsyncBytes can report local URLProtocol/socket failures
+    // before exposing a partially delivered line to the consumer, so the
+    // deterministic checks below pin the public surface and retry policy
+    // accessors without claiming live end-to-end coverage.
 
     @Test("StreamingResumePolicy default is .disabled")
     func resumePolicyDefaultsToDisabled() {

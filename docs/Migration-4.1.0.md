@@ -1,9 +1,9 @@
 # Migration Guide: 4.1.0
 
-This guide covers the three breaking changes introduced in the 4.1.0
+This guide covers the four breaking changes introduced in the 4.1.0
 minor release. The release is otherwise additive — every other surface
 on the 4.x stable ledger continues to compile unchanged. Skim the
-checklist below; if none of the three rows apply to your call sites,
+checklist below; if none of the four rows apply to your call sites,
 no migration is needed.
 
 ---
@@ -15,6 +15,7 @@ no migration is needed.
 | `MultipartUploadStrategy.inMemory` (zero-arg) | Pass an explicit `maxBytes:`, e.g. `.inMemory(maxBytes: 16 * 1024 * 1024)`. Or switch to `.platformDefault` / `.streamingThreshold(bytes: ...)`. |
 | OpenAPI spec containing path templates (`/users/{id}`) | The generator now rejects the operation. Either pin the path on a hand-rolled `APIDefinition` struct or remove the placeholder upstream in the spec. |
 | Private CA that identifies Ed25519 keys via the string `"ed25519"` | Switch the SPKI input to the RFC 8410 OID `1.3.101.112`. |
+| Direct `ConcurrencyTokenBucket.acquire()` calls | Add `try` and handle cancellation: `try await bucket.acquire()`. |
 
 The rest of this document walks each row in detail.
 
@@ -192,6 +193,44 @@ pinning behavior difference. Audit your pin fixtures and any private
 CA `keyType` shim before upgrading. The
 `spkiEncodingHelperRejectsEd25519Keywords` test in the trust target
 locks the rejection so accidental keyword fallbacks regress noisily.
+
+---
+
+## 4. `ConcurrencyTokenBucket.acquire()` is cancellation-aware
+
+### What changed
+
+`ConcurrencyTokenBucket.acquire()` used to ignore task cancellation while
+the caller was queued behind the concurrency cap. A cancelled task could
+remain in the FIFO queue and later consume a token that should have gone
+to live work.
+
+4.1.0 changes `acquire()` to `async throws`. If a waiting task is
+cancelled, the bucket removes that waiter and throws `CancellationError`.
+Callers that acquire immediately under capacity still return without
+suspending.
+
+### Before / After
+
+```swift
+// 4.0.x
+await bucket.acquire()
+defer { Task { await bucket.release() } }
+
+// 4.1.0
+try await bucket.acquire()
+do {
+    // protected work
+    await bucket.release()
+} catch {
+    await bucket.release()
+    throw error
+}
+```
+
+Prefer `ConcurrencyLimitExecutionPolicy` for request execution paths. It
+now awaits release before returning or rethrowing, so callers no longer
+need to pair request and response interceptors manually.
 
 ---
 

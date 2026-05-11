@@ -122,7 +122,7 @@ let authEndpoint = EndpointBuilder<EmptyResponse, AuthRequiredScope>
 ## Feature Recipes
 
 - Auth refresh: [Auth Refresh](../Sources/InnoNetwork/InnoNetwork.docc/Articles/AuthRefresh.md) and [Examples/Auth](../Examples/Auth).
-- Pagination and CRUD: [Examples/RealWorldAPI](../Examples/RealWorldAPI).
+- Basic typed requests: [Examples/BasicRequest](../Examples/BasicRequest).
 - Response cache: [Caching Strategies](../Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md).
 - Background download: [Examples/DownloadManager](../Examples/DownloadManager).
 - WebSocket chat: [Examples/WebSocketChat](../Examples/WebSocketChat).

@@ -176,6 +176,49 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     package let inFlight = InFlightRegistry()
     private let executionRuntime: RequestExecutionRuntime
 
+    /// Creates a client backed by the given URL session.
+    ///
+    /// - Parameters:
+    ///   - configuration: The ``NetworkConfiguration`` describing the
+    ///     base URL, interceptors, retry policy, and observability hooks.
+    ///   - session: The URL session that issues requests. Defaults to
+    ///     ``URLSession/shared`` for ergonomic prototyping.
+    ///
+    /// > Warning: The default of ``URLSession/shared`` is convenient but has
+    /// > three production caveats. Inject an explicit `URLSession` when any of
+    /// > them matters to you:
+    /// >
+    /// > 1. **Shared cookie / credential storage.** `URLSession.shared` uses
+    /// >    ``HTTPCookieStorage/shared`` and ``URLCredentialStorage/shared``,
+    /// >    so any other SDK in the process (analytics, auth, push) sees the
+    /// >    same cookie jar. For app-scoped or isolated stores, build a
+    /// >    session with a dedicated `URLSessionConfiguration`.
+    /// > 2. **No delegate.** `URLSession.shared` cannot be constructed with a
+    /// >    `URLSessionDelegate`, which disables custom server-trust
+    /// >    evaluation, `URLSessionTaskMetrics` collection, and redirect
+    /// >    interception. Features that rely on delegate callbacks (e.g.
+    /// >    ``InnoNetworkTrust`` public-key pinning) require an explicit
+    /// >    session.
+    /// > 3. **Configuration drift.** Several values on ``NetworkConfiguration``
+    /// >    only take effect when the session itself is built from a matching
+    /// >    `URLSessionConfiguration` (timeouts, HTTP/3, waits-for-connectivity,
+    /// >    cellular access). The shared session ignores those overrides.
+    /// >
+    /// > Recommended explicit form:
+    /// >
+    /// > ```swift
+    /// > let urlConfig = URLSessionConfiguration.ephemeral // isolated in-memory storage
+    /// > urlConfig.timeoutIntervalForRequest = 30
+    /// > let session = URLSession(
+    /// >     configuration: urlConfig,
+    /// >     delegate: nil,
+    /// >     delegateQueue: nil
+    /// > )
+    /// > let client = DefaultNetworkClient(
+    /// >     configuration: myAPI,
+    /// >     session: session
+    /// > )
+    /// > ```
     public init(
         configuration: NetworkConfiguration,
         session: URLSessionProtocol = URLSession.shared
@@ -442,9 +485,9 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
         // Wrap the work in an unstructured Task so cancelAll() can reach it
         // without the call site having to track individual Task handles.
         // Outer-task cancellation is forwarded via withTaskCancellationHandler.
-        let work = Task<D.APIResponse, Error> { [eventHub, configuration, session, requestBuilder] in
+        let work = Task<D.APIResponse, Error> { [eventHub, configuration, session, requestBuilder, executionRuntime] in
             await startGate.wait()
-            let retryCoordinator = RetryCoordinator(eventHub: eventHub)
+            let retryCoordinator = RetryCoordinator(eventHub: eventHub, clock: executionRuntime.clock)
             return try await retryCoordinator.execute(
                 retryPolicy: configuration.retryPolicy,
                 networkMonitor: configuration.networkMonitor,

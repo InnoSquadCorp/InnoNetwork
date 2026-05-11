@@ -1,13 +1,6 @@
-import CryptoKit
 import Foundation
 import InnoNetwork
 import OSLog
-
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
 
 /// Persistent on-disk implementation of ``ResponseCache``.
 ///
@@ -38,10 +31,15 @@ import Glibc
 /// `max-age` clamping) on top of the wrapped policy without changing this
 /// storage layer.
 public actor PersistentResponseCache: ResponseCache {
-    private static let formatVersion = 2
-    private static let logger = Logger(subsystem: "innosquad.network", category: "PersistentResponseCache")
+    static let formatVersion = 2
+    static let logger = Logger(subsystem: "innosquad.network", category: "PersistentResponseCache")
 
-    fileprivate struct DiskKey: Codable, Hashable, Sendable {
+    // Visibility note: nested types and static helpers are intentionally
+    // module-internal (no `private`/`fileprivate`) so the extension files
+    // (`PersistentResponseCache+OpenPipeline.swift`, `+IO.swift`,
+    // `+Policy.swift`) can reference them. The actor itself stays `public`,
+    // but these helpers remain module-private.
+    struct DiskKey: Codable, Hashable, Sendable {
         let method: String
         let url: String
         let headers: [String]
@@ -59,12 +57,12 @@ public actor PersistentResponseCache: ResponseCache {
         }
     }
 
-    private struct Index: Codable, Sendable {
+    struct Index: Codable, Sendable {
         var version: Int
         var entries: [String: Entry]
     }
 
-    private struct Entry: Codable, Sendable {
+    struct Entry: Codable, Sendable {
         var key: DiskKey
         let statusCode: Int
         let headers: [String: String]
@@ -76,7 +74,7 @@ public actor PersistentResponseCache: ResponseCache {
         var lastAccessedAt: Date
     }
 
-    private struct OpenResult: Sendable {
+    struct OpenResult: Sendable {
         var index: Index
         var telemetryEvents: [PersistentResponseCacheTelemetryEvent]
     }
@@ -215,7 +213,16 @@ public actor PersistentResponseCache: ResponseCache {
     /// index never demotes a successful read to a miss.
     public func get(_ key: ResponseCacheKey) async -> CachedResponse? {
         let diskKey = DiskKey(key, normalizer: keyNormalizer)
-        let id = identifier(for: diskKey)
+        let id: String
+        do {
+            id = try identifier(for: diskKey)
+        } catch {
+            Self.logger.error(
+                "persistent_cache_identifier_failed operation=get url=\(key.url, privacy: .private) error=\(String(describing: error), privacy: .private)"
+            )
+            recordMiss()
+            return nil
+        }
         guard var entry = index.entries[id] else {
             recordMiss()
             return nil
@@ -345,13 +352,21 @@ public actor PersistentResponseCache: ResponseCache {
     /// when the body exceeds ``PersistentResponseCacheConfiguration/maxEntryBytes``. Eviction runs
     /// synchronously to keep the on-disk footprint within budget.
     public func set(_ key: ResponseCacheKey, _ value: CachedResponse) async {
-        guard shouldStore(key: key, response: value), value.data.count <= configuration.maxEntryBytes else {
+        guard evaluateStorePolicy(key: key, response: value), value.data.count <= configuration.maxEntryBytes else {
             await invalidate(key)
             return
         }
 
         let diskKey = DiskKey(key, normalizer: keyNormalizer)
-        let id = identifier(for: diskKey)
+        let id: String
+        do {
+            id = try identifier(for: diskKey)
+        } catch {
+            Self.logger.error(
+                "persistent_cache_identifier_failed operation=set url=\(key.url, privacy: .private) error=\(String(describing: error), privacy: .private)"
+            )
+            return
+        }
         let bodyFileName = "\(id)-\(UUID().uuidString).body"
         let bodyURL = bodiesDirectoryURL.appendingPathComponent(bodyFileName, isDirectory: false)
         let byteCost =
@@ -425,7 +440,15 @@ public actor PersistentResponseCache: ResponseCache {
 
     /// Remove the entry for `key` from the index and delete its body file.
     public func invalidate(_ key: ResponseCacheKey) async {
-        let id = identifier(for: DiskKey(key, normalizer: keyNormalizer))
+        let id: String
+        do {
+            id = try identifier(for: DiskKey(key, normalizer: keyNormalizer))
+        } catch {
+            Self.logger.error(
+                "persistent_cache_identifier_failed operation=invalidate url=\(key.url, privacy: .private) error=\(String(describing: error), privacy: .private)"
+            )
+            return
+        }
         if let entry = index.entries[id] {
             removeEntry(id: id, entry: entry)
             try? persistIndex()
@@ -443,8 +466,12 @@ public actor PersistentResponseCache: ResponseCache {
         try? persistIndex()
     }
 
-    private func shouldStore(key: ResponseCacheKey, response: CachedResponse) -> Bool {
-        shouldStore(key: DiskKey(key, normalizer: keyNormalizer), responseHeaders: response.headers)
+    private func evaluateStorePolicy(key: ResponseCacheKey, response: CachedResponse) -> Bool {
+        Self.shouldStore(
+            key: DiskKey(key, normalizer: keyNormalizer),
+            responseHeaders: response.headers,
+            configuration: configuration
+        )
     }
 
     /// Current storage pressure snapshot, including in-process hit, miss,
@@ -546,414 +573,7 @@ public actor PersistentResponseCache: ResponseCache {
         pendingReadFlushes = 0
     }
 
-    private static func scrubPolicyRejectedEntriesOnOpen(
-        _ loadedIndex: Index,
-        configuration: PersistentResponseCacheConfiguration,
-        indexURL: URL,
-        bodiesDirectoryURL: URL,
-        fileManager: FileManager
-    ) throws -> OpenResult {
-        var scrubbedIndex = loadedIndex
-        let rejectedEntries = loadedIndex.entries.filter { _, entry in
-            !shouldStore(key: entry.key, responseHeaders: entry.headers, configuration: configuration)
-        }
-        guard !rejectedEntries.isEmpty else {
-            return OpenResult(index: loadedIndex, telemetryEvents: [])
-        }
-
-        var removedBytes = 0
-        for (id, entry) in rejectedEntries {
-            scrubbedIndex.entries.removeValue(forKey: id)
-            removedBytes += entry.byteCost
-            removeBody(fileName: entry.bodyFileName, in: bodiesDirectoryURL, fileManager: fileManager)
-        }
-        try persistIndex(
-            scrubbedIndex,
-            to: indexURL,
-            directoryURL: configuration.directoryURL,
-            configuration: configuration,
-            fileManager: fileManager
-        )
-        return OpenResult(
-            index: scrubbedIndex,
-            telemetryEvents: [
-                .scrubbedEntries(
-                    reason: .policyRejected,
-                    count: rejectedEntries.count,
-                    byteCount: removedBytes
-                )
-            ]
-        )
-    }
-
-    private static func enforceBudgetsOnOpen(
-        _ loadedIndex: Index,
-        configuration: PersistentResponseCacheConfiguration,
-        indexURL: URL,
-        bodiesDirectoryURL: URL,
-        fileManager: FileManager
-    ) throws -> OpenResult {
-        var budgetedIndex = loadedIndex
-        var didMutate = false
-        var scrubbedMissingCount = 0
-        var scrubbedMissingBytes = 0
-        var scrubbedOversizedCount = 0
-        var scrubbedOversizedBytes = 0
-        var evictedCount = 0
-        var evictedBytes = 0
-
-        for (id, entry) in loadedIndex.entries {
-            let bodyURL = bodiesDirectoryURL.appendingPathComponent(entry.bodyFileName, isDirectory: false)
-            guard let bodySize = fileSize(at: bodyURL, fileManager: fileManager) else {
-                budgetedIndex.entries.removeValue(forKey: id)
-                scrubbedMissingCount += 1
-                scrubbedMissingBytes += entry.byteCost
-                didMutate = true
-                continue
-            }
-            if bodySize > configuration.maxEntryBytes {
-                budgetedIndex.entries.removeValue(forKey: id)
-                removeBody(fileName: entry.bodyFileName, in: bodiesDirectoryURL, fileManager: fileManager)
-                scrubbedOversizedCount += 1
-                scrubbedOversizedBytes += entry.byteCost
-                didMutate = true
-            }
-        }
-
-        let sortedIDs = budgetedIndex.entries.keys.sorted { lhs, rhs in
-            let lhsDate = budgetedIndex.entries[lhs]?.lastAccessedAt ?? .distantPast
-            let rhsDate = budgetedIndex.entries[rhs]?.lastAccessedAt ?? .distantPast
-            return lhsDate < rhsDate
-        }
-        var cursor = sortedIDs.startIndex
-        while cursor < sortedIDs.endIndex,
-            budgetedIndex.entries.count > configuration.maxEntries
-                || totalBytes(in: budgetedIndex) > configuration.maxBytes
-        {
-            let victimID = sortedIDs[cursor]
-            cursor = sortedIDs.index(after: cursor)
-            guard let victim = budgetedIndex.entries.removeValue(forKey: victimID) else { continue }
-            removeBody(fileName: victim.bodyFileName, in: bodiesDirectoryURL, fileManager: fileManager)
-            evictedCount += 1
-            evictedBytes += victim.byteCost
-            didMutate = true
-        }
-
-        if didMutate {
-            try persistIndex(
-                budgetedIndex,
-                to: indexURL,
-                directoryURL: configuration.directoryURL,
-                configuration: configuration,
-                fileManager: fileManager
-            )
-        }
-        var telemetry: [PersistentResponseCacheTelemetryEvent] = []
-        if scrubbedMissingCount > 0 {
-            telemetry.append(
-                .scrubbedEntries(
-                    reason: .missingBody,
-                    count: scrubbedMissingCount,
-                    byteCount: scrubbedMissingBytes
-                )
-            )
-        }
-        if scrubbedOversizedCount > 0 {
-            telemetry.append(
-                .scrubbedEntries(
-                    reason: .entryTooLarge,
-                    count: scrubbedOversizedCount,
-                    byteCount: scrubbedOversizedBytes
-                )
-            )
-        }
-        if evictedCount > 0 {
-            telemetry.append(
-                .scrubbedEntries(
-                    reason: .storageBudget,
-                    count: evictedCount,
-                    byteCount: evictedBytes
-                )
-            )
-        }
-        return OpenResult(index: budgetedIndex, telemetryEvents: telemetry)
-    }
-
-    @discardableResult
-    private static func scrubUnreferencedBodiesOnOpen(
-        _ loadedIndex: Index,
-        bodiesDirectoryURL: URL,
-        fileManager: FileManager
-    ) -> Int {
-        let referencedBodyFileNames = Set(loadedIndex.entries.values.map(\.bodyFileName))
-        guard
-            let bodyURLs = try? fileManager.contentsOfDirectory(
-                at: bodiesDirectoryURL,
-                includingPropertiesForKeys: [.isRegularFileKey],
-                options: [.skipsHiddenFiles]
-            )
-        else {
-            return 0
-        }
-
-        var scrubbedCount = 0
-        for bodyURL in bodyURLs {
-            let isRegularFile =
-                (try? bodyURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false
-            guard isRegularFile, bodyURL.pathExtension == "body" else { continue }
-            guard !referencedBodyFileNames.contains(bodyURL.lastPathComponent) else { continue }
-            do {
-                try fileManager.removeItem(at: bodyURL)
-                scrubbedCount += 1
-            } catch {
-                continue
-            }
-        }
-        return scrubbedCount
-    }
-
-    private static func totalBytes(in index: Index) -> Int {
-        index.entries.values.reduce(0) { $0 + $1.byteCost }
-    }
-
-    /// Read a body file off the actor's executor. Wrapping the synchronous
-    /// `Data(contentsOf:)` in a detached task lets the cache actor service
-    /// other requests while slow flash satisfies the read.
-    private static func readBodyData(at url: URL) async throws -> Data {
-        try await Task.detached { try Data(contentsOf: url) }.value
-    }
-
-    /// Write a body file off the actor's executor and apply the configured
-    /// data-protection class. `FileManager.default` is documented as
-    /// thread-safe for the read/write/attribute APIs we use here, so the
-    /// detached task always uses the singleton — overriding the actor's
-    /// `fileManager` only affects on-actor metadata, not body bytes.
-    private static func writeBodyData(
-        _ data: Data,
-        to url: URL,
-        dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass
-    ) async throws {
-        try await Task.detached {
-            try data.write(to: url, options: .atomic)
-            applyDataProtection(dataProtectionClass, to: url, fileManager: .default)
-        }.value
-    }
-
-    private static func persistIndex(
-        _ index: Index,
-        to indexURL: URL,
-        directoryURL: URL,
-        configuration: PersistentResponseCacheConfiguration,
-        fileManager: FileManager,
-        durable: Bool = true
-    ) throws {
-        let data = try JSONEncoder.persistentCache.encode(index)
-        try data.write(to: indexURL, options: .atomic)
-        applyDataProtection(configuration.dataProtectionClass, to: indexURL, fileManager: fileManager)
-        guard durable, configuration.persistenceFsyncPolicy == .always else { return }
-        fsyncFile(at: indexURL)
-        fsyncDirectory(at: directoryURL)
-    }
-
-    private static func removeBody(fileName: String, in bodiesDirectoryURL: URL, fileManager: FileManager) {
-        let bodyURL = bodiesDirectoryURL.appendingPathComponent(fileName, isDirectory: false)
-        try? fileManager.removeItem(at: bodyURL)
-    }
-
-    private static func fileSize(at url: URL, fileManager: FileManager) -> Int? {
-        guard let size = try? fileManager.attributesOfItem(atPath: url.path)[.size] as? NSNumber else {
-            return nil
-        }
-        return size.intValue
-    }
-
-    private static func shouldStore(
-        key: DiskKey,
-        responseHeaders: [String: String],
-        configuration: PersistentResponseCacheConfiguration
-    ) -> Bool {
-        if !configuration.storesAuthenticatedResponses,
-            containsSensitiveRequestHeader(key.headers)
-        {
-            return false
-        }
-
-        let cacheControl = cacheControlDirectives(in: responseHeaders)
-        if cacheControl.contains("private") {
-            return false
-        }
-
-        if !configuration.storesSetCookieResponses,
-            responseHeaders.keys.contains(where: { $0.caseInsensitiveCompare("Set-Cookie") == .orderedSame })
-        {
-            return false
-        }
-
-        return true
-    }
-
-    private static func fsyncFile(at url: URL) {
-        let fd = url.withUnsafeFileSystemRepresentation { rep -> Int32 in
-            guard let rep else { return -1 }
-            return open(rep, O_RDONLY)
-        }
-        guard fd >= 0 else { return }
-        defer { close(fd) }
-        _ = syncFileDescriptor(fd)
-    }
-
-    private static func fsyncDirectory(at url: URL) {
-        let fd = url.withUnsafeFileSystemRepresentation { rep -> Int32 in
-            guard let rep else { return -1 }
-            return open(rep, O_RDONLY)
-        }
-        guard fd >= 0 else { return }
-        defer { close(fd) }
-        _ = syncFileDescriptor(fd)
-    }
-
-    @discardableResult
-    private static func syncFileDescriptor(_ fd: Int32) -> Int32 {
-        #if canImport(Darwin)
-        if fcntl(fd, F_FULLFSYNC, 0) == 0 {
-            return 0
-        }
-        guard isFullFsyncUnsupported(errno) else {
-            return -1
-        }
-        #endif
-        return fsync(fd)
-    }
-
-    static func isFullFsyncUnsupported(_ errorNumber: Int32) -> Bool {
-        #if canImport(Darwin)
-        errorNumber == EINVAL || errorNumber == EOPNOTSUPP
-        #else
-        _ = errorNumber
-        false
-        #endif
-    }
-
-    private static func containsSensitiveRequestHeader(_ headers: [String]) -> Bool {
-        let sensitiveHeaderNames = ResponseCacheHeaderPolicy.sensitiveHeaderNames
-        return headers.contains { header in
-            guard let separator = header.firstIndex(of: ":") else { return false }
-            let name = String(header[..<separator]).lowercased()
-            return sensitiveHeaderNames.contains(name)
-        }
-    }
-
-    private static func cacheControlDirectives(in headers: [String: String]) -> Set<String> {
-        let combined =
-            headers
-            .filter { $0.key.caseInsensitiveCompare("Cache-Control") == .orderedSame }
-            .map { $0.value }
-            .joined(separator: ",")
-        guard !combined.isEmpty else { return [] }
-        return Set(
-            HTTPListParser.split(combined)
-                .map(HTTPListParser.directiveName(of:))
-                .filter { !$0.isEmpty }
-        )
-    }
-
-    /// Apply the configured data-protection class to `url`. Promoted from
-    /// `fileprivate` to module-internal so ``PersistentCacheDiskKeyNormalizer``
-    /// — which lives in its own file — can request the same protection on the
-    /// HMAC key it manages alongside the cache.
-    static func applyDataProtection(
-        _ dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
-        to url: URL,
-        fileManager: FileManager
-    ) {
-        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
-        try? fileManager.setAttributes(
-            [.protectionKey: dataProtectionClass.fileProtectionType],
-            ofItemAtPath: url.path
-        )
-        #else
-        _ = (dataProtectionClass, url, fileManager)
-        #endif
-    }
-
-    private static func applyDataProtectionToExistingCacheFiles(
-        dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
-        indexURL: URL,
-        bodiesDirectoryURL: URL,
-        fileManager: FileManager
-    ) {
-        if fileManager.fileExists(atPath: indexURL.path) {
-            applyDataProtection(dataProtectionClass, to: indexURL, fileManager: fileManager)
-        }
-        guard
-            let bodyURLs = try? fileManager.contentsOfDirectory(
-                at: bodiesDirectoryURL,
-                includingPropertiesForKeys: [.isRegularFileKey],
-                options: [.skipsHiddenFiles]
-            )
-        else {
-            return
-        }
-
-        for bodyURL in bodyURLs {
-            let isRegularFile =
-                (try? bodyURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false
-            guard isRegularFile else { continue }
-            applyDataProtection(dataProtectionClass, to: bodyURL, fileManager: fileManager)
-        }
-    }
-
-    private static func loadIndex(
-        from indexURL: URL,
-        directoryURL: URL,
-        dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
-        fileManager: FileManager
-    ) throws -> OpenResult {
-        guard fileManager.fileExists(atPath: indexURL.path) else {
-            return OpenResult(index: Index(version: formatVersion, entries: [:]), telemetryEvents: [])
-        }
-
-        let bodiesDirectoryURL = directoryURL.appendingPathComponent("bodies", isDirectory: true)
-
-        // The cache is best-effort durable: corrupt indexes and unknown
-        // index versions both fall through to the same self-healing reset
-        // path. There is no inter-version migration: the 4.0.0 format is
-        // the first published one.
-        if let data = try? Data(contentsOf: indexURL),
-            let index = try? JSONDecoder.persistentCache.decode(Index.self, from: data),
-            index.version == formatVersion
-        {
-            return OpenResult(index: index, telemetryEvents: [])
-        }
-
-        try resetCacheStorage(
-            indexURL: indexURL,
-            bodiesDirectoryURL: bodiesDirectoryURL,
-            dataProtectionClass: dataProtectionClass,
-            fileManager: fileManager
-        )
-        return OpenResult(index: Index(version: formatVersion, entries: [:]), telemetryEvents: [])
-    }
-
-    private static func resetCacheStorage(
-        indexURL: URL,
-        bodiesDirectoryURL: URL,
-        dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
-        fileManager: FileManager
-    ) throws {
-        try? fileManager.removeItem(at: indexURL)
-        try? fileManager.removeItem(at: bodiesDirectoryURL)
-        try fileManager.createDirectory(at: bodiesDirectoryURL, withIntermediateDirectories: true)
-        applyDataProtection(dataProtectionClass, to: bodiesDirectoryURL, fileManager: fileManager)
-    }
-
-    private func identifier(for key: DiskKey) -> String {
-        Self.identifier(for: key, encoder: identifierEncoder)
-    }
-
-    private static func identifier(for key: DiskKey, encoder: JSONEncoder) -> String {
-        let data = try? encoder.encode(key)
-        let digest = SHA256.hash(data: data ?? Data())
-        return digest.map { String(format: "%02x", $0) }.joined()
+    private func identifier(for key: DiskKey) throws -> String {
+        try Self.identifier(for: key, encoder: identifierEncoder)
     }
 }

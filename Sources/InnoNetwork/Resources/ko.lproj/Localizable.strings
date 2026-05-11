@@ -1,0 +1,29 @@
+/* Korean localizations for `NetworkError.errorDescription`.
+   Keys mirror the cases in `Sources/InnoNetwork/NetworkError.swift`.
+   `%@` placeholders correspond to the case payload values; do not reorder
+   them without updating the call sites in `NetworkError.swift`. */
+
+"NetworkError.invalidBaseURL" = "잘못된 기본 URL입니다: %@";
+"NetworkError.invalidRequestConfiguration" = "요청 구성이 잘못되었습니다: %@";
+"NetworkError.offline" = "네트워크가 오프라인 상태입니다: %@";
+"NetworkError.decoding" = "응답을 디코딩하지 못했습니다 (%1$@): %2$@";
+"NetworkError.statusCode" = "상태 코드가 허용 범위를 벗어났습니다.";
+"NetworkError.cancelled" = "요청이 취소되었습니다.";
+
+"NetworkError.timeout.request" = "서버가 응답하기 전에 요청 시간이 초과되었습니다.";
+"NetworkError.timeout.resource" = "리소스 전송 시간이 초과되었습니다.";
+"NetworkError.timeout.connection" = "서버와의 연결 시간이 초과되었습니다.";
+
+"NetworkError.reachability.notConnectedToInternet" = "기기가 인터넷에 연결되어 있지 않습니다.";
+"NetworkError.reachability.dnsLookupFailed" = "연결을 열기 전에 DNS 조회에 실패했습니다.";
+"NetworkError.reachability.cannotFindHost" = "호스트 이름을 확인할 수 없습니다.";
+"NetworkError.reachability.networkConnectionLost" = "요청 도중 네트워크 연결이 끊겼습니다.";
+
+
+"NetworkError.trust.unsupportedAuthenticationMethod" = "지원하지 않는 인증 방식입니다: %@";
+"NetworkError.trust.missingServerTrust" = "서버 신뢰 정보가 없습니다.";
+"NetworkError.trust.systemTrustEvaluationFailedWithReason" = "시스템 신뢰 평가에 실패했습니다: %@";
+"NetworkError.trust.systemTrustEvaluationFailed" = "시스템 신뢰 평가에 실패했습니다.";
+"NetworkError.trust.hostNotPinned" = "호스트에 대해 핀이 설정되지 않았습니다: %@";
+"NetworkError.trust.publicKeyExtractionFailed" = "인증서 체인에서 공개키를 추출하지 못했습니다.";
+"NetworkError.trust.pinMismatch" = "호스트의 공개키 핀이 일치하지 않습니다: %@";

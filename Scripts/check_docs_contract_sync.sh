@@ -8,11 +8,11 @@ export LC_ALL=C
 api_stability="$repo_root/API_STABILITY.md"
 readme="$repo_root/README.md"
 
-# Per-module public-symbol allowlists. Splitting the legacy single
-# `Scripts/api_public_symbols.allowlist` into one file per shipping
-# module keeps PR diffs readable when only one module's surface
-# changes. The script concatenates them into a single temporary
-# allowlist so the rest of the validation logic stays unchanged.
+# Per-module public-symbol allowlists. Keeping one
+# `Scripts/symbols/*.allowlist` file per shipping module keeps PR diffs
+# readable when only one module's surface changes. The script concatenates
+# them into a single temporary allowlist so the rest of the validation logic
+# stays unchanged.
 public_symbols_dir="$repo_root/Scripts/symbols"
 public_symbols_allowlist="$(mktemp)"
 trap 'rm -f "$public_symbols_allowlist"' EXIT
@@ -361,6 +361,15 @@ expected_shipping_public_declarations=(
   WebSocketTask
 )
 
+# Top-level type declarations exposed under
+# `@_spi(GeneratedClientSupport)`. These are part of the contract
+# documented under API_STABILITY.md ("@_spi(GeneratedClientSupport)
+# Compatibility Contract") and are surfaced by passing
+# `--include-spi-symbols` to `swift package dump-symbol-graph` below.
+# `validate_spi_allowlist_drift` greps the InnoNetwork module and
+# fails the docs contract check when the source set drifts away from
+# this allowlist — i.e. a new SPI type is added or an existing one is
+# removed without updating this array and API_STABILITY.md.
 expected_spi_public_declarations=(
   LowLevelNetworkClient
   RequestPayload
@@ -575,6 +584,11 @@ collect_public_symbols() {
 
   local dump_status
   set +e
+  # `--include-spi-symbols` is intentional: the symbol-graph diff is
+  # how the docs contract notices when a new `@_spi(GeneratedClientSupport)`
+  # type silently joins the surface. The corresponding top-level type
+  # allowlist lives at `expected_spi_public_declarations` and is
+  # enforced by `validate_spi_allowlist_drift`.
   swift package dump-symbol-graph \
     --minimum-access-level public \
     --include-spi-symbols \
@@ -587,6 +601,40 @@ collect_public_symbols() {
   if [[ "$dump_status" -ne 0 ]]; then
     echo "docs-contract-sync: swift package dump-symbol-graph exited with $dump_status after emitting required library symbol graphs; ignoring non-contract target extraction failure." >&2
   fi
+}
+
+validate_spi_allowlist_drift() {
+  # Cross-check `expected_spi_public_declarations` against the source.
+  # A regex find is sufficient — only top-level type declarations
+  # (`protocol`, `struct`, `enum`, `class`, `actor`) count; SPI-tagged
+  # extensions and members ride on the underlying type and don't
+  # introduce a new contract surface.
+  local actual_file actual_raw_file expected_file
+  actual_file="$(mktemp)"
+  actual_raw_file="$(mktemp)"
+  expected_file="$(mktemp)"
+
+  local grep_status
+  grep_status=0
+  grep -rhoE \
+    '@_spi\(GeneratedClientSupport\) public (protocol|struct|enum|class|actor) [A-Z][A-Za-z0-9_]*' \
+    "$repo_root/Sources/InnoNetwork" > "$actual_raw_file" || grep_status=$?
+  if [[ "$grep_status" -gt 1 ]]; then
+    rm -f "$actual_file" "$actual_raw_file" "$expected_file"
+    fail "failed to scan @_spi(GeneratedClientSupport) declarations"
+  fi
+
+  awk '{ print $NF }' "$actual_raw_file" | sort -u > "$actual_file"
+
+  printf '%s\n' "${expected_spi_public_declarations[@]}" \
+    | sort -u > "$expected_file"
+
+  if ! diff -u "$expected_file" "$actual_file" >&2; then
+    rm -f "$actual_file" "$actual_raw_file" "$expected_file"
+    fail "@_spi(GeneratedClientSupport) declarations drifted; update Scripts/check_docs_contract_sync.sh::expected_spi_public_declarations and API_STABILITY.md"
+  fi
+
+  rm -f "$actual_file" "$actual_raw_file" "$expected_file"
 }
 
 validate_public_surface_ledger() {
@@ -603,7 +651,7 @@ validate_public_surface_ledger() {
   collect_public_symbols > "$actual_file"
 
   if ! diff -u "$expected_file" "$actual_file" >&2; then
-    fail "public symbol graph drifted; update Scripts/api_public_symbols.allowlist and API_STABILITY.md"
+    fail "public symbol graph drifted; update Scripts/symbols/*.allowlist and API_STABILITY.md"
   fi
 
   rm -f "$expected_file" "$actual_file"
@@ -1068,6 +1116,7 @@ for symbol in "${expected_provisionally[@]}"; do
   esac
 done
 
+validate_spi_allowlist_drift
 validate_public_surface_ledger
 validate_release_quality_gates
 

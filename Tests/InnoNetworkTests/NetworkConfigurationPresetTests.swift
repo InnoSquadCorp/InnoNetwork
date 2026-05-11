@@ -14,7 +14,7 @@ struct NetworkConfigurationPresetTests {
         #expect(configuration.retryPolicy != nil)
         #expect(configuration.circuitBreakerPolicy != nil)
         #expect(configuration.idempotencyKeyPolicy.methods == [.post, .put, .patch, .delete])
-        #expect(configuration.responseBodyBufferingPolicy.maxBytes == nil)
+        #expect(configuration.responseBodyBufferingPolicy.maxBytes == Int64(5 * 1024 * 1024))
     }
 
     // MARK: - Fluent modifiers
