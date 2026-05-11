@@ -133,15 +133,48 @@ public struct APIDefinitionMacro: ExtensionMacro {
         return normalized.hasPrefix("Optional<") || normalized.hasPrefix("Swift.Optional<")
     }
 
+    /// Returns the access-control keyword that the generated extension
+    /// members should carry, mirroring the visibility of the attached
+    /// declaration.
+    ///
+    /// The earlier implementation returned an empty string for any type
+    /// that did not carry `public`/`open`/`package` modifiers. That is
+    /// *almost* equivalent to `internal` — Swift defaults to internal —
+    /// but the silent default has two failure modes: (1) when the
+    /// extension is generated into a context that imports the module
+    /// without `@testable`, callers cannot see why the witness members
+    /// are reachable, and (2) a future refactor that switches the
+    /// attached type to `fileprivate` would leave a stale `internal`
+    /// witness in the generated extension with no surfaced warning.
+    /// Emit the keyword explicitly so the generated source is
+    /// self-describing and any visibility narrowing on the host type
+    /// has to be propagated by the author rather than silently kept
+    /// at internal by the macro.
     private static func witnessAccessPrefix(in declaration: some DeclGroupSyntax) -> String {
         let modifiers = declarationModifiers(in: declaration)
-        if modifiers.contains(where: { $0 == "public" || $0 == "open" }) {
+        if modifiers.contains(where: { $0 == "open" }) {
+            // `open` cannot apply to struct members or extension methods
+            // in the same way it does to a class declaration; the
+            // strongest correctly-applicable witness modifier is
+            // `public`.
+            return "public "
+        }
+        if modifiers.contains("public") {
             return "public "
         }
         if modifiers.contains("package") {
             return "package "
         }
-        return ""
+        if modifiers.contains("fileprivate") {
+            return "fileprivate "
+        }
+        if modifiers.contains("private") {
+            // `private` on a top-level type behaves like `fileprivate`;
+            // mirror that on the witness rather than silently widening
+            // visibility to `internal`.
+            return "fileprivate "
+        }
+        return "internal "
     }
 
     private static func declarationModifiers(in declaration: some DeclGroupSyntax) -> [String] {
