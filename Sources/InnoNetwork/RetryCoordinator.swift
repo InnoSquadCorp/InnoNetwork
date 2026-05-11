@@ -272,11 +272,18 @@ package struct RetryCoordinator {
     ) -> RetryDecision {
         if case .noRetry = decision { return decision }
         guard case .timeout = error else { return decision }
-        guard let request else { return decision }
         // `.methodAgnostic` (or any custom policy that retries every method)
         // means the caller owns duplicate-write protection above
         // InnoNetwork — never override the policy decision.
         if idempotency.retriesAllMethods { return decision }
+        // The retry coordinator's raw-`URLError` catch arm normalises into a
+        // `.timeout` classification without a Response attached, so
+        // `error.underlyingRequest` is `nil`. Without the request we cannot
+        // prove the method is safe; defaulting to `.noRetry` preserves the
+        // duplicate-write protection that the policy decision tried to grant.
+        // Callers that need to retry transport-only timeouts for safe methods
+        // can switch to `.methodAgnostic` and own the safety contract.
+        guard let request else { return .noRetry }
         let method = (request.httpMethod ?? "GET").uppercased()
         // Methods explicitly considered safe by the active policy (e.g.
         // GET/HEAD by default) are never converted to `.noRetry`.

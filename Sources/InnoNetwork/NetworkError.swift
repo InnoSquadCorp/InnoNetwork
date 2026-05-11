@@ -433,13 +433,42 @@ extension NetworkError: CustomNSError {
         userInfo[NetworkError.errorCodeUserInfoKey] = errorCode
         if let response = self.response {
             userInfo[NetworkError.statusCodeUserInfoKey] = response.statusCode
-            if let urlString = response.request?.url?.absoluteString
-                ?? response.response?.url?.absoluteString
-            {
-                userInfo[NetworkError.urlUserInfoKey] = urlString
+            // `NSError.userInfo` is pickled by crash reporters and analytics
+            // SDKs — emit a redacted form so user-info credentials, query
+            // tokens, and OAuth-fragment access tokens cannot ride the URL
+            // into telemetry. The redaction strips userinfo, query values,
+            // and the fragment while leaving scheme/host/path intact for
+            // bucketing.
+            let url = response.request?.url ?? response.response?.url
+            if let redacted = url.flatMap(NetworkError.redactedURLString(from:)) {
+                userInfo[NetworkError.urlUserInfoKey] = redacted
             }
         }
         return userInfo
+    }
+
+    /// Returns a copy of `url` with user-info credentials, query parameter
+    /// values, and the fragment stripped so the resulting string is safe to
+    /// emit into telemetry surfaces such as `NSError.userInfo`. Path and
+    /// query keys are preserved so the URL still groups for bucketing.
+    static func redactedURLString(from url: URL) -> String? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            // Fall back to a manually-composed string so a malformed input
+            // cannot leak userinfo or fragment via `absoluteString`.
+            let scheme = url.scheme ?? "http"
+            let host = url.host ?? ""
+            let path = url.path
+            return "\(scheme)://\(host)\(path)"
+        }
+        components.user = nil
+        components.password = nil
+        components.fragment = nil
+        if let items = components.queryItems {
+            components.queryItems = items.map {
+                URLQueryItem(name: $0.name, value: $0.value == nil ? nil : "[REDACTED]")
+            }
+        }
+        return components.string ?? components.url?.absoluteString
     }
 
     /// `NSError.userInfo` key for the integer ``NetworkError/errorCode``.
