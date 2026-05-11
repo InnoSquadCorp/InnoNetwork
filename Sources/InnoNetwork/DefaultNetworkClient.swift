@@ -176,6 +176,51 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     package let inFlight = InFlightRegistry()
     private let executionRuntime: RequestExecutionRuntime
 
+    /// Creates a client backed by the given URL session.
+    ///
+    /// - Parameters:
+    ///   - configuration: The ``NetworkConfiguration`` describing the
+    ///     base URL, interceptors, retry policy, and observability hooks.
+    ///   - session: The URL session that issues requests. Defaults to
+    ///     ``URLSession/shared`` for ergonomic prototyping.
+    ///
+    /// > Warning: The default of ``URLSession/shared`` is convenient but has
+    /// > three production caveats. Inject an explicit `URLSession` when any of
+    /// > them matters to you:
+    /// >
+    /// > 1. **Shared cookie / credential storage.** `URLSession.shared` uses
+    /// >    ``HTTPCookieStorage/shared`` and ``URLCredentialStorage/shared``,
+    /// >    so any other SDK in the process (analytics, auth, push) sees the
+    /// >    same cookie jar. For app-scoped or isolated stores, build a
+    /// >    session with a dedicated `URLSessionConfiguration`.
+    /// > 2. **No delegate.** `URLSession.shared` cannot be constructed with a
+    /// >    `URLSessionDelegate`, which disables custom server-trust
+    /// >    evaluation, `URLSessionTaskMetrics` collection, and redirect
+    /// >    interception. Features that rely on delegate callbacks (e.g.
+    /// >    ``InnoNetworkTrust`` public-key pinning) require an explicit
+    /// >    session.
+    /// > 3. **Configuration drift.** Several values on ``NetworkConfiguration``
+    /// >    only take effect when the session itself is built from a matching
+    /// >    `URLSessionConfiguration` (timeouts, HTTP/3, waits-for-connectivity,
+    /// >    cellular access). The shared session ignores those overrides.
+    /// >
+    /// > Recommended explicit form:
+    /// >
+    /// > ```swift
+    /// > let urlConfig = URLSessionConfiguration.default
+    /// > urlConfig.httpCookieStorage = nil              // app-scoped cookies
+    /// > urlConfig.urlCredentialStorage = nil           // app-scoped creds
+    /// > urlConfig.timeoutIntervalForRequest = 30
+    /// > let session = URLSession(
+    /// >     configuration: urlConfig,
+    /// >     delegate: nil,
+    /// >     delegateQueue: nil
+    /// > )
+    /// > let client = DefaultNetworkClient(
+    /// >     configuration: myAPI,
+    /// >     session: session
+    /// > )
+    /// > ```
     public init(
         configuration: NetworkConfiguration,
         session: URLSessionProtocol = URLSession.shared

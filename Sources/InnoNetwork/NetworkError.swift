@@ -166,6 +166,41 @@ public enum NetworkError: Error, Sendable {
     /// body decode error.
     case decoding(stage: DecodingStage, underlying: SendableUnderlyingError, response: Response)
 
+    /// Carries a transport-layer error that the built-in mapper did not
+    /// classify into a more specific case (e.g. ``timeout(reason:underlying:)``
+    /// or ``reachability(_:_:_:)``).
+    ///
+    /// Typical `URLError.Code` values that surface here include
+    /// `badServerResponse`, `secureConnectionFailed`,
+    /// `userAuthenticationRequired`, `clientCertificateRejected`, and
+    /// anything outside the curated reachability / timeout maps in
+    /// ``mapTransportError(_:metrics:response:)``. The mapping is part of the
+    /// public API contract and is locked by `NetworkErrorTimeoutTests`.
+    ///
+    /// > Recovering the original `URLError` code:
+    /// >
+    /// > ``SendableUnderlyingError`` is value-type `Sendable` and does **not**
+    /// > retain the source `URLError` instance — it captures the NSError
+    /// > projection (`domain`, `code`, `message`, optional reason / recovery,
+    /// > and an `NSUnderlyingErrorKey` chain). Branch on the code by
+    /// > reconstructing ``URLError/Code``:
+    /// >
+    /// > ```swift
+    /// > catch NetworkError.underlying(let wrapped, _) {
+    /// >     if wrapped.domain == NSURLErrorDomain {
+    /// >         switch URLError.Code(rawValue: wrapped.code) {
+    /// >         case .badServerResponse: ...
+    /// >         case .secureConnectionFailed: ...
+    /// >         default: ...
+    /// >         }
+    /// >     }
+    /// >     // Otherwise inspect wrapped.underlyingChain for nested causes.
+    /// > }
+    /// > ```
+    /// >
+    /// > The original `failingURL` / `userInfo` of the source `URLError` are
+    /// > **not** preserved across the `Sendable` boundary; if you need them,
+    /// > capture from the in-flight `URLRequest` / `Response` instead.
     case underlying(SendableUnderlyingError, Response?)
     /// The transport classified the failure as a reachability fault — DNS
     /// resolution failed, the device reports no link, or an established
