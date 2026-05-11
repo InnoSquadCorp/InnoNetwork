@@ -134,6 +134,17 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+        // macOS defaults to the legacy file-based keychain unless the
+        // caller opts into the data-protection keychain. iOS/tvOS/
+        // watchOS/visionOS are already on the data-protection
+        // keychain implicitly, but adding the attribute is a no-op
+        // there. Opting in uniformly keeps the storage backend
+        // consistent across platforms — the file keychain on macOS
+        // would otherwise prompt the user on unlock and persist
+        // entries in a format the iOS-style attributes
+        // (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`) do not
+        // fully constrain.
+        query[kSecUseDataProtectionKeychain as String] = true
         if let accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
@@ -159,6 +170,7 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
                 kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: service,
                 kSecAttrAccount as String: account,
+                kSecUseDataProtectionKeychain as String: true,
             ]
             if let accessGroup {
                 deleteQuery[kSecAttrAccessGroup as String] = accessGroup
@@ -174,6 +186,7 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
             kSecAttrAccount as String: account,
             kSecValueData as String: newKeyData,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecUseDataProtectionKeychain as String: true,
         ]
         if let accessGroup {
             addAttributes[kSecAttrAccessGroup as String] = accessGroup
