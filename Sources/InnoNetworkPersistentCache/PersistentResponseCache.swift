@@ -376,10 +376,14 @@ public actor PersistentResponseCache: ResponseCache {
         }
         let bodyFileName = "\(id)-\(UUID().uuidString).body"
         let bodyURL = bodiesDirectoryURL.appendingPathComponent(bodyFileName, isDirectory: false)
-        let byteCost =
-            value.data.count
-            + value.headers.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count }
-            + (value.varyHeaders?.reduce(0) { $0 + $1.key.utf8.count + ($1.value?.utf8.count ?? 0) } ?? 0)
+        let headerByteCost: Int = value.headers.reduce(0) { partialResult, header in
+            partialResult + header.key.utf8.count + header.value.utf8.count
+        }
+        let varyHeaderByteCost: Int =
+            value.varyHeaders?.reduce(0) { partialResult, header in
+                partialResult + header.key.utf8.count + (header.value?.utf8.count ?? 0)
+            } ?? 0
+        let byteCost = value.data.count + headerByteCost + varyHeaderByteCost
         let entry = Entry(
             key: diskKey,
             statusCode: value.statusCode,
