@@ -18,6 +18,25 @@ import Glibc
 ///
 /// The cache enforces a synchronous LRU bound on every write so the disk
 /// footprint stays within the configured byte and entry budgets.
+///
+/// ## RFC 9111 non-compliance
+///
+/// This cache is intentionally **not** an RFC 9111 cache. It honours the
+/// freshness and conditional-revalidation hooks provided by
+/// ``ResponseCachePolicy`` — `Cache-Control` directives on the **request**
+/// or **response** are otherwise ignored: `no-store`, `no-cache`,
+/// `must-revalidate`, `private`, `s-maxage`, `Vary` short-circuits, and
+/// the directive interactions described by RFC 9111 §3–§5 are not applied
+/// here. The cache will happily store a response that carries
+/// `Cache-Control: no-store` and will return a stale entry that the spec
+/// would require to be revalidated.
+///
+/// Callers that need RFC 9111 directive semantics should wrap their
+/// policy with ``ResponseCachePolicy/rfc9111Compliant(wrapping:)``. The
+/// adapter implements the directive subset documented in
+/// `docs/rfcs/RFC9111-Compliance.md` (`no-store`, `must-revalidate`, and
+/// `max-age` clamping) on top of the wrapped policy without changing this
+/// storage layer.
 public actor PersistentResponseCache: ResponseCache {
     private static let formatVersion = 2
     private static let logger = Logger(subsystem: "innosquad.network", category: "PersistentResponseCache")
@@ -847,10 +866,14 @@ public actor PersistentResponseCache: ResponseCache {
         to url: URL,
         fileManager: FileManager
     ) {
+        #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
         try? fileManager.setAttributes(
             [.protectionKey: dataProtectionClass.fileProtectionType],
             ofItemAtPath: url.path
         )
+        #else
+        _ = (dataProtectionClass, url, fileManager)
+        #endif
     }
 
     private static func applyDataProtectionToExistingCacheFiles(

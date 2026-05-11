@@ -254,11 +254,16 @@ public struct PublicKeyPinningEvaluator: TrustEvaluating {
     /// - **RSA** (`kSecAttrKeyTypeRSA`): rsaEncryption, OID 1.2.840.113549.1.1.1 with NULL params.
     /// - **EC NIST curves** (`kSecAttrKeyTypeEC` / `kSecAttrKeyTypeECSECPrimeRandom`):
     ///   id-ecPublicKey + named curve OID for P-256, P-384, P-521 (size-bucketed).
-    /// - **Ed25519**: id-Ed25519, OID 1.3.101.112 per RFC 8410. Matched by
-    ///   keyType string (`"ed25519"` case-insensitive, or the raw OID
-    ///   `"1.3.101.112"`) because Security.framework does not currently expose
-    ///   a public `kSecAttrKeyTypeEd25519` constant — once Apple ships one, the
-    ///   string match keeps working unchanged.
+    /// - **Ed25519**: id-Ed25519, OID 1.3.101.112 per RFC 8410. Matched
+    ///   strictly by the raw OID string `"1.3.101.112"`. The earlier
+    ///   case-insensitive `"ed25519"` keyword fallback was removed because
+    ///   private CAs in the wild expose Ed25519 keys under arbitrary
+    ///   informal identifiers (`"Ed25519"`, `"ED25519"`, `"ed-25519"`); the
+    ///   loose match risked colliding with a future Security.framework
+    ///   constant that happened to share the substring. Once Apple ships
+    ///   `kSecAttrKeyTypeEd25519`, recognition should be reintroduced
+    ///   against that constant by identity comparison, not against the
+    ///   word.
     ///
     /// When `nil` is returned, the caller still computes a fallback hash from
     /// the raw public key bytes via ``pinHashes(for:)``. That covers
@@ -298,11 +303,13 @@ public struct PublicKeyPinningEvaluator: TrustEvaluating {
                 ])
             }
         default:
-            // RFC 8410 — Ed25519 is matched by keyType string until Security.framework
-            // exposes a public constant. The OID string fallback covers Apple SDKs that
-            // surface the algorithm via its OID rather than a name.
-            let lower = keyType.lowercased()
-            if lower == "ed25519" || keyType == "1.3.101.112" {
+            // RFC 8410 — Ed25519 is identified strictly by its OID string.
+            // The previous case-insensitive `"ed25519"` keyword match was
+            // dropped because private CAs surface the algorithm under
+            // arbitrary informal identifiers, and a loose word match
+            // risked colliding with future Security.framework constants
+            // that happen to embed the same substring.
+            if keyType == "1.3.101.112" {
                 // id-Ed25519 OID (1.3.101.112), no params
                 return Data([0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70])
             }

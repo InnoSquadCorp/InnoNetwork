@@ -47,13 +47,20 @@ public protocol APIDefinition: Endpoint {
 /// headroom (macOS, visionOS). Small payloads stay in memory (cheap,
 /// single-pass) while larger uploads spill to a temp file and avoid
 /// jetsam. Endpoints that know they are always small can opt into
-/// ``inMemory`` for the slight encoding-cost savings; endpoints that
-/// always upload large media can pick ``alwaysStream``.
+/// ``inMemory(maxBytes:)`` with an explicit cap for the slight
+/// encoding-cost savings; endpoints that always upload large media can
+/// pick ``alwaysStream``.
 public enum MultipartUploadStrategy: Sendable, Equatable {
-    /// Always encode the multipart body into a single in-memory `Data` and
-    /// attach it to the request. Cheap for small payloads; risks jetsam on
-    /// large media.
-    case inMemory
+    /// Always encode the multipart body into a single in-memory `Data`
+    /// and attach it to the request. The caller must supply an explicit
+    /// `maxBytes` ceiling: the encoder pre-checks the estimated body
+    /// size against this cap and also enforces the limit while writing,
+    /// throwing
+    /// ``NetworkError/configuration(reason:)`` with
+    /// ``NetworkConfigurationFailureReason/invalidRequest(_:)`` if a
+    /// file part grew between the estimate and the read (TOCTOU guard).
+    /// Cheap for small payloads; risks jetsam when sized too generously.
+    case inMemory(maxBytes: Int)
 
     /// Encode in memory when the estimated body size is at or below `bytes`,
     /// otherwise stream the body to a temp file and upload via
@@ -126,8 +133,8 @@ public protocol MultipartAPIDefinition: Endpoint {
     /// iOS/watchOS/tvOS, 50 MiB on macOS/visionOS) so that large
     /// attachments do not blow up peak memory by default. Endpoints that
     /// always upload small payloads can override with
-    /// ``MultipartUploadStrategy/inMemory`` to skip the size check;
-    /// endpoints that always upload large payloads can override with
+    /// ``MultipartUploadStrategy/inMemory(maxBytes:)`` with an explicit
+    /// cap; endpoints that always upload large payloads can override with
     /// ``MultipartUploadStrategy/alwaysStream``.
     var uploadStrategy: MultipartUploadStrategy { get }
 }

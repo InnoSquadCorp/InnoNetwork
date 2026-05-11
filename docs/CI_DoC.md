@@ -32,19 +32,15 @@ The `CI` workflow must pass all of the following:
    download-only, websocket-only, test-support, generated-client, and codegen
    usage packages. Macro tests run from `Packages/InnoNetworkCodegen` so the
    codegen dependency graph stays isolated from runtime-only consumers.
-10. The benchmark smoke guard runs `swift run InnoNetworkBenchmarks --quick`
-   with `--enforce-baseline --max-regression-percent 20`. A regression
-   beyond 20% on the guarded request pipeline, request coalescing, response
-   cache, event hub delivery, download persistence restore/compaction,
-   decoding interceptor chain, and WebSocket lifecycle/send hot paths fails
-   the PR workflow. The decoding interceptor chain guards keep a 20,000-iteration
-   sample even in `--quick` mode so the CI smoke gate is not dominated by
-   sub-second hosted-runner scheduling noise. The scheduled/manual
-   benchmark workflow uses the same guarded benchmarks with a stricter 10%
-   threshold. Use `--guard-threshold group/name=percent` for benchmark-specific
-   exceptions and `--regression-reason` when a PR intentionally updates or
-   accepts a baseline movement; both values appear in the JSON artifact and PR
-   comment.
+10. The CI benchmark smoke job runs `swift run InnoNetworkBenchmarks --quick`
+    and uploads the JSON summary to prove the benchmark CLI still builds and
+    emits parseable results. Regression enforcement lives in the dedicated
+    `Benchmarks` workflow: pull requests use the guarded benchmark set with
+    `--enforce-baseline --max-regression-percent 20`, while scheduled/manual
+    runs use the same guarded benchmarks with a stricter 10% threshold. Use
+    `--guard-threshold group/name=percent` for benchmark-specific exceptions
+    and `--regression-reason` when a PR intentionally updates or accepts a
+    baseline movement; both values appear in the JSON artifact and PR comment.
 
 ## Pass/Fail Policy
 

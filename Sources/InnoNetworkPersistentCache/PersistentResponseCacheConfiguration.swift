@@ -64,8 +64,9 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     public let persistenceFsyncPolicy: PersistenceFsyncPolicy
     /// File protection class applied after cache directory and file creation.
     ///
-    /// Defaults to ``DataProtectionClass/completeUnlessOpen``. Platforms that do
-    /// not support Foundation file-protection attributes treat this as a no-op.
+    /// Defaults to ``DataProtectionClass/completeUnlessOpen``. Non-iOS-family
+    /// platforms treat this as a no-op even when Foundation exposes the
+    /// constants.
     /// ``DataProtectionClass/none`` requests `NSFileProtectionNone` for
     /// cache-owned paths instead of skipping existing protection updates.
     public let dataProtectionClass: DataProtectionClass

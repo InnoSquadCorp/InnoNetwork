@@ -32,9 +32,7 @@ func fetchInnoSquad() async {
     do {
         let user = try await client.request(GetUser(login: "InnoSquadCorp"))
         print("\(user.login) - id: \(user.id)")
-    } catch let error as NetworkError {
-        print("Failed: \(error.localizedDescription)")
     } catch {
-        print("Unexpected: \(error)")
+        print("Failed: \(error.localizedDescription)")
     }
 }

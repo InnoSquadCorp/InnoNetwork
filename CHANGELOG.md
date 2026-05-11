@@ -9,6 +9,46 @@ Versioning.
 
 ### Added
 
+- `NetworkErrorCode` SSOT enum in `Sources/InnoNetwork/NetworkErrorCode.swift`.
+  Owns every `NetworkError.errorCode` raw value (`1001`/`1002`/`1003`,
+  `2002`, `3001`/`3002`, `4001`/`4002`/`4003`, `5001`) — the inline
+  literals previously sprinkled across `RequestExecutor`,
+  `BufferedAsyncBytes`, `StreamingExecutor`, and `VCRURLSession` now
+  route through the enum. The `2001` slot is intentionally vacant for
+  historical compatibility (documented in a comment on the enum).
+- `NetworkError.reachability(ReachabilityReason, SendableUnderlyingError, Response?)`
+  case classifying `URLError.notConnectedToInternet`,
+  `.dnsLookupFailed`, `.cannotFindHost`, and `.networkConnectionLost`.
+  `mapTransportError(_:taskInterval:resourceTimeoutInterval:)` routes
+  the four `URLError.code`s into the new case **before** the timeout
+  /`cannotConnectToHost` arms so callers stop classifying connectivity
+  loss as transport timeouts. `errorCode` is `4002`. The
+  `WebSocketCloseDisposition.isTransientNetworkError` classifier now
+  pattern-matches on `.reachability` rather than scrubbing
+  `URLError.code` substrings out of `.underlying`.
+- `MultipartUploadStrategy.inMemory(maxBytes:)` requires an explicit
+  byte cap; the encoder now records every written part against a
+  running counter and throws `NetworkError.configuration(.invalidRequest(...))`
+  the moment the accumulator exceeds `maxBytes`, closing the
+  estimator-vs-read TOCTOU window that previously allowed swapped or
+  late-grown file parts to bypass the pre-flight estimate.
+- `DownloadConfiguration.taskInactivityTimeout: Duration?` watchdog.
+  When non-nil, `DownloadManager` starts a detached monitor that
+  cancels the underlying `URLSessionDownloadTask` (and emits the
+  same `NetworkError.cancelled` event the user-driven cancel path
+  emits) whenever no progress has been reported for the configured
+  window. `DownloadTask.lastProgressAt: ContinuousClock.Instant?`
+  exposes the most recent progress timestamp for diagnostics.
+- `ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware
+  adapter. Wraps any existing policy and adds opt-in support for
+  three RFC 9111 directives on top of the inner freshness window:
+  `Cache-Control: no-store` forces revalidation, `must-revalidate`
+  demotes `.returnStaleAndRevalidate` to `.revalidate`, and
+  `max-age=N` clamps freshness to `min(server, inner)`. Documented in
+  `docs/rfcs/RFC9111-Compliance.md`.
+- OpenAPI generator now emits explicit `APIResponse = EmptyResponse`
+  for operations declaring `202` or `204` responses (previously
+  collapsed onto a generic fallback).
 - `JWTBearerInterceptor` reference signer in `Sources/InnoNetwork/Auth/`.
   Wraps an `async throws -> String` token-mint closure and writes the
   resulting token into `Authorization: Bearer <token>` (or any
@@ -28,6 +68,18 @@ Versioning.
   test vectors before shipping to production. Listed as Provisionally
   Stable in API_STABILITY.md.
 
+### Fixed
+
+- Multipart `.inMemory` strategy now blocks the estimator-vs-read TOCTOU
+  window: previously a file part whose size grew between estimate and
+  read could exceed the configured ceiling; the new per-write
+  accumulator guard refuses the encode as soon as the cap is breached.
+- `DownloadManager.shutdown()` is now race-safe under concurrent calls.
+  The shutdown flag moved from actor-isolated state to a
+  `nonisolated OSAllocatedUnfairLock<Bool>` mirroring the
+  `WebSocketManager` pattern, so a `shutdown()` and a `deinit` racing
+  through the cleanup path no longer double-invalidate the session.
+
 ### Stability ledger
 
 - Promoted from Provisionally Stable to Stable in 4.x.x:
@@ -45,6 +97,31 @@ Versioning.
 
 ### Changed
 
+- **Breaking.** `MultipartUploadStrategy.inMemory` no longer accepts a
+  zero-argument form. Adopters must migrate to
+  `.inMemory(maxBytes: <Int>)` (or switch to
+  `.platformDefault` / `.streamingThreshold(bytes:)`). The compiler
+  surfaces the migration site as "missing argument for parameter
+  `maxBytes`". Rationale: the previous `.inMemory` call site silently
+  defaulted to `Int.max`, allowing a single oversized part to OOM the
+  process; the new mandatory cap forces an explicit ceiling and is
+  paired with a runtime accumulator guard. See `docs/Migration-4.1.0.md`.
+- **Breaking.** The OpenAPI generator now rejects path templates
+  (`/users/{id}`, `/orders/{orderID}/items`) at generation time with
+  `GenerationError.unsupportedPath`. Previously the placeholder was
+  emitted verbatim into the generated `path` string, which produced
+  surprising runtime 404s when the operation was invoked without
+  substitution. Adopters that need templating should hand-roll the
+  `path` property (delete the generator output and check in the
+  hand-written variant). See `docs/Migration-4.1.0.md`.
+- **Breaking.** `PublicKeyPinningEvaluator` no longer identifies
+  Ed25519 keys via the lowercase `"ed25519"` keyword string. Only the
+  RFC 8410 OID `1.3.101.112` matches. Adopters who fed a private CA
+  identifier string into the SPKI encoder must switch to the OID.
+  Rationale: the loose keyword match risked collisions with future
+  `Security.framework` constants that happen to contain `"ed25519"` as
+  a substring; the OID-only path is stable forever. See
+  `docs/Migration-4.1.0.md`.
 - **Breaking.** `NetworkClient.request(_:)`, `request(_:tag:)`,
   `upload(_:)`, and `upload(_:tag:)` now declare `throws(NetworkError)`
   instead of untyped `throws`. The four methods only ever surfaced
@@ -593,11 +670,9 @@ Versioning.
   how to re-measure on the hosted runner, replace
   `Benchmarks/Baselines/default.json`, log the change in
   `Benchmarks/Baselines/CHANGELOG.md`, and what counts as a "meaningful"
-  regression worth refreshing the baseline for. The benchmark-smoke
-  guard (already enforcing `--enforce-baseline --max-regression-percent
-  20` on guarded entries) stays the runtime gate; the README addition
-  removes the recurring ambiguity around when and how operators should
-  refresh the file.
+  regression worth refreshing the baseline for. The dedicated `Benchmarks`
+  workflow owns guarded regression enforcement; the CI benchmark smoke job
+  only proves the benchmark CLI still builds and emits parseable JSON.
 
 ## [4.0.0] - 2026-05-02
 

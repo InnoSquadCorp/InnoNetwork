@@ -119,6 +119,11 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance
 - `PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`
 - `DownloadTask.generation` / `attempt` observation accessors
+- `NetworkErrorCode` SSOT enum (4.1.0) — owns every `NetworkError.errorCode` raw value; new cases may be added in 4.x minors when `NetworkError` itself adds a case
+- `NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.1.0)
+- `MultipartUploadStrategy.inMemory(maxBytes:)` (4.1.0) — replaces the zero-arg `.inMemory` form (4.0.x); the encoder's accumulator guard is part of the contract
+- `DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.1.0)
+- `ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.1.0)
 
 ## Provisionally Stable Evolution Boundaries
 
@@ -483,6 +488,14 @@ requires `@_spi` import.
 - `WebSocketPingContext` and `WebSocketPongContext` public fields are stable
   because they are payloads of stable heartbeat events; their package-scoped
   initializers are construction details owned by the library.
+- `WebSocketTask.attemptedReconnectCount` may transiently observe
+  `maxReconnectAttempts + 1` during the failure transition that emits
+  `.exceeded(reason: .attempts)`. The counter is bumped **before** the cap
+  check so the rejected attempt itself is counted ("we tried and even this
+  attempt was over the limit"), and the same one-off overshoot applies to
+  the `.duration` exceed path. Observability layers that alert on the
+  counter should treat values up to `max + 1` as in-spec and reach for the
+  emitted `.exceeded` event to disambiguate.
 - Resilience policies are opt-in and provisionally stable.
   `RequestExecutionPolicy` is the stable custom hook for one transport
   attempt; retry scheduling, auth refresh replay, response-cache substitution,

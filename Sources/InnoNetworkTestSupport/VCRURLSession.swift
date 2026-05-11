@@ -211,7 +211,7 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
                 throw NetworkError.underlying(
                     SendableUnderlyingError(
                         domain: NetworkError.errorDomain,
-                        code: 3002,
+                        code: NetworkErrorCode.nonHTTPResponse.rawValue,
                         message:
                             "VCRURLSession received a non-HTTP response while recording \(NetworkError.diagnosticURLString(for: request.url))."
                     ),

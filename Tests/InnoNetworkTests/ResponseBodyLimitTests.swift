@@ -95,11 +95,12 @@ struct ResponseBodyLimitTests {
             Issue.record("Expected response-too-large NetworkError.underlying")
         } catch let error as NetworkError {
             switch error {
-            case .underlying(let underlying, _) where underlying.code == 4003:
+            case .underlying(let underlying, _)
+            where underlying.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue:
                 #expect(underlying.message.contains("\(payload.count)"))
                 #expect(underlying.message.contains("1024"))
             default:
-                Issue.record("Expected NetworkError.underlying with code 4003, got \(error)")
+                Issue.record("Expected NetworkError.underlying with responseBodyLimitExceeded code, got \(error)")
             }
         }
     }
@@ -282,14 +283,15 @@ struct ResponseBodyLimitTests {
             Issue.record("Expected response-too-large NetworkError.underlying")
         } catch let error as NetworkError {
             switch error {
-            case .underlying(let underlying, _) where underlying.code == 4003:
+            case .underlying(let underlying, _)
+            where underlying.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue:
                 #expect(underlying.message.contains("\(observed)"))
                 #expect(underlying.message.contains("\(limit)"))
             default:
-                Issue.record("Expected NetworkError.underlying with code 4003, got \(error)")
+                Issue.record("Expected NetworkError.underlying with responseBodyLimitExceeded code, got \(error)")
             }
         } catch {
-            Issue.record("Expected NetworkError.underlying with code 4003, got \(error)")
+            Issue.record("Expected NetworkError.underlying with responseBodyLimitExceeded code, got \(error)")
         }
     }
 

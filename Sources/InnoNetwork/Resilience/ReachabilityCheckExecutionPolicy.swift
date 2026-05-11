@@ -108,10 +108,16 @@ public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
                     reason: .offline("device path became .unsatisfied")
                 )
             case .requiresConnection, nil:
-                throw NetworkError.underlying(
+                // Surface this as the typed `.reachability` case rather than
+                // `.underlying` so it shares one discriminator with the
+                // URLSession-driven reachability classification — otherwise
+                // two distinct enum shapes would collide on
+                // `errorCode == 4002`.
+                throw NetworkError.reachability(
+                    .notConnectedToInternet,
                     SendableUnderlyingError(
                         domain: NetworkError.errorDomain,
-                        code: 4002,
+                        code: NetworkErrorCode.reachability.rawValue,
                         message:
                             "The network connection is still being restored. Please wait a moment and try the request again."
                     ),

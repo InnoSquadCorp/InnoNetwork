@@ -24,6 +24,7 @@ InnoNetwork provides the following error families:
   `DecodingStage`.
 - `NetworkError.underlying`: Underlying transport or adapter error
   (also surfaces the rare non-`HTTPURLResponse` path with code `3002`).
+- `NetworkError.reachability`: DNS, offline, or dropped-connection failure.
 - `NetworkError.trustEvaluationFailed`: TLS pinning or trust evaluation failure.
 - `NetworkError.cancelled`: Request was cancelled.
 - `NetworkError.timeout`: Request, resource, or connection timeout.
@@ -52,7 +53,7 @@ swift ErrorHandlingExample.swift
 do {
     let response = try await client.request(MyAPIRequest())
     print("Success: \(response)")
-} catch let error as NetworkError {
+} catch {
     switch error {
     case .configuration(let reason):
         switch reason {
@@ -80,6 +81,12 @@ do {
         if let response = response {
             print("Status Code: \(response.statusCode)")
         }
+    case .reachability(let reason, let underlyingError, let response):
+        print("Reachability Error: \(reason)")
+        print("Underlying Error: \(underlyingError)")
+        if let response = response {
+            print("Status Code: \(response.statusCode)")
+        }
     case .trustEvaluationFailed(let reason):
         print("Trust Evaluation Failed: \(reason)")
     case .cancelled:
@@ -89,8 +96,6 @@ do {
     @unknown default:
         print("Unhandled NetworkError: \(error)")
     }
-} catch {
-    print("Unknown error: \(error)")
 }
 ```
 
@@ -100,7 +105,7 @@ do {
 do {
     let post = try await client.request(NotFoundRequest())
     print("Success: \(post.title)")
-} catch let error as NetworkError {
+} catch {
     // Access response data if available
     if let response = error.response {
         print("Status Code: \(response.statusCode)")

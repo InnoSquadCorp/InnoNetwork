@@ -130,14 +130,22 @@ public enum WebSocketCloseDisposition: Sendable, Equatable {
 
     private static func isTransientNetworkError(_ error: SendableUnderlyingError) -> Bool {
         guard error.domain == NSURLErrorDomain else { return false }
+        let code = URLError.Code(rawValue: error.code)
 
-        switch URLError.Code(rawValue: error.code) {
+        // Prefer the typed `.reachability` classification so WebSocket and
+        // request-pipeline transience semantics stay aligned: if a URLError
+        // code is recognised as reachability by `NetworkError.mapTransportError`,
+        // it is transient by construction.
+        if case .reachability = NetworkError.mapTransportError(URLError(code)) {
+            return true
+        }
+
+        // Remaining transient URLError codes that classify outside the
+        // `.reachability` set (timeouts, captive-portal/socket refusal,
+        // carrier-side blocking, TLS failures the user can recover from).
+        switch code {
         case .timedOut,
-            .notConnectedToInternet,
-            .networkConnectionLost,
-            .cannotFindHost,
             .cannotConnectToHost,
-            .dnsLookupFailed,
             .resourceUnavailable,
             .internationalRoamingOff,
             .callIsActive,

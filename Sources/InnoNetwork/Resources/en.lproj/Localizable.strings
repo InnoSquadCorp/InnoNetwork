@@ -14,6 +14,11 @@
 "NetworkError.timeout.resource" = "The resource transfer timed out.";
 "NetworkError.timeout.connection" = "The connection to the server timed out.";
 
+"NetworkError.reachability.notConnectedToInternet" = "The device is not connected to the internet.";
+"NetworkError.reachability.dnsLookupFailed" = "DNS lookup failed before the request could open a connection.";
+"NetworkError.reachability.cannotFindHost" = "The host name could not be resolved.";
+"NetworkError.reachability.networkConnectionLost" = "The network connection was lost mid-request.";
+
 
 "NetworkError.trust.unsupportedAuthenticationMethod" = "Unsupported authentication method: %@";
 "NetworkError.trust.missingServerTrust" = "Missing server trust.";

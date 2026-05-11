@@ -36,7 +36,13 @@ public extension URLRequest {
     /// emitted with `--data-raw`; file-backed bodies can be represented by
     /// passing ``CurlCommandOptions/bodyFileURL``.
     func curlCommand(options: CurlCommandOptions = CurlCommandOptions()) -> String {
-        var parts = ["curl"]
+        let headerCount = allHTTPHeaderFields?.count ?? 0
+        // Worst-case appends:  curl + method(2) + header(2 per header) +
+        //                      body(2) + url(1). Slight overshoot is fine;
+        //                      avoids the early geometric reallocations.
+        var parts: [String] = []
+        parts.reserveCapacity(4 + headerCount * 2 + 3)
+        parts.append("curl")
         if let method = httpMethod, method.uppercased() != "GET" {
             parts.append("-X")
             parts.append(Self.shellEscape(method.uppercased()))

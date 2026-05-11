@@ -25,6 +25,12 @@ public actor DownloadTask: Identifiable {
     /// `_generation` advances; otherwise increments by one for each
     /// retry of the same generation.
     private var _attempt: Int = 0
+    /// Timestamp of the most recent download activity observed by
+    /// `DownloadManager`. Progress callbacks update it directly; the
+    /// inactivity watchdog may seed it when a task is downloading but has
+    /// not produced its first progress event yet. Consumed by
+    /// ``DownloadConfiguration/taskInactivityTimeout``.
+    private var _lastProgressAt: ContinuousClock.Instant?
 
     public var state: DownloadState { _state }
     public var progress: DownloadProgress { _progress }
@@ -36,6 +42,9 @@ public actor DownloadTask: Identifiable {
     public var generation: Int { _generation }
     /// Current attempt index within the active generation.
     public var attempt: Int { _attempt }
+    /// Timestamp of the most recent progress or watchdog-observed download
+    /// activity, or `nil` before a running attempt is observed.
+    public var lastProgressAt: ContinuousClock.Instant? { _lastProgressAt }
 
     /// Construct a download task description.
     ///
@@ -97,6 +106,10 @@ public actor DownloadTask: Identifiable {
         _progress = newProgress
     }
 
+    func setLastProgressAt(_ instant: ContinuousClock.Instant?) {
+        _lastProgressAt = instant
+    }
+
     func incrementRetryCount() -> Int {
         _retryCount += 1
         return _retryCount
@@ -131,6 +144,7 @@ public actor DownloadTask: Identifiable {
         _error = nil
         _generation = 0
         _attempt = 0
+        _lastProgressAt = nil
     }
 
     func startNextAttemptInCurrentGeneration() {
@@ -156,6 +170,12 @@ public actor DownloadTask: Identifiable {
             case .advancedEpoch(let nextGeneration, let nextAttempt):
                 _generation = nextGeneration
                 _attempt = nextAttempt
+                // A fresh attempt has no real progress timestamp yet. Keeping
+                // the prior epoch's value would let the inactivity watchdog
+                // cancel a freshly resumed/retried `URLSessionDownloadTask`
+                // before its first progress callback arrives — comparing
+                // `now` against a pause-era timestamp.
+                _lastProgressAt = nil
             case .rejectIllegalTransition:
                 continue
             }

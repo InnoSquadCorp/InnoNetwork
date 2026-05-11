@@ -179,6 +179,38 @@ struct CircuitBreakerRegistryHardeningTests {
         }
     }
 
+    @Test(
+        "NetworkError.reachability(reason:) counts toward the breaker for every reason",
+        arguments: [
+            ReachabilityReason.notConnectedToInternet,
+            ReachabilityReason.dnsLookupFailed,
+            ReachabilityReason.cannotFindHost,
+            ReachabilityReason.networkConnectionLost,
+        ]
+    )
+    func reachabilityIsCountable(_ reason: ReachabilityReason) async throws {
+        // Round 1 reclassified four URLErrors from `.underlying` into the
+        // typed `.reachability` case. Without an explicit arm in
+        // `isCountable(...)`, those failures stopped tripping the breaker —
+        // the regression the RetryPolicy parallel test covers on the retry
+        // side. Lock the breaker side too.
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1)
+        let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
+
+        let underlying = SendableUnderlyingError(
+            domain: NSURLErrorDomain,
+            code: -1,
+            message: "reachability fixture"
+        )
+        let error = NetworkError.reachability(reason, underlying, nil)
+        await registry.recordFailure(request: request, policy: policy, error: error)
+
+        await #expect(throws: NetworkError.self) {
+            try await registry.prepare(request: request, policy: policy)
+        }
+    }
+
     @Test("Transport security URL failures count when countsTransportSecurityFailures is true")
     func transportSecurityURLFailureCountableWhenOptedIn() async throws {
         let registry = CircuitBreakerRegistry()

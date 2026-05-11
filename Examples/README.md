@@ -301,12 +301,14 @@ let response = try await client.upload(UploadImage())
 do {
     let response = try await client.request(MyAPIRequest())
     print("Success: \(response)")
-} catch let error as NetworkError {
+} catch {
     switch error {
     case .statusCode(let response):
         print("HTTP Error: \(response.statusCode)")
     case .decoding(let stage, let decodingError, _):
         print("Decoding Error (\(stage)): \(decodingError)")
+    case .reachability(let reason, _, _):
+        print("Reachability Error: \(reason)")
     default:
         print("Other Error: \(error)")
     }

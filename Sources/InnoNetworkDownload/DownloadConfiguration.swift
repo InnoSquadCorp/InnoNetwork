@@ -17,6 +17,7 @@ public struct DownloadConfiguration: Sendable {
                 maxRetryDelay: 60,
                 timeoutForRequest: 30,
                 timeoutForResource: 60 * 60 * 24,
+                taskInactivityTimeout: nil,
                 // Cellular is opt-in in 4.0.x: large background downloads on
                 // metered links surprise users. Apps that explicitly want
                 // cellular call ``DownloadConfiguration/cellularEnabled()``.
@@ -44,6 +45,7 @@ public struct DownloadConfiguration: Sendable {
                 maxRetryDelay: 30,
                 timeoutForRequest: 60,
                 timeoutForResource: 60 * 60 * 24,
+                taskInactivityTimeout: nil,
                 allowsCellularAccess: false,
                 sessionIdentifier: sessionIdentifier,
                 networkMonitor: NetworkMonitor.shared,
@@ -90,6 +92,21 @@ public struct DownloadConfiguration: Sendable {
     public let maxRetryDelay: TimeInterval
     public let timeoutForRequest: TimeInterval
     public let timeoutForResource: TimeInterval
+    /// Optional per-task inactivity watchdog. When set, the manager cancels a
+    /// downloading task if no progress callback or first-observed download
+    /// activity has been seen for at least this duration. `nil` disables the
+    /// watchdog (default), falling back to the URLSession-level
+    /// ``timeoutForRequest`` and ``timeoutForResource``.
+    ///
+    /// Use this when you want to fail faster than `timeoutForResource` on
+    /// mid-transfer stalls — for example when a server stops feeding bytes
+    /// without closing the TCP connection.
+    ///
+    /// The init clamps non-`nil` values up to a 100-millisecond floor so
+    /// `Duration.zero` (or pathologically small values) cannot turn the
+    /// watchdog into a "cancel every task after one poll" generator. Pass
+    /// `nil` if you want the watchdog disabled.
+    public let taskInactivityTimeout: Duration?
     public let allowsCellularAccess: Bool
     /// Background `URLSession` identifier and persistence scope.
     ///
@@ -203,6 +220,8 @@ public struct DownloadConfiguration: Sendable {
         public var timeoutForRequest: TimeInterval
         /// Resource timeout in seconds. Defaults to `24h` in both presets.
         public var timeoutForResource: TimeInterval
+        /// Optional per-task inactivity watchdog. `nil` disables it (default).
+        public var taskInactivityTimeout: Duration?
         /// Whether downloads may use cellular connectivity. Defaults to `true`.
         public var allowsCellularAccess: Bool
         /// Background session identifier and persistence scope.
@@ -239,6 +258,7 @@ public struct DownloadConfiguration: Sendable {
             self.maxRetryDelay = preset.maxRetryDelay
             self.timeoutForRequest = preset.timeoutForRequest
             self.timeoutForResource = preset.timeoutForResource
+            self.taskInactivityTimeout = preset.taskInactivityTimeout
             self.allowsCellularAccess = preset.allowsCellularAccess
             self.sessionIdentifier = preset.sessionIdentifier
             self.networkMonitor = preset.networkMonitor
@@ -262,6 +282,7 @@ public struct DownloadConfiguration: Sendable {
                 maxRetryDelay: maxRetryDelay,
                 timeoutForRequest: timeoutForRequest,
                 timeoutForResource: timeoutForResource,
+                taskInactivityTimeout: taskInactivityTimeout,
                 allowsCellularAccess: allowsCellularAccess,
                 sessionIdentifier: sessionIdentifier,
                 networkMonitor: networkMonitor,
@@ -325,6 +346,7 @@ public struct DownloadConfiguration: Sendable {
         maxRetryDelay: TimeInterval = 60,
         timeoutForRequest: TimeInterval = 30,
         timeoutForResource: TimeInterval = 60 * 60 * 24,
+        taskInactivityTimeout: Duration? = nil,
         allowsCellularAccess: Bool = true,
         sessionIdentifier: String = "com.innonetwork.download",
         networkMonitor: (any NetworkMonitoring)? = NetworkMonitor.shared,
@@ -345,6 +367,10 @@ public struct DownloadConfiguration: Sendable {
         self.maxRetryDelay = max(0, maxRetryDelay)
         self.timeoutForRequest = max(0, timeoutForRequest)
         self.timeoutForResource = max(0, timeoutForResource)
+        // Clamp to a 100ms floor so `.zero` (or pathologically small values
+        // that round to one watchdog tick) cannot turn into a "cancel every
+        // task after one poll" generator. Pass `nil` to disable the watchdog.
+        self.taskInactivityTimeout = taskInactivityTimeout.map { max($0, .milliseconds(100)) }
         self.allowsCellularAccess = allowsCellularAccess
         self.sessionIdentifier = sessionIdentifier
         self.networkMonitor = networkMonitor
@@ -373,6 +399,7 @@ public struct DownloadConfiguration: Sendable {
             maxRetryDelay: maxRetryDelay,
             timeoutForRequest: timeoutForRequest,
             timeoutForResource: timeoutForResource,
+            taskInactivityTimeout: taskInactivityTimeout,
             allowsCellularAccess: true,
             sessionIdentifier: sessionIdentifier,
             networkMonitor: networkMonitor,

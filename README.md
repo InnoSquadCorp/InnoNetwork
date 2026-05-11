@@ -468,6 +468,26 @@ automatically (RFC 9111 §4.1):
   `private="Set-Cookie, Authorization"`. `Cache-Control: no-cache` stores the
   response but forces revalidation before every reuse.
 
+`InnoNetworkPersistentCache` is **not** a full RFC 9111 cache by
+default — `Cache-Control` directives beyond the row above are ignored
+and the freshness window is driven by `ResponseCachePolicy`
+(`cacheFirst(maxAge:)` etc.). Clients that need directive-aware
+behavior (`no-store` suppression, `must-revalidate` stale denial,
+server `max-age` clamping) should wrap their policy with
+`ResponseCachePolicy.rfc9111Compliant(wrapping:)`:
+
+```swift
+let cache = CachePack(
+    responseCachePolicy: .rfc9111Compliant(
+        wrapping: .cacheFirst(maxAge: .seconds(300))
+    ),
+    responseCache: InMemoryResponseCache()
+)
+```
+
+See `docs/rfcs/RFC9111-Compliance.md` for the exact directive coverage
+and the trade-offs.
+
 ### Optional Macros
 
 Add the separate `InnoNetworkCodegen` package only when you want compile-time
