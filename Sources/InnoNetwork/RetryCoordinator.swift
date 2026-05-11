@@ -149,7 +149,30 @@ package struct RetryCoordinator {
                 if NetworkError.isCancellation(error) {
                     throw NetworkError.cancelled
                 }
-                throw NetworkError.underlying(SendableUnderlyingError(error), nil)
+                // Raw transport errors (e.g. a `URLError` that escaped the
+                // executor pipeline without being wrapped) used to be
+                // re-thrown as ``NetworkError/underlying`` here, which retry
+                // policies treat opaquely. Route the error through
+                // ``NetworkError/mapTransportError(_:)`` so the resulting
+                // classification (`.reachability`, `.timeout`, etc.) reaches
+                // ``processRetryDecision(...)`` and can be acted upon — this
+                // matches the path taken by the typed `NetworkError` catch
+                // arm above.
+                let normalized = NetworkError.mapTransportError(error)
+                let outcome = try await processRetryDecision(
+                    error: normalized,
+                    request: normalized.underlyingRequest,
+                    retryPolicy: retryPolicy,
+                    networkMonitor: networkMonitor,
+                    requestID: requestID,
+                    eventObservers: eventObservers,
+                    retryIndex: retryIndex,
+                    totalRetries: totalRetries,
+                    snapshot: snapshot
+                )
+                retryIndex = outcome.nextRetryIndex
+                totalRetries = outcome.nextTotalRetries
+                snapshot = outcome.snapshot
             }
         }
     }
