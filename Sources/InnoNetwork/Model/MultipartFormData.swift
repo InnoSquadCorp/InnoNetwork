@@ -486,9 +486,24 @@ extension MultipartFormData {
 
         /// Builds the RFC 5987 `value-chars` representation of the filename:
         /// each byte that is not in the unreserved set gets percent-encoded.
+        ///
+        /// Filenames arriving from different sources can use different
+        /// Unicode normalisation forms — APFS yields NFD-decomposed
+        /// paths (`e` + combining acute) while pasteboards and most
+        /// user-typed names use NFC-precomposed scalars (`é` as a
+        /// single scalar). Emitting the raw UTF-8 would mean two
+        /// uploads of the *same* user-facing filename produce different
+        /// `filename*` byte streams, which downstream key-based dedup
+        /// (e.g. S3 `Content-MD5`, object storage idempotency keys)
+        /// treats as distinct objects. Normalise to NFC up front so the
+        /// wire representation is stable regardless of the host
+        /// filesystem's chosen form, and so any surrogate/combining
+        /// sequence resolves to its canonical composition before
+        /// percent-encoding.
         static func rfc5987EncodedFilename(_ value: String) -> String {
+            let normalized = value.precomposedStringWithCanonicalMapping
             var encoded = ""
-            for byte in value.utf8 {
+            for byte in normalized.utf8 {
                 if Self.isRFC5987Unreserved(byte) {
                     encoded.append(Character(UnicodeScalar(byte)))
                 } else {
