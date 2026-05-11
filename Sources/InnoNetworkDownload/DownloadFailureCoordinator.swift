@@ -218,6 +218,26 @@ package struct DownloadFailureCoordinator {
                 return false
             }
         }
+        // URLSession surfaces destination-side filesystem failures through
+        // its own domain (`NSURLErrorDomain`) when the background daemon
+        // cannot finalize the downloaded payload — e.g. the destination
+        // path is no longer writable, the volume is full, or the payload
+        // exceeds a configured ceiling. These describe writer-side state
+        // that another network attempt cannot improve, so classify them
+        // as fatal alongside the POSIX / Cocoa cases above.
+        if error.domain == NSURLErrorDomain {
+            switch error.code {
+            case URLError.cannotCreateFile.rawValue,
+                URLError.cannotWriteToFile.rawValue,
+                URLError.cannotMoveFile.rawValue,
+                URLError.cannotRemoveFile.rawValue,
+                URLError.noPermissionsToReadFile.rawValue,
+                URLError.dataLengthExceedsMaximum.rawValue:
+                return true
+            default:
+                return false
+            }
+        }
         return false
     }
 }
