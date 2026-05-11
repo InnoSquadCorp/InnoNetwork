@@ -205,11 +205,13 @@ struct CodeGeneratorTests {
                     type: "object",
                     properties: [
                         "1st-name": Schema(type: "string"),
+                        "Protocol": Schema(type: "string"),
+                        "Type": Schema(type: "string"),
                         "class": Schema(type: "string"),
                         "display_name": Schema(type: "string"),
                         "user-id": Schema(type: "integer", format: "int64"),
                     ],
-                    required: ["1st-name", "class", "display_name", "user-id"]
+                    required: ["1st-name", "Protocol", "Type", "class", "display_name", "user-id"]
                 )
             ])
         )
@@ -219,11 +221,15 @@ struct CodeGeneratorTests {
         let user = try #require(files.first(where: { $0.filename == "User.swift" })?.contents)
 
         #expect(user.contains("public var _1stName: String"))
+        #expect(user.contains("public var Protocol_: String"))
+        #expect(user.contains("public var Type_: String"))
         #expect(user.contains("public var class_: String"))
         #expect(user.contains("public var display_name: String"))
         #expect(user.contains("public var userId: Int64"))
         #expect(user.contains("private enum CodingKeys: String, CodingKey"))
         #expect(user.contains("case _1stName = \"1st-name\""))
+        #expect(user.contains("case Protocol_ = \"Protocol\""))
+        #expect(user.contains("case Type_ = \"Type\""))
         #expect(user.contains("case class_ = \"class\""))
         #expect(user.contains("case display_name"))
         #expect(user.contains("case userId = \"user-id\""))

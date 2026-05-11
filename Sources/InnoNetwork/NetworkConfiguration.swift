@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 public struct NetworkConfiguration: Sendable {
     /// The default range of HTTP status codes treated as successful responses.
@@ -464,16 +465,19 @@ public struct NetworkConfiguration: Sendable {
         // HTTP header names are case-insensitive (RFC 9110 §5.1) — compare
         // normalised forms so an `idempotency-key`/`Idempotency-Key`
         // pairing is not flagged as a mismatch.
-        assert(
-            keyHeader.lowercased() == retryHeader.lowercased(),
-            """
+        guard keyHeader.lowercased() != retryHeader.lowercased() else { return }
+        let message = """
             IdempotencyKeyPolicy.headerName (\(keyHeader)) does not match \
             RetryIdempotencyPolicy.idempotencyHeaderName (\(retryHeader)). \
             The retry safety net reads under the retry policy header and \
             will refuse to retry non-idempotent timeouts when the key is \
             written under a different name.
             """
-        )
+        #if DEBUG
+        assertionFailure(message)
+        #else
+        Logger.API.warning("\(message, privacy: .public)")
+        #endif
     }
 }
 

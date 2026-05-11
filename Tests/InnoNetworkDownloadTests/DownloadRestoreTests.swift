@@ -93,6 +93,35 @@ struct DownloadRestoreTests {
         #expect(foreignStub.cancelCount == 1)
     }
 
+    @Test("Canceling system tasks are matched by persisted URL before orphan pruning")
+    func cancelingSystemTaskMatchesPersistedURL() async throws {
+        let trackedID = "canceling-task-\(UUID().uuidString)"
+        let trackedURL = URL(string: "https://example.invalid/canceling.zip")!
+        let persistedRecord = DownloadTaskPersistence.Record(
+            id: trackedID,
+            url: trackedURL,
+            destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-canceling.zip")
+        )
+        let cancelingStub = StubDownloadURLTask(
+            request: URLRequest(url: trackedURL),
+            initialState: .canceling
+        )
+        let harness = try StubDownloadHarness(
+            label: "restore-canceling-url",
+            prepopulatedRecords: [persistedRecord],
+            preinstalledStubs: [cancelingStub]
+        )
+
+        let probe = await harness.startDownload(
+            url: URL(string: "https://example.invalid/probe.zip")!
+        )
+        await harness.manager.cancel(probe)
+
+        #expect(await harness.persistence.record(forID: trackedID) != nil)
+        #expect(await harness.manager.task(withId: trackedID) == nil)
+        #expect(cancelingStub.cancelCount == 0)
+    }
+
     @Test("Restore adopts an existing URL task whose taskDescription matches a persisted id")
     func restoreAdoptsExistingURLTask() async throws {
         let trackedID = "persisted-task-\(UUID().uuidString)"

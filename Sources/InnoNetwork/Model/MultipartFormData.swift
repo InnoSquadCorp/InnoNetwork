@@ -312,6 +312,7 @@ public struct MultipartFormData: Sendable {
     ) throws -> R {
         let manager = FileManager.default
         let baseDirectory: URL
+        let createdReplacementDirectory: Bool
         if let inheritingDirectoryFrom {
             do {
                 baseDirectory = try manager.url(
@@ -320,11 +321,14 @@ public struct MultipartFormData: Sendable {
                     appropriateFor: inheritingDirectoryFrom,
                     create: true
                 )
+                createdReplacementDirectory = true
             } catch {
                 baseDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+                createdReplacementDirectory = false
             }
         } else {
             baseDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            createdReplacementDirectory = false
         }
         let stagedURL = baseDirectory.appendingPathComponent(
             "InnoNetwork.multipart.\(UUID().uuidString)",
@@ -333,7 +337,7 @@ public struct MultipartFormData: Sendable {
         try writeEncodedData(to: stagedURL)
         defer {
             try? manager.removeItem(at: stagedURL)
-            if inheritingDirectoryFrom != nil, baseDirectory.lastPathComponent.hasPrefix("(A Document Being Saved") {
+            if createdReplacementDirectory {
                 try? manager.removeItem(at: baseDirectory)
             }
         }

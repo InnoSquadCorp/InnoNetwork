@@ -38,13 +38,10 @@ extension AnyResponseDecoder where Output: Decodable & Sendable {
             }
         case .custom(let closure):
             self = .init(closure)
-        default:
-            // Use the cached, canonical decoder instead of a bare
-            // `JSONDecoder()` — the bare initializer omits InnoNetwork's
-            // configured `dateDecodingStrategy`, so a fallback into this
-            // branch would silently decode dates with a different shape
-            // from every other transport path.
-            self = .json(decoder: SharedCoders.responseDecoder)
+        case .jsonAllowingEmpty(let decoder):
+            // Non-empty-decodable outputs cannot synthesize an empty response,
+            // but the caller's JSONDecoder customisation still matters.
+            self = .json(decoder: decoder)
         }
     }
 }

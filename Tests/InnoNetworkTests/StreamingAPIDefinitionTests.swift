@@ -548,6 +548,40 @@ struct StreamingAPIDefinitionTests {
         #expect(values == ["accepted"])
     }
 
+    @Test("stream() rejects an oversized line before buffering it unbounded")
+    func streamRejectsOversizedLine() async throws {
+        let definition = LineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        let oversizedLine = Data(
+            repeating: UInt8(ascii: "x"),
+            count: StreamingExecutor.maxStreamLineByteCount + 1
+        )
+        StreamingURLProtocol.register(
+            url: streamURL,
+            response: .success(statusCode: 200, data: oversizedLine)
+        )
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(baseURL: baseURL),
+            session: makeStreamingURLSession()
+        )
+
+        do {
+            for try await _ in client.stream(definition) {}
+            Issue.record("Expected oversized stream line to fail")
+        } catch let error as NetworkError {
+            switch error {
+            case .decoding(let stage, let underlying, let response):
+                #expect(stage == .streamFrame)
+                #expect(underlying.code == NetworkErrorCode.streamFrameTooLarge.rawValue)
+                #expect(response.kind == .headersOnly)
+                #expect(response.data.isEmpty)
+            default:
+                Issue.record("Expected NetworkError.decoding(stage: .streamFrame), got \(error)")
+            }
+        }
+    }
+
     @Test("stream() applies current token from RefreshTokenPolicy")
     func streamAppliesCurrentRefreshTokenPolicyToken() async throws {
         let definition = LineCounterStream()

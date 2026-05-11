@@ -32,7 +32,8 @@ struct CredentialRedactionTests {
             statusCode: 500,
             data: Data("body".utf8),
             request: request,
-            response: httpResponse
+            response: httpResponse,
+            kind: .headersOnly
         )
 
         let redacted = response.redactingData()
@@ -42,6 +43,7 @@ struct CredentialRedactionTests {
         #expect(!resultURLString.contains("secret"))
         #expect(resultURLString.contains("api.example.com"))
         #expect(redacted.data.isEmpty)
+        #expect(redacted.kind == .headersOnly)
     }
 
     @Test("Base URL with userinfo is rejected by EndpointPathBuilder")

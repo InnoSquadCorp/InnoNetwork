@@ -51,7 +51,8 @@ package struct DownloadRestoreCoordinator {
             if urlTask.state == .canceling {
                 if let description = urlTask.taskDescription, !description.isEmpty {
                     restoredTaskIDs.insert(description)
-                } else if let url = urlTask.originalRequest?.url,
+                }
+                if let url = urlTask.originalRequest?.url,
                     let id = await persistence.id(forURL: url)
                 {
                     restoredTaskIDs.insert(id)

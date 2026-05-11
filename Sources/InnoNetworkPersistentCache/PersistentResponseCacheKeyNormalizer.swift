@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import InnoNetwork
+import OSLog
 
 #if canImport(Security)
 import Security
@@ -13,6 +14,7 @@ import Security
 struct PersistentCacheDiskKeyNormalizer: Sendable {
     private static let keyFileName = "cache-key-hmac.key"
     private static let expectedKeyByteCount = 32  // SymmetricKeySize.bits256
+    private static let logger = Logger(subsystem: "innosquad.network.cache", category: "KeyStorage")
     private let key: SymmetricKey
 
     /// Result of opening or creating the on-disk HMAC key.
@@ -52,6 +54,9 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
             #else
             // Security framework unavailable on this platform — fall back
             // to file storage so configuration stays portable.
+            logger.warning(
+                "PersistentResponseCache requested keychain key storage, but Security is unavailable; using file key storage instead."
+            )
             return try loadOrCreateFromFile(
                 directoryURL: directoryURL,
                 dataProtectionClass: dataProtectionClass,

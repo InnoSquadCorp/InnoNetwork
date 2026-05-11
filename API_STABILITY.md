@@ -355,8 +355,8 @@ release line.
 ### InnoNetworkTestSupport
 
 - `MockURLSession`, `StubBehavior`, `StubNetworkClient`, `StubRequestKey`,
-  `VCRCassette`, `VCRInteraction`, `VCRMode`, `VCRRedactionPolicy`,
-  `VCRRequest`, `VCRResponse`, `VCRURLSession`, and
+  `MockURLSessionResponse`, `VCRCassette`, `VCRInteraction`, `VCRMode`,
+  `VCRRedactionPolicy`, `VCRRequest`, `VCRResponse`, `VCRURLSession`, and
   `WebSocketEventRecorder`.
 
 ### InnoNetworkCodegen Package

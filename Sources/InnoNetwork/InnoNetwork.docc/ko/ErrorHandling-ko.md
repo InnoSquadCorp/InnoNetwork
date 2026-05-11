@@ -81,7 +81,7 @@ opt-in 한 경우에만 보존됩니다. 프로덕션에서는 PII 가 크래시
 
 ## NSError 브리지
 
-`NetworkError` 는 안정 도메인 `InnoNetwork.NetworkError` 로 NSError 브리지가
+`NetworkError` 는 안정 도메인 `com.innosquad.innonetwork` 로 NSError 브리지가
 됩니다. 4.x 라인은 숫자 코드를 안정적으로 유지하므로, 관측 가능성 파이프라인이
 지역화 문자열을 파싱하지 않고도 실패를 그룹화할 수 있습니다. 기저 Foundation
 오류는 `.underlying` / timeout case 안에 ``SendableUnderlyingError`` 로

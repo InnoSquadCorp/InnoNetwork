@@ -51,7 +51,7 @@ package struct DownloadFailureCoordinator {
             // re-downloading bytes we cannot persist. Mark the task
             // failed immediately so callers see the actionable error
             // instead of a timeout-style retry-exhausted trail.
-            await markTaskFailed(task)
+            await markTaskFailed(task, reason: .fileSystemError(error))
             return
         }
         let totalRetryCount = await task.totalRetryCount
@@ -59,7 +59,7 @@ package struct DownloadFailureCoordinator {
         guard totalRetryCount < configuration.maxTotalRetries,
             retryCount < configuration.maxRetryCount
         else {
-            await markTaskFailed(task)
+            await markTaskFailed(task, reason: .maxRetriesExceeded)
             return
         }
         _ = await task.incrementTotalRetryCount()
@@ -166,13 +166,13 @@ package struct DownloadFailureCoordinator {
         return log2(initialDelay) + Double(exponent) >= log2(cap)
     }
 
-    package func markTaskFailed(_ task: DownloadTask) async {
+    package func markTaskFailed(_ task: DownloadTask, reason: DownloadError) async {
         await task.updateState(.failed)
-        await task.setError(.maxRetriesExceeded)
+        await task.setError(reason)
         await runtimeRegistry.onStateChanged?(task, .failed)
-        await runtimeRegistry.onFailed?(task, .maxRetriesExceeded)
+        await runtimeRegistry.onFailed?(task, reason)
         await eventHub.publish(.stateChanged(.failed), for: task.id)
-        await eventHub.publish(.failed(.maxRetriesExceeded), for: task.id)
+        await eventHub.publish(.failed(reason), for: task.id)
         do {
             try await persistence.remove(id: task.id)
         } catch {

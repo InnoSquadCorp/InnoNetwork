@@ -276,7 +276,7 @@ extension EndpointBuilder where Response == EmptyResponse {
         as type: T.Type
     ) throws -> T {
         do {
-            return try SharedCoders.responseDecoder.decode(type, from: data)
+            return try SharedCoders.decode(type, from: data)
         } catch {
             throw NetworkError.decoding(
                 stage: .responseBody,

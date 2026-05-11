@@ -229,15 +229,13 @@ public struct APIDefinitionMacro: ExtensionMacro {
         genericParameters: Set<String>
     ) -> TypeKind {
         guard let type else { return .concrete }
-        if type.is(SomeOrAnyTypeSyntax.self) {
-            // `some X` and `any X` share the same syntax node; reject only
-            // `some` because `any X` (where `X: LosslessStringConvertible`)
-            // is a legitimate existential the encoder can still consume.
-            if let constrained = type.as(SomeOrAnyTypeSyntax.self),
-                constrained.someOrAnySpecifier.text == "some"
-            {
-                return .opaque
-            }
+        // `some X` and `any X` share the same syntax node; reject only
+        // `some` because `any X` (where `X: LosslessStringConvertible`)
+        // is a legitimate existential the encoder can still consume.
+        if let constrained = type.as(SomeOrAnyTypeSyntax.self),
+            constrained.someOrAnySpecifier.text == "some"
+        {
+            return .opaque
         }
         if let identifier = type.as(IdentifierTypeSyntax.self),
             identifier.genericArgumentClause == nil,
@@ -291,7 +289,9 @@ public struct APIDefinitionMacro: ExtensionMacro {
         // along the chain so the extension does not advertise a wider
         // surface than the host type can be referenced through.
         let levels = collectVisibilityLevels(from: Syntax(declaration))
-        let effective = levels.reduce(VisibilityLevel.internal) { min($0, $1) }
+        let effective = levels.first.map { first in
+            levels.dropFirst().reduce(first) { min($0, $1) }
+        } ?? .internal
         return effective.witnessPrefix
     }
 

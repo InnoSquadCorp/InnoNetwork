@@ -244,17 +244,19 @@ struct CodeGenerator {
     let moduleName: String
 
     private static let swiftReservedIdentifiers: Set<String> = [
-        "Any", "Self", "actor", "as", "associatedtype", "async", "await",
-        "break", "case", "catch", "class", "continue", "default", "defer",
-        "deinit", "do", "else", "enum", "extension", "fallthrough", "false",
-        "fileprivate", "for", "func", "guard", "if", "import", "in",
-        "indirect", "infix", "init", "inout", "internal", "is", "isolated",
-        "let", "nil", "nonisolated", "open", "operator", "optional",
-        "override", "postfix", "precedencegroup", "prefix", "private",
-        "protocol", "public", "repeat", "required", "rethrows", "return",
-        "self", "some", "static", "struct", "subscript", "super", "switch",
-        "throw", "throws", "true", "try", "typealias", "var", "where",
-        "while",
+        "Any", "Protocol", "Self", "Type", "actor", "as", "associatedtype",
+        "associativity", "async", "await", "break", "case", "catch", "class",
+        "continue", "convenience", "default", "defer", "deinit", "didSet",
+        "do", "dynamic", "each", "else", "enum", "extension", "fallthrough",
+        "false", "fileprivate", "final", "for", "func", "get", "guard", "if",
+        "import", "in", "indirect", "infix", "init", "inout", "internal", "is",
+        "isolated", "lazy", "left", "let", "macro", "mutating", "nil", "none",
+        "nonisolated", "nonmutating", "open", "operator", "optional", "override",
+        "package", "postfix", "precedence", "precedencegroup", "prefix", "private",
+        "protocol", "public", "repeat", "required", "rethrows", "return", "right",
+        "self", "set", "some", "static", "struct", "subscript", "super", "switch",
+        "throw", "throws", "true", "try", "typealias", "unowned", "var", "weak",
+        "where", "while", "willSet",
     ]
 
     func generate(from document: OpenAPIDocument) throws -> [GeneratedFile] {

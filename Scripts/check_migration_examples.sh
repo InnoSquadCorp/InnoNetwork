@@ -52,51 +52,27 @@ for doc in "${migration_docs[@]}"; do
     doc_name="$(basename "$doc" .md)"
     # Use python3 to pull out marker-tagged ```swift blocks because the
     # marker→fence relationship requires a small bit of state that awk's
-    # default block-form makes awkward to express cleanly.
-    while IFS= read -r block_index; do
-        target_name="${doc_name//[^A-Za-z0-9]/}Block${block_index}"
-        target_dir="$smoke_root/Sources/$target_name"
-        mkdir -p "$target_dir"
-
-        python3 - "$doc" "$block_index" > "$target_dir/Snippet.swift" <<'PY'
-import sys
-
-doc_path, wanted = sys.argv[1], int(sys.argv[2])
-with open(doc_path, "r", encoding="utf-8") as handle:
-    lines = handle.readlines()
-
-block_index = 0
-i = 0
-while i < len(lines):
-    stripped = lines[i].strip()
-    if stripped == "<!-- compile-check -->":
-        j = i + 1
-        while j < len(lines) and lines[j].strip() == "":
-            j += 1
-        if j < len(lines) and lines[j].rstrip() == "```swift":
-            block_index += 1
-            end = j + 1
-            while end < len(lines) and lines[end].rstrip() != "```":
-                end += 1
-            if block_index == wanted:
-                sys.stdout.write("".join(lines[j + 1:end]))
-                sys.exit(0)
-            i = end + 1
-            continue
-    i += 1
-
-sys.exit(f"compile-check block #{wanted} not found in {doc_path}")
-PY
-
+    # default block-form makes awkward to express cleanly. One interpreter
+    # pass per document keeps block discovery and extraction in sync.
+    while IFS=$'\t' read -r target_name; do
+        [[ -z "$target_name" ]] && continue
         manifest_products+="        .executable(name: \"$target_name\", targets: [\"$target_name\"]),"$'\n'
         manifest_targets+="        .executableTarget(name: \"$target_name\", dependencies: [.product(name: \"InnoNetwork\", package: \"InnoNetwork\")]),"$'\n'
         extracted=$((extracted + 1))
     done < <(
-        python3 - "$doc" <<'PY'
+        python3 - "$doc" "$doc_name" "$smoke_root" <<'PY'
+import hashlib
+import os
+import re
 import sys
 
-with open(sys.argv[1], "r", encoding="utf-8") as handle:
+doc_path, doc_name, smoke_root = sys.argv[1], sys.argv[2], sys.argv[3]
+
+with open(doc_path, "r", encoding="utf-8") as handle:
     lines = handle.readlines()
+
+slug = re.sub(r"[^A-Za-z0-9]", "", doc_name) or "MigrationDoc"
+doc_hash = hashlib.sha256(doc_name.encode("utf-8")).hexdigest()[:8]
 
 count = 0
 i = 0
@@ -107,10 +83,19 @@ while i < len(lines):
             j += 1
         if j < len(lines) and lines[j].rstrip() == "```swift":
             count += 1
-            print(count)
             end = j + 1
             while end < len(lines) and lines[end].rstrip() != "```":
                 end += 1
+            target_name = f"{slug}{doc_hash}Block{count}"
+            target_dir = os.path.join(smoke_root, "Sources", target_name)
+            if os.path.exists(target_dir):
+                sys.exit(
+                    f"Duplicate migration example target '{target_name}' generated from {doc_path}"
+                )
+            os.makedirs(target_dir, exist_ok=False)
+            with open(os.path.join(target_dir, "Snippet.swift"), "w", encoding="utf-8") as output:
+                output.write("".join(lines[j + 1:end]))
+            print(target_name)
             i = end + 1
             continue
     i += 1

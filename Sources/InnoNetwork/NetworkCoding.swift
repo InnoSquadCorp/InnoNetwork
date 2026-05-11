@@ -66,19 +66,13 @@ package func makeDefaultResponseDecoder(
 /// after module load. `JSONEncoder`/`JSONDecoder` are documented as
 /// concurrency-safe for read-only use once configured.
 ///
-/// Enforcement: only `decode(_:from:)` and `encode(_:)` may be called on
-/// these instances. Mutation of any property (`dateDecodingStrategy`,
-/// `keyDecodingStrategy`, `userInfo`, …) is a contract violation that
-/// would race with concurrent reads. Audit grep-points: any internal
-/// addition of a `SharedCoders.*` usage must pair with code review that
-/// confirms only `decode`/`encode` is invoked. The CI grep guard
-/// `Scripts/check_shared_coders_mutation.sh` rejects `SharedCoders.\w+\.\w+\s*=`
-/// patterns to keep the invariant locked down.
+/// Enforcement: the cached coder instances stay private. Internal call sites
+/// can only reach them through wrapper methods that perform a single
+/// `decode` operation, so property mutation cannot compile.
 package enum SharedCoders {
-    /// Cached request encoder. Read-only — invoke `encode(_:)` only.
-    /// Mutating any property breaks the cross-thread safety contract.
-    package static let requestEncoder: JSONEncoder = makeDefaultRequestEncoder()
-    /// Cached response decoder. Read-only — invoke `decode(_:from:)` only.
-    /// Mutating any property breaks the cross-thread safety contract.
-    package static let responseDecoder: JSONDecoder = makeDefaultResponseDecoder()
+    private static let responseDecoder: JSONDecoder = makeDefaultResponseDecoder()
+
+    package static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        try responseDecoder.decode(type, from: data)
+    }
 }

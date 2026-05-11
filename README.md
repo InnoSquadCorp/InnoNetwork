@@ -540,8 +540,8 @@ import InnoNetworkCodegen
 
 @APIDefinition(method: .get, path: "/users/{id}")
 struct GetUser {
-    typealias APIResponse = User
     let id: Int
+    typealias APIResponse = User
 }
 
 let endpoint = #endpoint(.get, "/users/1", as: User.self)

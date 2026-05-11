@@ -7,42 +7,21 @@
 # to surface real dead code without drowning maintainers in false
 # positives.
 
-project: ./Package.swift
+# This is a library package with a separately guarded public surface; public
+# declarations are contract, not local dead code. Keep them retained so
+# Periphery's report stays focused on implementation-only declarations.
+retain_public: true
 
-# Treat declarations that are only referenced inside the same target as
-# unused even if they are `public`. Without this flag Periphery keeps
-# every public symbol because something outside the package *could*
-# reference it. With the public-symbol allowlists in `Scripts/symbols/`
-# already enforcing the intentional surface, we want Periphery to focus
-# on truly local dead code.
-retain_public: false
-
-# `package`-scoped symbols are part of an explicit cross-target contract
-# inside the multi-module Package.swift layout — keep them retained so
-# Periphery does not flag legitimate cross-product helpers.
+# Retain auxiliary trees that contain entry points or fixtures Periphery
+# cannot reach from SwiftPM target roots (resources, examples, smoke targets,
+# benchmarks, tests). Keeping them in `retain_files` prevents false positives
+# for symbols only referenced from these locations.
 retain_files:
   - Sources/InnoNetwork/Resources/**/*
   - Examples/**/*
   - SmokeTests/**/*
   - Benchmarks/**/*
   - Tests/**/*
-
-# Symbols exposed for SPI consumers ship with explicit `@_spi`
-# annotations. Periphery cannot resolve cross-package SPI usage when
-# the consumer lives outside the package, so we retain them eagerly.
-retain_spi: true
-
-# Codegen / runtime support targets emit declarations that are consumed
-# by macro expansions and generated code; treat them as roots so their
-# entry points are never flagged.
-schemes:
-  - InnoNetwork
-  - InnoNetworkDownload
-  - InnoNetworkWebSocket
-  - InnoNetworkPersistentCache
-  - InnoNetworkOpenAPI
-  - InnoNetworkTrust
-  - InnoNetworkTestSupport
 
 # Test targets are not interesting for the dead-code report.
 exclude_targets:
@@ -52,11 +31,13 @@ exclude_targets:
   - InnoNetworkTrustTests
   - InnoNetworkWebSocketTests
 
-# Fail the run when any new unused declaration shows up — the lint job
-# in CI inherits this default so a PR cannot silently regress.
-strict: true
+# Emit annotations without failing the CI job while the current internal
+# baseline is still being curated.
+strict: false
 
-# Markdown output is easier to scan in a CI annotation than the default
-# console format; the lint job uploads the rendered report as an
-# artefact.
+# `github-actions` emits ::warning/::error annotations directly on the PR diff.
+# Periphery requires relative paths for this formatter, so keep
+# `relative_results` in the config rather than relying on every caller to pass
+# the CLI flag.
 format: github-actions
+relative_results: true

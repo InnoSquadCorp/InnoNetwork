@@ -54,8 +54,9 @@ print(user.name)
 ```
 
 `request(_:)` 는 `async throws(NetworkError)` 시그니처로 선언되어 있으므로
-오류는 항상 ``NetworkError`` 로만 전파됩니다. `catch let error as NetworkError`
-또는 `do/catch` 안에서 case 별 처리로 직접 분기할 수 있습니다.
+오류는 항상 ``NetworkError`` 로만 전파됩니다. typed throws 덕분에 별도의
+`as NetworkError` 캐스팅 없이 `do/catch` 블록에서 곧바로 case 별 분기로
+처리할 수 있습니다.
 
 ## 간단한 호출은 `EndpointBuilder` 사용
 

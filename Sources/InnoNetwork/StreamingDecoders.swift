@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import os
 
 /// A single Server-Sent Events frame as defined by the WHATWG HTML Living
@@ -56,6 +57,8 @@ public struct ServerSentEvent: Sendable, Equatable {
 /// guards its internal frame buffer with an `OSAllocatedUnfairLock` so
 /// it is `Sendable` even when shared.
 public final class ServerSentEventDecoder: Sendable {
+    private static let logger = Logger(subsystem: "innosquad.network", category: "Streaming")
+
     private struct State {
         var current = ServerSentEvent()
         var hasProcessedFirstLine = false
@@ -169,6 +172,9 @@ public final class ServerSentEventDecoder: Sendable {
         for scalar in value.unicodeScalars {
             let codePoint = scalar.value
             if codePoint < 0x20 || codePoint > 0x7E {
+                logger.debug(
+                    "Rejected SSE id for Last-Event-ID: invalid scalar U+\(String(codePoint, radix: 16), privacy: .public), length \(value.count, privacy: .public)"
+                )
                 return false
             }
         }

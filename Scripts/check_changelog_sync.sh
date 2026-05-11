@@ -33,6 +33,11 @@ if [[ ! -d "${SOURCES}" ]]; then
     exit 1
 fi
 
+SEARCH_PATHS=("${SOURCES}")
+if [[ -d "${TESTS}" ]]; then
+    SEARCH_PATHS+=("${TESTS}")
+fi
+
 UNRELEASED="$(awk '
     /^## \[Unreleased\]/ { flag = 1; next }
     /^## \[/             { flag = 0 }
@@ -64,7 +69,7 @@ fi
 MISSING=()
 while IFS= read -r symbol; do
     [[ -z "${symbol}" ]] && continue
-    if grep -RIlq --include='*.swift' "\\b${symbol}\\b" "${SOURCES}" "${TESTS}" 2>/dev/null; then
+    if grep -RIlq --include='*.swift' "\\b${symbol}\\b" "${SEARCH_PATHS[@]}"; then
         continue
     fi
     MISSING+=("${symbol}")

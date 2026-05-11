@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Forbids mutation of the cached `SharedCoders.requestEncoder` /
-# `SharedCoders.responseDecoder` instances.
+# Forbids mutation of cached `SharedCoders` coder instances.
 #
 # These coders are shared across concurrent requests and treated as
 # immutable after module load. The cross-thread safety contract relies
-# on no caller assigning to `dateDecodingStrategy`, `keyEncodingStrategy`,
-# `userInfo`, or any other property on them. Any new use must invoke
-# only `decode(_:from:)` / `encode(_:)`.
+# on no caller assigning to `dateDecodingStrategy`, `keyDecodingStrategy`,
+# `userInfo`, or any other property on them. Any new use must go through
+# narrow wrapper methods such as `decode(_:from:)`.
 #
 # This guard catches the common syntactic mistake — assignment through
 # the singleton — at PR review time. Indirect mutation through a
@@ -29,15 +28,12 @@ trap 'rm -f "$violations"' EXIT
 for path in "${scan_paths[@]}"; do
     if [[ ! -d "$path" ]]; then continue; fi
     while IFS= read -r -d '' file; do
-        # Match `SharedCoders.<member>.<property> =` (assignment) and
-        # likewise the appending compound forms. The pattern excludes
-        # `==` and `!=` so equality checks are still permitted.
         # Match `SharedCoders.<member>.<property>` followed by an
-        # assignment operator. The operator class includes plain `=`
-        # plus the compound forms `+=`, `-=`, `*=`, `/=`, and the
-        # nil-coalesce update `??=`. The lookbehind on the second
-        # character rejects `==` / `!=` (equality, not assignment).
-        if grep -nE 'SharedCoders\.[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*(=|[-+*/]=|\?\?=)([^=]|$)' "$file" \
+        # assignment operator, including subscript mutation such as
+        # `userInfo[...] =`. The operator class includes plain `=`
+        # plus compound forms `+=`, `-=`, `*=`, `/=`, and `??=`;
+        # `==` / `!=` remain permitted.
+        if grep -nHE 'SharedCoders\.[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*(\[[^][]+\])?[[:space:]]*(=|[-+*/]=|\?\?=)([^=]|$)' "$file" \
             >> "$violations"; then
             :
         fi
@@ -50,4 +46,4 @@ if [[ -s "$violations" ]]; then
     exit 1
 fi
 
-echo "✅ No mutation of SharedCoders.requestEncoder / SharedCoders.responseDecoder."
+echo "✅ No mutation of cached SharedCoders instances."

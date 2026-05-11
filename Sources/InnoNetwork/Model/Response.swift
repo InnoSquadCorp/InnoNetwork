@@ -86,7 +86,8 @@ public struct Response: CustomDebugStringConvertible, Equatable, Sendable {
             statusCode: statusCode,
             data: Data(),
             request: request.map(Self.strippingURLCredentials),
-            response: response
+            response: response,
+            kind: kind
         )
     }
 
