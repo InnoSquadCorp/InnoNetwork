@@ -337,6 +337,16 @@ package actor CircuitBreakerRegistry {
                     return policy.countsTransportSecurityFailures
                 }
                 return true
+            case .reachability:
+                // Connectivity-class URLErrors (`notConnectedToInternet`,
+                // `dnsLookupFailed`, `cannotFindHost`, `networkConnectionLost`)
+                // were `.underlying` before round 1 and counted toward the
+                // breaker via the `.underlying` arm. Preserve that contract
+                // after the typed-throws refactor — a host that drops
+                // reachability should still trip the circuit. `RetryPolicy`
+                // got the same explicit arm in round 3; this is the symmetric
+                // fix for the breaker side.
+                return true
             default:
                 return false
             }
