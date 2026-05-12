@@ -28,11 +28,73 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  tsan:
-    name: Tests under ThreadSanitizer
+  detect-pr-changes:
+    name: Detect concurrency-heavy changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      should-run: ${{ steps.detect.outputs.should-run }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Detect paths
+        id: detect
+        shell: bash
+        run: |
+          set -eo pipefail
+
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          changed="$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)"
+
+          pattern='^(Sources/InnoNetwork/(Auth|RequestCoalescing|TaskEventHub|EventDeliveryChain|InFlightRegistry|DefaultNetworkClient|StreamingExecutor)|Sources/InnoNetworkDownload/|Sources/InnoNetworkWebSocket/|Tests/InnoNetworkTests/(.*(Auth|Coalesc|EventHub|InFlight|Streaming|Lifecycle).*)|Tests/InnoNetworkDownloadTests/|Tests/InnoNetworkWebSocketTests/).*\.swift$'
+          if printf '%s\n' "$changed" | grep -E "$pattern" > /dev/null; then
+            echo "should-run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should-run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  tsan-pr:
+    name: Tests under ThreadSanitizer (PR)
+    needs: detect-pr-changes
     if: >-
-      github.event_name != 'pull_request' ||
-      contains(github.event.pull_request.labels.*.name, 'concurrency-review')
+      contains(github.event.pull_request.labels.*.name, 'concurrency-review') ||
+      needs.detect-pr-changes.outputs.should-run == 'true'
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Run tests under ThreadSanitizer
+        env:
+          # Surface warnings as hard failures so flaky races are caught.
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: |
+          set -eo pipefail
+          xcrun swift test \
+            -Xswiftc -sanitize=thread \
+            --parallel
+
+  tsan-scheduled:
+    name: Tests under ThreadSanitizer (scheduled/manual)
+    if: github.event_name != 'pull_request'
     runs-on: macos-15
     timeout-minutes: 90
 

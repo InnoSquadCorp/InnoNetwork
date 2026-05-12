@@ -163,7 +163,7 @@ struct CancellationTests {
                 return
             }
         } catch {
-            #expect(error is CancellationError)
+            Issue.record("Expected NetworkError.cancelled, got \(error)")
         }
         #expect(session.startedRequestCount == 0)
     }

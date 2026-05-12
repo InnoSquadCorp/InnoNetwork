@@ -13,6 +13,7 @@ release line. `4.0.0` is the public baseline for this contract.
 - `RequestEncodingPolicy`
 - `ResponseDecodingStrategy`
 - `DefaultNetworkClient`
+- `DefaultNetworkClient.shutdown()`
 - `NetworkClient.request(_:)`
 - `NetworkClient.request(_:tag:)`
 - `NetworkClient.request(_:method:tag:)`

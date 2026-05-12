@@ -87,8 +87,8 @@ wrapper or Alamofire-style helper:
   unsafe methods retry only when an `Idempotency-Key` header is present.
   `Retry-After` is parsed for all three RFC 9110 formats with a
   maximum-clamp against malicious headers.
-- **RFC 9111 cache + first-class test support** — opt into
-  `rfc9111Compliant(wrapping:)` to get directive-aware persistence, or
+- **RFC 9111-aware cache adapter + first-class test support** — opt into
+  `rfc9111Compliant(wrapping:)` to get the documented directive subset, or
   drop in `MockURLSession` / `VCRURLSession` / `StubNetworkClient` from
   `InnoNetworkTestSupport` (a top-level product, not a hidden helper).
 
@@ -409,10 +409,12 @@ then, follow its `main` branch.
 
 ## Configuration
 
-The recommended entry point is `safeDefaults`. Use
-`recommendedForProduction(baseURL:)` when you want conservative retry,
-circuit-breaker, and idempotency-key defaults. Use `advanced` only when you
-need explicit operational tuning.
+Use `safeDefaults` as the secure baseline for prototypes, tests, and clients
+that already own retry/cache policy elsewhere. Use
+`recommendedForProduction(baseURL:)` for app-facing production clients: it
+keeps the safe baseline and adds conservative retry, circuit-breaker,
+idempotency-key, and body-size guardrails. Use `advanced` only when you need
+explicit operational tuning.
 
 ```swift
 import Foundation
@@ -420,7 +422,7 @@ import InnoNetwork
 import InnoNetworkDownload
 import InnoNetworkWebSocket
 
-let network = NetworkConfiguration.safeDefaults(
+let network = NetworkConfiguration.recommendedForProduction(
     baseURL: URL(string: "https://api.example.com")!
 )
 
@@ -579,6 +581,32 @@ struct GetUser {
 
 let endpoint = #endpoint(.get, "/users/1", as: User.self)
 ```
+
+The macro saves boilerplate for the simple, common endpoint shape:
+
+```swift
+// Hand-written
+struct GetUser: APIDefinition {
+    typealias Parameter = EmptyParameter
+    typealias APIResponse = User
+
+    let id: Int
+    var method: HTTPMethod { .get }
+    var path: String { "/users/\(id)" }
+}
+
+// Macro
+@APIDefinition(method: .get, path: "/users/{id}")
+struct GetUser {
+    let id: Int
+    typealias APIResponse = User
+}
+```
+
+Use the macro when the endpoint is method + path placeholders + standard
+decoding. Keep a hand-written `APIDefinition` when the endpoint owns custom
+parameters, interceptors, multipart, streaming, non-standard decoding, or an
+SDK surface where generated witnesses would hide important policy choices.
 
 See [Using Macros](Sources/InnoNetwork/InnoNetwork.docc/Articles/UsingMacros.md)
 for the supported scope.

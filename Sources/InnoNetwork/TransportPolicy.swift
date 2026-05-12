@@ -90,9 +90,21 @@ public extension TransportPolicy where Output: Decodable {
         )
     }
 
-    /// Fully custom transport: caller supplies the request encoding policy
-    /// and a decode closure that receives the raw response data and the
-    /// wrapping ``Response`` for header/status inspection.
+    /// Fully custom transport for buffered request/response endpoints.
+    ///
+    /// The caller supplies the request encoding policy and a decode closure
+    /// that receives the raw response data plus the wrapping ``Response`` for
+    /// header/status inspection. The closure runs after request interceptors,
+    /// transport execution, response interceptors, status-code validation, and
+    /// response body buffering limits have all completed. It does not run for
+    /// streaming endpoints, and it always receives the complete buffered body.
+    ///
+    /// Throwing from `decode` is mapped through the normal
+    /// ``NetworkError/decoding(stage:underlying:response:)`` boundary by the
+    /// request executor. Choose ``RequestEncodingPolicy/none`` only when the
+    /// endpoint truly has no query/body parameters; otherwise the supplied
+    /// encoding policy remains responsible for serializing the endpoint
+    /// parameter type into the outgoing request.
     static func custom(
         encoding: RequestEncodingPolicy,
         decode: @Sendable @escaping (Data, Response) throws -> Output

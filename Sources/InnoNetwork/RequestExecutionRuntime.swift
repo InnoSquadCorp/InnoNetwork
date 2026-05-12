@@ -18,4 +18,8 @@ package final class RequestExecutionRuntime: Sendable {
         self.inFlight = inFlight
         self.clock = clock
     }
+
+    package func shutdown() async {
+        await refreshCoordinator?.shutdown()
+    }
 }

@@ -272,9 +272,11 @@ package actor CircuitBreakerRegistry {
                 states[key] = Entry(mode: .closed(state), lastAccessAt: now)
             }
         case .open:
-            // Already open — outcomes here cannot occur because `prepare`
-            // either short-circuits or transitions to half-open. Defensive
-            // no-op.
+            // Defensive invariant guard: normal execution cannot record an
+            // outcome while still open because `prepare` either short-circuits
+            // before transport or transitions to half-open for a probe. Keep
+            // this branch as a no-op so stale async completions cannot mutate
+            // the open window.
             return
         case .halfOpen(_, let successCount, let resetAfter):
             if isFailure {

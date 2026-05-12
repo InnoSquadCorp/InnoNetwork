@@ -22,6 +22,11 @@ package struct WebSocketReceiveLoop {
             do {
                 while true {
                     try Task.checkCancellation()
+                    // Backpressure is deliberate here: the loop issues the
+                    // next `receive()` only after the current message has
+                    // run through callbacks and the bounded TaskEventHub
+                    // publication path. There is no separate unbounded
+                    // receive-side message buffer in this loop.
                     let message = try await urlTask.receive()
 
                     switch message {

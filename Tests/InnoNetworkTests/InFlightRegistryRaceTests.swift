@@ -63,6 +63,31 @@ struct InFlightRegistryRaceTests {
         #expect(registry.inFlightCount == 0)
     }
 
+    @Test("shutdownAll drains entries and rejects late registrations")
+    func shutdownAllDrainsAndRejectsLateRegistrations() {
+        let registry = InFlightRegistry()
+        let cancellations = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+        registry.register(
+            id: UUID(),
+            cancelHandler: { @Sendable in
+                cancellations.withLock { $0 += 1 }
+            }
+        )
+
+        registry.shutdownAll()
+        registry.register(
+            id: UUID(),
+            cancelHandler: { @Sendable in
+                cancellations.withLock { $0 += 1 }
+            }
+        )
+        registry.shutdownAll()
+
+        #expect(cancellations.withLock { $0 } == 2)
+        #expect(registry.inFlightCount == 0)
+    }
+
     @Test("cancelAll(matching:) only drains entries with the matching tag")
     func cancelAllMatchingIsolatesByTag() async {
         let registry = InFlightRegistry()

@@ -71,12 +71,39 @@ struct NetworkLoggerTests {
         #expect(!sanitized.contains("a@example.com"))
     }
 
+    @Test("Secure default masks JWT-like URL path segments")
+    func secureDefaultMasksJWTPathSegments() throws {
+        let logger = DefaultNetworkLogger()
+        let token = makeJWTLikeToken()
+        let url = try #require(URL(string: "https://example.com/files/\(token)/raw?token=secret"))
+
+        let sanitized = logger.sanitize(url: url)
+        let components = try #require(URLComponents(string: sanitized))
+
+        #expect(!sanitized.contains(token))
+        #expect(components.path.contains("<redacted-jwt>"))
+        #expect(components.queryItems?.contains { $0.name == "token" && $0.value == "<redacted>" } == true)
+    }
+
     @Test("Verbose mode keeps URL query values")
     func verboseModeKeepsURLQueryValues() throws {
         let logger = DefaultNetworkLogger(options: .verbose)
         let url = try #require(URL(string: "https://example.com/search?token=secret&email=a@example.com"))
 
         #expect(logger.sanitize(url: url) == url.absoluteString)
+    }
+
+    @Test("Verbose mode still masks JWT-like URL path segments")
+    func verboseModeMasksJWTPathSegments() throws {
+        let logger = DefaultNetworkLogger(options: .verbose)
+        let token = makeJWTLikeToken()
+        let url = try #require(URL(string: "https://example.com/files/\(token)/raw?token=secret"))
+
+        let sanitized = logger.sanitize(url: url)
+
+        #expect(!sanitized.contains(token))
+        #expect(sanitized.contains("<redacted-jwt>"))
+        #expect(sanitized.contains("token=secret"))
     }
 
     @Test("Cookie values are redacted by default")

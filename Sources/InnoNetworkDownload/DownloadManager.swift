@@ -96,6 +96,7 @@ public actor DownloadManager {
     let runtimeRegistry: DownloadRuntimeRegistry
     let restoreBarrier: RestoreBarrier
     private let invalidationBarrier: InvalidationBarrier
+    private let shutdownBarrier: InvalidationBarrier
     let transferCoordinator: DownloadTransferCoordinator
     let restoreCoordinator: DownloadRestoreCoordinator
     let failureCoordinator: DownloadFailureCoordinator
@@ -219,6 +220,7 @@ public actor DownloadManager {
             bufferingPolicy: .unbounded
         )
         let invalidationBarrier = InvalidationBarrier()
+        let shutdownBarrier = InvalidationBarrier()
         let runtimeRegistry = DownloadRuntimeRegistry()
         let restoreBarrier = RestoreBarrier()
         let eventHub = TaskEventHub<DownloadEvent>(
@@ -261,6 +263,7 @@ public actor DownloadManager {
         self.runtimeRegistry = runtimeRegistry
         self.restoreBarrier = restoreBarrier
         self.invalidationBarrier = invalidationBarrier
+        self.shutdownBarrier = shutdownBarrier
         self.transferCoordinator = transferCoordinator
         self.restoreCoordinator = restoreCoordinator
         self.failureCoordinator = failureCoordinator
@@ -566,16 +569,17 @@ public actor DownloadManager {
     /// completes, which can take longer than the surrounding scope.
     public func shutdown() async {
         guard markShutdownIfNeeded() else {
-            await invalidationBarrier.wait()
+            await shutdownBarrier.wait()
             return
         }
 
         inactivityWatchdogTask?.cancel()
         inactivityWatchdogTask = nil
 
-        delegateConsumerTaskHandle.withLock { task in
-            task?.cancel()
+        let delegateConsumerTask = delegateConsumerTaskHandle.withLock { task -> Task<Void, Never>? in
+            let current = task
             task = nil
+            return current
         }
 
         restorationTaskHandle.withLock { task in
@@ -584,6 +588,7 @@ public actor DownloadManager {
         }
 
         delegateEventContinuation.finish()
+        delegateConsumerTask?.cancel()
 
         // Cancel every in-flight URLSession task before invalidating, then
         // close the per-task event partition so listeners receive a clean
@@ -603,6 +608,8 @@ public actor DownloadManager {
         // the OS releases the session identifier and the delegate.
         session.invalidateAndCancel()
         await invalidationBarrier.wait()
+        await delegateConsumerTask?.value
+        await shutdownBarrier.complete()
     }
 
     public func retry(_ task: DownloadTask) async {

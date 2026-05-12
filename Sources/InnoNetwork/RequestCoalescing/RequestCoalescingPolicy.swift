@@ -101,13 +101,20 @@ package actor RequestCoalescer {
     }
 
     private var entries: [RequestDedupKey: Entry] = [:]
+    private struct CancelledWaiterRecord: Sendable {
+        let recordedAt: Date
+    }
+
     /// Waiter IDs that were cancelled before their `register` call reached the
     /// actor. Each entry is consumed by either `register` (matching ID arrives
-    /// and is short-circuited via `removeCancelledWaiter`) or by `finish`
-    /// (entry completion clears the whole bucket), so the dictionary cannot
-    /// retain entries indefinitely as long as `withCheckedThrowingContinuation`
-    /// is honoured—each `run` call always triggers exactly one `register`.
-    private var cancelledWaiters: [RequestDedupKey: Set<UUID>] = [:]
+    /// and is short-circuited via `removeCancelledWaiter`) or by periodic
+    /// actor-local pruning. The TTL/cap guard the late-cancel-after-finish
+    /// race where a cancellation hop arrives after the entry has already been
+    /// completed and removed.
+    private var cancelledWaiters: [RequestDedupKey: [UUID: CancelledWaiterRecord]] = [:]
+    private let cancelledWaiterTTL: TimeInterval
+    private let cancelledWaiterLimit: Int
+    private let now: @Sendable () -> Date
 
     /// Synchronously-marked cancellation flags. ``withTaskCancellationHandler``'s
     /// `onCancel` closure executes outside actor isolation, so reaching the
@@ -121,7 +128,30 @@ package actor RequestCoalescer {
     /// negligible.
     private let cancelMarks = OSAllocatedUnfairLock<Set<UUID>>(initialState: [])
 
-    package init() {}
+    package init(
+        cancelledWaiterTTL: TimeInterval = 30,
+        cancelledWaiterLimit: Int = 4_096,
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
+        self.cancelledWaiterTTL = max(0, cancelledWaiterTTL)
+        self.cancelledWaiterLimit = max(0, cancelledWaiterLimit)
+        self.now = now
+    }
+
+    package var cancellationBookkeepingCount: Int {
+        pruneCancelledWaiters(recordedAt: now())
+        let waiterCount = cancelledWaiters.values.reduce(0) { $0 + $1.count }
+        let markCount = cancelMarks.withLock { $0.count }
+        return waiterCount + markCount
+    }
+
+    package func recordCancelledWaiterForDiagnostics(
+        key: RequestDedupKey,
+        waiterID: UUID,
+        recordedAt: Date
+    ) {
+        insertCancelledWaiter(key: key, waiterID: waiterID, recordedAt: recordedAt)
+    }
 
     package func run(
         key: RequestDedupKey,
@@ -169,6 +199,7 @@ package actor RequestCoalescer {
         continuation: CheckedContinuation<TransportResult, Error>,
         operation: @escaping @Sendable () async throws -> TransportResult
     ) {
+        pruneCancelledWaiters(recordedAt: now())
         if consumeCancelMark(for: waiterID) || removeCancelledWaiter(key: key, waiterID: waiterID) {
             continuation.resume(throwing: CancellationError())
             return
@@ -203,6 +234,7 @@ package actor RequestCoalescer {
         guard let entry = entries[key], entry.id == entryID else { return }
         entries.removeValue(forKey: key)
         cancelledWaiters.removeValue(forKey: key)
+        pruneCancelledWaiters(recordedAt: now())
         // Snapshot any cancellation marks that arrived while the operation
         // was in flight so waiters whose `onCancel` raced past `finish`'s
         // resume site still observe a `CancellationError` instead of the
@@ -231,11 +263,16 @@ package actor RequestCoalescer {
         let hadMark = consumeCancelMark(for: waiterID)
         guard var entry = entries[key] else {
             if hadMark {
-                cancelledWaiters[key, default: []].insert(waiterID)
+                insertCancelledWaiter(key: key, waiterID: waiterID, recordedAt: now())
             }
             return
         }
-        guard let continuation = entry.waiters.removeValue(forKey: waiterID) else { return }
+        guard let continuation = entry.waiters.removeValue(forKey: waiterID) else {
+            if hadMark {
+                insertCancelledWaiter(key: key, waiterID: waiterID, recordedAt: now())
+            }
+            return
+        }
         continuation.resume(throwing: CancellationError())
         if entry.waiters.isEmpty {
             entry.task?.cancel()
@@ -250,7 +287,7 @@ package actor RequestCoalescer {
     }
 
     private func removeCancelledWaiter(key: RequestDedupKey, waiterID: UUID) -> Bool {
-        guard var waiters = cancelledWaiters[key], waiters.remove(waiterID) != nil else {
+        guard var waiters = cancelledWaiters[key], waiters.removeValue(forKey: waiterID) != nil else {
             return false
         }
         if waiters.isEmpty {
@@ -259,5 +296,63 @@ package actor RequestCoalescer {
             cancelledWaiters[key] = waiters
         }
         return true
+    }
+
+    private func insertCancelledWaiter(
+        key: RequestDedupKey,
+        waiterID: UUID,
+        recordedAt: Date
+    ) {
+        pruneCancelledWaiters(recordedAt: recordedAt)
+        guard cancelledWaiterTTL > 0, cancelledWaiterLimit > 0 else {
+            cancelledWaiters.removeAll(keepingCapacity: false)
+            return
+        }
+        cancelledWaiters[key, default: [:]][waiterID] = CancelledWaiterRecord(recordedAt: recordedAt)
+        enforceCancelledWaiterLimit()
+    }
+
+    private func pruneCancelledWaiters(recordedAt reference: Date) {
+        guard cancelledWaiterTTL > 0 else {
+            cancelledWaiters.removeAll(keepingCapacity: false)
+            return
+        }
+        let cutoff = reference.addingTimeInterval(-cancelledWaiterTTL)
+        for key in Array(cancelledWaiters.keys) {
+            guard var waiters = cancelledWaiters[key] else { continue }
+            waiters = waiters.filter { $0.value.recordedAt >= cutoff }
+            if waiters.isEmpty {
+                cancelledWaiters.removeValue(forKey: key)
+            } else {
+                cancelledWaiters[key] = waiters
+            }
+        }
+    }
+
+    private func enforceCancelledWaiterLimit() {
+        let total = cancelledWaiters.values.reduce(0) { $0 + $1.count }
+        guard total > cancelledWaiterLimit else { return }
+        guard cancelledWaiterLimit > 0 else {
+            cancelledWaiters.removeAll(keepingCapacity: false)
+            return
+        }
+
+        var records: [(key: RequestDedupKey, waiterID: UUID, recordedAt: Date)] = []
+        records.reserveCapacity(total)
+        for (key, waiters) in cancelledWaiters {
+            for (waiterID, record) in waiters {
+                records.append((key, waiterID, record.recordedAt))
+            }
+        }
+        records.sort { $0.recordedAt < $1.recordedAt }
+
+        var removeCount = total - cancelledWaiterLimit
+        for record in records where removeCount > 0 {
+            cancelledWaiters[record.key]?.removeValue(forKey: record.waiterID)
+            if cancelledWaiters[record.key]?.isEmpty == true {
+                cancelledWaiters.removeValue(forKey: record.key)
+            }
+            removeCount -= 1
+        }
     }
 }

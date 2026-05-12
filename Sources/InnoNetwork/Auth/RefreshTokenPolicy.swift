@@ -115,7 +115,7 @@ package actor RefreshTokenCoordinator {
     package func applyCurrentToken(to request: URLRequest) async throws -> URLRequest {
         guard policy.appliesToRequest(request) else { return request }
         guard let token = try await policy.currentTokenProvider() else { return request }
-        return policy.tokenApplicator(token, request)
+        return policy.tokenApplicator(token, Self.removingAuthorizationHeaders(from: request))
     }
 
     package func refreshAndApply(to request: URLRequest) async throws -> URLRequest {
@@ -123,22 +123,32 @@ package actor RefreshTokenCoordinator {
         guard policy.appliesToRequest(request) else { return request }
         let token = try await refreshedToken()
         try Task.checkCancellation()
+        return policy.tokenApplicator(token, Self.removingAuthorizationHeaders(from: request))
+    }
+
+    package func shutdown() {
+        if case .inFlight(_, let task) = state.phase {
+            task.cancel()
+        }
+        state = .initial
+    }
+
+    package func shouldRefresh(statusCode: Int, request: URLRequest) -> Bool {
+        policy.appliesToRequest(request) && policy.refreshStatusCodes.contains(statusCode)
+    }
+
+    private static func removingAuthorizationHeaders(from request: URLRequest) -> URLRequest {
         // Strip every existing `Authorization` header — case-insensitively —
-        // before reapplying so custom applicators that use `addValue` do not
-        // stack tokens on a replay, and so a manually-set `authorization`
-        // (lowercase) header on the original request is not retained
-        // alongside the new credential.
+        // before applying a current or refreshed token. This keeps custom
+        // applicators that use `addValue` from stacking endpoint-provided
+        // credentials alongside the policy credential.
         var sanitized = request
         if let headers = sanitized.allHTTPHeaderFields {
             for key in headers.keys where key.caseInsensitiveCompare("Authorization") == .orderedSame {
                 sanitized.setValue(nil, forHTTPHeaderField: key)
             }
         }
-        return policy.tokenApplicator(token, sanitized)
-    }
-
-    package func shouldRefresh(statusCode: Int, request: URLRequest) -> Bool {
-        policy.appliesToRequest(request) && policy.refreshStatusCodes.contains(statusCode)
+        return sanitized
     }
 
     private func refreshedToken() async throws -> String {

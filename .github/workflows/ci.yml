@@ -58,11 +58,6 @@ jobs:
     name: Lint (Periphery)
     runs-on: macos-15
     timeout-minutes: 25
-    # Periphery's Swift coverage is still maturing for macro-heavy
-    # packages, so the job runs but does not block PRs while the
-    # baseline is being curated. Remove `continue-on-error` once the
-    # report converges to zero unused declarations on main.
-    continue-on-error: true
 
     steps:
       - name: Checkout

@@ -69,6 +69,43 @@ struct DownloadManagerHardeningTests {
         #expect(await probe.isCompleted)
     }
 
+    @Test("shutdown() waits for an in-progress delegate handler")
+    func shutdownWaitsForInProgressDelegateHandler() async throws {
+        let harness = try StubDownloadHarness(label: "shutdown-delegate-drain")
+        let task = await harness.startDownload()
+        let taskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task)
+        )
+        let delegateProbe = DelegateDrainProbe()
+        let shutdownProbe = ShutdownCompletionProbe()
+
+        await harness.manager.setOnProgressHandler { _, _ in
+            await delegateProbe.handle()
+        }
+
+        harness.injectDelegateProgress(
+            taskIdentifier: taskIdentifier,
+            bytesWritten: 1,
+            totalBytesWritten: 1,
+            totalBytesExpectedToWrite: 10
+        )
+        #expect(await waitForCondition { await delegateProbe.isStarted })
+
+        let shutdownTask = Task {
+            await harness.manager.shutdown()
+            await shutdownProbe.markCompleted()
+        }
+
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(await shutdownProbe.isCompleted == false)
+        #expect(await delegateProbe.isFinished == false)
+
+        await delegateProbe.release()
+        await shutdownTask.value
+        #expect(await delegateProbe.isFinished)
+        #expect(await shutdownProbe.isCompleted)
+    }
+
     @Test("concurrent shutdown() calls all wait for URLSession invalidation")
     func concurrentShutdownCallsWaitForInvalidationCallback() async throws {
         let harness = try StubDownloadHarness(label: "shutdown-concurrent-barrier")
@@ -228,6 +265,28 @@ private actor ShutdownCompletionProbe {
 
     func markCompleted() {
         completed = true
+    }
+}
+
+
+private actor DelegateDrainProbe {
+    private var started = false
+    private var released = false
+    private var finished = false
+
+    var isStarted: Bool { started }
+    var isFinished: Bool { finished }
+
+    func handle() async {
+        started = true
+        while !released {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        finished = true
+    }
+
+    func release() {
+        released = true
     }
 }
 

@@ -40,6 +40,26 @@ package struct StreamingExecutor: Sendable {
         inFlight: InFlightRegistry,
         continuation: AsyncThrowingStream<T.Output, Error>.Continuation
     ) async {
+        do {
+            try Self.validateAuthScope(request, configuration: configuration)
+        } catch {
+            let mapped = Self.mapTransportError(error, startedAt: nil)
+            let nsError = mapped as NSError
+            await eventHub.publish(
+                .requestFailed(
+                    requestID: requestID,
+                    errorCode: nsError.code,
+                    message: mapped.localizedDescription
+                ),
+                requestID: requestID,
+                observers: configuration.eventObservers
+            )
+            await eventHub.finish(requestID: requestID)
+            inFlight.deregister(id: requestID)
+            continuation.finish(throwing: mapped)
+            return
+        }
+
         let resumePolicy = request.resumePolicy
         let resumeBudget = resumePolicy.maxAttempts
         let resumeDelay = resumePolicy.retryDelay
@@ -158,6 +178,18 @@ package struct StreamingExecutor: Sendable {
     }
 
     // MARK: - Helpers
+
+    private static func validateAuthScope<T: StreamingAPIDefinition>(
+        _ request: T,
+        configuration: NetworkConfiguration
+    ) throws {
+        _ = request
+        guard T.Auth.self == AuthRequiredScope.self, configuration.refreshTokenPolicy == nil else {
+            return
+        }
+        throw NetworkError.configuration(
+            reason: .invalidRequest("Auth-required endpoints require NetworkConfiguration.refreshTokenPolicy."))
+    }
 
     private func runAttempt<T: StreamingAPIDefinition>(
         request: T,
@@ -330,7 +362,9 @@ package struct StreamingExecutor: Sendable {
             }
             if let output = decoded {
                 if let eventID = request.eventID(from: output) {
-                    if Self.isValidLastEventIDCursor(eventID) {
+                    if eventID.isEmpty {
+                        resumeState.rejectEventID()
+                    } else if Self.isValidLastEventIDCursor(eventID) {
                         resumeState.observe(eventID: eventID)
                     } else {
                         // Do not keep sending a stale cursor after a malformed

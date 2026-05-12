@@ -17,6 +17,19 @@ private struct LineCounterStream: StreamingAPIDefinition {
     }
 }
 
+private struct AuthenticatedLineCounterStream: StreamingAPIDefinition {
+    typealias Output = String
+    typealias Auth = AuthRequiredScope
+
+    var method: HTTPMethod { .get }
+    var path: String { "/events" }
+
+    func decode(line: String) throws -> String? {
+        guard !line.isEmpty else { return nil }
+        return line
+    }
+}
+
 private struct PathCounterStream: StreamingAPIDefinition {
     typealias Output = String
 
@@ -793,6 +806,60 @@ struct StreamingAPIDefinitionTests {
         #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer stream-token")
     }
 
+    @Test("Auth-required stream fails before transport without RefreshTokenPolicy")
+    func authRequiredStreamRequiresRefreshTokenPolicy() async throws {
+        let definition = AuthenticatedLineCounterStream()
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(baseURL: uniqueStreamingBaseURL()),
+            session: ThrowingBytesSession(error: URLError(.badServerResponse))
+        )
+
+        do {
+            for try await _ in client.stream(definition) {}
+            Issue.record("Expected auth-required stream to fail before transport")
+        } catch let error as NetworkError {
+            guard case .configuration(let reason) = error else {
+                Issue.record("Expected NetworkError.configuration, got \(error)")
+                return
+            }
+            #expect(String(describing: reason).contains("refreshTokenPolicy"))
+        }
+    }
+
+    @Test("Auth-required stream applies current token when RefreshTokenPolicy is configured")
+    func authRequiredStreamAppliesCurrentToken() async throws {
+        let definition = AuthenticatedLineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 200, data: Data("authorized\n".utf8))
+            ])
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                refreshTokenPolicy: RefreshTokenPolicy(
+                    currentToken: { "auth-stream-token" },
+                    refreshToken: { "unused" }
+                )
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var values: [String] = []
+        for try await value in client.stream(definition) {
+            values.append(value)
+        }
+
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(values == ["authorized"])
+        #expect(captured.count == 1)
+        #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer auth-stream-token")
+    }
+
     @Test("stream() does not refresh-replay handshake authorization failures")
     func streamDoesNotRefreshReplayHandshakeAuthorizationFailures() async throws {
         actor RefreshCounter {
@@ -1282,20 +1349,28 @@ struct StreamingAPIDefinitionTests {
         let stream = client.stream(
             ResumableStream(resumePolicy: .lastEventID(maxAttempts: 2, retryDelay: 0))
         )
-        for try await event in stream {
-            collected.append(event)
+        do {
+            for try await event in stream {
+                collected.append(event)
+            }
+            Issue.record("Expected mid-stream transport failure")
+        } catch let error as NetworkError {
+            switch error {
+            case .reachability, .underlying:
+                break
+            default:
+                Issue.record("Expected transport failure, got \(error)")
+            }
         }
 
         #expect(
             collected == [
                 ResumableEvent(id: "1", payload: "alpha"),
                 ResumableEvent(id: "", payload: "reset"),
-                ResumableEvent(id: "2", payload: "beta"),
             ])
         let captured = server.capturedRequests()
-        #expect(captured.count == 2)
+        #expect(captured.count == 1)
         #expect(captured.first?.localizedCaseInsensitiveContains("Last-Event-ID:") == false)
-        #expect(captured.dropFirst().first?.localizedCaseInsensitiveContains("Last-Event-ID:") == false)
     }
 
     @Test("stream() clears stale Last-Event-ID when a later custom event id is unsafe")

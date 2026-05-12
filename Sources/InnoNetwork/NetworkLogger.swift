@@ -337,7 +337,7 @@ public struct DefaultNetworkLogger: NetworkLogger {
     /// redaction with `NetworkLoggingOptions.verbose`.
     func sanitize(url: URL?, nilFallback: String = "") -> String {
         guard let url else { return nilFallback }
-        guard options.redactSensitiveData else { return url.absoluteString }
+        guard options.redactSensitiveData else { return Self.maskJWTLikeTokens(in: url.absoluteString) }
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             // `URLComponents` parse failure on a `URL` is rare but possible
             // for malformed origins. Fall back to a manually-composed
@@ -346,13 +346,14 @@ public struct DefaultNetworkLogger: NetworkLogger {
             // promised to strip.
             let scheme = url.scheme ?? "http"
             let host = url.host ?? ""
-            return "\(scheme)://\(host)\(url.path)"
+            return Self.maskJWTLikeTokens(in: "\(scheme)://\(host)\(url.path)")
         }
 
         if components.user != nil { components.user = nil }
         if components.password != nil { components.password = nil }
         components.percentEncodedUser = nil
         components.percentEncodedPassword = nil
+        components.path = Self.maskJWTLikeTokens(in: components.path)
         components.fragment = nil
 
         if let queryItems = components.queryItems, !queryItems.isEmpty {
@@ -361,7 +362,8 @@ public struct DefaultNetworkLogger: NetworkLogger {
             }
         }
 
-        return components.string ?? "\(url.scheme ?? "http")://\(url.host ?? "")\(url.path)"
+        let fallback = "\(url.scheme ?? "http")://\(url.host ?? "")\(Self.maskJWTLikeTokens(in: url.path))"
+        return components.string ?? fallback
     }
 }
 

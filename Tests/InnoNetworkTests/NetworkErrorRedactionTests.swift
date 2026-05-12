@@ -96,6 +96,30 @@ struct NetworkErrorRedactionTests {
     private static let pii = "{\"email\":\"alice@example.com\",\"ssn\":\"123-45-6789\"}"
     private static let malformedFrame = "malformed"
 
+    @Test("NSError userInfo URL masks JWT-like path segments")
+    func userInfoURLMasksJWTPathSegments() throws {
+        let token = [
+            "ey" + String(repeating: "A", count: 14),
+            String(repeating: "B", count: 14),
+            String(repeating: "C", count: 24),
+        ].joined(separator: ".")
+        let url = try #require(URL(string: "https://user:pass@example.com/files/\(token)/raw?token=secret#fragment"))
+        let request = URLRequest(url: url)
+        let httpResponse = try #require(
+            HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil, headerFields: nil)
+        )
+        let response = Response(statusCode: 500, data: Data(), request: request, response: httpResponse)
+        let error = NetworkError.statusCode(response) as NSError
+        let redacted = try #require(error.userInfo[NetworkError.urlUserInfoKey] as? String)
+        let components = try #require(URLComponents(string: redacted))
+
+        #expect(!redacted.contains(token))
+        #expect(!redacted.contains("secret"))
+        #expect(!redacted.contains("fragment"))
+        #expect(!redacted.contains("user:pass"))
+        #expect(components.path.contains("<redacted-jwt>"))
+    }
+
     @Test("Default config redacts NetworkError.decoding payload bytes")
     func defaultRedactsDecoding() async {
         let mockSession = MockURLSession()

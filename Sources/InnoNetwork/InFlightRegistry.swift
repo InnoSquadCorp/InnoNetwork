@@ -5,11 +5,11 @@ import os
 /// ``DefaultNetworkClient``.
 ///
 /// Each entry is a `@Sendable () -> Void` closure that calls `cancel()` on the
-/// inner work `Task`, so a single `cancelAll()` invocation can interrupt every
-/// request in flight without the client having to expose its `Task`s. The
-/// registry is package-scoped because external consumers should drive
-/// cancellation through ``DefaultNetworkClient/cancelAll()`` rather than poke
-/// at this storage directly.
+/// inner work `Task`, so a single `cancelAll()` or terminal shutdown can
+/// interrupt every request in flight without the client having to expose its
+/// `Task`s. The registry is package-scoped because external consumers should
+/// drive cancellation through ``DefaultNetworkClient/cancelAll()`` rather than
+/// poke at this storage directly.
 package final class InFlightRegistry: Sendable {
     private struct Entry: Sendable {
         let tag: CancellationTag?
@@ -25,6 +25,7 @@ package final class InFlightRegistry: Sendable {
         var entries: [UUID: Entry] = [:]
         var globalGeneration: UInt64 = 0
         var tagGenerations: [CancellationTag: UInt64] = [:]
+        var isTerminal = false
     }
 
     private let state = OSAllocatedUnfairLock<State>(initialState: State())
@@ -47,6 +48,7 @@ package final class InFlightRegistry: Sendable {
         cancelHandler: @escaping @Sendable () -> Void
     ) {
         let shouldCancel = state.withLock { state in
+            guard !state.isTerminal else { return true }
             if let generation {
                 guard generation.global == state.globalGeneration else { return true }
                 if let tag, generation.tag != state.tagGenerations[tag, default: 0] {
@@ -69,6 +71,20 @@ package final class InFlightRegistry: Sendable {
 
     package func cancelAll() {
         let handlers = state.withLock { state -> [@Sendable () -> Void] in
+            state.globalGeneration &+= 1
+            let collected = state.entries.values.map { $0.cancelHandler }
+            state.entries.removeAll()
+            return collected
+        }
+        for handler in handlers {
+            handler()
+        }
+    }
+
+    package func shutdownAll() {
+        let handlers = state.withLock { state -> [@Sendable () -> Void] in
+            guard !state.isTerminal else { return [] }
+            state.isTerminal = true
             state.globalGeneration &+= 1
             let collected = state.entries.values.map { $0.cancelHandler }
             state.entries.removeAll()

@@ -928,6 +928,42 @@ struct ResiliencePolicyTests {
         #expect(await session.requestCount == 2)
     }
 
+    @Test("Coalescer cancellation bookkeeping is TTL pruned and capped")
+    func coalescerCancellationBookkeepingIsBounded() async throws {
+        var request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
+        request.httpMethod = "GET"
+        let key = try #require(RequestDedupKey(request: request, policy: .getOnly))
+        let now = Date(timeIntervalSince1970: 62)
+        let coalescer = RequestCoalescer(
+            cancelledWaiterTTL: 30,
+            cancelledWaiterLimit: 2,
+            now: { now }
+        )
+
+        await coalescer.recordCancelledWaiterForDiagnostics(
+            key: key,
+            waiterID: UUID(),
+            recordedAt: Date(timeIntervalSince1970: 0)
+        )
+        await coalescer.recordCancelledWaiterForDiagnostics(
+            key: key,
+            waiterID: UUID(),
+            recordedAt: Date(timeIntervalSince1970: 60)
+        )
+        await coalescer.recordCancelledWaiterForDiagnostics(
+            key: key,
+            waiterID: UUID(),
+            recordedAt: Date(timeIntervalSince1970: 61)
+        )
+        await coalescer.recordCancelledWaiterForDiagnostics(
+            key: key,
+            waiterID: UUID(),
+            recordedAt: Date(timeIntervalSince1970: 62)
+        )
+
+        #expect(await coalescer.cancellationBookkeepingCount == 2)
+    }
+
     @Test("Fresh cache returns without transport")
     func freshCacheShortCircuitsTransport() async throws {
         let cache = InMemoryResponseCache()
@@ -1930,6 +1966,30 @@ struct ResiliencePolicyTests {
         let applied = try await coordinator.refreshAndApply(to: request)
 
         #expect(applied.value(forHTTPHeaderField: "Authorization") == "Bearer new")
+    }
+
+    @Test("Current token application clears prior Authorization header before reapplying")
+    func currentTokenApplicationClearsPreviousAuthorizationHeader() async throws {
+        let coordinator = RefreshTokenCoordinator(
+            policy: RefreshTokenPolicy(
+                currentToken: { "current" },
+                refreshToken: { "unused" },
+                applyToken: { token, request in
+                    var request = request
+                    request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                    return request
+                }
+            )
+        )
+        var request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
+        request.setValue("Bearer endpoint", forHTTPHeaderField: "authorization")
+
+        let applied = try await coordinator.applyCurrentToken(to: request)
+        let headers = applied.allHTTPHeaderFields ?? [:]
+        let authHeaders = headers.filter { $0.key.caseInsensitiveCompare("Authorization") == .orderedSame }
+
+        #expect(authHeaders.count == 1)
+        #expect(authHeaders.first?.value == "Bearer current")
     }
 
     @Test("Failed refresh does not replay stale failure to subsequent callers when cooldown is disabled")

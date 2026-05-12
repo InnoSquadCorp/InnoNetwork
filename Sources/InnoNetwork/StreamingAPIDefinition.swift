@@ -138,6 +138,14 @@ extension StreamingResumePolicy: StreamingResumeStrategy {
 /// stream and surfaces the error to the consumer.
 public protocol StreamingAPIDefinition: Sendable {
     associatedtype Output: Sendable
+    /// Authentication scope required by this stream.
+    ///
+    /// The default ``PublicAuthScope`` preserves the 4.x source-compatible
+    /// behaviour for existing streams. Streams that require bearer-token
+    /// attachment should declare `typealias Auth = AuthRequiredScope`; the
+    /// executor then validates that the client was configured with
+    /// ``RefreshTokenPolicy`` before opening the transport.
+    associatedtype Auth: AuthScope = PublicAuthScope
 
     var method: HTTPMethod { get }
     var path: String { get }

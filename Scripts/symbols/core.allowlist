@@ -11,6 +11,7 @@ InnoNetwork	swift.associatedtype	StateReducer.Context
 InnoNetwork	swift.associatedtype	StateReducer.Event
 InnoNetwork	swift.associatedtype	StateReducer.Reduction
 InnoNetwork	swift.associatedtype	StateReducer.State
+InnoNetwork	swift.associatedtype	StreamingAPIDefinition.Auth
 InnoNetwork	swift.associatedtype	StreamingAPIDefinition.Output
 InnoNetwork	swift.class	ConcurrencyTokenBucket
 InnoNetwork	swift.class	DefaultNetworkClient
@@ -312,6 +313,7 @@ InnoNetwork	swift.method	DefaultNetworkClient.perform(_:tag:)
 InnoNetwork	swift.method	DefaultNetworkClient.perform(executable:tag:)
 InnoNetwork	swift.method	DefaultNetworkClient.request(_:)
 InnoNetwork	swift.method	DefaultNetworkClient.request(_:tag:)
+InnoNetwork	swift.method	DefaultNetworkClient.shutdown()
 InnoNetwork	swift.method	DefaultNetworkClient.stream(_:)
 InnoNetwork	swift.method	DefaultNetworkClient.stream(_:bufferingPolicy:)
 InnoNetwork	swift.method	DefaultNetworkClient.upload(_:)

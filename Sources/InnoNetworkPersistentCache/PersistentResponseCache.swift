@@ -12,6 +12,15 @@ import OSLog
 /// The cache enforces a synchronous LRU bound on every write so the disk
 /// footprint stays within the configured byte and entry budgets.
 ///
+/// ## Reentrancy invariant
+///
+/// The actor intentionally performs body-file I/O outside actor isolation.
+/// After each suspension point it re-checks that the index entry still points
+/// at the same body file before returning or committing metadata. This keeps
+/// concurrent `get`, `set`, `remove`, and trim operations from returning a
+/// stale body after another task replaced or evicted the entry while disk I/O
+/// was in flight.
+///
 /// ## RFC 9111 scope
 ///
 /// This cache is a storage layer, not a complete RFC 9111 implementation by
