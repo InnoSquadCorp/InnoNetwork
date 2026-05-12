@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Opt-in bearer-token refresh policy used by ``DefaultNetworkClient``.
 ///
@@ -236,55 +237,63 @@ package actor RefreshTokenCoordinator {
 }
 
 
-private actor RefreshTokenTaskAwaitBridge {
+private final class RefreshTokenTaskAwaitBridge: Sendable {
     private enum Outcome: Sendable {
         case success(String)
         case failure(any Error & Sendable)
     }
 
-    private var continuation: CheckedContinuation<String, any Error>?
-    private var outcome: Outcome?
+    private struct State: Sendable {
+        var continuation: CheckedContinuation<String, any Error>?
+        var outcome: Outcome?
+    }
+
+    private let state = OSAllocatedUnfairLock<State>(initialState: State())
 
     func value(of task: Task<String, any Error>) async throws -> String {
-        try await withTaskCancellationHandler {
+        let relay = Task { [self] in
+            do {
+                let value = try await task.value
+                finish(.success(value))
+            } catch {
+                finish(.failure(error))
+            }
+        }
+        return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                install(continuation, task: task)
+                install(continuation)
             }
         } onCancel: {
-            Task.detached {
-                await self.finish(.failure(CancellationError()))
-            }
+            self.finish(.failure(CancellationError()))
+            relay.cancel()
         }
     }
 
     private func install(
-        _ continuation: CheckedContinuation<String, any Error>,
-        task: Task<String, any Error>
+        _ continuation: CheckedContinuation<String, any Error>
     ) {
+        let outcome = state.withLock { state -> Outcome? in
+            if let outcome = state.outcome {
+                return outcome
+            }
+            state.continuation = continuation
+            return nil
+        }
         if let outcome {
             resume(continuation, with: outcome)
-            return
-        }
-
-        self.continuation = continuation
-        Task.detached {
-            do {
-                let value = try await task.value
-                await self.finish(.success(value))
-            } catch {
-                await self.finish(.failure(error))
-            }
         }
     }
 
     private func finish(_ outcome: Outcome) {
-        if self.outcome != nil {
-            return
+        let continuation = state.withLock { state -> CheckedContinuation<String, any Error>? in
+            if state.outcome != nil {
+                return nil
+            }
+            state.outcome = outcome
+            let continuation = state.continuation
+            state.continuation = nil
+            return continuation
         }
-
-        self.outcome = outcome
-        let continuation = self.continuation
-        self.continuation = nil
         if let continuation {
             resume(continuation, with: outcome)
         }
