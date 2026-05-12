@@ -90,7 +90,7 @@ jobs:
           set -eo pipefail
           xcrun swift test \
             --sanitize thread \
-            --parallel
+            --no-parallel
 
   tsan-scheduled:
     name: Tests under ThreadSanitizer (scheduled/manual)
@@ -121,4 +121,4 @@ jobs:
           set -eo pipefail
           xcrun swift test \
             --sanitize thread \
-            --parallel
+            --no-parallel
