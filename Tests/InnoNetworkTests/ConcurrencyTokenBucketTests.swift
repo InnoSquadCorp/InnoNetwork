@@ -104,6 +104,38 @@ struct ConcurrencyTokenBucketTests {
         await bucket.release()
         #expect(await bucket.available == 1)
     }
+
+    @Test
+    func cancelledWaiterDoesNotConsumeReleaseBeforeCleanupHop() async throws {
+        for _ in 0..<50 {
+            let bucket = ConcurrencyTokenBucket(maxConcurrent: 1)
+            try await bucket.acquire()
+
+            let cancelled = Task {
+                try await bucket.acquire()
+            }
+            await waitForQueuedWaiters(1, in: bucket)
+
+            let follower = Task {
+                try await bucket.acquire()
+            }
+            await waitForQueuedWaiters(2, in: bucket)
+
+            cancelled.cancel()
+            await bucket.release()
+
+            do {
+                try await cancelled.value
+                Issue.record("Expected cancelled waiter to throw CancellationError")
+            } catch is CancellationError {
+            }
+
+            try await follower.value
+            await bucket.release()
+            #expect(await bucket.available == 1)
+            #expect(await bucket.queuedWaitersCount == 0)
+        }
+    }
 }
 
 private actor OrderRecorder {

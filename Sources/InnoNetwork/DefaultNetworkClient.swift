@@ -324,9 +324,14 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
             let executionRuntime = self.executionRuntime
             let executor = StreamingExecutor(session: self.session, eventHub: self.eventHub)
             let startGate = TaskStartGate()
+            let generation = inFlight.generation()
 
             let work = Task<Void, Never> {
-                await startGate.wait()
+                guard await startGate.wait() else {
+                    inFlight.deregister(id: requestID)
+                    continuation.finish(throwing: NetworkError.cancelled)
+                    return
+                }
                 // Match the non-streaming path: deregister from
                 // ``InFlightRegistry`` when the executor finishes, no
                 // matter whether the stream completed normally, errored,
@@ -348,7 +353,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
             continuation.onTermination = { _ in
                 work.cancel()
             }
-            inFlight.register(id: requestID, cancelHandler: { work.cancel() })
+            inFlight.register(id: requestID, generation: generation, cancelHandler: { work.cancel() })
             startGate.open()
         }
     }
@@ -491,11 +496,12 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     ) async throws -> D.APIResponse {
         let requestID = UUID()
         let startGate = TaskStartGate()
+        let generation = inFlight.generation(for: tag)
         // Wrap the work in an unstructured Task so cancelAll() can reach it
         // without the call site having to track individual Task handles.
         // Outer-task cancellation is forwarded via withTaskCancellationHandler.
         let work = Task<D.APIResponse, Error> { [eventHub, configuration, session, requestBuilder, executionRuntime] in
-            await startGate.wait()
+            guard await startGate.wait() else { throw NetworkError.cancelled }
             let retryCoordinator = RetryCoordinator(eventHub: eventHub, clock: executionRuntime.clock)
             return try await retryCoordinator.execute(
                 retryPolicy: configuration.retryPolicy,
@@ -513,7 +519,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
                 )
             }
         }
-        inFlight.register(id: requestID, tag: tag, cancelHandler: { work.cancel() })
+        inFlight.register(id: requestID, tag: tag, generation: generation, cancelHandler: { work.cancel() })
         defer { inFlight.deregister(id: requestID) }
         startGate.open()
 

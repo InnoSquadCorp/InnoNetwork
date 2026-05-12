@@ -143,6 +143,60 @@ struct InFlightRegistryRaceTests {
         #expect(cancellations.withLock { $0 } == 200)
     }
 
+    @Test("register with stale global generation cancels immediately")
+    func staleGlobalGenerationCancelsRegistrationImmediately() {
+        let registry = InFlightRegistry()
+        let generation = registry.generation()
+        let cancellations = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+        registry.cancelAll()
+        registry.register(
+            id: UUID(),
+            generation: generation,
+            cancelHandler: { @Sendable in
+                cancellations.withLock { $0 += 1 }
+            }
+        )
+
+        #expect(cancellations.withLock { $0 } == 1)
+        #expect(registry.inFlightCount == 0)
+    }
+
+    @Test("tag generation invalidates only matching late registrations")
+    func tagGenerationInvalidatesOnlyMatchingLateRegistrations() {
+        let registry = InFlightRegistry()
+        let tagA: CancellationTag = "feature.a"
+        let tagB: CancellationTag = "feature.b"
+        let generationA = registry.generation(for: tagA)
+        let generationB = registry.generation(for: tagB)
+        let cancelledA = OSAllocatedUnfairLock<Int>(initialState: 0)
+        let cancelledB = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+        registry.cancelAll(matching: tagA)
+        registry.register(
+            id: UUID(),
+            tag: tagA,
+            generation: generationA,
+            cancelHandler: { @Sendable in
+                cancelledA.withLock { $0 += 1 }
+            }
+        )
+        registry.register(
+            id: UUID(),
+            tag: tagB,
+            generation: generationB,
+            cancelHandler: { @Sendable in
+                cancelledB.withLock { $0 += 1 }
+            }
+        )
+
+        #expect(cancelledA.withLock { $0 } == 1)
+        #expect(cancelledB.withLock { $0 } == 0)
+        #expect(registry.inFlightCount == 1)
+
+        registry.cancelAll()
+    }
+
     // MARK: - DefaultNetworkClient.perform deregister guarantees
 
     private struct LongPollRequest: APIDefinition {

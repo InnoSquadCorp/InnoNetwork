@@ -53,12 +53,17 @@ extension RequestExecutor {
             let revalidationID = UUID()
             let startGate = TaskStartGate()
             let revalidationHandle = InFlightTaskHandle()
-            runtime.inFlight.register(id: revalidationID) {
+            let generation = runtime.inFlight.generation()
+            runtime.inFlight.register(id: revalidationID, generation: generation) {
                 revalidationHandle.cancel()
             }
             let eventHub = self.eventHub
             let revalidationTask = Task {
-                await startGate.wait()
+                guard await startGate.wait() else {
+                    runtime.inFlight.deregister(id: revalidationID)
+                    await eventHub.finish(requestID: revalidationID)
+                    return
+                }
                 defer {
                     runtime.inFlight.deregister(id: revalidationID)
                 }

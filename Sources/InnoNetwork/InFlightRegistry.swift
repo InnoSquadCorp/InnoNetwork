@@ -16,28 +16,62 @@ package final class InFlightRegistry: Sendable {
         let cancelHandler: @Sendable () -> Void
     }
 
-    private let entries = OSAllocatedUnfairLock<[UUID: Entry]>(initialState: [:])
+    package struct Generation: Sendable, Equatable {
+        fileprivate let global: UInt64
+        fileprivate let tag: UInt64
+    }
+
+    private struct State: Sendable {
+        var entries: [UUID: Entry] = [:]
+        var globalGeneration: UInt64 = 0
+        var tagGenerations: [CancellationTag: UInt64] = [:]
+    }
+
+    private let state = OSAllocatedUnfairLock<State>(initialState: State())
 
     package init() {}
+
+    package func generation(for tag: CancellationTag? = nil) -> Generation {
+        state.withLock { state in
+            Generation(
+                global: state.globalGeneration,
+                tag: tag.map { state.tagGenerations[$0, default: 0] } ?? 0
+            )
+        }
+    }
 
     package func register(
         id: UUID,
         tag: CancellationTag? = nil,
+        generation: Generation? = nil,
         cancelHandler: @escaping @Sendable () -> Void
     ) {
-        entries.withLock { $0[id] = Entry(tag: tag, cancelHandler: cancelHandler) }
+        let shouldCancel = state.withLock { state in
+            if let generation {
+                guard generation.global == state.globalGeneration else { return true }
+                if let tag, generation.tag != state.tagGenerations[tag, default: 0] {
+                    return true
+                }
+            }
+            state.entries[id] = Entry(tag: tag, cancelHandler: cancelHandler)
+            return false
+        }
+        if shouldCancel {
+            cancelHandler()
+        }
     }
 
     package func deregister(id: UUID) {
-        entries.withLock { state in
-            _ = state.removeValue(forKey: id)
+        state.withLock { state in
+            _ = state.entries.removeValue(forKey: id)
         }
     }
 
     package func cancelAll() {
-        let handlers = entries.withLock { state -> [@Sendable () -> Void] in
-            let collected = state.values.map { $0.cancelHandler }
-            state.removeAll()
+        let handlers = state.withLock { state -> [@Sendable () -> Void] in
+            state.globalGeneration &+= 1
+            let collected = state.entries.values.map { $0.cancelHandler }
+            state.entries.removeAll()
             return collected
         }
         for handler in handlers {
@@ -49,19 +83,20 @@ package final class InFlightRegistry: Sendable {
     /// Requests registered without a tag, and requests with a different tag,
     /// are left alone. Matching entries are removed from the registry.
     package func cancelAll(matching tag: CancellationTag) {
-        let handlers = entries.withLock { state -> [@Sendable () -> Void] in
+        let handlers = state.withLock { state -> [@Sendable () -> Void] in
+            state.tagGenerations[tag, default: 0] &+= 1
             var handlers: [@Sendable () -> Void] = []
-            handlers.reserveCapacity(state.count)
+            handlers.reserveCapacity(state.entries.count)
             var retained: [UUID: Entry] = [:]
-            retained.reserveCapacity(state.count)
-            for (id, entry) in state {
+            retained.reserveCapacity(state.entries.count)
+            for (id, entry) in state.entries {
                 if entry.tag == tag {
                     handlers.append(entry.cancelHandler)
                 } else {
                     retained[id] = entry
                 }
             }
-            state = retained
+            state.entries = retained
             return handlers
         }
         for handler in handlers {
@@ -70,7 +105,7 @@ package final class InFlightRegistry: Sendable {
     }
 
     package var inFlightCount: Int {
-        entries.withLock { $0.count }
+        state.withLock { $0.entries.count }
     }
 }
 
@@ -108,38 +143,56 @@ package final class InFlightTaskHandle: Sendable {
 package final class TaskStartGate: Sendable {
     private struct State {
         var isOpen = false
-        var continuations: [CheckedContinuation<Void, Never>] = []
+        var continuations: [UUID: CheckedContinuation<Bool, Never>] = [:]
+        var cancelledWaiters: Set<UUID> = []
     }
 
     private let state = OSAllocatedUnfairLock<State>(initialState: State())
 
     package init() {}
 
-    package func wait() async {
-        await withCheckedContinuation { continuation in
-            let resumeImmediately = state.withLock { state in
-                if state.isOpen {
-                    return true
+    package func wait() async -> Bool {
+        let waiterID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let immediateResult = state.withLock { state -> Bool? in
+                    if state.cancelledWaiters.remove(waiterID) != nil || Task.isCancelled {
+                        return false
+                    }
+                    if state.isOpen {
+                        return true
+                    }
+                    state.continuations[waiterID] = continuation
+                    return nil
                 }
-                state.continuations.append(continuation)
-                return false
+                if let immediateResult {
+                    continuation.resume(returning: immediateResult)
+                }
             }
-            if resumeImmediately {
-                continuation.resume()
+        } onCancel: {
+            let continuation = state.withLock { state -> CheckedContinuation<Bool, Never>? in
+                if let continuation = state.continuations.removeValue(forKey: waiterID) {
+                    return continuation
+                }
+                if !state.isOpen {
+                    state.cancelledWaiters.insert(waiterID)
+                }
+                return nil
             }
+            continuation?.resume(returning: false)
         }
     }
 
     package func open() {
-        let continuations: [CheckedContinuation<Void, Never>] = state.withLock { state in
+        let continuations: [CheckedContinuation<Bool, Never>] = state.withLock { state in
             guard !state.isOpen else { return [] }
             state.isOpen = true
-            let continuations = state.continuations
+            let continuations = Array(state.continuations.values)
             state.continuations.removeAll()
             return continuations
         }
         for continuation in continuations {
-            continuation.resume()
+            continuation.resume(returning: true)
         }
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Bounded counting semaphore implemented as an actor so the
 /// fairness queue stays Sendable across structured-concurrency
@@ -72,6 +73,7 @@ public actor ConcurrencyTokenBucket {
     }
 
     private var waiters: [Waiter] = []
+    private let cancelMarks = OSAllocatedUnfairLock<Set<UUID>>(initialState: [])
 
     /// Creates a bucket with the supplied concurrency cap. Values
     /// less than 1 are clamped to 1 so the bucket always permits at
@@ -97,9 +99,16 @@ public actor ConcurrencyTokenBucket {
         do {
             try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    if consumeCancelMark(for: waiterID) || Task.isCancelled {
+                        continuation.resume(throwing: CancellationError())
+                        return
+                    }
                     waiters.append(Waiter(id: waiterID, continuation: continuation))
                 }
             } onCancel: { [weak self] in
+                self?.cancelMarks.withLock { marks in
+                    _ = marks.insert(waiterID)
+                }
                 Task { [weak self] in
                     await self?.cancelWaiter(id: waiterID)
                 }
@@ -119,8 +128,12 @@ public actor ConcurrencyTokenBucket {
     /// bucket never exceeds `maxConcurrent` available tokens, so a
     /// duplicate release is a no-op.
     public func release() {
-        if !waiters.isEmpty {
+        while !waiters.isEmpty {
             let next = waiters.removeFirst()
+            if consumeCancelMark(for: next.id) {
+                next.continuation.resume(throwing: CancellationError())
+                continue
+            }
             next.continuation.resume()
             return
         }
@@ -130,9 +143,16 @@ public actor ConcurrencyTokenBucket {
     }
 
     private func cancelWaiter(id: UUID) {
+        _ = consumeCancelMark(for: id)
         guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
         let waiter = waiters.remove(at: index)
         waiter.continuation.resume(throwing: CancellationError())
+    }
+
+    private func consumeCancelMark(for id: UUID) -> Bool {
+        cancelMarks.withLock { marks in
+            marks.remove(id) != nil
+        }
     }
 
     /// Number of acquirers currently queued behind the cap. Useful
