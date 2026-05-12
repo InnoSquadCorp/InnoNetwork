@@ -70,7 +70,9 @@ the copyable Swift starting points must stay source-compatible with the
 4.0.0 public API.
 The `Scripts/check_stable_examples.sh` gate, wired into the docs-contract
 job, fails CI if a stable example is removed, emptied, loses its README, or
-stops compiling.
+stops compiling. The smoke build runs with Swift warnings treated as errors
+because these examples are copyable public-contract code, not narrative-only
+documentation.
 
 - `Examples/BasicRequest` — request/response fundamentals across HTTP verbs
   and content types.
@@ -132,6 +134,18 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 ## Provisionally Stable Evolution Boundaries
 
 Per-symbol evolution allowances within the 4.x line:
+
+Promotion from Provisionally Stable to Stable requires all of the following:
+
+- The symbol has DocC or README coverage for the intended stable usage.
+- Contract tests or smoke examples exercise the source shape that is being
+  promoted.
+- The CHANGELOG and migration notes describe the promotion and any required
+  adopter action.
+- Stable examples or generated-client recipes are updated when the promoted
+  surface is a recommended entry point.
+- The symbol is moved into the Stable ledger above; once promoted, it cannot
+  move back to Provisionally Stable within the 4.x line.
 
 - `default` aliases — may add new defaults; never removed within 4.x.
 - Benchmark runner CLI flags and JSON keys — may evolve to reflect new

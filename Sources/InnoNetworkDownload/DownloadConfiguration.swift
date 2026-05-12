@@ -231,7 +231,9 @@ public struct DownloadConfiguration: Sendable {
         public var timeoutForResource: TimeInterval
         /// Optional per-task inactivity watchdog. `nil` disables it (default).
         public var taskInactivityTimeout: Duration?
-        /// Whether downloads may use cellular connectivity. Defaults to `true`.
+        /// Whether downloads may use cellular connectivity. Defaults to `false`
+        /// in safe and advanced presets; opt in when the product explicitly
+        /// accepts cellular transfer cost.
         public var allowsCellularAccess: Bool
         /// Background session identifier and persistence scope.
         ///

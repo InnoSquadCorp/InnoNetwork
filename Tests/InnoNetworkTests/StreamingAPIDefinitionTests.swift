@@ -738,6 +738,55 @@ struct StreamingAPIDefinitionTests {
         #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer stream-token")
     }
 
+    @Test("stream() does not refresh-replay handshake authorization failures")
+    func streamDoesNotRefreshReplayHandshakeAuthorizationFailures() async throws {
+        actor RefreshCounter {
+            private(set) var count = 0
+            func bump() -> String {
+                count += 1
+                return "refreshed"
+            }
+        }
+
+        let definition = LineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        let counter = RefreshCounter()
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 401, data: Data())
+            ])
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                refreshTokenPolicy: RefreshTokenPolicy(
+                    currentToken: { "expired" },
+                    refreshToken: { await counter.bump() }
+                )
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        do {
+            for try await _ in client.stream(definition) {}
+            Issue.record("Expected stream handshake 401 to throw")
+        } catch let error as NetworkError {
+            guard case .statusCode(let response) = error else {
+                Issue.record("Expected NetworkError.statusCode, got \(error)")
+                return
+            }
+            #expect(response.statusCode == 401)
+        }
+
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(captured.count == 1)
+        #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer expired")
+        #expect(await counter.count == 0)
+    }
+
     @Test("stream() applies single-value header semantics")
     func streamDuplicateSingleValueHeadersUseLastValue() async throws {
         let definition = DuplicateAuthHeaderStream()

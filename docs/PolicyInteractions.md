@@ -13,7 +13,9 @@ sequenceDiagram
     participant Build as RequestBuilder
     participant Adapt as Request interceptors
     participant Cache as ResponseCachePolicy
+    participant Custom as RequestExecutionPolicy
     participant CB as CircuitBreaker
+    participant Coal as RequestCoalescingPolicy
     participant Transport as URLSession
     participant Decode as Decoder
 
@@ -24,10 +26,14 @@ sequenceDiagram
     Adapt->>Adapt: endpoint interceptors
     Adapt->>Adapt: refresh policy applies current token
     Adapt->>Cache: lookup / conditional headers
-    Cache->>CB: prepare host circuit
-    CB->>Transport: execute transport
-    Transport-->>CB: response or error
-    CB-->>Cache: record success/failure
+    Cache->>Custom: wrap one raw transport attempt
+    Custom->>CB: prepare host circuit
+    CB->>Coal: enter dedup lane when eligible
+    Coal->>Transport: execute transport
+    Transport-->>Coal: response or error
+    Coal-->>CB: shared or direct result
+    CB-->>Custom: record success/failure
+    Custom-->>Cache: response, synthetic response, or error
     Cache-->>Adapt: cache write or 304 substitution
     Adapt-->>Decode: response interceptors, status validation
     Decode-->>Caller: decoded value
@@ -49,22 +55,24 @@ sequenceDiagram
 | Unsafe retry | POST/PUT/PATCH/DELETE retry only when an idempotency key is present, unless the retry policy explicitly opts into method-agnostic behavior. `OPTIONS` and `TRACE` are safe-method defaults alongside GET/HEAD. |
 | `IdempotencyKeyPolicy` enabled | The key is generated from the logical request id and reused across every retry attempt. |
 | Redirect across origin | `DefaultRedirectPolicy` strips credential-bearing headers. |
-| Streaming request | Core `RetryPolicy` is bypassed; `StreamingResumePolicy.lastEventID` is the only built-in resume path. |
+| Custom execution policy | Runs after cache lookup/conditional-header preparation and before circuit breaker, coalescing, and URLSession. A policy wraps one transport attempt; returning a synthetic response bypasses circuit/coalescing/transport for that attempt. |
+| Streaming request | Core `RetryPolicy`, cache, circuit breaker, coalescing, and custom execution policies are bypassed. The current token can be attached before the handshake, but 401 handshakes are not refresh-replayed; `StreamingResumePolicy.lastEventID` is the only built-in resume path. |
 
-## Detailed Five-Policy Compatibility Matrix
+## Detailed Six-Policy Compatibility Matrix
 
 The cells below describe what each policy does when the *row* policy fires
 on a request that the *column* policy is also active for. Read horizontally:
 "if Retry observes a failure under Cache, the result is …".
 
-| ↓ Row fires \ Column active | **Cache** (`ResponseCachePolicy`) | **Retry** (`RetryPolicy`) | **CircuitBreaker** | **Coalescing** | **Refresh** (`RefreshTokenPolicy`) |
-| --- | --- | --- | --- | --- | --- |
-| **Cache** hit | returns cached body, no further policy fires | retry not consulted | breaker not consulted | coalescer not consulted | refresh not consulted |
-| **Cache** stale (revalidate) | dispatches revalidation through transport stack | revalidation failures count toward retry budget | recorded as a probe under host key | revalidation runs in its own coalescer slot | no token replay on revalidation |
-| **Retry** schedules attempt N+1 | new attempt re-enters cache lookup | obeys `maxRetries` and `maxTotalRetries` | shares the host's open/half-open state | new dedup key per attempt; not reused | refresh replay does **not** consume a retry slot |
-| **CircuitBreaker** open | request fails before transport with `.configuration(.invalidRequest(...))` | considered as a normal `NetworkError`; usually terminal | this is the breaker's own state | coalescer never reached | no token applied — request fails before adapt |
-| **Coalescing** dedup hit | follower receives leader's response (and its cache write) | follower does not retry independently | follower inherits leader's circuit-breaker recording | this is the coalescer's own role | both leader and followers see the same auth header |
-| **Refresh** triggered by 401 | unchanged: 401 cache writes are skipped | refresh replay does not consume a retry slot | replay still records breaker outcome | replay opens a fresh dedup key in a refresh-segregated lane | single-flight refresh; concurrent followers wait |
+| ↓ Row fires \ Column active | **Cache** (`ResponseCachePolicy`) | **Retry** (`RetryPolicy`) | **Custom** (`RequestExecutionPolicy`) | **CircuitBreaker** | **Coalescing** | **Refresh** (`RefreshTokenPolicy`) |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Cache** hit | returns cached body, no further policy fires | retry not consulted | custom policies not invoked | breaker not consulted | coalescer not consulted | refresh not consulted |
+| **Cache** stale (revalidate) | dispatches revalidation through transport stack | revalidation failures count toward retry budget | custom policies wrap the revalidation attempt | recorded as a probe under host key | revalidation runs in its own coalescer slot | no token replay on revalidation |
+| **Retry** schedules attempt N+1 | new attempt re-enters cache lookup | obeys `maxRetries` and `maxTotalRetries` | policy `retryIndex` increments with the new attempt | shares the host's open/half-open state | new dedup key per attempt; not reused | refresh replay does **not** consume a retry slot |
+| **Custom** short-circuits | cache can still write the returned response | retry sees thrown policy errors like transport failures | this is the policy's own role | breaker is bypassed when `next.execute` is skipped | coalescer is bypassed when `next.execute` is skipped | refresh replay only sees returned 401 responses |
+| **CircuitBreaker** open | request fails before transport with `.configuration(.invalidRequest(...))` | considered as a normal `NetworkError`; usually terminal | custom policy receives the breaker error from `next.execute` | this is the breaker's own state | coalescer never reached | no token applied — request fails before adapt |
+| **Coalescing** dedup hit | follower receives leader's response (and its cache write) | follower does not retry independently | followers share the leader result inside the same custom-policy call | follower inherits leader's circuit-breaker recording | this is the coalescer's own role | both leader and followers see the same auth header |
+| **Refresh** triggered by 401 | unchanged: 401 cache writes are skipped | refresh replay does not consume a retry slot | replay runs through custom policies again with the refreshed request | replay still records breaker outcome | replay opens a fresh dedup key in a refresh-segregated lane | single-flight refresh; concurrent followers wait |
 
 Two invariants the matrix encodes:
 

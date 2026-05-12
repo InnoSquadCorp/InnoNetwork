@@ -27,3 +27,8 @@
 - Behavior-only changes that do not break call sites still require release
   notes when they affect resilience, websocket lifecycle, downloads, or
   observability.
+- The 4.x line keeps the full `NetworkConfiguration.init(...)` initializer
+  public for source compatibility. A future major may move callers to
+  `safeDefaults(baseURL:)`, `advanced(baseURL:_:)`, configuration packs, and
+  fluent modifiers instead. That migration requires explicit before/after
+  examples for every initializer argument that no longer maps one-to-one.

@@ -31,56 +31,22 @@ into one release line:
 - Phantom auth scopes through `AuthScope`, `PublicAuthScope`,
   `AuthRequiredScope`, and `EndpointBuilder`.
 
-## 4.x → 5.x Typed-Throws Migration
+## 4.x Typed-Throws Surface
 
-`NetworkClient.request(_:)`, `request(_:tag:)`, `upload(_:)`, and
-`upload(_:tag:)` are declared with untyped `async throws` today.
-Callers have to `catch let error as NetworkError` to recover the
-typed surface, which works but defeats one of the bigger ergonomic
-wins of Swift 6's `throws(MyError)` form (the compiler statically
-guarantees the catch covers every case).
+`NetworkClient.request(_:)`, `request(_:tag:)`,
+`request(_:method:tag:)`, `upload(_:)`, and `upload(_:tag:)` now expose
+`async throws(NetworkError)`. This is the 4.x public contract, not a
+future 5.0 migration item. Interceptors and execution policies that
+produce arbitrary errors are normalized before they leave the client
+surface so callers can switch on `NetworkError` directly.
 
-A drop-in switch to `throws(NetworkError)` is **not** safe inside the
-4.x line:
-
-- Adding a parallel `throws(NetworkError)` overload alongside the
-  untyped `throws` overload runs into Swift's typed-throws overload
-  resolution: the two signatures differ only in the throws clause and
-  cannot coexist as a clean public API.
-- Replacing the untyped throws clause with `throws(NetworkError)` is
-  a breaking change; every callsite that previously threw a non-
-  `NetworkError` type from inside a `RequestInterceptor` would stop
-  compiling. That is exactly the kind of change the API_STABILITY
-  ledger reserves for a major bump.
-- A renamed surface (`requestStrict`, `tryRequest`, …) would mean
-  carrying two parallel method names through 4.x; the readability
-  loss outweighs the ergonomic gain.
-
-The migration target is the 5.0 major. Until then the public surface
-keeps untyped `async throws` and adopters that want the typed surface
-can wrap with their own helper:
-
-```swift
-extension NetworkClient {
-    func requestTyped<T: APIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse {
-        do { return try await self.request(request) }
-        catch let error as NetworkError { throw error }
-        catch {
-            throw NetworkError.underlying(
-                SendableUnderlyingError(domain: "AppDomain", code: -1,
-                                        message: String(describing: error)),
-                nil
-            )
-        }
-    }
-}
-```
-
-The 5.0 plan is to flip the protocol declarations to
-`throws(NetworkError)` once interceptors are documented as required to
-throw `NetworkError` (or to wrap their own errors before exiting the
-interceptor chain). The CHANGELOG entry that introduces 5.0 will spell
-out the catch-block migration.
+The remaining 5.0 candidate on this axis is not typed throws. It is the
+large `NetworkConfiguration.init(...)` compatibility initializer: 4.x
+keeps it public for source compatibility, while new examples and docs
+should prefer `safeDefaults(baseURL:)`, `advanced(baseURL:_:)`, or the
+pack/fluent modifier surfaces. If a future major release hides or
+removes the full initializer, the CHANGELOG entry must include
+before/after call-site examples.
 
 ## 4.x Trust Pinning Module Split (shipped)
 

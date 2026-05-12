@@ -93,6 +93,16 @@ Versioning.
   implementation can be validated against the published AWS SigV4
   test vectors before shipping to production. Listed as Provisionally
   Stable in API_STABILITY.md.
+- Package-internal `NetworkError` classification helpers for category,
+  retry hint, and user-visible hint decisions. The public error shape
+  is unchanged; the helper centralizes policy branching that previously
+  lived at call sites.
+- `Examples/TargetTypeCatalog`, a Moya-style catalog migration recipe
+  that maps enum cases to concrete `APIDefinition` values before typed
+  request execution.
+- `Scripts/check_provisional_enum_cases.sh` plus an enum-case allowlist
+  for guarded public/provisionally-stable cases. CI and release checks
+  now fail if a guarded case changes without an explicit ledger update.
 
 ### Fixed
 
@@ -117,6 +127,17 @@ Versioning.
   without cancelling a shared refresh for other waiters. If the coordinator is
   released while a refresh is still in flight, the orphan refresh task is
   cancelled.
+- `TaskStartGate.wait()` is cancellation-aware. Awaiters cancelled before
+  `open()` now resume with `false` instead of leaving a continuation behind.
+- `ConcurrencyTokenBucket` now synchronously records cancellation before the
+  actor cleanup hop, preventing a queued waiter from being resumed by a
+  racing `release()`.
+- `InFlightRegistry` registration now checks a generation token captured before
+  suspension. Late registrations after `cancelAll()` or tagged cancellation are
+  cancelled immediately instead of re-entering the in-flight table.
+- `PersistentResponseCache` open-time budget enforcement now uses running total
+  byte accounting while evicting large indexes instead of recomputing total
+  bytes on every victim.
 - `DownloadManager` now stores its transfer, restore, and failure
   coordinators once during initialization instead of recreating them through
   computed properties on every access.
@@ -186,6 +207,10 @@ Versioning.
   returning or rethrowing. The previous implementation used an
   unstructured `Task` from `defer`, which made the release boundary
   observable only after a scheduler hop.
+- Stable example smoke builds now pass `-Xswiftc -warnings-as-errors` so
+  copyable contract examples cannot drift with compiler warnings.
+- `RequestExecutor.execute(...)` is split into prepare, response, and decode
+  stages while preserving request policy behavior.
 - `NetworkConfiguration.recommendedForProduction(baseURL:)` now caps
   streaming response body collection at 5 MiB by default. Callers that
   need larger inline bodies can still override the policy through
