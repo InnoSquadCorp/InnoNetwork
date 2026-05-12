@@ -88,6 +88,12 @@ jobs:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
         run: |
           set -eo pipefail
+          tsan_dylib="$(xcrun clang -print-file-name=libclang_rt.tsan_osx_dynamic.dylib)"
+          if [[ ! -f "$tsan_dylib" ]]; then
+            echo "ThreadSanitizer runtime not found: $tsan_dylib" >&2
+            exit 1
+          fi
+          export DYLD_INSERT_LIBRARIES="$tsan_dylib"
           xcrun swift test \
             -Xswiftc -sanitize=thread \
             --parallel
@@ -119,6 +125,12 @@ jobs:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
         run: |
           set -eo pipefail
+          tsan_dylib="$(xcrun clang -print-file-name=libclang_rt.tsan_osx_dynamic.dylib)"
+          if [[ ! -f "$tsan_dylib" ]]; then
+            echo "ThreadSanitizer runtime not found: $tsan_dylib" >&2
+            exit 1
+          fi
+          export DYLD_INSERT_LIBRARIES="$tsan_dylib"
           xcrun swift test \
             -Xswiftc -sanitize=thread \
             --parallel
