@@ -32,6 +32,9 @@ The default behaviour is:
 - apply the current token before transport when one is available
 - refresh on `401`
 - collapse concurrent refreshes into one in-flight operation
+- return a cancelled waiter promptly without cancelling a shared refresh for
+  other requests; releasing the coordinator cancels an orphaned in-flight
+  refresh task
 - replay the fully adapted request at most once, preserving session and
   endpoint interceptor headers while clearing the prior `Authorization` header
   before reapplying so custom applicators that use `addValue` stay idempotent

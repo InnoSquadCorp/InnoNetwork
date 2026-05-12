@@ -170,12 +170,19 @@ await client.cancelAll(matching: feed)  // feed 태그만 취소
 - `Vary: *` 응답은 캐시되지 않습니다.
 - `Vary: Accept-Language` 같은 명시 헤더는 저장 시점의 요청 헤더 값을 함께 캡처해
   이후 lookup 에서 동일 값일 때만 hit 으로 인정합니다.
-- `Vary` 헤더가 없는 응답은 기존 키 정책 (Authorization 등) 만으로 저장됩니다.
+- `Vary` 헤더가 없는 응답은 저장 조건을 통과한 경우 기존 키 정책
+  (Authorization 등) 으로 분리됩니다.
 - GET 응답 중 전체 표현을 재사용할 수 있는 cacheable status (`200`, `203`, `204`,
   `300`, `301`, `308`, `404`, `405`, `410`, `414`, `501`) 는 저장 대상입니다.
 - `Cache-Control: no-store` 와 `Cache-Control: private` 는 현재 키를 무효화하고
   저장하지 않습니다. `Cache-Control: no-cache` 는 저장하되 매 lookup 마다
   재검증을 강제합니다.
+- `Authorization` 요청의 응답은 origin 이 `Cache-Control: public`,
+  `must-revalidate`, `s-maxage` 중 하나로 명시적으로 허용할 때만 저장됩니다.
+- `POST`, `PUT`, `PATCH`, `DELETE` 같은 unsafe method 가 `2xx`/`3xx` 응답을
+  받으면 RFC 9111 §4.4 에 따라 같은 target URI 의 캐시 변형을 모두
+  무효화합니다. `.disabled` 와 `.networkOnly` 정책은 캐시 메타데이터를
+  건드리지 않습니다.
 
 ---
 

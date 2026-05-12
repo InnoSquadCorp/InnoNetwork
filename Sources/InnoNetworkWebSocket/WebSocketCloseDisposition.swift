@@ -24,13 +24,14 @@ public enum WebSocketCloseDisposition: Sendable, Equatable {
     case manual(WebSocketCloseCode)
     /// Peer closed normally (1000 Normal Closure). No reconnect.
     case peerNormal(WebSocketCloseCode, String?)
-    /// Peer closed with a retryable code (1001 Going Away, 1011 Internal
+    /// Peer closed with a retryable code (1001 Going Away, 1005 No Status
+    /// Received, 1011 Internal
     /// Server Error, 1012 Service Restart, 1013 Try Again Later, 1014
     /// Bad Gateway, 1015 TLS Handshake Failure, 1006 Abnormal Closure).
     /// Reconnect will be attempted per the configuration's backoff policy.
     case peerRetryable(WebSocketCloseCode, String?)
     /// Peer closed with an RFC-defined protocol or policy failure
-    /// (1002, 1003, 1005, 1007, 1008, 1009, 1010). No reconnect.
+    /// (1002, 1003, 1007, 1008, 1009, 1010). No reconnect.
     case peerProtocolFailure(WebSocketCloseCode, String?)
     /// Peer closed with an application-defined custom code. No reconnect.
     case peerApplicationFailure(WebSocketCloseCode, String?)
@@ -87,15 +88,15 @@ public enum WebSocketCloseDisposition: Sendable, Equatable {
             .serviceRestart,
             .tryAgainLater,
             .badGateway,
-            .tlsHandshakeFailure:
+            .tlsHandshakeFailure,
+            .noStatusReceived:
             return .peerRetryable(code, reason)
         case .unsupportedData,
             .invalidFramePayloadData,
             .policyViolation,
             .messageTooBig,
             .mandatoryExtensionMissing,
-            .protocolError,
-            .noStatusReceived:
+            .protocolError:
             return .peerProtocolFailure(code, reason)
         case .custom:
             return .peerApplicationFailure(code, reason)

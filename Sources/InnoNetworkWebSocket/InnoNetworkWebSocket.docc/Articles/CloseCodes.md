@@ -18,7 +18,7 @@ parsing magic numbers.
 | 1001 | ``WebSocketCloseCode/goingAway`` | Endpoint is leaving (page unload, server restart). |
 | 1002 | ``WebSocketCloseCode/protocolError`` | Frame violated the protocol. |
 | 1003 | ``WebSocketCloseCode/unsupportedData`` | Received data we cannot accept (text on a binary-only socket). |
-| 1005 | ``WebSocketCloseCode/noStatusReceived`` | Reserved — no status was actually sent. |
+| 1005 | ``WebSocketCloseCode/noStatusReceived`` | Reserved — no status was actually sent; treated as retryable because the peer did not send a protocol-failure status. |
 | 1006 | ``WebSocketCloseCode/abnormalClosure`` | Reserved — connection lost without a close frame. |
 | 1007 | ``WebSocketCloseCode/invalidFramePayloadData`` | Frame bytes were not consistent with the type (e.g., bad UTF-8). |
 | 1008 | ``WebSocketCloseCode/policyViolation`` | Generic policy violation. |

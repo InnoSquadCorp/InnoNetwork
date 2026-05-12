@@ -49,23 +49,45 @@ struct BaseURLConfigurationTests {
             ),
             transport: TransportPack(
                 timeout: 45,
-                cachePolicy: .reloadIgnoringLocalCacheData
+                cachePolicy: .reloadIgnoringLocalCacheData,
+                streamingLineByteLimit: 2048
             )
         )
 
         #expect(config.baseURL == baseURL)
         #expect(config.timeout == 45)
         #expect(config.cachePolicy == .reloadIgnoringLocalCacheData)
+        #expect(config.streamingLineByteLimit == 2048)
         #expect(config.eventDeliveryPolicy.overflowPolicy == .dropNewest)
     }
 
-    @Test("makeURLSessionConfiguration() returns the system default")
-    func makeURLSessionConfigurationReturnsDefault() {
+    @Test("streamingLineByteLimit defaults and clamps")
+    func streamingLineByteLimitDefaultsAndClamps() {
         let baseURL = URL(string: "https://api.example.com/v1")!
-        let config = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+        let defaults = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+        let clamped = NetworkConfiguration(baseURL: baseURL, streamingLineByteLimit: 0)
+
+        #expect(defaults.streamingLineByteLimit == NetworkConfiguration.defaultStreamingLineByteLimit)
+        #expect(clamped.streamingLineByteLimit == 1)
+    }
+
+    @Test("makeURLSessionConfiguration() mirrors session-level network configuration")
+    func makeURLSessionConfigurationMirrorsSessionLevelConfiguration() {
+        let baseURL = URL(string: "https://api.example.com/v1")!
+        let config = NetworkConfiguration(
+            baseURL: baseURL,
+            timeout: 45,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            allowsCellularAccess: false,
+            allowsExpensiveNetworkAccess: false,
+            allowsConstrainedNetworkAccess: false
+        )
         let resolved = config.makeURLSessionConfiguration()
-        // The default URLSessionConfiguration honors the system default request timeout (60s).
-        #expect(resolved.timeoutIntervalForRequest > 0)
+        #expect(resolved.timeoutIntervalForRequest == 45)
+        #expect(resolved.requestCachePolicy == .reloadIgnoringLocalCacheData)
+        #expect(resolved.allowsCellularAccess == false)
+        #expect(resolved.allowsExpensiveNetworkAccess == false)
+        #expect(resolved.allowsConstrainedNetworkAccess == false)
     }
 
     @Test("Configured baseURL is used for request dispatch")

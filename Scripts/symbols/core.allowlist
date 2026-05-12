@@ -116,6 +116,7 @@ InnoNetwork	swift.enum.case	NetworkError.statusCode(_:)
 InnoNetwork	swift.enum.case	NetworkError.timeout(reason:underlying:)
 InnoNetwork	swift.enum.case	NetworkError.trustEvaluationFailed(_:)
 InnoNetwork	swift.enum.case	NetworkError.underlying(_:_:)
+InnoNetwork	swift.enum.case	NetworkErrorCode.cancelled
 InnoNetwork	swift.enum.case	NetworkErrorCode.configurationInvalidBaseURL
 InnoNetwork	swift.enum.case	NetworkErrorCode.configurationInvalidRequest
 InnoNetwork	swift.enum.case	NetworkErrorCode.configurationOffline
@@ -125,6 +126,7 @@ InnoNetwork	swift.enum.case	NetworkErrorCode.reachability
 InnoNetwork	swift.enum.case	NetworkErrorCode.responseBodyLimitExceeded
 InnoNetwork	swift.enum.case	NetworkErrorCode.statusCode
 InnoNetwork	swift.enum.case	NetworkErrorCode.streamFrameTooLarge
+InnoNetwork	swift.enum.case	NetworkErrorCode.timeout
 InnoNetwork	swift.enum.case	NetworkErrorCode.trustEvaluationFailed
 InnoNetwork	swift.enum.case	NetworkErrorCode.underlying
 InnoNetwork	swift.enum.case	NetworkEvent.cacheRevalidation(originalID:state:)
@@ -247,7 +249,7 @@ InnoNetwork	swift.init	MultipartFormData.init(boundary:includesPartContentLength
 InnoNetwork	swift.init	MultipartPart.init(headers:data:)
 InnoNetwork	swift.init	MultipartResponseDecoder.init(boundary:)
 InnoNetwork	swift.init	MultipartStreamingResponseDecoder.init(boundary:)
-InnoNetwork	swift.init	NetworkConfiguration.init(baseURL:timeout:cachePolicy:requestPriority:allowsCellularAccess:allowsExpensiveNetworkAccess:allowsConstrainedNetworkAccess:retryPolicy:networkMonitor:metricsReporter:trustPolicy:eventObservers:eventDeliveryPolicy:eventMetricsReporter:acceptableStatusCodes:requestInterceptors:responseInterceptors:decodingInterceptors:refreshTokenPolicy:requestCoalescingPolicy:responseCachePolicy:responseCache:circuitBreakerPolicy:customExecutionPolicies:idempotencyKeyPolicy:userAgentProvider:acceptLanguageProvider:captureFailurePayload:responseBodyBufferingPolicy:responseBodyLimit:redirectPolicy:allowsInsecureHTTP:)
+InnoNetwork	swift.init	NetworkConfiguration.init(baseURL:timeout:cachePolicy:requestPriority:allowsCellularAccess:allowsExpensiveNetworkAccess:allowsConstrainedNetworkAccess:retryPolicy:networkMonitor:metricsReporter:trustPolicy:eventObservers:eventDeliveryPolicy:eventMetricsReporter:acceptableStatusCodes:requestInterceptors:responseInterceptors:decodingInterceptors:refreshTokenPolicy:requestCoalescingPolicy:responseCachePolicy:responseCache:circuitBreakerPolicy:customExecutionPolicies:idempotencyKeyPolicy:userAgentProvider:acceptLanguageProvider:captureFailurePayload:responseBodyBufferingPolicy:responseBodyLimit:streamingLineByteLimit:redirectPolicy:allowsInsecureHTTP:)
 InnoNetwork	swift.init	NetworkContext.init(traceID:correlationID:baggage:)
 InnoNetwork	swift.init	NetworkErrorCode.init(rawValue:)
 InnoNetwork	swift.init	NetworkInterfaceType.init(rawValue:)
@@ -277,7 +279,7 @@ InnoNetwork	swift.init	ServerSentEvent.init(id:event:data:retry:)
 InnoNetwork	swift.init	ServerSentEventDecoder.init()
 InnoNetwork	swift.init	StateReduction.init(state:effects:)
 InnoNetwork	swift.init	TraceContextInterceptor.init(generateWhenMissing:sampled:tracestate:)
-InnoNetwork	swift.init	TransportPack.init(timeout:cachePolicy:requestPriority:allowsCellularAccess:allowsExpensiveNetworkAccess:allowsConstrainedNetworkAccess:redirectPolicy:allowsInsecureHTTP:trustPolicy:acceptableStatusCodes:userAgentProvider:acceptLanguageProvider:)
+InnoNetwork	swift.init	TransportPack.init(timeout:cachePolicy:requestPriority:allowsCellularAccess:allowsExpensiveNetworkAccess:allowsConstrainedNetworkAccess:redirectPolicy:streamingLineByteLimit:allowsInsecureHTTP:trustPolicy:acceptableStatusCodes:userAgentProvider:acceptLanguageProvider:)
 InnoNetwork	swift.init	TransportPolicy.init(requestEncoding:responseDecoding:responseDecoder:)
 InnoNetwork	swift.init	URLQueryCustomKeyTransform.init(_:)
 InnoNetwork	swift.init	URLQueryEncoder.init(keyEncodingStrategy:dateEncodingStrategy:arrayEncodingStrategy:nonConformingFloatEncodingStrategy:)
@@ -336,6 +338,7 @@ InnoNetwork	swift.method	HTTPHeaders.value(for:)
 InnoNetwork	swift.method	HTTPHeaders.values(for:)
 InnoNetwork	swift.method	InMemoryResponseCache.get(_:)
 InnoNetwork	swift.method	InMemoryResponseCache.invalidate(_:)
+InnoNetwork	swift.method	InMemoryResponseCache.invalidateTargetURI(_:)
 InnoNetwork	swift.method	InMemoryResponseCache.set(_:_:)
 InnoNetwork	swift.method	JWTBearerInterceptor.adapt(_:)
 InnoNetwork	swift.method	LowLevelNetworkClient.perform(_:)
@@ -389,6 +392,7 @@ InnoNetwork	swift.method	RequestInterceptor.adapt(_:)
 InnoNetwork	swift.method	Response.redactingData()
 InnoNetwork	swift.method	ResponseCache.get(_:)
 InnoNetwork	swift.method	ResponseCache.invalidate(_:)
+InnoNetwork	swift.method	ResponseCache.invalidateTargetURI(_:)
 InnoNetwork	swift.method	ResponseCache.set(_:_:)
 InnoNetwork	swift.method	ResponseInterceptor.adapt(_:request:)
 InnoNetwork	swift.method	RetryIdempotencyPolicy.allowsRetry(for:)
@@ -563,6 +567,7 @@ InnoNetwork	swift.property	NetworkConfiguration.responseCache
 InnoNetwork	swift.property	NetworkConfiguration.responseCachePolicy
 InnoNetwork	swift.property	NetworkConfiguration.responseInterceptors
 InnoNetwork	swift.property	NetworkConfiguration.retryPolicy
+InnoNetwork	swift.property	NetworkConfiguration.streamingLineByteLimit
 InnoNetwork	swift.property	NetworkConfiguration.timeout
 InnoNetwork	swift.property	NetworkConfiguration.trustPolicy
 InnoNetwork	swift.property	NetworkConfiguration.userAgentProvider
@@ -689,6 +694,7 @@ InnoNetwork	swift.property	TransportPack.allowsInsecureHTTP
 InnoNetwork	swift.property	TransportPack.cachePolicy
 InnoNetwork	swift.property	TransportPack.redirectPolicy
 InnoNetwork	swift.property	TransportPack.requestPriority
+InnoNetwork	swift.property	TransportPack.streamingLineByteLimit
 InnoNetwork	swift.property	TransportPack.timeout
 InnoNetwork	swift.property	TransportPack.trustPolicy
 InnoNetwork	swift.property	TransportPack.userAgentProvider
@@ -861,6 +867,7 @@ InnoNetwork	swift.type.property	HTTPHeaders.default
 InnoNetwork	swift.type.property	IdempotencyKeyPolicy.disabled
 InnoNetwork	swift.type.property	MultipartUploadStrategy.platformDefault
 InnoNetwork	swift.type.property	NetworkConfiguration.defaultAcceptableStatusCodes
+InnoNetwork	swift.type.property	NetworkConfiguration.defaultStreamingLineByteLimit
 InnoNetwork	swift.type.property	NetworkContext.$current
 InnoNetwork	swift.type.property	NetworkContext.current
 InnoNetwork	swift.type.property	NetworkError.errorCodeUserInfoKey

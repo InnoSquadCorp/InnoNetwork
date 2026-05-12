@@ -100,6 +100,43 @@ private actor RefreshGate {
 }
 
 
+private actor CancellableRefreshProbe {
+    private var started = false
+    private var cancelled = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var cancelWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func refreshToken() async throws -> String {
+        started = true
+        startWaiters.forEach { $0.resume() }
+        startWaiters.removeAll()
+        do {
+            try await Task.sleep(for: .seconds(60))
+            return "new"
+        } catch is CancellationError {
+            cancelled = true
+            cancelWaiters.forEach { $0.resume() }
+            cancelWaiters.removeAll()
+            throw CancellationError()
+        }
+    }
+
+    func waitUntilStarted() async {
+        if started { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilCancelled() async {
+        if cancelled { return }
+        await withCheckedContinuation { continuation in
+            cancelWaiters.append(continuation)
+        }
+    }
+}
+
+
 private actor TokenStore {
     private var current: String
 
@@ -307,6 +344,36 @@ struct RefreshCoalescerRaceTests {
         #expect(applied.value(forHTTPHeaderField: "Authorization") == "Bearer new")
         let attempts = await log.attempts
         #expect(attempts == 2, "second call must trigger a fresh refresh (got \(attempts) total)")
+    }
+
+    @Test("Coordinator deinit cancels orphaned in-flight refresh task")
+    func coordinatorDeinitCancelsOrphanedInFlightRefresh() async throws {
+        let probe = CancellableRefreshProbe()
+        let policy = RefreshTokenPolicy(
+            currentToken: { "old" },
+            refreshToken: { try await probe.refreshToken() }
+        )
+        let request = URLRequest(url: URL(string: "https://api.example.com/me")!)
+
+        weak var weakCoordinator: RefreshTokenCoordinator?
+        let waiter: Task<URLRequest, Error>
+        do {
+            let coordinator = RefreshTokenCoordinator(policy: policy)
+            weakCoordinator = coordinator
+            waiter = Task {
+                try await coordinator.refreshAndApply(to: request)
+            }
+        }
+
+        await probe.waitUntilStarted()
+        waiter.cancel()
+        await #expect(throws: CancellationError.self) {
+            _ = try await waiter.value
+        }
+        for _ in 0..<10 { await Task.yield() }
+
+        #expect(weakCoordinator == nil)
+        await probe.waitUntilCancelled()
     }
 
     @Test("RequestDedupKey distinguishes refreshLane suffix")

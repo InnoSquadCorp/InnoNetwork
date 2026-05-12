@@ -89,7 +89,7 @@ package struct WebSocketHeartbeatCoordinator {
 
     package func startHeartbeat(
         for task: WebSocketTask,
-        onPingTimeout: @escaping @Sendable (Int) async -> Void
+        onPingTimeout: @escaping @Sendable (Int) -> Void
     ) async {
         await runtimeRegistry.cancelHeartbeatTask(for: task.id)
         guard configuration.heartbeatInterval > 0 else { return }
@@ -130,12 +130,7 @@ package struct WebSocketHeartbeatCoordinator {
                 } catch {
                     missedPongs += 1
                     if missedPongs >= configuration.maxMissedPongs {
-                        // Hand terminal timeout handling off to a fresh task so
-                        // manager-side cleanup can cancel this heartbeat task
-                        // without awaiting on its own completion.
-                        Task {
-                            await onPingTimeout(urlTask.taskIdentifier)
-                        }
+                        onPingTimeout(urlTask.taskIdentifier)
                         break
                     }
                     // Always surface a failed heartbeat as `.pingTimeout` so

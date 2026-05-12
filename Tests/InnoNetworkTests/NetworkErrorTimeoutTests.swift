@@ -192,8 +192,8 @@ struct NetworkErrorTimeoutTests {
         let invalidRequest = NetworkError.configuration(reason: .invalidRequest("bad")) as NSError
 
         #expect(timeout.domain == NetworkError.errorDomain)
-        #expect(timeout.code == NSURLErrorTimedOut)
-        #expect(cancelled.code == NSURLErrorCancelled)
+        #expect(timeout.code == NetworkErrorCode.timeout.rawValue)
+        #expect(cancelled.code == NetworkErrorCode.cancelled.rawValue)
         #expect(invalidRequest.code == 1002)
     }
 

@@ -12,17 +12,13 @@ import OSLog
 /// The cache enforces a synchronous LRU bound on every write so the disk
 /// footprint stays within the configured byte and entry budgets.
 ///
-/// ## RFC 9111 non-compliance
+/// ## RFC 9111 scope
 ///
-/// This cache is intentionally **not** an RFC 9111 cache. It honours the
-/// freshness and conditional-revalidation hooks provided by
-/// ``ResponseCachePolicy`` — `Cache-Control` directives on the **request**
-/// or **response** are otherwise ignored: `no-store`, `no-cache`,
-/// `must-revalidate`, `private`, `s-maxage`, `Vary` short-circuits, and
-/// the directive interactions described by RFC 9111 §3–§5 are not applied
-/// here. The cache will happily store a response that carries
-/// `Cache-Control: no-store` and will return a stale entry that the spec
-/// would require to be revalidated.
+/// This cache is a storage layer, not a complete RFC 9111 implementation by
+/// itself. `RequestExecutor` applies the default write-side guardrails
+/// (`no-store`, `private`, `Vary: *`, and unsafe-method target URI
+/// invalidation) before it calls into ``ResponseCache``. Direct calls to
+/// ``set(_:_:)`` still use only this actor's conservative persistence policy.
 ///
 /// Callers that need RFC 9111 directive semantics should wrap their
 /// policy with ``ResponseCachePolicy/rfc9111Compliant(wrapping:)``. The
@@ -55,6 +51,11 @@ public actor PersistentResponseCache: ResponseCache {
             self.url = url
             self.headers = headers
         }
+    }
+
+    struct VariantDiskKey: Codable, Hashable, Sendable {
+        let key: DiskKey
+        let varyHeaders: [String: String?]
     }
 
     struct Index: Codable, Sendable {
@@ -165,8 +166,21 @@ public actor PersistentResponseCache: ResponseCache {
             bodiesDirectoryURL: bodiesDirectoryURL,
             fileManager: fileManager
         )
-        let policyScrubResult = try Self.scrubPolicyRejectedEntriesOnOpen(
+        let reindexed = try Self.reindexVaryVariantsOnOpen(
             loadResult.index,
+            encoder: identifierEncoder
+        )
+        if Set(reindexed.entries.keys) != Set(loadResult.index.entries.keys) {
+            try Self.persistIndex(
+                reindexed,
+                to: indexURL,
+                directoryURL: configuration.directoryURL,
+                configuration: configuration,
+                fileManager: fileManager
+            )
+        }
+        let policyScrubResult = try Self.scrubPolicyRejectedEntriesOnOpen(
+            reindexed,
             configuration: configuration,
             indexURL: indexURL,
             bodiesDirectoryURL: bodiesDirectoryURL,
@@ -214,20 +228,12 @@ public actor PersistentResponseCache: ResponseCache {
     /// index never demotes a successful read to a miss.
     public func get(_ key: ResponseCacheKey) async -> CachedResponse? {
         let diskKey = DiskKey(key, normalizer: keyNormalizer)
-        let id: String
-        do {
-            id = try identifier(for: diskKey)
-        } catch {
-            Self.logger.error(
-                "persistent_cache_identifier_failed operation=get url=\(key.url, privacy: .private) error=\(String(describing: error), privacy: .private)"
-            )
+        guard let selection = matchingEntry(for: diskKey) else {
             recordMiss()
             return nil
         }
-        guard var entry = index.entries[id] else {
-            recordMiss()
-            return nil
-        }
+        let id = selection.0
+        var entry = selection.1
         guard shouldStore(key: entry.key, responseHeaders: entry.headers) else {
             scrubEntry(id: id, entry: entry, reason: .policyRejected)
             try? persistIndex()
@@ -361,7 +367,7 @@ public actor PersistentResponseCache: ResponseCache {
         let diskKey = DiskKey(key, normalizer: keyNormalizer)
         let id: String
         do {
-            id = try identifier(for: diskKey)
+            id = try identifier(for: diskKey, varyHeaders: value.varyHeaders)
         } catch {
             Self.logger.error(
                 "persistent_cache_identifier_failed operation=set url=\(key.url, privacy: .private) error=\(String(describing: error), privacy: .private)"
@@ -370,9 +376,14 @@ public actor PersistentResponseCache: ResponseCache {
         }
         let bodyFileName = "\(id)-\(UUID().uuidString).body"
         let bodyURL = bodiesDirectoryURL.appendingPathComponent(bodyFileName, isDirectory: false)
-        let byteCost =
-            value.data.count
-            + value.headers.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count }
+        let headerByteCost: Int = value.headers.reduce(0) { partialResult, header in
+            partialResult + header.key.utf8.count + header.value.utf8.count
+        }
+        let varyHeaderByteCost: Int =
+            value.varyHeaders?.reduce(0) { partialResult, header in
+                partialResult + header.key.utf8.count + (header.value?.utf8.count ?? 0)
+            } ?? 0
+        let byteCost = value.data.count + headerByteCost + varyHeaderByteCost
         let entry = Entry(
             key: diskKey,
             statusCode: value.statusCode,
@@ -441,19 +452,30 @@ public actor PersistentResponseCache: ResponseCache {
 
     /// Remove the entry for `key` from the index and delete its body file.
     public func invalidate(_ key: ResponseCacheKey) async {
-        let id: String
-        do {
-            id = try identifier(for: DiskKey(key, normalizer: keyNormalizer))
-        } catch {
-            Self.logger.error(
-                "persistent_cache_identifier_failed operation=invalidate url=\(key.url, privacy: .private) error=\(String(describing: error), privacy: .private)"
-            )
-            return
+        let diskKey = DiskKey(key, normalizer: keyNormalizer)
+        let matches = index.entries.filter { _, entry in
+            entry.key == diskKey
         }
-        if let entry = index.entries[id] {
+        guard !matches.isEmpty else { return }
+        for (id, entry) in matches {
             removeEntry(id: id, entry: entry)
-            try? persistIndex()
         }
+        try? persistIndex()
+    }
+
+    /// Remove every persisted entry whose normalized target URI matches
+    /// `targetURI`, regardless of request method or Vary/header dimensions.
+    public func invalidateTargetURI(_ targetURI: String) async {
+        let normalizedTargetURI = ResponseCacheKey.normalizedTargetURI(targetURI)
+        let matches = index.entries.filter { _, entry in
+            entry.key.url == normalizedTargetURI
+        }
+        guard !matches.isEmpty else { return }
+
+        for (id, entry) in matches {
+            removeEntry(id: id, entry: entry)
+        }
+        try? persistIndex()
     }
 
     /// Clear all entries. Resets the index and recreates the bodies directory.
@@ -555,6 +577,24 @@ public actor PersistentResponseCache: ResponseCache {
         index.entries[id]?.bodyFileName == entry.bodyFileName
     }
 
+    private func matchingEntry(for diskKey: DiskKey) -> (String, Entry)? {
+        let candidates =
+            index.entries
+            .filter { _, entry in entry.key == diskKey }
+            .sorted { lhs, rhs in
+                if lhs.value.lastAccessedAt != rhs.value.lastAccessedAt {
+                    return lhs.value.lastAccessedAt > rhs.value.lastAccessedAt
+                }
+                if lhs.value.storedAt != rhs.value.storedAt {
+                    return lhs.value.storedAt > rhs.value.storedAt
+                }
+                return lhs.key > rhs.key
+            }
+        return candidates.first { _, entry in
+            Self.varySnapshot(entry.varyHeaders, matches: diskKey)
+        }
+    }
+
     private func removeBody(fileName: String) {
         Self.removeBody(fileName: fileName, in: bodiesDirectoryURL, fileManager: fileManager)
     }
@@ -576,5 +616,9 @@ public actor PersistentResponseCache: ResponseCache {
 
     private func identifier(for key: DiskKey) throws -> String {
         try Self.identifier(for: key, encoder: identifierEncoder)
+    }
+
+    private func identifier(for key: DiskKey, varyHeaders: [String: String?]?) throws -> String {
+        try Self.identifier(for: key, varyHeaders: varyHeaders, encoder: identifierEncoder)
     }
 }

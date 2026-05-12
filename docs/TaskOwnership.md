@@ -24,11 +24,11 @@ and event streams do not map to structured child tasks owned by one caller.
 |---|---|---|---|
 | WebSocket close-handshake timeout | `WebSocketRuntimeRegistry` per task runtime | Cancel from the reducer's terminal cleanup path when close ack or timeout wins | Stale `didOpen` callbacks must reduce to `ignoreStaleCallback` while manual disconnect is in progress. |
 | WebSocket reconnect timer | `WebSocketRuntimeRegistry` via `WebSocketReconnectCoordinator` | Cancel when manual disconnect wins, when max attempts fail, or when the task reaches a terminal state | Reconnect timer firing is reduced to a fresh `connecting` generation before URLSession starts. |
-| WebSocket heartbeat loop | `WebSocketRuntimeRegistry` via `WebSocketHeartbeatCoordinator` | Cancel on manual disconnect, peer terminal close, ping timeout terminal failure, or reconnect handoff | Heartbeat events are scoped to one connection generation. |
+| WebSocket heartbeat loop | `WebSocketRuntimeRegistry` via `WebSocketHeartbeatCoordinator` | Cancel on manual disconnect, peer terminal close, ping timeout terminal failure, or reconnect handoff | Heartbeat events are scoped to one connection generation; ping timeouts route through the delegate-event queue so callback ordering stays FIFO. |
 | Event delivery worker tasks | `TaskEventHub` partition/consumer state | Finish partition delivery from the owning manager before registry removal | Slow consumers must not block fast consumers. |
 | Background download completion handler | `DownloadManager` background session bridge | Invoke exactly once after restored URLSession events have drained | The app delegate owns receiving the system callback; the manager owns release timing. |
 | Foundation delegate callback bridge | `URLSession` delegate adapters and managers | Bridge callback into manager actor, then reduce it with the generation captured for that URLSession task identifier | Delegate callbacks can arrive stale or out of order and must be generation/state-checked before mutating state or consuming reconnect budget. |
-| Auth refresh single-flight | `RefreshTokenPolicy` refresh coordinator | Shared refresh is not cancelled just because one waiting request is cancelled | This is the main approved `Task.detached`-style boundary: caller cancellation must not poison a shared refresh for other requests. |
+| Auth refresh single-flight | `RefreshTokenPolicy` refresh coordinator | Shared refresh is not cancelled just because one waiting request is cancelled; coordinator deinit cancels any orphaned in-flight refresh | This is the main approved `Task.detached`-style boundary: caller cancellation must not poison a shared refresh for other requests, but the coordinator still owns terminal cleanup. |
 
 ## Long-Lived Lifecycle
 

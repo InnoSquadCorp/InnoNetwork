@@ -238,39 +238,46 @@ jobs:
           name: innonetwork-coverage-${{ matrix.xcode.label }}
           path: .build/coverage/
 
-      # Codecov uploads run on every CI build. For pushes/PRs from the
-      # canonical repository the token must be present — a missing token
-      # there is a misconfiguration we want to surface, not paper over.
-      # Forked PRs cannot access secrets, so we still allow the upload to
-      # be skipped in that single case.
-      - name: Require Codecov token on canonical builds
+      - name: Detect Codecov token
+        id: codecov-token
+        if: matrix.xcode.required && steps.toolchain-compatibility.outputs.compatible == 'true'
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [[ -n "${CODECOV_TOKEN:-}" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Codecov uploads are optional on PRs because secrets can be absent or
+      # intentionally withheld. The coverage artifact above is still always
+      # uploaded. Main pushes in the canonical repository keep the stricter
+      # token requirement so the published badge and project gate do not drift.
+      - name: Require Codecov token on canonical main builds
         # Only the pinned canonical toolchain uploads coverage. The
         # runner-default matrix entry exists for an early-warning
         # signal on toolchain bumps; doubling its coverage upload
         # against the same commit would skew the Codecov report.
-        if: matrix.xcode.required && steps.toolchain-compatibility.outputs.compatible == 'true' && github.event.pull_request.head.repo.fork != true
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        if: matrix.xcode.required && steps.toolchain-compatibility.outputs.compatible == 'true' && github.event_name == 'push' && github.repository == 'InnoSquadCorp/InnoNetwork' && steps.codecov-token.outputs.present != 'true'
         run: |
-          if [[ -z "${CODECOV_TOKEN:-}" ]]; then
-            echo "::error::CODECOV_TOKEN secret is missing on a canonical build." \
-              "Codecov uploads are required so the badge and project gate stay" \
-              "trustworthy. Configure the secret or, if intentional, gate this" \
-              "step explicitly."
-            exit 1
-          fi
+          echo "::error::CODECOV_TOKEN secret is missing on a canonical main build." \
+            "Codecov uploads are required so the badge and project gate stay" \
+            "trustworthy. Configure the secret or, if intentional, gate this" \
+            "step explicitly."
+          exit 1
 
       - name: Upload coverage to Codecov
-        if: matrix.xcode.required && steps.toolchain-compatibility.outputs.compatible == 'true' && env.CODECOV_TOKEN != ''
+        if: matrix.xcode.required && steps.toolchain-compatibility.outputs.compatible == 'true' && steps.codecov-token.outputs.present == 'true'
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         with:
           files: .build/coverage/coverage.lcov
-          # Fail the build when the upload itself fails on canonical builds
-          # so a Codecov outage does not silently drop coverage from the
-          # project gate. Fork PRs skip this step entirely (see above).
-          fail_ci_if_error: true
+          # Fail the build when upload fails on canonical main pushes so a
+          # Codecov outage does not silently drop coverage from the project
+          # gate. PRs keep the artifact-only fallback non-blocking.
+          fail_ci_if_error: ${{ github.event_name == 'push' && github.repository == 'InnoSquadCorp/InnoNetwork' }}
 
       - name: Enforce @unchecked Sendable policy
         if: steps.toolchain-compatibility.outputs.compatible == 'true'

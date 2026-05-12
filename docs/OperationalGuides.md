@@ -53,6 +53,12 @@ buffer can drop decoded outputs that the resume cursor has already observed.
 Use the default lossless `stream(_:)` for SSE feeds where `Last-Event-ID` must
 reflect every event the consumer will eventually process.
 
+The live streaming smoke job is advisory: it proves the remote sample endpoint
+is reachable and still speaks the expected format, but it does not replace
+deterministic unit coverage for mid-stream transport failures. Keep
+Last-Event-ID resume assertions in local tests where the failure point and
+reconnect headers are controlled.
+
 ## Local CPU Notes
 
 DocC, symbol graph extraction, and benchmark jobs are CPU-heavy. Run them

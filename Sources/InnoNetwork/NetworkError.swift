@@ -418,9 +418,9 @@ extension NetworkError: CustomNSError {
         case .trustEvaluationFailed:
             return NetworkErrorCode.trustEvaluationFailed.rawValue
         case .cancelled:
-            return NSURLErrorCancelled
+            return NetworkErrorCode.cancelled.rawValue
         case .timeout:
-            return NSURLErrorTimedOut
+            return NetworkErrorCode.timeout.rawValue
         }
     }
 

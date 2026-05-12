@@ -111,6 +111,12 @@ extension RequestExecutor {
                 continue
             }
 
+            await invalidateUnsafeTargetURIIfNeeded(
+                networkResponse,
+                request: request,
+                configuration: configuration
+            )
+
             // Enforced before the response cache is written so an oversize
             // body cannot poison subsequent GETs that would replay it from
             // cache. The check is controlled by responseBodyBufferingPolicy;

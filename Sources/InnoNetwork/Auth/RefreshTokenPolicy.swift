@@ -95,6 +95,12 @@ package actor RefreshTokenCoordinator {
         self.now = now
     }
 
+    deinit {
+        if case .inFlight(_, let task) = state.phase {
+            task.cancel()
+        }
+    }
+
     /// Whether a refresh task is currently in flight.
     ///
     /// Reads are point-in-time. The intended consumer is
@@ -146,7 +152,7 @@ package actor RefreshTokenCoordinator {
         case .cooldown(let until, let lastError):
             if now() < until { throw lastError }
         case .inFlight(_, let task):
-            return try await task.value
+            return try await RefreshTokenTaskAwaitBridge().value(of: task)
         case .idle:
             break
         }
@@ -155,11 +161,11 @@ package actor RefreshTokenCoordinator {
         let id = UUID()
         // State transitions are driven by the detached task's own completion
         // (success/failure/cancel) rather than by the awaiter's catch arms.
-        // If the *caller* of `refreshedToken()` is cancelled while awaiting
-        // `task.value`, the detached task keeps running, so resetting state
-        // here would let a follow-up caller launch a duplicate refresh.
-        // Routing the transition through the task itself preserves
-        // single-flight even under aggressive caller cancellation.
+        // If the *caller* of `refreshedToken()` is cancelled while awaiting the
+        // detached task, the task keeps running, so resetting state here would
+        // let a follow-up caller launch a duplicate refresh. Routing the
+        // transition through the task itself preserves single-flight even under
+        // aggressive caller cancellation.
         //
         // The task body awaits `refreshDidSucceed`/`refreshDidCancel`/
         // `refreshDidFail` *before* re-throwing or returning. That ordering
@@ -194,7 +200,7 @@ package actor RefreshTokenCoordinator {
                 event: .start(id: id, task: task),
                 context: lifecycleContext()
             ).state
-        return try await task.value
+        return try await RefreshTokenTaskAwaitBridge().value(of: task)
     }
 
     private func refreshDidSucceed(id: UUID) {
@@ -226,6 +232,71 @@ package actor RefreshTokenCoordinator {
 
     private func lifecycleContext() -> RefreshLifecycleContext {
         RefreshLifecycleContext(now: now(), failureCooldown: policy.failureCooldown)
+    }
+}
+
+
+private actor RefreshTokenTaskAwaitBridge {
+    private enum Outcome: Sendable {
+        case success(String)
+        case failure(any Error & Sendable)
+    }
+
+    private var continuation: CheckedContinuation<String, any Error>?
+    private var outcome: Outcome?
+
+    func value(of task: Task<String, any Error>) async throws -> String {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                install(continuation, task: task)
+            }
+        } onCancel: {
+            Task.detached {
+                await self.finish(.failure(CancellationError()))
+            }
+        }
+    }
+
+    private func install(
+        _ continuation: CheckedContinuation<String, any Error>,
+        task: Task<String, any Error>
+    ) {
+        if let outcome {
+            resume(continuation, with: outcome)
+            return
+        }
+
+        self.continuation = continuation
+        Task.detached {
+            do {
+                let value = try await task.value
+                await self.finish(.success(value))
+            } catch {
+                await self.finish(.failure(error))
+            }
+        }
+    }
+
+    private func finish(_ outcome: Outcome) {
+        if self.outcome != nil {
+            return
+        }
+
+        self.outcome = outcome
+        let continuation = self.continuation
+        self.continuation = nil
+        if let continuation {
+            resume(continuation, with: outcome)
+        }
+    }
+
+    private func resume(_ continuation: CheckedContinuation<String, any Error>, with outcome: Outcome) {
+        switch outcome {
+        case .success(let value):
+            continuation.resume(returning: value)
+        case .failure(let error):
+            continuation.resume(throwing: error)
+        }
     }
 }
 

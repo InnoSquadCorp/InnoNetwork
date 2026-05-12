@@ -1,5 +1,6 @@
 import Foundation
 import InnoNetworkTestSupport
+import Network
 import Testing
 
 @testable import InnoNetwork
@@ -235,6 +236,95 @@ private func makeSequencedStreamingURLSession() -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [SequencedStreamingURLProtocol.self]
     return URLSession(configuration: configuration)
+}
+
+
+private final class StreamingResumeHTTPServer: @unchecked Sendable {
+    private let listener: NWListener
+    private let queue = DispatchQueue(label: "innonetwork.streaming-resume-http-server")
+    private var handledConnectionCount = 0
+    private var capturedHeaderBlocks: [String] = []
+    private var portValue: UInt16 = 0
+
+    var baseURL: URL {
+        URL(string: "http://127.0.0.1:\(portValue)")!
+    }
+
+    init() throws {
+        let listener = try NWListener(using: .tcp, on: .any)
+        self.listener = listener
+
+        let ready = DispatchSemaphore(value: 0)
+        listener.stateUpdateHandler = { state in
+            if case .ready = state {
+                ready.signal()
+            }
+        }
+        listener.newConnectionHandler = { [weak self] connection in
+            self?.handle(connection)
+        }
+        listener.start(queue: queue)
+
+        guard ready.wait(timeout: .now() + 2) == .success,
+            let port = listener.port
+        else {
+            throw URLError(.cannotConnectToHost)
+        }
+        self.portValue = port.rawValue
+    }
+
+    func stop() {
+        listener.cancel()
+    }
+
+    func capturedRequests() -> [String] {
+        queue.sync { capturedHeaderBlocks }
+    }
+
+    private func handle(_ connection: NWConnection) {
+        connection.start(queue: queue)
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 8 * 1024) { [weak self] data, _, _, _ in
+            guard let self else {
+                connection.cancel()
+                return
+            }
+            if let data, let headerBlock = String(data: data, encoding: .utf8) {
+                self.capturedHeaderBlocks.append(headerBlock)
+            } else {
+                self.capturedHeaderBlocks.append("")
+            }
+            self.handledConnectionCount += 1
+
+            if self.handledConnectionCount == 1 {
+                var partialResponse = Data(
+                    ("HTTP/1.1 200 OK\r\n"
+                        + "Content-Type: text/plain\r\n"
+                        + "Content-Length: 1000000\r\n"
+                        + "\r\n"
+                        + "1|alpha\n").utf8)
+                partialResponse.append(contentsOf: repeatElement(UInt8(ascii: "x"), count: 128 * 1024))
+                connection.send(
+                    content: partialResponse,
+                    completion: .contentProcessed { _ in
+                        self.queue.asyncAfter(deadline: .now() + 0.05) {
+                            connection.cancel()
+                        }
+                    })
+            } else {
+                let response =
+                    "HTTP/1.1 200 OK\r\n"
+                    + "Content-Type: text/plain\r\n"
+                    + "Content-Length: 7\r\n"
+                    + "\r\n"
+                    + "2|beta\n"
+                connection.send(
+                    content: Data(response.utf8),
+                    completion: .contentProcessed { _ in
+                        connection.cancel()
+                    })
+            }
+        }
+    }
 }
 
 
@@ -555,7 +645,7 @@ struct StreamingAPIDefinitionTests {
         let streamURL = baseURL.appendingPathComponent(definition.path)
         let oversizedLine = Data(
             repeating: UInt8(ascii: "x"),
-            count: StreamingExecutor.maxStreamLineByteCount + 1
+            count: NetworkConfiguration.defaultStreamingLineByteLimit + 1
         )
         StreamingURLProtocol.register(
             url: streamURL,
@@ -576,6 +666,38 @@ struct StreamingAPIDefinitionTests {
                 #expect(underlying.code == NetworkErrorCode.streamFrameTooLarge.rawValue)
                 #expect(response.kind == .headersOnly)
                 #expect(response.data.isEmpty)
+            default:
+                Issue.record("Expected NetworkError.decoding(stage: .streamFrame), got \(error)")
+            }
+        }
+    }
+
+    @Test("stream() uses configured line byte limit")
+    func streamUsesConfiguredLineByteLimit() async throws {
+        let definition = LineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        StreamingURLProtocol.register(
+            url: streamURL,
+            response: .success(statusCode: 200, data: Data("12345".utf8))
+        )
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                streamingLineByteLimit: 4
+            ),
+            session: makeStreamingURLSession()
+        )
+
+        do {
+            for try await _ in client.stream(definition) {}
+            Issue.record("Expected configured stream line limit to fail")
+        } catch let error as NetworkError {
+            switch error {
+            case .decoding(let stage, let underlying, _):
+                #expect(stage == .streamFrame)
+                #expect(underlying.code == NetworkErrorCode.streamFrameTooLarge.rawValue)
+                #expect(underlying.message.contains("4 bytes"))
             default:
                 Issue.record("Expected NetworkError.decoding(stage: .streamFrame), got \(error)")
             }
@@ -902,6 +1024,39 @@ struct StreamingAPIDefinitionTests {
         state.observe(eventID: nil)
         #expect(state.lastSeenEventID == "1")
         #expect(!state.canResume(maxAttempts: 2, completedResumeAttempts: 1))
+    }
+
+    @Test("stream() resumes with Last-Event-ID after a mid-stream transport failure")
+    func resumePolicyAttachesLastEventIDAfterMidStreamTransportFailure() async throws {
+        let server = try StreamingResumeHTTPServer()
+        defer { server.stop() }
+
+        let baseURL = server.baseURL
+        let definition = ResumableStream(resumePolicy: .lastEventID(maxAttempts: 2, retryDelay: 0))
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                timeout: 5,
+                allowsInsecureHTTP: true
+            ),
+            session: URLSession(configuration: .ephemeral)
+        )
+
+        var collected: [ResumableEvent] = []
+        for try await event in client.stream(definition) {
+            collected.append(event)
+        }
+
+        #expect(
+            collected == [
+                ResumableEvent(id: "1", payload: "alpha"),
+                ResumableEvent(id: "2", payload: "beta"),
+            ])
+        let captured = server.capturedRequests()
+        #expect(captured.count == 2)
+        #expect(captured.first?.localizedCaseInsensitiveContains("Last-Event-ID:") == false)
+        #expect(captured.dropFirst().first?.localizedCaseInsensitiveContains("Last-Event-ID: 1") == true)
     }
 
     @Test("stream() does not resume Last-Event-ID after decode errors")

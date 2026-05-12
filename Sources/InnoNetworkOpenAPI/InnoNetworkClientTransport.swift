@@ -11,7 +11,8 @@ import OpenAPIRuntime
 /// ``DefaultNetworkClient``; the transport is the inverse direction — it
 /// lets a `swift-openapi-generator`-produced `Client` dispatch its
 /// generated calls through a URLSession that the host application has
-/// already configured (cookie storage, HTTP/3, custom delegate, etc.).
+/// already configured (timeouts, cache policy, cookie storage, HTTP/3,
+/// custom delegate, etc.).
 ///
 /// `InnoNetworkClientTransport` does not currently flow requests through
 /// `DefaultNetworkClient`'s execution pipeline. The pipeline is shaped
@@ -34,23 +35,27 @@ public final class InnoNetworkClientTransport: ClientTransport {
     /// transport is a better fit at that point.
     public let requestBodyByteLimit: Int
 
-    /// Maximum number of bytes the transport will collect from the
-    /// origin response body before handing it to the generated client.
+    /// Maximum number of bytes the transport will stream from the origin
+    /// response body before failing the generated client's body consumer.
     /// Defaults to 50 MiB.
     public let responseBodyByteLimit: Int
 
     private let session: URLSession
+    private static let responseBodyChunkSize = 16 * 1024
 
     /// Construct a transport backed by the supplied `URLSession`.
     /// - Parameters:
     ///   - session: The URLSession used to dispatch generated requests.
     ///     Construct it from
-    ///     ``NetworkConfiguration/makeURLSessionConfiguration()`` to inherit
-    ///     the same TLS / timeout / cookie posture the rest of the app
-    ///     uses, or pass `.shared` for stand-alone use.
+    ///     ``NetworkConfiguration/makeURLSessionConfiguration()`` to carry
+    ///     session-level timeout, cache, and network-access defaults, then
+    ///     mutate `URLSessionConfiguration` directly for cookie storage,
+    ///     HTTP/3, TLS, or delegate-owned behavior. `NetworkConfiguration`
+    ///     trust policies are evaluated by InnoNetwork's request pipeline and
+    ///     are not copied into this bare generated-client transport.
     ///   - requestBodyByteLimit: Maximum collected size for outgoing
     ///     request bodies.
-    ///   - responseBodyByteLimit: Maximum collected size for incoming
+    ///   - responseBodyByteLimit: Maximum streamed size for incoming
     ///     response bodies.
     public init(
         session: URLSession,
@@ -74,30 +79,28 @@ public final class InnoNetworkClientTransport: ClientTransport {
             baseURL: baseURL
         )
 
-        let (responseData, urlResponse) = try await session.data(for: urlRequest)
+        let (responseBytes, urlResponse) = try await session.bytes(for: urlRequest)
 
         guard let httpResponse = urlResponse as? HTTPURLResponse else {
             throw InnoNetworkClientTransportError.nonHTTPResponse(urlResponse)
         }
 
-        // Enforce the response ceiling at the boundary so a peer that
-        // ignores the byte limit cannot push a multi-GiB body into the
-        // generated client. URLSession has already buffered the full
-        // payload by the time `session.data(for:)` returns, but failing
-        // here at least short-circuits the downstream decode and signals
-        // the violation to the generated client.
-        if responseData.count > responseBodyByteLimit {
+        let normalizedResponseLimit = max(0, responseBodyByteLimit)
+        if !Self.statusCodeMustNotCarryBody(httpResponse.statusCode),
+            urlResponse.expectedContentLength > Int64(normalizedResponseLimit)
+        {
             throw InnoNetworkClientTransportError.responseBodyTooLarge(
-                limit: responseBodyByteLimit,
-                received: responseData.count
+                limit: normalizedResponseLimit,
+                received: Int(clamping: urlResponse.expectedContentLength)
             )
         }
 
         let response = try makeHTTPResponse(from: httpResponse)
-        let responseBody =
-            responseData.isEmpty
-            ? nil
-            : HTTPBody(ArraySlice(responseData))
+        let responseBody = makeResponseBody(
+            responseBytes,
+            response: httpResponse,
+            limit: normalizedResponseLimit
+        )
         return (response, responseBody)
     }
 
@@ -136,6 +139,55 @@ public final class InnoNetworkClientTransport: ClientTransport {
         return urlRequest
     }
 
+    private func makeResponseBody(
+        _ bytes: URLSession.AsyncBytes,
+        response: HTTPURLResponse,
+        limit: Int
+    ) -> HTTPBody? {
+        guard !Self.statusCodeMustNotCarryBody(response.statusCode) else { return nil }
+        if response.expectedContentLength == 0 { return nil }
+
+        let bodyLength: HTTPBody.Length =
+            response.expectedContentLength > 0
+            ? .known(response.expectedContentLength)
+            : .unknown
+        let stream = AsyncThrowingStream<HTTPBody.ByteChunk, any Error> { continuation in
+            let task = Task {
+                var iterator = bytes.makeAsyncIterator()
+                var chunk: [UInt8] = []
+                chunk.reserveCapacity(Self.responseBodyChunkSize)
+                var received = 0
+
+                do {
+                    while let byte = try await iterator.next() {
+                        received += 1
+                        if received > limit {
+                            throw InnoNetworkClientTransportError.responseBodyTooLarge(
+                                limit: limit,
+                                received: received
+                            )
+                        }
+                        chunk.append(byte)
+                        if chunk.count >= Self.responseBodyChunkSize {
+                            continuation.yield(ArraySlice(chunk))
+                            chunk.removeAll(keepingCapacity: true)
+                        }
+                    }
+                    if !chunk.isEmpty {
+                        continuation.yield(ArraySlice(chunk))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in
+                task.cancel()
+            }
+        }
+        return HTTPBody(stream, length: bodyLength)
+    }
+
     private func makeHTTPResponse(from response: HTTPURLResponse) throws -> HTTPResponse {
         guard let status = HTTPResponse.Status(code: response.statusCode).optional else {
             throw InnoNetworkClientTransportError.invalidStatusCode(response.statusCode)
@@ -160,6 +212,10 @@ public final class InnoNetworkClientTransport: ClientTransport {
         }
         return HTTPResponse(status: status, headerFields: headerFields)
     }
+
+    private static func statusCodeMustNotCarryBody(_ statusCode: Int) -> Bool {
+        statusCode == 204 || statusCode == 205 || statusCode == 304
+    }
 }
 
 /// Errors raised by ``InnoNetworkClientTransport``.
@@ -173,8 +229,12 @@ public enum InnoNetworkClientTransportError: Error, CustomStringConvertible {
     /// The origin returned a status code outside the IANA-recognised
     /// range, so `HTTPResponse.Status(code:)` rejected it.
     case invalidStatusCode(Int)
-    /// The collected response body exceeded
-    /// ``InnoNetworkClientTransport/responseBodyByteLimit``.
+    /// The streamed response body exceeded
+    /// ``InnoNetworkClientTransport/responseBodyByteLimit``. When the server
+    /// reports an oversized `Content-Length`, this can be thrown by
+    /// ``InnoNetworkClientTransport/send(_:body:baseURL:operationID:)`` before
+    /// the body is returned. For unknown lengths, it can be thrown later while
+    /// the generated client consumes the returned `HTTPBody`.
     case responseBodyTooLarge(limit: Int, received: Int)
 
     public var description: String {

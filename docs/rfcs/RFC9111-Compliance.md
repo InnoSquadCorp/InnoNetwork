@@ -18,21 +18,36 @@ them.
 | `Cache-Control: no-store` (request and response) | ✅ Honored | Skips writes, invalidates an existing key. Applied in `RequestExecutor.storeCacheIfNeeded`. When the policy is wrapped via `ResponseCachePolicy.rfc9111Compliant(wrapping:)`, the directive additionally suppresses cache reads against an entry that was somehow persisted before the wrap (defence in depth). |
 | `Cache-Control: no-cache` | ✅ Honored | Stored but flagged as `requiresRevalidation`; the next read forces conditional revalidation. |
 | `Cache-Control: private` | ✅ Honored | Skips writes, invalidates an existing key. Quoted-form (`private="X-Foo"`) is parsed by `HTTPListParser` and treated identically. |
-| `Cache-Control: public` | ⚠️ Implicit | Cache is private-by-default; `public` is treated as "no objection" rather than a permission grant for shared caches. Single-process consumers are unaffected. |
+| `Cache-Control: public` | ✅ Honored for auth storage | Cache is private-by-default for ordinary responses; for requests carrying `Authorization`, `public` is one of the RFC 9111 §3.5 directives that permits storage. |
 | `Cache-Control: max-age=N` | ⚠️ Partial | Default policies preserve the directive on disk but drive freshness windows from `ResponseCachePolicy` (`cacheFirst(maxAge:)` etc.). The directive is consumed when the policy is wrapped via `ResponseCachePolicy.rfc9111Compliant(wrapping:)`, which clamps freshness to `min(server max-age, caller window)`. A 5.0 follow-up promotes that consumption to the default. |
-| `Cache-Control: s-maxage=N` | ❌ Not consumed | Shared-cache directive; ignored because the persistent cache is single-process. |
+| `Cache-Control: s-maxage=N` | ⚠️ Auth storage only | Shared-cache freshness is ignored because the persistent cache is single-process, but `s-maxage` is honoured as an RFC 9111 §3.5 permission directive for storing responses to `Authorization` requests. |
 | `Cache-Control: stale-while-revalidate=N` | ⚠️ Partial | The library exposes stale-while-revalidate semantics through `ResponseCachePolicy.staleWhileRevalidate`, but does not currently parse the response directive — operators opt in via the policy. |
 | `Cache-Control: stale-if-error=N` | ❌ Not consumed | Tracked as a 5.0 candidate. |
 | `Cache-Control: must-revalidate` | ⚠️ Implicit | Behaves identically to `no-cache` because the cache always revalidates `requiresRevalidation` entries. When the policy is wrapped via `ResponseCachePolicy.rfc9111Compliant(wrapping:)` the directive additionally forces `.returnStaleAndRevalidate` → `.revalidate`, denying the stale window. |
 | `Cache-Control: only-if-cached` | ❌ Not consumed | Request directive; the executor always falls through to transport on cache miss. |
 | `Cache-Control: immutable` | ❌ Not consumed | Tracked as a 5.0 candidate; safe to ignore because the freshness window is policy-driven. |
-| `Expires` | ❌ Not consumed | Superseded by the `ResponseCachePolicy` freshness window in 4.0.0. Listed here so operators do not assume the header takes effect. |
+| `Expires` | ⚠️ Adapter-only | Consumed by `ResponseCachePolicy.rfc9111Compliant(wrapping:)` when no valid `max-age` exists. The adapter uses `Expires - Date`, falling back to `Expires - storedAt`; invalid values are stale. Default policies remain caller-window driven. |
 | `Vary` | ✅ Honored | Captured at write time as `varyHeaders` and consulted on every lookup. `Vary: *` skips the write entirely. |
 | `Set-Cookie` | ✅ Honored | Refused by default (`storesSetCookieResponses = false`); operators can opt in. |
-| `Authorization` (request key) | ✅ Honored | Refused by default (`storesAuthenticatedResponses = false`); operators can opt in. |
+| `Authorization` (request key) | ✅ Honored | Refused by default (`storesAuthenticatedResponses = false`). Even after opt-in, storage requires `Cache-Control: public`, `must-revalidate`, or `s-maxage` per RFC 9111 §3.5. |
 | `ETag` | ✅ Honored | Captured for conditional revalidation via `If-None-Match`. |
-| `Last-Modified` | ⚠️ Partial | Captured on the cached entry but conditional revalidation in 4.0.0 keys on `If-None-Match` rather than `If-Modified-Since`. |
+| `Last-Modified` | ⚠️ Adapter-only freshness / partial revalidation | When `max-age` and `Expires` are absent, `ResponseCachePolicy.rfc9111Compliant(wrapping:)` applies the RFC 9111 §4.2.2 10% heuristic freshness calculation capped at 24 hours. Conditional revalidation in 4.0.0 still keys on `If-None-Match` rather than `If-Modified-Since`. |
 | `Age` | ❌ Not emitted | The cache does not synthesize an `Age` header on cached responses. |
+
+## Unsafe Method Invalidation
+
+RFC 9111 §4.4 requires caches to invalidate stored responses for the
+request target URI after a non-error response to an unsafe request method.
+InnoNetwork applies that rule in `RequestExecutor` after refresh-token
+replay has been decided and before response interceptors or status
+validation run:
+
+| Trigger | Status | Behavior in 4.0.0 |
+| --- | --- | --- |
+| `POST`, `PUT`, `PATCH`, `DELETE`, or any safety-unknown method with a `2xx` / `3xx` origin response | ✅ Honored | Calls `ResponseCache.invalidateTargetURI(_:)` for the normalized target URI when `responseCachePolicy.allowsCacheWrite` is true. |
+| Unsafe method with `4xx` / `5xx` response or transport failure | ✅ Preserved | Existing cache entries are kept. |
+| `.disabled` / `.networkOnly` cache policy | ✅ Preserved | Cache metadata stays untouched, matching the policy contract. |
+| `Location` / `Content-Location` candidate URI invalidation | ❌ Not consumed | RFC 9111 marks these invalidations as MAY; the 4.0.0 line limits the implementation to the mandatory target URI rule. |
 
 ## Directive-Aware Adapter (`rfc9111Compliant(wrapping:)`)
 
@@ -47,8 +62,10 @@ window without changing the storage layer:
 | `Cache-Control: no-store` | Forces `prepare(...)` to `.revalidate(nil)` regardless of the cached entry. |
 | `Cache-Control: must-revalidate` | Demotes the inner policy's `.returnStaleAndRevalidate` into `.revalidate` — the stale window is denied. Fresh entries are unaffected. |
 | `Cache-Control: max-age=N` | Clamps the inner policy's freshness window to `min(server max-age, inner max-age)`. The server can shorten the caller's window but never extend it. |
+| `Expires` | When no valid `max-age` exists, derives freshness from `Expires - Date`, or `Expires - storedAt` if `Date` is absent. Invalid `Expires` or malformed/duplicate `max-age` is treated as stale. |
+| `Last-Modified` | When no valid `max-age` or `Expires` exists, derives heuristic freshness from 10% of the apparent age (`Date` or `storedAt` minus `Last-Modified`), capped at 24 hours. Invalid or future dates fall back to the inner policy. |
 
-Unknown directives, `private`, `s-maxage`, and the request-directive
+Unknown directives, `private`, and the request-directive
 matrix are still handled by the existing executor pipeline; the adapter
 is intentionally narrow to keep the contract explicit.
 
@@ -84,7 +101,7 @@ implementation:
 | Total byte budget | 50 MB | `PersistentResponseCacheConfiguration.maxBytes` |
 | Total entry budget | 1,000 | `maxEntries` |
 | Per-entry hard cap | 5 MB | `maxEntryBytes` |
-| Authenticated request bodies | rejected | `storesAuthenticatedResponses` |
+| Credential-like request keys | rejected | `storesAuthenticatedResponses`; `Authorization` entries also require `public`, `must-revalidate`, or `s-maxage` |
 | `Set-Cookie` responses | rejected | `storesSetCookieResponses` |
 | File protection class | `.completeUnlessOpen` | `dataProtectionClass` |
 | Index durability | `.onCheckpoint` (no fsync) | `persistenceFsyncPolicy` |
@@ -103,9 +120,9 @@ lifetime, not only post-init activity.
    already exist; the 5.0 line should also accept the response directive
    directly so APIs that emit it transparently get stale-while-revalidate
    behavior.
-3. **`Last-Modified` based revalidation.** The cached entry already
-   captures `Last-Modified`; the 5.0 conditional revalidation path should
-   emit `If-Modified-Since` when no `ETag` is present.
+3. **`Last-Modified` based revalidation.** Heuristic freshness is already
+   implemented by the adapter, but the 5.0 conditional revalidation path
+   should emit `If-Modified-Since` when no `ETag` is present.
 4. **`Age` header synthesis.** Some downstream caches (or operator tools)
    inspect the `Age` header to detect stale-while-revalidate hits; the 5.0
    line should emit it on cache hits.

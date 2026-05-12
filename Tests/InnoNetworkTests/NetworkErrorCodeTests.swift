@@ -17,6 +17,8 @@ struct NetworkErrorCodeTests {
         #expect(NetworkErrorCode.underlying.rawValue == 4001)
         #expect(NetworkErrorCode.reachability.rawValue == 4002)
         #expect(NetworkErrorCode.responseBodyLimitExceeded.rawValue == 4003)
+        #expect(NetworkErrorCode.cancelled.rawValue == 4004)
+        #expect(NetworkErrorCode.timeout.rawValue == 4005)
         #expect(NetworkErrorCode.trustEvaluationFailed.rawValue == 5001)
     }
 
@@ -40,6 +42,8 @@ struct NetworkErrorCodeTests {
             NetworkErrorCode.underlying.rawValue,
             NetworkErrorCode.reachability.rawValue,
             NetworkErrorCode.responseBodyLimitExceeded.rawValue,
+            NetworkErrorCode.cancelled.rawValue,
+            NetworkErrorCode.timeout.rawValue,
             NetworkErrorCode.trustEvaluationFailed.rawValue,
         ]
         #expect(Set(raws).count == raws.count)
@@ -60,6 +64,7 @@ struct NetworkErrorCodeTests {
         #expect(
             NetworkError.underlying(underlying, nil).errorCode
                 == NetworkErrorCode.underlying.rawValue)
-        #expect(NetworkError.cancelled.errorCode == NSURLErrorCancelled)
+        #expect(NetworkError.cancelled.errorCode == NetworkErrorCode.cancelled.rawValue)
+        #expect(NetworkError.timeout(reason: .requestTimeout).errorCode == NetworkErrorCode.timeout.rawValue)
     }
 }

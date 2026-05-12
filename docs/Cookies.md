@@ -19,8 +19,9 @@ The library does not ship a cookie-isolation hook on
 right place to set cookie storage, and `DefaultNetworkClient` already
 accepts an injected `URLSession`. The pattern below uses the
 configuration's `makeURLSessionConfiguration()` as a starting point,
-mutates the cookie surface directly, and hands the resulting session
-to `DefaultNetworkClient(configuration:session:)`.
+which carries timeout, cache, and network-access defaults, then mutates
+the cookie surface directly and hands the resulting session to
+`DefaultNetworkClient(configuration:session:)`.
 
 ## Per-client cookie jar
 

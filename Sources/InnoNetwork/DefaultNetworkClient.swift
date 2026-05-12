@@ -193,16 +193,17 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     /// >    so any other SDK in the process (analytics, auth, push) sees the
     /// >    same cookie jar. For app-scoped or isolated stores, build a
     /// >    session with a dedicated `URLSessionConfiguration`.
-    /// > 2. **No delegate.** `URLSession.shared` cannot be constructed with a
-    /// >    `URLSessionDelegate`, which disables custom server-trust
-    /// >    evaluation, `URLSessionTaskMetrics` collection, and redirect
-    /// >    interception. Features that rely on delegate callbacks (e.g.
-    /// >    ``InnoNetworkTrust`` public-key pinning) require an explicit
-    /// >    session.
-    /// > 3. **Configuration drift.** Several values on ``NetworkConfiguration``
-    /// >    only take effect when the session itself is built from a matching
-    /// >    `URLSessionConfiguration` (timeouts, HTTP/3, waits-for-connectivity,
-    /// >    cellular access). The shared session ignores those overrides.
+    /// > 2. **No session-owned delegate or custom configuration.**
+    /// >    `URLSession.shared` cannot be constructed with a custom
+    /// >    `URLSessionConfiguration` or session delegate. InnoNetwork still
+    /// >    installs per-task delegates for requests executed through this client,
+    /// >    so configured trust evaluation, task metrics, and redirect policy
+    /// >    apply on that path. Use an explicit session when you need
+    /// >    session-wide delegate behavior or configuration-owned state.
+    /// > 3. **Configuration drift.** `URLSessionConfiguration`-only choices
+    /// >    such as HTTP/3 opt-in, cookie storage, proxy settings, and TLS
+    /// >    protocol bounds are owned by the session. The shared session cannot
+    /// >    inherit those choices from ``NetworkConfiguration``.
     /// >
     /// > Recommended explicit form:
     /// >

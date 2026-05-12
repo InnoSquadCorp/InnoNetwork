@@ -53,7 +53,7 @@ number would have been larger.
 
 The built-in ``ExponentialBackoffRetryPolicy`` is conservative by default:
 
-- `GET` and `HEAD` can retry automatically
+- `GET`, `HEAD`, `OPTIONS`, and `TRACE` can retry automatically
 - `POST`, upload, multipart, `PUT`, `PATCH`, and `DELETE` retry only when the
   originating request carries an `Idempotency-Key` header
 - transport failures are still evaluated against the request method and headers

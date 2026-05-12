@@ -140,6 +140,187 @@ struct RFC9111ComplianceTests {
         }
     }
 
+    // MARK: - Expires fallback
+
+    @Test("Expires fallback uses Date header for freshness")
+    func expiresFallbackUsesDateHeader() {
+        let storedAt = Date(timeIntervalSince1970: 0)
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: [
+                "Date": "Thu, 01 Jan 1970 00:00:00 GMT",
+                "Expires": "Thu, 01 Jan 1970 00:00:30 GMT",
+            ],
+            storedAt: storedAt
+        )
+        let adapter = ResponseCachePolicy.rfc9111Compliant(
+            wrapping: .cacheFirst(maxAge: .seconds(60))
+        )
+
+        switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(20)) {
+        case .returnCached:
+            break
+        default:
+            Issue.record("entry should be fresh before the Expires-derived lifetime")
+        }
+
+        switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(40)) {
+        case .revalidate(let attached):
+            #expect(attached == cached)
+        default:
+            Issue.record("entry should be stale after the Expires-derived lifetime")
+        }
+    }
+
+    @Test("Expires fallback uses storedAt when Date header is absent")
+    func expiresFallbackUsesStoredAtWithoutDate() {
+        let storedAt = Date(timeIntervalSince1970: 0)
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: ["Expires": "Thu, 01 Jan 1970 00:00:30 GMT"],
+            storedAt: storedAt
+        )
+        let adapter = ResponseCachePolicy.rfc9111Compliant(
+            wrapping: .cacheFirst(maxAge: .seconds(60))
+        )
+
+        switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(20)) {
+        case .returnCached:
+            break
+        default:
+            Issue.record("Date-less entry should fall back to storedAt for Expires freshness")
+        }
+    }
+
+    @Test("Invalid Expires is treated as stale")
+    func invalidExpiresIsStale() {
+        let storedAt = Date()
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: ["Expires": "0"],
+            storedAt: storedAt
+        )
+        let adapter = ResponseCachePolicy.rfc9111Compliant(
+            wrapping: .cacheFirst(maxAge: .seconds(60))
+        )
+
+        switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(1)) {
+        case .revalidate(let attached):
+            #expect(attached == cached)
+        default:
+            Issue.record("invalid Expires should not fall back to serving a fresh inner-policy entry")
+        }
+    }
+
+    @Test("max-age takes precedence over Expires")
+    func maxAgeTakesPrecedenceOverExpires() {
+        let storedAt = Date(timeIntervalSince1970: 0)
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: [
+                "Cache-Control": "max-age=60",
+                "Expires": "Thu, 01 Jan 1970 00:00:00 GMT",
+            ],
+            storedAt: storedAt
+        )
+        let adapter = ResponseCachePolicy.rfc9111Compliant(
+            wrapping: .cacheFirst(maxAge: .seconds(60))
+        )
+
+        switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(30)) {
+        case .returnCached:
+            break
+        default:
+            Issue.record("valid max-age must ignore an older Expires fallback")
+        }
+    }
+
+    // MARK: - Last-Modified heuristic freshness
+
+    @Test("Last-Modified heuristic freshness uses ten percent of apparent age")
+    func lastModifiedHeuristicUsesTenPercentOfAge() {
+        let storedAt = Date(timeIntervalSince1970: 1_000)
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: [
+                "Date": "Thu, 01 Jan 1970 00:16:40 GMT",
+                "Last-Modified": "Thu, 01 Jan 1970 00:00:00 GMT",
+            ],
+            storedAt: storedAt
+        )
+        let adapter = ResponseCachePolicy.rfc9111Compliant(
+            wrapping: .cacheFirst(maxAge: .seconds(1_000))
+        )
+
+        switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(90)) {
+        case .returnCached:
+            break
+        default:
+            Issue.record("entry should be fresh within the 10% Last-Modified heuristic lifetime")
+        }
+
+        switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(110)) {
+        case .revalidate(let attached):
+            #expect(attached == cached)
+        default:
+            Issue.record("entry should be stale after the 10% Last-Modified heuristic lifetime")
+        }
+    }
+
+    @Test("Last-Modified heuristic falls back to storedAt when Date is absent")
+    func lastModifiedHeuristicUsesStoredAtWithoutDate() {
+        let storedAt = Date(timeIntervalSince1970: 1_000)
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: ["Last-Modified": "Thu, 01 Jan 1970 00:00:00 GMT"],
+            storedAt: storedAt
+        )
+        let adapter = ResponseCachePolicy.rfc9111Compliant(
+            wrapping: .cacheFirst(maxAge: .seconds(1_000))
+        )
+
+        switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(90)) {
+        case .returnCached:
+            break
+        default:
+            Issue.record("Date-less entry should use storedAt for heuristic freshness")
+        }
+    }
+
+    @Test("Invalid or future Last-Modified does not extend inner policy")
+    func invalidOrFutureLastModifiedDoesNotExtendInnerPolicy() {
+        let storedAt = Date(timeIntervalSince1970: 1_000)
+        let adapter = ResponseCachePolicy.rfc9111Compliant(
+            wrapping: .cacheFirst(maxAge: .seconds(1))
+        )
+        let invalid = CachedResponse(
+            data: Data("payload".utf8),
+            headers: ["Last-Modified": "invalid"],
+            storedAt: storedAt
+        )
+        let future = CachedResponse(
+            data: Data("payload".utf8),
+            headers: [
+                "Date": "Thu, 01 Jan 1970 00:16:40 GMT",
+                "Last-Modified": "Thu, 01 Jan 1970 00:20:00 GMT",
+            ],
+            storedAt: storedAt
+        )
+
+        switch adapter.prepare(cached: invalid, now: storedAt.addingTimeInterval(2)) {
+        case .revalidate:
+            break
+        default:
+            Issue.record("invalid Last-Modified should not create heuristic freshness")
+        }
+        switch adapter.prepare(cached: future, now: storedAt.addingTimeInterval(2)) {
+        case .revalidate:
+            break
+        default:
+            Issue.record("future Last-Modified should not create heuristic freshness")
+        }
+    }
+
     // MARK: - Pass-through
 
     @Test("Adapter without directives matches inner policy behaviour")
@@ -182,8 +363,8 @@ struct RFC9111ComplianceTests {
 
     // MARK: - Edge cases
 
-    @Test("max-age with malformed value falls back to inner freshness")
-    func malformedMaxAgeIsIgnored() {
+    @Test("max-age with malformed value is treated as stale")
+    func malformedMaxAgeIsStale() {
         let storedAt = Date()
         let cached = CachedResponse(
             data: Data("payload".utf8),
@@ -195,10 +376,30 @@ struct RFC9111ComplianceTests {
         )
 
         switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(30)) {
-        case .returnCached:
-            break
+        case .revalidate(let attached):
+            #expect(attached == cached)
         default:
-            Issue.record("malformed max-age should not collapse the inner freshness window")
+            Issue.record("malformed max-age should be treated as stale")
+        }
+    }
+
+    @Test("duplicate max-age directives are treated as stale")
+    func duplicateMaxAgeIsStale() {
+        let storedAt = Date()
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: ["Cache-Control": "max-age=60, max-age=120"],
+            storedAt: storedAt
+        )
+        let adapter = ResponseCachePolicy.rfc9111Compliant(
+            wrapping: .cacheFirst(maxAge: .seconds(60))
+        )
+
+        switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(10)) {
+        case .revalidate(let attached):
+            #expect(attached == cached)
+        default:
+            Issue.record("duplicate freshness directives should not serve a cached entry")
         }
     }
 

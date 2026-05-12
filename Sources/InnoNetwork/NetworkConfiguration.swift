@@ -5,6 +5,10 @@ public struct NetworkConfiguration: Sendable {
     /// The default range of HTTP status codes treated as successful responses.
     /// `2xx` per RFC 9110 §15.3.
     public static let defaultAcceptableStatusCodes: Set<Int> = Set(200..<300)
+    /// Default maximum UTF-8 byte length accepted for a single line-delimited
+    /// streaming frame before it is rejected with
+    /// ``NetworkErrorCode/streamFrameTooLarge``.
+    public static let defaultStreamingLineByteLimit: Int = 1 << 20
 
     package enum Presets {
         static func safeDefaults(baseURL: URL) -> NetworkConfiguration {
@@ -29,6 +33,7 @@ public struct NetworkConfiguration: Sendable {
                 customExecutionPolicies: [],
                 idempotencyKeyPolicy: .disabled,
                 responseBodyBufferingPolicy: .streaming(),
+                streamingLineByteLimit: NetworkConfiguration.defaultStreamingLineByteLimit,
                 redirectPolicy: DefaultRedirectPolicy()
             )
         }
@@ -59,6 +64,7 @@ public struct NetworkConfiguration: Sendable {
                 customExecutionPolicies: [],
                 idempotencyKeyPolicy: .disabled,
                 responseBodyBufferingPolicy: .streaming(),
+                streamingLineByteLimit: NetworkConfiguration.defaultStreamingLineByteLimit,
                 redirectPolicy: DefaultRedirectPolicy()
             )
         }
@@ -165,6 +171,12 @@ public struct NetworkConfiguration: Sendable {
     /// ``responseBodyBufferingPolicy`` directly.
     public let responseBodyLimit: Int64?
 
+    /// Maximum UTF-8 byte length accepted for one line-delimited streaming
+    /// frame before decoding. Defaults to 1 MiB. Values below 1 are
+    /// normalised to 1 so a misconfigured client cannot disable the guard by
+    /// accident.
+    public let streamingLineByteLimit: Int
+
     /// Decides how the client reacts to HTTP redirects (3xx + `Location`).
     /// Defaults to ``DefaultRedirectPolicy``, which strips
     /// `Authorization`, `Cookie`, and `Proxy-Authorization` on cross-origin
@@ -184,8 +196,8 @@ public struct NetworkConfiguration: Sendable {
 
     /// Build a `URLSessionConfiguration` derived from `URLSessionConfiguration.default`.
     /// Provided as a convenience for callers that construct their own
-    /// `URLSession` and want a starting point that matches the rest of the
-    /// configuration surface.
+    /// `URLSession` and want a starting point that matches the session-level
+    /// parts of this configuration surface.
     ///
     /// Adopters that need to swap `httpCookieStorage` for multi-account
     /// isolation, configure proxy/HTTP2/TLS settings, or otherwise mutate
@@ -193,8 +205,18 @@ public struct NetworkConfiguration: Sendable {
     /// returned value, and pass the resulting `URLSession` to
     /// `DefaultNetworkClient(configuration:session:)`. See
     /// `docs/Cookies.md` for the canonical cookie-isolation recipe.
+    ///
+    /// `trustPolicy` is evaluated by InnoNetwork's per-task delegate during
+    /// request execution; it is not representable on `URLSessionConfiguration`
+    /// and is therefore not copied here.
     public func makeURLSessionConfiguration() -> URLSessionConfiguration {
-        URLSessionConfiguration.default
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = timeout
+        config.requestCachePolicy = cachePolicy
+        config.allowsCellularAccess = allowsCellularAccess
+        config.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
+        config.allowsConstrainedNetworkAccess = allowsConstrainedNetworkAccess
+        return config
     }
 
     /// Internal builder used by the pack-based `advanced(...)` factory
@@ -233,6 +255,7 @@ public struct NetworkConfiguration: Sendable {
         package var captureFailurePayload: Bool
         package var responseBodyBufferingPolicy: ResponseBodyBufferingPolicy
         package var responseBodyLimit: Int64?
+        package var streamingLineByteLimit: Int
         package var redirectPolicy: any RedirectPolicy
         package var allowsInsecureHTTP: Bool
         package init(preset: NetworkConfiguration) {
@@ -266,6 +289,7 @@ public struct NetworkConfiguration: Sendable {
             self.captureFailurePayload = preset.captureFailurePayload
             self.responseBodyBufferingPolicy = preset.responseBodyBufferingPolicy
             self.responseBodyLimit = preset.responseBodyLimit
+            self.streamingLineByteLimit = preset.streamingLineByteLimit
             self.redirectPolicy = preset.redirectPolicy
             self.allowsInsecureHTTP = preset.allowsInsecureHTTP
         }
@@ -302,6 +326,7 @@ public struct NetworkConfiguration: Sendable {
                 captureFailurePayload: captureFailurePayload,
                 responseBodyBufferingPolicy: responseBodyBufferingPolicy,
                 responseBodyLimit: responseBodyLimit,
+                streamingLineByteLimit: streamingLineByteLimit,
                 redirectPolicy: redirectPolicy,
                 allowsInsecureHTTP: allowsInsecureHTTP
             )
@@ -400,6 +425,7 @@ public struct NetworkConfiguration: Sendable {
         captureFailurePayload: Bool = false,
         responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(),
         responseBodyLimit: Int64? = nil,
+        streamingLineByteLimit: Int = NetworkConfiguration.defaultStreamingLineByteLimit,
         redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy(),
         allowsInsecureHTTP: Bool = false
     ) {
@@ -436,6 +462,7 @@ public struct NetworkConfiguration: Sendable {
         self.captureFailurePayload = captureFailurePayload
         self.responseBodyBufferingPolicy = resolvedBufferingPolicy
         self.responseBodyLimit = resolvedBufferingPolicy.maxBytes
+        self.streamingLineByteLimit = max(1, streamingLineByteLimit)
         self.redirectPolicy = redirectPolicy
         self.allowsInsecureHTTP = allowsInsecureHTTP
         Self.assertIdempotencyHeaderNamesMatch(

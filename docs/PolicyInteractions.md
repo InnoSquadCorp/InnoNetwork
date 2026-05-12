@@ -43,8 +43,10 @@ sequenceDiagram
 | `RefreshTokenPolicy.appliesTo` returns false | No token is attached and 401 does not trigger refresh replay. |
 | Duplicate request coalescing | Coalescing wraps raw transport attempts; auth-refresh replay and outer retry remain outside the shared result. |
 | Cache hit | Fresh hits return before transport. Stale hits can revalidate and publish cache revalidation lifecycle events. |
+| Authorization response cache write | Stored only when cache writes are enabled and the origin permits authenticated storage with `Cache-Control: public`, `must-revalidate`, or `s-maxage`. |
 | 304 with changed `Vary` | The old body and vary snapshot are preserved; only freshness metadata is refreshed. |
-| Unsafe retry | POST/PUT/PATCH/DELETE retry only when an idempotency key is present, unless the retry policy explicitly opts into method-agnostic behavior. |
+| Unsafe cache invalidation | Successful unsafe methods invalidate cached variants for the target URI after refresh replay is decided and before response interceptors/status validation run. |
+| Unsafe retry | POST/PUT/PATCH/DELETE retry only when an idempotency key is present, unless the retry policy explicitly opts into method-agnostic behavior. `OPTIONS` and `TRACE` are safe-method defaults alongside GET/HEAD. |
 | `IdempotencyKeyPolicy` enabled | The key is generated from the logical request id and reused across every retry attempt. |
 | Redirect across origin | `DefaultRedirectPolicy` strips credential-bearing headers. |
 | Streaming request | Core `RetryPolicy` is bypassed; `StreamingResumePolicy.lastEventID` is the only built-in resume path. |

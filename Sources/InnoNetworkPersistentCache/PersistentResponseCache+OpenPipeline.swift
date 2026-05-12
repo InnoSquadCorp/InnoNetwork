@@ -7,6 +7,21 @@ import OSLog
 // stay `static`; this file only relocates code, no behaviour changes.
 extension PersistentResponseCache {
 
+    static func reindexVaryVariantsOnOpen(
+        _ loadedIndex: Index,
+        encoder: JSONEncoder
+    ) throws -> Index {
+        var entries: [String: Entry] = [:]
+        for (_, entry) in loadedIndex.entries {
+            let id = try identifier(for: entry.key, varyHeaders: entry.varyHeaders, encoder: encoder)
+            if let existing = entries[id], existing.lastAccessedAt >= entry.lastAccessedAt {
+                continue
+            }
+            entries[id] = entry
+        }
+        return Index(version: loadedIndex.version, entries: entries)
+    }
+
     static func scrubPolicyRejectedEntriesOnOpen(
         _ loadedIndex: Index,
         configuration: PersistentResponseCacheConfiguration,

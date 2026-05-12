@@ -215,6 +215,37 @@ struct RetryAfterParsingTests {
         #expect(decision == .retryAfter(7))
     }
 
+    @Test("Default idempotency policy treats OPTIONS and TRACE as safe")
+    func defaultIdempotencyPolicyIncludesOptionsAndTrace() {
+        let policy = RetryIdempotencyPolicy.safeMethodsAndIdempotencyKey
+        #expect(policy.safeMethods == ["GET", "HEAD", "OPTIONS", "TRACE"])
+
+        var options = URLRequest(url: URL(string: "https://example.com/options")!)
+        options.httpMethod = "OPTIONS"
+        var trace = URLRequest(url: URL(string: "https://example.com/trace")!)
+        trace.httpMethod = "TRACE"
+
+        #expect(policy.allowsRetry(for: options))
+        #expect(policy.allowsRetry(for: trace))
+    }
+
+    @Test("PUT and DELETE require an idempotency key by default")
+    func putAndDeleteRequireIdempotencyKeyByDefault() {
+        let policy = RetryIdempotencyPolicy.safeMethodsAndIdempotencyKey
+        var put = URLRequest(url: URL(string: "https://example.com/item")!)
+        put.httpMethod = "PUT"
+        var delete = URLRequest(url: URL(string: "https://example.com/item")!)
+        delete.httpMethod = "DELETE"
+
+        #expect(!policy.allowsRetry(for: put))
+        #expect(!policy.allowsRetry(for: delete))
+
+        put.setValue("put-1", forHTTPHeaderField: "Idempotency-Key")
+        delete.setValue("delete-1", forHTTPHeaderField: "Idempotency-Key")
+        #expect(policy.allowsRetry(for: put))
+        #expect(policy.allowsRetry(for: delete))
+    }
+
     @Test("Coordinator safety net: non-idempotent POST + .timeout downgrades to .noRetry")
     func coordinatorSafetyNetForPostTimeout() async throws {
         // Even when a custom policy elects to retry, the coordinator must

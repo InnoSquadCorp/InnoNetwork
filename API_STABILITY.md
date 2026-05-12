@@ -103,7 +103,7 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
   `WebSocketEventRecorder`, `StubBehavior`, `StubNetworkClient`, and
   `StubRequestKey`)
 - `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
-- `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect, encoding utility, and circuit breaker policy surfaces
+- `RefreshTokenPolicy`, `RequestCoalescingPolicy`, retry, response cache, redirect, encoding utility, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
 - `MultipartStreamingResponseDecoder` streaming multipart response parsing surface
 - `InnoNetworkOpenAPI` companion product
@@ -125,6 +125,9 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `MultipartUploadStrategy.inMemory(maxBytes:)` (4.1.0) — replaces the zero-arg `.inMemory` form (4.0.x); the encoder's accumulator guard is part of the contract
 - `DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.1.0)
 - `ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.1.0)
+- `DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.1.0)
+- `ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.1.0)
+- `NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.1.0)
 
 ## Provisionally Stable Evolution Boundaries
 
@@ -150,6 +153,10 @@ Per-symbol evolution allowances within the 4.x line:
 - `ResponseBodyBufferingPolicy` — the default inline request path is
   streaming, with `responseBodyLimit` retained as a source-compatible alias
   for the policy's `maxBytes` value.
+- `NetworkConfiguration.streamingLineByteLimit` — controls the maximum UTF-8
+  byte length for one line-delimited streaming frame. The default remains
+  `NetworkConfiguration.defaultStreamingLineByteLimit` (1 MiB), and values
+  below 1 are normalized to 1.
 - `RequestExecutionPolicy` — custom policies may wrap raw transport attempts;
   built-in retry, refresh, cache, coalescing, and circuit breaker behavior
   remains provided by `NetworkConfiguration`.
@@ -165,10 +172,15 @@ Per-symbol evolution allowances within the 4.x line:
   execution owned by their managers.
 - `WebSocketCloseDisposition` — additional enum cases may appear as new
   close-code classifications are formalized.
-- `RefreshTokenPolicy`, `RequestCoalescingPolicy`, response cache, redirect,
-  encoding utility, and circuit breaker policy — built-in knobs may add fields,
-  helper cases, or sensitive-header defaults with source-compatible behavior;
-  the generic execution pipeline stays package/internal.
+- `RefreshTokenPolicy`, `RequestCoalescingPolicy`, retry, response cache,
+  redirect, encoding utility, and circuit breaker policy — built-in knobs may
+  add fields, helper cases, or sensitive-header defaults with
+  source-compatible behavior; the generic execution pipeline stays
+  package/internal. Retry defaults treat `GET`, `HEAD`, `OPTIONS`, and
+  `TRACE` as safe, while `PUT` and `DELETE` require `Idempotency-Key` or an
+  explicit method-agnostic policy. Response cache writes for requests carrying
+  `Authorization` require both the caller's privacy opt-in and an RFC 9111
+  permission directive (`public`, `must-revalidate`, or `s-maxage`).
 - `NetworkConfigurationFailureReason` — typed payload for
   ``NetworkError/configuration(reason:)``. Carries
   `invalidBaseURL` / `invalidRequest` / `offline` cases. The standalone
@@ -219,6 +231,18 @@ Per-symbol evolution allowances within the 4.x line:
   conventions without pulling those packages into the core runtime.
 - `PersistentResponseCache` statistics and telemetry — event reasons may grow
   as additional scrub cases are surfaced.
+- `ResponseCache.invalidateTargetURI(_:)` — the protocol requirement has a
+  default implementation for source compatibility; built-in caches remove all
+  variants for the normalized target URI, while custom caches may override the
+  default to match their own key layout.
+- `ResponseCachePolicy.rfc9111Compliant(wrapping:)` — the adapter may tighten
+  read-side freshness handling as RFC 9111 coverage expands. `max-age`
+  remains higher priority than `Expires`, which remains higher priority than
+  the `Last-Modified` heuristic; invalid or duplicate freshness directives
+  are treated as stale rather than extending cache reuse.
+- `NetworkErrorCode` — raw values use the
+  `com.innosquad.innonetwork.NetworkError` domain exclusively; Foundation
+  `URLError` codes are preserved only as underlying metadata.
 - `WebSocketError.unsupportedProtocolFeature` and `WebSocketProtocolFeature`
   — feature cases may grow as optional transports add or reject more protocol
   extensions.
@@ -243,6 +267,9 @@ Per-symbol evolution allowances within the 4.x line:
   tune default policy values in minors, but it remains a convenience builder
   over documented public policies. 4.1.0 caps streaming response body
   collection at 5 MiB by default.
+- `DownloadConfiguration.sharedContainerIdentifier` — additive App Group
+  background-session storage knob. Default stays `nil`; future minors may add
+  preset helpers, but the property and builder field remain source-compatible.
 - `HTTPHeader`, `HTTPHeaders`, and default header providers — default
   `User-Agent` / `Accept-Language` values are evaluated at request-build time
   so applications can inject bundle or locale ownership without relying on a

@@ -11,6 +11,8 @@ import Darwin
 
 @Suite("Persistent Response Cache Tests")
 struct PersistentResponseCacheTests {
+    private static let authenticatedCacheHeaders = ["Cache-Control": "public, max-age=60"]
+
     @Test("Cache persists entries across actor instances")
     func persistsAcrossInstances() async throws {
         let directory = makeDirectory()
@@ -27,6 +29,211 @@ struct PersistentResponseCacheTests {
 
         #expect(cached.data == response.data)
         #expect(cached.headers["ETag"] == "v1")
+    }
+
+    @Test("Target URI invalidation removes all variants and persists across reopen")
+    func invalidateTargetURIRemovesVariantsAcrossReopen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let first = ResponseCacheKey(
+            method: "GET",
+            url: "HTTPS://EXAMPLE.COM/items?b=2&a=1#first",
+            headers: ["Accept-Language": "en-US"]
+        )
+        let second = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/items?a=1&b=2#second",
+            headers: ["Accept-Language": "ko-KR"]
+        )
+        let third = ResponseCacheKey(
+            method: "HEAD",
+            url: "https://example.com/items?a=1&b=2",
+            headers: ["X-Variant": "metadata"]
+        )
+        let other = ResponseCacheKey(method: "GET", url: "https://example.com/items?a=1&b=3")
+        let cache = try PersistentResponseCache(configuration: configuration)
+
+        await cache.set(first, CachedResponse(data: Data("first".utf8)))
+        await cache.set(second, CachedResponse(data: Data("second".utf8)))
+        await cache.set(third, CachedResponse(data: Data("third".utf8)))
+        await cache.set(other, CachedResponse(data: Data("other".utf8)))
+
+        await cache.invalidateTargetURI("https://EXAMPLE.com/items?b=2&a=1#latest")
+
+        #expect(await cache.get(first) == nil)
+        #expect(await cache.get(second) == nil)
+        #expect(await cache.get(third) == nil)
+        #expect(await cache.get(other)?.data == Data("other".utf8))
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+        #expect(await reopened.get(first) == nil)
+        #expect(await reopened.get(second) == nil)
+        #expect(await reopened.get(third) == nil)
+        #expect(await reopened.get(other)?.data == Data("other".utf8))
+    }
+
+    @Test("Same key with different Vary snapshots stores distinct persistent variants")
+    func sameKeyDifferentVarySnapshotsDoNotOverwrite() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/negotiated",
+            headers: [
+                "Accept": "application/json",
+                "Accept-Language": "en-US",
+            ]
+        )
+        let cache = try PersistentResponseCache(configuration: configuration)
+
+        await cache.set(
+            key,
+            CachedResponse(
+                data: Data("language".utf8),
+                headers: ["Vary": "Accept-Language"],
+                varyHeaders: ["accept-language": "ko-KR"]
+            )
+        )
+        await cache.set(
+            key,
+            CachedResponse(
+                data: Data("accept".utf8),
+                headers: ["Vary": "Accept"],
+                varyHeaders: ["accept": "application/json"]
+            )
+        )
+
+        #expect(await cache.statistics().entryCount == 2)
+        #expect(await cache.get(key)?.data == Data("accept".utf8))
+
+        await cache.set(
+            key,
+            CachedResponse(
+                data: Data("accept-v2".utf8),
+                headers: ["Vary": "Accept"],
+                varyHeaders: ["accept": "application/json"]
+            )
+        )
+        #expect(await cache.statistics().entryCount == 2)
+        #expect(await cache.get(key)?.data == Data("accept-v2".utf8))
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+        #expect(await reopened.statistics().entryCount == 2)
+        #expect(await reopened.get(key)?.data == Data("accept-v2".utf8))
+
+        await reopened.invalidate(key)
+        #expect(await reopened.statistics().entryCount == 0)
+    }
+
+    @Test("Authorization Vary lookup stays scoped by the HMAC disk key")
+    func authorizationVaryLookupRequiresSamePersistentDiskKey() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            storesAuthenticatedResponses: true
+        )
+        let firstKey = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Authorization": "Bearer first"]
+        )
+        let secondKey = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Authorization": "Bearer second"]
+        )
+        var headers = Self.authenticatedCacheHeaders
+        headers["Vary"] = "Authorization"
+        let legacySHA256Fingerprint = "sha256:\(String(repeating: "0", count: 64))"
+        let cache = try PersistentResponseCache(configuration: configuration)
+
+        await cache.set(
+            firstKey,
+            CachedResponse(
+                data: Data("first".utf8),
+                headers: headers,
+                varyHeaders: ["authorization": legacySHA256Fingerprint]
+            )
+        )
+
+        #expect(await cache.get(firstKey)?.data == Data("first".utf8))
+        #expect(await cache.get(secondKey) == nil)
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+        #expect(await reopened.get(firstKey)?.data == Data("first".utf8))
+        #expect(await reopened.get(secondKey) == nil)
+    }
+
+    @Test("Persistent multi-token Vary lookup matches core token-set parity")
+    func persistentMultiTokenVaryLookupMatchesCoreTokenSetParity() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/compressed",
+            headers: ["Accept-Encoding": "deflate, gzip"]
+        )
+        let cached = CachedResponse(
+            data: Data("compressed".utf8),
+            headers: ["Vary": "Accept-Encoding"],
+            varyHeaders: ["accept-encoding": "gzip, deflate"]
+        )
+        var request = URLRequest(url: URL(string: "https://example.com/compressed")!)
+        request.setValue("deflate, gzip", forHTTPHeaderField: "Accept-Encoding")
+        let cache = try PersistentResponseCache(configuration: configuration)
+
+        #expect(cachedResponseMatchesVary(cached, request: request))
+
+        await cache.set(key, cached)
+
+        #expect(await cache.get(key)?.data == Data("compressed".utf8))
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+        #expect(await reopened.get(key)?.data == Data("compressed".utf8))
+    }
+
+    @Test("RFC 9111 compliant policy reads heuristic-fresh persistent entries end to end")
+    func rfc9111CompliantPolicyReadsHeuristicFreshPersistentEntry() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/users/1",
+            headers: ["Accept-Language": "en-US"]
+        )
+        let body = try JSONEncoder().encode(PersistentCacheUser(id: 1, name: "cached"))
+        await cache.set(
+            key,
+            CachedResponse(
+                data: body,
+                headers: ["Last-Modified": "Thu, 01 Jan 1970 00:00:00 GMT"],
+                storedAt: Date()
+            )
+        )
+        let session = FailingPersistentCacheURLSession()
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: URL(string: "https://example.com")!,
+                responseCachePolicy: .rfc9111Compliant(wrapping: .cacheFirst(maxAge: .seconds(48 * 60 * 60))),
+                responseCache: cache,
+                acceptLanguageProvider: { "en-US" }
+            ),
+            session: session
+        )
+
+        let user = try await client.request(
+            EndpointBuilder<PersistentCacheUser, PublicAuthScope>(method: .get, path: "/users/1")
+        )
+
+        #expect(user == PersistentCacheUser(id: 1, name: "cached"))
+        #expect(await session.requestCount == 0)
     }
 
     @Test("Default policy rejects authenticated and Set-Cookie responses")
@@ -48,6 +255,53 @@ struct PersistentResponseCacheTests {
 
         #expect(await cache.get(authenticatedKey) == nil)
         #expect(await cache.get(cookieKey) == nil)
+    }
+
+    @Test("Authenticated responses require RFC 9111 storage permission even when opt-in is enabled")
+    func authenticatedResponsesRequireStoragePermission() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                storesAuthenticatedResponses: true
+            )
+        )
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Authorization": "Bearer secret"]
+        )
+
+        await cache.set(key, CachedResponse(data: Data("private".utf8)))
+
+        #expect(await cache.get(key) == nil)
+    }
+
+    @Test(
+        "Authenticated responses store with RFC 9111 permission directives",
+        arguments: ["public", "must-revalidate", "s-maxage=60"])
+    func authenticatedResponsesStoreWithPermissionDirective(cacheControl: String) async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(
+                directoryURL: directory,
+                storesAuthenticatedResponses: true
+            )
+        )
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Authorization": "Bearer secret"]
+        )
+
+        await cache.set(
+            key,
+            CachedResponse(data: Data("private".utf8), headers: ["Cache-Control": cacheControl])
+        )
+
+        #expect(await cache.get(key)?.data == Data("private".utf8))
     }
 
     @Test("Default policy rejects Cookie request keys")
@@ -113,7 +367,7 @@ struct PersistentResponseCacheTests {
         )
         let cache = try PersistentResponseCache(configuration: configuration)
 
-        await cache.set(key, CachedResponse(data: Data("private".utf8)))
+        await cache.set(key, CachedResponse(data: Data("private".utf8), headers: Self.authenticatedCacheHeaders))
 
         let cached = try #require(await cache.get(key))
         #expect(cached.data == Data("private".utf8))
@@ -159,7 +413,7 @@ struct PersistentResponseCacheTests {
             headers: ["Authorization": "Bearer secret"]
         )
         let writer = try PersistentResponseCache(configuration: configuration)
-        await writer.set(key, CachedResponse(data: Data("first".utf8)))
+        await writer.set(key, CachedResponse(data: Data("first".utf8), headers: Self.authenticatedCacheHeaders))
 
         // Truncate the on-disk HMAC key. Existing entries are now keyed under
         // a key the cache will no longer recognize.
@@ -170,7 +424,7 @@ struct PersistentResponseCacheTests {
         #expect(await reader.get(key) == nil)
 
         // New writes work end to end.
-        await reader.set(key, CachedResponse(data: Data("second".utf8)))
+        await reader.set(key, CachedResponse(data: Data("second".utf8), headers: Self.authenticatedCacheHeaders))
         let cached = try #require(await reader.get(key))
         #expect(cached.data == Data("second".utf8))
 
@@ -193,7 +447,7 @@ struct PersistentResponseCacheTests {
             headers: ["Authorization": "Bearer secret"]
         )
         let writer = try PersistentResponseCache(configuration: configuration)
-        await writer.set(key, CachedResponse(data: Data("first".utf8)))
+        await writer.set(key, CachedResponse(data: Data("first".utf8), headers: Self.authenticatedCacheHeaders))
 
         // Replace the HMAC key with a 16-byte payload — wrong length but
         // structurally readable. Self-healing should still kick in.
@@ -201,7 +455,7 @@ struct PersistentResponseCacheTests {
 
         let reader = try PersistentResponseCache(configuration: configuration)
         #expect(await reader.get(key) == nil)
-        await reader.set(key, CachedResponse(data: Data("second".utf8)))
+        await reader.set(key, CachedResponse(data: Data("second".utf8), headers: Self.authenticatedCacheHeaders))
         let cached = try #require(await reader.get(key))
         #expect(cached.data == Data("second".utf8))
         let regeneratedKey = try Data(contentsOf: hmacKeyURL(in: directory))
@@ -222,7 +476,7 @@ struct PersistentResponseCacheTests {
             headers: ["Authorization": "Bearer secret"]
         )
         let writer = try PersistentResponseCache(configuration: configuration)
-        await writer.set(key, CachedResponse(data: Data("first".utf8)))
+        await writer.set(key, CachedResponse(data: Data("first".utf8), headers: Self.authenticatedCacheHeaders))
 
         // Replace the key file with a directory at the same path so
         // `Data(contentsOf:)` throws — simulating corruption / file-protection
@@ -233,7 +487,7 @@ struct PersistentResponseCacheTests {
 
         let reader = try PersistentResponseCache(configuration: configuration)
         #expect(await reader.get(key) == nil)
-        await reader.set(key, CachedResponse(data: Data("second".utf8)))
+        await reader.set(key, CachedResponse(data: Data("second".utf8), headers: Self.authenticatedCacheHeaders))
         let cached = try #require(await reader.get(key))
         #expect(cached.data == Data("second".utf8))
         let regeneratedKey = try Data(contentsOf: hmacKeyURL(in: directory))
@@ -254,7 +508,7 @@ struct PersistentResponseCacheTests {
             headers: ["Authorization": "Bearer secret"]
         )
         let writer = try PersistentResponseCache(configuration: configuration)
-        await writer.set(key, CachedResponse(data: Data("first".utf8)))
+        await writer.set(key, CachedResponse(data: Data("first".utf8), headers: Self.authenticatedCacheHeaders))
         #expect(try existingBodyURLs(in: directory).isEmpty == false)
 
         try FileManager.default.removeItem(at: hmacKeyURL(in: directory))
@@ -337,6 +591,32 @@ struct PersistentResponseCacheTests {
             )
         )
         #expect(await reopened.get(key) == nil)
+    }
+
+    @Test("Opt-in policy scrubs legacy Authorization entries without RFC 9111 permission on open")
+    func optInPolicyScrubsAuthorizedEntriesWithoutStoragePermissionOnOpen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/me",
+            headers: ["Authorization": "Bearer secret"]
+        )
+        let configuration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            storesAuthenticatedResponses: true
+        )
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("legacy".utf8), headers: Self.authenticatedCacheHeaders))
+        #expect(await writer.get(key) != nil)
+        #expect(try existingBodyURLs(in: directory).isEmpty == false)
+
+        try rewriteFirstIndexEntryHeaders(in: directory, headers: ["ETag": "legacy"])
+
+        _ = try PersistentResponseCache(configuration: configuration)
+
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(try indexEntryCount(in: directory) == 0)
     }
 
     @Test("Default policy scrubs legacy Set-Cookie entries on open")
@@ -1180,5 +1460,34 @@ private final class RecordingFileManager: FileManager, @unchecked Sendable {
             recorder.record(protectionType, path: path)
         }
         try super.setAttributes(attributes, ofItemAtPath: path)
+    }
+}
+
+private struct PersistentCacheUser: Codable, Sendable, Equatable {
+    let id: Int
+    let name: String
+}
+
+private actor FailingPersistentCacheURLSessionState {
+    private var count = 0
+
+    func record() {
+        count += 1
+    }
+
+    var requestCount: Int { count }
+}
+
+private final class FailingPersistentCacheURLSession: URLSessionProtocol, Sendable {
+    private let state = FailingPersistentCacheURLSessionState()
+
+    var requestCount: Int {
+        get async { await state.requestCount }
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        _ = request
+        await state.record()
+        throw NetworkError.configuration(reason: .invalidRequest("persistent cache test should not hit transport"))
     }
 }

@@ -62,8 +62,8 @@ The mapping is:
 |-------------|---------|------------|
 | `.manual` | Caller invoked `disconnect(_:closeCode:)` | `disconnected` |
 | `.peerNormal` | RFC 6455 `1000` (normal closure) | `disconnected` |
-| `.peerRetryable` | `1001`, `1006`, `1011`, `1012`, `1013`, `1014`, `1015` | `reconnecting` |
-| `.peerProtocolFailure` | `1002`, `1003`, `1005`, `1007`, `1008`, `1009`, `1010` (protocol/policy) | `failed` |
+| `.peerRetryable` | `1001`, `1005`, `1006`, `1011`, `1012`, `1013`, `1014`, `1015` | `reconnecting` |
+| `.peerProtocolFailure` | `1002`, `1003`, `1007`, `1008`, `1009`, `1010` (protocol/policy) | `failed` |
 | `.peerApplicationFailure` | custom application close codes (`3000`-`4999`) | `failed` |
 | `.handshakeServerUnavailable` | HTTP `429` / `5xx` on upgrade | `reconnecting` |
 | `.handshakeUnauthorized` | HTTP `401` specifically | `failed` (caller should refresh auth before reconnecting manually) |
@@ -134,9 +134,10 @@ complete `.disconnected` cleanup.
 2. Awaits either a pong or the configured `pongTimeout`, whichever comes first.
 3. On pong: emits `.pong(rtt:)` (RTT measured against `dispatchedAt` using
    `ContinuousClock`).
-4. On timeout: increments `missedPongs`. After `maxMissedPongs` consecutive timeouts the
-   manager surfaces `WebSocketError.pingTimeout` and transitions to either `reconnecting`
-   or `failed` per the reconnect policy.
+4. On timeout: queues a heartbeat timeout delegate event, preserving FIFO ordering with
+   Foundation open/close/error delegate callbacks. After `maxMissedPongs` consecutive
+   timeouts the manager surfaces `WebSocketError.pingTimeout` and transitions to either
+   `reconnecting` or `failed` per the reconnect policy.
 
 The `attemptNumber` is per-connection (1-indexed) and resets across reconnects so dashboards
 can filter "this socket lost N consecutive pongs".

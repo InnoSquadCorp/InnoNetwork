@@ -93,9 +93,12 @@ public actor DownloadManager {
     private let backgroundCompletionStore: BackgroundCompletionStore
     private let persistence: DownloadTaskPersistence
 
-    let runtimeRegistry = DownloadRuntimeRegistry()
-    let restoreBarrier = RestoreBarrier()
+    let runtimeRegistry: DownloadRuntimeRegistry
+    let restoreBarrier: RestoreBarrier
     private let invalidationBarrier: InvalidationBarrier
+    let transferCoordinator: DownloadTransferCoordinator
+    let restoreCoordinator: DownloadRestoreCoordinator
+    let failureCoordinator: DownloadFailureCoordinator
     var pendingRestoreFailures: Set<String> = []
     /// Tracks the one-shot shutdown latch. Kept `nonisolated` (and behind
     /// an `OSAllocatedUnfairLock`) so the `deinit` warning path and the
@@ -135,34 +138,6 @@ public actor DownloadManager {
             taskIdentifier: Int,
             location: URL?,
             error: SendableUnderlyingError?
-        )
-    }
-
-    var transferCoordinator: DownloadTransferCoordinator {
-        DownloadTransferCoordinator(
-            session: session,
-            runtimeRegistry: runtimeRegistry,
-            persistence: persistence,
-            eventHub: eventHub
-        )
-    }
-
-    var restoreCoordinator: DownloadRestoreCoordinator {
-        DownloadRestoreCoordinator(
-            configuration: configuration,
-            session: session,
-            runtimeRegistry: runtimeRegistry,
-            persistence: persistence,
-            transferCoordinator: transferCoordinator
-        )
-    }
-
-    var failureCoordinator: DownloadFailureCoordinator {
-        DownloadFailureCoordinator(
-            configuration: configuration,
-            runtimeRegistry: runtimeRegistry,
-            persistence: persistence,
-            eventHub: eventHub
         )
     }
 
@@ -244,6 +219,32 @@ public actor DownloadManager {
             bufferingPolicy: .unbounded
         )
         let invalidationBarrier = InvalidationBarrier()
+        let runtimeRegistry = DownloadRuntimeRegistry()
+        let restoreBarrier = RestoreBarrier()
+        let eventHub = TaskEventHub<DownloadEvent>(
+            policy: configuration.eventDeliveryPolicy,
+            metricsReporter: configuration.eventMetricsReporter,
+            hubKind: .downloadTask
+        )
+        let transferCoordinator = DownloadTransferCoordinator(
+            session: urlSession,
+            runtimeRegistry: runtimeRegistry,
+            persistence: persistence,
+            eventHub: eventHub
+        )
+        let restoreCoordinator = DownloadRestoreCoordinator(
+            configuration: configuration,
+            session: urlSession,
+            runtimeRegistry: runtimeRegistry,
+            persistence: persistence,
+            transferCoordinator: transferCoordinator
+        )
+        let failureCoordinator = DownloadFailureCoordinator(
+            configuration: configuration,
+            runtimeRegistry: runtimeRegistry,
+            persistence: persistence,
+            eventHub: eventHub
+        )
         if registersSessionIdentifier {
             try Self.registerSessionIdentifier(configuration.sessionIdentifier)
         }
@@ -257,12 +258,13 @@ public actor DownloadManager {
         self.delegate = delegate
         self.backgroundCompletionStore = backgroundCompletionStore
         self.persistence = persistence
+        self.runtimeRegistry = runtimeRegistry
+        self.restoreBarrier = restoreBarrier
         self.invalidationBarrier = invalidationBarrier
-        self.eventHub = TaskEventHub(
-            policy: configuration.eventDeliveryPolicy,
-            metricsReporter: configuration.eventMetricsReporter,
-            hubKind: .downloadTask
-        )
+        self.transferCoordinator = transferCoordinator
+        self.restoreCoordinator = restoreCoordinator
+        self.failureCoordinator = failureCoordinator
+        self.eventHub = eventHub
         self.session = urlSession
         self.delegateEvents = delegateEvents
         self.delegateEventContinuation = delegateEventContinuation

@@ -77,7 +77,9 @@ to avoid leaking PII into crash reports, analytics, or logs.
 domain. The 4.x line keeps numeric codes stable so observability pipelines can
 group failures without parsing localized strings. Underlying Foundation errors
 are preserved inside ``SendableUnderlyingError`` for `.underlying` and timeout
-cases, while status-code failures keep the structured ``Response`` metadata.
+cases, but ``NetworkError/errorCode`` always returns an InnoNetwork-owned
+``NetworkErrorCode`` value rather than a Foundation `URLError.Code`. Status-code
+failures keep the structured ``Response`` metadata.
 
 ## Cancellation is not a failure
 

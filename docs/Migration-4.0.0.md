@@ -185,8 +185,10 @@ that asserted on `.cancelled` absence need to update.
 ## RefreshTokenPolicy
 
 - Refresh runs in a detached single-flight task. Caller cancellation while
-  awaiting the refresh no longer clears the in-flight state, so a follow-up
-  caller does not launch a duplicate refresh.
+  awaiting the refresh no longer clears the in-flight state or blocks the
+  cancelled awaiter until the shared refresh finishes. If the coordinator is
+  released while a refresh is still in flight, the orphan refresh task is
+  cancelled.
 - Consecutive failures enter an exponential cooldown
   (`RefreshFailureCooldown.exponentialBackoff(base: 1.0, max: 30.0)`).
   Callers during cooldown receive the cached error. Configure
@@ -306,6 +308,9 @@ The default privacy policy now treats credential-like key headers
 (`Authorization`, `Cookie`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`,
 and custom headers registered through `ResponseCacheHeaderPolicy`) as
 authenticated. `Cache-Control: private` responses are always do-not-store.
+Even with `storesAuthenticatedResponses: true`, responses to requests carrying
+`Authorization` require `Cache-Control: public`, `must-revalidate`, or
+`s-maxage` before they are stored.
 
 ## NetworkMonitor
 

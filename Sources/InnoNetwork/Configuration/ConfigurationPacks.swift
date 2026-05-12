@@ -156,8 +156,9 @@ public struct CachePack: Sendable {
 }
 
 /// Groups timeout, cache policy, network access toggles, redirect
-/// policy, the insecure-HTTP escape, trust policy, acceptable status
-/// codes, and the default `User-Agent` / `Accept-Language` providers.
+/// policy, streaming line byte limits, the insecure-HTTP escape, trust
+/// policy, acceptable status codes, and the default `User-Agent` /
+/// `Accept-Language` providers.
 public struct TransportPack: Sendable {
     public var timeout: TimeInterval?
     public var cachePolicy: URLRequest.CachePolicy?
@@ -166,6 +167,7 @@ public struct TransportPack: Sendable {
     public var allowsExpensiveNetworkAccess: Bool?
     public var allowsConstrainedNetworkAccess: Bool?
     public var redirectPolicy: (any RedirectPolicy)?
+    public var streamingLineByteLimit: Int?
     public var allowsInsecureHTTP: Bool?
     public var trustPolicy: TrustPolicy?
     public var acceptableStatusCodes: Set<Int>?
@@ -180,6 +182,7 @@ public struct TransportPack: Sendable {
         allowsExpensiveNetworkAccess: Bool? = nil,
         allowsConstrainedNetworkAccess: Bool? = nil,
         redirectPolicy: (any RedirectPolicy)? = nil,
+        streamingLineByteLimit: Int? = nil,
         allowsInsecureHTTP: Bool? = nil,
         trustPolicy: TrustPolicy? = nil,
         acceptableStatusCodes: Set<Int>? = nil,
@@ -193,6 +196,7 @@ public struct TransportPack: Sendable {
         self.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
         self.allowsConstrainedNetworkAccess = allowsConstrainedNetworkAccess
         self.redirectPolicy = redirectPolicy
+        self.streamingLineByteLimit = streamingLineByteLimit
         self.allowsInsecureHTTP = allowsInsecureHTTP
         self.trustPolicy = trustPolicy
         self.acceptableStatusCodes = acceptableStatusCodes
@@ -212,6 +216,7 @@ public struct TransportPack: Sendable {
             builder.allowsConstrainedNetworkAccess = allowsConstrainedNetworkAccess
         }
         if let redirectPolicy { builder.redirectPolicy = redirectPolicy }
+        if let streamingLineByteLimit { builder.streamingLineByteLimit = streamingLineByteLimit }
         if let allowsInsecureHTTP { builder.allowsInsecureHTTP = allowsInsecureHTTP }
         if let trustPolicy { builder.trustPolicy = trustPolicy }
         if let acceptableStatusCodes { builder.acceptableStatusCodes = acceptableStatusCodes }

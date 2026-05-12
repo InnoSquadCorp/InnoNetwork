@@ -414,12 +414,38 @@ extension RequestExecutor {
         return headers
     }
 
+    /// RFC 9111 §4.4 requires a cache to invalidate stored responses for the
+    /// target URI after a non-error response to an unsafe request method.
+    ///
+    /// The executor runs this before response interceptors and status-code
+    /// validation so the decision reflects the origin response. Cache policies
+    /// that promise "metadata untouched" (`disabled`, `networkOnly`) still skip
+    /// the mutation by virtue of `allowsCacheWrite == false`.
+    func invalidateUnsafeTargetURIIfNeeded(
+        _ response: Response,
+        request: URLRequest,
+        configuration: NetworkConfiguration
+    ) async {
+        guard
+            Self.shouldInvalidateCacheForUnsafeMethod(request.httpMethod, statusCode: response.statusCode),
+            configuration.responseCachePolicy.allowsCacheWrite,
+            let cache = configuration.responseCache,
+            let targetURI = ResponseCacheKey.normalizedTargetURI(request.url)
+        else {
+            return
+        }
+
+        await cache.invalidateTargetURI(targetURI)
+    }
+
     /// Stores the response in cache when the policy allows writes.
     ///
     /// Only GET responses are persisted. InnoNetwork stores the RFC-cacheable
     /// status codes that are safe for whole-response reuse and honours
-    /// `Cache-Control: no-store` / `private` / `no-cache` without changing the
-    /// explicit `ResponseCachePolicy` freshness window selected by the caller.
+    /// `Cache-Control: no-store` / `private` / `no-cache`. Responses to
+    /// requests carrying `Authorization` are stored only when the origin
+    /// explicitly permits it with RFC 9111 §3.5 directives (`public`,
+    /// `must-revalidate`, or `s-maxage`).
     func storeCacheIfNeeded(
         _ response: Response,
         cacheKey: ResponseCacheKey?,
@@ -443,6 +469,12 @@ extension RequestExecutor {
         }
         let cacheControl = cacheControlDirectives(in: headerSnapshot)
         if cacheControl.contains("no-store") || cacheControl.contains("private") {
+            await cache.invalidate(cacheKey)
+            return
+        }
+        if ResponseCacheStoragePolicy.containsAuthorizationRequestHeader(request.allHTTPHeaderFields ?? [:]),
+            !ResponseCacheStoragePolicy.responsePermitsAuthenticatedStorage(cacheControlDirectives: cacheControl)
+        {
             await cache.invalidate(cacheKey)
             return
         }
@@ -474,6 +506,17 @@ extension RequestExecutor {
     private static let cacheableStatusCodes: Set<Int> = [
         200, 203, 204, 300, 301, 308, 404, 405, 410, 414, 501,
     ]
+
+    private static let safeCacheMethods: Set<String> = ["GET", "HEAD", "OPTIONS", "TRACE"]
+
+    private static func shouldInvalidateCacheForUnsafeMethod(_ method: String?, statusCode: Int) -> Bool {
+        guard (200..<400).contains(statusCode),
+            let method = method?.uppercased()
+        else {
+            return false
+        }
+        return !safeCacheMethods.contains(method)
+    }
 
     /// Parses Cache-Control directive *names* only. Quoted-string aware
     /// (RFC 9110 §5.6.4) so qualified directives like
