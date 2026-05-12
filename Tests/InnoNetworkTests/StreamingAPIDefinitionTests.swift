@@ -108,6 +108,7 @@ private final class DelayedFailingBytesSession: URLSessionProtocol, Sendable {
 private final class SequencedStreamingURLProtocol: URLProtocol {
     enum Step: Sendable {
         case success(statusCode: Int, data: Data)
+        case successWithHeaders(statusCode: Int, data: Data, headers: [String: String])
     }
 
     nonisolated(unsafe) private static var queue: [String: [Step]] = [:]
@@ -158,6 +159,15 @@ private final class SequencedStreamingURLProtocol: URLProtocol {
         switch next {
         case .success(let code, let data):
             guard let response = HTTPURLResponse(url: url, statusCode: code, httpVersion: nil, headerFields: nil) else {
+                client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+                return
+            }
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        case .successWithHeaders(let code, let data, let headers):
+            guard let response = HTTPURLResponse(url: url, statusCode: code, httpVersion: nil, headerFields: headers)
+            else {
                 client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
                 return
             }
@@ -832,6 +842,72 @@ struct StreamingAPIDefinitionTests {
         #expect(await counter.count == 0)
     }
 
+    @Test("stream() retries handshake failures through RetryPolicy before reading the body")
+    func streamRetriesHandshakeFailureThroughRetryPolicy() async throws {
+        let definition = LineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .successWithHeaders(
+                    statusCode: 503,
+                    data: Data(),
+                    headers: ["Retry-After": "0"]
+                ),
+                .success(statusCode: 200, data: Data("recovered\n".utf8)),
+            ])
+
+        let store = StreamingEventStore()
+        let configuration = NetworkConfiguration(
+            baseURL: baseURL,
+            retryPolicy: ExponentialBackoffRetryPolicy(
+                maxRetries: 1,
+                retryDelay: 0,
+                maxRetryAfterDelay: 0,
+                maxDelay: 0,
+                jitterRatio: 0
+            ),
+            eventObservers: [StreamingEventObserver(store: store)]
+        )
+        let client = DefaultNetworkClient(
+            configuration: configuration,
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var values: [String] = []
+        for try await value in client.stream(definition) {
+            values.append(value)
+        }
+
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(values == ["recovered"])
+        #expect(captured.count == 2)
+        let events = await waitForStreamingEvents(store: store, minimumCount: 8)
+        let retryDelays = events.compactMap { event -> TimeInterval? in
+            if case .retryScheduled(_, _, let delay, _) = event { return delay }
+            return nil
+        }
+        let startRetryIndexes = events.compactMap { event -> Int? in
+            if case .requestStart(_, _, _, let retryIndex) = event { return retryIndex }
+            return nil
+        }
+        #expect(retryDelays == [0])
+        #expect(startRetryIndexes == [0, 1])
+        #expect(
+            events.map(streamingEventName) == [
+                "start",
+                "adapted",
+                "response",
+                "retry",
+                "start",
+                "adapted",
+                "response",
+                "finished",
+            ])
+    }
+
     @Test("stream() applies single-value header semantics")
     func streamDuplicateSingleValueHeadersUseLastValue() async throws {
         let definition = DuplicateAuthHeaderStream()
@@ -1203,7 +1279,10 @@ struct StreamingAPIDefinitionTests {
         )
 
         var collected: [ResumableEvent] = []
-        for try await event in client.stream(ResumableStream(resumePolicy: .lastEventID(maxAttempts: 2, retryDelay: 0))) {
+        let stream = client.stream(
+            ResumableStream(resumePolicy: .lastEventID(maxAttempts: 2, retryDelay: 0))
+        )
+        for try await event in stream {
             collected.append(event)
         }
 

@@ -18,7 +18,8 @@ import Foundation
 /// 5. `responseReceived` event
 /// 6. session-level response interceptors (the `Response.data` is intentionally
 ///    empty because stream contents are decoded line-by-line)
-/// 7. acceptable status code validation (handshake failure does not retry)
+/// 7. acceptable status code validation with optional retry-policy handling
+///    before any stream body bytes are consumed
 /// 8. line iteration with `decode(line:)` and event id tracking
 /// 9. resume decision when the iterator throws mid-stream
 /// 10. `requestFinished` on clean completion or `requestFailed` on terminal error
@@ -44,16 +45,20 @@ package struct StreamingExecutor: Sendable {
         let resumeDelay = resumePolicy.retryDelay
         var resumeState = StreamingResumeState()
         var resumeAttempts = 0
+        var handshakeRetryState = StreamingHandshakeRetryState(
+            snapshot: await configuration.networkMonitor?.currentSnapshot()
+        )
 
         while true {
             do {
+                let attemptRetryIndex = resumeAttempts + handshakeRetryState.retryIndex
                 let attemptResult = try await runAttempt(
                     request: request,
                     requestID: requestID,
                     configuration: configuration,
                     executionRuntime: executionRuntime,
                     resumeState: &resumeState,
-                    resumeAttempts: resumeAttempts,
+                    retryIndex: attemptRetryIndex,
                     continuation: continuation
                 )
 
@@ -97,6 +102,38 @@ package struct StreamingExecutor: Sendable {
                 }
             } catch {
                 let failure = error as? StreamingAttemptFailure
+                do {
+                    if try await retryHandshakeIfNeeded(
+                        failure?.error ?? error,
+                        state: &handshakeRetryState,
+                        configuration: configuration,
+                        executionRuntime: executionRuntime,
+                        requestID: requestID
+                    ) {
+                        continue
+                    }
+                } catch {
+                    let mapped = Self.mapTransportError(
+                        error,
+                        startedAt: failure?.startedAt
+                    )
+                    let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
+                    let nsError = surfaced as NSError
+                    await eventHub.publish(
+                        .requestFailed(
+                            requestID: requestID,
+                            errorCode: nsError.code,
+                            message: surfaced.localizedDescription
+                        ),
+                        requestID: requestID,
+                        observers: configuration.eventObservers
+                    )
+                    await eventHub.finish(requestID: requestID)
+                    inFlight.deregister(id: requestID)
+                    continuation.finish(throwing: surfaced)
+                    return
+                }
+
                 let mapped = Self.mapTransportError(
                     failure?.error ?? error,
                     startedAt: failure?.startedAt
@@ -128,7 +165,7 @@ package struct StreamingExecutor: Sendable {
         configuration: NetworkConfiguration,
         executionRuntime: RequestExecutionRuntime,
         resumeState: inout StreamingResumeState,
-        resumeAttempts: Int,
+        retryIndex: Int,
         continuation: AsyncThrowingStream<T.Output, Error>.Continuation
     ) async throws -> StreamingAttemptResult {
         var attemptStartedAt: Date?
@@ -146,7 +183,7 @@ package struct StreamingExecutor: Sendable {
                     requestID: requestID,
                     method: urlRequest.httpMethod ?? "UNKNOWN",
                     url: urlRequest.url?.absoluteString ?? "",
-                    retryIndex: resumeAttempts
+                    retryIndex: retryIndex
                 ),
                 requestID: requestID,
                 observers: configuration.eventObservers
@@ -164,7 +201,7 @@ package struct StreamingExecutor: Sendable {
                     requestID: requestID,
                     method: urlRequest.httpMethod ?? "UNKNOWN",
                     url: urlRequest.url?.absoluteString ?? "",
-                    retryIndex: resumeAttempts
+                    retryIndex: retryIndex
                 ),
                 requestID: requestID,
                 observers: configuration.eventObservers
@@ -172,7 +209,7 @@ package struct StreamingExecutor: Sendable {
 
             let context = NetworkRequestContext(
                 requestID: requestID,
-                retryIndex: resumeAttempts,
+                retryIndex: retryIndex,
                 metricsReporter: configuration.metricsReporter,
                 trustPolicy: configuration.trustPolicy,
                 eventObservers: configuration.eventObservers,
@@ -214,9 +251,9 @@ package struct StreamingExecutor: Sendable {
 
             let acceptable = request.acceptableStatusCodes ?? configuration.acceptableStatusCodes
             guard acceptable.contains(networkResponse.statusCode) else {
-                // Handshake failure: do not retry. The status is a
-                // server-driven decision and re-sending the request is
-                // unlikely to change it within the stream's lifetime.
+                // Handshake failure: surface the status before consuming body
+                // bytes so the outer loop can consult RetryPolicy without
+                // mixing this budget with Last-Event-ID resume.
                 throw NetworkError.statusCode(networkResponse)
             }
 
@@ -313,6 +350,96 @@ package struct StreamingExecutor: Sendable {
     ) async throws {
         guard delay > 0 else { return }
         try await executionRuntime.clock.sleep(for: .seconds(delay))
+    }
+
+    private func retryHandshakeIfNeeded(
+        _ error: Error,
+        state: inout StreamingHandshakeRetryState,
+        configuration: NetworkConfiguration,
+        executionRuntime: RequestExecutionRuntime,
+        requestID: UUID
+    ) async throws -> Bool {
+        guard let networkError = error as? NetworkError,
+            case .statusCode = networkError,
+            let policy = configuration.retryPolicy
+        else {
+            return false
+        }
+
+        let request = networkError.underlyingRequest
+        let decision = policy.shouldRetry(
+            error: networkError,
+            retryIndex: state.retryIndex,
+            request: request,
+            response: networkError.underlyingHTTPResponse
+        )
+        if case .noRetry = decision {
+            return false
+        }
+        guard state.totalRetries < policy.maxTotalRetries else {
+            return false
+        }
+
+        let computedDelay = policy.retryDelay(for: state.retryIndex)
+        let delay = Self.retryDelay(
+            for: decision,
+            computedDelay: computedDelay,
+            policy: policy
+        )
+        await eventHub.publish(
+            .retryScheduled(
+                requestID: requestID,
+                retryIndex: state.retryIndex,
+                delay: delay,
+                reason: networkError.localizedDescription
+            ),
+            requestID: requestID,
+            observers: configuration.eventObservers
+        )
+
+        var nextRetryIndex = state.retryIndex + 1
+        var nextSnapshot = state.snapshot
+        if policy.waitsForNetworkChanges, let monitor = configuration.networkMonitor {
+            let newSnapshot = await monitor.waitForChange(
+                from: nextSnapshot,
+                timeout: policy.networkChangeTimeout
+            )
+            if policy.shouldResetAttempts(afterNetworkChangeFrom: nextSnapshot, to: newSnapshot) {
+                nextRetryIndex = 0
+            }
+            if let newSnapshot {
+                nextSnapshot = newSnapshot
+            } else {
+                nextSnapshot = await monitor.currentSnapshot() ?? nextSnapshot
+            }
+        }
+
+        if delay > 0 {
+            try await executionRuntime.clock.sleep(for: .seconds(delay))
+        }
+
+        state.retryIndex = nextRetryIndex
+        state.totalRetries += 1
+        state.snapshot = nextSnapshot
+        try Task.checkCancellation()
+        return true
+    }
+
+    private static func retryDelay(
+        for decision: RetryDecision,
+        computedDelay: TimeInterval,
+        policy: RetryPolicy
+    ) -> TimeInterval {
+        switch decision {
+        case .noRetry, .retry:
+            return computedDelay
+        case .retryAfter(let serverHint):
+            let hintedDelay = max(serverHint, computedDelay)
+            if let maxRetryAfterDelay = policy.maxRetryAfterDelay {
+                return min(hintedDelay, max(maxRetryAfterDelay, computedDelay))
+            }
+            return hintedDelay
+        }
     }
 
     private static func nextBoundedLine<Iterator: AsyncIteratorProtocol>(
@@ -445,6 +572,12 @@ package struct StreamingExecutor: Sendable {
 private struct BoundedStreamLine {
     let line: String
     let byteCount: Int
+}
+
+private struct StreamingHandshakeRetryState {
+    var retryIndex = 0
+    var totalRetries = 0
+    var snapshot: NetworkSnapshot?
 }
 
 private enum StreamingAttemptResult {

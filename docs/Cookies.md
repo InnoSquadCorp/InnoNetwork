@@ -1,11 +1,9 @@
 # Cookie Storage Isolation
 
-InnoNetwork creates `URLSession` instances on top of
-`URLSessionConfiguration.default`, which means every
-`DefaultNetworkClient` in the same process inherits
-`HTTPCookieStorage.shared` unless the consumer opts out. That is the
-right default for a single-account app, but it leaks cookies across
-clients in three common scenarios:
+`DefaultNetworkClient(configuration:)` creates a fresh `URLSession` from
+`URLSessionConfiguration.default`, then installs per-client cookie storage and
+an in-memory URL cache. That default avoids accidental leakage across clients,
+but some apps still need an explicit cookie surface in three common scenarios:
 
 - A single app signed into **multiple accounts** at once (B2B SaaS,
   family-account switchers, on-call rotations).
@@ -14,14 +12,13 @@ clients in three common scenarios:
 - An **embedded SDK** that talks to a side channel and should not
   contaminate the host app's session — or vice versa.
 
-The library does not ship a cookie-isolation hook on
-`NetworkConfiguration` itself; `URLSessionConfiguration` is the
-right place to set cookie storage, and `DefaultNetworkClient` already
-accepts an injected `URLSession`. The pattern below uses the
-configuration's `makeURLSessionConfiguration()` as a starting point,
-which carries timeout, cache, and network-access defaults, then mutates
-the cookie surface directly and hands the resulting session to
-`DefaultNetworkClient(configuration:session:)`.
+The library does not ship a named cookie-policy hook on
+`NetworkConfiguration` itself; `URLSessionConfiguration` is the right place to
+set custom cookie storage, and `DefaultNetworkClient` accepts an injected
+`URLSession`. The pattern below uses the configuration's
+`makeURLSessionConfiguration()` as a starting point, which carries timeout,
+cache, and network-access defaults, then mutates the cookie surface directly
+and hands the resulting session to `DefaultNetworkClient(configuration:session:)`.
 
 ## Per-client cookie jar
 
@@ -39,10 +36,10 @@ let session = URLSession(configuration: sessionConfig)
 let client = DefaultNetworkClient(configuration: config, session: session)
 ```
 
-`URLSession.shared` cannot honour a custom `httpCookieStorage` because
-the system manages its configuration; always pass an explicit
-`URLSession` built from `makeURLSessionConfiguration()` when cookie
-isolation matters.
+`URLSession.shared` cannot honour a custom `httpCookieStorage` because the
+system manages its configuration; pass an explicit `URLSession` built from
+`makeURLSessionConfiguration()` when you need an app-group jar, tenant-specific
+jar, or cookie-free transport.
 
 ## Cookie-free clients
 

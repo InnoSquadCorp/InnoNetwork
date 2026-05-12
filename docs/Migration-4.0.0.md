@@ -85,19 +85,23 @@ catch let error as NetworkError {
 
 ## NetworkConfiguration fluent modifiers
 
-`NetworkConfiguration` gains seven `.with(...)` modifiers in 4.0.0. New code
-should compose the pack-based `NetworkConfiguration.advanced(
-baseURL:resilience:auth:observability:cache:transport:)` factory; the
-modifiers are an additive surface that lets adopting one new policy avoid
-re-typing every other knob:
+`NetworkConfiguration` keeps seven `.with(...)` modifiers in 4.0.0 as a
+source-compatible migration bridge, but they are deprecated. New code should
+compose the pack-based `NetworkConfiguration.advanced(
+baseURL:resilience:auth:observability:cache:transport:)` factory so policy
+precedence is explicit at the construction site:
 
 ```swift
-NetworkConfiguration
-    .safeDefaults(baseURL: api)
-    .with(retry: ExponentialBackoffRetryPolicy())
-    .with(circuitBreaker: CircuitBreakerPolicy(failureThreshold: 3))
-    .with(executionPolicies: [MyTracingPolicy()])
-    .with(eventObservers: [MyOSLogObserver()])
+NetworkConfiguration.advanced(
+    baseURL: api,
+    resilience: .init(
+        retry: ExponentialBackoffRetryPolicy(),
+        circuitBreaker: CircuitBreakerPolicy(failureThreshold: 3)
+    ),
+    observability: .init(
+        eventObservers: [MyOSLogObserver()]
+    )
+)
 ```
 
 The closure-based `advanced(baseURL:_:)` factory has been removed; pass the
@@ -263,9 +267,11 @@ let client = DefaultNetworkClient(configuration: config, session: session)
 ```
 
 Callers that supplied their own `URLSessionConfiguration` still work
-unchanged when they pass the matching `URLSession` explicitly. Constructing
-`DefaultNetworkClient(configuration:)` with a non-nil override now fails fast,
-because the default `URLSession.shared` cannot observe that override.
+unchanged when they pass the matching `URLSession` explicitly.
+`DefaultNetworkClient(configuration:)` now constructs a fresh session from
+`makeURLSessionConfiguration()` with per-client cookie storage and an in-memory
+URL cache. Pass `URLSession.shared` explicitly only when process-wide cookie,
+cache, and credential storage are intentional.
 
 `redirectPolicy` defaults to `DefaultRedirectPolicy`. Cross-origin redirects
 strip `Authorization`, `Cookie`, and `Proxy-Authorization`; same-origin

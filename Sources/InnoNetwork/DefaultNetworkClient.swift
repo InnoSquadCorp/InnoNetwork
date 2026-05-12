@@ -181,36 +181,33 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     package let inFlight = InFlightRegistry()
     private let executionRuntime: RequestExecutionRuntime
 
+    /// Creates a client backed by a fresh `URLSession` derived from the
+    /// provided configuration.
+    ///
+    /// - Parameters:
+    ///   - configuration: The ``NetworkConfiguration`` describing the
+    ///     base URL, interceptors, retry policy, and observability hooks.
+    ///
+    /// The default session is constructed with
+    /// ``NetworkConfiguration/makeURLSessionConfiguration()`` plus per-client
+    /// cookie storage and an in-memory URL cache. Pass ``URLSession/shared`` or
+    /// another explicit session only when process-wide session state is
+    /// intentional.
+    public convenience init(configuration: NetworkConfiguration) {
+        self.init(
+            configuration: configuration,
+            session: Self.makeDefaultURLSession(configuration: configuration)
+        )
+    }
+
     /// Creates a client backed by the given URL session.
     ///
     /// - Parameters:
     ///   - configuration: The ``NetworkConfiguration`` describing the
     ///     base URL, interceptors, retry policy, and observability hooks.
-    ///   - session: The URL session that issues requests. Defaults to
-    ///     ``URLSession/shared`` for ergonomic prototyping.
+    ///   - session: The URL session that issues requests.
     ///
-    /// > Warning: The default of ``URLSession/shared`` is convenient but has
-    /// > three production caveats. Inject an explicit `URLSession` when any of
-    /// > them matters to you:
-    /// >
-    /// > 1. **Shared cookie / credential storage.** `URLSession.shared` uses
-    /// >    ``HTTPCookieStorage/shared`` and ``URLCredentialStorage/shared``,
-    /// >    so any other SDK in the process (analytics, auth, push) sees the
-    /// >    same cookie jar. For app-scoped or isolated stores, build a
-    /// >    session with a dedicated `URLSessionConfiguration`.
-    /// > 2. **No session-owned delegate or custom configuration.**
-    /// >    `URLSession.shared` cannot be constructed with a custom
-    /// >    `URLSessionConfiguration` or session delegate. InnoNetwork still
-    /// >    installs per-task delegates for requests executed through this client,
-    /// >    so configured trust evaluation, task metrics, and redirect policy
-    /// >    apply on that path. Use an explicit session when you need
-    /// >    session-wide delegate behavior or configuration-owned state.
-    /// > 3. **Configuration drift.** `URLSessionConfiguration`-only choices
-    /// >    such as HTTP/3 opt-in, cookie storage, proxy settings, and TLS
-    /// >    protocol bounds are owned by the session. The shared session cannot
-    /// >    inherit those choices from ``NetworkConfiguration``.
-    /// >
-    /// > Recommended explicit form:
+    /// > Recommended explicit-session form:
     /// >
     /// > ```swift
     /// > let urlConfig = URLSessionConfiguration.ephemeral // isolated in-memory storage
@@ -227,7 +224,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     /// > ```
     public init(
         configuration: NetworkConfiguration,
-        session: URLSessionProtocol = URLSession.shared
+        session: URLSessionProtocol
     ) {
         self.configuration = configuration
         self.session = session
@@ -243,9 +240,31 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
         )
     }
 
+    static func makeDefaultURLSession(configuration: NetworkConfiguration) -> URLSession {
+        let urlConfiguration = configuration.makeURLSessionConfiguration()
+        urlConfiguration.httpCookieStorage = HTTPCookieStorage()
+        urlConfiguration.urlCache = URLCache(
+            memoryCapacity: URLCache.shared.memoryCapacity,
+            diskCapacity: 0,
+            diskPath: nil
+        )
+        return URLSession(configuration: urlConfiguration)
+    }
+
+    package convenience init(
+        configuration: NetworkConfiguration,
+        clock: any InnoNetworkClock
+    ) {
+        self.init(
+            configuration: configuration,
+            session: Self.makeDefaultURLSession(configuration: configuration),
+            clock: clock
+        )
+    }
+
     package init(
         configuration: NetworkConfiguration,
-        session: URLSessionProtocol = URLSession.shared,
+        session: URLSessionProtocol,
         clock: any InnoNetworkClock
     ) {
         self.configuration = configuration

@@ -261,7 +261,12 @@ extension EndpointBuilder where Response == EmptyResponse {
                 responseDecoder: AnyResponseDecoder(strategy: strategy)
             )
         case .jsonAllowingEmpty(let decoder):
-            return .multipart(decoder: decoder)
+            let strategy = ResponseDecodingStrategy<T>.jsonAllowingEmpty(decoder)
+            return TransportPolicy<T>(
+                requestEncoding: .none,
+                responseDecoding: strategy,
+                responseDecoder: AnyResponseDecoder(strategy: strategy)
+            )
         case .custom(let decodeEmptyResponse):
             return .custom(encoding: .none) { data, response in
                 _ = try decodeEmptyResponse(data, response)

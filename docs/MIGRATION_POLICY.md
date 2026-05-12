@@ -2,15 +2,15 @@
 
 ## Stable API
 
-- Stable API changes require a migration note when call sites or behavior
-  must change.
+- Stable API source-breaking or documented behavior-breaking changes require a
+  major release and a migration note.
 - Behavior changes without source breakage should still be documented if they
   affect retries, websocket lifecycle, downloads, or observability.
 
 ## Provisionally Stable API
 
-- These APIs may evolve faster, but changes still require release notes and
-  updated examples.
+- These APIs may evolve faster. Shape or behavior changes can ship in a minor
+  release only with release notes, a migration note, and updated examples.
 
 ## Internal / Operational
 

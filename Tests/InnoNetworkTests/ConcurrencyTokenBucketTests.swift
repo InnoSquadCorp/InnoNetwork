@@ -127,7 +127,8 @@ struct ConcurrencyTokenBucketTests {
             do {
                 try await cancelled.value
                 Issue.record("Expected cancelled waiter to throw CancellationError")
-            } catch is CancellationError {
+            } catch {
+                #expect(error is CancellationError)
             }
 
             try await follower.value

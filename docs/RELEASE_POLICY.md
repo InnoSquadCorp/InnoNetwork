@@ -3,8 +3,13 @@
 ## Versioning
 
 - Public releases follow semantic versioning since `3.0.0`.
-- Stable API must not break in patch or minor releases.
-- Breaking changes require a major version bump and migration guidance.
+- Stable API source-breaking or documented behavior-breaking changes require a
+  major version bump and migration guidance.
+- Provisionally Stable API shape or behavior changes may ship in a minor
+  release only when the release notes include an explicit migration note.
+- Patch releases must stay source-compatible for Stable and Provisionally
+  Stable API and are limited to bug fixes, documentation, and additive
+  non-breaking clarifications.
 
 ## Release Process
 

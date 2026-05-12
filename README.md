@@ -22,6 +22,18 @@ root runtime package provides seven public products:
 - `InnoNetworkTestSupport` for consumer test targets
 - `InnoNetworkOpenAPI` for generated-client transport support
 
+## Product Selection Guide
+
+| Product | Use When |
+| --- | --- |
+| `InnoNetwork` | You need the core typed request pipeline: interceptors, retry, refresh, circuit breaker, coalescing, cache, tracing, trust, and observability. |
+| `InnoNetworkDownload` | You need foreground/background download lifecycle management with pause, resume, retry, persistence, and event streams. |
+| `InnoNetworkWebSocket` | You need long-lived bidirectional connections with heartbeat, reconnect, close taxonomy, and event delivery. |
+| `InnoNetworkPersistentCache` | You want `ResponseCache` backed by disk with conservative RFC-aware storage guards and data protection. |
+| `InnoNetworkOpenAPI` | Use `OpenAPIRequest` when generated or hand-written operations should run through the full `DefaultNetworkClient` pipeline. Use `InnoNetworkClientTransport` when an OpenAPI Runtime client needs a thin URLSession-backed transport and the full pipeline is not required. |
+| `InnoNetworkTrust` | You need optional public-key pinning via `PublicKeyPinningEvaluator` and `TrustPolicy.custom(_:)`. |
+| `InnoNetworkTestSupport` | You need consumer-test helpers such as `MockURLSession`, `StubNetworkClient`, or WebSocket recorders. Do not link it into production binaries. |
+
 For the **shortest path to a typed client**, opt in to the macro
 helpers in `InnoNetworkCodegen`:
 
@@ -342,6 +354,18 @@ for await event in await manager.events(for: task) {
 - applies `.completeUnlessOpen` data protection to cache files by default
 - `dataProtectionClass: .none` requests `NSFileProtectionNone` for cache-owned paths
 - versioned index and hashed body files with corrupt-entry eviction
+
+### `InnoNetworkOpenAPI`
+
+- `OpenAPIRequest` for running generated or hand-written operations through the full `DefaultNetworkClient` pipeline
+- `OpenAPIRestOperation` bridge for generated operation metadata
+- `InnoNetworkClientTransport` for thin `swift-openapi-runtime` transport when URLSession-level behavior is enough
+
+### `InnoNetworkTrust`
+
+- public-key pinning evaluator split from the core product
+- `PublicKeyPinningPolicy` host rules and SPKI matching
+- `TrustPolicy.custom(_:)` integration for HTTP and WebSocket trust evaluation
 
 ### `InnoNetworkTestSupport`
 
