@@ -1,6 +1,5 @@
 import Foundation
 import Testing
-import os
 
 @testable import InnoNetwork
 
@@ -16,16 +15,16 @@ private struct LifecycleEndpoint: APIDefinition {
     var path: String { "/lifecycle" }
 }
 
-private final class SleepingURLSession: URLSessionProtocol, @unchecked Sendable {
-    private let lock = OSAllocatedUnfairLock<Int>(initialState: 0)
+private actor SleepingURLSession: URLSessionProtocol {
+    private var recordedRequestCount = 0
 
     var requestCount: Int {
-        lock.withLock { $0 }
+        recordedRequestCount
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         _ = request
-        lock.withLock { $0 += 1 }
+        recordedRequestCount += 1
         try await Task.sleep(for: .seconds(30))
         throw URLError(.cancelled)
     }
@@ -48,7 +47,7 @@ struct DefaultNetworkClientLifecycleTests {
         do {
             _ = try await client.request(LifecycleEndpoint())
             Issue.record("Expected request after shutdown to fail")
-        } catch let error as NetworkError {
+        } catch let error {
             guard case .cancelled = error else {
                 Issue.record("Expected NetworkError.cancelled, got \(error)")
                 return
@@ -69,7 +68,7 @@ struct DefaultNetworkClientLifecycleTests {
             try await client.request(LifecycleEndpoint())
         }
 
-        #expect(await waitForLifecycleCondition { session.requestCount == 1 })
+        #expect(await waitForLifecycleCondition { await session.requestCount == 1 })
         await client.shutdown()
 
         do {
@@ -88,12 +87,12 @@ struct DefaultNetworkClientLifecycleTests {
 
 private func waitForLifecycleCondition(
     timeout: TimeInterval = 1.0,
-    predicate: @escaping @Sendable () -> Bool
+    predicate: @escaping @Sendable () async -> Bool
 ) async -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
-        if predicate() { return true }
+        if await predicate() { return true }
         try? await Task.sleep(for: .milliseconds(10))
     }
-    return predicate()
+    return await predicate()
 }
