@@ -55,6 +55,9 @@ jobs:
       - name: Verify CHANGELOG Unreleased section
         run: bash Scripts/check_changelog_sync.sh
 
+      - name: Verify provisionally stable enum case ledger
+        run: bash Scripts/check_provisional_enum_cases.sh
+
       - name: Enforce @unchecked Sendable policy
         run: bash Scripts/check_unchecked_sendable.sh
 

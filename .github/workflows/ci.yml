@@ -324,6 +324,9 @@ jobs:
       - name: Verify CHANGELOG Unreleased section
         run: bash Scripts/check_changelog_sync.sh
 
+      - name: Verify provisionally stable enum case ledger
+        run: bash Scripts/check_provisional_enum_cases.sh
+
       - name: Build documentation smoke target
         run: xcrun swift build --target InnoNetworkDocSmoke
 
