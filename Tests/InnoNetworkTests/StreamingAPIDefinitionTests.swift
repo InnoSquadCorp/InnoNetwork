@@ -252,6 +252,29 @@ private struct UnsafeEventIDResumableStream: StreamingAPIDefinition {
 }
 
 
+private struct MixedSafetyEventIDResumableStream: StreamingAPIDefinition {
+    typealias Output = ResumableEvent
+
+    var method: HTTPMethod { .get }
+    var path: String { "/sse" }
+    var resumePolicy: StreamingResumePolicy { .lastEventID(maxAttempts: 2, retryDelay: 0) }
+
+    func decode(line: String) throws -> ResumableEvent? {
+        guard !line.isEmpty else { return nil }
+        let parts = line.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return nil }
+        return ResumableEvent(id: String(parts[0]), payload: String(parts[1]))
+    }
+
+    func eventID(from output: ResumableEvent) -> String? {
+        if output.payload == "unsafe" {
+            return "\(output.id)\r\nInjected: true"
+        }
+        return output.id
+    }
+}
+
+
 private func makeSequencedStreamingURLSession() -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [SequencedStreamingURLProtocol.self]
@@ -262,6 +285,7 @@ private func makeSequencedStreamingURLSession() -> URLSession {
 private final class StreamingResumeHTTPServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "innonetwork.streaming-resume-http-server")
+    private let firstAttemptBody: String
     private var handledConnectionCount = 0
     private var capturedHeaderBlocks: [String] = []
     private var portValue: UInt16 = 0
@@ -270,9 +294,10 @@ private final class StreamingResumeHTTPServer: @unchecked Sendable {
         URL(string: "http://127.0.0.1:\(portValue)")!
     }
 
-    init() throws {
+    init(firstAttemptBody: String = "1|alpha\n") throws {
         let listener = try NWListener(using: .tcp, on: .any)
         self.listener = listener
+        self.firstAttemptBody = firstAttemptBody
 
         let ready = DispatchSemaphore(value: 0)
         listener.stateUpdateHandler = { state in
@@ -321,7 +346,7 @@ private final class StreamingResumeHTTPServer: @unchecked Sendable {
                         + "Content-Type: text/plain\r\n"
                         + "Content-Length: 1000000\r\n"
                         + "\r\n"
-                        + "1|alpha\n").utf8)
+                        + self.firstAttemptBody).utf8)
                 partialResponse.append(contentsOf: repeatElement(UInt8(ascii: "x"), count: 128 * 1024))
                 connection.send(
                     content: partialResponse,
@@ -1158,6 +1183,76 @@ struct StreamingAPIDefinitionTests {
         }
 
         #expect(collected == [ResumableEvent(id: "1", payload: "alpha")])
+        let captured = server.capturedRequests()
+        #expect(captured.count == 1)
+        #expect(captured.first?.localizedCaseInsensitiveContains("Last-Event-ID:") == false)
+    }
+
+    @Test("stream() clears stale Last-Event-ID when an attempt observes an empty event id")
+    func resumePolicyClearsStaleLastEventIDOnEmptyCursor() async throws {
+        let server = try StreamingResumeHTTPServer(firstAttemptBody: "1|alpha\n|reset\n")
+        defer { server.stop() }
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: server.baseURL,
+                timeout: 5,
+                allowsInsecureHTTP: true
+            ),
+            session: URLSession(configuration: .ephemeral)
+        )
+
+        var collected: [ResumableEvent] = []
+        for try await event in client.stream(ResumableStream(resumePolicy: .lastEventID(maxAttempts: 2, retryDelay: 0))) {
+            collected.append(event)
+        }
+
+        #expect(
+            collected == [
+                ResumableEvent(id: "1", payload: "alpha"),
+                ResumableEvent(id: "", payload: "reset"),
+                ResumableEvent(id: "2", payload: "beta"),
+            ])
+        let captured = server.capturedRequests()
+        #expect(captured.count == 2)
+        #expect(captured.first?.localizedCaseInsensitiveContains("Last-Event-ID:") == false)
+        #expect(captured.dropFirst().first?.localizedCaseInsensitiveContains("Last-Event-ID:") == false)
+    }
+
+    @Test("stream() clears stale Last-Event-ID when a later custom event id is unsafe")
+    func resumePolicyClearsStaleLastEventIDOnUnsafeCursor() async throws {
+        let server = try StreamingResumeHTTPServer(firstAttemptBody: "1|alpha\n2|unsafe\n")
+        defer { server.stop() }
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: server.baseURL,
+                timeout: 5,
+                allowsInsecureHTTP: true
+            ),
+            session: URLSession(configuration: .ephemeral)
+        )
+
+        var collected: [ResumableEvent] = []
+        do {
+            for try await event in client.stream(MixedSafetyEventIDResumableStream()) {
+                collected.append(event)
+            }
+            Issue.record("Expected mid-stream transport failure")
+        } catch let error as NetworkError {
+            switch error {
+            case .reachability, .underlying:
+                break
+            default:
+                Issue.record("Expected transport failure, got \(error)")
+            }
+        }
+
+        #expect(
+            collected == [
+                ResumableEvent(id: "1", payload: "alpha"),
+                ResumableEvent(id: "2", payload: "unsafe"),
+            ])
         let captured = server.capturedRequests()
         #expect(captured.count == 1)
         #expect(captured.first?.localizedCaseInsensitiveContains("Last-Event-ID:") == false)

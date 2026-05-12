@@ -84,4 +84,4 @@ Stay on ``NetworkConfiguration/safeDefaults(baseURL:)`` unless you need to chang
 - event delivery policy
 - metrics or observability reporters
 
-For those cases, switch to ``NetworkConfiguration/advanced(baseURL:_:)`` and keep the tuning local to the integration that actually needs it.
+For those cases, switch to ``NetworkConfiguration/advanced(baseURL:resilience:auth:observability:cache:transport:)`` and keep the tuning local to the integration that actually needs it.

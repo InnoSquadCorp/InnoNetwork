@@ -19,7 +19,7 @@ release line. `4.0.0` is the public baseline for this contract.
 - `NetworkClient.upload(_:)`
 - `NetworkClient.upload(_:tag:)`
 - `NetworkConfiguration.safeDefaults(baseURL:)`
-- `NetworkConfiguration.advanced(baseURL:_:)`
+- `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 - `DownloadConfiguration.safeDefaults()`
 - `DownloadConfiguration.advanced(_:)`
 - `WebSocketConfiguration.safeDefaults()`

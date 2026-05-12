@@ -62,8 +62,8 @@ package struct StreamingExecutor: Sendable {
                     // Mid-stream transport disconnect. Resume only when:
                     // - resume policy is active
                     // - attempt budget remains
-                    // - we have an event id to send (server cannot
-                    //   resume from "nothing")
+                    // - this attempt observed a safe cursor (empty cursor
+                    //   explicitly resets Last-Event-ID)
                     let canResume = resumeState.canResume(
                         maxAttempts: resumeBudget,
                         completedResumeAttempts: resumeAttempts
@@ -292,10 +292,15 @@ package struct StreamingExecutor: Sendable {
                 )
             }
             if let output = decoded {
-                if let eventID = request.eventID(from: output),
-                    Self.isValidLastEventIDHeaderValue(eventID)
-                {
-                    resumeState.observe(eventID: eventID)
+                if let eventID = request.eventID(from: output) {
+                    if Self.isValidLastEventIDCursor(eventID) {
+                        resumeState.observe(eventID: eventID)
+                    } else {
+                        // Do not keep sending a stale cursor after a malformed
+                        // custom id. An unsafe cursor makes this attempt
+                        // non-resumable instead of replaying from an older id.
+                        resumeState.rejectEventID()
+                    }
                 }
                 continuation.yield(output)
             }
@@ -393,11 +398,15 @@ package struct StreamingExecutor: Sendable {
         return urlRequest
     }
 
-    private static func isValidLastEventIDHeaderValue(_ value: String) -> Bool {
-        guard value.isEmpty == false else { return false }
-        return value.unicodeScalars.allSatisfy { scalar in
+    private static func isValidLastEventIDCursor(_ value: String) -> Bool {
+        value.unicodeScalars.allSatisfy { scalar in
             (0x20...0x7E).contains(scalar.value)
         }
+    }
+
+    private static func isValidLastEventIDHeaderValue(_ value: String) -> Bool {
+        guard value.isEmpty == false else { return false }
+        return isValidLastEventIDCursor(value)
     }
 
     private func applyRequestInterceptors(

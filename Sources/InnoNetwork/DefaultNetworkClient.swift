@@ -149,6 +149,11 @@ package struct StreamingResumeState: Sendable {
         perAttemptSeenNewCursor = true
     }
 
+    package mutating func rejectEventID() {
+        lastSeenEventID = nil
+        perAttemptSeenNewCursor = false
+    }
+
     package func canResume(maxAttempts: Int, completedResumeAttempts: Int) -> Bool {
         maxAttempts > 0
             && completedResumeAttempts < maxAttempts

@@ -5,9 +5,9 @@ import Foundation
 /// Streaming requests bypass the configured ``RetryPolicy`` because a partial
 /// event prefix cannot be replayed transparently. This policy describes the
 /// narrow alternative: re-establish the connection after a transport-level
-/// disconnect, using the most recent event id observed by the client as a
-/// `Last-Event-ID` HTTP header so the server can resume from the right
-/// position. Designed for Server-Sent Events but applicable to any
+/// disconnect, using the most recent non-empty event id observed by the
+/// client as a `Last-Event-ID` HTTP header so the server can resume from the
+/// right position. Designed for Server-Sent Events but applicable to any
 /// id-bearing line stream.
 public enum StreamingResumePolicy: Sendable, Equatable {
     /// Do not resume after a mid-stream transport disconnect. The error is
@@ -17,12 +17,14 @@ public enum StreamingResumePolicy: Sendable, Equatable {
     /// Resume up to `maxAttempts` times after a mid-stream transport
     /// disconnect. Between attempts, the client waits `retryDelay` seconds
     /// before reconnecting and attaches `Last-Event-ID: <last-seen-id>` to
-    /// the new request. The last-seen id comes from the consumer's
-    /// ``StreamingAPIDefinition/eventID(from:)`` hook.
+    /// the new request when the cursor is non-empty. The last-seen id comes
+    /// from the consumer's ``StreamingAPIDefinition/eventID(from:)`` hook.
     ///
     /// Resume is only triggered when an event id has been observed at least
-    /// once during the current attempt — re-issuing without an id would
-    /// cause the server to replay the entire stream.
+    /// once during the current attempt. An empty id is treated as an explicit
+    /// cursor reset: it clears any prior id and reconnects without a
+    /// `Last-Event-ID` header. A malformed id disables resume for that
+    /// attempt.
     case lastEventID(maxAttempts: Int, retryDelay: TimeInterval = 1.0)
 
     /// Internal accessor used by the streaming executor.
@@ -162,8 +164,10 @@ public protocol StreamingAPIDefinition: Sendable {
     /// Returns the Last-Event-ID-style identifier for a decoded event, when
     /// the underlying protocol carries one. The library tracks the most
     /// recent non-nil result and uses it as the `Last-Event-ID` header on
-    /// resume attempts. Default returns `nil`, which disables resume even if
-    /// ``resumePolicy`` is configured.
+    /// resume attempts. An empty string clears the previous cursor and is not
+    /// sent as a blank header. Values containing characters unsafe for HTTP
+    /// headers disable resume for that attempt. Default returns `nil`, which
+    /// disables resume even if ``resumePolicy`` is configured.
     func eventID(from output: Output) -> String?
 }
 

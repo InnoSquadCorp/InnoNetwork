@@ -585,9 +585,9 @@ public struct NetworkConfiguration: Sendable {
 // Seven additive modifier helpers that wrap the existing
 // ``AdvancedBuilder`` plumbing so callers can override one policy at a
 // time without re-typing every other field. Equivalent to threading the
-// override through `advanced(baseURL:)`; preserved here so adopting one
-// new policy does not require touching the configuration construction
-// site.
+// override through the pack-based `advanced(...)` factory; preserved here
+// so adopting one new policy does not require touching the configuration
+// construction site.
 //
 // Each modifier mutates a fresh builder seeded from `self` and returns the
 // rebuilt configuration. Composition is chainable:

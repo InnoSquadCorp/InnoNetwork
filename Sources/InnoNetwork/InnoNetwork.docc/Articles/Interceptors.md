@@ -136,10 +136,13 @@ let refreshPolicy = RefreshTokenPolicy(
 )
 
 let client = DefaultNetworkClient(
-    configuration: .advanced(baseURL: apiBaseURL) { builder in
-        builder.requestInterceptors = [TenantHeaderInterceptor()]
-        builder.refreshTokenPolicy = refreshPolicy
-    }
+    configuration: .advanced(
+        baseURL: apiBaseURL,
+        auth: AuthPack(
+            refreshToken: refreshPolicy,
+            additionalSigners: [TenantHeaderInterceptor()]
+        )
+    )
 )
 ```
 

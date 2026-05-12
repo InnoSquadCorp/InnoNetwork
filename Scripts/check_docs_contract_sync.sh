@@ -137,7 +137,7 @@ expected_stable=(
 '`NetworkClient.upload(_:)`'
 '`NetworkClient.upload(_:tag:)`'
 '`NetworkConfiguration.safeDefaults(baseURL:)`'
-'`NetworkConfiguration.advanced(baseURL:_:)`'
+'`NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`'
 '`DownloadConfiguration.safeDefaults()`'
 '`DownloadConfiguration.advanced(_:)`'
 '`WebSocketConfiguration.safeDefaults()`'
@@ -970,7 +970,7 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public static func safeDefaults(baseURL: URL)'
       target="$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
       ;;
-    '`NetworkConfiguration.advanced(baseURL:_:)`')
+    '`NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`')
       pattern='public static func advanced('
       target="$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
       ;;

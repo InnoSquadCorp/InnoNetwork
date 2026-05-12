@@ -112,8 +112,10 @@ Versioning.
   accumulator guard refuses the encode as soon as the cap is breached.
 - Streaming `Last-Event-ID` resume now scopes `URLSession.AsyncBytes`
   to one attempt helper and rejects custom event IDs containing CR, LF,
-  NUL, or other non-visible ASCII before storing or sending the resume
-  header.
+  NUL, or characters outside visible ASCII before storing or sending the resume
+  header. Empty event IDs still clear the previous cursor without
+  attaching a blank resume header; malformed event IDs disable resume for
+  that attempt instead of replaying from a stale cursor.
 - Persistent response-cache lookups now maintain an actor-private
   `DiskKey -> entry ids` index seeded on open and updated on set,
   invalidation, eviction, removal, and rollback. The disk index format is
