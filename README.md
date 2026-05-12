@@ -12,9 +12,10 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 InnoNetwork is a Swift package for type-safe networking on Apple platforms. The
-root runtime package provides seven public products:
+root runtime package provides eight public products:
 
 - `InnoNetwork` for request/response APIs
+- `InnoNetworkAuthAWS` for the optional AWS SigV4 reference signer
 - `InnoNetworkDownload` for download lifecycle management
 - `InnoNetworkWebSocket` for connection-oriented realtime flows
 - `InnoNetworkPersistentCache` for a conservative on-disk response cache
@@ -27,6 +28,7 @@ root runtime package provides seven public products:
 | Product | Use When |
 | --- | --- |
 | `InnoNetwork` | You need the core typed request pipeline: interceptors, retry, refresh, circuit breaker, coalescing, cache, tracing, trust, and observability. |
+| `InnoNetworkAuthAWS` | You need the optional AWS SigV4 reference signer. It is a single-shot signer, not an AWS SDK replacement. |
 | `InnoNetworkDownload` | You need foreground/background download lifecycle management with pause, resume, retry, persistence, and event streams. |
 | `InnoNetworkWebSocket` | You need long-lived bidirectional connections with heartbeat, reconnect, close taxonomy, and event delivery. |
 | `InnoNetworkPersistentCache` | You want `ResponseCache` backed by disk with conservative RFC-aware storage guards and data protection. |
@@ -34,31 +36,10 @@ root runtime package provides seven public products:
 | `InnoNetworkTrust` | You need optional public-key pinning via `PublicKeyPinningEvaluator` and `TrustPolicy.custom(_:)`. |
 | `InnoNetworkTestSupport` | You need consumer-test helpers such as `MockURLSession`, `StubNetworkClient`, or WebSocket recorders. Do not link it into production binaries. |
 
-For the **shortest path to a typed client**, opt in to the macro
-helpers in `InnoNetworkCodegen`:
-
-> ℹ️ **Stability — Provisionally Stable.** `@APIDefinition` and
-> `#endpoint` are *Provisionally Stable* per `API_STABILITY.md`: the
-> spelling, argument labels, and expansion shape will not break in
-> patch releases, but diagnostic messages and FixIts may evolve as we
-> harden the macro. The runtime types they expand into
-> (`APIDefinition`, `HTTPMethod`, `EmptyParameter`) are *Stable*.
-
-```swift
-@APIDefinition(method: .get, path: "/users/{id}")
-struct GetUser {
-    let id: Int
-    typealias APIResponse = User
-}
-
-let user = try await client.request(GetUser(id: 1))
-```
-
-The `@APIDefinition` and `#endpoint` macros expand into the same value
-types you would write by hand. They live in a separate `Packages/
-InnoNetworkCodegen` package so root package consumers do not resolve
-`swift-syntax`; opt in by adding the codegen package alongside the root
-package, then `import InnoNetworkCodegen`.
+For the first 30 minutes, use `EndpointBuilder`. It gives you typed
+responses, auth scopes, transport policy, and decoding without creating a
+new type per endpoint. Reach for macros, streaming, multipart, WebSocket,
+OpenAPI, or persistent cache after the basic request path is working.
 
 The packages are built around Swift Concurrency, explicit transport
 policies, and operational visibility that can scale from app prototypes
@@ -103,14 +84,13 @@ around each of these.
 ## Choosing the Right Entry Point
 
 InnoNetwork ships several layers. Pick the highest one that matches your
-situation — most apps never need anything below `APIDefinition`.
+situation. Most app teams should start with `EndpointBuilder` and move down
+only when an endpoint needs an owned type or a specialized transport.
 
 ```text
-Want the shortest typed-client surface and tolerate a swift-syntax
-build-time dependency?
-├─ yes ─► @APIDefinition / #endpoint macros from InnoNetworkCodegen
-│        (separate package; runtime-only consumers do not resolve
-│         swift-syntax — see "Optional Macros" below)
+Do you just need method + path + headers + query/body + decoding?
+├─ yes ─► EndpointBuilder
+│          (e.g. EndpointBuilder<EmptyResponse, PublicAuthScope>.get("/users").decoding(User.self))
 └─ no
    │
    Does the endpoint own interceptors, custom transport, multipart, or streaming?
@@ -118,9 +98,9 @@ build-time dependency?
    │        (dedicated value type per endpoint)
    └─ no
       │
-      Do you just need method + path + headers + query/body + decoding?
-      ├─ yes ─► EndpointBuilder
-      │          (e.g. EndpointBuilder<EmptyResponse, PublicAuthScope>.get("/users").decoding(User.self))
+      Are you generating client code or want macro-generated endpoint structs?
+      ├─ yes ─► InnoNetworkOpenAPI or InnoNetworkCodegen
+      │        (advanced entry points; see "Advanced Surfaces" below)
       └─ no
          │
          Are you building an SDK or library wrapper that needs raw
@@ -168,23 +148,25 @@ dependencies: [
 > but apps with older deployment targets should keep a thin compatibility
 > client until they can raise their platform floor.
 
-### Core Request
+### First 30 Minutes: EndpointBuilder
 
 ```swift
 import Foundation
 import InnoNetwork
 
-struct GetUser: APIDefinition {
-    typealias Parameter = EmptyParameter
-    typealias APIResponse = User
-
-    var method: HTTPMethod { .get }
-    var path: String { "/users/1" }
-}
-
 struct User: Decodable, Sendable {
     let id: Int
     let name: String
+}
+
+struct CreatePost: Encodable, Sendable {
+    let title: String
+    let body: String
+}
+
+struct Post: Decodable, Sendable {
+    let id: Int
+    let title: String
 }
 
 let client = DefaultNetworkClient(
@@ -193,22 +175,29 @@ let client = DefaultNetworkClient(
     )
 )
 
-let user = try await client.request(GetUser())
-print(user)
-```
-
-For simple endpoints that only need method, path, query/body parameters,
-headers, transport, and response decoding, use the builder-style
-`EndpointBuilder` API. Keep a dedicated `APIDefinition` type when an endpoint owns interceptors,
-custom transport, multipart uploads, or streaming.
-
-```swift
 let user = try await client.request(
     EndpointBuilder<EmptyResponse, PublicAuthScope>
         .get("/users/1")
         .decoding(User.self)
 )
 
+let created = try await client.request(
+    EndpointBuilder<EmptyResponse, PublicAuthScope>
+        .post("/posts")
+        .body(CreatePost(title: "Hello", body: "World"))
+        .header("Idempotency-Key", value: UUID().uuidString)
+        .decoding(Post.self)
+)
+
+print(user)
+```
+
+`EndpointBuilder` is the default onboarding path. It keeps the call site
+compact while still flowing through retry, auth refresh, interceptors,
+coalescing, cache, trust, tracing, and event observers configured on the
+client.
+
+```swift
 let users = try await client.request(
     EndpointBuilder<EmptyResponse, PublicAuthScope>
         .get("/users")
@@ -232,10 +221,9 @@ let me = try await client.request(
 )
 ```
 
-`APIDefinition` exposes one transport-shape entry point — `transport: TransportPolicy<APIResponse>`.
-The default is method-aware (`GET` → `.query()`, otherwise `.json()`), so most
-hand-written endpoints don't override it. Use the `TransportPolicy` factories
-when you need a different shape:
+Use a dedicated `APIDefinition` type after the first path is working and an
+endpoint needs a named contract, custom transport, per-endpoint interceptors,
+multipart upload, or streaming response.
 
 ```swift
 struct UserPatch: Encodable, Sendable {
@@ -254,6 +242,48 @@ struct UpdateUser: APIDefinition {
         .json(decoder: snakeCaseDecoder)
     }
 }
+```
+
+`APIDefinition` exposes one transport-shape entry point — `transport: TransportPolicy<APIResponse>`.
+The default is method-aware (`GET` → `.query()`, otherwise `.json()`), so most
+hand-written endpoints don't override it. Use the `TransportPolicy` factories
+when you need a different shape:
+
+```swift
+let patched = try await client.request(
+    UpdateUser(parameters: UserPatch(displayName: "Taylor"))
+)
+```
+
+### Advanced Surfaces
+
+Use these after the first request path is stable:
+
+- `@APIDefinition` / `#endpoint` in `InnoNetworkCodegen` when generated
+  endpoint structs are worth the additional build-time dependency.
+- `MultipartAPIDefinition` for upload payloads that need explicit part
+  boundaries, metadata, and retry idempotency.
+- `StreamingAPIDefinition` for SSE, NDJSON, logs, or other line-delimited
+  long-lived responses.
+- `InnoNetworkWebSocket` for bidirectional realtime flows.
+- `InnoNetworkOpenAPI` for generated clients or OpenAPI Runtime transport.
+- `InnoNetworkPersistentCache` when an API needs on-disk RFC-aware response
+  caching beyond the in-memory default.
+
+The `@APIDefinition` and `#endpoint` macros expand into the same value
+types you would write by hand. They live in a separate
+`Packages/InnoNetworkCodegen` package so root package consumers do not
+resolve `swift-syntax`; opt in by adding the codegen package alongside the
+root package, then `import InnoNetworkCodegen`.
+
+```swift
+@APIDefinition(method: .get, path: "/users/{id}")
+struct GetUser {
+    let id: Int
+    typealias APIResponse = User
+}
+
+let macroUser = try await client.request(GetUser(id: 1))
 ```
 
 ### Download
@@ -665,8 +695,10 @@ header values.
 
 For operational tuning, see [Examples](Examples/README.md) and [API Stability](API_STABILITY.md).
 Teams migrating an existing client can start with
-[Migration Guides](docs/MigrationGuides.md) for URLSession, Alamofire, and Moya
-mapping notes.
+[Migration Guides](docs/MigrationGuides.md), then use the focused
+[Alamofire cookbook](docs/MigrationFromAlamofire.md) or
+[Moya cookbook](docs/MigrationFromMoya.md) for 30-minute before/after
+examples.
 
 ## Stability
 
@@ -821,6 +853,8 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
 - Migration Guides: [docs/MigrationGuides.md](docs/MigrationGuides.md)
+- Alamofire Migration Cookbook: [docs/MigrationFromAlamofire.md](docs/MigrationFromAlamofire.md)
+- Moya Migration Cookbook: [docs/MigrationFromMoya.md](docs/MigrationFromMoya.md)
 - DocC Deployment: [docs/DocC_Deployment.md](docs/DocC_Deployment.md)
 - Query Encoding Reference: [docs/QueryEncoding.md](docs/QueryEncoding.md)
 - WebSocket Lifecycle: [docs/WebSocketLifecycle.md](docs/WebSocketLifecycle.md)

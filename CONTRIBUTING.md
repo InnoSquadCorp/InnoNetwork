@@ -37,6 +37,22 @@ swift run InnoNetworkBenchmarks --quick --json-path /tmp/innonetwork-bench.json
 - `Provisionally Stable` APIs can evolve more quickly, but still require documentation updates.
 - `Internal/Operational` items should not be relied on by downstream consumers.
 
+`API_STABILITY.md` is the public ledger. When a symbol is added, removed,
+promoted, or deprecated, update the ledger in the same change so reviewers can
+see whether the proposal is a patch-safe fix, a minor-version addition, or a
+future-major RFC.
+
+The generated symbol allowlists under `Scripts/symbols/` are review aids, not
+busywork. They make public surface changes explicit in pull requests and catch
+accidental exports from helper targets. If a symbol is intentionally public,
+add it to the matching allowlist and explain the contract in docs or symbol
+comments.
+
+Periphery is used to find dead private/package code before it becomes part of
+the maintenance surface. Do not silence Periphery by default. Keep code only
+when it is dynamically referenced, a fixture, or a deliberate public contract,
+and leave the reason near the allowlist or in the PR description.
+
 ## Maintainer Escalation
 
 InnoNetwork is maintained by a single primary maintainer. Response is
@@ -53,10 +69,11 @@ If you need an urgent path:
   prefixed with `[regression]` and include (a) the affected version range,
   (b) a minimal reproducer, and (c) the previous-version behaviour. These
   are triaged immediately.
-- **Critical CVE in a transitive dependency** — InnoNetwork itself ships
-  zero runtime dependencies, so this rarely applies, but report via the
-  same private security flow if you spot one in development tooling
-  (`swift-syntax`, action SHAs).
+- **Critical CVE in a transitive dependency** — the core request product keeps
+  its dependency budget intentionally small, but optional products may depend
+  on companion packages such as `swift-crypto`. Report via the same private
+  security flow if you spot one in runtime or development tooling
+  (`swift-crypto`, `swift-syntax`, action SHAs).
 
 If the primary maintainer is unreachable for more than two weeks on a
 critical-severity report, contact `InnoSquadCorp` org owners through the
