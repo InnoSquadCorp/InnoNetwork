@@ -2,8 +2,14 @@ import Foundation
 
 /// Controls how inline response bodies are collected before decode.
 public enum ResponseBodyBufferingPolicy: Sendable, Equatable {
-    /// Prefer `URLSession.bytes(for:)` and collect into a bounded `Data`
-    /// buffer. This is the 4.0.0 default for inline requests.
+    /// Prefer `URLSession.bytes(for:)` and collect into a `Data` buffer.
+    ///
+    /// When `maxBytes` is `nil`, a `URLSessionProtocol` implementation that
+    /// reports streaming as unsupported with
+    /// ``NetworkConfigurationFailureReason/invalidRequest(_:)`` falls back to
+    /// the buffered `data(for:)` path. Bounded streaming (`maxBytes != nil`)
+    /// does not fall back, because the buffered path cannot enforce the limit
+    /// before the body is collected.
     case streaming(maxBytes: Int64? = nil)
     /// Use `URLSession.data(for:)`, preserving the pre-4.0 buffered
     /// transport path while still applying the optional size limit.

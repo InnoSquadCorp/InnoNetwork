@@ -13,13 +13,14 @@ release line. `4.0.0` is the public baseline for this contract.
 - `RequestEncodingPolicy`
 - `ResponseDecodingStrategy`
 - `DefaultNetworkClient`
+- `DefaultNetworkClient.shutdown()`
 - `NetworkClient.request(_:)`
 - `NetworkClient.request(_:tag:)`
 - `NetworkClient.request(_:method:tag:)`
 - `NetworkClient.upload(_:)`
 - `NetworkClient.upload(_:tag:)`
 - `NetworkConfiguration.safeDefaults(baseURL:)`
-- `NetworkConfiguration.advanced(baseURL:_:)`
+- `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 - `DownloadConfiguration.safeDefaults()`
 - `DownloadConfiguration.advanced(_:)`
 - `WebSocketConfiguration.safeDefaults()`
@@ -43,6 +44,10 @@ release line. `4.0.0` is the public baseline for this contract.
 - `URLQueryArrayEncodingStrategy`
 - `ResponseBodyBufferingPolicy`
 - `RequestExecutionPolicy`
+- `NetworkErrorCategory`
+- `NetworkError.category`
+- `NetworkError.isRetriableHint`
+- `NetworkError.isUserVisible`
 - `AuthScope`
 - `PublicAuthScope`
 - `AuthRequiredScope`
@@ -70,7 +75,9 @@ the copyable Swift starting points must stay source-compatible with the
 4.0.0 public API.
 The `Scripts/check_stable_examples.sh` gate, wired into the docs-contract
 job, fails CI if a stable example is removed, emptied, loses its README, or
-stops compiling.
+stops compiling. The smoke build runs with Swift warnings treated as errors
+because these examples are copyable public-contract code, not narrative-only
+documentation.
 
 - `Examples/BasicRequest` — request/response fundamentals across HTTP verbs
   and content types.
@@ -112,7 +119,7 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `WebSocketError.unsupportedProtocolFeature`
 - `WebSocketProtocolFeature`
 - `JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens
-- `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing
+- `InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing
 - `StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`
 - `NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface
 - `HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)
@@ -132,6 +139,26 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 ## Provisionally Stable Evolution Boundaries
 
 Per-symbol evolution allowances within the 4.x line:
+
+Promotion from Provisionally Stable to Stable requires all of the following:
+
+- The symbol has DocC or README coverage for the intended stable usage.
+- Contract tests or smoke examples exercise the source shape that is being
+  promoted.
+- The CHANGELOG and migration notes describe the promotion and any required
+  adopter action.
+- Stable examples or generated-client recipes are updated when the promoted
+  surface is a recommended entry point.
+- The symbol is moved into the Stable ledger above; once promoted, it cannot
+  move back to Provisionally Stable within the 4.x line.
+
+| Surface | Promotion target | Required evidence |
+| --- | --- | --- |
+| `EndpointBuilder` onboarding path | Stable at 4.0.0 | README first-30-minute flow, stable example smoke, and migration cookbook examples compile. |
+| `InnoNetworkAuthAWS` | 4.x minor after adopter validation | AWS SigV4 vector tests, product README/DocC scope, and explicit "reference signer, not AWS SDK replacement" wording. |
+| `PersistentResponseCache` statistics and telemetry | 4.x minor | Reentrancy invariant docs plus persistent cache key-rotation/statistics tests. |
+| `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | 4.x minor | The subset is documented as RFC 9111-aware, with directive tests for the supported rules. |
+| `InnoNetworkCodegen` macros | No automatic promotion | Promote only if the before/after ROI is clear; otherwise keep provisional or deprecate. |
 
 - `default` aliases — may add new defaults; never removed within 4.x.
 - Benchmark runner CLI flags and JSON keys — may evolve to reflect new
@@ -267,6 +294,10 @@ Per-symbol evolution allowances within the 4.x line:
   tune default policy values in minors, but it remains a convenience builder
   over documented public policies. 4.1.0 caps streaming response body
   collection at 5 MiB by default.
+- `NetworkConfiguration.init(...)` — the direct 32-parameter public
+  construction surface was removed before the 4.0.0 baseline and is not part
+  of the 4.x stable API. Use presets, configuration packs, and fluent
+  modifiers instead.
 - `DownloadConfiguration.sharedContainerIdentifier` — additive App Group
   background-session storage knob. Default stays `nil`; future minors may add
   preset helpers, but the property and builder field remain source-compatible.
@@ -318,6 +349,7 @@ release line.
   `MultipartStreamingEvent`, `MultipartStreamingResponseDecoder`,
   `MultipartUploadStrategy`,
   `NetworkClient`, `NetworkConfiguration`, `NetworkContext`, `NetworkError`,
+  `NetworkErrorCategory`,
   `NetworkEvent`, `NetworkEventObserving`, `NetworkInterfaceType`,
   `NetworkLoggingOptions`, `NetworkLogger`, `NetworkMetricsReporting`,
   `NetworkMonitor`, `NetworkMonitoring`, `NetworkReachabilityStatus`,
@@ -367,6 +399,10 @@ release line.
 
 - `PublicKeyPinningEvaluator`, `PublicKeyPinningPolicy`, and
   `PublicKeyPinningPolicy.HostMatchingStrategy`.
+
+### InnoNetworkAuthAWS
+
+- `AWSSigV4Interceptor`.
 
 ### InnoNetworkPersistentCache
 

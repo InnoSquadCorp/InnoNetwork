@@ -11,6 +11,7 @@ InnoNetwork	swift.associatedtype	StateReducer.Context
 InnoNetwork	swift.associatedtype	StateReducer.Event
 InnoNetwork	swift.associatedtype	StateReducer.Reduction
 InnoNetwork	swift.associatedtype	StateReducer.State
+InnoNetwork	swift.associatedtype	StreamingAPIDefinition.Auth
 InnoNetwork	swift.associatedtype	StreamingAPIDefinition.Output
 InnoNetwork	swift.class	ConcurrencyTokenBucket
 InnoNetwork	swift.class	DefaultNetworkClient
@@ -32,6 +33,7 @@ InnoNetwork	swift.enum	MultipartStreamingEvent
 InnoNetwork	swift.enum	MultipartUploadStrategy
 InnoNetwork	swift.enum	NetworkConfigurationFailureReason
 InnoNetwork	swift.enum	NetworkError
+InnoNetwork	swift.enum	NetworkErrorCategory
 InnoNetwork	swift.enum	NetworkErrorCode
 InnoNetwork	swift.enum	NetworkEvent
 InnoNetwork	swift.enum	NetworkInterfaceType
@@ -116,6 +118,14 @@ InnoNetwork	swift.enum.case	NetworkError.statusCode(_:)
 InnoNetwork	swift.enum.case	NetworkError.timeout(reason:underlying:)
 InnoNetwork	swift.enum.case	NetworkError.trustEvaluationFailed(_:)
 InnoNetwork	swift.enum.case	NetworkError.underlying(_:_:)
+InnoNetwork	swift.enum.case	NetworkErrorCategory.cancellation
+InnoNetwork	swift.enum.case	NetworkErrorCategory.configuration
+InnoNetwork	swift.enum.case	NetworkErrorCategory.decoding
+InnoNetwork	swift.enum.case	NetworkErrorCategory.reachability
+InnoNetwork	swift.enum.case	NetworkErrorCategory.statusCode
+InnoNetwork	swift.enum.case	NetworkErrorCategory.timeout
+InnoNetwork	swift.enum.case	NetworkErrorCategory.transport
+InnoNetwork	swift.enum.case	NetworkErrorCategory.trust
 InnoNetwork	swift.enum.case	NetworkErrorCode.cancelled
 InnoNetwork	swift.enum.case	NetworkErrorCode.configurationInvalidBaseURL
 InnoNetwork	swift.enum.case	NetworkErrorCode.configurationInvalidRequest
@@ -207,7 +217,6 @@ InnoNetwork	swift.enum.case	URLQueryFloatEncodingStrategy.throw
 InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.convertToSnakeCase
 InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.custom(_:)
 InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.useDefaultKeys
-InnoNetwork	swift.init	AWSSigV4Interceptor.init(accessKeyID:secretAccessKey:region:service:sessionToken:now:)
 InnoNetwork	swift.init	AnyEncodable.init(_:)
 InnoNetwork	swift.init	AnyRequestExecutionPolicy.init(_:)
 InnoNetwork	swift.init	AnyResponseDecoder.init(_:)
@@ -224,6 +233,7 @@ InnoNetwork	swift.init	ConcurrencyTokenBucket.init(maxConcurrent:)
 InnoNetwork	swift.init	ContentType.init(rawValue:)
 InnoNetwork	swift.init	CorrelationIDInterceptor.init(traceHeader:correlationHeader:)
 InnoNetwork	swift.init	CurlCommandOptions.init(redactedHeaderNames:includesBody:bodyFileURL:)
+InnoNetwork	swift.init	DefaultNetworkClient.init(configuration:)
 InnoNetwork	swift.init	DefaultNetworkClient.init(configuration:session:)
 InnoNetwork	swift.init	DefaultNetworkLogger.init(options:cookieStorage:)
 InnoNetwork	swift.init	DefaultRedirectPolicy.init()
@@ -249,7 +259,6 @@ InnoNetwork	swift.init	MultipartFormData.init(boundary:includesPartContentLength
 InnoNetwork	swift.init	MultipartPart.init(headers:data:)
 InnoNetwork	swift.init	MultipartResponseDecoder.init(boundary:)
 InnoNetwork	swift.init	MultipartStreamingResponseDecoder.init(boundary:)
-InnoNetwork	swift.init	NetworkConfiguration.init(baseURL:timeout:cachePolicy:requestPriority:allowsCellularAccess:allowsExpensiveNetworkAccess:allowsConstrainedNetworkAccess:retryPolicy:networkMonitor:metricsReporter:trustPolicy:eventObservers:eventDeliveryPolicy:eventMetricsReporter:acceptableStatusCodes:requestInterceptors:responseInterceptors:decodingInterceptors:refreshTokenPolicy:requestCoalescingPolicy:responseCachePolicy:responseCache:circuitBreakerPolicy:customExecutionPolicies:idempotencyKeyPolicy:userAgentProvider:acceptLanguageProvider:captureFailurePayload:responseBodyBufferingPolicy:responseBodyLimit:streamingLineByteLimit:redirectPolicy:allowsInsecureHTTP:)
 InnoNetwork	swift.init	NetworkContext.init(traceID:correlationID:baggage:)
 InnoNetwork	swift.init	NetworkErrorCode.init(rawValue:)
 InnoNetwork	swift.init	NetworkInterfaceType.init(rawValue:)
@@ -285,9 +294,6 @@ InnoNetwork	swift.init	URLQueryCustomKeyTransform.init(_:)
 InnoNetwork	swift.init	URLQueryEncoder.init(keyEncodingStrategy:dateEncodingStrategy:arrayEncodingStrategy:nonConformingFloatEncodingStrategy:)
 InnoNetwork	swift.init	W3CTraceContext.init(traceID:parentID:sampled:)
 InnoNetwork	swift.init	W3CTraceContext.init(traceparent:)
-InnoNetwork	swift.method	AWSSigV4Interceptor.adapt(_:)
-InnoNetwork	swift.method	AWSSigV4Interceptor.canonicalRequest(for:)
-InnoNetwork	swift.method	AWSSigV4Interceptor.stringToSign(canonicalRequest:date:)
 InnoNetwork	swift.method	AnyEncodable.encode(to:)
 InnoNetwork	swift.method	AnyRequestExecutionPolicy.execute(input:context:next:)
 InnoNetwork	swift.method	AnyResponseDecoder.decode(data:response:)
@@ -303,6 +309,7 @@ InnoNetwork	swift.method	DefaultNetworkClient.perform(_:tag:)
 InnoNetwork	swift.method	DefaultNetworkClient.perform(executable:tag:)
 InnoNetwork	swift.method	DefaultNetworkClient.request(_:)
 InnoNetwork	swift.method	DefaultNetworkClient.request(_:tag:)
+InnoNetwork	swift.method	DefaultNetworkClient.shutdown()
 InnoNetwork	swift.method	DefaultNetworkClient.stream(_:)
 InnoNetwork	swift.method	DefaultNetworkClient.stream(_:bufferingPolicy:)
 InnoNetwork	swift.method	DefaultNetworkClient.upload(_:)
@@ -416,10 +423,6 @@ InnoNetwork	swift.method	URLSessionProtocol.data(for:context:)
 InnoNetwork	swift.method	URLSessionProtocol.upload(for:fromFile:context:)
 InnoNetwork	swift.property	APIDefinition.parameters
 InnoNetwork	swift.property	APIDefinition.transport
-InnoNetwork	swift.property	AWSSigV4Interceptor.accessKeyID
-InnoNetwork	swift.property	AWSSigV4Interceptor.now
-InnoNetwork	swift.property	AWSSigV4Interceptor.region
-InnoNetwork	swift.property	AWSSigV4Interceptor.service
 InnoNetwork	swift.property	AuthPack.additionalDecodingInterceptors
 InnoNetwork	swift.property	AuthPack.additionalResponseInterceptors
 InnoNetwork	swift.property	AuthPack.additionalSigners
@@ -574,10 +577,13 @@ InnoNetwork	swift.property	NetworkConfiguration.userAgentProvider
 InnoNetwork	swift.property	NetworkContext.baggage
 InnoNetwork	swift.property	NetworkContext.correlationID
 InnoNetwork	swift.property	NetworkContext.traceID
+InnoNetwork	swift.property	NetworkError.category
 InnoNetwork	swift.property	NetworkError.errorCode
 InnoNetwork	swift.property	NetworkError.errorDescription
 InnoNetwork	swift.property	NetworkError.errorUserInfo
 InnoNetwork	swift.property	NetworkError.isDecodingFailure
+InnoNetwork	swift.property	NetworkError.isRetriableHint
+InnoNetwork	swift.property	NetworkError.isUserVisible
 InnoNetwork	swift.property	NetworkError.response
 InnoNetwork	swift.property	NetworkLoggingOptions.includeCookies
 InnoNetwork	swift.property	NetworkLoggingOptions.includeRequestBody
@@ -736,7 +742,6 @@ InnoNetwork	swift.protocol	StreamingAPIDefinition
 InnoNetwork	swift.protocol	StreamingResumeStrategy
 InnoNetwork	swift.protocol	TrustEvaluating
 InnoNetwork	swift.protocol	URLSessionProtocol
-InnoNetwork	swift.struct	AWSSigV4Interceptor
 InnoNetwork	swift.struct	AnyEncodable
 InnoNetwork	swift.struct	AnyRequestExecutionPolicy
 InnoNetwork	swift.struct	AnyResponseDecoder

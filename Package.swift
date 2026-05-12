@@ -42,6 +42,10 @@ let package = Package(
             targets: ["InnoNetwork"]
         ),
         .library(
+            name: "InnoNetworkAuthAWS",
+            targets: ["InnoNetworkAuthAWS"]
+        ),
+        .library(
             name: "InnoNetworkDownload",
             targets: ["InnoNetworkDownload"]
         ),
@@ -90,6 +94,14 @@ let package = Package(
             url: "https://github.com/apple/swift-openapi-runtime",
             .upToNextMajor(from: "1.0.0")
         ),
+        // Swift Crypto is used only by the optional cryptographic surfaces:
+        // the AWS SigV4 companion product, public-key pinning, and persistent
+        // cache key normalization. Core request execution continues to avoid
+        // broad cryptographic policy ownership.
+        .package(
+            url: "https://github.com/apple/swift-crypto",
+            .upToNextMajor(from: "4.0.0")
+        ),
     ],
     targets: [
         .target(
@@ -105,6 +117,16 @@ let package = Package(
             // File Timestamp Required Reason API used by
             // `MultipartFormData.attributesOfItem(...)`.
             resources: [.process("Resources")],
+            swiftSettings: strictSettings
+        ),
+        .target(
+            name: "InnoNetworkAuthAWS",
+            dependencies: [
+                "InnoNetwork",
+                .product(name: "Crypto", package: "swift-crypto"),
+            ],
+            path: "Sources/InnoNetworkAuthAWS",
+            exclude: ["README.md"],
             swiftSettings: strictSettings
         ),
         .target(
@@ -125,7 +147,10 @@ let package = Package(
         ),
         .target(
             name: "InnoNetworkPersistentCache",
-            dependencies: ["InnoNetwork"],
+            dependencies: [
+                "InnoNetwork",
+                .product(name: "Crypto", package: "swift-crypto"),
+            ],
             path: "Sources/InnoNetworkPersistentCache",
             // Bundles `Resources/PrivacyInfo.xcprivacy` declaring the
             // File Timestamp Required Reason API used by
@@ -144,7 +169,10 @@ let package = Package(
         ),
         .target(
             name: "InnoNetworkTrust",
-            dependencies: ["InnoNetwork"],
+            dependencies: [
+                "InnoNetwork",
+                .product(name: "Crypto", package: "swift-crypto"),
+            ],
             path: "Sources/InnoNetworkTrust",
             swiftSettings: strictSettings
         ),
@@ -179,6 +207,7 @@ let package = Package(
             name: "InnoNetworkDocSmoke",
             dependencies: [
                 "InnoNetwork",
+                "InnoNetworkAuthAWS",
                 "InnoNetworkDownload",
                 "InnoNetworkOpenAPI",
                 "InnoNetworkPersistentCache",
@@ -232,6 +261,15 @@ let package = Package(
                 "InnoNetworkTrust",
             ],
             path: "Tests/InnoNetworkTests",
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "InnoNetworkAuthAWSTests",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkAuthAWS",
+            ],
+            path: "Tests/InnoNetworkAuthAWSTests",
             swiftSettings: strictSettings
         ),
         .testTarget(

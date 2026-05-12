@@ -18,6 +18,13 @@ struct ConditionalRevalidationContext {
     let cached: CachedResponse
 }
 
+private struct PreparedExecutionRequest {
+    var request: URLRequest
+    let bodySource: BodySource
+    let cleanupFileURL: URL?
+    let context: NetworkRequestContext
+}
+
 /// Per-request execution coordinator.
 ///
 /// The struct itself only owns the URLSession transport and event hub
@@ -48,119 +55,33 @@ package struct RequestExecutor {
         var retryRequest: URLRequest?
         var attemptStartedAt: Date?
         do {
-            try validateAuthScope(executable, configuration: configuration)
-            let built = try requestBuilder.build(executable, configuration: configuration)
-            var request = built.request
-            let cleanupFileURL: URL?
-            if case .file(let fileURL, cleanupAfterUse: true) = built.bodySource {
-                cleanupFileURL = fileURL
-            } else {
-                cleanupFileURL = nil
-            }
+            let prepared = try await prepareRequestStage(
+                executable,
+                configuration: configuration,
+                requestBuilder: requestBuilder,
+                runtime: runtime,
+                retryIndex: retryIndex,
+                requestID: requestID
+            )
             defer {
-                if let cleanupFileURL {
+                if let cleanupFileURL = prepared.cleanupFileURL {
                     try? FileManager.default.removeItem(at: cleanupFileURL)
                 }
             }
-            configuration.idempotencyKeyPolicy.apply(to: &request, requestID: requestID)
-            await notifyRequestStart(
-                request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
-
-            // Onion model: session-level interceptors run first (outer), then
-            // per-request interceptors (inner). Cross-cutting concerns
-            // declared on NetworkConfiguration apply to every endpoint;
-            // per-APIDefinition interceptors layer on top.
-            for interceptor in configuration.requestInterceptors {
-                request = try await interceptor.adapt(request)
-            }
-            for interceptor in executable.requestInterceptors {
-                request = try await interceptor.adapt(request)
-            }
-            if let refreshCoordinator = runtime.refreshCoordinator {
-                request = try await refreshCoordinator.applyCurrentToken(to: request)
-            }
-            retryRequest = request
-            await notifyRequestAdapted(
-                request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
-
-            executable.logger.log(request: request)
-
-            let context = NetworkRequestContext(
-                requestID: requestID,
-                retryIndex: retryIndex,
-                metricsReporter: configuration.metricsReporter,
-                trustPolicy: configuration.trustPolicy,
-                eventObservers: configuration.eventObservers,
-                redirectPolicy: configuration.redirectPolicy
-            )
-
+            retryRequest = prepared.request
             attemptStartedAt = runtime.clock.now()
-            var networkResponse = try await executeWithPolicies(
-                request: request,
-                bodySource: built.bodySource,
+            let networkResponse = try await responseStage(
+                executable,
+                prepared: prepared,
                 configuration: configuration,
-                context: context,
                 runtime: runtime,
                 requestID: requestID
             )
-
-            // Onion unwinds inner→outer: per-request interceptors first,
-            // session-level interceptors last. A session-level response
-            // interceptor sees the same response a session-only setup would
-            // produce because per-endpoint adapters have already finished.
-            for interceptor in executable.responseInterceptors {
-                networkResponse = try await interceptor.adapt(networkResponse, request: request)
-            }
-            for interceptor in configuration.responseInterceptors {
-                networkResponse = try await interceptor.adapt(networkResponse, request: request)
-            }
-            // After response interceptors settle, give cancellation a chance
-            // to short-circuit before we spend cycles on body-limit checks,
-            // decode, and didDecode chains.
-            try Task.checkCancellation()
-            try enforceResponseBodyLimit(networkResponse, configuration: configuration)
-
-            // Per-endpoint override wins over the session-wide configuration
-            // when present. Lets one definition treat e.g. 304 as success
-            // without changing the default for the rest of the client.
-            let acceptable = executable.acceptableStatusCodes ?? configuration.acceptableStatusCodes
-            guard acceptable.contains(networkResponse.statusCode) else {
-                throw NetworkError.statusCode(networkResponse)
-            }
-
-            executable.logger.log(response: networkResponse, isError: false)
-            await eventHub.publish(
-                .requestFinished(
-                    requestID: requestID,
-                    statusCode: networkResponse.statusCode,
-                    byteCount: networkResponse.data.count
-                ),
-                requestID: requestID,
-                observers: configuration.eventObservers
+            return try await decodeStage(
+                executable,
+                response: networkResponse,
+                configuration: configuration
             )
-
-            // willDecode runs after response interceptors have settled
-            // so adapters that mutate the response (envelope rewriting,
-            // header-driven sanitization) observe the same payload the
-            // decoder will see. Interceptors fire in declaration order.
-            var decodableData = networkResponse.data
-            for interceptor in configuration.decodingInterceptors {
-                decodableData = try await interceptor.willDecode(
-                    data: decodableData,
-                    response: networkResponse
-                )
-            }
-            try enforceResponseBodyLimit(data: decodableData, configuration: configuration)
-
-            // Synchronous decode can block for several ms on large payloads;
-            // the surrounding async machinery would not check cancellation
-            // again until didDecode runs, so insert a checkpoint here.
-            try Task.checkCancellation()
-            var decoded = try executable.decode(data: decodableData, response: networkResponse)
-            for interceptor in configuration.decodingInterceptors {
-                decoded = try await interceptor.didDecode(decoded, response: networkResponse)
-            }
-            return decoded
         } catch let error as NetworkError {
             let surfaced = configuration.captureFailurePayload ? error : error.redactingFailurePayload()
             executable.logger.log(error: surfaced)
@@ -176,5 +97,145 @@ package struct RequestExecutor {
             await notifyFailure(surfaced, requestID: requestID, configuration: configuration)
             throw RequestExecutionFailure(error: surfaced, request: retryRequest ?? surfaced.underlyingRequest)
         }
+    }
+
+    @inline(__always)
+    private func prepareRequestStage<D: SingleRequestExecutable>(
+        _ executable: D,
+        configuration: NetworkConfiguration,
+        requestBuilder: RequestBuilder,
+        runtime: RequestExecutionRuntime,
+        retryIndex: Int,
+        requestID: UUID
+    ) async throws -> PreparedExecutionRequest {
+        try validateAuthScope(executable, configuration: configuration)
+        let built = try requestBuilder.build(executable, configuration: configuration)
+        var request = built.request
+        let cleanupFileURL: URL?
+        if case .file(let fileURL, cleanupAfterUse: true) = built.bodySource {
+            cleanupFileURL = fileURL
+        } else {
+            cleanupFileURL = nil
+        }
+
+        configuration.idempotencyKeyPolicy.apply(to: &request, requestID: requestID)
+        await notifyRequestStart(
+            request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
+
+        // Onion model: session-level interceptors run first (outer), then
+        // per-request interceptors (inner). Cross-cutting concerns declared on
+        // NetworkConfiguration apply to every endpoint; per-APIDefinition
+        // interceptors layer on top.
+        for interceptor in configuration.requestInterceptors {
+            request = try await interceptor.adapt(request)
+        }
+        for interceptor in executable.requestInterceptors {
+            request = try await interceptor.adapt(request)
+        }
+        if let refreshCoordinator = runtime.refreshCoordinator {
+            request = try await refreshCoordinator.applyCurrentToken(to: request)
+        }
+        await notifyRequestAdapted(
+            request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
+
+        executable.logger.log(request: request)
+
+        let context = NetworkRequestContext(
+            requestID: requestID,
+            retryIndex: retryIndex,
+            metricsReporter: configuration.metricsReporter,
+            trustPolicy: configuration.trustPolicy,
+            eventObservers: configuration.eventObservers,
+            redirectPolicy: configuration.redirectPolicy
+        )
+
+        return PreparedExecutionRequest(
+            request: request,
+            bodySource: built.bodySource,
+            cleanupFileURL: cleanupFileURL,
+            context: context
+        )
+    }
+
+    @inline(__always)
+    private func responseStage<D: SingleRequestExecutable>(
+        _ executable: D,
+        prepared: PreparedExecutionRequest,
+        configuration: NetworkConfiguration,
+        runtime: RequestExecutionRuntime,
+        requestID: UUID
+    ) async throws -> Response {
+        var networkResponse = try await executeWithPolicies(
+            request: prepared.request,
+            bodySource: prepared.bodySource,
+            configuration: configuration,
+            context: prepared.context,
+            runtime: runtime,
+            requestID: requestID
+        )
+
+        // Onion unwinds inner→outer: per-request interceptors first,
+        // session-level interceptors last. A session-level response
+        // interceptor sees the same response a session-only setup would
+        // produce because per-endpoint adapters have already finished.
+        for interceptor in executable.responseInterceptors {
+            networkResponse = try await interceptor.adapt(networkResponse, request: prepared.request)
+        }
+        for interceptor in configuration.responseInterceptors {
+            networkResponse = try await interceptor.adapt(networkResponse, request: prepared.request)
+        }
+        // After response interceptors settle, give cancellation a chance
+        // to short-circuit before we spend cycles on body-limit checks,
+        // decode, and didDecode chains.
+        try Task.checkCancellation()
+        try enforceResponseBodyLimit(networkResponse, configuration: configuration)
+
+        // Per-endpoint override wins over the session-wide configuration
+        // when present. Lets one definition treat e.g. 304 as success
+        // without changing the default for the rest of the client.
+        let acceptable = executable.acceptableStatusCodes ?? configuration.acceptableStatusCodes
+        guard acceptable.contains(networkResponse.statusCode) else {
+            throw NetworkError.statusCode(networkResponse)
+        }
+
+        executable.logger.log(response: networkResponse, isError: false)
+        await eventHub.publish(
+            .requestFinished(
+                requestID: requestID,
+                statusCode: networkResponse.statusCode,
+                byteCount: networkResponse.data.count
+            ),
+            requestID: requestID,
+            observers: configuration.eventObservers
+        )
+
+        return networkResponse
+    }
+
+    @inline(__always)
+    private func decodeStage<D: SingleRequestExecutable>(
+        _ executable: D,
+        response networkResponse: Response,
+        configuration: NetworkConfiguration
+    ) async throws -> D.APIResponse {
+        // willDecode runs after response interceptors have settled so adapters
+        // that mutate the response observe the same payload the decoder will see.
+        var decodableData = networkResponse.data
+        for interceptor in configuration.decodingInterceptors {
+            decodableData = try await interceptor.willDecode(
+                data: decodableData,
+                response: networkResponse
+            )
+        }
+        try enforceResponseBodyLimit(data: decodableData, configuration: configuration)
+
+        // Synchronous decode can block for several ms on large payloads; insert
+        // a cancellation checkpoint before decoder handoff.
+        try Task.checkCancellation()
+        var decoded = try executable.decode(data: decodableData, response: networkResponse)
+        for interceptor in configuration.decodingInterceptors {
+            decoded = try await interceptor.didDecode(decoded, response: networkResponse)
+        }
+        return decoded
     }
 }

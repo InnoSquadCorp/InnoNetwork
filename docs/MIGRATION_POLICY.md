@@ -2,15 +2,15 @@
 
 ## Stable API
 
-- Stable API changes require a migration note when call sites or behavior
-  must change.
+- Stable API source-breaking or documented behavior-breaking changes require a
+  major release and a migration note.
 - Behavior changes without source breakage should still be documented if they
   affect retries, websocket lifecycle, downloads, or observability.
 
 ## Provisionally Stable API
 
-- These APIs may evolve faster, but changes still require release notes and
-  updated examples.
+- These APIs may evolve faster. Shape or behavior changes can ship in a minor
+  release only with release notes, a migration note, and updated examples.
 
 ## Internal / Operational
 
@@ -27,3 +27,8 @@
 - Behavior-only changes that do not break call sites still require release
   notes when they affect resilience, websocket lifecycle, downloads, or
   observability.
+- The full `NetworkConfiguration.init(...)` initializer was removed from the
+  public API before the 4.0.0 baseline, so it is not part of the 4.x source
+  compatibility promise. New code should use `safeDefaults(baseURL:)`,
+  `recommendedForProduction(baseURL:)`, `advanced(baseURL:resilience:auth:observability:cache:transport:)`,
+  configuration packs, or fluent modifiers instead.

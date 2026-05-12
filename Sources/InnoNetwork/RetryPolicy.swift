@@ -18,7 +18,12 @@ public enum RetryDecision: Sendable, Equatable {
 
 public protocol RetryPolicy: Sendable {
     var maxRetries: Int { get }
-    /// Maximum total retry count, even if retry count is reset due to network changes.
+    /// Absolute retry budget for one logical request.
+    ///
+    /// ``maxRetries`` may reset when a policy observes a meaningful network
+    /// change, but `maxTotalRetries` never resets. Use it as a session-level
+    /// safety cap so network flapping cannot turn one request into an
+    /// unbounded retry loop.
     var maxTotalRetries: Int { get }
     var retryDelay: TimeInterval { get }
     /// Optional absolute ceiling for `Retry-After` waits.

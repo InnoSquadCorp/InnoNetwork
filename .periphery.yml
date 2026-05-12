@@ -31,9 +31,11 @@ exclude_targets:
   - InnoNetworkTrustTests
   - InnoNetworkWebSocketTests
 
-# Emit annotations without failing the CI job while the current internal
-# baseline is still being curated.
-strict: false
+# Emit annotations and fail the CI job on new implementation-only dead code.
+# Public declarations stay retained above because they are library contract,
+# not local reachability.
+strict: true
+baseline: .periphery-baseline.json
 
 # `github-actions` emits ::warning/::error annotations directly on the PR diff.
 # Periphery requires relative paths for this formatter, so keep

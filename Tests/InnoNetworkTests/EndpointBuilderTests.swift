@@ -111,7 +111,7 @@ struct EndpointBuilderTests {
     }
 
     @Test
-    func decodingPreservesMultipartTransportDecoder() {
+    func decodingPreservesNoneEncodingEmptyAwareDecoder() {
         let decoder = JSONDecoder()
 
         let endpoint: EndpointBuilder<EndpointAck, PublicAuthScope> = EndpointBuilder<EmptyResponse, PublicAuthScope>
@@ -124,10 +124,10 @@ struct EndpointBuilderTests {
         } else {
             Issue.record("Promoted multipart endpoint should keep .none request encoding")
         }
-        if case .json(let promotedDecoder) = endpoint.transport.responseDecoding {
+        if case .jsonAllowingEmpty(let promotedDecoder) = endpoint.transport.responseDecoding {
             #expect(promotedDecoder === decoder)
         } else {
-            Issue.record("Promoted multipart endpoint should keep the original response decoder")
+            Issue.record("Promoted endpoint should keep the empty-aware response decoder")
         }
     }
 

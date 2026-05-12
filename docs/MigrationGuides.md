@@ -44,25 +44,24 @@ response serializers. Move those concepts one layer at a time:
 |---|---|
 | `Session` | `DefaultNetworkClient` |
 | `RequestInterceptor` auth adapter/retrier | `RefreshTokenPolicy` plus request interceptors |
-| `ParameterEncoder` | `TransportPolicy` / endpoint `parameters` |
+| `ParameterEncoder` | `EndpointBuilder` or `TransportPolicy` / endpoint `parameters` |
 | `ResponseSerializer` | `ResponseDecodingStrategy` or `AnyResponseDecoder` |
 | `EventMonitor` | `NetworkEventObserving` |
 
 ```swift
-let client = DefaultNetworkClient(
-    configuration: .advanced(
-        baseURL: URL(string: "https://api.example.com")!
-    ) { builder in
-        builder.refreshTokenPolicy = refreshPolicy
-        builder.retryPolicy = ExponentialBackoffRetryPolicy(maxRetries: 2)
-        builder.eventObservers = [analyticsObserver]
-    }
+let configuration = NetworkConfiguration.advanced(
+    baseURL: URL(string: "https://api.example.com")!,
+    resilience: ResiliencePack(retry: ExponentialBackoffRetryPolicy(maxRetries: 2)),
+    auth: AuthPack(refreshToken: refreshPolicy),
+    observability: ObservabilityPack(eventObservers: [analyticsObserver])
 )
+let client = DefaultNetworkClient(configuration: configuration)
 ```
 
 Migrate leaf endpoints first. Keep Alamofire for flows that still need
 custom session behavior, then delete the compatibility layer when the last
-caller moves to typed endpoints.
+caller moves to typed endpoints. For a smaller before/after, use
+[`MigrationFromAlamofire.md`](MigrationFromAlamofire.md).
 
 ## From Moya
 
@@ -95,6 +94,7 @@ Migration notes:
 - Keep pagination as app/domain logic that repeatedly calls typed endpoints.
 - Prefer `EndpointBuilder` for simple targets and `APIDefinition` when an endpoint
   owns custom transport, multipart upload, streaming, or interceptors.
+- For a smaller before/after, use [`MigrationFromMoya.md`](MigrationFromMoya.md).
 
 ## Removed Fluent Endpoint Names
 

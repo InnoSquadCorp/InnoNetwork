@@ -12,6 +12,15 @@ import OSLog
 /// The cache enforces a synchronous LRU bound on every write so the disk
 /// footprint stays within the configured byte and entry budgets.
 ///
+/// ## Reentrancy invariant
+///
+/// The actor intentionally performs body-file I/O outside actor isolation.
+/// After each suspension point it re-checks that the index entry still points
+/// at the same body file before returning or committing metadata. This keeps
+/// concurrent `get`, `set`, `remove`, and trim operations from returning a
+/// stale body after another task replaced or evicted the entry while disk I/O
+/// was in flight.
+///
 /// ## RFC 9111 scope
 ///
 /// This cache is a storage layer, not a complete RFC 9111 implementation by
@@ -87,6 +96,7 @@ public actor PersistentResponseCache: ResponseCache {
     private let keyNormalizer: PersistentCacheDiskKeyNormalizer
     private let identifierEncoder = JSONEncoder.persistentCache
     private var index: Index
+    private var entryIDsByDiskKey: [DiskKey: Set<String>] = [:]
     private var runningTotalBytes: Int
     private var telemetryEvents: [PersistentResponseCacheTelemetryEvent]
     /// Cumulative cache hits since this actor was constructed.
@@ -199,6 +209,7 @@ public actor PersistentResponseCache: ResponseCache {
             fileManager: fileManager
         )
         self.index = budgetResult.index
+        self.entryIDsByDiskKey = Self.makeEntryIDsByDiskKey(from: budgetResult.index)
         self.runningTotalBytes = Self.totalBytes(in: budgetResult.index)
         var telemetry = loadResult.telemetryEvents
         telemetry.append(contentsOf: policyScrubResult.telemetryEvents)
@@ -413,11 +424,13 @@ public actor PersistentResponseCache: ResponseCache {
             )
             rollbackIndex = index
             rollbackRunningTotalBytes = runningTotalBytes
-            let replacedBodyFileName = index.entries[id]?.bodyFileName
-            if let old = index.entries[id] {
+            let replacedEntry = index.entries[id]
+            let replacedBodyFileName = replacedEntry?.bodyFileName
+            if let old = replacedEntry {
                 runningTotalBytes -= old.byteCost
             }
             index.entries[id] = entry
+            replaceEntryReference(id: id, old: replacedEntry, new: entry)
             runningTotalBytes += entry.byteCost
             var removableBodies = evictIfNeeded()
             let evictedBytes = removableBodies.reduce(0) { $0 + $1.byteCost }
@@ -441,6 +454,7 @@ public actor PersistentResponseCache: ResponseCache {
         } catch {
             if let rollbackIndex, let rollbackRunningTotalBytes {
                 index = rollbackIndex
+                entryIDsByDiskKey = Self.makeEntryIDsByDiskKey(from: rollbackIndex)
                 runningTotalBytes = rollbackRunningTotalBytes
             }
             removeBody(fileName: bodyFileName)
@@ -453,9 +467,7 @@ public actor PersistentResponseCache: ResponseCache {
     /// Remove the entry for `key` from the index and delete its body file.
     public func invalidate(_ key: ResponseCacheKey) async {
         let diskKey = DiskKey(key, normalizer: keyNormalizer)
-        let matches = index.entries.filter { _, entry in
-            entry.key == diskKey
-        }
+        let matches = entryIDs(matching: diskKey)
         guard !matches.isEmpty else { return }
         for (id, entry) in matches {
             removeEntry(id: id, entry: entry)
@@ -482,6 +494,7 @@ public actor PersistentResponseCache: ResponseCache {
     /// The user-supplied configuration directory itself is left in place.
     public func removeAll() async {
         index.entries.removeAll()
+        entryIDsByDiskKey.removeAll(keepingCapacity: true)
         runningTotalBytes = 0
         try? fileManager.removeItem(at: bodiesDirectoryURL)
         try? fileManager.createDirectory(at: bodiesDirectoryURL, withIntermediateDirectories: true)
@@ -551,6 +564,7 @@ public actor PersistentResponseCache: ResponseCache {
             guard let victim = index.entries[victimID] else { continue }
             if let removed = index.entries.removeValue(forKey: victimID) {
                 runningTotalBytes -= removed.byteCost
+                removeEntryReference(id: victimID, entry: removed)
                 removedBodies.append((fileName: victim.bodyFileName, byteCost: victim.byteCost))
             }
         }
@@ -558,10 +572,13 @@ public actor PersistentResponseCache: ResponseCache {
     }
 
     private func removeEntry(id: String, entry: Entry) {
+        var bodyFileName = entry.bodyFileName
         if let removed = index.entries.removeValue(forKey: id) {
             runningTotalBytes -= removed.byteCost
+            removeEntryReference(id: id, entry: removed)
+            bodyFileName = removed.bodyFileName
         }
-        removeBody(fileName: entry.bodyFileName)
+        removeBody(fileName: bodyFileName)
     }
 
     private func scrubEntry(
@@ -579,8 +596,7 @@ public actor PersistentResponseCache: ResponseCache {
 
     private func matchingEntry(for diskKey: DiskKey) -> (String, Entry)? {
         let candidates =
-            index.entries
-            .filter { _, entry in entry.key == diskKey }
+            entryIDs(matching: diskKey)
             .sorted { lhs, rhs in
                 if lhs.value.lastAccessedAt != rhs.value.lastAccessedAt {
                     return lhs.value.lastAccessedAt > rhs.value.lastAccessedAt
@@ -592,6 +608,37 @@ public actor PersistentResponseCache: ResponseCache {
             }
         return candidates.first { _, entry in
             Self.varySnapshot(entry.varyHeaders, matches: diskKey)
+        }
+    }
+
+    private static func makeEntryIDsByDiskKey(from index: Index) -> [DiskKey: Set<String>] {
+        index.entries.reduce(into: [:]) { partial, item in
+            let (id, entry) = item
+            partial[entry.key, default: []].insert(id)
+        }
+    }
+
+    private func entryIDs(matching diskKey: DiskKey) -> [(key: String, value: Entry)] {
+        guard let ids = entryIDsByDiskKey[diskKey] else { return [] }
+        return ids.compactMap { id in
+            index.entries[id].map { (key: id, value: $0) }
+        }
+    }
+
+    private func replaceEntryReference(id: String, old: Entry?, new: Entry) {
+        if let old {
+            removeEntryReference(id: id, entry: old)
+        }
+        entryIDsByDiskKey[new.key, default: []].insert(id)
+    }
+
+    private func removeEntryReference(id: String, entry: Entry) {
+        guard var ids = entryIDsByDiskKey[entry.key] else { return }
+        ids.remove(id)
+        if ids.isEmpty {
+            entryIDsByDiskKey[entry.key] = nil
+        } else {
+            entryIDsByDiskKey[entry.key] = ids
         }
     }
 

@@ -9,7 +9,7 @@ token store. Mirrors the pattern most production iOS / macOS apps use:
    a new one.
 3. `RefreshTokenPolicy` owns the single-flight refresh and the
    one-time replay after configured auth status codes (default `401`).
-4. `NetworkConfiguration.advanced(baseURL:)` registers the policy on
+4. `NetworkConfiguration.advanced(...)` registers the policy on
    the client.
 
 ## Why the library does not ship a Keychain layer

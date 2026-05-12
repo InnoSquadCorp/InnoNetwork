@@ -31,56 +31,21 @@ into one release line:
 - Phantom auth scopes through `AuthScope`, `PublicAuthScope`,
   `AuthRequiredScope`, and `EndpointBuilder`.
 
-## 4.x → 5.x Typed-Throws Migration
+## 4.x Typed-Throws Surface
 
-`NetworkClient.request(_:)`, `request(_:tag:)`, `upload(_:)`, and
-`upload(_:tag:)` are declared with untyped `async throws` today.
-Callers have to `catch let error as NetworkError` to recover the
-typed surface, which works but defeats one of the bigger ergonomic
-wins of Swift 6's `throws(MyError)` form (the compiler statically
-guarantees the catch covers every case).
+`NetworkClient.request(_:)`, `request(_:tag:)`,
+`request(_:method:tag:)`, `upload(_:)`, and `upload(_:tag:)` now expose
+`async throws(NetworkError)`. This is the 4.x public contract, not a
+future 5.0 migration item. Interceptors and execution policies that
+produce arbitrary errors are normalized before they leave the client
+surface so callers can switch on `NetworkError` directly.
 
-A drop-in switch to `throws(NetworkError)` is **not** safe inside the
-4.x line:
-
-- Adding a parallel `throws(NetworkError)` overload alongside the
-  untyped `throws` overload runs into Swift's typed-throws overload
-  resolution: the two signatures differ only in the throws clause and
-  cannot coexist as a clean public API.
-- Replacing the untyped throws clause with `throws(NetworkError)` is
-  a breaking change; every callsite that previously threw a non-
-  `NetworkError` type from inside a `RequestInterceptor` would stop
-  compiling. That is exactly the kind of change the API_STABILITY
-  ledger reserves for a major bump.
-- A renamed surface (`requestStrict`, `tryRequest`, …) would mean
-  carrying two parallel method names through 4.x; the readability
-  loss outweighs the ergonomic gain.
-
-The migration target is the 5.0 major. Until then the public surface
-keeps untyped `async throws` and adopters that want the typed surface
-can wrap with their own helper:
-
-```swift
-extension NetworkClient {
-    func requestTyped<T: APIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse {
-        do { return try await self.request(request) }
-        catch let error as NetworkError { throw error }
-        catch {
-            throw NetworkError.underlying(
-                SendableUnderlyingError(domain: "AppDomain", code: -1,
-                                        message: String(describing: error)),
-                nil
-            )
-        }
-    }
-}
-```
-
-The 5.0 plan is to flip the protocol declarations to
-`throws(NetworkError)` once interceptors are documented as required to
-throw `NetworkError` (or to wrap their own errors before exiting the
-interceptor chain). The CHANGELOG entry that introduces 5.0 will spell
-out the catch-block migration.
+The previous 5.0 candidate on this axis was not typed throws. The large
+`NetworkConfiguration.init(...)` compatibility initializer was removed from
+the public API before the 4.0.0 baseline, so 4.x examples and docs should use
+`safeDefaults(baseURL:)`, `recommendedForProduction(baseURL:)`,
+`advanced(baseURL:resilience:auth:observability:cache:transport:)`, or the
+pack/fluent modifier surfaces.
 
 ## 4.x Trust Pinning Module Split (shipped)
 
@@ -116,26 +81,45 @@ What shipped:
 
 ## 4.x Reference Signers — AWS SigV4 and JWT Bearer
 
-`HMACRequestInterceptor` is the only request signer shipped in 4.0. The
-4.x roadmap adds two more reference implementations so the most common
-external-API conventions are covered without every adopter writing
-their own:
+`HMACRequestInterceptor` remains in the core product. AWS-specific signing
+ships in the optional `InnoNetworkAuthAWS` companion product so the first
+request path does not imply AWS SDK coverage:
 
-- **AWS SigV4** — canonical-request signer for AWS APIs and any service
-  that adopts the same authorization scheme. Ships as
-  `AWSSigV4Interceptor` in a follow-up minor; the wire shape is
-  documented today in [`RequestSigning.md`](../Sources/InnoNetwork/InnoNetwork.docc/Articles/RequestSigning.md).
+- **AWS SigV4** — `InnoNetworkAuthAWS.AWSSigV4Interceptor` is a
+  canonical-request reference signer for AWS APIs and any service that adopts
+  the same authorization scheme. It is not an AWS SDK replacement; streaming
+  SigV4, presigned URLs, credential-provider chains, and service-specific
+  behaviours stay out of scope.
 - **JWT Bearer (request-minted)** — interceptor shape for backends that
   expect a JWT computed per request (claims include method/path).
   `RefreshTokenPolicy` already covers session-rotated bearer tokens, so
   this signer targets the request-minted lane only.
 
-Both signers will keep key material outside the interceptor (closure
-injection so adopters can use Keychain or Secure Enclave); both ride
-on the existing `RequestInterceptor` contract. Streaming-body variants
-(SigV4 chunk-signed) are explicitly deferred — the interceptor surface
-runs before the upload pipeline owns the body, so chunk signing needs
-a deeper hook that is not yet planned.
+Reference signers ride on the existing `RequestInterceptor` contract. Streaming
+body variants (SigV4 chunk-signed) are explicitly deferred because the
+interceptor surface runs before the upload pipeline owns the body.
+
+## Provisional to Stable Promotion Roadmap
+
+| Surface | Current state | Promotion target | Done criteria |
+| --- | --- | --- | --- |
+| `EndpointBuilder` onboarding path | Stable candidate before 4.0.0 | Stable at 4.0.0 | README first-30-minute flow, stable example smoke, and migration cookbook examples stay green. |
+| `InnoNetworkAuthAWS` | Provisionally Stable | 4.x minor after field validation | AWS SigV4 vector tests, README/DocC reference-signer scope, and one adopter migration note. |
+| `PersistentResponseCache` telemetry/statistics | Provisionally Stable | 4.x minor | Reentrancy invariant documented, persistent cache tests cover key rotation and stats. |
+| `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | Provisionally Stable | 4.x minor | Directive subset is documented as RFC 9111-aware, not full compliance, with cache policy tests. |
+| Macro package | Provisionally Stable | No automatic promotion | Before/after ROI remains clear; deprecate instead of promoting if handwritten endpoints stay simpler. |
+
+## 5.0 RFC Parking Lot
+
+These are deliberately not implemented in the 4.0.0 branch, even though the
+branch can still make pre-release breaking changes:
+
+- `NetworkConfiguration.Transport`, `.Resilience`, `.Auth`, and
+  `.Observability` nested naming can replace the current top-level pack names
+  in 5.0 if adopter feedback shows the flatter names are confusing.
+- `NetworkError` can move to a frozen outer wrapper plus an unfrozen inner
+  `Reason` in 5.0 if catch sites need a smaller stable matching surface.
+  Until then, the current enum stays the 4.x source shape.
 
 ## 4.x Configuration Convergence — Packs over AdvancedBuilder
 
@@ -167,7 +151,7 @@ the equivalent Pack fields.
 - Broader Download side-effect ownership remains out of this PR; Download
   already owns reducer-driven state decisions in 4.0.0.
 - An NIO-backed WebSocket/HTTP transport product remains out of this PR so the
-  root runtime products keep their zero-dependency shape.
+  core request product keeps its URLSession-first shape.
 - Pulse/Sentry/OpenTelemetry adapter examples remain separate companion
   examples rather than core dependencies.
 - Hummingbird or other server-side Swift in-process integration tests stay out

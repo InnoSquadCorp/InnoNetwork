@@ -264,6 +264,44 @@ struct RefreshCoalescerRaceTests {
         #expect(await coordinator.isRefreshInProgress == false)
     }
 
+    @Test("Cancelled refresh awaiter returns before shared refresh completes")
+    func cancelledRefreshAwaiterReturnsBeforeSharedRefreshCompletes() async throws {
+        let gate = RefreshGate()
+        let policy = RefreshTokenPolicy(
+            currentToken: { "old" },
+            refreshToken: {
+                await gate.wait()
+                return "new"
+            }
+        )
+        let coordinator = RefreshTokenCoordinator(policy: policy)
+        let request = URLRequest(url: URL(string: "https://api.example.com/me")!)
+
+        let waiter = Task {
+            try await coordinator.refreshAndApply(to: request)
+        }
+
+        for _ in 0..<100 {
+            if await coordinator.isRefreshInProgress { break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(await coordinator.isRefreshInProgress == true)
+
+        waiter.cancel()
+        await #expect(throws: CancellationError.self) {
+            _ = try await waiter.value
+        }
+
+        #expect(await coordinator.isRefreshInProgress == true)
+        await gate.release()
+
+        for _ in 0..<100 {
+            if await coordinator.isRefreshInProgress == false { break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(await coordinator.isRefreshInProgress == false)
+    }
+
     @Test("Subsequent coordinator runs a fresh refresh after a prior coordinator was released")
     func freshCoordinatorRunsRefreshAfterPriorWasReleased() async throws {
         // The detached refresh task captures `self` weakly. Even though

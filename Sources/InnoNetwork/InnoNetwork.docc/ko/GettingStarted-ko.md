@@ -89,7 +89,7 @@ let users = try await client.request(
 ## 고급 설정으로 전환할 때
 
 다음 중 하나가 필요할 때만 ``NetworkConfiguration/safeDefaults(baseURL:)`` 에서
-``NetworkConfiguration/advanced(baseURL:_:)`` 로 옮기는 것을 권장합니다.
+``NetworkConfiguration/advanced(baseURL:resilience:auth:observability:cache:transport:)`` 로 옮기는 것을 권장합니다.
 
 - 재시도 정책의 의미 변경
 - TLS 신뢰 평가 동작 변경

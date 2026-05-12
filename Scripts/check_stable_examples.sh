@@ -94,7 +94,7 @@ EOF
 for example in "${stable_examples[@]}"; do
     example_name="$(basename "$example")"
     target_name="${example_name}Smoke"
-    xcrun swift build --package-path "$smoke_root" --target "$target_name"
+    xcrun swift build --package-path "$smoke_root" --target "$target_name" -Xswiftc -warnings-as-errors
 done
 
 echo "✅ Stable examples contract satisfied."

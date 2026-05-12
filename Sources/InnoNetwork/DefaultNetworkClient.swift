@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 public protocol NetworkClient: Sendable {
     /// Executes a standard typed request modeled with ``APIDefinition``.
@@ -149,6 +150,11 @@ package struct StreamingResumeState: Sendable {
         perAttemptSeenNewCursor = true
     }
 
+    package mutating func rejectEventID() {
+        lastSeenEventID = nil
+        perAttemptSeenNewCursor = false
+    }
+
     package func canResume(maxAttempts: Int, completedResumeAttempts: Int) -> Bool {
         maxAttempts > 0
             && completedResumeAttempts < maxAttempts
@@ -160,52 +166,50 @@ package struct StreamingResumeState: Sendable {
 
 /// The default ``NetworkClient`` implementation.
 ///
-/// Despite its `async throws` API surface, `DefaultNetworkClient` is an
-/// **immutable value object**: every stored property is a `let` binding, and
-/// all mutation lives behind the `eventHub` actor, the URL session, and the
-/// retry coordinator structs. The type therefore conforms to `Sendable`
-/// without crossing an actor isolation boundary on every call — concurrent
-/// `request(_:)` invocations execute in parallel as soon as they reach
-/// ``URLSessionProtocol/data(for:context:)``, the same as in the previous
-/// `actor` form (which already released isolation on every `await`).
+/// `DefaultNetworkClient` keeps request execution non-actor-isolated so
+/// concurrent `request(_:)` invocations execute in parallel as soon as they
+/// reach ``URLSessionProtocol/data(for:context:)``. Shared lifecycle state
+/// lives behind small lock/actor boundaries: in-flight request cancellation,
+/// event publication, refresh coordination, and the terminal shutdown latch.
 public final class DefaultNetworkClient: NetworkClient, Sendable {
     private let configuration: NetworkConfiguration
     private let session: URLSessionProtocol
+    private let ownedSession: URLSession?
     private let requestBuilder = RequestBuilder()
     private let eventHub: NetworkEventHub
     package let inFlight = InFlightRegistry()
     private let executionRuntime: RequestExecutionRuntime
+    private let shutdownLock = OSAllocatedUnfairLock<Bool>(initialState: false)
+
+    /// Creates a client backed by a fresh `URLSession` derived from the
+    /// provided configuration.
+    ///
+    /// - Parameters:
+    ///   - configuration: The ``NetworkConfiguration`` describing the
+    ///     base URL, interceptors, retry policy, and observability hooks.
+    ///
+    /// The default session is constructed with
+    /// ``NetworkConfiguration/makeURLSessionConfiguration()`` plus per-client
+    /// cookie storage and an in-memory URL cache. Pass ``URLSession/shared`` or
+    /// another explicit session only when process-wide session state is
+    /// intentional.
+    public convenience init(configuration: NetworkConfiguration) {
+        let session = Self.makeDefaultURLSession(configuration: configuration)
+        self.init(
+            configuration: configuration,
+            session: session,
+            ownedSession: session
+        )
+    }
 
     /// Creates a client backed by the given URL session.
     ///
     /// - Parameters:
     ///   - configuration: The ``NetworkConfiguration`` describing the
     ///     base URL, interceptors, retry policy, and observability hooks.
-    ///   - session: The URL session that issues requests. Defaults to
-    ///     ``URLSession/shared`` for ergonomic prototyping.
+    ///   - session: The URL session that issues requests.
     ///
-    /// > Warning: The default of ``URLSession/shared`` is convenient but has
-    /// > three production caveats. Inject an explicit `URLSession` when any of
-    /// > them matters to you:
-    /// >
-    /// > 1. **Shared cookie / credential storage.** `URLSession.shared` uses
-    /// >    ``HTTPCookieStorage/shared`` and ``URLCredentialStorage/shared``,
-    /// >    so any other SDK in the process (analytics, auth, push) sees the
-    /// >    same cookie jar. For app-scoped or isolated stores, build a
-    /// >    session with a dedicated `URLSessionConfiguration`.
-    /// > 2. **No session-owned delegate or custom configuration.**
-    /// >    `URLSession.shared` cannot be constructed with a custom
-    /// >    `URLSessionConfiguration` or session delegate. InnoNetwork still
-    /// >    installs per-task delegates for requests executed through this client,
-    /// >    so configured trust evaluation, task metrics, and redirect policy
-    /// >    apply on that path. Use an explicit session when you need
-    /// >    session-wide delegate behavior or configuration-owned state.
-    /// > 3. **Configuration drift.** `URLSessionConfiguration`-only choices
-    /// >    such as HTTP/3 opt-in, cookie storage, proxy settings, and TLS
-    /// >    protocol bounds are owned by the session. The shared session cannot
-    /// >    inherit those choices from ``NetworkConfiguration``.
-    /// >
-    /// > Recommended explicit form:
+    /// > Recommended explicit-session form:
     /// >
     /// > ```swift
     /// > let urlConfig = URLSessionConfiguration.ephemeral // isolated in-memory storage
@@ -220,31 +224,54 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     /// >     session: session
     /// > )
     /// > ```
-    public init(
+    public convenience init(
         configuration: NetworkConfiguration,
-        session: URLSessionProtocol = URLSession.shared
+        session: URLSessionProtocol
     ) {
-        self.configuration = configuration
-        self.session = session
-        self.executionRuntime = RequestExecutionRuntime(
-            configuration: configuration,
-            inFlight: inFlight,
-            clock: SystemClock()
+        self.init(configuration: configuration, session: session, ownedSession: nil)
+    }
+
+    static func makeDefaultURLSession(configuration: NetworkConfiguration) -> URLSession {
+        let urlConfiguration = configuration.makeURLSessionConfiguration()
+        urlConfiguration.httpCookieStorage = HTTPCookieStorage()
+        urlConfiguration.urlCache = URLCache(
+            memoryCapacity: URLCache.shared.memoryCapacity,
+            diskCapacity: 0,
+            diskPath: nil
         )
-        self.eventHub = NetworkEventHub(
-            policy: configuration.eventDeliveryPolicy,
-            metricsReporter: configuration.eventMetricsReporter,
-            hubKind: .networkRequest
+        return URLSession(configuration: urlConfiguration)
+    }
+
+    package convenience init(
+        configuration: NetworkConfiguration,
+        clock: any InnoNetworkClock
+    ) {
+        let session = Self.makeDefaultURLSession(configuration: configuration)
+        self.init(
+            configuration: configuration,
+            session: session,
+            ownedSession: session,
+            clock: clock
         )
     }
 
-    package init(
+    package convenience init(
         configuration: NetworkConfiguration,
-        session: URLSessionProtocol = URLSession.shared,
+        session: URLSessionProtocol,
         clock: any InnoNetworkClock
+    ) {
+        self.init(configuration: configuration, session: session, ownedSession: nil, clock: clock)
+    }
+
+    private init(
+        configuration: NetworkConfiguration,
+        session: URLSessionProtocol,
+        ownedSession: URLSession?,
+        clock: any InnoNetworkClock = SystemClock()
     ) {
         self.configuration = configuration
         self.session = session
+        self.ownedSession = ownedSession
         self.executionRuntime = RequestExecutionRuntime(
             configuration: configuration,
             inFlight: inFlight,
@@ -294,6 +321,11 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
         _ request: T,
         bufferingPolicy: StreamingBufferingPolicy
     ) -> AsyncThrowingStream<T.Output, Error> {
+        guard !isShutdown else {
+            return AsyncThrowingStream { continuation in
+                continuation.finish(throwing: NetworkError.cancelled)
+            }
+        }
         if let incompatibleBufferingError = Self.incompatibleStreamingBufferingError(
             resumePolicy: request.resumePolicy,
             bufferingPolicy: bufferingPolicy
@@ -324,9 +356,14 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
             let executionRuntime = self.executionRuntime
             let executor = StreamingExecutor(session: self.session, eventHub: self.eventHub)
             let startGate = TaskStartGate()
+            let generation = inFlight.generation()
 
             let work = Task<Void, Never> {
-                await startGate.wait()
+                guard await startGate.wait() else {
+                    inFlight.deregister(id: requestID)
+                    continuation.finish(throwing: NetworkError.cancelled)
+                    return
+                }
                 // Match the non-streaming path: deregister from
                 // ``InFlightRegistry`` when the executor finishes, no
                 // matter whether the stream completed normally, errored,
@@ -335,6 +372,10 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
                 // backing `Task` is gone, causing `cancelAll()` and the
                 // tagged-cancel variants to hang on a stale handle.
                 defer { inFlight.deregister(id: requestID) }
+                guard !self.isShutdown else {
+                    continuation.finish(throwing: NetworkError.cancelled)
+                    return
+                }
                 await executor.run(
                     request: request,
                     requestID: requestID,
@@ -348,7 +389,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
             continuation.onTermination = { _ in
                 work.cancel()
             }
-            inFlight.register(id: requestID, cancelHandler: { work.cancel() })
+            inFlight.register(id: requestID, generation: generation, cancelHandler: { work.cancel() })
             startGate.open()
         }
     }
@@ -394,6 +435,21 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     /// of the app.
     public func cancelAll(matching tag: CancellationTag) async {
         inFlight.cancelAll(matching: tag)
+    }
+
+    /// Terminates this concrete client instance.
+    ///
+    /// The shutdown is idempotent. It cancels every in-flight request and any
+    /// in-flight auth refresh, then invalidates only the `URLSession` created
+    /// by ``init(configuration:)``. Sessions supplied through
+    /// ``init(configuration:session:)`` remain caller-owned and are not
+    /// invalidated. After shutdown, new request/upload/stream calls fail with
+    /// ``NetworkError/cancelled``; create a fresh client for more work.
+    public func shutdown() async {
+        guard markShutdownIfNeeded() else { return }
+        inFlight.shutdownAll()
+        await executionRuntime.shutdown()
+        ownedSession?.invalidateAndCancel()
     }
 
     public func request<T: APIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse {
@@ -491,11 +547,12 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
     ) async throws -> D.APIResponse {
         let requestID = UUID()
         let startGate = TaskStartGate()
+        let generation = inFlight.generation(for: tag)
         // Wrap the work in an unstructured Task so cancelAll() can reach it
         // without the call site having to track individual Task handles.
         // Outer-task cancellation is forwarded via withTaskCancellationHandler.
         let work = Task<D.APIResponse, Error> { [eventHub, configuration, session, requestBuilder, executionRuntime] in
-            await startGate.wait()
+            guard await startGate.wait() else { throw NetworkError.cancelled }
             let retryCoordinator = RetryCoordinator(eventHub: eventHub, clock: executionRuntime.clock)
             return try await retryCoordinator.execute(
                 retryPolicy: configuration.retryPolicy,
@@ -513,7 +570,7 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
                 )
             }
         }
-        inFlight.register(id: requestID, tag: tag, cancelHandler: { work.cancel() })
+        inFlight.register(id: requestID, tag: tag, generation: generation, cancelHandler: { work.cancel() })
         defer { inFlight.deregister(id: requestID) }
         startGate.open()
 
@@ -521,6 +578,18 @@ public final class DefaultNetworkClient: NetworkClient, Sendable {
             try await work.value
         } onCancel: {
             work.cancel()
+        }
+    }
+
+    private var isShutdown: Bool {
+        shutdownLock.withLock { $0 }
+    }
+
+    private func markShutdownIfNeeded() -> Bool {
+        shutdownLock.withLock { state in
+            guard !state else { return false }
+            state = true
+            return true
         }
     }
 }

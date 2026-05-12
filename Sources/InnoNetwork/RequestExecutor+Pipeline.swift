@@ -43,6 +43,7 @@ extension RequestExecutor {
                 runtime: runtime,
                 originalRequestID: requestID
             ) {
+                try Task.checkCancellation()
                 return cachedResponse
             }
 
@@ -107,6 +108,7 @@ extension RequestExecutor {
                 // endpoint interceptors keep their headers/signatures while
                 // the auth policy replaces only the Authorization value.
                 request = try await refreshCoordinator.refreshAndApply(to: adaptedRequest)
+                try Task.checkCancellation()
                 replayedAfterRefresh = true
                 continue
             }

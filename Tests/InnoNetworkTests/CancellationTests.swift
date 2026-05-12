@@ -46,6 +46,52 @@ private actor CompletionRecorder<Key: Hashable & Sendable> {
     }
 }
 
+private actor BlockingResponseCache: ResponseCache {
+    private let cached: CachedResponse
+    private var getStarted = false
+    private var getWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+    init(cached: CachedResponse) {
+        self.cached = cached
+    }
+
+    func get(_ key: ResponseCacheKey) async -> CachedResponse? {
+        _ = key
+        getStarted = true
+        getWaiter?.resume()
+        getWaiter = nil
+        await withCheckedContinuation { continuation in
+            releaseWaiter = continuation
+        }
+        return cached
+    }
+
+    func set(_ key: ResponseCacheKey, _ value: CachedResponse) async {
+        _ = (key, value)
+    }
+
+    func invalidate(_ key: ResponseCacheKey) async {
+        _ = key
+    }
+
+    func invalidateTargetURI(_ targetURI: String) async {
+        _ = targetURI
+    }
+
+    func waitForGet() async {
+        guard getStarted == false else { return }
+        await withCheckedContinuation { continuation in
+            getWaiter = continuation
+        }
+    }
+
+    func releaseGet() {
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+    }
+}
+
 
 private func waitUntil(
     timeout: TimeInterval = 2.0,
@@ -72,6 +118,54 @@ struct CancellationTests {
 
         var method: HTTPMethod { .get }
         var path: String { "/poll" }
+    }
+
+    private struct CachedPayload: Codable, Sendable, Equatable {
+        let ok: Bool
+    }
+
+    private struct CachedPayloadRequest: APIDefinition {
+        typealias Parameter = EmptyParameter
+        typealias APIResponse = CachedPayload
+
+        var method: HTTPMethod { .get }
+        var path: String { "/cached" }
+    }
+
+    @Test("request cancellation is checked before returning cache hits")
+    func cancellationBeforeCacheHitReturnThrows() async throws {
+        let payload = try JSONEncoder().encode(CachedPayload(ok: true))
+        let cache = BlockingResponseCache(cached: CachedResponse(data: payload))
+        let session = HangingSession()
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: URL(string: "https://api.example.com/v1")!,
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let task = Task {
+            try await client.request(CachedPayloadRequest())
+        }
+
+        await cache.waitForGet()
+        task.cancel()
+        await cache.releaseGet()
+
+        do {
+            _ = try await task.value
+            Issue.record("Expected cancellation before cache-hit return to throw")
+        } catch let error as NetworkError {
+            guard case .cancelled = error else {
+                Issue.record("Expected NetworkError.cancelled, got \(error)")
+                return
+            }
+        } catch {
+            Issue.record("Expected NetworkError.cancelled, got \(error)")
+        }
+        #expect(session.startedRequestCount == 0)
     }
 
     @Test("cancelAll(matching:) only cancels requests with the matching tag")

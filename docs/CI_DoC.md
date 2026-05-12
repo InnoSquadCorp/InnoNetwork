@@ -32,7 +32,9 @@ The `CI` workflow must pass all of the following:
    download-only, websocket-only, test-support, generated-client, and codegen
    usage packages. Macro tests run from `Packages/InnoNetworkCodegen` so the
    codegen dependency graph stays isolated from root package consumers.
-10. The CI benchmark smoke job runs `swift run InnoNetworkBenchmarks --quick`
+10. `bash Scripts/check_provisional_enum_cases.sh` confirms guarded public enum
+    cases still match their migration-review allowlist.
+11. The CI benchmark smoke job runs `swift run InnoNetworkBenchmarks --quick`
     and uploads the JSON summary to prove the benchmark CLI still builds and
     emits parseable results. Regression enforcement lives in the dedicated
     `Benchmarks` workflow: pull requests use the guarded benchmark set with
@@ -76,6 +78,7 @@ rg -n "@unchecked Sendable" \
   Sources/InnoNetworkWebSocket
 bash Scripts/check_production_force_unwraps.sh
 bash Scripts/check_no_print_in_production.sh
+bash Scripts/check_provisional_enum_cases.sh
 
 # Optional: render the same coverage artifacts CI uploads.
 profdata="$(find .build -name 'default.profdata' -type f | head -n 1)"

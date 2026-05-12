@@ -96,6 +96,7 @@ public actor DownloadManager {
     let runtimeRegistry: DownloadRuntimeRegistry
     let restoreBarrier: RestoreBarrier
     private let invalidationBarrier: InvalidationBarrier
+    private let shutdownBarrier: InvalidationBarrier
     let transferCoordinator: DownloadTransferCoordinator
     let restoreCoordinator: DownloadRestoreCoordinator
     let failureCoordinator: DownloadFailureCoordinator
@@ -219,6 +220,7 @@ public actor DownloadManager {
             bufferingPolicy: .unbounded
         )
         let invalidationBarrier = InvalidationBarrier()
+        let shutdownBarrier = InvalidationBarrier()
         let runtimeRegistry = DownloadRuntimeRegistry()
         let restoreBarrier = RestoreBarrier()
         let eventHub = TaskEventHub<DownloadEvent>(
@@ -261,6 +263,7 @@ public actor DownloadManager {
         self.runtimeRegistry = runtimeRegistry
         self.restoreBarrier = restoreBarrier
         self.invalidationBarrier = invalidationBarrier
+        self.shutdownBarrier = shutdownBarrier
         self.transferCoordinator = transferCoordinator
         self.restoreCoordinator = restoreCoordinator
         self.failureCoordinator = failureCoordinator
@@ -389,10 +392,18 @@ public actor DownloadManager {
 
     private static func safeDirectoryDownloadFileName(_ rawName: String) -> String? {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name != ".", name != ".." else { return nil }
-        guard name.contains("/") == false, name.contains("\\") == false else { return nil }
-        guard name.unicodeScalars.contains(where: { $0.value == 0 }) == false else { return nil }
+        guard isSafeDirectoryDownloadPathComponent(name) else { return nil }
+        guard isSafeDirectoryDownloadPathComponent(name.precomposedStringWithCompatibilityMapping) else { return nil }
         return name
+    }
+
+    private static func isSafeDirectoryDownloadPathComponent(_ name: String) -> Bool {
+        guard !name.isEmpty, name != ".", name != ".." else { return false }
+        guard name.contains("/") == false, name.contains("\\") == false, name.contains(":") == false else {
+            return false
+        }
+        guard name.unicodeScalars.contains(where: { $0.value == 0 }) == false else { return false }
+        return true
     }
 
     public func pause(_ task: DownloadTask) async {
@@ -558,16 +569,17 @@ public actor DownloadManager {
     /// completes, which can take longer than the surrounding scope.
     public func shutdown() async {
         guard markShutdownIfNeeded() else {
-            await invalidationBarrier.wait()
+            await shutdownBarrier.wait()
             return
         }
 
         inactivityWatchdogTask?.cancel()
         inactivityWatchdogTask = nil
 
-        delegateConsumerTaskHandle.withLock { task in
-            task?.cancel()
+        let delegateConsumerTask = delegateConsumerTaskHandle.withLock { task -> Task<Void, Never>? in
+            let current = task
             task = nil
+            return current
         }
 
         restorationTaskHandle.withLock { task in
@@ -576,6 +588,7 @@ public actor DownloadManager {
         }
 
         delegateEventContinuation.finish()
+        delegateConsumerTask?.cancel()
 
         // Cancel every in-flight URLSession task before invalidating, then
         // close the per-task event partition so listeners receive a clean
@@ -595,6 +608,8 @@ public actor DownloadManager {
         // the OS releases the session identifier and the delegate.
         session.invalidateAndCancel()
         await invalidationBarrier.wait()
+        await delegateConsumerTask?.value
+        await shutdownBarrier.complete()
     }
 
     public func retry(_ task: DownloadTask) async {

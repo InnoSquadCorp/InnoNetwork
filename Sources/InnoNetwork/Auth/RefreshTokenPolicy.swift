@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Opt-in bearer-token refresh policy used by ``DefaultNetworkClient``.
 ///
@@ -114,7 +115,7 @@ package actor RefreshTokenCoordinator {
     package func applyCurrentToken(to request: URLRequest) async throws -> URLRequest {
         guard policy.appliesToRequest(request) else { return request }
         guard let token = try await policy.currentTokenProvider() else { return request }
-        return policy.tokenApplicator(token, request)
+        return policy.tokenApplicator(token, Self.removingAuthorizationHeaders(from: request))
     }
 
     package func refreshAndApply(to request: URLRequest) async throws -> URLRequest {
@@ -122,22 +123,32 @@ package actor RefreshTokenCoordinator {
         guard policy.appliesToRequest(request) else { return request }
         let token = try await refreshedToken()
         try Task.checkCancellation()
+        return policy.tokenApplicator(token, Self.removingAuthorizationHeaders(from: request))
+    }
+
+    package func shutdown() {
+        if case .inFlight(_, let task) = state.phase {
+            task.cancel()
+        }
+        state = .initial
+    }
+
+    package func shouldRefresh(statusCode: Int, request: URLRequest) -> Bool {
+        policy.appliesToRequest(request) && policy.refreshStatusCodes.contains(statusCode)
+    }
+
+    private static func removingAuthorizationHeaders(from request: URLRequest) -> URLRequest {
         // Strip every existing `Authorization` header — case-insensitively —
-        // before reapplying so custom applicators that use `addValue` do not
-        // stack tokens on a replay, and so a manually-set `authorization`
-        // (lowercase) header on the original request is not retained
-        // alongside the new credential.
+        // before applying a current or refreshed token. This keeps custom
+        // applicators that use `addValue` from stacking endpoint-provided
+        // credentials alongside the policy credential.
         var sanitized = request
         if let headers = sanitized.allHTTPHeaderFields {
             for key in headers.keys where key.caseInsensitiveCompare("Authorization") == .orderedSame {
                 sanitized.setValue(nil, forHTTPHeaderField: key)
             }
         }
-        return policy.tokenApplicator(token, sanitized)
-    }
-
-    package func shouldRefresh(statusCode: Int, request: URLRequest) -> Bool {
-        policy.appliesToRequest(request) && policy.refreshStatusCodes.contains(statusCode)
+        return sanitized
     }
 
     private func refreshedToken() async throws -> String {
@@ -236,55 +247,63 @@ package actor RefreshTokenCoordinator {
 }
 
 
-private actor RefreshTokenTaskAwaitBridge {
+private final class RefreshTokenTaskAwaitBridge: Sendable {
     private enum Outcome: Sendable {
         case success(String)
         case failure(any Error & Sendable)
     }
 
-    private var continuation: CheckedContinuation<String, any Error>?
-    private var outcome: Outcome?
+    private struct State: Sendable {
+        var continuation: CheckedContinuation<String, any Error>?
+        var outcome: Outcome?
+    }
+
+    private let state = OSAllocatedUnfairLock<State>(initialState: State())
 
     func value(of task: Task<String, any Error>) async throws -> String {
-        try await withTaskCancellationHandler {
+        let relay = Task { [self] in
+            do {
+                let value = try await task.value
+                finish(.success(value))
+            } catch {
+                finish(.failure(error))
+            }
+        }
+        return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                install(continuation, task: task)
+                install(continuation)
             }
         } onCancel: {
-            Task.detached {
-                await self.finish(.failure(CancellationError()))
-            }
+            self.finish(.failure(CancellationError()))
+            relay.cancel()
         }
     }
 
     private func install(
-        _ continuation: CheckedContinuation<String, any Error>,
-        task: Task<String, any Error>
+        _ continuation: CheckedContinuation<String, any Error>
     ) {
+        let outcome = state.withLock { state -> Outcome? in
+            if let outcome = state.outcome {
+                return outcome
+            }
+            state.continuation = continuation
+            return nil
+        }
         if let outcome {
             resume(continuation, with: outcome)
-            return
-        }
-
-        self.continuation = continuation
-        Task.detached {
-            do {
-                let value = try await task.value
-                await self.finish(.success(value))
-            } catch {
-                await self.finish(.failure(error))
-            }
         }
     }
 
     private func finish(_ outcome: Outcome) {
-        if self.outcome != nil {
-            return
+        let continuation = state.withLock { state -> CheckedContinuation<String, any Error>? in
+            if state.outcome != nil {
+                return nil
+            }
+            state.outcome = outcome
+            let continuation = state.continuation
+            state.continuation = nil
+            return continuation
         }
-
-        self.outcome = outcome
-        let continuation = self.continuation
-        self.continuation = nil
         if let continuation {
             resume(continuation, with: outcome)
         }

@@ -435,10 +435,10 @@ extension NetworkError: CustomNSError {
             userInfo[NetworkError.statusCodeUserInfoKey] = response.statusCode
             // `NSError.userInfo` is pickled by crash reporters and analytics
             // SDKs — emit a redacted form so user-info credentials, query
-            // tokens, and OAuth-fragment access tokens cannot ride the URL
-            // into telemetry. The redaction strips userinfo, query values,
-            // and the fragment while leaving scheme/host/path intact for
-            // bucketing.
+            // tokens, OAuth-fragment access tokens, and JWT-shaped path
+            // segments cannot ride the URL into telemetry. The redaction
+            // strips userinfo, query values, and the fragment while leaving
+            // scheme/host/path shape intact for bucketing.
             let url = response.request?.url ?? response.response?.url
             if let redacted = url.flatMap(NetworkError.redactedURLString(from:)) {
                 userInfo[NetworkError.urlUserInfoKey] = redacted
@@ -449,19 +449,21 @@ extension NetworkError: CustomNSError {
 
     /// Returns a copy of `url` with user-info credentials, query parameter
     /// values, and the fragment stripped so the resulting string is safe to
-    /// emit into telemetry surfaces such as `NSError.userInfo`. Path and
-    /// query keys are preserved so the URL still groups for bucketing.
+    /// emit into telemetry surfaces such as `NSError.userInfo`. Path shape and
+    /// query keys are preserved so the URL still groups for bucketing, but
+    /// JWT-shaped path segments are masked.
     static func redactedURLString(from url: URL) -> String? {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             // Fall back to a manually-composed string so a malformed input
             // cannot leak userinfo or fragment via `absoluteString`.
             let scheme = url.scheme ?? "http"
             let host = url.host ?? ""
-            let path = url.path
+            let path = DefaultNetworkLogger.maskJWTLikeTokens(in: url.path)
             return "\(scheme)://\(host)\(path)"
         }
         components.user = nil
         components.password = nil
+        components.path = DefaultNetworkLogger.maskJWTLikeTokens(in: components.path)
         components.fragment = nil
         if let items = components.queryItems {
             components.queryItems = items.map {
@@ -577,8 +579,10 @@ extension NetworkError {
     public static func diagnosticURLString(for url: URL?) -> String {
         guard let url else { return "<unknown>" }
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return "\(url.scheme ?? "")://\(url.host ?? "<unknown>")\(url.path)"
+            let path = DefaultNetworkLogger.maskJWTLikeTokens(in: url.path)
+            return "\(url.scheme ?? "")://\(url.host ?? "<unknown>")\(path)"
         }
+        components.path = DefaultNetworkLogger.maskJWTLikeTokens(in: components.path)
         components.query = nil
         components.fragment = nil
         return components.string ?? "\(components.scheme ?? "")://\(components.host ?? "<unknown>")\(components.path)"

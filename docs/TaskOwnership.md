@@ -14,9 +14,15 @@ and event streams do not map to structured child tasks owned by one caller.
   cleanup.
 - Cancel runtime tasks only from the same cleanup path that also finishes
   event streams and removes registries.
+- Publish terminal events before finishing a task's event stream so consumers
+  see `finished`/`failed` before end-of-stream.
 - Keep `Task.detached` rare. It is allowed only when caller cancellation must
   not cancel shared work, such as auth refresh single-flight. New detached
   work needs a short rationale in code or docs.
+- When shared work intentionally outlives a cancelled caller, bridge the
+  caller's await separately from the shared task. The caller must return
+  promptly on cancellation, while the shared task continues for any remaining
+  waiters.
 
 ## Ownership Table
 
@@ -29,6 +35,12 @@ and event streams do not map to structured child tasks owned by one caller.
 | Background download completion handler | `DownloadManager` background session bridge | Invoke exactly once after restored URLSession events have drained | The app delegate owns receiving the system callback; the manager owns release timing. |
 | Foundation delegate callback bridge | `URLSession` delegate adapters and managers | Bridge callback into manager actor, then reduce it with the generation captured for that URLSession task identifier | Delegate callbacks can arrive stale or out of order and must be generation/state-checked before mutating state or consuming reconnect budget. |
 | Auth refresh single-flight | `RefreshTokenPolicy` refresh coordinator | Shared refresh is not cancelled just because one waiting request is cancelled; coordinator deinit cancels any orphaned in-flight refresh | This is the main approved `Task.detached`-style boundary: caller cancellation must not poison a shared refresh for other requests, but the coordinator still owns terminal cleanup. |
+
+The auth-refresh await bridge exists to hold that boundary: awaiting callers
+observe their own cancellation immediately, but `RefreshTokenCoordinator`
+keeps the in-flight refresh alive until it succeeds, fails, or the coordinator
+itself deinitializes. That avoids priority/cancellation inheritance from one
+request changing the outcome for other requests sharing the same refresh.
 
 ## Long-Lived Lifecycle
 

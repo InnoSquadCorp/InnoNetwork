@@ -13,7 +13,7 @@ public struct NetworkConfiguration: Sendable {
     package enum Presets {
         static func safeDefaults(baseURL: URL) -> NetworkConfiguration {
             NetworkConfiguration(
-                baseURL: baseURL,
+                internalBaseURL: baseURL,
                 timeout: 30.0,
                 cachePolicy: .useProtocolCachePolicy,
                 requestPriority: .normal,
@@ -40,7 +40,7 @@ public struct NetworkConfiguration: Sendable {
 
         static func advancedTuning(baseURL: URL) -> NetworkConfiguration {
             NetworkConfiguration(
-                baseURL: baseURL,
+                internalBaseURL: baseURL,
                 timeout: 60.0,
                 cachePolicy: .reloadIgnoringLocalCacheData,
                 requestPriority: .normal,
@@ -296,7 +296,7 @@ public struct NetworkConfiguration: Sendable {
 
         package func build() -> NetworkConfiguration {
             NetworkConfiguration(
-                baseURL: baseURL,
+                internalBaseURL: baseURL,
                 timeout: timeout,
                 cachePolicy: cachePolicy,
                 requestPriority: requestPriority,
@@ -394,8 +394,8 @@ public struct NetworkConfiguration: Sendable {
         return builder.build()
     }
 
-    public init(
-        baseURL: URL,
+    private init(
+        internalBaseURL baseURL: URL,
         timeout: TimeInterval = 30.0,
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
         requestPriority: RequestPriority = .normal,
@@ -471,6 +471,78 @@ public struct NetworkConfiguration: Sendable {
         )
     }
 
+    package init(
+        baseURL: URL,
+        timeout: TimeInterval = 30.0,
+        cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
+        requestPriority: RequestPriority = .normal,
+        allowsCellularAccess: Bool = true,
+        allowsExpensiveNetworkAccess: Bool = true,
+        allowsConstrainedNetworkAccess: Bool = true,
+        retryPolicy: RetryPolicy? = nil,
+        networkMonitor: (any NetworkMonitoring)? = NetworkMonitor.shared,
+        metricsReporter: (any NetworkMetricsReporting)? = nil,
+        trustPolicy: TrustPolicy = .systemDefault,
+        eventObservers: [any NetworkEventObserving] = [],
+        eventDeliveryPolicy: EventDeliveryPolicy = .default,
+        eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
+        acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes,
+        requestInterceptors: [RequestInterceptor] = [],
+        responseInterceptors: [ResponseInterceptor] = [],
+        decodingInterceptors: [DecodingInterceptor] = [],
+        refreshTokenPolicy: RefreshTokenPolicy? = nil,
+        requestCoalescingPolicy: RequestCoalescingPolicy = .disabled,
+        responseCachePolicy: ResponseCachePolicy = .disabled,
+        responseCache: (any ResponseCache)? = nil,
+        circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
+        customExecutionPolicies: [any RequestExecutionPolicy] = [],
+        idempotencyKeyPolicy: IdempotencyKeyPolicy = .disabled,
+        userAgentProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultUserAgent.value },
+        acceptLanguageProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultAcceptLanguage.value },
+        captureFailurePayload: Bool = false,
+        responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(),
+        responseBodyLimit: Int64? = nil,
+        streamingLineByteLimit: Int = NetworkConfiguration.defaultStreamingLineByteLimit,
+        redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy(),
+        allowsInsecureHTTP: Bool = false
+    ) {
+        self.init(
+            internalBaseURL: baseURL,
+            timeout: timeout,
+            cachePolicy: cachePolicy,
+            requestPriority: requestPriority,
+            allowsCellularAccess: allowsCellularAccess,
+            allowsExpensiveNetworkAccess: allowsExpensiveNetworkAccess,
+            allowsConstrainedNetworkAccess: allowsConstrainedNetworkAccess,
+            retryPolicy: retryPolicy,
+            networkMonitor: networkMonitor,
+            metricsReporter: metricsReporter,
+            trustPolicy: trustPolicy,
+            eventObservers: eventObservers,
+            eventDeliveryPolicy: eventDeliveryPolicy,
+            eventMetricsReporter: eventMetricsReporter,
+            acceptableStatusCodes: acceptableStatusCodes,
+            requestInterceptors: requestInterceptors,
+            responseInterceptors: responseInterceptors,
+            decodingInterceptors: decodingInterceptors,
+            refreshTokenPolicy: refreshTokenPolicy,
+            requestCoalescingPolicy: requestCoalescingPolicy,
+            responseCachePolicy: responseCachePolicy,
+            responseCache: responseCache,
+            circuitBreakerPolicy: circuitBreakerPolicy,
+            customExecutionPolicies: customExecutionPolicies,
+            idempotencyKeyPolicy: idempotencyKeyPolicy,
+            userAgentProvider: userAgentProvider,
+            acceptLanguageProvider: acceptLanguageProvider,
+            captureFailurePayload: captureFailurePayload,
+            responseBodyBufferingPolicy: responseBodyBufferingPolicy,
+            responseBodyLimit: responseBodyLimit,
+            streamingLineByteLimit: streamingLineByteLimit,
+            redirectPolicy: redirectPolicy,
+            allowsInsecureHTTP: allowsInsecureHTTP
+        )
+    }
+
     /// Debug-only sanity check that the idempotency header attached by
     /// ``IdempotencyKeyPolicy`` matches the header consulted by
     /// ``RetryIdempotencyPolicy``.
@@ -510,26 +582,20 @@ public struct NetworkConfiguration: Sendable {
 
 // MARK: - Fluent modifiers
 //
-// Seven additive modifier helpers that wrap the existing
-// ``AdvancedBuilder`` plumbing so callers can override one policy at a
-// time without re-typing every other field. Equivalent to threading the
-// override through `advanced(baseURL:)`; preserved here so adopting one
-// new policy does not require touching the configuration construction
-// site.
-//
-// Each modifier mutates a fresh builder seeded from `self` and returns the
-// rebuilt configuration. Composition is chainable:
-//
-// ```swift
-// let configuration = NetworkConfiguration
-//     .safeDefaults(baseURL: api)
-//     .with(retry: ExponentialBackoffRetryPolicy())
-//     .with(circuitBreaker: CircuitBreakerPolicy(failureThreshold: 3))
-// ```
+// Deprecated chainable modifier helpers. They remain in 4.x as a migration
+// bridge for callers that already adopted them, but new code should compose
+// named packs through `advanced(baseURL:resilience:auth:observability:cache:transport:)`
+// so policy precedence is visible at the construction site.
 public extension NetworkConfiguration {
     /// Returns a new configuration with ``retryPolicy`` replaced.
     /// Pass `nil` to disable retries on a configuration that previously
     /// had a retry policy attached.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
+    )
     func with(retry retryPolicy: RetryPolicy?) -> NetworkConfiguration {
         var builder = AdvancedBuilder(preset: self)
         builder.retryPolicy = retryPolicy
@@ -540,6 +606,12 @@ public extension NetworkConfiguration {
     /// Pass `nil` to detach the cache. Caller is responsible for setting
     /// a compatible ``responseCachePolicy`` separately when enabling cache
     /// reads/writes; this modifier only swaps the storage backend.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
+    )
     func with(cache responseCache: (any ResponseCache)?) -> NetworkConfiguration {
         var builder = AdvancedBuilder(preset: self)
         builder.responseCache = responseCache
@@ -548,6 +620,12 @@ public extension NetworkConfiguration {
 
     /// Returns a new configuration with ``circuitBreakerPolicy`` replaced.
     /// Pass `nil` to remove the breaker.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
+    )
     func with(circuitBreaker circuitBreakerPolicy: CircuitBreakerPolicy?) -> NetworkConfiguration {
         var builder = AdvancedBuilder(preset: self)
         builder.circuitBreakerPolicy = circuitBreakerPolicy
@@ -556,6 +634,12 @@ public extension NetworkConfiguration {
 
     /// Returns a new configuration with ``refreshTokenPolicy`` replaced.
     /// Pass `nil` to remove auth refresh.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
+    )
     func with(refresh refreshTokenPolicy: RefreshTokenPolicy?) -> NetworkConfiguration {
         var builder = AdvancedBuilder(preset: self)
         builder.refreshTokenPolicy = refreshTokenPolicy
@@ -563,6 +647,12 @@ public extension NetworkConfiguration {
     }
 
     /// Returns a new configuration with ``requestCoalescingPolicy`` replaced.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
+    )
     func with(coalescing requestCoalescingPolicy: RequestCoalescingPolicy) -> NetworkConfiguration {
         var builder = AdvancedBuilder(preset: self)
         builder.requestCoalescingPolicy = requestCoalescingPolicy
@@ -574,6 +664,12 @@ public extension NetworkConfiguration {
     /// modifier; the 5.0 line is expected to relocate the field into a
     /// protocol-bag and route every assignment through this modifier so the
     /// configuration struct's surface stops growing one slot per policy.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
+    )
     func with(executionPolicies customExecutionPolicies: [any RequestExecutionPolicy]) -> NetworkConfiguration {
         var builder = AdvancedBuilder(preset: self)
         builder.customExecutionPolicies = customExecutionPolicies
@@ -582,6 +678,12 @@ public extension NetworkConfiguration {
 
     /// Returns a new configuration with ``eventObservers`` replaced. Same
     /// 4.0.0 -> 5.0 migration expectation as ``with(executionPolicies:)``.
+    @available(
+        *,
+        deprecated,
+        message:
+            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
+    )
     func with(eventObservers: [any NetworkEventObserving]) -> NetworkConfiguration {
         var builder = AdvancedBuilder(preset: self)
         builder.eventObservers = eventObservers

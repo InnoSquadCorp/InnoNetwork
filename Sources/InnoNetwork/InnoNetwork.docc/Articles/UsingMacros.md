@@ -56,6 +56,36 @@ Keep hand-written ``APIDefinition`` types for endpoints that need custom
 parameters, interceptors, multipart uploads, streaming, or non-standard
 decoding. The macro package is provisionally stable in 4.0.0.
 
+## When the macro pays off
+
+Use ``APIDefinition(method:path:)`` when the endpoint is mostly method, path
+placeholders, and standard JSON decoding:
+
+```swift
+// Hand-written endpoint.
+struct GetUser: APIDefinition {
+    typealias Parameter = EmptyParameter
+    typealias APIResponse = User
+
+    let id: Int
+    var method: HTTPMethod { .get }
+    var path: String { "/users/\(id)" }
+}
+
+// Macro endpoint.
+@APIDefinition(method: .get, path: "/users/{id}")
+struct GetUser {
+    typealias APIResponse = User
+    let id: Int
+}
+```
+
+The macro is intentionally not a replacement for the full protocol. Prefer a
+hand-written conformance when the endpoint needs request parameters,
+interceptors, custom transport policies, multipart upload, streaming, custom
+auth scope documentation, or a public SDK surface where explicit witnesses are
+clearer than generated ones.
+
 ## Common failure cases
 
 - Missing `typealias APIResponse` leaves the generated conformance incomplete.

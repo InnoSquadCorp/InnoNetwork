@@ -18,6 +18,19 @@ struct CredentialRedactionTests {
         #expect(sanitized.contains("token=%3Credacted%3E") || sanitized.contains("token=<redacted>"))
     }
 
+    @Test("NetworkLogger sanitize strips percent-encoded userinfo from URLs")
+    func loggerStripsPercentEncodedUserinfo() {
+        let logger = DefaultNetworkLogger(options: .secureDefault)
+
+        let url = URL(string: "https://alice%40example.com:p%40ss@api.example.com/v1/me")!
+        let sanitized = logger.sanitize(url: url)
+
+        #expect(!sanitized.contains("alice"))
+        #expect(!sanitized.contains("p%40ss"))
+        #expect(!sanitized.contains("p@ss"))
+        #expect(sanitized == "https://api.example.com/v1/me")
+    }
+
     @Test("Response.redactingData strips userinfo from request URL")
     func responseRedactingDataStripsUserinfo() {
         let url = URL(string: "https://alice:secret@api.example.com/users/1")!

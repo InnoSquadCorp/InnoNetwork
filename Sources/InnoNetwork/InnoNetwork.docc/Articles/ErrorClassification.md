@@ -9,6 +9,12 @@ context.
 each case carries the structured information you need to decide whether to retry, surface
 to the user, or escalate to crash reporting.
 
+For most app-layer routing, start with the coarse helpers:
+``NetworkError/category``, ``NetworkError/isRetriableHint``, and
+``NetworkError/isUserVisible``. They keep UI, logging, and retry-affordance
+code out of exhaustive `switch` statements while preserving the full
+``NetworkError`` payload when deeper diagnostics are needed.
+
 ## Cases at a glance
 
 | Case | Cause | Typical recovery |
@@ -24,7 +30,28 @@ to the user, or escalate to crash reporting.
 | ``NetworkError/cancelled`` | `Task` cancellation or `cancelAll()`. | Honour silently — caller wanted to stop. |
 | ``NetworkError/timeout(_:)`` | Request, resource, or connection timed out. | Apply retry policy if budget allows. |
 
-## Recipe: branch on classification, not raw code
+## Recipe: branch on classification first
+
+```swift
+func presentation(for error: NetworkError) -> ErrorPresentation {
+    switch error.category {
+    case .cancellation:
+        return .silent
+    case .configuration:
+        return error.isUserVisible ? .offline : .developerIssue
+    case .reachability, .timeout, .transport:
+        return error.isRetriableHint ? .retryableNetwork : .networkFailure
+    case .statusCode:
+        return .serverRejected
+    case .decoding:
+        return .unexpectedResponse
+    case .trust:
+        return .securityFailure
+    }
+}
+```
+
+## Recipe: branch on structured payloads when needed
 
 ```swift
 do {
@@ -59,8 +86,9 @@ do {
 }
 ```
 
-The point is that you classify on **case + structured payload** rather than re-parsing
-strings. Two screens away from the call site, this stays robust to library changes.
+The point is that you classify on **helper bucket, or case + structured
+payload** rather than re-parsing strings. Two screens away from the call site,
+this stays robust to library changes.
 
 ## Failure payload capture
 
@@ -99,5 +127,6 @@ Across products, cancellation is terminal and non-retryable:
 ## Related
 
 - ``NetworkError``
+- ``NetworkErrorCategory``
 - ``SendableUnderlyingError``
 - ``NetworkConfiguration``

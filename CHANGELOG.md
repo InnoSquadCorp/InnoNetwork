@@ -82,17 +82,29 @@ Versioning.
   request-minted JWT lane only — session-rotated bearer tokens are
   still better served by `RefreshTokenPolicy`'s single-flight refresh.
   Listed as Provisionally Stable in API_STABILITY.md.
-- `AWSSigV4Interceptor` reference signer in `Sources/InnoNetwork/Auth/`.
-  Targets the single-shot, in-memory body flow that covers most AWS
-  service calls (DynamoDB, S3 GET, CloudWatch, SQS). Streaming SigV4
-  (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`) and presigned URL signing are
-  out of scope and intentionally not implemented; adopters that need
-  them should fall back to the AWS SDK or a purpose-built signer. The
-  interceptor exposes `canonicalRequest(for:)` and
-  `stringToSign(canonicalRequest:date:)` as test probes so the
-  implementation can be validated against the published AWS SigV4
-  test vectors before shipping to production. Listed as Provisionally
-  Stable in API_STABILITY.md.
+- `AWSSigV4Interceptor` moved to the new `InnoNetworkAuthAWS` companion
+  product. The signer moved out of the core product before the 4.0.0 baseline and
+  now lives in `Sources/InnoNetworkAuthAWS/` with a product README and
+  DocC entry that state the scope explicitly: reference signer, not AWS
+  SDK replacement. It targets the single-shot, in-memory body flow that
+  covers many AWS service calls (DynamoDB, S3 GET, CloudWatch, SQS).
+  Streaming SigV4 (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`), presigned URL
+  signing, credential-provider chains, and service-specific behaviours are
+  out of scope. Listed as Provisionally Stable in API_STABILITY.md.
+- `docs/MigrationFromAlamofire.md` and `docs/MigrationFromMoya.md`
+  cookbooks. Both start from a small before/after and route the first
+  30-minute migration through `EndpointBuilder`; the longer DocC migration
+  articles remain the detailed reference.
+- Public `NetworkErrorCategory` plus `NetworkError.category`,
+  `isRetriableHint`, and `isUserVisible` helpers. App code can route
+  UI, logging, and retry affordances without exhaustively switching over
+  every `NetworkError` payload.
+- `Examples/TargetTypeCatalog`, a Moya-style catalog migration recipe
+  that maps enum cases to concrete `APIDefinition` values before typed
+  request execution.
+- `Scripts/check_provisional_enum_cases.sh` plus an enum-case allowlist
+  for guarded public/provisionally-stable cases. CI and release checks
+  now fail if a guarded case changes without an explicit ledger update.
 
 ### Fixed
 
@@ -100,6 +112,23 @@ Versioning.
   window: previously a file part whose size grew between estimate and
   read could exceed the configured ceiling; the new per-write
   accumulator guard refuses the encode as soon as the cap is breached.
+- Streaming `Last-Event-ID` resume now scopes `URLSession.AsyncBytes`
+  to one attempt helper and rejects custom event IDs containing CR, LF,
+  NUL, or characters outside visible ASCII before storing or sending the resume
+  header. Empty event IDs still clear the previous cursor without
+  attaching a blank resume header; malformed event IDs disable resume for
+  that attempt instead of replaying from a stale cursor.
+- Persistent response-cache lookups now maintain an actor-private
+  `DiskKey -> entry ids` index seeded on open and updated on set,
+  invalidation, eviction, removal, and rollback. The disk index format is
+  unchanged, but average `get` lookup avoids a full entry scan.
+- Directory download filenames are validated after trimming and
+  compatibility normalization; path separators, colon, NUL, `.`, `..`,
+  and fullwidth-dot traversal attempts now fall back to a generated
+  `download-*` name.
+- `NetworkLogger` explicitly clears percent-encoded userinfo while
+  sanitizing URLs, and retry idempotency checks now treat whitespace-only
+  `Idempotency-Key` values as missing.
 - `ResponseCache` now follows RFC 9111 §4.4 for unsafe-method
   invalidation: `POST` / `PUT` / `PATCH` / `DELETE` and safety-unknown
   methods invalidate stored responses for the request target URI after
@@ -117,6 +146,17 @@ Versioning.
   without cancelling a shared refresh for other waiters. If the coordinator is
   released while a refresh is still in flight, the orphan refresh task is
   cancelled.
+- `TaskStartGate.wait()` is cancellation-aware. Awaiters cancelled before
+  `open()` now resume with `false` instead of leaving a continuation behind.
+- `ConcurrencyTokenBucket` now synchronously records cancellation before the
+  actor cleanup hop, preventing a queued waiter from being resumed by a
+  racing `release()`.
+- `InFlightRegistry` registration now checks a generation token captured before
+  suspension. Late registrations after `cancelAll()` or tagged cancellation are
+  cancelled immediately instead of re-entering the in-flight table.
+- `PersistentResponseCache` open-time budget enforcement now uses running total
+  byte accounting while evicting large indexes instead of recomputing total
+  bytes on every victim.
 - `DownloadManager` now stores its transfer, restore, and failure
   coordinators once during initialization instead of recreating them through
   computed properties on every access.
@@ -182,10 +222,21 @@ Versioning.
   consuming a token. Direct callers must migrate from
   `await bucket.acquire()` to `try await bucket.acquire()`. See
   `docs/Migration-4.1.0.md`.
+- **Breaking before 4.0.0 baseline.** The direct
+  `NetworkConfiguration.init(...)` construction surface was removed from the
+  public API before the 4.0.0 release. New code should use
+  `safeDefaults(baseURL:)`,
+  `recommendedForProduction(baseURL:)`, or
+  `advanced(baseURL:resilience:auth:observability:cache:transport:)`
+  with configuration packs/fluent modifiers.
 - `ConcurrencyLimitExecutionPolicy` now awaits `bucket.release()` before
   returning or rethrowing. The previous implementation used an
   unstructured `Task` from `defer`, which made the release boundary
   observable only after a scheduler hop.
+- Stable example smoke builds now pass `-Xswiftc -warnings-as-errors` so
+  copyable contract examples cannot drift with compiler warnings.
+- `RequestExecutor.execute(...)` is split into prepare, response, and decode
+  stages while preserving request policy behavior.
 - `NetworkConfiguration.recommendedForProduction(baseURL:)` now caps
   streaming response body collection at 5 MiB by default. Callers that
   need larger inline bodies can still override the policy through
@@ -247,7 +298,7 @@ Versioning.
   hashing, host-match, and `SecTrustEvaluateWithError` machinery) now
   live in `Sources/InnoNetworkTrust/`. Apps relying on Apple's ATS
   defaults link only `InnoNetwork` and no longer pay the
-  `Security`/`CryptoKit` symbol cost. Adopters that pin migrate by
+  `Security`/`swift-crypto` symbol cost. Adopters that pin migrate by
   adding the `InnoNetworkTrust` product to their target dependencies,
   `import InnoNetworkTrust`, and feeding the evaluator into
   `TrustPolicy.custom(_:)`.
@@ -300,8 +351,7 @@ Versioning.
 - **Breaking.** `NetworkConfiguration.urlSessionConfigurationOverride`,
   the matching field on `AdvancedBuilder`, and the
   `urlSessionConfigurationOverride` parameter on
-  `NetworkConfiguration.init(...)` and `TransportPack.init(...)` have
-  been removed. The hook was a leaky
+  `TransportPack.init(...)` have been removed. The hook was a leaky
   abstraction over raw `URLSessionConfiguration` and overlapped with
   the existing explicit-session path. Migration: build a configuration
   from `NetworkConfiguration.makeURLSessionConfiguration()`, mutate it
@@ -511,8 +561,9 @@ Versioning.
   default). Streaming bodies (`URLRequest.httpBodyStream`) are
   rejected with `NetworkError.configuration(reason: .invalidRequest(...))`
   rather than silently signing an empty payload — production protocols
-  needing AWS SigV4, OAuth1, or similar canonicalization should ship as a
-  dedicated interceptor on top of the same `RequestInterceptor` contract.
+  needing AWS SigV4 should import the `InnoNetworkAuthAWS` companion product;
+  OAuth1 or similar canonicalization can still ship as a dedicated interceptor
+  on top of the same `RequestInterceptor` contract.
   Composes through `NetworkConfiguration.requestInterceptors` alongside any
   existing auth chain (`RefreshTokenPolicy`, custom adapters).
 - `NetworkError.configuration(reason:)` and the matching

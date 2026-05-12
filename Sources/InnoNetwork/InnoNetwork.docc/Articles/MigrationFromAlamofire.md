@@ -98,9 +98,10 @@ let refresh = RefreshTokenPolicy(
 )
 
 let client = DefaultNetworkClient(
-    configuration: .advanced(baseURL: apiBaseURL) { builder in
-        builder.refreshTokenPolicy = refresh
-    }
+    configuration: .advanced(
+        baseURL: apiBaseURL,
+        auth: AuthPack(refreshToken: refresh)
+    )
 )
 ```
 

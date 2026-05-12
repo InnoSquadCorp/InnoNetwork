@@ -13,7 +13,12 @@ Use this module when you need:
 - request encoding choices that stay explicit
 - trust policy, retry policy, and observability that can be tuned when production needs it
 
-The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)``. Reach for advanced configuration only when you have an operational reason to do so.
+Start prototypes and tests with ``NetworkConfiguration/safeDefaults(baseURL:)``.
+For app-facing production clients, prefer
+``NetworkConfiguration/recommendedForProduction(baseURL:)`` so retry,
+circuit-breaker, idempotency-key, and body-size guardrails are enabled
+explicitly. Reach for advanced configuration only when you have an operational
+reason to tune those defaults.
 
 ## Topics
 
@@ -45,6 +50,7 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``HTTPMethod``
 - ``ContentType``
 - ``NetworkError``
+- ``NetworkErrorCategory``
 - ``MultipartResponseDecoder``
 - ``MultipartPart``
 - ``DecodingInterceptor``

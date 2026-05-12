@@ -131,13 +131,14 @@ expected_stable=(
 '`RequestEncodingPolicy`'
 '`ResponseDecodingStrategy`'
 '`DefaultNetworkClient`'
+'`DefaultNetworkClient.shutdown()`'
 '`NetworkClient.request(_:)`'
 '`NetworkClient.request(_:tag:)`'
 '`NetworkClient.request(_:method:tag:)`'
 '`NetworkClient.upload(_:)`'
 '`NetworkClient.upload(_:tag:)`'
 '`NetworkConfiguration.safeDefaults(baseURL:)`'
-'`NetworkConfiguration.advanced(baseURL:_:)`'
+'`NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`'
 '`DownloadConfiguration.safeDefaults()`'
 '`DownloadConfiguration.advanced(_:)`'
 '`WebSocketConfiguration.safeDefaults()`'
@@ -161,6 +162,10 @@ expected_stable=(
 '`URLQueryArrayEncodingStrategy`'
 '`ResponseBodyBufferingPolicy`'
 '`RequestExecutionPolicy`'
+'`NetworkErrorCategory`'
+'`NetworkError.category`'
+'`NetworkError.isRetriableHint`'
+'`NetworkError.isUserVisible`'
 '`AuthScope`'
 '`PublicAuthScope`'
 '`AuthRequiredScope`'
@@ -211,7 +216,7 @@ expected_provisionally=(
 '`WebSocketError.unsupportedProtocolFeature`'
 '`WebSocketProtocolFeature`'
 '`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens'
-'`AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing'
+'`InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing'
 '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`'
 '`NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface'
 '`HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)'
@@ -234,6 +239,7 @@ expected_shipping_public_declarations=(
   AnyEncodable
   AnyRequestExecutionPolicy
   AnyResponseDecoder
+  AWSSigV4Interceptor
   AuthRequiredScope
   CachedResponse
   CacheRevalidationState
@@ -288,6 +294,7 @@ expected_shipping_public_declarations=(
   NetworkClient
   NetworkConfiguration
   NetworkContext
+  NetworkErrorCategory
   NetworkErrorCode
   NetworkError
   NetworkEvent
@@ -941,6 +948,10 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public final class DefaultNetworkClient'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
+    '`DefaultNetworkClient.shutdown()`')
+      pattern='    public func shutdown() async'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
     '`NetworkClient.request(_:)`')
       pattern='    func request<T: APIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
@@ -965,7 +976,7 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public static func safeDefaults(baseURL: URL)'
       target="$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
       ;;
-    '`NetworkConfiguration.advanced(baseURL:_:)`')
+    '`NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`')
       pattern='public static func advanced('
       target="$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
       ;;
@@ -1060,6 +1071,22 @@ for symbol in "${expected_stable[@]}"; do
     '`RequestExecutionPolicy`')
       pattern='public protocol RequestExecutionPolicy'
       target="$repo_root/Sources/InnoNetwork/RequestExecutionPolicy.swift"
+      ;;
+    '`NetworkErrorCategory`')
+      pattern='public enum NetworkErrorCategory'
+      target="$repo_root/Sources/InnoNetwork/NetworkError+Classification.swift"
+      ;;
+    '`NetworkError.category`')
+      pattern='public var category: NetworkErrorCategory'
+      target="$repo_root/Sources/InnoNetwork/NetworkError+Classification.swift"
+      ;;
+    '`NetworkError.isRetriableHint`')
+      pattern='public var isRetriableHint: Bool'
+      target="$repo_root/Sources/InnoNetwork/NetworkError+Classification.swift"
+      ;;
+    '`NetworkError.isUserVisible`')
+      pattern='public var isUserVisible: Bool'
+      target="$repo_root/Sources/InnoNetwork/NetworkError+Classification.swift"
       ;;
     '`AuthScope`')
       pattern='public protocol AuthScope'
@@ -1178,9 +1205,11 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/Auth/JWTBearerInterceptor.swift"
       continue
       ;;
-    '`AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing')
+    '`InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing')
+      require_contains 'name: "InnoNetworkAuthAWS"' "$repo_root/Package.swift"
+      require_contains 'targets: ["InnoNetworkAuthAWS"]' "$repo_root/Package.swift"
       require_contains 'public struct AWSSigV4Interceptor: RequestInterceptor' \
-        "$repo_root/Sources/InnoNetwork/Auth/AWSSigV4Interceptor.swift"
+        "$repo_root/Sources/InnoNetworkAuthAWS/AWSSigV4Interceptor.swift"
       continue
       ;;
     '`DecodingInterceptor`')

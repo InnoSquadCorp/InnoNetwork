@@ -102,15 +102,15 @@ extension PersistentResponseCache {
             return lhsDate < rhsDate
         }
         var cursor = sortedIDs.startIndex
-        // TODO: Mirror `evictIfNeeded()`'s `runningTotalBytes` accounting here
-        // if this open-time budget loop ever becomes hot on large indexes.
+        var runningTotalBytes = totalBytes(in: budgetedIndex)
         while cursor < sortedIDs.endIndex,
             budgetedIndex.entries.count > configuration.maxEntries
-                || totalBytes(in: budgetedIndex) > configuration.maxBytes
+                || runningTotalBytes > configuration.maxBytes
         {
             let victimID = sortedIDs[cursor]
             cursor = sortedIDs.index(after: cursor)
             guard let victim = budgetedIndex.entries.removeValue(forKey: victimID) else { continue }
+            runningTotalBytes -= victim.byteCost
             removeBody(fileName: victim.bodyFileName, in: bodiesDirectoryURL, fileManager: fileManager)
             evictedCount += 1
             evictedBytes += victim.byteCost
