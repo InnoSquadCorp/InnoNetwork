@@ -123,13 +123,15 @@ package struct StreamingExecutor: Sendable {
             } catch {
                 let failure = error as? StreamingAttemptFailure
                 do {
-                    if try await retryHandshakeIfNeeded(
-                        failure?.error ?? error,
-                        state: &handshakeRetryState,
-                        configuration: configuration,
-                        executionRuntime: executionRuntime,
-                        requestID: requestID
-                    ) {
+                    if let failure,
+                        try await retryHandshakeIfNeeded(
+                            failure,
+                            state: &handshakeRetryState,
+                            configuration: configuration,
+                            executionRuntime: executionRuntime,
+                            requestID: requestID
+                        )
+                    {
                         continue
                     }
                 } catch {
@@ -201,6 +203,7 @@ package struct StreamingExecutor: Sendable {
         continuation: AsyncThrowingStream<T.Output, Error>.Continuation
     ) async throws -> StreamingAttemptResult {
         var attemptStartedAt: Date?
+        var retryRequest: URLRequest?
         do {
             try Task.checkCancellation()
             resumeState.beginAttempt()
@@ -209,6 +212,7 @@ package struct StreamingExecutor: Sendable {
                 configuration: configuration,
                 lastSeenEventID: resumeState.lastSeenEventID
             )
+            retryRequest = urlRequest
 
             await eventHub.publish(
                 .requestStart(
@@ -227,6 +231,7 @@ package struct StreamingExecutor: Sendable {
                 endpointInterceptors: request.requestInterceptors,
                 refreshCoordinator: executionRuntime.refreshCoordinator
             )
+            retryRequest = urlRequest
 
             await eventHub.publish(
                 .requestAdapted(
@@ -248,7 +253,18 @@ package struct StreamingExecutor: Sendable {
                 redirectPolicy: configuration.redirectPolicy
             )
             attemptStartedAt = Date()
-            let (bytes, response) = try await session.bytes(for: urlRequest, context: context)
+            let bytes: URLSession.AsyncBytes
+            let response: URLResponse
+            do {
+                (bytes, response) = try await session.bytes(for: urlRequest, context: context)
+            } catch {
+                throw StreamingAttemptFailure(
+                    error: error,
+                    startedAt: attemptStartedAt,
+                    phase: .handshake,
+                    request: retryRequest
+                )
+            }
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw NetworkError.underlying(
                     SendableUnderlyingError(
@@ -286,7 +302,12 @@ package struct StreamingExecutor: Sendable {
                 // Handshake failure: surface the status before consuming body
                 // bytes so the outer loop can consult RetryPolicy without
                 // mixing this budget with Last-Event-ID resume.
-                throw NetworkError.statusCode(networkResponse)
+                throw StreamingAttemptFailure(
+                    error: NetworkError.statusCode(networkResponse),
+                    startedAt: attemptStartedAt,
+                    phase: .handshake,
+                    request: urlRequest
+                )
             }
 
             let streamingLineByteLimit = max(1, configuration.streamingLineByteLimit)
@@ -387,20 +408,20 @@ package struct StreamingExecutor: Sendable {
     }
 
     private func retryHandshakeIfNeeded(
-        _ error: Error,
+        _ failure: StreamingAttemptFailure,
         state: inout StreamingHandshakeRetryState,
         configuration: NetworkConfiguration,
         executionRuntime: RequestExecutionRuntime,
         requestID: UUID
     ) async throws -> Bool {
-        guard let networkError = error as? NetworkError,
-            case .statusCode = networkError,
+        guard failure.phase == .handshake,
             let policy = configuration.retryPolicy
         else {
             return false
         }
 
-        let request = networkError.underlyingRequest
+        let networkError = Self.mapTransportError(failure.error, startedAt: failure.startedAt)
+        let request = networkError.underlyingRequest ?? failure.request
         let decision = policy.shouldRetry(
             error: networkError,
             retryIndex: state.retryIndex,
@@ -620,8 +641,31 @@ private enum StreamingAttemptResult {
 }
 
 private struct StreamingAttemptFailure: Error {
+    enum Phase {
+        case handshake
+        case body
+    }
+
     let error: Error
     let startedAt: Date?
+    let phase: Phase
+    let request: URLRequest?
+
+    init(
+        error: Error,
+        startedAt: Date?,
+        phase: Phase,
+        request: URLRequest?
+    ) {
+        self.error = error
+        self.startedAt = startedAt
+        self.phase = phase
+        self.request = request
+    }
+
+    init(error: Error, startedAt: Date?) {
+        self.init(error: error, startedAt: startedAt, phase: .body, request: nil)
+    }
 }
 
 private struct StreamingLineTooLargeError: Error {

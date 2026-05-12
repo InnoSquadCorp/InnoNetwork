@@ -122,6 +122,7 @@ private final class SequencedStreamingURLProtocol: URLProtocol {
     enum Step: Sendable {
         case success(statusCode: Int, data: Data)
         case successWithHeaders(statusCode: Int, data: Data, headers: [String: String])
+        case failure(URLError)
     }
 
     nonisolated(unsafe) private static var queue: [String: [Step]] = [:]
@@ -187,6 +188,8 @@ private final class SequencedStreamingURLProtocol: URLProtocol {
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: data)
             client?.urlProtocolDidFinishLoading(self)
+        case .failure(let error):
+            client?.urlProtocol(self, didFailWithError: error)
         case .none:
             client?.urlProtocol(self, didFailWithError: URLError(.unknown))
         }
@@ -967,6 +970,57 @@ struct StreamingAPIDefinitionTests {
                 "start",
                 "adapted",
                 "response",
+                "retry",
+                "start",
+                "adapted",
+                "response",
+                "finished",
+            ])
+    }
+
+    @Test("stream() retries pre-handshake transport failures through RetryPolicy")
+    func streamRetriesPreHandshakeTransportFailureThroughRetryPolicy() async throws {
+        let definition = LineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .failure(URLError(.timedOut)),
+                .success(statusCode: 200, data: Data("recovered\n".utf8)),
+            ])
+
+        let store = StreamingEventStore()
+        let configuration = NetworkConfiguration(
+            baseURL: baseURL,
+            retryPolicy: ExponentialBackoffRetryPolicy(
+                maxRetries: 1,
+                retryDelay: 0,
+                maxRetryAfterDelay: 0,
+                maxDelay: 0,
+                jitterRatio: 0
+            ),
+            eventObservers: [StreamingEventObserver(store: store)]
+        )
+        let client = DefaultNetworkClient(
+            configuration: configuration,
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var values: [String] = []
+        for try await value in client.stream(definition) {
+            values.append(value)
+        }
+
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(values == ["recovered"])
+        #expect(captured.count == 2)
+        let events = await waitForStreamingEvents(store: store, minimumCount: 7)
+        #expect(
+            events.map(streamingEventName) == [
+                "start",
+                "adapted",
                 "retry",
                 "start",
                 "adapted",
