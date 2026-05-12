@@ -651,6 +651,20 @@ swift run InnoNetworkBenchmarks --json-path /tmp/innonetwork-bench.json
 
 Benchmark governance, baseline policy, and CI posture are documented in [Benchmarks/README.md](Benchmarks/README.md).
 
+Current guarded quick-baseline highlights from
+[`Benchmarks/Baselines/default.json`](Benchmarks/Baselines/default.json)
+(`generatedAt`: `2026-05-02T18:40:44Z`):
+
+| Area | Guarded benchmark | Iterations | Baseline ops/sec |
+| --- | --- | ---: | ---: |
+| Request pipeline | `client/request-pipeline` | 2,000 | 5,225 |
+| Request coalescing | `client/request-coalescing-shared-get` | 2,000 | 3,891 |
+| Cache lookup | `cache/response-cache-lookup` | 200,000 | 466,773 |
+| Cache revalidation | `cache/response-cache-revalidation` | 200,000 | 1,285,328 |
+| Event fan-out | `events/task-event-fanout-single` | 2,000 | 18,124 |
+| Download restore | `persistence/download-persistence-restore` | 50 | 46 |
+| WebSocket close classification | `websocket/websocket-close-disposition-classify` | 500,000 | 3,980,702 |
+
 ## Production Checklist
 
 Operational items to verify before shipping a client built on InnoNetwork.

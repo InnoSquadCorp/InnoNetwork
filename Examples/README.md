@@ -113,10 +113,26 @@ Observability sample for event delivery metrics and custom reporting.
 
 ---
 
+### 7. [TargetTypeCatalog](./TargetTypeCatalog)
+
+Moya-style enum catalog that maps each app-level route to a concrete
+`APIDefinition` before execution.
+
+**Covers:**
+- Central route enum for incremental migrations
+- Typed request/response endpoints behind each catalog case
+- Result enum wrapping without erasing transport-time response types
+
+**Best for:** Teams migrating a large TargetType catalog while keeping typed
+endpoint execution in new code.
+
+---
+
 ## Feature Recipes
 
 - Auth refresh: [Auth](./Auth)
 - Custom headers / pagination / CRUD walkthroughs: [App Networking Cookbook](../Sources/InnoNetwork/InnoNetwork.docc/Articles/AppNetworkingCookbook.md)
+- TargetType-style catalogs: [TargetTypeCatalog](./TargetTypeCatalog)
 - Response cache: [Caching Strategies](../Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md)
 - Background download: [DownloadManager](./DownloadManager)
 - WebSocket chat: [WebSocketChat](./WebSocketChat)
