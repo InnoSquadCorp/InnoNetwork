@@ -99,6 +99,7 @@ package struct RequestExecutor {
         }
     }
 
+    @inline(__always)
     private func prepareRequestStage<D: SingleRequestExecutable>(
         _ executable: D,
         configuration: NetworkConfiguration,
@@ -156,6 +157,7 @@ package struct RequestExecutor {
         )
     }
 
+    @inline(__always)
     private func responseStage<D: SingleRequestExecutable>(
         _ executable: D,
         prepared: PreparedExecutionRequest,
@@ -210,6 +212,7 @@ package struct RequestExecutor {
         return networkResponse
     }
 
+    @inline(__always)
     private func decodeStage<D: SingleRequestExecutable>(
         _ executable: D,
         response networkResponse: Response,
