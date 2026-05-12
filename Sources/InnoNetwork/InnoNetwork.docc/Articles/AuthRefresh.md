@@ -45,6 +45,15 @@ The default behaviour is:
 Provide `refreshStatusCodes:` or `applyToken:` only when your API differs from
 standard bearer-token authentication.
 
+## Shared Refresh Task Ownership
+
+The refresh operation is intentionally owned by the coordinator, not by the
+first request that observes `401`. Internally that shared work may use a
+detached task boundary so one caller's cancellation or priority does not
+cancel or downgrade the refresh needed by other waiting requests. A cancelled
+waiter returns promptly, while the coordinator keeps the refresh alive until it
+succeeds, fails, or the coordinator is released.
+
 ## Mark Auth-Required Endpoints
 
 4.0.0 adds a type-level auth marker so an authenticated endpoint cannot

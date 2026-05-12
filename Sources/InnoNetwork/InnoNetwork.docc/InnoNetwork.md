@@ -45,6 +45,7 @@ The recommended starting point is ``NetworkConfiguration/safeDefaults(baseURL:)`
 - ``HTTPMethod``
 - ``ContentType``
 - ``NetworkError``
+- ``NetworkErrorCategory``
 - ``MultipartResponseDecoder``
 - ``MultipartPart``
 - ``DecodingInterceptor``

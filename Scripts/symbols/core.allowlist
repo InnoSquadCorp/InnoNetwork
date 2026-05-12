@@ -32,6 +32,7 @@ InnoNetwork	swift.enum	MultipartStreamingEvent
 InnoNetwork	swift.enum	MultipartUploadStrategy
 InnoNetwork	swift.enum	NetworkConfigurationFailureReason
 InnoNetwork	swift.enum	NetworkError
+InnoNetwork	swift.enum	NetworkErrorCategory
 InnoNetwork	swift.enum	NetworkErrorCode
 InnoNetwork	swift.enum	NetworkEvent
 InnoNetwork	swift.enum	NetworkInterfaceType
@@ -116,6 +117,14 @@ InnoNetwork	swift.enum.case	NetworkError.statusCode(_:)
 InnoNetwork	swift.enum.case	NetworkError.timeout(reason:underlying:)
 InnoNetwork	swift.enum.case	NetworkError.trustEvaluationFailed(_:)
 InnoNetwork	swift.enum.case	NetworkError.underlying(_:_:)
+InnoNetwork	swift.enum.case	NetworkErrorCategory.cancellation
+InnoNetwork	swift.enum.case	NetworkErrorCategory.configuration
+InnoNetwork	swift.enum.case	NetworkErrorCategory.decoding
+InnoNetwork	swift.enum.case	NetworkErrorCategory.reachability
+InnoNetwork	swift.enum.case	NetworkErrorCategory.statusCode
+InnoNetwork	swift.enum.case	NetworkErrorCategory.timeout
+InnoNetwork	swift.enum.case	NetworkErrorCategory.transport
+InnoNetwork	swift.enum.case	NetworkErrorCategory.trust
 InnoNetwork	swift.enum.case	NetworkErrorCode.cancelled
 InnoNetwork	swift.enum.case	NetworkErrorCode.configurationInvalidBaseURL
 InnoNetwork	swift.enum.case	NetworkErrorCode.configurationInvalidRequest
@@ -574,10 +583,13 @@ InnoNetwork	swift.property	NetworkConfiguration.userAgentProvider
 InnoNetwork	swift.property	NetworkContext.baggage
 InnoNetwork	swift.property	NetworkContext.correlationID
 InnoNetwork	swift.property	NetworkContext.traceID
+InnoNetwork	swift.property	NetworkError.category
 InnoNetwork	swift.property	NetworkError.errorCode
 InnoNetwork	swift.property	NetworkError.errorDescription
 InnoNetwork	swift.property	NetworkError.errorUserInfo
 InnoNetwork	swift.property	NetworkError.isDecodingFailure
+InnoNetwork	swift.property	NetworkError.isRetriableHint
+InnoNetwork	swift.property	NetworkError.isUserVisible
 InnoNetwork	swift.property	NetworkError.response
 InnoNetwork	swift.property	NetworkLoggingOptions.includeCookies
 InnoNetwork	swift.property	NetworkLoggingOptions.includeRequestBody

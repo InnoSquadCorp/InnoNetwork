@@ -13,7 +13,7 @@ public struct NetworkConfiguration: Sendable {
     package enum Presets {
         static func safeDefaults(baseURL: URL) -> NetworkConfiguration {
             NetworkConfiguration(
-                baseURL: baseURL,
+                internalBaseURL: baseURL,
                 timeout: 30.0,
                 cachePolicy: .useProtocolCachePolicy,
                 requestPriority: .normal,
@@ -40,7 +40,7 @@ public struct NetworkConfiguration: Sendable {
 
         static func advancedTuning(baseURL: URL) -> NetworkConfiguration {
             NetworkConfiguration(
-                baseURL: baseURL,
+                internalBaseURL: baseURL,
                 timeout: 60.0,
                 cachePolicy: .reloadIgnoringLocalCacheData,
                 requestPriority: .normal,
@@ -296,7 +296,7 @@ public struct NetworkConfiguration: Sendable {
 
         package func build() -> NetworkConfiguration {
             NetworkConfiguration(
-                baseURL: baseURL,
+                internalBaseURL: baseURL,
                 timeout: timeout,
                 cachePolicy: cachePolicy,
                 requestPriority: requestPriority,
@@ -394,8 +394,8 @@ public struct NetworkConfiguration: Sendable {
         return builder.build()
     }
 
-    public init(
-        baseURL: URL,
+    private init(
+        internalBaseURL baseURL: URL,
         timeout: TimeInterval = 30.0,
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
         requestPriority: RequestPriority = .normal,
@@ -468,6 +468,83 @@ public struct NetworkConfiguration: Sendable {
         Self.assertIdempotencyHeaderNamesMatch(
             keyPolicy: idempotencyKeyPolicy,
             retryPolicy: retryPolicy
+        )
+    }
+
+    @available(
+        *,
+        deprecated,
+        message: "Use safeDefaults, recommendedForProduction, or advanced packs instead."
+    )
+    public init(
+        baseURL: URL,
+        timeout: TimeInterval = 30.0,
+        cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
+        requestPriority: RequestPriority = .normal,
+        allowsCellularAccess: Bool = true,
+        allowsExpensiveNetworkAccess: Bool = true,
+        allowsConstrainedNetworkAccess: Bool = true,
+        retryPolicy: RetryPolicy? = nil,
+        networkMonitor: (any NetworkMonitoring)? = NetworkMonitor.shared,
+        metricsReporter: (any NetworkMetricsReporting)? = nil,
+        trustPolicy: TrustPolicy = .systemDefault,
+        eventObservers: [any NetworkEventObserving] = [],
+        eventDeliveryPolicy: EventDeliveryPolicy = .default,
+        eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
+        acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes,
+        requestInterceptors: [RequestInterceptor] = [],
+        responseInterceptors: [ResponseInterceptor] = [],
+        decodingInterceptors: [DecodingInterceptor] = [],
+        refreshTokenPolicy: RefreshTokenPolicy? = nil,
+        requestCoalescingPolicy: RequestCoalescingPolicy = .disabled,
+        responseCachePolicy: ResponseCachePolicy = .disabled,
+        responseCache: (any ResponseCache)? = nil,
+        circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
+        customExecutionPolicies: [any RequestExecutionPolicy] = [],
+        idempotencyKeyPolicy: IdempotencyKeyPolicy = .disabled,
+        userAgentProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultUserAgent.value },
+        acceptLanguageProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultAcceptLanguage.value },
+        captureFailurePayload: Bool = false,
+        responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(),
+        responseBodyLimit: Int64? = nil,
+        streamingLineByteLimit: Int = NetworkConfiguration.defaultStreamingLineByteLimit,
+        redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy(),
+        allowsInsecureHTTP: Bool = false
+    ) {
+        self.init(
+            internalBaseURL: baseURL,
+            timeout: timeout,
+            cachePolicy: cachePolicy,
+            requestPriority: requestPriority,
+            allowsCellularAccess: allowsCellularAccess,
+            allowsExpensiveNetworkAccess: allowsExpensiveNetworkAccess,
+            allowsConstrainedNetworkAccess: allowsConstrainedNetworkAccess,
+            retryPolicy: retryPolicy,
+            networkMonitor: networkMonitor,
+            metricsReporter: metricsReporter,
+            trustPolicy: trustPolicy,
+            eventObservers: eventObservers,
+            eventDeliveryPolicy: eventDeliveryPolicy,
+            eventMetricsReporter: eventMetricsReporter,
+            acceptableStatusCodes: acceptableStatusCodes,
+            requestInterceptors: requestInterceptors,
+            responseInterceptors: responseInterceptors,
+            decodingInterceptors: decodingInterceptors,
+            refreshTokenPolicy: refreshTokenPolicy,
+            requestCoalescingPolicy: requestCoalescingPolicy,
+            responseCachePolicy: responseCachePolicy,
+            responseCache: responseCache,
+            circuitBreakerPolicy: circuitBreakerPolicy,
+            customExecutionPolicies: customExecutionPolicies,
+            idempotencyKeyPolicy: idempotencyKeyPolicy,
+            userAgentProvider: userAgentProvider,
+            acceptLanguageProvider: acceptLanguageProvider,
+            captureFailurePayload: captureFailurePayload,
+            responseBodyBufferingPolicy: responseBodyBufferingPolicy,
+            responseBodyLimit: responseBodyLimit,
+            streamingLineByteLimit: streamingLineByteLimit,
+            redirectPolicy: redirectPolicy,
+            allowsInsecureHTTP: allowsInsecureHTTP
         )
     }
 

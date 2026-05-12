@@ -14,6 +14,8 @@ and event streams do not map to structured child tasks owned by one caller.
   cleanup.
 - Cancel runtime tasks only from the same cleanup path that also finishes
   event streams and removes registries.
+- Publish terminal events before finishing a task's event stream so consumers
+  see `finished`/`failed` before end-of-stream.
 - Keep `Task.detached` rare. It is allowed only when caller cancellation must
   not cancel shared work, such as auth refresh single-flight. New detached
   work needs a short rationale in code or docs.

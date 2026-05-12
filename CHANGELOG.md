@@ -93,10 +93,10 @@ Versioning.
   implementation can be validated against the published AWS SigV4
   test vectors before shipping to production. Listed as Provisionally
   Stable in API_STABILITY.md.
-- Package-internal `NetworkError` classification helpers for category,
-  retry hint, and user-visible hint decisions. The public error shape
-  is unchanged; the helper centralizes policy branching that previously
-  lived at call sites.
+- Public `NetworkErrorCategory` plus `NetworkError.category`,
+  `isRetriableHint`, and `isUserVisible` helpers. App code can route
+  UI, logging, and retry affordances without exhaustively switching over
+  every `NetworkError` payload.
 - `Examples/TargetTypeCatalog`, a Moya-style catalog migration recipe
   that maps enum cases to concrete `APIDefinition` values before typed
   request execution.
@@ -110,6 +110,21 @@ Versioning.
   window: previously a file part whose size grew between estimate and
   read could exceed the configured ceiling; the new per-write
   accumulator guard refuses the encode as soon as the cap is breached.
+- Streaming `Last-Event-ID` resume now scopes `URLSession.AsyncBytes`
+  to one attempt helper and rejects custom event IDs containing CR, LF,
+  NUL, or other non-visible ASCII before storing or sending the resume
+  header.
+- Persistent response-cache lookups now maintain an actor-private
+  `DiskKey -> entry ids` index seeded on open and updated on set,
+  invalidation, eviction, removal, and rollback. The disk index format is
+  unchanged, but average `get` lookup avoids a full entry scan.
+- Directory download filenames are validated after trimming and
+  compatibility normalization; path separators, colon, NUL, `.`, `..`,
+  and fullwidth-dot traversal attempts now fall back to a generated
+  `download-*` name.
+- `NetworkLogger` explicitly clears percent-encoded userinfo while
+  sanitizing URLs, and retry idempotency checks now treat whitespace-only
+  `Idempotency-Key` values as missing.
 - `ResponseCache` now follows RFC 9111 §4.4 for unsafe-method
   invalidation: `POST` / `PUT` / `PATCH` / `DELETE` and safety-unknown
   methods invalidate stored responses for the request target URI after
@@ -203,6 +218,11 @@ Versioning.
   consuming a token. Direct callers must migrate from
   `await bucket.acquire()` to `try await bucket.acquire()`. See
   `docs/Migration-4.1.0.md`.
+- `NetworkConfiguration.init(...)` remains source-compatible but is now
+  deprecated. New code should use `safeDefaults(baseURL:)`,
+  `recommendedForProduction(baseURL:)`, or
+  `advanced(baseURL:resilience:auth:observability:cache:transport:)`
+  with configuration packs/fluent modifiers.
 - `ConcurrencyLimitExecutionPolicy` now awaits `bucket.release()` before
   returning or rethrowing. The previous implementation used an
   unstructured `Task` from `defer`, which made the release boundary

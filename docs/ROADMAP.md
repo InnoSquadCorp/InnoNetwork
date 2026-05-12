@@ -42,11 +42,11 @@ surface so callers can switch on `NetworkError` directly.
 
 The remaining 5.0 candidate on this axis is not typed throws. It is the
 large `NetworkConfiguration.init(...)` compatibility initializer: 4.x
-keeps it public for source compatibility, while new examples and docs
-should prefer `safeDefaults(baseURL:)`, `advanced(baseURL:_:)`, or the
-pack/fluent modifier surfaces. If a future major release hides or
-removes the full initializer, the CHANGELOG entry must include
-before/after call-site examples.
+keeps it public but deprecated, while new examples and docs should prefer
+`safeDefaults(baseURL:)`, `recommendedForProduction(baseURL:)`,
+`advanced(baseURL:resilience:auth:observability:cache:transport:)`, or the
+pack/fluent modifier surfaces. If a future major release removes the full
+initializer, the CHANGELOG entry must include before/after call-site examples.
 
 ## 4.x Trust Pinning Module Split (shipped)
 

@@ -31,6 +31,15 @@ memory-constrained device forces a smaller ceiling.
 
 Passing a custom policy replaces the default for that manager's lifetime.
 
+## Terminal Ordering
+
+Managers publish the terminal event for a logical task before finishing that
+task's event partition. For requests and streams this means
+`requestFinished`/`requestFailed` is enqueued before `finish(requestID:)`;
+download and websocket managers follow the same terminal-event-then-finish
+shape for their task-scoped streams. Consumers should treat stream completion
+as "no more events after the terminal event", not as a separate status signal.
+
 ## Buffering: `maxBufferedEventsPerPartition`
 
 Each partition — one per active task — holds up to

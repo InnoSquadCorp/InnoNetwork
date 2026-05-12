@@ -161,6 +161,10 @@ expected_stable=(
 '`URLQueryArrayEncodingStrategy`'
 '`ResponseBodyBufferingPolicy`'
 '`RequestExecutionPolicy`'
+'`NetworkErrorCategory`'
+'`NetworkError.category`'
+'`NetworkError.isRetriableHint`'
+'`NetworkError.isUserVisible`'
 '`AuthScope`'
 '`PublicAuthScope`'
 '`AuthRequiredScope`'
@@ -288,6 +292,7 @@ expected_shipping_public_declarations=(
   NetworkClient
   NetworkConfiguration
   NetworkContext
+  NetworkErrorCategory
   NetworkErrorCode
   NetworkError
   NetworkEvent
@@ -1060,6 +1065,22 @@ for symbol in "${expected_stable[@]}"; do
     '`RequestExecutionPolicy`')
       pattern='public protocol RequestExecutionPolicy'
       target="$repo_root/Sources/InnoNetwork/RequestExecutionPolicy.swift"
+      ;;
+    '`NetworkErrorCategory`')
+      pattern='public enum NetworkErrorCategory'
+      target="$repo_root/Sources/InnoNetwork/NetworkError+Classification.swift"
+      ;;
+    '`NetworkError.category`')
+      pattern='public var category: NetworkErrorCategory'
+      target="$repo_root/Sources/InnoNetwork/NetworkError+Classification.swift"
+      ;;
+    '`NetworkError.isRetriableHint`')
+      pattern='public var isRetriableHint: Bool'
+      target="$repo_root/Sources/InnoNetwork/NetworkError+Classification.swift"
+      ;;
+    '`NetworkError.isUserVisible`')
+      pattern='public var isUserVisible: Bool'
+      target="$repo_root/Sources/InnoNetwork/NetworkError+Classification.swift"
       ;;
     '`AuthScope`')
       pattern='public protocol AuthScope'

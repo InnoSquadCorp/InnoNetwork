@@ -28,7 +28,9 @@
   notes when they affect resilience, websocket lifecycle, downloads, or
   observability.
 - The 4.x line keeps the full `NetworkConfiguration.init(...)` initializer
-  public for source compatibility. A future major may move callers to
-  `safeDefaults(baseURL:)`, `advanced(baseURL:_:)`, configuration packs, and
-  fluent modifiers instead. That migration requires explicit before/after
+  public for source compatibility, but the direct initializer is deprecated.
+  New code should use `safeDefaults(baseURL:)`,
+  `recommendedForProduction(baseURL:)`, `advanced(baseURL:resilience:auth:observability:cache:transport:)`,
+  configuration packs, or fluent modifiers instead. A future major may remove
+  the direct initializer; that migration requires explicit before/after
   examples for every initializer argument that no longer maps one-to-one.

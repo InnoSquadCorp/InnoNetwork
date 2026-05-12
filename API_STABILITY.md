@@ -43,6 +43,10 @@ release line. `4.0.0` is the public baseline for this contract.
 - `URLQueryArrayEncodingStrategy`
 - `ResponseBodyBufferingPolicy`
 - `RequestExecutionPolicy`
+- `NetworkErrorCategory`
+- `NetworkError.category`
+- `NetworkError.isRetriableHint`
+- `NetworkError.isUserVisible`
 - `AuthScope`
 - `PublicAuthScope`
 - `AuthRequiredScope`
@@ -281,6 +285,10 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   tune default policy values in minors, but it remains a convenience builder
   over documented public policies. 4.1.0 caps streaming response body
   collection at 5 MiB by default.
+- `NetworkConfiguration.init(...)` — remains callable for 4.x source
+  compatibility, but is deprecated in favor of presets, configuration packs,
+  and fluent modifiers. A future major may remove the direct 32-parameter
+  construction surface after migration examples ship.
 - `DownloadConfiguration.sharedContainerIdentifier` — additive App Group
   background-session storage knob. Default stays `nil`; future minors may add
   preset helpers, but the property and builder field remain source-compatible.
@@ -332,6 +340,7 @@ release line.
   `MultipartStreamingEvent`, `MultipartStreamingResponseDecoder`,
   `MultipartUploadStrategy`,
   `NetworkClient`, `NetworkConfiguration`, `NetworkContext`, `NetworkError`,
+  `NetworkErrorCategory`,
   `NetworkEvent`, `NetworkEventObserving`, `NetworkInterfaceType`,
   `NetworkLoggingOptions`, `NetworkLogger`, `NetworkMetricsReporting`,
   `NetworkMonitor`, `NetworkMonitoring`, `NetworkReachabilityStatus`,
