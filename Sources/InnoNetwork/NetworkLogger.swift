@@ -351,6 +351,8 @@ public struct DefaultNetworkLogger: NetworkLogger {
 
         if components.user != nil { components.user = nil }
         if components.password != nil { components.password = nil }
+        components.percentEncodedUser = nil
+        components.percentEncodedPassword = nil
         components.fragment = nil
 
         if let queryItems = components.queryItems, !queryItems.isEmpty {

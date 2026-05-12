@@ -232,6 +232,26 @@ private struct ThrowingResumableStream: StreamingAPIDefinition {
 }
 
 
+private struct UnsafeEventIDResumableStream: StreamingAPIDefinition {
+    typealias Output = ResumableEvent
+
+    var method: HTTPMethod { .get }
+    var path: String { "/sse" }
+    var resumePolicy: StreamingResumePolicy { .lastEventID(maxAttempts: 2, retryDelay: 0) }
+
+    func decode(line: String) throws -> ResumableEvent? {
+        guard !line.isEmpty else { return nil }
+        let parts = line.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return nil }
+        return ResumableEvent(id: String(parts[0]), payload: String(parts[1]))
+    }
+
+    func eventID(from output: ResumableEvent) -> String? {
+        "\(output.id)\r\nInjected: true"
+    }
+}
+
+
 private func makeSequencedStreamingURLSession() -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [SequencedStreamingURLProtocol.self]
@@ -1106,6 +1126,41 @@ struct StreamingAPIDefinitionTests {
         #expect(captured.count == 2)
         #expect(captured.first?.localizedCaseInsensitiveContains("Last-Event-ID:") == false)
         #expect(captured.dropFirst().first?.localizedCaseInsensitiveContains("Last-Event-ID: 1") == true)
+    }
+
+    @Test("stream() drops custom event ids that are unsafe for Last-Event-ID")
+    func resumePolicyDropsUnsafeCustomEventID() async throws {
+        let server = try StreamingResumeHTTPServer()
+        defer { server.stop() }
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: server.baseURL,
+                timeout: 5,
+                allowsInsecureHTTP: true
+            ),
+            session: URLSession(configuration: .ephemeral)
+        )
+
+        var collected: [ResumableEvent] = []
+        do {
+            for try await event in client.stream(UnsafeEventIDResumableStream()) {
+                collected.append(event)
+            }
+            Issue.record("Expected mid-stream transport failure")
+        } catch let error as NetworkError {
+            switch error {
+            case .reachability, .underlying:
+                break
+            default:
+                Issue.record("Expected transport failure, got \(error)")
+            }
+        }
+
+        #expect(collected == [ResumableEvent(id: "1", payload: "alpha")])
+        let captured = server.capturedRequests()
+        #expect(captured.count == 1)
+        #expect(captured.first?.localizedCaseInsensitiveContains("Last-Event-ID:") == false)
     }
 
     @Test("stream() does not resume Last-Event-ID after decode errors")

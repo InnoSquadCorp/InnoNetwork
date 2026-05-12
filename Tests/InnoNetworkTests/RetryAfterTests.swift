@@ -304,6 +304,58 @@ struct RetryAfterParsingTests {
         #expect(totalAttempts == 1, "POST timeout without Idempotency-Key must not auto-retry; got \(totalAttempts)")
     }
 
+    @Test("Coordinator safety net treats blank Idempotency-Key as missing")
+    func coordinatorSafetyNetRejectsBlankIdempotencyKey() async throws {
+        struct AlwaysRetryPolicy: RetryPolicy {
+            let maxRetries = 3
+            let maxTotalRetries = 3
+            let retryDelay: TimeInterval = 0
+            func shouldRetry(
+                error: NetworkError,
+                retryIndex: Int,
+                request: URLRequest?,
+                response: HTTPURLResponse?
+            ) -> RetryDecision {
+                .retry
+            }
+        }
+
+        let url = URL(string: "https://example.com/charge")!
+        let request: URLRequest = {
+            var r = URLRequest(url: url)
+            r.httpMethod = "POST"
+            r.setValue("  \t  ", forHTTPHeaderField: "Idempotency-Key")
+            return r
+        }()
+
+        let coordinator = RetryCoordinator(eventHub: NetworkEventHub())
+        let attempts = OSAllocatedUnfairLockBox(value: 0)
+        do {
+            _ = try await coordinator.execute(
+                retryPolicy: AlwaysRetryPolicy(),
+                networkMonitor: nil,
+                requestID: UUID(),
+                eventObservers: []
+            ) { _, _ in
+                attempts.withLock { $0 += 1 }
+                throw RequestExecutionFailure(
+                    error: .timeout(reason: .requestTimeout),
+                    request: request
+                )
+            }
+            Issue.record("Expected timeout to surface without retry")
+        } catch let error as NetworkError {
+            if case .timeout = error {
+                // expected
+            } else {
+                Issue.record("Expected .timeout, got \(error)")
+            }
+        }
+
+        let totalAttempts = attempts.withLock { $0 }
+        #expect(totalAttempts == 1, "Blank Idempotency-Key must not permit POST timeout retry")
+    }
+
     @Test("Coordinator safety net: POST + .timeout + Idempotency-Key still retries")
     func coordinatorSafetyNetSkippedWhenIdempotencyKeyPresent() async throws {
         // The safety net is keyed on the absence of `Idempotency-Key`;

@@ -290,8 +290,10 @@ package struct RetryCoordinator {
         if idempotency.safeMethods.contains(method) { return decision }
         // For non-safe methods, only block when the configured idempotency
         // header is missing. Custom header names are honored.
-        let hasIdempotencyKey =
-            request.value(forHTTPHeaderField: idempotency.idempotencyHeaderName)?.isEmpty == false
+        let idempotencyKey =
+            request.value(forHTTPHeaderField: idempotency.idempotencyHeaderName)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasIdempotencyKey = idempotencyKey?.isEmpty == false
         if hasIdempotencyKey { return decision }
         return .noRetry
     }

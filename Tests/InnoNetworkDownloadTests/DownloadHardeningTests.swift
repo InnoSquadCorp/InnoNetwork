@@ -135,7 +135,17 @@ struct DownloadManagerHardeningTests {
 
     @Test(
         "directory downloads fall back for unsafe filenames",
-        arguments: ["../escape.zip", "nested/file.zip", "nested\\file.zip", "", "   ", ".", ".."]
+        arguments: [
+            "../escape.zip",
+            "nested/file.zip",
+            "nested\\file.zip",
+            "bad:name.zip",
+            "\u{FF0E}\u{FF0E}",
+            "",
+            "   ",
+            ".",
+            "..",
+        ]
     )
     func directoryDownloadFallsBackForUnsafeFileNames(fileName: String) async throws {
         let harness = try StubDownloadHarness(label: "unsafe-filename")

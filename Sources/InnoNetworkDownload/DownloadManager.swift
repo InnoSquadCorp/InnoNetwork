@@ -389,10 +389,18 @@ public actor DownloadManager {
 
     private static func safeDirectoryDownloadFileName(_ rawName: String) -> String? {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name != ".", name != ".." else { return nil }
-        guard name.contains("/") == false, name.contains("\\") == false else { return nil }
-        guard name.unicodeScalars.contains(where: { $0.value == 0 }) == false else { return nil }
+        guard isSafeDirectoryDownloadPathComponent(name) else { return nil }
+        guard isSafeDirectoryDownloadPathComponent(name.precomposedStringWithCompatibilityMapping) else { return nil }
         return name
+    }
+
+    private static func isSafeDirectoryDownloadPathComponent(_ name: String) -> Bool {
+        guard !name.isEmpty, name != ".", name != ".." else { return false }
+        guard name.contains("/") == false, name.contains("\\") == false, name.contains(":") == false else {
+            return false
+        }
+        guard name.unicodeScalars.contains(where: { $0.value == 0 }) == false else { return false }
+        return true
     }
 
     public func pause(_ task: DownloadTask) async {
