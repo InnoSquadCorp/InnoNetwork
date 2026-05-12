@@ -82,17 +82,19 @@ Versioning.
   request-minted JWT lane only — session-rotated bearer tokens are
   still better served by `RefreshTokenPolicy`'s single-flight refresh.
   Listed as Provisionally Stable in API_STABILITY.md.
-- `AWSSigV4Interceptor` reference signer in `Sources/InnoNetwork/Auth/`.
-  Targets the single-shot, in-memory body flow that covers most AWS
-  service calls (DynamoDB, S3 GET, CloudWatch, SQS). Streaming SigV4
-  (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`) and presigned URL signing are
-  out of scope and intentionally not implemented; adopters that need
-  them should fall back to the AWS SDK or a purpose-built signer. The
-  interceptor exposes `canonicalRequest(for:)` and
-  `stringToSign(canonicalRequest:date:)` as test probes so the
-  implementation can be validated against the published AWS SigV4
-  test vectors before shipping to production. Listed as Provisionally
-  Stable in API_STABILITY.md.
+- `AWSSigV4Interceptor` moved to the new `InnoNetworkAuthAWS` companion
+  product. The signer moved out of the core product before the 4.0.0 baseline and
+  now lives in `Sources/InnoNetworkAuthAWS/` with a product README and
+  DocC entry that state the scope explicitly: reference signer, not AWS
+  SDK replacement. It targets the single-shot, in-memory body flow that
+  covers many AWS service calls (DynamoDB, S3 GET, CloudWatch, SQS).
+  Streaming SigV4 (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`), presigned URL
+  signing, credential-provider chains, and service-specific behaviours are
+  out of scope. Listed as Provisionally Stable in API_STABILITY.md.
+- `docs/MigrationFromAlamofire.md` and `docs/MigrationFromMoya.md`
+  cookbooks. Both start from a small before/after and route the first
+  30-minute migration through `EndpointBuilder`; the longer DocC migration
+  articles remain the detailed reference.
 - Public `NetworkErrorCategory` plus `NetworkError.category`,
   `isRetriableHint`, and `isUserVisible` helpers. App code can route
   UI, logging, and retry affordances without exhaustively switching over
@@ -296,7 +298,7 @@ Versioning.
   hashing, host-match, and `SecTrustEvaluateWithError` machinery) now
   live in `Sources/InnoNetworkTrust/`. Apps relying on Apple's ATS
   defaults link only `InnoNetwork` and no longer pay the
-  `Security`/`CryptoKit` symbol cost. Adopters that pin migrate by
+  `Security`/`swift-crypto` symbol cost. Adopters that pin migrate by
   adding the `InnoNetworkTrust` product to their target dependencies,
   `import InnoNetworkTrust`, and feeding the evaluator into
   `TrustPolicy.custom(_:)`.
@@ -559,8 +561,9 @@ Versioning.
   default). Streaming bodies (`URLRequest.httpBodyStream`) are
   rejected with `NetworkError.configuration(reason: .invalidRequest(...))`
   rather than silently signing an empty payload — production protocols
-  needing AWS SigV4, OAuth1, or similar canonicalization should ship as a
-  dedicated interceptor on top of the same `RequestInterceptor` contract.
+  needing AWS SigV4 should import the `InnoNetworkAuthAWS` companion product;
+  OAuth1 or similar canonicalization can still ship as a dedicated interceptor
+  on top of the same `RequestInterceptor` contract.
   Composes through `NetworkConfiguration.requestInterceptors` alongside any
   existing auth chain (`RefreshTokenPolicy`, custom adapters).
 - `NetworkError.configuration(reason:)` and the matching

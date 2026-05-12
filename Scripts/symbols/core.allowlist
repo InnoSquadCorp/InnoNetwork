@@ -217,7 +217,6 @@ InnoNetwork	swift.enum.case	URLQueryFloatEncodingStrategy.throw
 InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.convertToSnakeCase
 InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.custom(_:)
 InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.useDefaultKeys
-InnoNetwork	swift.init	AWSSigV4Interceptor.init(accessKeyID:secretAccessKey:region:service:sessionToken:now:)
 InnoNetwork	swift.init	AnyEncodable.init(_:)
 InnoNetwork	swift.init	AnyRequestExecutionPolicy.init(_:)
 InnoNetwork	swift.init	AnyResponseDecoder.init(_:)
@@ -295,9 +294,6 @@ InnoNetwork	swift.init	URLQueryCustomKeyTransform.init(_:)
 InnoNetwork	swift.init	URLQueryEncoder.init(keyEncodingStrategy:dateEncodingStrategy:arrayEncodingStrategy:nonConformingFloatEncodingStrategy:)
 InnoNetwork	swift.init	W3CTraceContext.init(traceID:parentID:sampled:)
 InnoNetwork	swift.init	W3CTraceContext.init(traceparent:)
-InnoNetwork	swift.method	AWSSigV4Interceptor.adapt(_:)
-InnoNetwork	swift.method	AWSSigV4Interceptor.canonicalRequest(for:)
-InnoNetwork	swift.method	AWSSigV4Interceptor.stringToSign(canonicalRequest:date:)
 InnoNetwork	swift.method	AnyEncodable.encode(to:)
 InnoNetwork	swift.method	AnyRequestExecutionPolicy.execute(input:context:next:)
 InnoNetwork	swift.method	AnyResponseDecoder.decode(data:response:)
@@ -427,10 +423,6 @@ InnoNetwork	swift.method	URLSessionProtocol.data(for:context:)
 InnoNetwork	swift.method	URLSessionProtocol.upload(for:fromFile:context:)
 InnoNetwork	swift.property	APIDefinition.parameters
 InnoNetwork	swift.property	APIDefinition.transport
-InnoNetwork	swift.property	AWSSigV4Interceptor.accessKeyID
-InnoNetwork	swift.property	AWSSigV4Interceptor.now
-InnoNetwork	swift.property	AWSSigV4Interceptor.region
-InnoNetwork	swift.property	AWSSigV4Interceptor.service
 InnoNetwork	swift.property	AuthPack.additionalDecodingInterceptors
 InnoNetwork	swift.property	AuthPack.additionalResponseInterceptors
 InnoNetwork	swift.property	AuthPack.additionalSigners
@@ -750,7 +742,6 @@ InnoNetwork	swift.protocol	StreamingAPIDefinition
 InnoNetwork	swift.protocol	StreamingResumeStrategy
 InnoNetwork	swift.protocol	TrustEvaluating
 InnoNetwork	swift.protocol	URLSessionProtocol
-InnoNetwork	swift.struct	AWSSigV4Interceptor
 InnoNetwork	swift.struct	AnyEncodable
 InnoNetwork	swift.struct	AnyRequestExecutionPolicy
 InnoNetwork	swift.struct	AnyResponseDecoder

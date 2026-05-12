@@ -81,26 +81,45 @@ What shipped:
 
 ## 4.x Reference Signers — AWS SigV4 and JWT Bearer
 
-`HMACRequestInterceptor` is the only request signer shipped in 4.0. The
-4.x roadmap adds two more reference implementations so the most common
-external-API conventions are covered without every adopter writing
-their own:
+`HMACRequestInterceptor` remains in the core product. AWS-specific signing
+ships in the optional `InnoNetworkAuthAWS` companion product so the first
+request path does not imply AWS SDK coverage:
 
-- **AWS SigV4** — canonical-request signer for AWS APIs and any service
-  that adopts the same authorization scheme. Ships as
-  `AWSSigV4Interceptor` in a follow-up minor; the wire shape is
-  documented today in [`RequestSigning.md`](../Sources/InnoNetwork/InnoNetwork.docc/Articles/RequestSigning.md).
+- **AWS SigV4** — `InnoNetworkAuthAWS.AWSSigV4Interceptor` is a
+  canonical-request reference signer for AWS APIs and any service that adopts
+  the same authorization scheme. It is not an AWS SDK replacement; streaming
+  SigV4, presigned URLs, credential-provider chains, and service-specific
+  behaviours stay out of scope.
 - **JWT Bearer (request-minted)** — interceptor shape for backends that
   expect a JWT computed per request (claims include method/path).
   `RefreshTokenPolicy` already covers session-rotated bearer tokens, so
   this signer targets the request-minted lane only.
 
-Both signers will keep key material outside the interceptor (closure
-injection so adopters can use Keychain or Secure Enclave); both ride
-on the existing `RequestInterceptor` contract. Streaming-body variants
-(SigV4 chunk-signed) are explicitly deferred — the interceptor surface
-runs before the upload pipeline owns the body, so chunk signing needs
-a deeper hook that is not yet planned.
+Reference signers ride on the existing `RequestInterceptor` contract. Streaming
+body variants (SigV4 chunk-signed) are explicitly deferred because the
+interceptor surface runs before the upload pipeline owns the body.
+
+## Provisional to Stable Promotion Roadmap
+
+| Surface | Current state | Promotion target | Done criteria |
+| --- | --- | --- | --- |
+| `EndpointBuilder` onboarding path | Stable candidate before 4.0.0 | Stable at 4.0.0 | README first-30-minute flow, stable example smoke, and migration cookbook examples stay green. |
+| `InnoNetworkAuthAWS` | Provisionally Stable | 4.x minor after field validation | AWS SigV4 vector tests, README/DocC reference-signer scope, and one adopter migration note. |
+| `PersistentResponseCache` telemetry/statistics | Provisionally Stable | 4.x minor | Reentrancy invariant documented, persistent cache tests cover key rotation and stats. |
+| `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | Provisionally Stable | 4.x minor | Directive subset is documented as RFC 9111-aware, not full compliance, with cache policy tests. |
+| Macro package | Provisionally Stable | No automatic promotion | Before/after ROI remains clear; deprecate instead of promoting if handwritten endpoints stay simpler. |
+
+## 5.0 RFC Parking Lot
+
+These are deliberately not implemented in the 4.0.0 branch, even though the
+branch can still make pre-release breaking changes:
+
+- `NetworkConfiguration.Transport`, `.Resilience`, `.Auth`, and
+  `.Observability` nested naming can replace the current top-level pack names
+  in 5.0 if adopter feedback shows the flatter names are confusing.
+- `NetworkError` can move to a frozen outer wrapper plus an unfrozen inner
+  `Reason` in 5.0 if catch sites need a smaller stable matching surface.
+  Until then, the current enum stays the 4.x source shape.
 
 ## 4.x Configuration Convergence — Packs over AdvancedBuilder
 
@@ -132,7 +151,7 @@ the equivalent Pack fields.
 - Broader Download side-effect ownership remains out of this PR; Download
   already owns reducer-driven state decisions in 4.0.0.
 - An NIO-backed WebSocket/HTTP transport product remains out of this PR so the
-  root runtime products keep their zero-dependency shape.
+  core request product keeps its URLSession-first shape.
 - Pulse/Sentry/OpenTelemetry adapter examples remain separate companion
   examples rather than core dependencies.
 - Hummingbird or other server-side Swift in-process integration tests stay out

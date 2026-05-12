@@ -3,8 +3,8 @@
 #
 # Two zones with different rules:
 #
-#   1. Production library targets (Sources/InnoNetwork{,Download,Persistent
-#      Cache,WebSocket,Trust,OpenAPI}) — `@unchecked Sendable` is
+#   1. Production library targets (Sources/InnoNetwork{,AuthAWS,Download,
+#      PersistentCache,WebSocket,Trust,OpenAPI}) — `@unchecked Sendable` is
 #      forbidden. Strict-concurrency static analysis must succeed by
 #      construction; if a real escape hatch is needed, design a proper
 #      actor or use the per-call locking primitives already in the
@@ -32,6 +32,7 @@ cd "$repo_root"
 
 production_paths=(
     "Sources/InnoNetwork"
+    "Sources/InnoNetworkAuthAWS"
     "Sources/InnoNetworkDownload"
     "Sources/InnoNetworkPersistentCache"
     "Sources/InnoNetworkWebSocket"

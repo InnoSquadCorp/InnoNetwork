@@ -1,7 +1,8 @@
 import Foundation
+import InnoNetwork
 import Testing
 
-@testable import InnoNetwork
+@testable import InnoNetworkAuthAWS
 
 /// Validates ``AWSSigV4Interceptor`` against the published AWS SigV4 test
 /// suite (`aws/aws-sdk-cpp` `aws-cpp-sdk-core/source/auth/signer/aws4_signer`

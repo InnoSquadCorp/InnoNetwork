@@ -1,5 +1,6 @@
 import Foundation
 import InnoNetwork
+import InnoNetworkAuthAWS
 import InnoNetworkDownload
 import InnoNetworkOpenAPI
 import InnoNetworkPersistentCache
@@ -166,6 +167,18 @@ private func runDocSmoke() {
         baseURL: URL(string: "https://api.example.com/v1")!
     )
     _ = production
+
+    let awsSigner = AWSSigV4Interceptor(
+        accessKeyID: "AKIDEXAMPLE",
+        secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+        region: "us-east-1",
+        service: "execute-api"
+    )
+    let awsConfiguration = NetworkConfiguration.advanced(
+        baseURL: URL(string: "https://api.example.com/v1")!,
+        auth: AuthPack(additionalSigners: [awsSigner])
+    )
+    _ = awsConfiguration
 
     let persistentCacheConfiguration = PersistentResponseCacheConfiguration(
         directoryURL: FileManager.default.temporaryDirectory

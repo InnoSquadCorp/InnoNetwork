@@ -1,39 +1,15 @@
-import CryptoKit
+import Crypto
 import Foundation
+@_exported import InnoNetwork
 
 /// `RequestInterceptor` that signs outgoing requests with the AWS
 /// Signature Version 4 (SigV4) algorithm.
 ///
-/// Targets the **single-shot, in-memory body** flow that covers the
-/// majority of AWS service calls (DynamoDB, S3 GET / small PUT,
-/// CloudWatch, SQS, …). Out of scope:
-///
-/// - **Streaming SigV4** (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`). The
-///   interceptor surface runs before the upload pipeline owns the
-///   body, so chunk signing needs a deeper hook than this contract.
-///   Streaming uploads to S3 must use a per-call custom interceptor
-///   or fall back to the AWS SDK.
-/// - **Presigned URLs** (query-string signing). Use the AWS SDK or a
-///   purpose-built signer; the SigV4 flow for that variant differs
-///   meaningfully (no body, signature in query params).
-/// - **STS session tokens** are honoured when supplied via the
-///   `sessionToken` init argument — the interceptor adds
-///   `X-Amz-Security-Token` automatically — but rotation is the
-///   caller's responsibility.
-///
-/// The interceptor recomputes the signature on every attempt because
-/// the canonical request includes `X-Amz-Date`, which advances every
-/// time the clock is sampled. There is no caching layer.
-///
-/// > Important: This is a **reference implementation**, not a
-/// > drop-in replacement for the AWS SDK. Validate it against your
-/// > target service with the published AWS SigV4 test vectors before
-/// > shipping; the interceptor exposes ``canonicalRequest(for:)``
-/// > and ``stringToSign(canonicalRequest:date:)`` for that purpose.
-/// > The canonical path is single-encoded for `service == "s3"` and
-/// > double-encoded for every other service to match the SigV4 rule
-/// > that non-S3 services (API Gateway, Elasticsearch, SQS, …)
-/// > re-encode percent sequences when computing the canonical URI.
+/// This product is a reference signer, not a replacement for the AWS SDK. It
+/// targets the single-shot, in-memory body flow that covers many AWS service
+/// calls (DynamoDB, S3 GET / small PUT, CloudWatch, SQS) and intentionally
+/// leaves streaming SigV4, presigned URLs, credential rotation, and
+/// service-specific SDK behaviours to the caller or to AWS-provided SDKs.
 public struct AWSSigV4Interceptor: RequestInterceptor {
     public let accessKeyID: String
     /// Holds the long-term IAM secret used to derive the signing key.
@@ -73,7 +49,8 @@ public struct AWSSigV4Interceptor: RequestInterceptor {
             throw NetworkError.configuration(
                 reason: .invalidRequest(
                     "AWSSigV4Interceptor cannot sign streaming bodies; use a chunk-signed implementation."
-                ))
+                )
+            )
         }
 
         var request = urlRequest
@@ -90,7 +67,9 @@ public struct AWSSigV4Interceptor: RequestInterceptor {
             let host = url.host
         {
             request.setValue(
-                Self.canonicalHostValue(host: host, scheme: url.scheme, port: url.port), forHTTPHeaderField: "Host")
+                Self.canonicalHostValue(host: host, scheme: url.scheme, port: url.port),
+                forHTTPHeaderField: "Host"
+            )
         }
 
         let canonicalRequest = canonicalRequest(for: request)
@@ -108,40 +87,22 @@ public struct AWSSigV4Interceptor: RequestInterceptor {
         return request
     }
 
-    // MARK: - Probes for tests
-
     /// Exposes the canonical-request string for the supplied request.
-    /// Adopters can run this against the AWS SigV4 published test
-    /// vectors to verify the interceptor matches the spec.
+    /// Adopters can run this against the AWS SigV4 published test vectors to
+    /// verify the interceptor matches the spec.
     public func canonicalRequest(for request: URLRequest) -> String {
         let method = request.httpMethod ?? "GET"
         let url = request.url
         let urlPath = url?.path ?? ""
         let firstPass = urlPath.isEmpty ? "/" : Self.uriEncode(urlPath, allowSlash: true)
         // SigV4: S3 uses single-encoded paths; every other service expects
-        // the canonical URI to be encoded *again* (percent signs re-escaped).
+        // the canonical URI to be encoded again (percent signs re-escaped).
         let path = service.lowercased() == "s3" ? firstPass : Self.uriEncode(firstPass, allowSlash: true)
         let query = canonicalQueryString(from: url)
         let (headers, signed) = canonicalHeaders(of: request)
         let body = request.httpBody ?? Data()
         let payloadHash = Self.hex(Self.sha256(body))
         return "\(method)\n\(path)\n\(query)\n\(headers)\n\(signed)\n\(payloadHash)"
-    }
-
-    /// Computes the value to send in the `Host` header so it matches what
-    /// URLSession will actually put on the wire. Default ports (443 for
-    /// `https`, 80 for `http`) are stripped because URLSession omits them;
-    /// any other port is preserved so the value used during SigV4 signing
-    /// equals the value the service will receive.
-    static func canonicalHostValue(host: String, scheme: String?, port: Int?) -> String {
-        guard let port else { return host }
-        let isDefault: Bool
-        switch scheme?.lowercased() {
-        case "https": isDefault = port == 443
-        case "http": isDefault = port == 80
-        default: isDefault = false
-        }
-        return isDefault ? host : "\(host):\(port)"
     }
 
     /// Exposes the string-to-sign for the supplied canonical request.
@@ -151,8 +112,6 @@ public struct AWSSigV4Interceptor: RequestInterceptor {
         let scope = "\(dateStamp)/\(region)/\(service)/aws4_request"
         return "AWS4-HMAC-SHA256\n\(amzDate)\n\(scope)\n" + Self.hex(Self.sha256(Data(canonicalRequest.utf8)))
     }
-
-    // MARK: - Internals
 
     private func canonicalQueryString(from url: URL?) -> String {
         guard let url else { return "" }
@@ -200,7 +159,16 @@ public struct AWSSigV4Interceptor: RequestInterceptor {
         return SymmetricKey(data: kSigning)
     }
 
-    // MARK: - Static helpers
+    private static func canonicalHostValue(host: String, scheme: String?, port: Int?) -> String {
+        guard let port else { return host }
+        let isDefault: Bool
+        switch scheme?.lowercased() {
+        case "https": isDefault = port == 443
+        case "http": isDefault = port == 80
+        default: isDefault = false
+        }
+        return isDefault ? host : "\(host):\(port)"
+    }
 
     private static func sha256(_ data: Data) -> Data {
         Data(SHA256.hash(data: data))

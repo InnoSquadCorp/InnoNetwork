@@ -23,7 +23,7 @@ it ships as a regular ``RequestInterceptor``.
 | --- | --- |
 | `HMAC-SHA256(secret, body)` carried in `X-Signature` plus a key id | Use ``HMACRequestInterceptor`` directly. |
 | `HMAC-SHA256(secret, body)` with custom header names (e.g. GitHub `X-Hub-Signature-256`) | Use ``HMACRequestInterceptor`` and override `signatureHeaderName` / `keyIDHeaderName`. |
-| Canonical-string signing (AWS SigV4, Twitter OAuth1, Azure SAS) | Implement a custom ``RequestInterceptor`` that builds the canonical request and reuses CryptoKit primitives. |
+| Canonical-string signing (AWS SigV4, Twitter OAuth1, Azure SAS) | Use `InnoNetworkAuthAWS.AWSSigV4Interceptor` for the single-shot AWS SigV4 reference signer; otherwise implement a custom ``RequestInterceptor`` that builds the canonical request and reuses CryptoKit primitives. |
 | Body hash + timestamp + nonce, signed together | Custom interceptor; see "Building a custom signer" below. |
 | Streaming (chunk-encoded) request bodies | Custom interceptor with access to the upload pipeline; ``HMACRequestInterceptor`` rejects streaming bodies by design. |
 
@@ -140,15 +140,15 @@ prefer one of the following:
    protocol-specific interceptor; the shared
    `RequestInterceptor` surface stays the same.
 
-## AWS SigV4 (built-in reference signer)
+## AWS SigV4 (optional reference signer)
 
-``AWSSigV4Interceptor`` ships as a reference implementation for the
+`InnoNetworkAuthAWS.AWSSigV4Interceptor` ships as a reference implementation for the
 single-shot, in-memory body flow that covers most AWS service calls
 (DynamoDB, S3 GET / small PUT, CloudWatch, SQS, …). Wire it into the
 `requestInterceptors` chain the same way you would `HMACRequestInterceptor`:
 
 ```swift
-import InnoNetwork
+import InnoNetworkAuthAWS
 
 let signer = AWSSigV4Interceptor(
     accessKeyID: accessKey,
@@ -169,8 +169,8 @@ single-encoded for `service == "s3"` and double-encoded for every
 other service to match the SigV4 rule.
 
 For deterministic tests, inject a `now: @Sendable () -> Date` closure
-that returns a fixed timestamp; ``AWSSigV4Interceptor`` exposes
-``canonicalRequest(for:)`` and ``stringToSign(canonicalRequest:date:)``
+that returns a fixed timestamp; `AWSSigV4Interceptor` exposes
+`canonicalRequest(for:)` and `stringToSign(canonicalRequest:date:)`
 so you can validate against the published AWS test vectors.
 
 > Important: SigV4 over a streaming body needs the chunk-signed

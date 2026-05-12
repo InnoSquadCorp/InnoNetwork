@@ -119,7 +119,7 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `WebSocketError.unsupportedProtocolFeature`
 - `WebSocketProtocolFeature`
 - `JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens
-- `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing
+- `InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing
 - `StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`
 - `NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface
 - `HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)
@@ -151,6 +151,14 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   surface is a recommended entry point.
 - The symbol is moved into the Stable ledger above; once promoted, it cannot
   move back to Provisionally Stable within the 4.x line.
+
+| Surface | Promotion target | Required evidence |
+| --- | --- | --- |
+| `EndpointBuilder` onboarding path | Stable at 4.0.0 | README first-30-minute flow, stable example smoke, and migration cookbook examples compile. |
+| `InnoNetworkAuthAWS` | 4.x minor after adopter validation | AWS SigV4 vector tests, product README/DocC scope, and explicit "reference signer, not AWS SDK replacement" wording. |
+| `PersistentResponseCache` statistics and telemetry | 4.x minor | Reentrancy invariant docs plus persistent cache key-rotation/statistics tests. |
+| `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | 4.x minor | The subset is documented as RFC 9111-aware, with directive tests for the supported rules. |
+| `InnoNetworkCodegen` macros | No automatic promotion | Promote only if the before/after ROI is clear; otherwise keep provisional or deprecate. |
 
 - `default` aliases — may add new defaults; never removed within 4.x.
 - Benchmark runner CLI flags and JSON keys — may evolve to reflect new
@@ -391,6 +399,10 @@ release line.
 
 - `PublicKeyPinningEvaluator`, `PublicKeyPinningPolicy`, and
   `PublicKeyPinningPolicy.HostMatchingStrategy`.
+
+### InnoNetworkAuthAWS
+
+- `AWSSigV4Interceptor`.
 
 ### InnoNetworkPersistentCache
 
