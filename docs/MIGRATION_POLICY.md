@@ -27,10 +27,8 @@
 - Behavior-only changes that do not break call sites still require release
   notes when they affect resilience, websocket lifecycle, downloads, or
   observability.
-- The 4.x line keeps the full `NetworkConfiguration.init(...)` initializer
-  public for source compatibility, but the direct initializer is deprecated.
-  New code should use `safeDefaults(baseURL:)`,
+- The full `NetworkConfiguration.init(...)` initializer was removed from the
+  public API before the 4.0.0 baseline, so it is not part of the 4.x source
+  compatibility promise. New code should use `safeDefaults(baseURL:)`,
   `recommendedForProduction(baseURL:)`, `advanced(baseURL:resilience:auth:observability:cache:transport:)`,
-  configuration packs, or fluent modifiers instead. A future major may remove
-  the direct initializer; that migration requires explicit before/after
-  examples for every initializer argument that no longer maps one-to-one.
+  configuration packs, or fluent modifiers instead.

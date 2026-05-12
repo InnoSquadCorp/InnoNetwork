@@ -218,8 +218,10 @@ Versioning.
   consuming a token. Direct callers must migrate from
   `await bucket.acquire()` to `try await bucket.acquire()`. See
   `docs/Migration-4.1.0.md`.
-- `NetworkConfiguration.init(...)` remains source-compatible but is now
-  deprecated. New code should use `safeDefaults(baseURL:)`,
+- **Breaking before 4.0.0 baseline.** The direct
+  `NetworkConfiguration.init(...)` construction surface was removed from the
+  public API before the 4.0.0 release. New code should use
+  `safeDefaults(baseURL:)`,
   `recommendedForProduction(baseURL:)`, or
   `advanced(baseURL:resilience:auth:observability:cache:transport:)`
   with configuration packs/fluent modifiers.
@@ -345,8 +347,7 @@ Versioning.
 - **Breaking.** `NetworkConfiguration.urlSessionConfigurationOverride`,
   the matching field on `AdvancedBuilder`, and the
   `urlSessionConfigurationOverride` parameter on
-  `NetworkConfiguration.init(...)` and `TransportPack.init(...)` have
-  been removed. The hook was a leaky
+  `TransportPack.init(...)` have been removed. The hook was a leaky
   abstraction over raw `URLSessionConfiguration` and overlapped with
   the existing explicit-session path. Migration: build a configuration
   from `NetworkConfiguration.makeURLSessionConfiguration()`, mutate it

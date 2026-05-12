@@ -471,12 +471,7 @@ public struct NetworkConfiguration: Sendable {
         )
     }
 
-    @available(
-        *,
-        deprecated,
-        message: "Use safeDefaults, recommendedForProduction, or advanced packs instead."
-    )
-    public init(
+    package init(
         baseURL: URL,
         timeout: TimeInterval = 30.0,
         cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,

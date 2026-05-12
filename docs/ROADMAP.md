@@ -40,13 +40,12 @@ future 5.0 migration item. Interceptors and execution policies that
 produce arbitrary errors are normalized before they leave the client
 surface so callers can switch on `NetworkError` directly.
 
-The remaining 5.0 candidate on this axis is not typed throws. It is the
-large `NetworkConfiguration.init(...)` compatibility initializer: 4.x
-keeps it public but deprecated, while new examples and docs should prefer
+The previous 5.0 candidate on this axis was not typed throws. The large
+`NetworkConfiguration.init(...)` compatibility initializer was removed from
+the public API before the 4.0.0 baseline, so 4.x examples and docs should use
 `safeDefaults(baseURL:)`, `recommendedForProduction(baseURL:)`,
 `advanced(baseURL:resilience:auth:observability:cache:transport:)`, or the
-pack/fluent modifier surfaces. If a future major release removes the full
-initializer, the CHANGELOG entry must include before/after call-site examples.
+pack/fluent modifier surfaces.
 
 ## 4.x Trust Pinning Module Split (shipped)
 
