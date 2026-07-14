@@ -156,34 +156,6 @@ package actor WebSocketRuntimeRegistry {
         _onPong = callback
     }
 
-    package func notifyConnected(_ task: WebSocketTask, protocolName: String?) async {
-        guard let callback = _onConnected else { return }
-        await invokeUserCallback {
-            await callback(task, protocolName)
-        }
-    }
-
-    package func notifyDisconnected(_ task: WebSocketTask, error: WebSocketError?) async {
-        guard let callback = _onDisconnected else { return }
-        await invokeUserCallback {
-            await callback(task, error)
-        }
-    }
-
-    package func notifyMessage(_ task: WebSocketTask, data: Data) async {
-        guard let callback = _onMessage else { return }
-        await invokeUserCallback {
-            await callback(task, data)
-        }
-    }
-
-    package func notifyString(_ task: WebSocketTask, string: String) async {
-        guard let callback = _onString else { return }
-        await invokeUserCallback {
-            await callback(task, string)
-        }
-    }
-
     package func notifyError(_ task: WebSocketTask, error: WebSocketError) async {
         guard let callback = _onError else { return }
         await invokeUserCallback {
@@ -281,13 +253,6 @@ package actor WebSocketRuntimeRegistry {
             isCurrentWorker: true,
             callback: callback
         )
-    }
-
-    func prepareStringCallbackFromCurrentWorker(
-        _ task: WebSocketTask,
-        string: String
-    ) -> WebSocketPreparedUserCallback? {
-        prepareStringEventFromCurrentWorker(task, string: string).callback
     }
 
     func prepareStringEventFromCurrentWorker(
@@ -525,10 +490,6 @@ package actor WebSocketRuntimeRegistry {
     ) -> Bool {
         identifierToTask[identifier] === context.task
             && identifierToGeneration[identifier] == context.generation
-    }
-
-    package func connectionGeneration(for identifier: Int) -> Int? {
-        identifierToGeneration[identifier]
     }
 
     package func urlTask(for taskId: String) -> (any WebSocketURLTask)? {

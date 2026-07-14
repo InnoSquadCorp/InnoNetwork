@@ -107,31 +107,19 @@ package actor FlockSimulator {
     package enum Outcome: Sendable {
         case acquired
         case wouldBlock
-        case error(Int32)
     }
 
     private var lockHeld: Bool = false
-    private var nextOutcomes: [Outcome] = []
 
     package init() {}
 
-    package func enqueue(_ outcomes: [Outcome]) {
-        nextOutcomes.append(contentsOf: outcomes)
-    }
-
     package func tryAcquire() -> Outcome {
-        if !nextOutcomes.isEmpty {
-            let outcome = nextOutcomes.removeFirst()
-            if case .acquired = outcome { lockHeld = true }
-            return outcome
-        }
         if lockHeld { return .wouldBlock }
         lockHeld = true
         return .acquired
     }
 
     package func release() { lockHeld = false }
-    package var isLocked: Bool { lockHeld }
 }
 
 
@@ -144,12 +132,10 @@ package final class FailingFileHandle: @unchecked Sendable {
     package struct Plan: Sendable {
         package var failWriteAt: Int?
         package var failCloseWith: Error?
-        package var underlying: URL?
 
-        package init(failWriteAt: Int? = nil, failCloseWith: Error? = nil, underlying: URL? = nil) {
+        package init(failWriteAt: Int? = nil, failCloseWith: Error? = nil) {
             self.failWriteAt = failWriteAt
             self.failCloseWith = failCloseWith
-            self.underlying = underlying
         }
     }
 
@@ -166,7 +152,6 @@ package final class FailingFileHandle: @unchecked Sendable {
         self.stateLock = OSAllocatedUnfairLock(initialState: State(plan: plan))
     }
 
-    package var writeCount: Int { stateLock.withLock { $0.writeCount } }
     package var bytesWritten: Data { stateLock.withLock { $0.written } }
     package var isClosed: Bool { stateLock.withLock { $0.closed } }
 
@@ -206,7 +191,6 @@ package final class CountingURLSession: URLSessionProtocol, @unchecked Sendable 
         var dataCallCount: Int = 0
         var completionCount: Int = 0
         var nextResult: Result<(Data, URLResponse), Error>
-        var artificialDelay: Duration = .zero
     }
 
     private let stateLock: OSAllocatedUnfairLock<State>
@@ -219,22 +203,11 @@ package final class CountingURLSession: URLSessionProtocol, @unchecked Sendable 
     package var dataCallCount: Int { stateLock.withLock { $0.dataCallCount } }
     package var completionCount: Int { stateLock.withLock { $0.completionCount } }
 
-    package func setNextResult(_ result: Result<(Data, URLResponse), Error>) {
-        stateLock.withLock { $0.nextResult = result }
-    }
-
-    package func setArtificialDelay(_ duration: Duration) {
-        stateLock.withLock { $0.artificialDelay = duration }
-    }
-
     package func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        let (delay, result): (Duration, Result<(Data, URLResponse), Error>) = stateLock.withLock { state in
+        let result: Result<(Data, URLResponse), Error> = stateLock.withLock { state in
             state.dataCallCount += 1
             state.captured.append(request)
-            return (state.artificialDelay, state.nextResult)
-        }
-        if delay > .zero {
-            try await Task.sleep(for: delay)
+            return state.nextResult
         }
         stateLock.withLock { $0.completionCount += 1 }
         return try result.get()

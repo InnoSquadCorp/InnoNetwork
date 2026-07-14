@@ -12,24 +12,16 @@
 # Periphery's report stays focused on implementation-only declarations.
 retain_public: true
 
-# Retain auxiliary trees that contain entry points or fixtures Periphery
-# cannot reach from SwiftPM target roots (resources, examples, smoke targets,
-# benchmarks, tests). Keeping them in `retain_files` prevents false positives
-# for symbols only referenced from these locations.
+# Retain declarations that live in auxiliary trees (resources, examples, smoke
+# targets, benchmarks, and tests). Test targets remain in the analysis graph so
+# package-scoped production seams exercised only by tests are recognized as
+# reachable, while declarations inside the retained fixture files are ignored.
 retain_files:
   - Sources/InnoNetwork/Resources/**/*
   - Examples/**/*
   - SmokeTests/**/*
   - Benchmarks/**/*
   - Tests/**/*
-
-# Test targets are not interesting for the dead-code report.
-exclude_targets:
-  - InnoNetworkTests
-  - InnoNetworkDownloadTests
-  - InnoNetworkPersistentCacheTests
-  - InnoNetworkTrustTests
-  - InnoNetworkWebSocketTests
 
 # Emit annotations and fail the CI job on new implementation-only dead code.
 # Public declarations stay retained above because they are library contract,

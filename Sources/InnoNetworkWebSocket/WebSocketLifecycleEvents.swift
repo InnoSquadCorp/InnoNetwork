@@ -77,13 +77,4 @@ package struct WebSocketLifecycleTransition: Sendable, Equatable {
 package enum WebSocketStateTransitionResult: Sendable, Equatable {
     case applied(previous: WebSocketState, next: WebSocketState)
     case rejected(previous: WebSocketState, next: WebSocketState)
-
-    package var wasApplied: Bool {
-        switch self {
-        case .applied:
-            true
-        case .rejected:
-            false
-        }
-    }
 }
