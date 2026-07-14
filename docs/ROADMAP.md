@@ -1,5 +1,26 @@
 # Roadmap
 
+## 5.0.0 Implementation Scope
+
+The 5.0 line converts the hardening backlog into an explicit major-version
+contract:
+
+- request execution policies preserve the executor-owned request identity;
+- body-aware signing runs after interceptors and refresh-token application and
+  signs the exact data or file snapshot sent by the transport;
+- signed requests bypass caches/coalescing and reject automatic redirects;
+- default redirects deny HTTPS downgrade and unsafe cross-origin replay;
+- download and WebSocket shutdown paths have bounded, exactly-once cleanup;
+- refresh generations, cache lookup sharing, and circuit-breaker half-open
+  hysteresis have deterministic tests;
+- release provenance, recursive CycloneDX SBOMs, coverage, release-mode
+  benchmarks, and all-product DocC are enforced by CI; and
+- the seven deprecated configuration modifiers and package-internal reducer
+  vocabulary are removed from the public API.
+
+The source migration is documented in `docs/Migration-5.0.0.md`. Remaining
+items below are either historical context or post-5.0 candidates.
+
 ## 4.0.0 Implementation Scope
 
 The 4.0.0 improvement PR folds the former minor and major-candidate backlog
@@ -35,8 +56,8 @@ into one release line:
 
 `NetworkClient.request(_:)`, `request(_:tag:)`,
 `request(_:method:tag:)`, `upload(_:)`, and `upload(_:tag:)` now expose
-`async throws(NetworkError)`. This is the 4.x public contract, not a
-future 5.0 migration item. Interceptors and execution policies that
+`async throws(NetworkError)`. This shipped in the 4.x public contract and is
+unchanged in 5.0. Interceptors and execution policies that
 produce arbitrary errors are normalized before they leave the client
 surface so callers can switch on `NetworkError` directly.
 
@@ -45,7 +66,7 @@ The previous 5.0 candidate on this axis was not typed throws. The large
 the public API before the 4.0.0 baseline, so 4.x examples and docs should use
 `safeDefaults(baseURL:)`, `recommendedForProduction(baseURL:)`,
 `advanced(baseURL:resilience:auth:observability:cache:transport:)`, or the
-pack/fluent modifier surfaces.
+configuration-pack surface.
 
 ## 4.x Trust Pinning Module Split (shipped)
 
@@ -79,7 +100,7 @@ What shipped:
   pipeline (`RequestExecutionPolicy`, `NetworkObservability`); only
   the declaration site of the pinning evaluator moves.
 
-## 4.x Reference Signers — AWS SigV4 and JWT Bearer
+## 5.0 Body-Aware Reference Signers — AWS SigV4 and JWT Bearer
 
 `HMACRequestInterceptor` remains in the core product. AWS-specific signing
 ships in the optional `InnoNetworkAuthAWS` companion product so the first
@@ -95,9 +116,10 @@ request path does not imply AWS SDK coverage:
   `RefreshTokenPolicy` already covers session-rotated bearer tokens, so
   this signer targets the request-minted lane only.
 
-Reference signers ride on the existing `RequestInterceptor` contract. Streaming
-body variants (SigV4 chunk-signed) are explicitly deferred because the
-interceptor surface runs before the upload pipeline owns the body.
+Reference signers conform to `RequestSigner` and observe the final
+`RequestBody` after request interceptors and refresh-token application. Data
+and stable file snapshots are supported; opaque body streams and SigV4
+chunk-signing remain explicitly deferred to protocol-specific transports.
 
 ## Provisional to Stable Promotion Roadmap
 
@@ -109,19 +131,18 @@ interceptor surface runs before the upload pipeline owns the body.
 | `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | Provisionally Stable | 4.x minor | Directive subset is documented as RFC 9111-aware, not full compliance, with cache policy tests. |
 | Macro package | Provisionally Stable | No automatic promotion | Before/after ROI remains clear; deprecate instead of promoting if handwritten endpoints stay simpler. |
 
-## 5.0 RFC Parking Lot
+## Post-5.0 RFC Parking Lot
 
-These are deliberately not implemented in the 4.0.0 branch, even though the
-branch can still make pre-release breaking changes:
+These are deliberately not implemented in the 5.0.0 contract:
 
 - `NetworkConfiguration.Transport`, `.Resilience`, `.Auth`, and
   `.Observability` nested naming can replace the current top-level pack names
-  in 5.0 if adopter feedback shows the flatter names are confusing.
+  in a later major if adopter feedback shows the flatter names are confusing.
 - `NetworkError` can move to a frozen outer wrapper plus an unfrozen inner
-  `Reason` in 5.0 if catch sites need a smaller stable matching surface.
-  Until then, the current enum stays the 4.x source shape.
+  `Reason` in a later major if catch sites need a smaller stable matching
+  surface. Until then, the current enum stays the 5.x source shape.
 
-## 4.x Configuration Convergence — Packs over AdvancedBuilder
+## 5.0 Configuration Contract — Packs over AdvancedBuilder
 
 `NetworkConfiguration` exposes a Packs-only public entry point:
 
@@ -176,7 +197,7 @@ the equivalent Pack fields.
 - Keep `@unchecked Sendable` out of production sources; test-only exceptions
   should live in test or TestSupport targets.
 - Revisit full WebSocket compression and alternate transports only after the
-  URLSession-based products have a tagged 4.0.0 baseline.
+  URLSession-based products have a tagged 5.0.0 baseline.
 - Continue hardening persistent cache operations with production feedback on
   eviction policy, data-protection defaults, app-group deployment, and privacy
   header policy.

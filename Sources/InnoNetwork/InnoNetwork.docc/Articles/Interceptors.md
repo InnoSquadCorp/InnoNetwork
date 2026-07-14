@@ -30,7 +30,8 @@ request IDs belong on the session. Endpoint-specific overrides — a one-off
 Both kinds of interceptor run, but in different directions:
 
 ```text
-Request:  configuration → APIDefinition → URLSession.data
+Request:  configuration interceptor → APIDefinition interceptor → refresh token
+          → configuration signer → APIDefinition signer → URLSession
 Response: URLSession.data → APIDefinition → configuration
 ```
 
@@ -66,9 +67,10 @@ Two rules follow from that:
   category mapping inside ``RetryPolicy/shouldRetry(error:retryIndex:request:response:)``
   if you need finer control.
 
-Interceptors run again on every retry, so transient failures recover
-naturally — token refresh, signing nonces, and idempotency keys are
-recomputed on each attempt.
+Interceptors run again on every retry, so transient adaptation failures can
+recover naturally. Body-dependent signatures and signing nonces belong in
+``RequestSigner``; signers also run on every retry and refresh replay, after
+the final body is available.
 
 ## Example: shared trace headers
 
@@ -85,7 +87,9 @@ struct TraceHeaders: RequestInterceptor {
 
 let configuration = NetworkConfiguration.advanced(
     baseURL: URL(string: "https://api.example.com")!,
-    auth: AuthPack(additionalSigners: [TraceHeaders(traceStore: traceStore)])
+    auth: AuthPack(
+        additionalRequestInterceptors: [TraceHeaders(traceStore: traceStore)]
+    )
 )
 let client = DefaultNetworkClient(configuration: configuration)
 ```
@@ -126,8 +130,8 @@ session-level chain already attached.
 
 Use ``RefreshTokenPolicy`` for current access-token application, `401`-driven
 refresh, and replay. Keep ``RequestInterceptor`` implementations focused on
-tenant headers, request IDs, request signatures, and other metadata that the
-refresh policy does not own:
+tenant headers, request IDs, and other unsigned metadata that the refresh
+policy does not own. Use ``RequestSigner`` for request signatures:
 
 ```swift
 let refreshPolicy = RefreshTokenPolicy(
@@ -140,7 +144,7 @@ let client = DefaultNetworkClient(
         baseURL: apiBaseURL,
         auth: AuthPack(
             refreshToken: refreshPolicy,
-            additionalSigners: [TenantHeaderInterceptor()]
+            additionalRequestInterceptors: [TenantHeaderInterceptor()]
         )
     )
 )
@@ -148,12 +152,14 @@ let client = DefaultNetworkClient(
 
 Refresh replay starts from the request after the session-level and endpoint
 interceptor chains have run, then replaces only the authorization value through
-the refresh policy. That preserves trace, tenant, and signing headers across
-the replay attempt.
+the refresh policy. That preserves trace and tenant headers. Request signers
+then run again so the replay receives a signature over the final token, URL,
+headers, and body.
 
 Header precedence is fixed as: library defaults, endpoint headers, automatic
 body `Content-Type`, request interceptors, then ``RefreshTokenPolicy``
-authorization. The last writer for a case-insensitive header name wins.
+authorization, then request signers. The last writer for a case-insensitive
+header name wins.
 
 When building headers manually, use ``HTTPHeaders/add(name:value:)`` only for
 fields where repeated values are intentional. Use ``HTTPHeaders/update(name:value:)``,
@@ -183,7 +189,9 @@ interceptors run for streams.
 
 | Concern                        | Recommended slot                |
 |--------------------------------|---------------------------------|
-| Auth (Bearer, OAuth, mTLS)     | Session                         |
+| Session bearer / OAuth refresh | ``RefreshTokenPolicy``          |
+| HMAC / request JWT / AWS SigV4 | ``RequestSigner``               |
+| mTLS / server trust            | Session trust policy            |
 | Request IDs / tracing headers  | Session                         |
 | Locale / device headers        | Session                         |
 | Debug response logging         | Session                         |

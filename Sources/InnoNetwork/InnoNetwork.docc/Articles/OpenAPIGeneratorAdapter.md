@@ -42,7 +42,7 @@ struct UsersGeneratedClient: Sendable {
 
 Use the SPI path only when a generated operation owns serialization or decoding
 that does not fit `Encodable` / `Decodable`. The package must explicitly import
-the SPI and pin a revision because this hook is not part of the default 4.0.0
+the SPI and pin a revision because this hook is not part of the default 5.0.0
 stable contract.
 
 ```swift

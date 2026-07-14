@@ -133,14 +133,14 @@ dependencies: [
     // Recommended for app targets: pin to the current minor and accept
     // patch upgrades. Provisionally stable APIs may evolve across minor
     // bumps, so review CHANGELOG.md before adopting a new minor.
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", .upToNextMinor(from: "4.0.0"))
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", .upToNextMinor(from: "5.0.0"))
 ]
 ```
 
-> Use `from: "4.0.0"` (`.upToNextMajor`) only if you exclusively call
+> Use `from: "5.0.0"` (`.upToNextMajor`) only if you exclusively call
 > the **Stable** ledger in `API_STABILITY.md`. Provisionally stable
-> APIs (`EndpointBuilder`, `WebSocketCloseDisposition`, `DecodingInterceptor`,
-> resilience policy surfaces, …) may change in any minor release.
+> APIs (test support, signing, code generation, and resilience policy
+> surfaces) may change in any minor release.
 >
 > InnoNetwork also intentionally requires Swift 6.2+ and current Apple OS
 > baselines (iOS 16, macOS 14, tvOS 16, watchOS 9, visionOS 1). That keeps
@@ -433,7 +433,7 @@ Protocol Buffers support moved to the separate `InnoNetworkProtobuf` package. Co
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "4.0.0"),
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "5.0.0"),
     .package(url: "https://github.com/InnoSquadCorp/InnoNetworkProtobuf.git", branch: "main")
 ]
 ```
@@ -728,8 +728,8 @@ examples.
 
 ## Stability
 
-Public releases follow semantic versioning starting with `4.0.0`, the first
-public release of the 4.x line.
+Public releases follow semantic versioning. `5.0.0` is the current compatibility
+baseline; see the migration guide before moving from 4.x.
 
 - Stable public API: [API_STABILITY.md](API_STABILITY.md)
 - Release rules and compatibility policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
@@ -750,7 +750,8 @@ streams), use `DefaultNetworkClient.stream(_:)` together with a
 `StreamingAPIDefinition`. To cancel every in-flight request and stream
 (for example, on logout or backgrounding), call
 `DefaultNetworkClient.cancelAll()`. See
-[docs/releases/4.0.0.md](docs/releases/4.0.0.md) for full release details.
+[docs/releases/5.0.0.md](docs/releases/5.0.0.md) for full release details and
+[docs/Migration-5.0.0.md](docs/Migration-5.0.0.md) for required source changes.
 
 ## Benchmarks
 
@@ -856,8 +857,9 @@ Operational items to verify before shipping a client built on InnoNetwork.
   `disconnect()` calls before app suspension. Implement `applicationDidEnterBackground`
   cleanup; the OS will not gracefully close sockets on your behalf.
 - **Token refresh.** Let `RefreshTokenPolicy` apply the current access token and
-  own `401` refresh + replay. Keep request signing, tenant headers, request IDs,
-  and other non-refresh metadata in `RequestInterceptor`s.
+  own `401` refresh + replay. Keep tenant headers, request IDs, and other
+  unsigned metadata in `RequestInterceptor`s; use `RequestSigner` for
+  body-dependent signatures that must be recomputed after refresh.
 
 ### Pre-flight Test Plan
 
@@ -881,13 +883,14 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
 - Migration Guides: [docs/MigrationGuides.md](docs/MigrationGuides.md)
+- 5.0 Migration Guide: [docs/Migration-5.0.0.md](docs/Migration-5.0.0.md)
 - Alamofire Migration Cookbook: [docs/MigrationFromAlamofire.md](docs/MigrationFromAlamofire.md)
 - Moya Migration Cookbook: [docs/MigrationFromMoya.md](docs/MigrationFromMoya.md)
 - DocC Deployment: [docs/DocC_Deployment.md](docs/DocC_Deployment.md)
 - Query Encoding Reference: [docs/QueryEncoding.md](docs/QueryEncoding.md)
 - WebSocket Lifecycle: [docs/WebSocketLifecycle.md](docs/WebSocketLifecycle.md)
 - Task Ownership: [docs/TaskOwnership.md](docs/TaskOwnership.md)
-- Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)
+- Release Notes: [docs/releases/5.0.0.md](docs/releases/5.0.0.md)
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 - 한국어 문서: [docs/ko/README.md](docs/ko/README.md)
 

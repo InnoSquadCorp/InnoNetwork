@@ -3,6 +3,15 @@
 This page is a practical map for moving existing Apple-client networking code
 onto InnoNetwork without rewriting every endpoint at once.
 
+## From InnoNetwork 4.x
+
+Start with the [5.0 migration guide](Migration-5.0.0.md). The required source
+changes are concentrated in four areas: zero-argument
+`RequestExecutionNext.execute()`, configuration packs instead of the seven
+deprecated `.with(...)` modifiers, app-owned reducer vocabulary, and
+body-aware `RequestSigner` implementations. The guide also documents stricter
+redirect defaults and the cache/coalescing boundary for signed requests.
+
 ## From URLSession
 
 Start by wrapping one endpoint in `APIDefinition` and keep the same model

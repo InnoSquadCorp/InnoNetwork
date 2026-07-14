@@ -1,36 +1,42 @@
 # Request Signing
 
-Authenticate requests with a body-derived signature instead of (or in
-addition to) a Bearer token. Covers the
-``HMACRequestInterceptor`` reference implementation and the pattern
-for layering richer canonicalization protocols on top of the same
-``RequestInterceptor`` contract.
+Sign the final encoded request with access to the exact data or file bytes that
+the transport will send.
 
 ## Overview
 
-Some backends authenticate by computing an HMAC over the request body
-with a shared secret instead of issuing a session token: webhook
-delivery from Stripe / GitHub / Slack, internal RPC behind an API
-gateway, partner integrations where rotating session tokens is
-expensive. ``RefreshTokenPolicy`` covers OAuth2 Bearer tokens, but
-the body-signed lane is structurally different — every request needs
-to be re-signed because the signature depends on the body bytes — so
-it ships as a regular ``RequestInterceptor``.
+Use ``RequestSigner`` when authentication depends on the request body, final
+URL, method, or headers. ``RefreshTokenPolicy`` remains the right abstraction
+for session-rotated bearer tokens; a signer covers request-minted JWTs, HMAC,
+AWS Signature Version 4, and similar per-attempt authentication schemes.
 
-## Choosing an interceptor shape
+The 5.0 execution order is fixed:
+
+1. Encode the endpoint payload and create a stable snapshot for caller-owned
+   files when signing requires one.
+2. Run configuration and endpoint ``RequestInterceptor`` values.
+3. Apply the current token from ``RefreshTokenPolicy``.
+4. Run configuration signers, then endpoint signers. Each signer sees headers
+   returned by the preceding signer.
+5. Send the signed request and the exact ``RequestBody`` that was signed.
+
+Signing runs again for every retry attempt and after a refresh-token replay.
+Header values returned by a signer use single-value replacement semantics.
+
+## Choose a signer
 
 | Backend convention | Recommendation |
 | --- | --- |
-| `HMAC-SHA256(secret, body)` carried in `X-Signature` plus a key id | Use ``HMACRequestInterceptor`` directly. |
-| `HMAC-SHA256(secret, body)` with custom header names (e.g. GitHub `X-Hub-Signature-256`) | Use ``HMACRequestInterceptor`` and override `signatureHeaderName` / `keyIDHeaderName`. |
-| Canonical-string signing (AWS SigV4, Twitter OAuth1, Azure SAS) | Use `InnoNetworkAuthAWS.AWSSigV4Interceptor` for the single-shot AWS SigV4 reference signer; otherwise implement a custom ``RequestInterceptor`` that builds the canonical request and reuses CryptoKit primitives. |
-| Body hash + timestamp + nonce, signed together | Custom interceptor; see "Building a custom signer" below. |
-| Streaming (chunk-encoded) request bodies | Custom interceptor with access to the upload pipeline; ``HMACRequestInterceptor`` rejects streaming bodies by design. |
+| `HMAC(secret, body)` plus a key id | Use ``HMACRequestInterceptor``. |
+| Request-minted JWT in `Authorization` | Use ``JWTBearerInterceptor``. |
+| AWS Signature Version 4 | Add the `InnoNetworkAuthAWS` product and use `AWSSigV4Interceptor`. |
+| Custom canonical string or nonce scheme | Implement ``RequestSigner``. |
+| Chunk-signed streaming protocol | Use a protocol-specific transport; opaque `httpBodyStream` values are intentionally unsupported. |
 
-## Wiring `HMACRequestInterceptor`
+Despite their legacy `Interceptor` suffixes, the shipped HMAC, JWT, and AWS
+types conform to ``RequestSigner`` in 5.0.
 
-Register the interceptor on ``NetworkConfiguration`` like any other
-``RequestInterceptor``:
+## Configure HMAC signing
 
 ```swift
 import InnoNetwork
@@ -45,202 +51,144 @@ let configuration = NetworkConfiguration.advanced(
     baseURL: baseURL,
     auth: AuthPack(additionalSigners: [signer])
 )
-
-let client = DefaultNetworkClient(configuration: configuration)
 ```
 
-The signer runs once per request attempt (per the
-``RequestInterceptor`` documentation), so retries pick up a fresh
-signature. Pair it with ``RefreshTokenPolicy`` when the backend
-expects both — the order in `requestInterceptors` is the wire order,
-and `RefreshTokenPolicy` runs as the last layer regardless, so the
-HMAC header is computed over the body before the bearer token is
-attached.
+`HMACRequestInterceptor` incrementally reads stable file bodies instead of
+loading the entire file into memory. Override `signatureHeaderName` and
+`keyIDHeaderName` when the server uses different field names.
 
-## Building a custom signer
+## Implement a custom signer
 
-Most production protocols want more than `HMAC(secret, body)`:
-timestamps, nonces, scoping the signature to method and URL,
-versioning the algorithm. The library's contract is intentionally
-narrow so consumers can extend it without forking. The skeleton:
+A signer cannot replace the executor-owned URL, method, or body. It receives a
+read-only request value and returns only the headers to merge:
 
 ```swift
 import CryptoKit
 import Foundation
 import InnoNetwork
 
-struct CanonicalSigner: RequestInterceptor {
+struct CanonicalSigner: RequestSigner {
     let keyID: String
     let secret: SymmetricKey
-    /// Inject a clock closure so tests can pin the timestamp.
-    /// Production callers leave the default `{ Date() }`.
     let now: @Sendable () -> Date
 
-    func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
-        guard let url = urlRequest.url else {
-            throw NetworkError.configuration(reason: .invalidRequest("Missing URL for signing"))
-        }
-        if urlRequest.httpBodyStream != nil {
+    func signatureHeaders(
+        for request: URLRequest,
+        body: RequestBody
+    ) async throws -> HTTPHeaders {
+        guard let url = request.url else {
             throw NetworkError.configuration(
-                reason: .invalidRequest("Streaming bodies require a streaming-aware signer")
+                reason: .invalidRequest("Missing URL for signing")
             )
         }
 
         let timestamp = String(Int(now().timeIntervalSince1970))
-        let nonce = UUID().uuidString
-        let body = urlRequest.httpBody ?? Data()
-        let bodyHash = SHA256.hash(data: body)
+        let bodyDigest = try sha256(body)
         let canonical = [
-            urlRequest.httpMethod ?? "GET",
+            request.httpMethod ?? "GET",
             url.path,
             url.query ?? "",
             timestamp,
-            nonce,
-            Data(bodyHash).base64EncodedString()
+            bodyDigest.base64EncodedString(),
         ].joined(separator: "\n")
-
         let mac = HMAC<SHA256>.authenticationCode(
             for: Data(canonical.utf8),
             using: secret
         )
 
-        var signed = urlRequest
-        signed.setValue(keyID, forHTTPHeaderField: "X-Key-Id")
-        signed.setValue(timestamp, forHTTPHeaderField: "X-Timestamp")
-        signed.setValue(nonce, forHTTPHeaderField: "X-Nonce")
-        signed.setValue(
-            Data(mac).base64EncodedString(),
-            forHTTPHeaderField: "X-Signature"
-        )
-        return signed
+        return HTTPHeaders([
+            HTTPHeader(name: "X-Key-Id", value: keyID),
+            HTTPHeader(name: "X-Timestamp", value: timestamp),
+            HTTPHeader(
+                name: "X-Signature",
+                value: Data(mac).base64EncodedString()
+            ),
+        ])
+    }
+
+    private func sha256(_ body: RequestBody) throws -> Data {
+        var hasher = SHA256()
+        switch body {
+        case .none:
+            break
+        case .data(let data):
+            hasher.update(data: data)
+        case .file(let url):
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            while let chunk = try handle.read(upToCount: 64 * 1024),
+                !chunk.isEmpty
+            {
+                try Task.checkCancellation()
+                hasher.update(data: chunk)
+            }
+        }
+        return Data(hasher.finalize())
     }
 }
 ```
 
-`adapt(_:)` runs once per attempt, so every retry produces a fresh
-`timestamp` / `nonce` pair, side-stepping replay protection on the
-backend.
+The URL in ``RequestBody/file(_:)`` points to an InnoNetwork-owned immutable
+snapshot for that execution. Read it during `signatureHeaders(for:body:)`; do
+not retain it after the signer returns. The snapshot is removed after the
+transport attempt completes.
 
-## Streaming uploads
+## Sharing and redirect boundaries
 
-`HMACRequestInterceptor` rejects requests whose body arrives via
-`httpBodyStream` because hashing a stream forces a buffer-or-replay
-choice that has to be explicit. If you control the upload path,
-prefer one of the following:
+A signer may establish the authentication principal, but the unsigned request
+does not yet carry a safe principal partition. Signed requests therefore:
 
-1. Hash the bytes during multipart construction (before they become
-   a stream) and inject the digest yourself, then sign the digest
-   with a custom interceptor that reads the supplied header instead
-   of recomputing.
-2. Move the signature out of the request body altogether — sign a
-   manifest of upload metadata (object key, content length, content
-   type, expiry) and let the upload itself proceed unsigned, the way
-   AWS S3 presigned PUTs work.
-3. Use a chunk-signed protocol (SigV4 streaming) and ship a
-   protocol-specific interceptor; the shared
-   `RequestInterceptor` surface stays the same.
+- bypass InnoNetwork response-cache reads and writes;
+- do not join in-flight request coalescing;
+- use `URLRequest.CachePolicy.reloadIgnoringLocalCacheData`, add
+  `Cache-Control: no-store`, and reject URLSession cache storage; and
+- reject automatic redirects, including same-origin redirects, because the
+  URLSession-generated follow-up would not pass through the async signer.
 
-## AWS SigV4 (optional reference signer)
+If a signed endpoint intentionally redirects, surface the 3xx response, verify
+the target in application policy, and issue a new typed request so the target
+is encoded and signed from the beginning. Circuit-breaker health remains keyed
+by unsigned origin because it measures transport availability rather than
+response identity.
 
-`InnoNetworkAuthAWS.AWSSigV4Interceptor` ships as a reference implementation for the
-single-shot, in-memory body flow that covers most AWS service calls
-(DynamoDB, S3 GET / small PUT, CloudWatch, SQS, …). Wire it into the
-`requestInterceptors` chain the same way you would `HMACRequestInterceptor`:
+## File and stream bodies
 
-```swift
-import InnoNetworkAuthAWS
+Data and explicit file payloads are supported. For caller-owned files,
+InnoNetwork snapshots the source before the signer reads it, and the transport
+uploads that same snapshot. Mutating or deleting the caller's original file
+after execution starts cannot change the signed bytes.
 
-let signer = AWSSigV4Interceptor(
-    accessKeyID: accessKey,
-    secretAccessKey: secret,
-    region: "us-east-1",
-    service: "execute-api"
-)
+Opaque `URLRequest.httpBodyStream` bodies are rejected because reading them
+would consume the wire stream. Use `RequestPayload.data(_:)` or
+`RequestPayload.fileURL(_:contentType:)`, or adopt a transport designed for the
+backend's streaming-signature protocol.
 
-let configuration = NetworkConfiguration.advanced(
-    baseURL: baseURL,
-    auth: AuthPack(additionalSigners: [signer])
-)
-```
+## AWS SigV4
 
-The interceptor recomputes the signature on every attempt because the
-canonical request includes `X-Amz-Date`. The canonical path is
-single-encoded for `service == "s3"` and double-encoded for every
-other service to match the SigV4 rule.
+`InnoNetworkAuthAWS.AWSSigV4Interceptor` supports ordinary header-based SigV4
+for empty, data-backed, and stable file-backed bodies. It adds the S3 payload
+hash header when `service == "s3"` and incrementally hashes file snapshots.
+Streaming SigV4, presigned URLs, credential-provider chains, and automatic IAM
+rotation remain out of scope; use an AWS SDK when those are required.
 
-For deterministic tests, inject a `now: @Sendable () -> Date` closure
-that returns a fixed timestamp; `AWSSigV4Interceptor` exposes
-`canonicalRequest(for:)` and `stringToSign(canonicalRequest:date:)`
-so you can validate against the published AWS test vectors.
+For deterministic tests, inject a fixed `now` closure and compare the returned
+headers with published AWS vectors.
 
-> Important: SigV4 over a streaming body needs the chunk-signed
-> variant (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`). The interceptor
-> contract delivers the request before the upload pipeline owns the
-> body, so a streaming signer needs deeper integration than this
-> recipe — file an issue if your use case requires it. Likewise,
-> presigned URLs (query-string signing) and IAM role rotation are out
-> of scope; use the AWS SDK for those.
+## Request-minted JWT
 
-## JWT bearer with auto-refresh (interceptor recipe)
+Use ``JWTBearerInterceptor`` only when claims depend on the final request and a
+new token must be minted per attempt. Its `tokenProvider` sees the final URL,
+method, and interceptor/refresh headers. If it returns `Authorization`, that
+late value intentionally replaces an earlier refresh-token header.
 
-For long-lived JWT bearer tokens (HS256 / RS256 / ES256), prefer
-``RefreshTokenPolicy``: that surface already coalesces single-flight
-refresh, replays one in-flight request after a 401, and routes around
-public endpoints via `appliesTo`. A custom JWT interceptor only adds
-value when the token is **minted on every request** (claims include
-the request method/path) rather than rotated by the auth server.
-
-For request-minted JWTs, use the shipped ``JWTBearerInterceptor``:
-it owns the `Authorization` header carry-out and delegates the actual
-token production to a `tokenProvider` closure, so the signing key
-material lives in Keychain or Secure Enclave rather than inside the
-interceptor.
-
-```swift
-import InnoNetwork
-
-let jwt = JWTBearerInterceptor(
-    tokenProvider: { request in
-        // Construct header + claims as JSON, base64url-encode each,
-        // join with ".", hand off to your signer (CryptoKit, CryptoSwift,
-        // or a Keychain-backed helper), append base64url(signature).
-        try await mintRequestScopedJWT(for: request)
-    }
-)
-
-let configuration = NetworkConfiguration.advanced(
-    baseURL: baseURL,
-    auth: AuthPack(additionalSigners: [jwt])
-)
-```
-
-The default `scheme` is `"Bearer"` and the default `headerName` is
-`"Authorization"`; pass overrides at init time if your backend uses a
-different scheme. The `tokenProvider` closure receives the outgoing
-`URLRequest` so claims like `htu` / `htm` (DPoP) can include the
-request URL and method.
-
-## Testing your interceptor
-
-For HMAC-style signers, derive the expected signature with the same
-CryptoKit primitives in the test:
-
-```swift
-let expectedMAC = HMAC<SHA256>.authenticationCode(
-    for: body,
-    using: SymmetricKey(data: secret)
-)
-let expected = Data(expectedMAC).base64EncodedString()
-```
-
-This is the pattern used by `HMACRequestInterceptorTests` in the
-package: it round-trips the same algorithm rather than checking
-against an opaque vector, so the test stays meaningful even if the
-backend swaps SHA-256 for SHA-384.
+For ordinary OAuth-style session tokens, use ``RefreshTokenPolicy`` instead so
+concurrent 401 responses share one refresh generation.
 
 ## See also
 
+- ``RequestSigner``
+- ``RequestBody``
 - ``HMACRequestInterceptor``
-- ``RequestInterceptor``
+- ``JWTBearerInterceptor``
 - <doc:Interceptors>
 - <doc:AuthRefresh>

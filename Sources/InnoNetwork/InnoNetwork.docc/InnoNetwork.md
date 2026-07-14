@@ -72,7 +72,6 @@ reason to tune those defaults.
 - ``InMemoryResponseCache``
 - ``RequestExecutionPolicy``
 - ``ResponseBodyBufferingPolicy``
-- ``StateReducer``
 - ``CircuitBreakerPolicy``
 - ``CircuitBreakerOpenError``
 - <doc:RetryDecisions>

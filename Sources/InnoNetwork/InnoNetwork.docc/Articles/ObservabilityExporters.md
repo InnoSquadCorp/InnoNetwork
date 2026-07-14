@@ -113,7 +113,7 @@ they're frequent and not interesting on their own unless they fail.
 ## Versioning and compatibility
 
 Adapter packages should pin their InnoNetwork dependency to a minor
-range (`from: "4.0.0"`) and bump on every observability surface change.
-The 4.x line aims to keep changes additive; adapters should include a
+range (`from: "5.0.0"`) and bump on every observability surface change.
+The 5.x line aims to keep changes additive; adapters should include a
 `default:` case in event switches so new ``NetworkEvent`` cases do not
 break compilation before the adapter has mapped them.

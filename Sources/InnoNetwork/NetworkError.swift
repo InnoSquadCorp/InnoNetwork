@@ -113,7 +113,7 @@ public enum DecodingStage: Sendable, Equatable {
 /// to keep that constant: the resilience and observability features in
 /// the roadmap will introduce new failure modes (notably circuit-breaker
 /// trips and richer rate-limit / reachability diagnostics). To stay
-/// forward-compatible against the 4.x line, every exhaustive `switch` over a
+/// forward-compatible against the 5.x line, every exhaustive `switch` over a
 /// `NetworkError` value should include a `@unknown default` arm:
 ///
 /// ```swift

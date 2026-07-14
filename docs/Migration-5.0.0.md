@@ -1,16 +1,28 @@
-# InnoNetwork 5.0 Migration Notes
+# Migration Guide: 5.0.0
 
-The endpoint vocabulary and `NetworkError` ledger originally planned for 5.0
-landed in `4.0.0` as a breaking API reset. This guide now tracks the remaining
-5.0 work and the 4.0 migration steps consumers must complete before adopting
-future minors.
+InnoNetwork 5.0 makes request identity, signing, redirects, and configuration
+composition explicit. The changes below intentionally remove 4.x migration
+bridges that could make the bytes sent on the wire differ from the request a
+policy observed.
+
+## Required source changes
+
+| 4.x usage | 5.0 replacement |
+| --- | --- |
+| `RequestExecutionNext.execute(request)` | `RequestExecutionNext.execute()` |
+| `.with(retry:)`, `.with(circuitBreaker:)`, `.with(coalescing:)`, `.with(executionPolicies:)` | `ResiliencePack` passed to `NetworkConfiguration.advanced(...)` |
+| `.with(refresh:)` | `AuthPack(refreshToken:)` |
+| `.with(eventObservers:)` | `ObservabilityPack(eventObservers:)` |
+| `.with(cache:)` | `CachePack(responseCache:)` |
+| Public `StateReducer` / `StateReduction` | An application-owned reducer type, or a feature-local reducer |
+| Body signing in `RequestInterceptor` | `RequestSigner.signatureHeaders(for:body:)` |
 
 ## Request execution policies preserve request identity
 
-`RequestExecutionNext.execute(_:)` has been replaced by the zero-argument
+`RequestExecutionNext.execute(_:)` is replaced by the zero-argument
 `RequestExecutionNext.execute()`. A policy can still short-circuit by calling
 `next` zero times or replay the same transport request by calling it multiple
-times, but it can no longer substitute a different `URLRequest`.
+times, but it cannot substitute another `URLRequest`.
 
 Move URL, header, and body adaptation into a `RequestInterceptor`:
 
@@ -38,50 +50,98 @@ struct TracingPolicy: RequestExecutionPolicy {
 ```
 
 This keeps cache, coalescing, retry, signing, and transport identity aligned
-around the request prepared by the executor.
+around the executor-owned request.
 
-## Already Required in 4.0.0
+## Compose configuration with packs
 
-| Previous usage | Current API |
-| --- | --- |
-| `EndpointShape` | `Endpoint` |
-| `EndpointAuthScope` | `AuthScope` |
-| `ScopedEndpoint<Response, Scope>` | `EndpointBuilder<Response, Scope>` |
-| `Endpoint<Response>` | `EndpointBuilder<Response, PublicAuthScope>` |
-| `AuthenticatedEndpoint<Response>` | `EndpointBuilder<Response, AuthRequiredScope>` |
-| `NetworkError.invalidBaseURL(_:)` | `NetworkError.configuration(reason: .invalidBaseURL(...))` |
-| `NetworkError.invalidRequestConfiguration(_:)` | `NetworkError.configuration(reason: .invalidRequest(...))` |
+The seven deprecated `NetworkConfiguration.with(...)` modifiers are removed.
+Construct the complete policy set at one call site:
 
-There is no 4.x compatibility alias for the removed names above. Code that
-still references them must be updated before it can compile against `4.0.0`.
+```swift
+let configuration = NetworkConfiguration.advanced(
+    baseURL: baseURL,
+    resilience: ResiliencePack(
+        retry: ExponentialBackoffRetryPolicy(maxRetries: 2),
+        coalescing: .getOnly,
+        circuitBreaker: CircuitBreakerPolicy(failureThreshold: 5),
+        customExecutionPolicies: [reachabilityPolicy]
+    ),
+    auth: AuthPack(refreshToken: refreshPolicy),
+    observability: ObservabilityPack(eventObservers: [observer]),
+    cache: CachePack(responseCache: cache)
+)
+```
 
-## Still Planned for 5.0
+Pack fields default to `nil`, so specify only the axes the client owns. To
+disable a policy that a preset enables, construct an explicit advanced
+configuration instead of mutating that preset after construction.
 
-- `NetworkConfiguration` pack-shaped entry points may become first-class
-  convenience parameters. The existing `AdvancedBuilder` path remains the
-  source-compatible baseline.
-- Code generation may add richer auth mapping and schema coverage, building on
-  the current `Tools/openapi-to-innonetwork` preview.
-- New `NetworkError` cases may appear for additional failure modes. Keep
-  `@unknown default` in exhaustive switches because `NetworkError` is not
-  `@frozen`.
+## Own reducer vocabulary at the feature boundary
 
-## Pre-flight Checklist
+`StateReducer` and `StateReduction` are no longer public API. They only
+described package lifecycle mechanics and did not provide transport behavior.
+Applications that used the generic names should define a small local protocol
+or return a feature-specific tuple/value from their reducer. There is no
+runtime migration and no replacement module to import.
 
-- [ ] Replace old endpoint names with `Endpoint`, `AuthScope`, and
-  `EndpointBuilder`.
-- [ ] Replace top-level configuration error cases with
-  `NetworkError.configuration(reason:)`.
-- [ ] For auth-required fluent calls, use
-  `EndpointBuilder<EmptyResponse, AuthRequiredScope>` and configure
-  `NetworkConfiguration.refreshTokenPolicy`.
-- [ ] Build stable examples or app integration targets against `4.0.0` before
-  taking later minors.
+## Sign the final body, not a preliminary request
 
-## See Also
+Body-aware authentication moves to `RequestSigner`. In 5.0 the executor:
 
-- [API_STABILITY.md](../API_STABILITY.md) for the symbol-level 4.x contract.
-- [Migration-4.0.0.md](Migration-4.0.0.md) for the full 4.0 breaking-change
-  checklist.
-- [MIGRATION_POLICY.md](MIGRATION_POLICY.md) for the project's general
-  migration philosophy.
+1. encodes the payload and snapshots caller-owned files;
+2. runs configuration and endpoint request interceptors;
+3. applies the current refresh token;
+4. runs configuration signers, then endpoint signers; and
+5. sends the exact `RequestBody` observed by the signers.
+
+Signing runs for every retry and refresh replay. HMAC, request-minted JWT, and
+AWS SigV4 reference implementations now conform to `RequestSigner` despite
+their legacy `Interceptor` suffixes. Opaque `httpBodyStream` values are
+rejected; use data or explicit file payloads.
+
+Signed requests bypass response-cache reads and writes, request coalescing,
+and URLSession caching. They also reject every automatic redirect because a
+URLSession-generated follow-up cannot pass through the asynchronous signer.
+Issue a new typed request after validating an intentional redirect target.
+
+See the [Request Signing guide](../Sources/InnoNetwork/InnoNetwork.docc/Articles/RequestSigning.md)
+for custom signer and file-lifetime examples.
+
+## Redirect defaults are stricter
+
+The default redirect policy now denies HTTPS-to-HTTP downgrade, strips the
+expanded sensitive-header set when authority changes, and denies cross-origin
+`307`/`308` redirects for unsafe methods. Signed requests deny automatic
+redirects even when the target is same-origin.
+
+If an API contract requires a redirect that the defaults reject, treat the 3xx
+as application data, validate the target explicitly, and start a new typed
+request. Do not forward authorization, cookie, proxy authorization, API-key,
+or signature headers across authority boundaries.
+
+## Code generation remains local and experimental
+
+`Packages/InnoNetworkCodegen` is a nested SwiftPM package with a path
+dependency on the repository root. The root 5.0 tag does not vend an
+`InnoNetworkCodegen` product, so the nested package is supported only from a
+complete local checkout. Its macro contract remains experimental until it is
+distributed as an independent package or moved into the root package graph.
+
+## Pre-flight checklist
+
+- [ ] Replace every `next.execute(request)` call with `next.execute()` and
+  move adaptation to `RequestInterceptor`.
+- [ ] Replace the seven `.with(...)` modifiers with configuration packs.
+- [ ] Move adopter-defined `StateReducer` conformances to app-owned types.
+- [ ] Move body-dependent authentication to `RequestSigner`.
+- [ ] Verify any redirect-dependent endpoint against the stricter policy.
+- [ ] Exercise signed data and file uploads, retries, and refresh replays.
+- [ ] Build codegen users from a complete local checkout.
+
+## See also
+
+- [API_STABILITY.md](../API_STABILITY.md) for the 5.x compatibility contract.
+- [Migration-4.1.0.md](Migration-4.1.0.md) for the immediately preceding
+  minor-release changes.
+- [Migration-4.0.0.md](Migration-4.0.0.md) for the original public baseline.
+- [MIGRATION_POLICY.md](MIGRATION_POLICY.md) for the general migration policy.

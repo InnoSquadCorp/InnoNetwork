@@ -39,6 +39,7 @@ required_meta_docs=(
   "$repo_root/docs/RELEASE_POLICY.md"
   "$repo_root/docs/MIGRATION_POLICY.md"
   "$repo_root/docs/releases/4.0.0.md"
+  "$repo_root/docs/releases/5.0.0.md"
 )
 required_feature_docs=(
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryPolicy.md"
@@ -121,6 +122,8 @@ forbidden_pattern() {
 require_line "## Stable" "$api_stability"
 require_line "## Provisionally Stable" "$api_stability"
 require_line "## Internal/Operational" "$api_stability"
+require_contains 'release line. `5.0.0` is the public baseline for this contract.' "$api_stability"
+require_contains '.upToNextMinor(from: "5.0.0")' "$api_stability"
 
 expected_stable=(
 '`APIDefinition`'
@@ -169,7 +172,6 @@ expected_stable=(
 '`AuthScope`'
 '`PublicAuthScope`'
 '`AuthRequiredScope`'
-'`StateReducer`'
 '`EventDeliveryPolicy`'
 '`WebSocketCloseCode`'
 '`EndpointBuilder`, `EndpointPathEncoding` (promoted from Provisionally Stable in 4.x.x; the path-encoding shape and decoding helpers are SemVer-protected)'
@@ -219,13 +221,12 @@ expected_provisionally=(
 '`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens'
 '`InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing'
 '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`'
-'`NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface'
 '`HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)'
 '`MultipartUploadStrategy.threshold(bytes:)`'
 '`StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance'
 '`PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`'
 '`DownloadTask.generation` / `attempt` observation accessors'
-'`NetworkErrorCode` SSOT enum (4.1.0) — owns every `NetworkError.errorCode` raw value; new cases may be added in 4.x minors when `NetworkError` itself adds a case'
+'`NetworkErrorCode` SSOT enum (introduced in 4.1.0) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case'
 '`NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.1.0)'
 '`MultipartUploadStrategy.inMemory(maxBytes:)` (4.1.0) — replaces the zero-arg `.inMemory` form (4.0.x); the encoder'\''s accumulator guard is part of the contract'
 '`DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.1.0)'
@@ -352,8 +353,6 @@ expected_shipping_public_declarations=(
   SendableUnderlyingError
   ServerSentEvent
   ServerSentEventDecoder
-  StateReducer
-  StateReduction
   StreamingAPIDefinition
   StreamingBufferingPolicy
   StreamingResumePolicy
@@ -872,7 +871,7 @@ validate_oss_readiness_public_api() {
 validate_troubleshooting_and_examples_docs() {
   require_contains 'Examples: [Examples/README.md](Examples/README.md)' "$readme"
   require_contains 'API Stability: [API_STABILITY.md](API_STABILITY.md)' "$readme"
-  require_contains 'Release Notes: [docs/releases/4.0.0.md](docs/releases/4.0.0.md)' "$readme"
+  require_contains 'Release Notes: [docs/releases/5.0.0.md](docs/releases/5.0.0.md)' "$readme"
   require_contains '### 1. [BasicRequest](./BasicRequest)' "$repo_root/Examples/README.md"
   require_contains '### 2. [ErrorHandling](./ErrorHandling)' "$repo_root/Examples/README.md"
   require_contains '### 3. [Auth](./Auth)' "$repo_root/Examples/README.md"
@@ -1103,10 +1102,6 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public enum AuthRequiredScope'
       target="$repo_root/Sources/InnoNetwork/Endpoint.swift"
       ;;
-    '`StateReducer`')
-      pattern='public protocol StateReducer'
-      target="$repo_root/Sources/InnoNetwork/StateReducer.swift"
-      ;;
     '`EventDeliveryPolicy`')
       pattern='public struct EventDeliveryPolicy'
       target="$repo_root/Sources/InnoNetwork/EventPipeline.swift"
@@ -1231,23 +1226,6 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_operational_dx_public_api
       continue
       ;;
-    '`NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface')
-      require_contains 'func with(retry retryPolicy: RetryPolicy?)' \
-        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
-      require_contains 'func with(cache responseCache: (any ResponseCache)?)' \
-        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
-      require_contains 'func with(circuitBreaker circuitBreakerPolicy: CircuitBreakerPolicy?)' \
-        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
-      require_contains 'func with(refresh refreshTokenPolicy: RefreshTokenPolicy?)' \
-        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
-      require_contains 'func with(coalescing requestCoalescingPolicy: RequestCoalescingPolicy)' \
-        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
-      require_contains 'func with(executionPolicies customExecutionPolicies' \
-        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
-      require_contains 'func with(eventObservers: [any NetworkEventObserving])' \
-        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
-      continue
-      ;;
     '`HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)')
       require_contains 'public struct HTTPHeaderName<Variant: HTTPHeaderVariant>' \
         "$repo_root/Sources/InnoNetwork/HTTPHeaders.swift"
@@ -1287,7 +1265,7 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
       continue
       ;;
-    '`NetworkErrorCode` SSOT enum (4.1.0) — owns every `NetworkError.errorCode` raw value; new cases may be added in 4.x minors when `NetworkError` itself adds a case')
+    '`NetworkErrorCode` SSOT enum (introduced in 4.1.0) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case')
       require_contains 'public enum NetworkErrorCode' \
         "$repo_root/Sources/InnoNetwork/NetworkErrorCode.swift"
       require_contains 'return NetworkErrorCode.reachability.rawValue' \
@@ -1441,6 +1419,7 @@ forbidden_pattern 'does not pull|do not pull|not pull `swift-syntax`|has no exte
   "$readme" \
   "$repo_root/CHANGELOG.md" \
   "$repo_root/docs/releases/4.0.0.md" \
+  "$repo_root/docs/releases/5.0.0.md" \
   "$repo_root/SECURITY.md" \
   "$repo_root/docs" \
   "$repo_root/Sources"
@@ -1449,6 +1428,7 @@ forbidden_pattern '4\.2\.0|4\.2 line|pre-v4\.2|v4\.2|docs/releases/4\.2\.0' \
   "$readme" \
   "$repo_root/CHANGELOG.md" \
   "$repo_root/docs/releases/4.0.0.md" \
+  "$repo_root/docs/releases/5.0.0.md" \
   "$repo_root/SECURITY.md" \
   "$repo_root/Benchmarks/README.md" \
   "$repo_root/docs" \

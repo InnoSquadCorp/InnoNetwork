@@ -1,7 +1,14 @@
 # API Stability
 
-This document defines the compatibility contract for the InnoNetwork 4.x
-release line. `4.0.0` is the public baseline for this contract.
+This document defines the compatibility contract for the InnoNetwork 5.x
+release line. `5.0.0` is the public baseline for this contract.
+
+The 5.0.0 baseline intentionally removes the deprecated 4.x
+`NetworkConfiguration.with(...)` modifier family and moves the shared
+`StateReducer` / `StateReduction` lifecycle vocabulary to package scope.
+Consumers should migrate configuration to
+`NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
+and own application reducer types in their feature or architecture layer.
 
 ## Stable
 
@@ -51,19 +58,18 @@ release line. `4.0.0` is the public baseline for this contract.
 - `AuthScope`
 - `PublicAuthScope`
 - `AuthRequiredScope`
-- `StateReducer`
 - `EventDeliveryPolicy`
 - `WebSocketCloseCode`
 - `EndpointBuilder`, `EndpointPathEncoding` (promoted from Provisionally Stable in 4.x.x; the path-encoding shape and decoding helpers are SemVer-protected)
 - `DecodingInterceptor` (promoted from Provisionally Stable in 4.x.x)
 - `WebSocketCloseDisposition` (promoted from Provisionally Stable in 4.x.x)
 
-> **No 5.0 major bump is planned in the 4.x line.** The Stable
-> ledger only grows over the rest of 4.x; entries do not move
+> **5.0.0 is the compatibility reset for the 5.x line.** The Stable
+> ledger only grows over the rest of 5.x; entries do not move
 > back into Provisionally Stable. Surfaces that need a breaking
 > change wait until a future major. Adopters can pin
-> `.upToNextMajor(from: "4.0.0")` and rely on the entries above
-> remaining source-compatible across the entire 4.x line.
+> `.upToNextMajor(from: "5.0.0")` and rely on the entries above
+> remaining source-compatible across the entire 5.x line.
 
 ## Stable Examples
 
@@ -72,7 +78,7 @@ contract. For each entry below the directory must exist, contain at least
 one Swift source file, ship a `README.md`, and compile against the current
 public package. The exact wording of the example is **not** contractual, but
 the copyable Swift starting points must stay source-compatible with the
-4.0.0 public API.
+5.0.0 public API.
 The `Scripts/check_stable_examples.sh` gate, wired into the docs-contract
 job, fails CI if a stable example is removed, emptied, loses its README, or
 stops compiling. The smoke build runs with Swift warnings treated as errors
@@ -96,11 +102,11 @@ part of the compatibility contract.
 ## Provisionally Stable
 
 Symbols in this section are public and supported, but they may grow new
-cases, parameters, or shape during the 4.x line. Each change ships with
+cases, parameters, or shape during the 5.x line. Each change ships with
 release notes describing the migration path. Consumers who want strict
 compile-time stability should pin the package with
-`.upToNextMinor(from: "4.0.0")` (see "Version Pinning Guidance" below)
-and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
+`.upToNextMinor(from: "5.0.0")` (see "Version Pinning Guidance" below)
+and treat any 5.y → 5.(y+1) bump as a code-level review boundary.
 
 - `default` aliases on configuration types
 - benchmark runner CLI flags and JSON summary presentation details
@@ -122,13 +128,12 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens
 - `InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing
 - `StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`
-- `NetworkConfiguration.with(retry:)` / `with(cache:)` / `with(circuitBreaker:)` / `with(refresh:)` / `with(coalescing:)` / `with(executionPolicies:)` / `with(eventObservers:)` fluent modifier surface
 - `HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)
 - `MultipartUploadStrategy.threshold(bytes:)`
 - `StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance
 - `PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`
 - `DownloadTask.generation` / `attempt` observation accessors
-- `NetworkErrorCode` SSOT enum (4.1.0) — owns every `NetworkError.errorCode` raw value; new cases may be added in 4.x minors when `NetworkError` itself adds a case
+- `NetworkErrorCode` SSOT enum (introduced in 4.1.0) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case
 - `NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.1.0)
 - `MultipartUploadStrategy.inMemory(maxBytes:)` (4.1.0) — replaces the zero-arg `.inMemory` form (4.0.x); the encoder's accumulator guard is part of the contract
 - `DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.1.0)
@@ -139,7 +144,7 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 
 ## Provisionally Stable Evolution Boundaries
 
-Per-symbol evolution allowances within the 4.x line:
+Per-symbol evolution allowances within the 5.x line:
 
 Promotion from Provisionally Stable to Stable requires all of the following:
 
@@ -151,23 +156,23 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 - Stable examples or generated-client recipes are updated when the promoted
   surface is a recommended entry point.
 - The symbol is moved into the Stable ledger above; once promoted, it cannot
-  move back to Provisionally Stable within the 4.x line.
+  move back to Provisionally Stable within the 5.x line.
 
 | Surface | Promotion target | Required evidence |
 | --- | --- | --- |
-| `EndpointBuilder` onboarding path | Stable at 4.0.0 | README first-30-minute flow, stable example smoke, and migration cookbook examples compile. |
-| `InnoNetworkAuthAWS` | 4.x minor after adopter validation | AWS SigV4 vector tests, product README/DocC scope, and explicit "reference signer, not AWS SDK replacement" wording. |
-| `PersistentResponseCache` statistics and telemetry | 4.x minor | Reentrancy invariant docs plus persistent cache key-rotation/statistics tests. |
-| `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | 4.x minor | The subset is documented as RFC 9111-aware, with directive tests for the supported rules. |
+| `EndpointBuilder` onboarding path | Stable since 4.0.0 | README first-30-minute flow, stable example smoke, and migration cookbook examples compile. |
+| `InnoNetworkAuthAWS` | 5.x minor after adopter validation | AWS SigV4 vector tests, product README/DocC scope, and explicit "reference signer, not AWS SDK replacement" wording. |
+| `PersistentResponseCache` statistics and telemetry | 5.x minor | Reentrancy invariant docs plus persistent cache key-rotation/statistics tests. |
+| `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | 5.x minor | The subset is documented as RFC 9111-aware, with directive tests for the supported rules. |
 | `InnoNetworkCodegen` macros | No automatic promotion | Promote only if the before/after ROI is clear; otherwise keep provisional or deprecate. |
 
-- `default` aliases — may add new defaults; never removed within 4.x.
+- `default` aliases — may add new defaults; never removed within 5.x.
 - Benchmark runner CLI flags and JSON keys — may evolve to reflect new
   metrics; baseline contents are operational policy.
 - README/DocC examples — track the stable APIs they illustrate; their
   exact wording is not part of the compatibility contract.
 - `InnoNetworkTestSupport` — additional helpers may be added; existing
-  symbols stay source-compatible within 4.x. VCR-style cassette helpers are
+  symbols stay source-compatible within 5.x. VCR-style cassette helpers are
   intended for test targets and may gain new matching/redaction knobs.
 - `EndpointBuilder`, `AnyEncodable`, `NetworkContext`, `CorrelationIDInterceptor` —
   builder shape may grow new chainable methods.
@@ -191,15 +196,12 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   `RequestInterceptor`. Built-in retry, refresh, cache, coalescing, and circuit
   breaker behavior remains provided by `NetworkConfiguration`.
 - `AuthScope` — marker scopes can be added in future minors; the
-  public/auth-required split remains source-compatible for 4.0.0.
+  public/auth-required split remains source-compatible for 5.0.0.
 - `MultipartAPIDefinition.Auth` — the multipart protocol carries the same
   `Auth: AuthScope` associated type as `APIDefinition`, defaulted to
   `PublicAuthScope`. Existing multipart endpoints stay source-compatible;
   authenticated multipart uploads must declare `typealias Auth = AuthRequiredScope`
   to participate in `RefreshTokenPolicy` validation.
-- `StateReducer` — public reducer vocabulary for lifecycle state machines;
-  package products can use it for internal reducers while keeping effect
-  execution owned by their managers.
 - `WebSocketCloseDisposition` — additional enum cases may appear as new
   close-code classifications are formalized.
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, retry, response cache,
@@ -216,7 +218,7 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   `invalidBaseURL` / `invalidRequest` / `offline` cases. The standalone
   `NetworkError.invalidBaseURL` and
   `NetworkError.invalidRequestConfiguration` cases are not part of the
-  4.0.0 surface; adopters switch on this reason payload directly.
+  5.0.0 surface; adopters switch on this reason payload directly.
 - `ReachabilityCheckExecutionPolicy` — `RequestExecutionPolicy` that
   consults a `NetworkMonitoring` source and short-circuits requests
   when the path is `.unsatisfied`. `.requiresConnection` waits up to
@@ -244,8 +246,8 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   `TransportPack` — configuration packs accepted as named arguments by
   `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`.
   Each pack groups a thematic axis of options; the underlying builder
-  is now `package`-only. The pack APIs stay source-compatible from
-  4.x → 5.x; future minors may add fields to existing packs without
+  is now `package`-only. The pack APIs stay source-compatible throughout
+  5.x; future minors may add fields to existing packs without
   breaking call sites because every field defaults to `nil`.
 - `HMACRequestInterceptor` — reference HMAC body-signing interceptor
   (SHA-256 / SHA-384 / SHA-512). Header names and key id are
@@ -280,7 +282,7 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   default implementations as additional decode-boundary use cases
   surface.
 - `StreamingBufferingPolicy` — bounded buffering cases may gain additional
-  policy knobs, but `stream(_:)` stays lossless by default for 4.x and bounded
+  policy knobs, but `stream(_:)` stays lossless by default for 5.x and bounded
   buffers remain incompatible with `StreamingResumePolicy.lastEventID`.
 - `TraceContextInterceptor` and `W3CTraceContext` — W3C header propagation
   remains additive; future minors may add richer correlation helpers without
@@ -298,8 +300,8 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   collection at 5 MiB by default.
 - `NetworkConfiguration.init(...)` — the direct 32-parameter public
   construction surface was removed before the 4.0.0 baseline and is not part
-  of the 4.x stable API. Use presets, configuration packs, and fluent
-  modifiers instead.
+  of the 5.x stable API. Use presets and the named configuration packs passed
+  to `NetworkConfiguration.advanced(...)` instead.
 - `DownloadConfiguration.sharedContainerIdentifier` — additive App Group
   background-session storage knob. Default stays `nil`; future minors may add
   preset helpers, but the property and builder field remain source-compatible.
@@ -310,10 +312,10 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 
 ## Version Pinning Guidance
 
-Apps that consume InnoNetwork via SwiftPM should pin against the 4.0.0 minor:
+Apps that consume InnoNetwork via SwiftPM should pin against the 5.0.0 minor:
 
 ```swift
-.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "4.0.0"))
+.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "5.0.0"))
 ```
 
 `.upToNextMinor(from:)` accepts patch upgrades within the pinned minor
@@ -331,7 +333,7 @@ minor releases.
 The docs-contract gate extracts public symbols from Swift symbol graphs and
 compares them with `Scripts/symbols/*.allowlist`. That catches nested public
 types and members in addition to top-level declarations. The grouped ledger
-below keeps the high-level compatibility classification readable for the 4.x
+below keeps the high-level compatibility classification readable for the 5.x
 release line.
 
 ### InnoNetwork
@@ -367,7 +369,7 @@ release line.
   `ResponseDecodingStrategy`, `ResponseInterceptor`,
   `RetryDecision`, `RetryIdempotencyPolicy`, `RetryPolicy`,
   `RFC3986Encoding`, `EndpointBuilder`, `SendableUnderlyingError`, `ServerSentEvent`,
-  `ServerSentEventDecoder`, `StateReducer`, `StateReduction`,
+  `ServerSentEventDecoder`,
   `StreamingAPIDefinition`, `StreamingBufferingPolicy`,
   `StreamingResumePolicy`, `TimeoutReason`, `TraceContextInterceptor`,
   `TransportPolicy`, `TrustChallengeOutcome`, `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
@@ -518,7 +520,7 @@ audits against external `@_spi` consumers, and Issues that report
 this section. Specifically:
 
 - **Build errors** after a minor bump are expected and not regressions.
-- **Pin to an exact InnoNetwork tag** (`.exact("4.0.0")`) if you import
+- **Pin to an exact InnoNetwork tag** (`.exact("5.0.0")`) if you import
   `@_spi`. `.upToNextMinor` is *not* tight enough.
 - **Treat `@_spi` upgrades as code-level reviews** — diff the SPI
   surface in `Sources/InnoNetwork/...` and re-run your generator.
@@ -539,15 +541,19 @@ requires `@_spi` import.
 - package/internal request/response policy layers
 - package/internal request execution pipeline stages that power auth refresh,
   coalescing, response cache, and circuit breaker features
+- package-scoped `StateReducer` / `StateReduction` lifecycle vocabulary used
+  by shipping modules; it is not part of the consumer-facing 5.x API
 - benchmark baseline contents and update cadence
 - lower-level execution hooks that are present in source but not part of the
-  4.0.0 stable public contract
+  5.0.0 stable public contract
 
 ## Notes
 
-- Stable items follow semantic versioning for the 4.0.0 line once it is tagged.
+- Stable items follow semantic versioning for the 5.0.0 line once it is tagged.
 - `default` aliases are convenience entry points and should be treated as `safeDefaults` aliases.
-- Advanced builders are public and supported, but operational tuning values are not guaranteed to stay numerically identical across releases.
+- Configuration packs are public and supported; their operational tuning
+  defaults are not guaranteed to stay numerically identical across releases.
+  The underlying advanced builders are package implementation details.
 - `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`,
   `SingleRequestExecutable`, `APISingleRequestExecutable`,
   `MultipartSingleRequestExecutable`, and `RequestPayload` are SPI surfaces.
@@ -595,10 +601,9 @@ requires `@_spi` import.
   `NetworkError` should add `@unknown default` to keep their code
   forward-compatible across minor bumps.
 - `NetworkError.errorDescription` localization keys are a provisionally
-  stable behaviour contract for 4.x. The initial catalogue ships English
-  and Korean strings; additional localizations can be added in minor
-  releases, but existing key meanings should not be repurposed without a
-  changelog entry.
+  stable behaviour contract for 5.x. The package ships the English catalogue;
+  applications own end-user localization. Existing key meanings are not
+  repurposed without a changelog entry.
 
 ## Deprecation Policy
 

@@ -7,6 +7,29 @@ Versioning.
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-07-14
+
+### Breaking
+
+- `RequestExecutionNext.execute(_:)` is replaced by
+  `RequestExecutionNext.execute()`. Request mutation belongs in a
+  `RequestInterceptor`; execution policies can observe, short-circuit, or
+  replay only the executor-owned request.
+- The seven deprecated `NetworkConfiguration.with(...)` modifiers are removed.
+  Compose `ResiliencePack`, `AuthPack`, `ObservabilityPack`, `CachePack`, and
+  `TransportPack` through `NetworkConfiguration.advanced(...)`.
+- `StateReducer` and `StateReduction` are package implementation vocabulary,
+  not public API. Adopters should own reducer types at their feature boundary.
+- Redirect defaults deny HTTPS downgrade and unsafe cross-origin `307`/`308`
+  replay. Signed requests reject every automatic redirect.
+- Body-dependent authentication uses `RequestSigner` and `RequestBody` after
+  interceptors and refresh-token application. Signed requests bypass response
+  caches, request coalescing, and URLSession cache storage.
+
+See [`docs/Migration-5.0.0.md`](docs/Migration-5.0.0.md) for before/after
+examples and [`docs/releases/5.0.0.md`](docs/releases/5.0.0.md) for the
+curated release summary.
+
 ### Added
 
 - `WebSocketError.reconnectSleepFailed(SendableUnderlyingError)` case. The
@@ -86,8 +109,8 @@ Versioning.
   product. The signer moved out of the core product before the 4.0.0 baseline and
   now lives in `Sources/InnoNetworkAuthAWS/` with a product README and
   DocC entry that state the scope explicitly: reference signer, not AWS
-  SDK replacement. It targets the single-shot, in-memory body flow that
-  covers many AWS service calls (DynamoDB, S3 GET, CloudWatch, SQS).
+  SDK replacement. It supports empty, data-backed, and stable file-backed
+  bodies, including the S3 payload hash header.
   Streaming SigV4 (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`), presigned URL
   signing, credential-provider chains, and service-specific behaviours are
   out of scope. Listed as Provisionally Stable in API_STABILITY.md.
@@ -182,9 +205,6 @@ Versioning.
   unchanged since 4.0.0 and now carry the SemVer-protected contract;
   consumers can pin `.upToNextMajor(from: "4.0.0")` and rely on them
   remaining source-compatible across the 4.x line.
-- Added an explicit "no 5.0 major bump is planned in the 4.x line"
-  callout to API_STABILITY.md. The Stable ledger only grows over the
-  rest of 4.x; entries do not move back into Provisionally Stable.
 - Removed stale Stable Examples wording referencing
   `Examples/CustomHeaders` and `Examples/RealWorldAPI`, which were
   deleted earlier in this PR.
@@ -228,7 +248,7 @@ Versioning.
   `safeDefaults(baseURL:)`,
   `recommendedForProduction(baseURL:)`, or
   `advanced(baseURL:resilience:auth:observability:cache:transport:)`
-  with configuration packs/fluent modifiers.
+  with configuration packs.
 - `ConcurrencyLimitExecutionPolicy` now awaits `bucket.release()` before
   returning or rethrowing. The previous implementation used an
   unstructured `Task` from `defer`, which made the release boundary
@@ -402,10 +422,6 @@ Versioning.
   `PersistentResponseCacheStatistics` adds three monotonic in-process
   counters: `hitCount`, `missCount`, and `evictionCount`. The cache
   actor seeds the eviction counter from the open-time scrub pipeline.
-- **NetworkConfiguration fluent modifiers.** Seven additive
-  modifiers — `with(retry:)`, `with(cache:)`, `with(circuitBreaker:)`,
-  `with(refresh:)`, `with(coalescing:)`, `with(executionPolicies:)`,
-  `with(eventObservers:)` — wrap the existing `AdvancedBuilder`.
 - **`StreamingResumeStrategy` protocol.** Marker protocol with a
   single `isCompatible(with bufferingPolicy:)` requirement;
   `StreamingResumePolicy` retroactively conforms. The streaming
@@ -594,10 +610,9 @@ Versioning.
 
 ### Changed
 
-- `docs/Migration-5.0.0.md` now reflects that the endpoint vocabulary and
-  `NetworkError` ledger reset landed in `4.0.0`. It keeps the future 5.0
-  notes focused on remaining pack/codegen evolution and directs consumers to
-  migrate old endpoint/error spellings before adopting this release.
+- `docs/Migration-5.0.0.md` documents the final execution-policy,
+  configuration-pack, reducer-visibility, signing, redirect, and codegen
+  contracts with a required source-migration checklist.
 - `CLAUDE.md` updates the project-context platform floors to match
   the 4.x backport (iOS 16 / macOS 14 / tvOS 16 / watchOS 9 /
   visionOS 1).
@@ -666,10 +681,10 @@ Versioning.
   the request-executor chain. Five unit tests cover
   acquire-under-capacity, release-refill, bounded-release, FIFO waiter
   resume, and cap clamping.
-- Five 5.0 forward-compat configuration packs:
+- Five configuration packs form the 5.0 advanced-construction contract:
   - `ResiliencePack` (retry, coalescing, circuit breaker,
     idempotency, body buffering)
-  - `AuthPack` (refresh token, additional signing interceptors)
+  - `AuthPack` (refresh token, additional request signers)
   - `ObservabilityPack` (event observers, delivery policy, metrics
     reporters, network monitor)
   - `CachePack` (response cache policy, cache backend, failure-
@@ -677,12 +692,10 @@ Versioning.
   - `TransportPack` (timeout, cache policy, request priority,
     cellular/expensive/constrained access toggles, redirect policy,
     `URLSessionConfiguration` override, insecure-HTTP escape)
-  Each pack exposes `apply(to: inout NetworkConfiguration.AdvancedBuilder)`
-  so adopters can compose the builder additively today; nil pack
-  fields leave the builder untouched. The 5.0 release will accept
-  the same packs as named init arguments. Pack APIs stay
-  source-compatible across 4.x → 5.x; field additions remain
-  non-breaking because every property defaults to `nil`.
+  Pass the packs as named arguments to
+  `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`.
+  Nil pack fields leave defaults untouched; the underlying
+  `AdvancedBuilder` remains package-only.
 - 5.0 platform floors backported to iOS 16 / macOS 14 / tvOS 16 /
   watchOS 9 / visionOS 1 (down from the stale draft baseline of iOS 18 /
   macOS 15 / tvOS 18 / watchOS 11 / visionOS 2). The audit confirmed

@@ -7,10 +7,6 @@ InnoNetwork	swift.associatedtype	APIDefinition.Parameter
 InnoNetwork	swift.associatedtype	Endpoint.APIResponse
 InnoNetwork	swift.associatedtype	MultipartAPIDefinition.Auth
 InnoNetwork	swift.associatedtype	SingleRequestExecutable.APIResponse
-InnoNetwork	swift.associatedtype	StateReducer.Context
-InnoNetwork	swift.associatedtype	StateReducer.Event
-InnoNetwork	swift.associatedtype	StateReducer.Reduction
-InnoNetwork	swift.associatedtype	StateReducer.State
 InnoNetwork	swift.associatedtype	StreamingAPIDefinition.Auth
 InnoNetwork	swift.associatedtype	StreamingAPIDefinition.Output
 InnoNetwork	swift.class	ConcurrencyTokenBucket
@@ -290,7 +286,6 @@ InnoNetwork	swift.init	SendableUnderlyingError.init(_:)
 InnoNetwork	swift.init	SendableUnderlyingError.init(domain:code:message:failureReason:recoverySuggestion:underlyingChain:)
 InnoNetwork	swift.init	ServerSentEvent.init(id:event:data:retry:)
 InnoNetwork	swift.init	ServerSentEventDecoder.init()
-InnoNetwork	swift.init	StateReduction.init(state:effects:)
 InnoNetwork	swift.init	TraceContextInterceptor.init(generateWhenMissing:sampled:tracestate:)
 InnoNetwork	swift.init	TransportPack.init(timeout:cachePolicy:requestPriority:allowsCellularAccess:allowsExpensiveNetworkAccess:allowsConstrainedNetworkAccess:redirectPolicy:streamingLineByteLimit:allowsInsecureHTTP:trustPolicy:acceptableStatusCodes:userAgentProvider:acceptLanguageProvider:)
 InnoNetwork	swift.init	TransportPolicy.init(requestEncoding:responseDecoding:responseDecoder:)
@@ -370,13 +365,6 @@ InnoNetwork	swift.method	NetworkClient.request(_:tag:)
 InnoNetwork	swift.method	NetworkClient.upload(_:)
 InnoNetwork	swift.method	NetworkClient.upload(_:tag:)
 InnoNetwork	swift.method	NetworkConfiguration.makeURLSessionConfiguration()
-InnoNetwork	swift.method	NetworkConfiguration.with(cache:)
-InnoNetwork	swift.method	NetworkConfiguration.with(circuitBreaker:)
-InnoNetwork	swift.method	NetworkConfiguration.with(coalescing:)
-InnoNetwork	swift.method	NetworkConfiguration.with(eventObservers:)
-InnoNetwork	swift.method	NetworkConfiguration.with(executionPolicies:)
-InnoNetwork	swift.method	NetworkConfiguration.with(refresh:)
-InnoNetwork	swift.method	NetworkConfiguration.with(retry:)
 InnoNetwork	swift.method	NetworkError.redactingFailurePayload()
 InnoNetwork	swift.method	NetworkEventObserving.handle(_:)
 InnoNetwork	swift.method	NetworkLogger.log(error:)
@@ -691,8 +679,6 @@ InnoNetwork	swift.property	SingleRequestExecutable.requestSigners
 InnoNetwork	swift.property	SingleRequestExecutable.requiresRefreshTokenPolicy
 InnoNetwork	swift.property	SingleRequestExecutable.responseInterceptors
 InnoNetwork	swift.property	SingleRequestExecutable.timeoutOverride
-InnoNetwork	swift.property	StateReduction.effects
-InnoNetwork	swift.property	StateReduction.state
 InnoNetwork	swift.property	StreamingAPIDefinition.acceptableStatusCodes
 InnoNetwork	swift.property	StreamingAPIDefinition.headers
 InnoNetwork	swift.property	StreamingAPIDefinition.method
@@ -751,7 +737,6 @@ InnoNetwork	swift.protocol	ResponseCache
 InnoNetwork	swift.protocol	ResponseInterceptor
 InnoNetwork	swift.protocol	RetryPolicy
 InnoNetwork	swift.protocol	SingleRequestExecutable
-InnoNetwork	swift.protocol	StateReducer
 InnoNetwork	swift.protocol	StreamingAPIDefinition
 InnoNetwork	swift.protocol	StreamingResumeStrategy
 InnoNetwork	swift.protocol	TrustEvaluating
@@ -813,7 +798,6 @@ InnoNetwork	swift.struct	RetryIdempotencyPolicy
 InnoNetwork	swift.struct	SendableUnderlyingError
 InnoNetwork	swift.struct	SendableUnderlyingError.Frame
 InnoNetwork	swift.struct	ServerSentEvent
-InnoNetwork	swift.struct	StateReduction
 InnoNetwork	swift.struct	TraceContextInterceptor
 InnoNetwork	swift.struct	TransportPack
 InnoNetwork	swift.struct	TransportPolicy
@@ -855,7 +839,6 @@ InnoNetwork	swift.type.method	RFC3986Encoding.encode(_:)
 InnoNetwork	swift.type.method	RefreshFailureCooldown.exponentialBackoff(base:max:)
 InnoNetwork	swift.type.method	ResponseCacheHeaderPolicy.registerSensitiveHeader(_:)
 InnoNetwork	swift.type.method	ResponseCacheHeaderPolicy.unregisterSensitiveHeader(_:)
-InnoNetwork	swift.type.method	StateReducer.reduce(state:event:context:)
 InnoNetwork	swift.type.method	TransportPolicy.custom(encoding:decode:)
 InnoNetwork	swift.type.method	TransportPolicy.formURLEncoded(encoder:rootKey:decoder:)
 InnoNetwork	swift.type.method	TransportPolicy.json(encoder:decoder:)

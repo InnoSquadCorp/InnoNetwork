@@ -1,4 +1,4 @@
-# openapi-to-innonetwork (4.x preview)
+# openapi-to-innonetwork (5.x preview)
 
 Generates `APIDefinition`-conforming Swift structs from a JSON-encoded
 OpenAPI 3 subset. Lives outside the root SwiftPM package so the
@@ -6,7 +6,7 @@ runtime library never resolves codegen dependencies.
 
 ## Status
 
-**Preview, expanded for 5.0**. The 4.x line ships this tool as a
+**Preview.** The 5.x line ships this tool as a
 starting point so adopters with 100+ endpoint backends can avoid
 hand-rolling `APIDefinition` structs. The current state covers the
 common case (JSON + YAML input, `components.schemas` → Codable
@@ -60,11 +60,11 @@ boundaries are enforced at generation time, not silently degraded.
   from the generated output.
 - **Server variables**, **security schemes**, **parameter `in: query`
   / `in: path` / `in: header` schemas**, **content types other than
-  `application/json`** — out of scope for the 4.x preview.
+  `application/json`** — out of scope for the 5.x preview.
 
 ### Compatibility note
 
-The path-template rejection in 4.x is a **breaking change** for any
+The path-template rejection introduced in 4.1 is a **breaking change** for any
 OpenAPI spec that previously round-tripped through this tool with
 `{name}` placeholders. The previous behaviour emitted the placeholder
 verbatim into the generated `path` string. See
