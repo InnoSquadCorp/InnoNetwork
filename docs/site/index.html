@@ -277,9 +277,9 @@
       <div class="eyebrow">Swift Networking SDK</div>
       <h1>InnoNetwork Documentation</h1>
       <p>
-        Type-safe request execution, durable downloads, and reconnect-aware realtime flows for
-        current Apple platforms. The documentation site is organized by product so teams can start
-        from the module they actually need.
+        Type-safe request execution and focused companion modules for authentication, downloads,
+        realtime flows, caching, OpenAPI, trust, and testing on current Apple platforms. The
+        documentation site is organized by product so teams can start from the module they need.
       </p>
       <div class="hero-actions">
         <a class="button button-primary" href="./InnoNetwork/documentation/innonetwork/gettingstarted">Get Started</a>
@@ -288,8 +288,8 @@
       </div>
       <div class="metrics">
         <div class="metric">
-          <strong>4 Products</strong>
-          <span>Core requests, downloads, persistent cache, and WebSocket flows.</span>
+          <strong>8 Products</strong>
+          <span>One core library and seven opt-in companion modules.</span>
         </div>
         <div class="metric">
           <strong>Swift 6.2+</strong>
@@ -319,6 +319,22 @@
           <div class="link-row">
             <a class="pill" href="./InnoNetwork/documentation/innonetwork">Module Docs</a>
             <a class="pill" href="./InnoNetwork/documentation/innonetwork/gettingstarted">Quick Start</a>
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>InnoNetworkAuthAWS</h3>
+          <p>
+            Late, body-aware AWS Signature Version 4 signing for data-backed and stable file-backed
+            requests without moving AWS-specific policy into the core product.
+          </p>
+          <ul>
+            <li>Signs the final encoded request after interceptors and token refresh</li>
+            <li>Supports normal header-based SigV4 and S3 payload hashes</li>
+            <li>Keeps streaming SigV4 and credential rotation explicitly out of scope</li>
+          </ul>
+          <div class="link-row">
+            <a class="pill" href="./InnoNetworkAuthAWS/documentation/innonetworkauthaws">Module Docs</a>
           </div>
         </article>
 
@@ -367,6 +383,54 @@
           </ul>
           <div class="link-row">
             <a class="pill" href="./InnoNetworkPersistentCache/documentation/innonetworkpersistentcache">Module Docs</a>
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>InnoNetworkOpenAPI</h3>
+          <p>
+            Adapters for using generated-style operations with the InnoNetwork request pipeline or
+            connecting a swift-openapi-generator client to an application-owned URLSession.
+          </p>
+          <ul>
+            <li>Typed <code>OpenAPIRequest</code> integration</li>
+            <li><code>OpenAPIRuntime.ClientTransport</code> implementation</li>
+            <li>Explicit body-size limits for generated client traffic</li>
+          </ul>
+          <div class="link-row">
+            <a class="pill" href="./InnoNetworkOpenAPI/documentation/innonetworkopenapi">Module Docs</a>
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>InnoNetworkTrust</h3>
+          <p>
+            Optional SPKI public-key pinning for applications whose threat model needs to narrow
+            system trust with host-specific key material.
+          </p>
+          <ul>
+            <li>Exact-host and parent-domain matching strategies</li>
+            <li>Leaf-only or any-certificate-in-chain pin scope</li>
+            <li>Granular trust failure reasons through the core trust pipeline</li>
+          </ul>
+          <div class="link-row">
+            <a class="pill" href="./InnoNetworkTrust/documentation/innonetworktrust">Module Docs</a>
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>InnoNetworkTestSupport</h3>
+          <p>
+            Consumer-facing test helpers for deterministic URLSession responses, typed request
+            stubs, redacted HTTP cassettes, and WebSocket event assertions.
+          </p>
+          <ul>
+            <li>Scripted <code>MockURLSession</code> responses</li>
+            <li>Typed <code>StubNetworkClient</code> behavior</li>
+            <li>Record/replay cassettes with credential redaction</li>
+          </ul>
+          <div class="link-row">
+            <a class="pill" href="./InnoNetworkTestSupport/documentation/innonetworktestsupport">Module Docs</a>
           </div>
         </article>
       </div>

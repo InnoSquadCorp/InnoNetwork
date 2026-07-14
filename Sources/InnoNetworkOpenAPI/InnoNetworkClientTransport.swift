@@ -6,9 +6,9 @@ import OpenAPIRuntime
 /// An `OpenAPIRuntime.ClientTransport` implementation that routes generated
 /// OpenAPI client traffic through a caller-supplied `URLSession`.
 ///
-/// This adapter complements ``OpenAPIAdapter`` / ``OpenAPIRequest``. The
+/// This adapter complements ``OpenAPIRequest``. The
 /// adapter wraps an `OpenAPIRestOperation` so it can be dispatched through
-/// ``DefaultNetworkClient``; the transport is the inverse direction — it
+/// `DefaultNetworkClient`; the transport is the inverse direction — it
 /// lets a `swift-openapi-generator`-produced `Client` dispatch its
 /// generated calls through a URLSession that the host application has
 /// already configured (timeouts, cache policy, cookie storage, HTTP/3,
@@ -47,7 +47,7 @@ public final class InnoNetworkClientTransport: ClientTransport {
     /// - Parameters:
     ///   - session: The URLSession used to dispatch generated requests.
     ///     Construct it from
-    ///     ``NetworkConfiguration/makeURLSessionConfiguration()`` to carry
+    ///     `NetworkConfiguration.makeURLSessionConfiguration()` to carry
     ///     session-level timeout, cache, and network-access defaults, then
     ///     mutate `URLSessionConfiguration` directly for cookie storage,
     ///     HTTP/3, TLS, or delegate-owned behavior. `NetworkConfiguration`

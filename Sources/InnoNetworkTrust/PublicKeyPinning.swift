@@ -5,7 +5,7 @@ import Security
 
 /// Configuration for public-key pinning.
 ///
-/// 4.x.x split this type out of the core ``InnoNetwork`` module into a
+/// 4.x.x split this type out of the core `InnoNetwork` module into a
 /// dedicated ``InnoNetworkTrust`` product. Apps that don't need pinning
 /// no longer pay the surface cost (376 lines of DER/SPKI code, 7 failure
 /// reasons, certificate-chain plumbing). To pin, link
@@ -151,13 +151,10 @@ public struct PublicKeyPinningPolicy: Sendable {
 /// `TrustEvaluating` adapter that performs SPKI-based public-key pinning
 /// against ``PublicKeyPinningPolicy``.
 ///
-/// Surfaces the granular ``TrustFailureReason`` cases
-/// (``TrustFailureReason/hostNotPinned(_:)``,
-/// ``TrustFailureReason/pinMismatch(host:)``,
-/// ``TrustFailureReason/publicKeyExtractionFailed``,
-/// ``TrustFailureReason/systemTrustEvaluationFailed(reason:)``) via
-/// ``TrustChallengeOutcome/cancel(_:)`` so observability layers can
-/// distinguish failure modes.
+/// Surfaces the granular `TrustFailureReason` cases (`hostNotPinned`,
+/// `pinMismatch`, `publicKeyExtractionFailed`, and
+/// `systemTrustEvaluationFailed`) through `TrustChallengeOutcome.cancel(_:)`
+/// so observability layers can distinguish failure modes.
 public struct PublicKeyPinningEvaluator: TrustEvaluating {
     public let policy: PublicKeyPinningPolicy
 

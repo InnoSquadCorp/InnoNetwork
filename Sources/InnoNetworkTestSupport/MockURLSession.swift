@@ -59,7 +59,7 @@ private struct MockURLSessionState {
 }
 
 
-/// In-memory ``URLSessionProtocol`` implementation for consumer tests.
+/// In-memory `URLSessionProtocol` implementation for consumer tests.
 public final class MockURLSession: URLSessionProtocol, Sendable {
     private let stateLock = OSAllocatedUnfairLock<MockURLSessionState>(
         initialState: MockURLSessionState(

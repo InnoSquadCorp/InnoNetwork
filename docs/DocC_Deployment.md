@@ -6,12 +6,20 @@ DocC documentation is built and deployed to GitHub Pages via:
 
 - `.github/workflows/docc-pages.yml`
 
-The workflow builds DocC archives for public products that own a DocC catalog:
+The workflow builds and publishes DocC archives for all public products:
 
 1. `InnoNetwork`
-2. `InnoNetworkDownload`
-3. `InnoNetworkPersistentCache`
+2. `InnoNetworkAuthAWS`
+3. `InnoNetworkDownload`
 4. `InnoNetworkWebSocket`
+5. `InnoNetworkPersistentCache`
+6. `InnoNetworkOpenAPI`
+7. `InnoNetworkTrust`
+8. `InnoNetworkTestSupport`
+
+Each public product owns a same-named DocC catalog. This keeps the generated
+module landing page and curated topic groups from depending on DocC's
+symbol-only fallback behavior.
 
 ## Triggers
 
@@ -23,11 +31,19 @@ The workflow builds DocC archives for public products that own a DocC catalog:
 The workflow deploys a static site to GitHub Pages with module-specific entry points:
 
 - `/<repo>/InnoNetwork/documentation/innonetwork`
+- `/<repo>/InnoNetworkAuthAWS/documentation/innonetworkauthaws`
 - `/<repo>/InnoNetworkDownload/documentation/innonetworkdownload`
-- `/<repo>/InnoNetworkPersistentCache/documentation/innonetworkpersistentcache`
 - `/<repo>/InnoNetworkWebSocket/documentation/innonetworkwebsocket`
+- `/<repo>/InnoNetworkPersistentCache/documentation/innonetworkpersistentcache`
+- `/<repo>/InnoNetworkOpenAPI/documentation/innonetworkopenapi`
+- `/<repo>/InnoNetworkTrust/documentation/innonetworktrust`
+- `/<repo>/InnoNetworkTestSupport/documentation/innonetworktestsupport`
 
-It also publishes a root index page linking to those module docs.
+It also publishes a root index page linking to every module. Before upload, the
+workflow requires each module's transformed landing HTML and render-node JSON
+to exist and requires the root index to link to all eight routes. After Pages
+deployment, it requests the root and every module URL with bounded retries so a
+bad hosting base path or missing route fails the deployment job.
 
 ## Local Reproduction
 
@@ -41,15 +57,32 @@ xcodebuild docbuild \
 
 mkdir -p .build/docc-site
 
-xcrun docc process-archive transform-for-static-hosting \
-  .build/DocC/Build/Products/Debug/InnoNetwork.doccarchive \
-  --output-path .build/docc-site/InnoNetwork \
-  --hosting-base-path InnoNetwork/InnoNetwork
+doc_modules=(
+  InnoNetwork
+  InnoNetworkAuthAWS
+  InnoNetworkDownload
+  InnoNetworkWebSocket
+  InnoNetworkPersistentCache
+  InnoNetworkOpenAPI
+  InnoNetworkTrust
+  InnoNetworkTestSupport
+)
+
+for module in "${doc_modules[@]}"; do
+  archive="$(find .build/DocC/Build/Products -type d \
+    -path "*/${module}.doccarchive" -print -quit)"
+  xcrun docc process-archive transform-for-static-hosting "$archive" \
+    --output-path ".build/docc-site/$module" \
+    --hosting-base-path "InnoNetwork/$module"
+
+  slug="$(printf '%s' "$module" | tr '[:upper:]' '[:lower:]')"
+  test -s ".build/docc-site/$module/documentation/$slug/index.html"
+  test -s ".build/docc-site/$module/data/documentation/$slug.json"
+done
 ```
 
-Repeat the `process-archive` step for the other DocC-backed modules:
-`InnoNetworkDownload`, `InnoNetworkPersistentCache`, and
-`InnoNetworkWebSocket`.
+Replace the first `InnoNetwork` in each `--hosting-base-path` with the actual
+repository name when reproducing a fork's Pages layout.
 
 For local CPU stability, run DocC archive transforms sequentially. Avoid running
 symbol graph generation for other Swift packages at the same time; DocC and
@@ -60,4 +93,5 @@ machines.
 
 - Ensure GitHub Pages is enabled in repository settings.
 - The workflow uses `actions/upload-pages-artifact` and `actions/deploy-pages`.
-- If module naming changes, update the root index links in `docc-pages.yml`.
+- A product addition or rename must update its DocC catalog, the workflow's
+  module list, this route list, and `docs/site/index.html` together.

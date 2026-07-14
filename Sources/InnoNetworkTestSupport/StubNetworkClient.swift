@@ -32,7 +32,7 @@ public struct StubRequestKey: Hashable, Sendable {
 
 
 /// Explicit test/preview client for returning canned responses without
-/// changing production ``APIDefinition`` behavior.
+/// changing production `APIDefinition` behavior.
 public final class StubNetworkClient: NetworkClient, Sendable {
     private struct StubEntry: Sendable {
         let response: any Sendable

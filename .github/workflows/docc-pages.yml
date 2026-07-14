@@ -14,6 +14,7 @@ jobs:
   build-docs:
     name: Build DocC Site
     runs-on: macos-15
+    timeout-minutes: 30
     permissions:
       contents: read
 
@@ -44,11 +45,21 @@ jobs:
           set -euo pipefail
 
           SITE_DIR=".build/docc-site"
+          rm -rf "$SITE_DIR"
           mkdir -p "$SITE_DIR"
           touch "$SITE_DIR/.nojekyll"
 
-          modules=(InnoNetwork InnoNetworkDownload InnoNetworkPersistentCache InnoNetworkWebSocket)
-          for module in "${modules[@]}"; do
+          doc_modules=(
+            InnoNetwork
+            InnoNetworkAuthAWS
+            InnoNetworkDownload
+            InnoNetworkWebSocket
+            InnoNetworkPersistentCache
+            InnoNetworkOpenAPI
+            InnoNetworkTrust
+            InnoNetworkTestSupport
+          )
+          for module in "${doc_modules[@]}"; do
             archive="$(find .build/DocC/Build/Products -type d -path "*/${module}.doccarchive" -print -quit)"
             if [[ -z "$archive" || ! -d "$archive" ]]; then
               echo "Missing DocC archive for module: $module"
@@ -62,6 +73,35 @@ jobs:
 
           cp docs/site/index.html "$SITE_DIR/index.html"
 
+      - name: Validate DocC site files
+        run: |
+          set -euo pipefail
+
+          SITE_DIR=".build/docc-site"
+          doc_modules=(
+            InnoNetwork
+            InnoNetworkAuthAWS
+            InnoNetworkDownload
+            InnoNetworkWebSocket
+            InnoNetworkPersistentCache
+            InnoNetworkOpenAPI
+            InnoNetworkTrust
+            InnoNetworkTestSupport
+          )
+
+          test -f "$SITE_DIR/.nojekyll"
+          test -s "$SITE_DIR/index.html"
+
+          for module in "${doc_modules[@]}"; do
+            slug="$(printf '%s' "$module" | tr '[:upper:]' '[:lower:]')"
+            route="./${module}/documentation/${slug}"
+
+            test -s "$SITE_DIR/${module}/index.html"
+            test -s "$SITE_DIR/${module}/documentation/${slug}/index.html"
+            test -s "$SITE_DIR/${module}/data/documentation/${slug}.json"
+            grep -Fq "href=\"${route}" "$SITE_DIR/index.html"
+          done
+
       - name: Setup Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
@@ -74,6 +114,7 @@ jobs:
     name: Deploy to GitHub Pages
     needs: build-docs
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       pages: write
@@ -86,3 +127,34 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+
+      - name: Smoke deployed DocC URLs
+        env:
+          SITE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+
+          base_url="${SITE_URL%/}"
+          doc_modules=(
+            InnoNetwork
+            InnoNetworkAuthAWS
+            InnoNetworkDownload
+            InnoNetworkWebSocket
+            InnoNetworkPersistentCache
+            InnoNetworkOpenAPI
+            InnoNetworkTrust
+            InnoNetworkTestSupport
+          )
+
+          curl --fail --location --silent --show-error \
+            --retry 12 --retry-delay 5 --retry-all-errors \
+            --connect-timeout 10 --max-time 30 \
+            "$base_url/" >/dev/null
+
+          for module in "${doc_modules[@]}"; do
+            slug="$(printf '%s' "$module" | tr '[:upper:]' '[:lower:]')"
+            curl --fail --location --silent --show-error \
+              --retry 12 --retry-delay 5 --retry-all-errors \
+              --connect-timeout 10 --max-time 30 \
+              "$base_url/${module}/documentation/${slug}/" >/dev/null
+          done
