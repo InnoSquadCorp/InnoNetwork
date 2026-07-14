@@ -1,167 +1,346 @@
 #!/usr/bin/env bash
 #
-# Emits a CycloneDX 1.5 SBOM (JSON) describing the InnoNetwork package and
-# its SwiftPM build inputs. Components are derived from the SwiftPM manifest
-# rather than hardcoded, so added external dependencies appear in release
-# attestations.
+# Emits a CycloneDX 1.5 SBOM (JSON) from SwiftPM's resolved dependency graph.
+# The default package is the repository root. Set PACKAGE_PATH to generate an
+# SBOM for another package, for example Packages/InnoNetworkCodegen.
 #
 # Output is written to the path supplied as the first argument, defaulting
 # to .build/release-artifacts/sbom.cdx.json.
+#
+# The SBOM_* metadata overrides and SBOM_DEPENDENCY_JSON are primarily useful
+# for deterministic, network-free tests. SBOM_DEPENDENCY_JSON must name a file
+# containing `swift package show-dependencies --format json` output.
 
 set -euo pipefail
 
-OUTPUT="${1:-.build/release-artifacts/sbom.cdx.json}"
-mkdir -p "$(dirname "$OUTPUT")"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+output="${1:-.build/release-artifacts/sbom.cdx.json}"
+package_path="${PACKAGE_PATH:-$repo_root}"
 
-# Resolve metadata from the SwiftPM manifest.
-package_json="$(xcrun swift package describe --type json)"
-name="$(printf '%s' "$package_json" | python3 -c 'import json, sys; print(json.load(sys.stdin)["name"])')"
+if [[ "$package_path" != /* ]]; then
+    package_path="$repo_root/$package_path"
+fi
+
+mkdir -p "$(dirname "$output")"
+
+temporary_dependency_json=""
+cleanup() {
+    if [[ -n "$temporary_dependency_json" ]]; then
+        rm -f "$temporary_dependency_json"
+    fi
+}
+trap cleanup EXIT
+
+if [[ -n "${SBOM_DEPENDENCY_JSON:-}" ]]; then
+    dependency_json="$SBOM_DEPENDENCY_JSON"
+    [[ -f "$dependency_json" ]] || {
+        printf 'SBOM dependency graph does not exist: %s\n' "$dependency_json" >&2
+        exit 1
+    }
+else
+    [[ -d "$package_path" ]] || {
+        printf 'Swift package path does not exist: %s\n' "$package_path" >&2
+        exit 1
+    }
+    temporary_dependency_json="$(mktemp "${TMPDIR:-/tmp}/innonetwork-sbom-dependencies.XXXXXX")"
+    xcrun swift package --package-path "$package_path" \
+        show-dependencies --format json > "$temporary_dependency_json"
+    dependency_json="$temporary_dependency_json"
+fi
+
 version="${SBOM_VERSION:-${GITHUB_REF_NAME:-unknown}}"
-serial="urn:uuid:$(uuidgen | tr 'A-Z' 'a-z')"
-timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-revision="$(git rev-parse HEAD 2>/dev/null || echo "unknown")"
-swift_version="$(xcrun swift --version | head -n 1)"
+serial="${SBOM_SERIAL_NUMBER:-urn:uuid:$(uuidgen | tr '[:upper:]' '[:lower:]')}"
+timestamp="${SBOM_TIMESTAMP:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+revision="${SBOM_REVISION:-$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || echo "unknown")}"
+swift_version="${SBOM_SWIFT_VERSION:-$(xcrun swift --version 2>/dev/null | head -n 1)}"
 
-OUTPUT="$OUTPUT" \
-PACKAGE_JSON="$package_json" \
-SERIAL="$serial" \
-TIMESTAMP="$timestamp" \
-NAME="$name" \
-VERSION="$version" \
-REVISION="$revision" \
-SWIFT_VERSION="$swift_version" \
-python3 - <<'PY'
+SBOM_VERSION="$version" \
+SBOM_SERIAL_NUMBER="$serial" \
+SBOM_TIMESTAMP="$timestamp" \
+SBOM_REVISION="$revision" \
+SBOM_SWIFT_VERSION="$swift_version" \
+python3 - "$dependency_json" "$output" <<'PY'
+import datetime
 import json
 import os
-import posixpath
+import re
 import sys
-
-output = os.environ["OUTPUT"]
-name = os.environ["NAME"]
-version = os.environ["VERSION"]
-package = json.loads(os.environ["PACKAGE_JSON"])
+import tempfile
+import urllib.parse
+import uuid
 
 
-def dependency_name(dependency):
-    name = dependency.get("identity") or dependency.get("name")
-    if name:
-        return str(name)
+dependency_json, output = sys.argv[1:]
 
-    source = dependency.get("url") or dependency.get("path")
-    if not source:
+
+def fail(message):
+    print(f"SBOM generation failed: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+try:
+    with open(dependency_json, encoding="utf-8") as dependency_file:
+        graph = json.load(dependency_file)
+except (OSError, json.JSONDecodeError) as error:
+    fail(f"could not read the resolved SwiftPM dependency graph: {error}")
+
+
+def required_text(mapping, key, context):
+    value = mapping.get(key)
+    if not isinstance(value, str) or not value.strip():
+        fail(f"{context} has no non-empty '{key}' field")
+    return value.strip()
+
+
+def normalized_version(node):
+    value = node.get("version")
+    if not isinstance(value, str):
         return None
-
-    trimmed = str(source).rstrip("/")
-    basename = posixpath.basename(trimmed)
-    if basename.endswith(".git"):
-        basename = basename[:-4]
-    return basename or trimmed
-
-
-def dependency_version(requirement):
-    if isinstance(requirement, str):
-        return requirement
-    if not isinstance(requirement, dict):
+    value = value.strip()
+    if not value or value.lower() == "unspecified":
         return None
+    return value
 
-    exact = requirement.get("exact")
-    if isinstance(exact, str):
-        return exact
-    if isinstance(exact, list) and exact:
-        return str(exact[0])
 
-    revision = requirement.get("revision")
-    if isinstance(revision, str):
-        return revision
+def package_url(identity, version=None):
+    encoded_identity = urllib.parse.quote(identity.lower(), safe="._-")
+    result = f"pkg:swift/{encoded_identity}"
+    if version:
+        result += "@" + urllib.parse.quote(version, safe="._-+")
+    return result
 
-    branch = requirement.get("branch")
-    if isinstance(branch, str):
-        return branch
 
+def remote_source_url(node):
+    value = node.get("url")
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    scheme = urllib.parse.urlsplit(value).scheme.lower()
+    if scheme in {"https", "http", "ssh", "git"}:
+        return value
     return None
 
 
-def dependency_component(dependency):
-    if not isinstance(dependency, dict):
-        return None
+def child_nodes(node, context):
+    dependencies = node.get("dependencies", [])
+    if not isinstance(dependencies, list):
+        fail(f"{context} has a non-array 'dependencies' field")
+    for index, child in enumerate(dependencies):
+        if not isinstance(child, dict):
+            fail(f"{context} dependency {index} is not an object")
+    return dependencies
 
-    dep_name = dependency_name(dependency)
-    if not dep_name:
-        return None
 
-    requirement = dependency.get("requirement")
-    version = dependency_version(requirement)
-    purl = f"pkg:swift/{dep_name}"
-    if version:
-        purl = f"{purl}@{version}"
+if not isinstance(graph, dict):
+    fail("resolved SwiftPM dependency graph root is not an object")
 
-    properties = []
-    for key in ("identity", "url", "path"):
-        value = dependency.get(key)
-        if value:
-            properties.append({"name": f"swift:{key}", "value": str(value)})
-    if requirement:
-        if isinstance(requirement, str):
-            requirement_value = requirement
-        else:
-            requirement_value = json.dumps(requirement, sort_keys=True, separators=(",", ":"))
-        properties.append({"name": "swift:requirement", "value": requirement_value})
+root_identity = required_text(graph, "identity", "root package")
+root_name = required_text(graph, "name", "root package")
+root_version = os.environ["SBOM_VERSION"] if "SBOM_VERSION" in os.environ else os.environ.get("GITHUB_REF_NAME", "unknown")
+if not root_version.strip():
+    fail("SBOM_VERSION must not be empty")
+root_version = root_version.strip()
+root_ref = package_url(root_identity, root_version)
 
+component_records = {}
+component_child_sets = {}
+relationship_sets = {root_ref: set()}
+visiting = set()
+
+
+def visit(node, parent_ref, context):
+    identity = required_text(node, "identity", context)
+    name = required_text(node, "name", context)
+    version = normalized_version(node)
+    ref = package_url(identity, version)
+    children = child_nodes(node, context)
+    expected_children = {
+        package_url(
+            required_text(child, "identity", f"dependency of {identity}"),
+            normalized_version(child),
+        )
+        for child in children
+    }
+
+    if ref == root_ref:
+        fail(f"resolved dependency '{identity}' collides with the root component reference")
+    if ref in visiting:
+        fail(f"resolved dependency graph contains a cycle at '{ref}'")
+
+    source_url = remote_source_url(node)
+    record = {
+        "identity": identity,
+        "name": name,
+        "version": version,
+        "source_url": source_url,
+    }
+    previous = component_records.get(ref)
+    if previous is not None and previous != record:
+        fail(f"resolved dependency reference '{ref}' has conflicting package metadata")
+    component_records[ref] = record
+    relationship_sets.setdefault(ref, set())
+    relationship_sets.setdefault(parent_ref, set()).add(ref)
+
+    # A repeated package is normal in the tree-shaped show-dependencies output.
+    # Traverse each stable component reference once and reject actual cycles.
+    if previous is not None:
+        if component_child_sets[ref] != expected_children:
+            fail(f"repeated dependency '{ref}' has conflicting relationships")
+        return
+
+    component_child_sets[ref] = expected_children
+    visiting.add(ref)
+    for child_index, child in enumerate(children):
+        visit(child, ref, f"dependency {child_index} of {identity}")
+    visiting.remove(ref)
+
+
+for index, dependency in enumerate(child_nodes(graph, "root package")):
+    visit(dependency, root_ref, f"root dependency {index}")
+
+
+def component_for(ref, record):
     component = {
         "type": "library",
-        "bom-ref": purl,
-        "name": dep_name,
+        "bom-ref": ref,
+        "name": record["name"],
         "scope": "required",
-        "purl": purl,
+        "purl": ref,
+        "properties": [
+            {"name": "swift:identity", "value": record["identity"]},
+        ],
     }
-    if version:
-        component["version"] = version
-    if properties:
-        component["properties"] = properties
+    if record["version"]:
+        component["version"] = record["version"]
+    if record["source_url"]:
+        component["externalReferences"] = [
+            {"type": "vcs", "url": record["source_url"]},
+        ]
     return component
 
 
-dependencies = package.get("dependencies") or []
-components = [component for component in (dependency_component(dependency) for dependency in dependencies) if component]
-if dependencies and not components:
-    print("SBOM generation found SwiftPM dependencies but could not populate CycloneDX components.", file=sys.stderr)
-    sys.exit(1)
+components = [
+    component_for(ref, component_records[ref])
+    for ref in sorted(component_records)
+]
+relationships = [
+    {"ref": ref, "dependsOn": sorted(relationship_sets[ref])}
+    for ref in sorted(relationship_sets)
+]
 
 document = {
     "bomFormat": "CycloneDX",
     "specVersion": "1.5",
-    "serialNumber": os.environ["SERIAL"],
+    "serialNumber": os.environ["SBOM_SERIAL_NUMBER"],
     "version": 1,
     "metadata": {
-        "timestamp": os.environ["TIMESTAMP"],
+        "timestamp": os.environ["SBOM_TIMESTAMP"],
         "tools": {
             "components": [
                 {
                     "type": "application",
                     "name": "Scripts/generate-sbom.sh",
-                    "version": "1.0.0",
+                    "version": "2.0.0",
                 }
             ]
         },
         "component": {
             "type": "library",
-            "bom-ref": f"pkg:swift/{name}@{version}",
-            "name": name,
-            "version": version,
+            "bom-ref": root_ref,
+            "name": root_name,
+            "version": root_version,
             "scope": "required",
-            "purl": f"pkg:swift/{name}@{version}",
+            "purl": root_ref,
             "properties": [
-                {"name": "swift:revision", "value": os.environ["REVISION"]},
-                {"name": "swift:toolchain", "value": os.environ["SWIFT_VERSION"]},
+                {"name": "swift:identity", "value": root_identity},
+                {"name": "swift:revision", "value": os.environ["SBOM_REVISION"]},
+                {"name": "swift:toolchain", "value": os.environ["SBOM_SWIFT_VERSION"]},
             ],
         },
     },
     "components": components,
+    "dependencies": relationships,
 }
 
-with open(output, "w", encoding="utf-8") as file:
-    json.dump(document, file, indent=2)
-    file.write("\n")
+
+def validate_rfc3339(value):
+    if not isinstance(value, str):
+        fail("metadata timestamp is not a string")
+    try:
+        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        fail(f"metadata timestamp is not RFC 3339: {value!r}")
+    if parsed.tzinfo is None:
+        fail("metadata timestamp must include a timezone")
+
+
+def contains_local_absolute_path(value):
+    if not isinstance(value, str):
+        return False
+    return (
+        value.startswith("file://")
+        or os.path.isabs(value)
+        or re.match(r"^[A-Za-z]:[\\/]", value) is not None
+    )
+
+
+try:
+    serial_value = document["serialNumber"]
+    if not serial_value.startswith("urn:uuid:"):
+        raise ValueError("missing urn:uuid prefix")
+    uuid.UUID(serial_value.removeprefix("urn:uuid:"))
+except (AttributeError, ValueError) as error:
+    fail(f"serialNumber is not a valid UUID URN: {error}")
+
+validate_rfc3339(document["metadata"]["timestamp"])
+
+component_refs = {root_ref, *(component["bom-ref"] for component in components)}
+if len(component_refs) != len(components) + 1:
+    fail("component bom-ref values are not unique")
+relationship_refs = {relationship["ref"] for relationship in relationships}
+if relationship_refs != component_refs:
+    fail("dependency relationships do not cover every component exactly once")
+for relationship in relationships:
+    unknown_refs = set(relationship["dependsOn"]) - component_refs
+    if unknown_refs:
+        fail(f"dependency relationship contains unknown references: {sorted(unknown_refs)}")
+
+
+def validate_no_local_paths(value, location="$"):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            validate_no_local_paths(child, f"{location}.{key}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            validate_no_local_paths(child, f"{location}[{index}]")
+    elif contains_local_absolute_path(value):
+        fail(f"local absolute path leaked into output at {location}")
+
+
+validate_no_local_paths(document)
+
+output_directory = os.path.dirname(os.path.abspath(output))
+temporary_output = None
+try:
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=output_directory,
+        prefix=".sbom.",
+        suffix=".tmp",
+        delete=False,
+    ) as output_file:
+        temporary_output = output_file.name
+        json.dump(document, output_file, indent=2, ensure_ascii=False)
+        output_file.write("\n")
+    os.replace(temporary_output, output)
+except OSError as error:
+    if temporary_output:
+        try:
+            os.unlink(temporary_output)
+        except FileNotFoundError:
+            pass
+    fail(f"could not write output: {error}")
 PY
 
-echo "Generated $OUTPUT (revision $revision, version $version)"
+printf 'Generated %s (revision %s, version %s)\n' "$output" "$revision" "$version"
