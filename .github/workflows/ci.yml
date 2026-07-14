@@ -278,6 +278,10 @@ jobs:
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: bash Scripts/check_unchecked_sendable.sh
 
+      - name: Enforce SharedCoders immutability
+        if: steps.toolchain-compatibility.outputs.compatible == 'true'
+        run: bash Scripts/check_shared_coders_mutation.sh
+
       - name: Enforce no force unwrap in production sources
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: bash Scripts/check_production_force_unwraps.sh
@@ -285,6 +289,44 @@ jobs:
       - name: Enforce no print() in production sources
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: bash Scripts/check_no_print_in_production.sh
+
+  parallel-tests:
+    name: Test (SwiftPM Parallel) — Xcode 26.0.1
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: ${{ runner.os }}-parallel-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-parallel-xcode-26.0.1-
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Run tests with parallel scheduling
+        run: |
+          set -eo pipefail
+          # Keep the coverage lane deterministic and serial, while this
+          # blocking lane exposes scheduler-sensitive races on every change.
+          xcrun swift test --parallel
 
   docs-contract-sync:
     name: Docs / Contract Sync
@@ -348,15 +390,15 @@ jobs:
           - destination: "generic/platform=tvOS Simulator"
             runtime: "tvOS"
             sdk: "appletvsimulator"
-            required: false
+            required: true
           - destination: "generic/platform=watchOS Simulator"
             runtime: "watchOS"
             sdk: "watchsimulator"
-            required: false
+            required: true
           - destination: "generic/platform=visionOS Simulator"
             runtime: "visionOS"
             sdk: "xrsimulator"
-            required: false
+            required: true
 
     steps:
       - name: Checkout
@@ -382,43 +424,18 @@ jobs:
           required="${{ matrix.required }}"
           destination="${{ matrix.destination }}"
 
-          if [[ "$runtime" != "macOS" ]]; then
-            if ! xcodebuild -showsdks | awk -v sdk="$sdk" '$0 ~ "-sdk " sdk { found = 1 } END { exit found ? 0 : 1 }'; then
-              if [[ "$required" == "true" ]]; then
-                echo "::error::Required simulator SDK $sdk is not installed on this runner."
-                exit 1
-              fi
-              echo "::notice::Skipping optional $runtime smoke because simulator SDK $sdk is not installed on this runner."
-              exit 0
+          if ! xcodebuild -showsdks | awk -v sdk="$sdk" '$0 ~ "-sdk " sdk { found = 1 } END { exit found ? 0 : 1 }'; then
+            if [[ "$required" == "true" ]]; then
+              echo "::error::Required $runtime SDK $sdk is not installed on the canonical runner."
+              exit 1
             fi
-
-            if ! xcrun simctl list runtimes | awk -v runtime="$runtime" '$0 ~ "^" runtime " " && $0 !~ /unavailable/ { found = 1 } END { exit found ? 0 : 1 }'; then
-              if [[ "$required" == "true" ]]; then
-                echo "::error::Required simulator runtime $runtime is not installed on this runner."
-                exit 1
-              fi
-              echo "::notice::Skipping optional $runtime smoke because the runtime is not installed on this runner."
-              exit 0
-            fi
-
-            destination_platform="$runtime Simulator"
-            destination_listing="$(xcodebuild -scheme InnoNetwork-Package -destination "$destination" -showdestinations 2>&1 || true)"
-            if ! printf '%s\n' "$destination_listing" | awk -v platform="platform:$destination_platform" '
-              /Available destinations/ { in_available = 1; next }
-              /Ineligible destinations/ { in_available = 0 }
-              in_available && index($0, platform) && $0 !~ /variant:/ { found = 1 }
-              END { exit found ? 0 : 1 }
-            '; then
-              if [[ "$required" == "true" ]]; then
-                echo "::error::Required destination $destination is not available on this runner."
-                printf '%s\n' "$destination_listing"
-                exit 1
-              fi
-              echo "::notice::Skipping optional $runtime smoke because destination $destination is not available on this runner."
-              exit 0
-            fi
+            echo "::notice::Skipping optional $runtime smoke because SDK $sdk is not installed on this runner."
+            exit 0
           fi
 
+          # These are generic compile destinations; a bootable simulator
+          # runtime is not required. xcodebuild remains the source of truth
+          # for destination support after the SDK gate above.
           xcodebuild \
             -scheme InnoNetwork-Package \
             -destination "$destination" \
@@ -484,7 +501,7 @@ jobs:
         run: xcrun swift build
 
       - name: Test codegen package
-        run: xcrun swift test --package-path Packages/InnoNetworkCodegen --filter MacroExpansionTests
+        run: xcrun swift test --package-path Packages/InnoNetworkCodegen
 
       - name: Build openapi-to-innonetwork CLI
         working-directory: Tools/openapi-to-innonetwork

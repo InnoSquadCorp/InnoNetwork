@@ -11,9 +11,52 @@ concurrency:
   group: nightly-live-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  live-smoke:
-    name: Live endpoint smoke
+  live-core:
+    name: Live/Core endpoint tests
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Show toolchain versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: ${{ runner.os }}-nightly-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-nightly-xcode-26.0.1-
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Run live-endpoint tests
+        env:
+          INNO_LIVE: '1'
+        run: |
+          set -euo pipefail
+          xcrun swift test \
+            --filter InnoNetworkLiveTests \
+            --parallel
+
+  websocket:
+    name: WebSocket smoke
     runs-on: macos-15
     timeout-minutes: 20
 
@@ -30,17 +73,18 @@ jobs:
           xcodebuild -version
           xcrun swift --version
 
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: ${{ runner.os }}-nightly-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-nightly-xcode-26.0.1-
+
       - name: Resolve dependencies
         run: xcrun swift package resolve
-
-      - name: Run live-endpoint tests
-        env:
-          INNO_LIVE: '1'
-        run: |
-          set -eo pipefail
-          xcrun swift test \
-            --filter InnoNetworkLiveTests \
-            --parallel
 
       - name: WebSocket smoke (live)
         timeout-minutes: 10
@@ -49,17 +93,122 @@ jobs:
           INNONETWORK_RUN_INTEGRATION: '1'
           INNONETWORK_WEBSOCKET_SMOKE_URL: ${{ vars.INNONETWORK_WEBSOCKET_SMOKE_URL || 'wss://echo.websocket.events' }}
         run: |
-          set -eo pipefail
+          set -euo pipefail
           curl --connect-timeout 5 --max-time 10 -fsS -o /dev/null \
             "$INNONETWORK_WEBSOCKET_SMOKE_URL"
           xcrun swift run -c release InnoNetworkWebSocketSmoke \
             "$INNONETWORK_WEBSOCKET_SMOKE_URL"
 
+  persistent-cache:
+    name: Persistent cache smoke
+    runs-on: macos-15
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Show toolchain versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: ${{ runner.os }}-nightly-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-nightly-xcode-26.0.1-
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
       - name: Persistent cache smoke (offline)
         timeout-minutes: 10
         run: |
-          set -eo pipefail
+          set -euo pipefail
           xcrun swift run -c release InnoNetworkCacheSmoke
+
+  download:
+    name: Download pause/resume smoke
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Show toolchain versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: ${{ runner.os }}-nightly-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-nightly-xcode-26.0.1-
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Download pause/resume smoke (live)
+        timeout-minutes: 10
+        env:
+          INNONETWORK_RUN_INTEGRATION: '1'
+          # A fixed 10 MB fixture is large enough to exercise pause/resume but
+          # bounded so a nightly regression cannot consume unbounded traffic.
+          INNONETWORK_DOWNLOAD_SMOKE_URL: 'https://proof.ovh.net/files/10Mb.dat'
+        run: |
+          set -euo pipefail
+          xcrun swift run -c release InnoNetworkDownloadSmoke \
+            "$INNONETWORK_DOWNLOAD_SMOKE_URL"
+
+  openapi:
+    name: OpenAPI adapter smoke
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Show toolchain versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: ${{ runner.os }}-nightly-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-nightly-xcode-26.0.1-
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
 
       - name: OpenAPI adapter smoke (live)
         timeout-minutes: 10
@@ -68,7 +217,7 @@ jobs:
           INNONETWORK_RUN_INTEGRATION: '1'
           INNONETWORK_OPENAPI_SMOKE_BASE_URL: ${{ vars.INNONETWORK_OPENAPI_SMOKE_BASE_URL || 'https://jsonplaceholder.typicode.com' }}
         run: |
-          set -eo pipefail
+          set -euo pipefail
           curl --connect-timeout 5 --max-time 10 -fsSI \
             "$INNONETWORK_OPENAPI_SMOKE_BASE_URL"
           xcrun swift run -c release InnoNetworkOpenAPISmoke \

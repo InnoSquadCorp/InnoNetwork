@@ -42,7 +42,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-InnoNetwork is a type-safe Swift network library shipped as **7 products**:
+InnoNetwork is a type-safe Swift network library shipped as **8 products**:
 
 **InnoNetwork (Core):**
 - Async/await + `typed throws` (`async throws(NetworkError)`)
@@ -87,10 +87,10 @@ InnoNetwork is a type-safe Swift network library shipped as **7 products**:
 swift build
 
 # Test
-swift test
+swift test --parallel
 
-# Test with coverage
-swift test --enable-code-coverage --parallel
+# Test with coverage (the CI coverage lane is intentionally serial)
+swift test --no-parallel --enable-code-coverage
 
 # List tests
 swift test --list-tests
@@ -98,7 +98,7 @@ swift test --list-tests
 
 ## Architecture
 
-전체 7개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
+전체 8개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
 
 ### Sources/InnoNetwork (Core)
 - `APIDefinition.swift` / `APIDefinition+Macros.swift` — endpoint 선언 프로토콜 + `@APIDefinition` 매크로 옵트인
@@ -251,7 +251,7 @@ for await event in manager.events(for: task) {
 }
 
 // Or use callbacks
-manager.onProgress = { task, progress in
+await manager.setOnProgressHandler { task, progress in
     print(progress.percentCompleted)
 }
 
