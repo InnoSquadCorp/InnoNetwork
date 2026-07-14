@@ -123,10 +123,12 @@ public actor PersistentResponseCache: ResponseCache {
 
     /// Open or create a persistent response cache at `configuration.directoryURL`.
     ///
-    /// Throws if the directory cannot be created. Unknown index versions and
-    /// decode failures are not surfaced as errors — the cache resets its own
-    /// state and continues, so a corrupt cache from a prior version is safe to
-    /// inherit.
+    /// Throws if the directory cannot be created or the existing HMAC key
+    /// cannot currently be read. A key read failure is surfaced without
+    /// deleting cache state because protected data or file access can be
+    /// temporarily unavailable. Unknown index versions and decode failures are
+    /// not surfaced as errors — the cache resets its own state and continues,
+    /// so a corrupt cache from a prior version is safe to inherit.
     public init(
         configuration: PersistentResponseCacheConfiguration,
         fileManager: FileManager = .default
@@ -149,12 +151,12 @@ public actor PersistentResponseCache: ResponseCache {
             keyStorage: configuration.keyStorage,
             fileManager: fileManager
         )
-        // If the existing HMAC key was unreadable or had the wrong length we
-        // had to regenerate it. Any prior on-disk entries are now keyed under
-        // a different HMAC and would never lookup-match again, so we reset the
-        // index and bodies together to keep the cache self-consistent. This
-        // mirrors the recovery policy used for corrupt or unknown-version
-        // indexes.
+        // If the existing HMAC key had the wrong length, or was missing while
+        // cache state remained, we had to regenerate it. Any prior on-disk
+        // entries are now keyed under a different HMAC and would never
+        // lookup-match again, so we reset the index and bodies together to
+        // keep the cache self-consistent. Read failures throw before this point
+        // and leave all existing files untouched.
         if keyResult.regenerated {
             try Self.resetCacheStorage(
                 indexURL: indexURL,

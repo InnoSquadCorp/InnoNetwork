@@ -462,8 +462,8 @@ struct PersistentResponseCacheTests {
         #expect(regeneratedKey.count == 32)
     }
 
-    @Test("Unreadable HMAC key file self-heals on reopen")
-    func unreadableHMACKeyFileSelfHealsOnReopen() async throws {
+    @Test("Transient HMAC key read failure preserves the key, index, and bodies")
+    func transientHMACKeyReadFailurePreservesCacheFiles() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let configuration = PersistentResponseCacheConfiguration(
@@ -478,19 +478,52 @@ struct PersistentResponseCacheTests {
         let writer = try PersistentResponseCache(configuration: configuration)
         await writer.set(key, CachedResponse(data: Data("first".utf8), headers: Self.authenticatedCacheHeaders))
 
-        // Replace the key file with a directory at the same path so
-        // `Data(contentsOf:)` throws — simulating corruption / file-protection
-        // edge cases. The cache must still self-heal.
-        let keyPath = hmacKeyURL(in: directory)
-        try FileManager.default.removeItem(at: keyPath)
-        try FileManager.default.createDirectory(at: keyPath, withIntermediateDirectories: false)
+        let keyURL = hmacKeyURL(in: directory)
+        let originalKey = try Data(contentsOf: keyURL)
+        let originalIndex = try Data(contentsOf: indexURL(in: directory))
+        let originalBodies = try bodySnapshots(in: directory)
+        #expect(originalBodies.isEmpty == false)
+
+        do {
+            _ = try PersistentCacheDiskKeyNormalizer.loadOrCreate(
+                directoryURL: directory,
+                dataProtectionClass: configuration.dataProtectionClass,
+                fileManager: .default,
+                keyFileReader: { _ in
+                    throw CocoaError(.fileReadNoPermission)
+                }
+            )
+            Issue.record("Expected the transient key read error to be surfaced")
+        } catch let error as CocoaError {
+            #expect(error.code == .fileReadNoPermission)
+        } catch {
+            Issue.record("Expected CocoaError.fileReadNoPermission, got \(error)")
+        }
+
+        #expect(try Data(contentsOf: keyURL) == originalKey)
+        #expect(try Data(contentsOf: indexURL(in: directory)) == originalIndex)
+        #expect(try bodySnapshots(in: directory) == originalBodies)
+    }
+
+    @Test("Non-regular HMAC key path still self-heals as structural corruption")
+    func nonRegularHMACKeyPathSelfHeals() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            maxBytes: 1_000_000
+        )
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/non-regular-key")
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("first".utf8), headers: Self.authenticatedCacheHeaders))
+
+        let keyURL = hmacKeyURL(in: directory)
+        try FileManager.default.removeItem(at: keyURL)
+        try FileManager.default.createDirectory(at: keyURL, withIntermediateDirectories: false)
 
         let reader = try PersistentResponseCache(configuration: configuration)
         #expect(await reader.get(key) == nil)
-        await reader.set(key, CachedResponse(data: Data("second".utf8), headers: Self.authenticatedCacheHeaders))
-        let cached = try #require(await reader.get(key))
-        #expect(cached.data == Data("second".utf8))
-        let regeneratedKey = try Data(contentsOf: hmacKeyURL(in: directory))
+        let regeneratedKey = try Data(contentsOf: keyURL)
         #expect(regeneratedKey.count == 32)
     }
 
@@ -1347,6 +1380,14 @@ struct PersistentResponseCacheTests {
         )
         .filter { $0.pathExtension == "body" }
         .sorted { $0.path < $1.path }
+    }
+
+    private func bodySnapshots(in directory: URL) throws -> [String: Data] {
+        try Dictionary(
+            uniqueKeysWithValues: existingBodyURLs(in: directory).map { url in
+                (url.lastPathComponent, try Data(contentsOf: url))
+            }
+        )
     }
 
     private func indexEntryCount(in directory: URL) throws -> Int {

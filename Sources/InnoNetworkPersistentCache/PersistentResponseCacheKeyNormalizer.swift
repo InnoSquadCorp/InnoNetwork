@@ -19,12 +19,12 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
 
     /// Result of opening or creating the on-disk HMAC key.
     ///
-    /// `regenerated` is `true` when an existing key file was discarded due to
-    /// a read failure (corruption, partial write, file protection edge case)
-    /// or an invalid length, or when the key file is missing while persisted
-    /// cache metadata/body files remain. Callers must reset any cached entries
-    /// that were keyed under the prior HMAC so the cache stays
-    /// self-consistent.
+    /// `regenerated` is `true` when an existing, readable key file had an
+    /// invalid length, or when the key file is missing while persisted cache
+    /// metadata/body files remain. Callers must reset any cached entries that
+    /// were keyed under the prior HMAC so the cache stays self-consistent.
+    /// Read failures are surfaced without replacing the key because they can
+    /// be transient (for example, while protected data is unavailable).
     struct LoadOrCreateResult {
         let normalizer: PersistentCacheDiskKeyNormalizer
         let regenerated: Bool
@@ -34,14 +34,16 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
         directoryURL: URL,
         dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
         keyStorage: PersistentResponseCacheConfiguration.KeyStorage = .file,
-        fileManager: FileManager
+        fileManager: FileManager,
+        keyFileReader: @Sendable (URL) throws -> Data = { try Data(contentsOf: $0) }
     ) throws -> LoadOrCreateResult {
         switch keyStorage {
         case .file:
             return try loadOrCreateFromFile(
                 directoryURL: directoryURL,
                 dataProtectionClass: dataProtectionClass,
-                fileManager: fileManager
+                fileManager: fileManager,
+                keyFileReader: keyFileReader
             )
         case .keychain(let service, let accessGroup):
             #if canImport(Security)
@@ -60,7 +62,8 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
             return try loadOrCreateFromFile(
                 directoryURL: directoryURL,
                 dataProtectionClass: dataProtectionClass,
-                fileManager: fileManager
+                fileManager: fileManager,
+                keyFileReader: keyFileReader
             )
             #endif
         }
@@ -69,14 +72,34 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
     private static func loadOrCreateFromFile(
         directoryURL: URL,
         dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
-        fileManager: FileManager
+        fileManager: FileManager,
+        keyFileReader: @Sendable (URL) throws -> Data
     ) throws -> LoadOrCreateResult {
         let keyURL = directoryURL.appendingPathComponent(keyFileName, isDirectory: false)
         if fileManager.fileExists(atPath: keyURL.path) {
-            // Best-effort read with length validation. Any failure mode
-            // (unreadable, truncated, oversized) routes through the same
-            // regenerate-and-reset recovery.
-            if let data = try? Data(contentsOf: keyURL), data.count == expectedKeyByteCount {
+            // A directory, symbolic link, or other known non-regular entry at
+            // the key path is deterministic structural corruption, not a
+            // transient protected-data read failure. Recover it without ever
+            // following a link outside the cache directory.
+            let resourceValues = try? keyURL.resourceValues(
+                forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+            )
+            if resourceValues?.isSymbolicLink == true || resourceValues?.isRegularFile == false {
+                try? fileManager.removeItem(at: keyURL)
+                return try createAndStoreKey(
+                    at: keyURL,
+                    dataProtectionClass: dataProtectionClass,
+                    fileManager: fileManager,
+                    regenerated: true
+                )
+            }
+
+            // A failed read does not prove the key is corrupt. Protected data
+            // can be temporarily unavailable while a device is locked, and
+            // permissions or coordinated file access can fail transiently.
+            // Surface that error without deleting either the key or cache.
+            let data = try keyFileReader(keyURL)
+            if data.count == expectedKeyByteCount {
                 PersistentResponseCache.applyDataProtection(
                     dataProtectionClass,
                     to: keyURL,
@@ -87,9 +110,10 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
                     regenerated: false
                 )
             }
-            // Best-effort cleanup: if fileManager.removeItem(at: keyURL)
-            // fails, the following .atomic write will either replace keyURL
-            // or leave the existing copy untouched.
+
+            // A successful read with an invalid length is deterministic
+            // evidence that the stored key cannot be used. Regenerate it and
+            // let the caller reset entries keyed under the prior HMAC.
             try? fileManager.removeItem(at: keyURL)
             return try createAndStoreKey(
                 at: keyURL,
