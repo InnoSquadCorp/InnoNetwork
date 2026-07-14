@@ -1,5 +1,4 @@
-import InnoNetwork
-
+#if Macros
 /// Authentication requirement declared by ``APIDefinition(method:path:auth:)``.
 ///
 /// Authentication is intentionally explicit at every macro call site. A
@@ -51,3 +50,4 @@ public macro APIDefinition(
     auth: APIAuthentication
 ) =
     #externalMacro(module: "InnoNetworkMacros", type: "APIDefinitionMacro")
+#endif

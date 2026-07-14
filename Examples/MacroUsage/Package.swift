@@ -12,15 +12,13 @@ let package = Package(
         .visionOS(.v2),
     ],
     dependencies: [
-        .package(name: "InnoNetwork", path: "../.."),
-        .package(name: "InnoNetworkCodegen", path: "../../Packages/InnoNetworkCodegen"),
+        .package(name: "InnoNetwork", path: "../..")
     ],
     targets: [
         .executableTarget(
             name: "MacroUsage",
             dependencies: [
-                .product(name: "InnoNetwork", package: "InnoNetwork"),
-                .product(name: "InnoNetworkCodegen", package: "InnoNetworkCodegen"),
+                .product(name: "InnoNetwork", package: "InnoNetwork")
             ],
             path: "Sources/MacroUsage"
         )

@@ -1,6 +1,6 @@
+#if Macros
 import Foundation
 import InnoNetwork
-import InnoNetworkCodegen
 import Testing
 
 @Suite("APIDefinition macro integration")
@@ -130,3 +130,4 @@ private struct MacroOptionalListUsers {
 private func requireAuth<T: APIDefinition>(_: T.Type) where T.Auth == AuthRequiredScope {}
 
 private func requirePublicAuth<T: APIDefinition>(_: T.Type) where T.Auth == PublicAuthScope {}
+#endif

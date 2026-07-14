@@ -1,5 +1,6 @@
 // swift-tools-version: 6.2
 
+import CompilerPluginSupport
 import PackageDescription
 
 /// Swift 6 language mode is enabled for every target so strict concurrency
@@ -8,7 +9,7 @@ import PackageDescription
 /// this setting carries the same semantics and stays enforced for consumers
 /// that build from source.
 let strictSettings: [SwiftSetting] = [
-    .swiftLanguageMode(.v6),
+    .swiftLanguageMode(.v6)
 ]
 
 // Platform policy: InnoNetwork is intentionally Apple-only. The library
@@ -34,7 +35,7 @@ let package = Package(
         .macOS(.v14),
         .tvOS(.v16),
         .watchOS(.v9),
-        .visionOS(.v1)
+        .visionOS(.v1),
     ],
     products: [
         .library(
@@ -84,6 +85,13 @@ let package = Package(
             targets: ["InnoNetworkTestSupport"]
         ),
     ],
+    traits: [
+        .trait(
+            name: "Macros",
+            description: "Enables @APIDefinition compile-time generation."
+        ),
+        .default(enabledTraits: ["Macros"]),
+    ],
     dependencies: [
         // `InnoNetworkOpenAPI` imports HTTPTypes directly at its generated-client
         // transport boundary. Keep that dependency explicit instead of relying
@@ -95,13 +103,20 @@ let package = Package(
             .upToNextMajor(from: "1.5.1")
         ),
         // The root package resolves `swift-openapi-runtime` because it ships
-        // the optional `InnoNetworkOpenAPI` companion product. Codegen remains
-        // isolated in Packages/InnoNetworkCodegen so root package consumers do
-        // not resolve `swift-syntax`. The 1.x range keeps the runtime's
-        // `ClientTransport` surface under explicit major-version review.
+        // the optional `InnoNetworkOpenAPI` companion product. The 1.x range
+        // keeps the runtime's `ClientTransport` surface under explicit
+        // major-version review.
         .package(
             url: "https://github.com/apple/swift-openapi-runtime",
             .upToNextMajor(from: "1.0.0")
+        ),
+        // Macro expansion formatting and diagnostic locations are part of the
+        // generated-code contract, so the patch release is pinned. Its
+        // products and compiler plug-in are reachable only when the Macros
+        // trait is enabled; SwiftPM still resolves manifest dependencies.
+        .package(
+            url: "https://github.com/swiftlang/swift-syntax.git",
+            exact: "603.0.2"
         ),
         // Swift Crypto is used only by the optional cryptographic surfaces:
         // the AWS SigV4 companion product, public-key pinning, and persistent
@@ -113,8 +128,26 @@ let package = Package(
         ),
     ],
     targets: [
+        .macro(
+            name: "InnoNetworkMacros",
+            dependencies: [
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+                .product(name: "SwiftDiagnostics", package: "swift-syntax"),
+                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+            ],
+            path: "Sources/InnoNetworkMacros",
+            swiftSettings: strictSettings
+        ),
         .target(
             name: "InnoNetwork",
+            dependencies: [
+                .target(
+                    name: "InnoNetworkMacros",
+                    condition: .when(traits: ["Macros"])
+                )
+            ],
             path: "Sources/InnoNetwork",
             // Bundles the `Resources/en.lproj/Localizable.strings`
             // catalogue that backs ``NetworkError.errorDescription``.
@@ -273,6 +306,33 @@ let package = Package(
                 .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
             ],
             path: "Tests/InnoNetworkTests",
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "InnoNetworkMacroTests",
+            dependencies: [
+                "InnoNetwork",
+                .target(
+                    name: "InnoNetworkMacros",
+                    condition: .when(traits: ["Macros"])
+                ),
+                .product(
+                    name: "SwiftDiagnostics",
+                    package: "swift-syntax",
+                    condition: .when(traits: ["Macros"])
+                ),
+                .product(
+                    name: "SwiftSyntaxMacros",
+                    package: "swift-syntax",
+                    condition: .when(traits: ["Macros"])
+                ),
+                .product(
+                    name: "SwiftSyntaxMacrosTestSupport",
+                    package: "swift-syntax",
+                    condition: .when(traits: ["Macros"])
+                ),
+            ],
+            path: "Tests/InnoNetworkMacroTests",
             swiftSettings: strictSettings
         ),
         .testTarget(

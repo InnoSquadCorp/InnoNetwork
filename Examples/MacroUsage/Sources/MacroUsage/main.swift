@@ -1,6 +1,5 @@
 import Foundation
 import InnoNetwork
-import InnoNetworkCodegen
 
 struct User: Decodable, Sendable {
     let id: Int

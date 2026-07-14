@@ -1,5 +1,4 @@
 import InnoNetwork
-import InnoNetworkCodegen
 
 private typealias OptionalUserID = Int?
 

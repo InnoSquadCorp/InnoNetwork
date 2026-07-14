@@ -1,3 +1,4 @@
+#if Macros
 import SwiftDiagnostics
 import SwiftSyntaxMacros
 import SwiftSyntaxMacrosTestSupport
@@ -832,7 +833,7 @@ struct MacroExpansionTests {
     func apiDefinitionQualifiedCases() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: InnoNetwork.HTTPMethod.post, path: "/users", auth: InnoNetworkCodegen.APIAuthentication.required)
+            @APIDefinition(method: InnoNetwork.HTTPMethod.post, path: "/users", auth: InnoNetwork.APIAuthentication.required)
             struct CreateUser {
                 typealias APIResponse = User
                 let body: CreateUserRequest
@@ -871,5 +872,5 @@ struct MacroExpansionTests {
             macros: macros
         )
     }
-
 }
+#endif
