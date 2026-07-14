@@ -32,9 +32,9 @@ Built-in policies occupy the preflight and post-transport slots:
   invalidate cached target URIs after successful unsafe methods.
 - `CircuitBreakerPolicy` short-circuits repeated per-host failures before
   transport and surfaces open-circuit failures through `NetworkError.underlying`.
-- `RequestExecutionPolicy` wraps one raw transport attempt when applications
-  need custom tracing, request signing, A/B routing, or response rewriting that
-  belongs below interceptors but above `URLSession`.
+- `RequestExecutionPolicy` observes or wraps one raw transport attempt when
+  applications need custom tracing, admission control, or response rewriting
+  below interceptors but above `URLSession`.
 
 ## Public Surface Policy
 
@@ -43,14 +43,16 @@ keeping the built-in retry, refresh, coalescing, cache, and circuit-breaker
 policies as first-class configuration values on `NetworkConfiguration`.
 
 Custom policies should be small and transport-attempt scoped. They receive the
-adapted `URLRequest` and may invoke ``RequestExecutionNext`` zero, one, or
-multiple times — for example, a retry policy that replays the chain after a
-transient failure invokes `next` repeatedly, while a synthetic-response policy
-may decide to return without invoking `next` at all. The policy must always
-return a full ``Response``. Custom policies should not try to replace retry
-scheduling, auth refresh replay, response-cache freshness, or circuit-breaker
-state; those remain owned by the built-in policy layers so cancellation,
-metrics, and cache semantics stay consistent.
+adapted `URLRequest` as an immutable observation snapshot and may invoke
+``RequestExecutionNext`` zero, one, or multiple times. Every `execute()` call
+forwards the same executor-owned request: URL, header, and body mutation belongs
+in a ``RequestInterceptor``. For example, a replay policy may invoke `next`
+repeatedly, while a synthetic-response policy may return without invoking
+`next` at all. The policy must always return a full ``Response``. Custom
+policies should not try to replace retry scheduling, auth refresh replay,
+response-cache freshness, or circuit-breaker state; those remain owned by the
+built-in policy layers so cancellation, metrics, and cache semantics stay
+consistent.
 
 ## Auth Scope
 

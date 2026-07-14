@@ -2,9 +2,10 @@ import Foundation
 
 /// Immutable input passed to a custom request execution policy.
 public struct RequestExecutionInput: Sendable {
-    /// The request as adapted by the executor immediately before this policy
-    /// runs. A policy may produce a modified copy and pass it to ``next`` to
-    /// influence the rest of the chain.
+    /// The request as adapted by the executor immediately before the policy
+    /// chain runs. Policies may inspect this immutable snapshot, but request
+    /// mutation belongs in a ``RequestInterceptor`` and cannot be forwarded
+    /// through ``RequestExecutionNext``.
     public let request: URLRequest
     /// Stable identifier shared with metrics, events, and downstream policies
     /// for the entire request — including retries.
@@ -56,31 +57,31 @@ public struct RequestExecutionContext: Sendable {
 /// Calls the next policy in the chain, or the built-in transport when the
 /// current policy is the innermost policy.
 public struct RequestExecutionNext: Sendable {
-    private let executeRequest: @Sendable (URLRequest) async throws -> Response
+    private let executeRequest: @Sendable () async throws -> Response
 
     /// Wrap a continuation closure as a `RequestExecutionNext`. The executor
     /// constructs this; tests can construct one directly when exercising a
     /// single policy in isolation.
-    public init(_ executeRequest: @escaping @Sendable (URLRequest) async throws -> Response) {
+    public init(_ executeRequest: @escaping @Sendable () async throws -> Response) {
         self.executeRequest = executeRequest
     }
 
-    /// Forward `request` to the rest of the chain (or the transport if this is
-    /// the innermost policy) and return the resulting response.
+    /// Forward the executor-owned request to the rest of the chain (or the
+    /// transport if this is the innermost policy) and return the resulting
+    /// response.
     ///
     /// Calling convention:
     ///
-    /// - A policy may call `execute(_:)` zero or more times. Calling it more
+    /// - A policy may call `execute()` zero or more times. Calling it more
     ///   than once produces multiple transport attempts; the executor publishes
     ///   one ``NetworkEvent/responseReceived`` for each successful call.
     /// - A policy that returns a synthetic response without calling `execute`
     ///   bypasses the transport entirely. The executor will not record a
     ///   `responseReceived` event for that path.
-    /// - The request passed to `execute` becomes the `URLRequest` consumed by
-    ///   the next policy. Use this to layer headers, swap URLs, or substitute
-    ///   bodies for the rest of the chain.
-    public func execute(_ request: URLRequest) async throws -> Response {
-        try await executeRequest(request)
+    /// - Policies cannot replace or mutate the executor-owned request. Use a
+    ///   ``RequestInterceptor`` for URL, header, or body adaptation.
+    public func execute() async throws -> Response {
+        try await executeRequest()
     }
 }
 
@@ -88,11 +89,11 @@ public struct RequestExecutionNext: Sendable {
 public protocol RequestExecutionPolicy: Sendable {
     /// Invoke the policy for a single transport attempt.
     ///
-    /// Implementations should call `next.execute(_:)` exactly once for the
+    /// Implementations should call `next.execute()` exactly once for the
     /// common case of forwarding to the rest of the chain. They may call it
     /// multiple times to retry within the same attempt, or skip the call to
     /// short-circuit with a synthetic response. See
-    /// ``RequestExecutionNext/execute(_:)`` for the full calling contract.
+    /// ``RequestExecutionNext/execute()`` for the full calling contract.
     func execute(
         input: RequestExecutionInput,
         context: RequestExecutionContext,

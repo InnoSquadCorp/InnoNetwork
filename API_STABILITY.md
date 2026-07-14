@@ -184,9 +184,11 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   byte length for one line-delimited streaming frame. The default remains
   `NetworkConfiguration.defaultStreamingLineByteLimit` (1 MiB), and values
   below 1 are normalized to 1.
-- `RequestExecutionPolicy` — custom policies may wrap raw transport attempts;
-  built-in retry, refresh, cache, coalescing, and circuit breaker behavior
-  remains provided by `NetworkConfiguration`.
+- `RequestExecutionPolicy` — custom policies may observe and wrap raw
+  transport attempts or adapt their responses. `RequestExecutionNext.execute()`
+  always forwards the executor-owned request; request mutation belongs in a
+  `RequestInterceptor`. Built-in retry, refresh, cache, coalescing, and circuit
+  breaker behavior remains provided by `NetworkConfiguration`.
 - `AuthScope` — marker scopes can be added in future minors; the
   public/auth-required split remains source-compatible for 4.0.0.
 - `MultipartAPIDefinition.Auth` — the multipart protocol carries the same
@@ -564,7 +566,9 @@ requires `@_spi` import.
   emitted `.exceeded` event to disambiguate.
 - Resilience policies are opt-in and provisionally stable.
   `RequestExecutionPolicy` is the stable custom hook for one transport
-  attempt; retry scheduling, auth refresh replay, response-cache substitution,
+  attempt. It may invoke `RequestExecutionNext.execute()` zero, one, or
+  multiple times, but cannot replace the request captured for that attempt.
+  Retry scheduling, auth refresh replay, response-cache substitution,
   coalescing, and circuit-breaker state remain owned by built-in pipeline
   stages that may evolve internally.
 - `InnoNetworkCodegen` is a separate compile-time package under

@@ -17,12 +17,12 @@ struct ReachabilityCheckExecutionPolicyTests {
             _ = try await policy.execute(
                 input: RequestExecutionInput(request: URLRequest(url: url), requestID: UUID(), retryIndex: 0),
                 context: makeContext(),
-                next: RequestExecutionNext { request in
+                next: RequestExecutionNext {
                     Issue.record("Chain should not run when offline")
                     return Response(
                         statusCode: 200,
                         data: Data(),
-                        request: request,
+                        request: URLRequest(url: url),
                         response: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
                     )
                 }
@@ -49,11 +49,11 @@ struct ReachabilityCheckExecutionPolicyTests {
         let response = try await policy.execute(
             input: RequestExecutionInput(request: URLRequest(url: url), requestID: UUID(), retryIndex: 0),
             context: makeContext(),
-            next: RequestExecutionNext { request in
+            next: RequestExecutionNext {
                 Response(
                     statusCode: 200,
                     data: Data(),
-                    request: request,
+                    request: URLRequest(url: url),
                     response: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
                 )
             }
@@ -73,11 +73,11 @@ struct ReachabilityCheckExecutionPolicyTests {
         let response = try await policy.execute(
             input: RequestExecutionInput(request: URLRequest(url: url), requestID: UUID(), retryIndex: 0),
             context: makeContext(),
-            next: RequestExecutionNext { request in
+            next: RequestExecutionNext {
                 Response(
                     statusCode: 200,
                     data: Data(),
-                    request: request,
+                    request: URLRequest(url: url),
                     response: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
                 )
             }
@@ -101,12 +101,12 @@ struct ReachabilityCheckExecutionPolicyTests {
             _ = try await policy.execute(
                 input: RequestExecutionInput(request: URLRequest(url: url), requestID: UUID(), retryIndex: 0),
                 context: makeContext(),
-                next: RequestExecutionNext { request in
+                next: RequestExecutionNext {
                     Issue.record("Chain should not run while reachability is suspended")
                     return Response(
                         statusCode: 200,
                         data: Data(),
-                        request: request,
+                        request: URLRequest(url: url),
                         response: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
                     )
                 }
@@ -138,11 +138,11 @@ struct ReachabilityCheckExecutionPolicyTests {
         let response = try await policy.execute(
             input: RequestExecutionInput(request: URLRequest(url: url), requestID: UUID(), retryIndex: 0),
             context: makeContext(),
-            next: RequestExecutionNext { request in
+            next: RequestExecutionNext {
                 Response(
                     statusCode: 200,
                     data: Data(),
-                    request: request,
+                    request: URLRequest(url: url),
                     response: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
                 )
             }
@@ -168,12 +168,12 @@ struct ReachabilityCheckExecutionPolicyTests {
             _ = try await policy.execute(
                 input: RequestExecutionInput(request: URLRequest(url: url), requestID: UUID(), retryIndex: 0),
                 context: makeContext(),
-                next: RequestExecutionNext { request in
+                next: RequestExecutionNext {
                     Issue.record("Chain should not run after reachability becomes offline")
                     return Response(
                         statusCode: 200,
                         data: Data(),
-                        request: request,
+                        request: URLRequest(url: url),
                         response: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
                     )
                 }
@@ -205,11 +205,11 @@ struct ReachabilityCheckExecutionPolicyTests {
         let response = try await policy.execute(
             input: RequestExecutionInput(request: URLRequest(url: url), requestID: UUID(), retryIndex: 0),
             context: makeContext(),
-            next: RequestExecutionNext { request in
+            next: RequestExecutionNext {
                 Response(
                     statusCode: 200,
                     data: Data(),
-                    request: request,
+                    request: URLRequest(url: url),
                     response: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
                 )
             }
@@ -228,11 +228,11 @@ struct ReachabilityCheckExecutionPolicyTests {
         let response = try await policy.execute(
             input: RequestExecutionInput(request: URLRequest(url: url), requestID: UUID(), retryIndex: 0),
             context: makeContext(),
-            next: RequestExecutionNext { request in
+            next: RequestExecutionNext {
                 Response(
                     statusCode: 200,
                     data: Data(),
-                    request: request,
+                    request: URLRequest(url: url),
                     response: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
                 )
             }

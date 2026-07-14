@@ -5,6 +5,41 @@ landed in `4.0.0` as a breaking API reset. This guide now tracks the remaining
 5.0 work and the 4.0 migration steps consumers must complete before adopting
 future minors.
 
+## Request execution policies preserve request identity
+
+`RequestExecutionNext.execute(_:)` has been replaced by the zero-argument
+`RequestExecutionNext.execute()`. A policy can still short-circuit by calling
+`next` zero times or replay the same transport request by calling it multiple
+times, but it can no longer substitute a different `URLRequest`.
+
+Move URL, header, and body adaptation into a `RequestInterceptor`:
+
+```swift
+struct HeaderInterceptor: RequestInterceptor {
+    func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
+        var request = urlRequest
+        request.setValue("example", forHTTPHeaderField: "X-Example")
+        return request
+    }
+}
+
+struct TracingPolicy: RequestExecutionPolicy {
+    func execute(
+        input: RequestExecutionInput,
+        context: RequestExecutionContext,
+        next: RequestExecutionNext
+    ) async throws -> Response {
+        recordStart(request: input.request, context: context)
+        let response = try await next.execute()
+        recordFinish(response: response, context: context)
+        return response
+    }
+}
+```
+
+This keeps cache, coalescing, retry, signing, and transport identity aligned
+around the request prepared by the executor.
+
 ## Already Required in 4.0.0
 
 | Previous usage | Current API |

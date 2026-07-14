@@ -86,7 +86,7 @@ public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
         next: RequestExecutionNext
     ) async throws -> Response {
         guard mode == .requireOnline else {
-            return try await next.execute(input.request)
+            return try await next.execute()
         }
 
         let snapshot = await monitor.currentSnapshot()
@@ -127,6 +127,6 @@ public struct ReachabilityCheckExecutionPolicy: RequestExecutionPolicy {
         case .satisfied, nil:
             break
         }
-        return try await next.execute(input.request)
+        return try await next.execute()
     }
 }

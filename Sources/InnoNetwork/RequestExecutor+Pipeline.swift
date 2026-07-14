@@ -140,9 +140,9 @@ extension RequestExecutor {
         requestID: UUID
     ) async throws -> Response {
         let eventHub = self.eventHub
-        let baseNext = RequestExecutionNext { nextRequest in
+        let baseNext = RequestExecutionNext {
             let result = try await performTransportResult(
-                request: nextRequest,
+                request: request,
                 bodySource: bodySource,
                 configuration: configuration,
                 context: context,
@@ -160,7 +160,7 @@ extension RequestExecutor {
             return Response(
                 statusCode: result.response.statusCode,
                 data: result.data,
-                request: nextRequest,
+                request: request,
                 response: result.response
             )
         }
@@ -174,10 +174,10 @@ extension RequestExecutor {
         )
 
         let chain = configuration.customExecutionPolicies.reversed().reduce(baseNext) { next, policy in
-            RequestExecutionNext { nextRequest in
+            RequestExecutionNext {
                 try await policy.execute(
                     input: RequestExecutionInput(
-                        request: nextRequest,
+                        request: request,
                         requestID: requestID,
                         retryIndex: context.retryIndex
                     ),
@@ -187,7 +187,7 @@ extension RequestExecutor {
             }
         }
 
-        return try await chain.execute(request)
+        return try await chain.execute()
     }
 
     func refreshLaneIfInProgress(

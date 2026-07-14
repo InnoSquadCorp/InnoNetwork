@@ -45,7 +45,7 @@ public struct ConcurrencyLimitExecutionPolicy: RequestExecutionPolicy {
     ) async throws -> Response {
         try await bucket.acquire()
         do {
-            let response = try await next.execute(input.request)
+            let response = try await next.execute()
             await bucket.release()
             return response
         } catch {

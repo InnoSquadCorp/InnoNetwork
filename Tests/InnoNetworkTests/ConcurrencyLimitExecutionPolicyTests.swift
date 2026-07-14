@@ -20,13 +20,13 @@ struct ConcurrencyLimitExecutionPolicyTests {
                 trustPolicy: .systemDefault,
                 eventObservers: []
             ),
-            next: RequestExecutionNext { request in
+            next: RequestExecutionNext {
                 Response(
                     statusCode: 200,
                     data: Data(),
-                    request: request,
+                    request: URLRequest(url: url),
                     response: HTTPURLResponse(
-                        url: request.url ?? url,
+                        url: url,
                         statusCode: 200,
                         httpVersion: nil,
                         headerFields: nil
@@ -55,15 +55,15 @@ struct ConcurrencyLimitExecutionPolicyTests {
                 trustPolicy: .systemDefault,
                 eventObservers: []
             ),
-            next: RequestExecutionNext { request in
+            next: RequestExecutionNext {
                 let mid = await bucket.available
                 await observedAvailable.set(mid)
                 return Response(
                     statusCode: 200,
                     data: Data(),
-                    request: request,
+                    request: URLRequest(url: url),
                     response: HTTPURLResponse(
-                        url: request.url ?? url,
+                        url: url,
                         statusCode: 200,
                         httpVersion: nil,
                         headerFields: nil
@@ -94,7 +94,7 @@ struct ConcurrencyLimitExecutionPolicyTests {
                     trustPolicy: .systemDefault,
                     eventObservers: []
                 ),
-                next: RequestExecutionNext { _ in
+                next: RequestExecutionNext {
                     throw PolicyProbeError.failure
                 }
             )

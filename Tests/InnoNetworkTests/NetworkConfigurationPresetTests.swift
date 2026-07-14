@@ -136,6 +136,7 @@ private struct PassthroughExecutionPolicy: RequestExecutionPolicy {
         next: RequestExecutionNext
     ) async throws -> Response {
         _ = context
-        return try await next.execute(input.request)
+        _ = input
+        return try await next.execute()
     }
 }

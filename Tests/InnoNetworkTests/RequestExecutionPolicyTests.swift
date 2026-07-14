@@ -17,7 +17,7 @@ struct RequestExecutionPolicyTests {
         }
     }
 
-    private struct HeaderPolicy: RequestExecutionPolicy {
+    private struct LocallyMutatingPolicy: RequestExecutionPolicy {
         func execute(
             input: RequestExecutionInput,
             context: RequestExecutionContext,
@@ -25,7 +25,9 @@ struct RequestExecutionPolicyTests {
         ) async throws -> Response {
             var request = input.request
             request.setValue("policy-\(context.retryIndex)", forHTTPHeaderField: "X-Policy")
-            return try await next.execute(request)
+            request.url = URL(string: "https://replacement.example.com/replaced")
+            _ = request
+            return try await next.execute()
         }
     }
 
@@ -37,7 +39,7 @@ struct RequestExecutionPolicyTests {
             context: RequestExecutionContext,
             next: RequestExecutionNext
         ) async throws -> Response {
-            let response = try await next.execute(input.request)
+            let response = try await next.execute()
             guard let httpResponse = response.response else { return response }
             return Response(
                 statusCode: response.statusCode,
@@ -48,21 +50,63 @@ struct RequestExecutionPolicyTests {
         }
     }
 
-    @Test("Custom execution policy can adapt the transport request")
-    func customPolicyAdaptsTransportRequest() async throws {
+    @Test("Custom execution policy cannot replace the executor-owned request")
+    func customPolicyCannotReplaceTransportRequest() async throws {
         let mockSession = MockURLSession()
         mockSession.setMockResponse(statusCode: 200, data: Data("ok".utf8))
         let client = DefaultNetworkClient(
             configuration: makeTestNetworkConfiguration(
                 baseURL: "https://api.example.com",
-                customExecutionPolicies: [HeaderPolicy()]
+                customExecutionPolicies: [LocallyMutatingPolicy()]
             ),
             session: mockSession
         )
 
         _ = try await client.request(DataEcho())
 
-        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "X-Policy") == "policy-0")
+        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "X-Policy") == nil)
+        #expect(mockSession.capturedRequest?.url?.absoluteString == "https://api.example.com/policy")
+        #expect(mockSession.capturedRequestsInOrder.count == 1)
+    }
+
+    private struct SyntheticResponsePolicy: RequestExecutionPolicy {
+        func execute(
+            input: RequestExecutionInput,
+            context: RequestExecutionContext,
+            next: RequestExecutionNext
+        ) async throws -> Response {
+            _ = (context, next)
+            let response = HTTPURLResponse(
+                url: input.request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return Response(
+                statusCode: response.statusCode,
+                data: Data("synthetic".utf8),
+                request: input.request,
+                response: response
+            )
+        }
+    }
+
+    @Test("Custom execution policy can return a synthetic response without invoking next")
+    func customPolicyCanSkipNext() async throws {
+        let mockSession = MockURLSession()
+        mockSession.setMockResponse(statusCode: 200, data: Data("unused".utf8))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                customExecutionPolicies: [SyntheticResponsePolicy()]
+            ),
+            session: mockSession
+        )
+
+        let data = try await client.request(DataEcho())
+
+        #expect(String(data: data, encoding: .utf8) == "synthetic")
+        #expect(mockSession.capturedRequestsInOrder.isEmpty)
     }
 
     @Test("Custom execution policy can rewrite the transport response before decode")
@@ -104,8 +148,8 @@ struct RequestExecutionPolicyTests {
             context: RequestExecutionContext,
             next: RequestExecutionNext
         ) async throws -> Response {
-            _ = try await next.execute(input.request)
-            return try await next.execute(input.request)
+            _ = try await next.execute()
+            return try await next.execute()
         }
     }
 
@@ -127,6 +171,7 @@ struct RequestExecutionPolicyTests {
         _ = try await client.request(DataEcho())
 
         #expect(observer.responseReceivedCount == 2)
+        #expect(mockSession.capturedRequestsInOrder.count == 2)
     }
 
     private struct ThrowingPolicy: RequestExecutionPolicy {
@@ -177,7 +222,7 @@ struct RequestExecutionPolicyTests {
             context: RequestExecutionContext,
             next: RequestExecutionNext
         ) async throws -> Response {
-            try await next.execute(input.request)
+            try await next.execute()
         }
     }
 
