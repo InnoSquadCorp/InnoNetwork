@@ -8,6 +8,10 @@ import Testing
 import Darwin
 #endif
 
+#if canImport(Security)
+import Security
+#endif
+
 
 @Suite("Persistent Response Cache Tests")
 struct PersistentResponseCacheTests {
@@ -504,6 +508,96 @@ struct PersistentResponseCacheTests {
         #expect(try Data(contentsOf: indexURL(in: directory)) == originalIndex)
         #expect(try bodySnapshots(in: directory) == originalBodies)
     }
+
+    #if canImport(Security)
+    @Test(
+        "Transient Keychain read statuses preserve the item and cache files",
+        arguments: [
+            errSecInteractionNotAllowed,
+            errSecNotAvailable,
+            errSecMissingEntitlement,
+        ])
+    func transientKeychainReadStatusPreservesState(status: OSStatus) throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
+        try FileManager.default.createDirectory(at: bodiesURL, withIntermediateDirectories: true)
+        let originalIndex = Data("existing-index".utf8)
+        let originalBody = Data("existing-body".utf8)
+        try originalIndex.write(to: indexURL(in: directory), options: .atomic)
+        let bodyURL = bodiesURL.appendingPathComponent("existing.body", isDirectory: false)
+        try originalBody.write(to: bodyURL, options: .atomic)
+        let keychain = StubPersistentCacheKeychain(copyStatus: status)
+
+        do {
+            _ = try PersistentCacheDiskKeyNormalizer.loadOrCreateFromKeychain(
+                directoryURL: directory,
+                service: "com.innosquad.InnoNetwork.tests",
+                accessGroup: nil,
+                fileManager: .default,
+                keychainOperations: keychain.operations
+            )
+            Issue.record("Expected Keychain read status \(status) to be surfaced")
+        } catch NetworkError.configuration(reason: .invalidRequest(let message)) {
+            #expect(message.contains("status: \(status)"))
+        } catch {
+            Issue.record("Expected a Keychain configuration error, got \(error)")
+        }
+
+        #expect(keychain.copyCallCount == 1)
+        #expect(keychain.deleteCallCount == 0)
+        #expect(keychain.addCallCount == 0)
+        #expect(try Data(contentsOf: indexURL(in: directory)) == originalIndex)
+        #expect(try Data(contentsOf: bodyURL) == originalBody)
+    }
+
+    @Test("A successfully read wrong-length Keychain key is regenerated")
+    func wrongLengthKeychainKeyRegenerates() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let keychain = StubPersistentCacheKeychain(
+            copyStatus: errSecSuccess,
+            copiedData: Data(repeating: 0xAB, count: 16)
+        )
+
+        let result = try PersistentCacheDiskKeyNormalizer.loadOrCreateFromKeychain(
+            directoryURL: directory,
+            service: "com.innosquad.InnoNetwork.tests",
+            accessGroup: nil,
+            fileManager: .default,
+            keychainOperations: keychain.operations
+        )
+
+        #expect(result.regenerated)
+        #expect(keychain.copyCallCount == 1)
+        #expect(keychain.deleteCallCount == 1)
+        #expect(keychain.addCallCount == 1)
+        #expect(keychain.addedKeyData?.count == 32)
+    }
+
+    @Test("A missing Keychain item creates a key without deleting")
+    func missingKeychainItemCreatesWithoutDelete() throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let keychain = StubPersistentCacheKeychain(copyStatus: errSecItemNotFound)
+
+        let result = try PersistentCacheDiskKeyNormalizer.loadOrCreateFromKeychain(
+            directoryURL: directory,
+            service: "com.innosquad.InnoNetwork.tests",
+            accessGroup: nil,
+            fileManager: .default,
+            keychainOperations: keychain.operations
+        )
+
+        #expect(!result.regenerated)
+        #expect(keychain.copyCallCount == 1)
+        #expect(keychain.deleteCallCount == 0)
+        #expect(keychain.addCallCount == 1)
+        #expect(keychain.addedKeyData?.count == 32)
+    }
+    #endif
 
     @Test("Non-regular HMAC key path still self-heals as structural corruption")
     func nonRegularHMACKeyPathSelfHeals() async throws {
@@ -1469,6 +1563,50 @@ struct PersistentResponseCacheTests {
         NSError(domain: "PersistentResponseCacheTests", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
 }
+
+#if canImport(Security)
+private final class StubPersistentCacheKeychain {
+    private let copyStatus: OSStatus
+    private let copiedData: Data?
+    private let deleteStatus: OSStatus
+    private let addStatus: OSStatus
+
+    private(set) var copyCallCount = 0
+    private(set) var deleteCallCount = 0
+    private(set) var addCallCount = 0
+    private(set) var addedKeyData: Data?
+
+    init(
+        copyStatus: OSStatus,
+        copiedData: Data? = nil,
+        deleteStatus: OSStatus = errSecSuccess,
+        addStatus: OSStatus = errSecSuccess
+    ) {
+        self.copyStatus = copyStatus
+        self.copiedData = copiedData
+        self.deleteStatus = deleteStatus
+        self.addStatus = addStatus
+    }
+
+    var operations: PersistentCacheKeychainOperations {
+        PersistentCacheKeychainOperations(
+            copyMatching: { _ in
+                self.copyCallCount += 1
+                return (self.copyStatus, self.copiedData)
+            },
+            delete: { _ in
+                self.deleteCallCount += 1
+                return self.deleteStatus
+            },
+            add: { attributes in
+                self.addCallCount += 1
+                self.addedKeyData = attributes[kSecValueData as String] as? Data
+                return self.addStatus
+            }
+        )
+    }
+}
+#endif
 
 private final class ProtectionWriteRecorder: @unchecked Sendable {
     private let lock = NSLock()

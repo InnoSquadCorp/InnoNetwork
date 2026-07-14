@@ -5,6 +5,31 @@ import OSLog
 
 #if canImport(Security)
 import Security
+
+/// Synchronous Security.framework boundary used by the persistent-cache key
+/// loader. Keeping the adapter at the SecItem operation level lets tests
+/// exercise OSStatus handling without touching the process Keychain.
+struct PersistentCacheKeychainOperations {
+    let copyMatching: (_ query: [String: Any]) -> (status: OSStatus, data: Data?)
+    let delete: (_ query: [String: Any]) -> OSStatus
+    let add: (_ attributes: [String: Any]) -> OSStatus
+
+    static var live: Self {
+        Self(
+            copyMatching: { query in
+                var item: CFTypeRef?
+                let status = SecItemCopyMatching(query as CFDictionary, &item)
+                return (status, item as? Data)
+            },
+            delete: { query in
+                SecItemDelete(query as CFDictionary)
+            },
+            add: { attributes in
+                SecItemAdd(attributes as CFDictionary, nil)
+            }
+        )
+    }
+}
 #endif
 
 /// Normalizes per-request cache key headers, blinding sensitive values via
@@ -149,11 +174,12 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
     }
 
     #if canImport(Security)
-    private static func loadOrCreateFromKeychain(
+    static func loadOrCreateFromKeychain(
         directoryURL: URL,
         service: String,
         accessGroup: String?,
-        fileManager: FileManager
+        fileManager: FileManager,
+        keychainOperations: PersistentCacheKeychainOperations = .live
     ) throws -> LoadOrCreateResult {
         let account = keychainAccount(for: directoryURL)
         var query: [String: Any] = [
@@ -178,23 +204,27 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
 
-        var item: CFTypeRef?
-        let copyStatus = SecItemCopyMatching(query as CFDictionary, &item)
-        if copyStatus == errSecSuccess,
-            let data = item as? Data,
-            data.count == expectedKeyByteCount
-        {
-            return LoadOrCreateResult(
-                normalizer: PersistentCacheDiskKeyNormalizer(key: SymmetricKey(data: data)),
-                regenerated: false
-            )
-        }
+        let copyResult = keychainOperations.copyMatching(query)
+        let regenerated: Bool
+        switch copyResult.status {
+        case errSecSuccess:
+            guard let data = copyResult.data else {
+                throw NetworkError.configuration(
+                    reason: .invalidRequest(
+                        "Keychain returned success without persistent cache HMAC key data."
+                    ))
+            }
+            if data.count == expectedKeyByteCount {
+                return LoadOrCreateResult(
+                    normalizer: PersistentCacheDiskKeyNormalizer(key: SymmetricKey(data: data)),
+                    regenerated: false
+                )
+            }
 
-        // Any non-success / wrong-length read regenerates the key. Wipe
-        // the existing item so the subsequent add does not race against a
-        // pre-existing entry of a different length.
-        let priorItemPresent = copyStatus != errSecItemNotFound
-        if priorItemPresent {
+            // A successful read with an invalid length is deterministic
+            // evidence of corruption. Only this successful-read path may
+            // replace an existing item; transient Keychain errors must leave
+            // both the item and persisted cache state untouched.
             var deleteQuery: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: service,
@@ -204,7 +234,20 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
             if let accessGroup {
                 deleteQuery[kSecAttrAccessGroup as String] = accessGroup
             }
-            _ = SecItemDelete(deleteQuery as CFDictionary)
+            let deleteStatus = keychainOperations.delete(deleteQuery)
+            guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
+                throw keychainError(operation: "replace", status: deleteStatus)
+            }
+            regenerated = true
+
+        case errSecItemNotFound:
+            regenerated = hasPersistedCacheWithoutKey(
+                directoryURL: directoryURL,
+                fileManager: fileManager
+            )
+
+        default:
+            throw keychainError(operation: "read", status: copyResult.status)
         }
 
         let newKey = SymmetricKey(size: .bits256)
@@ -221,12 +264,9 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
             addAttributes[kSecAttrAccessGroup as String] = accessGroup
         }
 
-        let addStatus = SecItemAdd(addAttributes as CFDictionary, nil)
+        let addStatus = keychainOperations.add(addAttributes)
         guard addStatus == errSecSuccess else {
-            throw NetworkError.configuration(
-                reason: .invalidRequest(
-                    "Failed to persist persistent cache HMAC key to Keychain (status: \(addStatus))."
-                ))
+            throw keychainError(operation: "persist", status: addStatus)
         }
 
         // Regeneration semantics mirror the file backend: any existing
@@ -235,13 +275,17 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
         // overwritten, or when cache state is already on disk without a
         // matching key — both cases produce HMAC mismatch for stored
         // entries.
-        let regenerated =
-            priorItemPresent
-            || hasPersistedCacheWithoutKey(directoryURL: directoryURL, fileManager: fileManager)
         return LoadOrCreateResult(
             normalizer: PersistentCacheDiskKeyNormalizer(key: newKey),
             regenerated: regenerated
         )
+    }
+
+    private static func keychainError(operation: String, status: OSStatus) -> NetworkError {
+        NetworkError.configuration(
+            reason: .invalidRequest(
+                "Failed to \(operation) persistent cache HMAC key in Keychain (status: \(status))."
+            ))
     }
 
     /// Scope the keychain account to the cache directory so two caches in
