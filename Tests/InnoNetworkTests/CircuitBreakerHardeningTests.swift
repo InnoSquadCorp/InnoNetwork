@@ -178,8 +178,8 @@ struct CircuitBreakerRegistryHardeningTests {
         try await registry.prepare(request: request, policy: policy)
     }
 
-    @Test("4xx response closes half-open circuit without waiting for hysteresis probes")
-    func clientErrorClosesHalfOpenCircuit() async throws {
+    @Test("Multiple 4xx probes honor half-open hysteresis before closing")
+    func clientErrorsHonorHalfOpenHysteresis() async throws {
         let registry = CircuitBreakerRegistry()
         let policy = CircuitBreakerPolicy(
             failureThreshold: 1,
@@ -192,12 +192,67 @@ struct CircuitBreakerRegistryHardeningTests {
 
         await registry.recordStatus(request: request, policy: policy, statusCode: 500)
         try await registry.prepare(request: request, policy: policy)
-        await registry.recordStatus(request: request, policy: policy, statusCode: 404)
+        for statusCode in [404, 401] {
+            await registry.recordStatus(request: request, policy: policy, statusCode: statusCode)
 
-        // A closed circuit admits repeated prepares. A lingering half-open
-        // entry would reserve the first probe slot and reject the second one.
+            // The healthy probe releases its slot, but the circuit stays
+            // half-open until the configured success threshold is reached.
+            try await registry.prepare(request: request, policy: policy)
+            await #expect(throws: NetworkError.self) {
+                try await registry.prepare(request: request, policy: policy)
+            }
+        }
+        await registry.recordStatus(request: request, policy: policy, statusCode: 422)
+
+        // The third transport-health success closes the circuit, so prepares
+        // no longer reserve a single half-open probe slot.
         try await registry.prepare(request: request, policy: policy)
         try await registry.prepare(request: request, policy: policy)
+    }
+
+    @Test("Mixed 4xx and 2xx probes share the half-open success count")
+    func mixedHealthyStatusesShareHalfOpenHysteresis() async throws {
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(
+            failureThreshold: 1,
+            windowSize: 1,
+            resetAfter: .zero,
+            maxResetAfter: .seconds(60),
+            numberOfProbesRequiredToClose: 3
+        )
+        let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
+
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+        try await registry.prepare(request: request, policy: policy)
+
+        await registry.recordStatus(request: request, policy: policy, statusCode: 404)
+        try await registry.prepare(request: request, policy: policy)
+        await registry.recordStatus(request: request, policy: policy, statusCode: 204)
+        try await registry.prepare(request: request, policy: policy)
+
+        // The two status families contribute to the same healthy-probe count;
+        // the third success closes the circuit.
+        await registry.recordStatus(request: request, policy: policy, statusCode: 304)
+        try await registry.prepare(request: request, policy: policy)
+        try await registry.prepare(request: request, policy: policy)
+    }
+
+    @Test("4xx responses preserve the closed-state rolling window")
+    func clientErrorsPreserveClosedWindow() async throws {
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(failureThreshold: 2, windowSize: 2)
+        let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
+
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+        await registry.recordStatus(request: request, policy: policy, statusCode: 404)
+        await registry.recordStatus(request: request, policy: policy, statusCode: 401)
+        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
+
+        // Closed-state 4xx responses neither erase nor evict the first
+        // transport failure, so the second 500 still opens the circuit.
+        await #expect(throws: NetworkError.self) {
+            try await registry.prepare(request: request, policy: policy)
+        }
     }
 
     @Test("Cancellation in closed state preserves the rolling window")

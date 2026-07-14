@@ -8,7 +8,10 @@ import Foundation
 /// with ``CircuitBreakerOpenError``. After `resetAfter` elapses the breaker
 /// transitions to half-open and admits a single probe; `numberOfProbesRequiredToClose`
 /// consecutive successful probes are needed before the circuit fully closes
-/// (default `1`, i.e. no hysteresis).
+/// (default `1`, i.e. no hysteresis). HTTP `4xx` responses are excluded from
+/// the closed-state rolling window, but count as transport-health successes
+/// while half-open and therefore follow the same probe hysteresis as `2xx` and
+/// `3xx` responses.
 public struct CircuitBreakerPolicy: Sendable, Equatable {
     public let failureThreshold: Int
     public let windowSize: Int
@@ -217,10 +220,11 @@ package actor CircuitBreakerRegistry {
         } else if (400...499).contains(statusCode) {
             // 4xx responses indicate a working transport with a client-side
             // semantic problem. They do not advance the rolling window in
-            // either direction. In half-open they release the probe slot
-            // because the transport itself is healthy.
+            // either direction. In half-open they count as transport-health
+            // successes and follow the same configured hysteresis as 2xx/3xx
+            // probes before fully closing the circuit.
             if case .halfOpen = states[key]?.mode {
-                states[key] = Entry(mode: .closed(ClosedState(window: [])), lastAccessAt: clock.now())
+                recordOutcome(key: key, isFailure: false, policy: policy)
             }
         } else {
             // 2xx/3xx and other non-error status families confirm the host is
