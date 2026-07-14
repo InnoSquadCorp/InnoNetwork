@@ -260,9 +260,33 @@ jobs:
           name: innonetwork-coverage-26.0.1
           path: .build/coverage
 
+      - name: Install Codecov CLI v11.3.1
+        id: install-codecov-cli
+        continue-on-error: ${{ !(github.event_name == 'push' && github.repository == 'InnoSquadCorp/InnoNetwork') }}
+        env:
+          CODECOV_CLI_VERSION: "v11.3.1"
+          CODECOV_CLI_SHA256: "ca1d64196d2d34771084afe76ea657d581bf628e31d993ff8e52ea09cc88a56d"
+        run: |
+          set -euo pipefail
+
+          binary="$RUNNER_TEMP/codecov-$CODECOV_CLI_VERSION"
+          curl --fail --location --proto '=https' --tlsv1.2 --retry 3 \
+            --output "$binary" \
+            "https://cli.codecov.io/$CODECOV_CLI_VERSION/linux/codecov"
+          printf '%s  %s\n' "$CODECOV_CLI_SHA256" "$binary" \
+            | sha256sum -c -
+          chmod 0755 "$binary"
+          "$binary" --version
+
+      - name: Report artifact-only Codecov fallback
+        if: ${{ always() && steps.install-codecov-cli.outcome != 'success' }}
+        run: echo "::notice::Codecov CLI installation failed; retaining the uploaded coverage artifact without a Codecov upload."
+
       - name: Upload coverage to Codecov
+        if: steps.install-codecov-cli.outcome == 'success'
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         with:
+          binary: ${{ runner.temp }}/codecov-v11.3.1
           use_oidc: true
           files: .build/coverage/coverage.lcov
           disable_search: true
@@ -274,7 +298,7 @@ jobs:
           fail_ci_if_error: ${{ github.event_name == 'push' && github.repository == 'InnoSquadCorp/InnoNetwork' }}
 
   parallel-tests:
-    name: Test (SwiftPM Parallel) — Xcode 26.0.1
+    name: Test (Bounded Target Shards) — Xcode 26.0.1
     runs-on: macos-15
     timeout-minutes: 45
 
@@ -292,9 +316,9 @@ jobs:
           path: |
             .build/checkouts
             .build/repositories
-          key: ${{ runner.os }}-parallel-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          key: ${{ runner.os }}-bounded-shards-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-parallel-xcode-26.0.1-
+            ${{ runner.os }}-bounded-shards-xcode-26.0.1-
 
       - name: Show Xcode and Swift versions
         run: |
@@ -304,13 +328,13 @@ jobs:
       - name: Resolve dependencies
         run: xcrun swift package resolve
 
-      - name: Run tests with parallel scheduling
+      - name: Run bounded target-sharded tests
         run: |
           set -eo pipefail
-          # Keep the coverage lane deterministic and serial, while this
-          # blocking lane exposes scheduler-sensitive races without launching
-          # more timing-sensitive tests than the hosted runner can schedule.
-          xcrun swift test --parallel --num-workers 4
+          # Swift Testing 6.2 ignores SwiftPM's --num-workers value. Keep the
+          # coverage lane serial, then load four target-filtered copies of the
+          # built test bundle so hosted concurrency is actually bound.
+          bash Scripts/run_bounded_parallel_tests.sh
 
   docs-contract-sync:
     name: Docs / Contract Sync
@@ -550,9 +574,33 @@ jobs:
           name: innonetwork-coverage-codegen
           path: .build/coverage-codegen
 
+      - name: Install Codecov CLI v11.3.1
+        id: install-codecov-cli
+        continue-on-error: ${{ !(github.event_name == 'push' && github.repository == 'InnoSquadCorp/InnoNetwork') }}
+        env:
+          CODECOV_CLI_VERSION: "v11.3.1"
+          CODECOV_CLI_SHA256: "ca1d64196d2d34771084afe76ea657d581bf628e31d993ff8e52ea09cc88a56d"
+        run: |
+          set -euo pipefail
+
+          binary="$RUNNER_TEMP/codecov-$CODECOV_CLI_VERSION"
+          curl --fail --location --proto '=https' --tlsv1.2 --retry 3 \
+            --output "$binary" \
+            "https://cli.codecov.io/$CODECOV_CLI_VERSION/linux/codecov"
+          printf '%s  %s\n' "$CODECOV_CLI_SHA256" "$binary" \
+            | sha256sum -c -
+          chmod 0755 "$binary"
+          "$binary" --version
+
+      - name: Report artifact-only Codecov fallback
+        if: ${{ always() && steps.install-codecov-cli.outcome != 'success' }}
+        run: echo "::notice::Codecov CLI installation failed; retaining the uploaded coverage artifact without a Codecov upload."
+
       - name: Upload codegen coverage to Codecov
+        if: steps.install-codecov-cli.outcome == 'success'
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         with:
+          binary: ${{ runner.temp }}/codecov-v11.3.1
           use_oidc: true
           files: .build/coverage-codegen/coverage.lcov
           disable_search: true

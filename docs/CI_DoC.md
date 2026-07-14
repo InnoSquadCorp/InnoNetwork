@@ -15,9 +15,13 @@ The `CI` workflow must pass all of the following:
 1. `xcrun swift package resolve`
 2. `xcrun swift build`
 3. `xcrun swift test --no-parallel --enable-code-coverage`
-4. A separate blocking `xcrun swift test --parallel --num-workers 4` job
-   exercises the full suite under bounded SwiftPM parallel scheduling without
-   coverage instrumentation.
+4. A separate blocking `bash Scripts/run_bounded_parallel_tests.sh` job builds
+   the suite once, then loads its test bundle in four concurrent, target-filtered
+   Swift Testing processes without coverage instrumentation. Every process uses
+   `--no-parallel`, so the Swift 6.2 testing runtime cannot exceed the intended
+   four-process bound. Direct bundle loading avoids SwiftPM's shared `.build`
+   lock; the script also proves that every discovered test belongs to exactly
+   one shard.
 5. `rg -n "@unchecked Sendable" Sources/InnoNetwork Sources/InnoNetworkDownload Sources/InnoNetworkPersistentCache Sources/InnoNetworkWebSocket` returns no matches
 6. `bash Scripts/check_shared_coders_mutation.sh` confirms the shared default
    JSON coders are never mutated after construction.
@@ -33,8 +37,11 @@ The `CI` workflow must pass all of the following:
    with `disable_search: true`, using separate `core` and `codegen` flags.
    Dedicated upload jobs authenticate with short-lived GitHub OIDC credentials
    instead of a repository secret, so dependency builds and tests never receive
-   `id-token: write`. Pull requests retain artifact-only fallback when an upload
-   fails, while canonical `main` pushes require both Codecov uploads.
+   `id-token: write`. They download a fixed Codecov CLI release and verify its
+   SHA-256 before handing it to the pinned action, avoiding an unreviewed
+   `latest` binary at upload time. Pull requests retain artifact-only fallback
+   when CLI installation or an upload fails, while canonical `main` pushes
+   require both uploads.
 10. `apple-platform-build-smoke` runs `xcodebuild ... build` for macOS, iOS,
    tvOS, watchOS, and visionOS destinations. Simulator destinations are
    build-only; SwiftPM test+coverage remains the runtime test gate. macOS and
@@ -93,7 +100,7 @@ sudo xcode-select -s /Applications/Xcode_26.0.1.app
 xcrun swift package resolve
 xcrun swift build
 # Match both blocking test lanes.
-xcrun swift test --parallel --num-workers 4
+bash Scripts/run_bounded_parallel_tests.sh
 xcrun swift test --no-parallel --enable-code-coverage
 rg -n "@unchecked Sendable" \
   Sources/InnoNetwork \

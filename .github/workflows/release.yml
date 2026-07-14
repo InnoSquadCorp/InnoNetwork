@@ -132,8 +132,8 @@ jobs:
             .build/release-artifacts/coverage-core \
             Sources
 
-      - name: Run tests with parallel scheduling
-        run: xcrun swift test --parallel --num-workers 4
+      - name: Run bounded target-sharded tests
+        run: bash Scripts/run_bounded_parallel_tests.sh
 
       - name: Run codegen tests with coverage
         run: xcrun swift test --package-path Packages/InnoNetworkCodegen --enable-code-coverage

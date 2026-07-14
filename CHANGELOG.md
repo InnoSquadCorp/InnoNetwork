@@ -70,8 +70,8 @@ curated release summary.
 - `APISingleRequestExecutable` snapshots its transport policy once so request
   encoding and decoding observe one policy value.
 - Scheduler-sensitive cancellation, refresh, and WebSocket tests use explicit
-  gates; CI runs the complete root suite in serial coverage mode and with four
-  bounded parallel workers.
+  gates; CI runs the complete root suite in serial coverage mode and across
+  four bounded target shards.
 - External WebSocket shutdown waits for already-admitted manager callbacks;
   reentrant shutdown from one of those callbacks initiates teardown and returns
   so a later external call can await the full boundary.
@@ -80,9 +80,10 @@ curated release summary.
 - Hosted benchmark baselines are recalibrated from a complete release-mode
   artifact after the systematic shift was confirmed across three successful
   runs, so debug-build overhead no longer distorts regression deltas.
-- CI installs a checksum-pinned Periphery release, isolates Codecov OIDC to
-  artifact-only upload jobs, bounds parallel tests to four workers, and skips
-  only hosted platform components that the pinned runner does not install.
+- CI installs checksum-pinned Periphery and Codecov CLI releases, isolates
+  Codecov OIDC to artifact-only upload jobs, bounds concurrent tests to four
+  serial target shards, and skips only hosted platform components that the
+  pinned runner does not install.
 - Periphery now analyzes test-target references instead of baselining package
   test seams. Fourteen unused internal helpers are removed, 40 stale baseline
   entries are pruned, and seven protocol-shape or synthesized-`Equatable`
