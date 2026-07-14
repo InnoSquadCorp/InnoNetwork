@@ -4,23 +4,29 @@ import CompilerPluginSupport
 import PackageDescription
 
 let strictSettings: [SwiftSetting] = [
-    .swiftLanguageMode(.v6),
+    .swiftLanguageMode(.v6)
 ]
 
+// Experimental, repository-local package. SwiftPM resolves the manifest at a
+// repository URL's root, so an InnoNetwork release tag does not expose this
+// nested package as a remotely consumable product. The path dependency below
+// intentionally supports development from a complete repository checkout.
+// Keep these deployment floors aligned with the root package while codegen is
+// maintained in this monorepo.
 let package = Package(
     name: "InnoNetworkCodegen",
     platforms: [
-        .iOS(.v18),
-        .macOS(.v15),
-        .tvOS(.v18),
-        .watchOS(.v11),
-        .visionOS(.v2),
+        .iOS(.v16),
+        .macOS(.v14),
+        .tvOS(.v16),
+        .watchOS(.v9),
+        .visionOS(.v1),
     ],
     products: [
         .library(
             name: "InnoNetworkCodegen",
             targets: ["InnoNetworkCodegen"]
-        ),
+        )
     ],
     dependencies: [
         .package(name: "InnoNetwork", path: "../.."),

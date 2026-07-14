@@ -424,10 +424,19 @@ release line.
   `VCRRedactionPolicy`, `VCRRequest`, `VCRResponse`, `VCRURLSession`, and
   `WebSocketEventRecorder`.
 
-### InnoNetworkCodegen Package
+### InnoNetworkCodegen Package (Experimental Distribution)
 
 - `APIDefinition(method:path:)` attached macro.
 - `endpoint(_:_:as:)` freestanding expression macro.
+
+The macro declarations retain their provisional source contract for local
+workspace users, but the package distribution contract is **experimental**.
+`Packages/InnoNetworkCodegen` is a nested SwiftPM package with a path dependency
+on the repository root. SwiftPM resolves a repository URL from its root
+manifest, which does not vend an `InnoNetworkCodegen` product; consequently an
+InnoNetwork release tag cannot be used as a remote dependency for this nested
+package. Remote availability requires a separately distributed package or a
+future root-package graph change.
 
 Macro expansion is source-generation behavior, not a new runtime public API.
 The attached macro emits witnesses at the attached type's visibility
@@ -574,7 +583,8 @@ requires `@_spi` import.
 - `InnoNetworkCodegen` is a separate compile-time package under
   `Packages/InnoNetworkCodegen`. Importing the root `InnoNetwork` package does
   not resolve or build `swift-syntax`; macro users opt into that dependency by
-  depending on the codegen package.
+  using the nested package from a complete local checkout. The nested package
+  is not remotely consumable from the root package's release tag.
 - Persistence and telemetry formats are not external storage contracts.
 - Benchmark guard thresholds, guarded benchmark selection, and baseline
   contents are operational policy rather than public compatibility surface.

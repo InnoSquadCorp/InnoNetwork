@@ -74,5 +74,8 @@ configuration has no `RefreshTokenPolicy`.
 `InnoNetworkCodegen` is a separate package under
 `Packages/InnoNetworkCodegen`. Consumers that depend only on the root
 `InnoNetwork` package do not resolve, fetch, or build `swift-syntax`; macro
-users opt into that package explicitly. Macro usage is documented in
+users opt into that package explicitly from a complete local checkout. Its
+distribution is experimental: a remote InnoNetwork release tag exposes only
+the root manifest and cannot vend the nested codegen package. Macro usage is
+documented in
 [`UsingMacros.md`](../Sources/InnoNetwork/InnoNetwork.docc/Articles/UsingMacros.md).

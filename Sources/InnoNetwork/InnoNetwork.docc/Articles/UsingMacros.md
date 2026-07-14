@@ -2,7 +2,11 @@
 
 `InnoNetworkCodegen` is a separate package for compile-time endpoint helpers.
 Importing only the root `InnoNetwork` package does not resolve, fetch, or build
-`swift-syntax`. Macro users opt into `Packages/InnoNetworkCodegen` explicitly.
+`swift-syntax`. The nested package is experimental and supported only from a
+complete local repository checkout. An InnoNetwork release tag exposes the
+root manifest and therefore does not vend `InnoNetworkCodegen` as a remotely
+consumable product. Macro users opt into `Packages/InnoNetworkCodegen`
+explicitly during local workspace development.
 
 ```swift
 import InnoNetwork
@@ -54,7 +58,8 @@ rejected with a diagnostic so call sites stay consistent.
 
 Keep hand-written ``APIDefinition`` types for endpoints that need custom
 parameters, interceptors, multipart uploads, streaming, or non-standard
-decoding. The macro package is provisionally stable in 4.0.0.
+decoding. The macro declarations have a provisional source contract for local
+workspace users, while package distribution remains experimental.
 
 ## When the macro pays off
 

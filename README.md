@@ -273,8 +273,10 @@ Use these after the first request path is stable:
 The `@APIDefinition` and `#endpoint` macros expand into the same value
 types you would write by hand. They live in a separate
 `Packages/InnoNetworkCodegen` package so root package consumers do not
-resolve `swift-syntax`; opt in by adding the codegen package alongside the
-root package, then `import InnoNetworkCodegen`.
+resolve `swift-syntax`. Codegen distribution is experimental and supported
+from a complete local checkout only: the root release tag does not vend the
+nested product. Local workspace targets can opt in with the nested package,
+then `import InnoNetworkCodegen`.
 
 ```swift
 @APIDefinition(method: .get, path: "/users/{id}")
@@ -409,8 +411,10 @@ for await event in await manager.events(for: task) {
 - optional `@APIDefinition` and `#endpoint` macros
 - depends on `swift-syntax` from `Packages/InnoNetworkCodegen` only
 - keeps `swift-syntax` out of the root `InnoNetwork` package dependency graph
-- has a newer compile-time package floor: iOS 18, macOS 15, tvOS 18,
-  watchOS 11, and visionOS 2
+- experimental local-checkout distribution; the root release tag does not vend
+  the nested product
+- follows the root deployment floors: iOS 16, macOS 14, tvOS 16, watchOS 9,
+  and visionOS 1
 
 ## Platform Matrix
 
