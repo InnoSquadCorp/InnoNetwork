@@ -36,9 +36,7 @@ struct CreateUser {
 let typed = GetUser(id: 1)
 let list = ListUsers(query: ListUsersQuery(page: 1))
 let create = CreateUser(body: CreateUserRequest(name: "Blob"))
-let builder = #endpoint(.get, "/users/1", as: User.self)
 
 print(typed.path)
 print(list.parameters?.page ?? 0)
 print(create.parameters?.name ?? "")
-print(builder.path)
