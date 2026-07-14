@@ -45,9 +45,11 @@ public actor WebSocketManager {
     /// `OSAllocatedUnfairLock` is preserved here even after the actor
     /// conversion: the shutdown flag has to stay readable from the
     /// nonisolated ``deinit`` and from synchronous URLSession delegate
-    /// callbacks, neither of which can hop onto the actor executor. The
-    /// lock is internally `Sendable`, so a `nonisolated let` field is
-    /// safe.
+    /// callbacks, neither of which can hop onto the actor executor. It also
+    /// acts as the linearization fence shared with `WebSocketTask` while a
+    /// delegate event reduces lifecycle state, so shutdown and a terminal
+    /// delegate transition have one unambiguous winner. The lock is internally
+    /// `Sendable`, so a `nonisolated let` field is safe.
     nonisolated let shutdownLock = OSAllocatedUnfairLock<Bool>(initialState: false)
     let invalidationBarrier: WebSocketInvalidationBarrier
 
@@ -389,9 +391,10 @@ public actor WebSocketManager {
 
         // Keep manager-level callbacks alive through the terminal sweep so
         // callback-only consumers observe the same shutdown error as stream
-        // consumers. From this point forward delegate events are already
-        // rejected by the finished continuation, so clearing the callbacks
-        // establishes a strict no-callback boundary for the rest of teardown.
+        // consumers. From this point forward the shutdown fence rejects both
+        // buffered and already-dequeued delegate lifecycle reductions, so
+        // clearing the callbacks establishes a strict no-callback boundary for
+        // the rest of teardown.
         await runtimeRegistry.clearCallbacks()
 
         session.invalidateAndCancel()

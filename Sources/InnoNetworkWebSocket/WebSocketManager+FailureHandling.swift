@@ -26,8 +26,9 @@ extension WebSocketManager {
         let finalError = makeFailureError(closeDisposition: closeDisposition)
         let currentGeneration = await task.connectionGeneration
         if let generation, generation != currentGeneration {
-            let transition = await task.applyLifecycleEvent(
-                .failure(generation: generation, disposition: closeDisposition, error: finalError)
+            let transition = await task.applyDelegateLifecycleEvent(
+                .failure(generation: generation, disposition: closeDisposition, error: finalError),
+                shutdownFence: shutdownLock
             )
             await executeLifecycleEffects(transition.effects, for: task)
             return
@@ -35,8 +36,9 @@ extension WebSocketManager {
 
         let currentState = await task.state
         if currentState == .disconnecting || currentState.isTerminal {
-            let transition = await task.applyLifecycleEvent(
-                .failure(generation: generation, disposition: closeDisposition, error: finalError)
+            let transition = await task.applyDelegateLifecycleEvent(
+                .failure(generation: generation, disposition: closeDisposition, error: finalError),
+                shutdownFence: shutdownLock
             )
             await executeLifecycleEffects(transition.effects, for: task)
             return
@@ -47,12 +49,13 @@ extension WebSocketManager {
             closeDisposition: closeDisposition,
             previousState: previousState
         )
-        let transition = await task.applyLifecycleEvent(
+        let transition = await task.applyDelegateLifecycleEvent(
             .failure(generation: generation, disposition: closeDisposition, error: finalError),
             context: .init(
                 reconnectAction: reconnectAction,
                 attempt: await task.attemptedReconnectCount
-            )
+            ),
+            shutdownFence: shutdownLock
         )
         await executeLifecycleEffects(transition.effects, for: task)
     }

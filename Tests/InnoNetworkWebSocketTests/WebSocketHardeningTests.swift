@@ -338,6 +338,91 @@ struct WebSocketManagerShutdownTests {
         #expect(callbacks.withLock { $0 } == ["shutdown-error"])
     }
 
+    @Test(
+        "shutdown fence wins over buffered terminal delegate events",
+        arguments: [BufferedTerminalDelegateEvent.mappedError, .didClose]
+    )
+    func shutdownFenceWinsOverBufferedTerminalDelegateEvents(
+        _ bufferedEvent: BufferedTerminalDelegateEvent
+    ) async throws {
+        let harness = makeShutdownHarness()
+        let observedErrors = OSAllocatedUnfairLock<[WebSocketError]>(initialState: [])
+        let disconnectedCount = OSAllocatedUnfairLock<Int>(initialState: 0)
+        await harness.manager.setOnErrorHandler { _, error in
+            observedErrors.withLock { $0.append(error) }
+        }
+        await harness.manager.setOnDisconnectedHandler { _, _ in
+            disconnectedCount.withLock { $0 += 1 }
+        }
+
+        let task = await harness.manager.connect(url: URL(string: "wss://example.invalid/buffered-terminal")!)
+        let taskIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: task)
+        )
+
+        // Model the exact actor interleaving deterministically: shutdown has
+        // linearized at its lock-backed fence, but the registry sweep has not
+        // yet run and a terminal delegate event that was already buffered is
+        // selected by the consumer. Resetting the fence afterwards is only to
+        // let the public shutdown API perform normal test teardown.
+        #expect(harness.manager.markShutdownIfNeeded())
+        await harness.manager.processDelegateEvent(
+            bufferedEvent.delegateEvent(taskIdentifier: taskIdentifier)
+        )
+        harness.manager.shutdownLock.withLock { $0 = false }
+
+        let shutdown = Task { await harness.manager.shutdown() }
+        #expect(await harness.session.waitForInvalidation())
+        harness.callbacks.handleInvalidation(nil)
+        await shutdown.value
+
+        let shutdownError = WebSocketManager.managerShutdownError()
+        #expect(await task.state == .failed)
+        #expect(await task.error == shutdownError)
+        #expect(observedErrors.withLock { $0 } == [shutdownError])
+        #expect(disconnectedCount.withLock { $0 } == 0)
+    }
+
+    @Test("shutdown fence rejects a terminal delegate reduction already dequeued")
+    func shutdownFenceRejectsAlreadyDequeuedTerminalReduction() async {
+        let harness = makeShutdownHarness()
+        let observedErrors = OSAllocatedUnfairLock<[WebSocketError]>(initialState: [])
+        await harness.manager.setOnErrorHandler { _, error in
+            observedErrors.withLock { $0.append(error) }
+        }
+
+        let task = await harness.manager.connect(url: URL(string: "wss://example.invalid/dequeued-terminal")!)
+        let generation = await task.connectionGeneration
+
+        // This models a consumer that passed processDelegateEvent's fast
+        // fence check before shutdown, then suspended waiting for the task
+        // actor. The reducer itself must re-enter the same fence and lose to
+        // shutdown rather than applying the already-dequeued failure.
+        #expect(harness.manager.markShutdownIfNeeded())
+        let delegateTransition = await task.applyDelegateLifecycleEvent(
+            .failure(
+                generation: generation,
+                disposition: .transportFailure(.pingTimeout),
+                error: .pingTimeout
+            ),
+            context: .init(reconnectAction: .terminal),
+            shutdownFence: harness.manager.shutdownLock
+        )
+        #expect(delegateTransition.isIgnoredCallback)
+        #expect(await task.state == .connecting)
+        harness.manager.shutdownLock.withLock { $0 = false }
+
+        let shutdown = Task { await harness.manager.shutdown() }
+        #expect(await harness.session.waitForInvalidation())
+        harness.callbacks.handleInvalidation(nil)
+        await shutdown.value
+
+        let shutdownError = WebSocketManager.managerShutdownError()
+        #expect(await task.state == .failed)
+        #expect(await task.error == shutdownError)
+        #expect(observedErrors.withLock { $0 } == [shutdownError])
+    }
+
     @Test("connect after shutdown does not create a URLSession task")
     func connectAfterShutdownIsTerminalGuarded() async {
         let harness = makeShutdownHarness()
@@ -426,6 +511,24 @@ struct WebSocketManagerShutdownTests {
         let manager: WebSocketManager
         let session: StubWebSocketURLSession
         let callbacks: WebSocketSessionDelegateCallbacks
+    }
+
+    enum BufferedTerminalDelegateEvent: Sendable {
+        case mappedError
+        case didClose
+
+        func delegateEvent(taskIdentifier: Int) -> WebSocketManager.DelegateEvent {
+            switch self {
+            case .mappedError:
+                .mappedError(taskIdentifier: taskIdentifier, error: .pingTimeout)
+            case .didClose:
+                .disconnected(
+                    taskIdentifier: taskIdentifier,
+                    closeCode: .normalClosure,
+                    reason: nil
+                )
+            }
+        }
     }
 }
 

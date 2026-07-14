@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 public actor WebSocketTask: Identifiable {
     /// Stable identifier for this logical WebSocket task.
@@ -104,6 +105,36 @@ public actor WebSocketTask: Identifiable {
         lifecycleState = transition.state
         syncLifecycleMetadata()
         return transition
+    }
+
+    /// Applies a URLSession delegate event only while the owning manager's
+    /// shutdown fence is open.
+    ///
+    /// The fence remains locked through reducer evaluation and state mutation,
+    /// making this transition and `WebSocketManager.markShutdownIfNeeded()` a
+    /// single linearized order. If shutdown closes the fence first, an event
+    /// that was already buffered (or already dequeued but suspended on this
+    /// actor) is ignored and cannot replace the manager-shutdown terminal
+    /// error. The manager's own synthetic shutdown event intentionally uses
+    /// `applyLifecycleEvent` directly so it can transition after the fence is
+    /// closed.
+    @discardableResult
+    package func applyDelegateLifecycleEvent(
+        _ event: WebSocketLifecycleEvent,
+        context: WebSocketLifecycleDecisionContext = .init(),
+        shutdownFence: OSAllocatedUnfairLock<Bool>
+    ) -> WebSocketLifecycleTransition {
+        // `withLock` requires a `@Sendable` closure, which would erase this
+        // method's actor isolation. This closure is synchronous, nonescaping,
+        // and invoked only while already isolated to `WebSocketTask`; the
+        // unchecked variant preserves that isolation while sharing the same
+        // unfair-lock storage with the manager's fence mutation.
+        shutdownFence.withLockUnchecked { isShutdown in
+            guard !isShutdown else {
+                return .init(state: lifecycleState, effects: [.ignoreStaleCallback])
+            }
+            return applyLifecycleEvent(event, context: context)
+        }
     }
 
     @discardableResult

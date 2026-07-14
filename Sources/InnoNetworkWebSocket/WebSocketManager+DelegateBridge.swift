@@ -10,6 +10,13 @@ import InnoNetwork
 extension WebSocketManager {
 
     func processDelegateEvent(_ event: DelegateEvent) async {
+        // `AsyncStream.Continuation.finish()` drains elements that were
+        // already buffered. Treat the manager's lock-backed shutdown flag as
+        // the ordering fence instead of assuming `finish()` rejects that
+        // backlog. The task-level guarded reducer below closes the smaller
+        // race where this method started before shutdown and then suspended.
+        guard !isShutdown else { return }
+
         switch event {
         case .connected(let taskIdentifier, let protocolName):
             await processConnected(taskIdentifier: taskIdentifier, protocolName: protocolName)
@@ -60,8 +67,9 @@ extension WebSocketManager {
             for: taskIdentifier,
             fallbackTask: task
         )
-        let transition = await task.applyLifecycleEvent(
-            .didOpen(generation: generation, protocolName: protocolName)
+        let transition = await task.applyDelegateLifecycleEvent(
+            .didOpen(generation: generation, protocolName: protocolName),
+            shutdownFence: shutdownLock
         )
         let didConnect = transition.state.publicState == .connected && !transition.isIgnoredCallback
 
@@ -120,14 +128,15 @@ extension WebSocketManager {
             }
         }
 
-        let transition = await task.applyLifecycleEvent(
+        let transition = await task.applyDelegateLifecycleEvent(
             .didClose(
                 generation: callbackGeneration,
                 closeCode: closeCode,
                 disposition: disposition,
                 error: error
             ),
-            context: context
+            context: context,
+            shutdownFence: shutdownLock
         )
         await executeLifecycleEffects(transition.effects, for: task)
     }
