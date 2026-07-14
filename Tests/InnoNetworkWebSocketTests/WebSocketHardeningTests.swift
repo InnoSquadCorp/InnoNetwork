@@ -202,6 +202,32 @@ struct WebSocketReconnectHardeningTests {
 @Suite("WebSocket Manager Shutdown Tests")
 struct WebSocketManagerShutdownTests {
 
+    @Test("shutdown() delivers one terminal error to callback-only consumers")
+    func shutdownDeliversTerminalErrorToCallbackOnlyConsumers() async {
+        let harness = makeShutdownHarness()
+        let observedErrors = OSAllocatedUnfairLock<[WebSocketError]>(initialState: [])
+        await harness.manager.setOnErrorHandler { _, error in
+            observedErrors.withLock { $0.append(error) }
+        }
+
+        let task = await harness.manager.connect(url: URL(string: "wss://example.invalid/handler-only")!)
+        let shutdown = Task { await harness.manager.shutdown() }
+
+        #expect(
+            await waitForCondition(timeout: 1.0) {
+                observedErrors.withLock { $0.count == 1 }
+            },
+            "the terminal handler must run before shutdown waits for URLSession invalidation"
+        )
+        #expect(observedErrors.withLock { $0 } == [WebSocketManager.managerShutdownError()])
+        #expect(await task.state == .failed)
+
+        #expect(await waitForCondition(timeout: 1.0) { harness.session.didInvalidateAndCancel })
+        harness.callbacks.handleInvalidation(nil)
+        await shutdown.value
+        #expect(observedErrors.withLock { $0.count } == 1)
+    }
+
     @Test("shutdown() invalidates the URLSession and cancels active sockets")
     func shutdownInvalidatesSessionAndCancelsActiveSockets() async throws {
         let harness = makeShutdownHarness()
@@ -224,6 +250,12 @@ struct WebSocketManagerShutdownTests {
     func shutdownIsIdempotentAndWaitsForInvalidation() async {
         let harness = makeShutdownHarness()
         let completedCount = OSAllocatedUnfairLock<Int>(initialState: 0)
+        let terminalErrorCount = OSAllocatedUnfairLock<Int>(initialState: 0)
+        await harness.manager.setOnErrorHandler { _, error in
+            guard error == WebSocketManager.managerShutdownError() else { return }
+            terminalErrorCount.withLock { $0 += 1 }
+        }
+        _ = await harness.manager.connect(url: URL(string: "wss://example.invalid/concurrent-shutdown")!)
 
         let first = Task {
             await harness.manager.shutdown()
@@ -242,6 +274,7 @@ struct WebSocketManagerShutdownTests {
         await first.value
         await second.value
         #expect(completedCount.withLock { $0 } == 2)
+        #expect(terminalErrorCount.withLock { $0 } == 1)
     }
 
     @Test("shutdown() finishes per-task event streams")
@@ -265,6 +298,47 @@ struct WebSocketManagerShutdownTests {
             return
         }
         #expect(await iterator.next() == nil)
+    }
+
+    @Test("late delegate events do not invoke callbacks after shutdown returns")
+    func lateDelegateEventsDoNotInvokeCallbacksAfterShutdown() async throws {
+        let harness = makeShutdownHarness()
+        let callbacks = OSAllocatedUnfairLock<[String]>(initialState: [])
+        await harness.manager.setOnConnectedHandler { _, _ in
+            callbacks.withLock { $0.append("connected") }
+        }
+        await harness.manager.setOnDisconnectedHandler { _, _ in
+            callbacks.withLock { $0.append("disconnected") }
+        }
+        await harness.manager.setOnErrorHandler { _, error in
+            if error == WebSocketManager.managerShutdownError() {
+                callbacks.withLock { $0.append("shutdown-error") }
+            } else {
+                callbacks.withLock { $0.append("error") }
+            }
+        }
+
+        let task = await harness.manager.connect(url: URL(string: "wss://example.invalid/late-delegate")!)
+        let taskIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: task)
+        )
+
+        let shutdown = Task { await harness.manager.shutdown() }
+        #expect(await waitForCondition(timeout: 1.0) { harness.session.didInvalidateAndCancel })
+        harness.callbacks.handleInvalidation(nil)
+        await shutdown.value
+        #expect(callbacks.withLock { $0 } == ["shutdown-error"])
+
+        harness.manager.handleConnected(taskIdentifier: taskIdentifier, protocolName: nil)
+        harness.manager.handleDisconnected(
+            taskIdentifier: taskIdentifier,
+            closeCode: .normalClosure,
+            reason: nil
+        )
+        harness.manager.handleError(taskIdentifier: taskIdentifier, error: URLError(.timedOut))
+        for _ in 0..<5 { await Task.yield() }
+
+        #expect(callbacks.withLock { $0 } == ["shutdown-error"])
     }
 
     @Test("connect after shutdown does not create a URLSession task")

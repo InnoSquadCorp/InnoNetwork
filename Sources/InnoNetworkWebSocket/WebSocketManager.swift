@@ -359,6 +359,14 @@ public actor WebSocketManager {
     /// Tears down the manager, cancels active sockets, finishes event streams,
     /// and invalidates the underlying URLSession.
     ///
+    /// Every registered, nonterminal task transitions to `.failed` and emits
+    /// exactly one shutdown `.error(_:)` before its event stream finishes.
+    /// The same error is delivered to ``setOnErrorHandler(_:)``; shutdown does
+    /// not synthesize a `.disconnected` event because no peer-close handshake
+    /// occurred. Manager-level handlers are cleared only after this terminal
+    /// sweep, and no new handler callbacks are dispatched after shutdown
+    /// returns.
+    ///
     /// After `shutdown()` returns, the manager is terminal. Create a fresh
     /// instance for new socket work; diagnostic getters can still return their
     /// last-known values while terminal cleanup drains. Calling `shutdown()`
@@ -370,30 +378,21 @@ public actor WebSocketManager {
         }
 
         delegateEventContinuation.finish()
-        await runtimeRegistry.clearCallbacks()
 
-        let shutdownError = Self.managerShutdownError()
         // Atomically flip the registry into a "no new tasks" state and capture
         // the live snapshot in a single actor hop. Any concurrent
         // `connect()`/`retry()` past this point will be refused at `add(_:)`
         // and routed through `finishTaskBecauseManagerIsShutdown`.
         for task in await runtimeRegistry.markShutdownStartedAndSnapshot() {
-            let state = await task.state
-            if !state.isTerminal {
-                let transition = await task.applyLifecycleEvent(
-                    .failure(
-                        generation: await task.connectionGeneration,
-                        disposition: .transportFailure(shutdownError),
-                        error: shutdownError
-                    ),
-                    context: .init(reconnectAction: .terminal)
-                )
-                await executeLifecycleEffects(transition.effects, for: task)
-            }
-            await runtimeRegistry.removeTaskRuntime(taskId: task.id)
-            await eventHub.finish(taskID: task.id)
-            await runtimeRegistry.remove(task)
+            await finishTaskBecauseManagerIsShutdown(task)
         }
+
+        // Keep manager-level callbacks alive through the terminal sweep so
+        // callback-only consumers observe the same shutdown error as stream
+        // consumers. From this point forward delegate events are already
+        // rejected by the finished continuation, so clearing the callbacks
+        // establishes a strict no-callback boundary for the rest of teardown.
+        await runtimeRegistry.clearCallbacks()
 
         session.invalidateAndCancel()
         await invalidationBarrier.wait()
