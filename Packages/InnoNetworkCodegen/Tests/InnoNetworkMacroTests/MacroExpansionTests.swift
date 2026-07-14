@@ -30,8 +30,12 @@ struct MacroExpansionTests {
 
                 extension GetUser: APIDefinition {
                     public typealias Parameter = EmptyParameter
-                    public var method: HTTPMethod { .get }
-                    public var path: String { "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))" }
+                    public var method: HTTPMethod {
+                        .get
+                    }
+                    public var path: String {
+                        "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))"
+                    }
                 }
                 """,
             macros: macros
@@ -56,9 +60,13 @@ struct MacroExpansionTests {
                 }
 
                 extension UpdateAvatar: APIDefinition {
-                    typealias Parameter = EmptyParameter
-                    var method: HTTPMethod { .post }
-                    var path: String { "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))/avatar" }
+                    internal typealias Parameter = EmptyParameter
+                    internal var method: HTTPMethod {
+                        .post
+                    }
+                    internal var path: String {
+                        "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))/avatar"
+                    }
                 }
                 """,
             macros: macros
@@ -84,8 +92,12 @@ struct MacroExpansionTests {
 
                 extension DeleteUser: APIDefinition {
                     package typealias Parameter = EmptyParameter
-                    package var method: HTTPMethod { .delete }
-                    package var path: String { "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))" }
+                    package var method: HTTPMethod {
+                        .delete
+                    }
+                    package var path: String {
+                        "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))"
+                    }
                 }
                 """,
             macros: macros
@@ -113,7 +125,7 @@ struct MacroExpansionTests {
                 DiagnosticSpec(
                     message: "@APIDefinition path placeholder {missing} must match a stored property.",
                     line: 1,
-                    column: 1
+                    column: 36
                 )
             ],
             macros: macros
@@ -141,7 +153,7 @@ struct MacroExpansionTests {
                 DiagnosticSpec(
                     message: "@APIDefinition path placeholder {id} cannot reference an Optional stored property.",
                     line: 1,
-                    column: 1
+                    column: 36
                 )
             ],
             macros: macros
@@ -169,7 +181,7 @@ struct MacroExpansionTests {
                 DiagnosticSpec(
                     message: "@APIDefinition path placeholder {id} cannot reference an Optional stored property.",
                     line: 1,
-                    column: 1
+                    column: 36
                 )
             ],
             macros: macros
@@ -197,7 +209,7 @@ struct MacroExpansionTests {
                 DiagnosticSpec(
                     message: "@APIDefinition path placeholder {id} cannot reference an Optional stored property.",
                     line: 1,
-                    column: 1
+                    column: 36
                 )
             ],
             macros: macros
@@ -226,7 +238,7 @@ struct MacroExpansionTests {
                     message:
                         "@APIDefinition path placeholder {id} cannot reference a generic parameter. Declare the property with a concrete `LosslessStringConvertible & Sendable` type.",
                     line: 1,
-                    column: 1
+                    column: 36
                 )
             ],
             macros: macros
@@ -255,7 +267,7 @@ struct MacroExpansionTests {
                     message:
                         "@APIDefinition path placeholder {id} cannot reference an opaque (`some`) type. Declare the property with a concrete `LosslessStringConvertible & Sendable` type.",
                     line: 1,
-                    column: 1
+                    column: 36
                 )
             ],
             macros: macros
@@ -283,7 +295,7 @@ struct MacroExpansionTests {
                 DiagnosticSpec(
                     message: "@APIDefinition path: does not support string interpolation.",
                     line: 1,
-                    column: 38,
+                    column: 44,
                     fixIts: [
                         FixItSpec(
                             message: "Replace string interpolation with '{id}' path placeholder."
@@ -316,7 +328,7 @@ struct MacroExpansionTests {
                 DiagnosticSpec(
                     message: "@APIDefinition path: does not support string interpolation.",
                     line: 1,
-                    column: 38,
+                    column: 44,
                     fixIts: []
                 )
             ],
@@ -380,7 +392,7 @@ struct MacroExpansionTests {
                 DiagnosticSpec(
                     message: "#endpoint fourth argument must be labeled scope:.",
                     line: 1,
-                    column: 16
+                    column: 54
                 )
             ],
             macros: macros
@@ -401,7 +413,7 @@ struct MacroExpansionTests {
                 DiagnosticSpec(
                     message: "#endpoint scope: argument must be a metatype expression (e.g. AuthRequiredScope.self).",
                     line: 1,
-                    column: 16
+                    column: 54
                 )
             ],
             macros: macros
@@ -422,7 +434,7 @@ struct MacroExpansionTests {
                 DiagnosticSpec(
                     message: "#endpoint third argument must be labeled as:.",
                     line: 1,
-                    column: 16
+                    column: 42
                 )
             ],
             macros: macros
@@ -443,7 +455,7 @@ struct MacroExpansionTests {
                 DiagnosticSpec(
                     message: "#endpoint first argument (method) must be unlabeled.",
                     line: 1,
-                    column: 16
+                    column: 26
                 )
             ],
             macros: macros
@@ -464,7 +476,7 @@ struct MacroExpansionTests {
                 DiagnosticSpec(
                     message: "#endpoint second argument (path) must be unlabeled.",
                     line: 1,
-                    column: 16
+                    column: 32
                 )
             ],
             macros: macros
