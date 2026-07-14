@@ -61,19 +61,32 @@ curated release summary.
 - Refresh generations, transient persistent-cache key reads, shared cache
   lookups, and circuit-breaker half-open hysteresis preserve their state under
   cancellation and concurrent replay.
+- Request event partitions preserve terminal events already queued behind a
+  slow observer. Finish waits for partition-to-observer handoff without making
+  request completion depend on observer handler latency.
 
 ### Changed
 
 - `APISingleRequestExecutable` snapshots its transport policy once so request
   encoding and decoding observe one policy value.
 - Scheduler-sensitive cancellation, refresh, and WebSocket tests use explicit
-  gates; CI runs the complete root suite in both serial coverage and parallel
-  modes.
+  gates; CI runs the complete root suite in serial coverage mode and with four
+  bounded parallel workers.
 - External WebSocket shutdown waits for already-admitted manager callbacks;
   reentrant shutdown from one of those callbacks initiates teardown and returns
   so a later external call can await the full boundary.
 - Guarded benchmarks build in release mode, and 5.0 publishes an explicit API,
   migration, codegen-distribution, and release-integrity contract.
+- Hosted benchmark baselines are recalibrated from three release-mode runs,
+  using the slowest successful sample for every row so debug-build overhead no
+  longer distorts regression deltas.
+- CI installs a checksum-pinned Periphery release, isolates Codecov OIDC to
+  artifact-only upload jobs, bounds parallel tests to four workers, and skips
+  only hosted platform components that the pinned runner does not install.
+- Periphery now analyzes test-target references instead of baselining package
+  test seams. Fourteen unused internal helpers are removed, 40 stale baseline
+  entries are pruned, and seven protocol-shape or synthesized-`Equatable`
+  analyzer false positives are added explicitly.
 
 ## [4.0.0] - 2026-05-02
 

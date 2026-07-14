@@ -1,160 +1,204 @@
 {
-  "generatedAt" : "2026-05-02T18:40:44Z",
+  "generatedAt" : "2026-07-14T17:50:26Z",
   "results" : [
     {
-      "elapsedSeconds" : 0.052382417,
+      "elapsedSeconds" : 0.013956542,
       "group" : "encoding",
       "iterations" : 2000,
       "name" : "query-encoder-small",
-      "operationsPerSecond" : 38180.75061332126
+      "operationsPerSecond" : 143301.97265196493,
+      "peakResidentBytes" : 5144576,
+      "residentDeltaBytes" : 901120
     },
     {
-      "elapsedSeconds" : 0.501449875,
+      "elapsedSeconds" : 0.133846125,
       "group" : "encoding",
       "iterations" : 2000,
       "name" : "query-encoder-large",
-      "operationsPerSecond" : 3988.4345369514745
+      "operationsPerSecond" : 14942.531956005449,
+      "peakResidentBytes" : 6586368,
+      "residentDeltaBytes" : 1441792
     },
     {
-      "elapsedSeconds" : 0.110349542,
+      "elapsedSeconds" : 0.058844917,
       "group" : "events",
       "iterations" : 2000,
       "name" : "task-event-fanout-single",
-      "operationsPerSecond" : 18124.225653786583
+      "operationsPerSecond" : 33987.642467063044,
+      "peakResidentBytes" : 7258112,
+      "residentDeltaBytes" : 655360
     },
     {
-      "elapsedSeconds" : 0.432039333,
+      "elapsedSeconds" : 0.325020416,
       "group" : "events",
       "iterations" : 2000,
       "name" : "task-event-fanout-many",
-      "operationsPerSecond" : 4629.208146657332
+      "operationsPerSecond" : 6153.459602980756,
+      "peakResidentBytes" : 9486336,
+      "residentDeltaBytes" : 2228224
     },
     {
-      "elapsedSeconds" : 0.115308542,
+      "elapsedSeconds" : 0.064177542,
       "group" : "events",
       "iterations" : 2000,
       "name" : "task-event-slow-isolation",
-      "operationsPerSecond" : 17344.768785646425
+      "operationsPerSecond" : 31163.549392402718,
+      "peakResidentBytes" : 9076736,
+      "residentDeltaBytes" : 81920
     },
     {
-      "elapsedSeconds" : 4.659418541,
+      "elapsedSeconds" : 0.849125417,
       "group" : "persistence",
       "iterations" : 300,
       "name" : "append-log-write",
-      "operationsPerSecond" : 64.38571623480175
+      "operationsPerSecond" : 353.30469915729776,
+      "peakResidentBytes" : 22626304,
+      "residentDeltaBytes" : 13058048
     },
     {
-      "elapsedSeconds" : 0.040993625,
+      "elapsedSeconds" : 0.020144292,
       "group" : "persistence",
       "iterations" : 300,
       "name" : "append-log-replay",
-      "operationsPerSecond" : 7318.211063305575
+      "operationsPerSecond" : 14892.556164297062,
+      "peakResidentBytes" : 36569088,
+      "residentDeltaBytes" : 147456
     },
     {
-      "elapsedSeconds" : 45.738364792,
+      "elapsedSeconds" : 8.312354166,
       "group" : "persistence",
       "iterations" : 1050,
       "name" : "append-log-compaction",
-      "operationsPerSecond" : 22.95665804352615
+      "operationsPerSecond" : 126.31800558917618,
+      "peakResidentBytes" : 195444736,
+      "residentDeltaBytes" : 158842880
     },
     {
-      "elapsedSeconds" : 1.070317416,
+      "elapsedSeconds" : 0.13319975,
       "group" : "persistence",
       "iterations" : 50,
       "name" : "download-persistence-restore",
-      "operationsPerSecond" : 46.71511390224823
+      "operationsPerSecond" : 375.3760799100599,
+      "peakResidentBytes" : 202964992,
+      "residentDeltaBytes" : 3358720
     },
     {
-      "elapsedSeconds" : 0.060379541,
+      "elapsedSeconds" : 0.040332125,
       "group" : "websocket",
       "iterations" : 20000,
       "name" : "websocket-reconnect-decision",
-      "operationsPerSecond" : 331238.0264699263
+      "operationsPerSecond" : 495882.6245827612,
+      "peakResidentBytes" : 201752576,
+      "residentDeltaBytes" : 180224
     },
     {
-      "elapsedSeconds" : 0.125605958,
+      "elapsedSeconds" : 0.006622458,
       "group" : "websocket",
       "iterations" : 500000,
       "name" : "websocket-close-disposition-classify",
-      "operationsPerSecond" : 3980702.8899059077
+      "operationsPerSecond" : 75500667.57690272,
+      "peakResidentBytes" : 201752576,
+      "residentDeltaBytes" : 0
     },
     {
-      "elapsedSeconds" : 0.183290041,
+      "elapsedSeconds" : 0.031094416,
       "group" : "websocket",
       "iterations" : 500000,
       "name" : "websocket-ping-context-create",
-      "operationsPerSecond" : 2727916.897568919
+      "operationsPerSecond" : 16080057.589761455,
+      "peakResidentBytes" : 201768960,
+      "residentDeltaBytes" : 0
     },
     {
-      "elapsedSeconds" : 0.154645458,
+      "elapsedSeconds" : 0.0693015,
       "group" : "websocket",
       "iterations" : 200000,
       "name" : "websocket-send-queue-reserve",
-      "operationsPerSecond" : 1293280.789404109
+      "operationsPerSecond" : 2885940.419760034,
+      "peakResidentBytes" : 201785344,
+      "residentDeltaBytes" : 16384
     },
     {
-      "elapsedSeconds" : 0.226852958,
+      "elapsedSeconds" : 0.034598708,
       "group" : "websocket",
       "iterations" : 200000,
       "name" : "websocket-lifecycle-transition-table",
-      "operationsPerSecond" : 881628.3541694
+      "operationsPerSecond" : 5780562.673033918,
+      "peakResidentBytes" : 201785344,
+      "residentDeltaBytes" : 0
     },
     {
-      "elapsedSeconds" : 0.382771417,
+      "elapsedSeconds" : 0.24820125,
       "group" : "client",
       "iterations" : 2000,
       "name" : "request-pipeline",
-      "operationsPerSecond" : 5225.050542371088
+      "operationsPerSecond" : 8057.97714556232,
+      "peakResidentBytes" : 203046912,
+      "residentDeltaBytes" : 1261568
     },
     {
-      "elapsedSeconds" : 0.513916375,
+      "elapsedSeconds" : 0.288199834,
       "group" : "client",
       "iterations" : 2000,
       "name" : "request-coalescing-shared-get",
-      "operationsPerSecond" : 3891.683739402155
+      "operationsPerSecond" : 6939.629257385346,
+      "peakResidentBytes" : 203997184,
+      "residentDeltaBytes" : 0
     },
     {
-      "elapsedSeconds" : 0.15787325,
+      "elapsedSeconds" : 0.08950775,
       "group" : "client",
       "iterations" : 2000,
       "name" : "concurrent-50-requests",
-      "operationsPerSecond" : 12668.39062349068
+      "operationsPerSecond" : 22344.433861872298,
+      "peakResidentBytes" : 203046912,
+      "residentDeltaBytes" : 0
     },
     {
-      "elapsedSeconds" : 3.450106375,
+      "elapsedSeconds" : 2.171100417,
       "group" : "client",
       "iterations" : 20000,
       "name" : "decoding-interceptor-chain-1",
-      "operationsPerSecond" : 5796.9227108251125
+      "operationsPerSecond" : 9211.918455451156,
+      "peakResidentBytes" : 203046912,
+      "residentDeltaBytes" : 0
     },
     {
-      "elapsedSeconds" : 3.448275862,
+      "elapsedSeconds" : 2.145149417,
       "group" : "client",
       "iterations" : 20000,
       "name" : "decoding-interceptor-chain-3",
-      "operationsPerSecond" : 5800.0
+      "operationsPerSecond" : 9323.359874842696,
+      "peakResidentBytes" : 203046912,
+      "residentDeltaBytes" : 0
     },
     {
-      "elapsedSeconds" : 3.448275862,
+      "elapsedSeconds" : 2.239655208,
       "group" : "client",
       "iterations" : 20000,
       "name" : "decoding-interceptor-chain-8",
-      "operationsPerSecond" : 5800.0
+      "operationsPerSecond" : 8929.94597050494,
+      "peakResidentBytes" : 203046912,
+      "residentDeltaBytes" : 0
     },
     {
-      "elapsedSeconds" : 0.428473667,
+      "elapsedSeconds" : 0.065537875,
       "group" : "cache",
       "iterations" : 200000,
       "name" : "response-cache-lookup",
-      "operationsPerSecond" : 466773.14244378055
+      "operationsPerSecond" : 3051670.5035065603,
+      "peakResidentBytes" : 203046912,
+      "residentDeltaBytes" : 0
     },
     {
-      "elapsedSeconds" : 0.155602292,
+      "elapsedSeconds" : 0.043864542,
       "group" : "cache",
       "iterations" : 200000,
       "name" : "response-cache-revalidation",
-      "operationsPerSecond" : 1285328.110719603
+      "operationsPerSecond" : 4559491.354087317,
+      "peakResidentBytes" : 203046912,
+      "residentDeltaBytes" : 0
     }
   ],
-  "version" : 1
+  "version" : 2
 }
