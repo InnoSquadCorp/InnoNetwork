@@ -64,7 +64,7 @@ struct RequireOnlineInterceptor: RequestInterceptor {
 let configuration = NetworkConfiguration.advanced(
     baseURL: baseURL,
     auth: AuthPack(
-        additionalSigners: [RequireOnlineInterceptor(monitor: networkMonitor)]
+        additionalRequestInterceptors: [RequireOnlineInterceptor(monitor: networkMonitor)]
     )
 )
 ```

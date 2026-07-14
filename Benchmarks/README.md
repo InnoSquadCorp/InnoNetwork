@@ -88,7 +88,7 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
 ## Baseline Policy
 
 - baseline 파일은 [Baselines/default.json](Baselines/default.json)입니다.
-- baseline 수치는 GitHub Actions `macos-15-arm64` hosted runner의 `--quick`
+- baseline 수치는 GitHub Actions `macos-15` hosted runner의 `--quick`
   결과를 기준으로 보정합니다. 로컬 개발 장비에서 더 빠르게 나오거나 느리게
   나오는 diff는 참고용입니다.
 - runner는 baseline 대비 diff를 항상 출력합니다.
@@ -114,22 +114,25 @@ baseline 갱신은 사람이 명시적으로 수행하는 운영 작업입니다
 
 1. **재측정 트리거**: `benchmarks` workflow를 `workflow_dispatch`로
    실행합니다 (또는 nightly schedule을 그대로 사용해도 무방). 이 job은
-   `macos-15-arm64` hosted runner에서 `--quick` runner를 호출해
-   `innonetwork-benchmark-smoke` artifact에 JSON summary를 업로드합니다.
+   `macos-15` hosted runner에서 `--quick` runner를 호출해
+   `innonetwork-benchmarks` artifact에 JSON summary를 업로드합니다.
    로컬 개발 장비에서 측정한 결과를 직접 commit하지 마세요. CPU 모델/
    thermal/scheduling 차이로 baseline이 비대칭적으로 흔들립니다.
 2. **artifact 다운로드 후 `Benchmarks/Baselines/default.json` 교체**:
    ```bash
-   gh run download <RUN_ID> --name innonetwork-benchmark-smoke -D /tmp/inb
-   cp /tmp/inb/results.json Benchmarks/Baselines/default.json
+   gh run download <RUN_ID> --name innonetwork-benchmarks -D /tmp/inb
+   jq -S '{version, generatedAt, results}' \
+     /tmp/inb/results.json > /tmp/inb/default.json
+   cp /tmp/inb/default.json Benchmarks/Baselines/default.json
    ```
-   workflow가 출력하는 JSON 스키마는 baseline 파일과 동일합니다.
+   workflow 결과의 `baseline` 비교 메타데이터와 절대 경로는 기준선에
+   포함하지 않습니다. 위 정규화 단계는 재사용 가능한 측정값만 보존합니다.
 3. **변경 검증**: 같은 commit에서 `swift run -c release InnoNetworkBenchmarks --quick
    --json-path .build/benchmarks/results.json --enforce-baseline
    --max-regression-percent 20` 을 다시 돌려 가드를 통과하는지 확인합니다.
    통과해야 PR을 올립니다.
 4. **`Benchmarks/Baselines/CHANGELOG.md`** 갱신:
-   - 새로운 entry에 runner 식별자 (예: `macos-15-arm64, GitHub Actions
+   - 새로운 entry에 runner 식별자 (예: `macos-15, GitHub Actions
      run #123`), 변경 사유 (의미 있는 회귀가 무엇이었는지 / 의도한
      개선이 무엇이었는지), 그리고 변경된 benchmark의 before/after ops/s
      diff을 한 줄씩 적습니다.
@@ -151,8 +154,9 @@ baseline 갱신은 사람이 명시적으로 수행하는 운영 작업입니다
   재기록하고, `Baselines/CHANGELOG.md`에 환경 변경을 명시합니다.
 
 일시적인 hosted-runner noise (단발 -8%) 는 갱신 사유가 아닙니다.
-`benchmark-smoke`와 PR `Benchmarks` workflow의 guarded run은 3회
-재시도하므로, 단발 noise는 자동으로 흡수됩니다.
+`Benchmarks` workflow의 guarded run은 실패할 때 최대 3회 재시도해
+단발 noise를 흡수합니다. CI의 unguarded `benchmark-smoke`는 CLI와 JSON
+생성만 한 번 확인하며 기준선 측정으로 사용하지 않습니다.
 
 ## Initial Baseline (4.0.0)
 

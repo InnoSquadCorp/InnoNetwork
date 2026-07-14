@@ -133,14 +133,14 @@ and treat any 5.y → 5.(y+1) bump as a code-level review boundary.
 - `StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance
 - `PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`
 - `DownloadTask.generation` / `attempt` observation accessors
-- `NetworkErrorCode` SSOT enum (introduced in 4.1.0) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case
-- `NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.1.0)
-- `MultipartUploadStrategy.inMemory(maxBytes:)` (4.1.0) — replaces the zero-arg `.inMemory` form (4.0.x); the encoder's accumulator guard is part of the contract
-- `DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.1.0)
-- `ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.1.0)
-- `DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.1.0)
-- `ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.1.0)
-- `NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.1.0)
+- `NetworkErrorCode` SSOT enum (4.0.0 baseline) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case
+- `NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.0.0 baseline)
+- `MultipartUploadStrategy.inMemory(maxBytes:)` (4.0.0 baseline) — the explicit cap and encoder accumulator guard are part of the contract
+- `DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.0.0 baseline)
+- `ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.0.0 baseline)
+- `DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.0.0 baseline)
+- `ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.0.0 baseline)
+- `NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.0.0 baseline)
 
 ## Provisionally Stable Evolution Boundaries
 
@@ -239,7 +239,8 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   `ConcurrencyLimitExecutionPolicy` over paired
   `RequestInterceptor` / `ResponseInterceptor` wiring because the policy
   owns release on success, failure, and cancellation. `acquire()` is
-  `async throws` in 4.1.0 so queued cancellation removes the waiter
+  `async throws` in the 4.0.0 baseline so queued cancellation removes the
+  waiter
   before a future token can be consumed; direct callers must use
   `try await`.
 - `ResiliencePack`, `AuthPack`, `ObservabilityPack`, `CachePack`,
@@ -296,8 +297,8 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   platform mappings may be added while preserving current defaults.
 - `NetworkConfiguration.recommendedForProduction(baseURL:)` — the preset may
   tune default policy values in minors, but it remains a convenience builder
-  over documented public policies. 4.1.0 caps streaming response body
-  collection at 5 MiB by default.
+  over documented public policies. The 4.0.0 baseline caps streaming response
+  body collection at 5 MiB by default.
 - `NetworkConfiguration.init(...)` — the direct 32-parameter public
   construction surface was removed before the 4.0.0 baseline and is not part
   of the 5.x stable API. Use presets and the named configuration packs passed

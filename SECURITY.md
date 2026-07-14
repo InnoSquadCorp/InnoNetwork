@@ -18,7 +18,7 @@ request before the maintainers have acknowledged the report.
 
 Whichever channel you use, please include:
 
-- affected module and version (e.g. `InnoNetworkPersistentCache @ 4.0.0`)
+- affected module and version (e.g. `InnoNetworkPersistentCache @ 5.0.0`)
 - reproduction steps (minimal failing case if possible)
 - expected impact and threat model (confidentiality / integrity /
   availability, attacker preconditions)
@@ -28,8 +28,8 @@ Whichever channel you use, please include:
 
 ## Supported Versions
 
-- `4.x` is the actively supported public release line.
-- `3.x` receives security fixes on a best-effort basis when fixes can be
+- `5.x` is the actively supported public release line.
+- `4.x` receives security fixes on a best-effort basis when fixes can be
   backported without destabilizing the current release line.
 
 ## Disclosure
@@ -50,7 +50,7 @@ To verify a downloaded artifact:
 # Pre-requisites:
 brew install cosign
 
-# Replace <version> with the release tag (e.g. 4.0.0).
+# Replace <version> with the release tag (e.g. 5.0.0).
 version="<version>"
 artifact="benchmarks.json"   # or sbom.cdx.json / sbom-codegen.cdx.json
 

@@ -226,14 +226,14 @@ expected_provisionally=(
 '`StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance'
 '`PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`'
 '`DownloadTask.generation` / `attempt` observation accessors'
-'`NetworkErrorCode` SSOT enum (introduced in 4.1.0) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case'
-'`NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.1.0)'
-'`MultipartUploadStrategy.inMemory(maxBytes:)` (4.1.0) — replaces the zero-arg `.inMemory` form (4.0.x); the encoder'\''s accumulator guard is part of the contract'
-'`DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.1.0)'
-'`ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.1.0)'
-'`DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.1.0)'
-'`ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.1.0)'
-'`NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.1.0)'
+'`NetworkErrorCode` SSOT enum (4.0.0 baseline) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case'
+'`NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.0.0 baseline)'
+'`MultipartUploadStrategy.inMemory(maxBytes:)` (4.0.0 baseline) — the explicit cap and encoder accumulator guard are part of the contract'
+'`DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.0.0 baseline)'
+'`ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.0.0 baseline)'
+'`DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.0.0 baseline)'
+'`ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.0.0 baseline)'
+'`NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.0.0 baseline)'
 )
 
 expected_shipping_public_declarations=(
@@ -1265,7 +1265,7 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
       continue
       ;;
-    '`NetworkErrorCode` SSOT enum (introduced in 4.1.0) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case')
+    '`NetworkErrorCode` SSOT enum (4.0.0 baseline) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case')
       require_contains 'public enum NetworkErrorCode' \
         "$repo_root/Sources/InnoNetwork/NetworkErrorCode.swift"
       require_contains 'return NetworkErrorCode.reachability.rawValue' \
@@ -1284,7 +1284,7 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/NetworkError.swift"
       continue
       ;;
-    '`NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.1.0)')
+    '`NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.0.0 baseline)')
       require_contains 'public enum ReachabilityReason' \
         "$repo_root/Sources/InnoNetwork/NetworkError.swift"
       require_contains 'case reachability(ReachabilityReason, SendableUnderlyingError, Response?)' \
@@ -1293,21 +1293,21 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/NetworkError.swift"
       continue
       ;;
-    '`MultipartUploadStrategy.inMemory(maxBytes:)` (4.1.0) — replaces the zero-arg `.inMemory` form (4.0.x); the encoder'\''s accumulator guard is part of the contract')
+    '`MultipartUploadStrategy.inMemory(maxBytes:)` (4.0.0 baseline) — the explicit cap and encoder accumulator guard are part of the contract')
       require_contains 'case inMemory(maxBytes: Int)' \
         "$repo_root/Sources/InnoNetwork/APIDefinition.swift"
       require_contains 'maxInMemoryBytes' \
         "$repo_root/Sources/InnoNetwork/Model/MultipartFormData.swift"
       continue
       ;;
-    '`DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.1.0)')
+    '`DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.0.0 baseline)')
       require_contains 'public let taskInactivityTimeout: Duration?' \
         "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
       require_contains 'public var lastProgressAt: ContinuousClock.Instant?' \
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
       continue
       ;;
-    '`ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.1.0)')
+    '`ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.0.0 baseline)')
       require_contains 'indirect case rfc9111Compliant(wrapping: ResponseCachePolicy)' \
         "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
       require_contains 'func prepareWithRFC9111' \
@@ -1322,7 +1322,7 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/Cache/RFC9111CompliantCachePolicy.swift"
       continue
       ;;
-    '`DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.1.0)')
+    '`DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.0.0 baseline)')
       require_contains 'public let sharedContainerIdentifier: String?' \
         "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
       require_contains 'public var sharedContainerIdentifier: String?' \
@@ -1331,7 +1331,7 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
       continue
       ;;
-    '`ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.1.0)')
+    '`ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.0.0 baseline)')
       require_contains 'func invalidateTargetURI(_ targetURI: String) async' \
         "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
       require_contains 'public func invalidateTargetURI(_ targetURI: String) async' \
@@ -1342,7 +1342,7 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/RequestExecutor+Cache.swift"
       continue
       ;;
-    '`NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.1.0)')
+    '`NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.0.0 baseline)')
       require_contains 'public static let defaultStreamingLineByteLimit' \
         "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
       require_contains 'public let streamingLineByteLimit: Int' \

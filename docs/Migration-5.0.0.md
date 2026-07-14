@@ -141,7 +141,5 @@ distributed as an independent package or moved into the root package graph.
 ## See also
 
 - [API_STABILITY.md](../API_STABILITY.md) for the 5.x compatibility contract.
-- [Migration-4.1.0.md](Migration-4.1.0.md) for the immediately preceding
-  minor-release changes.
 - [Migration-4.0.0.md](Migration-4.0.0.md) for the original public baseline.
 - [MIGRATION_POLICY.md](MIGRATION_POLICY.md) for the general migration policy.

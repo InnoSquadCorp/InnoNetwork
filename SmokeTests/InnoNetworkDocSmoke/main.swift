@@ -159,6 +159,9 @@ private func runDocSmoke() {
 
     let networkAdvanced = NetworkConfiguration.advanced(
         baseURL: URL(string: "https://api.example.com/v1")!,
+        auth: AuthPack(
+            additionalRequestInterceptors: [SmokeAlamofireStyleAdapter()]
+        ),
         transport: TransportPack(timeout: 45, trustPolicy: .systemDefault)
     )
     _ = networkAdvanced

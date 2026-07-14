@@ -1,21 +1,24 @@
 # Client Architecture
 
 InnoNetwork's public request API remains `DefaultNetworkClient.request(_:)`.
-4.0.0 adds built-in resilience features by splitting the internal executor into
-explicit stages and exposing a narrow custom execution-policy hook around the
-raw transport attempt.
+5.0 preserves the resilience stages while making request identity and late,
+body-aware signing explicit around the raw transport attempt.
 
 ## Request Path
 
 ```text
-build request
+auth-scope preflight
+  -> build request and body
   -> configuration request interceptors
   -> endpoint request interceptors
-  -> auth-scope preflight
-  -> built-in preflight policies
+  -> apply current refresh token
+  -> unsigned-only cache lookup / conditional headers
+  -> snapshot file body and apply request signers
   -> custom execution policies
+  -> circuit breaker
+  -> unsigned-only request coalescing
   -> transport
-  -> built-in post-transport policies
+  -> unsigned-only cache write / 304 substitution
   -> response interceptors
   -> status validation
   -> decode
@@ -25,11 +28,14 @@ Built-in policies occupy the preflight and post-transport slots:
 
 - `RefreshTokenPolicy` applies the current token, refreshes on configured auth
   status codes, and replays the fully adapted request once.
+- `RequestSigner` observes the finalized data or stable file body after
+  interceptors and token application. Signed requests disable response-cache
+  sharing, coalescing, URLSession caching, and automatic redirects.
 - `RequestCoalescingPolicy` shares one raw `(Data, HTTPURLResponse)` result
-  among identical in-flight requests.
-- `ResponseCachePolicy` can return cached GET responses, revalidate with ETag,
-  substitute `304` bodies, refresh stale entries in the background, and
-  invalidate cached target URIs after successful unsafe methods.
+  among identical unsigned in-flight requests.
+- `ResponseCachePolicy` can return cached unsigned GET responses, revalidate
+  with ETag, substitute `304` bodies, refresh stale entries in the background,
+  and invalidate cached target URIs after successful unsafe methods.
 - `CircuitBreakerPolicy` short-circuits repeated per-host failures before
   transport and surfaces open-circuit failures through `NetworkError.underlying`.
 - `RequestExecutionPolicy` observes or wraps one raw transport attempt when
@@ -38,9 +44,10 @@ Built-in policies occupy the preflight and post-transport slots:
 
 ## Public Surface Policy
 
-4.0.0 exposes ``RequestExecutionPolicy`` as an additive extension point, while
-keeping the built-in retry, refresh, coalescing, cache, and circuit-breaker
-policies as first-class configuration values on `NetworkConfiguration`.
+5.0 exposes ``RequestExecutionPolicy`` as a request-identity-preserving
+extension point, while keeping the built-in retry, refresh, coalescing, cache,
+and circuit-breaker policies as first-class configuration values on
+`NetworkConfiguration`.
 
 Custom policies should be small and transport-attempt scoped. They receive the
 adapted `URLRequest` as an immutable observation snapshot and may invoke

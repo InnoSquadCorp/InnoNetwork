@@ -1,8 +1,8 @@
 # Policy Interactions
 
-This page fixes the 4.0.0 execution order for request policies. Use it when
-combining retry, auth refresh, response cache, coalescing, circuit breaker,
-redirect handling, and custom execution policies.
+This page fixes the 5.0 execution order for request policies. Use it when
+combining retry, auth refresh, late request signing, response cache,
+coalescing, circuit breaker, redirect handling, and custom execution policies.
 
 ## Request Attempt Order
 
@@ -12,6 +12,7 @@ sequenceDiagram
     participant Retry as RetryCoordinator
     participant Build as RequestBuilder
     participant Adapt as Request interceptors
+    participant Sign as Request signers
     participant Cache as ResponseCachePolicy
     participant Custom as RequestExecutionPolicy
     participant CB as CircuitBreaker
@@ -25,16 +26,22 @@ sequenceDiagram
     Build->>Adapt: configuration interceptors
     Adapt->>Adapt: endpoint interceptors
     Adapt->>Adapt: refresh policy applies current token
-    Adapt->>Cache: lookup / conditional headers
-    Cache->>Custom: wrap one raw transport attempt
+    alt unsigned request
+        Adapt->>Cache: lookup / conditional headers
+        Cache->>Sign: continue on cache miss
+    else request has signers
+        Adapt->>Sign: bypass cache lookup
+    end
+    Sign->>Sign: snapshot body and apply late signers
+    Sign->>Custom: wrap one raw transport attempt
     Custom->>CB: prepare host circuit
-    CB->>Coal: enter dedup lane when eligible
+    CB->>Coal: enter dedup lane when unsigned and eligible
     Coal->>Transport: execute transport
     Transport-->>Coal: response or error
     Coal-->>CB: shared or direct result
     CB-->>Custom: record success/failure
     Custom-->>Cache: response, synthetic response, or error
-    Cache-->>Adapt: cache write or 304 substitution
+    Cache-->>Adapt: unsigned cache write / 304 substitution, or signed bypass
     Adapt-->>Decode: response interceptors, status validation
     Decode-->>Caller: decoded value
     Retry-->>Build: retry only after policy accepts the failure
@@ -42,7 +49,7 @@ sequenceDiagram
 
 ## Interaction Matrix
 
-| Scenario | 4.0.0 behavior |
+| Scenario | 5.0 behavior |
 | --- | --- |
 | Circuit open | Request fails before transport and is considered by the retry policy like any other `NetworkError`. |
 | 401 with refresh policy | The current token is applied after request interceptors; one refresh replay uses the fully adapted request with the new token. |
@@ -55,6 +62,7 @@ sequenceDiagram
 | Unsafe retry | POST/PUT/PATCH/DELETE retry only when an idempotency key is present, unless the retry policy explicitly opts into method-agnostic behavior. `OPTIONS` and `TRACE` are safe-method defaults alongside GET/HEAD. |
 | `IdempotencyKeyPolicy` enabled | The key is generated from the logical request id and reused across every retry attempt. |
 | Redirect across origin | `DefaultRedirectPolicy` rejects HTTPS downgrades and 307/308 unsafe-method replay; other cross-origin hops strip built-in and configured sensitive headers. |
+| Signed request | Signers observe the finalized data or stable file body after interceptors and current-token application. Signed requests bypass response cache, request coalescing, and URLSession caching, and reject every automatic redirect. |
 | Custom execution policy | Runs after cache lookup/conditional-header preparation and before circuit breaker, coalescing, and URLSession. A policy observes or wraps one executor-owned request; returning a synthetic response bypasses circuit/coalescing/transport for that attempt. Request mutation belongs in a request interceptor. |
 | Streaming request | Core `RetryPolicy`, cache, circuit breaker, coalescing, and custom execution policies are bypassed. The current token can be attached before the handshake, but 401 handshakes are not refresh-replayed; `StreamingResumePolicy.lastEventID` is the only built-in resume path. |
 
@@ -76,18 +84,18 @@ on a request that the *column* policy is also active for. Read horizontally:
 
 Two invariants the matrix encodes:
 
-1. **Cache wins over every other policy.** A fresh cache hit short-circuits
-   the entire stack — retry/breaker/coalescer/refresh do not run. This is
-   why the cache lookup is the very first stage after request adaptation.
+1. **Eligible unsigned cache hits short-circuit the transport stack.** A fresh
+   hit means retry/breaker/coalescer/refresh do not run. Signed requests are
+   never cache-eligible, so they continue through late signing and transport.
 2. **Refresh replay is orthogonal to the retry budget.** A single
    `RefreshTokenPolicy` replay per request never decrements the
    `RetryPolicy.maxRetries` counter. Consumers that want to cap total
    "user-visible attempts" should plan for `maxRetries + 1` in worst-case
    401 paths.
 
-## Deferred Beyond 4.0.0
+## Deferred Beyond 5.0
 
 Full streaming retry policy, multiple refresh-policy chains, and external
-OpenTelemetry exporters are intentionally outside the 4.0.0 GA scope. They
-belong in companion packages or a later minor release after the 4.0.0 contract
-is tagged.
+OpenTelemetry exporters are intentionally outside the 5.0 scope. They belong
+in companion packages or a later 5.x release after the new signing and
+request-identity contracts have production evidence.
