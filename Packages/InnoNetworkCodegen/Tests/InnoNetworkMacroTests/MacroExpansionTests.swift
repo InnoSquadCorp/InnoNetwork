@@ -15,7 +15,7 @@ struct MacroExpansionTests {
     func apiDefinitionPublicExpansion() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{id}")
+            @APIDefinition(method: .get, path: "/users/{id}", auth: .public)
             public struct GetUser {
                 public let id: Int
                 public typealias APIResponse = User
@@ -46,7 +46,7 @@ struct MacroExpansionTests {
     func apiDefinitionInternalExpansion() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .post, path: "/users/{id}/avatar")
+            @APIDefinition(method: .post, path: "/users/{id}/avatar", auth: .public)
             struct UpdateAvatar {
                 let id: Int
                 typealias APIResponse = Avatar
@@ -77,7 +77,7 @@ struct MacroExpansionTests {
     func apiDefinitionPackageExpansion() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .delete, path: "/users/{id}")
+            @APIDefinition(method: .delete, path: "/users/{id}", auth: .public)
             package struct DeleteUser {
                 package let id: Int
                 package typealias APIResponse = EmptyResponse
@@ -108,7 +108,7 @@ struct MacroExpansionTests {
     func apiDefinitionUnknownPlaceholderDiagnostic() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{missing}")
+            @APIDefinition(method: .get, path: "/users/{missing}", auth: .public)
             public struct GetUser {
                 public let id: Int
                 public typealias APIResponse = User
@@ -136,7 +136,7 @@ struct MacroExpansionTests {
     func apiDefinitionOptionalPlaceholderDiagnostic() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{id}")
+            @APIDefinition(method: .get, path: "/users/{id}", auth: .public)
             public struct GetUser {
                 public let id: Int?
                 public typealias APIResponse = User
@@ -164,7 +164,7 @@ struct MacroExpansionTests {
     func apiDefinitionImplicitlyUnwrappedOptionalPlaceholderDiagnostic() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{id}")
+            @APIDefinition(method: .get, path: "/users/{id}", auth: .public)
             struct GetUser {
                 let id: Int!
                 typealias APIResponse = User
@@ -192,7 +192,7 @@ struct MacroExpansionTests {
     func apiDefinitionOptionalGenericPlaceholderDiagnostic() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{id}")
+            @APIDefinition(method: .get, path: "/users/{id}", auth: .public)
             struct GetUser {
                 let id: Optional<Int>
                 typealias APIResponse = User
@@ -220,7 +220,7 @@ struct MacroExpansionTests {
     func apiDefinitionGenericParameterPlaceholderDiagnostic() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{id}")
+            @APIDefinition(method: .get, path: "/users/{id}", auth: .public)
             struct GetUser<T> {
                 let id: T
                 typealias APIResponse = User
@@ -249,7 +249,7 @@ struct MacroExpansionTests {
     func apiDefinitionOpaqueTypePlaceholderDiagnostic() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{id}")
+            @APIDefinition(method: .get, path: "/users/{id}", auth: .public)
             struct GetUser {
                 let id: some LosslessStringConvertible
                 typealias APIResponse = User
@@ -278,7 +278,7 @@ struct MacroExpansionTests {
     func apiDefinitionInterpolationFixIt() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/\\(id)")
+            @APIDefinition(method: .get, path: "/users/\\(id)", auth: .public)
             struct GetUser {
                 let id: Int
                 typealias APIResponse = User
@@ -311,7 +311,7 @@ struct MacroExpansionTests {
     func apiDefinitionNoFixItForComplexInterpolation() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/\\(user.id)")
+            @APIDefinition(method: .get, path: "/users/\\(user.id)", auth: .public)
             struct GetUser {
                 let user: User
                 typealias APIResponse = User
@@ -332,6 +332,109 @@ struct MacroExpansionTests {
                     fixIts: []
                 )
             ],
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro derives an explicit GET query payload")
+    func apiDefinitionQueryExpansion() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .get, path: "/users", auth: .public)
+            struct ListUsers {
+                typealias APIResponse = [User]
+                let query: ListUsersQuery
+            }
+            """,
+            expandedSource:
+                """
+                struct ListUsers {
+                    typealias APIResponse = [User]
+                    let query: ListUsersQuery
+                }
+
+                extension ListUsers: APIDefinition {
+                    internal typealias Parameter = ListUsersQuery
+                    internal var parameters: Parameter? {
+                        query
+                    }
+                    internal var method: HTTPMethod {
+                        .get
+                    }
+                    internal var path: String {
+                        "/users"
+                    }
+                }
+                """,
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro derives a required-auth POST body")
+    func apiDefinitionBodyAndAuthExpansion() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .post, path: "/users", auth: .required)
+            struct CreateUser {
+                typealias APIResponse = User
+                let body: CreateUserRequest
+            }
+            """,
+            expandedSource:
+                """
+                struct CreateUser {
+                    typealias APIResponse = User
+                    let body: CreateUserRequest
+                }
+
+                extension CreateUser: APIDefinition {
+                    internal typealias Parameter = CreateUserRequest
+                    internal var parameters: Parameter? {
+                        body
+                    }
+                    internal typealias Auth = AuthRequiredScope
+                    internal var method: HTTPMethod {
+                        .post
+                    }
+                    internal var path: String {
+                        "/users"
+                    }
+                }
+                """,
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro preserves an explicit Parameter contract")
+    func apiDefinitionManualParameterExpansion() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .post, path: "/users", auth: .public)
+            struct CreateUser {
+                typealias APIResponse = User
+                typealias Parameter = CreateUserRequest
+                let parameters: Parameter?
+                var transport: TransportPolicy<User> { .json() }
+            }
+            """,
+            expandedSource:
+                """
+                struct CreateUser {
+                    typealias APIResponse = User
+                    typealias Parameter = CreateUserRequest
+                    let parameters: Parameter?
+                    var transport: TransportPolicy<User> { .json() }
+                }
+
+                extension CreateUser: APIDefinition {
+                    internal var method: HTTPMethod {
+                        .post
+                    }
+                    internal var path: String {
+                        "/users"
+                    }
+                }
+                """,
             macros: macros
         )
     }

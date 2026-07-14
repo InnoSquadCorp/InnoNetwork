@@ -15,8 +15,8 @@ public struct APIDefinitionMacro: ExtensionMacro {
     ///   - type: Syntax for the annotated type name.
     ///   - protocols: Protocols requested by the compiler for the extension.
     ///   - context: Macro expansion context used by SwiftSyntax.
-    /// - Returns: A single extension declaration that synthesizes
-    ///   `Parameter`, `method`, and `path`.
+    /// - Returns: A single extension declaration that synthesizes the
+    ///   protocol mechanics not explicitly owned by the annotated struct.
     /// - Throws: ``InnoNetworkMacroDiagnostic`` when required arguments are
     ///   missing, `path:` is not a static string literal, or a path placeholder
     ///   does not match a stored property.
@@ -28,25 +28,64 @@ public struct APIDefinitionMacro: ExtensionMacro {
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
         let arguments = try argumentList(from: node)
-        let method = try requiredArgument(named: "method", in: arguments).expression.trimmedDescription
+        let methodArgument = try requiredArgument(named: "method", in: arguments)
+        let method = methodArgument.expression.trimmedDescription
         let pathArgument = try requiredArgument(named: "path", in: arguments)
+        let authArgument = try requiredArgument(named: "auth", in: arguments)
+        let authentication = try authentication(from: authArgument)
         let pathLiteral = try stringLiteralArgument(named: "path", in: arguments)
         let properties = storedProperties(in: declaration)
         let path = try interpolatedPath(pathLiteral, properties: properties, anchor: pathArgument.expression)
         let typeName = type.trimmedDescription
         let accessPrefix = witnessAccessPrefix(in: declaration)
+        var witnesses = try payloadWitnesses(
+            in: declaration,
+            properties: properties,
+            method: method,
+            anchor: methodArgument.expression,
+            accessPrefix: accessPrefix
+        )
+        if declaresTypeAlias(named: "Auth", in: declaration) {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition auth: owns the Auth witness; remove the explicit typealias Auth.",
+                id: "api-definition-explicit-auth-conflict"
+            ).error(at: declaration)
+        }
+        if authentication == .required {
+            witnesses.append("\(accessPrefix)typealias Auth = AuthRequiredScope")
+        }
+        witnesses.append("\(accessPrefix)var method: HTTPMethod { \(method) }")
+        witnesses.append("\(accessPrefix)var path: String { \"\(path)\" }")
+        let witnessSource = witnesses.joined(separator: "\n    ")
 
         return [
             try ExtensionDeclSyntax(
                 """
                 extension \(raw: typeName): APIDefinition {
-                    \(raw: accessPrefix)typealias Parameter = EmptyParameter
-                    \(raw: accessPrefix)var method: HTTPMethod { \(raw: method) }
-                    \(raw: accessPrefix)var path: String { "\(raw: path)" }
+                    \(raw: witnessSource)
                 }
                 """
             )
         ]
+    }
+
+    private enum Authentication {
+        case publicAccess
+        case required
+    }
+
+    private static func authentication(from argument: LabeledExprSyntax) throws -> Authentication {
+        switch argument.expression.trimmedDescription {
+        case ".public", "APIAuthentication.public", "APIAuthentication.`public`":
+            return .publicAccess
+        case ".required", "APIAuthentication.required":
+            return .required
+        default:
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition auth: must be either .public or .required.",
+                id: "api-definition-invalid-auth"
+            ).error(at: argument.expression)
+        }
     }
 
     private static func argumentList(from node: AttributeSyntax) throws -> LabeledExprListSyntax {
@@ -138,6 +177,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
     private struct StoredProperty {
         let isOptional: Bool
         let typeKind: TypeKind
+        let type: TypeSyntax?
     }
 
     /// Coarse classification of a stored property's declared type, used by
@@ -163,11 +203,158 @@ public struct APIDefinitionMacro: ExtensionMacro {
                 let type = binding.typeAnnotation?.type
                 properties[identifier] = StoredProperty(
                     isOptional: isOptionalType(type),
-                    typeKind: classifyType(type, genericParameters: genericParameters)
+                    typeKind: classifyType(type, genericParameters: genericParameters),
+                    type: type
                 )
             }
         }
         return properties
+    }
+
+    private static func payloadWitnesses(
+        in declaration: some DeclGroupSyntax,
+        properties: [String: StoredProperty],
+        method: String,
+        anchor: some SyntaxProtocol,
+        accessPrefix: String
+    ) throws -> [String] {
+        let parameterAlias = typeAlias(named: "Parameter", in: declaration)
+        let hasParameters = declaresVariable(named: "parameters", in: declaration)
+
+        // A complete manual pair is the advanced escape hatch. Once present,
+        // it is authoritative even when the endpoint also stores values named
+        // `body` or `query` for its own computed witnesses.
+        if parameterAlias != nil, hasParameters {
+            return []
+        }
+
+        if let parameterAlias, !hasParameters {
+            if parameterAlias.initializer.value.trimmedDescription == "EmptyParameter" {
+                return []
+            }
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition explicit Parameter requires a matching parameters property.",
+                id: "api-definition-missing-parameters-witness"
+            ).error(at: parameterAlias)
+        }
+
+        if parameterAlias == nil, hasParameters {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition explicit parameters requires a matching typealias Parameter.",
+                id: "api-definition-missing-parameter-alias"
+            ).error(at: declaration)
+        }
+
+        let body = properties["body"]
+        let query = properties["query"]
+        if body != nil, query != nil {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition simple mode accepts either body or query, not both.",
+                id: "api-definition-body-query-conflict"
+            ).error(at: declaration)
+        }
+
+        if let body {
+            guard methodKind(method) == .nonGet else {
+                throw InnoNetworkMacroDiagnostic(
+                    "@APIDefinition GET endpoints cannot infer a body; use the explicit Parameter + parameters fallback for a custom transport.",
+                    id: "api-definition-get-body"
+                ).error(at: anchor)
+            }
+            let parameterType = try parameterTypeName(for: body, role: "body", anchor: declaration)
+            return [
+                "\(accessPrefix)typealias Parameter = \(parameterType)",
+                "\(accessPrefix)var parameters: Parameter? { body }",
+            ]
+        }
+
+        if let query {
+            guard methodKind(method) == .get else {
+                throw InnoNetworkMacroDiagnostic(
+                    "@APIDefinition query inference is supported only for GET endpoints; use the explicit Parameter + parameters fallback for a custom transport.",
+                    id: "api-definition-nonget-query"
+                ).error(at: anchor)
+            }
+            let parameterType = try parameterTypeName(for: query, role: "query", anchor: declaration)
+            return [
+                "\(accessPrefix)typealias Parameter = \(parameterType)",
+                "\(accessPrefix)var parameters: Parameter? { query }",
+            ]
+        }
+
+        return ["\(accessPrefix)typealias Parameter = EmptyParameter"]
+    }
+
+    private enum MethodKind {
+        case get
+        case nonGet
+        case unknown
+    }
+
+    private static func methodKind(_ method: String) -> MethodKind {
+        switch method {
+        case ".get", "HTTPMethod.get":
+            return .get
+        case ".post", ".put", ".patch", ".delete", ".head", ".options",
+            "HTTPMethod.post", "HTTPMethod.put", "HTTPMethod.patch", "HTTPMethod.delete",
+            "HTTPMethod.head", "HTTPMethod.options":
+            return .nonGet
+        default:
+            return .unknown
+        }
+    }
+
+    private static func parameterTypeName(
+        for property: StoredProperty,
+        role: String,
+        anchor: some SyntaxProtocol
+    ) throws -> String {
+        guard let type = property.type else {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition \(role) requires an explicit type annotation.",
+                id: "api-definition-inferred-\(role)-type"
+            ).error(at: anchor)
+        }
+
+        let source = type.trimmedDescription
+        if source.hasSuffix("?") || source.hasSuffix("!") {
+            return String(source.dropLast())
+        }
+        for prefix in ["Optional<", "Swift.Optional<"] where source.hasPrefix(prefix) && source.hasSuffix(">") {
+            return String(source.dropFirst(prefix.count).dropLast())
+        }
+        return source
+    }
+
+    private static func typeAlias(
+        named name: String,
+        in declaration: some DeclGroupSyntax
+    ) -> TypeAliasDeclSyntax? {
+        declaration.memberBlock.members.lazy.compactMap { member in
+            member.decl.as(TypeAliasDeclSyntax.self)
+        }.first { $0.name.text == name }
+    }
+
+    private static func declaresTypeAlias(
+        named name: String,
+        in declaration: some DeclGroupSyntax
+    ) -> Bool {
+        typeAlias(named: name, in: declaration) != nil
+    }
+
+    private static func declaresVariable(
+        named name: String,
+        in declaration: some DeclGroupSyntax
+    ) -> Bool {
+        for member in declaration.memberBlock.members {
+            guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
+            for binding in variable.bindings {
+                if binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text == name {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     /// Returns the syntactic generic parameter names visible to the
@@ -289,9 +476,10 @@ public struct APIDefinitionMacro: ExtensionMacro {
         // along the chain so the extension does not advertise a wider
         // surface than the host type can be referenced through.
         let levels = collectVisibilityLevels(from: Syntax(declaration))
-        let effective = levels.first.map { first in
-            levels.dropFirst().reduce(first) { min($0, $1) }
-        } ?? .internal
+        let effective =
+            levels.first.map { first in
+                levels.dropFirst().reduce(first) { min($0, $1) }
+            } ?? .internal
         return effective.witnessPrefix
     }
 
