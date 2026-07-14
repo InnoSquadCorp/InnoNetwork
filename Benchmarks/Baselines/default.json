@@ -2,40 +2,40 @@
   "generatedAt" : "2026-07-14T17:50:26Z",
   "results" : [
     {
-      "elapsedSeconds" : 0.013956542,
+      "elapsedSeconds" : 0.011323,
       "group" : "encoding",
       "iterations" : 2000,
       "name" : "query-encoder-small",
-      "operationsPerSecond" : 143301.97265196493,
-      "peakResidentBytes" : 5144576,
+      "operationsPerSecond" : 176631.63472577938,
+      "peakResidentBytes" : 5111808,
       "residentDeltaBytes" : 901120
     },
     {
-      "elapsedSeconds" : 0.133846125,
+      "elapsedSeconds" : 0.131902834,
       "group" : "encoding",
       "iterations" : 2000,
       "name" : "query-encoder-large",
-      "operationsPerSecond" : 14942.531956005449,
-      "peakResidentBytes" : 6586368,
-      "residentDeltaBytes" : 1441792
+      "operationsPerSecond" : 15162.676489574136,
+      "peakResidentBytes" : 6340608,
+      "residentDeltaBytes" : 1228800
     },
     {
-      "elapsedSeconds" : 0.058844917,
+      "elapsedSeconds" : 0.041530833,
       "group" : "events",
       "iterations" : 2000,
       "name" : "task-event-fanout-single",
-      "operationsPerSecond" : 33987.642467063044,
-      "peakResidentBytes" : 7258112,
-      "residentDeltaBytes" : 655360
+      "operationsPerSecond" : 48156.99217976196,
+      "peakResidentBytes" : 6881280,
+      "residentDeltaBytes" : 540672
     },
     {
-      "elapsedSeconds" : 0.325020416,
+      "elapsedSeconds" : 0.300743791,
       "group" : "events",
       "iterations" : 2000,
       "name" : "task-event-fanout-many",
-      "operationsPerSecond" : 6153.459602980756,
-      "peakResidentBytes" : 9486336,
-      "residentDeltaBytes" : 2228224
+      "operationsPerSecond" : 6650.1788560615705,
+      "peakResidentBytes" : 8994816,
+      "residentDeltaBytes" : 2113536
     },
     {
       "elapsedSeconds" : 0.064177542,
@@ -47,40 +47,40 @@
       "residentDeltaBytes" : 81920
     },
     {
-      "elapsedSeconds" : 0.849125417,
+      "elapsedSeconds" : 0.77973125,
       "group" : "persistence",
       "iterations" : 300,
       "name" : "append-log-write",
-      "operationsPerSecond" : 353.30469915729776,
-      "peakResidentBytes" : 22626304,
-      "residentDeltaBytes" : 13058048
+      "operationsPerSecond" : 384.74795001482886,
+      "peakResidentBytes" : 22528000,
+      "residentDeltaBytes" : 13418496
     },
     {
-      "elapsedSeconds" : 0.020144292,
+      "elapsedSeconds" : 0.019362084,
       "group" : "persistence",
       "iterations" : 300,
       "name" : "append-log-replay",
-      "operationsPerSecond" : 14892.556164297062,
-      "peakResidentBytes" : 36569088,
-      "residentDeltaBytes" : 147456
+      "operationsPerSecond" : 15494.19990120898,
+      "peakResidentBytes" : 36208640,
+      "residentDeltaBytes" : 32768
     },
     {
-      "elapsedSeconds" : 8.312354166,
+      "elapsedSeconds" : 8.205769334,
       "group" : "persistence",
       "iterations" : 1050,
       "name" : "append-log-compaction",
-      "operationsPerSecond" : 126.31800558917618,
-      "peakResidentBytes" : 195444736,
-      "residentDeltaBytes" : 158842880
+      "operationsPerSecond" : 127.95875161264922,
+      "peakResidentBytes" : 195641344,
+      "residentDeltaBytes" : 159432704
     },
     {
-      "elapsedSeconds" : 0.13319975,
+      "elapsedSeconds" : 0.131705791,
       "group" : "persistence",
       "iterations" : 50,
       "name" : "download-persistence-restore",
-      "operationsPerSecond" : 375.3760799100599,
-      "peakResidentBytes" : 202964992,
-      "residentDeltaBytes" : 3358720
+      "operationsPerSecond" : 379.6340283928746,
+      "peakResidentBytes" : 201572352,
+      "residentDeltaBytes" : 2129920
     },
     {
       "elapsedSeconds" : 0.040332125,
@@ -137,12 +137,12 @@
       "residentDeltaBytes" : 1261568
     },
     {
-      "elapsedSeconds" : 0.288199834,
+      "elapsedSeconds" : 0.22615075,
       "group" : "client",
       "iterations" : 2000,
       "name" : "request-coalescing-shared-get",
-      "operationsPerSecond" : 6939.629257385346,
-      "peakResidentBytes" : 203997184,
+      "operationsPerSecond" : 8843.658488861964,
+      "peakResidentBytes" : 203046912,
       "residentDeltaBytes" : 0
     },
     {
@@ -151,6 +151,24 @@
       "iterations" : 2000,
       "name" : "concurrent-50-requests",
       "operationsPerSecond" : 22344.433861872298,
+      "peakResidentBytes" : 203046912,
+      "residentDeltaBytes" : 0
+    },
+    {
+      "elapsedSeconds" : 0.065537875,
+      "group" : "cache",
+      "iterations" : 200000,
+      "name" : "response-cache-lookup",
+      "operationsPerSecond" : 3051670.5035065603,
+      "peakResidentBytes" : 203046912,
+      "residentDeltaBytes" : 0
+    },
+    {
+      "elapsedSeconds" : 0.043864542,
+      "group" : "cache",
+      "iterations" : 200000,
+      "name" : "response-cache-revalidation",
+      "operationsPerSecond" : 4559491.354087317,
       "peakResidentBytes" : 203046912,
       "residentDeltaBytes" : 0
     },
@@ -178,24 +196,6 @@
       "iterations" : 20000,
       "name" : "decoding-interceptor-chain-8",
       "operationsPerSecond" : 8929.94597050494,
-      "peakResidentBytes" : 203046912,
-      "residentDeltaBytes" : 0
-    },
-    {
-      "elapsedSeconds" : 0.065537875,
-      "group" : "cache",
-      "iterations" : 200000,
-      "name" : "response-cache-lookup",
-      "operationsPerSecond" : 3051670.5035065603,
-      "peakResidentBytes" : 203046912,
-      "residentDeltaBytes" : 0
-    },
-    {
-      "elapsedSeconds" : 0.043864542,
-      "group" : "cache",
-      "iterations" : 200000,
-      "name" : "response-cache-revalidation",
-      "operationsPerSecond" : 4559491.354087317,
       "peakResidentBytes" : 203046912,
       "residentDeltaBytes" : 0
     }

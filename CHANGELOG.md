@@ -77,9 +77,9 @@ curated release summary.
   so a later external call can await the full boundary.
 - Guarded benchmarks build in release mode, and 5.0 publishes an explicit API,
   migration, codegen-distribution, and release-integrity contract.
-- Hosted benchmark baselines are recalibrated from three release-mode runs,
-  using the slowest successful sample for every row so debug-build overhead no
-  longer distorts regression deltas.
+- Hosted benchmark baselines are recalibrated from a complete release-mode
+  artifact after the systematic shift was confirmed across three successful
+  runs, so debug-build overhead no longer distorts regression deltas.
 - CI installs a checksum-pinned Periphery release, isolates Codecov OIDC to
   artifact-only upload jobs, bounds parallel tests to four workers, and skips
   only hosted platform components that the pinned runner does not install.

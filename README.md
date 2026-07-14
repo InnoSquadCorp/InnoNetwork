@@ -769,17 +769,17 @@ Benchmark governance, baseline policy, and CI posture are documented in [Benchma
 
 Current guarded quick-baseline highlights from
 [`Benchmarks/Baselines/default.json`](Benchmarks/Baselines/default.json)
-(`generatedAt`: `2026-05-02T18:40:44Z`):
+(`generatedAt`: `2026-07-14T17:50:26Z`):
 
 | Area | Guarded benchmark | Iterations | Baseline ops/sec |
 | --- | --- | ---: | ---: |
-| Request pipeline | `client/request-pipeline` | 2,000 | 5,225 |
-| Request coalescing | `client/request-coalescing-shared-get` | 2,000 | 3,891 |
-| Cache lookup | `cache/response-cache-lookup` | 200,000 | 466,773 |
-| Cache revalidation | `cache/response-cache-revalidation` | 200,000 | 1,285,328 |
-| Event fan-out | `events/task-event-fanout-single` | 2,000 | 18,124 |
-| Download restore | `persistence/download-persistence-restore` | 50 | 46 |
-| WebSocket close classification | `websocket/websocket-close-disposition-classify` | 500,000 | 3,980,702 |
+| Request pipeline | `client/request-pipeline` | 2,000 | 8,058 |
+| Request coalescing | `client/request-coalescing-shared-get` | 2,000 | 8,844 |
+| Cache lookup | `cache/response-cache-lookup` | 200,000 | 3,051,671 |
+| Cache revalidation | `cache/response-cache-revalidation` | 200,000 | 4,559,491 |
+| Event fan-out | `events/task-event-fanout-single` | 2,000 | 48,157 |
+| Download restore | `persistence/download-persistence-restore` | 50 | 380 |
+| WebSocket close classification | `websocket/websocket-close-disposition-classify` | 500,000 | 75,500,668 |
 
 ## Production Checklist
 

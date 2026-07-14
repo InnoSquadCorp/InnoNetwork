@@ -15,22 +15,22 @@ Record the reason every time `default.json` changes.
 
 - Date: 2026-07-14
 - PR: N/A (5.0 direct-main preparation)
-- Runner: `macos-15`, Xcode 26.0.1, GitHub Actions runs
+- Runner: `macos-15`, Xcode 26.0.1. The baseline source is GitHub Actions run
+  [29355256676](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/29355256676),
+  with the same systematic release-mode shift confirmed by preceding runs
   [29353749598](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/29353749598),
-  [29354354216](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/29354354216),
-  and
-  [29355256676](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/29355256676)
-- Benchmarks changed: all 22 rows were recalibrated to the slowest successful
-  artifact sample across the three sequential runs:
-  - `encoding/query-encoder-small`: 38,180.75 -> 143,301.97 ops/s
-  - `encoding/query-encoder-large`: 3,988.43 -> 14,942.53 ops/s
-  - `events/task-event-fanout-single`: 18,124.23 -> 33,987.64 ops/s
-  - `events/task-event-fanout-many`: 4,629.21 -> 6,153.46 ops/s
+  and [29354354216](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/29354354216).
+- Benchmarks changed: all 22 rows were recalibrated from the final complete
+  artifact in the three-run sequence:
+  - `encoding/query-encoder-small`: 38,180.75 -> 176,631.63 ops/s
+  - `encoding/query-encoder-large`: 3,988.43 -> 15,162.68 ops/s
+  - `events/task-event-fanout-single`: 18,124.23 -> 48,156.99 ops/s
+  - `events/task-event-fanout-many`: 4,629.21 -> 6,650.18 ops/s
   - `events/task-event-slow-isolation`: 17,344.77 -> 31,163.55 ops/s
-  - `persistence/append-log-write`: 64.39 -> 353.30 ops/s
-  - `persistence/append-log-replay`: 7,318.21 -> 14,892.56 ops/s
-  - `persistence/append-log-compaction`: 22.96 -> 126.32 ops/s
-  - `persistence/download-persistence-restore`: 46.72 -> 375.38 ops/s
+  - `persistence/append-log-write`: 64.39 -> 384.75 ops/s
+  - `persistence/append-log-replay`: 7,318.21 -> 15,494.20 ops/s
+  - `persistence/append-log-compaction`: 22.96 -> 127.96 ops/s
+  - `persistence/download-persistence-restore`: 46.72 -> 379.63 ops/s
   - `websocket/websocket-reconnect-decision`: 331,238.03 -> 495,882.62 ops/s
   - `websocket/websocket-close-disposition-classify`: 3,980,702.89 ->
     75,500,667.58 ops/s
@@ -39,7 +39,7 @@ Record the reason every time `default.json` changes.
   - `websocket/websocket-lifecycle-transition-table`: 881,628.35 ->
     5,780,562.67 ops/s
   - `client/request-pipeline`: 5,225.05 -> 8,057.98 ops/s
-  - `client/request-coalescing-shared-get`: 3,891.68 -> 6,939.63 ops/s
+  - `client/request-coalescing-shared-get`: 3,891.68 -> 8,843.66 ops/s
   - `client/concurrent-50-requests`: 12,668.39 -> 22,344.43 ops/s
   - `client/decoding-interceptor-chain-1`: 5,796.92 -> 9,211.92 ops/s
   - `client/decoding-interceptor-chain-3`: 5,800.00 -> 9,323.36 ops/s
@@ -52,10 +52,10 @@ Record the reason every time `default.json` changes.
   systematic measurement-mode recalibration rather than a claimed runtime
   optimization. Failed attempts remain retry noise and are not calibration
   inputs.
-- Validation: all three hosted runs completed with zero final guard failures;
-  the schema-v2 baseline stores each per-row minimum successful sample as one
-  whole result, including its matching elapsed and resident-memory fields,
-  rather than combining throughput with metadata from another run.
+- Validation: all three hosted runs completed with zero final guard failures.
+  The schema-v2 baseline is the exact normalized `version`, `generatedAt`, and
+  `results` projection of run 29355256676, preserving its result order,
+  run-wide provenance, and monotonically nondecreasing high-water memory data.
 
 - Date: 2026-07-14
 - PR: N/A (5.0 direct-main preparation)
