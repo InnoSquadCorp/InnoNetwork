@@ -49,7 +49,9 @@ nonterminal WebSocket events retain the normal overflow policy.
 
 Consumers should treat stream completion as "no more events after the terminal
 outcome", not as a separate status signal. Event handling remains asynchronous
-after enqueue and may finish after a manager shutdown call returns.
+after enqueue and may finish after a manager shutdown call returns. Request
+finish waits for the partition queue to hand events to each observer chain, but
+does not wait for observer handler execution.
 
 ## Buffering: `maxBufferedEventsPerPartition`
 

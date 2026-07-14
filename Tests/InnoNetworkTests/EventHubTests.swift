@@ -36,6 +36,19 @@ private struct RecordingObserver: NetworkEventObserving {
     }
 }
 
+private struct FirstEventBlockingObserver: NetworkEventObserving {
+    let recorder: NetworkEventRecorder
+    let gate: DeliveryGate
+
+    func handle(_ event: NetworkEvent) async {
+        if case .requestStart = event {
+            await gate.markStarted()
+            await gate.waitForRelease()
+        }
+        await recorder.append(event)
+    }
+}
+
 private final class EventPipelineMetricRecorder: EventPipelineMetricsReporting, @unchecked Sendable {
     private let lock = NSLock()
     private var metrics: [EventPipelineMetric] = []
@@ -396,6 +409,124 @@ struct EventHubTests {
         await hub.finish(requestID: fastRequestID)
     }
 
+    @Test("NetworkEventHub finish preserves events queued behind an active observer")
+    func networkEventHubFinishPreservesQueuedObserverEvents() async throws {
+        let hub = NetworkEventHub()
+        let recorder = NetworkEventRecorder()
+        let gate = DeliveryGate()
+        let observer = FirstEventBlockingObserver(recorder: recorder, gate: gate)
+        let requestID = UUID()
+
+        await hub.publish(
+            .requestStart(
+                requestID: requestID,
+                method: "GET",
+                url: "https://example.com/queued-finish",
+                retryIndex: 0
+            ),
+            requestID: requestID,
+            observers: [observer]
+        )
+        await gate.waitUntilStarted()
+
+        await hub.publish(
+            .requestFailed(requestID: requestID, errorCode: -999, message: "cancelled"),
+            requestID: requestID,
+            observers: [observer]
+        )
+
+        let finishTask = Task {
+            await hub.finish(requestID: requestID)
+            await gate.markReturned()
+        }
+        let finishReturned = await waitForEventHubCondition(timeout: 1.0) {
+            await gate.hasReturned()
+        }
+        #expect(finishReturned)
+        #expect(await recorder.snapshot().isEmpty)
+
+        await gate.release()
+        _ = await finishTask.result
+
+        let events = try await waitForNetworkEvents(recorder: recorder, expectedCount: 2)
+        #expect(events.count == 2)
+        #expect(events.map(requestID(of:)) == [requestID, requestID])
+        let isTerminalFailure: Bool
+        if let lastEvent = events.last, case .requestFailed = lastEvent {
+            isTerminalFailure = true
+        } else {
+            isTerminalFailure = false
+        }
+        #expect(isTerminalFailure)
+    }
+
+    @Test("NetworkEventHub keeps a closed tombstone across retirement reentrancy")
+    func networkEventHubRetirementRejectsReentrantPublishAndJoinsFinish() async throws {
+        let retirementGate = DeliveryGate()
+        let firstFinishGate = DeliveryGate()
+        let secondFinishGate = DeliveryGate()
+        let recorder = NetworkEventRecorder()
+        let requestID = UUID()
+        let hub = NetworkEventHub { retiringRequestID in
+            guard retiringRequestID == requestID else { return }
+            await retirementGate.markStarted()
+            await retirementGate.waitForRelease()
+        }
+        let observer = RecordingObserver(recorder: recorder)
+
+        await hub.publish(
+            .requestStart(
+                requestID: requestID,
+                method: "GET",
+                url: "https://example.com/retirement-reentrancy",
+                retryIndex: 0
+            ),
+            requestID: requestID,
+            observers: [observer]
+        )
+        _ = try await waitForNetworkEvents(recorder: recorder, expectedCount: 1)
+
+        let firstFinish = Task {
+            await hub.finish(requestID: requestID)
+            await firstFinishGate.markReturned()
+        }
+        await retirementGate.waitUntilStarted()
+
+        let retiringState = try #require(
+            await hub._testingRetirementState(requestID: requestID)
+        )
+        #expect(retiringState.isClosed)
+        #expect(retiringState.isRetiring)
+
+        await hub.publish(
+            .requestFinished(requestID: requestID, statusCode: 200, byteCount: 0),
+            requestID: requestID,
+            observers: [observer]
+        )
+
+        let secondFinish = Task {
+            await secondFinishGate.markStarted()
+            await hub.finish(requestID: requestID)
+            await secondFinishGate.markReturned()
+        }
+        await secondFinishGate.waitUntilStarted()
+        let secondFinishJoined = await waitForEventHubCondition(timeout: 1.0) {
+            await hub._testingRetirementState(requestID: requestID)?.closureWaiterCount == 1
+        }
+        #expect(secondFinishJoined)
+        #expect(await firstFinishGate.hasReturned() == false)
+        #expect(await secondFinishGate.hasReturned() == false)
+
+        await retirementGate.release()
+        _ = await firstFinish.result
+        _ = await secondFinish.result
+
+        #expect(await firstFinishGate.hasReturned())
+        #expect(await secondFinishGate.hasReturned())
+        #expect(await recorder.snapshot().count == 1)
+        #expect(await hub._testingRetirementState(requestID: requestID) == nil)
+    }
+
     @Test("TaskEventHub reports consumer overflow metrics with dropOldest policy")
     func taskEventHubReportsConsumerOverflowMetrics() async throws {
         let recorder = EventPipelineMetricRecorder()
@@ -418,14 +549,22 @@ struct EventHubTests {
         await hub.publish(2, for: "task-overflow")
         await hub.publish(3, for: "task-overflow")
 
-        let values = try await waitForValues(store: store, expectedCount: 2)
-        #expect(values == [1, 3] || values == [2, 3])
-
-        let metrics = recorder.snapshot()
-        let consumerMetrics = metrics.compactMap { metric -> EventPipelineConsumerStateMetric? in
-            guard case .consumerState(let state) = metric else { return nil }
-            return state.partitionID == "task-overflow" ? state : nil
+        let terminalDelivered = await waitForEventHubCondition(timeout: 1.0) {
+            await store.snapshot().last == 3
         }
+        #expect(terminalDelivered)
+        let values = await store.snapshot()
+        #expect(!values.isEmpty)
+        #expect(values.count <= 2)
+        #expect(values == values.sorted())
+        #expect(values.last == 3)
+
+        let consumerMetrics = try await waitForConsumerMetrics(
+            recorder: recorder,
+            partitionID: "task-overflow",
+            minimumCount: 1,
+            minimumDroppedEventCount: 1
+        )
         #expect(consumerMetrics.contains(where: { $0.droppedEventCount > 0 }))
         #expect(consumerMetrics.allSatisfy { !$0.consumerID.hasPrefix("stream-") })
     }

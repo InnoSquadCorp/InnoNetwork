@@ -239,9 +239,8 @@ struct RetryCoordinatorTimingTests {
             }
         }
 
-        // `eventHub.publish` enqueues the event on a partition that
-        // drains through a Task that may still be in flight when
-        // `finish(requestID:)` returns; poll until the observer chain
+        // `finish(requestID:)` waits for the partition-to-observer handoff,
+        // but observer handlers remain asynchronous. Poll until the observer
         // delivers the failure or the timeout elapses.
         let observedFailures = await eventStore.waitForRequestFailed(count: 1)
         #expect(observedFailures.count == 1)
@@ -283,12 +282,10 @@ private actor RetryTimingEventStore {
     }
 
     /// Polls `requestFailedEntries()` until at least `count` entries are
-    /// observed or `timeout` elapses. ``NetworkEventHub`` drains and
-    /// delivers events asynchronously through the partition queue, so
-    /// `finish(requestID:)` only guarantees the partition is closed, not
-    /// that observers have already received every queued event. Tests
-    /// that need to assert on a published event must poll instead of
-    /// reading once.
+    /// observed or `timeout` elapses. ``NetworkEventHub`` waits for queued
+    /// events to reach each observer chain before `finish(requestID:)`
+    /// returns, but observer handlers execute asynchronously. Tests that need
+    /// to assert on observer-owned state must poll instead of reading once.
     func waitForRequestFailed(
         count: Int,
         timeout: TimeInterval = 1.0

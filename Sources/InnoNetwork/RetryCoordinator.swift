@@ -59,10 +59,10 @@ package struct RetryCoordinator {
             } else {
                 propagated = error
             }
-            // Awaiting `finish` *before* propagating the error guarantees
-            // that any drained observer has settled before the caller's
-            // `try await client.request(...)` resumes — without this,
-            // observer-published-state could be inspected mid-drain.
+            // Awaiting `finish` before propagating the error guarantees that
+            // the terminal event has crossed the partition boundary into each
+            // observer queue. Observer handlers intentionally remain
+            // asynchronous so a slow observer cannot delay the request.
             await eventHub.finish(requestID: requestID)
             throw propagated
         }

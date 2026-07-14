@@ -12,21 +12,29 @@ package actor NetworkEventHub {
         var observerChains: [Int: EventDeliveryChain<NetworkEvent>] = [:]
         var isDraining = false
         var isClosed = false
+        var isRetiring = false
         var droppedEventCount = 0
     }
 
     private var partitions: [UUID: PartitionState] = [:]
+    /// Waiters that close a request lifecycle only after its partition queue
+    /// has been handed off to the per-observer delivery chains. Observer
+    /// handlers remain asynchronous after that handoff.
+    private var partitionClosureWaiters: [UUID: [CheckedContinuation<Void, Never>]] = [:]
     private let policy: EventDeliveryPolicy
     private let metricsProxy: EventPipelineMetricsReporterProxy?
+    private let retirementSuspension: (@Sendable (UUID) async -> Void)?
     private var metricsReporter: (any EventPipelineMetricsReporting)? { metricsProxy }
 
     package init(
         policy: EventDeliveryPolicy = .default,
         metricsReporter: (any EventPipelineMetricsReporting)? = nil,
         hubKind: EventPipelineHubKind = .networkRequest,
-        metricsSnapshotInterval: Duration = .seconds(30)
+        metricsSnapshotInterval: Duration = .seconds(30),
+        retirementSuspension: (@Sendable (UUID) async -> Void)? = nil
     ) {
         self.policy = policy
+        self.retirementSuspension = retirementSuspension
         self.metricsProxy = metricsReporter.map {
             EventPipelineMetricsReporterProxy(
                 hubKind: hubKind,
@@ -43,11 +51,11 @@ package actor NetworkEventHub {
     /// Enqueues `event` for delivery to `observers` partitioned by `requestID`.
     ///
     /// Observers are bound at publish time, so this hub does not retain
-    /// historical events for late subscribers. After ``finish(requestID:)``
-    /// is called, subsequent `publish` calls for the same partition are
-    /// silently dropped — request lifecycles are terminal, and resurrecting
-    /// a closed partition with new events would risk delivering them after
-    /// the awaiting consumer has already cleaned up.
+    /// historical events for late subscribers. ``finish(requestID:)`` marks
+    /// the active partition closed, so publishes serialized while it retires
+    /// are dropped. Request IDs are one-use lifecycle identifiers and must not
+    /// be reused after finish; the hub discards closed partition tombstones
+    /// once observer-queue handoff completes.
     package func publish(_ event: NetworkEvent, requestID: UUID, observers: [any NetworkEventObserving]) {
         guard !observers.isEmpty else { return }
         var partition = partitions[requestID] ?? PartitionState()
@@ -75,11 +83,21 @@ package actor NetworkEventHub {
         startDrainIfNeeded(requestID: requestID)
     }
 
+    /// Closes a request partition and waits until its queued events have been
+    /// handed to each observer chain. Observer handler execution remains
+    /// asynchronous so slow instrumentation cannot delay request completion.
     package func finish(requestID: UUID) async {
         guard var partition = partitions[requestID] else { return }
         partition.isClosed = true
         partitions[requestID] = partition
-        await cleanupPartitionIfPossible(requestID: requestID)
+
+        if partition.isRetiring || partition.isDraining || !partition.queue.isEmpty {
+            await withCheckedContinuation { continuation in
+                partitionClosureWaiters[requestID, default: []].append(continuation)
+            }
+        } else {
+            await cleanupPartitionIfPossible(requestID: requestID)
+        }
     }
 
     private func startDrainIfNeeded(requestID: UUID) {
@@ -149,13 +167,44 @@ package actor NetworkEventHub {
     }
 
     private func cleanupPartitionIfPossible(requestID: UUID) async {
-        guard let partition = partitions[requestID] else { return }
-        guard partition.isClosed, !partition.isDraining, partition.queue.isEmpty else { return }
+        guard var partition = partitions[requestID] else { return }
+        guard
+            partition.isClosed,
+            !partition.isRetiring,
+            !partition.isDraining,
+            partition.queue.isEmpty
+        else { return }
+
+        // Keep the closed partition installed across the actor reentrancy
+        // points below. Otherwise a publish serialized while an observer
+        // chain is closing could recreate this request lifecycle, and a
+        // concurrent finish could observe the wrong partition.
+        partition.isRetiring = true
+        partitions[requestID] = partition
+        if let retirementSuspension {
+            await retirementSuspension(requestID)
+        }
+
+        for chain in partition.observerChains.values {
+            await chain.finish(deliverQueuedEvents: true)
+        }
 
         partitions.removeValue(forKey: requestID)
-        for chain in partition.observerChains.values {
-            await chain.finish()
+        let closureWaiters = partitionClosureWaiters.removeValue(forKey: requestID) ?? []
+        for waiter in closureWaiters {
+            waiter.resume()
         }
+    }
+
+    package func _testingRetirementState(
+        requestID: UUID
+    ) -> (isClosed: Bool, isRetiring: Bool, closureWaiterCount: Int)? {
+        guard let partition = partitions[requestID] else { return nil }
+        return (
+            isClosed: partition.isClosed,
+            isRetiring: partition.isRetiring,
+            closureWaiterCount: partitionClosureWaiters[requestID]?.count ?? 0
+        )
     }
 
     private func reportPartitionMetric(for requestID: UUID, partition: PartitionState) {
