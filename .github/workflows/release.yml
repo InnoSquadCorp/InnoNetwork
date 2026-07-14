@@ -122,11 +122,28 @@ jobs:
             --guard-benchmark cache/response-cache-lookup \
             --guard-benchmark cache/response-cache-revalidation
 
-      - name: Run tests
+      - name: Run serial tests with coverage
         run: xcrun swift test --no-parallel --enable-code-coverage
 
-      - name: Run codegen tests
-        run: xcrun swift test --package-path Packages/InnoNetworkCodegen
+      - name: Generate core coverage report
+        run: |
+          bash Scripts/generate_coverage_report.sh \
+            .build \
+            .build/release-artifacts/coverage-core \
+            Sources
+
+      - name: Run tests with parallel scheduling
+        run: xcrun swift test --parallel
+
+      - name: Run codegen tests with coverage
+        run: xcrun swift test --package-path Packages/InnoNetworkCodegen --enable-code-coverage
+
+      - name: Generate codegen coverage report
+        run: |
+          bash Scripts/generate_coverage_report.sh \
+            Packages/InnoNetworkCodegen/.build \
+            .build/release-artifacts/coverage-codegen \
+            Packages/InnoNetworkCodegen/Sources
 
       - name: Build DocC archives
         run: |
@@ -152,6 +169,8 @@ jobs:
             .build/release-artifacts/benchmarks.json
             .build/release-artifacts/sbom.cdx.json
             .build/release-artifacts/sbom-codegen.cdx.json
+            .build/release-artifacts/coverage-core/
+            .build/release-artifacts/coverage-codegen/
           if-no-files-found: error
 
   publish-release:

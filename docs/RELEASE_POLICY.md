@@ -20,7 +20,8 @@
    `docs/releases/<version>.md`; the workflow rejects lightweight tags,
    off-main commits, stale main refs, and missing release notes before build.
 4. Let the `Release` workflow run:
-   - `swift test --no-parallel --enable-code-coverage`
+   - root tests in serial coverage mode and parallel scheduling mode
+   - codegen tests with coverage plus fail-closed core/codegen LCOV generation
    - docs contract sync
    - doc smoke build/run
    - consumer smoke build
