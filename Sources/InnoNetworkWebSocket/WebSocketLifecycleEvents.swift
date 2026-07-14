@@ -5,8 +5,7 @@ import InnoNetwork
 // and output value types — `WebSocketLifecycleEvent`,
 // `WebSocketLifecycleDecisionContext`, `WebSocketLifecycleEffect`,
 // `WebSocketLifecycleTransition`, and `WebSocketStateTransitionResult`
-// — live alongside the state model. All types stay `package`; this
-// file only relocates code, no behaviour changes.
+// — live alongside the state model. All types stay `package`.
 
 package enum WebSocketLifecycleEvent: Sendable, Equatable {
     case connect
@@ -19,6 +18,9 @@ package enum WebSocketLifecycleEvent: Sendable, Equatable {
         error: WebSocketError?
     )
     case failure(generation: Int?, disposition: WebSocketCloseDisposition, error: WebSocketError)
+    /// Terminal manager-owned teardown. Unlike an ordinary transport failure,
+    /// this event also overrides an in-progress manual close.
+    case managerShutdown(error: WebSocketError)
     case closeTimeout(closeCode: WebSocketCloseCode, error: WebSocketError)
     case reconnectTimerFired
     case reset
@@ -49,6 +51,7 @@ package enum WebSocketLifecycleEffect: Sendable, Equatable {
     case publishConnected(protocolName: String?)
     case publishDisconnected(error: WebSocketError?)
     case publishError(WebSocketError)
+    case publishTerminalError(WebSocketError)
     case scheduleReconnect
     case finishTerminal(generation: Int)
     case ignoreStaleCallback

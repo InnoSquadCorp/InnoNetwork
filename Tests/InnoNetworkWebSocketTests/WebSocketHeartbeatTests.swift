@@ -22,7 +22,11 @@ struct WebSocketHeartbeatTests {
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
 
-        await coordinator.startHeartbeat(for: task) { _ in }
+        await coordinator.startHeartbeat(
+            for: task,
+            onPingTimeout: { _ in },
+            onPong: { _, _, _ in }
+        )
 
         // No heartbeat loop; subsequent cancel is a fast no-op.
         await registry.cancelHeartbeatTask(for: task.id)
@@ -48,7 +52,11 @@ struct WebSocketHeartbeatTests {
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
         await task.restoreStateForTesting(.connected)
 
-        await coordinator.startHeartbeat(for: task) { _ in }
+        await coordinator.startHeartbeat(
+            for: task,
+            onPingTimeout: { _ in },
+            onPong: { _, _, _ in }
+        )
 
         try? await Task.sleep(nanoseconds: 150_000_000)
         await registry.cancelHeartbeatTask(for: task.id)
@@ -73,8 +81,16 @@ struct WebSocketHeartbeatTests {
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
         await task.restoreStateForTesting(.connected)
 
-        await coordinator.startHeartbeat(for: task) { _ in }
-        await coordinator.startHeartbeat(for: task) { _ in }
+        await coordinator.startHeartbeat(
+            for: task,
+            onPingTimeout: { _ in },
+            onPong: { _, _, _ in }
+        )
+        await coordinator.startHeartbeat(
+            for: task,
+            onPingTimeout: { _ in },
+            onPong: { _, _, _ in }
+        )
 
         // Must complete without deadlocking; previous is awaited on replacement.
         await registry.cancelHeartbeatTask(for: task.id)

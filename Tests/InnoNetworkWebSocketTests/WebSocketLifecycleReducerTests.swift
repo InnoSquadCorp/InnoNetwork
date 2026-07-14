@@ -30,6 +30,37 @@ struct WebSocketLifecycleReducerTests {
             ])
     }
 
+    @Test("terminal handles cannot be connected again")
+    func terminalHandlesIgnoreConnect() {
+        let terminalStates: [WebSocketLifecycleState] = [
+            .disconnected(
+                generation: 2,
+                attempt: 0,
+                autoReconnect: false,
+                closeCode: .normalClosure,
+                disposition: .manual(.normalClosure),
+                error: nil
+            ),
+            .failed(
+                generation: 3,
+                attempt: 1,
+                autoReconnect: false,
+                closeCode: nil,
+                disposition: .transportFailure(.pingTimeout),
+                error: .pingTimeout
+            ),
+        ]
+
+        for state in terminalStates {
+            let transition = WebSocketLifecycleReducer.reduce(
+                state: state,
+                event: .connect
+            )
+            #expect(transition.state == state)
+            #expect(transition.effects.isEmpty)
+        }
+    }
+
     @Test("connected manual disconnect finalizes through disconnected")
     func connectedManualDisconnectFinalizesThroughDisconnected() async {
         let connected = WebSocketLifecycleState.connected(
@@ -136,6 +167,14 @@ struct WebSocketLifecycleReducerTests {
         #expect(failed.state.publicState == .failed)
         #expect(failed.state.closeCode == .goingAway)
         #expect(failed.state.error == .maxReconnectAttemptsExceeded)
+        #expect(
+            failed.effects == [
+                .cleanupRuntime,
+                .cancelHeartbeat,
+                .cancelMessageListener,
+                .publishError(.maxReconnectAttemptsExceeded),
+                .finishTerminal(generation: 4),
+            ])
     }
 
     @Test("terminal handshake failure transitions to failed")
@@ -181,6 +220,39 @@ struct WebSocketLifecycleReducerTests {
 
         #expect(afterDidOpen.state == disconnecting)
         #expect(afterDidOpen.effects == [.ignoreStaleCallback])
+    }
+
+    @Test("manager shutdown overrides an in-progress manual close")
+    func managerShutdownOverridesInProgressManualClose() async {
+        let disconnecting = WebSocketLifecycleState.disconnecting(
+            generation: 7,
+            attempt: 1,
+            manualDisconnect: .init(closeCode: .goingAway, error: .disconnected(nil))
+        )
+        let error = WebSocketError.connectionFailed(
+            SendableUnderlyingError(
+                domain: "InnoNetworkWebSocket.ManagerShutdown",
+                code: 1,
+                message: "manager shutdown"
+            )
+        )
+        let shutdown = WebSocketLifecycleReducer.reduce(
+            state: disconnecting,
+            event: .managerShutdown(error: error)
+        )
+
+        #expect(shutdown.state.publicState == .failed)
+        #expect(shutdown.state.autoReconnectEnabled == false)
+        #expect(shutdown.state.closeCode == .goingAway)
+        #expect(shutdown.state.error == error)
+        #expect(shutdown.state.closeDisposition == .transportFailure(error))
+        #expect(
+            shutdown.effects == [
+                .cleanupRuntime,
+                .publishTerminalError(error),
+                .finishTerminal(generation: 7),
+            ]
+        )
     }
 
     @Test("stale close and failure callbacks do not mutate the current generation")

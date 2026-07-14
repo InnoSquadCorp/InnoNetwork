@@ -89,63 +89,100 @@ package struct WebSocketHeartbeatCoordinator {
 
     package func startHeartbeat(
         for task: WebSocketTask,
-        onPingTimeout: @escaping @Sendable (Int) -> Void
+        onPingTimeout: @escaping @Sendable (Int) -> Void,
+        onPing:
+            (
+                @Sendable (
+                    WebSocketTask,
+                    any WebSocketURLTask
+                ) async -> WebSocketPingContext?
+            )? = nil,
+        onPong:
+            @escaping @Sendable (
+                WebSocketTask,
+                any WebSocketURLTask,
+                WebSocketPongContext
+            ) async -> Void,
+        onPingError:
+            (
+                @Sendable (
+                    WebSocketTask,
+                    any WebSocketURLTask,
+                    WebSocketError
+                ) async -> Bool
+            )? = nil
     ) async {
         await runtimeRegistry.cancelHeartbeatTask(for: task.id)
         guard configuration.heartbeatInterval > 0 else { return }
 
+        let workerID = UUID()
         let heartbeatTask = Task {
-            var missedPongs = 0
-            while !Task.isCancelled {
-                do {
-                    try await clock.sleep(for: .seconds(configuration.heartbeatInterval))
-                } catch is CancellationError {
-                    break
-                } catch {
-                    break
-                }
-
-                if Task.isCancelled { break }
-
-                let state = await task.state
-                if state != .connected { break }
-
-                guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else { break }
-
-                let attempt = await task.incrementPingCounter()
-                let pingContext = WebSocketPingContext(
-                    attemptNumber: attempt,
-                    dispatchedAt: .now
-                )
-                await eventHub.publish(.ping(pingContext), for: task.id)
-                do {
-                    try await sendPing(urlTask, timeout: configuration.pongTimeout)
-                    missedPongs = 0
-                    let pongContext = WebSocketPongContext(
-                        attemptNumber: pingContext.attemptNumber,
-                        roundTrip: ContinuousClock.now - pingContext.dispatchedAt
-                    )
-                    await runtimeRegistry.onPong?(task, pongContext)
-                    await eventHub.publish(.pong(pongContext), for: task.id)
-                } catch {
-                    missedPongs += 1
-                    if missedPongs >= configuration.maxMissedPongs {
-                        onPingTimeout(urlTask.taskIdentifier)
+            await WebSocketRuntimeWorkerContext.$workerID.withValue(workerID) {
+                var missedPongs = 0
+                while !Task.isCancelled {
+                    do {
+                        try await clock.sleep(for: .seconds(configuration.heartbeatInterval))
+                    } catch is CancellationError {
+                        break
+                    } catch {
                         break
                     }
-                    // Always surface a failed heartbeat as `.pingTimeout` so
-                    // observers see one event per missed pong, regardless of
-                    // whether the underlying error matches the classifier.
-                    // Silently swallowing unclassified errors hid mid-link
-                    // failures (e.g. `URLError.badServerResponse` from a
-                    // misbehaving proxy) until the missed-pong threshold
-                    // tripped, which broke alerting on flaky paths.
-                    await eventHub.publish(.error(.pingTimeout), for: task.id)
+
+                    if Task.isCancelled { break }
+
+                    let state = await task.state
+                    if state != .connected { break }
+
+                    guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else { break }
+
+                    let pingContext: WebSocketPingContext
+                    if let onPing {
+                        guard let admittedContext = await onPing(task, urlTask) else { break }
+                        pingContext = admittedContext
+                    } else {
+                        guard let attempt = await task.nextConnectedPingAttempt() else { break }
+                        pingContext = WebSocketPingContext(
+                            attemptNumber: attempt,
+                            dispatchedAt: .now
+                        )
+                        await eventHub.publish(.ping(pingContext), for: task.id)
+                    }
+                    do {
+                        try await sendPing(urlTask, timeout: configuration.pongTimeout)
+                        missedPongs = 0
+                        let pongContext = WebSocketPongContext(
+                            attemptNumber: pingContext.attemptNumber,
+                            roundTrip: ContinuousClock.now - pingContext.dispatchedAt
+                        )
+                        if Task.isCancelled { break }
+                        await onPong(task, urlTask, pongContext)
+                    } catch is CancellationError {
+                        break
+                    } catch {
+                        if Task.isCancelled { break }
+                        missedPongs += 1
+                        if missedPongs >= configuration.maxMissedPongs {
+                            onPingTimeout(urlTask.taskIdentifier)
+                            break
+                        }
+                        // Always surface a failed heartbeat as `.pingTimeout` so
+                        // observers see one event per missed pong, regardless of
+                        // whether the underlying error matches the classifier.
+                        // Silently swallowing unclassified errors hid mid-link
+                        // failures (e.g. `URLError.badServerResponse` from a
+                        // misbehaving proxy) until the missed-pong threshold
+                        // tripped, which broke alerting on flaky paths.
+                        if let onPingError {
+                            guard await onPingError(task, urlTask, .pingTimeout) else { break }
+                        } else {
+                            await eventHub.publish(.error(.pingTimeout), for: task.id)
+                        }
+                    }
                 }
             }
         }
 
-        await runtimeRegistry.setHeartbeatTask(heartbeatTask, for: task.id)
+        await runtimeRegistry.setHeartbeatTask(heartbeatTask, workerID: workerID, for: task.id)
     }
 
     package func sendPing(_ urlTask: any WebSocketURLTask) async throws {

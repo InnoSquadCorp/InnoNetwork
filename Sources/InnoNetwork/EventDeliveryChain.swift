@@ -56,7 +56,20 @@ package actor EventDeliveryChain<Event: Sendable> {
         enqueue(
             event,
             enqueuedAt: enqueuedAt,
-            deliveryCompletion: nil
+            deliveryCompletion: nil,
+            guaranteesAdmission: false
+        )
+    }
+
+    /// Enqueues the final terminal outcome even when a `.dropNewest` consumer
+    /// queue is full. The oldest queued non-delivered event is displaced so
+    /// the final terminal signal remains observable.
+    package func enqueueGuaranteed(_ event: Event, enqueuedAt: Date = .now) {
+        enqueue(
+            event,
+            enqueuedAt: enqueuedAt,
+            deliveryCompletion: nil,
+            guaranteesAdmission: true
         )
     }
 
@@ -68,7 +81,8 @@ package actor EventDeliveryChain<Event: Sendable> {
             enqueue(
                 event,
                 enqueuedAt: enqueuedAt,
-                deliveryCompletion: DeliveryCompletion(continuation)
+                deliveryCompletion: DeliveryCompletion(continuation),
+                guaranteesAdmission: false
             )
         }
     }
@@ -76,7 +90,8 @@ package actor EventDeliveryChain<Event: Sendable> {
     private func enqueue(
         _ event: Event,
         enqueuedAt: Date,
-        deliveryCompletion: DeliveryCompletion?
+        deliveryCompletion: DeliveryCompletion?,
+        guaranteesAdmission: Bool
     ) {
         guard !isClosed else {
             deliveryCompletion?.resume()
@@ -84,15 +99,21 @@ package actor EventDeliveryChain<Event: Sendable> {
         }
         if queue.count >= policy.maxBufferedEventsPerConsumer {
             droppedEventCount += 1
-            switch policy.overflowPolicy {
-            case .dropOldest:
+            if guaranteesAdmission {
                 if let droppedEvent = queue.popFirst() {
                     droppedEvent.deliveryCompletion?.resume()
                 }
-            case .dropNewest:
-                reportQueueState()
-                deliveryCompletion?.resume()
-                return
+            } else {
+                switch policy.overflowPolicy {
+                case .dropOldest:
+                    if let droppedEvent = queue.popFirst() {
+                        droppedEvent.deliveryCompletion?.resume()
+                    }
+                case .dropNewest:
+                    reportQueueState()
+                    deliveryCompletion?.resume()
+                    return
+                }
             }
         }
 
@@ -125,7 +146,7 @@ package actor EventDeliveryChain<Event: Sendable> {
 
     private func startDrainIfNeeded() {
         guard drainTask == nil else { return }
-        drainTask = Task {
+        drainTask = Task.detached { [self] in
             await drainLoop()
         }
     }

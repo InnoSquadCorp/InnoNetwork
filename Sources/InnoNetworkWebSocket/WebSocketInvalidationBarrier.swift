@@ -1,11 +1,11 @@
 import Foundation
 
-/// Barrier used by ``WebSocketManager/shutdown()`` to drain in-flight
-/// disconnect callbacks before invalidating the underlying URLSession.
+/// One-shot completion barrier used by ``WebSocketManager/shutdown()``.
 ///
-/// The barrier is open after ``complete()`` is called once; subsequent
-/// ``wait()`` calls return immediately. Concurrent waiters are resumed in
-/// arbitrary order on completion.
+/// The manager keeps one instance for the URLSession invalidation callback and
+/// another for the full delegate-drain/task-cleanup boundary. A barrier is open
+/// after ``complete()`` is called once; subsequent ``wait()`` calls return
+/// immediately. Concurrent waiters are resumed in arbitrary order.
 actor WebSocketInvalidationBarrier {
     private var isCompleted = false
     private var waiters: [CheckedContinuation<Void, Never>] = []

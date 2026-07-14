@@ -284,7 +284,14 @@ struct WebSocketTaskTests {
         #expect(await task.closeDisposition == .transportFailure(.pingTimeout))
 
         let result = await task.updateState(.connecting)
-        #expect(result == .applied(previous: .failed, next: .connecting))
+        #expect(result == .rejected(previous: .failed, next: .connecting))
+        #expect(await task.error == .pingTimeout)
+        #expect(await task.closeDisposition == .transportFailure(.pingTimeout))
+
+        // Terminal handles are immutable in production. The test-only restore
+        // hook still lets this metadata synchronization test exercise a fresh
+        // nonterminal state without weakening the public lifecycle contract.
+        await task.restoreStateForTesting(.connecting)
         #expect(await task.error == nil)
         #expect(await task.closeCode == nil)
         #expect(await task.closeDisposition == nil)
@@ -398,8 +405,8 @@ struct WebSocketManagerTests {
         #expect(activeTasks.isEmpty)
     }
 
-    @Test("Retry re-registers terminal tasks in manager registry")
-    func retryReRegistersTerminalTaskInRegistry() async throws {
+    @Test("Retry replaces a terminal task with a fresh registered task")
+    func retryReplacesTerminalTaskInRegistry() async throws {
         let harness = StubMessagingHarness(
             heartbeatInterval: 0,
             reconnectDelay: 0,
@@ -408,20 +415,29 @@ struct WebSocketManagerTests {
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
         await task.restoreStateForTesting(.failed)
 
-        await harness.manager.retry(task)
+        let replacement = try #require(await harness.manager.retry(task))
+        let replacementIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: replacement
+            ))
 
-        let registeredTask = try #require(await harness.manager.task(withId: task.id))
-        #expect(registeredTask.id == task.id)
-        #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
-        #expect((await harness.manager.activeTasks()).contains { $0.id == task.id })
+        #expect(replacement.id != task.id)
+        #expect(await task.state == .failed)
+        #expect(await harness.manager.task(withId: task.id) == nil)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == nil)
+        #expect(await harness.manager.task(withId: replacement.id)?.id == replacement.id)
+        #expect((await harness.manager.allTasks()).contains { $0.id == replacement.id })
+        #expect((await harness.manager.activeTasks()).contains { $0.id == replacement.id })
+        #expect(replacementIdentifier == harness.stubTaskIdentifier)
 
-        await harness.manager.disconnect(task)
+        await harness.manager.disconnect(replacement)
         harness.manager.handleDisconnected(
-            taskIdentifier: harness.stubTaskIdentifier,
+            taskIdentifier: replacementIdentifier,
             closeCode: .normalClosure,
             reason: nil
         )
-        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
+        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: replacement))
     }
 
     @Test("Retry from onError callback survives terminal cleanup")
@@ -435,6 +451,7 @@ struct WebSocketManagerTests {
         let retryURLTask = StubWebSocketURLTask()
         harness.stubSession.enqueue(retryURLTask)
         let didRetry = OSAllocatedUnfairLock(initialState: false)
+        let replacementBox = OSAllocatedUnfairLock<WebSocketTask?>(initialState: nil)
 
         await harness.manager.setOnErrorHandler { callbackTask, _ in
             let shouldRetry = didRetry.withLock { alreadyRetried in
@@ -443,7 +460,8 @@ struct WebSocketManagerTests {
                 return true
             }
             guard shouldRetry, callbackTask.id == task.id else { return }
-            await harness.manager.retry(callbackTask)
+            let replacement = await harness.manager.retry(callbackTask)
+            replacementBox.withLock { $0 = replacement }
         }
 
         harness.manager.handleError(
@@ -451,24 +469,28 @@ struct WebSocketManagerTests {
             error: URLError(.cannotConnectToHost)
         )
 
+        let replacement = try #require(await waitForExplicitRetryReplacement(in: replacementBox))
         let retryIdentifier = try #require(
             await waitForWebSocketRuntimeTaskIdentifier(
                 manager: harness.manager,
-                task: task,
-                excluding: [harness.stubTaskIdentifier]
+                task: replacement
             ))
         #expect(retryIdentifier == retryURLTask.taskIdentifier)
-        #expect(await harness.manager.task(withId: task.id) != nil)
-        #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
-        #expect((await harness.manager.activeTasks()).contains { $0.id == task.id })
+        #expect(replacement.id != task.id)
+        #expect(await task.state == .failed)
+        #expect(await harness.manager.task(withId: task.id) == nil)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == nil)
+        #expect(await harness.manager.task(withId: replacement.id)?.id == replacement.id)
+        #expect((await harness.manager.allTasks()).contains { $0.id == replacement.id })
+        #expect((await harness.manager.activeTasks()).contains { $0.id == replacement.id })
 
-        await harness.manager.disconnect(task)
+        await harness.manager.disconnect(replacement)
         harness.manager.handleDisconnected(
             taskIdentifier: retryIdentifier,
             closeCode: .normalClosure,
             reason: nil
         )
-        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
+        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: replacement))
     }
 
     @Test("Retry from onDisconnected callback survives terminal cleanup")
@@ -482,6 +504,7 @@ struct WebSocketManagerTests {
         let retryURLTask = StubWebSocketURLTask()
         harness.stubSession.enqueue(retryURLTask)
         let didRetry = OSAllocatedUnfairLock(initialState: false)
+        let replacementBox = OSAllocatedUnfairLock<WebSocketTask?>(initialState: nil)
 
         await harness.manager.setOnDisconnectedHandler { callbackTask, _ in
             let shouldRetry = didRetry.withLock { alreadyRetried in
@@ -490,7 +513,8 @@ struct WebSocketManagerTests {
                 return true
             }
             guard shouldRetry, callbackTask.id == task.id else { return }
-            await harness.manager.retry(callbackTask)
+            let replacement = await harness.manager.retry(callbackTask)
+            replacementBox.withLock { $0 = replacement }
         }
 
         harness.manager.handleDisconnected(
@@ -499,24 +523,28 @@ struct WebSocketManagerTests {
             reason: nil
         )
 
+        let replacement = try #require(await waitForExplicitRetryReplacement(in: replacementBox))
         let retryIdentifier = try #require(
             await waitForWebSocketRuntimeTaskIdentifier(
                 manager: harness.manager,
-                task: task,
-                excluding: [harness.stubTaskIdentifier]
+                task: replacement
             ))
         #expect(retryIdentifier == retryURLTask.taskIdentifier)
-        #expect(await harness.manager.task(withId: task.id) != nil)
-        #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
-        #expect((await harness.manager.activeTasks()).contains { $0.id == task.id })
+        #expect(replacement.id != task.id)
+        #expect(await task.state == .disconnected)
+        #expect(await harness.manager.task(withId: task.id) == nil)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == nil)
+        #expect(await harness.manager.task(withId: replacement.id)?.id == replacement.id)
+        #expect((await harness.manager.allTasks()).contains { $0.id == replacement.id })
+        #expect((await harness.manager.activeTasks()).contains { $0.id == replacement.id })
 
-        await harness.manager.disconnect(task)
+        await harness.manager.disconnect(replacement)
         harness.manager.handleDisconnected(
             taskIdentifier: retryIdentifier,
             closeCode: .normalClosure,
             reason: nil
         )
-        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
+        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: replacement))
     }
 
     @Test("Retry from error event listener survives terminal cleanup")
@@ -530,6 +558,7 @@ struct WebSocketManagerTests {
         let retryURLTask = StubWebSocketURLTask()
         harness.stubSession.enqueue(retryURLTask)
         let didRetry = OSAllocatedUnfairLock(initialState: false)
+        let replacementBox = OSAllocatedUnfairLock<WebSocketTask?>(initialState: nil)
 
         _ = await harness.manager.addEventListener(for: task) { event in
             let shouldRetry = didRetry.withLock { alreadyRetried in
@@ -539,7 +568,8 @@ struct WebSocketManagerTests {
                 return true
             }
             guard shouldRetry else { return }
-            await harness.manager.retry(task)
+            let replacement = await harness.manager.retry(task)
+            replacementBox.withLock { $0 = replacement }
         }
 
         harness.manager.handleError(
@@ -547,24 +577,28 @@ struct WebSocketManagerTests {
             error: URLError(.cannotConnectToHost)
         )
 
+        let replacement = try #require(await waitForExplicitRetryReplacement(in: replacementBox))
         let retryIdentifier = try #require(
             await waitForWebSocketRuntimeTaskIdentifier(
                 manager: harness.manager,
-                task: task,
-                excluding: [harness.stubTaskIdentifier]
+                task: replacement
             ))
         #expect(retryIdentifier == retryURLTask.taskIdentifier)
-        #expect(await harness.manager.task(withId: task.id) != nil)
-        #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
-        #expect((await harness.manager.activeTasks()).contains { $0.id == task.id })
+        #expect(replacement.id != task.id)
+        #expect(await task.state == .failed)
+        #expect(await harness.manager.task(withId: task.id) == nil)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == nil)
+        #expect(await harness.manager.task(withId: replacement.id)?.id == replacement.id)
+        #expect((await harness.manager.allTasks()).contains { $0.id == replacement.id })
+        #expect((await harness.manager.activeTasks()).contains { $0.id == replacement.id })
 
-        await harness.manager.disconnect(task)
+        await harness.manager.disconnect(replacement)
         harness.manager.handleDisconnected(
             taskIdentifier: retryIdentifier,
             closeCode: .normalClosure,
             reason: nil
         )
-        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
+        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: replacement))
     }
 
     @Test("Retry from disconnected event listener survives terminal cleanup")
@@ -578,6 +612,7 @@ struct WebSocketManagerTests {
         let retryURLTask = StubWebSocketURLTask()
         harness.stubSession.enqueue(retryURLTask)
         let didRetry = OSAllocatedUnfairLock(initialState: false)
+        let replacementBox = OSAllocatedUnfairLock<WebSocketTask?>(initialState: nil)
 
         _ = await harness.manager.addEventListener(for: task) { event in
             let shouldRetry = didRetry.withLock { alreadyRetried in
@@ -587,7 +622,8 @@ struct WebSocketManagerTests {
                 return true
             }
             guard shouldRetry else { return }
-            await harness.manager.retry(task)
+            let replacement = await harness.manager.retry(task)
+            replacementBox.withLock { $0 = replacement }
         }
 
         harness.manager.handleDisconnected(
@@ -596,24 +632,28 @@ struct WebSocketManagerTests {
             reason: nil
         )
 
+        let replacement = try #require(await waitForExplicitRetryReplacement(in: replacementBox))
         let retryIdentifier = try #require(
             await waitForWebSocketRuntimeTaskIdentifier(
                 manager: harness.manager,
-                task: task,
-                excluding: [harness.stubTaskIdentifier]
+                task: replacement
             ))
         #expect(retryIdentifier == retryURLTask.taskIdentifier)
-        #expect(await harness.manager.task(withId: task.id) != nil)
-        #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
-        #expect((await harness.manager.activeTasks()).contains { $0.id == task.id })
+        #expect(replacement.id != task.id)
+        #expect(await task.state == .disconnected)
+        #expect(await harness.manager.task(withId: task.id) == nil)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == nil)
+        #expect(await harness.manager.task(withId: replacement.id)?.id == replacement.id)
+        #expect((await harness.manager.allTasks()).contains { $0.id == replacement.id })
+        #expect((await harness.manager.activeTasks()).contains { $0.id == replacement.id })
 
-        await harness.manager.disconnect(task)
+        await harness.manager.disconnect(replacement)
         harness.manager.handleDisconnected(
             taskIdentifier: retryIdentifier,
             closeCode: .normalClosure,
             reason: nil
         )
-        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
+        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: replacement))
     }
 
     @Test("Retry from self-removing error event listener survives terminal cleanup")
@@ -628,6 +668,7 @@ struct WebSocketManagerTests {
         harness.stubSession.enqueue(retryURLTask)
         let didRetry = OSAllocatedUnfairLock(initialState: false)
         let subscriptionBox = OSAllocatedUnfairLock<WebSocketEventSubscription?>(initialState: nil)
+        let replacementBox = OSAllocatedUnfairLock<WebSocketTask?>(initialState: nil)
 
         let subscription = await harness.manager.addEventListener(for: task) { event in
             let shouldRetry = didRetry.withLock { alreadyRetried in
@@ -645,7 +686,8 @@ struct WebSocketManagerTests {
             } catch {
                 return
             }
-            await harness.manager.retry(task)
+            let replacement = await harness.manager.retry(task)
+            replacementBox.withLock { $0 = replacement }
         }
         subscriptionBox.withLock { $0 = subscription }
 
@@ -654,24 +696,28 @@ struct WebSocketManagerTests {
             error: URLError(.cannotConnectToHost)
         )
 
+        let replacement = try #require(await waitForExplicitRetryReplacement(in: replacementBox))
         let retryIdentifier = try #require(
             await waitForWebSocketRuntimeTaskIdentifier(
                 manager: harness.manager,
-                task: task,
-                excluding: [harness.stubTaskIdentifier]
+                task: replacement
             ))
         #expect(retryIdentifier == retryURLTask.taskIdentifier)
-        #expect(await harness.manager.task(withId: task.id) != nil)
-        #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
-        #expect((await harness.manager.activeTasks()).contains { $0.id == task.id })
+        #expect(replacement.id != task.id)
+        #expect(await task.state == .failed)
+        #expect(await harness.manager.task(withId: task.id) == nil)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == nil)
+        #expect(await harness.manager.task(withId: replacement.id)?.id == replacement.id)
+        #expect((await harness.manager.allTasks()).contains { $0.id == replacement.id })
+        #expect((await harness.manager.activeTasks()).contains { $0.id == replacement.id })
 
-        await harness.manager.disconnect(task)
+        await harness.manager.disconnect(replacement)
         harness.manager.handleDisconnected(
             taskIdentifier: retryIdentifier,
             closeCode: .normalClosure,
             reason: nil
         )
-        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
+        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: replacement))
     }
 
     @Test("Retry from self-removing disconnected event listener survives terminal cleanup")
@@ -686,6 +732,7 @@ struct WebSocketManagerTests {
         harness.stubSession.enqueue(retryURLTask)
         let didRetry = OSAllocatedUnfairLock(initialState: false)
         let subscriptionBox = OSAllocatedUnfairLock<WebSocketEventSubscription?>(initialState: nil)
+        let replacementBox = OSAllocatedUnfairLock<WebSocketTask?>(initialState: nil)
 
         let subscription = await harness.manager.addEventListener(for: task) { event in
             let shouldRetry = didRetry.withLock { alreadyRetried in
@@ -703,7 +750,8 @@ struct WebSocketManagerTests {
             } catch {
                 return
             }
-            await harness.manager.retry(task)
+            let replacement = await harness.manager.retry(task)
+            replacementBox.withLock { $0 = replacement }
         }
         subscriptionBox.withLock { $0 = subscription }
 
@@ -713,24 +761,28 @@ struct WebSocketManagerTests {
             reason: nil
         )
 
+        let replacement = try #require(await waitForExplicitRetryReplacement(in: replacementBox))
         let retryIdentifier = try #require(
             await waitForWebSocketRuntimeTaskIdentifier(
                 manager: harness.manager,
-                task: task,
-                excluding: [harness.stubTaskIdentifier]
+                task: replacement
             ))
         #expect(retryIdentifier == retryURLTask.taskIdentifier)
-        #expect(await harness.manager.task(withId: task.id) != nil)
-        #expect((await harness.manager.allTasks()).contains { $0.id == task.id })
-        #expect((await harness.manager.activeTasks()).contains { $0.id == task.id })
+        #expect(replacement.id != task.id)
+        #expect(await task.state == .disconnected)
+        #expect(await harness.manager.task(withId: task.id) == nil)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == nil)
+        #expect(await harness.manager.task(withId: replacement.id)?.id == replacement.id)
+        #expect((await harness.manager.allTasks()).contains { $0.id == replacement.id })
+        #expect((await harness.manager.activeTasks()).contains { $0.id == replacement.id })
 
-        await harness.manager.disconnect(task)
+        await harness.manager.disconnect(replacement)
         harness.manager.handleDisconnected(
             taskIdentifier: retryIdentifier,
             closeCode: .normalClosure,
             reason: nil
         )
-        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
+        #expect(await waitForWebSocketTaskRemoval(manager: harness.manager, task: replacement))
     }
 
     @Test("Reconnect decision allows disconnected and failed states only when enabled")
@@ -846,7 +898,10 @@ struct WebSocketManagerTests {
         #expect(WebSocketState.connecting.canTransition(to: .connected))
         #expect(WebSocketState.connecting.canTransition(to: .reconnecting))
         #expect(WebSocketState.connected.canTransition(to: .reconnecting))
-        #expect(WebSocketState.failed.canTransition(to: .idle))
+        #expect(WebSocketState.disconnected.nextStates.isEmpty)
+        #expect(WebSocketState.failed.nextStates.isEmpty)
+        #expect(!WebSocketState.failed.canTransition(to: .idle))
+        #expect(!WebSocketState.disconnected.canTransition(to: .connecting))
         #expect(!WebSocketState.connected.canTransition(to: .idle))
         #expect(WebSocketState.failed.isTerminal)
         #expect(!WebSocketState.reconnecting.isTerminal)
@@ -913,6 +968,21 @@ struct WebSocketManagerTests {
         }
         return false
     }
+}
+
+
+private func waitForExplicitRetryReplacement(
+    in box: OSAllocatedUnfairLock<WebSocketTask?>,
+    timeout: TimeInterval = 2.0
+) async -> WebSocketTask? {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if let replacement = box.withLock({ $0 }) {
+            return replacement
+        }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return nil
 }
 
 
@@ -1059,7 +1129,7 @@ struct WebSocketListenerLifecycleTests {
         let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
         manager.handleDisconnected(
             taskIdentifier: taskIdentifier,
-            closeCode: .goingAway,
+            closeCode: .normalClosure,
             reason: "server shutdown"
         )
 
@@ -1067,7 +1137,7 @@ struct WebSocketListenerLifecycleTests {
             if case .disconnected(.disconnected(let underlying)) = event {
                 return underlying?.domain == "InnoNetworkWebSocket.CloseReason"
                     && underlying?.message == "server shutdown"
-                    && underlying?.code == Int(URLSessionWebSocketTask.CloseCode.goingAway.rawValue)
+                    && underlying?.code == Int(URLSessionWebSocketTask.CloseCode.normalClosure.rawValue)
             }
             return false
         }
@@ -1453,9 +1523,9 @@ struct WebSocketListenerLifecycleTests {
     func lifecycleModelTransitionPaths() {
         let sequences: [[WebSocketState]] = [
             [.idle, .connecting, .connected, .disconnecting, .disconnected],
-            [.idle, .connecting, .failed, .idle, .connecting],
+            [.idle, .connecting, .failed],
             [.connected, .reconnecting, .connecting, .connected],
-            [.connected, .disconnected, .reconnecting, .failed],
+            [.connected, .disconnected],
         ]
 
         for sequence in sequences {
@@ -1471,7 +1541,13 @@ struct WebSocketListenerLifecycleTests {
         var state = WebSocketState.idle
         for _ in 0..<128 {
             let nextStates = Array(state.nextStates).sorted { $0.rawValue < $1.rawValue }
-            #expect(!nextStates.isEmpty)
+            if nextStates.isEmpty {
+                #expect(state.isTerminal)
+                // A new task starts a new lifecycle walk; this is not a
+                // transition of the retired terminal handle.
+                state = .idle
+                continue
+            }
             seed = seed &* 6_364_136_223_846_793_005 &+ 1
             let next = nextStates[Int(seed % UInt64(nextStates.count))]
             #expect(state.canTransition(to: next))

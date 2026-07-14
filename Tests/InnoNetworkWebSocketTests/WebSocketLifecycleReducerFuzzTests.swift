@@ -14,8 +14,7 @@ import Testing
 ///    triples produce equal transitions.
 /// 2. Generation counters are monotonic — they never decrease.
 /// 3. `disconnected(.manual(_))` and `failed(.maxReconnectAttemptsExceeded)`
-///    are absorbing once entered without an explicit `reset` /
-///    `connect`.
+///    are absorbing once entered without the package-internal test reset.
 /// 4. Stale-callback events (a `didOpen` / `didClose` / `failure`
 ///    tagged with a generation that is not the current one) are
 ///    ignored: the state does not change and the only effect is
@@ -23,9 +22,9 @@ import Testing
 ///
 /// Note: this fuzz test does not assert that every transition is in
 /// `WebSocketState/canTransition(to:)`. The reducer is intentionally
-/// more permissive than that documentation table — `.reset` can land
-/// in `.idle` from any state, and `.connect` can re-enter `.connecting`
-/// from any non-terminal state — and the reducer is the authority.
+/// more permissive than that documentation table because the package-internal
+/// `.reset` event can land in `.idle` from any state; the reducer remains the
+/// authority for internal transitions.
 @Suite("WebSocket lifecycle reducer fuzz")
 struct WebSocketLifecycleReducerFuzzTests {
     private static let seeds: [UInt64] = [
@@ -109,6 +108,7 @@ struct WebSocketLifecycleReducerFuzzTests {
         #expect(terminal.state.publicState.isTerminal)
 
         let nonResetEvents: [WebSocketLifecycleEvent] = [
+            .connect,
             .didOpen(generation: 5, protocolName: nil),
             .didClose(
                 generation: 5, closeCode: .abnormalClosure, disposition: .peerTerminal(.abnormalClosure, nil),
@@ -157,6 +157,7 @@ struct WebSocketLifecycleReducerFuzzTests {
         #expect(failed.state.error == .maxReconnectAttemptsExceeded)
 
         let nonResetEvents: [WebSocketLifecycleEvent] = [
+            .connect,
             .didOpen(generation: 7, protocolName: nil),
             .didClose(
                 generation: 7, closeCode: .abnormalClosure, disposition: .peerTerminal(.abnormalClosure, nil),

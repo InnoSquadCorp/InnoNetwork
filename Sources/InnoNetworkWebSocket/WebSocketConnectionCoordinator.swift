@@ -1,29 +1,27 @@
 import Foundation
 
+package struct WebSocketPreparedConnection: Sendable {
+    package let generation: Int
+    package let request: URLRequest
+}
+
 package struct WebSocketConnectionCoordinator {
     let configuration: WebSocketConfiguration
-    let session: any WebSocketURLSession
     let runtimeRegistry: WebSocketRuntimeRegistry
-    let receiveLoop: WebSocketReceiveLoop
+    let isTransportAdmissionOpen: @Sendable () -> Bool
 
     package init(
         configuration: WebSocketConfiguration,
-        session: any WebSocketURLSession,
         runtimeRegistry: WebSocketRuntimeRegistry,
-        receiveLoop: WebSocketReceiveLoop
+        isTransportAdmissionOpen: @escaping @Sendable () -> Bool
     ) {
         self.configuration = configuration
-        self.session = session
         self.runtimeRegistry = runtimeRegistry
-        self.receiveLoop = receiveLoop
+        self.isTransportAdmissionOpen = isTransportAdmissionOpen
     }
 
-    package func startConnection(
-        _ task: WebSocketTask,
-        onReceiveError: @escaping @Sendable (Int, Error) -> Void
-    ) async {
+    package func prepareConnection(_ task: WebSocketTask) async -> WebSocketPreparedConnection? {
         let generation = await task.connectionGeneration
-        await runtimeRegistry.cancelHeartbeatTask(for: task.id)
 
         var request = URLRequest(url: task.url)
         request.timeoutInterval = configuration.connectionTimeout
@@ -39,21 +37,16 @@ package struct WebSocketConnectionCoordinator {
             }
         }
 
+        guard isTransportAdmissionOpen(), await task.isConnecting(generation: generation) else { return nil }
         for adapter in configuration.handshakeRequestAdapters {
-            request = await adapter.adapt(request)
+            let requestToAdapt = request
+            request = await runtimeRegistry.invokeUserCallback {
+                await adapter.adapt(requestToAdapt)
+            }
+            guard isTransportAdmissionOpen(), await task.isConnecting(generation: generation) else { return nil }
         }
 
-        let urlTask = session.makeWebSocketTask(with: request)
-        urlTask.maximumMessageSize = configuration.maximumMessageSize
-        await runtimeRegistry.setMapping(
-            webSocketTask: task,
-            for: urlTask.taskIdentifier,
-            generation: generation
-        )
-        await runtimeRegistry.setURLTask(urlTask, for: task.id)
-
-        urlTask.resume()
-        await receiveLoop.start(task: task, urlTask: urlTask, onError: onReceiveError)
+        return WebSocketPreparedConnection(generation: generation, request: request)
     }
 
     private static func request(_ request: URLRequest, containsHeaderNamed name: String) -> Bool {

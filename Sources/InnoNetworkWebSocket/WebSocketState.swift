@@ -13,6 +13,8 @@ public enum WebSocketState: String, Sendable {
 
 public extension WebSocketState {
     /// Returns all documented next states from the current lifecycle point.
+    /// Terminal states have no next state on the same task; explicit retry
+    /// creates and returns a fresh ``WebSocketTask``.
     var nextStates: Set<Self> {
         switch self {
         case .idle:
@@ -24,11 +26,11 @@ public extension WebSocketState {
         case .disconnecting:
             [.disconnected]
         case .disconnected:
-            [.connecting, .reconnecting, .failed]
+            []
         case .reconnecting:
             [.connecting, .connected, .failed, .disconnected]
         case .failed:
-            [.idle, .connecting]
+            []
         }
     }
 

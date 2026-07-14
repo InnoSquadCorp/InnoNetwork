@@ -5,16 +5,15 @@ import InnoNetwork
 // nonisolated yield entry points, on-actor consumer (`processDelegateEvent`
 // and the four `process*` reducers), and the URLError → WebSocketError
 // classifier — lives in one place. All methods stay actor-isolated except
-// the nonisolated bridges; this file only relocates code, no behaviour
-// changes.
+// the nonisolated bridges.
 extension WebSocketManager {
 
     func processDelegateEvent(_ event: DelegateEvent) async {
         // `AsyncStream.Continuation.finish()` drains elements that were
-        // already buffered. Treat the manager's lock-backed shutdown flag as
-        // the ordering fence instead of assuming `finish()` rejects that
-        // backlog. The task-level guarded reducer below closes the smaller
-        // race where this method started before shutdown and then suspended.
+        // already buffered. The lock-backed shutdown flag rejects that
+        // backlog, while shutdown awaits the single consumer before starting
+        // its terminal sweep. An event that passes this guard therefore runs
+        // to completion before shutdown can mutate or remove its task.
         guard !isShutdown else { return }
 
         switch event {
@@ -61,15 +60,16 @@ extension WebSocketManager {
     }
 
     func processConnected(taskIdentifier: Int, protocolName: String?) async {
-        guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
+        guard let callbackContext = await runtimeRegistry.callbackContext(for: taskIdentifier),
+            await acquireTaskLifecycleGate(
+                for: callbackContext,
+                taskIdentifier: taskIdentifier
+            )
+        else { return }
+        let task = callbackContext.task
         let previousState = await task.state
-        let generation = await callbackGeneration(
-            for: taskIdentifier,
-            fallbackTask: task
-        )
-        let transition = await task.applyDelegateLifecycleEvent(
-            .didOpen(generation: generation, protocolName: protocolName),
-            shutdownFence: shutdownLock
+        let transition = await task.applyLifecycleEvent(
+            .didOpen(generation: callbackContext.generation, protocolName: protocolName)
         )
         let didConnect = transition.state.publicState == .connected && !transition.isIgnoredCallback
 
@@ -83,16 +83,18 @@ extension WebSocketManager {
             await task.setAutoReconnectEnabled(true)
             await task.setError(nil)
         }
-        await executeLifecycleEffects(transition.effects, for: task)
+        await executeLifecycleEffectsAfterLockedApply(transition, for: task)
     }
 
     func processDisconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?) async {
-        guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
+        guard let callbackContext = await runtimeRegistry.callbackContext(for: taskIdentifier),
+            await acquireTaskLifecycleGate(
+                for: callbackContext,
+                taskIdentifier: taskIdentifier
+            )
+        else { return }
+        let task = callbackContext.task
         let previousState = await task.state
-        let callbackGeneration = await callbackGeneration(
-            for: taskIdentifier,
-            fallbackTask: task
-        )
         let isManualClose = await task.awaitingCloseHandshake
         let disposition: WebSocketCloseDisposition
         let error: WebSocketError?
@@ -109,7 +111,7 @@ extension WebSocketManager {
             )
             error = makeDisconnectedError(closeDisposition: disposition)
             let currentGeneration = await task.connectionGeneration
-            if callbackGeneration != currentGeneration
+            if callbackContext.generation != currentGeneration
                 || previousState == .disconnecting
                 || previousState == .disconnected
                 || previousState == .failed
@@ -128,17 +130,16 @@ extension WebSocketManager {
             }
         }
 
-        let transition = await task.applyDelegateLifecycleEvent(
+        let transition = await task.applyLifecycleEvent(
             .didClose(
-                generation: callbackGeneration,
+                generation: callbackContext.generation,
                 closeCode: closeCode,
                 disposition: disposition,
                 error: error
             ),
-            context: context,
-            shutdownFence: shutdownLock
+            context: context
         )
-        await executeLifecycleEffects(transition.effects, for: task)
+        await executeLifecycleEffectsAfterLockedApply(transition, for: task)
     }
 
     func processMappedError(taskIdentifier: Int, error wsError: WebSocketError) async {
@@ -158,20 +159,22 @@ extension WebSocketManager {
         statusCode: Int?
     ) async {
         guard !Self.isCancelledTransportError(error) else { return }
-        guard let task = await runtimeRegistry.webSocketTask(for: taskIdentifier) else { return }
+        guard let callbackContext = await runtimeRegistry.callbackContext(for: taskIdentifier),
+            await acquireTaskLifecycleGate(
+                for: callbackContext,
+                taskIdentifier: taskIdentifier
+            )
+        else { return }
 
+        let task = callbackContext.task
         let state = await task.state
         if state == .connecting || state == .reconnecting {
             let disposition = WebSocketCloseDisposition.classifyHandshake(
                 statusCode: statusCode,
                 error: error
             )
-            await handleFailure(
-                task: task,
-                generation: await callbackGeneration(
-                    for: taskIdentifier,
-                    fallbackTask: task
-                ),
+            await handleFailureHoldingLifecycleGate(
+                callbackContext: callbackContext,
                 closeDisposition: disposition,
                 previousState: state
             )
@@ -179,12 +182,8 @@ extension WebSocketManager {
         }
 
         let wsError: WebSocketError = Self.isTimeoutTransportError(error) ? .pingTimeout : .connectionFailed(error)
-        await handleFailure(
-            task: task,
-            generation: await callbackGeneration(
-                for: taskIdentifier,
-                fallbackTask: task
-            ),
+        await handleFailureHoldingLifecycleGate(
+            callbackContext: callbackContext,
             closeDisposition: .transportFailure(wsError)
         )
     }

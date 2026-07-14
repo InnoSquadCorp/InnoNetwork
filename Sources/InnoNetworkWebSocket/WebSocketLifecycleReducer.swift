@@ -37,6 +37,8 @@ package enum WebSocketLifecycleReducer: StateReducer {
                 error: error,
                 context: context
             )
+        case .managerShutdown(let error):
+            return managerShutdown(from: state, error: error)
         case .closeTimeout(let closeCode, let error):
             return closeTimeout(from: state, closeCode: closeCode, error: error)
         case .reconnectTimerFired:
@@ -50,6 +52,9 @@ package enum WebSocketLifecycleReducer: StateReducer {
     }
 
     private static func startConnecting(from state: WebSocketLifecycleState) -> WebSocketLifecycleTransition {
+        guard state.publicState == .idle else {
+            return .init(state: state, effects: [])
+        }
         let nextGeneration = state.generation + 1
         let nextState = WebSocketLifecycleState.connecting(
             generation: nextGeneration,
@@ -225,7 +230,12 @@ package enum WebSocketLifecycleReducer: StateReducer {
                     .cleanupRuntime,
                     .cancelHeartbeat,
                     .cancelMessageListener,
-                    .publishDisconnected(error: error),
+                    // A reconnect-exhausted close has one authoritative
+                    // terminal outcome. The peer-close details remain on the
+                    // task's closeCode/closeDisposition. Avoiding a second,
+                    // intermediate terminal notification also gives consumers
+                    // one unambiguous point at which to claim a fresh explicit
+                    // retry task.
                     .publishError(finalError),
                     .finishTerminal(generation: state.generation),
                 ]
@@ -315,6 +325,32 @@ package enum WebSocketLifecycleReducer: StateReducer {
                 ]
             )
         }
+    }
+
+    private static func managerShutdown(
+        from state: WebSocketLifecycleState,
+        error: WebSocketError
+    ) -> WebSocketLifecycleTransition {
+        guard !state.publicState.isTerminal else {
+            return .init(state: state, effects: [.ignoreStaleCallback])
+        }
+
+        let nextState = WebSocketLifecycleState.failed(
+            generation: state.generation,
+            attempt: state.attempt,
+            autoReconnect: false,
+            closeCode: state.closeCode,
+            disposition: .transportFailure(error),
+            error: error
+        )
+        return .init(
+            state: nextState,
+            effects: [
+                .cleanupRuntime,
+                .publishTerminalError(error),
+                .finishTerminal(generation: state.generation),
+            ]
+        )
     }
 
     private static func closeTimeout(

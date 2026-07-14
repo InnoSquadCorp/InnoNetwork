@@ -29,6 +29,7 @@ package actor TaskEventHub<Event: Sendable> {
         let streamConsumerIDs: [UUID]
         let completion: DeliveryCompletion?
         let completionMode: CompletionMode
+        let guaranteesAdmission: Bool
     }
 
     private enum CompletionMode: Sendable {
@@ -114,6 +115,10 @@ package actor TaskEventHub<Event: Sendable> {
     }
 
     private var partitions: [String: PartitionState] = [:]
+    /// Waiters used by lifecycle owners that must not finish retirement until
+    /// a closed partition has been fully detached. Listener handlers are still
+    /// allowed to drain asynchronously after detachment.
+    private var partitionClosureWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
     private let policy: EventDeliveryPolicy
     private let metricsProxy: EventPipelineMetricsReporterProxy?
     private let metricsSnapshotInterval: Duration?
@@ -182,7 +187,7 @@ package actor TaskEventHub<Event: Sendable> {
         updateStreamMetricsReconciliationTaskState()
         stream.continuation.onTermination = { @Sendable [weak self] _ in
             guard let self else { return }
-            Task { [self] in
+            Task.detached { [self] in
                 await self.removeContinuation(taskID: taskID, continuationID: continuationID)
             }
         }
@@ -190,7 +195,13 @@ package actor TaskEventHub<Event: Sendable> {
     }
 
     package func publish(_ event: Event, for taskID: String) {
-        enqueue(event, for: taskID, completion: nil, completionMode: .none)
+        enqueue(
+            event,
+            for: taskID,
+            completion: nil,
+            completionMode: .none,
+            guaranteesAdmission: false
+        )
     }
 
     package func publishAndWaitForEnqueue(_ event: Event, for taskID: String) async {
@@ -199,7 +210,25 @@ package actor TaskEventHub<Event: Sendable> {
                 event,
                 for: taskID,
                 completion: DeliveryCompletion(continuation),
-                completionMode: .listenerEnqueue
+                completionMode: .listenerEnqueue,
+                guaranteesAdmission: false
+            )
+        }
+    }
+
+    /// Admits the final terminal outcome even when `.dropNewest` queues are
+    /// saturated, then waits until it has reached every currently registered
+    /// consumer's queue. Delivery remains asynchronous under each consumer's
+    /// policy. Earlier notifications in a multi-event terminal burst retain
+    /// the configured bounded overflow behavior.
+    package func publishTerminalAndWaitForEnqueue(_ event: Event, for taskID: String) async {
+        await withCheckedContinuation { continuation in
+            enqueue(
+                event,
+                for: taskID,
+                completion: DeliveryCompletion(continuation),
+                completionMode: .listenerEnqueue,
+                guaranteesAdmission: true
             )
         }
     }
@@ -210,7 +239,8 @@ package actor TaskEventHub<Event: Sendable> {
                 event,
                 for: taskID,
                 completion: DeliveryCompletion(continuation),
-                completionMode: .listenerDelivery
+                completionMode: .listenerDelivery,
+                guaranteesAdmission: false
             )
         }
     }
@@ -219,7 +249,8 @@ package actor TaskEventHub<Event: Sendable> {
         _ event: Event,
         for taskID: String,
         completion: DeliveryCompletion?,
-        completionMode: CompletionMode
+        completionMode: CompletionMode,
+        guaranteesAdmission: Bool
     ) {
         var partition = partitions[taskID] ?? PartitionState()
         guard !partition.isClosed else {
@@ -228,14 +259,18 @@ package actor TaskEventHub<Event: Sendable> {
         }
         if partition.queue.count >= policy.maxBufferedEventsPerPartition {
             partition.droppedEventCount += 1
-            switch policy.overflowPolicy {
-            case .dropOldest:
+            if guaranteesAdmission {
                 partition.queue.popFirst()?.completion?.resume()
-            case .dropNewest:
-                partitions[taskID] = partition
-                reportPartitionMetric(for: taskID, partition: partition)
-                completion?.resume()
-                return
+            } else {
+                switch policy.overflowPolicy {
+                case .dropOldest:
+                    partition.queue.popFirst()?.completion?.resume()
+                case .dropNewest:
+                    partitions[taskID] = partition
+                    reportPartitionMetric(for: taskID, partition: partition)
+                    completion?.resume()
+                    return
+                }
             }
         }
         partition.queue.append(
@@ -245,7 +280,8 @@ package actor TaskEventHub<Event: Sendable> {
                 listenerIDs: Array(partition.listeners.keys),
                 streamConsumerIDs: Array(partition.streamConsumers.keys),
                 completion: completion,
-                completionMode: completionMode
+                completionMode: completionMode,
+                guaranteesAdmission: guaranteesAdmission
             )
         )
         partitions[taskID] = partition
@@ -258,6 +294,25 @@ package actor TaskEventHub<Event: Sendable> {
         partition.isClosed = true
         partitions[taskID] = partition
         await cleanupPartitionIfPossible(taskID: taskID)
+    }
+
+    /// Closes a partition and waits until the hub has detached it.
+    ///
+    /// This stronger boundary is intended for task lifecycles that must retire
+    /// their event partition before a successor can be registered. It waits
+    /// for the partition-level queue to drain, but not for user listener
+    /// handlers: their delivery chains retain the asynchronous semantics
+    /// established by ``finish(taskID:)``.
+    package func finishAndWaitForClosure(taskID: String) async {
+        guard var partition = partitions[taskID] else { return }
+        partition.isClosed = true
+        partitions[taskID] = partition
+        await cleanupPartitionIfPossible(taskID: taskID)
+        guard partitions[taskID] != nil else { return }
+
+        await withCheckedContinuation { continuation in
+            partitionClosureWaiters[taskID, default: []].append(continuation)
+        }
     }
 
     private func removeContinuation(taskID: String, continuationID: UUID) async {
@@ -278,7 +333,7 @@ package actor TaskEventHub<Event: Sendable> {
         guard var partition = partitions[taskID], !partition.isDraining else { return }
         partition.isDraining = true
         partitions[taskID] = partition
-        Task {
+        Task.detached { [self] in
             await drain(taskID: taskID)
         }
     }
@@ -326,11 +381,25 @@ package actor TaskEventHub<Event: Sendable> {
             switch pendingEvent.completionMode {
             case .none:
                 for listener in listeners {
-                    await listener.enqueue(pendingEvent.event, enqueuedAt: pendingEvent.enqueuedAt)
+                    if pendingEvent.guaranteesAdmission {
+                        await listener.enqueueGuaranteed(
+                            pendingEvent.event,
+                            enqueuedAt: pendingEvent.enqueuedAt
+                        )
+                    } else {
+                        await listener.enqueue(pendingEvent.event, enqueuedAt: pendingEvent.enqueuedAt)
+                    }
                 }
             case .listenerEnqueue:
                 for listener in listeners {
-                    await listener.enqueue(pendingEvent.event, enqueuedAt: pendingEvent.enqueuedAt)
+                    if pendingEvent.guaranteesAdmission {
+                        await listener.enqueueGuaranteed(
+                            pendingEvent.event,
+                            enqueuedAt: pendingEvent.enqueuedAt
+                        )
+                    } else {
+                        await listener.enqueue(pendingEvent.event, enqueuedAt: pendingEvent.enqueuedAt)
+                    }
                 }
                 pendingEvent.completion?.resume()
             case .listenerDelivery:
@@ -398,6 +467,11 @@ package actor TaskEventHub<Event: Sendable> {
 
         for listener in partition.listeners.values {
             await listener.finish(deliverQueuedEvents: true)
+        }
+
+        let closureWaiters = partitionClosureWaiters.removeValue(forKey: taskID) ?? []
+        for waiter in closureWaiters {
+            waiter.resume()
         }
     }
 

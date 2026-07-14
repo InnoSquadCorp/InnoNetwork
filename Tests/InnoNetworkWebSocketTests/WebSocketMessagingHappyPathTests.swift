@@ -199,24 +199,19 @@ struct WebSocketMessagingHappyPathTests {
         await harness.tearDown(task: task)
     }
 
-    @Test("Manual ping success calls onPong with RTT before publishing .pong")
-    func manualPingSuccessCallsOnPongBeforePublishingPongEvent() async throws {
+    @Test("Manual ping success delivers the same RTT context through callback and event")
+    func manualPingSuccessDeliversMatchingPongContexts() async throws {
         let harness = StubMessagingHarness(pongTimeout: 1)
         let task = try await harness.connectAndReady()
         let recorder = WebSocketEventCollector()
-        let order = OSAllocatedUnfairLock<[String]>(initialState: [])
         let pongContext = OSAllocatedUnfairLock<WebSocketPongContext?>(initialState: nil)
 
         let subscription = await harness.manager.addEventListener(for: task) { event in
             recorder.record(event)
-            if case .pong = event {
-                order.withLock { $0.append("event") }
-            }
         }
         await harness.manager.setOnPongHandler { callbackTask, context in
             #expect(callbackTask.id == task.id)
             pongContext.withLock { $0 = context }
-            order.withLock { $0.append("handler") }
         }
 
         let pingTask = Task {
@@ -230,12 +225,14 @@ struct WebSocketMessagingHappyPathTests {
         #expect(await recorder.waitForCount(2, timeout: 1.0))
         let snapshot = recorder.snapshot()
         #expect(snapshot.count == 2)
+        var eventContext: WebSocketPongContext?
         if snapshot.count == 2 {
             if case .ping = snapshot[0] {
             } else {
                 Issue.record("expected first event to be .ping")
             }
-            if case .pong = snapshot[1] {
+            if case .pong(let context) = snapshot[1] {
+                eventContext = context
             } else {
                 Issue.record("expected second event to be .pong")
             }
@@ -246,8 +243,8 @@ struct WebSocketMessagingHappyPathTests {
         if let receivedContext {
             #expect(receivedContext.attemptNumber == 1)
             #expect(receivedContext.roundTrip >= .zero)
+            #expect(eventContext == receivedContext)
         }
-        #expect(order.withLock { $0 } == ["handler", "event"])
 
         await harness.manager.setOnPongHandler(nil)
         await harness.manager.removeEventListener(subscription)

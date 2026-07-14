@@ -109,44 +109,47 @@ package struct WebSocketReconnectCoordinator {
         // under rapid disconnect bursts.
         await runtimeRegistry.cancelReconnectTask(for: task.id)
 
+        let workerID = UUID()
         let reconnectTask = Task { [eventHub] in
-            let reconnectCount = await task.attemptedReconnectCount
-            let delay = reconnectDelay(forAttempt: reconnectCount)
+            await WebSocketRuntimeWorkerContext.$workerID.withValue(workerID) {
+                let reconnectCount = await task.attemptedReconnectCount
+                let delay = reconnectDelay(forAttempt: reconnectCount)
 
-            do {
-                try await clock.sleep(for: .seconds(delay))
-            } catch is CancellationError {
-                return
-            } catch {
-                // Sleep failed for a reason other than cancellation. The
-                // previous behaviour silently dropped the reconnect attempt;
-                // surface a typed error event so observers can correlate the
-                // skipped retry with the underlying clock/sleep failure
-                // instead of seeing a generic `.unknown` or watching the
-                // socket stall in `.reconnecting` forever.
-                if let eventHub {
-                    let wrapped = SendableUnderlyingError(error)
-                    await eventHub.publish(.error(.reconnectSleepFailed(wrapped)), for: task.id)
+                do {
+                    try await clock.sleep(for: .seconds(delay))
+                } catch is CancellationError {
+                    return
+                } catch {
+                    // Sleep failed for a reason other than cancellation. The
+                    // previous behaviour silently dropped the reconnect attempt;
+                    // surface a typed error event so observers can correlate the
+                    // skipped retry with the underlying clock/sleep failure
+                    // instead of seeing a generic `.unknown` or watching the
+                    // socket stall in `.reconnecting` forever.
+                    if let eventHub {
+                        let wrapped = SendableUnderlyingError(error)
+                        await eventHub.publish(.error(.reconnectSleepFailed(wrapped)), for: task.id)
+                    }
+                    return
                 }
-                return
-            }
 
-            do {
-                try Task.checkCancellation()
-            } catch is CancellationError {
-                return
-            } catch {
-                return
-            }
+                do {
+                    try Task.checkCancellation()
+                } catch is CancellationError {
+                    return
+                } catch {
+                    return
+                }
 
-            guard await task.autoReconnectEnabled else { return }
-            let state = await task.state
-            if Self.shouldReconnect(currentState: state, autoReconnectEnabled: true) {
-                await startConnection(task)
+                guard await task.autoReconnectEnabled else { return }
+                let state = await task.state
+                if Self.shouldReconnect(currentState: state, autoReconnectEnabled: true) {
+                    await startConnection(task)
+                }
             }
         }
 
-        await runtimeRegistry.setReconnectTask(reconnectTask, for: task.id)
+        await runtimeRegistry.setReconnectTask(reconnectTask, workerID: workerID, for: task.id)
     }
 
     private func reconnectDelay(forAttempt reconnectCount: Int) -> TimeInterval {

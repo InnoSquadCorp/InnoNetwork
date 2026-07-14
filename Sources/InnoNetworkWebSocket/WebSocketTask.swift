@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 public actor WebSocketTask: Identifiable {
     /// Stable identifier for this logical WebSocket task.
@@ -20,6 +19,11 @@ public actor WebSocketTask: Identifiable {
     private var _closeCode: WebSocketCloseCode?
     private var _closeDisposition: WebSocketCloseDisposition?
     private var _reconnectWindowStartedAt: Date?
+    /// Explicit retry retires this handle permanently and creates a fresh
+    /// task. Keeping the claim on the task actor makes the one-shot boundary
+    /// global even when two managers race to adopt the same unowned task.
+    private var explicitRetryClaimed = false
+    private var ownerManagerID: UUID?
 
     /// Current public lifecycle state projected from the reducer-owned internal state.
     public var state: WebSocketState { lifecycleState.publicState }
@@ -96,6 +100,7 @@ public actor WebSocketTask: Identifiable {
         _ event: WebSocketLifecycleEvent,
         context: WebSocketLifecycleDecisionContext = .init()
     ) -> WebSocketLifecycleTransition {
+        let previousGeneration = lifecycleState.generation
         let transition = WebSocketLifecycleReducer.reduce(
             state: lifecycleState,
             event: event,
@@ -103,44 +108,20 @@ public actor WebSocketTask: Identifiable {
         )
         guard !transition.isIgnoredCallback else { return transition }
         lifecycleState = transition.state
+        if lifecycleState.generation != previousGeneration
+            || lifecycleState.publicState.isTerminal
+        {
+            _inFlightSends = 0
+        }
         syncLifecycleMetadata()
         return transition
-    }
-
-    /// Applies a URLSession delegate event only while the owning manager's
-    /// shutdown fence is open.
-    ///
-    /// The fence remains locked through reducer evaluation and state mutation,
-    /// making this transition and `WebSocketManager.markShutdownIfNeeded()` a
-    /// single linearized order. If shutdown closes the fence first, an event
-    /// that was already buffered (or already dequeued but suspended on this
-    /// actor) is ignored and cannot replace the manager-shutdown terminal
-    /// error. The manager's own synthetic shutdown event intentionally uses
-    /// `applyLifecycleEvent` directly so it can transition after the fence is
-    /// closed.
-    @discardableResult
-    package func applyDelegateLifecycleEvent(
-        _ event: WebSocketLifecycleEvent,
-        context: WebSocketLifecycleDecisionContext = .init(),
-        shutdownFence: OSAllocatedUnfairLock<Bool>
-    ) -> WebSocketLifecycleTransition {
-        // `withLock` requires a `@Sendable` closure, which would erase this
-        // method's actor isolation. This closure is synchronous, nonescaping,
-        // and invoked only while already isolated to `WebSocketTask`; the
-        // unchecked variant preserves that isolation while sharing the same
-        // unfair-lock storage with the manager's fence mutation.
-        shutdownFence.withLockUnchecked { isShutdown in
-            guard !isShutdown else {
-                return .init(state: lifecycleState, effects: [.ignoreStaleCallback])
-            }
-            return applyLifecycleEvent(event, context: context)
-        }
     }
 
     @discardableResult
     package func advanceConnectionGeneration() -> Int {
         let nextGeneration = lifecycleState.generation + 1
         lifecycleState = lifecycleState.replacingGeneration(nextGeneration)
+        _inFlightSends = 0
         return nextGeneration
     }
 
@@ -192,6 +173,38 @@ public actor WebSocketTask: Identifiable {
 
     package var reconnectWindowStartedAt: Date? { _reconnectWindowStartedAt }
 
+    package func isConnecting(generation: Int) -> Bool {
+        lifecycleState.generation == generation && lifecycleState.publicState == .connecting
+    }
+
+    package func isConnected(generation: Int) -> Bool {
+        lifecycleState.generation == generation && lifecycleState.publicState == .connected
+    }
+
+    /// Assigns this task to its creating manager. Publicly constructed tasks
+    /// may start unowned and are atomically adopted by the first manager that
+    /// accepts an explicit retry; an already-owned task cannot be handed to a
+    /// different manager after terminal cleanup.
+    package func assignOwnerIfUnowned(_ managerID: UUID) -> Bool {
+        if let ownerManagerID {
+            return ownerManagerID == managerID
+        }
+        ownerManagerID = managerID
+        return true
+    }
+
+    /// Claims the single explicit retry allowed for this terminal handle.
+    /// Automatic reconnect does not use this path and continues to advance the
+    /// generation on the same task.
+    package func claimExplicitRetry(requestingManagerID managerID: UUID) -> Bool {
+        guard lifecycleState.publicState.isTerminal, !explicitRetryClaimed else {
+            return false
+        }
+        guard assignOwnerIfUnowned(managerID) else { return false }
+        explicitRetryClaimed = true
+        return true
+    }
+
     /// Atomically reserves a send slot if one is available. Returns true if
     /// the slot was reserved (caller must pair with ``releaseSendSlot()``);
     /// returns false if the queue is at `limit`.
@@ -213,7 +226,15 @@ public actor WebSocketTask: Identifiable {
     }
 
     /// Releases a send slot previously reserved by ``tryReserveSendSlot(limit:)``.
-    package func releaseSendSlot() {
+    /// When `generation` is supplied, a completion from an older transport is
+    /// ignored instead of decrementing a retried generation's queue depth.
+    package func releaseSendSlot(generation: Int? = nil) {
+        // Terminal handles are immutable snapshots. Their final queue depth is
+        // zero even if a cancelled transport send completes after retirement.
+        guard !lifecycleState.publicState.isTerminal else { return }
+        if let generation, generation != lifecycleState.generation {
+            return
+        }
         if _inFlightSends > 0 {
             _inFlightSends -= 1
         }

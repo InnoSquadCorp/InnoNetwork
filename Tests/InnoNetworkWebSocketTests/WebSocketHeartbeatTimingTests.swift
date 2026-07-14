@@ -460,6 +460,35 @@ struct WebSocketHeartbeatTimingTests {
         #expect(harness.stubTask.pingCount == 0)
     }
 
+    @Test("Cancelling a pending pong does not emit pingTimeout or invoke the timeout callback")
+    func heartbeatCancellationDoesNotCountAsMissedPong() async throws {
+        let harness = HeartbeatTestHarness(
+            heartbeatInterval: 4,
+            pongTimeout: 30,
+            maxMissedPongs: 2
+        )
+        let timeoutIdentifier = OSAllocatedUnfairLock<Int?>(initialState: nil)
+        await harness.startHeartbeat { identifier in
+            timeoutIdentifier.withLock { $0 = identifier }
+        }
+
+        #expect(await harness.clock.waitForWaiters(count: 1))
+        let baseline = harness.clock.enqueuedCount
+        harness.clock.advance(by: .seconds(4))
+        #expect(await harness.waitForStubPingCount(atLeast: 1))
+        #expect(await harness.waitForPingEventCount(atLeast: 1))
+        #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 1))
+
+        // Runtime teardown cancels an in-flight sendPing continuation. That is
+        // worker retirement, not a missed heartbeat, and must not leak a
+        // pingTimeout immediately before a reconnect or terminal outcome.
+        await harness.stopHeartbeat()
+        try? await Task.sleep(for: .milliseconds(20))
+
+        #expect(timeoutIdentifier.withLock { $0 } == nil)
+        #expect(harness.defaultRecorder.pingTimeoutErrorCount == 0)
+    }
+
     @Test("Timed out heartbeat does not dispatch a stale ping after pre-dispatch cancellation")
     func timedOutHeartbeatDoesNotDispatchStalePing() async throws {
         let dispatchGate = AsyncDispatchGate()
@@ -617,9 +646,16 @@ final class HeartbeatTestHarness: Sendable {
         await runtimeRegistry.setOnPong { _, context in
             pongContexts.withLock { $0.append(context) }
         }
-        await coordinator.startHeartbeat(for: task) { identifier in
-            onPingTimeout(identifier)
-        }
+        await coordinator.startHeartbeat(
+            for: task,
+            onPingTimeout: { identifier in
+                onPingTimeout(identifier)
+            },
+            onPong: { [eventHub, runtimeRegistry] task, _, context in
+                await eventHub.publish(.pong(context), for: task.id)
+                await runtimeRegistry.notifyPong(task, context: context)
+            }
+        )
     }
 
     func stopHeartbeat() async {
