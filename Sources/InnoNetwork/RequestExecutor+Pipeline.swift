@@ -43,7 +43,14 @@ extension RequestExecutor {
             // share one response before the second signer is even invoked.
             let allowsRequestSharing = requestSigners.isEmpty
             let cacheKey = allowsRequestSharing ? ResponseCacheKey(request: request) : nil
+            let cachePreparation = await prepareCacheLookup(
+                cacheKey: cacheKey,
+                request: request,
+                configuration: configuration,
+                runtime: runtime
+            )
             if let cachedResponse = try await cachedResponseIfAvailable(
+                preparation: cachePreparation,
                 cacheKey: cacheKey,
                 request: request,
                 configuration: configuration,
@@ -57,9 +64,9 @@ extension RequestExecutor {
                 return cachedResponse
             }
 
-            let revalidation = try await prepareConditionalCacheHeaders(
+            let revalidation = prepareConditionalCacheHeaders(
                 request: &request,
-                cacheKey: cacheKey,
+                preparation: cachePreparation,
                 configuration: configuration
             )
 

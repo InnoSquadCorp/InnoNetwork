@@ -9,7 +9,29 @@ import OSLog
 // transport (next section) → 304 handling → store.
 
 extension RequestExecutor {
+    func prepareCacheLookup(
+        cacheKey: ResponseCacheKey?,
+        request: URLRequest,
+        configuration: NetworkConfiguration,
+        runtime: RequestExecutionRuntime
+    ) async -> CachePreparation {
+        guard let cacheKey,
+            request.httpMethod?.uppercased() == "GET",
+            let cache = configuration.responseCache,
+            configuration.responseCachePolicy.allowsCacheRead
+        else {
+            return .bypass
+        }
+
+        let cached = await cachedRespectingVary(cache, key: cacheKey, request: request)
+        return configuration.responseCachePolicy.prepare(
+            cached: cached,
+            now: runtime.clock.now()
+        )
+    }
+
     func cachedResponseIfAvailable(
+        preparation: CachePreparation,
         cacheKey: ResponseCacheKey?,
         request: URLRequest,
         configuration: NetworkConfiguration,
@@ -19,16 +41,7 @@ extension RequestExecutor {
         runtime: RequestExecutionRuntime,
         originalRequestID: UUID
     ) async throws -> Response? {
-        guard let cacheKey,
-            request.httpMethod?.uppercased() == "GET",
-            let cache = configuration.responseCache,
-            configuration.responseCachePolicy.allowsCacheRead
-        else {
-            return nil
-        }
-
-        let cached = await cachedRespectingVary(cache, key: cacheKey, request: request)
-        switch configuration.responseCachePolicy.prepare(cached: cached) {
+        switch preparation {
         case .bypass, .revalidate:
             return nil
         case .returnCached(let cached):
@@ -50,6 +63,8 @@ extension RequestExecutor {
                 response: httpResponse
             )
             try enforceResponseBodyLimit(staleResponse, configuration: configuration)
+
+            guard let cacheKey else { return nil }
 
             let revalidationID = UUID()
             let startGate = TaskStartGate()
@@ -224,21 +239,12 @@ extension RequestExecutor {
 
     func prepareConditionalCacheHeaders(
         request: inout URLRequest,
-        cacheKey: ResponseCacheKey?,
+        preparation: CachePreparation,
         configuration: NetworkConfiguration
-    ) async throws -> ConditionalRevalidationContext? {
-        guard let cacheKey,
-            request.httpMethod?.uppercased() == "GET",
-            let cache = configuration.responseCache,
-            configuration.responseCachePolicy.isEnabled,
+    ) -> ConditionalRevalidationContext? {
+        guard configuration.responseCachePolicy.isEnabled,
             configuration.responseCachePolicy.allowsConditionalRevalidation,
-            let cached = await cachedRespectingVary(cache, key: cacheKey, request: request)
-        else {
-            return nil
-        }
-        guard
-            case .revalidate(let revalidationCandidate) =
-                configuration.responseCachePolicy.prepare(cached: cached),
+            case .revalidate(let revalidationCandidate) = preparation,
             let candidate = revalidationCandidate
         else {
             return nil

@@ -1009,6 +1009,67 @@ struct ResiliencePolicyTests {
         #expect(await session.requestCount == 0)
     }
 
+    @Test("Stale cache lookup is shared with conditional revalidation")
+    func staleCacheUsesOnePreTransportLookup() async throws {
+        let cachedBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
+        let cache = CountingResponseCache(
+            cached: CachedResponse(
+                data: cachedBody,
+                headers: ["ETag": "v1"],
+                storedAt: Date(timeIntervalSince1970: 0)
+            )
+        )
+        let freshBody = ResilienceUser(id: 2, name: "fresh")
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: freshBody)
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let user = try await client.request(ResilienceGetRequest())
+
+        #expect(user == freshBody)
+        #expect(await cache.getCount == 1)
+        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
+    }
+
+    @Test("Vary mismatch performs one lookup and skips conditional headers")
+    func varyMismatchUsesOnePreTransportLookup() async throws {
+        let cachedBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
+        let cache = CountingResponseCache(
+            cached: CachedResponse(
+                data: cachedBody,
+                headers: ["ETag": "v1", "Vary": "Accept-Language"],
+                storedAt: Date(timeIntervalSince1970: 0),
+                varyHeaders: ["accept-language": "definitely-not-the-request-language"]
+            )
+        )
+        let freshBody = ResilienceUser(id: 2, name: "fresh")
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: freshBody)
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let user = try await client.request(ResilienceGetRequest())
+
+        #expect(user == freshBody)
+        #expect(await cache.getCount == 1)
+        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == nil)
+    }
+
     @Test("ETag 304 response uses cached body")
     func etagNotModifiedUsesCachedBody() async throws {
         let cache = InMemoryResponseCache()
