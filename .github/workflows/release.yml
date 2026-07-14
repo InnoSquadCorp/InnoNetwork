@@ -133,7 +133,7 @@ jobs:
             Sources
 
       - name: Run tests with parallel scheduling
-        run: xcrun swift test --parallel
+        run: xcrun swift test --parallel --num-workers 4
 
       - name: Run codegen tests with coverage
         run: xcrun swift test --package-path Packages/InnoNetworkCodegen --enable-code-coverage

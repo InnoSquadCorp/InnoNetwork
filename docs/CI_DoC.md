@@ -15,8 +15,9 @@ The `CI` workflow must pass all of the following:
 1. `xcrun swift package resolve`
 2. `xcrun swift build`
 3. `xcrun swift test --no-parallel --enable-code-coverage`
-4. A separate blocking `xcrun swift test --parallel` job exercises the full
-   suite under SwiftPM parallel scheduling without coverage instrumentation.
+4. A separate blocking `xcrun swift test --parallel --num-workers 4` job
+   exercises the full suite under bounded SwiftPM parallel scheduling without
+   coverage instrumentation.
 5. `rg -n "@unchecked Sendable" Sources/InnoNetwork Sources/InnoNetworkDownload Sources/InnoNetworkPersistentCache Sources/InnoNetworkWebSocket` returns no matches
 6. `bash Scripts/check_shared_coders_mutation.sh` confirms the shared default
    JSON coders are never mutated after construction.
@@ -30,13 +31,17 @@ The `CI` workflow must pass all of the following:
    source files, or LCOV records fail the job; artifact upload also uses
    `if-no-files-found: error`. Codecov receives only those explicit reports
    with `disable_search: true`, using separate `core` and `codegen` flags.
-   Tokenless PRs retain artifact-only review, while canonical `main` pushes
-   require both Codecov uploads.
+   Dedicated upload jobs authenticate with short-lived GitHub OIDC credentials
+   instead of a repository secret, so dependency builds and tests never receive
+   `id-token: write`. Pull requests retain artifact-only fallback when an upload
+   fails, while canonical `main` pushes require both Codecov uploads.
 10. `apple-platform-build-smoke` runs `xcodebuild ... build` for macOS, iOS,
    tvOS, watchOS, and visionOS destinations. Simulator destinations are
-   build-only; SwiftPM test+coverage remains the runtime test gate. All five
-   declared platforms are required on the pinned canonical Xcode runner; a
-   missing SDK is a failure rather than a skipped green build.
+   build-only; SwiftPM test+coverage remains the runtime test gate. macOS and
+   iOS are required. tvOS, watchOS, and visionOS build whenever the pinned
+   hosted runner exposes a compatible SDK and destination; a missing optional
+   platform component emits an explicit notice, while a source or build
+   failure on an available destination still fails the job.
 11. Consumer smoke first asserts that the root package dependency graph does not
    contain `swift-syntax`, then builds separate core-only, aggregate,
    download-only, websocket-only, test-support, generated-client, and codegen
@@ -88,7 +93,7 @@ sudo xcode-select -s /Applications/Xcode_26.0.1.app
 xcrun swift package resolve
 xcrun swift build
 # Match both blocking test lanes.
-xcrun swift test --parallel
+xcrun swift test --parallel --num-workers 4
 xcrun swift test --no-parallel --enable-code-coverage
 rg -n "@unchecked Sendable" \
   Sources/InnoNetwork \

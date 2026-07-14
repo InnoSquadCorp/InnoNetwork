@@ -620,7 +620,7 @@ validate_codegen_product() {
   require_contains 'targets: ["InnoNetworkCodegen"]' "$codegen_package"
   require_contains 'name: "InnoNetworkMacros"' "$codegen_package"
   require_contains 'https://github.com/swiftlang/swift-syntax.git' "$codegen_package"
-  require_contains 'from: "603.0.1"' "$codegen_package"
+  require_contains 'exact: "603.0.2"' "$codegen_package"
   require_contains 'public macro APIDefinition' "$codegen_macros"
   require_contains 'public macro endpoint' "$codegen_macros"
   require_contains '`APIDefinition(method:path:)`' "$api_stability"
