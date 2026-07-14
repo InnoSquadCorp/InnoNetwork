@@ -129,6 +129,15 @@ import OSLog
 
 package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExecutable {
     let base: Base
+    // `APIDefinition.transport` may be computed and its default factories
+    // create fresh coders. Keep one policy for payload preparation and decode,
+    // including every retry attempt in this request execution.
+    private let transport: TransportPolicy<Base.APIResponse>
+
+    package init(base: Base) {
+        self.base = base
+        self.transport = base.transport
+    }
 
     package var logger: NetworkLogger { base.logger }
     package var requestInterceptors: [RequestInterceptor] { base.requestInterceptors }
@@ -147,12 +156,11 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
     package var allowsConstrainedNetworkAccessOverride: Bool? { base.allowsConstrainedNetworkAccessOverride }
     package var bodyContentType: String? {
         guard base.parameters != nil else { return nil }
-        return base.transport.requestEncoding.contentTypeHeader
+        return transport.requestEncoding.contentTypeHeader
     }
 
     package func makePayload() throws -> RequestPayload {
         guard let parameters = base.parameters else { return .none }
-        let transport = base.transport
 
         switch transport.requestEncoding {
         case .none:
@@ -170,7 +178,7 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
     }
 
     package func decode(data: Data, response: Response) throws -> Base.APIResponse {
-        try base.transport.responseDecoder.decode(data: data, response: response)
+        try transport.responseDecoder.decode(data: data, response: response)
     }
 
     private func encodeQueryItems(

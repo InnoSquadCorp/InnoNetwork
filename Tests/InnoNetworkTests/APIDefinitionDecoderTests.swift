@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import os
 
 @testable import InnoNetwork
 
@@ -14,6 +15,37 @@ private struct ExplicitDecoderRequest: APIDefinition {
         .custom(encoding: .query(URLQueryEncoder(), rootKey: nil)) { _, _ in
             "decoded-by-explicit-strategy"
         }
+    }
+}
+
+private final class TransportAccessCounter: Sendable {
+    private let lock = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+    func recordAccess() {
+        lock.withLock { $0 += 1 }
+    }
+
+    var value: Int {
+        lock.withLock { $0 }
+    }
+}
+
+private struct CountingTransportBodyRequest: APIDefinition {
+    struct Parameter: Encodable, Sendable {
+        let message: String
+    }
+
+    typealias APIResponse = Data
+
+    let parameters: Parameter?
+    let transportAccessCounter: TransportAccessCounter
+
+    var method: HTTPMethod { .post }
+    var path: String { "/transport-snapshot" }
+
+    var transport: TransportPolicy<Data> {
+        transportAccessCounter.recordAccess()
+        return .custom(encoding: .json(defaultRequestEncoder)) { data, _ in data }
     }
 }
 
@@ -46,5 +78,29 @@ struct APIDefinitionDecoderTests {
 
         let result = try request.transport.responseDecoder.decode(data: Data(), response: response)
         #expect(result == "decoded-by-explicit-strategy")
+    }
+
+    @Test("Body request snapshots transport once for encoding and decoding")
+    func bodyRequestSnapshotsTransportOnce() async throws {
+        let configuration = makeTestNetworkConfiguration(baseURL: "https://example.com")
+        let session = MockURLSession()
+        let responseData = Data("decoded-response".utf8)
+        session.setMockResponse(statusCode: 200, data: responseData)
+        let client = DefaultNetworkClient(configuration: configuration, session: session)
+        let counter = TransportAccessCounter()
+
+        let result = try await client.request(
+            CountingTransportBodyRequest(
+                parameters: .init(message: "encoded-request"),
+                transportAccessCounter: counter
+            ))
+
+        let requestBody = try #require(session.capturedRequest?.httpBody)
+        let requestObject = try #require(
+            JSONSerialization.jsonObject(with: requestBody) as? [String: String]
+        )
+        #expect(requestObject["message"] == "encoded-request")
+        #expect(result == responseData)
+        #expect(counter.value == 1)
     }
 }
