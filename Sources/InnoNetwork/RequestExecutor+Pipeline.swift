@@ -24,6 +24,7 @@ extension RequestExecutor {
     func executeWithPolicies(
         request adaptedRequest: URLRequest,
         bodySource: BodySource,
+        requestSigners: [RequestSigner],
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
         runtime: RequestExecutionRuntime,
@@ -33,13 +34,20 @@ extension RequestExecutor {
         var replayedAfterRefresh = false
 
         while true {
-            let cacheKey = ResponseCacheKey(request: request)
+            // A signer may establish or change the authentication principal
+            // (for example JWT Bearer or AWS SigV4). Until signers can expose
+            // a stable, non-secret principal partition, an unsigned request is
+            // not a safe cache identity: two endpoint signers could otherwise
+            // share one response before the second signer is even invoked.
+            let allowsRequestSharing = requestSigners.isEmpty
+            let cacheKey = allowsRequestSharing ? ResponseCacheKey(request: request) : nil
             if let cachedResponse = try await cachedResponseIfAvailable(
                 cacheKey: cacheKey,
                 request: request,
                 configuration: configuration,
                 context: context,
                 bodySource: bodySource,
+                requestSigners: requestSigners,
                 runtime: runtime,
                 originalRequestID: requestID
             ) {
@@ -53,13 +61,19 @@ extension RequestExecutor {
                 configuration: configuration
             )
 
-            let networkResponse = try await performTransport(
+            // Signing is deliberately the last mutation before transport.
+            // Every pre-transport header must be covered by canonical
+            // signatures. Signed requests conservatively bypass cache sharing
+            // because their principal does not exist in the unsigned key.
+            let networkResponse = try await performSignedTransport(
                 request: request,
                 bodySource: bodySource,
+                requestSigners: requestSigners,
                 configuration: configuration,
                 context: context,
                 runtime: runtime,
-                requestID: requestID
+                requestID: requestID,
+                allowsRequestCoalescing: allowsRequestSharing
             )
 
             if let substitution = try await convertNotModifiedIfNeeded(
@@ -133,20 +147,24 @@ extension RequestExecutor {
 
     func executeCustomPolicies(
         request: URLRequest,
+        identityRequest: URLRequest,
         bodySource: BodySource,
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
         runtime: RequestExecutionRuntime,
-        requestID: UUID
+        requestID: UUID,
+        allowsRequestCoalescing: Bool
     ) async throws -> Response {
         let eventHub = self.eventHub
         let baseNext = RequestExecutionNext {
             let result = try await performTransportResult(
                 request: request,
+                identityRequest: identityRequest,
                 bodySource: bodySource,
                 configuration: configuration,
                 context: context,
-                runtime: runtime
+                runtime: runtime,
+                allowsRequestCoalescing: allowsRequestCoalescing
             )
             await eventHub.publish(
                 .responseReceived(
@@ -195,6 +213,119 @@ extension RequestExecutor {
     ) async -> UUID? {
         guard let coordinator else { return nil }
         return await coordinator.isRefreshInProgress ? UUID() : nil
+    }
+
+    func applyRequestSigners(
+        _ signers: [RequestSigner],
+        to request: URLRequest,
+        bodySource: BodySource
+    ) async throws -> URLRequest {
+        guard !signers.isEmpty else { return request }
+
+        let body = try bodySource.signingBody(for: request)
+        var signedRequest = request
+        for signer in signers {
+            let headers = try await signer.signatureHeaders(for: signedRequest, body: body)
+            for header in headers {
+                signedRequest.setValue(header.value, forHTTPHeaderField: header.name)
+            }
+        }
+        return signedRequest
+    }
+
+    func performSignedTransport(
+        request: URLRequest,
+        bodySource: BodySource,
+        requestSigners: [RequestSigner],
+        configuration: NetworkConfiguration,
+        context: NetworkRequestContext,
+        runtime: RequestExecutionRuntime,
+        requestID: UUID,
+        allowsRequestCoalescing: Bool
+    ) async throws -> Response {
+        let preparedBody = try prepareSigningBodySource(bodySource, signers: requestSigners)
+        defer {
+            if let snapshotURL = preparedBody.snapshotURL {
+                try? FileManager.default.removeItem(at: snapshotURL)
+            }
+        }
+
+        let requestForSigning =
+            requestSigners.isEmpty ? request : request.preparingForSignedTransport()
+        let signedRequest = try await applyRequestSigners(
+            requestSigners,
+            to: requestForSigning,
+            bodySource: preparedBody.bodySource
+        )
+        let transportContext =
+            requestSigners.isEmpty ? context : context.restrictingSignedRequestSharing()
+        return try await performTransport(
+            request: signedRequest,
+            identityRequest: request,
+            bodySource: preparedBody.bodySource,
+            configuration: configuration,
+            context: transportContext,
+            runtime: runtime,
+            requestID: requestID,
+            allowsRequestCoalescing: allowsRequestCoalescing
+        )
+    }
+
+    func performSignedTransportResult(
+        request: URLRequest,
+        bodySource: BodySource,
+        requestSigners: [RequestSigner],
+        configuration: NetworkConfiguration,
+        context: NetworkRequestContext,
+        runtime: RequestExecutionRuntime
+    ) async throws -> TransportResult {
+        let preparedBody = try prepareSigningBodySource(bodySource, signers: requestSigners)
+        defer {
+            if let snapshotURL = preparedBody.snapshotURL {
+                try? FileManager.default.removeItem(at: snapshotURL)
+            }
+        }
+
+        let requestForSigning =
+            requestSigners.isEmpty ? request : request.preparingForSignedTransport()
+        let signedRequest = try await applyRequestSigners(
+            requestSigners,
+            to: requestForSigning,
+            bodySource: preparedBody.bodySource
+        )
+        let transportContext =
+            requestSigners.isEmpty ? context : context.restrictingSignedRequestSharing()
+        return try await performTransportResult(
+            request: signedRequest,
+            identityRequest: request,
+            bodySource: preparedBody.bodySource,
+            configuration: configuration,
+            context: transportContext,
+            runtime: runtime,
+            allowsRequestCoalescing: requestSigners.isEmpty
+        )
+    }
+
+    private func prepareSigningBodySource(
+        _ bodySource: BodySource,
+        signers: [RequestSigner]
+    ) throws -> (bodySource: BodySource, snapshotURL: URL?) {
+        guard !signers.isEmpty,
+            case .file(let callerURL, cleanupAfterUse: false) = bodySource
+        else {
+            return (bodySource, nil)
+        }
+
+        let snapshotURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "innonetwork.upload.snapshot.\(UUID().uuidString).\(callerURL.lastPathComponent)"
+        )
+        do {
+            try FileManager.default.copyItem(at: callerURL, to: snapshotURL)
+            return (.file(snapshotURL, cleanupAfterUse: true), snapshotURL)
+        } catch {
+            try? FileManager.default.removeItem(at: snapshotURL)
+            throw error
+        }
     }
 }
 

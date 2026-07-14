@@ -43,6 +43,7 @@ InnoNetwork	swift.enum	RFC3986Encoding
 InnoNetwork	swift.enum	ReachabilityCheckExecutionPolicy.Mode
 InnoNetwork	swift.enum	ReachabilityReason
 InnoNetwork	swift.enum	RepeatableHeader
+InnoNetwork	swift.enum	RequestBody
 InnoNetwork	swift.enum	RequestEncodingPolicy
 InnoNetwork	swift.enum	RequestPayload
 InnoNetwork	swift.enum	RequestPriority
@@ -160,6 +161,9 @@ InnoNetwork	swift.enum.case	ReachabilityReason.cannotFindHost
 InnoNetwork	swift.enum.case	ReachabilityReason.dnsLookupFailed
 InnoNetwork	swift.enum.case	ReachabilityReason.networkConnectionLost
 InnoNetwork	swift.enum.case	ReachabilityReason.notConnectedToInternet
+InnoNetwork	swift.enum.case	RequestBody.data(_:)
+InnoNetwork	swift.enum.case	RequestBody.file(_:)
+InnoNetwork	swift.enum.case	RequestBody.none
 InnoNetwork	swift.enum.case	RequestEncodingPolicy.formURLEncoded(_:rootKey:)
 InnoNetwork	swift.enum.case	RequestEncodingPolicy.json(_:)
 InnoNetwork	swift.enum.case	RequestEncodingPolicy.none
@@ -220,7 +224,7 @@ InnoNetwork	swift.enum.case	URLQueryKeyEncodingStrategy.useDefaultKeys
 InnoNetwork	swift.init	AnyEncodable.init(_:)
 InnoNetwork	swift.init	AnyRequestExecutionPolicy.init(_:)
 InnoNetwork	swift.init	AnyResponseDecoder.init(_:)
-InnoNetwork	swift.init	AuthPack.init(refreshToken:additionalSigners:additionalResponseInterceptors:additionalDecodingInterceptors:)
+InnoNetwork	swift.init	AuthPack.init(refreshToken:additionalRequestInterceptors:additionalSigners:additionalResponseInterceptors:additionalDecodingInterceptors:)
 InnoNetwork	swift.init	CachePack.init(responseCachePolicy:responseCache:captureFailurePayload:)
 InnoNetwork	swift.init	CachedResponse.init(data:statusCode:headers:storedAt:requiresRevalidation:varyHeaders:)
 InnoNetwork	swift.init	CancellationTag.init(_:)
@@ -329,7 +333,7 @@ InnoNetwork	swift.method	EventPipelineMetricsReporting.report(_:)
 InnoNetwork	swift.method	ExponentialBackoffRetryPolicy.retryDelay(for:)
 InnoNetwork	swift.method	ExponentialBackoffRetryPolicy.shouldResetAttempts(afterNetworkChangeFrom:to:)
 InnoNetwork	swift.method	ExponentialBackoffRetryPolicy.shouldRetry(error:retryIndex:request:response:)
-InnoNetwork	swift.method	HMACRequestInterceptor.adapt(_:)
+InnoNetwork	swift.method	HMACRequestInterceptor.signatureHeaders(for:body:)
 InnoNetwork	swift.method	HTTPHeaders.add(_:)
 InnoNetwork	swift.method	HTTPHeaders.add(name:value:)
 InnoNetwork	swift.method	HTTPHeaders.append(_:value:)
@@ -347,7 +351,7 @@ InnoNetwork	swift.method	InMemoryResponseCache.get(_:)
 InnoNetwork	swift.method	InMemoryResponseCache.invalidate(_:)
 InnoNetwork	swift.method	InMemoryResponseCache.invalidateTargetURI(_:)
 InnoNetwork	swift.method	InMemoryResponseCache.set(_:_:)
-InnoNetwork	swift.method	JWTBearerInterceptor.adapt(_:)
+InnoNetwork	swift.method	JWTBearerInterceptor.signatureHeaders(for:body:)
 InnoNetwork	swift.method	LowLevelNetworkClient.perform(_:)
 InnoNetwork	swift.method	LowLevelNetworkClient.perform(_:tag:)
 InnoNetwork	swift.method	LowLevelNetworkClient.perform(executable:)
@@ -396,6 +400,7 @@ InnoNetwork	swift.method	RedirectPolicy.redirect(request:response:originalReques
 InnoNetwork	swift.method	RequestExecutionNext.execute()
 InnoNetwork	swift.method	RequestExecutionPolicy.execute(input:context:next:)
 InnoNetwork	swift.method	RequestInterceptor.adapt(_:)
+InnoNetwork	swift.method	RequestSigner.signatureHeaders(for:body:)
 InnoNetwork	swift.method	Response.redactingData()
 InnoNetwork	swift.method	ResponseCache.get(_:)
 InnoNetwork	swift.method	ResponseCache.invalidate(_:)
@@ -424,6 +429,7 @@ InnoNetwork	swift.method	URLSessionProtocol.upload(for:fromFile:context:)
 InnoNetwork	swift.property	APIDefinition.parameters
 InnoNetwork	swift.property	APIDefinition.transport
 InnoNetwork	swift.property	AuthPack.additionalDecodingInterceptors
+InnoNetwork	swift.property	AuthPack.additionalRequestInterceptors
 InnoNetwork	swift.property	AuthPack.additionalResponseInterceptors
 InnoNetwork	swift.property	AuthPack.additionalSigners
 InnoNetwork	swift.property	AuthPack.refreshToken
@@ -473,6 +479,7 @@ InnoNetwork	swift.property	Endpoint.method
 InnoNetwork	swift.property	Endpoint.path
 InnoNetwork	swift.property	Endpoint.priorityOverride
 InnoNetwork	swift.property	Endpoint.requestInterceptors
+InnoNetwork	swift.property	Endpoint.requestSigners
 InnoNetwork	swift.property	Endpoint.responseInterceptors
 InnoNetwork	swift.property	Endpoint.timeoutOverride
 InnoNetwork	swift.property	Endpoint.transport
@@ -567,6 +574,7 @@ InnoNetwork	swift.property	NetworkConfiguration.refreshTokenPolicy
 InnoNetwork	swift.property	NetworkConfiguration.requestCoalescingPolicy
 InnoNetwork	swift.property	NetworkConfiguration.requestInterceptors
 InnoNetwork	swift.property	NetworkConfiguration.requestPriority
+InnoNetwork	swift.property	NetworkConfiguration.requestSigners
 InnoNetwork	swift.property	NetworkConfiguration.responseBodyBufferingPolicy
 InnoNetwork	swift.property	NetworkConfiguration.responseBodyLimit
 InnoNetwork	swift.property	NetworkConfiguration.responseCache
@@ -679,6 +687,7 @@ InnoNetwork	swift.property	SingleRequestExecutable.method
 InnoNetwork	swift.property	SingleRequestExecutable.path
 InnoNetwork	swift.property	SingleRequestExecutable.priorityOverride
 InnoNetwork	swift.property	SingleRequestExecutable.requestInterceptors
+InnoNetwork	swift.property	SingleRequestExecutable.requestSigners
 InnoNetwork	swift.property	SingleRequestExecutable.requiresRefreshTokenPolicy
 InnoNetwork	swift.property	SingleRequestExecutable.responseInterceptors
 InnoNetwork	swift.property	SingleRequestExecutable.timeoutOverride
@@ -689,6 +698,7 @@ InnoNetwork	swift.property	StreamingAPIDefinition.headers
 InnoNetwork	swift.property	StreamingAPIDefinition.method
 InnoNetwork	swift.property	StreamingAPIDefinition.path
 InnoNetwork	swift.property	StreamingAPIDefinition.requestInterceptors
+InnoNetwork	swift.property	StreamingAPIDefinition.requestSigners
 InnoNetwork	swift.property	StreamingAPIDefinition.resumePolicy
 InnoNetwork	swift.property	StreamingBufferingPolicy.maySilentlyDropOutputs
 InnoNetwork	swift.property	TraceContextInterceptor.generateWhenMissing
@@ -736,6 +746,7 @@ InnoNetwork	swift.protocol	NetworkMonitoring
 InnoNetwork	swift.protocol	RedirectPolicy
 InnoNetwork	swift.protocol	RequestExecutionPolicy
 InnoNetwork	swift.protocol	RequestInterceptor
+InnoNetwork	swift.protocol	RequestSigner
 InnoNetwork	swift.protocol	ResponseCache
 InnoNetwork	swift.protocol	ResponseInterceptor
 InnoNetwork	swift.protocol	RetryPolicy

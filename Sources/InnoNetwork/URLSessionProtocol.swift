@@ -108,7 +108,7 @@ extension URLSession: URLSessionProtocol {
 }
 
 
-private final class RequestTaskDelegate: NSObject, URLSessionTaskDelegate {
+private final class RequestTaskDelegate: NSObject, URLSessionDataDelegate {
     private let request: URLRequest
     private let context: NetworkRequestContext
     private let trustFailureReasonLock = OSAllocatedUnfairLock<TrustFailureReason?>(initialState: nil)
@@ -155,6 +155,10 @@ private final class RequestTaskDelegate: NSObject, URLSessionTaskDelegate {
         newRequest: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
+        guard context.allowsAutomaticRedirects else {
+            completionHandler(nil)
+            return
+        }
         let policy = context.redirectPolicy
         let originalRequest = request
         let result = policy.redirect(
@@ -163,5 +167,14 @@ private final class RequestTaskDelegate: NSObject, URLSessionTaskDelegate {
             originalRequest: originalRequest
         )
         completionHandler(result)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        willCacheResponse proposedResponse: CachedURLResponse,
+        completionHandler: @escaping (CachedURLResponse?) -> Void
+    ) {
+        completionHandler(context.allowsURLCacheStorage ? proposedResponse : nil)
     }
 }

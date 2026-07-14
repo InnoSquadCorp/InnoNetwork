@@ -215,6 +215,7 @@ expected_provisionally=(
 '`PersistentResponseCache` statistics and telemetry surfaces'
 '`WebSocketError.unsupportedProtocolFeature`'
 '`WebSocketProtocolFeature`'
+'`RequestSigner` and `RequestBody` late body-aware signing contract'
 '`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens'
 '`InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing'
 '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`'
@@ -333,6 +334,8 @@ expected_shipping_public_declarations=(
   RequestExecutionPolicy
   RequestInterceptor
   RequestPriority
+  RequestBody
+  RequestSigner
   RFC3986Encoding
   Response
   ResponseBodyBufferingPolicy
@@ -1200,15 +1203,22 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkWebSocket/WebSocketState.swift"
       continue
       ;;
+    '`RequestSigner` and `RequestBody` late body-aware signing contract')
+      require_contains 'public protocol RequestSigner: Sendable' \
+        "$repo_root/Sources/InnoNetwork/RequestSigner.swift"
+      require_contains 'public enum RequestBody: Sendable' \
+        "$repo_root/Sources/InnoNetwork/RequestSigner.swift"
+      continue
+      ;;
     '`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens')
-      require_contains 'public struct JWTBearerInterceptor: RequestInterceptor' \
+      require_contains 'public struct JWTBearerInterceptor: RequestSigner' \
         "$repo_root/Sources/InnoNetwork/Auth/JWTBearerInterceptor.swift"
       continue
       ;;
     '`InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing')
       require_contains 'name: "InnoNetworkAuthAWS"' "$repo_root/Package.swift"
       require_contains 'targets: ["InnoNetworkAuthAWS"]' "$repo_root/Package.swift"
-      require_contains 'public struct AWSSigV4Interceptor: RequestInterceptor' \
+      require_contains 'public struct AWSSigV4Interceptor: RequestSigner' \
         "$repo_root/Sources/InnoNetworkAuthAWS/AWSSigV4Interceptor.swift"
       continue
       ;;

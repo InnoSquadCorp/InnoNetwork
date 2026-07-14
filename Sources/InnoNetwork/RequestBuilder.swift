@@ -32,7 +32,24 @@ package struct RequestBuilder {
         _ executable: D,
         configuration: NetworkConfiguration
     ) throws -> BuiltRequest {
+        // Validate the target before asking the executable to materialize a
+        // payload. Multipart executables may create a temporary file from
+        // `makePayload()`; doing URL validation first prevents an invalid path
+        // from orphaning that file before the executor can install cleanup.
+        var targetURL = try EndpointPathBuilder.makeURL(
+            baseURL: configuration.baseURL,
+            endpointPath: executable.path,
+            allowsInsecureHTTP: configuration.allowsInsecureHTTP
+        )
         let payload = try executable.makePayload()
+        var didTransferPayloadOwnership = false
+        defer {
+            if !didTransferPayloadOwnership,
+                case .temporaryFileURL(let temporaryURL, _) = payload
+            {
+                try? FileManager.default.removeItem(at: temporaryURL)
+            }
+        }
 
         // GET requests with a body are accepted by some servers and silently
         // dropped by others; reject them so the caller is forced to use a
@@ -43,11 +60,6 @@ package struct RequestBuilder {
                     "HTTP GET requests must not carry a request body. Use POST or PUT for body-bearing endpoints."))
         }
 
-        var targetURL = try EndpointPathBuilder.makeURL(
-            baseURL: configuration.baseURL,
-            endpointPath: executable.path,
-            allowsInsecureHTTP: configuration.allowsInsecureHTTP
-        )
         var httpBody: Data?
         var bodySource = BodySource.inline
         var bodyContentType = executable.bodyContentType
@@ -84,6 +96,7 @@ package struct RequestBuilder {
         request.allowsConstrainedNetworkAccess =
             executable.allowsConstrainedNetworkAccessOverride ?? configuration.allowsConstrainedNetworkAccess
         request.httpBody = httpBody
+        didTransferPayloadOwnership = true
         return BuiltRequest(request: request, bodySource: bodySource)
     }
 

@@ -2,8 +2,9 @@
 # product owns AWS-specific signing so the core InnoNetwork module does not
 # imply AWS SDK coverage or pull AWS-specific policy into the onboarding path.
 InnoNetworkAuthAWS	swift.init	AWSSigV4Interceptor.init(accessKeyID:secretAccessKey:region:service:sessionToken:now:)
-InnoNetworkAuthAWS	swift.method	AWSSigV4Interceptor.adapt(_:)
 InnoNetworkAuthAWS	swift.method	AWSSigV4Interceptor.canonicalRequest(for:)
+InnoNetworkAuthAWS	swift.method	AWSSigV4Interceptor.canonicalRequest(for:body:)
+InnoNetworkAuthAWS	swift.method	AWSSigV4Interceptor.signatureHeaders(for:body:)
 InnoNetworkAuthAWS	swift.method	AWSSigV4Interceptor.stringToSign(canonicalRequest:date:)
 InnoNetworkAuthAWS	swift.property	AWSSigV4Interceptor.accessKeyID
 InnoNetworkAuthAWS	swift.property	AWSSigV4Interceptor.now

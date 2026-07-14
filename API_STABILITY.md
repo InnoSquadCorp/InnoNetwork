@@ -118,6 +118,7 @@ and treat any 4.y → 4.(y+1) bump as a code-level review boundary.
 - `PersistentResponseCache` statistics and telemetry surfaces
 - `WebSocketError.unsupportedProtocolFeature`
 - `WebSocketProtocolFeature`
+- `RequestSigner` and `RequestBody` late body-aware signing contract
 - `JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens
 - `InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing
 - `StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`
@@ -248,9 +249,8 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   breaking call sites because every field defaults to `nil`.
 - `HMACRequestInterceptor` — reference HMAC body-signing interceptor
   (SHA-256 / SHA-384 / SHA-512). Header names and key id are
-  provider-tunable; the streaming-body rejection is intentional, and
-  future minors may add a streaming-aware integration without breaking
-  source compatibility for the existing initializer signature.
+  provider-tunable; data and stable file bodies are supported while opaque
+  `httpBodyStream` values remain intentionally unsupported.
 - `MultipartResponseDecoder` and `MultipartStreamingResponseDecoder` — the
   buffered API remains source-compatible; the streaming event vocabulary may
   gain additive diagnostic events as more long-lived multipart deployments are
@@ -359,8 +359,8 @@ release line.
   `NoOpNetworkLogger`, `OSLogNetworkEventObserver`, `PublicAuthScope`,
   `RedirectPolicy`, `RefreshFailureCooldown`, `RefreshTokenPolicy`,
   `RequestCoalescingPolicy`, `RequestEncodingPolicy`,
-  `RequestPriority`,
-  `RequestInterceptor`, `Response`, `ResponseCache`, `ResponseCacheKey`,
+  `RequestPriority`, `RequestBody`,
+  `RequestInterceptor`, `RequestSigner`, `Response`, `ResponseCache`, `ResponseCacheKey`,
   `RequestExecutionContext`, `RequestExecutionInput`, `RequestExecutionNext`,
   `RequestExecutionPolicy`, `ResponseBodyBufferingPolicy`,
   `ResponseCacheHeaderPolicy`, `ResponseCachePolicy`,

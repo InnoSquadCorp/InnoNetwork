@@ -34,30 +34,39 @@ extension RequestExecutor {
 
     func performTransport(
         request: URLRequest,
+        identityRequest: URLRequest,
         bodySource: BodySource,
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
         runtime: RequestExecutionRuntime,
-        requestID: UUID
+        requestID: UUID,
+        allowsRequestCoalescing: Bool
     ) async throws -> Response {
         try await executeCustomPolicies(
             request: request,
+            identityRequest: identityRequest,
             bodySource: bodySource,
             configuration: configuration,
             context: context,
             runtime: runtime,
-            requestID: requestID
+            requestID: requestID,
+            allowsRequestCoalescing: allowsRequestCoalescing
         )
     }
 
     func performTransportResult(
         request: URLRequest,
+        identityRequest: URLRequest,
         bodySource: BodySource,
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
-        runtime: RequestExecutionRuntime
+        runtime: RequestExecutionRuntime,
+        allowsRequestCoalescing: Bool
     ) async throws -> TransportResult {
-        try await runtime.circuitBreakers.prepare(request: request, policy: configuration.circuitBreakerPolicy)
+        try await runtime.circuitBreakers.prepare(
+            request: identityRequest,
+            policy: configuration.circuitBreakerPolicy
+        )
 
         // `prepare()` may have flipped a half-open probe slot to
         // `probeInFlight: true`. The await on `refreshLaneIfInProgress` and
@@ -80,9 +89,10 @@ extension RequestExecutor {
             // `Authorization` it is the actual safeguard.
             let refreshLane: UUID? = await refreshLaneIfInProgress(coordinator: runtime.refreshCoordinator)
 
-            if case .inline = bodySource,
+            if allowsRequestCoalescing,
+                case .inline = bodySource,
                 let key = RequestDedupKey(
-                    request: request,
+                    request: identityRequest,
                     policy: configuration.requestCoalescingPolicy,
                     refreshLane: refreshLane
                 )
@@ -90,6 +100,7 @@ extension RequestExecutor {
                 return try await runtime.requestCoalescer.run(key: key) {
                     try await self.transportAndRecordCircuit(
                         request: request,
+                        identityRequest: identityRequest,
                         bodySource: bodySource,
                         configuration: configuration,
                         context: context,
@@ -101,6 +112,7 @@ extension RequestExecutor {
 
             return try await transportAndRecordCircuit(
                 request: request,
+                identityRequest: identityRequest,
                 bodySource: bodySource,
                 configuration: configuration,
                 context: context,
@@ -127,7 +139,7 @@ extension RequestExecutor {
             // safely without state corruption.
             if NetworkError.isCancellation(error) {
                 await runtime.circuitBreakers.recordCancellation(
-                    request: request,
+                    request: identityRequest,
                     policy: configuration.circuitBreakerPolicy
                 )
             }
@@ -137,6 +149,7 @@ extension RequestExecutor {
 
     func transportAndRecordCircuit(
         request: URLRequest,
+        identityRequest: URLRequest,
         bodySource: BodySource,
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
@@ -151,17 +164,17 @@ extension RequestExecutor {
                 context: context
             )
             await runtime.circuitBreakers.recordStatus(
-                request: request,
+                request: identityRequest,
                 policy: policy,
                 statusCode: result.response.statusCode
             )
             return result
         } catch {
             if NetworkError.isCancellation(error) {
-                await runtime.circuitBreakers.recordCancellation(request: request, policy: policy)
+                await runtime.circuitBreakers.recordCancellation(request: identityRequest, policy: policy)
             } else {
                 await runtime.circuitBreakers.recordFailure(
-                    request: request,
+                    request: identityRequest,
                     policy: policy,
                     error: error
                 )

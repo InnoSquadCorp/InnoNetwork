@@ -100,6 +100,10 @@ public struct NetworkConfiguration: Sendable {
     /// headers, request IDs) so each ``APIDefinition`` does not have to
     /// re-declare them.
     public let requestInterceptors: [RequestInterceptor]
+    /// Header-only request signers applied after every request interceptor
+    /// and after the active refresh-token policy attaches its current token.
+    /// Configuration signers run before endpoint-level signers.
+    public let requestSigners: [RequestSigner]
     /// Response interceptors applied to **every** response, after any
     /// per-``APIDefinition`` interceptors. The order is intentionally an
     /// onion: the request chain runs outer→inner (config first), and the
@@ -241,6 +245,7 @@ public struct NetworkConfiguration: Sendable {
         package var eventMetricsReporter: (any EventPipelineMetricsReporting)?
         package var acceptableStatusCodes: Set<Int>
         package var requestInterceptors: [RequestInterceptor]
+        package var requestSigners: [RequestSigner]
         package var responseInterceptors: [ResponseInterceptor]
         package var decodingInterceptors: [DecodingInterceptor]
         package var refreshTokenPolicy: RefreshTokenPolicy?
@@ -275,6 +280,7 @@ public struct NetworkConfiguration: Sendable {
             self.eventMetricsReporter = preset.eventMetricsReporter
             self.acceptableStatusCodes = preset.acceptableStatusCodes
             self.requestInterceptors = preset.requestInterceptors
+            self.requestSigners = preset.requestSigners
             self.responseInterceptors = preset.responseInterceptors
             self.decodingInterceptors = preset.decodingInterceptors
             self.refreshTokenPolicy = preset.refreshTokenPolicy
@@ -312,6 +318,7 @@ public struct NetworkConfiguration: Sendable {
                 eventMetricsReporter: eventMetricsReporter,
                 acceptableStatusCodes: acceptableStatusCodes,
                 requestInterceptors: requestInterceptors,
+                requestSigners: requestSigners,
                 responseInterceptors: responseInterceptors,
                 decodingInterceptors: decodingInterceptors,
                 refreshTokenPolicy: refreshTokenPolicy,
@@ -411,6 +418,7 @@ public struct NetworkConfiguration: Sendable {
         eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
         acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes,
         requestInterceptors: [RequestInterceptor] = [],
+        requestSigners: [RequestSigner] = [],
         responseInterceptors: [ResponseInterceptor] = [],
         decodingInterceptors: [DecodingInterceptor] = [],
         refreshTokenPolicy: RefreshTokenPolicy? = nil,
@@ -448,6 +456,7 @@ public struct NetworkConfiguration: Sendable {
         self.eventMetricsReporter = eventMetricsReporter
         self.acceptableStatusCodes = acceptableStatusCodes
         self.requestInterceptors = requestInterceptors
+        self.requestSigners = requestSigners
         self.responseInterceptors = responseInterceptors
         self.decodingInterceptors = decodingInterceptors
         self.refreshTokenPolicy = refreshTokenPolicy
@@ -488,6 +497,7 @@ public struct NetworkConfiguration: Sendable {
         eventMetricsReporter: (any EventPipelineMetricsReporting)? = nil,
         acceptableStatusCodes: Set<Int> = NetworkConfiguration.defaultAcceptableStatusCodes,
         requestInterceptors: [RequestInterceptor] = [],
+        requestSigners: [RequestSigner] = [],
         responseInterceptors: [ResponseInterceptor] = [],
         decodingInterceptors: [DecodingInterceptor] = [],
         refreshTokenPolicy: RefreshTokenPolicy? = nil,
@@ -523,6 +533,7 @@ public struct NetworkConfiguration: Sendable {
             eventMetricsReporter: eventMetricsReporter,
             acceptableStatusCodes: acceptableStatusCodes,
             requestInterceptors: requestInterceptors,
+            requestSigners: requestSigners,
             responseInterceptors: responseInterceptors,
             decodingInterceptors: decodingInterceptors,
             refreshTokenPolicy: refreshTokenPolicy,

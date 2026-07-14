@@ -11,7 +11,7 @@ import Foundation
 /// ```swift
 /// let configuration = NetworkConfiguration.advanced(
 ///     baseURL: baseURL,
-///     auth: AuthPack(additionalSigners: [CorrelationIDInterceptor()])
+///     auth: AuthPack(additionalRequestInterceptors: [CorrelationIDInterceptor()])
 /// )
 ///
 /// NetworkContext.$current.withValue(

@@ -222,7 +222,7 @@ struct InterceptorChainTests {
         let configuration = NetworkConfiguration.advanced(
             baseURL: URL(string: "https://api.example.com/v1")!,
             auth: AuthPack(
-                additionalSigners: [HeaderStampingInterceptor(label: "adv-req", recorder: recorder)],
+                additionalRequestInterceptors: [HeaderStampingInterceptor(label: "adv-req", recorder: recorder)],
                 additionalResponseInterceptors: [ResponseStampingInterceptor(label: "adv-res", recorder: recorder)]
             )
         )

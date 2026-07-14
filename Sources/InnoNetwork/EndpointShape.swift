@@ -50,6 +50,12 @@ public protocol Endpoint: Sendable {
     /// The default implementation returns an empty array.
     var requestInterceptors: [RequestInterceptor] { get }
 
+    /// Endpoint-level signers that run after every request interceptor and
+    /// after the active refresh-token policy applies its token.
+    ///
+    /// The default implementation returns an empty array.
+    var requestSigners: [RequestSigner] { get }
+
     /// Endpoint-level response adapters that run before configuration-level
     /// response interceptors and before status-code validation.
     ///
@@ -104,6 +110,9 @@ public extension Endpoint {
 
     /// Default empty request-interceptor chain.
     var requestInterceptors: [RequestInterceptor] { [] }
+
+    /// Default empty late request-signer chain.
+    var requestSigners: [RequestSigner] { [] }
 
     /// Default empty response-interceptor chain.
     var responseInterceptors: [ResponseInterceptor] { [] }

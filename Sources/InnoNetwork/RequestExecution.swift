@@ -39,6 +39,8 @@ import OSLog
     var logger: NetworkLogger { get }
     /// Request interceptors applied before the transport executes.
     var requestInterceptors: [RequestInterceptor] { get }
+    /// Header-only request signers applied after interceptors and auth refresh.
+    var requestSigners: [RequestSigner] { get }
     /// Response interceptors applied after the transport completes.
     var responseInterceptors: [ResponseInterceptor] { get }
     /// HTTP method used for the outgoing request.
@@ -104,6 +106,8 @@ import OSLog
     /// ``RequestPayload/data(_:)`` or file payloads should override this when
     /// they want InnoNetwork to set `Content-Type`.
     var bodyContentType: String? { nil }
+    /// Default executable contracts do not add late request signers.
+    var requestSigners: [RequestSigner] { [] }
     /// Default executable contracts are public unless their adapter opts into
     /// the auth-required lane.
     var requiresRefreshTokenPolicy: Bool { false }
@@ -128,6 +132,7 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
 
     package var logger: NetworkLogger { base.logger }
     package var requestInterceptors: [RequestInterceptor] { base.requestInterceptors }
+    package var requestSigners: [RequestSigner] { base.requestSigners }
     package var responseInterceptors: [ResponseInterceptor] { base.responseInterceptors }
     package var method: HTTPMethod { base.method }
     package var path: String { base.path }
@@ -204,6 +209,7 @@ package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: S
 
     package var logger: NetworkLogger { base.logger }
     package var requestInterceptors: [RequestInterceptor] { base.requestInterceptors }
+    package var requestSigners: [RequestSigner] { base.requestSigners }
     package var responseInterceptors: [ResponseInterceptor] { base.responseInterceptors }
     package var method: HTTPMethod { base.method }
     package var path: String { base.path }

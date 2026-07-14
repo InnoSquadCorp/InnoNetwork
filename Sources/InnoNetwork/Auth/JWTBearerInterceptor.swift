@@ -1,7 +1,7 @@
 import Foundation
 
-/// `RequestInterceptor` that attaches a JWT bearer token to outgoing
-/// requests through the standard `Authorization: Bearer <token>` header.
+/// Late authentication-header provider that attaches a request-minted JWT
+/// through the standard `Authorization: Bearer <token>` header.
 ///
 /// Use this interceptor for the **request-minted** lane only — backends
 /// where the JWT claims include the request method/path or otherwise
@@ -36,7 +36,13 @@ import Foundation
 /// is delegated to the caller because the algorithm matrix
 /// (HS256/RS256/ES256/EdDSA) and the claims set are application-specific
 /// and outside the scope of a generic networking library.
-public struct JWTBearerInterceptor: RequestInterceptor {
+///
+/// Despite its legacy `Interceptor` suffix, this type conforms to
+/// ``RequestSigner`` in 5.0. The header is produced after ordinary request
+/// interceptors and refresh-token adaptation, so the token provider observes
+/// the final URL and method. If both a refresh policy and this provider are
+/// configured, this later request-minted JWT intentionally wins.
+public struct JWTBearerInterceptor: RequestSigner {
     /// Closure that mints the JWT for a given request. Invoked once per
     /// request attempt; rate-limit and cache inside the closure if the
     /// minting cost is non-trivial.
@@ -70,10 +76,14 @@ public struct JWTBearerInterceptor: RequestInterceptor {
         self.tokenProvider = tokenProvider
     }
 
-    public func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
-        var request = urlRequest
-        let token = try await tokenProvider(urlRequest)
-        request.setValue("\(scheme) \(token)", forHTTPHeaderField: headerName)
-        return request
+    public func signatureHeaders(
+        for request: URLRequest,
+        body: RequestBody
+    ) async throws -> HTTPHeaders {
+        _ = body
+        let token = try await tokenProvider(request)
+        return HTTPHeaders([
+            HTTPHeader(name: headerName, value: "\(scheme) \(token)")
+        ])
     }
 }

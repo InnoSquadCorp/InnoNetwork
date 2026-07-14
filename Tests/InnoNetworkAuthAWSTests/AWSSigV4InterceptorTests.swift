@@ -41,6 +41,19 @@ struct AWSSigV4InterceptorTests {
         )
     }
 
+    private static func signedRequest(
+        _ request: URLRequest,
+        using signer: AWSSigV4Interceptor,
+        body: RequestBody = .none
+    ) async throws -> URLRequest {
+        let headers = try await signer.signatureHeaders(for: request, body: body)
+        var signed = request
+        for header in headers {
+            signed.setValue(header.value, forHTTPHeaderField: header.name)
+        }
+        return signed
+    }
+
     @Test
     func getVanillaMatchesPublishedVector() async throws {
         let interceptor = Self.makeInterceptor()
@@ -74,7 +87,7 @@ struct AWSSigV4InterceptorTests {
             ) == expectedStringToSign
         )
 
-        let signed = try await interceptor.adapt(request)
+        let signed = try await Self.signedRequest(request, using: interceptor)
         let authorization = signed.value(forHTTPHeaderField: "Authorization")
         #expect(
             authorization
@@ -130,7 +143,7 @@ struct AWSSigV4InterceptorTests {
             """
         #expect(interceptor.canonicalRequest(for: request) == expectedCanonical)
 
-        let signed = try await interceptor.adapt(request)
+        let signed = try await Self.signedRequest(request, using: interceptor)
         #expect(
             signed.value(forHTTPHeaderField: "Authorization")
                 == "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, SignedHeaders=host;x-amz-date, Signature=5da7c1a2acd57cee7505fc6676e4e544621c30862966e37dddb68e92efbe5d6b"
@@ -150,7 +163,7 @@ struct AWSSigV4InterceptorTests {
         var request = URLRequest(url: URL(string: "https://example.amazonaws.com/")!)
         request.httpMethod = "GET"
 
-        let signed = try await interceptor.adapt(request)
+        let signed = try await Self.signedRequest(request, using: interceptor)
         #expect(signed.value(forHTTPHeaderField: "X-Amz-Security-Token") == "session/token/abc")
     }
 
@@ -166,12 +179,12 @@ struct AWSSigV4InterceptorTests {
         var request = URLRequest(url: URL(string: "https://localhost:9000/bucket")!)
         request.httpMethod = "GET"
 
-        let signed = try await interceptor.adapt(request)
+        let signed = try await Self.signedRequest(request, using: interceptor)
         #expect(signed.value(forHTTPHeaderField: "Host") == "localhost:9000")
 
         var requestDefaultPort = URLRequest(url: URL(string: "https://example.amazonaws.com:443/")!)
         requestDefaultPort.httpMethod = "GET"
-        let signedDefault = try await interceptor.adapt(requestDefaultPort)
+        let signedDefault = try await Self.signedRequest(requestDefaultPort, using: interceptor)
         #expect(signedDefault.value(forHTTPHeaderField: "Host") == "example.amazonaws.com")
     }
 
@@ -207,14 +220,51 @@ struct AWSSigV4InterceptorTests {
     }
 
     @Test
-    func streamingBodyIsRejected() async throws {
-        let interceptor = Self.makeInterceptor()
+    func s3EmitsPayloadHashForEmptyDataAndFileBodies() async throws {
+        let interceptor = AWSSigV4Interceptor(
+            accessKeyID: "AKIDEXAMPLE",
+            secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "s3",
+            now: { Self.fixedDate }
+        )
         var request = URLRequest(url: URL(string: "https://example.amazonaws.com/")!)
         request.httpMethod = "PUT"
-        request.httpBodyStream = InputStream(data: Data("payload".utf8))
 
-        await #expect(throws: NetworkError.self) {
-            _ = try await interceptor.adapt(request)
-        }
+        let empty = try await Self.signedRequest(request, using: interceptor)
+        #expect(
+            empty.value(forHTTPHeaderField: "X-Amz-Content-SHA256")
+                == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        )
+        #expect(empty.value(forHTTPHeaderField: "Authorization")?.contains("x-amz-content-sha256") == true)
+
+        let payload = Data("hello".utf8)
+        let dataSigned = try await Self.signedRequest(request, using: interceptor, body: .data(payload))
+        #expect(
+            dataSigned.value(forHTTPHeaderField: "X-Amz-Content-SHA256")
+                == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        )
+        var canonicalInput = request
+        canonicalInput.setValue("example.amazonaws.com", forHTTPHeaderField: "Host")
+        canonicalInput.setValue("20150830T123600Z", forHTTPHeaderField: "X-Amz-Date")
+        let dataCanonical = try interceptor.canonicalRequest(for: canonicalInput, body: .data(payload))
+        #expect(
+            dataCanonical.contains(
+                "x-amz-content-sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            )
+        )
+        #expect(dataCanonical.contains("host;x-amz-content-sha256"))
+
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try payload.write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let fileSigned = try await Self.signedRequest(request, using: interceptor, body: .file(fileURL))
+        #expect(
+            fileSigned.value(forHTTPHeaderField: "X-Amz-Content-SHA256")
+                == dataSigned.value(forHTTPHeaderField: "X-Amz-Content-SHA256")
+        )
+        #expect(
+            fileSigned.value(forHTTPHeaderField: "Authorization")
+                == dataSigned.value(forHTTPHeaderField: "Authorization"))
     }
 }

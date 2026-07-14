@@ -229,6 +229,8 @@ package struct StreamingExecutor: Sendable {
                 urlRequest,
                 sessionInterceptors: configuration.requestInterceptors,
                 endpointInterceptors: request.requestInterceptors,
+                sessionSigners: configuration.requestSigners,
+                endpointSigners: request.requestSigners,
                 refreshCoordinator: executionRuntime.refreshCoordinator
             )
             retryRequest = urlRequest
@@ -244,7 +246,7 @@ package struct StreamingExecutor: Sendable {
                 observers: configuration.eventObservers
             )
 
-            let context = NetworkRequestContext(
+            let baseContext = NetworkRequestContext(
                 requestID: requestID,
                 retryIndex: retryIndex,
                 metricsReporter: configuration.metricsReporter,
@@ -252,6 +254,10 @@ package struct StreamingExecutor: Sendable {
                 eventObservers: configuration.eventObservers,
                 redirectPolicy: configuration.redirectPolicy
             )
+            let hasRequestSigners =
+                !configuration.requestSigners.isEmpty || !request.requestSigners.isEmpty
+            let context =
+                hasRequestSigners ? baseContext.restrictingSignedRequestSharing() : baseContext
             attemptStartedAt = Date()
             let bytes: URLSession.AsyncBytes
             let response: URLResponse
@@ -595,6 +601,8 @@ package struct StreamingExecutor: Sendable {
         _ urlRequest: URLRequest,
         sessionInterceptors: [RequestInterceptor],
         endpointInterceptors: [RequestInterceptor],
+        sessionSigners: [RequestSigner],
+        endpointSigners: [RequestSigner],
         refreshCoordinator: RefreshTokenCoordinator?
     ) async throws -> URLRequest {
         var current = urlRequest
@@ -607,7 +615,26 @@ package struct StreamingExecutor: Sendable {
         if let refreshCoordinator {
             current = try await refreshCoordinator.applyCurrentToken(to: current)
         }
+        guard !sessionSigners.isEmpty || !endpointSigners.isEmpty else {
+            return current
+        }
+        current = current.preparingForSignedTransport()
+        let body = try BodySource.inline.signingBody(for: current)
+        for signer in sessionSigners {
+            let headers = try await signer.signatureHeaders(for: current, body: body)
+            Self.apply(headers: headers, to: &current)
+        }
+        for signer in endpointSigners {
+            let headers = try await signer.signatureHeaders(for: current, body: body)
+            Self.apply(headers: headers, to: &current)
+        }
         return current
+    }
+
+    private static func apply(headers: HTTPHeaders, to request: inout URLRequest) {
+        for header in headers {
+            request.setValue(header.value, forHTTPHeaderField: header.name)
+        }
     }
 
     private static func mapTransportError(

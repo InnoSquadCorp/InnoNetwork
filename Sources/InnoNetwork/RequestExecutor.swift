@@ -21,6 +21,7 @@ struct ConditionalRevalidationContext {
 private struct PreparedExecutionRequest {
     var request: URLRequest
     let bodySource: BodySource
+    let requestSigners: [RequestSigner]
     let cleanupFileURL: URL?
     let context: NetworkRequestContext
 }
@@ -117,44 +118,57 @@ package struct RequestExecutor {
         } else {
             cleanupFileURL = nil
         }
+        do {
+            configuration.idempotencyKeyPolicy.apply(to: &request, requestID: requestID)
+            await notifyRequestStart(
+                request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
 
-        configuration.idempotencyKeyPolicy.apply(to: &request, requestID: requestID)
-        await notifyRequestStart(
-            request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
+            // Onion model: session-level interceptors run first (outer), then
+            // per-request interceptors (inner). Cross-cutting concerns declared on
+            // NetworkConfiguration apply to every endpoint; per-APIDefinition
+            // interceptors layer on top.
+            for interceptor in configuration.requestInterceptors {
+                request = try await interceptor.adapt(request)
+            }
+            for interceptor in executable.requestInterceptors {
+                request = try await interceptor.adapt(request)
+            }
+            if let refreshCoordinator = runtime.refreshCoordinator {
+                request = try await refreshCoordinator.applyCurrentToken(to: request)
+            }
 
-        // Onion model: session-level interceptors run first (outer), then
-        // per-request interceptors (inner). Cross-cutting concerns declared on
-        // NetworkConfiguration apply to every endpoint; per-APIDefinition
-        // interceptors layer on top.
-        for interceptor in configuration.requestInterceptors {
-            request = try await interceptor.adapt(request)
+            let requestSigners = configuration.requestSigners + executable.requestSigners
+            await notifyRequestAdapted(
+                request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
+
+            executable.logger.log(request: request)
+
+            let context = NetworkRequestContext(
+                requestID: requestID,
+                retryIndex: retryIndex,
+                metricsReporter: configuration.metricsReporter,
+                trustPolicy: configuration.trustPolicy,
+                eventObservers: configuration.eventObservers,
+                redirectPolicy: configuration.redirectPolicy
+            )
+
+            return PreparedExecutionRequest(
+                request: request,
+                bodySource: built.bodySource,
+                requestSigners: requestSigners,
+                cleanupFileURL: cleanupFileURL,
+                context: context
+            )
+        } catch {
+            // Preparation may already have materialized a multipart temp file.
+            // `execute` cannot install its defer
+            // until this method returns, so failures/cancellation from an
+            // interceptor, token provider, or signer must clean up here.
+            if let cleanupFileURL {
+                try? FileManager.default.removeItem(at: cleanupFileURL)
+            }
+            throw error
         }
-        for interceptor in executable.requestInterceptors {
-            request = try await interceptor.adapt(request)
-        }
-        if let refreshCoordinator = runtime.refreshCoordinator {
-            request = try await refreshCoordinator.applyCurrentToken(to: request)
-        }
-        await notifyRequestAdapted(
-            request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
-
-        executable.logger.log(request: request)
-
-        let context = NetworkRequestContext(
-            requestID: requestID,
-            retryIndex: retryIndex,
-            metricsReporter: configuration.metricsReporter,
-            trustPolicy: configuration.trustPolicy,
-            eventObservers: configuration.eventObservers,
-            redirectPolicy: configuration.redirectPolicy
-        )
-
-        return PreparedExecutionRequest(
-            request: request,
-            bodySource: built.bodySource,
-            cleanupFileURL: cleanupFileURL,
-            context: context
-        )
     }
 
     @inline(__always)
@@ -168,6 +182,7 @@ package struct RequestExecutor {
         var networkResponse = try await executeWithPolicies(
             request: prepared.request,
             bodySource: prepared.bodySource,
+            requestSigners: prepared.requestSigners,
             configuration: configuration,
             context: prepared.context,
             runtime: runtime,

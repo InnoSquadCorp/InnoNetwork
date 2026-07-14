@@ -116,6 +116,12 @@ public struct NetworkRequestContext: Sendable {
     public let trustPolicy: TrustPolicy
     public let eventObservers: [any NetworkEventObserving]
     public let redirectPolicy: any RedirectPolicy
+    /// Signed requests cannot follow a URLSession-generated redirect because
+    /// the follow-up URL/method would not pass through the async signer stage.
+    package let allowsAutomaticRedirects: Bool
+    /// Signed requests must not enter URLSession's shared response cache until
+    /// the signer contract can contribute a stable principal partition.
+    package let allowsURLCacheStorage: Bool
 
     public init(
         requestID: UUID = UUID(),
@@ -131,5 +137,40 @@ public struct NetworkRequestContext: Sendable {
         self.trustPolicy = trustPolicy
         self.eventObservers = eventObservers
         self.redirectPolicy = redirectPolicy
+        self.allowsAutomaticRedirects = true
+        self.allowsURLCacheStorage = true
+    }
+
+    package init(
+        requestID: UUID,
+        retryIndex: Int,
+        metricsReporter: (any NetworkMetricsReporting)?,
+        trustPolicy: TrustPolicy,
+        eventObservers: [any NetworkEventObserving],
+        redirectPolicy: any RedirectPolicy,
+        allowsAutomaticRedirects: Bool,
+        allowsURLCacheStorage: Bool
+    ) {
+        self.requestID = requestID
+        self.retryIndex = retryIndex
+        self.metricsReporter = metricsReporter
+        self.trustPolicy = trustPolicy
+        self.eventObservers = eventObservers
+        self.redirectPolicy = redirectPolicy
+        self.allowsAutomaticRedirects = allowsAutomaticRedirects
+        self.allowsURLCacheStorage = allowsURLCacheStorage
+    }
+
+    package func restrictingSignedRequestSharing() -> NetworkRequestContext {
+        NetworkRequestContext(
+            requestID: requestID,
+            retryIndex: retryIndex,
+            metricsReporter: metricsReporter,
+            trustPolicy: trustPolicy,
+            eventObservers: eventObservers,
+            redirectPolicy: redirectPolicy,
+            allowsAutomaticRedirects: false,
+            allowsURLCacheStorage: false
+        )
     }
 }

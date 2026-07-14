@@ -15,6 +15,8 @@ private final class FileAwareMockSession: URLSessionProtocol, Sendable {
         var capturedFileURL: URL?
         var capturedFileBytes: Data?
         var capturedRequest: URLRequest?
+        var capturedAllowsAutomaticRedirects: Bool?
+        var capturedAllowsURLCacheStorage: Bool?
     }
 
     private let lock: OSAllocatedUnfairLock<State>
@@ -26,13 +28,17 @@ private final class FileAwareMockSession: URLSessionProtocol, Sendable {
                 statusCode: statusCode,
                 capturedFileURL: nil,
                 capturedFileBytes: nil,
-                capturedRequest: nil
+                capturedRequest: nil,
+                capturedAllowsAutomaticRedirects: nil,
+                capturedAllowsURLCacheStorage: nil
             ))
     }
 
     var capturedFileURL: URL? { lock.withLock { $0.capturedFileURL } }
     var capturedFileBytes: Data? { lock.withLock { $0.capturedFileBytes } }
     var capturedRequest: URLRequest? { lock.withLock { $0.capturedRequest } }
+    var capturedAllowsAutomaticRedirects: Bool? { lock.withLock { $0.capturedAllowsAutomaticRedirects } }
+    var capturedAllowsURLCacheStorage: Bool? { lock.withLock { $0.capturedAllowsURLCacheStorage } }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         let snapshot = lock.withLock { state -> (Data, Int) in
@@ -56,6 +62,8 @@ private final class FileAwareMockSession: URLSessionProtocol, Sendable {
         let bytes = try Data(contentsOf: fileURL)
         let snapshot = lock.withLock { state -> (Data, Int) in
             state.capturedRequest = request
+            state.capturedAllowsAutomaticRedirects = context.allowsAutomaticRedirects
+            state.capturedAllowsURLCacheStorage = context.allowsURLCacheStorage
             state.capturedFileURL = fileURL
             state.capturedFileBytes = bytes
             return (state.responseData, state.statusCode)
@@ -117,6 +125,94 @@ private struct EchoResponse: Sendable, Equatable {
 }
 
 
+private struct FileMutationSigner: RequestSigner {
+    let callerURL: URL
+    let replacement: Data
+
+    func signatureHeaders(for request: URLRequest, body: RequestBody) async throws -> HTTPHeaders {
+        _ = request
+        guard case .file(let snapshotURL) = body else {
+            throw NetworkError.configuration(reason: .invalidRequest("Expected a file signing body."))
+        }
+        let snapshotBytes = try Data(contentsOf: snapshotURL)
+        try replacement.write(to: callerURL, options: .atomic)
+        return ["X-Snapshot-Bytes": snapshotBytes.base64EncodedString()]
+    }
+}
+
+
+private struct IntentionalSignerFailure: Error, Sendable {}
+
+
+private final class SigningBodyURLRecorder: Sendable {
+    private let lock = OSAllocatedUnfairLock<URL?>(initialState: nil)
+
+    func record(_ url: URL) { lock.withLock { $0 = url } }
+    var url: URL? { lock.withLock { $0 } }
+}
+
+
+private struct ThrowingFileSigner: RequestSigner {
+    let recorder: SigningBodyURLRecorder
+
+    func signatureHeaders(for request: URLRequest, body: RequestBody) async throws -> HTTPHeaders {
+        _ = request
+        if case .file(let fileURL) = body {
+            recorder.record(fileURL)
+        }
+        throw IntentionalSignerFailure()
+    }
+}
+
+
+private actor BlockingFileSigner: RequestSigner {
+    private var bodyURL: URL?
+    private var didStart = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func signatureHeaders(for request: URLRequest, body: RequestBody) async throws -> HTTPHeaders {
+        _ = request
+        if case .file(let fileURL) = body {
+            bodyURL = fileURL
+        }
+        didStart = true
+        let pending = startWaiters
+        startWaiters.removeAll()
+        pending.forEach { $0.resume() }
+        try await Task.sleep(for: .seconds(60))
+        return [:]
+    }
+
+    func waitUntilStarted() async {
+        guard !didStart else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    var capturedBodyURL: URL? { bodyURL }
+}
+
+
+private struct InvalidGETTemporaryFileExecutable: SingleRequestExecutable {
+    typealias APIResponse = EchoResponse
+
+    let fileURL: URL
+    var logger: NetworkLogger { NoOpNetworkLogger() }
+    var requestInterceptors: [RequestInterceptor] { [] }
+    var responseInterceptors: [ResponseInterceptor] { [] }
+    var method: HTTPMethod { .get }
+    var path: String { "/invalid-upload" }
+    var headers: HTTPHeaders { HTTPHeaders() }
+
+    func makePayload() throws -> RequestPayload {
+        .temporaryFileURL(fileURL, contentType: "application/octet-stream")
+    }
+
+    func decode(data: Data, response: Response) throws -> EchoResponse {
+        EchoResponse(byteCount: data.count)
+    }
+}
+
+
 @Suite("File Upload Tests")
 struct FileUploadTests {
 
@@ -152,6 +248,8 @@ struct FileUploadTests {
         let expected = try Data(contentsOf: payloadURL)
         #expect(captured == expected)
         #expect(FileManager.default.fileExists(atPath: payloadURL.path))
+        #expect(session.capturedAllowsAutomaticRedirects == true)
+        #expect(session.capturedAllowsURLCacheStorage == true)
         // Content-Type was overridden by the .fileURL contentType.
         #expect(session.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == formData.contentTypeHeader)
     }
@@ -249,5 +347,166 @@ struct FileUploadTests {
         } catch {
             Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
         }
+    }
+
+    @Test("Signed caller file uses one private snapshot for hashing and upload")
+    func signedCallerFileUsesStableSnapshot() async throws {
+        let callerURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "signed-caller-\(UUID().uuidString).bin"
+        )
+        let original = Data("original wire bytes".utf8)
+        let replacement = Data("mutated after signing".utf8)
+        try original.write(to: callerURL)
+        defer { try? FileManager.default.removeItem(at: callerURL) }
+
+        let session = FileAwareMockSession()
+        let signer = FileMutationSigner(callerURL: callerURL, replacement: replacement)
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                requestSigners: [signer]
+            ),
+            session: session
+        )
+
+        _ = try await client.perform(
+            executable: FileUploadTestExecutable(
+                fileURL: callerURL,
+                contentType: "application/octet-stream",
+                payloadStrategy: .file
+            )
+        )
+
+        let snapshotURL = try #require(session.capturedFileURL)
+        #expect(snapshotURL != callerURL)
+        #expect(session.capturedFileBytes == original)
+        #expect(
+            session.capturedRequest?.value(forHTTPHeaderField: "X-Snapshot-Bytes") == original.base64EncodedString())
+        #expect(try Data(contentsOf: callerURL) == replacement)
+        #expect(FileManager.default.fileExists(atPath: callerURL.path))
+        #expect(!FileManager.default.fileExists(atPath: snapshotURL.path))
+        #expect(session.capturedAllowsAutomaticRedirects == false)
+        #expect(session.capturedAllowsURLCacheStorage == false)
+        #expect(session.capturedRequest?.cachePolicy == .reloadIgnoringLocalCacheData)
+        #expect(session.capturedRequest?.value(forHTTPHeaderField: "Cache-Control") == "no-store")
+    }
+
+    @Test("Caller snapshot is removed when a signer throws without removing the caller file")
+    func callerSnapshotCleansUpAfterSignerFailure() async throws {
+        let callerURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "signer-failure-caller-\(UUID().uuidString).bin"
+        )
+        try Data("caller-owned".utf8).write(to: callerURL)
+        defer { try? FileManager.default.removeItem(at: callerURL) }
+        let recorder = SigningBodyURLRecorder()
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                requestSigners: [ThrowingFileSigner(recorder: recorder)]
+            ),
+            session: FileAwareMockSession()
+        )
+
+        await #expect(throws: NetworkError.self) {
+            _ = try await client.perform(
+                executable: FileUploadTestExecutable(
+                    fileURL: callerURL,
+                    contentType: "application/octet-stream",
+                    payloadStrategy: .file
+                )
+            )
+        }
+
+        let snapshotURL = try #require(recorder.url)
+        #expect(snapshotURL != callerURL)
+        #expect(!FileManager.default.fileExists(atPath: snapshotURL.path))
+        #expect(FileManager.default.fileExists(atPath: callerURL.path))
+    }
+
+    @Test("Library temporary file is removed when a signer throws")
+    func temporaryFileCleansUpAfterSignerFailure() async throws {
+        let temporaryURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "signer-failure-temporary-\(UUID().uuidString).bin"
+        )
+        try Data("library-owned".utf8).write(to: temporaryURL)
+        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+        let recorder = SigningBodyURLRecorder()
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                requestSigners: [ThrowingFileSigner(recorder: recorder)]
+            ),
+            session: FileAwareMockSession()
+        )
+
+        await #expect(throws: NetworkError.self) {
+            _ = try await client.perform(
+                executable: FileUploadTestExecutable(
+                    fileURL: temporaryURL,
+                    contentType: "application/octet-stream",
+                    payloadStrategy: .temporaryFile
+                )
+            )
+        }
+
+        #expect(recorder.url == temporaryURL)
+        #expect(!FileManager.default.fileExists(atPath: temporaryURL.path))
+    }
+
+    @Test("Caller snapshot is removed when signing is cancelled")
+    func callerSnapshotCleansUpAfterSignerCancellation() async throws {
+        let callerURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "signer-cancel-caller-\(UUID().uuidString).bin"
+        )
+        try Data("caller-owned".utf8).write(to: callerURL)
+        defer { try? FileManager.default.removeItem(at: callerURL) }
+        let signer = BlockingFileSigner()
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                requestSigners: [signer]
+            ),
+            session: FileAwareMockSession()
+        )
+        let executable = FileUploadTestExecutable(
+            fileURL: callerURL,
+            contentType: "application/octet-stream",
+            payloadStrategy: .file
+        )
+
+        let task = Task { try await client.perform(executable: executable) }
+        await signer.waitUntilStarted()
+        let snapshotURL = try #require(await signer.capturedBodyURL)
+        task.cancel()
+        do {
+            _ = try await task.value
+            Issue.record("Expected signing cancellation")
+        } catch {
+            #expect(NetworkError.isCancellation(error))
+        }
+
+        #expect(!FileManager.default.fileExists(atPath: snapshotURL.path))
+        #expect(FileManager.default.fileExists(atPath: callerURL.path))
+    }
+
+    @Test("Builder removes a temporary payload when validation fails before preparation returns")
+    func builderScopeCleansTemporaryPayload() async throws {
+        let temporaryURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "builder-failure-temporary-\(UUID().uuidString).bin"
+        )
+        try Data("temporary".utf8).write(to: temporaryURL)
+        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: FileAwareMockSession()
+        )
+
+        await #expect(throws: NetworkError.self) {
+            _ = try await client.perform(
+                executable: InvalidGETTemporaryFileExecutable(fileURL: temporaryURL)
+            )
+        }
+
+        #expect(!FileManager.default.fileExists(atPath: temporaryURL.path))
     }
 }

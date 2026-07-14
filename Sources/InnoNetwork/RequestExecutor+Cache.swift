@@ -15,6 +15,7 @@ extension RequestExecutor {
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
         bodySource: BodySource,
+        requestSigners: [RequestSigner],
         runtime: RequestExecutionRuntime,
         originalRequestID: UUID
     ) async throws -> Response? {
@@ -102,6 +103,7 @@ extension RequestExecutor {
                     let result = try await revalidateInBackground(
                         request: revalidationRequest,
                         bodySource: bodySource,
+                        requestSigners: requestSigners,
                         configuration: configuration,
                         context: context,
                         runtime: runtime
@@ -197,6 +199,7 @@ extension RequestExecutor {
     func revalidateInBackground(
         request: URLRequest,
         bodySource: BodySource,
+        requestSigners: [RequestSigner],
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
         runtime: RequestExecutionRuntime
@@ -209,9 +212,10 @@ extension RequestExecutor {
             eventObservers: context.eventObservers,
             redirectPolicy: context.redirectPolicy
         )
-        return try await performTransportResult(
+        return try await performSignedTransportResult(
             request: request,
             bodySource: bodySource,
+            requestSigners: requestSigners,
             configuration: configuration,
             context: revalidationContext,
             runtime: runtime

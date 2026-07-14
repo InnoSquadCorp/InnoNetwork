@@ -151,6 +151,7 @@ public protocol StreamingAPIDefinition: Sendable {
     var path: String { get }
     var headers: HTTPHeaders { get }
     var requestInterceptors: [RequestInterceptor] { get }
+    var requestSigners: [RequestSigner] { get }
 
     /// Per-endpoint override for the set of acceptable HTTP status codes used
     /// when validating the streaming response handshake. When `nil`, falls
@@ -183,6 +184,7 @@ public protocol StreamingAPIDefinition: Sendable {
 public extension StreamingAPIDefinition {
     var headers: HTTPHeaders { HTTPHeaders() }
     var requestInterceptors: [RequestInterceptor] { [] }
+    var requestSigners: [RequestSigner] { [] }
     var acceptableStatusCodes: Set<Int>? { nil }
     var resumePolicy: StreamingResumePolicy { .disabled }
     func eventID(from output: Output) -> String? { nil }

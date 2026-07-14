@@ -60,24 +60,28 @@ public struct ResiliencePack: Sendable {
 
 /// Groups refresh-token policy and the interceptor chains.
 ///
-/// `additionalSigners`, `additionalResponseInterceptors`, and
+/// `additionalRequestInterceptors`, `additionalSigners`,
+/// `additionalResponseInterceptors`, and
 /// `additionalDecodingInterceptors` are **appended** to the builder's
 /// existing chains rather than replacing them, so the pack composes
 /// cleanly with `recommendedForProduction(baseURL:)` and other presets
 /// that already populate these slots.
 public struct AuthPack: Sendable {
     public var refreshToken: RefreshTokenPolicy?
-    public var additionalSigners: [RequestInterceptor]
+    public var additionalRequestInterceptors: [RequestInterceptor]
+    public var additionalSigners: [RequestSigner]
     public var additionalResponseInterceptors: [ResponseInterceptor]
     public var additionalDecodingInterceptors: [DecodingInterceptor]
 
     public init(
         refreshToken: RefreshTokenPolicy? = nil,
-        additionalSigners: [RequestInterceptor] = [],
+        additionalRequestInterceptors: [RequestInterceptor] = [],
+        additionalSigners: [RequestSigner] = [],
         additionalResponseInterceptors: [ResponseInterceptor] = [],
         additionalDecodingInterceptors: [DecodingInterceptor] = []
     ) {
         self.refreshToken = refreshToken
+        self.additionalRequestInterceptors = additionalRequestInterceptors
         self.additionalSigners = additionalSigners
         self.additionalResponseInterceptors = additionalResponseInterceptors
         self.additionalDecodingInterceptors = additionalDecodingInterceptors
@@ -85,8 +89,11 @@ public struct AuthPack: Sendable {
 
     package func apply(to builder: inout NetworkConfiguration.AdvancedBuilder) {
         if let refreshToken { builder.refreshTokenPolicy = refreshToken }
+        if !additionalRequestInterceptors.isEmpty {
+            builder.requestInterceptors.append(contentsOf: additionalRequestInterceptors)
+        }
         if !additionalSigners.isEmpty {
-            builder.requestInterceptors.append(contentsOf: additionalSigners)
+            builder.requestSigners.append(contentsOf: additionalSigners)
         }
         if !additionalResponseInterceptors.isEmpty {
             builder.responseInterceptors.append(contentsOf: additionalResponseInterceptors)
