@@ -61,6 +61,55 @@ struct DownloadPauseResumeTests {
         await harness.manager.cancel(task)
     }
 
+    @Test("Completion while pause awaits resume data does not revive the completed task")
+    func completionInterleavingPauseDoesNotEmitPausedOrPersistResumeData() async throws {
+        let fileManager = FileManager.default
+        let rootURL = fileManager.temporaryDirectory.appendingPathComponent(
+            "inno-pause-completion-race-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let temporaryLocation = rootURL.appendingPathComponent("download.tmp", isDirectory: false)
+        let destinationURL = rootURL.appendingPathComponent("download.bin", isDirectory: false)
+        try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data("completed-payload".utf8).write(to: temporaryLocation)
+        defer { try? fileManager.removeItem(at: rootURL) }
+
+        let harness = try StubDownloadHarness(label: "pause-completion-race")
+        let stateRecorder = PauseStateRecorder()
+        await harness.manager.setOnStateChangedHandler { _, state in
+            await stateRecorder.record(state)
+        }
+        harness.stubTask.suspendCancelByProducingResumeData()
+
+        let task = await harness.startDownload(destinationURL: destinationURL)
+        let taskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task, timeout: 5.0)
+        )
+        #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .downloading })
+
+        let pauseTask = Task {
+            await harness.manager.pause(task)
+        }
+        #expect(
+            await waitForPauseCondition {
+                harness.stubTask.pendingCancelByProducingResumeDataCount == 1
+            }
+        )
+
+        await harness.injectCompletion(taskIdentifier: taskIdentifier, location: temporaryLocation)
+        #expect(await task.state == .completed)
+
+        harness.stubTask.completeCancelByProducingResumeData(with: Data("stale-resume-data".utf8))
+        await pauseTask.value
+
+        #expect(await task.state == .completed)
+        #expect(await task.resumeData == nil)
+        #expect(await harness.store.record(forID: task.id) == nil)
+        #expect(await stateRecorder.contains(.paused) == false)
+        #expect(try Data(contentsOf: destinationURL) == Data("completed-payload".utf8))
+        await harness.manager.shutdown()
+    }
+
     @Test("Resume from paused with resumeData creates a new task via withResumeData:")
     func resumeFromPausedUsesResumeData() async throws {
         let resumedStub = StubDownloadURLTask()
@@ -188,4 +237,32 @@ struct DownloadPauseResumeTests {
         #expect(await harness.manager.task(withId: task.id) == nil)
         #expect(await harness.manager.runtimeTaskIdentifier(for: task) == nil)
     }
+}
+
+
+private actor PauseStateRecorder {
+    private var states: [DownloadState] = []
+
+    func record(_ state: DownloadState) {
+        states.append(state)
+    }
+
+    func contains(_ state: DownloadState) -> Bool {
+        states.contains(state)
+    }
+}
+
+
+private func waitForPauseCondition(
+    timeout: TimeInterval = 2.0,
+    predicate: @escaping @Sendable () async -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await predicate() {
+            return true
+        }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return await predicate()
 }

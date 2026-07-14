@@ -52,6 +52,36 @@ package struct DownloadCompletionStager: Sendable {
         try? fileManager.removeItem(at: url)
     }
 
+    /// Removes completion files orphaned by a prior process lifetime.
+    ///
+    /// The sweep is intentionally non-recursive and restricted to this
+    /// stager's generated filename shape. Directories, symbolic links, and
+    /// unrelated files in the configured base directory are never touched.
+    package func removeStaleFiles(fileManager: FileManager = .default) {
+        guard
+            let candidates = try? fileManager.contentsOfDirectory(
+                at: directoryURL,
+                includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+                options: [.skipsHiddenFiles]
+            )
+        else {
+            return
+        }
+
+        for candidate in candidates {
+            let name = candidate.lastPathComponent
+            guard name.hasPrefix("download-"), name.hasSuffix(".tmp") else { continue }
+            guard
+                let values = try? candidate.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+                values.isRegularFile == true,
+                values.isSymbolicLink != true
+            else {
+                continue
+            }
+            try? fileManager.removeItem(at: candidate)
+        }
+    }
+
     private static func defaultDirectoryURL() -> URL {
         let fileManager = FileManager.default
         let baseDirectory =

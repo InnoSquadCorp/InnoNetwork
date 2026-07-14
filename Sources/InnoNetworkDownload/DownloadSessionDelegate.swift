@@ -95,6 +95,8 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
         var progress: ProgressHandler?
         var completion: CompletionHandler?
         var invalidation: InvalidationHandler?
+        var isDrainingPendingCompletions = false
+        var pendingCompletions: [(Int, URL?, SendableUnderlyingError?)] = []
     }
 
     private let handlersLock = OSAllocatedUnfairLock<Handlers>(initialState: .init())
@@ -105,9 +107,43 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
         onProgress: @escaping ProgressHandler,
         onCompletion: @escaping CompletionHandler
     ) {
-        handlersLock.withLock {
-            $0.progress = onProgress
-            $0.completion = onCompletion
+        var pending = handlersLock.withLock { state -> [(Int, URL?, SendableUnderlyingError?)] in
+            state.progress = onProgress
+            state.completion = onCompletion
+            state.isDrainingPendingCompletions = true
+            let pending = state.pendingCompletions
+            state.pendingCompletions.removeAll(keepingCapacity: true)
+            return pending
+        }
+
+        // Preserve delegate order across the installation boundary. New
+        // completions keep buffering while this loop drains, then switch to
+        // direct delivery only after every earlier completion was delivered.
+        while true {
+            for (taskIdentifier, location, error) in pending {
+                onCompletion(taskIdentifier, location, error)
+            }
+            pending = handlersLock.withLock { state in
+                guard !state.pendingCompletions.isEmpty else {
+                    state.isDrainingPendingCompletions = false
+                    return []
+                }
+                let next = state.pendingCompletions
+                state.pendingCompletions.removeAll(keepingCapacity: true)
+                return next
+            }
+            if pending.isEmpty { break }
+        }
+    }
+
+    deinit {
+        let pendingLocations = handlersLock.withLock { state -> [URL] in
+            let locations = state.pendingCompletions.compactMap(\.1)
+            state.pendingCompletions.removeAll()
+            return locations
+        }
+        for location in pendingLocations {
+            DownloadCompletionStager.removeIfPresent(location)
         }
     }
 
@@ -136,7 +172,14 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
         location: URL?,
         error: SendableUnderlyingError?
     ) {
-        handlersLock.withLock { $0.completion }?(taskIdentifier, location, error)
+        let handler = handlersLock.withLock { state -> CompletionHandler? in
+            guard let completion = state.completion, !state.isDrainingPendingCompletions else {
+                state.pendingCompletions.append((taskIdentifier, location, error))
+                return nil
+            }
+            return completion
+        }
+        handler?(taskIdentifier, location, error)
     }
 
     package func handleInvalidation(_ error: SendableUnderlyingError?) {

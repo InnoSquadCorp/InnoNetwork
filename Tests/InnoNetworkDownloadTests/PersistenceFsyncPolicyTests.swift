@@ -154,6 +154,30 @@ struct PersistenceFsyncPolicyTests {
         #expect(DownloadConfiguration.PersistenceFsyncPolicy.always != .never)
     }
 
+    @Test("Atomic write removes its temporary file when pre-rename fsync fails")
+    func atomicWriteRemovesTemporaryFileAfterFsyncFailure() throws {
+        let fileManager = FileManager.default
+        let baseDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("inno-atomic-write-cleanup-\(UUID().uuidString)", isDirectory: true)
+        let destinationURL = baseDirectory.appendingPathComponent("checkpoint.json", isDirectory: false)
+        try fileManager.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: baseDirectory) }
+
+        #expect(throws: POSIXError.self) {
+            try AppendLogDownloadTaskStore.writeAtomically(
+                data: Data("checkpoint".utf8),
+                to: destinationURL,
+                fileManager: fileManager,
+                fsyncBeforeRename: true,
+                fsync: failFsyncWithEIO
+            )
+        }
+
+        let remainingNames = try fileManager.contentsOfDirectory(atPath: baseDirectory.path)
+        #expect(remainingNames.contains(where: { $0.hasPrefix("checkpoint.tmp-") }) == false)
+        #expect(fileManager.fileExists(atPath: destinationURL.path) == false)
+    }
+
     @Test(".always policy surfaces append fsync failures")
     func alwaysPolicyThrowsWhenAppendFsyncFails() async throws {
         let baseDirectory = FileManager.default.temporaryDirectory

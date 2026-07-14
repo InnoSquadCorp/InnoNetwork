@@ -1,6 +1,12 @@
 import Foundation
 import OSLog
 
+struct DownloadTaskLifecycleSnapshot: Sendable, Equatable {
+    let state: DownloadState
+    let generation: Int
+    let attempt: Int
+}
+
 public actor DownloadTask: Identifiable {
     public nonisolated let id: String
     public nonisolated let url: URL
@@ -134,6 +140,32 @@ public actor DownloadTask: Identifiable {
 
     func setError(_ error: DownloadError?) {
         _error = error
+    }
+
+    func lifecycleSnapshot() -> DownloadTaskLifecycleSnapshot {
+        DownloadTaskLifecycleSnapshot(
+            state: _state,
+            generation: _generation,
+            attempt: _attempt
+        )
+    }
+
+    /// Applies the pause result only when the same running attempt is still
+    /// active. `cancelByProducingResumeData()` is asynchronous, so a terminal
+    /// delegate callback or retry may advance the task while `pause(_:)` is
+    /// suspended. Keeping the comparison, resume-data assignment, and state
+    /// transition in one actor turn prevents a stale pause result from
+    /// reviving that superseded attempt.
+    func transitionToPaused(
+        resumeData: Data?,
+        ifMatching expected: DownloadTaskLifecycleSnapshot
+    ) -> Bool {
+        guard lifecycleSnapshot() == expected, _state == .downloading else {
+            return false
+        }
+        _resumeData = resumeData
+        updateState(.paused)
+        return true
     }
 
     func reset() {

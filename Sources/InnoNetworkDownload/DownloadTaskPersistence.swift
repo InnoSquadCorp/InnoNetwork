@@ -233,9 +233,26 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     }
 
     package func updateResumeData(id: String, resumeData: Data?) async throws {
-        guard let existing = state.records[id] else { return }
-        try await upsert(
-            id: existing.id, url: existing.url, destinationURL: existing.destinationURL, resumeData: resumeData)
+        try await mutate {
+            guard let existing = $0.records[id] else { return [] }
+            $0.records[id] = DownloadTaskPersistence.Record(
+                id: existing.id,
+                url: existing.url,
+                destinationURL: existing.destinationURL,
+                resumeData: resumeData
+            )
+            return [
+                Event(
+                    sequence: $0.nextSequence,
+                    timestamp: .now,
+                    kind: .upsert,
+                    taskID: existing.id,
+                    url: existing.url,
+                    destinationURL: existing.destinationURL,
+                    resumeData: resumeData
+                )
+            ]
+        }
     }
 
     package func remove(id: String) async throws {

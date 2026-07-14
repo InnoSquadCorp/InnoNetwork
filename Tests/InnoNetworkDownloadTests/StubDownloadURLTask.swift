@@ -35,6 +35,8 @@ final class StubDownloadURLTask: DownloadURLTask, @unchecked Sendable {
         var cancelCount = 0
         var cancelByProducingResumeDataCount = 0
         var cancelByProducingResumeDataResponse: Data?
+        var suspendsCancelByProducingResumeData = false
+        var pendingCancelByProducingResumeData: [CheckedContinuation<Data?, Never>] = []
     }
 
     private let stateLock: OSAllocatedUnfairLock<State>
@@ -84,10 +86,19 @@ final class StubDownloadURLTask: DownloadURLTask, @unchecked Sendable {
     }
 
     func cancelByProducingResumeData() async -> Data? {
-        stateLock.withLock { state in
-            state.cancelByProducingResumeDataCount += 1
-            state.state = .canceling
-            return state.cancelByProducingResumeDataResponse
+        await withCheckedContinuation { continuation in
+            let immediateResponse = stateLock.withLock { state -> ImmediateResumeData? in
+                state.cancelByProducingResumeDataCount += 1
+                state.state = .canceling
+                guard state.suspendsCancelByProducingResumeData else {
+                    return ImmediateResumeData(value: state.cancelByProducingResumeDataResponse)
+                }
+                state.pendingCancelByProducingResumeData.append(continuation)
+                return nil
+            }
+            if let immediateResponse {
+                continuation.resume(returning: immediateResponse.value)
+            }
         }
     }
 
@@ -99,6 +110,25 @@ final class StubDownloadURLTask: DownloadURLTask, @unchecked Sendable {
         stateLock.withLock { $0.cancelByProducingResumeDataResponse = data }
     }
 
+    /// Holds `cancelByProducingResumeData()` until the test explicitly
+    /// releases it, allowing delegate completion to interleave deterministically.
+    func suspendCancelByProducingResumeData() {
+        stateLock.withLock { $0.suspendsCancelByProducingResumeData = true }
+    }
+
+    func completeCancelByProducingResumeData(with data: Data?) {
+        let continuations = stateLock.withLock { state -> [CheckedContinuation<Data?, Never>] in
+            state.cancelByProducingResumeDataResponse = data
+            state.suspendsCancelByProducingResumeData = false
+            let continuations = state.pendingCancelByProducingResumeData
+            state.pendingCancelByProducingResumeData.removeAll()
+            return continuations
+        }
+        for continuation in continuations {
+            continuation.resume(returning: data)
+        }
+    }
+
     // MARK: Observations
 
     var resumeCount: Int { stateLock.withLock { $0.resumeCount } }
@@ -107,6 +137,14 @@ final class StubDownloadURLTask: DownloadURLTask, @unchecked Sendable {
     var cancelByProducingResumeDataCount: Int {
         stateLock.withLock { $0.cancelByProducingResumeDataCount }
     }
+    var pendingCancelByProducingResumeDataCount: Int {
+        stateLock.withLock { $0.pendingCancelByProducingResumeData.count }
+    }
+}
+
+
+private struct ImmediateResumeData: Sendable {
+    let value: Data?
 }
 
 

@@ -115,10 +115,13 @@ public actor DownloadManager {
     /// ``DownloadConfiguration/taskInactivityTimeout``. `nil` when the
     /// configuration disables the watchdog.
     var inactivityWatchdogTask: Task<Void, Never>?
-    /// Drains delegate events into actor-isolated handlers; cancelled in
-    /// ``shutdown()`` so it does not outlive the manager when callers exit
-    /// without waiting for the stream to finish naturally. Stored behind a
-    /// nonisolated lock because it is assigned from the nonisolated init.
+    /// Serializes pause production per logical task while the manager actor is
+    /// reentrant at `cancelByProducingResumeData()` and persistence awaits.
+    var pausingTaskIDs: Set<String> = []
+    /// Drains delegate events into actor-isolated handlers; finished and
+    /// awaited in ``shutdown()`` so buffered completion files are consumed
+    /// before teardown returns. Stored behind a nonisolated lock because it
+    /// is assigned from the nonisolated init.
     nonisolated private let delegateConsumerTaskHandle =
         OSAllocatedUnfairLock<Task<Void, Never>?>(initialState: nil)
     /// Runs the one-shot persistence restoration; cancelled in ``shutdown()``
@@ -177,12 +180,14 @@ public actor DownloadManager {
 
         let callbacks = DownloadSessionDelegateCallbacks()
         let backgroundCompletionStore = BackgroundCompletionStore()
+        let completionStager = DownloadCompletionStager(
+            directoryURL: DownloadCompletionStager.directoryURL(for: configuration)
+        )
+        completionStager.removeStaleFiles()
         let delegate = DownloadSessionDelegate(
             callbacks: callbacks,
             backgroundCompletionStore: backgroundCompletionStore,
-            completionStager: DownloadCompletionStager(
-                directoryURL: DownloadCompletionStager.directoryURL(for: configuration)
-            )
+            completionStager: completionStager
         )
 
         let sessionConfig = configuration.makeURLSessionConfiguration()
@@ -305,8 +310,11 @@ public actor DownloadManager {
         )
         let consumerTask: Task<Void, Never> = Task { [weak self, delegateEvents] in
             for await event in delegateEvents {
-                if Task.isCancelled { break }
-                await self?.handleDelegateEvent(event)
+                if Task.isCancelled {
+                    DownloadManager.removeStagedLocationIfNeeded(from: event)
+                    continue
+                }
+                await DownloadManager.consumeDelegateEvent(event, manager: self)
             }
         }
         delegateConsumerTaskHandle.withLock { $0 = consumerTask }
@@ -328,6 +336,19 @@ public actor DownloadManager {
                 await self?.startInactivityWatchdog(timeout: timeout)
             }
         }
+    }
+
+    static func consumeDelegateEvent(_ event: DelegateEvent, manager: DownloadManager?) async {
+        guard let manager else {
+            removeStagedLocationIfNeeded(from: event)
+            return
+        }
+        await manager.handleDelegateEvent(event)
+    }
+
+    static func removeStagedLocationIfNeeded(from event: DelegateEvent) {
+        guard case .completion(_, let location, _) = event, let location else { return }
+        DownloadCompletionStager.removeIfPresent(location)
     }
 
     public func setOnProgressHandler(_ callback: (@Sendable (DownloadTask, DownloadProgress) async -> Void)?) async {
@@ -414,21 +435,47 @@ public actor DownloadManager {
 
     public func pause(_ task: DownloadTask) async {
         guard await waitForRestore() else { return }
-        guard await task.state == .downloading else { return }
+        guard pausingTaskIDs.insert(task.id).inserted else { return }
+        defer { pausingTaskIDs.remove(task.id) }
 
-        if let urlTask = await runtimeRegistry.urlTask(for: task.id) {
-            let resumeData = await urlTask.cancelByProducingResumeData()
-            do {
-                try await persistence.updateResumeData(id: task.id, resumeData: resumeData)
-            } catch {
-                await transferCoordinator.markTaskFailedForPersistence(task, error: error)
-                return
-            }
-            await task.setResumeData(resumeData)
-            await task.updateState(.paused)
-            await runtimeRegistry.onStateChanged?(task, .paused)
-            await eventHub.publish(.stateChanged(.paused), for: task.id)
+        let expectedLifecycle = await task.lifecycleSnapshot()
+        guard expectedLifecycle.state == .downloading else { return }
+        guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else { return }
+        let expectedTaskIdentifier = urlTask.taskIdentifier
+
+        let resumeData = await urlTask.cancelByProducingResumeData()
+
+        guard await task.lifecycleSnapshot() == expectedLifecycle,
+            let currentURLTask = await runtimeRegistry.urlTask(for: task.id),
+            currentURLTask.taskIdentifier == expectedTaskIdentifier
+        else {
+            return
         }
+
+        do {
+            try await persistence.updateResumeData(id: task.id, resumeData: resumeData)
+        } catch {
+            await transferCoordinator.markTaskFailedForPersistence(task, error: error)
+            return
+        }
+
+        guard await task.transitionToPaused(resumeData: resumeData, ifMatching: expectedLifecycle) else {
+            // The persistence store may have accepted the resume payload just
+            // before a completion/retry won the race. A conditional nil update
+            // cannot recreate a removed terminal record, and prevents a live
+            // replacement attempt from inheriting stale pause data.
+            do {
+                try await persistence.updateResumeData(id: task.id, resumeData: nil)
+            } catch {
+                Self.logger.fault(
+                    "Failed to clear superseded resumeData for task \(task.id, privacy: .private(mask: .hash)): \(String(describing: error), privacy: .private(mask: .hash))"
+                )
+            }
+            return
+        }
+
+        await runtimeRegistry.onStateChanged?(task, .paused)
+        await eventHub.publish(.stateChanged(.paused), for: task.id)
     }
 
     public func resume(_ task: DownloadTask) async {
@@ -594,7 +641,11 @@ public actor DownloadManager {
         }
 
         delegateEventContinuation.finish()
-        delegateConsumerTask?.cancel()
+        // Do not cancel the consumer here. Completion locations already
+        // accepted into the stream are library-owned staging files; finishing
+        // the continuation lets the consumer drain those buffered events.
+        // Once runtime mappings are removed below, each completion takes the
+        // unknown-task cleanup path and deletes its staged file.
 
         // Cancel every in-flight URLSession task before invalidating, then
         // close the per-task event partition so listeners receive a clean

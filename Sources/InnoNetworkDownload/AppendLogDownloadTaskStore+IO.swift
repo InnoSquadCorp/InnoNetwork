@@ -27,6 +27,11 @@ extension AppendLogDownloadTaskStore {
             fileURL
             .deletingPathExtension()
             .appendingPathExtension("tmp-\(UUID().uuidString)")
+        defer {
+            if fileManager.fileExists(atPath: tempURL.path()) {
+                try? fileManager.removeItem(at: tempURL)
+            }
+        }
 
         try data.write(to: tempURL, options: .atomic)
 

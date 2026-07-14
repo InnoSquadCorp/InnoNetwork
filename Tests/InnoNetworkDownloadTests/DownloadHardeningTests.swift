@@ -106,6 +106,49 @@ struct DownloadManagerHardeningTests {
         #expect(await shutdownProbe.isCompleted)
     }
 
+    @Test("shutdown() drains a staged completion buffered behind an in-progress delegate handler")
+    func shutdownDrainsBufferedStagedCompletion() async throws {
+        let fileManager = FileManager.default
+        let stagedURL = fileManager.temporaryDirectory.appendingPathComponent(
+            "download-shutdown-buffered-\(UUID().uuidString).tmp",
+            isDirectory: false
+        )
+        try Data("buffered-completion".utf8).write(to: stagedURL)
+        defer { try? fileManager.removeItem(at: stagedURL) }
+
+        let harness = try StubDownloadHarness(label: "shutdown-buffered-completion")
+        let task = await harness.startDownload()
+        let taskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task)
+        )
+        let delegateProbe = DelegateDrainProbe()
+        await harness.manager.setOnProgressHandler { _, _ in
+            await delegateProbe.handle()
+        }
+
+        harness.injectDelegateProgress(
+            taskIdentifier: taskIdentifier,
+            bytesWritten: 1,
+            totalBytesWritten: 1,
+            totalBytesExpectedToWrite: 10
+        )
+        #expect(await waitForCondition { await delegateProbe.isStarted })
+
+        // This completion is queued behind the blocked progress callback.
+        // Its unknown task id makes the expected drain action unambiguously
+        // file cleanup rather than a transfer state transition.
+        harness.injectDelegateCompletion(taskIdentifier: Int.max, location: stagedURL)
+        let shutdownTask = Task {
+            await harness.manager.shutdown()
+        }
+        #expect(await waitForCondition { harness.stubSession.didInvalidateAndCancel })
+
+        await delegateProbe.release()
+        await shutdownTask.value
+
+        #expect(fileManager.fileExists(atPath: stagedURL.path) == false)
+    }
+
     @Test("concurrent shutdown() calls all wait for URLSession invalidation")
     func concurrentShutdownCallsWaitForInvalidationCallback() async throws {
         let harness = try StubDownloadHarness(label: "shutdown-concurrent-barrier")
@@ -293,6 +336,44 @@ private actor DelegateDrainProbe {
 
 @Suite("Download Persistence Hardening Tests")
 struct DownloadPersistenceHardeningTests {
+
+    @Test("stale store instance cannot resurrect a task while updating resume data")
+    func staleResumeDataUpdateDoesNotResurrectRemovedRecord() async throws {
+        let baseDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("inno-stale-resume-update-\(UUID().uuidString)", isDirectory: true)
+        let sessionIdentifier = "stale-resume-update"
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+
+        let writer = AppendLogDownloadTaskStore(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        try await writer.upsert(
+            id: "task",
+            url: URL(string: "https://example.invalid/file.zip")!,
+            destinationURL: baseDirectory.appendingPathComponent("file.zip"),
+            resumeData: nil
+        )
+
+        // Both actors load the record before one removes it, leaving the
+        // other actor's in-memory state intentionally stale.
+        let staleUpdater = AppendLogDownloadTaskStore(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        let remover = AppendLogDownloadTaskStore(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        try await remover.remove(id: "task")
+        try await staleUpdater.updateResumeData(id: "task", resumeData: Data("stale".utf8))
+
+        let verifier = AppendLogDownloadTaskStore(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        #expect(await verifier.record(forID: "task") == nil)
+    }
 
     @Test("id(forURL:) returns the most recently upserted task for that URL")
     func urlReverseIndexReturnsLatestUpsert() async throws {
