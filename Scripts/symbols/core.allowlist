@@ -236,7 +236,7 @@ InnoNetwork	swift.init	CurlCommandOptions.init(redactedHeaderNames:includesBody:
 InnoNetwork	swift.init	DefaultNetworkClient.init(configuration:)
 InnoNetwork	swift.init	DefaultNetworkClient.init(configuration:session:)
 InnoNetwork	swift.init	DefaultNetworkLogger.init(options:cookieStorage:)
-InnoNetwork	swift.init	DefaultRedirectPolicy.init()
+InnoNetwork	swift.init	DefaultRedirectPolicy.init(additionalSensitiveHeaders:allowsHTTPSDowngrade:allowsCrossOriginUnsafeMethodRedirects:)
 InnoNetwork	swift.init	EmptyResponse.init()
 InnoNetwork	swift.init	EmptyResponse.init(from:)
 InnoNetwork	swift.init	EndpointBuilder.init(method:path:parameters:headers:acceptableStatusCodes:transport:)
@@ -459,6 +459,9 @@ InnoNetwork	swift.property	CorrelationIDInterceptor.traceHeader
 InnoNetwork	swift.property	CurlCommandOptions.bodyFileURL
 InnoNetwork	swift.property	CurlCommandOptions.includesBody
 InnoNetwork	swift.property	CurlCommandOptions.redactedHeaderNames
+InnoNetwork	swift.property	DefaultRedirectPolicy.additionalSensitiveHeaders
+InnoNetwork	swift.property	DefaultRedirectPolicy.allowsCrossOriginUnsafeMethodRedirects
+InnoNetwork	swift.property	DefaultRedirectPolicy.allowsHTTPSDowngrade
 InnoNetwork	swift.property	Endpoint.acceptableStatusCodes
 InnoNetwork	swift.property	Endpoint.allowsCellularAccessOverride
 InnoNetwork	swift.property	Endpoint.allowsConstrainedNetworkAccessOverride

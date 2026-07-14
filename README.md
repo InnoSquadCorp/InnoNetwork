@@ -489,12 +489,34 @@ the built-in policies.
 Core request clients default to HTTPS-only construction and safe redirect
 handling:
 
-- `DefaultRedirectPolicy` strips `Authorization`, `Cookie`, and
-  `Proxy-Authorization` when a redirect crosses scheme, host, or port.
+- `DefaultRedirectPolicy` rejects HTTPS-to-HTTP downgrade redirects.
+- Cross-origin 307/308 redirects cannot automatically replay unsafe methods
+  such as POST, PUT, PATCH, or DELETE.
+- Other cross-origin redirects strip common authorization, cookie, API-key,
+  CSRF/session-token, and temporary AWS credential headers. Add proprietary
+  credential carriers with `additionalSensitiveHeaders`; built-in protection
+  remains enabled.
 - Plain `http://` base URLs fail before transport unless the client opts in
   with `allowsInsecureHTTP = true`.
 - Base URLs with embedded `user:password@host` credentials or fragments are
   rejected; put credentials in an interceptor or `RefreshTokenPolicy` instead.
+
+```swift
+let redirectPolicy = DefaultRedirectPolicy(
+    additionalSensitiveHeaders: ["X-Tenant-Secret"]
+)
+```
+
+Two explicit compatibility switches exist for controlled legacy or LAN
+environments. Enabling them weakens the default boundary, so scope the policy
+to a dedicated client; sensitive headers are still stripped across origins:
+
+```swift
+let controlledLegacyRedirects = DefaultRedirectPolicy(
+    allowsHTTPSDowngrade: true,
+    allowsCrossOriginUnsafeMethodRedirects: true
+)
+```
 
 Keep the HTTP opt-in scoped to local development or a controlled LAN-only
 client:
@@ -714,8 +736,10 @@ as `safeDefaults` aliases, but new examples and new integrations should prefer
 `safeDefaults`.
 
 `request` and `upload` are the recommended request execution APIs. Use
-`RequestExecutionPolicy` for narrow transport-attempt customization. SPI
-lower-level execution hooks remain outside the stable public contract.
+`RequestExecutionPolicy` to observe or wrap a transport attempt and to adapt
+its response. Execution policies cannot replace the executor-owned request;
+use `RequestInterceptor` for URL, header, or body mutation. SPI lower-level
+execution hooks remain outside the stable public contract.
 
 For long-lived line-delimited transports (Server-Sent Events, NDJSON, log
 streams), use `DefaultNetworkClient.stream(_:)` together with a

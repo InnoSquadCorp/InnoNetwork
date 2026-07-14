@@ -32,7 +32,7 @@ struct RedirectPolicyTests {
         #expect(result.value(forHTTPHeaderField: "Cookie") == "session=abc")
     }
 
-    @Test("Cross-host redirect strips Authorization, Cookie, Proxy-Authorization")
+    @Test("Cross-host redirect strips built-in auth, API, and security-token headers")
     func crossHostStripsCredentials() async throws {
         let policy = DefaultRedirectPolicy()
 
@@ -43,6 +43,10 @@ struct RedirectPolicyTests {
         redirect.setValue("Bearer secret-token", forHTTPHeaderField: "Authorization")
         redirect.setValue("session=abc", forHTTPHeaderField: "Cookie")
         redirect.setValue("Basic xyz", forHTTPHeaderField: "Proxy-Authorization")
+        redirect.setValue("api-secret", forHTTPHeaderField: "X-API-Key")
+        redirect.setValue("auth-secret", forHTTPHeaderField: "X-Auth-Token")
+        redirect.setValue("aws-session-secret", forHTTPHeaderField: "X-Amz-Security-Token")
+        redirect.setValue("csrf-secret", forHTTPHeaderField: "X-CSRF-Token")
         redirect.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let response = HTTPURLResponse(
@@ -59,11 +63,15 @@ struct RedirectPolicyTests {
         #expect(result.value(forHTTPHeaderField: "Authorization") == nil)
         #expect(result.value(forHTTPHeaderField: "Cookie") == nil)
         #expect(result.value(forHTTPHeaderField: "Proxy-Authorization") == nil)
+        #expect(result.value(forHTTPHeaderField: "X-API-Key") == nil)
+        #expect(result.value(forHTTPHeaderField: "X-Auth-Token") == nil)
+        #expect(result.value(forHTTPHeaderField: "X-Amz-Security-Token") == nil)
+        #expect(result.value(forHTTPHeaderField: "X-CSRF-Token") == nil)
         #expect(result.value(forHTTPHeaderField: "Accept") == "application/json")
     }
 
-    @Test("Cross-scheme HTTPS→HTTP redirect strips credentials")
-    func schemeChangeStripsCredentials() async throws {
+    @Test("HTTPS→HTTP redirect is rejected by default")
+    func rejectsHTTPSDowngradeByDefault() async {
         let policy = DefaultRedirectPolicy()
 
         var original = URLRequest(url: URL(string: "https://api.example.com/me")!)
@@ -77,10 +85,47 @@ struct RedirectPolicyTests {
             headerFields: ["Location": redirect.url!.absoluteString]
         )!
 
+        #expect(
+            policy.redirect(request: redirect, response: response, originalRequest: original) == nil
+        )
+    }
+
+    @Test("Explicit HTTPS downgrade opt-in still strips sensitive headers")
+    func allowsOptedInHTTPSDowngradeWithoutCredentials() async throws {
+        let policy = DefaultRedirectPolicy(allowsHTTPSDowngrade: true)
+
+        let original = URLRequest(url: URL(string: "https://api.example.com/me")!)
+        var redirect = URLRequest(url: URL(string: "http://api.example.com/me")!)
+        redirect.setValue("Bearer secret", forHTTPHeaderField: "Authorization")
+        redirect.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let response = HTTPURLResponse(
+            url: original.url!, statusCode: 302, httpVersion: "HTTP/1.1",
+            headerFields: ["Location": redirect.url!.absoluteString]
+        )!
+
         let result = try #require(
             policy.redirect(request: redirect, response: response, originalRequest: original)
         )
         #expect(result.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(result.value(forHTTPHeaderField: "Accept") == "application/json")
+    }
+
+    @Test("Downgrade detection uses the current redirect hop")
+    func rejectsHTTPSDowngradeAfterInitialHTTPHop() async {
+        let policy = DefaultRedirectPolicy()
+
+        let original = URLRequest(url: URL(string: "http://bootstrap.example.com/start")!)
+        let currentURL = URL(string: "https://api.example.com/me")!
+        let redirect = URLRequest(url: URL(string: "http://api.example.com/me")!)
+        let response = HTTPURLResponse(
+            url: currentURL, statusCode: 302, httpVersion: "HTTP/1.1",
+            headerFields: ["Location": redirect.url!.absoluteString]
+        )!
+
+        #expect(
+            policy.redirect(request: redirect, response: response, originalRequest: original) == nil
+        )
     }
 
     @Test("Cross-port redirect on same host strips credentials")
@@ -123,6 +168,119 @@ struct RedirectPolicyTests {
         )
         #expect(result.value(forHTTPHeaderField: "Authorization") == nil)
         #expect(result.value(forHTTPHeaderField: "Cookie") == nil)
+    }
+
+    @Test("Application-specific sensitive headers are additive and case-insensitive")
+    func stripsAdditionalSensitiveHeaders() async throws {
+        let policy = DefaultRedirectPolicy(
+            additionalSensitiveHeaders: ["  X-Tenant-Secret  ", "X-Signed-Identity"]
+        )
+
+        let original = URLRequest(url: URL(string: "https://a.example.com/")!)
+        var redirect = URLRequest(url: URL(string: "https://b.example.com/")!)
+        redirect.setValue("tenant-secret", forHTTPHeaderField: "x-tenant-secret")
+        redirect.setValue("identity-secret", forHTTPHeaderField: "X-SIGNED-IDENTITY")
+        redirect.setValue("trace-1", forHTTPHeaderField: "X-Trace-ID")
+
+        let response = HTTPURLResponse(
+            url: original.url!, statusCode: 302, httpVersion: "HTTP/1.1",
+            headerFields: ["Location": redirect.url!.absoluteString]
+        )!
+
+        let result = try #require(
+            policy.redirect(request: redirect, response: response, originalRequest: original)
+        )
+        #expect(policy.additionalSensitiveHeaders == ["x-tenant-secret", "x-signed-identity"])
+        #expect(result.value(forHTTPHeaderField: "X-Tenant-Secret") == nil)
+        #expect(result.value(forHTTPHeaderField: "X-Signed-Identity") == nil)
+        #expect(result.value(forHTTPHeaderField: "X-Trace-ID") == "trace-1")
+    }
+
+    @Test("Cross-origin 307/308 rejects unsafe-method replay", arguments: [307, 308])
+    func rejectsCrossOriginUnsafeMethodReplay(statusCode: Int) async {
+        let policy = DefaultRedirectPolicy()
+
+        var original = URLRequest(url: URL(string: "https://api.example.com/payments")!)
+        original.httpMethod = "POST"
+        original.httpBody = Data(#"{"amount":100}"#.utf8)
+        var redirect = URLRequest(url: URL(string: "https://payments.example.net/submit")!)
+        redirect.httpMethod = "POST"
+        redirect.httpBody = original.httpBody
+
+        let response = HTTPURLResponse(
+            url: original.url!, statusCode: statusCode, httpVersion: "HTTP/1.1",
+            headerFields: ["Location": redirect.url!.absoluteString]
+        )!
+
+        #expect(
+            policy.redirect(request: redirect, response: response, originalRequest: original) == nil
+        )
+    }
+
+    @Test("Cross-origin 307 for a safe method remains followable")
+    func allowsCrossOriginSafeMethodRedirect() async throws {
+        let policy = DefaultRedirectPolicy()
+
+        let original = URLRequest(url: URL(string: "https://api.example.com/catalog")!)
+        var redirect = URLRequest(url: URL(string: "https://cdn.example.net/catalog")!)
+        redirect.httpMethod = "GET"
+        redirect.setValue("Bearer secret", forHTTPHeaderField: "Authorization")
+
+        let response = HTTPURLResponse(
+            url: original.url!, statusCode: 307, httpVersion: "HTTP/1.1",
+            headerFields: ["Location": redirect.url!.absoluteString]
+        )!
+
+        let result = try #require(
+            policy.redirect(request: redirect, response: response, originalRequest: original)
+        )
+        #expect(result.value(forHTTPHeaderField: "Authorization") == nil)
+    }
+
+    @Test("Same-origin 307 preserves an unsafe method and body")
+    func allowsSameOriginUnsafeMethodRedirect() async throws {
+        let policy = DefaultRedirectPolicy()
+
+        var original = URLRequest(url: URL(string: "https://api.example.com/payments")!)
+        original.httpMethod = "POST"
+        var redirect = URLRequest(url: URL(string: "https://api.example.com/v2/payments")!)
+        redirect.httpMethod = "POST"
+        redirect.httpBody = Data(#"{"amount":100}"#.utf8)
+
+        let response = HTTPURLResponse(
+            url: original.url!, statusCode: 307, httpVersion: "HTTP/1.1",
+            headerFields: ["Location": redirect.url!.absoluteString]
+        )!
+
+        let result = try #require(
+            policy.redirect(request: redirect, response: response, originalRequest: original)
+        )
+        #expect(result.httpMethod == "POST")
+        #expect(result.httpBody == redirect.httpBody)
+    }
+
+    @Test("Explicit unsafe-method opt-in still strips cross-origin credentials")
+    func allowsOptedInCrossOriginUnsafeMethodWithoutCredentials() async throws {
+        let policy = DefaultRedirectPolicy(allowsCrossOriginUnsafeMethodRedirects: true)
+
+        var original = URLRequest(url: URL(string: "https://api.example.com/payments")!)
+        original.httpMethod = "PATCH"
+        var redirect = URLRequest(url: URL(string: "https://payments.example.net/submit")!)
+        redirect.httpMethod = "PATCH"
+        redirect.httpBody = Data(#"{"state":"confirmed"}"#.utf8)
+        redirect.setValue("Bearer secret", forHTTPHeaderField: "Authorization")
+
+        let response = HTTPURLResponse(
+            url: original.url!, statusCode: 308, httpVersion: "HTTP/1.1",
+            headerFields: ["Location": redirect.url!.absoluteString]
+        )!
+
+        let result = try #require(
+            policy.redirect(request: redirect, response: response, originalRequest: original)
+        )
+        #expect(result.httpMethod == "PATCH")
+        #expect(result.httpBody == redirect.httpBody)
+        #expect(result.value(forHTTPHeaderField: "Authorization") == nil)
     }
 
     @Test("Non-HTTP redirect target rejected")

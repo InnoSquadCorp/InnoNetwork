@@ -178,9 +178,9 @@ public struct NetworkConfiguration: Sendable {
     public let streamingLineByteLimit: Int
 
     /// Decides how the client reacts to HTTP redirects (3xx + `Location`).
-    /// Defaults to ``DefaultRedirectPolicy``, which strips
-    /// `Authorization`, `Cookie`, and `Proxy-Authorization` on cross-origin
-    /// hops per RFC 9110 §15.4.4.
+    /// Defaults to ``DefaultRedirectPolicy``, which rejects HTTPS downgrades
+    /// and cross-origin 307/308 unsafe-method replay, and strips built-in or
+    /// caller-registered sensitive headers on other cross-origin hops.
     public let redirectPolicy: any RedirectPolicy
 
     /// When `false` (default), a `baseURL` with `http://` scheme is rejected
