@@ -17,115 +17,91 @@ struct NetworkConfigurationPresetTests {
         #expect(configuration.responseBodyBufferingPolicy.maxBytes == Int64(5 * 1024 * 1024))
     }
 
-    // MARK: - Fluent modifiers
+    // MARK: - Configuration packs
 
-    @Test("with(retry:) replaces only the retry policy and keeps every other field")
-    func withRetryReplacesOnlyRetryPolicy() async {
+    @Test("ResiliencePack composes retry, circuit breaker, and coalescing policies")
+    func resiliencePackComposesPolicies() {
         let baseURL = URL(string: "https://api.example.com")!
-        let original = NetworkConfiguration.safeDefaults(baseURL: baseURL)
         let policy = ExponentialBackoffRetryPolicy(maxRetries: 7)
-        let updated = original.with(retry: policy)
-
-        #expect(updated.retryPolicy != nil)
-        #expect(updated.baseURL == original.baseURL)
-        #expect(updated.timeout == original.timeout)
-        #expect(updated.acceptableStatusCodes == original.acceptableStatusCodes)
-    }
-
-    @Test("with(retry: nil) detaches an existing retry policy")
-    func withRetryNilDetachesPolicy() async {
-        let baseURL = URL(string: "https://api.example.com")!
-        let production = NetworkConfiguration.recommendedForProduction(baseURL: baseURL)
-        #expect(production.retryPolicy != nil)
-
-        let detached = production.with(retry: nil)
-        #expect(detached.retryPolicy == nil)
-        #expect(detached.circuitBreakerPolicy != nil)
-    }
-
-    @Test("Modifiers chain compositionally")
-    func modifiersChainCompositionally() async {
-        let baseURL = URL(string: "https://api.example.com")!
-        let configuration =
-            NetworkConfiguration
-            .safeDefaults(baseURL: baseURL)
-            .with(retry: ExponentialBackoffRetryPolicy())
-            .with(circuitBreaker: CircuitBreakerPolicy(failureThreshold: 3))
-            .with(coalescing: .getOnly)
+        let configuration = NetworkConfiguration.advanced(
+            baseURL: baseURL,
+            resilience: ResiliencePack(
+                retry: policy,
+                coalescing: .getOnly,
+                circuitBreaker: CircuitBreakerPolicy(failureThreshold: 3)
+            )
+        )
 
         #expect(configuration.retryPolicy != nil)
         #expect(configuration.circuitBreakerPolicy != nil)
         #expect(configuration.requestCoalescingPolicy == .getOnly)
+        #expect(configuration.baseURL == baseURL)
+        #expect(configuration.refreshTokenPolicy == nil)
     }
 
-    @Test("with(circuitBreaker:) replaces only the breaker policy")
-    func withCircuitBreakerReplacesOnlyBreaker() async {
+    @Test("CachePack supplies the response cache")
+    func cachePackSuppliesResponseCache() {
         let baseURL = URL(string: "https://api.example.com")!
-        let original = NetworkConfiguration.safeDefaults(baseURL: baseURL)
-        let breaker = CircuitBreakerPolicy(failureThreshold: 9)
-
-        let updated = original.with(circuitBreaker: breaker)
-
-        #expect(updated.circuitBreakerPolicy != nil)
-        #expect(updated.retryPolicy == nil)
-        #expect(updated.refreshTokenPolicy == nil)
-    }
-
-    @Test("with(cache:) replaces only the response cache")
-    func withCacheReplacesOnlyResponseCache() {
-        let baseURL = URL(string: "https://api.example.com")!
-        let original = NetworkConfiguration.safeDefaults(baseURL: baseURL)
         let cache = InMemoryResponseCache()
+        let configuration = NetworkConfiguration.advanced(
+            baseURL: baseURL,
+            cache: CachePack(responseCache: cache)
+        )
 
-        let updated = original.with(cache: cache)
-
-        #expect(updated.responseCache != nil)
-        #expect(updated.baseURL == original.baseURL)
-        #expect(updated.retryPolicy == nil)
-        #expect(updated.circuitBreakerPolicy == nil)
+        #expect(configuration.responseCache != nil)
+        #expect(configuration.baseURL == baseURL)
+        #expect(configuration.retryPolicy == nil)
+        #expect(configuration.circuitBreakerPolicy == nil)
     }
 
-    @Test("with(refresh:) replaces only the refresh token policy")
-    func withRefreshReplacesOnlyRefreshTokenPolicy() {
+    @Test("AuthPack supplies the refresh token policy")
+    func authPackSuppliesRefreshTokenPolicy() {
         let baseURL = URL(string: "https://api.example.com")!
-        let original = NetworkConfiguration.safeDefaults(baseURL: baseURL)
         let refresh = RefreshTokenPolicy(
             currentToken: { "old" },
             refreshToken: { "new" }
         )
+        let configuration = NetworkConfiguration.advanced(
+            baseURL: baseURL,
+            auth: AuthPack(refreshToken: refresh)
+        )
 
-        let updated = original.with(refresh: refresh)
-
-        #expect(updated.refreshTokenPolicy != nil)
-        #expect(updated.baseURL == original.baseURL)
-        #expect(updated.retryPolicy == nil)
-        #expect(updated.circuitBreakerPolicy == nil)
+        #expect(configuration.refreshTokenPolicy != nil)
+        #expect(configuration.baseURL == baseURL)
+        #expect(configuration.retryPolicy == nil)
+        #expect(configuration.circuitBreakerPolicy == nil)
     }
 
-    @Test("with(executionPolicies:) replaces only the custom policy chain")
-    func withExecutionPoliciesReplacesOnlyCustomPolicyChain() {
+    @Test("ResiliencePack supplies the custom execution policy chain")
+    func resiliencePackSuppliesCustomExecutionPolicies() {
         let baseURL = URL(string: "https://api.example.com")!
-        let original = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+        let configuration = NetworkConfiguration.advanced(
+            baseURL: baseURL,
+            resilience: ResiliencePack(
+                customExecutionPolicies: [PassthroughExecutionPolicy()]
+            )
+        )
 
-        let updated = original.with(executionPolicies: [PassthroughExecutionPolicy()])
-
-        #expect(updated.customExecutionPolicies.count == 1)
-        #expect(updated.baseURL == original.baseURL)
-        #expect(updated.retryPolicy == nil)
-        #expect(updated.circuitBreakerPolicy == nil)
+        #expect(configuration.customExecutionPolicies.count == 1)
+        #expect(configuration.baseURL == baseURL)
+        #expect(configuration.retryPolicy == nil)
+        #expect(configuration.circuitBreakerPolicy == nil)
     }
 
-    @Test("with(eventObservers:) replaces only network event observers")
-    func withEventObserversReplacesOnlyEventObservers() {
+    @Test("ObservabilityPack supplies network event observers")
+    func observabilityPackSuppliesEventObservers() {
         let baseURL = URL(string: "https://api.example.com")!
-        let original = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+        let configuration = NetworkConfiguration.advanced(
+            baseURL: baseURL,
+            observability: ObservabilityPack(
+                eventObservers: [NoOpNetworkEventObserver()]
+            )
+        )
 
-        let updated = original.with(eventObservers: [NoOpNetworkEventObserver()])
-
-        #expect(updated.eventObservers.count == 1)
-        #expect(updated.baseURL == original.baseURL)
-        #expect(updated.retryPolicy == nil)
-        #expect(updated.circuitBreakerPolicy == nil)
+        #expect(configuration.eventObservers.count == 1)
+        #expect(configuration.baseURL == baseURL)
+        #expect(configuration.retryPolicy == nil)
+        #expect(configuration.circuitBreakerPolicy == nil)
     }
 }
 

@@ -223,11 +223,11 @@ public struct NetworkConfiguration: Sendable {
         return config
     }
 
-    /// Internal builder used by the pack-based `advanced(...)` factory
-    /// and the chainable `with(...)` modifiers. Adopters compose
-    /// configurations through ``advanced(baseURL:resilience:auth:observability:cache:transport:)``
-    /// or the full ``init(baseURL:...)``; the builder type is not part
-    /// of the public API.
+    /// Internal builder used by the pack-based `advanced(...)` factory.
+    /// Adopters compose
+    /// configurations through
+    /// ``advanced(baseURL:resilience:auth:observability:cache:transport:)``;
+    /// the builder type is not part of the public API.
     package struct AdvancedBuilder: Sendable {
         package var baseURL: URL
         package var timeout: TimeInterval
@@ -588,116 +588,5 @@ public struct NetworkConfiguration: Sendable {
         #else
         Logger.API.warning("\(message, privacy: .public)")
         #endif
-    }
-}
-
-// MARK: - Fluent modifiers
-//
-// Deprecated chainable modifier helpers. They remain in 4.x as a migration
-// bridge for callers that already adopted them, but new code should compose
-// named packs through `advanced(baseURL:resilience:auth:observability:cache:transport:)`
-// so policy precedence is visible at the construction site.
-public extension NetworkConfiguration {
-    /// Returns a new configuration with ``retryPolicy`` replaced.
-    /// Pass `nil` to disable retries on a configuration that previously
-    /// had a retry policy attached.
-    @available(
-        *,
-        deprecated,
-        message:
-            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
-    )
-    func with(retry retryPolicy: RetryPolicy?) -> NetworkConfiguration {
-        var builder = AdvancedBuilder(preset: self)
-        builder.retryPolicy = retryPolicy
-        return builder.build()
-    }
-
-    /// Returns a new configuration with ``responseCache`` replaced.
-    /// Pass `nil` to detach the cache. Caller is responsible for setting
-    /// a compatible ``responseCachePolicy`` separately when enabling cache
-    /// reads/writes; this modifier only swaps the storage backend.
-    @available(
-        *,
-        deprecated,
-        message:
-            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
-    )
-    func with(cache responseCache: (any ResponseCache)?) -> NetworkConfiguration {
-        var builder = AdvancedBuilder(preset: self)
-        builder.responseCache = responseCache
-        return builder.build()
-    }
-
-    /// Returns a new configuration with ``circuitBreakerPolicy`` replaced.
-    /// Pass `nil` to remove the breaker.
-    @available(
-        *,
-        deprecated,
-        message:
-            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
-    )
-    func with(circuitBreaker circuitBreakerPolicy: CircuitBreakerPolicy?) -> NetworkConfiguration {
-        var builder = AdvancedBuilder(preset: self)
-        builder.circuitBreakerPolicy = circuitBreakerPolicy
-        return builder.build()
-    }
-
-    /// Returns a new configuration with ``refreshTokenPolicy`` replaced.
-    /// Pass `nil` to remove auth refresh.
-    @available(
-        *,
-        deprecated,
-        message:
-            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
-    )
-    func with(refresh refreshTokenPolicy: RefreshTokenPolicy?) -> NetworkConfiguration {
-        var builder = AdvancedBuilder(preset: self)
-        builder.refreshTokenPolicy = refreshTokenPolicy
-        return builder.build()
-    }
-
-    /// Returns a new configuration with ``requestCoalescingPolicy`` replaced.
-    @available(
-        *,
-        deprecated,
-        message:
-            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
-    )
-    func with(coalescing requestCoalescingPolicy: RequestCoalescingPolicy) -> NetworkConfiguration {
-        var builder = AdvancedBuilder(preset: self)
-        builder.requestCoalescingPolicy = requestCoalescingPolicy
-        return builder.build()
-    }
-
-    /// Returns a new configuration with ``customExecutionPolicies`` replaced.
-    /// The 4.0.0 line keeps both the direct field (still readable) and this
-    /// modifier; the 5.0 line is expected to relocate the field into a
-    /// protocol-bag and route every assignment through this modifier so the
-    /// configuration struct's surface stops growing one slot per policy.
-    @available(
-        *,
-        deprecated,
-        message:
-            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
-    )
-    func with(executionPolicies customExecutionPolicies: [any RequestExecutionPolicy]) -> NetworkConfiguration {
-        var builder = AdvancedBuilder(preset: self)
-        builder.customExecutionPolicies = customExecutionPolicies
-        return builder.build()
-    }
-
-    /// Returns a new configuration with ``eventObservers`` replaced. Same
-    /// 4.0.0 -> 5.0 migration expectation as ``with(executionPolicies:)``.
-    @available(
-        *,
-        deprecated,
-        message:
-            "Use NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:) with configuration packs. The fluent with(...) modifiers are planned for removal in the next major release."
-    )
-    func with(eventObservers: [any NetworkEventObserving]) -> NetworkConfiguration {
-        var builder = AdvancedBuilder(preset: self)
-        builder.eventObservers = eventObservers
-        return builder.build()
     }
 }
