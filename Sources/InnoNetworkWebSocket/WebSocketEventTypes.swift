@@ -43,6 +43,25 @@ public enum WebSocketEvent: Sendable {
     case sendDropped(limit: Int)
 }
 
+/// The fresh logical task and pre-registered event stream created by an
+/// explicit ``WebSocketManager/retry(_:)`` operation.
+///
+/// The stream is registered before the replacement transport is resumed, so
+/// events do not encounter a late-registration gap. Delivery remains subject
+/// to the manager's bounded ``EventDeliveryPolicy``.
+public struct WebSocketRetryResult: Sendable {
+    /// Fresh task created for this explicit retry.
+    public let task: WebSocketTask
+
+    /// Bounded event stream already attached to ``task``.
+    public let events: AsyncStream<WebSocketEvent>
+
+    package init(task: WebSocketTask, events: AsyncStream<WebSocketEvent>) {
+        self.task = task
+        self.events = events
+    }
+}
+
 
 /// Metadata that accompanies every ``WebSocketEvent/ping(_:)`` emission.
 ///

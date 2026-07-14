@@ -513,20 +513,26 @@ public actor WebSocketManager {
     ///
     /// The terminal `task` keeps its terminal lifecycle snapshot and identity;
     /// its existing listeners and streams stay bound to the retired task ID.
-    /// Attach consumers to the returned task. Automatic reconnect is unchanged
-    /// and continues to reuse its task handle across transport generations.
+    /// Consume the returned result's pre-registered event stream. Automatic
+    /// reconnect is unchanged and continues to reuse its task handle across
+    /// transport generations.
     ///
-    /// - Returns: A fresh task after connection setup has completed. If
-    ///   shutdown wins after retry admission, the returned replacement is
-    ///   already terminal with the manager-shutdown error. Returns
+    /// - Returns: A fresh task and its pre-registered bounded event stream after
+    ///   connection setup has completed. If shutdown wins after retry admission,
+    ///   the returned replacement is already terminal with the manager-shutdown
+    ///   error and the stream contains that terminal outcome. Returns
     ///   `nil` when the source task is nonterminal, already claimed by another
     ///   retry, owned by another manager, or shutdown admission is closed.
-    public func retry(_ task: WebSocketTask) async -> WebSocketTask? {
+    public func retry(_ task: WebSocketTask) async -> WebSocketRetryResult? {
         guard beginShutdownTrackedOperation() else { return nil }
         defer { finishShutdownTrackedOperation() }
 
         switch await prepareTaskForRetry(task) {
         case .ready(let replacement):
+            // Register the retry-owned stream before the transport can resume.
+            // A synchronous delegate callback from resume() can therefore be
+            // published immediately without racing consumer registration.
+            let events = await eventHub.stream(for: replacement.id)
             await startConnection(replacement)
             // Shutdown flips its admission flag before draining tracked
             // operations. A retry admitted just before that flip can finish
@@ -536,12 +542,16 @@ public actor WebSocketManager {
             if isShutdown {
                 await finishTaskBecauseManagerIsShutdown(replacement)
             }
-            return replacement
+            return WebSocketRetryResult(task: replacement, events: events)
         case .ineligible:
             return nil
         case .managerShutdown(let replacement):
+            // The shutdown-race path still returns an observable terminal
+            // replacement. Register its stream before publishing and closing
+            // the manager-shutdown outcome.
+            let events = await eventHub.stream(for: replacement.id)
             await finishTaskBecauseManagerIsShutdown(replacement)
-            return replacement
+            return WebSocketRetryResult(task: replacement, events: events)
         }
     }
 
@@ -622,9 +632,6 @@ public actor WebSocketManager {
         task: WebSocketTask,
         limit: Int
     ) async throws -> (generation: Int, urlTask: any WebSocketURLTask)? {
-        guard !mustAvoidLifecycleGateFromCurrentCallback(taskID: task.id) else {
-            throw WebSocketError.disconnected(nil)
-        }
         guard await acquireTaskLifecycleGate(taskID: task.id) else { throw CancellationError() }
         defer { releaseTaskLifecycleGate(taskID: task.id) }
 
@@ -681,9 +688,6 @@ public actor WebSocketManager {
     private func preparePing(
         _ task: WebSocketTask
     ) async throws -> (Int, any WebSocketURLTask, WebSocketPingContext) {
-        guard !mustAvoidLifecycleGateFromCurrentCallback(taskID: task.id) else {
-            throw WebSocketError.disconnected(nil)
-        }
         guard await acquireTaskLifecycleGate(taskID: task.id) else { throw CancellationError() }
         defer { releaseTaskLifecycleGate(taskID: task.id) }
 
@@ -705,7 +709,6 @@ public actor WebSocketManager {
         urlTask: any WebSocketURLTask,
         context: WebSocketPongContext
     ) async {
-        guard !mustAvoidLifecycleGateFromCurrentCallback(taskID: task.id) else { return }
         guard await acquireTaskLifecycleGate(taskID: task.id) else { return }
         guard await isCurrentConnectedRuntime(task, generation: generation, urlTask: urlTask) else {
             releaseTaskLifecycleGate(taskID: task.id)
@@ -876,7 +879,6 @@ public actor WebSocketManager {
         urlTask: any WebSocketURLTask,
         error: WebSocketError
     ) async {
-        guard !mustAvoidLifecycleGateFromCurrentCallback(taskID: task.id) else { return }
         guard await acquireTaskLifecycleGate(taskID: task.id) else { return }
         defer { releaseTaskLifecycleGate(taskID: task.id) }
         guard await isCurrentConnectedRuntime(task, generation: generation, urlTask: urlTask) else { return }
@@ -896,13 +898,6 @@ public actor WebSocketManager {
             return false
         }
         return await task.isConnected(generation: generation)
-    }
-
-    private func mustAvoidLifecycleGateFromCurrentCallback(taskID: String) -> Bool {
-        guard taskLifecycleGateOwners.contains(taskID) else { return false }
-        return WebSocketUserCallbackContext.token?.containsActiveCallback(
-            for: runtimeRegistry.callbackContextID
-        ) == true
     }
 
     public func task(withId id: String) async -> WebSocketTask? {

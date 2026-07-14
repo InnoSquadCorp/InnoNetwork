@@ -38,7 +38,8 @@ as a "moving" state from the manager's perspective.
 
 Terminal states have no outgoing transition on the same logical task.
 ``WebSocketManager/retry(_:)`` is a relationship between two tasks: it retires
-an eligible terminal source and returns a fresh task with a new `id`. It does
+an eligible terminal source and returns a result containing a fresh task with a
+new `id` plus a bounded stream registered before transport resume. It does
 not reset or reconnect the source state machine.
 
 The public transition contract is
@@ -179,10 +180,11 @@ let manager = WebSocketManager(configuration: .safeDefaults())
 let task = await manager.connect(url: socketURL)
 
 // After `task` reaches a terminal state:
-guard let replacement = await manager.retry(task) else { return }
+guard let retryResult = await manager.retry(task) else { return }
+let replacement = retryResult.task
 
-// Task-scoped consumers belong to the replacement's fresh ID.
-for await event in await manager.events(for: replacement) {
+// This bounded stream was registered before the replacement transport resumed.
+for await event in retryResult.events {
     print(event)
 }
 ```
@@ -190,8 +192,9 @@ for await event in await manager.events(for: replacement) {
 Explicit retry is one-shot for an eligible terminal source and is accepted only
 by the source's owning manager. It returns `nil` for nonterminal,
 already-claimed, foreign-manager, or post-shutdown tasks. If shutdown wins
-after retry admission, the non-`nil` replacement can already be terminal with
-the manager-shutdown connection error. The source task and its per-task
+after retry admission, the non-`nil` result's task can already be terminal with
+the manager-shutdown connection error, which is observable on the returned
+stream. The source task and its per-task
 listeners remain terminal and are never retargeted; manager-level handlers
 remain installed until manager shutdown.
 

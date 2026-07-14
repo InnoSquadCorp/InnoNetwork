@@ -16,7 +16,7 @@ policy observed.
 | `.with(cache:)` | `CachePack(responseCache:)` |
 | Public `StateReducer` / `StateReduction` | An application-owned reducer type, or a feature-local reducer |
 | Body signing in `RequestInterceptor` | `RequestSigner.signatureHeaders(for:body:)` |
-| `await manager.retry(task)` while continuing to use `task` | Capture the returned `WebSocketTask?`, then attach task-scoped consumers to the fresh task |
+| `await manager.retry(task)` while continuing to use `task` | Capture `WebSocketRetryResult?`, use its fresh `task`, and consume its pre-registered `events` stream |
 
 ## Request execution policies preserve request identity
 
@@ -110,19 +110,22 @@ for custom signer and file-lifetime examples.
 
 ## WebSocket explicit retry creates a fresh task
 
-In 5.0, `WebSocketManager.retry(_:)` returns `WebSocketTask?`. An accepted
-explicit retry retires the terminal source handle and creates a new logical
-task with a fresh UUID-backed `id`. The source task remains terminal and its
-listeners and `AsyncStream` consumers finish on the old identity, so retaining
-the old handle no longer follows the replacement connection.
+In 5.0, `WebSocketManager.retry(_:)` returns `WebSocketRetryResult?`. An
+accepted explicit retry retires the terminal source handle and creates a new
+logical task with a fresh UUID-backed `id`. The result also carries a bounded
+event stream that is registered before the replacement transport resumes. The
+source task remains terminal and its listeners and `AsyncStream` consumers
+finish on the old identity, so retaining the old handle no longer follows the
+replacement connection.
 
 Capture the replacement and register task-scoped consumers again:
 
 ```swift
 var currentTask = await manager.connect(url: socketURL)
+var currentEvents = await manager.events(for: currentTask)
 
 while true {
-    for await event in await manager.events(for: currentTask) {
+    for await event in currentEvents {
         print(event)
     }
 
@@ -132,8 +135,9 @@ while true {
     else { break }
 
     await refreshApplicationState()
-    guard let replacement = await manager.retry(currentTask) else { break }
-    currentTask = replacement
+    guard let retryResult = await manager.retry(currentTask) else { break }
+    currentTask = retryResult.task
+    currentEvents = retryResult.events
 }
 ```
 
@@ -144,9 +148,9 @@ the same, task-scoped consumers remain attached, and only the underlying
 An explicit retry is accepted once for a terminal source task and only by its
 owning manager. It returns `nil` when the source is nonterminal, was already
 claimed, belongs to another manager, or shutdown admission is closed. A retry
-that was admitted just before shutdown may return a non-`nil` replacement that
-is already terminal with the manager-shutdown connection error; inspect the
-returned task and its events rather than assuming a non-`nil` result is live.
+that was admitted just before shutdown may return a non-`nil` result whose task
+is already terminal with the manager-shutdown connection error; consume the
+returned stream rather than attempting a second registration after the race.
 
 ## Redirect defaults are stricter
 
@@ -177,8 +181,8 @@ distributed as an independent package or moved into the root package graph.
 - [ ] Move body-dependent authentication to `RequestSigner`.
 - [ ] Verify any redirect-dependent endpoint against the stricter policy.
 - [ ] Exercise signed data and file uploads, retries, and refresh replays.
-- [ ] Capture every `WebSocketManager.retry(_:)` result and reattach per-task
-  listeners or streams to the returned replacement.
+- [ ] Capture every `WebSocketManager.retry(_:)` result, consume its returned
+  event stream, and attach any additional listeners to its fresh task.
 - [ ] Keep automatic-reconnect observers on the existing task; do not create a
   second task for a transport-generation change.
 - [ ] Build codegen users from a complete local checkout.

@@ -65,6 +65,8 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
         OSAllocatedUnfairLock<(@Sendable () async -> Void)?>(initialState: nil)
     private let beforeSendCompletionHook =
         OSAllocatedUnfairLock<(@Sendable () async -> Void)?>(initialState: nil)
+    private let resumeHook =
+        OSAllocatedUnfairLock<(@Sendable () -> Void)?>(initialState: nil)
     private let receiveCancellationBehavior: ReceiveCancellationBehavior
 
     init(
@@ -79,6 +81,7 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
 
     func resume() {
         stateLock.withLock { $0.resumeCount += 1 }
+        resumeHook.withLock { $0 }?()
     }
 
     func send(_ message: URLSessionWebSocketTask.Message) async throws {
@@ -241,6 +244,10 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
 
     func setBeforeSendCompletionHook(_ hook: (@Sendable () async -> Void)?) {
         beforeSendCompletionHook.withLock { $0 = hook }
+    }
+
+    func setResumeHook(_ hook: (@Sendable () -> Void)?) {
+        resumeHook.withLock { $0 = hook }
     }
 
     // MARK: Observations

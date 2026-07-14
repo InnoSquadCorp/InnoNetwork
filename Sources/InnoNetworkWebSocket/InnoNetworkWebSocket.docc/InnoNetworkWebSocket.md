@@ -15,7 +15,7 @@ Use this module when you need:
 - async handshake request adaptation via ``WebSocketHandshakeRequestAdapter``
 - listener retention across automatic reconnect transport generations
 - explicit retry through ``WebSocketManager/retry(_:)``, which returns a fresh
-  optional task and requires task-scoped consumers to attach again
+  task and a pre-registered bounded event stream in ``WebSocketRetryResult``
 - manual disconnect semantics that stay visible to the caller
 
 Reconnect decisions are driven by handshake and close outcomes, so the public manager can distinguish retryable failures from terminal ones without forcing application code to rebuild that policy every time.
@@ -24,7 +24,7 @@ Create feature-scoped ``WebSocketManager`` instances so reconnect, heartbeat,
 send-buffer, and event-delivery policy stay owned by the feature that opens the
 socket. See <doc:FeatureScopedManagers>.
 
-Event delivery for socket tasks flows through the shared event hub. Tune buffering, overflow behavior, and metrics integration via ``WebSocketConfiguration/eventDeliveryPolicy`` — see <doc:EventDeliveryPolicy> in the core module for a full guide.
+Event delivery for socket tasks flows through the shared event hub. Tune buffering, overflow behavior, and metrics integration via ``WebSocketConfiguration/eventDeliveryPolicy`` — see the [event delivery guide](https://innosquadcorp.github.io/InnoNetwork/InnoNetwork/documentation/innonetwork/eventdeliveryguide) in the core module.
 
 ### Observing heartbeat attempts
 

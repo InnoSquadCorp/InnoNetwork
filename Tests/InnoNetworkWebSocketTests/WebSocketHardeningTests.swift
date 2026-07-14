@@ -995,7 +995,8 @@ struct WebSocketManagerShutdownTests {
 
         let retriedURLTask = StubWebSocketURLTask(taskIdentifier: 9_202)
         harness.session.enqueue(retriedURLTask)
-        let replacement = try #require(await harness.manager.retry(task))
+        let retryResult = try #require(await harness.manager.retry(task))
+        let replacement = retryResult.task
         let staleEventCount = OSAllocatedUnfairLock<Int>(initialState: 0)
         _ = await harness.manager.addEventListener(for: replacement) { event in
             if case .pong = event {
@@ -1082,7 +1083,8 @@ struct WebSocketManagerShutdownTests {
         #expect(harness.session.createdTasks.count == 1)
 
         await cleanupGate.release()
-        let replacement = try #require(await retry.value)
+        let retryResult = try #require(await retry.value)
+        let replacement = retryResult.task
         #expect(retryReturned.withLock { $0 })
         #expect(harness.session.createdTasks.count == 2)
         #expect(replacement.id != task.id)
@@ -1167,7 +1169,8 @@ struct WebSocketManagerShutdownTests {
         #expect(await source.state == .disconnected)
 
         harness.session.enqueue(replacementURLTask)
-        let replacement = try #require(await harness.manager.retry(source))
+        let retryResult = try #require(await harness.manager.retry(source))
+        let replacement = retryResult.task
         let replacementIdentifier = try #require(
             await waitForWebSocketRuntimeTaskIdentifier(
                 manager: harness.manager,
@@ -1280,7 +1283,7 @@ struct WebSocketManagerShutdownTests {
         async let firstRetry = harness.manager.retry(source)
         async let secondRetry = harness.manager.retry(source)
         let (firstResult, secondResult) = await (firstRetry, secondRetry)
-        let replacements = [firstResult, secondResult].compactMap { $0 }
+        let replacements = [firstResult, secondResult].compactMap { $0?.task }
 
         let replacement = try #require(replacements.first)
         #expect(replacements.count == 1)
@@ -1319,7 +1322,8 @@ struct WebSocketManagerShutdownTests {
         )
         try #require(await waitForWebSocketTaskRemoval(manager: harness.manager, task: source))
 
-        let replacement = try #require(await harness.manager.retry(source))
+        let retryResult = try #require(await harness.manager.retry(source))
+        let replacement = retryResult.task
         let secondIdentifier = try #require(
             await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: replacement)
         )
@@ -1332,7 +1336,8 @@ struct WebSocketManagerShutdownTests {
         )
         try #require(await waitForWebSocketTaskRemoval(manager: harness.manager, task: replacement))
 
-        let successor = try #require(await harness.manager.retry(replacement))
+        let successorResult = try #require(await harness.manager.retry(replacement))
+        let successor = successorResult.task
         let thirdIdentifier = try #require(
             await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: successor)
         )
@@ -1375,7 +1380,8 @@ struct WebSocketManagerShutdownTests {
         #expect(foreign.session.createdTasks.isEmpty)
 
         owner.session.enqueue(ownerRetryURLTask)
-        let replacement = try #require(await owner.manager.retry(source))
+        let retryResult = try #require(await owner.manager.retry(source))
+        let replacement = retryResult.task
         #expect(replacement.id != source.id)
         #expect(
             await owner.manager.runtimeTaskIdentifier(for: replacement)
@@ -1463,8 +1469,17 @@ struct WebSocketManagerShutdownTests {
         harness.callbacks.handleInvalidation(nil)
         await cleanupGate.release()
 
-        let replacement = try #require(await retry.value)
+        let retryResult = try #require(await retry.value)
+        let replacement = retryResult.task
         await shutdown.value
+        var eventIterator = retryResult.events.makeAsyncIterator()
+        let terminalEvent = try #require(await eventIterator.next())
+        guard case .error(let terminalError) = terminalEvent else {
+            Issue.record("expected manager-shutdown error, got \(terminalEvent)")
+            return
+        }
+        #expect(terminalError == WebSocketManager.managerShutdownError())
+        #expect(await eventIterator.next() == nil)
         #expect(replacement.id != source.id)
         #expect(await replacement.state == .failed)
         #expect(await replacement.error == WebSocketManager.managerShutdownError())
@@ -2401,9 +2416,9 @@ struct WebSocketManagerShutdownTests {
         await harness.manager.setOnErrorHandler { [manager = harness.manager] callbackTask, _ in
             await manager.setOnErrorHandler(nil)
             await manager.disconnect(callbackTask)
-            let replacement = await manager.retry(callbackTask)
-            replacementTask.withLock { $0 = replacement }
-            if let replacement {
+            let retryResult = await manager.retry(callbackTask)
+            replacementTask.withLock { $0 = retryResult?.task }
+            if let replacement = retryResult?.task {
                 _ = await manager.addEventListener(for: replacement) { event in
                     if case .error = event {
                         staleErrorCount.withLock { $0 += 1 }
@@ -2478,9 +2493,9 @@ struct WebSocketManagerShutdownTests {
 
         await harness.manager.setOnErrorHandler { [manager = harness.manager] callbackTask, _ in
             await manager.setOnErrorHandler(nil)
-            let replacement = await manager.retry(callbackTask)
-            replacementTask.withLock { $0 = replacement }
-            guard let replacement else {
+            let retryResult = await manager.retry(callbackTask)
+            replacementTask.withLock { $0 = retryResult?.task }
+            guard let replacement = retryResult?.task else {
                 callbackReturned.withLock { $0 = true }
                 return
             }
@@ -2601,7 +2616,8 @@ struct WebSocketManagerShutdownTests {
         )
         try #require(await waitForWebSocketTaskRemoval(manager: harness.manager, task: task))
 
-        let replacement = try #require(await harness.manager.retry(task))
+        let retryResult = try #require(await harness.manager.retry(task))
+        let replacement = retryResult.task
         let retriedGeneration = await replacement.connectionGeneration
         #expect(replacement.id != task.id)
         #expect(await task.state == .disconnected)
@@ -2764,6 +2780,297 @@ struct WebSocketManagerShutdownTests {
         await shutdown.value
     }
 
+    @Test("message callback waits for another connected task's lifecycle gate before sending")
+    func messageCallbackWaitsForUnrelatedLifecycleGateBeforeSending() async throws {
+        let harness = makeShutdownHarness()
+        let sourceURLTask = StubWebSocketURLTask(taskIdentifier: 9_360)
+        let targetURLTask = StubWebSocketURLTask(taskIdentifier: 9_361)
+        harness.session.enqueue(sourceURLTask)
+        harness.session.enqueue(targetURLTask)
+
+        let source = await harness.manager.connect(
+            url: URL(string: "wss://example.invalid/callback-gated-send-source")!
+        )
+        let sourceIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: source)
+        )
+        harness.manager.handleConnected(taskIdentifier: sourceIdentifier, protocolName: nil)
+        try #require(await waitForWebSocketState(source) { $0 == .connected })
+
+        let target = await harness.manager.connect(
+            url: URL(string: "wss://example.invalid/callback-gated-send-target")!
+        )
+        let targetIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: target)
+        )
+        harness.manager.handleConnected(taskIdentifier: targetIdentifier, protocolName: nil)
+        try #require(await waitForWebSocketState(target) { $0 == .connected })
+
+        let callbackReturned = OSAllocatedUnfairLock<Bool>(initialState: false)
+        let sendSucceeded = OSAllocatedUnfairLock<Bool>(initialState: false)
+        let callbackError = OSAllocatedUnfairLock<String?>(initialState: nil)
+        await harness.manager.setOnMessageHandler { [manager = harness.manager] callbackTask, _ in
+            guard callbackTask === source else { return }
+            do {
+                try await manager.send(target, string: "from-gated-message-callback")
+                sendSucceeded.withLock { $0 = true }
+            } catch {
+                callbackError.withLock { $0 = String(describing: error) }
+            }
+            callbackReturned.withLock { $0 = true }
+        }
+
+        // Hold only the target's gate. A callback belonging to the same manager
+        // but originating from another task must queue rather than being
+        // mistaken for a recursive owner of this gate.
+        await harness.manager.acquireTaskLifecycleGateUnconditionally(taskID: target.id)
+        sourceURLTask.scriptReceive(.success(.data(Data("send".utf8))))
+
+        let waiterDeadline = ContinuousClock.now + .seconds(1)
+        while await harness.manager.taskLifecycleGateWaiterCount(taskID: target.id) != 1,
+            !callbackReturned.withLock({ $0 }),
+            ContinuousClock.now < waiterDeadline
+        {
+            await Task.yield()
+        }
+        let waiterCount = await harness.manager.taskLifecycleGateWaiterCount(taskID: target.id)
+
+        // Always release the synthetic owner before asserting, so the test is
+        // bounded even when the callback incorrectly returns immediately.
+        await harness.manager.releaseTaskLifecycleGate(taskID: target.id)
+        #expect(waiterCount == 1)
+        #expect(
+            await waitForCondition(timeout: 1.0) {
+                callbackReturned.withLock { $0 }
+            }
+        )
+        #expect(sendSucceeded.withLock { $0 })
+        #expect(callbackError.withLock { $0 } == nil)
+        let sentMessages = targetURLTask.sentMessages
+        #expect(sentMessages.count == 1)
+        if let firstMessage = sentMessages.first, case .string(let payload) = firstMessage {
+            #expect(payload == "from-gated-message-callback")
+        } else {
+            Issue.record("expected one string payload from the message callback")
+        }
+
+        let shutdown = Task { await harness.manager.shutdown() }
+        #expect(await harness.session.waitForInvalidation())
+        harness.callbacks.handleInvalidation(nil)
+        await shutdown.value
+    }
+
+    @Test("message callback waits for another connected task's lifecycle gate before pinging")
+    func messageCallbackWaitsForUnrelatedLifecycleGateBeforePinging() async throws {
+        let harness = makeShutdownHarness()
+        let sourceURLTask = StubWebSocketURLTask(taskIdentifier: 9_362)
+        let targetURLTask = StubWebSocketURLTask(taskIdentifier: 9_363)
+        harness.session.enqueue(sourceURLTask)
+        harness.session.enqueue(targetURLTask)
+
+        let source = await harness.manager.connect(
+            url: URL(string: "wss://example.invalid/callback-gated-ping-source")!
+        )
+        let sourceIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: source)
+        )
+        harness.manager.handleConnected(taskIdentifier: sourceIdentifier, protocolName: nil)
+        try #require(await waitForWebSocketState(source) { $0 == .connected })
+
+        let target = await harness.manager.connect(
+            url: URL(string: "wss://example.invalid/callback-gated-ping-target")!
+        )
+        let targetIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: target)
+        )
+        harness.manager.handleConnected(taskIdentifier: targetIdentifier, protocolName: nil)
+        try #require(await waitForWebSocketState(target) { $0 == .connected })
+
+        let callbackReturned = OSAllocatedUnfairLock<Bool>(initialState: false)
+        let pingSucceeded = OSAllocatedUnfairLock<Bool>(initialState: false)
+        let callbackError = OSAllocatedUnfairLock<String?>(initialState: nil)
+        await harness.manager.setOnMessageHandler { [manager = harness.manager] callbackTask, _ in
+            guard callbackTask === source else { return }
+            do {
+                try await manager.ping(target)
+                pingSucceeded.withLock { $0 = true }
+            } catch {
+                callbackError.withLock { $0 = String(describing: error) }
+            }
+            callbackReturned.withLock { $0 = true }
+        }
+
+        await harness.manager.acquireTaskLifecycleGateUnconditionally(taskID: target.id)
+        sourceURLTask.scriptReceive(.success(.data(Data("ping".utf8))))
+
+        let waiterDeadline = ContinuousClock.now + .seconds(1)
+        while await harness.manager.taskLifecycleGateWaiterCount(taskID: target.id) != 1,
+            !callbackReturned.withLock({ $0 }),
+            ContinuousClock.now < waiterDeadline
+        {
+            await Task.yield()
+        }
+        let waiterCount = await harness.manager.taskLifecycleGateWaiterCount(taskID: target.id)
+        await harness.manager.releaseTaskLifecycleGate(taskID: target.id)
+        #expect(waiterCount == 1)
+
+        let pingDispatchObserved = await waitForCondition(timeout: 1.0) {
+            targetURLTask.hasPendingPong || callbackReturned.withLock { $0 }
+        }
+        let pingWasDispatched = targetURLTask.hasPendingPong
+        #expect(pingDispatchObserved && pingWasDispatched)
+        targetURLTask.completePendingPong(with: nil)
+
+        #expect(
+            await waitForCondition(timeout: 1.0) {
+                callbackReturned.withLock { $0 }
+            }
+        )
+        #expect(pingSucceeded.withLock { $0 })
+        #expect(callbackError.withLock { $0 } == nil)
+        #expect(targetURLTask.pingCount == 1)
+
+        let shutdown = Task { await harness.manager.shutdown() }
+        #expect(await harness.session.waitForInvalidation())
+        harness.callbacks.handleInvalidation(nil)
+        await shutdown.value
+    }
+
+    @Test(
+        "message callback preserves ping outcome while its publication waits for a lifecycle gate",
+        arguments: [ManualPingCompletion.success, .failure]
+    )
+    func messageCallbackWaitsForPingOutcomePublication(
+        _ completion: ManualPingCompletion
+    ) async throws {
+        let configuration = WebSocketConfiguration(
+            heartbeatInterval: 0,
+            pongTimeout: 0.25,
+            reconnectDelay: 0,
+            maxReconnectAttempts: 0,
+            sessionIdentifier: makeWebSocketTestSessionIdentifier("callback-gated-ping-outcome")
+        )
+        let harness = makeShutdownHarness(configuration: configuration)
+        let sourceURLTask = StubWebSocketURLTask(taskIdentifier: 9_364)
+        let targetURLTask = StubWebSocketURLTask(taskIdentifier: 9_365)
+        harness.session.enqueue(sourceURLTask)
+        harness.session.enqueue(targetURLTask)
+
+        let source = await harness.manager.connect(
+            url: URL(string: "wss://example.invalid/callback-gated-outcome-source")!
+        )
+        let sourceIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: source)
+        )
+        harness.manager.handleConnected(taskIdentifier: sourceIdentifier, protocolName: nil)
+        try #require(await waitForWebSocketState(source) { $0 == .connected })
+
+        let target = await harness.manager.connect(
+            url: URL(string: "wss://example.invalid/callback-gated-outcome-target")!
+        )
+        let targetIdentifier = try #require(
+            await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: target)
+        )
+        harness.manager.handleConnected(taskIdentifier: targetIdentifier, protocolName: nil)
+        try #require(await waitForWebSocketState(target) { $0 == .connected })
+
+        let pongEventCount = OSAllocatedUnfairLock<Int>(initialState: 0)
+        let errorEventCount = OSAllocatedUnfairLock<Int>(initialState: 0)
+        _ = await harness.manager.addEventListener(for: target) { event in
+            switch event {
+            case .pong:
+                pongEventCount.withLock { $0 += 1 }
+            case .error(.pingTimeout):
+                errorEventCount.withLock { $0 += 1 }
+            case .connected, .disconnected, .message, .string, .ping, .error, .sendDropped:
+                break
+            }
+        }
+
+        let callbackReturned = OSAllocatedUnfairLock<Bool>(initialState: false)
+        let pingSucceeded = OSAllocatedUnfairLock<Bool>(initialState: false)
+        let callbackError = OSAllocatedUnfairLock<WebSocketError?>(initialState: nil)
+        await harness.manager.setOnMessageHandler { [manager = harness.manager] callbackTask, _ in
+            guard callbackTask === source else { return }
+            do {
+                try await manager.ping(target)
+                pingSucceeded.withLock { $0 = true }
+            } catch let error as WebSocketError {
+                callbackError.withLock { $0 = error }
+            } catch {
+                Issue.record("unexpected ping error: \(error)")
+            }
+            callbackReturned.withLock { $0 = true }
+        }
+
+        // Let preparePing complete before taking the target gate. Completing
+        // the transport while that gate is held then isolates the pong/error
+        // publication boundary from the initial ping-admission boundary.
+        sourceURLTask.scriptReceive(.success(.data(Data("outcome".utf8))))
+        let pingWasDispatched =
+            await waitForCondition(timeout: 1.0) {
+                targetURLTask.hasPendingPong || callbackReturned.withLock { $0 }
+            } && targetURLTask.hasPendingPong
+
+        var waiterCount = 0
+        if pingWasDispatched {
+            await harness.manager.acquireTaskLifecycleGateUnconditionally(taskID: target.id)
+            switch completion {
+            case .success:
+                targetURLTask.completePendingPong(with: nil)
+            case .failure:
+                targetURLTask.completePendingPong(with: URLError(.timedOut))
+            }
+
+            let waiterDeadline = ContinuousClock.now + .seconds(1)
+            while await harness.manager.taskLifecycleGateWaiterCount(taskID: target.id) != 1,
+                !callbackReturned.withLock({ $0 }),
+                ContinuousClock.now < waiterDeadline
+            {
+                await Task.yield()
+            }
+            waiterCount = await harness.manager.taskLifecycleGateWaiterCount(taskID: target.id)
+
+            // The old callback-wide shortcut returns or drops the outcome here.
+            // Release regardless of the observed result to keep failures bounded.
+            await harness.manager.releaseTaskLifecycleGate(taskID: target.id)
+        }
+
+        #expect(pingWasDispatched)
+        #expect(waiterCount == 1)
+        #expect(
+            await waitForCondition(timeout: 1.0) {
+                callbackReturned.withLock { $0 }
+            }
+        )
+
+        switch completion {
+        case .success:
+            #expect(pingSucceeded.withLock { $0 })
+            #expect(callbackError.withLock { $0 } == nil)
+            #expect(
+                await waitForCondition(timeout: 1.0) {
+                    pongEventCount.withLock { $0 } == 1
+                }
+            )
+            #expect(errorEventCount.withLock { $0 } == 0)
+        case .failure:
+            #expect(!pingSucceeded.withLock { $0 })
+            #expect(callbackError.withLock { $0 } == .pingTimeout)
+            #expect(
+                await waitForCondition(timeout: 1.0) {
+                    errorEventCount.withLock { $0 } == 1
+                }
+            )
+            #expect(pongEventCount.withLock { $0 } == 0)
+        }
+
+        let shutdown = Task { await harness.manager.shutdown() }
+        #expect(await harness.session.waitForInvalidation())
+        harness.callbacks.handleInvalidation(nil)
+        await shutdown.value
+    }
+
     @Test("admitted heartbeat callback can retry after terminal cleanup cancels its worker")
     func admittedHeartbeatCallbackRetrySurvivesWorkerCancellation() async throws {
         let configuration = WebSocketConfiguration(
@@ -2800,8 +3107,8 @@ struct WebSocketManagerShutdownTests {
         let replacementTask = OSAllocatedUnfairLock<WebSocketTask?>(initialState: nil)
         await harness.manager.setOnPongHandler { [manager = harness.manager] callbackTask, _ in
             await callbackGate.arriveAndWait()
-            let replacement = await manager.retry(callbackTask)
-            replacementTask.withLock { $0 = replacement }
+            let retryResult = await manager.retry(callbackTask)
+            replacementTask.withLock { $0 = retryResult?.task }
             callbackRetryReturned.withLock { $0 = true }
         }
 
@@ -3418,6 +3725,11 @@ struct WebSocketManagerShutdownTests {
     enum TerminalHandlerReplacementCase: Sendable {
         case error
         case disconnected
+    }
+
+    enum ManualPingCompletion: Sendable {
+        case success
+        case failure
     }
 }
 

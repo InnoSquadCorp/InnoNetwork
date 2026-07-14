@@ -40,9 +40,10 @@ enabled:
 - `retryJitterRatio = 0.2`
 - `maxRetryDelay = 60` — cap in seconds (set to `<= 0` to disable)
 
-See `EventDeliveryPolicy.md` for event-buffer tuning guidance. Treat
-exponential-backoff tuning knobs as future-candidate API until they are
-explicitly promoted in the stability contract.
+See the [event delivery guide](../../Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryGuide.md)
+for event-buffer tuning guidance. Treat exponential-backoff tuning knobs as
+future-candidate API until they are explicitly promoted in the stability
+contract.
 
 ## Troubleshooting
 

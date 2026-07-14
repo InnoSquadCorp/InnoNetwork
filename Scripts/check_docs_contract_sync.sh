@@ -43,7 +43,7 @@ required_meta_docs=(
   "$repo_root/docs/releases/5.0.0.md"
 )
 required_feature_docs=(
-  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryPolicy.md"
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryGuide.md"
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/OpenAPIGeneratorAdapter.md"
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/AuthRefresh.md"
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"
@@ -153,7 +153,8 @@ expected_stable=(
 '`DownloadManager`'
 '`WebSocketManager`'
 '`WebSocketManager.shutdown()`'
-'`WebSocketManager.retry(_:) -> WebSocketTask?`'
+'`WebSocketManager.retry(_:) -> WebSocketRetryResult?`'
+'`WebSocketRetryResult`'
 '`WebSocketTask.id`'
 '`WebSocketEvent.ping`'
 '`WebSocketEvent.pong`'
@@ -1019,9 +1020,13 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public func shutdown() async'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
       ;;
-    '`WebSocketManager.retry(_:) -> WebSocketTask?`')
-      pattern='public func retry(_ task: WebSocketTask) async -> WebSocketTask?'
+    '`WebSocketManager.retry(_:) -> WebSocketRetryResult?`')
+      pattern='public func retry(_ task: WebSocketTask) async -> WebSocketRetryResult?'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      ;;
+    '`WebSocketRetryResult`')
+      pattern='public struct WebSocketRetryResult: Sendable'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketEventTypes.swift"
       ;;
     '`WebSocketTask.id`')
       pattern='public nonisolated let id: String'
@@ -1407,8 +1412,10 @@ require_contains 'deinit {' \
   "$repo_root/Sources/InnoNetwork/Auth/RefreshTokenPolicy.swift"
 require_contains 'coordinator deinit cancels any orphaned in-flight refresh' \
   "$repo_root/docs/TaskOwnership.md"
-require_contains 'public func retry(_ task: WebSocketTask) async -> WebSocketTask?' \
+require_contains 'public func retry(_ task: WebSocketTask) async -> WebSocketRetryResult?' \
   "$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+require_contains 'public let events: AsyncStream<WebSocketEvent>' \
+  "$repo_root/Sources/InnoNetworkWebSocket/WebSocketEventTypes.swift"
 require_contains '`WebSocketManager.retry(_:)` is an explicit logical restart.' \
   "$api_stability"
 require_contains 'WebSocket explicit retry creates a fresh task' \
@@ -1418,7 +1425,7 @@ require_contains 'retires the source partition; its consumers finish' \
 require_contains 'Terminal states have no outgoing transition on the same logical task.' \
   "$repo_root/docs/WebSocketLifecycle.md"
 require_contains 'publication snapshot even when `.dropNewest` queues are full' \
-  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryPolicy.md"
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryGuide.md"
 require_contains 'invoke snapshotted callback' \
   "$repo_root/docs/TaskOwnership.md"
 require_contains '`InnoNetworkClientTransport`' \

@@ -36,7 +36,8 @@ and own application reducer types in their feature or architecture layer.
 - `DownloadManager`
 - `WebSocketManager`
 - `WebSocketManager.shutdown()`
-- `WebSocketManager.retry(_:) -> WebSocketTask?`
+- `WebSocketManager.retry(_:) -> WebSocketRetryResult?`
+- `WebSocketRetryResult`
 - `WebSocketTask.id`
 - `WebSocketEvent.ping`
 - `WebSocketEvent.pong`
@@ -575,16 +576,18 @@ requires `@_spi` import.
   because they are payloads of stable heartbeat events; their package-scoped
   initializers are construction details owned by the library.
 - `WebSocketManager.retry(_:)` is an explicit logical restart. A successful
-  call returns a new `WebSocketTask` with a fresh `id`; the terminal source
-  task and its listeners/streams remain bound to the retired identity. Attach
-  task-scoped consumers to the returned replacement. Automatic reconnect is a
-  different operation: it preserves the public task and `id` while replacing
-  the underlying `URLSessionWebSocketTask` for each transport generation.
+  call returns `WebSocketRetryResult`, whose `task` has a fresh `id` and whose
+  bounded `events` stream is registered before the replacement transport can
+  resume. The terminal source task and its listeners/streams remain bound to
+  the retired identity. Automatic reconnect is a different operation: it
+  preserves the public task and `id` while replacing the underlying
+  `URLSessionWebSocketTask` for each transport generation.
 - Explicit retry is accepted at most once for a terminal source task and only
   by the manager that owns it. It returns `nil` for a nonterminal, already
   claimed, foreign-manager, or post-shutdown source. If shutdown wins after
-  retry admission, the non-`nil` replacement can already be terminal with the
-  manager-shutdown connection error.
+  retry admission, the non-`nil` result's task can already be terminal with the
+  manager-shutdown connection error; its pre-registered stream carries that
+  terminal outcome.
 - `WebSocketTask.attemptedReconnectCount` may transiently observe
   `maxReconnectAttempts + 1` during the failure transition that emits
   `.error(.maxReconnectAttemptsExceeded)`. The counter is bumped **before**

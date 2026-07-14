@@ -25,8 +25,8 @@ memory-constrained device forces a smaller ceiling.
 
 ``EventDeliveryPolicy`` flows through each module's configuration:
 
-- ``WebSocketConfiguration/eventDeliveryPolicy``
-- ``DownloadConfiguration/eventDeliveryPolicy``
+- WebSocket: `WebSocketConfiguration.eventDeliveryPolicy`
+- Download: `DownloadConfiguration.eventDeliveryPolicy`
 - network request observability inside ``NetworkConfiguration``
 
 Passing a custom policy replaces the default for that manager's lifetime.

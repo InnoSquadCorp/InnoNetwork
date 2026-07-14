@@ -25,9 +25,10 @@ Versioning.
 - Body-dependent authentication uses `RequestSigner` and `RequestBody` after
   interceptors and refresh-token application. Signed requests bypass response
   caches, request coalescing, and URLSession cache storage.
-- `WebSocketManager.retry(_:)` returns an optional fresh `WebSocketTask` with a
-  new ID. The source task stays terminal, and per-task consumers must attach to
-  the returned replacement; automatic reconnect still preserves its task ID.
+- `WebSocketManager.retry(_:)` returns an optional `WebSocketRetryResult` with
+  a fresh task and bounded event stream. The stream is registered before the
+  replacement transport resumes, the source task stays terminal, and automatic
+  reconnect still preserves its task ID.
 
 See [`docs/Migration-5.0.0.md`](docs/Migration-5.0.0.md) for before/after
 examples and [`docs/releases/5.0.0.md`](docs/releases/5.0.0.md) for the

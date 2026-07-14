@@ -5,7 +5,7 @@ conditions, and the user's battery.
 
 ## Overview
 
-``WebSocketReconnectCoordinator`` decides whether a closed connection should reconnect,
+The internal `WebSocketReconnectCoordinator` decides whether a closed connection should reconnect,
 and how long to wait before the next attempt. The decision is informed by:
 
 1. The reason the connection closed (``WebSocketCloseDisposition``).
@@ -16,10 +16,10 @@ and how long to wait before the next attempt. The decision is informed by:
 
 `reconnectAction(_:_:)` returns one of:
 
-- ``WebSocketReconnectAction/retry(delay:)`` — schedule another attempt after the delay.
-- ``WebSocketReconnectAction/terminal`` — stop. The close was something we cannot recover
+- `retry` — schedule another attempt after the configured backoff delay.
+- `terminal` — stop. The close was something we cannot recover
   from automatically (e.g., HTTP `401`, protocol error).
-- ``WebSocketReconnectAction/exceeded`` — stop. We already used the per-connection budget.
+- `exceeded` — stop. We already used the per-connection budget.
 
 The built-in policy is intentionally narrow: application-defined custom close
 codes classify as ``WebSocketCloseDisposition/peerApplicationFailure(_:_:)`` and
@@ -28,9 +28,10 @@ do not auto-reconnect. Observe ``WebSocketTask/closeDisposition`` and call
 
 ```swift
 var currentTask = await manager.connect(url: socketURL)
+var currentEvents = await manager.events(for: currentTask)
 
 while true {
-    for await event in await manager.events(for: currentTask) {
+    for await event in currentEvents {
         print(event)
     }
 
@@ -39,17 +40,19 @@ while true {
     else { break }
 
     await refreshApplicationState()
-    guard let replacement = await manager.retry(currentTask) else { break }
-    currentTask = replacement
+    guard let retryResult = await manager.retry(currentTask) else { break }
+    currentTask = retryResult.task
+    currentEvents = retryResult.events
 }
 ```
 
 An explicit retry is a new logical task, not another state transition on the
 terminal source. It is accepted once for a terminal source and only by the
 manager that owns that source. The call returns `nil` for a nonterminal,
-already-claimed, foreign-manager, or post-shutdown task. If shutdown begins
-after admission, the returned replacement may already be terminal with the
-manager-shutdown connection error.
+already-claimed, foreign-manager, or post-shutdown task. Its bounded event
+stream is registered before the replacement transport resumes. If shutdown
+begins after admission, the returned task may already be terminal with the
+manager-shutdown connection error, which remains observable on that stream.
 
 Use handshake adapters when reconnect attempts need fresh auth headers:
 
@@ -90,9 +93,6 @@ herd. A small jitter (10–20 %) is enough to spread the load.
 - ``WebSocketTask/successfulReconnectCount`` — attempts that re-entered the `connected`
   state. Useful for SLO dashboards.
 
-The legacy property ``WebSocketTask/reconnectCount`` aliases `attemptedReconnectCount` for
-source compatibility.
-
 When a reconnect budget is exhausted, observers receive exactly one public
 `.error(.maxReconnectAttemptsExceeded)` or
 `.error(.reconnectWindowExceeded)` terminal outcome. The coordinator's
@@ -107,8 +107,8 @@ Disable auto-reconnect when:
   coordinator).
 - The app is being backgrounded without push wakeups configured. Reconnects in the
   background can drain battery and never deliver messages anyway.
-- Authentication or authorization has failed (``WebSocketCloseDisposition/handshakeUnauthorized``
-  or ``WebSocketCloseDisposition/handshakeForbidden``). Refresh the credential or permission,
+- Authentication or authorization has failed (``WebSocketCloseDisposition/handshakeUnauthorized(_:)``
+  or ``WebSocketCloseDisposition/handshakeForbidden(_:)``). Refresh the credential or permission,
   then reconnect explicitly or configure
   ``WebSocketHandshakeRequestAdapter`` so the next attempt builds fresh headers.
 
@@ -123,13 +123,14 @@ let configuration = WebSocketConfiguration.advanced { builder in
 | Flow | Public task and `id` | Transport generation | Task-scoped consumers |
 | --- | --- | --- | --- |
 | Automatic reconnect | Preserved | A fresh `URLSessionWebSocketTask` for each attempt | Retained |
-| Explicit ``WebSocketManager/retry(_:)`` | Fresh task with a new UUID-backed `id` | Fresh | Reattach to the returned task |
+| Explicit ``WebSocketManager/retry(_:)`` | Fresh task with a new UUID-backed `id` | Fresh | Consume the result's pre-registered stream; add any additional listeners to the returned task |
 
 Listeners and streams attached through ``WebSocketManager/events(for:)``
 survive automatic reconnect attempts because the manager retains the logical
 task partition while replacing its transport. Explicit retry permanently
 retires the source partition; its consumers finish and never migrate to the
-replacement task.
+replacement task. ``WebSocketRetryResult/events`` is attached to the fresh
+partition before its transport can produce events.
 
 ## Related
 

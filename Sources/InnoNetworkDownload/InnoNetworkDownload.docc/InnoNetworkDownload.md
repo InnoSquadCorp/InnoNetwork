@@ -15,7 +15,7 @@ Use this module when you need:
 
 Construct one ``DownloadManager`` per download domain with an explicit ``DownloadConfiguration`` and a unique session identifier.
 
-Download task events flow through the shared event hub. Tune buffering, overflow behavior, and metrics integration via ``DownloadConfiguration/eventDeliveryPolicy`` — see <doc:EventDeliveryPolicy> in the core module for a full guide.
+Download task events flow through the shared event hub. Tune buffering, overflow behavior, and metrics integration via ``DownloadConfiguration/eventDeliveryPolicy`` — see the [event delivery guide](https://innosquadcorp.github.io/InnoNetwork/InnoNetwork/documentation/innonetwork/eventdeliveryguide) in the core module.
 
 ## Topics
 

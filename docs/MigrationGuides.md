@@ -135,7 +135,7 @@ let authEndpoint = EndpointBuilder<EmptyResponse, AuthRequiredScope>
 - Response cache: [Caching Strategies](../Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md).
 - Background download: [Examples/DownloadManager](../Examples/DownloadManager).
 - WebSocket chat: [Examples/WebSocketChat](../Examples/WebSocketChat).
-- Observability: [Examples/EventPolicyObserver](../Examples/EventPolicyObserver) and [Event Delivery Policy](../Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryPolicy.md).
+- Observability: [Examples/EventPolicyObserver](../Examples/EventPolicyObserver) and [Event Delivery Policy](../Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryGuide.md).
 
 ## Platform Trade-off
 

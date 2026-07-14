@@ -150,6 +150,8 @@ InnoNetworkWebSocket	swift.property	WebSocketPingContext.attemptNumber
 InnoNetworkWebSocket	swift.property	WebSocketPingContext.dispatchedAt
 InnoNetworkWebSocket	swift.property	WebSocketPongContext.attemptNumber
 InnoNetworkWebSocket	swift.property	WebSocketPongContext.roundTrip
+InnoNetworkWebSocket	swift.property	WebSocketRetryResult.events
+InnoNetworkWebSocket	swift.property	WebSocketRetryResult.task
 InnoNetworkWebSocket	swift.property	WebSocketProtocolFeature.description
 InnoNetworkWebSocket	swift.property	WebSocketState.isTerminal
 InnoNetworkWebSocket	swift.property	WebSocketState.nextStates
@@ -171,6 +173,7 @@ InnoNetworkWebSocket	swift.struct	WebSocketEventSubscription
 InnoNetworkWebSocket	swift.struct	WebSocketHandshakeRequestAdapter
 InnoNetworkWebSocket	swift.struct	WebSocketPingContext
 InnoNetworkWebSocket	swift.struct	WebSocketPongContext
+InnoNetworkWebSocket	swift.struct	WebSocketRetryResult
 InnoNetworkWebSocket	swift.type.method	WebSocketConfiguration.advanced(_:)
 InnoNetworkWebSocket	swift.type.method	WebSocketConfiguration.safeDefaults()
 InnoNetworkWebSocket	swift.type.property	WebSocketConfiguration.default

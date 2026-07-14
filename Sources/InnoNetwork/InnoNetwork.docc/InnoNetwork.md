@@ -84,7 +84,7 @@ reason to tune those defaults.
 
 ### Event Pipeline
 
-- <doc:EventDeliveryPolicy>
+- <doc:EventDeliveryGuide>
 - ``EventDeliveryPolicy``
 - ``EventPipelineOverflowPolicy``
 - ``EventPipelineMetricsReporting``

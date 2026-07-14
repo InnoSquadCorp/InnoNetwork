@@ -173,6 +173,10 @@ package actor TaskEventHub<Event: Sendable> {
         partitions[taskID]?.listeners.count ?? 0
     }
 
+    package func streamConsumerCount(taskID: String) -> Int {
+        partitions[taskID]?.streamConsumers.count ?? 0
+    }
+
     package func stream(for taskID: String) -> AsyncStream<Event> {
         let stream = AsyncStream<Event>.makeStream(
             bufferingPolicy: .bufferingNewest(policy.maxBufferedEventsPerConsumer)
