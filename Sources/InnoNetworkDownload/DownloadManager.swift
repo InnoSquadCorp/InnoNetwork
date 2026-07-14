@@ -179,7 +179,10 @@ public actor DownloadManager {
         let backgroundCompletionStore = BackgroundCompletionStore()
         let delegate = DownloadSessionDelegate(
             callbacks: callbacks,
-            backgroundCompletionStore: backgroundCompletionStore
+            backgroundCompletionStore: backgroundCompletionStore,
+            completionStager: DownloadCompletionStager(
+                directoryURL: DownloadCompletionStager.directoryURL(for: configuration)
+            )
         )
 
         let sessionConfig = configuration.makeURLSessionConfiguration()
@@ -289,12 +292,15 @@ public actor DownloadManager {
                     ))
             },
             onCompletion: { [delegateEventContinuation] taskIdentifier, location, error in
-                delegateEventContinuation.yield(
+                let result = delegateEventContinuation.yield(
                     .completion(
                         taskIdentifier: taskIdentifier,
                         location: location,
                         error: error
                     ))
+                if case .terminated = result, let location {
+                    DownloadCompletionStager.removeIfPresent(location)
+                }
             }
         )
         let consumerTask: Task<Void, Never> = Task { [weak self, delegateEvents] in

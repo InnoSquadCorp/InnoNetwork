@@ -40,7 +40,12 @@ extension DownloadManager {
     }
 
     func handleCompletion(taskIdentifier: Int, location: URL?, error: SendableUnderlyingError?) async {
-        guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else { return }
+        guard let task = await runtimeRegistry.downloadTask(for: taskIdentifier) else {
+            if let location {
+                DownloadCompletionStager.removeIfPresent(location)
+            }
+            return
+        }
 
         if let error {
             await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)

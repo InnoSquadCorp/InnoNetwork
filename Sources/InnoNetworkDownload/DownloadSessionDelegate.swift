@@ -5,13 +5,16 @@ import os
 package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate {
     private let callbacks: DownloadSessionDelegateCallbacks
     private let backgroundCompletionStore: BackgroundCompletionStore
+    private let completionStager: DownloadCompletionStager
 
     package init(
         callbacks: DownloadSessionDelegateCallbacks,
-        backgroundCompletionStore: BackgroundCompletionStore
+        backgroundCompletionStore: BackgroundCompletionStore,
+        completionStager: DownloadCompletionStager = DownloadCompletionStager()
     ) {
         self.callbacks = callbacks
         self.backgroundCompletionStore = backgroundCompletionStore
+        self.completionStager = completionStager
         super.init()
     }
 
@@ -35,11 +38,23 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        callbacks.handleCompletion(
-            taskIdentifier: downloadTask.taskIdentifier,
-            location: location,
-            error: nil
-        )
+        do {
+            let stagedLocation = try completionStager.stage(
+                location,
+                taskIdentifier: downloadTask.taskIdentifier
+            )
+            callbacks.handleCompletion(
+                taskIdentifier: downloadTask.taskIdentifier,
+                location: stagedLocation,
+                error: nil
+            )
+        } catch {
+            callbacks.handleCompletion(
+                taskIdentifier: downloadTask.taskIdentifier,
+                location: nil,
+                error: SendableUnderlyingError(error)
+            )
+        }
     }
 
     package func urlSession(

@@ -50,6 +50,9 @@ package struct DownloadTransferCoordinator {
 
     package func completeDownload(task: DownloadTask, temporaryLocation: URL) async throws {
         let fileManager = FileManager.default
+        defer {
+            DownloadCompletionStager.removeIfPresent(temporaryLocation)
+        }
 
         let directory = task.destinationURL.deletingLastPathComponent()
         if !fileManager.fileExists(atPath: directory.path) {
