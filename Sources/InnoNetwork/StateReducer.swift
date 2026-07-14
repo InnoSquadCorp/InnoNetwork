@@ -1,24 +1,24 @@
 /// Generic value returned by reducers that emit a new state plus ordered
 /// side-effect descriptions for the caller to interpret.
-public struct StateReduction<State: Sendable, Effect: Sendable>: Sendable {
+package struct StateReduction<State: Sendable, Effect: Sendable>: Sendable {
     /// The next state after the reducer has applied an event.
-    public let state: State
+    package let state: State
     /// Side effects the reducer wants the caller to perform, in order.
-    public let effects: [Effect]
+    package let effects: [Effect]
 
     /// Construct a reduction result.
     /// - Parameters:
     ///   - state: The next state to apply.
     ///   - effects: Side effects to perform in order. Defaults to an empty list
     ///     for transitions that only update state.
-    public init(state: State, effects: [Effect] = []) {
+    package init(state: State, effects: [Effect] = []) {
         self.state = state
         self.effects = effects
     }
 }
 
 /// Common shape for reducer-driven lifecycle logic.
-public protocol StateReducer: Sendable {
+package protocol StateReducer: Sendable {
     /// The reducer's persistent input — typically a value type representing a
     /// snapshot of the lifecycle.
     associatedtype State: Sendable
