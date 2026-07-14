@@ -452,8 +452,8 @@ validate_default_aliases() {
 }
 
 validate_benchmark_docs() {
-  require_contains 'swift run InnoNetworkBenchmarks --quick' "$readme"
-  require_contains 'swift run InnoNetworkBenchmarks --json-path /tmp/innonetwork-bench.json' "$readme"
+  require_contains 'swift run -c release InnoNetworkBenchmarks --quick' "$readme"
+  require_contains 'swift run -c release InnoNetworkBenchmarks --json-path /tmp/innonetwork-bench.json' "$readme"
   require_contains 'JSON summary' "$repo_root/Benchmarks/README.md"
   require_contains '"results"' "$repo_root/Benchmarks/README.md"
 }

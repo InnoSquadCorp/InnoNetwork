@@ -18,10 +18,11 @@ private struct BenchmarkResult: Codable, Sendable {
     /// baseline contract backwards compatible).
     let peakResidentBytes: UInt64?
     /// Current resident-memory delta (`postResidentBytes -
-    /// preResidentBytes`) in bytes. Positive values surface allocation hot
-    /// spots that throughput-only metrics miss; negative values mean the
-    /// closure released memory back to the system before returning. `nil`
-    /// for the same reasons as ``peakResidentBytes``.
+    /// preResidentBytes`) in bytes. Positive values surface process resident
+    /// growth that throughput-only metrics miss; negative values mean the
+    /// process returned resident pages before the closure completed. This is
+    /// not an allocation counter. `nil` for the same reasons as
+    /// ``peakResidentBytes``.
     let residentDeltaBytes: Int64?
 }
 
@@ -422,7 +423,7 @@ private enum InnoNetworkBenchmarks {
         results.append(try await benchmarkPersistenceRestore(iterations: restoreIterations))
         results.append(try await benchmarkReconnectDecision(iterations: reconnectIterations))
         results.append(try await benchmarkCloseDispositionClassify(iterations: websocketGuardIterations))
-        results.append(try await benchmarkPingContextAlloc(iterations: websocketGuardIterations))
+        results.append(try await benchmarkPingContextCreation(iterations: websocketGuardIterations))
         results.append(try await benchmarkWebSocketSendQueue(iterations: sendQueueIterations))
         results.append(try await benchmarkWebSocketLifecycleTransitionTable(iterations: lifecycleIterations))
         let clientIterations = options.quick ? 2_000 : 20_000
@@ -696,11 +697,12 @@ private enum InnoNetworkBenchmarks {
         }
     }
 
-    /// Measures the cost of allocating a `WebSocketPingContext` — dominated
-    /// by the `ContinuousClock.now` read. Heartbeat loops emit this on every
-    /// cycle so it is a natural regression-guard target.
-    private static func benchmarkPingContextAlloc(iterations: Int) async throws -> BenchmarkResult {
-        try await measure(name: "websocket-ping-context-alloc", group: "websocket", iterations: iterations) {
+    /// Measures `WebSocketPingContext` construction throughput, including the
+    /// `ContinuousClock.now` read. It does not count heap allocations.
+    /// Heartbeat loops emit this on every cycle, so it is a natural
+    /// regression-guard target.
+    private static func benchmarkPingContextCreation(iterations: Int) async throws -> BenchmarkResult {
+        try await measure(name: "websocket-ping-context-create", group: "websocket", iterations: iterations) {
             var attempt = 0
             for _ in 0..<iterations {
                 attempt &+= 1
@@ -830,9 +832,11 @@ private enum InnoNetworkBenchmarks {
     /// The benchmark runs the full request pipeline against an in-memory URL
     /// session that returns a fixed JSON payload, with `depth` passive
     /// interceptors installed (identity `willDecode` / `didDecode`). The
-    /// per-iteration delta between depths captures the allocation cost of
-    /// adding a chain link. Used as a baseline so future regressions in the
-    /// dispatch/iteration shape surface here before they reach production.
+    /// per-iteration delta between depths captures the combined construction,
+    /// iteration, and async-dispatch cost of adding a chain link. It does not
+    /// isolate or count allocations. Used as a baseline so future regressions
+    /// in the dispatch/iteration shape surface here before they reach
+    /// production.
     private static func benchmarkDecodingInterceptorChain(
         depth: Int,
         iterations: Int,

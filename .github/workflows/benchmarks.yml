@@ -64,7 +64,7 @@ jobs:
           status=1
           for attempt in 1 2 3; do
             echo "Guarded benchmark attempt ${attempt}/3"
-            if xcrun swift run InnoNetworkBenchmarks \
+            if xcrun swift run -c release InnoNetworkBenchmarks \
               --quick \
               --json-path .build/benchmarks/results.json \
               --enforce-baseline \
@@ -72,7 +72,7 @@ jobs:
               --guard-benchmark persistence/download-persistence-restore \
               --guard-benchmark persistence/append-log-compaction \
               --guard-benchmark websocket/websocket-close-disposition-classify \
-              --guard-benchmark websocket/websocket-ping-context-alloc \
+              --guard-benchmark websocket/websocket-ping-context-create \
               --guard-benchmark websocket/websocket-send-queue-reserve \
               --guard-benchmark websocket/websocket-lifecycle-transition-table \
               --guard-benchmark client/request-pipeline \
@@ -133,6 +133,7 @@ jobs:
         with:
           name: innonetwork-benchmarks
           path: .build/benchmarks/results.json
+          if-no-files-found: error
 
   append-trend:
     name: Append benchmark trend

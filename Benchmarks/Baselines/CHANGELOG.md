@@ -11,6 +11,19 @@ Record the reason every time `default.json` changes.
 - Reason:
 - Validation:
 
+## 5.0.0
+
+- Date: 2026-07-14
+- PR: N/A (5.0 direct-main preparation)
+- Runner: identifier-only baseline migration; measurements unchanged
+- Benchmarks changed: renamed `websocket/websocket-ping-context-alloc` to
+  `websocket/websocket-ping-context-create`.
+- Reason: the benchmark measures construction throughput plus a clock read; it
+  does not count heap allocations. The new identifier makes the measured
+  contract explicit without changing the captured baseline value.
+- Validation: `swift run -c release InnoNetworkBenchmarks --quick
+  --enforce-baseline` with the guarded identifier set.
+
 ## 4.0.0
 
 - Date: 2026-05-02

@@ -191,37 +191,7 @@ jobs:
 
       - name: Generate coverage report
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
-        run: |
-          set -eo pipefail
-          # Resolve all .xctest binaries and the merged profdata under the
-          # SwiftPM build root. The exact paths are platform/version-dependent
-          # so we discover them dynamically.
-          profdata="$(find .build -name 'default.profdata' -type f | head -n 1)"
-          llvm_cov_objects=()
-          while IFS= read -r -d '' xctest_bundle; do
-            binary="$xctest_bundle/Contents/MacOS/$(basename "$xctest_bundle" .xctest)"
-            if [[ -x "$binary" ]]; then
-              llvm_cov_objects+=(--object "$binary")
-            fi
-          done < <(find .build -name '*.xctest' -type d -print0)
-
-          if [[ -z "$profdata" || ${#llvm_cov_objects[@]} -eq 0 ]]; then
-            echo "::warning::Coverage artifacts not found; skipping report."
-            exit 0
-          fi
-
-          mkdir -p .build/coverage
-          xcrun llvm-cov report \
-            --instr-profile="$profdata" \
-            --use-color=false \
-            --ignore-filename-regex='(^|/)(\.build|Tests|SmokeTests|Examples|Benchmarks)/' \
-            "${llvm_cov_objects[@]}" | tee .build/coverage/summary.txt
-
-          xcrun llvm-cov export \
-            --instr-profile="$profdata" \
-            --format=lcov \
-            --ignore-filename-regex='(^|/)(\.build|Tests|SmokeTests|Examples|Benchmarks)/' \
-            "${llvm_cov_objects[@]}" > .build/coverage/coverage.lcov
+        run: bash Scripts/generate_coverage_report.sh .build .build/coverage Sources
 
       - name: Upload coverage artifact
         if: always() && steps.toolchain-compatibility.outputs.compatible == 'true'
@@ -232,6 +202,7 @@ jobs:
           # slot.
           name: innonetwork-coverage-${{ matrix.xcode.label }}
           path: .build/coverage/
+          if-no-files-found: error
 
       - name: Detect Codecov token
         id: codecov-token
@@ -269,6 +240,9 @@ jobs:
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         with:
           files: .build/coverage/coverage.lcov
+          disable_search: true
+          flags: core
+          name: core-coverage
           # Fail the build when upload fails on canonical main pushes so a
           # Codecov outage does not silently drop coverage from the project
           # gate. PRs keep the artifact-only fallback non-blocking.
@@ -500,8 +474,53 @@ jobs:
         working-directory: Examples/GeneratedClientRecipe
         run: xcrun swift build
 
-      - name: Test codegen package
-        run: xcrun swift test --package-path Packages/InnoNetworkCodegen
+      - name: Test codegen package (with code coverage)
+        run: xcrun swift test --package-path Packages/InnoNetworkCodegen --enable-code-coverage
+
+      - name: Generate codegen coverage report
+        run: |
+          bash Scripts/generate_coverage_report.sh \
+            Packages/InnoNetworkCodegen/.build \
+            .build/coverage-codegen \
+            Packages/InnoNetworkCodegen/Sources
+
+      - name: Upload codegen coverage artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: innonetwork-coverage-codegen
+          path: .build/coverage-codegen/
+          if-no-files-found: error
+
+      - name: Detect Codecov token for codegen
+        id: codegen-codecov-token
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [[ -n "${CODECOV_TOKEN:-}" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require Codecov token for codegen on canonical main builds
+        if: github.event_name == 'push' && github.repository == 'InnoSquadCorp/InnoNetwork' && steps.codegen-codecov-token.outputs.present != 'true'
+        run: |
+          echo "::error::CODECOV_TOKEN secret is missing on a canonical main build." \
+            "The codegen coverage upload is required alongside core coverage."
+          exit 1
+
+      - name: Upload codegen coverage to Codecov
+        if: steps.codegen-codecov-token.outputs.present == 'true'
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+        with:
+          files: .build/coverage-codegen/coverage.lcov
+          disable_search: true
+          flags: codegen
+          name: codegen-coverage
+          fail_ci_if_error: ${{ github.event_name == 'push' && github.repository == 'InnoSquadCorp/InnoNetwork' }}
 
       - name: Build openapi-to-innonetwork CLI
         working-directory: Tools/openapi-to-innonetwork
@@ -539,7 +558,7 @@ jobs:
       - name: Run benchmark smoke
         run: |
           mkdir -p .build/benchmarks
-          xcrun swift run InnoNetworkBenchmarks \
+          xcrun swift run -c release InnoNetworkBenchmarks \
             --quick \
             --json-path .build/benchmarks/results.json
 
@@ -549,3 +568,4 @@ jobs:
         with:
           name: innonetwork-benchmark-smoke
           path: .build/benchmarks/results.json
+          if-no-files-found: error

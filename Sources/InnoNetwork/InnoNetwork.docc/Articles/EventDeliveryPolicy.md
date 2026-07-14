@@ -151,9 +151,9 @@ let config = WebSocketConfiguration.advanced {
 
 - ``EventDeliveryPolicy/default``: balanced for interactive UX; safe
   starting point.
-- Zero-allocation reporter (``NoOpEventPipelineMetricsReporter``) wires up
-  in tests or benchmarks that need to exercise the metrics pipeline without
-  side effects.
+- No-op reporter (``NoOpEventPipelineMetricsReporter``) wires up in tests or
+  benchmarks that need to exercise the metrics pipeline without side effects.
+  It does not provide an allocation-counting guarantee.
 
 Revisit the policy when you ship operational metrics that show overflow or
 consumer latency p95 creeping up — that is the earliest signal that the

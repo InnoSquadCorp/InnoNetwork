@@ -753,8 +753,8 @@ streams), use `DefaultNetworkClient.stream(_:)` together with a
 The repository includes a dedicated benchmark runner for quick local comparisons.
 
 ```bash
-swift run InnoNetworkBenchmarks --quick
-swift run InnoNetworkBenchmarks --json-path /tmp/innonetwork-bench.json
+swift run -c release InnoNetworkBenchmarks --quick
+swift run -c release InnoNetworkBenchmarks --json-path /tmp/innonetwork-bench.json
 ```
 
 Benchmark governance, baseline policy, and CI posture are documented in [Benchmarks/README.md](Benchmarks/README.md).

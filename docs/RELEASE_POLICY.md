@@ -21,8 +21,9 @@
    - docs contract sync
    - doc smoke build/run
    - consumer smoke build
-   - benchmark quick run with the guarded request pipeline, event hub,
-     response cache, download restore, and WebSocket lifecycle/send set
+   - release-mode benchmark quick run with enforced baselines for the guarded
+     request pipeline, event hub, response cache, download restore, and
+     WebSocket lifecycle/send set
    - DocC build smoke
    - GitHub Release creation with benchmark artifact upload
 5. Re-check `API_STABILITY.md` and `Scripts/symbols/*.allowlist`

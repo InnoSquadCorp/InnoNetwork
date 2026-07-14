@@ -20,7 +20,7 @@ swift build --target InnoNetworkBenchmarks
 For benchmark validation:
 
 ```bash
-swift run InnoNetworkBenchmarks --quick --json-path /tmp/innonetwork-bench.json
+swift run -c release InnoNetworkBenchmarks --quick --json-path /tmp/innonetwork-bench.json
 ```
 
 ## Pull Request Expectations

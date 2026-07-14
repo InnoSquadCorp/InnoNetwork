@@ -24,10 +24,14 @@ The `CI` workflow must pass all of the following:
    production source targets. Tests and smoke fixtures are excluded.
 8. `bash Scripts/check_no_print_in_production.sh` returns no matches in
    production source targets. Tests and smoke fixtures are excluded.
-9. Coverage report is generated under `.build/coverage/` and uploaded as a
-   workflow artifact. When the `CODECOV_TOKEN` secret is configured the
-   `lcov` payload is also uploaded to Codecov; without the token the upload
-   step is skipped (the artifact alone is enough for manual review).
+9. Core and codegen coverage reports are generated from explicit source roots
+   under `.build/coverage/` and `.build/coverage-codegen/`, then uploaded as
+   separate workflow artifacts. Missing profiling data, test executables,
+   source files, or LCOV records fail the job; artifact upload also uses
+   `if-no-files-found: error`. Codecov receives only those explicit reports
+   with `disable_search: true`, using separate `core` and `codegen` flags.
+   Tokenless PRs retain artifact-only review, while canonical `main` pushes
+   require both Codecov uploads.
 10. `apple-platform-build-smoke` runs `xcodebuild ... build` for macOS, iOS,
    tvOS, watchOS, and visionOS destinations. Simulator destinations are
    build-only; SwiftPM test+coverage remains the runtime test gate. All five
@@ -36,13 +40,15 @@ The `CI` workflow must pass all of the following:
 11. Consumer smoke first asserts that the root package dependency graph does not
    contain `swift-syntax`, then builds separate core-only, aggregate,
    download-only, websocket-only, test-support, generated-client, and codegen
-   usage packages. Macro tests run from `Packages/InnoNetworkCodegen` so the
-   codegen dependency graph stays isolated from root package consumers.
+   usage packages. Macro tests run with coverage from
+   `Packages/InnoNetworkCodegen` so the codegen dependency graph and report
+   stay isolated from root package consumers.
 12. `bash Scripts/check_provisional_enum_cases.sh` confirms guarded public enum
     cases still match their migration-review allowlist.
 13. The codegen package runs its complete test target rather than a named-test
     filter, so newly added macro suites are included automatically.
-14. The CI benchmark smoke job runs `swift run InnoNetworkBenchmarks --quick`
+14. The CI benchmark smoke job runs
+    `swift run -c release InnoNetworkBenchmarks --quick`
     and uploads the JSON summary to prove the benchmark CLI still builds and
     emits parseable results. Regression enforcement lives in the dedicated
     `Benchmarks` workflow: pull requests use the guarded benchmark set with
@@ -94,39 +100,23 @@ bash Scripts/check_no_print_in_production.sh
 bash Scripts/check_shared_coders_mutation.sh
 bash Scripts/check_provisional_enum_cases.sh
 
-# Optional: render the same coverage artifacts CI uploads.
-profdata="$(find .build -name 'default.profdata' -type f | head -n 1)"
-llvm_cov_objects=()
-while IFS= read -r -d '' xctest_bundle; do
-  binary="$xctest_bundle/Contents/MacOS/$(basename "$xctest_bundle" .xctest)"
-  if [[ -x "$binary" ]]; then
-    llvm_cov_objects+=(--object "$binary")
-  fi
-done < <(find .build -name '*.xctest' -type d -print0)
-if [[ -z "$profdata" || ${#llvm_cov_objects[@]} -eq 0 ]]; then
-  echo "Coverage artifacts not found; skipping report."
-  exit 0
-fi
-mkdir -p .build/coverage
-xcrun llvm-cov report \
-  --instr-profile="$profdata" \
-  --use-color=false \
-  --ignore-filename-regex='(^|/)(\.build|Tests|SmokeTests|Examples|Benchmarks)/' \
-  "${llvm_cov_objects[@]}" | tee .build/coverage/summary.txt
-xcrun llvm-cov export \
-  --instr-profile="$profdata" \
-  --format=lcov \
-  --ignore-filename-regex='(^|/)(\.build|Tests|SmokeTests|Examples|Benchmarks)/' \
-  "${llvm_cov_objects[@]}" > .build/coverage/coverage.lcov
+# Render the same explicit coverage artifacts CI uploads. These commands fail
+# instead of silently accepting missing or empty coverage inputs.
+bash Scripts/generate_coverage_report.sh .build .build/coverage Sources
+xcrun swift test --package-path Packages/InnoNetworkCodegen --enable-code-coverage
+bash Scripts/generate_coverage_report.sh \
+  Packages/InnoNetworkCodegen/.build \
+  .build/coverage-codegen \
+  Packages/InnoNetworkCodegen/Sources
 
 # Optional: replay the benchmark smoke guard locally.
-xcrun swift run InnoNetworkBenchmarks --quick \
+xcrun swift run -c release InnoNetworkBenchmarks --quick \
   --enforce-baseline \
   --guard-benchmark events/task-event-fanout-single \
   --guard-benchmark persistence/download-persistence-restore \
   --guard-benchmark persistence/append-log-compaction \
   --guard-benchmark websocket/websocket-close-disposition-classify \
-  --guard-benchmark websocket/websocket-ping-context-alloc \
+  --guard-benchmark websocket/websocket-ping-context-create \
   --guard-benchmark websocket/websocket-send-queue-reserve \
   --guard-benchmark websocket/websocket-lifecycle-transition-table \
   --guard-benchmark client/request-pipeline \

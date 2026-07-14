@@ -82,7 +82,7 @@
       "elapsedSeconds" : 0.183290041,
       "group" : "websocket",
       "iterations" : 500000,
-      "name" : "websocket-ping-context-alloc",
+      "name" : "websocket-ping-context-create",
       "operationsPerSecond" : 2727916.897568919
     },
     {

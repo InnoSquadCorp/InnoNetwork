@@ -10,15 +10,16 @@
 - `persistence/download-persistence-restore` — persisted download registry restore cost after app relaunch.
 - `websocket/websocket-reconnect-decision` — `WebSocketReconnectCoordinator.reconnectAction` 분기 비용.
 - `websocket/websocket-close-disposition-classify` — `WebSocketCloseDisposition.classifyPeerClose` 분류기 비용 (4.0.0).
-- `websocket/websocket-ping-context-alloc` — `WebSocketPingContext` 생성 + `ContinuousClock.now` 읽기 비용 (4.0.0, heartbeat 루프 핫패스).
+- `websocket/websocket-ping-context-create` — `WebSocketPingContext` 생성 + `ContinuousClock.now` 읽기 throughput (heartbeat 루프 핫패스). 힙 할당 횟수를 카운트하지 않습니다.
 - `websocket/websocket-send-queue-reserve` — send queue backpressure slot 예약/해제 hot path.
 - `websocket/websocket-lifecycle-transition-table` — lifecycle state transition table lookup cost.
 - `client/request-pipeline` — in-memory `DefaultNetworkClient.request(_:)` dispatch/retry/event/decode path.
 - `client/request-coalescing-shared-get` — shared GET request coalescing fan-in overhead.
 - `client/decoding-interceptor-chain-{1,3,8}` — passive `DecodingInterceptor`
   chain depth baseline. The per-iteration delta between depths captures the
-  per-link allocation/dispatch overhead. Baseline added so future
-  regressions in the chain shape surface here before reaching production.
+  combined construction, iteration, and async-dispatch overhead; it does not
+  isolate heap allocations. Baseline added so future regressions in the chain
+  shape surface here before reaching production.
 - `cache/response-cache-*` — response cache lookup and conditional revalidation preparation.
 
 ## Memory Metrics
@@ -31,8 +32,9 @@
   set size (`resident_size_max`, bytes). 이 값은 프로세스 시작 이후의
   peak라서 앞서 실행된 benchmark의 영향을 포함할 수 있습니다.
 - `residentDeltaBytes`: 클로저 종료 직후 현재 resident set size에서
-  클로저 시작 직전 현재 resident set size를 뺀 값입니다. 양수는 클로저가
-  새로 점유한 메모리, 음수는 시스템에 반환한 메모리입니다.
+  클로저 시작 직전 현재 resident set size를 뺀 값입니다. 양수는 프로세스의
+  resident page가 늘었음을, 음수는 완료 시점에 resident page가
+  줄었음을 뜻합니다. 이 값은 힙 할당/해제 횟수가 아닙니다.
 
 Resident 메모리는 페이지 단위(Apple Silicon은 16 KiB)로 반올림되므로,
 같은 페이지 안에서 끝나는 작은 할당은 0으로 보일 수 있습니다.
@@ -122,7 +124,7 @@ baseline 갱신은 사람이 명시적으로 수행하는 운영 작업입니다
    cp /tmp/inb/results.json Benchmarks/Baselines/default.json
    ```
    workflow가 출력하는 JSON 스키마는 baseline 파일과 동일합니다.
-3. **변경 검증**: 같은 commit에서 `swift run InnoNetworkBenchmarks --quick
+3. **변경 검증**: 같은 commit에서 `swift run -c release InnoNetworkBenchmarks --quick
    --json-path .build/benchmarks/results.json --enforce-baseline
    --max-regression-percent 20` 을 다시 돌려 가드를 통과하는지 확인합니다.
    통과해야 PR을 올립니다.
@@ -170,6 +172,8 @@ function dispatch.
 
 ## CI Policy
 
+- CI와 release workflow의 benchmark 커맨드는 모두 `-c release`로 실행해
+  debug 빌드 오버헤드가 throughput 비교에 섞이지 않게 합니다.
 - PR CI의 `Benchmark Smoke` job은 `--quick` benchmark를 실행해 CLI 빌드와 JSON
   summary 생성을 확인합니다.
 - PR benchmark workflow가 guarded benchmark set을 `20%` threshold로 검사하고,
@@ -182,6 +186,8 @@ function dispatch.
 - scheduled/manual benchmark workflow는 같은 guard 항목을 `10%` threshold로 검사하는 strict regression gate입니다.
 - scheduled/manual benchmark 결과는 `benchmark-trends` branch의
   `trends/benchmark-results.jsonl`에 누적됩니다.
+- tag release는 같은 guarded set을 10% threshold로 강제하며,
+  baseline 누락·스키마 오류·회귀 중 하나라도 있으면 publish를 시작하지 않습니다.
 - 두 workflow 모두 JSON summary artifact를 업로드해 실패 시 수치 비교를 바로 확인할 수 있게 합니다.
 
 Guarded benchmark set:
@@ -190,7 +196,7 @@ Guarded benchmark set:
 - `persistence/download-persistence-restore`: background download resume/restore 경로 baseline.
 - `persistence/append-log-compaction`: append-log snapshot compaction 경로 baseline.
 - `websocket/websocket-close-disposition-classify`: close callback마다 실행되는 분류 hot path.
-- `websocket/websocket-ping-context-alloc`: heartbeat loop context 생성 hot path.
+- `websocket/websocket-ping-context-create`: heartbeat loop context 생성 hot path.
 - `websocket/websocket-send-queue-reserve`: send queue backpressure accounting baseline.
 - `websocket/websocket-lifecycle-transition-table`: lifecycle transition table lookup baseline.
 - `client/request-pipeline`: core request pipeline overhead baseline.
