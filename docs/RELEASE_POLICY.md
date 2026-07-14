@@ -15,7 +15,10 @@
 
 1. Update `CHANGELOG.md`
 2. Confirm `docs/releases/<version>.md`
-3. Push an annotated tag such as `4.0.0`
+3. Push an unprefixed annotated SemVer tag such as `5.0.0`. The tagged commit
+   must be reachable from the freshly fetched `origin/main` and already contain
+   `docs/releases/<version>.md`; the workflow rejects lightweight tags,
+   off-main commits, stale main refs, and missing release notes before build.
 4. Let the `Release` workflow run:
    - `swift test --no-parallel --enable-code-coverage`
    - docs contract sync
@@ -25,7 +28,9 @@
      request pipeline, event hub, response cache, download restore, and
      WebSocket lifecycle/send set
    - DocC build smoke
-   - GitHub Release creation with benchmark artifact upload
+   - resolved CycloneDX SBOM generation for both the root and codegen packages
+   - sigstore signing and GitHub Release creation with the benchmark and both
+     SBOM artifact sets
 5. Re-check `API_STABILITY.md` and `Scripts/symbols/*.allowlist`
    together whenever a release branch changes public or SPI declarations.
 6. Re-run DocC/sample smoke after documentation-only release edits so

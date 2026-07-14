@@ -39,9 +39,10 @@ Whichever channel you use, please include:
 
 ## Verifying release artifacts
 
-Tagged releases publish the benchmark snapshot (`benchmarks.json`) and a
-CycloneDX SBOM (`sbom.cdx.json`) signed with sigstore cosign keyless
-signatures. The signing workflow runs on
+Tagged releases publish the benchmark snapshot (`benchmarks.json`), the root
+package SBOM (`sbom.cdx.json`), and the isolated codegen SBOM
+(`sbom-codegen.cdx.json`), all signed with sigstore cosign keyless signatures.
+The signing workflow runs on
 `InnoSquadCorp/InnoNetwork`'s release job and uses the GitHub OIDC issuer.
 To verify a downloaded artifact:
 
@@ -51,7 +52,7 @@ brew install cosign
 
 # Replace <version> with the release tag (e.g. 4.0.0).
 version="<version>"
-artifact="benchmarks.json"   # or sbom.cdx.json
+artifact="benchmarks.json"   # or sbom.cdx.json / sbom-codegen.cdx.json
 
 curl -sLO "https://github.com/InnoSquadCorp/InnoNetwork/releases/download/${version}/${artifact}"
 curl -sLO "https://github.com/InnoSquadCorp/InnoNetwork/releases/download/${version}/${artifact}.sig"
@@ -71,11 +72,11 @@ re-uploaded copy.
 
 ## Supply-chain artifacts
 
-- `sbom.cdx.json` — CycloneDX 1.5 software bill of materials. The root
-  runtime package has an empty external dependency graph. The separate
-  `Packages/InnoNetworkCodegen` package records SwiftPM's `swift-syntax`
-  dependency when macro/codegen helpers are built. Release SBOMs should keep
-  those runtime and codegen graphs distinct for downstream auditors and
-  procurement processes that require a structured manifest.
+- `sbom.cdx.json` — CycloneDX 1.5 software bill of materials for the root
+  package's complete resolved SwiftPM dependency graph.
+- `sbom-codegen.cdx.json` — a separate CycloneDX 1.5 graph for the experimental
+  `Packages/InnoNetworkCodegen` package, including its transitive
+  `swift-syntax` dependencies. Keeping the graphs distinct prevents optional
+  build-time dependencies from being misreported as root runtime requirements.
 - `benchmarks.json` — frozen output of the release-time benchmark run
   ([Benchmarks/README.md](Benchmarks/README.md)).
