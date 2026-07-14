@@ -43,9 +43,7 @@ struct WebSocketReceiveLoopTests {
         // deterministically. Wait until the listener has actually suspended
         // inside `urlTask.receive()` before scripting the error so the rest
         // of the assertions run with a known starting state.
-        let suspended = await waitFor(timeout: 2.0) {
-            stub.pendingReceiveCount == 1
-        }
+        let suspended = await stub.waitForPendingReceiveCount(1)
         #expect(suspended)
 
         // Scripted error causes the suspended receive() to resume with a
@@ -84,16 +82,14 @@ struct WebSocketReceiveLoopTests {
 
         // Wait until the loop is suspended inside urlTask.receive() with no
         // scripted results, then cancel.
-        let suspended = await waitFor(timeout: 1.0) {
-            stub.pendingReceiveCount == 1
-        }
+        let suspended = await stub.waitForPendingReceiveCount(1)
         #expect(suspended)
 
         await registry.cancelMessageListenerTask(for: task.id)
 
-        // Give the cancellation path a moment to propagate, then verify that
-        // onError stayed silent.
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        // The stub signals when cancellation has removed the suspended
+        // receive continuation, so the assertions cannot race cleanup.
+        #expect(await stub.waitForPendingReceiveCount(0))
         #expect(errorFired.withLock { $0 } == false)
         #expect(stub.pendingReceiveCount == 0)
     }
@@ -123,14 +119,14 @@ struct WebSocketReceiveLoopTests {
         }
 
         stub.scriptReceive(.success(.string("first")))
-        let firstDelivered = try await recorder.waitForEvent(timeout: 1.0) { event in
+        let firstDelivered = try await recorder.waitForEvent(timeout: 5.0) { event in
             if case .string(let s) = event, s == "first" { return true }
             return false
         }
         #expect(firstDelivered)
 
         stub.scriptReceive(.success(.data(Data([0x01, 0x02]))))
-        let secondDelivered = try await recorder.waitForEvent(timeout: 1.0) { event in
+        let secondDelivered = try await recorder.waitForEvent(timeout: 5.0) { event in
             if case .message(let d) = event, d == Data([0x01, 0x02]) { return true }
             return false
         }
@@ -177,16 +173,15 @@ struct WebSocketReceiveLoopTests {
 
         // Wait until all 5 observable events (mix of .string/.message) have
         // landed in the recorder.
-        let delivered = await waitFor(timeout: 1.0) {
-            let snapshot = recorder.snapshot()
-            let count = snapshot.reduce(into: 0) { acc, event in
+        let delivered = try await recorder.waitForCount(
+            atLeast: payloads.count,
+            matching: { event in
                 switch event {
-                case .string, .message: acc += 1
-                default: break
+                case .string, .message: true
+                default: false
                 }
             }
-            return count == payloads.count
-        }
+        )
         #expect(delivered)
 
         // Verify the sequence order-for-order.
@@ -240,7 +235,7 @@ struct WebSocketReceiveLoopTests {
         await loop.start(task: task, urlTask: originalStub) { _, _ in }
 
         // Wait for the loop to block inside `originalStub.receive()`.
-        #expect(await waitFor(timeout: 1.0) { originalStub.pendingReceiveCount == 1 })
+        #expect(await originalStub.waitForPendingReceiveCount(1))
 
         // Swap the registry's URL task entry. The running loop should NOT
         // start polling `replacementStub` — it still holds a reference to
@@ -250,16 +245,16 @@ struct WebSocketReceiveLoopTests {
 
         // Delivery through `originalStub` still publishes.
         originalStub.scriptReceive(.success(.string("from-original")))
-        let originalDelivered = try await recorder.waitForEvent(timeout: 1.0) { event in
+        let originalDelivered = try await recorder.waitForEvent(timeout: 5.0) { event in
             if case .string(let s) = event, s == "from-original" { return true }
             return false
         }
         #expect(originalDelivered)
 
-        // `replacementStub` never had a receiver attached — its pending
-        // receive count should stay at zero while the loop runs against
-        // the original.
-        try? await Task.sleep(nanoseconds: 30_000_000)
+        // Wait for the original loop to suspend in its next receive. This
+        // proves it iterated again after delivery before we make the negative
+        // assertion about the replacement.
+        #expect(await originalStub.waitForPendingReceiveCount(1))
         #expect(replacementStub.pendingReceiveCount == 0)
 
         await registry.cancelMessageListenerTask(for: task.id)

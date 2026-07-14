@@ -7,6 +7,12 @@ import os
 /// the test drive scripted outcomes for `receive()` / `sendPing`.
 final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
 
+    private struct PendingReceiveWaiter {
+        let id: UUID
+        let expectedCount: Int
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
     enum ReceiveCancellationBehavior: Sendable, Equatable {
         /// Models an async operation that directly observes Swift Task
         /// cancellation, which is convenient for most focused unit tests.
@@ -32,6 +38,21 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
         var scriptedReceives: [Result<URLSessionWebSocketTask.Message, Error>] = []
         var pendingReceiveContinuations: [UUID: CheckedContinuation<URLSessionWebSocketTask.Message, Error>] = [:]
         var pendingOrder: [UUID] = []
+        var pendingReceiveWaiters: [PendingReceiveWaiter] = []
+
+        mutating func removeSatisfiedPendingReceiveWaiters() -> [CheckedContinuation<Bool, Never>] {
+            var ready: [CheckedContinuation<Bool, Never>] = []
+            var remaining: [PendingReceiveWaiter] = []
+            for waiter in pendingReceiveWaiters {
+                if pendingReceiveContinuations.count == waiter.expectedCount {
+                    ready.append(waiter.continuation)
+                } else {
+                    remaining.append(waiter)
+                }
+            }
+            pendingReceiveWaiters = remaining
+            return ready
+        }
     }
 
     var maximumMessageSize: Int {
@@ -88,36 +109,43 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
             let stateLock = self.stateLock
             message = try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { continuation in
-                    let alreadyCancelled: Bool = stateLock.withLock { state in
-                        if Task.isCancelled { return true }
-                        state.pendingReceiveContinuations[continuationID] = continuation
-                        state.pendingOrder.append(continuationID)
-                        return false
-                    }
-                    if alreadyCancelled {
+                    let registration: (Bool, [CheckedContinuation<Bool, Never>]) =
+                        stateLock.withLock { state in
+                            if Task.isCancelled { return (true, []) }
+                            state.pendingReceiveContinuations[continuationID] = continuation
+                            state.pendingOrder.append(continuationID)
+                            return (false, state.removeSatisfiedPendingReceiveWaiters())
+                        }
+                    resumePendingReceiveWaiters(registration.1)
+                    if registration.0 {
                         continuation.resume(throwing: CancellationError())
                     }
                 }
             } onCancel: {
-                let waiter: CheckedContinuation<URLSessionWebSocketTask.Message, Error>? = stateLock.withLock {
-                    state in
-                    guard let cont = state.pendingReceiveContinuations.removeValue(forKey: continuationID) else {
-                        return nil
+                let removal:
+                    (
+                        CheckedContinuation<URLSessionWebSocketTask.Message, Error>?,
+                        [CheckedContinuation<Bool, Never>]
+                    ) = stateLock.withLock { state in
+                        guard let cont = state.pendingReceiveContinuations.removeValue(forKey: continuationID) else {
+                            return (nil, [])
+                        }
+                        state.pendingOrder.removeAll { $0 == continuationID }
+                        return (cont, state.removeSatisfiedPendingReceiveWaiters())
                     }
-                    state.pendingOrder.removeAll { $0 == continuationID }
-                    return cont
-                }
-                waiter?.resume(throwing: CancellationError())
+                removal.0?.resume(throwing: CancellationError())
+                resumePendingReceiveWaiters(removal.1)
             }
         case .transportCancellationOnly:
             message = try await withCheckedThrowingContinuation { continuation in
-                let transportWasCancelled: Bool = stateLock.withLock { state in
-                    if state.didCancelUnconditionally { return true }
+                let registration: (Bool, [CheckedContinuation<Bool, Never>]) = stateLock.withLock { state in
+                    if state.didCancelUnconditionally { return (true, []) }
                     state.pendingReceiveContinuations[continuationID] = continuation
                     state.pendingOrder.append(continuationID)
-                    return false
+                    return (false, state.removeSatisfiedPendingReceiveWaiters())
                 }
-                if transportWasCancelled {
+                resumePendingReceiveWaiters(registration.1)
+                if registration.0 {
                     continuation.resume(throwing: URLError(.cancelled))
                 }
             }
@@ -146,16 +174,21 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
     }
 
     func cancel() {
-        let waiters: [CheckedContinuation<URLSessionWebSocketTask.Message, Error>] = stateLock.withLock { state in
-            state.didCancelUnconditionally = true
-            let waiters = Array(state.pendingReceiveContinuations.values)
-            state.pendingReceiveContinuations.removeAll(keepingCapacity: false)
-            state.pendingOrder.removeAll(keepingCapacity: false)
-            return waiters
-        }
-        for waiter in waiters {
+        let cancellation:
+            (
+                [CheckedContinuation<URLSessionWebSocketTask.Message, Error>],
+                [CheckedContinuation<Bool, Never>]
+            ) = stateLock.withLock { state in
+                state.didCancelUnconditionally = true
+                let waiters = Array(state.pendingReceiveContinuations.values)
+                state.pendingReceiveContinuations.removeAll(keepingCapacity: false)
+                state.pendingOrder.removeAll(keepingCapacity: false)
+                return (waiters, state.removeSatisfiedPendingReceiveWaiters())
+            }
+        for waiter in cancellation.0 {
             waiter.resume(throwing: URLError(.cancelled))
         }
+        resumePendingReceiveWaiters(cancellation.1)
     }
 
     // MARK: Test scripting
@@ -163,15 +196,20 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
     /// Queues a message to be delivered by the next `receive()` call. Already
     /// waiting receivers are resumed immediately.
     func scriptReceive(_ result: Result<URLSessionWebSocketTask.Message, Error>) {
-        let waiter: CheckedContinuation<URLSessionWebSocketTask.Message, Error>? = stateLock.withLock { state in
-            if let firstID = state.pendingOrder.first {
-                state.pendingOrder.removeFirst()
-                return state.pendingReceiveContinuations.removeValue(forKey: firstID)
+        let delivery:
+            (
+                CheckedContinuation<URLSessionWebSocketTask.Message, Error>?,
+                [CheckedContinuation<Bool, Never>]
+            ) = stateLock.withLock { state in
+                if let firstID = state.pendingOrder.first {
+                    state.pendingOrder.removeFirst()
+                    let waiter = state.pendingReceiveContinuations.removeValue(forKey: firstID)
+                    return (waiter, state.removeSatisfiedPendingReceiveWaiters())
+                }
+                state.scriptedReceives.append(result)
+                return (nil, [])
             }
-            state.scriptedReceives.append(result)
-            return nil
-        }
-        if let waiter {
+        if let waiter = delivery.0 {
             switch result {
             case .success(let message):
                 waiter.resume(returning: message)
@@ -179,6 +217,7 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
                 waiter.resume(throwing: error)
             }
         }
+        resumePendingReceiveWaiters(delivery.1)
     }
 
     /// Completes the most recently queued ping with an optional error.
@@ -218,6 +257,59 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
     var pendingReceiveCount: Int {
         stateLock.withLock { $0.pendingReceiveContinuations.count }
     }
+
+    func waitForPendingReceiveCount(_ expectedCount: Int, timeout: TimeInterval = 5.0) async -> Bool {
+        if stateLock.withLock({ $0.pendingReceiveContinuations.count == expectedCount }) {
+            return true
+        }
+
+        let id = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let shouldWait = stateLock.withLock { state in
+                    guard state.pendingReceiveContinuations.count != expectedCount else { return false }
+                    state.pendingReceiveWaiters.append(
+                        PendingReceiveWaiter(
+                            id: id,
+                            expectedCount: expectedCount,
+                            continuation: continuation
+                        )
+                    )
+                    return true
+                }
+                guard shouldWait else {
+                    continuation.resume(returning: true)
+                    return
+                }
+                schedulePendingReceiveTimeout(id: id, timeout: timeout)
+            }
+        } onCancel: {
+            finishPendingReceiveWaiter(id: id, result: false)
+        }
+    }
+
+    private func schedulePendingReceiveTimeout(id: UUID, timeout: TimeInterval) {
+        Task { [self] in
+            try? await ContinuousClock().sleep(for: .seconds(max(timeout, 0)))
+            finishPendingReceiveWaiter(id: id, result: false)
+        }
+    }
+
+    private func finishPendingReceiveWaiter(id: UUID, result: Bool) {
+        let continuation: CheckedContinuation<Bool, Never>? = stateLock.withLock { state in
+            guard let index = state.pendingReceiveWaiters.firstIndex(where: { $0.id == id }) else {
+                return nil
+            }
+            return state.pendingReceiveWaiters.remove(at: index).continuation
+        }
+        continuation?.resume(returning: result)
+    }
+
+    private func resumePendingReceiveWaiters(_ waiters: [CheckedContinuation<Bool, Never>]) {
+        for waiter in waiters {
+            waiter.resume(returning: true)
+        }
+    }
 }
 
 
@@ -226,6 +318,11 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
 /// falling back to a fresh stub if the queue is empty.
 final class StubWebSocketURLSession: WebSocketURLSession, @unchecked Sendable {
 
+    private struct InvalidationWaiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
     private struct State {
         var queuedTasks: [StubWebSocketURLTask] = []
         var createdTasks: [StubWebSocketURLTask] = []
@@ -233,6 +330,7 @@ final class StubWebSocketURLSession: WebSocketURLSession, @unchecked Sendable {
         var lastRequest: URLRequest?
         var didFinishTasksAndInvalidate = false
         var didInvalidateAndCancel = false
+        var invalidationWaiters: [InvalidationWaiter] = []
     }
 
     private let stateLock = OSAllocatedUnfairLock<State>(initialState: State())
@@ -265,7 +363,15 @@ final class StubWebSocketURLSession: WebSocketURLSession, @unchecked Sendable {
     }
 
     func invalidateAndCancel() {
-        stateLock.withLock { $0.didInvalidateAndCancel = true }
+        let waiters: [CheckedContinuation<Bool, Never>] = stateLock.withLock { state in
+            state.didInvalidateAndCancel = true
+            let waiters = state.invalidationWaiters.map(\.continuation)
+            state.invalidationWaiters.removeAll(keepingCapacity: false)
+            return waiters
+        }
+        for waiter in waiters {
+            waiter.resume(returning: true)
+        }
     }
 
     // MARK: Observations
@@ -275,4 +381,47 @@ final class StubWebSocketURLSession: WebSocketURLSession, @unchecked Sendable {
     var createdTasks: [StubWebSocketURLTask] { stateLock.withLock { $0.createdTasks } }
     var didFinishTasksAndInvalidate: Bool { stateLock.withLock { $0.didFinishTasksAndInvalidate } }
     var didInvalidateAndCancel: Bool { stateLock.withLock { $0.didInvalidateAndCancel } }
+
+    func waitForInvalidation(timeout: TimeInterval = 5.0) async -> Bool {
+        if stateLock.withLock({ $0.didInvalidateAndCancel }) {
+            return true
+        }
+
+        let id = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let shouldWait = stateLock.withLock { state in
+                    guard !state.didInvalidateAndCancel else { return false }
+                    state.invalidationWaiters.append(
+                        InvalidationWaiter(id: id, continuation: continuation)
+                    )
+                    return true
+                }
+                guard shouldWait else {
+                    continuation.resume(returning: true)
+                    return
+                }
+                scheduleInvalidationTimeout(id: id, timeout: timeout)
+            }
+        } onCancel: {
+            finishInvalidationWaiter(id: id, result: false)
+        }
+    }
+
+    private func scheduleInvalidationTimeout(id: UUID, timeout: TimeInterval) {
+        Task { [self] in
+            try? await ContinuousClock().sleep(for: .seconds(max(timeout, 0)))
+            finishInvalidationWaiter(id: id, result: false)
+        }
+    }
+
+    private func finishInvalidationWaiter(id: UUID, result: Bool) {
+        let continuation: CheckedContinuation<Bool, Never>? = stateLock.withLock { state in
+            guard let index = state.invalidationWaiters.firstIndex(where: { $0.id == id }) else {
+                return nil
+            }
+            return state.invalidationWaiters.remove(at: index).continuation
+        }
+        continuation?.resume(returning: result)
+    }
 }

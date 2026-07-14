@@ -214,15 +214,12 @@ struct WebSocketManagerShutdownTests {
         let shutdown = Task { await harness.manager.shutdown() }
 
         #expect(
-            await waitForCondition(timeout: 1.0) {
-                observedErrors.withLock { $0.count == 1 }
-            },
+            await harness.session.waitForInvalidation(),
             "the terminal handler must run before shutdown waits for URLSession invalidation"
         )
         #expect(observedErrors.withLock { $0 } == [WebSocketManager.managerShutdownError()])
         #expect(await task.state == .failed)
 
-        #expect(await waitForCondition(timeout: 1.0) { harness.session.didInvalidateAndCancel })
         harness.callbacks.handleInvalidation(nil)
         await shutdown.value
         #expect(observedErrors.withLock { $0.count } == 1)
@@ -237,7 +234,7 @@ struct WebSocketManagerShutdownTests {
         _ = try #require(await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: task))
 
         async let shutdown: Void = harness.manager.shutdown()
-        #expect(await waitForCondition(timeout: 1.0) { harness.session.didInvalidateAndCancel })
+        #expect(await harness.session.waitForInvalidation())
         #expect(urlTask.didCancelUnconditionally)
         #expect(await harness.manager.task(withId: task.id) == nil)
         #expect(await harness.manager.listenerCount(for: task) == 0)
@@ -266,8 +263,7 @@ struct WebSocketManagerShutdownTests {
             completedCount.withLock { $0 += 1 }
         }
 
-        _ = await waitForCondition(timeout: 1.0) { harness.session.didInvalidateAndCancel }
-        try? await Task.sleep(nanoseconds: 30_000_000)
+        #expect(await harness.session.waitForInvalidation())
         #expect(completedCount.withLock { $0 } == 0)
 
         harness.callbacks.handleInvalidation(nil)
@@ -285,6 +281,7 @@ struct WebSocketManagerShutdownTests {
         var iterator = stream.makeAsyncIterator()
 
         async let shutdown: Void = harness.manager.shutdown()
+        #expect(await harness.session.waitForInvalidation())
         harness.callbacks.handleInvalidation(nil)
         await shutdown
 
@@ -324,7 +321,7 @@ struct WebSocketManagerShutdownTests {
         )
 
         let shutdown = Task { await harness.manager.shutdown() }
-        #expect(await waitForCondition(timeout: 1.0) { harness.session.didInvalidateAndCancel })
+        #expect(await harness.session.waitForInvalidation())
         harness.callbacks.handleInvalidation(nil)
         await shutdown.value
         #expect(callbacks.withLock { $0 } == ["shutdown-error"])
@@ -345,7 +342,7 @@ struct WebSocketManagerShutdownTests {
     func connectAfterShutdownIsTerminalGuarded() async {
         let harness = makeShutdownHarness()
         async let shutdown: Void = harness.manager.shutdown()
-        _ = await waitForCondition(timeout: 1.0) { harness.session.didInvalidateAndCancel }
+        #expect(await harness.session.waitForInvalidation())
         harness.callbacks.handleInvalidation(nil)
         await shutdown
 
@@ -381,7 +378,7 @@ struct WebSocketManagerShutdownTests {
         #expect(harness.session.createdTasks.isEmpty)
 
         async let shutdown: Void = harness.manager.shutdown()
-        _ = await waitForCondition(timeout: 1.0) { harness.session.didInvalidateAndCancel }
+        #expect(await harness.session.waitForInvalidation())
         harness.callbacks.handleInvalidation(nil)
         await shutdown
     }

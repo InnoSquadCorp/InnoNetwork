@@ -17,7 +17,7 @@ import os
 public final class WebSocketEventRecorder: Sendable {
     private struct EventWaiter {
         let id: UUID
-        let predicate: @Sendable (WebSocketEvent) -> Bool
+        let isSatisfied: @Sendable ([WebSocketEvent]) -> Bool
         let continuation: CheckedContinuation<Bool, Error>
     }
 
@@ -29,7 +29,7 @@ public final class WebSocketEventRecorder: Sendable {
             var ready: [CheckedContinuation<Bool, Error>] = []
             var remaining: [EventWaiter] = []
             for waiter in waiters {
-                if events.contains(where: waiter.predicate) {
+                if waiter.isSatisfied(events) {
                     ready.append(waiter.continuation)
                 } else {
                     remaining.append(waiter)
@@ -155,8 +155,39 @@ public final class WebSocketEventRecorder: Sendable {
         timeout: TimeInterval,
         matching predicate: @escaping @Sendable (WebSocketEvent) -> Bool
     ) async throws -> Bool {
+        try await waitForEvents(timeout: timeout) { events in
+            events.contains(where: predicate)
+        }
+    }
+
+    /// Waits until at least `minimumCount` recorded events match `predicate`.
+    ///
+    /// This is package-scoped because count synchronization is intended for
+    /// InnoNetwork's own concurrency tests, not as consumer-facing test API.
+    /// Unlike snapshot polling, the continuation is resumed by `record(_:)`
+    /// when the requested count is reached.
+    package func waitForCount(
+        atLeast minimumCount: Int,
+        matching predicate: @escaping @Sendable (WebSocketEvent) -> Bool,
+        timeout: TimeInterval = 5.0
+    ) async throws -> Bool {
+        guard minimumCount > 0 else { return true }
+        return try await waitForEvents(timeout: timeout) { events in
+            var count = 0
+            for event in events where predicate(event) {
+                count += 1
+                if count >= minimumCount { return true }
+            }
+            return false
+        }
+    }
+
+    private func waitForEvents(
+        timeout: TimeInterval,
+        satisfying isSatisfied: @escaping @Sendable ([WebSocketEvent]) -> Bool
+    ) async throws -> Bool {
         try Task.checkCancellation()
-        if stateLock.withLock({ $0.events.contains(where: predicate) }) {
+        if stateLock.withLock({ isSatisfied($0.events) }) {
             return true
         }
 
@@ -164,9 +195,13 @@ public final class WebSocketEventRecorder: Sendable {
         let matched = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let shouldWait = stateLock.withLock { state in
-                    guard !state.events.contains(where: predicate) else { return false }
+                    guard !isSatisfied(state.events) else { return false }
                     state.waiters.append(
-                        EventWaiter(id: id, predicate: predicate, continuation: continuation)
+                        EventWaiter(
+                            id: id,
+                            isSatisfied: isSatisfied,
+                            continuation: continuation
+                        )
                     )
                     return true
                 }
