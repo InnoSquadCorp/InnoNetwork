@@ -12,7 +12,7 @@ Examples are categorized into two tiers, mirroring [API_STABILITY.md](../API_STA
 
 - **Stable** — `BasicRequest`, `Auth`, `ErrorHandling`. The directory layout
   (Swift sources, `README.md`) and compileability against the current package
-  are part of the 4.x SemVer-protected contract and are enforced by
+  are part of the 5.x SemVer-protected contract and are enforced by
   `Scripts/check_stable_examples.sh`. Copy these as a starting point with the
   same confidence as the Stable public API surface.
 - **Provisionally Stable** — every other example. Their layout tracks the
@@ -155,7 +155,7 @@ three shipping products.
 
 Compile-only package that protects wrapper-style integrations built on
 future-candidate low-level execution hooks. These source shapes are not part of
-the 4.0.0 stable public contract.
+the 5.x Stable public contract.
 
 ### [MacroUsage](./MacroUsage)
 

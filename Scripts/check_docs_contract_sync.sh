@@ -38,6 +38,7 @@ required_meta_docs=(
   "$repo_root/CHANGELOG.md"
   "$repo_root/docs/RELEASE_POLICY.md"
   "$repo_root/docs/MIGRATION_POLICY.md"
+  "$repo_root/docs/Migration-5.0.0.md"
   "$repo_root/docs/releases/4.0.0.md"
   "$repo_root/docs/releases/5.0.0.md"
 )
@@ -52,6 +53,8 @@ required_feature_docs=(
   "$repo_root/Sources/InnoNetworkDownload/InnoNetworkDownload.docc/Articles/Persistence.md"
   "$repo_root/Sources/InnoNetworkWebSocket/InnoNetworkWebSocket.docc/Articles/FeatureScopedManagers.md"
   "$repo_root/Sources/InnoNetworkWebSocket/InnoNetworkWebSocket.docc/Articles/CloseCodes.md"
+  "$repo_root/Sources/InnoNetworkWebSocket/InnoNetworkWebSocket.docc/Articles/Reconnect.md"
+  "$repo_root/docs/WebSocketLifecycle.md"
 )
 example_docs=(
   "$repo_root/Examples/BasicRequest/README.md"
@@ -150,6 +153,8 @@ expected_stable=(
 '`DownloadManager`'
 '`WebSocketManager`'
 '`WebSocketManager.shutdown()`'
+'`WebSocketManager.retry(_:) -> WebSocketTask?`'
+'`WebSocketTask.id`'
 '`WebSocketEvent.ping`'
 '`WebSocketEvent.pong`'
 '`WebSocketEvent.error(.pingTimeout)`'
@@ -1014,6 +1019,14 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public func shutdown() async'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
       ;;
+    '`WebSocketManager.retry(_:) -> WebSocketTask?`')
+      pattern='public func retry(_ task: WebSocketTask) async -> WebSocketTask?'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+      ;;
+    '`WebSocketTask.id`')
+      pattern='public nonisolated let id: String'
+      target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketTask.swift"
+      ;;
     '`WebSocketEvent.ping`')
       pattern='case ping(WebSocketPingContext)'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketEventTypes.swift"
@@ -1394,6 +1407,22 @@ require_contains 'deinit {' \
   "$repo_root/Sources/InnoNetwork/Auth/RefreshTokenPolicy.swift"
 require_contains 'coordinator deinit cancels any orphaned in-flight refresh' \
   "$repo_root/docs/TaskOwnership.md"
+require_contains 'public func retry(_ task: WebSocketTask) async -> WebSocketTask?' \
+  "$repo_root/Sources/InnoNetworkWebSocket/WebSocketManager.swift"
+require_contains '`WebSocketManager.retry(_:)` is an explicit logical restart.' \
+  "$api_stability"
+require_contains 'WebSocket explicit retry creates a fresh task' \
+  "$repo_root/docs/Migration-5.0.0.md"
+require_contains 'retires the source partition; its consumers finish' \
+  "$repo_root/Sources/InnoNetworkWebSocket/InnoNetworkWebSocket.docc/Articles/Reconnect.md"
+require_contains 'Terminal states have no outgoing transition on the same logical task.' \
+  "$repo_root/docs/WebSocketLifecycle.md"
+require_contains 'publication snapshot even when `.dropNewest` queues are full' \
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryPolicy.md"
+require_contains 'invoke snapshotted callback' \
+  "$repo_root/docs/TaskOwnership.md"
+require_contains '`InnoNetworkClientTransport`' \
+  "$repo_root/docs/CodeGeneration.md"
 
 for doc in "${required_meta_docs[@]}"; do
   [[ -f "$doc" ]] || fail "required OSS document is missing: $doc"
@@ -1442,6 +1471,18 @@ forbidden_pattern 'manager\.receive\(' \
   "$repo_root/docs" \
   "$repo_root/Sources" \
   "$repo_root/Tests"
+forbidden_pattern '4\.x preview' \
+  "$repo_root/docs/CodeGeneration.md"
+forbidden_pattern 'introduced in 4\.1|After 5\.0' \
+  "$repo_root/Tools/openapi-to-innonetwork/README.md"
+forbidden_pattern 'InnoNetworkOpenAPITransport|What 5\.0 will add' \
+  "$repo_root/Tools/openapi-to-innonetwork/SwiftOpenAPIGeneratorPath.md"
+forbidden_pattern 'missing, stale, empty' \
+  "$repo_root/CHANGELOG.md" \
+  "$repo_root/docs/releases/5.0.0.md"
+forbidden_pattern '^[[:space:]]*await manager\.retry\(task\)[[:space:]]*$' \
+  "$repo_root/docs/Migration-5.0.0.md" \
+  "$repo_root/Sources/InnoNetworkWebSocket/InnoNetworkWebSocket.docc/Articles/Reconnect.md"
 
 require_contains 'GET responses with RFC-cacheable whole-response status codes' \
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"

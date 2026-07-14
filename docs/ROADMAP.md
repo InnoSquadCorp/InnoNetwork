@@ -126,9 +126,9 @@ chunk-signing remain explicitly deferred to protocol-specific transports.
 | Surface | Current state | Promotion target | Done criteria |
 | --- | --- | --- | --- |
 | `EndpointBuilder` onboarding path | Stable candidate before 4.0.0 | Stable at 4.0.0 | README first-30-minute flow, stable example smoke, and migration cookbook examples stay green. |
-| `InnoNetworkAuthAWS` | Provisionally Stable | 4.x minor after field validation | AWS SigV4 vector tests, README/DocC reference-signer scope, and one adopter migration note. |
-| `PersistentResponseCache` telemetry/statistics | Provisionally Stable | 4.x minor | Reentrancy invariant documented, persistent cache tests cover key rotation and stats. |
-| `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | Provisionally Stable | 4.x minor | Directive subset is documented as RFC 9111-aware, not full compliance, with cache policy tests. |
+| `InnoNetworkAuthAWS` | Provisionally Stable | 5.x minor after field validation | AWS SigV4 vector tests, README/DocC reference-signer scope, and one adopter migration note. |
+| `PersistentResponseCache` telemetry/statistics | Provisionally Stable | 5.x minor | Reentrancy invariant documented, persistent cache tests cover key rotation and stats. |
+| `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | Provisionally Stable | 5.x minor | Directive subset is documented as RFC 9111-aware, not full compliance, with cache policy tests. |
 | Macro package | Provisionally Stable | No automatic promotion | Before/after ROI remains clear; deprecate instead of promoting if handwritten endpoints stay simpler. |
 
 ## Post-5.0 RFC Parking Lot
@@ -185,7 +185,7 @@ the equivalent Pack fields.
   coordinator per client configuration.
 - Header/query result-builder DSLs, mutation testing, full SwiftUI sample app,
   richer HTTPTypes/OpenAPI adapters that pin external generator versions,
-  Linux-safe contracts, and iOS 17 LTS evaluation remain post-4.0 adoption work
+  Linux-safe contracts, and iOS 17 LTS evaluation remain post-5.0 adoption work
   rather than GA blockers.
 
 ## Continuing Operations

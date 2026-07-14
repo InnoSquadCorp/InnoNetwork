@@ -37,8 +37,19 @@ Managers publish the terminal event for a logical task before finishing that
 task's event partition. For requests and streams this means
 `requestFinished`/`requestFailed` is enqueued before `finish(requestID:)`;
 download and websocket managers follow the same terminal-event-then-finish
-shape for their task-scoped streams. Consumers should treat stream completion
-as "no more events after the terminal event", not as a separate status signal.
+shape for their task-scoped streams. This ordering does not by itself override
+the configured overflow policy for request or download notifications.
+
+WebSocket final terminal outcomes have a stronger guarantee. The final event
+is admitted to the task partition and every consumer queue present in the
+publication snapshot even when `.dropNewest` queues are full; the oldest
+queued event is displaced when necessary. The manager waits for enqueue, not
+listener execution. Earlier notifications in the same terminal burst and all
+nonterminal WebSocket events retain the normal overflow policy.
+
+Consumers should treat stream completion as "no more events after the terminal
+outcome", not as a separate status signal. Event handling remains asynchronous
+after enqueue and may finish after a manager shutdown call returns.
 
 ## Buffering: `maxBufferedEventsPerPartition`
 

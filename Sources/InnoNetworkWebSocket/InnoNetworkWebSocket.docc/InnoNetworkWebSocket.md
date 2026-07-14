@@ -13,7 +13,9 @@ Use this module when you need:
   `.error(.pingTimeout)` events
 - typed close-code handling via ``WebSocketCloseCode``
 - async handshake request adaptation via ``WebSocketHandshakeRequestAdapter``
-- listener retention across reconnect attempts
+- listener retention across automatic reconnect transport generations
+- explicit retry through ``WebSocketManager/retry(_:)``, which returns a fresh
+  optional task and requires task-scoped consumers to attach again
 - manual disconnect semantics that stay visible to the caller
 
 Reconnect decisions are driven by handshake and close outcomes, so the public manager can distinguish retryable failures from terminal ones without forcing application code to rebuild that policy every time.
@@ -26,9 +28,14 @@ Event delivery for socket tasks flows through the shared event hub. Tune bufferi
 
 ### Observing heartbeat attempts
 
-The 4.0.0 public contract emits a `.ping` event before each heartbeat or manual
+The 5.x contract emits a `.ping` event before each heartbeat or manual
 ping attempt. Pair it with `.pong` and `.error(.pingTimeout)` to track heartbeat
 success, timeout, and approximate round-trip timing in application code.
+
+For pong, event publication is attempted before the snapshotted manager
+handler is invoked. The event still uses ordinary bounded overflow and listener
+delivery is asynchronous, so the event can be dropped and no listener-versus-
+handler execution order is guaranteed.
 
 ```swift
 var pendingPingAt: Date?

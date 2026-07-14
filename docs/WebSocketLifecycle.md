@@ -31,16 +31,15 @@ stateDiagram-v2
     reconnecting --> disconnected : disconnect(_:closeCode:)
 
     disconnecting --> disconnected : close handshake completes
-    disconnected --> connecting : connect(_:) again
-    disconnected --> reconnecting : auto-reconnect armed by peer close
-    disconnected --> failed : observer-driven failure escalation
-
-    failed --> idle : reset()
-    failed --> connecting : connect(_:) (manual restart)
 ```
 
 `isTerminal` is `true` only for `disconnected` and `failed`. Every other state is observable
 as a "moving" state from the manager's perspective.
+
+Terminal states have no outgoing transition on the same logical task.
+``WebSocketManager/retry(_:)`` is a relationship between two tasks: it retires
+an eligible terminal source and returns a fresh task with a new `id`. It does
+not reset or reconnect the source state machine.
 
 The public transition contract is
 [`WebSocketState.swift`](../Sources/InnoNetworkWebSocket/WebSocketState.swift):
@@ -89,8 +88,11 @@ These invariants prevent `_autoReconnectEnabled` from racing against
    caller's intent is to terminate.
 3. **`maxReconnectAttempts` is a hard cap.** The cap is checked in
    `WebSocketReconnectCoordinator.reconnectAction(_:_:)` *before* state mutation. Even if
-   the count overshoots due to multiple coordinator entries, the public-facing decision
-   stays at `.exceeded` once the cap is reached. (See `WebSocketTask` counter docs in
+   the count overshoots due to multiple coordinator entries, the internal coordinator
+   decision stays at `.exceeded` once the cap is reached. Observers receive one
+   authoritative `.error(.maxReconnectAttemptsExceeded)` or
+   `.error(.reconnectWindowExceeded)` terminal event, without a preceding synthetic
+   `.disconnected` event. (See `WebSocketTask` counter docs in
    [`WebSocketTask.swift`](../Sources/InnoNetworkWebSocket/WebSocketTask.swift) for why
    the internal counter may overshoot.)
 4. **Stale callbacks cannot advance generation.** Delegate callback identifiers
@@ -106,13 +108,33 @@ These invariants prevent `_autoReconnectEnabled` from racing against
 
 ## Terminal cleanup ownership
 
-Terminal cleanup is reducer-driven and ordered. Runtime URL tasks/timers/loops
-are cancelled before the final event is published so receive loops are woken
-promptly; after callbacks and event listeners observe the terminal event, the
-manager generation-checks the task before finishing per-task event streams and
-removing registry state. This preserves the existing escape hatch where a
-consumer may call `retry(_:)` from a terminal callback without the old finalizer
-tearing down the newly registered generation.
+Terminal cleanup is reducer-driven and ordered. During manager shutdown, the
+delegate event that already passed admission drains first; buffered events
+that had not passed admission are rejected. For each terminal task, the owner
+then performs this sequence:
+
+1. cancel or detach runtime URL tasks, timers, and loops;
+2. snapshot the matching manager callbacks and publish the final terminal
+   event;
+3. wait for that event to be enqueued, close the task event partition, and
+   remove the task from the runtime registry;
+4. release the task lifecycle gate; and
+5. invoke the snapshotted manager callbacks.
+
+An external ``WebSocketManager/shutdown()`` call waits for already-admitted
+manager callbacks to return. Task listeners and `AsyncStream` consumers retain
+their asynchronous delivery policy, so their already-enqueued terminal event
+may be handled after shutdown returns. A reentrant shutdown call from a
+manager callback starts teardown and returns so it does not await its own
+worker; a later external shutdown call waits for the complete boundary.
+
+The final WebSocket terminal outcome has a stronger saturation guarantee than
+ordinary events. It is forced into the task partition and every consumer queue
+present in the publication snapshot, including queues configured with
+`.dropNewest`; when necessary, the oldest queued event is displaced. The wait
+is for enqueue, not handler execution. Any earlier notification in the same
+terminal burst and all nonterminal events retain the configured overflow
+policy.
 
 Stale callbacks may be ignored after generation/state checks, but they must not
 partially cancel close-handshake or reconnect runtime state that is still owned
@@ -132,8 +154,9 @@ complete `.disconnected` cleanup.
 
 1. Emits `WebSocketEvent.ping(attemptNumber:dispatchedAt:)` immediately before the send.
 2. Awaits either a pong or the configured `pongTimeout`, whichever comes first.
-3. On pong: emits `.pong(rtt:)` (RTT measured against `dispatchedAt` using
-   `ContinuousClock`).
+3. On pong: attempts to publish `.pong(context)` before invoking the
+   snapshotted manager handler. Read `context.roundTrip` for RTT measured
+   against `dispatchedAt` using `ContinuousClock`.
 4. On timeout: queues a heartbeat timeout delegate event, preserving FIFO ordering with
    Foundation open/close/error delegate callbacks. After `maxMissedPongs` consecutive
    timeouts the manager surfaces `WebSocketError.pingTimeout` and transitions to either
@@ -141,6 +164,11 @@ complete `.disconnected` cleanup.
 
 The `attemptNumber` is per-connection (1-indexed) and resets across reconnects so dashboards
 can filter "this socket lost N consecutive pongs".
+
+Pong publication uses the ordinary bounded overflow policy, so a listener may
+not receive the event when its queue is saturated. The publication attempt
+precedes manager-handler invocation, but delivery remains asynchronous; there
+is no guarantee that a listener executes before or after that handler.
 
 ## Manual reconnect (escape hatch)
 
@@ -150,14 +178,22 @@ For debugging or auth-refresh flows, you can drive reconnect manually:
 let manager = WebSocketManager(configuration: .safeDefaults())
 let task = await manager.connect(url: socketURL)
 
-// Force a clean reconnect with a custom close code (e.g. application-defined 4001):
-await manager.disconnect(task, closeCode: .custom(4001))
-let resumed = await manager.connect(url: socketURL)
+// After `task` reaches a terminal state:
+guard let replacement = await manager.retry(task) else { return }
+
+// Task-scoped consumers belong to the replacement's fresh ID.
+for await event in await manager.events(for: replacement) {
+    print(event)
+}
 ```
 
-The new connect call returns a *new* `WebSocketTask` (different `id`) — the previous task's
-listeners are not preserved automatically. If you need listener retention across a manual
-reset, attach observers to `WebSocketManager` directly rather than per-task.
+Explicit retry is one-shot for an eligible terminal source and is accepted only
+by the source's owning manager. It returns `nil` for nonterminal,
+already-claimed, foreign-manager, or post-shutdown tasks. If shutdown wins
+after retry admission, the non-`nil` replacement can already be terminal with
+the manager-shutdown connection error. The source task and its per-task
+listeners remain terminal and are never retargeted; manager-level handlers
+remain installed until manager shutdown.
 
 ## Related
 

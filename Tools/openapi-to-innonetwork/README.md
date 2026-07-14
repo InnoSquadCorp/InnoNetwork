@@ -64,14 +64,15 @@ boundaries are enforced at generation time, not silently degraded.
 
 ### Compatibility note
 
-The path-template rejection introduced in 4.1 is a **breaking change** for any
-OpenAPI spec that previously round-tripped through this tool with
-`{name}` placeholders. The previous behaviour emitted the placeholder
-verbatim into the generated `path` string. See
-`docs/Migration-4.1.0.md` for the 1:1 migration recipe.
+The published 4.0.0 baseline already rejects path templates. Users migrating
+from an earlier, untagged source snapshot may have generated literal `{name}`
+placeholders; replace those files with a hand-written `path` implementation as
+described in "Scope" above. The release baseline and migration policy are
+recorded in [`docs/Migration-4.0.0.md`](../../docs/Migration-4.0.0.md); the 4.1
+tombstone is not a released compatibility boundary.
 
-External dependencies live exclusively inside this Tools/ package, so
-adopters who pull in InnoNetwork as a library never resolve Yams.
+Yams is scoped exclusively to this Tools/ package, so adopters who pull in
+InnoNetwork as a library never resolve Yams.
 
 ## Usage
 
@@ -133,9 +134,11 @@ A spec containing `/users/{id}` would instead fail generation with
 `GenerationError.unsupportedPath` — see the "Scope" section above for
 the migration guidance.
 
-After 5.0 broadens the parser, more spec features (including path
-templating) will produce typed `Parameter` / `APIResponse` pairs
-derived from the OpenAPI request body and response schemas.
+The current 5.x preview still rejects path templating and does not promise a
+delivery version for broader parser support. A future 5.x release may add more
+schema features with an explicit changelog entry, but adopters should choose a
+hand-written `APIDefinition` or `swift-openapi-generator` today when the
+current subset is insufficient.
 
 ## Tests
 
@@ -156,6 +159,5 @@ generation for unsupported property shapes.
 - [Examples/GeneratedClientRecipe](../../Examples/GeneratedClientRecipe)
   — the Provisionally Stable SPI surface for richer codegen.
 - [SwiftOpenAPIGeneratorPath.md](SwiftOpenAPIGeneratorPath.md) — 5.0
-  design note for the optional `apple/swift-openapi-generator`
-  transport adapter. The 4.0.0 line ships only the document; the
-  implementation lands on the 5.0 line.
+  integration guide for the shipped `InnoNetworkClientTransport` and
+  `OpenAPIRequest` paths.

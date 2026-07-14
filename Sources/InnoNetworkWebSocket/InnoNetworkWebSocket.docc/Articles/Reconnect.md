@@ -27,16 +27,29 @@ do not auto-reconnect. Observe ``WebSocketTask/closeDisposition`` and call
 ``WebSocketManager/retry(_:)`` when your app owns a retryable custom code.
 
 ```swift
-let task = await manager.connect(url: socketURL)
-for await event in await manager.events(for: task) {
-    guard case .disconnected = event else { continue }
-    guard case .peerApplicationFailure(.custom(4001), _) = await task.closeDisposition else {
-        continue
+var currentTask = await manager.connect(url: socketURL)
+
+while true {
+    for await event in await manager.events(for: currentTask) {
+        print(event)
     }
+
+    guard case .peerApplicationFailure(.custom(4001), _) =
+        await currentTask.closeDisposition
+    else { break }
+
     await refreshApplicationState()
-    await manager.retry(task)
+    guard let replacement = await manager.retry(currentTask) else { break }
+    currentTask = replacement
 }
 ```
+
+An explicit retry is a new logical task, not another state transition on the
+terminal source. It is accepted once for a terminal source and only by the
+manager that owns that source. The call returns `nil` for a nonterminal,
+already-claimed, foreign-manager, or post-shutdown task. If shutdown begins
+after admission, the returned replacement may already be terminal with the
+manager-shutdown connection error.
 
 Use handshake adapters when reconnect attempts need fresh auth headers:
 
@@ -80,6 +93,12 @@ herd. A small jitter (10–20 %) is enough to spread the load.
 The legacy property ``WebSocketTask/reconnectCount`` aliases `attemptedReconnectCount` for
 source compatibility.
 
+When a reconnect budget is exhausted, observers receive exactly one public
+`.error(.maxReconnectAttemptsExceeded)` or
+`.error(.reconnectWindowExceeded)` terminal outcome. The coordinator's
+internal `.exceeded` decision is not a public event, and no synthetic
+`.disconnected` event precedes the authoritative error.
+
 ## When auto-reconnect is wrong
 
 Disable auto-reconnect when:
@@ -99,12 +118,18 @@ let configuration = WebSocketConfiguration.advanced { builder in
 }
 ```
 
-## Listener retention across attempts
+## Task identity and listener retention
 
-Listeners attached via ``WebSocketManager/events(for:)`` survive reconnect attempts. The
-underlying `URLSessionWebSocketTask` is replaced each attempt, but the public
-``WebSocketTask`` keeps the same `id` and the manager fans events to the same set of
-subscribers. Application code does not need to reattach observers on each reconnect.
+| Flow | Public task and `id` | Transport generation | Task-scoped consumers |
+| --- | --- | --- | --- |
+| Automatic reconnect | Preserved | A fresh `URLSessionWebSocketTask` for each attempt | Retained |
+| Explicit ``WebSocketManager/retry(_:)`` | Fresh task with a new UUID-backed `id` | Fresh | Reattach to the returned task |
+
+Listeners and streams attached through ``WebSocketManager/events(for:)``
+survive automatic reconnect attempts because the manager retains the logical
+task partition while replacing its transport. Explicit retry permanently
+retires the source partition; its consumers finish and never migrate to the
+replacement task.
 
 ## Related
 

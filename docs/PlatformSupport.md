@@ -13,7 +13,7 @@ InnoNetwork ships against the current Apple platforms only:
 The package targets these versions intentionally so the codebase can rely on
 modern Swift Concurrency semantics, strict Sendable checking, and the latest
 URLSession surface without compatibility shims. There is no Linux toolchain
-support and no plan to add one in 4.x.
+support and no plan to add one in 5.x.
 
 ## Why no Linux
 

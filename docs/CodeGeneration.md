@@ -1,24 +1,28 @@
 # Code Generation for InnoNetwork
 
-When you have more than ~30 endpoints, hand-rolling
-`APIDefinition` structs becomes the bottleneck. This article
-covers the two supported paths.
+When you have more than ~30 endpoints, hand-rolling `APIDefinition` structs
+can become the bottleneck. InnoNetwork 5.x supports three distinct OpenAPI
+integration paths; choose based on the generated type shape and whether the
+request must use the full InnoNetwork execution pipeline.
 
-## When to use code generation
+## Choose an integration path
 
-| Scenario | Recommendation |
-| --- | --- |
-| 5–30 endpoints, frequent ad-hoc tweaks | Hand-write `APIDefinition` structs or `EndpointBuilder` calls. |
-| 30+ endpoints, OpenAPI spec is the source of truth | Use `Tools/openapi-to-innonetwork` (4.x preview). |
-| Custom envelope or auth shape upstream of `APIDefinition` | Use the `@_spi(GeneratedClientSupport)` SPI surface. See `Examples/GeneratedClientRecipe`. |
-| Apollo / GraphQL operations | Stay with Apollo iOS or `swift-openapi-generator`; an InnoNetwork adapter on top of either is on the 5.0+ roadmap. |
-
-The 4.x preview tool accepts JSON or YAML input, emits Codable schema
-structs for `components.schemas`, and wires typed `Parameter` /
-`APIResponse` aliases when operations use `$ref`. It still always emits
-`PublicAuthScope`; authenticated OpenAPI mapping is a follow-up.
+| Scenario | Recommendation | Runtime behavior |
+| --- | --- | --- |
+| 5–30 endpoints, frequent ad-hoc tweaks | Hand-write `APIDefinition` structs or `EndpointBuilder` calls. | Full `DefaultNetworkClient` pipeline. |
+| A narrow OpenAPI 3 subset is sufficient and you want generated `APIDefinition` types | Use `Tools/openapi-to-innonetwork` (5.x preview). | Generated requests use the full pipeline. |
+| Generated or hand-written metadata can conform to `OpenAPIRestOperation` | Wrap the operation in `OpenAPIRequest` from `InnoNetworkOpenAPI`. | Full retry, interceptor, cache, trust, and observability pipeline. |
+| An `apple/swift-openapi-generator` `Client` is already the application entry point | Supply `InnoNetworkClientTransport` from `InnoNetworkOpenAPI`. | Thin caller-owned `URLSession` transport only; no InnoNetwork retry, refresh, interceptor, cache, coalescing, circuit-breaker, signing, or trust pipeline. |
+| Custom generated serialization upstream of `APIDefinition` | Use the `@_spi(GeneratedClientSupport)` SPI surface. | Full pipeline through a best-effort SPI contract. |
+| Apollo / GraphQL operations | Stay with Apollo iOS. | `swift-openapi-generator` and the OpenAPI adapters do not generate or execute GraphQL operations. |
 
 ## `Tools/openapi-to-innonetwork`
+
+The 5.x preview tool accepts JSON or YAML input, emits Codable schema structs
+for `components.schemas`, and wires typed `Parameter` / `APIResponse` aliases
+when operations use `$ref`. It still always emits `PublicAuthScope` and rejects
+path templates; authenticated mapping and broader OpenAPI coverage remain
+follow-up work.
 
 ```bash
 cd Tools/openapi-to-innonetwork
@@ -28,33 +32,59 @@ swift run openapi-to-innonetwork \
     --module-name MyAPI
 ```
 
-The generator emits one Swift file per `components.schemas` entry
-before emitting operation files. Operations with `$ref` request or
-response shapes receive typed `Parameter` / `APIResponse` aliases;
-operations without them fall back to `EmptyParameter` /
-`EmptyResponse` so adopters can fill gaps during integration.
+The generator emits one Swift file per `components.schemas` entry before
+emitting operation files. Operations without supported request or response
+shapes fall back to `EmptyParameter` / `EmptyResponse` so adopters can fill the
+gaps during integration.
 
-JSON and YAML inputs are both supported. YAML decoding uses Yams
-inside the standalone `Tools/` package, so the root runtime package
-still resolves no code generation dependencies.
+JSON and YAML inputs are both supported. YAML decoding uses Yams inside the
+standalone `Tools/` package. The root package does not resolve Yams or a code
+generation plugin, although it does resolve `swift-openapi-runtime` for the
+optional `InnoNetworkOpenAPI` product.
 
-For the full README and roadmap see
+For the exact supported subset, see
 [Tools/openapi-to-innonetwork/README.md](../Tools/openapi-to-innonetwork/README.md).
+
+## `OpenAPIRestOperation` and `OpenAPIRequest`
+
+Use this route when you can expose an operation as method, path, parameters,
+response, headers, status codes, and transport policy. `OpenAPIRequest` adapts
+that shape to `APIDefinition`, so execution goes through
+`DefaultNetworkClient` and inherits the complete InnoNetwork policy stack.
+
+This bridge does not make arbitrary `swift-openapi-generator` output conform
+automatically. Add a small operation adapter yourself, or use the generated
+client transport below when the generator-emitted `Client` must stay as-is.
+
+## `InnoNetworkClientTransport`
+
+`InnoNetworkClientTransport` conforms to `OpenAPIRuntime.ClientTransport` and
+can be passed directly to a `swift-openapi-generator` client. It translates
+`HTTPRequest` / `HTTPBody` to the caller-supplied `URLSession` and translates
+the response back to OpenAPI runtime types.
+
+The adapter intentionally does not route through `DefaultNetworkClient`.
+Configure session-level behavior on the supplied `URLSession`; InnoNetwork
+retry, auth refresh, interceptors, response cache, request coalescing, circuit
+breaker, signing, and trust evaluation do not run on this path. Request and
+response body limits default to 50 MiB and can be overridden at initialization.
+
+See
+[`SwiftOpenAPIGeneratorPath.md`](../Tools/openapi-to-innonetwork/SwiftOpenAPIGeneratorPath.md)
+for the selection and migration details.
 
 ## SPI route — `@_spi(GeneratedClientSupport)`
 
-When the generated client needs to plug richer serialization or
-decoding into the InnoNetwork retry / refresh / observability
-machinery without going through `APIDefinition`, the SPI surface
-is the right tool. It is documented in
+When the generated client needs richer serialization or decoding inside the
+InnoNetwork retry / refresh / observability machinery without going through
+`APIDefinition`, use the SPI surface documented in
 [`API_STABILITY.md`](../API_STABILITY.md#spi) and exercised by
-`Examples/GeneratedClientRecipe`. The SPI is best-effort across
-minors, so adopters should pin the InnoNetwork revision they
-generated against.
+`Examples/GeneratedClientRecipe`. The SPI is best-effort across minors, so pin
+the InnoNetwork revision used by the generator.
 
 ## See also
 
 - [`Tools/openapi-to-innonetwork/README.md`](../Tools/openapi-to-innonetwork/README.md)
+- [`Tools/openapi-to-innonetwork/SwiftOpenAPIGeneratorPath.md`](../Tools/openapi-to-innonetwork/SwiftOpenAPIGeneratorPath.md)
 - [`Examples/GeneratedClientRecipe`](../Examples/GeneratedClientRecipe)
-- [`API_STABILITY.md`](../API_STABILITY.md) — SPI surface and
-  contract scope.
+- [`API_STABILITY.md`](../API_STABILITY.md) — SPI surface and contract scope.

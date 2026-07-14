@@ -25,6 +25,9 @@ Versioning.
 - Body-dependent authentication uses `RequestSigner` and `RequestBody` after
   interceptors and refresh-token application. Signed requests bypass response
   caches, request coalescing, and URLSession cache storage.
+- `WebSocketManager.retry(_:)` returns an optional fresh `WebSocketTask` with a
+  new ID. The source task stays terminal, and per-task consumers must attach to
+  the returned replacement; automatic reconnect still preserves its task ID.
 
 See [`docs/Migration-5.0.0.md`](docs/Migration-5.0.0.md) for before/after
 examples and [`docs/releases/5.0.0.md`](docs/releases/5.0.0.md) for the
@@ -40,15 +43,20 @@ curated release summary.
   on `origin/main`, deterministic root and codegen CycloneDX 1.5 SBOMs, and
   signed benchmark/SBOM release artifacts.
 - CI builds DocC for all eight public products and fails closed when core or
-  codegen coverage artifacts are missing, stale, empty, or contain absolute
+  codegen coverage artifacts are missing, empty, or contain absolute
   source paths.
 
 ### Fixed
 
 - Download completion staging, pause/resume transactions, temporary-file
   cleanup, and shutdown behavior are bounded and cancellation-safe.
-- WebSocket disconnect and shutdown teardown are bounded and deliver one
-  terminal shutdown failure to every affected subscriber.
+- WebSocket disconnect and shutdown teardown are bounded. The final terminal
+  outcome is forced into every snapshotted consumer queue even under
+  `.dropNewest` saturation, then the partition and registry close before
+  snapshotted manager callbacks run.
+- WebSocket reconnect-budget exhaustion emits one authoritative public error,
+  and pong publication is attempted before its snapshotted manager handler;
+  ordinary overflow and asynchronous listener delivery still apply.
 - Refresh generations, transient persistent-cache key reads, shared cache
   lookups, and circuit-breaker half-open hysteresis preserve their state under
   cancellation and concurrent replay.
@@ -60,6 +68,9 @@ curated release summary.
 - Scheduler-sensitive cancellation, refresh, and WebSocket tests use explicit
   gates; CI runs the complete root suite in both serial coverage and parallel
   modes.
+- External WebSocket shutdown waits for already-admitted manager callbacks;
+  reentrant shutdown from one of those callbacks initiates teardown and returns
+  so a later external call can await the full boundary.
 - Guarded benchmarks build in release mode, and 5.0 publishes an explicit API,
   migration, codegen-distribution, and release-integrity contract.
 

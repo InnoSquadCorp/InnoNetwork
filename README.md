@@ -375,7 +375,9 @@ for await event in await manager.events(for: task) {
 
 - heartbeat and pong timeout handling
 - reconnect policies with handshake-aware close taxonomy
-- listener retention across reconnect attempts
+- listener retention across automatic reconnect transport generations
+- explicit `retry(_:)` returns a fresh optional task with a new ID; attach
+  task-scoped listeners and streams to the returned replacement
 - `AsyncStream` and listener-based event delivery
 
 ### `InnoNetworkPersistentCache`
