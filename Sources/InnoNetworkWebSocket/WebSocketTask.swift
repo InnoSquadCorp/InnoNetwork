@@ -43,7 +43,7 @@ public actor WebSocketTask: Identifiable {
     /// Cumulative number of reconnect attempts that successfully re-entered
     /// the `.connected` state for the lifetime of this task. Unlike
     /// ``attemptedReconnectCount`` this counter is **not** reset on each
-    /// successful connection — it only resets when ``reset()`` is invoked.
+    /// successful connection — it only resets when `reset()` is invoked.
     /// Use this for SLO dashboards that need "how flaky was this socket?".
     public var successfulReconnectCount: Int { _successfulReconnectCount }
 

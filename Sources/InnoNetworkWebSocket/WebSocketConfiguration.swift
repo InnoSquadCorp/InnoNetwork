@@ -131,7 +131,7 @@ public struct WebSocketConfiguration: Sendable {
     /// Optional cumulative wall-clock budget in seconds covering all reconnect
     /// attempts within a single disconnect window. The reconnect coordinator
     /// stamps the first attempt and refuses further retries once `now` exceeds
-    /// the budget, classifying the result as ``WebSocketReconnectAction/exceeded``.
+    /// the budget, classifying the result as `.exceeded`.
     /// Successful reconnects clear the window, so flapping over many days does
     /// not consume the budget linearly.
     ///

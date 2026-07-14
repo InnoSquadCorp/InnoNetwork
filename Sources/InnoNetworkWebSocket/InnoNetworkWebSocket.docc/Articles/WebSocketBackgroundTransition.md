@@ -69,8 +69,8 @@ process restart cannot mutate a fresh generation by accident. See
 
 ## Reconnect policy on resume
 
-Use ``WebSocketReconnectCoordinator`` defaults rather than rolling a
-custom retry loop:
+Use the built-in reconnect coordinator defaults rather than rolling a custom
+retry loop:
 
 - Bounded exponential backoff with jitter.
 - Distinguish handshake-time failures (HTTP 401 / 403 / 404 on the
