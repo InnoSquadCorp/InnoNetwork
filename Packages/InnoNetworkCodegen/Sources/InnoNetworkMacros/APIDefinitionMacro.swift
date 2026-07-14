@@ -27,6 +27,31 @@ public struct APIDefinitionMacro: ExtensionMacro {
         conformingTo protocols: [TypeSyntax],
         in context: some MacroExpansionContext
     ) throws -> [ExtensionDeclSyntax] {
+        guard let structDeclaration = declaration.as(StructDeclSyntax.self) else {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition can only be attached to a struct so each endpoint remains an explicit Sendable value.",
+                id: "api-definition-non-struct"
+            ).error(at: declaration)
+        }
+        if let conformance = directAPIDefinitionConformance(in: structDeclaration) {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition adds APIDefinition conformance; remove the explicit conformance from the struct declaration.",
+                id: "api-definition-duplicate-conformance"
+            ).error(at: conformance)
+        }
+        guard declaresTypeAlias(named: "APIResponse", in: structDeclaration) else {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition requires an explicit typealias APIResponse so the response contract remains visible on the struct.",
+                id: "api-definition-missing-response"
+            ).error(at: structDeclaration.name)
+        }
+        for ownedMember in ["method", "path"] where declaresVariable(named: ownedMember, in: structDeclaration) {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition owns the generated \(ownedMember) witness; remove the explicit \(ownedMember) property.",
+                id: "api-definition-explicit-\(ownedMember)-conflict"
+            ).error(at: structDeclaration)
+        }
+
         let arguments = try argumentList(from: node)
         let methodArgument = try requiredArgument(named: "method", in: arguments)
         let method = methodArgument.expression.trimmedDescription
@@ -34,14 +59,32 @@ public struct APIDefinitionMacro: ExtensionMacro {
         let authArgument = try requiredArgument(named: "auth", in: arguments)
         let authentication = try authentication(from: authArgument)
         let pathLiteral = try stringLiteralArgument(named: "path", in: arguments)
+        try validatePathLiteral(pathLiteral, anchor: pathArgument.expression)
+        if !hasCompleteManualPayloadContract(in: structDeclaration) {
+            try validateSimplePayloadDeclarations(in: structDeclaration)
+        }
         let properties = storedProperties(in: declaration)
         let path = try interpolatedPath(pathLiteral, properties: properties, anchor: pathArgument.expression)
         let typeName = type.trimmedDescription
         let accessPrefix = witnessAccessPrefix(in: declaration)
+        if let parameterAlias = typeAlias(named: "Parameter", in: declaration),
+            parameterAlias.initializer.value.trimmedDescription == "EmptyParameter",
+            !declaresVariable(named: "parameters", in: declaration),
+            properties["body"] == nil,
+            properties["query"] == nil
+        {
+            context.diagnose(
+                InnoNetworkMacroDiagnostic(
+                    "typealias Parameter = EmptyParameter is redundant; @APIDefinition synthesizes it for empty requests.",
+                    id: "api-definition-redundant-empty-parameter",
+                    severity: .warning
+                ).diagnostic(at: parameterAlias)
+            )
+        }
         var witnesses = try payloadWitnesses(
             in: declaration,
             properties: properties,
-            method: method,
+            method: methodArgument.expression,
             anchor: methodArgument.expression,
             accessPrefix: accessPrefix
         )
@@ -56,7 +99,14 @@ public struct APIDefinitionMacro: ExtensionMacro {
         }
         witnesses.append("\(accessPrefix)var method: HTTPMethod { \(method) }")
         witnesses.append("\(accessPrefix)var path: String { \"\(path)\" }")
-        let witnessSource = witnesses.joined(separator: "\n    ")
+        let witnessSource =
+            witnesses
+            .map {
+                $0.split(separator: "\n", omittingEmptySubsequences: false)
+                    .map(String.init)
+                    .joined(separator: "\n    ")
+            }
+            .joined(separator: "\n    ")
 
         return [
             try ExtensionDeclSyntax(
@@ -75,17 +125,81 @@ public struct APIDefinitionMacro: ExtensionMacro {
     }
 
     private static func authentication(from argument: LabeledExprSyntax) throws -> Authentication {
-        switch argument.expression.trimmedDescription {
-        case ".public", "APIAuthentication.public", "APIAuthentication.`public`":
+        switch enumCaseName(from: argument.expression) {
+        case "public":
             return .publicAccess
-        case ".required", "APIAuthentication.required":
+        case "required":
             return .required
         default:
             throw InnoNetworkMacroDiagnostic(
-                "@APIDefinition auth: must be either .public or .required.",
+                "@APIDefinition auth: must be the explicit .public or .required enum case.",
                 id: "api-definition-invalid-auth"
             ).error(at: argument.expression)
         }
+    }
+
+    private static func directAPIDefinitionConformance(
+        in declaration: StructDeclSyntax
+    ) -> InheritedTypeSyntax? {
+        declaration.inheritanceClause?.inheritedTypes.first { inherited in
+            let name = inherited.type.trimmedDescription
+            return name == "APIDefinition" || name.hasSuffix(".APIDefinition")
+        }
+    }
+
+    private static func validatePathLiteral(
+        _ path: String,
+        anchor: some SyntaxProtocol
+    ) throws {
+        guard !path.contains("?"), !path.contains("#") else {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition path must not contain query or fragment components; declare query values through the query property.",
+                id: "api-definition-path-component"
+            ).error(at: anchor)
+        }
+
+        var index = path.startIndex
+        while index < path.endIndex {
+            guard path[index] == "%" else {
+                index = path.index(after: index)
+                continue
+            }
+            let first = path.index(after: index)
+            guard first < path.endIndex else {
+                throw invalidPercentEscape(at: anchor)
+            }
+            let second = path.index(after: first)
+            guard second < path.endIndex,
+                isASCIIHexDigit(path[first]),
+                isASCIIHexDigit(path[second])
+            else {
+                throw invalidPercentEscape(at: anchor)
+            }
+            index = path.index(after: second)
+        }
+    }
+
+    private static func isASCIIHexDigit(_ character: Character) -> Bool {
+        guard character.unicodeScalars.count == 1,
+            let value = character.unicodeScalars.first?.value
+        else {
+            return false
+        }
+        switch value {
+        case 48...57, 65...70, 97...102:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func invalidPercentEscape(
+        at anchor: some SyntaxProtocol
+    ) -> DiagnosticsError {
+        InnoNetworkMacroDiagnostic(
+            "@APIDefinition path contains an invalid percent escape.",
+            id: "api-definition-invalid-percent-escape"
+        ).error(at: anchor)
     }
 
     private static func argumentList(from node: AttributeSyntax) throws -> LabeledExprListSyntax {
@@ -189,13 +303,36 @@ public struct APIDefinitionMacro: ExtensionMacro {
         case genericParameter
     }
 
+    private static func hasCompleteManualPayloadContract(
+        in declaration: some DeclGroupSyntax
+    ) -> Bool {
+        typeAlias(named: "Parameter", in: declaration) != nil
+            && instanceVariable(named: "parameters", in: declaration) != nil
+    }
+
+    private static func validateSimplePayloadDeclarations(
+        in declaration: some DeclGroupSyntax
+    ) throws {
+        for role in ["body", "query"] {
+            guard let (variable, binding) = variableBinding(named: role, in: declaration) else {
+                continue
+            }
+            guard isEligibleStoredInstanceProperty(variable: variable, binding: binding) else {
+                throw InnoNetworkMacroDiagnostic(
+                    "@APIDefinition simple-mode \(role) must be an instance stored property; use a complete Parameter + parameters fallback for computed, static, or lazy payloads.",
+                    id: "api-definition-invalid-\(role)-declaration"
+                ).error(at: variable)
+            }
+        }
+    }
+
     private static func storedProperties(in declaration: some DeclGroupSyntax) -> [String: StoredProperty] {
         let genericParameters = genericParameterNames(in: declaration)
         var properties: [String: StoredProperty] = [:]
         for member in declaration.memberBlock.members {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
             for binding in variable.bindings {
-                guard binding.accessorBlock == nil,
+                guard isEligibleStoredInstanceProperty(variable: variable, binding: binding),
                     let identifier = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text
                 else {
                     continue
@@ -214,12 +351,22 @@ public struct APIDefinitionMacro: ExtensionMacro {
     private static func payloadWitnesses(
         in declaration: some DeclGroupSyntax,
         properties: [String: StoredProperty],
-        method: String,
+        method: ExprSyntax,
         anchor: some SyntaxProtocol,
         accessPrefix: String
     ) throws -> [String] {
         let parameterAlias = typeAlias(named: "Parameter", in: declaration)
-        let hasParameters = declaresVariable(named: "parameters", in: declaration)
+        let parametersDeclaration = variableBinding(named: "parameters", in: declaration)
+        let hasParameters = parametersDeclaration != nil
+
+        if let (variable, _) = parametersDeclaration,
+            hasNonInstanceModifier(variable)
+        {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition explicit parameters must be an instance property.",
+                id: "api-definition-static-parameters-witness"
+            ).error(at: variable)
+        }
 
         // A complete manual pair is the advanced escape hatch. Once present,
         // it is authoritative even when the endpoint also stores values named
@@ -230,6 +377,12 @@ public struct APIDefinitionMacro: ExtensionMacro {
 
         if let parameterAlias, !hasParameters {
             if parameterAlias.initializer.value.trimmedDescription == "EmptyParameter" {
+                if properties["body"] != nil || properties["query"] != nil {
+                    throw InnoNetworkMacroDiagnostic(
+                        "@APIDefinition body/query inference conflicts with the explicit EmptyParameter alias; remove the alias or use a complete Parameter + parameters fallback.",
+                        id: "api-definition-empty-parameter-payload-conflict"
+                    ).error(at: parameterAlias)
+                }
                 return []
             }
             throw InnoNetworkMacroDiagnostic(
@@ -255,30 +408,52 @@ public struct APIDefinitionMacro: ExtensionMacro {
         }
 
         if let body {
-            guard methodKind(method) == .nonGet else {
+            switch methodKind(method) {
+            case .get:
                 throw InnoNetworkMacroDiagnostic(
                     "@APIDefinition GET endpoints cannot infer a body; use the explicit Parameter + parameters fallback for a custom transport.",
                     id: "api-definition-get-body"
                 ).error(at: anchor)
+            case .unknown:
+                throw InnoNetworkMacroDiagnostic(
+                    "@APIDefinition body/query inference requires method: to be an explicit HTTPMethod enum case.",
+                    id: "api-definition-dynamic-payload-method"
+                ).error(at: anchor)
+            case .nonGet:
+                break
             }
             let parameterType = try parameterTypeName(for: body, role: "body", anchor: declaration)
             return [
                 "\(accessPrefix)typealias Parameter = \(parameterType)",
-                "\(accessPrefix)var parameters: Parameter? { body }",
+                normalizedParametersWitness(
+                    property: "body",
+                    accessPrefix: accessPrefix
+                ),
             ]
         }
 
         if let query {
-            guard methodKind(method) == .get else {
+            switch methodKind(method) {
+            case .nonGet:
                 throw InnoNetworkMacroDiagnostic(
                     "@APIDefinition query inference is supported only for GET endpoints; use the explicit Parameter + parameters fallback for a custom transport.",
                     id: "api-definition-nonget-query"
                 ).error(at: anchor)
+            case .unknown:
+                throw InnoNetworkMacroDiagnostic(
+                    "@APIDefinition body/query inference requires method: to be an explicit HTTPMethod enum case.",
+                    id: "api-definition-dynamic-payload-method"
+                ).error(at: anchor)
+            case .get:
+                break
             }
             let parameterType = try parameterTypeName(for: query, role: "query", anchor: declaration)
             return [
                 "\(accessPrefix)typealias Parameter = \(parameterType)",
-                "\(accessPrefix)var parameters: Parameter? { query }",
+                normalizedParametersWitness(
+                    property: "query",
+                    accessPrefix: accessPrefix
+                ),
             ]
         }
 
@@ -291,17 +466,37 @@ public struct APIDefinitionMacro: ExtensionMacro {
         case unknown
     }
 
-    private static func methodKind(_ method: String) -> MethodKind {
-        switch method {
-        case ".get", "HTTPMethod.get":
+    private static func methodKind(_ method: ExprSyntax) -> MethodKind {
+        switch enumCaseName(from: method) {
+        case "get":
             return .get
-        case ".post", ".put", ".patch", ".delete", ".head", ".options",
-            "HTTPMethod.post", "HTTPMethod.put", "HTTPMethod.patch", "HTTPMethod.delete",
-            "HTTPMethod.head", "HTTPMethod.options":
+        case "post", "put", "patch", "delete":
             return .nonGet
         default:
             return .unknown
         }
+    }
+
+    private static func enumCaseName(from expression: ExprSyntax) -> String? {
+        expression.as(MemberAccessExprSyntax.self)?.declName.baseName.text
+    }
+
+    private static func normalizedParametersWitness(
+        property: String,
+        accessPrefix: String
+    ) -> String {
+        """
+        \(accessPrefix)var parameters: Parameter? {
+            func normalized<Value>(_ value: Value) -> Value? {
+                .some(value)
+            }
+            func normalized<Value>(_ value: Value?) -> Value?? {
+                guard let value else { return nil }
+                return .some(.some(value))
+            }
+            return normalized(\(property))
+        }
+        """
     }
 
     private static func parameterTypeName(
@@ -317,11 +512,8 @@ public struct APIDefinitionMacro: ExtensionMacro {
         }
 
         let source = type.trimmedDescription
-        if source.hasSuffix("?") || source.hasSuffix("!") {
-            return String(source.dropLast())
-        }
-        for prefix in ["Optional<", "Swift.Optional<"] where source.hasPrefix(prefix) && source.hasSuffix(">") {
-            return String(source.dropFirst(prefix.count).dropLast())
+        if source.hasSuffix("!") {
+            return "\(source.dropLast())?"
         }
         return source
     }
@@ -346,15 +538,67 @@ public struct APIDefinitionMacro: ExtensionMacro {
         named name: String,
         in declaration: some DeclGroupSyntax
     ) -> Bool {
+        variableBinding(named: name, in: declaration) != nil
+    }
+
+    private static func instanceVariable(
+        named name: String,
+        in declaration: some DeclGroupSyntax
+    ) -> VariableDeclSyntax? {
+        guard let (variable, _) = variableBinding(named: name, in: declaration),
+            !hasNonInstanceModifier(variable)
+        else {
+            return nil
+        }
+        return variable
+    }
+
+    private static func variableBinding(
+        named name: String,
+        in declaration: some DeclGroupSyntax
+    ) -> (VariableDeclSyntax, PatternBindingSyntax)? {
         for member in declaration.memberBlock.members {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
             for binding in variable.bindings {
                 if binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text == name {
-                    return true
+                    return (variable, binding)
                 }
             }
         }
-        return false
+        return nil
+    }
+
+    private static func isEligibleStoredInstanceProperty(
+        variable: VariableDeclSyntax,
+        binding: PatternBindingSyntax
+    ) -> Bool {
+        guard !hasNonInstanceModifier(variable) else { return false }
+        guard let accessorBlock = binding.accessorBlock else { return true }
+
+        switch accessorBlock.accessors {
+        case .getter:
+            return false
+        case .accessors(let accessors):
+            return accessors.allSatisfy { accessor in
+                switch accessor.accessorSpecifier.text {
+                case "willSet", "didSet":
+                    return true
+                default:
+                    return false
+                }
+            }
+        }
+    }
+
+    private static func hasNonInstanceModifier(_ variable: VariableDeclSyntax) -> Bool {
+        variable.modifiers.contains { modifier in
+            switch modifier.name.text {
+            case "static", "class", "lazy":
+                return true
+            default:
+                return false
+            }
+        }
     }
 
     /// Returns the syntactic generic parameter names visible to the

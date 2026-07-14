@@ -17,27 +17,9 @@ public enum EndpointPathEncoding {
         percentEncodedSegment(String(value))
     }
 
-    /// Percent-encodes a dynamic optional value for use as a single URL path
-    /// segment.
-    ///
-    /// Optional values trigger an `assertionFailure` in DEBUG builds because
-    /// accepting them silently would hide a missing path component. In
-    /// RELEASE builds, `.some` values are unwrapped and `.none` renders as
-    /// `"nil"` to preserve the previous non-crashing behavior.
-    public static func percentEncodedSegment<T>(_ value: T?) -> String
-    where T: LosslessStringConvertible & Sendable {
-        optionalSegment(value.map(String.init))
-    }
-
     /// Percent-encodes a dynamic UUID for use as a single URL path segment.
     public static func percentEncodedSegment(_ value: UUID) -> String {
         percentEncodedSegment(value.uuidString)
-    }
-
-    /// Percent-encodes a dynamic optional UUID for use as a single URL path
-    /// segment.
-    public static func percentEncodedSegment(_ value: UUID?) -> String {
-        optionalSegment(value?.uuidString)
     }
 
     /// Percent-encodes a dynamic raw-value enum for use as a single URL path
@@ -47,22 +29,9 @@ public enum EndpointPathEncoding {
         percentEncodedSegment(value.rawValue)
     }
 
-    /// Percent-encodes a dynamic optional raw-value enum for use as a single
-    /// URL path segment.
-    public static func percentEncodedSegment<T>(_ value: T?) -> String
-    where T: RawRepresentable & Sendable, T.RawValue: LosslessStringConvertible & Sendable {
-        optionalSegment(value.map { String($0.rawValue) })
-    }
-
     /// Percent-encodes a dynamic string for use as a single URL path segment.
     public static func percentEncodedSegment(_ value: String) -> String {
         percentEncode(value, preservingPercentEscapes: false, allowsSlash: false)
-    }
-
-    /// Percent-encodes a dynamic optional string for use as a single URL path
-    /// segment.
-    public static func percentEncodedSegment(_ value: String?) -> String {
-        optionalSegment(value)
     }
 
     package static func percentEncodedPathLiteral(_ path: String) throws -> String {
@@ -133,16 +102,6 @@ public enum EndpointPathEncoding {
         NetworkError.configuration(
             reason: .invalidRequest(
                 "Endpoint path must be a valid percent-encoded URL path. Invalid percent escape found in '\(path)'."))
-    }
-
-    private static func optionalSegment(_ value: String?) -> String {
-        guard let unwrapped = value else {
-            assertionFailure(
-                "EndpointPathEncoding.percentEncodedSegment received a nil Optional. Unwrap the value before passing it to a path placeholder."
-            )
-            return percentEncodedSegment("nil")
-        }
-        return percentEncodedSegment(unwrapped)
     }
 
     private static let hexDigits: [Character] = Array("0123456789ABCDEF")

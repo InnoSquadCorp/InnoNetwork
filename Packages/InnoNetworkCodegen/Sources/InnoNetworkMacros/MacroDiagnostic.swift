@@ -6,10 +6,28 @@ struct InnoNetworkMacroDiagnostic: DiagnosticMessage, Error {
     let diagnosticID: MessageID
     let severity: DiagnosticSeverity
 
-    init(_ message: String, id: String) {
+    init(
+        _ message: String,
+        id: String,
+        severity: DiagnosticSeverity = .error
+    ) {
         self.message = message
         self.diagnosticID = MessageID(domain: "InnoNetworkMacros", id: id)
-        self.severity = .error
+        self.severity = severity
+    }
+
+    /// Creates a diagnostic that can be emitted without aborting expansion.
+    /// Use this for warning-only guidance; definite request-shape violations
+    /// should continue to throw ``error(at:fixIts:)``.
+    func diagnostic(
+        at node: some SyntaxProtocol,
+        fixIts: [FixIt] = []
+    ) -> Diagnostic {
+        Diagnostic(
+            node: Syntax(node),
+            message: self,
+            fixIts: fixIts
+        )
     }
 
     /// Wraps the diagnostic in a `DiagnosticsError` whose source location
@@ -28,11 +46,7 @@ struct InnoNetworkMacroDiagnostic: DiagnosticMessage, Error {
         fixIts: [FixIt] = []
     ) -> DiagnosticsError {
         DiagnosticsError(diagnostics: [
-            Diagnostic(
-                node: Syntax(node),
-                message: self,
-                fixIts: fixIts
-            )
+            diagnostic(at: node, fixIts: fixIts)
         ])
     }
 }

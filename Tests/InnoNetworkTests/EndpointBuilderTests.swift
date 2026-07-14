@@ -504,7 +504,10 @@ struct EndpointBuilderTests {
 
     @Test(
         "Malformed endpoint paths fail before transport",
-        arguments: ["/files/%", "/files/%2", "/files/%ZZ", "/users?name=kim", "/users#section"])
+        arguments: [
+            "/files/%", "/files/%2", "/files/%ZZ", "/files/%ＦＦ", "/users?name=kim",
+            "/users#section",
+        ])
     func malformedEndpointPathThrows(path: String) async {
         let mockSession = MockURLSession()
         let client = DefaultNetworkClient(

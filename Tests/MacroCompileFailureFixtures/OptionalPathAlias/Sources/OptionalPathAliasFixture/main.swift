@@ -1,0 +1,17 @@
+import InnoNetwork
+import InnoNetworkCodegen
+
+private typealias OptionalUserID = Int?
+
+private struct User: Decodable, Sendable {
+    let id: Int
+}
+
+@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+private struct GetUser {
+    typealias APIResponse = User
+
+    let id: OptionalUserID
+}
+
+_ = GetUser(id: nil)
