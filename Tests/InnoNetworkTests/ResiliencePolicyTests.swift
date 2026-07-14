@@ -282,6 +282,126 @@ private final class SequenceURLSession: URLSessionProtocol, Sendable {
     }
 }
 
+
+private actor ResilienceTokenStore {
+    private var token: String
+
+    init(_ token: String) {
+        self.token = token
+    }
+
+    func read() -> String {
+        token
+    }
+
+    func replace(with token: String) {
+        self.token = token
+    }
+}
+
+
+private actor RefreshTestGate {
+    private struct EntryWaiter {
+        let minimumCount: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private var entryCount = 0
+    private var entryWaiters: [EntryWaiter] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private var isReleased = false
+
+    func enterAndWait() async {
+        entryCount += 1
+        let ready = entryWaiters.filter { entryCount >= $0.minimumCount }
+        entryWaiters.removeAll { entryCount >= $0.minimumCount }
+        ready.forEach { $0.continuation.resume() }
+
+        guard !isReleased else { return }
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilEntered(count: Int = 1) async {
+        guard entryCount < count else { return }
+        await withCheckedContinuation { continuation in
+            entryWaiters.append(EntryWaiter(minimumCount: count, continuation: continuation))
+        }
+    }
+
+    func release() {
+        isReleased = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll(keepingCapacity: false)
+        waiters.forEach { $0.resume() }
+    }
+
+    var totalEntryCount: Int {
+        entryCount
+    }
+}
+
+
+private actor AuthorizationRoutingState {
+    private struct OldRequestWaiter {
+        let minimumCount: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private let oldTokenResponse: QueuedHTTPResponse
+    private let newTokenResponse: QueuedHTTPResponse
+    private var oldTokenRequestCount = 0
+    private var oldRequestWaiters: [OldRequestWaiter] = []
+
+    init(oldTokenResponse: QueuedHTTPResponse, newTokenResponse: QueuedHTTPResponse) {
+        self.oldTokenResponse = oldTokenResponse
+        self.newTokenResponse = newTokenResponse
+    }
+
+    func response(for request: URLRequest) -> QueuedHTTPResponse {
+        if request.value(forHTTPHeaderField: "Authorization") == "Bearer new" {
+            return newTokenResponse
+        }
+
+        oldTokenRequestCount += 1
+        let ready = oldRequestWaiters.filter { oldTokenRequestCount >= $0.minimumCount }
+        oldRequestWaiters.removeAll { oldTokenRequestCount >= $0.minimumCount }
+        ready.forEach { $0.continuation.resume() }
+        return oldTokenResponse
+    }
+
+    func waitForOldTokenRequests(count: Int) async {
+        guard oldTokenRequestCount < count else { return }
+        await withCheckedContinuation { continuation in
+            oldRequestWaiters.append(
+                OldRequestWaiter(minimumCount: count, continuation: continuation)
+            )
+        }
+    }
+}
+
+
+private final class AuthorizationRoutingURLSession: URLSessionProtocol, Sendable {
+    private let state: AuthorizationRoutingState
+
+    init(oldTokenResponse: QueuedHTTPResponse, newTokenResponse: QueuedHTTPResponse) {
+        self.state = AuthorizationRoutingState(
+            oldTokenResponse: oldTokenResponse,
+            newTokenResponse: newTokenResponse
+        )
+    }
+
+    func waitForOldTokenRequests(count: Int) async {
+        await state.waitForOldTokenRequests(count: count)
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        let response = await state.response(for: request)
+        return (response.data, response.response)
+    }
+}
+
 private final class CacheInvalidatingURLSession: URLSessionProtocol, Sendable {
     private let cache: InMemoryResponseCache
     private let cacheKey: ResponseCacheKey
@@ -577,20 +697,17 @@ struct ResiliencePolicyTests {
     @Test("Concurrent 401 responses share one refresh")
     func refreshPolicySingleFlight() async throws {
         let body = ResilienceUser(id: 1, name: "ok")
-        var responses: [QueuedHTTPResponse] = []
-        for _ in 0..<10 {
-            responses.append(try queuedResponse(statusCode: 401))
-        }
-        for _ in 0..<10 {
-            responses.append(try queuedResponse(statusCode: 200, body: body))
-        }
-        let session = SequenceURLSession(queue: responses)
-        let refreshCount = Counter()
+        let session = AuthorizationRoutingURLSession(
+            oldTokenResponse: try queuedResponse(statusCode: 401),
+            newTokenResponse: try queuedResponse(statusCode: 200, body: body)
+        )
+        let tokenStore = ResilienceTokenStore("old")
+        let refreshGate = RefreshTestGate()
         let policy = RefreshTokenPolicy(
-            currentToken: { "old" },
+            currentToken: { await tokenStore.read() },
             refreshToken: {
-                await refreshCount.increment()
-                try await Task.sleep(for: .milliseconds(50))
+                await refreshGate.enterAndWait()
+                await tokenStore.replace(with: "new")
                 return "new"
             }
         )
@@ -608,28 +725,35 @@ struct ResiliencePolicyTests {
                     try await client.request(ResilienceGetRequest())
                 }
             }
+
+            // Hold the single refresh until every caller has sent its old
+            // token. This makes the coalescing cohort explicit even when the
+            // parallel test scheduler delays individual child tasks.
+            await session.waitForOldTokenRequests(count: 10)
+            await refreshGate.release()
+
             for try await user in group {
                 #expect(user == body)
             }
         }
 
-        #expect(await refreshCount.count == 1)
+        #expect(await refreshGate.totalEntryCount == 1)
     }
 
     @Test("Cancelled refresh waiter does not cancel shared refresh")
     func cancelledRefreshWaiterDoesNotCancelSharedRefresh() async throws {
         let body = ResilienceUser(id: 1, name: "ok")
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 401),
-            queuedResponse(statusCode: 401),
-            queuedResponse(statusCode: 200, body: body),
-        ])
-        let refreshCount = Counter()
+        let session = AuthorizationRoutingURLSession(
+            oldTokenResponse: try queuedResponse(statusCode: 401),
+            newTokenResponse: try queuedResponse(statusCode: 200, body: body)
+        )
+        let tokenStore = ResilienceTokenStore("old")
+        let refreshGate = RefreshTestGate()
         let policy = RefreshTokenPolicy(
-            currentToken: { "old" },
+            currentToken: { await tokenStore.read() },
             refreshToken: {
-                await refreshCount.increment()
-                try await Task.sleep(for: .milliseconds(100))
+                await refreshGate.enterAndWait()
+                await tokenStore.replace(with: "new")
                 return "new"
             }
         )
@@ -644,19 +768,19 @@ struct ResiliencePolicyTests {
         let cancelled = Task {
             try await client.request(ResilienceGetRequest())
         }
-        try await waitUntil {
-            await refreshCount.count == 1
-        }
+        await refreshGate.waitUntilEntered()
         let remaining = Task {
             try await client.request(ResilienceGetRequest())
         }
+        await session.waitForOldTokenRequests(count: 2)
         cancelled.cancel()
 
         await expectCancelled(cancelled)
+        await refreshGate.release()
         let user = try await remaining.value
 
         #expect(user == body)
-        #expect(await refreshCount.count == 1)
+        #expect(await refreshGate.totalEntryCount == 1)
     }
 
     @Test("Refresh failure fans out to concurrent 401 waiters")
