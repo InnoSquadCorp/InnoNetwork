@@ -110,6 +110,92 @@ struct DownloadPauseResumeTests {
         await harness.manager.shutdown()
     }
 
+    @Test("Pause cancellation callback before resume data preserves the pausing attempt")
+    func cancellationBeforeResumeDataDoesNotOrphanPause() async throws {
+        let harness = try StubDownloadHarness(label: "pause-cancellation-before-resume-data")
+        let resumeData = Data("resume-after-early-cancellation".utf8)
+        harness.stubTask.suspendCancelByProducingResumeData()
+
+        let task = await harness.startDownload()
+        let taskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task, timeout: 5.0)
+        )
+        #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .downloading })
+
+        let pauseTask = Task {
+            await harness.manager.pause(task)
+        }
+        #expect(
+            await waitForPauseCondition {
+                harness.stubTask.pendingCancelByProducingResumeDataCount == 1
+            }
+        )
+
+        await harness.injectCompletion(
+            taskIdentifier: taskIdentifier,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.cancelled.rawValue,
+                message: "pause cancellation"
+            )
+        )
+
+        #expect(await task.state == .downloading)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == taskIdentifier)
+
+        harness.stubTask.completeCancelByProducingResumeData(with: resumeData)
+        await pauseTask.value
+
+        #expect(await task.state == .paused)
+        #expect(await task.resumeData == resumeData)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == nil)
+        await harness.manager.cancel(task)
+    }
+
+    @Test("Late cancellation from paused attempt does not remove resumed runtime")
+    func lateCancellationFromPausedAttemptPreservesResumedRuntime() async throws {
+        let resumedStub = StubDownloadURLTask()
+        let harness = try StubDownloadHarness(
+            label: "pause-late-cancellation-after-resume",
+            prequeuedStubs: [resumedStub]
+        )
+        harness.stubTask.scriptCancelResumeData(Data("resume-before-late-cancellation".utf8))
+
+        let task = await harness.startDownload()
+        let pausedAttemptIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task, timeout: 5.0)
+        )
+        #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .downloading })
+
+        await harness.manager.pause(task)
+        #expect(await task.state == .paused)
+
+        await harness.manager.resume(task)
+        let resumedIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: pausedAttemptIdentifier,
+                timeout: 5.0
+            )
+        )
+        #expect(resumedIdentifier == resumedStub.taskIdentifier)
+
+        await harness.injectCompletion(
+            taskIdentifier: pausedAttemptIdentifier,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.cancelled.rawValue,
+                message: "late pause cancellation"
+            )
+        )
+
+        #expect(await task.state == .downloading)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == resumedIdentifier)
+        #expect(resumedStub.state == .running)
+        await harness.manager.cancel(task)
+    }
+
     @Test("Resume from paused with resumeData creates a new task via withResumeData:")
     func resumeFromPausedUsesResumeData() async throws {
         let resumedStub = StubDownloadURLTask()

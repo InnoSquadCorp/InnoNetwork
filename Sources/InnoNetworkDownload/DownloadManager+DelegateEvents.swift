@@ -47,6 +47,20 @@ extension DownloadManager {
             return
         }
 
+        // `cancel(byProducingResumeData:)` may invoke the URLSession delegate
+        // before its resume-data completion handler. The pause path owns this
+        // exact cancellation and will retire the attempt once the payload is
+        // available; consuming it here would orphan the still-downloading
+        // logical task. Identifier matching is essential because a resumed
+        // attempt can exist while an old cancellation callback is still late.
+        if let error,
+            error.domain == NSURLErrorDomain,
+            error.code == URLError.cancelled.rawValue,
+            pausingTaskIdentifiers[task.id] == taskIdentifier
+        {
+            return
+        }
+
         if let error {
             await runtimeRegistry.detachRuntime(taskIdentifier: taskIdentifier)
             await failureCoordinator.handleError(task: task, error: error) { [transferCoordinator] task in

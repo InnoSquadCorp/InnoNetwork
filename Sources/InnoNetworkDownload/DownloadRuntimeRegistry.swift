@@ -78,7 +78,21 @@ package actor DownloadRuntimeRegistry {
     /// leaving the URLTask handle pinned in memory.
     package func detachRuntime(taskIdentifier: Int) {
         guard let task = identifierToTask.removeValue(forKey: taskIdentifier) else { return }
-        taskIdToIdentifier.removeValue(forKey: task.id)
+        if taskIdToIdentifier[task.id] == taskIdentifier {
+            taskIdToIdentifier.removeValue(forKey: task.id)
+        }
+    }
+
+    /// Removes one concrete URLSession attempt without touching a newer
+    /// attempt registered for the same logical download task.
+    package func removeAttemptRuntime(taskIdentifier: Int) {
+        guard let task = identifierToTask.removeValue(forKey: taskIdentifier) else { return }
+        if taskIdToIdentifier[task.id] == taskIdentifier {
+            taskIdToIdentifier.removeValue(forKey: task.id)
+        }
+        if taskIdToURLTask[task.id]?.taskIdentifier == taskIdentifier {
+            taskIdToURLTask.removeValue(forKey: task.id)
+        }
     }
 
     package func removeTaskRuntime(taskId: String) {

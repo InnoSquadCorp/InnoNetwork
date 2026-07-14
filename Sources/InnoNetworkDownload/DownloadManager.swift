@@ -118,6 +118,11 @@ public actor DownloadManager {
     /// Serializes pause production per logical task while the manager actor is
     /// reentrant at `cancelByProducingResumeData()` and persistence awaits.
     var pausingTaskIDs: Set<String> = []
+    /// Pins the concrete URLSession attempt whose cancellation belongs to an
+    /// in-flight pause. The delegate may report that cancellation before
+    /// `cancelByProducingResumeData()` resumes; matching it by identifier keeps
+    /// a later resumed attempt from being mistaken for the one being paused.
+    var pausingTaskIdentifiers: [String: Int] = [:]
     /// Drains delegate events into actor-isolated handlers; finished and
     /// awaited in ``shutdown()`` so buffered completion files are consumed
     /// before teardown returns. Stored behind a nonisolated lock because it
@@ -442,6 +447,8 @@ public actor DownloadManager {
         guard expectedLifecycle.state == .downloading else { return }
         guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else { return }
         let expectedTaskIdentifier = urlTask.taskIdentifier
+        pausingTaskIdentifiers[task.id] = expectedTaskIdentifier
+        defer { pausingTaskIdentifiers.removeValue(forKey: task.id) }
 
         let resumeData = await urlTask.cancelByProducingResumeData()
 
@@ -451,6 +458,11 @@ public actor DownloadManager {
         else {
             return
         }
+
+        // The attempt is cancelled regardless of when URLSession delivers its
+        // cancellation delegate event. Retire only this identifier: actor
+        // reentrancy may already have allowed a newer runtime to register.
+        await runtimeRegistry.removeAttemptRuntime(taskIdentifier: expectedTaskIdentifier)
 
         do {
             try await persistence.updateResumeData(id: task.id, resumeData: resumeData)
