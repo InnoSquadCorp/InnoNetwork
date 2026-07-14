@@ -184,9 +184,13 @@ the equivalent Pack fields.
   `RefreshTokenPolicy.appliesTo` for request-level routing while keeping one
   coordinator per client configuration.
 - Header/query result-builder DSLs, mutation testing, full SwiftUI sample app,
-  richer HTTPTypes/OpenAPI adapters that pin external generator versions,
-  Linux-safe contracts, and iOS 17 LTS evaluation remain post-5.0 adoption work
-  rather than GA blockers.
+  richer public HTTPTypes/OpenAPI conversion adapters, external generator
+  version pinning, Linux-safe contracts, and iOS 17 LTS evaluation remain
+  post-5.0 adoption work rather than GA blockers. The existing
+  `InnoNetworkOpenAPI` transport owns a direct compatible 1.x
+  `swift-http-types` dependency, currently validated with 1.6.0; the deferred
+  item is broader public conversion API, not dependency hygiene at that
+  companion boundary.
 
 ## Continuing Operations
 

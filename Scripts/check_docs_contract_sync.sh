@@ -595,8 +595,49 @@ validate_multipart_streaming_api() {
 validate_openapi_companion_product() {
   require_contains 'name: "InnoNetworkOpenAPI"' "$repo_root/Package.swift"
   require_contains 'targets: ["InnoNetworkOpenAPI"]' "$repo_root/Package.swift"
+  require_contains 'https://github.com/apple/swift-http-types' "$repo_root/Package.swift"
+  require_contains '.upToNextMajor(from: "1.5.1")' "$repo_root/Package.swift"
   require_contains 'https://github.com/apple/swift-openapi-runtime' "$repo_root/Package.swift"
-  require_contains '.product(name: "OpenAPIRuntime", package: "swift-openapi-runtime")' "$repo_root/Package.swift"
+
+  local package_dump
+  package_dump="$(xcrun swift package dump-package)" \
+    || fail "unable to inspect Package.swift dependency ownership"
+  if ! PACKAGE_DUMP="$package_dump" python3 - <<'PYEOF'
+import json
+import os
+import sys
+
+manifest = json.loads(os.environ["PACKAGE_DUMP"])
+target = next(
+    (target for target in manifest["targets"] if target["name"] == "InnoNetworkOpenAPI"),
+    None,
+)
+if target is None:
+    print("InnoNetworkOpenAPI target is missing", file=sys.stderr)
+    sys.exit(1)
+
+products = {
+    (dependency["product"][0], dependency["product"][1])
+    for dependency in target["dependencies"]
+    if "product" in dependency
+}
+required = {
+    ("HTTPTypes", "swift-http-types"),
+    ("OpenAPIRuntime", "swift-openapi-runtime"),
+}
+missing = required - products
+if missing:
+    print(
+        "InnoNetworkOpenAPI is missing direct product dependencies: "
+        + ", ".join(f"{product} ({package})" for product, package in sorted(missing)),
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PYEOF
+  then
+    fail "InnoNetworkOpenAPI must directly own its HTTPTypes and OpenAPIRuntime imports"
+  fi
+
   require_contains 'public protocol OpenAPIRestOperation' \
     "$repo_root/Sources/InnoNetworkOpenAPI/OpenAPIAdapter.swift"
   require_contains 'public struct OpenAPIRequest' \

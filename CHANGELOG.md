@@ -7,6 +7,14 @@ Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- `InnoNetworkOpenAPI` now declares its direct `swift-http-types` dependency
+  explicitly with a compatible 1.x range from 1.5.1, instead of relying on
+  `swift-openapi-runtime` to expose it transitively. Current validation resolves
+  1.6.0; the core `InnoNetwork` product keeps its existing request, header, and
+  response types.
+
 ## [5.0.0] - 2026-07-14
 
 ### Breaking

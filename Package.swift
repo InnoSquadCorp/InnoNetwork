@@ -85,6 +85,15 @@ let package = Package(
         ),
     ],
     dependencies: [
+        // `InnoNetworkOpenAPI` imports HTTPTypes directly at its generated-client
+        // transport boundary. Keep that dependency explicit instead of relying
+        // on swift-openapi-runtime to expose its own transitive dependency.
+        // Preserve the previously resolved 1.5.1 compatibility floor while
+        // allowing SwiftPM to select newer compatible 1.x releases.
+        .package(
+            url: "https://github.com/apple/swift-http-types",
+            .upToNextMajor(from: "1.5.1")
+        ),
         // The root package resolves `swift-openapi-runtime` because it ships
         // the optional `InnoNetworkOpenAPI` companion product. Codegen remains
         // isolated in Packages/InnoNetworkCodegen so root package consumers do
@@ -162,6 +171,7 @@ let package = Package(
             name: "InnoNetworkOpenAPI",
             dependencies: [
                 "InnoNetwork",
+                .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
             ],
             path: "Sources/InnoNetworkOpenAPI",
@@ -259,6 +269,8 @@ let package = Package(
                 "InnoNetworkOpenAPI",
                 "InnoNetworkTestSupport",
                 "InnoNetworkTrust",
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
             ],
             path: "Tests/InnoNetworkTests",
             swiftSettings: strictSettings
