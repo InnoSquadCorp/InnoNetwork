@@ -112,13 +112,16 @@ extension WebSocketManager {
         urlTask.cancel(with: closeCode.urlSessionCloseCode, reason: nil)
         let closeHandshakeTimeout = configuration.closeHandshakeTimeout
         let taskID = task.id
-        let closeTimeoutTask = Task { [weak self, taskID] in
+        let clock = self.clock
+        let closeTimeoutTask = Task { [weak self, taskID, clock] in
             do {
-                try await Task.sleep(for: closeHandshakeTimeout)
+                try await clock.sleep(for: closeHandshakeTimeout)
             } catch is CancellationError {
                 return
             } catch {
-                return
+                // A scheduler failure must not silently remove the only bound
+                // on listener teardown. Fail closed and force the same terminal
+                // path as an elapsed close-handshake deadline.
             }
             await self?.handleCloseHandshakeTimeout(taskID: taskID, closeCode: closeCode)
         }

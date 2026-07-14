@@ -46,10 +46,10 @@ struct WebSocketLifecycleReducerTests {
         #expect(disconnecting.state.publicState == .disconnecting)
         #expect(
             disconnecting.effects == [
+                .scheduleCloseTimeout(closeCode: .normalClosure),
                 .cancelHeartbeat,
                 .cancelReconnect,
                 .cancelMessageListener,
-                .scheduleCloseTimeout(closeCode: .normalClosure),
             ])
 
         let closed = WebSocketLifecycleReducer.reduce(

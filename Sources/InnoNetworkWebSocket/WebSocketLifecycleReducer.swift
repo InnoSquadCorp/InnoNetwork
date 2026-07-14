@@ -109,10 +109,16 @@ package enum WebSocketLifecycleReducer: StateReducer {
             return .init(
                 state: nextState,
                 effects: [
+                    // Arm the graceful close and its hard-close deadline before
+                    // awaiting any child-task cleanup. Foundation's async
+                    // `receive()` is not required to finish merely because the
+                    // surrounding Swift Task was cancelled, so waiting for the
+                    // listener first can otherwise prevent us from ever closing
+                    // the transport that would unblock it.
+                    .scheduleCloseTimeout(closeCode: closeCode),
                     .cancelHeartbeat,
                     .cancelReconnect,
                     .cancelMessageListener,
-                    .scheduleCloseTimeout(closeCode: closeCode),
                 ]
             )
         case .idle, .disconnecting, .disconnected, .failed:

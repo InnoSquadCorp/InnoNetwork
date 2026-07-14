@@ -7,6 +7,16 @@ import os
 /// the test drive scripted outcomes for `receive()` / `sendPing`.
 final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
 
+    enum ReceiveCancellationBehavior: Sendable, Equatable {
+        /// Models an async operation that directly observes Swift Task
+        /// cancellation, which is convenient for most focused unit tests.
+        case cooperative
+        /// Models Foundation's transport boundary: cancelling the surrounding
+        /// Swift Task alone does not complete `receive()`; only cancelling the
+        /// underlying URL task releases the pending operation.
+        case transportCancellationOnly
+    }
+
     let taskIdentifier: Int
 
     private struct State {
@@ -32,9 +42,14 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
     private let stateLock = OSAllocatedUnfairLock<State>(initialState: State())
     private let beforeReceiveCancellationCheckHook =
         OSAllocatedUnfairLock<(@Sendable () async -> Void)?>(initialState: nil)
+    private let receiveCancellationBehavior: ReceiveCancellationBehavior
 
-    init(taskIdentifier: Int = Int.random(in: 1...1_000_000)) {
+    init(
+        taskIdentifier: Int = Int.random(in: 1...1_000_000),
+        receiveCancellationBehavior: ReceiveCancellationBehavior = .cooperative
+    ) {
         self.taskIdentifier = taskIdentifier
+        self.receiveCancellationBehavior = receiveCancellationBehavior
     }
 
     // MARK: Production protocol
@@ -60,38 +75,59 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
             if let hook = beforeReceiveCancellationCheckHook.withLock({ $0 }) {
                 await hook()
             }
-            try Task.checkCancellation()
+            if receiveCancellationBehavior == .cooperative {
+                try Task.checkCancellation()
+            }
             return message
         }
 
         let continuationID = UUID()
-        let stateLock = self.stateLock
-        let message = try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                let alreadyCancelled: Bool = stateLock.withLock { state in
-                    if Task.isCancelled { return true }
+        let message: URLSessionWebSocketTask.Message
+        switch receiveCancellationBehavior {
+        case .cooperative:
+            let stateLock = self.stateLock
+            message = try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    let alreadyCancelled: Bool = stateLock.withLock { state in
+                        if Task.isCancelled { return true }
+                        state.pendingReceiveContinuations[continuationID] = continuation
+                        state.pendingOrder.append(continuationID)
+                        return false
+                    }
+                    if alreadyCancelled {
+                        continuation.resume(throwing: CancellationError())
+                    }
+                }
+            } onCancel: {
+                let waiter: CheckedContinuation<URLSessionWebSocketTask.Message, Error>? = stateLock.withLock {
+                    state in
+                    guard let cont = state.pendingReceiveContinuations.removeValue(forKey: continuationID) else {
+                        return nil
+                    }
+                    state.pendingOrder.removeAll { $0 == continuationID }
+                    return cont
+                }
+                waiter?.resume(throwing: CancellationError())
+            }
+        case .transportCancellationOnly:
+            message = try await withCheckedThrowingContinuation { continuation in
+                let transportWasCancelled: Bool = stateLock.withLock { state in
+                    if state.didCancelUnconditionally { return true }
                     state.pendingReceiveContinuations[continuationID] = continuation
                     state.pendingOrder.append(continuationID)
                     return false
                 }
-                if alreadyCancelled {
-                    continuation.resume(throwing: CancellationError())
+                if transportWasCancelled {
+                    continuation.resume(throwing: URLError(.cancelled))
                 }
             }
-        } onCancel: {
-            let waiter: CheckedContinuation<URLSessionWebSocketTask.Message, Error>? = stateLock.withLock { state in
-                guard let cont = state.pendingReceiveContinuations.removeValue(forKey: continuationID) else {
-                    return nil
-                }
-                state.pendingOrder.removeAll { $0 == continuationID }
-                return cont
-            }
-            waiter?.resume(throwing: CancellationError())
         }
         if let hook = beforeReceiveCancellationCheckHook.withLock({ $0 }) {
             await hook()
         }
-        try Task.checkCancellation()
+        if receiveCancellationBehavior == .cooperative {
+            try Task.checkCancellation()
+        }
         return message
     }
 
@@ -110,8 +146,15 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
     }
 
     func cancel() {
-        stateLock.withLock { state in
+        let waiters: [CheckedContinuation<URLSessionWebSocketTask.Message, Error>] = stateLock.withLock { state in
             state.didCancelUnconditionally = true
+            let waiters = Array(state.pendingReceiveContinuations.values)
+            state.pendingReceiveContinuations.removeAll(keepingCapacity: false)
+            state.pendingOrder.removeAll(keepingCapacity: false)
+            return waiters
+        }
+        for waiter in waiters {
+            waiter.resume(throwing: URLError(.cancelled))
         }
     }
 

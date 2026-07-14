@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 import os
 
@@ -79,6 +80,68 @@ struct WebSocketCloseDispositionObservationTests {
         }
         #expect(code == .normalClosure)
         #expect(await waitForManagerTaskRemoval(manager: harness.manager, task: task, timeout: .seconds(1)))
+    }
+
+    @Test("Manual disconnect arms its deadline before awaiting a transport-bound receive")
+    func manualDisconnectBoundsNonCooperativeReceive() async throws {
+        let closeTimeout = Duration.seconds(3)
+        let clock = TestClock()
+        let stubTask = StubWebSocketURLTask(
+            receiveCancellationBehavior: .transportCancellationOnly
+        )
+        let harness = StubMessagingHarness(
+            closeHandshakeTimeout: closeTimeout,
+            clock: clock,
+            stubTask: stubTask
+        )
+        let task = try await harness.connectAndReady()
+
+        let receiveIsPending = await waitForPendingReceive(stubTask, timeout: .seconds(1))
+        guard receiveIsPending else {
+            Issue.record("message listener never entered its transport receive")
+            return
+        }
+
+        let disconnectTask = Task {
+            await harness.manager.disconnect(task, closeCode: .normalClosure)
+        }
+
+        // This is the regression boundary: before the fix, disconnect awaited
+        // the non-cooperative listener first, so no close-deadline waiter was
+        // ever registered and the operation could hang indefinitely.
+        guard await clock.waitForWaiters(count: 1) else {
+            stubTask.cancel()
+            await disconnectTask.value
+            harness.manager.handleDisconnected(
+                taskIdentifier: harness.stubTaskIdentifier,
+                closeCode: .normalClosure,
+                reason: nil
+            )
+            Issue.record("close-handshake deadline was not armed before listener cleanup")
+            return
+        }
+
+        #expect(stubTask.cancelledCloseCode == .normalClosure)
+        #expect(await task.state == .disconnecting)
+
+        clock.advance(by: closeTimeout)
+        await disconnectTask.value
+
+        #expect(stubTask.didCancelUnconditionally)
+        let disposition = await waitForCloseDisposition(task: task, timeout: .seconds(1))
+        guard case .handshakeTimeout(let code) = disposition else {
+            Issue.record("expected .handshakeTimeout, got \(String(describing: disposition))")
+            return
+        }
+        #expect(code == .normalClosure)
+        #expect(await task.state == .disconnected)
+        #expect(
+            await waitForManagerTaskRemoval(
+                manager: harness.manager,
+                task: task,
+                timeout: .seconds(1)
+            )
+        )
     }
 
     @Test("Peer close with retryable code records .peerRetryable disposition")
@@ -207,4 +270,19 @@ private func waitForManagerTaskRemoval(
         try? await Task.sleep(for: .milliseconds(10))
     }
     return await manager.task(withId: task.id) == nil
+}
+
+private func waitForPendingReceive(
+    _ stubTask: StubWebSocketURLTask,
+    timeout: Duration
+) async -> Bool {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+    while clock.now < deadline {
+        if stubTask.pendingReceiveCount == 1 {
+            return true
+        }
+        try? await clock.sleep(for: .milliseconds(5))
+    }
+    return stubTask.pendingReceiveCount == 1
 }

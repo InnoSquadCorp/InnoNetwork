@@ -38,6 +38,7 @@ public actor WebSocketManager {
     let configuration: WebSocketConfiguration
     let session: any WebSocketURLSession
     let delegate: WebSocketSessionDelegate
+    let clock: any InnoNetworkClock
 
     package let runtimeRegistry = WebSocketRuntimeRegistry()
     let eventHub: TaskEventHub<WebSocketEvent>
@@ -99,9 +100,12 @@ public actor WebSocketManager {
     }
 
     var reconnectCoordinator: WebSocketReconnectCoordinator {
-        WebSocketReconnectCoordinator(
+        let clock = self.clock
+        return WebSocketReconnectCoordinator(
             configuration: configuration,
             runtimeRegistry: runtimeRegistry,
+            clock: clock,
+            dateProvider: { clock.now() },
             eventHub: eventHub
         )
     }
@@ -110,7 +114,8 @@ public actor WebSocketManager {
         WebSocketHeartbeatCoordinator(
             configuration: configuration,
             runtimeRegistry: runtimeRegistry,
-            eventHub: eventHub
+            eventHub: eventHub,
+            clock: clock
         )
     }
 
@@ -155,10 +160,12 @@ public actor WebSocketManager {
         configuration: WebSocketConfiguration,
         urlSession: any WebSocketURLSession,
         delegate: WebSocketSessionDelegate,
-        callbacks: WebSocketSessionDelegateCallbacks
+        callbacks: WebSocketSessionDelegateCallbacks,
+        clock: any InnoNetworkClock = SystemClock()
     ) {
         self.configuration = configuration
         self.delegate = delegate
+        self.clock = clock
         self.eventHub = TaskEventHub(
             policy: configuration.eventDeliveryPolicy,
             metricsReporter: configuration.eventMetricsReporter,
