@@ -30,7 +30,9 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "InnoNetwork", path: "../.."),
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "603.0.1"),
+        // Macro expansion formatting and diagnostic locations are part of the
+        // generated-code contract, and they can change across SwiftSyntax patch releases.
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.1"),
     ],
     targets: [
         .target(
