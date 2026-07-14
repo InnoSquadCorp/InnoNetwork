@@ -87,6 +87,7 @@ package actor RefreshTokenCoordinator {
     private let policy: RefreshTokenPolicy
     private let now: @Sendable () -> Date
     private var state: RefreshLifecycleState = .initial
+    private var successfulRefreshGeneration: UInt64 = 0
 
     package init(
         policy: RefreshTokenPolicy,
@@ -113,17 +114,70 @@ package actor RefreshTokenCoordinator {
     }
 
     package func applyCurrentToken(to request: URLRequest) async throws -> URLRequest {
-        guard policy.appliesToRequest(request) else { return request }
-        guard let token = try await policy.currentTokenProvider() else { return request }
-        return policy.tokenApplicator(token, Self.removingAuthorizationHeaders(from: request))
+        try await applyCurrentTokenWithGeneration(to: request).request
+    }
+
+    package func applyCurrentTokenWithGeneration(
+        to request: URLRequest
+    ) async throws -> RefreshTokenApplication {
+        guard policy.appliesToRequest(request) else {
+            return RefreshTokenApplication(request: request, generation: successfulRefreshGeneration)
+        }
+
+        // The provider is external async work, so the actor may process a
+        // successful refresh while it is suspended. Re-read until the token
+        // and generation come from one stable refresh epoch.
+        while true {
+            let generation = successfulRefreshGeneration
+            let token = try await policy.currentTokenProvider()
+            guard generation == successfulRefreshGeneration else { continue }
+            guard let token else {
+                return RefreshTokenApplication(request: request, generation: generation)
+            }
+            return RefreshTokenApplication(
+                request: policy.tokenApplicator(token, Self.removingAuthorizationHeaders(from: request)),
+                generation: generation
+            )
+        }
     }
 
     package func refreshAndApply(to request: URLRequest) async throws -> URLRequest {
         try Task.checkCancellation()
         guard policy.appliesToRequest(request) else { return request }
-        let token = try await refreshedToken()
+        let resolution = try await resolveRefresh(expectedGeneration: nil)
+        guard case .refreshed(let token) = resolution else {
+            // `expectedGeneration == nil` never produces this branch. Keep the
+            // fallback total so the invariant remains explicit if resolution
+            // gains another case in the future.
+            return try await applyCurrentTokenWithGeneration(to: request).request
+        }
         try Task.checkCancellation()
         return policy.tokenApplicator(token, Self.removingAuthorizationHeaders(from: request))
+    }
+
+    package func recoverAfterAuthenticationFailure(
+        request: URLRequest,
+        observedGeneration: UInt64
+    ) async throws -> RefreshTokenApplication {
+        try Task.checkCancellation()
+        guard policy.appliesToRequest(request) else {
+            return RefreshTokenApplication(request: request, generation: successfulRefreshGeneration)
+        }
+
+        // `resolveRefresh` checks the generation in the same actor-isolated
+        // segment that joins or creates the refresh task. Keeping those two
+        // decisions together closes the reentrancy window where a refresh
+        // could complete after this method checked the generation but before
+        // a second refresh task was registered.
+        let resolution = try await resolveRefresh(expectedGeneration: observedGeneration)
+        guard case .refreshed(let token) = resolution else {
+            return try await applyCurrentTokenWithGeneration(to: request)
+        }
+        try Task.checkCancellation()
+        return RefreshTokenApplication(
+            request: policy.tokenApplicator(token, Self.removingAuthorizationHeaders(from: request)),
+            generation: successfulRefreshGeneration
+        )
     }
 
     package func shutdown() {
@@ -131,6 +185,7 @@ package actor RefreshTokenCoordinator {
             task.cancel()
         }
         state = .initial
+        successfulRefreshGeneration = 0
     }
 
     package func shouldRefresh(statusCode: Int, request: URLRequest) -> Bool {
@@ -151,7 +206,20 @@ package actor RefreshTokenCoordinator {
         return sanitized
     }
 
-    private func refreshedToken() async throws -> String {
+    private enum RefreshResolution {
+        case generationAdvanced
+        case refreshed(String)
+    }
+
+    private func resolveRefresh(
+        expectedGeneration: UInt64?
+    ) async throws -> RefreshResolution {
+        if let expectedGeneration,
+            expectedGeneration != successfulRefreshGeneration
+        {
+            return .generationAdvanced
+        }
+
         state =
             RefreshLifecycleReducer.reduce(
                 state: state,
@@ -163,7 +231,7 @@ package actor RefreshTokenCoordinator {
         case .cooldown(let until, let lastError):
             if now() < until { throw lastError }
         case .inFlight(_, let task):
-            return try await RefreshTokenTaskAwaitBridge().value(of: task)
+            return .refreshed(try await RefreshTokenTaskAwaitBridge().value(of: task))
         case .idle:
             break
         }
@@ -172,7 +240,7 @@ package actor RefreshTokenCoordinator {
         let id = UUID()
         // State transitions are driven by the detached task's own completion
         // (success/failure/cancel) rather than by the awaiter's catch arms.
-        // If the *caller* of `refreshedToken()` is cancelled while awaiting the
+        // If the *caller* of `resolveRefresh(...)` is cancelled while awaiting the
         // detached task, the task keeps running, so resetting state here would
         // let a follow-up caller launch a duplicate refresh. Routing the
         // transition through the task itself preserves single-flight even under
@@ -183,7 +251,7 @@ package actor RefreshTokenCoordinator {
         // guarantees that by the time any awaiter on `task.value` observes
         // the result, the actor's state has already been reconciled
         // through the reducer — so a follow-up caller entering
-        // `refreshedToken()` after the failed/cancelled refresh sees
+        // `resolveRefresh(...)` after the failed/cancelled refresh sees
         // `.idle` (or `.cooldown`) and can start a fresh refresh without
         // racing the prior task's terminal callback.
         //
@@ -211,16 +279,19 @@ package actor RefreshTokenCoordinator {
                 event: .start(id: id, task: task),
                 context: lifecycleContext()
             ).state
-        return try await RefreshTokenTaskAwaitBridge().value(of: task)
+        return .refreshed(try await RefreshTokenTaskAwaitBridge().value(of: task))
     }
 
     private func refreshDidSucceed(id: UUID) {
-        state =
-            RefreshLifecycleReducer.reduce(
-                state: state,
-                event: .succeed(id: id),
-                context: lifecycleContext()
-            ).state
+        let reduction = RefreshLifecycleReducer.reduce(
+            state: state,
+            event: .succeed(id: id),
+            context: lifecycleContext()
+        )
+        state = reduction.state
+        if !reduction.effects.contains(.ignoreStaleCompletion) {
+            successfulRefreshGeneration &+= 1
+        }
     }
 
     private func refreshDidCancel(id: UUID) {
@@ -244,6 +315,12 @@ package actor RefreshTokenCoordinator {
     private func lifecycleContext() -> RefreshLifecycleContext {
         RefreshLifecycleContext(now: now(), failureCooldown: policy.failureCooldown)
     }
+}
+
+
+package struct RefreshTokenApplication: Sendable {
+    package let request: URLRequest
+    package let generation: UInt64
 }
 
 

@@ -23,6 +23,7 @@ extension RequestExecutor {
 
     func executeWithPolicies(
         request adaptedRequest: URLRequest,
+        refreshGeneration initialRefreshGeneration: UInt64?,
         bodySource: BodySource,
         requestSigners: [RequestSigner],
         configuration: NetworkConfiguration,
@@ -31,6 +32,7 @@ extension RequestExecutor {
         requestID: UUID
     ) async throws -> Response {
         var request = adaptedRequest
+        var refreshGeneration = initialRefreshGeneration
         var replayedAfterRefresh = false
 
         while true {
@@ -121,7 +123,12 @@ extension RequestExecutor {
                 // Replay from the fully adapted request so session and
                 // endpoint interceptors keep their headers/signatures while
                 // the auth policy replaces only the Authorization value.
-                request = try await refreshCoordinator.refreshAndApply(to: adaptedRequest)
+                let application = try await refreshCoordinator.recoverAfterAuthenticationFailure(
+                    request: adaptedRequest,
+                    observedGeneration: refreshGeneration ?? 0
+                )
+                request = application.request
+                refreshGeneration = application.generation
                 try Task.checkCancellation()
                 replayedAfterRefresh = true
                 continue

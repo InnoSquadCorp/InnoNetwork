@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 import os
 
@@ -962,6 +963,29 @@ struct ResiliencePolicyTests {
         )
 
         #expect(await coalescer.cancellationBookkeepingCount == 2)
+    }
+
+    @Test("Request runtime injects its virtual clock into coalescer pruning")
+    func runtimeClockDrivesCoalescerPruning() async throws {
+        let clock = TestClock(epoch: Date(timeIntervalSince1970: 1_000))
+        let runtime = RequestExecutionRuntime(
+            configuration: NetworkConfiguration(baseURL: URL(string: "https://api.example.com")!),
+            inFlight: InFlightRegistry(),
+            clock: clock
+        )
+        var request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
+        request.httpMethod = "GET"
+        let key = try #require(RequestDedupKey(request: request, policy: .getOnly))
+
+        await runtime.requestCoalescer.recordCancelledWaiterForDiagnostics(
+            key: key,
+            waiterID: UUID(),
+            recordedAt: clock.now()
+        )
+        #expect(await runtime.requestCoalescer.cancellationBookkeepingCount == 1)
+
+        clock.advance(by: .seconds(31))
+        #expect(await runtime.requestCoalescer.cancellationBookkeepingCount == 0)
     }
 
     @Test("Fresh cache returns without transport")
@@ -2058,6 +2082,49 @@ struct ResiliencePolicyTests {
 
         // Advancing past the cooldown window allows another attempt.
         nowBox.withLock { $0 = now.addingTimeInterval(6) }
+        await #expect(throws: NetworkError.self) {
+            _ = try await coordinator.refreshAndApply(to: request)
+        }
+        #expect(await script.calls == 2)
+    }
+
+    @Test("Request runtime injects its virtual clock into refresh cooldown")
+    func runtimeClockDrivesRefreshCooldown() async throws {
+        actor RefreshScript {
+            var calls = 0
+            func next() async throws -> String {
+                calls += 1
+                throw NetworkError.configuration(reason: .invalidRequest("refresh keeps failing"))
+            }
+        }
+
+        let script = RefreshScript()
+        let clock = TestClock(epoch: Date(timeIntervalSince1970: 1_700_000_000))
+        let configuration = NetworkConfiguration(
+            baseURL: URL(string: "https://api.example.com")!,
+            refreshTokenPolicy: RefreshTokenPolicy(
+                failureCooldown: .exponentialBackoff(base: 5, max: 60),
+                currentToken: { "old" },
+                refreshToken: { try await script.next() }
+            )
+        )
+        let runtime = RequestExecutionRuntime(
+            configuration: configuration,
+            inFlight: InFlightRegistry(),
+            clock: clock
+        )
+        let coordinator = try #require(runtime.refreshCoordinator)
+        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
+
+        await #expect(throws: NetworkError.self) {
+            _ = try await coordinator.refreshAndApply(to: request)
+        }
+        await #expect(throws: NetworkError.self) {
+            _ = try await coordinator.refreshAndApply(to: request)
+        }
+        #expect(await script.calls == 1)
+
+        clock.advance(by: .seconds(6))
         await #expect(throws: NetworkError.self) {
             _ = try await coordinator.refreshAndApply(to: request)
         }

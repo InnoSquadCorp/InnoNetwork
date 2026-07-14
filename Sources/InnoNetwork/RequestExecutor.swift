@@ -20,6 +20,7 @@ struct ConditionalRevalidationContext {
 
 private struct PreparedExecutionRequest {
     var request: URLRequest
+    let refreshGeneration: UInt64?
     let bodySource: BodySource
     let requestSigners: [RequestSigner]
     let cleanupFileURL: URL?
@@ -133,8 +134,13 @@ package struct RequestExecutor {
             for interceptor in executable.requestInterceptors {
                 request = try await interceptor.adapt(request)
             }
+            let refreshGeneration: UInt64?
             if let refreshCoordinator = runtime.refreshCoordinator {
-                request = try await refreshCoordinator.applyCurrentToken(to: request)
+                let application = try await refreshCoordinator.applyCurrentTokenWithGeneration(to: request)
+                request = application.request
+                refreshGeneration = application.generation
+            } else {
+                refreshGeneration = nil
             }
 
             let requestSigners = configuration.requestSigners + executable.requestSigners
@@ -154,6 +160,7 @@ package struct RequestExecutor {
 
             return PreparedExecutionRequest(
                 request: request,
+                refreshGeneration: refreshGeneration,
                 bodySource: built.bodySource,
                 requestSigners: requestSigners,
                 cleanupFileURL: cleanupFileURL,
@@ -181,6 +188,7 @@ package struct RequestExecutor {
     ) async throws -> Response {
         var networkResponse = try await executeWithPolicies(
             request: prepared.request,
+            refreshGeneration: prepared.refreshGeneration,
             bodySource: prepared.bodySource,
             requestSigners: prepared.requestSigners,
             configuration: configuration,

@@ -35,19 +35,54 @@ private actor RoutingState {
     private let oldResponse: QueuedHTTPResponse
     private let newResponse: QueuedHTTPResponse
     private var requests: [URLRequest] = []
+    private var oldRequestCount = 0
+    private var didObserveSecondOldRequest = false
+    private var secondOldRequestObservers: [CheckedContinuation<Void, Never>] = []
+    private var canFinishSecondOldRequest = false
+    private var secondOldRequestWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(oldResponse: QueuedHTTPResponse, newResponse: QueuedHTTPResponse) {
         self.oldResponse = oldResponse
         self.newResponse = newResponse
     }
 
-    func record(_ request: URLRequest) {
+    func response(for request: URLRequest) async -> QueuedHTTPResponse {
         requests.append(request)
+        let auth = request.value(forHTTPHeaderField: "Authorization")
+        guard auth != "Bearer NEW" else { return newResponse }
+
+        oldRequestCount += 1
+        if oldRequestCount == 2 {
+            didObserveSecondOldRequest = true
+            let observers = secondOldRequestObservers
+            secondOldRequestObservers.removeAll()
+            for observer in observers {
+                observer.resume()
+            }
+
+            if !canFinishSecondOldRequest {
+                await withCheckedContinuation { continuation in
+                    secondOldRequestWaiters.append(continuation)
+                }
+            }
+        }
+        return oldResponse
     }
 
-    func response(for request: URLRequest) -> QueuedHTTPResponse {
-        let auth = request.value(forHTTPHeaderField: "Authorization")
-        return auth == "Bearer NEW" ? newResponse : oldResponse
+    func waitForSecondOldRequest() async {
+        guard !didObserveSecondOldRequest else { return }
+        await withCheckedContinuation { continuation in
+            secondOldRequestObservers.append(continuation)
+        }
+    }
+
+    func releaseSecondOldRequest() {
+        canFinishSecondOldRequest = true
+        let waiters = secondOldRequestWaiters
+        secondOldRequestWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
     }
 
     var requestCount: Int { requests.count }
@@ -69,8 +104,15 @@ private final class RoutingSession: URLSessionProtocol, Sendable {
         get async { await state.capturedAuthorizations }
     }
 
+    func waitForSecondOldRequest() async {
+        await state.waitForSecondOldRequest()
+    }
+
+    func releaseSecondOldRequest() async {
+        await state.releaseSecondOldRequest()
+    }
+
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        await state.record(request)
         let queued = await state.response(for: request)
         return (queued.data, queued.response)
     }
@@ -84,11 +126,26 @@ private final class RoutingSession: URLSessionProtocol, Sendable {
 private actor RefreshGate {
     private var continuation: CheckedContinuation<Void, Never>?
     private var released = false
+    private var waitCount = 0
+    private var waitCountObservers: [CheckedContinuation<Void, Never>] = []
 
     func wait() async {
+        waitCount += 1
+        let observers = waitCountObservers
+        waitCountObservers.removeAll()
+        for observer in observers {
+            observer.resume()
+        }
         if released { return }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             self.continuation = continuation
+        }
+    }
+
+    func waitUntilEntered() async {
+        guard waitCount == 0 else { return }
+        await withCheckedContinuation { continuation in
+            waitCountObservers.append(continuation)
         }
     }
 
@@ -97,6 +154,8 @@ private actor RefreshGate {
         continuation?.resume()
         continuation = nil
     }
+
+    var totalWaitCount: Int { waitCount }
 }
 
 
@@ -170,13 +229,13 @@ private func queued(
 @Suite("Refresh-aware coalescer race (P2.1)")
 struct RefreshCoalescerRaceTests {
 
-    @Test("Concurrent OLD-token callers during refresh both retry with NEW token")
-    func concurrentCallersDuringRefreshBothRetryWithNewToken() async throws {
-        // Two callers (A, B) both observe a 401 with OLD token. A wins
-        // single-flight refresh; B awaits A's refresh and retries with the
-        // new token.  Validates the existing single-flight invariant: no
-        // caller is left holding a stale 401 even when their transports are
-        // interleaved.
+    @Test("Late OLD-token 401 reuses the completed refresh generation")
+    func lateAuthenticationFailureReusesCompletedRefreshGeneration() async throws {
+        // A starts a refresh after its OLD request receives 401. B reaches
+        // transport while that refresh is in flight, but its OLD 401 is held
+        // until A has completed both the refresh and its NEW-token replay.
+        // B must observe the advanced generation and reapply the stored token
+        // without launching a redundant second refresh.
         let oldResponse = try queued(statusCode: 401)
         let newResponse = try queued(
             statusCode: 200,
@@ -204,38 +263,23 @@ struct RefreshCoalescerRaceTests {
             session: session
         )
 
-        await withTaskGroup(of: ProtectedUser?.self) { group in
-            group.addTask {
-                try? await client.request(ProtectedGet())
-            }
-            group.addTask {
-                // Stagger B slightly so A registers its refresh first.
-                try? await Task.sleep(for: .milliseconds(20))
-                return try? await client.request(ProtectedGet())
-            }
-            // Release the refresh after both callers have entered the
-            // refresh path.
-            try? await Task.sleep(for: .milliseconds(80))
-            await gate.release()
+        let first = Task { try await client.request(ProtectedGet()) }
+        await gate.waitUntilEntered()
 
-            var users: [ProtectedUser] = []
-            for await user in group {
-                if let user { users.append(user) }
-            }
-            #expect(users.count == 2)
-            #expect(users.allSatisfy { $0.token == "NEW" })
-        }
+        let second = Task { try await client.request(ProtectedGet()) }
+        await session.waitForSecondOldRequest()
+
+        await gate.release()
+        let firstUser = try await first.value
+        #expect(firstUser.token == "NEW")
+
+        await session.releaseSecondOldRequest()
+        let secondUser = try await second.value
+        #expect(secondUser.token == "NEW")
 
         let captured = await session.capturedAuthorizations
-        let oldCount = captured.filter { $0 == "Bearer OLD" }.count
-        let newCount = captured.filter { $0 == "Bearer NEW" }.count
-        // Each caller must hit the wire at least once with OLD before
-        // observing 401, and the retry leg must carry the NEW token. The
-        // post-refresh retries may coalesce (same dedup key, same token,
-        // refresh no longer in progress), so newCount >= 1 is sufficient.
-        #expect(oldCount >= 1, "at least one OLD transport must reach the wire (got \(captured))")
-        #expect(newCount >= 1, "post-refresh retry must carry the new token (got \(captured))")
-        #expect(captured.allSatisfy { $0 == "Bearer OLD" || $0 == "Bearer NEW" })
+        #expect(captured == ["Bearer OLD", "Bearer OLD", "Bearer NEW", "Bearer NEW"])
+        #expect(await gate.totalWaitCount == 1, "late 401 must not start a second refresh")
     }
 
     @Test("RefreshTokenCoordinator.isRefreshInProgress reports refresh state")
@@ -255,8 +299,7 @@ struct RefreshCoalescerRaceTests {
         let request = URLRequest(url: URL(string: "https://api.example.com/me")!)
         async let refreshed = coordinator.refreshAndApply(to: request)
 
-        // Give the detached refresh task a moment to register inFlight.
-        try await Task.sleep(for: .milliseconds(20))
+        await gate.waitUntilEntered()
         #expect(await coordinator.isRefreshInProgress == true)
 
         await gate.release()
@@ -281,10 +324,7 @@ struct RefreshCoalescerRaceTests {
             try await coordinator.refreshAndApply(to: request)
         }
 
-        for _ in 0..<100 {
-            if await coordinator.isRefreshInProgress { break }
-            try await Task.sleep(for: .milliseconds(1))
-        }
+        await gate.waitUntilEntered()
         #expect(await coordinator.isRefreshInProgress == true)
 
         waiter.cancel()
@@ -293,12 +333,11 @@ struct RefreshCoalescerRaceTests {
         }
 
         #expect(await coordinator.isRefreshInProgress == true)
-        await gate.release()
-
-        for _ in 0..<100 {
-            if await coordinator.isRefreshInProgress == false { break }
-            try await Task.sleep(for: .milliseconds(1))
+        let survivingWaiter = Task {
+            try await coordinator.refreshAndApply(to: request)
         }
+        await gate.release()
+        _ = try await survivingWaiter.value
         #expect(await coordinator.isRefreshInProgress == false)
     }
 
@@ -330,7 +369,6 @@ struct RefreshCoalescerRaceTests {
             weakFirstCoordinator = first
             _ = try await first.refreshAndApply(to: request)
         }
-        for _ in 0..<10 { await Task.yield() }
         #expect(weakFirstCoordinator == nil, "first coordinator should release after its refresh completes")
 
         let second = RefreshTokenCoordinator(policy: policy)
@@ -375,7 +413,6 @@ struct RefreshCoalescerRaceTests {
         // no in-flight refresh and must accept a new refresh that drives a
         // second `refreshTokenProvider` invocation — verifying the cancel
         // → idle → restart transition is wired end-to-end.
-        for _ in 0..<10 { await Task.yield() }
         #expect(await coordinator.isRefreshInProgress == false)
 
         let applied = try await coordinator.refreshAndApply(to: request)
@@ -408,10 +445,8 @@ struct RefreshCoalescerRaceTests {
         await #expect(throws: CancellationError.self) {
             _ = try await waiter.value
         }
-        for _ in 0..<10 { await Task.yield() }
-
-        #expect(weakCoordinator == nil)
         await probe.waitUntilCancelled()
+        #expect(weakCoordinator == nil)
     }
 
     @Test("RequestDedupKey distinguishes refreshLane suffix")

@@ -12,8 +12,11 @@ package final class RequestExecutionRuntime: Sendable {
         inFlight: InFlightRegistry,
         clock: any InnoNetworkClock = SystemClock()
     ) {
-        self.refreshCoordinator = configuration.refreshTokenPolicy.map { RefreshTokenCoordinator(policy: $0) }
-        self.requestCoalescer = RequestCoalescer()
+        let now: @Sendable () -> Date = { clock.now() }
+        self.refreshCoordinator = configuration.refreshTokenPolicy.map {
+            RefreshTokenCoordinator(policy: $0, now: now)
+        }
+        self.requestCoalescer = RequestCoalescer(now: now)
         self.circuitBreakers = CircuitBreakerRegistry(clock: clock)
         self.inFlight = inFlight
         self.clock = clock
