@@ -4,47 +4,159 @@ import os
 
 @testable import InnoNetwork
 
-/// `URLSessionProtocol` stub that suspends every request indefinitely until
-/// cooperative cancellation interrupts it. Mirrors the helper in
-/// `CancelAllTests` but is local so the two suites can evolve independently.
+/// `URLSessionProtocol` stub that holds each request behind a continuation.
+/// Tests can wait for exact start/cancellation signals and explicitly complete
+/// surviving paths without relying on polling or wall-clock delays.
 private final class HangingSession: URLSessionProtocol, Sendable {
-    private let started: OSAllocatedUnfairLock<Int>
-
-    init() {
-        self.started = OSAllocatedUnfairLock(initialState: 0)
+    private struct PendingRequest {
+        let url: URL
+        let continuation: CheckedContinuation<(Data, URLResponse), any Error>
     }
 
+    private struct CountWaiter {
+        let minimumCount: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private struct State {
+        var startedRequestCount = 0
+        var startedPathCounts: [String: Int] = [:]
+        var cancelledPathCounts: [String: Int] = [:]
+        var pendingRequests: [UUID: PendingRequest] = [:]
+        var cancelledBeforeRegistration: Set<UUID> = []
+        var startedCountWaiters: [CountWaiter] = []
+        var startedPathWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+        var cancelledPathWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
     var startedRequestCount: Int {
-        started.withLock { $0 }
+        state.withLock { $0.startedRequestCount }
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        started.withLock { $0 += 1 }
-        try await Task.sleep(for: .seconds(60))
-        return (
-            Data(),
-            HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-        )
+        guard let url = request.url else {
+            throw URLError(.badURL)
+        }
+
+        let id = UUID()
+        let path = url.path
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                let registration = state.withLock { state -> (Bool, [CheckedContinuation<Void, Never>]) in
+                    guard state.cancelledBeforeRegistration.remove(id) == nil else {
+                        return (false, [])
+                    }
+
+                    state.pendingRequests[id] = PendingRequest(url: url, continuation: continuation)
+                    state.startedRequestCount += 1
+                    state.startedPathCounts[path, default: 0] += 1
+
+                    var readyWaiters: [CheckedContinuation<Void, Never>] = []
+                    state.startedCountWaiters.removeAll { waiter in
+                        guard state.startedRequestCount >= waiter.minimumCount else { return false }
+                        readyWaiters.append(waiter.continuation)
+                        return true
+                    }
+                    readyWaiters.append(contentsOf: state.startedPathWaiters.removeValue(forKey: path) ?? [])
+                    return (true, readyWaiters)
+                }
+
+                guard registration.0 else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                registration.1.forEach { $0.resume() }
+            }
+        } onCancel: {
+            cancelRequest(id: id, path: path)
+        }
+    }
+
+    func waitUntilStarted(count: Int) async {
+        await withCheckedContinuation { continuation in
+            let shouldResume = state.withLock { state in
+                guard state.startedRequestCount < count else { return true }
+                state.startedCountWaiters.append(
+                    CountWaiter(minimumCount: count, continuation: continuation)
+                )
+                return false
+            }
+            if shouldResume {
+                continuation.resume()
+            }
+        }
+    }
+
+    func waitUntilStarted(path: String) async {
+        await withCheckedContinuation { continuation in
+            let shouldResume = state.withLock { state in
+                guard state.startedPathCounts[path, default: 0] == 0 else { return true }
+                state.startedPathWaiters[path, default: []].append(continuation)
+                return false
+            }
+            if shouldResume {
+                continuation.resume()
+            }
+        }
+    }
+
+    func waitUntilCancelled(path: String) async {
+        await withCheckedContinuation { continuation in
+            let shouldResume = state.withLock { state in
+                guard state.cancelledPathCounts[path, default: 0] == 0 else { return true }
+                state.cancelledPathWaiters[path, default: []].append(continuation)
+                return false
+            }
+            if shouldResume {
+                continuation.resume()
+            }
+        }
+    }
+
+    func succeed(path: String) {
+        let pending = state.withLock { state -> [PendingRequest] in
+            let ids = state.pendingRequests.compactMap { id, request in
+                request.url.path == path ? id : nil
+            }
+            return ids.compactMap { state.pendingRequests.removeValue(forKey: $0) }
+        }
+
+        #expect(pending.count == 1, "Expected exactly one pending request for \(path)")
+        for request in pending {
+            guard
+                let response = HTTPURLResponse(
+                    url: request.url,
+                    statusCode: 204,
+                    httpVersion: nil,
+                    headerFields: nil
+                )
+            else {
+                request.continuation.resume(throwing: URLError(.badServerResponse))
+                continue
+            }
+            request.continuation.resume(returning: (Data(), response))
+        }
+    }
+
+    private func cancelRequest(id: UUID, path: String) {
+        let cancellation = state.withLock { state -> (PendingRequest?, [CheckedContinuation<Void, Never>]) in
+            state.cancelledPathCounts[path, default: 0] += 1
+            let waiters = state.cancelledPathWaiters.removeValue(forKey: path) ?? []
+            guard let pending = state.pendingRequests.removeValue(forKey: id) else {
+                state.cancelledBeforeRegistration.insert(id)
+                return (nil, waiters)
+            }
+            return (pending, waiters)
+        }
+
+        cancellation.0?.continuation.resume(throwing: CancellationError())
+        cancellation.1.forEach { $0.resume() }
     }
 }
 
-
-private actor CompletionRecorder<Key: Hashable & Sendable> {
-    private var counts: [Key: Int] = [:]
-
-    func record(_ key: Key) {
-        counts[key, default: 0] += 1
-    }
-
-    func count(for key: Key) -> Int {
-        counts[key, default: 0]
-    }
-}
 
 private actor BlockingResponseCache: ResponseCache {
     private let cached: CachedResponse
@@ -93,22 +205,6 @@ private actor BlockingResponseCache: ResponseCache {
 }
 
 
-private func waitUntil(
-    timeout: TimeInterval = 2.0,
-    pollInterval: Duration = .milliseconds(20),
-    _ condition: @escaping @Sendable () async -> Bool
-) async throws {
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline {
-        if await condition() {
-            return
-        }
-        try await Task.sleep(for: pollInterval)
-    }
-    #expect(await condition())
-}
-
-
 @Suite("Tag-based Cancellation Tests")
 struct CancellationTests {
 
@@ -117,7 +213,7 @@ struct CancellationTests {
         typealias APIResponse = EmptyResponse
 
         var method: HTTPMethod { .get }
-        var path: String { "/poll" }
+        let path: String
     }
 
     private struct CachedPayload: Codable, Sendable, Equatable {
@@ -172,84 +268,80 @@ struct CancellationTests {
     func cancelAllByTagAffectsOnlyMatchingTag() async throws {
         let session = HangingSession()
         let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com"),
             session: session
         )
 
         let feed: CancellationTag = "feed"
         let detail: CancellationTag = "detail"
-        let completions = CompletionRecorder<CancellationTag>()
+        let firstFeedPath = "/feed/first"
+        let secondFeedPath = "/feed/second"
+        let detailPath = "/detail"
 
         try await withThrowingTaskGroup(of: (CancellationTag, NetworkError?).self) { group in
-            group.addTask { [client, completions] in
+            group.addTask { [client] in
                 let result: (CancellationTag, NetworkError?)
                 do {
-                    _ = try await client.request(LongPollRequest(), tag: feed)
+                    _ = try await client.request(LongPollRequest(path: firstFeedPath), tag: feed)
                     result = (feed, nil)
                 } catch let error as NetworkError {
                     result = (feed, error)
                 } catch {
                     result = (feed, .underlying(SendableUnderlyingError(error), nil))
                 }
-                await completions.record(feed)
                 return result
             }
-            group.addTask { [client, completions] in
+            group.addTask { [client] in
                 let result: (CancellationTag, NetworkError?)
                 do {
-                    _ = try await client.request(LongPollRequest(), tag: feed)
+                    _ = try await client.request(LongPollRequest(path: secondFeedPath), tag: feed)
                     result = (feed, nil)
                 } catch let error as NetworkError {
                     result = (feed, error)
                 } catch {
                     result = (feed, .underlying(SendableUnderlyingError(error), nil))
                 }
-                await completions.record(feed)
                 return result
             }
-            group.addTask { [client, completions] in
+            group.addTask { [client] in
                 let result: (CancellationTag, NetworkError?)
                 do {
-                    _ = try await client.request(LongPollRequest(), tag: detail)
+                    _ = try await client.request(LongPollRequest(path: detailPath), tag: detail)
                     result = (detail, nil)
                 } catch let error as NetworkError {
                     result = (detail, error)
                 } catch {
                     result = (detail, .underlying(SendableUnderlyingError(error), nil))
                 }
-                await completions.record(detail)
                 return result
             }
 
-            // Wait until every request has actually entered the URL session.
-            let waitDeadline = Date().addingTimeInterval(2.0)
-            while session.startedRequestCount < 3, Date() < waitDeadline {
-                try await Task.sleep(for: .milliseconds(20))
-            }
-            #expect(session.startedRequestCount == 3)
+            await session.waitUntilStarted(count: 3)
 
             await client.cancelAll(matching: feed)
-            try await waitUntil {
-                await completions.count(for: feed) == 2
-            }
-
-            // Wait briefly so the detail task has a chance to terminate if the
-            // cancellation incorrectly leaked across tags.
-            try await Task.sleep(for: .milliseconds(100))
-            #expect(await completions.count(for: detail) == 0)
-
-            // Tear down the surviving request so the suite finishes.
-            await client.cancelAll()
+            await session.waitUntilCancelled(path: firstFeedPath)
+            await session.waitUntilCancelled(path: secondFeedPath)
+            session.succeed(path: detailPath)
 
             var feedCancelled = 0
-            var detailCancelled = 0
+            var detailSucceeded = false
             for try await (tag, error) in group {
-                guard case .cancelled = error else { continue }
-                if tag == feed { feedCancelled += 1 }
-                if tag == detail { detailCancelled += 1 }
+                if tag == feed {
+                    guard case .cancelled = error else {
+                        Issue.record("Expected feed request cancellation, got \(String(describing: error))")
+                        continue
+                    }
+                    feedCancelled += 1
+                } else if tag == detail {
+                    if error == nil {
+                        detailSucceeded = true
+                    } else {
+                        Issue.record("Expected detail request success, got \(String(describing: error))")
+                    }
+                }
             }
             #expect(feedCancelled == 2)
-            #expect(detailCancelled == 1)
+            #expect(detailSucceeded)
         }
     }
 
@@ -257,70 +349,65 @@ struct CancellationTests {
     func cancelByTagLeavesUntaggedRequestsAlone() async throws {
         let session = HangingSession()
         let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com"),
             session: session
         )
 
         let tagged: CancellationTag = "tagged"
-        let completions = CompletionRecorder<Bool>()
+        let taggedPath = "/tagged"
+        let untaggedPath = "/untagged"
 
         try await withThrowingTaskGroup(of: (Bool, NetworkError?).self) { group in
-            group.addTask { [client, completions] in
+            group.addTask { [client] in
                 let result: (Bool, NetworkError?)
                 do {
-                    _ = try await client.request(LongPollRequest(), tag: tagged)
+                    _ = try await client.request(LongPollRequest(path: taggedPath), tag: tagged)
                     result = (true, nil)
                 } catch let error as NetworkError {
                     result = (true, error)
                 } catch {
                     result = (true, .underlying(SendableUnderlyingError(error), nil))
                 }
-                await completions.record(true)
                 return result
             }
-            group.addTask { [client, completions] in
+            group.addTask { [client] in
                 let result: (Bool, NetworkError?)
                 do {
-                    _ = try await client.request(LongPollRequest())
+                    _ = try await client.request(LongPollRequest(path: untaggedPath))
                     result = (false, nil)
                 } catch let error as NetworkError {
                     result = (false, error)
                 } catch {
                     result = (false, .underlying(SendableUnderlyingError(error), nil))
                 }
-                await completions.record(false)
                 return result
             }
 
-            let waitDeadline = Date().addingTimeInterval(2.0)
-            while session.startedRequestCount < 2, Date() < waitDeadline {
-                try await Task.sleep(for: .milliseconds(20))
-            }
-            #expect(session.startedRequestCount == 2)
+            await session.waitUntilStarted(count: 2)
 
             await client.cancelAll(matching: tagged)
-            try await waitUntil {
-                await completions.count(for: true) == 1
-            }
-            try await Task.sleep(for: .milliseconds(100))
-            #expect(await completions.count(for: false) == 0)
-
-            // Untagged request still in flight — cancel everything to let the
-            // task group drain.
-            await client.cancelAll()
+            await session.waitUntilCancelled(path: taggedPath)
+            session.succeed(path: untaggedPath)
 
             var taggedCancelled = false
-            var untaggedCancelled = false
+            var untaggedSucceeded = false
             for try await (isTagged, error) in group {
-                guard case .cancelled = error else { continue }
                 if isTagged {
-                    taggedCancelled = true
+                    if case .cancelled = error {
+                        taggedCancelled = true
+                    } else {
+                        Issue.record("Expected tagged request cancellation, got \(String(describing: error))")
+                    }
                 } else {
-                    untaggedCancelled = true
+                    if error == nil {
+                        untaggedSucceeded = true
+                    } else {
+                        Issue.record("Expected untagged request success, got \(String(describing: error))")
+                    }
                 }
             }
             #expect(taggedCancelled)
-            #expect(untaggedCancelled)
+            #expect(untaggedSucceeded)
         }
     }
 
@@ -328,14 +415,15 @@ struct CancellationTests {
     func requestWithNilTagBehavesAsUntagged() async throws {
         let session = HangingSession()
         let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com"),
             session: session
         )
+        let nilTagPath = "/nil-tag"
 
         try await withThrowingTaskGroup(of: NetworkError?.self) { group in
             group.addTask {
                 do {
-                    _ = try await client.request(LongPollRequest(), tag: nil)
+                    _ = try await client.request(LongPollRequest(path: nilTagPath), tag: nil)
                     return nil
                 } catch let error as NetworkError {
                     return error
@@ -344,24 +432,16 @@ struct CancellationTests {
                 }
             }
 
-            let waitDeadline = Date().addingTimeInterval(2.0)
-            while session.startedRequestCount < 1, Date() < waitDeadline {
-                try await Task.sleep(for: .milliseconds(20))
-            }
-            #expect(session.startedRequestCount == 1)
+            await session.waitUntilStarted(path: nilTagPath)
 
             // cancelAll(matching:) with an unrelated tag must not interrupt
             // an untagged request.
             await client.cancelAll(matching: "unrelated")
-            try await Task.sleep(for: .milliseconds(100))
-
-            await client.cancelAll()
+            session.succeed(path: nilTagPath)
 
             for try await error in group {
-                if case .cancelled = error {
-                    // expected
-                } else {
-                    Issue.record("Expected .cancelled, got \(String(describing: error))")
+                if error != nil {
+                    Issue.record("Expected nil-tag request success, got \(String(describing: error))")
                 }
             }
         }
