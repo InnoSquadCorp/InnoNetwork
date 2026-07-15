@@ -501,30 +501,7 @@ jobs:
           xcrun swift --version
 
       - name: Verify macro trait dependency graphs
-        run: |
-          set -euo pipefail
-          mkdir -p .build
-
-          xcrun swift package show-traits | tee .build/root-traits.txt
-          if ! grep -Eq '^Macros .*\(default\)$' .build/root-traits.txt; then
-            echo "::error::The Macros package trait must remain enabled by default."
-            exit 1
-          fi
-
-          xcrun swift package show-dependencies --format flatlist \
-            | tee .build/default-trait-dependencies.txt
-          if ! grep -Fxq "swift-syntax" .build/default-trait-dependencies.txt; then
-            echo "::error::The default Macros trait graph must include swift-syntax."
-            exit 1
-          fi
-
-          xcrun swift package --disable-default-traits \
-            show-dependencies --format flatlist \
-            | tee .build/core-only-dependencies.txt
-          if grep -Fxq "swift-syntax" .build/core-only-dependencies.txt; then
-            echo "::error::The core-only target graph must exclude swift-syntax."
-            exit 1
-          fi
+        run: bash Scripts/check_macro_trait_graphs.sh
 
       - name: Build root core without default traits
         run: xcrun swift build --disable-default-traits --target InnoNetwork

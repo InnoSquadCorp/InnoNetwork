@@ -120,10 +120,7 @@ bash Scripts/check_shared_coders_mutation.sh
 bash Scripts/check_provisional_enum_cases.sh
 
 # Verify default and core-only macro trait profiles.
-xcrun swift package show-traits
-xcrun swift package show-dependencies --format flatlist
-xcrun swift package --disable-default-traits \
-  show-dependencies --format flatlist
+bash Scripts/check_macro_trait_graphs.sh
 xcrun swift build --disable-default-traits --target InnoNetwork
 xcrun swift build --package-path Examples/CoreSmoke
 xcrun swift build --package-path Examples/MacroUsage
