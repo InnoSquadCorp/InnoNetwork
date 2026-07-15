@@ -9,9 +9,9 @@ public struct NetworkConfiguration: Sendable {
     /// streaming frame before it is rejected with
     /// ``NetworkErrorCode/streamFrameTooLarge``.
     public static let defaultStreamingLineByteLimit: Int = 1 << 20
-    /// Default maximum size for an inline response collected by the
-    /// production-facing configuration presets.
-    package static let defaultInlineResponseBodyByteLimit: Int64 = 5 * 1024 * 1024
+    /// Default maximum size for a collected response, including file-upload
+    /// responses, in production-facing configuration presets.
+    package static let defaultResponseBodyByteLimit: Int64 = 5 * 1024 * 1024
 
     package enum Presets {
         static func safeDefaults(baseURL: URL) -> NetworkConfiguration {
@@ -36,7 +36,7 @@ public struct NetworkConfiguration: Sendable {
                 customExecutionPolicies: [],
                 idempotencyKeyPolicy: .disabled,
                 responseBodyBufferingPolicy: .streaming(
-                    maxBytes: NetworkConfiguration.defaultInlineResponseBodyByteLimit
+                    maxBytes: NetworkConfiguration.defaultResponseBodyByteLimit
                 ),
                 streamingLineByteLimit: NetworkConfiguration.defaultStreamingLineByteLimit,
                 redirectPolicy: DefaultRedirectPolicy()
@@ -69,7 +69,7 @@ public struct NetworkConfiguration: Sendable {
                 customExecutionPolicies: [],
                 idempotencyKeyPolicy: .disabled,
                 responseBodyBufferingPolicy: .streaming(
-                    maxBytes: NetworkConfiguration.defaultInlineResponseBodyByteLimit
+                    maxBytes: NetworkConfiguration.defaultResponseBodyByteLimit
                 ),
                 streamingLineByteLimit: NetworkConfiguration.defaultStreamingLineByteLimit,
                 redirectPolicy: DefaultRedirectPolicy()
@@ -170,15 +170,18 @@ public struct NetworkConfiguration: Sendable {
     /// the failing response body is worth the privacy trade-off.
     public let captureFailurePayload: Bool
 
-    /// Inline response body collection policy. ``safeDefaults(baseURL:)``
+    /// Response body collection policy. ``safeDefaults(baseURL:)``
     /// and ``advanced(baseURL:resilience:auth:observability:cache:transport:)``
     /// use ``ResponseBodyBufferingPolicy/streaming(maxBytes:)`` with a 5 MiB
-    /// ceiling. Callers that intentionally need an unbounded inline response
+    /// ceiling for inline requests and file-backed uploads. Callers that
+    /// intentionally need an unbounded response
     /// can opt out explicitly with `.streaming(maxBytes: nil)` or
     /// `.buffered(maxBytes: nil)`. Test doubles that only implement
     /// `data(for:)` must select a buffered policy explicitly when exercising
     /// transport; bounded streaming fails closed instead of allocating the
-    /// complete response before enforcing its ceiling.
+    /// complete response before enforcing its ceiling. Custom sessions that
+    /// support file uploads but not bounded upload-response streaming also
+    /// fail closed while a ceiling is active.
     public let responseBodyBufferingPolicy: ResponseBodyBufferingPolicy
 
     /// Compatibility alias for the optional maximum body size in
@@ -442,7 +445,9 @@ public struct NetworkConfiguration: Sendable {
         userAgentProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultUserAgent.value },
         acceptLanguageProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultAcceptLanguage.value },
         captureFailurePayload: Bool = false,
-        responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(),
+        responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(
+            maxBytes: NetworkConfiguration.defaultResponseBodyByteLimit
+        ),
         responseBodyLimit: Int64? = nil,
         streamingLineByteLimit: Int = NetworkConfiguration.defaultStreamingLineByteLimit,
         redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy(),
@@ -521,7 +526,9 @@ public struct NetworkConfiguration: Sendable {
         userAgentProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultUserAgent.value },
         acceptLanguageProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultAcceptLanguage.value },
         captureFailurePayload: Bool = false,
-        responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(),
+        responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(
+            maxBytes: NetworkConfiguration.defaultResponseBodyByteLimit
+        ),
         responseBodyLimit: Int64? = nil,
         streamingLineByteLimit: Int = NetworkConfiguration.defaultStreamingLineByteLimit,
         redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy(),

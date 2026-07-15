@@ -30,7 +30,7 @@ func makeTestNetworkConfiguration(
     userAgentProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultUserAgent.value },
     acceptLanguageProvider: @escaping @Sendable () -> String = { HTTPHeader.defaultAcceptLanguage.value },
     captureFailurePayload: Bool = false,
-    responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .buffered(),
+    responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .buffered(maxBytes: nil),
     responseBodyLimit: Int64? = nil
 ) -> NetworkConfiguration {
     NetworkConfiguration(

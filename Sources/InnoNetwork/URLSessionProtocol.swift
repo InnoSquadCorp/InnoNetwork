@@ -38,6 +38,19 @@ public protocol URLSessionProtocol: Sendable {
     )
 }
 
+/// Package-only capability for file uploads whose response body must be
+/// bounded while it is being received. Keeping this separate from the public
+/// ``URLSessionProtocol`` avoids expanding the consumer-facing mocking
+/// surface: custom sessions either opt in inside this package, or fail closed
+/// when a bounded file-upload response is requested.
+package protocol BoundedFileUploadSession: URLSessionProtocol {
+    func bytes(
+        for request: URLRequest,
+        uploadingFileAt fileURL: URL,
+        context: NetworkRequestContext
+    ) async throws -> (URLSession.AsyncBytes, URLResponse)
+}
+
 public extension URLSessionProtocol {
     func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
         _ = context
@@ -63,6 +76,7 @@ public extension URLSessionProtocol {
 
 extension URLSession: URLSessionProtocol {
     public func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
+        try validateRedirectControllableSession()
         // Always install the delegate so the configured ``RedirectPolicy``
         // can enforce downgrade, unsafe replay, and sensitive-header
         // boundaries. URLSession's native redirect handling does not apply
@@ -88,6 +102,7 @@ extension URLSession: URLSessionProtocol {
     public func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
         URLSession.AsyncBytes, URLResponse
     ) {
+        try validateRedirectControllableSession()
         let delegate = RequestTaskDelegate(request: request, context: context)
         do {
             let result = try await bytes(for: request, delegate: delegate)
@@ -109,6 +124,7 @@ extension URLSession: URLSessionProtocol {
     public func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (
         Data, URLResponse
     ) {
+        try validateRedirectControllableSession()
         let delegate = RequestTaskDelegate(request: request, context: context)
         do {
             let result = try await upload(for: request, fromFile: fileURL, delegate: delegate)
@@ -128,16 +144,97 @@ extension URLSession: URLSessionProtocol {
     }
 }
 
+extension URLSession: BoundedFileUploadSession {
+    package func bytes(
+        for request: URLRequest,
+        uploadingFileAt fileURL: URL,
+        context: NetworkRequestContext
+    ) async throws -> (URLSession.AsyncBytes, URLResponse) {
+        try validateRedirectControllableSession()
+        var streamingRequest = request
+        streamingRequest.httpBody = nil
+        let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        guard let fileSize = (attributes[.size] as? NSNumber)?.int64Value else {
+            throw NetworkError.configuration(
+                reason: .invalidRequest("Unable to determine the file-based upload body length.")
+            )
+        }
+        guard streamingRequest.value(forHTTPHeaderField: "Transfer-Encoding") == nil else {
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "File-based uploads must not provide Transfer-Encoding; InnoNetwork owns request framing."
+                )
+            )
+        }
+        if let suppliedLength = streamingRequest.value(forHTTPHeaderField: "Content-Length") {
+            let normalizedLength = suppliedLength.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isCanonicalDecimal =
+                !normalizedLength.isEmpty
+                && normalizedLength.utf8.allSatisfy { byte in
+                    byte >= 0x30 && byte <= 0x39
+                }
+            guard isCanonicalDecimal, Int64(normalizedLength) == fileSize else {
+                throw NetworkError.configuration(
+                    reason: .invalidRequest(
+                        "File-based upload Content-Length must match the immutable upload snapshot size."
+                    )
+                )
+            }
+        }
+        guard let bodyStream = InputStream(url: fileURL) else {
+            throw NetworkError.configuration(
+                reason: .invalidRequest("Unable to open the file-based upload body stream.")
+            )
+        }
+        streamingRequest.setValue(String(fileSize), forHTTPHeaderField: "Content-Length")
+        streamingRequest.httpBodyStream = bodyStream
+        let delegate = RequestTaskDelegate(
+            request: request,
+            context: context,
+            uploadBodyFileURL: fileURL
+        )
+        do {
+            let result = try await bytes(for: streamingRequest, delegate: delegate)
+            if let redirectFailure = delegate.redirectFailure {
+                throw redirectFailure
+            }
+            return result
+        } catch {
+            if let trustFailureReason = delegate.trustFailureReason {
+                throw TrustEvaluationError.failed(trustFailureReason, error)
+            }
+            if let redirectFailure = delegate.redirectFailure {
+                throw redirectFailure
+            }
+            throw error
+        }
+    }
+}
+
+private extension URLSession {
+    func validateRedirectControllableSession() throws {
+        guard configuration.identifier == nil else {
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "Background URLSession instances always follow redirects and cannot enforce InnoNetwork redirect admission. Use a default or ephemeral URLSession."
+                )
+            )
+        }
+    }
+}
+
 
 private final class RequestTaskDelegate: NSObject, URLSessionDataDelegate {
     private let request: URLRequest
     private let context: NetworkRequestContext
+    private let uploadBodyFileURL: URL?
     private let trustFailureReasonLock = OSAllocatedUnfairLock<TrustFailureReason?>(initialState: nil)
     private let redirectFailureLock = OSAllocatedUnfairLock<NetworkError?>(initialState: nil)
 
-    init(request: URLRequest, context: NetworkRequestContext) {
+    init(request: URLRequest, context: NetworkRequestContext, uploadBodyFileURL: URL? = nil) {
         self.request = request
         self.context = context
+        self.uploadBodyFileURL = uploadBodyFileURL
     }
 
     var trustFailureReason: TrustFailureReason? {
@@ -154,6 +251,18 @@ private final class RequestTaskDelegate: NSObject, URLSessionDataDelegate {
         didFinishCollecting metrics: URLSessionTaskMetrics
     ) {
         context.metricsReporter?.report(metrics: metrics, for: request, response: task.response)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        needNewBodyStream completionHandler: @escaping (InputStream?) -> Void
+    ) {
+        guard let uploadBodyFileURL else {
+            completionHandler(nil)
+            return
+        }
+        completionHandler(InputStream(url: uploadBodyFileURL))
     }
 
     func urlSession(

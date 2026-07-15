@@ -33,19 +33,27 @@ Passing a custom policy replaces the default for that manager's lifetime.
 
 ## Terminal Ordering
 
-Managers publish the terminal event for a logical task before finishing that
-task's event partition. For requests and streams this means
-`requestFinished`/`requestFailed` is enqueued before `finish(requestID:)`;
-download and websocket managers follow the same terminal-event-then-finish
-shape for their task-scoped streams. This ordering does not by itself override
-the configured overflow policy for request or download notifications.
+Normal request, download, and WebSocket notifications use the configured
+partition and consumer overflow policy. Request observability events keep that
+policy through `requestFinished`/`requestFailed`; finishing the request
+partition does not turn either event into a lossless audit record.
 
-WebSocket final terminal outcomes have a stronger guarantee. The final event
-is admitted to the task partition and every consumer queue present in the
-publication snapshot even when `.dropNewest` queues are full; the oldest
-queued event is displaced when necessary. The manager waits for enqueue, not
-listener execution. Earlier notifications in the same terminal burst and all
-nonterminal WebSocket events retain the normal overflow policy.
+Download and WebSocket managers give the one authoritative final outcome a
+stronger guarantee. That event is admitted to the task partition and to every
+listener or `AsyncStream` consumer in the
+publication snapshot even when `.dropNewest` queues are full; the same
+guarantee applies under `.dropOldest`.
+When a bounded partition or consumer queue is full, its oldest queued event is
+displaced to make room for the final outcome. The manager waits for enqueue,
+not user-handler execution.
+
+For downloads, `completed`, `failed`, and cancellation outcomes atomically
+seal the task partition when admitted. A late progress or state publisher
+cannot enqueue behind the final outcome or displace it. WebSocket terminal
+cleanup likewise publishes its final `disconnected` or `error` outcome before
+closing the partition. Earlier notifications in a multi-event terminal burst,
+and all other nonterminal events, retain the configured overflow policy and
+may be dropped.
 
 Consumers should treat stream completion as "no more events after the terminal
 outcome", not as a separate status signal. Event handling remains asynchronous
@@ -67,9 +75,10 @@ reaches a listener. Two common adjustments:
   ``EventPipelineOverflowPolicy/dropOldest`` so the newest state always
   reaches the UI.
 
-`maxBufferedEventsPerConsumer` behaves identically per consumer — listener
-chains and `AsyncStream` subscribers both use that ceiling to isolate slow
-consumers from the rest of the partition.
+`maxBufferedEventsPerConsumer` applies to listener chains and `AsyncStream`
+subscribers alike, isolating a slow consumer from the rest of the partition.
+The final download/WebSocket outcome is the sole admission exception described
+above; it displaces the oldest queued event instead of being dropped.
 
 ## Overflow: `.dropOldest` vs `.dropNewest`
 

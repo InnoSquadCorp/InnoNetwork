@@ -351,6 +351,44 @@ struct FileUploadTests {
         }
     }
 
+    @Test("Bounded file upload fails closed when a custom session cannot stream its response")
+    func boundedUploadOnNonStreamingCustomSessionThrows() async throws {
+        let payloadURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "upload-bounded-custom-\(UUID().uuidString).bin")
+        try Data("payload".utf8).write(to: payloadURL)
+        defer { try? FileManager.default.removeItem(at: payloadURL) }
+
+        let session = FileAwareMockSession(responseData: Data(repeating: 0xAA, count: 2))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                responseBodyBufferingPolicy: .buffered(maxBytes: 1)
+            ),
+            session: session
+        )
+        let executable = FileUploadTestExecutable(
+            fileURL: payloadURL,
+            contentType: "application/octet-stream",
+            payloadStrategy: .file
+        )
+
+        do {
+            _ = try await client.perform(executable: executable)
+            Issue.record("Expected bounded file-upload response streaming to fail closed")
+        } catch let error as NetworkError {
+            guard case .configuration(reason: .invalidRequest(let message)) = error else {
+                Issue.record("Expected invalid-request configuration, got \(error)")
+                return
+            }
+            #expect(message.contains("Bounded file-upload responses are not supported"))
+        } catch {
+            Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
+        }
+
+        #expect(session.capturedFileURL == nil)
+        #expect(session.capturedRequest == nil)
+    }
+
     @Test("Signed caller file uses one private snapshot for hashing and upload")
     func signedCallerFileUsesStableSnapshot() async throws {
         let callerURL = FileManager.default.temporaryDirectory.appendingPathComponent(

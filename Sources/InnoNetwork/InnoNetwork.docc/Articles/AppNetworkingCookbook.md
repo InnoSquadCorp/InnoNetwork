@@ -6,8 +6,8 @@ observation without forcing one global manager.
 ## Feature Container
 
 Keep request execution, downloads, and sockets feature-scoped. This lets each
-feature choose its own cache, background session identifier, and reconnect
-policy while sharing the same auth token store.
+feature choose its own cache, download session/persistence identifier, and
+reconnect policy while sharing the same auth token store.
 
 ```swift
 import Foundation
@@ -47,6 +47,7 @@ struct AppNetworking: Sendable {
         )
 
         let downloadConfiguration = DownloadConfiguration.advanced { builder in
+            builder.sessionMode = .background
             builder.sessionIdentifier = "com.example.app.downloads.media"
             builder.persistenceCompactionPolicy = .init()
         }
@@ -105,6 +106,13 @@ let catalog = try await networking.api.request(
 ```
 
 ## Background Download
+
+`DownloadConfiguration.advanced` defaults to `.foreground`. This example opts
+into `.background` so the system can continue transfers when the app is
+suspended. Background sessions automatically follow redirects, so the package
+cannot run its per-hop redirect-admission preflight; it validates the final URL
+where Foundation exposes it. Keep the foreground default when every redirect
+hop must be admitted before following it.
 
 Download restoration is explicit at app launch. Public download APIs already
 wait on the internal restore gate, but `waitForRestoration()` is useful when

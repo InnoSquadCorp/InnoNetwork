@@ -274,6 +274,86 @@ struct ResponseBodyLimitTests {
         #expect(compatibilityAlias.responseBodyLimit == 1_024)
     }
 
+    @Test("HEAD response metadata does not trigger Content-Length preflight")
+    func headResponseSkipsContentLengthPreflight() throws {
+        var request = URLRequest(url: URL(string: "https://api.example.com/metadata")!)
+        request.httpMethod = HTTPMethod.head.rawValue
+        let response = try #require(
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Length": "9223372036854775807"]
+            )
+        )
+
+        #expect(RequestExecutor.responseMayCarryBody(request: request, response: response) == false)
+    }
+
+    @Test("RFC no-body statuses skip Content-Length preflight", arguments: [100, 101, 150, 199, 204, 205, 304])
+    func noBodyStatusSkipsContentLengthPreflight(statusCode: Int) throws {
+        var request = URLRequest(url: URL(string: "https://api.example.com/metadata")!)
+        request.httpMethod = HTTPMethod.get.rawValue
+        let response = try #require(
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: statusCode,
+                httpVersion: nil,
+                headerFields: ["Content-Length": "9223372036854775807"]
+            )
+        )
+
+        #expect(RequestExecutor.responseMayCarryBody(request: request, response: response) == false)
+    }
+
+    @Test("Successful CONNECT ignores framing metadata")
+    func successfulConnectSkipsContentLengthPreflight() throws {
+        var request = URLRequest(url: URL(string: "https://api.example.com/tunnel")!)
+        request.httpMethod = HTTPMethod.connect.rawValue
+        let response = try #require(
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Length": "9223372036854775807"]
+            )
+        )
+
+        #expect(RequestExecutor.responseMayCarryBody(request: request, response: response) == false)
+    }
+
+    @Test("Unsuccessful CONNECT may carry an ordinary response body")
+    func unsuccessfulConnectRetainsContentLengthPreflight() throws {
+        var request = URLRequest(url: URL(string: "https://api.example.com/tunnel")!)
+        request.httpMethod = HTTPMethod.connect.rawValue
+        let response = try #require(
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: 407,
+                httpVersion: nil,
+                headerFields: ["Content-Length": "4096"]
+            )
+        )
+
+        #expect(RequestExecutor.responseMayCarryBody(request: request, response: response))
+    }
+
+    @Test("Ordinary responses retain Content-Length preflight")
+    func ordinaryResponseRetainsContentLengthPreflight() throws {
+        var request = URLRequest(url: URL(string: "https://api.example.com/body")!)
+        request.httpMethod = HTTPMethod.get.rawValue
+        let response = try #require(
+            HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Length": "4096"]
+            )
+        )
+
+        #expect(RequestExecutor.responseMayCarryBody(request: request, response: response))
+    }
+
     private func expectResponseTooLarge(
         limit: Int64 = 1_024,
         observed: Int64,

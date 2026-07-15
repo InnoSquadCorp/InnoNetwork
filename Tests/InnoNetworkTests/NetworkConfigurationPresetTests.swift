@@ -5,6 +5,24 @@ import Testing
 
 @Suite("Network configuration presets")
 struct NetworkConfigurationPresetTests {
+    @Test("Package initializer caps responses at 5 MiB unless explicitly overridden")
+    func packageInitializerCapsResponsesAtFiveMiB() {
+        let baseURL = URL(string: "https://api.example.com")!
+        let bounded = NetworkConfiguration(baseURL: baseURL)
+        let explicitlyUnbounded = NetworkConfiguration(
+            baseURL: baseURL,
+            responseBodyBufferingPolicy: .streaming(maxBytes: nil)
+        )
+
+        #expect(
+            bounded.responseBodyBufferingPolicy
+                == .streaming(maxBytes: Int64(5 * 1024 * 1024))
+        )
+        #expect(bounded.responseBodyLimit == Int64(5 * 1024 * 1024))
+        #expect(explicitlyUnbounded.responseBodyBufferingPolicy == .streaming(maxBytes: nil))
+        #expect(explicitlyUnbounded.responseBodyLimit == nil)
+    }
+
     @Test("Safe and advanced presets cap inline responses at 5 MiB")
     func presetsCapInlineResponsesAtFiveMiB() {
         let baseURL = URL(string: "https://api.example.com")!

@@ -205,7 +205,12 @@ extension RequestExecutor {
             case .inline:
                 (data, response) = try await inlineData(for: request, configuration: configuration, context: context)
             case .file(let fileURL, _):
-                (data, response) = try await session.upload(for: request, fromFile: fileURL, context: context)
+                (data, response) = try await fileUploadData(
+                    for: request,
+                    fromFile: fileURL,
+                    configuration: configuration,
+                    context: context
+                )
             }
 
             try Task.checkCancellation()
@@ -248,7 +253,12 @@ extension RequestExecutor {
         case .streaming(let maxBytes):
             do {
                 let (bytes, response) = try await session.bytes(for: request, context: context)
-                let data = try await collect(bytes: bytes, response: response, maxBytes: maxBytes)
+                let data = try await collect(
+                    bytes: bytes,
+                    response: response,
+                    request: request,
+                    maxBytes: maxBytes
+                )
                 return (data, response)
             } catch let error as NetworkError {
                 switch error {
@@ -269,37 +279,122 @@ extension RequestExecutor {
         }
     }
 
-    func collect(
-        bytes: URLSession.AsyncBytes,
-        response: URLResponse,
-        maxBytes: Int64?
-    ) async throws -> Data {
-        let normalizedLimit = maxBytes.map { max(0, $0) }
-        if let normalizedLimit,
-            response.expectedContentLength > normalizedLimit
-        {
-            throw NetworkError.underlying(
-                SendableUnderlyingError(
-                    domain: NetworkError.errorDomain,
-                    code: NetworkErrorCode.responseBodyLimitExceeded.rawValue,
-                    message:
-                        "Response body of \(response.expectedContentLength) bytes exceeded the configured limit of \(normalizedLimit) bytes."
-                ),
-                nil
+    func fileUploadData(
+        for request: URLRequest,
+        fromFile fileURL: URL,
+        configuration: NetworkConfiguration,
+        context: NetworkRequestContext
+    ) async throws -> (Data, URLResponse) {
+        guard let maxBytes = configuration.responseBodyBufferingPolicy.maxBytes else {
+            // Preserve the existing upload-task behavior when the caller has
+            // explicitly opted out of a response bound.
+            return try await session.upload(for: request, fromFile: fileURL, context: context)
+        }
+        guard let boundedSession = session as? any BoundedFileUploadSession else {
+            // A buffered fallback would collect an arbitrarily large response
+            // before the executor could inspect it. Fail closed unless the
+            // injected session explicitly supports bounded upload responses.
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "Bounded file-upload responses are not supported by this URLSessionProtocol implementation."
+                )
             )
         }
 
-        var data = Data()
-        if response.expectedContentLength > 0 {
-            let expectedBytes =
-                normalizedLimit.map { min(response.expectedContentLength, $0) }
-                ?? response.expectedContentLength
-            data.reserveCapacity(Int(clamping: expectedBytes))
+        let (bytes, response) = try await boundedSession.bytes(
+            for: request,
+            uploadingFileAt: fileURL,
+            context: context
+        )
+        let data = try await collect(
+            bytes: bytes,
+            response: response,
+            request: request,
+            maxBytes: maxBytes
+        )
+        return (data, response)
+    }
+
+    func collect(
+        bytes: URLSession.AsyncBytes,
+        response: URLResponse,
+        request: URLRequest,
+        maxBytes: Int64?
+    ) async throws -> Data {
+        do {
+            let normalizedLimit = maxBytes.map { max(0, $0) }
+            // Redirect policies may intentionally rewrite the method. Body
+            // semantics belong to the request that produced this response,
+            // not the pre-redirect request originally passed to the executor.
+            let responseRequest = bytes.task.currentRequest ?? request
+            let responseMayCarryBody = Self.responseMayCarryBody(
+                request: responseRequest,
+                response: response
+            )
+            if let normalizedLimit,
+                responseMayCarryBody,
+                response.expectedContentLength > normalizedLimit
+            {
+                throw NetworkError.underlying(
+                    SendableUnderlyingError(
+                        domain: NetworkError.errorDomain,
+                        code: NetworkErrorCode.responseBodyLimitExceeded.rawValue,
+                        message:
+                            "Response body of \(response.expectedContentLength) bytes exceeded the configured limit of \(normalizedLimit) bytes."
+                    ),
+                    nil
+                )
+            }
+
+            var data = Data()
+            if responseMayCarryBody, response.expectedContentLength > 0 {
+                let expectedBytes =
+                    normalizedLimit.map { min(response.expectedContentLength, $0) }
+                    ?? response.expectedContentLength
+                // Content-Length is remote input and only a capacity hint.
+                // Keep unbounded collection semantically unbounded without
+                // allowing an Int64.max-style header to force a giant eager
+                // allocation before the first byte arrives.
+                let safeReservationHint = min(expectedBytes, 1 * 1024 * 1024)
+                data.reserveCapacity(Int(clamping: safeReservationHint))
+            }
+            for try await chunk in BufferedAsyncBytes(bytes, maxBytes: normalizedLimit) {
+                data.append(contentsOf: chunk)
+            }
+            return data
+        } catch {
+            // Abandoning an AsyncBytes iterator is not a documented transport
+            // cancellation boundary. Stop the underlying request explicitly
+            // when a known Content-Length or streamed limit is exceeded (and
+            // on caller cancellation) so the server cannot keep sending after
+            // the API has already failed.
+            bytes.task.cancel()
+            throw error
         }
-        for try await chunk in BufferedAsyncBytes(bytes, maxBytes: normalizedLimit) {
-            data.append(contentsOf: chunk)
+    }
+
+    /// `Content-Length` on HEAD, successful CONNECT, and RFC-defined no-body responses describes
+    /// representation metadata rather than bytes that this request will
+    /// receive. Skip only the header preflight for those responses; the actual
+    /// AsyncBytes iterator still runs through `BufferedAsyncBytes` so a
+    /// malformed peer that sends payload bytes remains bounded.
+    static func responseMayCarryBody(request: URLRequest, response: URLResponse) -> Bool {
+        let method = request.httpMethod
+        if method?.caseInsensitiveCompare(HTTPMethod.head.rawValue) == .orderedSame {
+            return false
         }
-        return data
+        guard let httpResponse = response as? HTTPURLResponse else { return true }
+        if method?.caseInsensitiveCompare(HTTPMethod.connect.rawValue) == .orderedSame,
+            (200..<300).contains(httpResponse.statusCode)
+        {
+            return false
+        }
+        switch httpResponse.statusCode {
+        case 100..<200, 204, 205, 304:
+            return false
+        default:
+            return true
+        }
     }
 
     static func mapTransportError(

@@ -4,6 +4,181 @@ import os
 package actor TaskEventHub<Event: Sendable> {
     package typealias Listener = @Sendable (Event) async -> Void
 
+    /// Demand-driven buffer used by `AsyncStream(unfolding:)`. Keeping the
+    /// bounded queue here avoids the double-buffering of a continuation-based
+    /// stream, where the hub could drain into Foundation's hidden buffer and
+    /// lose control of both overflow policy and guaranteed terminal admission.
+    private final class StreamMailbox: Sendable {
+        private struct Item: Sendable {
+            let event: Event
+            let enqueuedAt: Date
+        }
+
+        struct Snapshot: Sendable {
+            let queueDepth: Int
+            let waiterCount: Int
+            let droppedEventCount: Int
+            let oldestQueuedEventAge: TimeInterval?
+        }
+
+        enum EnqueueResult: Sendable {
+            case accepted
+            case dropped
+            case terminated
+        }
+
+        private struct Waiter: Sendable {
+            let id: UUID
+            let continuation: CheckedContinuation<Event?, Never>
+        }
+
+        private struct State: Sendable {
+            var queue = FIFOBuffer<Item>()
+            var waiters: [Waiter] = []
+            var droppedEventCount = 0
+            var isFinished = false
+        }
+
+        private enum NextAction {
+            case waiting
+            case resume(CheckedContinuation<Event?, Never>, Event?)
+        }
+
+        private let state = OSAllocatedUnfairLock(initialState: State())
+
+        func enqueue(
+            _ event: Event,
+            enqueuedAt: Date,
+            maxBufferedEvents: Int,
+            overflowPolicy: EventPipelineOverflowPolicy,
+            guaranteesAdmission: Bool
+        ) -> EnqueueResult {
+            let action = state.withLock { state -> (CheckedContinuation<Event?, Never>?, EnqueueResult) in
+                guard !state.isFinished else { return (nil, .terminated) }
+                if !state.waiters.isEmpty {
+                    let waiter = state.waiters.removeFirst()
+                    return (waiter.continuation, .accepted)
+                }
+
+                if state.queue.count >= maxBufferedEvents {
+                    state.droppedEventCount += 1
+                    if guaranteesAdmission || overflowPolicy == .dropOldest {
+                        _ = state.queue.popFirst()
+                    } else {
+                        return (nil, .dropped)
+                    }
+                }
+                state.queue.append(Item(event: event, enqueuedAt: enqueuedAt))
+                return (nil, .accepted)
+            }
+            action.0?.resume(returning: event)
+            return action.1
+        }
+
+        func next() async -> Event? {
+            let waiterID = UUID()
+            return await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    let wasAlreadyCancelled = Task.isCancelled
+                    let action = state.withLock { state -> NextAction in
+                        if let item = state.queue.popFirst() {
+                            return .resume(continuation, item.event)
+                        }
+                        if state.isFinished || wasAlreadyCancelled {
+                            return .resume(continuation, nil)
+                        }
+                        state.waiters.append(
+                            Waiter(id: waiterID, continuation: continuation)
+                        )
+                        return .waiting
+                    }
+                    if case .resume(let continuation, let event) = action {
+                        continuation.resume(returning: event)
+                    }
+
+                    // Cancellation can run after the initial task-state read
+                    // but before this waiter is installed. Re-check after the
+                    // registration so that race cannot strand a continuation.
+                    if Task.isCancelled {
+                        cancelWaiter(id: waiterID)
+                    }
+                }
+            } onCancel: {
+                cancelWaiter(id: waiterID)
+            }
+        }
+
+        func finish() {
+            let waiters = state.withLock { state -> [CheckedContinuation<Event?, Never>] in
+                state.isFinished = true
+                let waiters = state.waiters.map(\.continuation)
+                state.waiters.removeAll(keepingCapacity: false)
+                return waiters
+            }
+            for waiter in waiters {
+                waiter.resume(returning: nil)
+            }
+        }
+
+        func cancel() {
+            let waiters = state.withLock { state -> [CheckedContinuation<Event?, Never>] in
+                state.isFinished = true
+                state.queue.removeAll()
+                let waiters = state.waiters.map(\.continuation)
+                state.waiters.removeAll(keepingCapacity: false)
+                return waiters
+            }
+            for waiter in waiters {
+                waiter.resume(returning: nil)
+            }
+        }
+
+        func snapshot() -> Snapshot {
+            state.withLock { state in
+                Snapshot(
+                    queueDepth: state.queue.count,
+                    waiterCount: state.waiters.count,
+                    droppedEventCount: state.droppedEventCount,
+                    oldestQueuedEventAge: state.queue.first.map {
+                        Date.now.timeIntervalSince($0.enqueuedAt)
+                    }
+                )
+            }
+        }
+
+        private func cancelWaiter(id: UUID) {
+            let continuation = state.withLock { state -> CheckedContinuation<Event?, Never>? in
+                guard let index = state.waiters.firstIndex(where: { $0.id == id }) else {
+                    return nil
+                }
+                return state.waiters.remove(at: index).continuation
+            }
+            continuation?.resume(returning: nil)
+        }
+    }
+
+    private final class StreamRemovalToken: Sendable {
+        private let didRemove = OSAllocatedUnfairLock(initialState: false)
+        private let operation: @Sendable () -> Void
+
+        init(operation: @escaping @Sendable () -> Void) {
+            self.operation = operation
+        }
+
+        func remove() {
+            let shouldRemove = didRemove.withLock { removed in
+                guard !removed else { return false }
+                removed = true
+                return true
+            }
+            if shouldRemove { operation() }
+        }
+
+        deinit {
+            remove()
+        }
+    }
+
     private final class DeliveryCompletion: Sendable {
         private let continuation: OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>
 
@@ -19,6 +194,41 @@ package actor TaskEventHub<Event: Sendable> {
             }
 
             continuation?.resume()
+        }
+    }
+
+    private final class PartitionRetirementBarrier: Sendable {
+        private struct State: Sendable {
+            var isComplete = false
+            var waiters: [CheckedContinuation<Void, Never>] = []
+        }
+
+        private let state = OSAllocatedUnfairLock(initialState: State())
+
+        func wait() async {
+            await withCheckedContinuation { continuation in
+                let isAlreadyComplete = state.withLock { state in
+                    guard !state.isComplete else { return true }
+                    state.waiters.append(continuation)
+                    return false
+                }
+                if isAlreadyComplete {
+                    continuation.resume()
+                }
+            }
+        }
+
+        func complete() {
+            let waiters = state.withLock { state -> [CheckedContinuation<Void, Never>] in
+                guard !state.isComplete else { return [] }
+                state.isComplete = true
+                let waiters = state.waiters
+                state.waiters.removeAll(keepingCapacity: false)
+                return waiters
+            }
+            for waiter in waiters {
+                waiter.resume()
+            }
         }
     }
 
@@ -40,72 +250,38 @@ package actor TaskEventHub<Event: Sendable> {
 
     private struct StreamConsumerState {
         let consumerID: String
-        var continuation: AsyncStream<Event>.Continuation
-        var queuedEventDates = FIFOBuffer<Date>()
-        var droppedEventCount = 0
+        let mailbox: StreamMailbox
 
-        init(id: UUID, continuation: AsyncStream<Event>.Continuation) {
+        init(id: UUID, mailbox: StreamMailbox) {
             self.consumerID = "stream-\(id.uuidString)"
-            self.continuation = continuation
-        }
-
-        mutating func recordYieldResult(
-            _ result: AsyncStream<Event>.Continuation.YieldResult,
-            enqueuedAt: Date,
-            maxBufferedEvents: Int
-        ) {
-            switch result {
-            case .enqueued(let remaining):
-                queuedEventDates.append(enqueuedAt)
-                reconcileQueueDepth(actualDepth: max(0, maxBufferedEvents - remaining))
-            case .dropped:
-                droppedEventCount += 1
-                _ = queuedEventDates.popFirst()
-                queuedEventDates.append(enqueuedAt)
-                reconcileQueueDepth(actualDepth: maxBufferedEvents)
-            case .terminated:
-                queuedEventDates.removeAll()
-            @unknown default:
-                queuedEventDates.removeAll()
-            }
-        }
-
-        var queueDepth: Int {
-            queuedEventDates.count
-        }
-
-        var oldestQueuedEventAge: TimeInterval? {
-            queuedEventDates.first.map { Date.now.timeIntervalSince($0) }
+            self.mailbox = mailbox
         }
 
         func makeMetric(partitionID: String) -> EventPipelineConsumerStateMetric {
-            EventPipelineConsumerStateMetric(
+            let snapshot = mailbox.snapshot()
+            return EventPipelineConsumerStateMetric(
                 partitionID: partitionID,
                 consumerID: consumerID,
-                queueDepth: queueDepth,
-                droppedEventCount: droppedEventCount,
-                oldestQueuedEventAge: oldestQueuedEventAge
+                queueDepth: snapshot.queueDepth,
+                droppedEventCount: snapshot.droppedEventCount,
+                oldestQueuedEventAge: snapshot.oldestQueuedEventAge
             )
         }
 
         func makeTerminalMetric(partitionID: String) -> EventPipelineConsumerStateMetric {
-            EventPipelineConsumerStateMetric(
+            let snapshot = mailbox.snapshot()
+            return EventPipelineConsumerStateMetric(
                 partitionID: partitionID,
                 consumerID: consumerID,
                 queueDepth: 0,
-                droppedEventCount: droppedEventCount,
+                droppedEventCount: snapshot.droppedEventCount,
                 oldestQueuedEventAge: nil
             )
-        }
-
-        private mutating func reconcileQueueDepth(actualDepth: Int) {
-            while queuedEventDates.count > actualDepth {
-                _ = queuedEventDates.popFirst()
-            }
         }
     }
 
     private struct PartitionState {
+        let generation = UUID()
         var listeners: [UUID: EventDeliveryChain<Event>] = [:]
         var streamConsumers: [UUID: StreamConsumerState] = [:]
         var queue = FIFOBuffer<PendingEvent>()
@@ -114,14 +290,20 @@ package actor TaskEventHub<Event: Sendable> {
         var droppedEventCount = 0
     }
 
+    private struct PartitionKey: Hashable {
+        let taskID: String
+        let generation: UUID
+    }
+
     private var partitions: [String: PartitionState] = [:]
     /// Waiters used by lifecycle owners that must not finish retirement until
     /// a closed partition has been fully detached. Listener handlers are still
     /// allowed to drain asynchronously after detachment.
-    private var partitionClosureWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+    private var partitionRetirementBarriers: [PartitionKey: PartitionRetirementBarrier] = [:]
     private let policy: EventDeliveryPolicy
     private let metricsProxy: EventPipelineMetricsReporterProxy?
     private let metricsSnapshotInterval: Duration?
+    private let partitionRetirementHook: (@Sendable (String, UUID) async -> Void)?
     private var streamMetricsReconciliationTask: Task<Void, Never>?
     private var metricsReporter: (any EventPipelineMetricsReporting)? { metricsProxy }
 
@@ -140,6 +322,26 @@ package actor TaskEventHub<Event: Sendable> {
                 snapshotInterval: metricsSnapshotInterval
             )
         }
+        self.partitionRetirementHook = nil
+    }
+
+    package init(
+        policy: EventDeliveryPolicy = .default,
+        metricsReporter: (any EventPipelineMetricsReporting)? = nil,
+        hubKind: EventPipelineHubKind = .genericTask,
+        metricsSnapshotInterval: Duration = .seconds(30),
+        partitionRetirementHook: @escaping @Sendable (String, UUID) async -> Void
+    ) {
+        self.policy = policy
+        self.metricsSnapshotInterval = metricsReporter == nil ? nil : metricsSnapshotInterval
+        self.metricsProxy = metricsReporter.map {
+            EventPipelineMetricsReporterProxy(
+                hubKind: hubKind,
+                reporter: $0,
+                snapshotInterval: metricsSnapshotInterval
+            )
+        }
+        self.partitionRetirementHook = partitionRetirementHook
     }
 
     deinit {
@@ -147,9 +349,10 @@ package actor TaskEventHub<Event: Sendable> {
         metricsProxy?.shutdown()
     }
 
-    package func addListener(taskID: String, listener: @escaping Listener) -> UUID {
+    package func addListener(taskID: String, listener: @escaping Listener) async -> UUID {
+        await waitForClosedPartitionRetirement(taskID: taskID)
         let listenerID = UUID()
-        var partition = partitions[taskID] ?? PartitionState()
+        var partition = partition(for: taskID)
         partition.listeners[listenerID] = EventDeliveryChain(
             partitionID: taskID,
             consumerID: listenerID.uuidString,
@@ -177,25 +380,56 @@ package actor TaskEventHub<Event: Sendable> {
         partitions[taskID]?.streamConsumers.count ?? 0
     }
 
-    package func stream(for taskID: String) -> AsyncStream<Event> {
-        let stream = AsyncStream<Event>.makeStream(
-            bufferingPolicy: .bufferingNewest(policy.maxBufferedEventsPerConsumer)
-        )
+    /// Deterministic observation used by concurrency tests to wait until
+    /// `AsyncStream(unfolding:)` calls have actually suspended in their
+    /// mailboxes. This stays package-scoped and does not affect consumer API.
+    package func streamWaiterCount(taskID: String) -> Int {
+        partitions[taskID]?.streamConsumers.values.reduce(into: 0) { count, consumer in
+            count += consumer.mailbox.snapshot().waiterCount
+        } ?? 0
+    }
+
+    package func stream(for taskID: String) async -> AsyncStream<Event> {
+        await waitForClosedPartitionRetirement(taskID: taskID)
         let continuationID = UUID()
-        var partition = partitions[taskID] ?? PartitionState()
-        partition.streamConsumers[continuationID] = StreamConsumerState(
-            id: continuationID,
-            continuation: stream.continuation
-        )
-        partitions[taskID] = partition
-        updateStreamMetricsReconciliationTaskState()
-        stream.continuation.onTermination = { @Sendable [weak self] _ in
+        let mailbox = StreamMailbox()
+        let removalToken = StreamRemovalToken { [weak self, mailbox] in
+            // `AsyncStream(unfolding:)` cannot forcibly unwind a producer that
+            // is suspended in a checked continuation. End the mailbox first so
+            // cancellation never depends on this actor still being alive or
+            // available to process the bookkeeping hop below.
+            mailbox.cancel()
             guard let self else { return }
             Task.detached { [self] in
                 await self.removeContinuation(taskID: taskID, continuationID: continuationID)
             }
         }
-        return stream.stream
+        var partition = partition(for: taskID)
+        partition.streamConsumers[continuationID] = StreamConsumerState(
+            id: continuationID,
+            mailbox: mailbox
+        )
+        partitions[taskID] = partition
+        updateStreamMetricsReconciliationTaskState()
+        return AsyncStream(
+            unfolding: {
+                _ = removalToken
+                return await mailbox.next()
+            },
+            onCancel: {
+                removalToken.remove()
+            }
+        )
+    }
+
+    /// A terminal publisher may have sealed a partition while its final
+    /// event is still draining. New consumers must join the next partition,
+    /// not the closed predecessor whose enqueue guard would discard replay.
+    private func waitForClosedPartitionRetirement(taskID: String) async {
+        while let partition = partitions[taskID], partition.isClosed {
+            let barrier = retirementBarrier(taskID: taskID, partition: partition)
+            await barrier.wait()
+        }
     }
 
     package func publish(_ event: Event, for taskID: String) {
@@ -206,6 +440,28 @@ package actor TaskEventHub<Event: Sendable> {
             completionMode: .none,
             guaranteesAdmission: false
         )
+    }
+
+    /// Validates a producer epoch before admitting a nonterminal event.
+    /// Validation suspends this actor, allowing an already-started terminal
+    /// publisher to seal the partition first. Once validation succeeds, the
+    /// enqueue happens in the same actor turn, so terminal ordering is total.
+    @discardableResult
+    package func publishIfCurrent(
+        _ event: Event,
+        for taskID: String,
+        validate: @escaping @Sendable () async -> Bool
+    ) async -> Bool {
+        guard await validate() else { return false }
+        guard partitions[taskID]?.isClosed != true else { return false }
+        enqueue(
+            event,
+            for: taskID,
+            completion: nil,
+            completionMode: .none,
+            guaranteesAdmission: false
+        )
+        return true
     }
 
     package func publishAndWaitForEnqueue(_ event: Event, for taskID: String) async {
@@ -237,6 +493,28 @@ package actor TaskEventHub<Event: Sendable> {
         }
     }
 
+    /// Admits the final terminal outcome and atomically seals its partition.
+    ///
+    /// Sealing in the same actor turn prevents a late nonterminal publisher
+    /// from displacing the guaranteed event in a `.dropOldest` listener queue
+    /// or an `AsyncStream.bufferingNewest` buffer. Events already admitted
+    /// ahead of the terminal outcome retain their configured overflow policy.
+    package func publishTerminalAndFinish(_ event: Event, for taskID: String) async {
+        await withCheckedContinuation { continuation in
+            enqueue(
+                event,
+                for: taskID,
+                completion: DeliveryCompletion(continuation),
+                completionMode: .listenerEnqueue,
+                guaranteesAdmission: true
+            )
+            if var partition = partitions[taskID] {
+                partition.isClosed = true
+                partitions[taskID] = partition
+            }
+        }
+    }
+
     package func publishAndWaitForDelivery(_ event: Event, for taskID: String) async {
         await withCheckedContinuation { continuation in
             enqueue(
@@ -256,7 +534,7 @@ package actor TaskEventHub<Event: Sendable> {
         completionMode: CompletionMode,
         guaranteesAdmission: Bool
     ) {
-        var partition = partitions[taskID] ?? PartitionState()
+        var partition = partition(for: taskID)
         guard !partition.isClosed else {
             completion?.resume()
             return
@@ -309,14 +587,11 @@ package actor TaskEventHub<Event: Sendable> {
     /// established by ``finish(taskID:)``.
     package func finishAndWaitForClosure(taskID: String) async {
         guard var partition = partitions[taskID] else { return }
+        let retirementBarrier = retirementBarrier(taskID: taskID, partition: partition)
         partition.isClosed = true
         partitions[taskID] = partition
         await cleanupPartitionIfPossible(taskID: taskID)
-        guard partitions[taskID] != nil else { return }
-
-        await withCheckedContinuation { continuation in
-            partitionClosureWaiters[taskID, default: []].append(continuation)
-        }
+        await retirementBarrier.wait()
     }
 
     private func removeContinuation(taskID: String, continuationID: UUID) async {
@@ -327,6 +602,7 @@ package actor TaskEventHub<Event: Sendable> {
         )
         partitions[taskID] = partition
         if let removedConsumer {
+            removedConsumer.mailbox.cancel()
             await reportStreamConsumerRemoval(for: taskID, consumer: removedConsumer)
             updateStreamMetricsReconciliationTaskState()
         }
@@ -351,10 +627,16 @@ package actor TaskEventHub<Event: Sendable> {
             var removedConsumers: [StreamConsumerState] = []
 
             for consumerID in pendingEvent.streamConsumerIDs {
-                guard var streamConsumer = partition.streamConsumers[consumerID] else {
+                guard let streamConsumer = partition.streamConsumers[consumerID] else {
                     continue
                 }
-                let result = streamConsumer.continuation.yield(pendingEvent.event)
+                let result = streamConsumer.mailbox.enqueue(
+                    pendingEvent.event,
+                    enqueuedAt: pendingEvent.enqueuedAt,
+                    maxBufferedEvents: policy.maxBufferedEventsPerConsumer,
+                    overflowPolicy: policy.overflowPolicy,
+                    guaranteesAdmission: pendingEvent.guaranteesAdmission
+                )
                 switch result {
                 case .terminated:
                     if let removedConsumer = removeStreamConsumer(
@@ -363,13 +645,7 @@ package actor TaskEventHub<Event: Sendable> {
                     ) {
                         removedConsumers.append(removedConsumer)
                     }
-                default:
-                    streamConsumer.recordYieldResult(
-                        result,
-                        enqueuedAt: pendingEvent.enqueuedAt,
-                        maxBufferedEvents: policy.maxBufferedEventsPerConsumer
-                    )
-                    partition.streamConsumers[consumerID] = streamConsumer
+                case .accepted, .dropped:
                     reportStreamConsumerMetric(for: taskID, consumer: streamConsumer)
                 }
             }
@@ -458,7 +734,10 @@ package actor TaskEventHub<Event: Sendable> {
         guard let partition = partitions[taskID] else { return }
         guard partition.isClosed, !partition.isDraining, partition.queue.isEmpty else { return }
 
+        let key = PartitionKey(taskID: taskID, generation: partition.generation)
+        let retirementBarrier = partitionRetirementBarriers[key]
         partitions.removeValue(forKey: taskID)
+        await partitionRetirementHook?(taskID, partition.generation)
 
         for consumer in partition.streamConsumers.values {
             await reportStreamConsumerRemoval(for: taskID, consumer: consumer)
@@ -466,17 +745,32 @@ package actor TaskEventHub<Event: Sendable> {
         updateStreamMetricsReconciliationTaskState()
 
         for consumer in partition.streamConsumers.values {
-            consumer.continuation.finish()
+            consumer.mailbox.finish()
         }
 
         for listener in partition.listeners.values {
             await listener.finish(deliverQueuedEvents: true)
         }
 
-        let closureWaiters = partitionClosureWaiters.removeValue(forKey: taskID) ?? []
-        for waiter in closureWaiters {
-            waiter.resume()
+        retirementBarrier?.complete()
+        partitionRetirementBarriers.removeValue(forKey: key)
+    }
+
+    private func partition(for taskID: String) -> PartitionState {
+        partitions[taskID] ?? PartitionState()
+    }
+
+    private func retirementBarrier(
+        taskID: String,
+        partition: PartitionState
+    ) -> PartitionRetirementBarrier {
+        let key = PartitionKey(taskID: taskID, generation: partition.generation)
+        if let barrier = partitionRetirementBarriers[key] {
+            return barrier
         }
+        let barrier = PartitionRetirementBarrier()
+        partitionRetirementBarriers[key] = barrier
+        return barrier
     }
 
     private func reportPartitionMetric(for taskID: String, partition: PartitionState) {

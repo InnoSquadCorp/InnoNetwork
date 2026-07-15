@@ -26,6 +26,15 @@ circuit-breaker, idempotency-key, and body-size guardrails are enabled
 explicitly. Reach for advanced configuration only when you have an operational
 reason to tune those defaults.
 
+``ResponseBodyBufferingPolicy/buffered(maxBytes:)`` performs post-buffer size
+validation for inline requests: `URLSession.data(for:)` has already collected
+the complete body before the limit is checked. Bounded
+``ResponseBodyBufferingPolicy/streaming(maxBytes:)`` and bounded file-upload
+responses validate while bytes arrive and explicitly cancel the underlying
+task when the ceiling is exceeded. A bounded file upload uses a streamed data
+task with an explicit `Content-Length`; an explicitly unbounded file upload
+uses the native file-backed upload task.
+
 ## Topics
 
 ### Tutorials

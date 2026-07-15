@@ -320,7 +320,7 @@ private enum InnoNetworkBenchmarks {
     /// supported buffered transport explicitly; bounded streaming must not
     /// fall back after `bytes(for:context:)` reports that it is unsupported.
     private static let inMemorySessionBufferingPolicy: ResponseBodyBufferingPolicy =
-        .buffered(maxBytes: NetworkConfiguration.defaultInlineResponseBodyByteLimit)
+        .buffered(maxBytes: NetworkConfiguration.defaultResponseBodyByteLimit)
 
     static func runMain() async throws {
         let options = try BenchmarkOptions.parse(arguments: Array(CommandLine.arguments.dropFirst()))

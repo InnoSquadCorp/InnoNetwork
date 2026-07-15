@@ -51,3 +51,5 @@ package struct FIFOBuffer<Element> {
         headIndex = 0
     }
 }
+
+extension FIFOBuffer: Sendable where Element: Sendable {}

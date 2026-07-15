@@ -583,6 +583,8 @@ extension NetworkError {
             return "\(url.scheme ?? "")://\(url.host ?? "<unknown>")\(path)"
         }
         components.path = DefaultNetworkLogger.maskJWTLikeTokens(in: components.path)
+        components.user = nil
+        components.password = nil
         components.query = nil
         components.fragment = nil
         return components.string ?? "\(components.scheme ?? "")://\(components.host ?? "<unknown>")\(components.path)"
