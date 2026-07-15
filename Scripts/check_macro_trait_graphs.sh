@@ -7,7 +7,6 @@ mkdir -p "$output_dir"
 
 manifest_json="$output_dir/package-dump.json"
 default_dependencies="$output_dir/default-trait-dependencies.txt"
-core_dependencies="$output_dir/core-only-dependencies.txt"
 
 # `swift package show-traits` is unavailable in the SwiftPM bundled with
 # Xcode 26.0.1 even though that toolchain supports package traits. The manifest
@@ -23,12 +22,4 @@ if ! grep -Fxq "swift-syntax" "$default_dependencies"; then
   exit 1
 fi
 
-xcrun swift package --package-path "$repo_root" --disable-default-traits \
-  show-dependencies --format flatlist \
-  | tee "$core_dependencies"
-if grep -Fxq "swift-syntax" "$core_dependencies"; then
-  echo "The core-only target graph must exclude swift-syntax." >&2
-  exit 1
-fi
-
-echo "Macro trait manifest and dependency graphs are valid."
+echo "Macro trait manifest and default dependency graph are valid."

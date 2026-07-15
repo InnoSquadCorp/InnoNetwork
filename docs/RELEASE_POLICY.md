@@ -23,7 +23,7 @@
    - root tests in serial coverage mode and bounded target-sharded mode
    - root macro tests, negative compile fixtures, and fail-closed runtime/macro
      LCOV generation
-   - default and core-only trait graph/build checks
+   - default trait graph and clean core-only build checks
    - docs contract sync
    - doc smoke build/run
    - consumer smoke build

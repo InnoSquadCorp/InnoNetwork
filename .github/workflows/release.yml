@@ -60,11 +60,11 @@ jobs:
       - name: Resolve dependencies
         run: xcrun swift package resolve
 
-      - name: Verify macro trait dependency graphs
+      - name: Verify macro trait manifest and default graph
         run: bash Scripts/check_macro_trait_graphs.sh
 
       - name: Build root core without default traits
-        run: xcrun swift build --disable-default-traits --target InnoNetwork
+        run: bash Scripts/check_core_trait_build.sh
 
       - name: Verify docs and stability contract
         run: bash Scripts/check_docs_contract_sync.sh

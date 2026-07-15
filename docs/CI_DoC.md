@@ -50,15 +50,16 @@ The `CI` workflow must pass all of the following:
    hosted runner exposes a compatible SDK and destination; a missing optional
    platform component emits an explicit notice, while a source or build
    failure on an available destination still fails the job.
-11. Consumer smoke verifies `Macros` is a default trait, the default target
-   graph includes `swift-syntax`, and the `--disable-default-traits` target
-   graph excludes it. It builds the root `InnoNetwork` target with default
-   traits disabled, then builds separate core-only (`traits: []`), aggregate,
-   download-only, websocket-only, test-support, generated-client, and macro
-   usage packages. SwiftPM can still resolve or fetch manifest-level
-   dependencies during a core-only build; the invariant is that macro products
-   are absent from the target graph and compilation. Traits are unified per
-   package, so another dependency enabling default traits re-enables `Macros`.
+11. Consumer smoke verifies `Macros` is a default trait, the default package
+   graph includes `swift-syntax`, and the `InnoNetworkMacros` target
+   dependency is conditioned on that trait. It then performs a clean
+   `--disable-default-traits` root build and rejects compiled macro products
+   before building separate core-only (`traits: []`), aggregate, download-only,
+   websocket-only, test-support, generated-client, and macro usage packages.
+   SwiftPM 6.2 can still resolve, fetch, or list manifest-level dependencies
+   during a core-only build; the invariant is that macro products are absent
+   from compilation. Traits are unified per package, so another dependency
+   enabling default traits re-enables `Macros`.
 12. `bash Scripts/check_provisional_enum_cases.sh` confirms guarded public enum
     cases still match their migration-review allowlist.
 13. Macro tests run from source with
@@ -121,7 +122,7 @@ bash Scripts/check_provisional_enum_cases.sh
 
 # Verify default and core-only macro trait profiles.
 bash Scripts/check_macro_trait_graphs.sh
-xcrun swift build --disable-default-traits --target InnoNetwork
+bash Scripts/check_core_trait_build.sh
 xcrun swift build --package-path Examples/CoreSmoke
 xcrun swift build --package-path Examples/MacroUsage
 

@@ -500,11 +500,11 @@ jobs:
           xcodebuild -version
           xcrun swift --version
 
-      - name: Verify macro trait dependency graphs
+      - name: Verify macro trait manifest and default graph
         run: bash Scripts/check_macro_trait_graphs.sh
 
       - name: Build root core without default traits
-        run: xcrun swift build --disable-default-traits --target InnoNetwork
+        run: bash Scripts/check_core_trait_build.sh
 
       - name: Build core-only consumer smoke package
         working-directory: Examples/CoreSmoke
