@@ -445,7 +445,8 @@ public struct APIDefinitionMacro: ExtensionMacro {
             "allowsExpensiveNetworkAccessOverride",
             "allowsConstrainedNetworkAccessOverride",
         ]
-        let consumed = pathProperties
+        let consumed =
+            pathProperties
             .union(["body", "query"])
             .union(endpointWitnesses)
 
@@ -549,17 +550,17 @@ public struct APIDefinitionMacro: ExtensionMacro {
 
         if let body {
             switch methodKind(method) {
-            case .get:
+            case .queryOnly(let name):
                 throw InnoNetworkMacroDiagnostic(
-                    "@APIDefinition GET endpoints cannot infer a body; use the explicit Parameter + parameters fallback for a custom transport.",
-                    id: "api-definition-get-body"
+                    "@APIDefinition \(name) endpoints cannot infer a body; use the explicit Parameter + parameters fallback for a custom transport.",
+                    id: "api-definition-query-method-body"
                 ).error(at: anchor)
-            case .unknown:
+            case .requiresExplicitPayload:
                 throw InnoNetworkMacroDiagnostic(
-                    "@APIDefinition body/query inference requires method: to be an explicit HTTPMethod enum case.",
+                    simplePayloadMethodDiagnostic,
                     id: "api-definition-dynamic-payload-method"
                 ).error(at: anchor)
-            case .nonGet:
+            case .body:
                 break
             }
             let parameterType = try parameterTypeName(for: body, role: "body", anchor: declaration)
@@ -574,17 +575,17 @@ public struct APIDefinitionMacro: ExtensionMacro {
 
         if let query {
             switch methodKind(method) {
-            case .nonGet:
+            case .body:
                 throw InnoNetworkMacroDiagnostic(
-                    "@APIDefinition query inference is supported only for GET endpoints; use the explicit Parameter + parameters fallback for a custom transport.",
+                    "@APIDefinition query inference is supported only for GET and HEAD endpoints; use the explicit Parameter + parameters fallback for a custom transport.",
                     id: "api-definition-nonget-query"
                 ).error(at: anchor)
-            case .unknown:
+            case .requiresExplicitPayload:
                 throw InnoNetworkMacroDiagnostic(
-                    "@APIDefinition body/query inference requires method: to be an explicit HTTPMethod enum case.",
+                    simplePayloadMethodDiagnostic,
                     id: "api-definition-dynamic-payload-method"
                 ).error(at: anchor)
-            case .get:
+            case .queryOnly:
                 break
             }
             let parameterType = try parameterTypeName(for: query, role: "query", anchor: declaration)
@@ -606,21 +607,26 @@ public struct APIDefinitionMacro: ExtensionMacro {
     }
 
     private enum MethodKind {
-        case get
-        case nonGet
-        case unknown
+        case queryOnly(name: String)
+        case body
+        case requiresExplicitPayload
     }
 
     private static func methodKind(_ method: ExprSyntax) -> MethodKind {
         switch enumCaseName(from: method) {
         case "get":
-            return .get
+            return .queryOnly(name: "GET")
+        case "head":
+            return .queryOnly(name: "HEAD")
         case "post", "put", "patch", "delete":
-            return .nonGet
+            return .body
         default:
-            return .unknown
+            return .requiresExplicitPayload
         }
     }
+
+    private static let simplePayloadMethodDiagnostic =
+        "@APIDefinition simple body/query inference requires method: to be an explicit .get, .head, .post, .put, .patch, or .delete standard HTTPMethod member; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods."
 
     private static func enumCaseName(from expression: ExprSyntax) -> String? {
         expression.as(MemberAccessExprSyntax.self)?.declName.baseName.text

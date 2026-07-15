@@ -392,6 +392,52 @@ struct MacroExpansionTests {
         )
     }
 
+    @Test("APIDefinition macro derives an explicit HEAD query payload")
+    func apiDefinitionHeadQueryExpansion() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .head, path: "/users", auth: .anonymous)
+            struct HeadUsers {
+                typealias APIResponse = EmptyResponse
+                let query: ListUsersQuery
+            }
+            """,
+            expandedSource:
+                """
+                struct HeadUsers {
+                    typealias APIResponse = EmptyResponse
+                    let query: ListUsersQuery
+                }
+
+                extension HeadUsers: InnoNetwork.APIDefinition {
+                    internal typealias Parameter = ListUsersQuery
+                    internal var parameters: Parameter? {
+                        func normalized<Value>(_ value: Value) -> Value? {
+                            .some(value)
+                        }
+                        func normalized<Value>(_ value: Value?) -> Value?? {
+                            guard let value else {
+                                return nil
+                            }
+                            return .some(.some(value))
+                        }
+                        return normalized(query)
+                    }
+                    internal var sessionAuthentication: InnoNetwork.SessionAuthentication {
+                        .anonymous
+                    }
+                    internal var method: InnoNetwork.HTTPMethod {
+                        .head
+                    }
+                    internal var path: Swift.String {
+                        "/users"
+                    }
+                }
+                """,
+            macros: macros
+        )
+    }
+
     @Test("APIDefinition macro derives a required-auth POST body")
     func apiDefinitionBodyAndAuthExpansion() {
         assertMacroExpansion(
@@ -639,6 +685,35 @@ struct MacroExpansionTests {
         )
     }
 
+    @Test("APIDefinition macro rejects HEAD body inference")
+    func apiDefinitionHeadBody() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .head, path: "/users", auth: .anonymous)
+            struct SearchUsers {
+                typealias APIResponse = EmptyResponse
+                let body: SearchBody
+            }
+            """,
+            expandedSource:
+                """
+                struct SearchUsers {
+                    typealias APIResponse = EmptyResponse
+                    let body: SearchBody
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition HEAD endpoints cannot infer a body; use the explicit Parameter + parameters fallback for a custom transport.",
+                    line: 1,
+                    column: 24
+                )
+            ],
+            macros: macros
+        )
+    }
+
     @Test("APIDefinition macro rejects a partial manual payload contract")
     func apiDefinitionPartialManualContract() {
         assertMacroExpansion(
@@ -875,11 +950,107 @@ struct MacroExpansionTests {
             diagnostics: [
                 DiagnosticSpec(
                     message:
-                        "@APIDefinition body/query inference requires method: to be an explicit HTTPMethod enum case.",
+                        "@APIDefinition simple body/query inference requires method: to be an explicit .get, .head, .post, .put, .patch, or .delete standard HTTPMethod member; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
                     line: 1,
                     column: 24
                 )
             ],
+            macros: macros
+        )
+    }
+
+    @Test(
+        "APIDefinition macro requires a manual payload for non-simple standard methods",
+        arguments: ["options", "connect", "trace"]
+    )
+    func apiDefinitionNonSimpleStandardMethod(_ method: String) {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .\(method), path: "/users", auth: .anonymous)
+            struct UpdateUsers {
+                typealias APIResponse = [User]
+                let body: UpdateUsersRequest
+            }
+            """,
+            expandedSource:
+                """
+                struct UpdateUsers {
+                    typealias APIResponse = [User]
+                    let body: UpdateUsersRequest
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition simple body/query inference requires method: to be an explicit .get, .head, .post, .put, .patch, or .delete standard HTTPMethod member; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
+                    line: 1,
+                    column: 24
+                )
+            ],
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro rejects a custom method during simple query inference")
+    func apiDefinitionCustomQueryMethod() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: HTTPMethod(rawValue: "PROPFIND")!, path: "/users", auth: .anonymous)
+            struct FindUsers {
+                typealias APIResponse = [User]
+                let query: ListUsersQuery
+            }
+            """,
+            expandedSource:
+                """
+                struct FindUsers {
+                    typealias APIResponse = [User]
+                    let query: ListUsersQuery
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition simple body/query inference requires method: to be an explicit .get, .head, .post, .put, .patch, or .delete standard HTTPMethod member; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
+                    line: 1,
+                    column: 24
+                )
+            ],
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro preserves an explicit payload contract for a custom method")
+    func apiDefinitionCustomMethodManualPayloadExpansion() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: HTTPMethod(rawValue: "PROPFIND")!, path: "/users", auth: .anonymous)
+            struct FindUsers {
+                typealias APIResponse = [User]
+                typealias Parameter = ListUsersQuery
+                let parameters: Parameter?
+            }
+            """,
+            expandedSource:
+                """
+                struct FindUsers {
+                    typealias APIResponse = [User]
+                    typealias Parameter = ListUsersQuery
+                    let parameters: Parameter?
+                }
+
+                extension FindUsers: InnoNetwork.APIDefinition {
+                    internal var sessionAuthentication: InnoNetwork.SessionAuthentication {
+                        .anonymous
+                    }
+                    internal var method: InnoNetwork.HTTPMethod {
+                        HTTPMethod(rawValue: "PROPFIND")!
+                    }
+                    internal var path: Swift.String {
+                        "/users"
+                    }
+                }
+                """,
             macros: macros
         )
     }

@@ -10,16 +10,17 @@ import Foundation
 ///
 /// ```swift
 /// var transport: TransportPolicy<APIResponse> { .json() }                 // POST
-/// var transport: TransportPolicy<APIResponse> { .query() }                // GET
+/// var transport: TransportPolicy<APIResponse> { .query() }                // GET / HEAD
 /// var transport: TransportPolicy<APIResponse> { .formURLEncoded() }
 /// var transport: TransportPolicy<APIResponse> { .jsonAllowingEmpty() }    // 204-tolerant
 /// var transport: TransportPolicy<APIResponse> { .custom(encoding: ..., decode: ...) }
 /// ```
 ///
-/// The default ``transport`` selects ``TransportPolicy/json(encoder:decoder:)``
-/// for body-bearing methods (`POST`, `PUT`, `PATCH`, `DELETE`) and
-/// ``TransportPolicy/query(encoder:rootKey:decoder:)`` for `GET`, so most
-/// hand-written endpoints can omit the property entirely.
+/// The default ``transport`` selects
+/// ``TransportPolicy/query(encoder:rootKey:decoder:)`` for methods whose
+/// parameters conventionally belong in the URL (`GET` and `HEAD`) and
+/// ``TransportPolicy/json(encoder:decoder:)`` otherwise, so most hand-written
+/// endpoints can omit the property entirely.
 ///
 /// HTTP envelope requirements (method, path, headers, interceptors,
 /// status-code acceptance, transport) are inherited from
@@ -131,17 +132,13 @@ extension APIDefinition where Parameter == EmptyParameter {
 }
 
 public extension APIDefinition {
-    /// Method-aware default transport: `GET` maps to a query-string transport,
-    /// every other method maps to a JSON body transport. Override this
+    /// Method-aware default transport: methods whose parameters conventionally
+    /// belong in the URL (such as `GET` and `HEAD`) map to a query-string
+    /// transport; other methods map to a JSON body transport. Override this
     /// property when an endpoint needs `formURLEncoded`, `multipart`, an
     /// empty-tolerant decoder, or a fully custom transport shape.
     var transport: TransportPolicy<APIResponse> {
-        switch method {
-        case .get:
-            return .query()
-        default:
-            return .json()
-        }
+        method.defaultsToQueryTransport ? .query() : .json()
     }
 }
 
@@ -160,12 +157,7 @@ public extension APIDefinition where APIResponse: HTTPEmptyResponseDecodable {
     /// bodies by default, so the method-aware default transport routes through
     /// the empty-capable decoders.
     var transport: TransportPolicy<APIResponse> {
-        switch method {
-        case .get:
-            return .query()
-        default:
-            return .jsonAllowingEmpty()
-        }
+        method.defaultsToQueryTransport ? .query() : .jsonAllowingEmpty()
     }
 }
 

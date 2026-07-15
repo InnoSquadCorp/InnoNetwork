@@ -46,6 +46,17 @@ struct RequestBuilderOverridesTests {
         var parameters: GetWithBodyParameters? { GetWithBodyParameters(token: "secret") }
     }
 
+    private struct HeadWithJSONBodyEndpoint: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
+        typealias Parameter = GetWithBodyParameters
+        typealias APIResponse = BaseURLResponse
+
+        var method: HTTPMethod { .head }
+        var path: String { "/users/1" }
+        var transport: TransportPolicy<APIResponse> { .json() }
+        var parameters: GetWithBodyParameters? { GetWithBodyParameters(token: "secret") }
+    }
+
     private struct DuplicateAuthHeaderEndpoint: APIDefinition {
         var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
@@ -113,6 +124,31 @@ struct RequestBuilderOverridesTests {
             _ = try await client.request(GetWithJSONBodyEndpoint())
         }
         // The transport must not have been invoked.
+        #expect(mockSession.capturedRequest == nil)
+    }
+
+    @Test("HEAD requests with an explicit body fail before transport")
+    func headWithBodyRejected() async throws {
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(BaseURLResponse(id: 1, name: "Tester"))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com"),
+            session: mockSession
+        )
+
+        do {
+            _ = try await client.request(HeadWithJSONBodyEndpoint())
+            Issue.record("Expected the HEAD request body to be rejected")
+        } catch let error as NetworkError {
+            guard case .configuration(reason: .invalidRequest(let message)) = error else {
+                Issue.record("Expected invalid-request configuration, got \(error)")
+                return
+            }
+            #expect(message.contains("HTTP HEAD"))
+        } catch {
+            Issue.record("Expected NetworkError, got \(error)")
+        }
+
         #expect(mockSession.capturedRequest == nil)
     }
 

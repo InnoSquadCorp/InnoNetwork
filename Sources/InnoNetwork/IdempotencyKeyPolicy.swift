@@ -39,7 +39,7 @@ public struct IdempotencyKeyPolicy: Sendable {
     }
 
     package func apply(to request: inout URLRequest, requestID: UUID) {
-        guard let method = HTTPMethod(rawValue: (request.httpMethod ?? "GET").uppercased()),
+        guard let method = HTTPMethod(rawValue: request.httpMethod ?? HTTPMethod.get.rawValue),
             methods.contains(method),
             request.value(forHTTPHeaderField: headerName)?.isEmpty != false,
             let key = keyProvider(requestID),

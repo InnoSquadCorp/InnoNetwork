@@ -77,6 +77,17 @@ private struct CustomQueryEncodingRequest: APIDefinition {
     }
 }
 
+private struct DefaultHeadQueryEncodingRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
+    typealias Parameter = EncodingPayload
+    typealias APIResponse = EmptyResponse
+
+    let parameters: EncodingPayload?
+
+    var method: HTTPMethod { .head }
+    var path: String { "/encoding/head-query" }
+}
+
 private struct CustomFormEncodingRequest: APIDefinition {
     var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EncodingPayload
@@ -264,6 +275,25 @@ struct APIDefinitionEncodingTests {
         let items = try #require(components.queryItems)
         #expect(items.contains { $0.name == "user_name" && $0.value == "Alice" })
         #expect(items.contains { $0.name == "created_at" && $0.value == "2024-12-17" })
+    }
+
+    @Test("HEAD defaults parameters to the query string")
+    func headDefaultsParametersToURLQuery() async throws {
+        let mockSession = MockURLSession()
+        mockSession.setMockResponse(statusCode: 204)
+        let client = DefaultNetworkClient(configuration: configuration, session: mockSession)
+
+        _ = try await client.request(DefaultHeadQueryEncodingRequest(parameters: payload))
+
+        let request = try #require(mockSession.capturedRequest)
+        let url = try #require(request.url)
+        let items = try #require(
+            URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+        )
+        #expect(request.httpMethod == "HEAD")
+        #expect(request.httpBody == nil)
+        #expect(items.contains { $0.name == "userName" && $0.value == "Alice" })
+        #expect(items.contains { $0.name == "createdAt" })
     }
 
     @Test("Custom queryEncoder shapes form-urlencoded bodies")

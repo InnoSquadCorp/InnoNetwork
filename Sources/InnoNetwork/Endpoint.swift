@@ -93,7 +93,7 @@ public struct EndpointBuilder<Response: Decodable & Sendable>: APIDefinition {
     }
 
     private static func defaultTransport(for method: HTTPMethod) -> TransportPolicy<Response> {
-        method == .get ? .query() : .json()
+        method.defaultsToQueryTransport ? .query() : .json()
     }
 
 }
@@ -128,7 +128,8 @@ extension EndpointBuilder where Response == EmptyResponse {
 
 extension EndpointBuilder {
     /// Returns a copy of this endpoint with query parameters attached. This is
-    /// intended for `GET` endpoints; non-`GET` methods still follow the normal
+    /// intended for methods whose parameters conventionally belong in the URL,
+    /// such as `GET` and `HEAD`; other methods still follow the normal
     /// ``APIDefinition`` encoding rules for their method and transport.
     public func query(_ query: some Encodable & Sendable) -> Self {
         Self(

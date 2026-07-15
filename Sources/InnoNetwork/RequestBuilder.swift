@@ -51,13 +51,15 @@ package struct RequestBuilder {
             }
         }
 
-        // GET requests with a body are accepted by some servers and silently
-        // dropped by others; reject them so the caller is forced to use a
-        // body-bearing method instead of getting non-deterministic behaviour.
-        if payload.hasBody, executable.method == .get {
+        // Methods whose specifications do not define request-body semantics
+        // are accepted by some servers and silently dropped by others. Reject
+        // them so callers get deterministic behaviour before transport.
+        if payload.hasBody, executable.method.forbidsRequestBody {
             throw NetworkError.configuration(
                 reason: .invalidRequest(
-                    "HTTP GET requests must not carry a request body. Use POST or PUT for body-bearing endpoints."))
+                    "HTTP \(executable.method.rawValue) requests must not carry a request body. Use query parameters or a body-capable method."
+                )
+            )
         }
 
         var httpBody: Data?

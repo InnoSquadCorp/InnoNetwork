@@ -33,14 +33,10 @@ public extension OpenAPIRestOperation {
     /// Default session-level status-code handling.
     var acceptableStatusCodes: Set<Int>? { nil }
 
-    /// Default method-aware transport: query for GET, JSON otherwise.
+    /// Default method-aware transport: query for methods such as GET and HEAD
+    /// whose parameters conventionally belong in the URL, JSON otherwise.
     var transport: TransportPolicy<Response> {
-        switch method {
-        case .get:
-            .query()
-        default:
-            .json()
-        }
+        method.defaultsToQueryTransport ? .query() : .json()
     }
 }
 

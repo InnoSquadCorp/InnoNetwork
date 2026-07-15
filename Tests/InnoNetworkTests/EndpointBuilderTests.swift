@@ -23,15 +23,16 @@ private struct EndpointHeaderInterceptor: RequestInterceptor {
 private actor EndpointSessionAuthenticationProbe {
     private var currentTokenCallCount = 0
     private var refreshTokenCallCount = 0
-    private var currentTokenCallWaiter: (
-        minimum: Int,
-        continuation: CheckedContinuation<Void, Never>
-    )?
+    private var currentTokenCallWaiter:
+        (
+            minimum: Int,
+            continuation: CheckedContinuation<Void, Never>
+        )?
 
     func currentToken(_ token: String?) -> String? {
         currentTokenCallCount += 1
         if let waiter = currentTokenCallWaiter,
-           currentTokenCallCount >= waiter.minimum
+            currentTokenCallCount >= waiter.minimum
         {
             currentTokenCallWaiter = nil
             waiter.continuation.resume()
@@ -84,6 +85,21 @@ struct EndpointBuilderTests {
             Issue.record("Default GET transport should be .query")
         }
         #expect(endpoint.acceptableStatusCodes == nil)
+    }
+
+    @Test("HEAD builder defaults to query-string transport")
+    func headProducesQueryTransportByDefault() {
+        let endpoint = EndpointBuilder<EmptyResponse>(
+            method: .head,
+            path: "/users/42"
+        )
+
+        #expect(endpoint.method == .head)
+        if case .query = endpoint.transport.requestEncoding {
+            // expected
+        } else {
+            Issue.record("Default HEAD transport should be .query")
+        }
     }
 
     @Test
