@@ -43,6 +43,10 @@ private final class FsyncCallRecorder: @unchecked Sendable {
     var directoryCount: Int {
         lock.withLock { $0.directoryCount }
     }
+
+    var fileCount: Int {
+        lock.withLock { $0.fileCount }
+    }
 }
 
 
@@ -51,7 +55,81 @@ private actor FailingUpsertDownloadTaskStore: DownloadTaskStore {
         throw PersistenceTestError.upsertFailed
     }
 
-    func updateResumeData(id: String, resumeData: Data?) async throws {}
+    func beginStart(
+        id: String,
+        url: URL,
+        destinationURL: URL,
+        mode: DownloadTaskPersistence.StartMode,
+        retryCount: Int,
+        totalRetryCount: Int
+    ) async throws -> Bool {
+        _ = (id, url, destinationURL, mode, retryCount, totalRetryCount)
+        throw PersistenceTestError.upsertFailed
+    }
+
+    func updateResumeData(
+        id: String,
+        resumeData: Data?,
+        lifecycle: DownloadTaskPersistence.Record.Lifecycle
+    ) async throws {}
+
+    func transitionResumeState(
+        id: String,
+        from expectedLifecycle: DownloadTaskPersistence.Record.Lifecycle?,
+        to lifecycle: DownloadTaskPersistence.Record.Lifecycle,
+        resumeData: Data?
+    ) async throws -> Bool { false }
+
+    func updateRetryState(
+        id: String,
+        retryCount: Int,
+        totalRetryCount: Int,
+        retryPlan: DownloadTaskPersistence.RetryPlan?
+    ) async throws -> Bool {
+        _ = (id, retryCount, totalRetryCount, retryPlan)
+        throw PersistenceTestError.upsertFailed
+    }
+
+    func beginCommit(
+        id: String,
+        metadata: DownloadTaskPersistence.CommitMetadata
+    ) async throws -> Bool {
+        _ = (id, metadata)
+        throw PersistenceTestError.upsertFailed
+    }
+
+    func finishCommit(
+        id: String,
+        metadata: DownloadTaskPersistence.CommitMetadata
+    ) async throws -> Bool {
+        _ = (id, metadata)
+        throw PersistenceTestError.upsertFailed
+    }
+
+    func abandonCommit(
+        id: String,
+        metadata: DownloadTaskPersistence.CommitMetadata?
+    ) async throws -> Bool {
+        _ = (id, metadata)
+        throw PersistenceTestError.upsertFailed
+    }
+
+    func acknowledgeCommitOutcome(
+        id: String,
+        metadata: DownloadTaskPersistence.CommitMetadata,
+        outcome: DownloadTaskPersistence.CommitOutcome
+    ) async throws -> Bool {
+        _ = (id, metadata, outcome)
+        throw PersistenceTestError.upsertFailed
+    }
+
+    func markTerminal(
+        ids: Set<String>,
+        inserting records: [DownloadTaskPersistence.Record]
+    ) async throws {
+        _ = (ids, records)
+        throw PersistenceTestError.upsertFailed
+    }
 
     func remove(id: String) async throws {}
 
@@ -285,6 +363,136 @@ struct PersistenceFsyncPolicyTests {
         }
     }
 
+    @Test(
+        "Commit CAS fsyncs append evidence regardless of the configured policy",
+        arguments: [
+            DownloadConfiguration.PersistenceFsyncPolicy.onCheckpoint,
+            .never,
+        ]
+    )
+    func commitCASForcesAppendFsync(
+        policy: DownloadConfiguration.PersistenceFsyncPolicy
+    ) async throws {
+        let baseDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("inno-commit-fsync-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+
+        let recorder = FsyncCallRecorder()
+        let persistence = DownloadTaskPersistence(
+            sessionIdentifier: "test.commit.fsync.\(UUID().uuidString)",
+            baseDirectoryURL: baseDirectory,
+            fsyncPolicy: policy,
+            fsync: recorder.record
+        )
+        let url = URL(string: "https://example.invalid/commit.bin")!
+        let destinationURL = baseDirectory.appendingPathComponent("commit.bin")
+        let finishID = "finish"
+        let abandonID = "abandon"
+        try await persistence.upsert(id: finishID, url: url, destinationURL: destinationURL)
+        try await persistence.upsert(id: abandonID, url: url, destinationURL: destinationURL)
+        #expect(recorder.fileCount == 0)
+        #expect(recorder.directoryCount == 0)
+
+        let finishMetadata = makeFsyncCommitMetadata(
+            url: url,
+            destinationURL: destinationURL,
+            suffix: "finish"
+        )
+        #expect(try await persistence.beginCommit(id: finishID, metadata: finishMetadata))
+        #expect(recorder.fileCount == 1)
+        #expect(recorder.directoryCount == 1)
+        #expect(try await persistence.finishCommit(id: finishID, metadata: finishMetadata))
+        #expect(recorder.fileCount == 2)
+        #expect(recorder.directoryCount == 2)
+
+        let abandonMetadata = makeFsyncCommitMetadata(
+            url: url,
+            destinationURL: destinationURL,
+            suffix: "abandon"
+        )
+        #expect(try await persistence.beginCommit(id: abandonID, metadata: abandonMetadata))
+        #expect(recorder.fileCount == 3)
+        #expect(recorder.directoryCount == 3)
+        #expect(try await persistence.abandonCommit(id: abandonID, metadata: abandonMetadata))
+        #expect(recorder.fileCount == 4)
+        #expect(recorder.directoryCount == 4)
+    }
+
+    @Test("Crash-critical commit compaction fsyncs both append log and checkpoint")
+    func commitCASForcesCheckpointFsyncDuringCompaction() async throws {
+        let baseDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("inno-commit-checkpoint-fsync-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+
+        let recorder = FsyncCallRecorder()
+        let persistence = DownloadTaskPersistence(
+            sessionIdentifier: "test.commit.checkpoint.fsync.\(UUID().uuidString)",
+            baseDirectoryURL: baseDirectory,
+            fsyncPolicy: .never,
+            compactionPolicy: .init(
+                maxEvents: 1,
+                maxLogBytes: UInt64.max,
+                tombstoneRatio: 1
+            ),
+            fsync: recorder.record
+        )
+        let id = "commit"
+        let url = URL(string: "https://example.invalid/commit-checkpoint.bin")!
+        try await persistence.upsert(
+            id: id,
+            url: url,
+            destinationURL: baseDirectory.appendingPathComponent("commit-checkpoint.bin")
+        )
+        #expect(recorder.fileCount == 0)
+        #expect(recorder.directoryCount == 0)
+
+        let metadata = makeFsyncCommitMetadata(
+            url: url,
+            destinationURL: baseDirectory.appendingPathComponent("commit-checkpoint.bin"),
+            suffix: "checkpoint"
+        )
+        #expect(try await persistence.beginCommit(id: id, metadata: metadata))
+        #expect(recorder.fileCount == 2)
+        #expect(recorder.directoryCount == 2)
+    }
+
+    @Test(".never policy still surfaces crash-critical commit fsync failures")
+    func commitCASPropagatesForcedFsyncFailure() async throws {
+        let baseDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("inno-commit-fsync-fail-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+
+        let persistence = DownloadTaskPersistence(
+            sessionIdentifier: "test.commit.fsync.fail.\(UUID().uuidString)",
+            baseDirectoryURL: baseDirectory,
+            fsyncPolicy: .never,
+            fsync: failFsyncWithEIO
+        )
+        let id = "commit"
+        let url = URL(string: "https://example.invalid/commit-failure.bin")!
+        try await persistence.upsert(
+            id: id,
+            url: url,
+            destinationURL: baseDirectory.appendingPathComponent("commit-failure.bin")
+        )
+
+        do {
+            _ = try await persistence.beginCommit(
+                id: id,
+                metadata: makeFsyncCommitMetadata(
+                    url: url,
+                    destinationURL: baseDirectory.appendingPathComponent("commit-failure.bin"),
+                    suffix: "failure"
+                )
+            )
+            Issue.record("Expected crash-critical commit fsync failure to throw")
+        } catch let error as POSIXError {
+            #expect(error.code == .EIO)
+        } catch {
+            Issue.record("Expected POSIXError.EIO, got \(error)")
+        }
+    }
+
     @Test(".onCheckpoint policy surfaces checkpoint fsync failures")
     func onCheckpointPolicyThrowsWhenCheckpointFsyncFails() async throws {
         let baseDirectory = FileManager.default.temporaryDirectory
@@ -383,6 +591,25 @@ struct PersistenceFsyncPolicyTests {
         #expect(stubSession.lastURL == nil)
         #expect((await manager.allTasks()).isEmpty)
     }
+}
+
+private func makeFsyncCommitMetadata(
+    url: URL,
+    destinationURL: URL,
+    suffix: String
+) -> DownloadTaskPersistence.CommitMetadata {
+    DownloadTaskPersistence.CommitMetadata(
+        stagingKey: try! DownloadCompletionStager.stagingKey(
+            forTaskID: "fsync-\(suffix)"
+        ),
+        originalRequestURL: url,
+        currentRequestURL: url,
+        destinationURL: destinationURL,
+        expectedByteCount: 1,
+        payloadSHA256: try! DownloadCompletionStager.stagingKey(
+            forTaskID: "payload-\(suffix)"
+        )
+    )
 }
 
 #if canImport(Darwin)

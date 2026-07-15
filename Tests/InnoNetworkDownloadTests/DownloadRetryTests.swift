@@ -63,13 +63,15 @@ struct DownloadRetryTests {
         #expect(await task.retryCount >= 2)
     }
 
-    @Test("Cancelled transport error does not trigger retry")
-    func cancelledTransportErrorSkipsRetry() async throws {
+    @Test("Unowned cancelled transport error retries instead of stranding the logical task")
+    func unownedCancelledTransportErrorRetries() async throws {
+        let retryStub = StubDownloadURLTask()
         let harness = try StubDownloadHarness(
             maxRetryCount: 3,
             maxTotalRetries: 3,
             retryDelay: 0,
-            label: "retry-cancelled"
+            label: "retry-cancelled",
+            prequeuedStubs: [retryStub]
         )
         let task = await harness.startDownload()
 
@@ -91,13 +93,18 @@ struct DownloadRetryTests {
             )
         )
 
-        // Give the failure coordinator a short window to (not) react. The
-        // cancelled-transport path short-circuits before retry scheduling,
-        // so no new runtime task is created.
-        try? await Task.sleep(nanoseconds: 50_000_000)
-        #expect(await task.retryCount == 0)
-        #expect(await task.state != .failed)
-        #expect(harness.stubSession.createdTasks.count == 1)
+        let retryIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: identifier,
+                timeout: 2.0
+            )
+        )
+        #expect(retryIdentifier == retryStub.taskIdentifier)
+        #expect(await task.retryCount == 1)
+        #expect(await task.state == .downloading)
+        #expect(harness.stubSession.createdTasks.count == 2)
 
         await harness.manager.cancel(task)
     }

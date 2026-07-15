@@ -89,7 +89,8 @@ struct DownloadInactivityWatchdogTests {
 
     @Test("Resume after long pause does not trigger watchdog cancel on the fresh attempt")
     func resumeAfterPauseDoesNotImmediatelyCancel() async throws {
-        let resumedStub = StubDownloadURLTask()
+        let downloadURL = URL(string: "https://example.invalid/file.zip")!
+        let resumedStub = StubDownloadURLTask(request: URLRequest(url: downloadURL))
         let harness = try StubDownloadHarness(
             taskInactivityTimeout: .milliseconds(150),
             label: "inactivity-pause-resume",
@@ -98,7 +99,7 @@ struct DownloadInactivityWatchdogTests {
         let resumeData = Data("resume-payload".utf8)
         harness.stubTask.scriptCancelResumeData(resumeData)
 
-        let task = await harness.startDownload()
+        let task = await harness.startDownload(url: downloadURL)
         let initialIdentifier = try #require(
             await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task)
         )
@@ -128,6 +129,47 @@ struct DownloadInactivityWatchdogTests {
             "watchdog must not cancel a freshly resumed task before its first progress callback"
         )
 
+        await harness.manager.cancel(task)
+        await harness.manager.shutdown()
+    }
+
+    @Test("Retry backoff without a live URL task is not treated as inactivity")
+    func retryBackoffIsNotCancelledAsInactive() async throws {
+        let retryStub = StubDownloadURLTask()
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 1,
+            maxTotalRetries: 1,
+            retryDelay: 0.5,
+            taskInactivityTimeout: .milliseconds(150),
+            label: "inactivity-retry-backoff",
+            prequeuedStubs: [retryStub]
+        )
+        let task = await harness.startDownload()
+        let firstIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task)
+        )
+
+        let failure = Task {
+            await harness.injectCompletion(
+                taskIdentifier: firstIdentifier,
+                error: SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: URLError.networkConnectionLost.rawValue,
+                    message: "retry after backoff"
+                )
+            )
+        }
+
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(await task.state == .downloading)
+        #expect(await task.error == nil)
+
+        await failure.value
+        let retryIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task)
+        )
+        #expect(retryIdentifier == retryStub.taskIdentifier)
+        #expect(await task.state == .downloading)
         await harness.manager.cancel(task)
         await harness.manager.shutdown()
     }

@@ -485,7 +485,22 @@ private func makeCoordinator(
     clock: TestClock
 ) async -> (DownloadFailureCoordinator, DownloadTask) {
     let runtimeRegistry = DownloadRuntimeRegistry()
-    let persistence = DownloadTaskPersistence(store: InMemoryDownloadTaskStore())
+    let task = DownloadTask(
+        url: URL(string: "https://example.invalid/test.bin")!,
+        destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString).bin")
+    )
+    let persistence = DownloadTaskPersistence(
+        store: InMemoryDownloadTaskStore(
+            seed: [
+                DownloadTaskPersistence.Record(
+                    id: task.id,
+                    url: task.url,
+                    destinationURL: task.destinationURL,
+                    lifecycle: .active
+                )
+            ]
+        )
+    )
     let eventHub = TaskEventHub<DownloadEvent>(
         policy: configuration.eventDeliveryPolicy,
         metricsReporter: configuration.eventMetricsReporter,
@@ -497,10 +512,6 @@ private func makeCoordinator(
         persistence: persistence,
         eventHub: eventHub,
         clock: clock
-    )
-    let task = DownloadTask(
-        url: URL(string: "https://example.invalid/test.bin")!,
-        destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString).bin")
     )
     await runtimeRegistry.add(task)
     return (coordinator, task)

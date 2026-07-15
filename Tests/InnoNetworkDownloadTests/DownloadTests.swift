@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import os
 
 @testable import InnoNetworkDownload
 
@@ -94,6 +95,7 @@ struct DownloadConfigurationTests {
         let config = DownloadConfiguration(
             maxConnectionsPerHost: 4,
             allowsCellularAccess: false,
+            sessionMode: .background,
             sessionIdentifier: "test.session",
             sharedContainerIdentifier: "group.com.example.downloads"
         )
@@ -812,17 +814,33 @@ struct DownloadDelegateOrderingTests {
 
 @Suite("Download Background Completion Tests")
 struct DownloadBackgroundCompletionTests {
-    @Test("Background completion runs when session finishes before the app registers completion")
-    func backgroundCompletionRunsAfterFinishBeforeSetRace() async throws {
-        let harness = try StubDownloadHarness(label: "background-completion-race")
-        await harness.markBackgroundEventsFinished()
+    @Test("An unscoped finish is not carried into a later background batch")
+    func backgroundCompletionRequiresFinishAfterRegistration() async throws {
+        let harness = try StubDownloadHarness(
+            sessionMode: .background,
+            label: "background-completion-race"
+        )
+        #expect(await harness.manager.waitForRestoration())
+        let callCount = OSAllocatedUnfairLock(initialState: 0)
 
-        await confirmation("background completion called") { confirm in
-            harness.handleBackgroundSessionCompletion {
-                confirm()
-            }
-            try? await Task.sleep(for: .milliseconds(100))
+        harness.injectBackgroundEventsFinished()
+        // Register the next batch immediately, before the actor can consume
+        // the already-queued finish. The earlier event must carry its own nil
+        // claim instead of taking this newly registered handler later.
+        harness.handleBackgroundSessionCompletion {
+            callCount.withLock { $0 += 1 }
         }
+        try? await Task.sleep(for: .milliseconds(25))
+        #expect(callCount.withLock { $0 } == 0)
+
+        harness.injectBackgroundEventsFinished()
+        let deadline = ContinuousClock().now.advanced(by: .seconds(2))
+        while callCount.withLock({ $0 }) == 0, ContinuousClock().now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(callCount.withLock { $0 } == 1)
+
+        await harness.manager.shutdown()
     }
 }
 
@@ -855,7 +873,8 @@ struct DownloadTransferCoordinatorTests {
                 policy: configuration.eventDeliveryPolicy,
                 metricsReporter: configuration.eventMetricsReporter,
                 hubKind: .downloadTask
-            )
+            ),
+            lifecycleGate: DownloadLifecycleGate()
         )
         let task = DownloadTask(
             url: URL(string: "https://example.invalid/payload.bin")!,
@@ -949,6 +968,26 @@ struct DownloadPersistenceCleanupTests {
         await harness.store.setRemoveFailure(false)
         await harness.manager.cancel(task)
         #expect(await harness.manager.task(withId: task.id) == nil)
+    }
+
+    @Test("cancelAll retries cleanup for terminal tasks after a bulk remove failure")
+    func cancelAllRetriesTerminalCleanupAfterRemoveFailure() async throws {
+        let harness = try StubDownloadHarness(label: "cancel-all-remove-retry")
+        let task = await harness.startDownload()
+
+        await harness.store.setRemoveFailure(true)
+        await harness.manager.cancelAll()
+
+        #expect(await task.state == .cancelled)
+        #expect(await harness.manager.task(withId: task.id) != nil)
+        #expect(await harness.persistence.record(forID: task.id) != nil)
+
+        await harness.store.setRemoveFailure(false)
+        await harness.manager.cancelAll()
+
+        #expect(await harness.manager.task(withId: task.id) == nil)
+        #expect(await harness.persistence.record(forID: task.id) == nil)
+        await harness.manager.shutdown()
     }
 
     @Test("Failed task remains registered when persistence removal fails")

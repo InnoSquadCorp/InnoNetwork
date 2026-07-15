@@ -320,7 +320,17 @@ let task = await manager.download(
 for await event in await manager.events(for: task) {
     print(event)
 }
+
+// The owner closes the lifecycle explicitly. This cancels and removes
+// persisted in-flight work, drains admitted callbacks/events, and releases
+// the manager's session and persistence scope.
+await manager.shutdown()
 ```
+
+`safeDefaults` and `advanced` use the secure foreground session mode. Choose
+`builder.sessionMode = .background` only when transfers must continue outside
+the app process; see the background-mode redirect trade-off below and in the
+[background download guide](Sources/InnoNetworkDownload/InnoNetworkDownload.docc/Articles/BackgroundDownloads.md).
 
 > The 4.0.0 line removes the global `DownloadManager.shared` singleton —
 > every feature now constructs and owns its own manager via
@@ -472,9 +482,19 @@ idempotency-key, and body-size guardrails. Use `advanced` only when you need
 explicit operational tuning.
 
 In the 5.0 preview, `safeDefaults`, the `advanced` preset, and
-`recommendedForProduction` cap inline response collection at 5 MiB by default.
+`recommendedForProduction` cap collected responses, including file-upload
+responses, at 5 MiB by default.
 Set an explicit `.streaming(maxBytes: nil)` or `.buffered(maxBytes: nil)` only
 when an unbounded response is a deliberate, reviewed choice.
+
+For inline requests, `.buffered(maxBytes:)` validates the size only after
+`URLSession.data(for:)` has buffered the response; it bounds what proceeds to
+cache storage and decoding, not peak transport buffering. Bounded streaming
+and bounded file-upload responses inspect the body while it arrives and cancel
+the underlying task as soon as a known or observed limit is exceeded. A
+bounded file upload therefore uses a streamed data task with an explicit
+`Content-Length`; an explicitly unbounded file upload preserves the native
+file-backed upload-task path.
 
 ```swift
 import Foundation
@@ -516,8 +536,8 @@ the built-in policies.
 
 ### Transport security defaults
 
-Core request clients default to HTTPS-only construction and safe redirect
-handling:
+Core request clients and downloads default to HTTPS-only construction and safe
+redirect handling:
 
 - `DefaultRedirectPolicy` rejects HTTPS-to-HTTP downgrade redirects.
 - Cross-origin 307/308 redirects cannot automatically replay unsafe methods
@@ -528,6 +548,24 @@ handling:
   remains enabled.
 - Plain `http://` base URLs fail before transport unless the client opts in
   with `allowsInsecureHTTP = true`.
+- Foreground downloads — the `DownloadConfiguration.SessionMode` default —
+  re-admit every redirect target through the same URL guard. A rejected
+  downgrade, unsafe cross-origin replay, or traversal target fails as
+  `DownloadError.invalidURL` without consuming retry budget.
+- Explicit `.background` download sessions trade that per-hop preflight for
+  process-independent continuation: Foundation follows background redirects
+  automatically without consulting the redirect delegate. Initial and final
+  URLs are still validated where Foundation exposes them, but that validation
+  cannot prevent an intermediate background redirect from being contacted.
+- Download progress callbacks are coalesced before entering the actor, while
+  completion callbacks remain lossless and FIFO. Final completed, failed, and
+  cancelled events seal their task partition so late progress cannot displace
+  the terminal outcome under a bounded overflow policy.
+- App-facing download callbacks use a per-task ordered delivery lane. A slow
+  progress or terminal callback does not hold the URLSession delegate FIFO or
+  delay the system background-session completion handler. The pre-transport
+  `waiting` and `downloading` state callbacks remain admission hooks, and
+  external `shutdown()` still drains every accepted callback before returning.
 - Base URLs with embedded `user:password@host` credentials or fragments are
   rejected; put credentials in an interceptor or `RefreshTokenPolicy` instead.
 
@@ -814,14 +852,27 @@ Operational items to verify before shipping a client built on InnoNetwork.
 
 ### Background Operation
 
-- **Background download Info.plist.** Background sessions require declaring
-  `UIBackgroundModes` with `fetch` (and `processing` if you use long-running tasks).
+- **Foreground is the secure default.** `DownloadConfiguration.safeDefaults`
+  and `advanced` use `.foreground`, which permits per-hop redirect admission.
+  Set `sessionMode = .background` only when the product requires transfers to
+  continue outside the app process and accepts Foundation-managed redirects.
+- **Background download Info.plist.** A background `URLSession` download does
+  not itself require `UIBackgroundModes`. Declare a mode only for a separate
+  wake-up mechanism owned by the app, such as `remote-notification`.
 - **Session identifier uniqueness.** Each `DownloadConfiguration.sessionIdentifier` must be
-  globally unique within the app process. Reuse causes Foundation to merge tasks; the library
-  asserts in DEBUG and emits an OSLog `.fault` in RELEASE.
+  unique among live managers in the app process. The library rejects reuse with
+  `DownloadManagerError.duplicateSessionIdentifier`; for background sessions,
+  the identifier is also the Foundation background-session identifier. App
+  Groups do not make concurrent app/extension ownership safe: coordinate so
+  exactly one process owns a given identifier at a time.
+- **Destination ownership.** Assign one active logical download to each final
+  file path. Different sessions or processes are not serialized merely because
+  they share an App Group container.
 - **Background completion handler.** Wire the system-provided completion handler (delivered to
   `application(_:handleEventsForBackgroundURLSession:completionHandler:)`) into
-  `DownloadManager` so the OS releases the app suspension promptly.
+  `DownloadManager` so the OS releases the app suspension promptly. The handler
+  is paired only with a `urlSessionDidFinishEvents` that occurs after that batch
+  is registered; an earlier unscoped finish is never carried forward.
 
 ### Observability & Privacy
 

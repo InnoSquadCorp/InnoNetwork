@@ -10,10 +10,16 @@ Use this module when you need:
 
 - pause, resume, retry, and restoration support
 - durable task persistence across app launches
-- foreground and background session handling
+- secure foreground downloads by default, with explicit background continuation
 - listener or `AsyncStream` delivery for download state transitions
 
-Construct one ``DownloadManager`` per download domain with an explicit ``DownloadConfiguration`` and a unique session identifier.
+Construct one ``DownloadManager`` per download domain with an explicit
+``DownloadConfiguration`` and a unique session identifier. The safe and
+advanced presets use ``DownloadConfiguration/SessionMode/foreground`` so each
+redirect can be admitted before transport. Choose
+``DownloadConfiguration/SessionMode/background`` only when continuation
+outside the app process is worth Foundation automatically following redirects
+without per-hop library preflight; see <doc:BackgroundDownloads>.
 
 Download task events flow through the shared event hub. Tune buffering, overflow behavior, and metrics integration via ``DownloadConfiguration/eventDeliveryPolicy`` — see the [event delivery guide](https://innosquadcorp.github.io/InnoNetwork/InnoNetwork/documentation/innonetwork/eventdeliveryguide) in the core module.
 

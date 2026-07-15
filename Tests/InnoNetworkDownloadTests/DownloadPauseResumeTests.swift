@@ -110,6 +110,65 @@ struct DownloadPauseResumeTests {
         await harness.manager.shutdown()
     }
 
+    @Test("A synchronously journaled completion wins before pause finalizes resume data")
+    func journaledCompletionWinsPauseFinalization() async throws {
+        let fileManager = FileManager.default
+        let rootURL = fileManager.temporaryDirectory.appendingPathComponent(
+            "inno-pause-journal-race-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let temporaryLocation = rootURL.appendingPathComponent("download.tmp", isDirectory: false)
+        let destinationURL = rootURL.appendingPathComponent("download.bin", isDirectory: false)
+        try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data("journal-wins-pause".utf8).write(to: temporaryLocation)
+        defer { try? fileManager.removeItem(at: rootURL) }
+
+        let harness = try StubDownloadHarness(label: "pause-journal-race")
+        harness.stubTask.suspendCancelByProducingResumeData()
+        let task = await harness.startDownload(destinationURL: destinationURL)
+        let taskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task, timeout: 5.0)
+        )
+
+        let pauseTask = Task {
+            await harness.manager.pause(task)
+        }
+        #expect(
+            await waitForPauseCondition {
+                harness.stubTask.pendingCancelByProducingResumeDataCount == 1
+            }
+        )
+
+        let admissionGate = await harness.manager.completionAdmissionGate
+        #expect(
+            admissionGate.beginStaging(
+                taskID: task.id,
+                taskIdentifier: taskIdentifier
+            )
+        )
+        admissionGate.finishStaging(
+            taskID: task.id,
+            taskIdentifier: taskIdentifier,
+            journaled: true
+        )
+        harness.stubTask.completeCancelByProducingResumeData(
+            with: Data("must-not-be-persisted".utf8)
+        )
+        await pauseTask.value
+
+        #expect(await task.state == .downloading)
+        #expect(await task.resumeData == nil)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == taskIdentifier)
+
+        await harness.injectCompletion(
+            taskIdentifier: taskIdentifier,
+            location: temporaryLocation
+        )
+        #expect(await task.state == .completed)
+        #expect(try Data(contentsOf: destinationURL) == Data("journal-wins-pause".utf8))
+        await harness.manager.shutdown()
+    }
+
     @Test("Pause cancellation callback before resume data preserves the pausing attempt")
     func cancellationBeforeResumeDataDoesNotOrphanPause() async throws {
         let harness = try StubDownloadHarness(label: "pause-cancellation-before-resume-data")
@@ -152,16 +211,64 @@ struct DownloadPauseResumeTests {
         await harness.manager.cancel(task)
     }
 
+    @Test("Caller cancellation cannot abandon an irreversible pause transition")
+    func callerCancellationStillFinalizesPause() async throws {
+        let harness = try StubDownloadHarness(label: "pause-caller-cancellation")
+        harness.stubTask.suspendCancelByProducingResumeData()
+        let task = await harness.startDownload()
+        let taskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task, timeout: 5.0)
+        )
+
+        let pauseTask = Task {
+            await harness.manager.pause(task)
+        }
+        #expect(
+            await waitForPauseCondition {
+                guard harness.stubTask.pendingCancelByProducingResumeDataCount == 1 else {
+                    return false
+                }
+                return await harness.persistence.record(forID: task.id)?.lifecycle == .pausing
+            }
+        )
+
+        pauseTask.cancel()
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(await task.state == .downloading)
+
+        harness.stubTask.completeCancelByProducingResumeData(with: nil)
+        await pauseTask.value
+
+        #expect(await task.state == .paused)
+        #expect(await harness.persistence.record(forID: task.id)?.lifecycle == .paused)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == nil)
+
+        await harness.injectCompletion(
+            taskIdentifier: taskIdentifier,
+            taskDescription: task.id,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.cancelled.rawValue,
+                message: "late cancellation after caller-cancelled pause"
+            )
+        )
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(await task.state == .paused)
+        #expect(harness.stubSession.createdTasks.count == 1)
+        await harness.manager.cancel(task)
+    }
+
     @Test("Late cancellation from paused attempt does not remove resumed runtime")
     func lateCancellationFromPausedAttemptPreservesResumedRuntime() async throws {
-        let resumedStub = StubDownloadURLTask()
+        let downloadURL = URL(string: "https://example.invalid/file.zip")!
+        let resumedStub = StubDownloadURLTask(request: URLRequest(url: downloadURL))
         let harness = try StubDownloadHarness(
             label: "pause-late-cancellation-after-resume",
             prequeuedStubs: [resumedStub]
         )
         harness.stubTask.scriptCancelResumeData(Data("resume-before-late-cancellation".utf8))
 
-        let task = await harness.startDownload()
+        let task = await harness.startDownload(url: downloadURL)
         let pausedAttemptIdentifier = try #require(
             await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task, timeout: 5.0)
         )
@@ -183,6 +290,7 @@ struct DownloadPauseResumeTests {
 
         await harness.injectCompletion(
             taskIdentifier: pausedAttemptIdentifier,
+            taskDescription: task.id,
             error: SendableUnderlyingError(
                 domain: NSURLErrorDomain,
                 code: URLError.cancelled.rawValue,
@@ -198,7 +306,8 @@ struct DownloadPauseResumeTests {
 
     @Test("Resume from paused with resumeData creates a new task via withResumeData:")
     func resumeFromPausedUsesResumeData() async throws {
-        let resumedStub = StubDownloadURLTask()
+        let downloadURL = URL(string: "https://example.invalid/file.zip")!
+        let resumedStub = StubDownloadURLTask(request: URLRequest(url: downloadURL))
         let harness = try StubDownloadHarness(
             label: "resume-with-data",
             prequeuedStubs: [resumedStub]
@@ -206,7 +315,7 @@ struct DownloadPauseResumeTests {
         let resumeData = Data("resume-payload".utf8)
         harness.stubTask.scriptCancelResumeData(resumeData)
 
-        let task = await harness.startDownload()
+        let task = await harness.startDownload(url: downloadURL)
         _ = try #require(
             await waitForRuntimeTaskIdentifier(
                 manager: harness.manager,
@@ -272,6 +381,40 @@ struct DownloadPauseResumeTests {
         await harness.manager.cancel(task)
     }
 
+    @Test("Concurrent resume calls create only one replacement attempt")
+    func concurrentResumeCallsAreSerialized() async throws {
+        let resumedStub = StubDownloadURLTask()
+        let harness = try StubDownloadHarness(
+            label: "resume-concurrent",
+            prequeuedStubs: [resumedStub]
+        )
+        harness.stubTask.scriptCancelResumeData(nil)
+        let task = await harness.startDownload()
+        await harness.manager.pause(task)
+        #expect(await task.state == .paused)
+
+        await harness.store.suspendUpserts()
+        let firstResume = Task { await harness.manager.resume(task) }
+        #expect(
+            await waitForPauseCondition {
+                await harness.store.pendingUpsertCount == 1
+            }
+        )
+        let secondResume = Task { await harness.manager.resume(task) }
+        await Task.yield()
+        #expect(await harness.store.pendingUpsertCount == 1)
+
+        await harness.store.resumeUpserts()
+        await firstResume.value
+        await secondResume.value
+
+        #expect(harness.stubSession.createdTasks.count == 2)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == resumedStub.taskIdentifier)
+        #expect(await task.state == .downloading)
+        #expect(await harness.persistence.record(forID: task.id) != nil)
+        await harness.manager.cancel(task)
+    }
+
     @Test("Resume with persistence failure transitions paused → failed")
     func resumePersistenceFailureTransitionsPausedToFailed() async throws {
         let resumedStub = StubDownloadURLTask()
@@ -298,6 +441,30 @@ struct DownloadPauseResumeTests {
 
         #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .failed })
         await harness.store.setUpsertFailure(false)
+    }
+
+    @Test("Persistence failure keeps the failed handle registered until stale row cleanup succeeds")
+    func persistenceFailureWithCleanupFailureRemainsRecoverable() async throws {
+        let harness = try StubDownloadHarness(label: "resume-persistence-cleanup-fails")
+        harness.stubTask.scriptCancelResumeData(Data("durable-paused-row".utf8))
+        let task = await harness.startDownload()
+        await harness.manager.pause(task)
+        #expect(await task.state == .paused)
+        #expect(await harness.persistence.record(forID: task.id) != nil)
+
+        await harness.store.setUpsertFailure(true)
+        await harness.store.setRemoveFailure(true)
+        await harness.manager.resume(task)
+
+        #expect(await task.state == .failed)
+        #expect(await harness.manager.task(withId: task.id) === task)
+        #expect(await harness.persistence.record(forID: task.id) != nil)
+
+        await harness.store.setUpsertFailure(false)
+        await harness.store.setRemoveFailure(false)
+        await harness.manager.cancel(task)
+        #expect(await harness.manager.task(withId: task.id) == nil)
+        #expect(await harness.persistence.record(forID: task.id) == nil)
     }
 
     @Test("Cancel from paused state clears runtime registration")

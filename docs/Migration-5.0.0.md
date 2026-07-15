@@ -32,8 +32,9 @@ sent on the wire differ from the request or security policy a caller declared.
 | `@APIDefinition(method:path:)` | Add mandatory `auth: .anonymous`, `.optional`, or `.required` |
 | `#endpoint(method, path, as: Response.self)` | Use a named macro-assisted endpoint struct or runtime `EndpointBuilder` |
 | Passing an optional directly to `EndpointPathEncoding.percentEncodedSegment` | Unwrap it and define the nil behavior before encoding |
-| Assuming `safeDefaults` / `advanced` has an unbounded inline response | Accept the 5 MiB default, configure another explicit bound, or deliberately select `.streaming(maxBytes: nil)` / `.buffered(maxBytes: nil)` |
+| Assuming `safeDefaults` / `advanced` has an unbounded collected response, including for file uploads | Accept the 5 MiB default, configure another explicit bound, or deliberately select `.streaming(maxBytes: nil)` / `.buffered(maxBytes: nil)` |
 | Plain HTTP downloads, OpenAPI base URLs, or plain WS sockets without an opt-in | Use HTTPS/WSS, or enable the matching scoped `allowsInsecureHTTP` / `allowsInsecureWebSocket` configuration only for an intentional environment |
+| Relying on a download preset to create a background session | Keep the secure `.foreground` default, or set `DownloadConfiguration.SessionMode.background` explicitly after reviewing its redirect trade-off |
 | `OpenAPIRestOperation` without auth metadata | Add `var sessionAuthentication: SessionAuthentication` and review generated `.anonymous` witnesses against the service security scheme |
 
 ## Replace type-level auth scopes with one explicit value
@@ -355,15 +356,86 @@ host, userinfo, fragment, origin-override, or traversal checks. If an existing
 route intentionally contains a literal dot segment, change the server route or
 request contract; there is no traversal-admission opt-out.
 
-## Choose an inline response ceiling deliberately
+The safe and advanced download presets now use
+`DownloadConfiguration.SessionMode.foreground`. Foreground downloads apply
+`DefaultRedirectPolicy` and URL admission before following every redirect.
+HTTPS downgrade, unsafe cross-origin 307/308 replay, missing retained origin
+metadata, and traversal targets terminate as `DownloadError.invalidURL`
+without retry. `DownloadConfiguration.allowsInsecureHTTP` permits an
+intentional plain-HTTP source and same-scheme foreground redirect; it does not
+enable an HTTPS downgrade through the foreground redirect policy.
+
+If an existing app depends on process-independent transfers, opt back into a
+background session explicitly:
+
+```swift
+let backgroundDownloads = DownloadConfiguration.advanced(
+    sessionIdentifier: "com.example.app.downloads"
+) { builder in
+    builder.sessionMode = .background
+}
+```
+
+This is a security/continuation trade-off. Foundation background sessions
+follow redirects automatically without invoking the redirect delegate, so
+InnoNetwork cannot run per-hop redirect policy or URL-admission preflight in
+that mode. Initial URLs and final URLs exposed at library lifecycle boundaries
+remain validated where applicable, but final validation cannot undo contact
+with an intermediate redirect target. Keep `.foreground` unless continuing
+outside the app process is a product requirement.
+
+Download restoration and shutdown now form a strict lifecycle boundary:
+
+- restored and opaque resume tasks are adopted only when both retained request
+  URLs match the persisted admitted source;
+- shutdown cancels and joins restoration, drains mutations admitted before the
+  shutdown latch, removes their persistence records, and prevents a suspended
+  operation from resuming a URL task after teardown begins;
+- progress delegate callbacks are coalesced per URL-task segment, while
+  completions remain lossless and ordered; and
+- app-facing callbacks are delivered in per-task order outside the system
+  delegate FIFO, so slow progress and terminal handlers do not delay the
+  background-session completion handler; pre-transport waiting/downloading
+  handlers remain admission hooks; and
+- completed, failed, and cancelled events atomically seal their bounded task
+  partition. A manager callback may call `shutdown()`; that reentrant call
+  starts teardown and returns so it cannot wait on its own restoration or
+  delegate worker. A later external `shutdown()` still waits for full teardown.
+
+Background restoration now closes its one-shot completion window at
+`urlSessionDidFinishEvents(forBackgroundURLSession:)`, not at the earlier
+`allDownloadTasks()` inventory snapshot. Register the UIKit completion handler
+through `handleBackgroundSessionCompletion` for each batch; a finish event seen
+without a registered handler is not reused by a later batch.
+
+Completion commits now use an attempt-scoped admission gate and a deterministic
+journal containing the admitted source/final URLs, destination, byte count, and
+payload SHA-256. A `.terminal(.finished)` receipt is removed only by an exact
+metadata/outcome acknowledgment after terminal event and callback admission.
+If the final destination no longer matches that receipt on restore, the task
+fails with `DownloadError.fileSystemError` while the receipt and staged payload
+remain available for an explicit recovery policy. Policy-rejected journals are
+explicitly abandoned and cleaned so they cannot block manual retry.
+
+App Group storage is not a multi-owner lock. Exactly one process may own a
+background session identifier at a time, and callers must give concurrent
+logical downloads distinct final destination paths.
+
+Apps should continue to treat `shutdown()` as the owner's final operation and
+create a fresh manager for later work. Existing event streams now receive one
+authoritative terminal outcome before ending, including under saturated
+`.dropNewest` or `.dropOldest` delivery policies.
+
+## Choose a response ceiling deliberately
 
 `NetworkConfiguration.safeDefaults(baseURL:)`,
 `NetworkConfiguration.advanced(...)`, and
 `NetworkConfiguration.recommendedForProduction(baseURL:)` now use streaming
-inline collection with a 5 MiB maximum. This is a behavior change for clients
+collection with a 5 MiB maximum for inline requests and file-backed uploads.
+This is a behavior change for clients
 that previously relied on an unbounded default.
 
-Keep the default for ordinary JSON. For a known larger inline payload, set a
+Keep the default for ordinary JSON. For a known larger payload, set a
 bounded product-specific ceiling. Reserve `nil` for a deliberate unbounded
 decision:
 
@@ -383,11 +455,27 @@ let explicitlyUnbounded = NetworkConfiguration.advanced(
 )
 ```
 
-`.buffered(maxBytes:)` has the same explicit-`nil` opt-out. A test double that
-implements only `data(for:)` must select buffered collection explicitly;
-bounded streaming fails closed instead of loading the entire body before
-checking its ceiling. Oversized responses are rejected before cache storage or
-decoding.
+`.buffered(maxBytes:)` has the same explicit-`nil` opt-out. The 5.0 enum cases
+require the argument, so the former `.streaming()` and `.buffered()` shorthand
+no longer compiles; every unbounded choice must spell `maxBytes: nil`.
+
+For inline requests, `.buffered(maxBytes:)` uses `URLSession.data(for:)` and
+checks the byte count only after the complete response has been buffered. It
+prevents an oversized body from reaching cache storage or decoding, but it is
+not an early transport or peak-memory bound. Bounded `.streaming(maxBytes:)`
+checks `Content-Length` and observed bytes while receiving the body, explicitly
+cancels the underlying task when the ceiling is crossed, and fails closed when
+a custom session cannot provide streaming bytes.
+
+File-backed uploads choose their Foundation task shape from the presence of a
+response bound, regardless of whether the policy case is `.streaming` or
+`.buffered`: a non-`nil` bound uses a streamed data task, supplies the file as
+an `httpBodyStream`, and sets an explicit `Content-Length` so the response can
+be cancelled early. An explicit `maxBytes: nil` preserves
+`URLSession.upload(for:fromFile:)`. The bounded file-upload capability is
+package-only, so an external custom `URLSessionProtocol` fails closed for a
+bounded file upload. Use Foundation `URLSession` for bounded uploads, or select
+an explicit unbounded policy only when that behavior is reviewed.
 
 ## Move macro definitions to the root package
 
@@ -587,7 +675,7 @@ addition to the remaining release checks.
 - [ ] Move intentional plain HTTP/WS use behind its matching scoped opt-in and
   remove routes that contain origin overrides, userinfo, fragments, or dot
   traversal.
-- [ ] Accept or explicitly replace the new 5 MiB inline response cap; keep
+- [ ] Accept or explicitly replace the new 5 MiB collected-response cap; keep
   unbounded `nil` policies limited to reviewed payloads.
 - [ ] Regenerate/review OpenAPI auth witnesses and remove HEAD/1xx/204/205/304
   response-body assumptions.

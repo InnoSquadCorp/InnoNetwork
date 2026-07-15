@@ -55,7 +55,13 @@ extension AppendLogDownloadTaskStore {
                     id: event.taskID,
                     url: url,
                     destinationURL: destinationURL,
-                    resumeData: event.resumeData
+                    resumeData: event.resumeData,
+                    lifecycle: event.lifecycle,
+                    retryCount: event.retryCount,
+                    totalRetryCount: event.totalRetryCount,
+                    retryPlan: event.retryPlan,
+                    commitMetadata: event.commitMetadata,
+                    commitOutcome: event.commitOutcome
                 )
                 var ids = urlToID[url] ?? []
                 ids.removeAll { $0 == event.taskID }
@@ -177,6 +183,11 @@ extension AppendLogDownloadTaskStore {
         // durability.
         if fsyncPolicy == .always {
             try fsyncFileDescriptor(handle.fileDescriptor, fsync: fsync)
+            // The append is not crash-durable if the log's directory entry can
+            // still be lost. Sync the parent even for an existing path because
+            // a prior `.never` mutation may have created or replaced the log
+            // without establishing that directory durability.
+            try fsyncParentDirectory(of: logURL, fsync: fsync)
         }
     }
 

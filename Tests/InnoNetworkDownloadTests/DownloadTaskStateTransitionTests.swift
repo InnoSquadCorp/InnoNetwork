@@ -166,6 +166,27 @@ struct DownloadTaskStateTransitionTests {
         #expect(await task.attempt == 0)
     }
 
+    @Test("Cancellation waits for a failed completion claim and then wins")
+    func cancellationSurvivesFailedCompletionClaim() async {
+        let task = makeTask()
+        await task.updateState(.downloading)
+        #expect(await task.claimTerminalTransition())
+
+        let cancellation = Task {
+            await task.requestCancellation()
+        }
+        await Task.yield()
+        #expect(await task.state == .downloading)
+
+        // Models destination commit failure after completion claimed the
+        // terminal transition. Releasing the claim must wake the pending
+        // cancellation instead of silently losing it.
+        await task.releaseTerminalTransitionClaim()
+
+        #expect(await cancellation.value == .transitioned)
+        #expect(await task.state == .cancelled)
+    }
+
     // MARK: - restoreState escape hatch
 
     @Test("restoreState bypasses guard for every illegal pair")

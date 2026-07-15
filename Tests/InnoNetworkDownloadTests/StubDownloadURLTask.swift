@@ -26,6 +26,7 @@ final class StubDownloadURLTask: DownloadURLTask, @unchecked Sendable {
 
     let taskIdentifier: Int
     let originalRequest: URLRequest?
+    let currentRequest: URLRequest?
 
     private struct State {
         var state: URLSessionTask.State = .suspended
@@ -48,6 +49,21 @@ final class StubDownloadURLTask: DownloadURLTask, @unchecked Sendable {
     ) {
         self.taskIdentifier = taskIdentifier
         self.originalRequest = request
+        self.currentRequest = request
+        var initial = State()
+        initial.state = initialState
+        self.stateLock = OSAllocatedUnfairLock(initialState: initial)
+    }
+
+    init(
+        taskIdentifier: Int = nextStubDownloadTaskIdentifier(),
+        request: URLRequest?,
+        currentRequest: URLRequest?,
+        initialState: URLSessionTask.State = .suspended
+    ) {
+        self.taskIdentifier = taskIdentifier
+        self.originalRequest = request
+        self.currentRequest = currentRequest
         var initial = State()
         initial.state = initialState
         self.stateLock = OSAllocatedUnfairLock(initialState: initial)
@@ -169,6 +185,9 @@ final class StubDownloadURLSession: DownloadURLSession, @unchecked Sendable {
         var didInvalidateAndCancel = false
         var automaticallyCompletesInvalidation = true
         var invalidationHandler: (@Sendable () -> Void)?
+        var suspendsAllDownloadTasks = false
+        var isAllDownloadTasksQueryCancelled = false
+        var pendingAllDownloadTaskQueries: [CheckedContinuation<[any DownloadURLTask], Never>] = []
     }
 
     private let stateLock = OSAllocatedUnfairLock<State>(initialState: State())
@@ -218,9 +237,32 @@ final class StubDownloadURLSession: DownloadURLSession, @unchecked Sendable {
     }
 
     func allDownloadTasks() async -> [any DownloadURLTask] {
-        stateLock.withLock { state in
-            let all = state.preinstalledTasks + state.createdTasks
-            return all.map { $0 as any DownloadURLTask }
+        if Task.isCancelled { return [] }
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let immediate = stateLock.withLock { state -> [any DownloadURLTask]? in
+                    guard !state.isAllDownloadTasksQueryCancelled else { return [] }
+                    let all = state.preinstalledTasks + state.createdTasks
+                    guard state.suspendsAllDownloadTasks else {
+                        return all.map { $0 as any DownloadURLTask }
+                    }
+                    state.pendingAllDownloadTaskQueries.append(continuation)
+                    return nil
+                }
+                if let immediate {
+                    continuation.resume(returning: immediate)
+                }
+            }
+        } onCancel: {
+            let pending = self.stateLock.withLock { state in
+                state.isAllDownloadTasksQueryCancelled = true
+                let pending = state.pendingAllDownloadTaskQueries
+                state.pendingAllDownloadTaskQueries.removeAll()
+                return pending
+            }
+            for continuation in pending {
+                continuation.resume(returning: [])
+            }
         }
     }
 
@@ -245,6 +287,30 @@ final class StubDownloadURLSession: DownloadURLSession, @unchecked Sendable {
         stateLock.withLock { $0.automaticallyCompletesInvalidation = enabled }
     }
 
+    func suspendAllDownloadTasks() {
+        stateLock.withLock { state in
+            state.suspendsAllDownloadTasks = true
+            state.isAllDownloadTasksQueryCancelled = false
+        }
+    }
+
+    func completeAllDownloadTasks() {
+        let result = stateLock.withLock {
+            state -> (
+                [CheckedContinuation<[any DownloadURLTask], Never>],
+                [any DownloadURLTask]
+            ) in
+            state.suspendsAllDownloadTasks = false
+            let pending = state.pendingAllDownloadTaskQueries
+            state.pendingAllDownloadTaskQueries.removeAll()
+            let all = (state.preinstalledTasks + state.createdTasks).map { $0 as any DownloadURLTask }
+            return (pending, all)
+        }
+        for continuation in result.0 {
+            continuation.resume(returning: result.1)
+        }
+    }
+
     func completeInvalidation() {
         let handler = stateLock.withLock { $0.invalidationHandler }
         handler?()
@@ -262,5 +328,8 @@ final class StubDownloadURLSession: DownloadURLSession, @unchecked Sendable {
     }
     var didInvalidateAndCancel: Bool {
         stateLock.withLock { $0.didInvalidateAndCancel }
+    }
+    var pendingAllDownloadTaskQueryCount: Int {
+        stateLock.withLock { $0.pendingAllDownloadTaskQueries.count }
     }
 }

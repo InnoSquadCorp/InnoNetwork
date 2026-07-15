@@ -7,40 +7,61 @@ package struct DownloadFailureCoordinator {
 
     let configuration: DownloadConfiguration
     let runtimeRegistry: DownloadRuntimeRegistry
+    let callbackDeliveryQueue: DownloadCallbackDeliveryQueue
     let persistence: DownloadTaskPersistence
     let eventHub: TaskEventHub<DownloadEvent>
+    let lifecycleGate: DownloadLifecycleGate
     let clock: any InnoNetworkClock
 
     package init(
         configuration: DownloadConfiguration,
         runtimeRegistry: DownloadRuntimeRegistry,
+        callbackDeliveryQueue: DownloadCallbackDeliveryQueue? = nil,
         persistence: DownloadTaskPersistence,
         eventHub: TaskEventHub<DownloadEvent>,
+        lifecycleGate: DownloadLifecycleGate = DownloadLifecycleGate(),
         clock: any InnoNetworkClock = SystemClock()
     ) {
         self.configuration = configuration
         self.runtimeRegistry = runtimeRegistry
+        self.callbackDeliveryQueue =
+            callbackDeliveryQueue
+            ?? DownloadCallbackDeliveryQueue(runtimeRegistry: runtimeRegistry)
         self.persistence = persistence
         self.eventHub = eventHub
+        self.lifecycleGate = lifecycleGate
         self.clock = clock
     }
 
     package func handleError(
         task: DownloadTask,
         error: SendableUnderlyingError,
+        onAdmissionComplete: @escaping @Sendable () -> Void = {},
         restart: @Sendable (DownloadTask) async -> Void
     ) async {
+        if let invalidURL = DownloadRedirectAdmissionFailure.invalidURLDescription(from: error) {
+            // Redirect admission is deterministic for this task and policy.
+            // Retrying the same source would produce the same rejected target,
+            // so surface the typed URL failure without spending retry budget.
+            await markTaskFailed(
+                task,
+                reason: .invalidURL(invalidURL),
+                onLifecycleAdmissionComplete: onAdmissionComplete
+            )
+            return
+        }
         if isCancelledTransportError(error) {
             await runtimeRegistry.removeTaskRuntime(taskId: task.id)
-            // Cancelled transport errors short-circuit unconditionally:
-            // user cancels drain runtime+persistence in `cancel()` before
-            // this delegate callback fires, and system-driven cancels
-            // (background session reset, OS pressure) leave the task in a
-            // resumable state on disk so the caller can resume on the next
-            // launch. Treating them as transport failures would either
-            // double-drain or convert recoverable interruptions into
-            // permanent failures.
-            return
+            // Explicit pause/cancel paths already move the logical task out
+            // of `.downloading` before their delegate cancellation arrives.
+            // An otherwise-unowned cancellation must flow through normal
+            // retry/failure handling; returning here would strand a live
+            // logical task with no URLSession task behind it.
+            let state = await task.state
+            if state.isTerminal || state == .paused {
+                onAdmissionComplete()
+                return
+            }
         }
         if Self.isDeterministicFilesystemError(error) {
             // EACCES/EPERM/ENOSPC/EROFS and the matching Cocoa file-write
@@ -51,7 +72,11 @@ package struct DownloadFailureCoordinator {
             // re-downloading bytes we cannot persist. Mark the task
             // failed immediately so callers see the actionable error
             // instead of a timeout-style retry-exhausted trail.
-            await markTaskFailed(task, reason: .fileSystemError(error))
+            await markTaskFailed(
+                task,
+                reason: .fileSystemError(error),
+                onLifecycleAdmissionComplete: onAdmissionComplete
+            )
             return
         }
         let totalRetryCount = await task.totalRetryCount
@@ -59,39 +84,165 @@ package struct DownloadFailureCoordinator {
         guard totalRetryCount < configuration.maxTotalRetries,
             retryCount < configuration.maxRetryCount
         else {
-            await markTaskFailed(task, reason: .maxRetriesExceeded)
+            await markTaskFailed(
+                task,
+                reason: .maxRetriesExceeded,
+                onLifecycleAdmissionComplete: onAdmissionComplete
+            )
             return
         }
-        _ = await task.incrementTotalRetryCount()
-        _ = await task.incrementRetryCount()
-
-        if configuration.waitsForNetworkChanges, let monitor = configuration.networkMonitor {
-            let snapshot = await monitor.currentSnapshot()
-            let newSnapshot = await monitor.waitForChange(
-                from: snapshot,
-                timeout: configuration.networkChangeTimeout
+        let updatedTotalRetryCount = await task.incrementTotalRetryCount()
+        let updatedRetryCount = await task.incrementRetryCount()
+        let retryPlan: DownloadTaskPersistence.RetryPlan
+        if configuration.waitsForNetworkChanges,
+            let monitor = configuration.networkMonitor
+        {
+            let baseline = await monitor.currentSnapshot()
+            let deadline = configuration.networkChangeTimeout.map {
+                clock.now().addingTimeInterval(
+                    clampDelay($0, upperBound: Self.maximumSupportedDelay)
+                )
+            }
+            retryPlan = .waitingForNetwork(
+                baseline: baseline,
+                deadline: deadline
             )
-            if newSnapshot != snapshot {
-                await task.resetRetryCount()
+        } else {
+            retryPlan = makeBackoffPlan(retryCount: updatedRetryCount)
+        }
+        do {
+            let persisted = try await persistence.updateRetryState(
+                id: task.id,
+                retryCount: updatedRetryCount,
+                totalRetryCount: updatedTotalRetryCount,
+                retryPlan: retryPlan
+            )
+            guard persisted else {
+                // A terminal/cancel path or a newer durable phase won while
+                // this delegate failure was being admitted. Do not revive it
+                // or surface a second terminal result from this stale job.
+                onAdmissionComplete()
+                return
+            }
+        } catch {
+            await markTaskFailed(
+                task,
+                reason: .fileSystemError(SendableUnderlyingError(error)),
+                onLifecycleAdmissionComplete: onAdmissionComplete
+            )
+            return
+        }
+        // Everything before this point is bounded lifecycle admission. The
+        // caller may now continue draining unrelated delegate completions;
+        // network-change waits, backoff, and restart happen out of band.
+        onAdmissionComplete()
+
+        await resumePersistedRetry(
+            task: task,
+            plan: retryPlan,
+            restart: restart
+        )
+    }
+
+    /// Continues a durable retry plan reconstructed during launch restoration.
+    /// The caller owns task registration and tracks this async job through the
+    /// manager's deferred-failure registry so shutdown can drain it safely.
+    package func resumePersistedRetry(
+        task: DownloadTask,
+        plan: DownloadTaskPersistence.RetryPlan,
+        restart: @Sendable (DownloadTask) async -> Void
+    ) async {
+        var activePlan = plan
+
+        if activePlan.phase == .waitingForNetwork {
+            let baseline = activePlan.networkBaseline?.value
+            if let monitor = configuration.networkMonitor {
+                let timeout: TimeInterval?
+                if let deadline = activePlan.networkWaitDeadline {
+                    let remaining = deadline.timeIntervalSince(clock.now())
+                    if remaining <= 0 {
+                        timeout = 0
+                    } else {
+                        timeout = clampDelay(
+                            remaining,
+                            upperBound: Self.maximumSupportedDelay
+                        )
+                    }
+                } else {
+                    timeout = nil
+                }
+
+                let changeResult = await lifecycleGate.raceWithShutdown {
+                    await monitor.waitForChange(
+                        from: baseline,
+                        timeout: timeout
+                    )
+                }
+                guard case .value(let newSnapshot) = changeResult else { return }
+                if let newSnapshot, newSnapshot != baseline {
+                    await task.resetRetryCount()
+                }
+            }
+
+            let backoffPlan = makeBackoffPlan(
+                retryCount: await task.retryCount
+            )
+            do {
+                let persisted = try await persistence.updateRetryState(
+                    id: task.id,
+                    retryCount: await task.retryCount,
+                    totalRetryCount: await task.totalRetryCount,
+                    retryPlan: backoffPlan
+                )
+                guard persisted else { return }
+            } catch {
+                await markTaskFailed(
+                    task,
+                    reason: .fileSystemError(SendableUnderlyingError(error))
+                )
+                return
+            }
+            activePlan = backoffPlan
+        }
+
+        if activePlan.phase == .backoff,
+            let deadline = activePlan.retryNotBefore
+        {
+            let remaining = deadline.timeIntervalSince(clock.now())
+            if remaining > 0 {
+                let boundedRemaining = clampDelay(
+                    remaining,
+                    upperBound: Self.maximumSupportedDelay
+                )
+                let sleepResult = await lifecycleGate.raceWithShutdown {
+                    do {
+                        try await clock.sleep(for: .seconds(boundedRemaining))
+                        return true
+                    } catch {
+                        return false
+                    }
+                }
+                guard case .value(true) = sleepResult else { return }
             }
         }
 
-        let delay = computeRetryDelay(retryCount: await task.retryCount)
-        if delay > 0 {
-            do {
-                try await clock.sleep(for: .seconds(delay))
-            } catch is CancellationError {
-                return
-            } catch {
-                return
-            }
-        }
         if Task.isCancelled { return }
-        let state = await task.state
-        if state != .cancelled {
-            await task.startNextAttemptInCurrentGeneration()
-            await restart(task)
+        let lifecycle = await task.lifecycleSnapshot()
+        guard !lifecycle.state.isTerminal,
+            await task.advanceAttempt(ifMatching: lifecycle) != nil
+        else {
+            return
         }
+        await restart(task)
+    }
+
+    private func makeBackoffPlan(
+        retryCount: Int
+    ) -> DownloadTaskPersistence.RetryPlan {
+        let delay = computeRetryDelay(retryCount: retryCount)
+        return .backoff(
+            retryNotBefore: clock.now().addingTimeInterval(delay)
+        )
     }
 
     /// Computes the sleep interval before the next restart. When
@@ -166,24 +317,52 @@ package struct DownloadFailureCoordinator {
         return log2(initialDelay) + Double(exponent) >= log2(cap)
     }
 
-    package func markTaskFailed(_ task: DownloadTask, reason: DownloadError) async {
-        await task.updateState(.failed)
-        await task.setError(reason)
-        await runtimeRegistry.onStateChanged?(task, .failed)
-        await runtimeRegistry.onFailed?(task, reason)
-        await eventHub.publish(.stateChanged(.failed), for: task.id)
-        await eventHub.publish(.failed(reason), for: task.id)
+    package func markTaskFailed(
+        _ task: DownloadTask,
+        reason: DownloadError,
+        onLifecycleAdmissionComplete: @escaping @Sendable () -> Void = {}
+    ) async {
+        guard await task.transitionToFailureFinalizing(error: reason) == .transitioned else {
+            onLifecycleAdmissionComplete()
+            return
+        }
+        await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+        do {
+            try await persistence.markTerminal(task: task)
+        } catch {
+            Self.logger.fault(
+                "Failed to persist terminal marker for task \(task.id, privacy: .private(mask: .hash)): \(String(describing: error), privacy: .private(mask: .hash))"
+            )
+        }
+        var removedFromPersistence = false
         do {
             try await persistence.remove(id: task.id)
+            removedFromPersistence = true
         } catch {
             Self.logger.fault(
                 "Failed to remove failed task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))"
             )
-            return
         }
-        await runtimeRegistry.removeTaskRuntime(taskId: task.id)
-        await eventHub.finish(taskID: task.id)
-        await runtimeRegistry.remove(task)
+        if removedFromPersistence {
+            // Finish old-generation cleanup before publishing a retryable
+            // terminal event. A listener may call retry immediately.
+            await runtimeRegistry.remove(task)
+        }
+        let failedLifecycle = await task.lifecycleSnapshot()
+        await eventHub.publishIfCurrent(.stateChanged(.failed), for: task.id) {
+            await task.lifecycleSnapshot() == failedLifecycle
+        }
+        await eventHub.publishTerminalAndFinish(
+            .failed(reason),
+            for: task.id
+        )
+        await task.finishFailureFinalization()
+        // Delegate ordering depends only on durable state and terminal-event
+        // admission. App callbacks may suspend arbitrarily and therefore stay
+        // in the deferred failure job after this boundary.
+        onLifecycleAdmissionComplete()
+        await callbackDeliveryQueue.enqueueStateChanged(task, .failed)
+        await callbackDeliveryQueue.enqueueFailed(task, reason)
     }
 
     private func isCancelledTransportError(_ error: SendableUnderlyingError) -> Bool {

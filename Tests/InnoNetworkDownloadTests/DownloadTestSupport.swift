@@ -12,6 +12,8 @@ actor MockNetworkMonitor: NetworkMonitoring {
     private var _nextChangeSnapshot: NetworkSnapshot?
     private var _changeDelay: TimeInterval = 0
     private(set) var waitForChangeCallCount = 0
+    private(set) var lastWaitBaseline: NetworkSnapshot?
+    private(set) var lastWaitTimeout: TimeInterval?
 
     init(
         currentSnapshot: NetworkSnapshot? = NetworkSnapshot(status: .satisfied, interfaceTypes: [.wifi]),
@@ -37,6 +39,8 @@ actor MockNetworkMonitor: NetworkMonitoring {
 
     func waitForChange(from snapshot: NetworkSnapshot?, timeout: TimeInterval?) async -> NetworkSnapshot? {
         waitForChangeCallCount += 1
+        lastWaitBaseline = snapshot
+        lastWaitTimeout = timeout
         if _changeDelay > 0 {
             try? await Task.sleep(nanoseconds: UInt64(_changeDelay * 1_000_000_000))
         }
@@ -96,6 +100,8 @@ func injectSyntheticCompletion(
     await manager.cancelRuntimeURLTask(for: task)
     await manager.handleCompletion(
         taskIdentifier: taskIdentifier,
+        originalRequestURL: task.url,
+        currentRequestURL: task.url,
         location: location,
         error: error
     )

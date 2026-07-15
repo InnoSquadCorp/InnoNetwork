@@ -5,6 +5,23 @@ import InnoNetwork
 public struct DownloadConfiguration: Sendable {
     private static let defaultSessionIdentifier = "com.innonetwork.download"
 
+    /// Selects whether Foundation performs transfers in-process or in its
+    /// out-of-process background daemon.
+    public enum SessionMode: Sendable, Equatable {
+        /// Uses an ephemeral session, allowing InnoNetwork to inspect and
+        /// reject every redirect before it is followed. This is the secure
+        /// default.
+        case foreground
+        /// Uses a background session. Apple background sessions always follow
+        /// redirects without calling the redirect delegate, so redirect URL
+        /// admission cannot be enforced before each hop. Initial and final
+        /// URLs are still validated where Foundation exposes them, but final
+        /// validation cannot undo contact with an intermediate redirect
+        /// target. Select this only when process-independent continuation is
+        /// worth that trade-off.
+        case background
+    }
+
     package enum Presets {
         static func safeDefaults(sessionIdentifier: String) -> DownloadConfiguration {
             DownloadConfiguration(
@@ -23,6 +40,7 @@ public struct DownloadConfiguration: Sendable {
                 // cellular call ``DownloadConfiguration/cellularEnabled()``.
                 allowsCellularAccess: false,
                 allowsInsecureHTTP: false,
+                sessionMode: .foreground,
                 sessionIdentifier: sessionIdentifier,
                 sharedContainerIdentifier: nil,
                 networkMonitor: NetworkMonitor.shared,
@@ -50,6 +68,7 @@ public struct DownloadConfiguration: Sendable {
                 taskInactivityTimeout: nil,
                 allowsCellularAccess: false,
                 allowsInsecureHTTP: false,
+                sessionMode: .foreground,
                 sessionIdentifier: sessionIdentifier,
                 sharedContainerIdentifier: nil,
                 networkMonitor: NetworkMonitor.shared,
@@ -112,10 +131,20 @@ public struct DownloadConfiguration: Sendable {
     /// `nil` if you want the watchdog disabled.
     public let taskInactivityTimeout: Duration?
     public let allowsCellularAccess: Bool
-    /// Allows plain `http` download sources. Defaults to `false`; production
-    /// downloads should use HTTPS.
+    /// Allows plain `http` download sources and same-scheme redirect targets.
+    /// Defaults to `false`; production downloads should use HTTPS. This does
+    /// not permit HTTPS-to-HTTP downgrade redirects in foreground mode, where
+    /// the download delegate enforces the default redirect policy. Background
+    /// sessions do not expose per-hop redirect decisions to the delegate.
     public let allowsInsecureHTTP: Bool
-    /// Background `URLSession` identifier and persistence scope.
+    /// Foundation session mode. Foreground mode is the secure default and
+    /// enforces admission before every redirect. Background mode preserves
+    /// out-of-process continuation, but Foundation follows redirects without
+    /// consulting the delegate, so only initial and exposed final URLs can be
+    /// validated by the library.
+    public let sessionMode: SessionMode
+    /// Manager identifier and persistence scope. In background mode this is
+    /// also the `URLSessionConfiguration` background-session identifier.
     ///
     /// The preset factories use a shared identifier intended for a single download manager per process.
     /// Override this value when you need multiple independent managers or persistence domains.
@@ -125,7 +154,8 @@ public struct DownloadConfiguration: Sendable {
     ///
     /// Mirrors `URLSessionConfiguration.sharedContainerIdentifier`. Leave `nil`
     /// for app-private background sessions; set this when an app extension must
-    /// observe or continue the same background download session.
+    /// observe or continue the same background download session. This value
+    /// is ignored in foreground mode.
     public let sharedContainerIdentifier: String?
     public let networkMonitor: (any NetworkMonitoring)?
     /// When true, waits for network changes before retrying on download failure.
@@ -244,7 +274,12 @@ public struct DownloadConfiguration: Sendable {
         public var allowsCellularAccess: Bool
         /// Allows plain `http` download sources. Defaults to `false`.
         public var allowsInsecureHTTP: Bool
-        /// Background session identifier and persistence scope.
+        /// Foundation session mode. Defaults to secure `.foreground`, which
+        /// enforces per-hop redirect admission. `.background` accepts
+        /// system-managed redirects in exchange for out-of-process transfer.
+        public var sessionMode: SessionMode
+        /// Manager identifier and persistence scope. In background mode this
+        /// is also the Foundation background-session identifier.
         ///
         /// Override this when you need more than one download manager in the same process.
         public var sessionIdentifier: String
@@ -284,6 +319,7 @@ public struct DownloadConfiguration: Sendable {
             self.taskInactivityTimeout = preset.taskInactivityTimeout
             self.allowsCellularAccess = preset.allowsCellularAccess
             self.allowsInsecureHTTP = preset.allowsInsecureHTTP
+            self.sessionMode = preset.sessionMode
             self.sessionIdentifier = preset.sessionIdentifier
             self.sharedContainerIdentifier = preset.sharedContainerIdentifier
             self.networkMonitor = preset.networkMonitor
@@ -310,6 +346,7 @@ public struct DownloadConfiguration: Sendable {
                 taskInactivityTimeout: taskInactivityTimeout,
                 allowsCellularAccess: allowsCellularAccess,
                 allowsInsecureHTTP: allowsInsecureHTTP,
+                sessionMode: sessionMode,
                 sessionIdentifier: sessionIdentifier,
                 sharedContainerIdentifier: sharedContainerIdentifier,
                 networkMonitor: networkMonitor,
@@ -326,15 +363,18 @@ public struct DownloadConfiguration: Sendable {
 
     /// Returns conservative defaults suitable for most production download flows.
     ///
-    /// The returned configuration uses the shared `com.innonetwork.download` session identifier,
-    /// which is intended for a single download manager per process.
+    /// The returned configuration uses secure foreground mode and the shared
+    /// `com.innonetwork.download` identifier, which is intended for a single
+    /// download manager per process.
     public static func safeDefaults() -> DownloadConfiguration {
         safeDefaults(sessionIdentifier: defaultSessionIdentifier)
     }
 
     /// Returns conservative defaults suitable for most production download flows.
     ///
-    /// - Parameter sessionIdentifier: Background session identifier and persistence scope used by `DownloadManager`.
+    /// - Parameter sessionIdentifier: Manager identifier and persistence scope
+    ///   used by `DownloadManager`. In background mode this is also the
+    ///   Foundation background-session identifier.
     ///   Supply a unique value when multiple download managers must coexist in the same process.
     public static func safeDefaults(sessionIdentifier: String) -> DownloadConfiguration {
         Presets.safeDefaults(sessionIdentifier: sessionIdentifier)
@@ -351,7 +391,9 @@ public struct DownloadConfiguration: Sendable {
     /// Returns an advanced configuration seeded from the high-tuning preset.
     ///
     /// - Parameters:
-    ///   - sessionIdentifier: Background session identifier and persistence scope used by `DownloadManager`.
+    ///   - sessionIdentifier: Manager identifier and persistence scope used by
+    ///     `DownloadManager`. In background mode this is also the Foundation
+    ///     background-session identifier.
     ///     Supply a unique value when multiple download managers must coexist in the same process.
     ///   - configure: Closure that mutates an `AdvancedBuilder` seeded from `Presets.advancedTuning()`.
     public static func advanced(
@@ -376,6 +418,7 @@ public struct DownloadConfiguration: Sendable {
         taskInactivityTimeout: Duration? = nil,
         allowsCellularAccess: Bool = true,
         allowsInsecureHTTP: Bool = false,
+        sessionMode: SessionMode = .foreground,
         sessionIdentifier: String = "com.innonetwork.download",
         sharedContainerIdentifier: String? = nil,
         networkMonitor: (any NetworkMonitoring)? = NetworkMonitor.shared,
@@ -402,6 +445,7 @@ public struct DownloadConfiguration: Sendable {
         self.taskInactivityTimeout = taskInactivityTimeout.map { max($0, .milliseconds(100)) }
         self.allowsCellularAccess = allowsCellularAccess
         self.allowsInsecureHTTP = allowsInsecureHTTP
+        self.sessionMode = sessionMode
         self.sessionIdentifier = sessionIdentifier
         self.sharedContainerIdentifier = sharedContainerIdentifier
         self.networkMonitor = networkMonitor
@@ -433,6 +477,7 @@ public struct DownloadConfiguration: Sendable {
             taskInactivityTimeout: taskInactivityTimeout,
             allowsCellularAccess: true,
             allowsInsecureHTTP: allowsInsecureHTTP,
+            sessionMode: sessionMode,
             sessionIdentifier: sessionIdentifier,
             sharedContainerIdentifier: sharedContainerIdentifier,
             networkMonitor: networkMonitor,
@@ -449,11 +494,17 @@ public struct DownloadConfiguration: Sendable {
     public static let `default` = safeDefaults()
 
     func makeURLSessionConfiguration() -> URLSessionConfiguration {
-        let config = URLSessionConfiguration.background(withIdentifier: sessionIdentifier)
-        config.isDiscretionary = false
-        config.sessionSendsLaunchEvents = true
+        let config: URLSessionConfiguration
+        switch sessionMode {
+        case .foreground:
+            config = .ephemeral
+        case .background:
+            config = .background(withIdentifier: sessionIdentifier)
+            config.isDiscretionary = false
+            config.sessionSendsLaunchEvents = true
+            config.sharedContainerIdentifier = sharedContainerIdentifier
+        }
         config.allowsCellularAccess = allowsCellularAccess
-        config.sharedContainerIdentifier = sharedContainerIdentifier
         config.timeoutIntervalForRequest = timeoutForRequest
         config.timeoutIntervalForResource = timeoutForResource
         config.httpMaximumConnectionsPerHost = maxConnectionsPerHost

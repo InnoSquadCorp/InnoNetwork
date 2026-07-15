@@ -24,6 +24,8 @@ final class StubDownloadHarness: Sendable {
     let stubTaskIdentifier: Int
     let persistence: DownloadTaskPersistence
     let store: InMemoryDownloadTaskStore
+    let completionStager: DownloadCompletionStager
+    let completionAdmissionGate: DownloadCompletionAdmissionGate
 
     private let callbacks: DownloadSessionDelegateCallbacks
     private let backgroundCompletionStore: BackgroundCompletionStore
@@ -37,9 +39,15 @@ final class StubDownloadHarness: Sendable {
         waitsForNetworkChanges: Bool = false,
         networkChangeTimeout: TimeInterval? = 0.5,
         taskInactivityTimeout: Duration? = nil,
+        clock: any InnoNetworkClock = SystemClock(),
+        eventDeliveryPolicy: EventDeliveryPolicy = .default,
         allowsInsecureHTTP: Bool = false,
+        sessionMode: DownloadConfiguration.SessionMode = .foreground,
         label: String = "stub",
         sessionIdentifier: String? = nil,
+        persistenceBaseDirectoryURL: URL? = nil,
+        suspendsAllDownloadTasks: Bool = false,
+        failsRemovesInitially: Bool = false,
         prepopulatedRecords: [DownloadTaskPersistence.Record] = [],
         prequeuedStubs: [StubDownloadURLTask] = [],
         preinstalledStubs: [StubDownloadURLTask] = []
@@ -48,6 +56,9 @@ final class StubDownloadHarness: Sendable {
         self.sessionIdentifier = identifier
 
         let stubSession = StubDownloadURLSession()
+        if suspendsAllDownloadTasks {
+            stubSession.suspendAllDownloadTasks()
+        }
         // Preinstall must happen *before* the manager's restore task runs
         // (which happens on init). Do it before manager construction.
         for stub in preinstalledStubs {
@@ -65,19 +76,10 @@ final class StubDownloadHarness: Sendable {
         self.stubTask = stubTask
         self.stubTaskIdentifier = stubTask.taskIdentifier
 
-        let callbacks = DownloadSessionDelegateCallbacks()
-        let backgroundCompletionStore = BackgroundCompletionStore()
-        let delegate = DownloadSessionDelegate(
-            callbacks: callbacks,
-            backgroundCompletionStore: backgroundCompletionStore
+        let store = InMemoryDownloadTaskStore(
+            seed: prepopulatedRecords,
+            shouldFailRemove: failsRemovesInitially
         )
-        self.callbacks = callbacks
-        self.backgroundCompletionStore = backgroundCompletionStore
-        stubSession.setInvalidationHandler {
-            callbacks.handleInvalidation(nil)
-        }
-
-        let store = InMemoryDownloadTaskStore(seed: prepopulatedRecords)
         self.store = store
         let persistence = DownloadTaskPersistence(store: store)
         self.persistence = persistence
@@ -89,11 +91,34 @@ final class StubDownloadHarness: Sendable {
             timeoutForResource: 60 * 60 * 24,
             taskInactivityTimeout: taskInactivityTimeout,
             allowsInsecureHTTP: allowsInsecureHTTP,
+            sessionMode: sessionMode,
             sessionIdentifier: identifier,
             networkMonitor: networkMonitor,
             waitsForNetworkChanges: waitsForNetworkChanges,
-            networkChangeTimeout: networkChangeTimeout
+            networkChangeTimeout: networkChangeTimeout,
+            eventDeliveryPolicy: eventDeliveryPolicy,
+            persistenceBaseDirectoryURL: persistenceBaseDirectoryURL
         )
+        let completionStager = DownloadCompletionStager(
+            directoryURL: DownloadCompletionStager.directoryURL(for: config)
+        )
+        let completionAdmissionGate = DownloadCompletionAdmissionGate()
+        let callbacks = DownloadSessionDelegateCallbacks()
+        let backgroundCompletionStore = BackgroundCompletionStore()
+        let delegate = DownloadSessionDelegate(
+            callbacks: callbacks,
+            backgroundCompletionStore: backgroundCompletionStore,
+            completionStager: completionStager,
+            completionAdmissionGate: completionAdmissionGate,
+            allowsInsecureHTTP: allowsInsecureHTTP
+        )
+        self.completionStager = completionStager
+        self.completionAdmissionGate = completionAdmissionGate
+        self.callbacks = callbacks
+        self.backgroundCompletionStore = backgroundCompletionStore
+        stubSession.setInvalidationHandler {
+            callbacks.handleInvalidation(nil)
+        }
 
         self.manager = try DownloadManager(
             configuration: config,
@@ -101,7 +126,9 @@ final class StubDownloadHarness: Sendable {
             urlSession: stubSession,
             delegate: delegate,
             callbacks: callbacks,
-            backgroundCompletionStore: backgroundCompletionStore
+            backgroundCompletionStore: backgroundCompletionStore,
+            completionStager: completionStager,
+            clock: clock
         )
     }
 
@@ -122,11 +149,19 @@ final class StubDownloadHarness: Sendable {
     /// need to await the terminal handling before asserting.
     func injectCompletion(
         taskIdentifier: Int,
+        taskDescription: String? = nil,
+        originalRequestURL: URL? = nil,
+        currentRequestURL: URL? = nil,
+        usesLastRequestURLs: Bool = true,
         location: URL? = nil,
         error: SendableUnderlyingError? = nil
     ) async {
+        let inferredURL = usesLastRequestURLs ? stubSession.lastURL : nil
         await manager.handleCompletion(
             taskIdentifier: taskIdentifier,
+            taskDescription: taskDescription,
+            originalRequestURL: originalRequestURL ?? inferredURL,
+            currentRequestURL: currentRequestURL ?? inferredURL,
             location: location,
             error: error
         )
@@ -148,18 +183,28 @@ final class StubDownloadHarness: Sendable {
 
     func injectDelegateCompletion(
         taskIdentifier: Int,
+        taskDescription: String? = nil,
+        originalRequestURL: URL? = nil,
+        currentRequestURL: URL? = nil,
+        usesLastRequestURLs: Bool = true,
         location: URL? = nil,
         error: SendableUnderlyingError? = nil
     ) {
+        let inferredURL = usesLastRequestURLs ? stubSession.lastURL : nil
         callbacks.handleCompletion(
             taskIdentifier: taskIdentifier,
+            taskDescription: taskDescription,
+            originalRequestURL: originalRequestURL ?? inferredURL,
+            currentRequestURL: currentRequestURL ?? inferredURL,
             location: location,
             error: error
         )
     }
 
-    func markBackgroundEventsFinished() async {
-        _ = await backgroundCompletionStore.take()
+    func injectBackgroundEventsFinished() {
+        callbacks.handleBackgroundEventsFinished(
+            completion: backgroundCompletionStore.take()
+        )
     }
 
     func handleBackgroundSessionCompletion(_ completion: @escaping @Sendable () -> Void) {

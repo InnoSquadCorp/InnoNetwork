@@ -32,7 +32,14 @@ extension DownloadManager {
         let now = ContinuousClock().now
         let tasks = await runtimeRegistry.allTasks()
         for task in tasks {
-            guard await task.state == .downloading else { continue }
+            let expectedLifecycle = await task.lifecycleSnapshot()
+            guard expectedLifecycle.state == .downloading else { continue }
+            // Retry backoff and attempt replacement intentionally leave the
+            // logical task in `.downloading` while no URLSession task is
+            // active. Such a task cannot be stalled on the wire and must not
+            // be cancelled by the inactivity watchdog.
+            guard let expectedURLTask = await runtimeRegistry.urlTask(for: task.id) else { continue }
+            let expectedTaskIdentifier = expectedURLTask.taskIdentifier
             // Seed `lastProgressAt` lazily on first observation of a
             // `.downloading` task that has never reported progress. This
             // covers the "server accepted the connection but never sends
@@ -50,12 +57,69 @@ extension DownloadManager {
                 // Re-check state right before cancel: the task may have
                 // raced to `.paused` / `.completed` / `.failed` across the
                 // `lastProgressAt` await above.
-                guard await task.state == .downloading else { continue }
+                guard await task.lifecycleSnapshot() == expectedLifecycle,
+                    let currentURLTask = await runtimeRegistry.urlTask(for: task.id),
+                    currentURLTask.taskIdentifier == expectedTaskIdentifier
+                else { continue }
                 Self.logger.notice(
                     "Cancelling stalled download \(task.id, privacy: .private(mask: .hash)) — no progress for \(String(describing: timeout), privacy: .public)"
                 )
-                await cancel(task)
+                await cancelInactiveDownload(
+                    task,
+                    expectedLifecycle: expectedLifecycle,
+                    expectedTaskIdentifier: expectedTaskIdentifier,
+                    expectedURLTask: expectedURLTask
+                )
             }
         }
+    }
+
+    private func cancelInactiveDownload(
+        _ task: DownloadTask,
+        expectedLifecycle: DownloadTaskLifecycleSnapshot,
+        expectedTaskIdentifier: Int,
+        expectedURLTask: any DownloadURLTask
+    ) async {
+        guard beginShutdownTrackedOperation() else { return }
+        defer { finishShutdownTrackedOperation() }
+        guard await waitForRestore() else { return }
+        guard await runtimeRegistry.owns(task) else { return }
+        guard
+            await task.requestCancellationClaimingPersistenceCleanup(
+                ifMatching: expectedLifecycle
+            ) == .transitioned
+        else {
+            return
+        }
+
+        pendingRestoreFailures.remove(task.id)
+        await task.waitForStartPersistenceClaimRelease()
+        do {
+            try await persistence.markTerminal(task: task)
+        } catch {
+            Self.logger.fault(
+                "Failed to persist inactivity-cancellation tombstone for task \(task.id, privacy: .private(mask: .hash)): \(String(describing: error), privacy: .private(mask: .hash))"
+            )
+        }
+        await eventHub.publishTerminalAndFinish(
+            .stateChanged(.cancelled),
+            for: task.id
+        )
+        expectedURLTask.cancel()
+        await runtimeRegistry.removeAttemptRuntime(taskIdentifier: expectedTaskIdentifier)
+
+        do {
+            try await persistence.remove(id: task.id)
+        } catch {
+            Self.logger.fault(
+                "Failed to remove inactivity-cancelled task \(task.id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash))"
+            )
+            await callbackDeliveryQueue.enqueueStateChanged(task, .cancelled)
+            await task.releaseTerminalPersistenceCleanupClaim()
+            return
+        }
+        await runtimeRegistry.remove(task)
+        await callbackDeliveryQueue.enqueueStateChanged(task, .cancelled)
+        await task.releaseTerminalPersistenceCleanupClaim()
     }
 }

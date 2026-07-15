@@ -1,15 +1,42 @@
 import Foundation
 import Testing
 
+@testable import InnoNetwork
 @testable import InnoNetworkDownload
 
 @Suite("Download Manager Hardening Tests")
 struct DownloadManagerHardeningTests {
 
+    @Test("A manager ignores a DownloadTask owned by another manager")
+    func managerRejectsForeignTaskHandles() async throws {
+        let owner = try StubDownloadHarness(label: "ownership-owner")
+        let foreign = try StubDownloadHarness(label: "ownership-foreign")
+        let task = await owner.startDownload()
+        let originalIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: owner.manager, task: task)
+        )
+
+        await foreign.manager.pause(task)
+        await foreign.manager.resume(task)
+        await foreign.manager.retry(task)
+        await foreign.manager.cancel(task)
+        let stream = await foreign.manager.events(for: task)
+        var iterator = stream.makeAsyncIterator()
+
+        #expect(await iterator.next() == nil)
+        #expect(await task.state == .downloading)
+        #expect(await owner.manager.runtimeTaskIdentifier(for: task) == originalIdentifier)
+        #expect(await foreign.manager.task(withId: task.id) == nil)
+
+        await owner.manager.cancel(task)
+        await owner.manager.shutdown()
+        await foreign.manager.shutdown()
+    }
+
     @Test("shutdown() invalidates the URLSession and cancels in-flight tasks")
     func shutdownCancelsInFlightAndInvalidates() async throws {
         let harness = try StubDownloadHarness(label: "shutdown-cancel")
-        _ = await harness.startDownload()
+        let task = await harness.startDownload()
 
         await harness.manager.shutdown()
 
@@ -17,6 +44,7 @@ struct DownloadManagerHardeningTests {
         // After shutdown, the in-flight stub task receives a cancel call so
         // the URLSession can drain.
         #expect(harness.stubTask.cancelCount >= 1)
+        #expect(await harness.store.record(forID: task.id) == nil)
     }
 
     @Test("shutdown() is idempotent")
@@ -106,6 +134,266 @@ struct DownloadManagerHardeningTests {
         #expect(await shutdownProbe.isCompleted)
     }
 
+    @Test("Terminal failure admission does not hold background completion behind app callbacks")
+    func terminalFailureAdmissionDoesNotBlockBackgroundCompletion() async throws {
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 0,
+            sessionMode: .background,
+            label: "failure-admission-background"
+        )
+        let task = await harness.startDownload()
+        let identifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task)
+        )
+        let callbackProbe = DelegateDrainProbe()
+        let completionProbe = ShutdownCompletionProbe()
+
+        await harness.manager.setOnFailedHandler { _, _ in
+            await callbackProbe.handle()
+        }
+        harness.handleBackgroundSessionCompletion {
+            Task { await completionProbe.markCompleted() }
+        }
+
+        harness.injectDelegateCompletion(
+            taskIdentifier: identifier,
+            error: SendableUnderlyingError(URLError(.timedOut))
+        )
+        harness.injectBackgroundEventsFinished()
+
+        #expect(await waitForCondition { await callbackProbe.isStarted })
+        #expect(await waitForCondition { await completionProbe.isCompleted })
+        #expect(await task.state == .failed)
+        #expect(await harness.persistence.record(forID: task.id) == nil)
+        #expect(await callbackProbe.isFinished == false)
+
+        await callbackProbe.release()
+        await harness.manager.shutdown()
+    }
+
+    @Test("a failure callback can retry through nested waiting and downloading callbacks")
+    func failureCallbackRetryDoesNotSelfDeadlock() async throws {
+        let retryStub = StubDownloadURLTask()
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 0,
+            maxTotalRetries: 1,
+            label: "failure-callback-retry",
+            prequeuedStubs: [retryStub]
+        )
+        let task = await harness.startDownload()
+        let firstIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task)
+        )
+        let states = DownloadStateRecorder()
+        let retryReturned = ShutdownCompletionProbe()
+
+        await harness.manager.setOnStateChangedHandler { _, state in
+            await states.record(state)
+        }
+        await harness.manager.setOnFailedHandler { failedTask, _ in
+            await harness.manager.retry(failedTask)
+            await retryReturned.markCompleted()
+        }
+
+        harness.injectDelegateCompletion(
+            taskIdentifier: firstIdentifier,
+            error: SendableUnderlyingError(URLError(.networkConnectionLost))
+        )
+
+        #expect(
+            await waitForCondition(timeout: 2.0) {
+                guard await retryReturned.isCompleted else { return false }
+                return await harness.manager.runtimeTaskIdentifier(for: task)
+                    == retryStub.taskIdentifier
+            }
+        )
+        #expect(await states.snapshot() == [.failed, .waiting, .downloading])
+        #expect(await task.state == .downloading)
+        #expect(retryStub.resumeCount == 1)
+
+        await harness.manager.cancel(task)
+        await harness.manager.shutdown()
+    }
+
+    @Test("shutdown waits for admitted persistence work and prevents a late URL task start")
+    func shutdownPreventsLateStartAfterSuspendedUpsert() async throws {
+        let harness = try StubDownloadHarness(label: "shutdown-upsert-race")
+        await harness.store.suspendUpserts()
+
+        let downloadWork = Task {
+            await harness.startDownload()
+        }
+        let reachedUpsert = await waitForCondition {
+            await harness.store.pendingUpsertCount == 1
+        }
+        #expect(reachedUpsert)
+
+        let shutdownProbe = ShutdownCompletionProbe()
+        let shutdownWork = Task {
+            await harness.manager.shutdown()
+            await shutdownProbe.markCompleted()
+        }
+
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(await shutdownProbe.isCompleted == false)
+        #expect(harness.stubSession.didInvalidateAndCancel == false)
+
+        await harness.store.resumeUpserts()
+        let task = await downloadWork.value
+        await shutdownWork.value
+
+        #expect(await task.state == .cancelled)
+        #expect(harness.stubSession.createdTasks.isEmpty)
+        #expect(harness.stubSession.didInvalidateAndCancel)
+        #expect(await shutdownProbe.isCompleted)
+    }
+
+    @Test("shutdown is not held hostage by a suspended pause resume-data callback")
+    func shutdownEscapesSuspendedPauseCallback() async throws {
+        let harness = try StubDownloadHarness(label: "shutdown-suspended-pause")
+        let task = await harness.startDownload()
+        harness.stubTask.suspendCancelByProducingResumeData()
+
+        let pauseWork = Task {
+            await harness.manager.pause(task)
+        }
+        #expect(
+            await waitForCondition {
+                harness.stubTask.pendingCancelByProducingResumeDataCount == 1
+            }
+        )
+
+        let shutdownProbe = ShutdownCompletionProbe()
+        let shutdownWork = Task {
+            await harness.manager.shutdown()
+            await shutdownProbe.markCompleted()
+        }
+
+        let completedWithoutResumeData = await waitForCondition(timeout: 2.0) {
+            await shutdownProbe.isCompleted
+        }
+        #expect(completedWithoutResumeData)
+        #expect(harness.stubSession.didInvalidateAndCancel)
+        #expect(await task.state == .cancelled)
+
+        // Release the deliberately non-cooperative operation task so the test
+        // leaves no suspended continuation behind.
+        harness.stubTask.completeCancelByProducingResumeData(with: nil)
+        await pauseWork.value
+        await shutdownWork.value
+    }
+
+    @Test("cancel wins while resume is suspended in persistence without resurrecting work")
+    func cancelWinsSuspendedResumeUpsert() async throws {
+        let harness = try StubDownloadHarness(label: "cancel-resume-upsert-race")
+        let resumeData = Data("resume-upsert-race".utf8)
+        harness.stubTask.scriptCancelResumeData(resumeData)
+        let task = await harness.startDownload()
+        await harness.manager.pause(task)
+        #expect(await task.state == .paused)
+
+        await harness.store.suspendUpserts()
+        let resumeWork = Task {
+            await harness.manager.resume(task)
+        }
+        #expect(
+            await waitForCondition {
+                await harness.store.pendingUpsertCount == 1
+            }
+        )
+
+        await harness.manager.cancel(task)
+        await harness.store.resumeUpserts()
+        await resumeWork.value
+
+        #expect(await task.state == .cancelled)
+        #expect(harness.stubSession.createdTasks.count == 1)
+        #expect(harness.stubSession.lastResumeData == nil)
+        #expect(await harness.persistence.record(forID: task.id) == nil)
+        await harness.manager.shutdown()
+    }
+
+    @Test("shutdown escapes a retry monitor that ignores task cancellation")
+    func shutdownEscapesUncooperativeRetryMonitor() async throws {
+        let monitor = SuspendedDownloadNetworkMonitor()
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 1,
+            maxTotalRetries: 1,
+            networkMonitor: monitor,
+            waitsForNetworkChanges: true,
+            networkChangeTimeout: nil,
+            label: "shutdown-retry-monitor"
+        )
+        let task = await harness.startDownload()
+        let taskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task)
+        )
+        let completionWork = Task {
+            await harness.injectCompletion(
+                taskIdentifier: taskIdentifier,
+                error: SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: URLError.networkConnectionLost.rawValue,
+                    message: "network lost"
+                )
+            )
+        }
+        #expect(
+            await waitForCondition {
+                await monitor.waitForChangeCallCount == 1
+            }
+        )
+
+        let shutdownProbe = ShutdownCompletionProbe()
+        let shutdownWork = Task {
+            await harness.manager.shutdown()
+            await shutdownProbe.markCompleted()
+        }
+        #expect(
+            await waitForCondition(timeout: 2.0) {
+                await shutdownProbe.isCompleted
+            }
+        )
+        #expect(harness.stubSession.didInvalidateAndCancel)
+
+        await monitor.release()
+        await completionWork.value
+        await shutdownWork.value
+    }
+
+    @Test("a waiting callback can cancel without startDownload resurrecting the task")
+    func waitingCallbackCancellationWinsStart() async throws {
+        let harness = try StubDownloadHarness(label: "waiting-callback-cancel")
+        await harness.manager.setOnStateChangedHandler { task, state in
+            guard state == .waiting else { return }
+            await harness.manager.cancel(task)
+        }
+
+        let task = await harness.startDownload()
+
+        #expect(await task.state == .cancelled)
+        #expect(harness.stubSession.createdTasks.isEmpty)
+        #expect(await harness.persistence.record(forID: task.id) == nil)
+        await harness.manager.shutdown()
+    }
+
+    @Test("a downloading callback can cancel before the URL task is resumed")
+    func downloadingCallbackCancellationWinsResume() async throws {
+        let harness = try StubDownloadHarness(label: "downloading-callback-cancel")
+        await harness.manager.setOnStateChangedHandler { task, state in
+            guard state == .downloading else { return }
+            await harness.manager.cancel(task)
+        }
+
+        let task = await harness.startDownload()
+
+        #expect(await task.state == .cancelled)
+        #expect(harness.stubTask.resumeCount == 0)
+        #expect(harness.stubTask.cancelCount >= 1)
+        #expect(await harness.persistence.record(forID: task.id) == nil)
+        await harness.manager.shutdown()
+    }
+
     @Test("shutdown() drains a staged completion buffered behind an in-progress delegate handler")
     func shutdownDrainsBufferedStagedCompletion() async throws {
         let fileManager = FileManager.default
@@ -180,6 +468,68 @@ struct DownloadManagerHardeningTests {
         await secondShutdown.value
         #expect(await firstProbe.isCompleted)
         #expect(await secondProbe.isCompleted)
+    }
+
+    @Test("a cancellation callback can reenter shutdown without self-waiting")
+    func cancellationCallbackCanReenterShutdown() async throws {
+        let harness = try StubDownloadHarness(label: "shutdown-callback-reentrant")
+        _ = await harness.startDownload()
+        let callbackProbe = ShutdownCompletionProbe()
+
+        await harness.manager.setOnStateChangedHandler { _, state in
+            guard state == .cancelled else { return }
+            await harness.manager.shutdown()
+            await callbackProbe.markCompleted()
+        }
+
+        let externalShutdown = Task {
+            await harness.manager.shutdown()
+        }
+        let completed = await waitForCondition(timeout: 2.0) {
+            await callbackProbe.isCompleted && harness.stubSession.didInvalidateAndCancel
+        }
+        #expect(completed)
+        if completed {
+            await externalShutdown.value
+        } else {
+            externalShutdown.cancel()
+        }
+    }
+
+    @Test("a restoration failure callback can initiate shutdown without restoration self-join")
+    func restorationCallbackCanInitiateShutdown() async throws {
+        let record = DownloadTaskPersistence.Record(
+            id: "restore-callback-reentrant",
+            url: URL(string: "https://example.invalid/missing.zip")!,
+            destinationURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        )
+        let harness = try StubDownloadHarness(
+            label: "restore-callback-reentrant",
+            suspendsAllDownloadTasks: true,
+            prepopulatedRecords: [record]
+        )
+        let callbackProbe = ShutdownCompletionProbe()
+
+        await harness.manager.setOnStateChangedHandler { _, state in
+            guard state == .failed else { return }
+            await harness.manager.shutdown()
+            await callbackProbe.markCompleted()
+        }
+        #expect(
+            await waitForCondition {
+                harness.stubSession.pendingAllDownloadTaskQueryCount == 1
+            }
+        )
+
+        harness.stubSession.completeAllDownloadTasks()
+        let callbackReturned = await waitForCondition(timeout: 2.0) {
+            await callbackProbe.isCompleted
+        }
+        #expect(callbackReturned)
+        if callbackReturned {
+            await harness.manager.shutdown()
+            #expect(harness.stubSession.didInvalidateAndCancel)
+        }
     }
 
     @Test("shutdown() releases the session identifier before returning")
@@ -282,6 +632,10 @@ struct DownloadManagerHardeningTests {
             resumeData: Data("opaque-resume-data".utf8)
         )
         await task.restoreState(.paused)
+        // `resume(_:)` intentionally ignores handles owned by another manager.
+        // Register this synthetic restored handle so the assertion exercises
+        // URL re-admission rather than the ownership boundary.
+        await harness.manager.runtimeRegistry.add(task)
 
         await harness.manager.resume(task)
 
@@ -418,8 +772,70 @@ private actor DelegateDrainProbe {
 }
 
 
+/// Deliberately ignores task cancellation until the test releases its checked
+/// continuation. The manager lifecycle race must therefore stop awaiting it
+/// without relying on a well-behaved custom monitor implementation.
+private actor SuspendedDownloadNetworkMonitor: NetworkMonitoring {
+    private let snapshot = NetworkSnapshot(status: .satisfied, interfaceTypes: [.wifi])
+    private var continuation: CheckedContinuation<NetworkSnapshot?, Never>?
+    private(set) var waitForChangeCallCount = 0
+
+    func currentSnapshot() async -> NetworkSnapshot? {
+        snapshot
+    }
+
+    func waitForChange(
+        from snapshot: NetworkSnapshot?,
+        timeout: TimeInterval?
+    ) async -> NetworkSnapshot? {
+        _ = (snapshot, timeout)
+        waitForChangeCallCount += 1
+        return await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func release() {
+        let continuation = continuation
+        self.continuation = nil
+        continuation?.resume(returning: snapshot)
+    }
+}
+
+
 @Suite("Download Persistence Hardening Tests")
 struct DownloadPersistenceHardeningTests {
+
+    @Test("stale empty store removes a record written later by another instance")
+    func staleEmptyStoreRemoveUsesLockedDiskState() async throws {
+        let baseDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("inno-stale-empty-remove-\(UUID().uuidString)", isDirectory: true)
+        let sessionIdentifier = "stale-empty-remove"
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+
+        let staleRemover = AppendLogDownloadTaskStore(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        let writer = AppendLogDownloadTaskStore(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        try await writer.upsert(
+            id: "task",
+            url: URL(string: "https://example.invalid/file.zip")!,
+            destinationURL: baseDirectory.appendingPathComponent("file.zip"),
+            resumeData: nil
+        )
+
+        try await staleRemover.remove(id: "task")
+
+        let verifier = AppendLogDownloadTaskStore(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        #expect(await verifier.record(forID: "task") == nil)
+    }
 
     @Test("stale store instance cannot resurrect a task while updating resume data")
     func staleResumeDataUpdateDoesNotResurrectRemovedRecord() async throws {
@@ -450,7 +866,11 @@ struct DownloadPersistenceHardeningTests {
             baseDirectoryURL: baseDirectory
         )
         try await remover.remove(id: "task")
-        try await staleUpdater.updateResumeData(id: "task", resumeData: Data("stale".utf8))
+        try await staleUpdater.updateResumeData(
+            id: "task",
+            resumeData: Data("stale".utf8),
+            lifecycle: .paused
+        )
 
         let verifier = AppendLogDownloadTaskStore(
             sessionIdentifier: sessionIdentifier,
