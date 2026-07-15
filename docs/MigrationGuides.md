@@ -3,9 +3,14 @@
 This page is a practical map for moving existing Apple-client networking code
 onto InnoNetwork without rewriting every endpoint at once.
 
+> **Release status:** This page describes the unreleased 5.0 preview on `main`.
+> `4.0.0` remains the latest tagged stable release. Use the draft migration
+> guide to prepare and evaluate source changes, not as evidence that `5.0.0`
+> has shipped.
+
 ## From InnoNetwork 4.x
 
-Start with the [5.0 migration guide](Migration-5.0.0.md). The required source
+Start with the [draft 5.0 migration guide](Migration-5.0.0.md). The required source
 changes are concentrated in four areas: zero-argument
 `RequestExecutionNext.execute()`, configuration packs instead of the seven
 deprecated `.with(...)` modifiers, app-owned reducer vocabulary, and
@@ -110,11 +115,11 @@ Migration notes:
 
 ## Removed Auth-Scope Generics
 
-InnoNetwork 5.0 replaces the phantom auth-scope generic with the runtime
+The InnoNetwork 5.0 preview replaces the phantom auth-scope generic with the runtime
 ``SessionAuthentication`` policy. Keep the response type as the builder's only
 generic argument and choose authentication explicitly in the builder chain:
 
-| 4.x usage | 5.0 replacement |
+| 4.x usage | 5.0 preview replacement |
 | --- | --- |
 | 4.x public-scope builder | `EndpointBuilder<Response>` plus `.authentication(.anonymous)` |
 | 4.x auth-required builder | `EndpointBuilder<Response>` plus `.authentication(.required)` |

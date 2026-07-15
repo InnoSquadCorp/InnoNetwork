@@ -6,15 +6,19 @@ This directory contains practical examples demonstrating how to use InnoNetwork 
 
 InnoNetwork is a Swift package for type-safe network communication using async/await and Swift Concurrency. These examples cover common use cases from basic requests to complex workflows.
 
+> **Release status:** These examples track the unreleased 5.0 preview on
+> `main`. The latest tagged stable release is `4.0.0`; do not assume the
+> current example sources compile against the 4.x API.
+
 ## Stability Tiers
 
 Examples are categorized into two tiers, mirroring [API_STABILITY.md](../API_STABILITY.md):
 
 - **Stable** — `BasicRequest`, `Auth`, `ErrorHandling`. The directory layout
   (Swift sources, `README.md`) and compileability against the current package
-  are part of the 5.x SemVer-protected contract and are enforced by
-  `Scripts/check_stable_examples.sh`. Copy these as a starting point with the
-  same confidence as the Stable public API surface.
+  are intended to become part of the 5.x SemVer-protected contract and are
+  already enforced by `Scripts/check_stable_examples.sh`. Until `5.0.0` is
+  tagged, treat them as preview examples rather than a released contract.
 - **Provisionally Stable** — every other example. Their layout tracks the
   Provisionally Stable APIs they illustrate and may evolve in minor
   releases. The wording of any example is not contractual.
@@ -157,7 +161,7 @@ three shipping products.
 
 Compile-only package that protects wrapper-style integrations built on
 future-candidate low-level execution hooks. These source shapes are not part of
-the 5.x Stable public contract.
+the draft 5.x Stable public contract.
 
 ### [MacroUsage](./MacroUsage)
 
@@ -180,13 +184,31 @@ targets do.
 
 ### Installation
 
-Add InnoNetwork to your `Package.swift`:
+For a released application, consume the tagged 4.x line:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "5.0.0")
+    .package(
+        url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
+        .upToNextMajor(from: "4.0.0")
+    )
 ]
 ```
+
+To evaluate the current 5.0 API shown by these examples, use the unreleased
+`main` preview:
+
+```swift
+dependencies: [
+    .package(
+        url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
+        branch: "main"
+    )
+]
+```
+
+Do not ship a moving `main` dependency in production. Pin a reviewed revision
+for preview CI, or stay on the tagged 4.x line until `5.0.0` is released.
 
 ### Running the Examples
 

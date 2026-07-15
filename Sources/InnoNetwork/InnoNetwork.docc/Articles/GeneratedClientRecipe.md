@@ -5,7 +5,8 @@ specific OpenAPI or RPC generator.
 
 > Important: prefer the stable ``APIDefinition`` and
 > ``RequestExecutionPolicy`` paths first. The low-level execution path remains
-> SPI and is not part of the 5.0 stability promise.
+> SPI and is not part of the proposed 5.0 public contract. The current API is
+> an unreleased `main` preview; pin a reviewed revision when evaluating it.
 
 ## Choose the integration path
 
@@ -127,7 +128,8 @@ change outside the default import contract.
 > [`API_STABILITY.md` →
 > "@_spi(GeneratedClientSupport) Compatibility Contract"](../../../../API_STABILITY.md#_spigeneratedclientsupport-compatibility-contract).
 > SPI symbols may break in any minor release; pin to an exact InnoNetwork tag
-> if you import them at all.
+> after 5.0 is released, or an exact reviewed revision during the preview, if
+> you import them at all. Never ship a moving `main` dependency in production.
 
 ## Repository sample
 
@@ -138,7 +140,7 @@ path:
 - a generated REST-style operation adapted onto ``APIDefinition``
 - a richer generated operation adapted onto SPI ``SingleRequestExecutable``
 
-Use the `APIDefinition` and ``RequestExecutionPolicy`` portions as the 5.0
+Use the `APIDefinition` and ``RequestExecutionPolicy`` portions as draft 5.0
 guidance. Treat the richer wrapper portion as revision-pinned SPI material.
 
 Generated OpenAPI Runtime clients should use the optional

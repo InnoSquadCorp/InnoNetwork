@@ -1,14 +1,17 @@
-# API Stability
+# API Stability (5.0 Draft)
 
-This document defines the compatibility contract for the InnoNetwork 5.x
-release line. `5.0.0` is the public baseline for this contract.
+This document drafts the intended compatibility contract for the future
+InnoNetwork 5.x release line. No `5.0.0` tag exists yet: `4.0.0` remains the
+latest tagged stable baseline, and `main` is a source-breaking 5.0 preview.
+Until `5.0.0` is tagged, every ledger below describes the proposed contract
+and may still change before release.
 
-The 5.0.0 baseline intentionally removes the deprecated 4.x
-`NetworkConfiguration.with(...)` modifier family, replaces the type-level
+The planned 5.0.0 baseline will remove the deprecated 4.x
+`NetworkConfiguration.with(...)` modifier family, replace the type-level
 auth-scope markers with an explicit `SessionAuthentication` value on every
-endpoint shape, and moves the shared `StateReducer` / `StateReduction`
+endpoint shape, and move the shared `StateReducer` / `StateReduction`
 lifecycle vocabulary to package scope.
-Consumers should migrate configuration to
+Preview adopters should migrate configuration to
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.
 
@@ -67,21 +70,20 @@ and own application reducer types in their feature or architecture layer.
 - `DecodingInterceptor` (promoted from Provisionally Stable in 4.x.x)
 - `WebSocketCloseDisposition` (promoted from Provisionally Stable in 4.x.x)
 
-> **5.0.0 is the compatibility reset for the 5.x line.** The Stable
-> ledger only grows over the rest of 5.x; entries do not move
-> back into Provisionally Stable. Surfaces that need a breaking
-> change wait until a future major. Adopters can pin
-> `.upToNextMajor(from: "5.0.0")` and rely on the entries above
-> remaining source-compatible across the entire 5.x line.
+> **When tagged, 5.0.0 will be the compatibility reset for the 5.x line.**
+> From that release onward, the Stable ledger will only grow during 5.x;
+> entries will not move back into Provisionally Stable, and breaking changes
+> will wait for a future major. Those guarantees do not apply to the current
+> `main` preview.
 
 ## Stable Examples
 
-A subset of `Examples/` participates in the SemVer-protected stable
-contract. For each entry below the directory must exist, contain at least
-one Swift source file, ship a `README.md`, and compile against the current
-public package. The exact wording of the example is **not** contractual, but
-the copyable Swift starting points must stay source-compatible with the
-5.0.0 public API.
+A subset of `Examples/` is designated to participate in the SemVer-protected
+stable contract once 5.0.0 is tagged. For each entry below the directory must
+exist, contain at least one Swift source file, ship a `README.md`, and compile
+against the current preview package. The exact wording of the example is
+**not** contractual. After the tag, the copyable Swift starting points must
+stay source-compatible with the 5.0.0 public API.
 The `Scripts/check_stable_examples.sh` gate, wired into the docs-contract
 job, fails CI if a stable example is removed, emptied, loses its README, or
 stops compiling. The smoke build runs with Swift warnings treated as errors
@@ -96,20 +98,19 @@ documentation.
   `do`/`catch` patterns that surface response payloads.
 
 Every other example (`DownloadManager`, `WebSocketChat`,
-`EventPolicyObserver`, the consumer smoke packages, …) stays
-Provisionally Stable: structure may evolve across minors and they are
+`EventPolicyObserver`, the consumer smoke packages, …) is designated
+Provisionally Stable: structure may evolve across future minors and they are
 intentionally **not** enforced by the gate above. README/DocC examples
 continue to track the stable APIs they illustrate; their wording is not
 part of the compatibility contract.
 
 ## Provisionally Stable
 
-Symbols in this section are public and supported, but they may grow new
-cases, parameters, or shape during the 5.x line. Each change ships with
-release notes describing the migration path. Consumers who want strict
-compile-time stability should pin the package with
-`.upToNextMinor(from: "5.0.0")` (see "Version Pinning Guidance" below)
-and treat any 5.y → 5.(y+1) bump as a code-level review boundary.
+Symbols in this section are public in the preview and are intended to be
+supported after 5.0.0, but they may still change before that tag. During the
+future 5.x line they may grow new cases, parameters, or shape, with each change
+shipping release notes and a migration path. See "Version Pinning Guidance"
+below for the currently released 4.x line and explicit preview opt-in.
 
 - `default` aliases on configuration types
 - benchmark runner CLI flags and JSON summary presentation details
@@ -147,7 +148,7 @@ and treat any 5.y → 5.(y+1) bump as a code-level review boundary.
 
 ## Provisionally Stable Evolution Boundaries
 
-Per-symbol evolution allowances within the 5.x line:
+Per-symbol evolution allowances intended for the future 5.x line:
 
 Promotion from Provisionally Stable to Stable requires all of the following:
 
@@ -186,6 +187,10 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 - `URLQueryEncoder` — the default array convention remains indexed brackets
   for 4.0.0 compatibility, while ``URLQueryArrayEncodingStrategy`` can opt in
   to bracketed or repeated-key arrays per provider.
+- `HTTPMethod` — the planned 5.0 value type accepts any valid, case-sensitive
+  RFC 9110 method token through its failable `init(rawValue:)`; the standard
+  GET, HEAD, POST, PUT, PATCH, DELETE, CONNECT, OPTIONS, and TRACE constants
+  will remain available throughout 5.x.
 - `ResponseBodyBufferingPolicy` — the default inline request path is
   streaming, with `responseBodyLimit` retained as a source-compatible alias
   for the policy's `maxBytes` value.
@@ -219,7 +224,7 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   `invalidBaseURL` / `invalidRequest` / `offline` cases. The standalone
   `NetworkError.invalidBaseURL` and
   `NetworkError.invalidRequestConfiguration` cases are not part of the
-  5.0.0 surface; adopters switch on this reason payload directly.
+  proposed 5.0 surface; preview adopters switch on this reason payload directly.
 - `ReachabilityCheckExecutionPolicy` — `RequestExecutionPolicy` that
   consults a `NetworkMonitoring` source and short-circuits requests
   when the path is `.unsatisfied`. `.requiresConnection` waits up to
@@ -303,12 +308,14 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   platform mappings may be added while preserving current defaults.
 - `NetworkConfiguration.recommendedForProduction(baseURL:)` — the preset may
   tune default policy values in minors, but it remains a convenience builder
-  over documented public policies. The 4.0.0 baseline caps streaming response
-  body collection at 5 MiB by default.
+  over documented public policies. The planned 5.0 baseline caps inline
+  response body collection at 5 MiB by default in `safeDefaults`, the
+  `advanced` preset, and `recommendedForProduction`; explicit nil limits
+  remain the opt-out.
 - `NetworkConfiguration.init(...)` — the direct 32-parameter public
   construction surface was removed before the 4.0.0 baseline and is not part
-  of the 5.x stable API. Use presets and the named configuration packs passed
-  to `NetworkConfiguration.advanced(...)` instead.
+  of the planned 5.x stable API. Use presets and the named configuration packs
+  passed to `NetworkConfiguration.advanced(...)` instead.
 - `DownloadConfiguration.sharedContainerIdentifier` — additive App Group
   background-session storage knob. Default stays `nil`; future minors may add
   preset helpers, but the property and builder field remain source-compatible.
@@ -319,29 +326,31 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 
 ## Version Pinning Guidance
 
-Apps that consume InnoNetwork via SwiftPM should pin against the 5.0.0 minor:
+Released applications should consume the tagged 4.x line:
 
 ```swift
-.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "5.0.0"))
+.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMajor(from: "4.0.0"))
 ```
 
-`.upToNextMinor(from:)` accepts patch upgrades within the pinned minor
-but requires an explicit bump to consume the next minor. This matches
-the stability contract: stable surfaces follow SemVer, but provisionally
-stable surfaces may add or evolve in a minor bump, so consumers should
-review the changelog for the minor before adopting.
+To evaluate the source-breaking 5.0 preview, opt into `main` explicitly and pin
+a specific revision in CI when reproducibility matters:
 
-Use `.upToNextMajor(from:)` only if you exclusively call the **Stable**
-ledger and accept that provisionally stable APIs may shift under you on
-minor releases.
+```swift
+.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", branch: "main")
+```
+
+The preview has no SemVer compatibility guarantee. After `5.0.0` is tagged,
+applications that use Provisionally Stable APIs should prefer
+`.upToNextMinor(from:)`; applications that exclusively use the Stable ledger
+may choose `.upToNextMajor(from:)`.
 
 ## Public Declaration Ledger
 
 The docs-contract gate extracts public symbols from Swift symbol graphs and
 compares them with `Scripts/symbols/*.allowlist`. That catches nested public
 types and members in addition to top-level declarations. The grouped ledger
-below keeps the high-level compatibility classification readable for the 5.x
-release line.
+below keeps the high-level compatibility classification readable for the
+planned 5.x release line.
 
 ### InnoNetwork
 
@@ -528,8 +537,9 @@ audits against external `@_spi` consumers, and Issues that report
 this section. Specifically:
 
 - **Build errors** after a minor bump are expected and not regressions.
-- **Pin to an exact InnoNetwork tag** (`.exact("5.0.0")`) if you import
-  `@_spi`. `.upToNextMinor` is *not* tight enough.
+- **Pin the current preview to an exact commit revision** if you import
+  `@_spi`. After 5.0.0 is released, pin its exact tag; a moving branch or
+  `.upToNextMinor` is *not* tight enough.
 - **Treat `@_spi` upgrades as code-level reviews** — diff the SPI
   surface in `Sources/InnoNetwork/...` and re-run your generator.
 
@@ -552,10 +562,10 @@ requires `@_spi` import.
 - package-scoped `APISingleRequestExecutable` and
   `MultipartSingleRequestExecutable` adapters used only by the built-in client
 - package-scoped `StateReducer` / `StateReduction` lifecycle vocabulary used
-  by shipping modules; it is not part of the consumer-facing 5.x API
+  by shipping modules; it is not part of the planned consumer-facing 5.x API
 - benchmark baseline contents and update cadence
 - lower-level execution hooks that are present in source but not part of the
-  5.0.0 stable public contract
+  proposed 5.0 stable public contract
 
 ## Notes
 
@@ -622,8 +632,9 @@ requires `@_spi` import.
   changelog. Consumers who write exhaustive `switch` statements over
   `NetworkError` should add `@unknown default` to keep their code
   forward-compatible across minor bumps.
-- `NetworkError.errorDescription` localization keys are a provisionally
-  stable behaviour contract for 5.x. The package ships the English catalogue;
+- `NetworkError.errorDescription` localization keys are intended to be a
+  provisionally stable behaviour contract after 5.0.0. The package ships the
+  English catalogue;
   applications own end-user localization. Existing key meanings are not
   repurposed without a changelog entry.
 

@@ -11,7 +11,7 @@ responses to survive process restarts.
 By default the cache rejects responses tied to credential-like request headers,
 `Set-Cookie`, and `Cache-Control: private`. It also applies
 ``PersistentResponseCacheConfiguration/DataProtectionClass/completeUntilFirstUserAuthentication``
-file protection on supported Apple platforms, keeping background reads
+file protection on iOS, tvOS, watchOS, and visionOS, keeping background reads
 available after the first device unlock while protecting data across restarts.
 
 Reproducible cache-owned artifacts are excluded from backup on Darwin: the

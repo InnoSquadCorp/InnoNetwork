@@ -1,6 +1,7 @@
 # Policy Interactions
 
-This page fixes the 5.0 execution order for request policies. Use it when
+This page documents the policy order in the unreleased 5.0 preview on `main`.
+It describes the planned 5.0 contract, not a tagged release. Use it when
 combining retry, auth refresh, late request signing, response cache,
 coalescing, circuit breaker, redirect handling, and custom execution policies.
 
@@ -49,7 +50,7 @@ sequenceDiagram
 
 ## Interaction Matrix
 
-| Scenario | 5.0 behavior |
+| Scenario | 5.0 preview behavior |
 | --- | --- |
 | Circuit open | Request fails before transport and is considered by the retry policy like any other `NetworkError`. |
 | 401 with refresh policy | The current token is applied after request interceptors; one refresh replay uses the fully adapted request with the new token. |
@@ -96,6 +97,6 @@ Two invariants the matrix encodes:
 ## Deferred Beyond 5.0
 
 Full streaming retry policy, multiple refresh-policy chains, and external
-OpenTelemetry exporters are intentionally outside the 5.0 scope. They belong
+OpenTelemetry exporters are intentionally outside the planned 5.0 scope. They belong
 in companion packages or a later 5.x release after the new signing and
 request-identity contracts have production evidence.

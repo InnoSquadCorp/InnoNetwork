@@ -195,7 +195,7 @@ struct DownloadTaskTests {
 
     @Test("Download lifecycle helper documents legal transitions")
     func stateTransitionModel() {
-        #expect(DownloadState.idle.nextStates == [.waiting, .downloading, .cancelled])
+        #expect(DownloadState.idle.nextStates == [.waiting, .downloading, .failed, .cancelled])
         #expect(DownloadState.idle.canTransition(to: .waiting))
         #expect(DownloadState.waiting.canTransition(to: .downloading))
         #expect(DownloadState.downloading.canTransition(to: .completed))

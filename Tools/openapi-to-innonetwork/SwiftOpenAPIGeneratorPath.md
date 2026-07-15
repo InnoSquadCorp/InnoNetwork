@@ -1,8 +1,8 @@
-# Apple swift-openapi-generator integration (5.0)
+# Apple swift-openapi-generator integration (5.0 preview)
 
-InnoNetwork 5.0 ships two OpenAPI runtime paths. They are complementary, but
-they do not provide the same execution behavior. Choose the entry point whose
-types your application already owns.
+The unreleased InnoNetwork 5.0 preview on `main` provides two OpenAPI runtime
+paths. They are complementary, but they do not provide the same execution
+behavior. Choose the entry point whose types your application already owns.
 
 ## Selection guide
 
@@ -71,7 +71,8 @@ pipeline policy does not.
 - Status-code interpretation remains owned by the generated client. The
   transport converts the Foundation response to `HTTPResponse` and does not
   apply an `APIDefinition.acceptableStatusCodes` policy.
-- `204`, `205`, and `304` responses return no body.
+- Responses to HEAD requests and responses with `1xx`, `204`, `205`, or `304`
+  status return no body.
 
 Choose another transport for payloads that cannot be collected within the
 outgoing limit or for flows that require a specialized streaming upload.

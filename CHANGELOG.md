@@ -7,25 +7,29 @@ Versioning.
 
 ## [Unreleased]
 
-### Changed
-
-- `InnoNetworkOpenAPI` now declares its direct `swift-http-types` dependency
-  explicitly with a compatible 1.x range from 1.5.1, instead of relying on
-  `swift-openapi-runtime` to expose it transitively. Current validation resolves
-  1.6.0; the core `InnoNetwork` product keeps its existing request, header, and
-  response types.
-
-## [5.0.0] - 2026-07-14
+`main` is the source-breaking 5.0 preview. These changes have not been tagged
+or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
 
 ### Breaking
 
 - The nested `Packages/InnoNetworkCodegen` package and `#endpoint` expression
   macro are removed. `@APIDefinition(method:path:auth:)` now comes from
-  `import InnoNetwork`, requires an explicit `.public` / `.required` auth
-  choice, and requires `typealias APIResponse` on the annotated struct.
+  `import InnoNetwork`, requires an explicit `.anonymous` / `.optional` /
+  `.required` `SessionAuthentication` choice, and requires
+  `typealias APIResponse` on the annotated struct.
+- Every buffered, multipart, streaming, OpenAPI, and macro-assisted endpoint
+  now carries explicit `SessionAuthentication`. `.required` fails before
+  transport if no refresh policy or usable token is available; manual endpoint
+  definitions and generated execution adapters no longer inherit anonymous
+  authentication implicitly.
 - Public optional overloads of
   `EndpointPathEncoding.percentEncodedSegment(_:)` are removed. Unwrap optional
   path values and define their nil behavior before encoding.
+- `HTTPMethod` is now an extensible, `RawRepresentable` value type. Standard
+  methods remain static constants; custom methods use the failable
+  `init(rawValue:)`, which accepts only nonempty RFC 9110 tokens. Code that
+  exhaustively switched over the former enum must use semantic helpers or a
+  default branch.
 - `RequestExecutionNext.execute(_:)` is replaced by
   `RequestExecutionNext.execute()`. Request mutation belongs in a
   `RequestInterceptor`; execution policies can observe, short-circuit, or
@@ -37,9 +41,16 @@ Versioning.
   not public API. Adopters should own reducer types at their feature boundary.
 - Redirect defaults deny HTTPS downgrade and unsafe cross-origin `307`/`308`
   replay. Signed requests reject every automatic redirect.
+- Core, OpenAPI, download, and WebSocket entry points reject malformed,
+  origin-changing, traversal-bearing, or insecure absolute URLs by default.
+  Plain HTTP and WebSocket connections require their explicit configuration
+  opt-ins.
 - Body-dependent authentication uses `RequestSigner` and `RequestBody` after
   interceptors and refresh-token application. Signed requests bypass response
   caches, request coalescing, and URLSession cache storage.
+- `WebSocketHandshakeRequestAdapter.adapt(_:)` is `async throws`; connection
+  setup awaits adapter completion and revalidates the resulting request before
+  opening a transport.
 - `WebSocketManager.retry(_:)` returns an optional `WebSocketRetryResult` with
   a fresh task and bounded event stream. The stream is registered before the
   replacement transport resumes, the source task stays terminal, and automatic
@@ -47,15 +58,19 @@ Versioning.
 
 See [`docs/Migration-5.0.0.md`](docs/Migration-5.0.0.md) for before/after
 examples and [`docs/releases/5.0.0.md`](docs/releases/5.0.0.md) for the
-curated release summary.
+draft release summary.
 
 ### Added
 
 - The root package's default `Macros` trait enables macro-assisted explicit
-  endpoint structs. GET `query` and non-GET `body` stored properties derive
-  payload witnesses, while a complete manual `Parameter` + `parameters` pair
-  remains authoritative. Fail-closed diagnostics reject incomplete, unsafe, or
-  ambiguous declarations.
+  endpoint structs. GET/HEAD `query` and POST/PUT/PATCH/DELETE `body` stored
+  properties derive payload witnesses, while a complete manual `Parameter` +
+  `parameters` pair remains authoritative. Fail-closed diagnostics reject
+  incomplete, unsafe, traversal-bearing, or ambiguous declarations, and reject
+  custom-method simple payload inference.
+- Macro expansion is covered by an end-to-end test that executes the generated
+  endpoint through `DefaultNetworkClient`, including path substitution, query
+  encoding, explicit authentication, and response decoding.
 - `RequestSigner` and `RequestBody` provide late, body-aware authentication
   after request encoding, interceptors, and refresh-token application. The
   HMAC, request-minted JWT, and AWS SigV4 reference implementations support
@@ -66,9 +81,29 @@ curated release summary.
 - CI builds DocC for all eight public products and fails closed when core or
   macro coverage artifacts are missing, empty, or contain absolute
   source paths.
+- CI and release validation now build the declared tvOS, watchOS, and visionOS
+  destinations as required gates, compile consumer fixtures at the package's
+  deployment floors, run generalized macro compile-failure fixtures, and treat
+  dependency review failures as blocking.
 
 ### Fixed
 
+- Inline response collection through `safeDefaults`, the `advanced` preset,
+  and `recommendedForProduction` is bounded to 5 MiB by default. Explicit
+  `.streaming(maxBytes: nil)` or `.buffered(maxBytes: nil)` remains the
+  deliberate unbounded opt-out, and byte-count arithmetic fails closed on
+  overflow.
+- OpenAPI transport treats HEAD responses, informational 1xx responses, and
+  statuses 204, 205, and 304 as bodyless, while preserving base paths and query
+  ordering when adapting requests.
+- Curl export and observability redact query values, request bodies, URL
+  credentials, fragments, sensitive path tokens, and error payload details by
+  default. Controlled debugging can opt into query values or bodies explicitly.
+- Persistent cache and download-owned state apply backup exclusion on Darwin
+  after directory creation, atomic replacement, and reopen. On iOS, tvOS,
+  watchOS, and visionOS they also apply
+  `.completeUntilFirstUserAuthentication` Data Protection. Caller-owned final
+  download files are not relabeled.
 - Download completion staging, pause/resume transactions, temporary-file
   cleanup, and shutdown behavior are bounded and cancellation-safe.
 - WebSocket disconnect and shutdown teardown are bounded. The final terminal
@@ -87,6 +122,14 @@ curated release summary.
 
 ### Changed
 
+- `InnoNetworkOpenAPI` declares its direct `swift-http-types` dependency with a
+  compatible 1.x range from 1.5.1 instead of relying on
+  `swift-openapi-runtime` to expose it transitively. HTTPTypes remains confined
+  to the optional `InnoNetworkOpenAPI` boundary; the core `InnoNetwork` public
+  request, header, and response models do not expose it.
+- Response-cache keys preserve query-item ordering, and the persistent cache
+  format advances to version 3 so older keys are reset rather than reused with
+  incompatible semantics.
 - `APISingleRequestExecutable` snapshots its transport policy once so request
   encoding and decoding observe one policy value.
 - Scheduler-sensitive cancellation, refresh, and WebSocket tests use explicit
@@ -95,8 +138,8 @@ curated release summary.
 - External WebSocket shutdown waits for already-admitted manager callbacks;
   reentrant shutdown from one of those callbacks initiates teardown and returns
   so a later external call can await the full boundary.
-- Guarded benchmarks build in release mode, and 5.0 publishes an explicit API,
-  migration, macro-trait, and release-integrity contract.
+- Guarded benchmarks build in release mode, and the 5.0 preview prepares an
+  explicit API, migration, macro-trait, and release-integrity contract.
 - Hosted benchmark baselines are recalibrated from a complete release-mode
   artifact after the systematic shift was confirmed across three successful
   runs, so debug-build overhead no longer distorts regression deltas.

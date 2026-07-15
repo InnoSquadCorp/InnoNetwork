@@ -1,9 +1,10 @@
 # Code Generation for InnoNetwork
 
 When you have more than ~30 endpoints, hand-rolling `APIDefinition` structs
-can become the bottleneck. InnoNetwork 5.x supports three distinct OpenAPI
-integration paths; choose based on the generated type shape and whether the
-request must use the full InnoNetwork execution pipeline.
+can become the bottleneck. The unreleased 5.0 preview on `main` supports three
+distinct OpenAPI integration paths; choose based on the generated type shape
+and whether the request must use the full InnoNetwork execution pipeline.
+`4.0.0` remains the latest tagged stable release.
 
 ## Choose an integration path
 

@@ -13,6 +13,7 @@ passed=0
 new_repo() {
     local version="$1"
     local include_notes="${2:-1}"
+    local release_status="${3:-ready}"
 
     test_index=$((test_index + 1))
     current_repo="$test_root/repo-$test_index"
@@ -22,7 +23,8 @@ new_repo() {
 
     mkdir -p "$current_repo/docs/releases" "$current_repo/Scripts"
     if [[ "$include_notes" == "1" ]]; then
-        printf '# Release %s\n' "$version" > "$current_repo/docs/releases/${version}.md"
+        printf '<!-- release-status: %s -->\n\n# Release %s\n' \
+            "$release_status" "$version" > "$current_repo/docs/releases/${version}.md"
     else
         printf '# Fixture\n' > "$current_repo/README.md"
     fi
@@ -84,7 +86,8 @@ expect_failure() {
 
 new_repo "5.0.0"
 annotate "$current_repo" "5.0.0"
-expect_success "annotated stable SemVer on main" run_validator "$current_repo" "5.0.0"
+expect_success "annotated stable SemVer at exact main HEAD with ready notes" \
+    run_validator "$current_repo" "5.0.0"
 
 new_repo "5.0.0-rc.1+build.7"
 annotate "$current_repo" "5.0.0-rc.1+build.7"
@@ -110,6 +113,58 @@ annotate "$current_repo" "5.0.0"
 expect_failure "missing versioned notes is rejected" "does not contain required release notes" \
     run_validator "$current_repo" "5.0.0"
 
+new_repo "5.0.0" 1 draft
+annotate "$current_repo" "5.0.0"
+expect_failure "draft release notes are rejected" "is marked 'draft'" \
+    run_validator "$current_repo" "5.0.0"
+
+new_repo "5.0.0" 1 unreleased
+annotate "$current_repo" "5.0.0"
+expect_failure "unreleased release notes are rejected" "is marked 'unreleased'" \
+    run_validator "$current_repo" "5.0.0"
+
+new_repo "5.0.0"
+sed -i.bak '1d' "$current_repo/docs/releases/5.0.0.md"
+rm "$current_repo/docs/releases/5.0.0.md.bak"
+git -C "$current_repo" add docs/releases/5.0.0.md
+git -C "$current_repo" commit -q -m "remove release status"
+annotate "$current_repo" "5.0.0"
+expect_failure "missing release-status marker is rejected" "exactly one release-status marker" \
+    run_validator "$current_repo" "5.0.0"
+
+new_repo "5.0.0"
+printf '\n<!-- release-status: ready -->\n' >> "$current_repo/docs/releases/5.0.0.md"
+git -C "$current_repo" add docs/releases/5.0.0.md
+git -C "$current_repo" commit -q -m "duplicate release status"
+annotate "$current_repo" "5.0.0"
+expect_failure "duplicate release-status markers are rejected" "exactly one release-status marker" \
+    run_validator "$current_repo" "5.0.0"
+
+new_repo "5.0.0"
+printf '\n<!-- release-status: draft -->\n' >> "$current_repo/docs/releases/5.0.0.md"
+git -C "$current_repo" add docs/releases/5.0.0.md
+git -C "$current_repo" commit -q -m "conflicting release status"
+annotate "$current_repo" "5.0.0"
+expect_failure "conflicting release-status markers are rejected" "exactly one release-status marker" \
+    run_validator "$current_repo" "5.0.0"
+
+new_repo "5.0.0"
+printf '\nThe old inline <!-- release-status: draft --> marker must not remain.\n' \
+    >> "$current_repo/docs/releases/5.0.0.md"
+git -C "$current_repo" add docs/releases/5.0.0.md
+git -C "$current_repo" commit -q -m "add inline release status"
+annotate "$current_repo" "5.0.0"
+expect_failure "inline duplicate release-status marker is rejected" "exactly one release-status marker" \
+    run_validator "$current_repo" "5.0.0"
+
+new_repo "5.0.0"
+annotate "$current_repo" "5.0.0"
+printf 'main advanced\n' > "$current_repo/main.txt"
+git -C "$current_repo" add main.txt
+git -C "$current_repo" commit -q -m "advance main"
+expect_failure "tag behind main HEAD is rejected" "does not exactly match configured main ref" \
+    run_validator "$current_repo" "5.0.0"
+
 new_repo "5.0.0"
 git -C "$current_repo" switch -q -c release-side
 printf 'side\n' > "$current_repo/side.txt"
@@ -117,7 +172,7 @@ git -C "$current_repo" add side.txt
 git -C "$current_repo" commit -q -m "side commit"
 annotate "$current_repo" "5.0.0"
 git -C "$current_repo" switch -q main
-expect_failure "tag outside main ancestry is rejected" "is not reachable" \
+expect_failure "tag on a side branch is rejected" "does not exactly match configured main ref" \
     run_validator "$current_repo" "5.0.0"
 
 new_repo "5.0.0"
@@ -142,6 +197,23 @@ git clone -q --bare "$current_repo" "$remote_repo"
 expect_success "injected local remote fetches main without network" \
     run_validator "$current_repo" "5.0.0" \
     RELEASE_REMOTE="$remote_repo" \
+    RELEASE_MAIN_REMOTE_REF=refs/heads/main \
+    RELEASE_MAIN_REF=refs/release-validation/main \
+    RELEASE_FETCH_MAIN=1
+
+new_repo "5.0.0"
+annotate "$current_repo" "5.0.0"
+tag_commit="$(git -C "$current_repo" rev-parse 'refs/tags/5.0.0^{commit}')"
+stale_remote="$test_root/stale-remote.git"
+git clone -q --bare "$current_repo" "$stale_remote"
+git -C "$current_repo" update-ref refs/release-validation/main "$tag_commit"
+printf 'remote main advanced\n' > "$current_repo/remote-main.txt"
+git -C "$current_repo" add remote-main.txt
+git -C "$current_repo" commit -q -m "advance remote main"
+git -C "$current_repo" push -q "$stale_remote" main
+expect_failure "stale local main ref is refreshed and rejected" "does not exactly match configured main ref" \
+    run_validator "$current_repo" "5.0.0" \
+    RELEASE_REMOTE="$stale_remote" \
     RELEASE_MAIN_REMOTE_REF=refs/heads/main \
     RELEASE_MAIN_REF=refs/release-validation/main \
     RELEASE_FETCH_MAIN=1

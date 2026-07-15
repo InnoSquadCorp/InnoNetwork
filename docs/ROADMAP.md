@@ -1,8 +1,8 @@
 # Roadmap
 
-## 5.0.0 Implementation Scope
+## Upcoming 5.0.0 Implementation Scope
 
-The 5.0 line converts the hardening backlog into an explicit major-version
+The unreleased 5.0 preview on `main` converts the hardening backlog into an explicit major-version
 contract:
 
 - request execution policies preserve the executor-owned request identity;
@@ -21,7 +21,7 @@ contract:
 - the seven deprecated configuration modifiers and package-internal reducer
   vocabulary are removed from the public API.
 
-The source migration is documented in `docs/Migration-5.0.0.md`. Remaining
+The draft source migration is documented in `docs/Migration-5.0.0.md`. Remaining
 items below are either historical context or post-5.0 candidates.
 
 ## 4.0.0 Implementation Scope
@@ -136,7 +136,7 @@ chunk-signing remain explicitly deferred to protocol-specific transports.
 
 ## Post-5.0 RFC Parking Lot
 
-These are deliberately not implemented in the 5.0.0 contract:
+These are deliberately not implemented in the planned 5.0.0 contract:
 
 - `NetworkConfiguration.Transport`, `.Resilience`, `.Auth`, and
   `.Observability` nested naming can replace the current top-level pack names

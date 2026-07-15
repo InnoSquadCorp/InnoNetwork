@@ -62,12 +62,13 @@ struct AppNetworking: Sendable {
 
 `PersistentResponseCache` refuses credential-like request keys,
 `Cache-Control: private`, and `Set-Cookie` responses by default, and applies
-`.completeUntilFirstUserAuthentication` data protection to its files. Even with
+`.completeUntilFirstUserAuthentication` data protection to its files on iOS,
+tvOS, watchOS, and visionOS. Even with
 `storesAuthenticatedResponses: true`, responses to requests carrying
 `Authorization` are stored only when the origin explicitly permits it with
 `Cache-Control: public`, `must-revalidate`, or `s-maxage`.
 `dataProtectionClass: .none` explicitly requests `NSFileProtectionNone` on
-cache-owned paths instead of skipping protection updates. If a
+cache-owned paths on those platforms instead of skipping protection updates. If a
 cookie-authenticated endpoint should be cached, make that choice in a
 feature-specific cache product and prefer explicit request headers or origin
 `private`/`no-store` directives; cookies injected by `URLSession` storage are

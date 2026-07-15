@@ -28,9 +28,10 @@ Event delivery for socket tasks flows through the shared event hub. Tune bufferi
 
 ### Observing heartbeat attempts
 
-The 5.x contract emits a `.ping` event before each heartbeat or manual
-ping attempt. Pair it with `.pong` and `.error(.pingTimeout)` to track heartbeat
-success, timeout, and approximate round-trip timing in application code.
+The unreleased 5.0 preview emits a `.ping` event before each heartbeat or
+manual ping attempt, as planned for the future 5.x contract. Pair it with
+`.pong` and `.error(.pingTimeout)` to track heartbeat success, timeout, and
+approximate round-trip timing in application code.
 
 For pong, event publication is attempted before the snapshotted manager
 handler is invoked. The event still uses ordinary bounded overflow and listener

@@ -102,8 +102,9 @@ to avoid leaking PII into crash reports, analytics, or logs.
 ## NSError bridging
 
 `NetworkError` bridges through the stable `com.innosquad.innonetwork` NSError
-domain. The 5.x line keeps numeric codes stable so observability pipelines can
-group failures without parsing localized strings. Underlying Foundation errors
+domain. The current 5.0 preview uses the numeric codes planned for the future
+5.x stability contract so observability pipelines can group failures without
+parsing localized strings. Underlying Foundation errors
 are preserved inside ``SendableUnderlyingError`` for `.underlying` and timeout
 cases, but ``NetworkError/errorCode`` always returns an InnoNetwork-owned
 ``NetworkErrorCode`` value rather than a Foundation `URLError.Code`. Status-code

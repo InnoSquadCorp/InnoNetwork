@@ -7,6 +7,9 @@ export LC_ALL=C
 
 api_stability="$repo_root/API_STABILITY.md"
 readme="$repo_root/README.md"
+changelog="$repo_root/CHANGELOG.md"
+security_policy="$repo_root/SECURITY.md"
+symbols_readme="$repo_root/Scripts/symbols/README.md"
 
 # Per-module public-symbol allowlists. Keeping one
 # `Scripts/symbols/*.allowlist` file per shipping module keeps PR diffs
@@ -125,8 +128,24 @@ forbidden_pattern() {
 require_line "## Stable" "$api_stability"
 require_line "## Provisionally Stable" "$api_stability"
 require_line "## Internal/Operational" "$api_stability"
-require_contains 'release line. `5.0.0` is the public baseline for this contract.' "$api_stability"
-require_contains '.upToNextMinor(from: "5.0.0")' "$api_stability"
+require_line "# API Stability (5.0 Draft)" "$api_stability"
+require_contains 'No `5.0.0` tag exists yet: `4.0.0` remains the' "$api_stability"
+require_contains '.upToNextMajor(from: "4.0.0")' "$api_stability"
+require_contains 'branch: "main"' "$api_stability"
+require_contains 'The planned 5.0 baseline caps inline' "$api_stability"
+require_contains '`safeDefaults`, the' "$api_stability"
+require_contains '`advanced` preset, and `recommendedForProduction`' "$api_stability"
+
+require_contains '`4.0.0` is the latest tagged stable release' "$readme"
+require_contains 'no `5.0.0` tag exists yet' "$readme"
+require_contains '.upToNextMajor(from: "4.0.0")' "$readme"
+require_contains 'branch: "main"' "$readme"
+require_contains '## [Unreleased]' "$changelog"
+require_contains 'These changes have not been tagged' "$changelog"
+require_not_contains '## [5.0.0] -' "$changelog"
+require_contains '`4.x` is the actively supported tagged public release line.' "$security_policy"
+require_contains 'unreleased 5.0 preview on `main`' "$security_policy"
+require_contains 'unreleased 5.0 preview snapshot' "$symbols_readme"
 
 expected_stable=(
 '`APIDefinition`'
@@ -936,7 +955,7 @@ validate_oss_readiness_public_api() {
 validate_troubleshooting_and_examples_docs() {
   require_contains 'Examples: [Examples/README.md](Examples/README.md)' "$readme"
   require_contains 'API Stability: [API_STABILITY.md](API_STABILITY.md)' "$readme"
-  require_contains 'Release Notes: [docs/releases/5.0.0.md](docs/releases/5.0.0.md)' "$readme"
+  require_contains 'Draft 5.0 Release Notes: [docs/releases/5.0.0.md](docs/releases/5.0.0.md)' "$readme"
   require_contains '### 1. [BasicRequest](./BasicRequest)' "$repo_root/Examples/README.md"
   require_contains '### 2. [ErrorHandling](./ErrorHandling)' "$repo_root/Examples/README.md"
   require_contains '### 3. [Auth](./Auth)' "$repo_root/Examples/README.md"
@@ -1507,6 +1526,13 @@ forbidden_pattern 'let configuration = NetworkConfiguration\(' "$readme" "${exam
 forbidden_pattern 'let client = DefaultNetworkClient\(\s*configuration:\s*\.default' "$readme" "${example_docs[@]}"
 forbidden_pattern 'addText|addFile' "$readme" "${example_docs[@]}"
 forbidden_pattern 'from:\s*"1\.0\.0"' "$readme" "${example_docs[@]}"
+forbidden_pattern '\.package.*5\.0\.0|\.exact\("5\.0\.0"\)' \
+  "$readme" \
+  "$api_stability"
+forbidden_pattern '5\.0\.0 is the public baseline|5\.0\.0` is the current compatibility|`5\.x` is the actively supported public release line' \
+  "$readme" \
+  "$api_stability" \
+  "$security_policy"
 forbidden_pattern 'Xcode 15|Xcode 16' "$readme" "${example_docs[@]}" "$repo_root/docs" "$repo_root/Sources"
 forbidden_pattern 'does not pull|do not pull|not pull `swift-syntax`|has no external dependencies|no external dependencies;' \
   "$api_stability" \

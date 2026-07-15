@@ -2,9 +2,10 @@
 # Validates that a release workflow was triggered from a trustworthy Git tag.
 #
 # The release tag must be a SemVer 2.0.0 version, be an annotated tag that
-# names that same version, peel to a commit on the configured main ref, and
-# contain versioned release notes. By default the configured remote main ref
-# is fetched first, so a stale local tracking ref is never accepted.
+# names that same version, peel to the exact commit at the configured main ref,
+# and contain versioned release notes explicitly marked ready. By default the
+# configured remote main ref is fetched first, so a stale local tracking ref is
+# never accepted.
 #
 # Environment overrides are intentionally explicit so the validator can be
 # exercised with local refs and local remotes in deterministic tests:
@@ -93,8 +94,8 @@ main_commit="$(git -C "$repo_root" rev-parse --verify "${main_ref}^{commit}" 2>/
 [[ -n "$main_commit" ]] \
     || fail "configured main ref '$main_ref' does not resolve to a commit."
 
-if ! git -C "$repo_root" merge-base --is-ancestor "$tag_commit" "$main_commit"; then
-    fail "tag commit '$tag_commit' is not reachable from '$main_ref' ($main_commit)."
+if [[ "$tag_commit" != "$main_commit" ]]; then
+    fail "tag commit '$tag_commit' does not exactly match configured main ref '$main_ref' ($main_commit)."
 fi
 
 release_notes="docs/releases/${release_tag}.md"
@@ -107,5 +108,30 @@ if [[ "$notes_type" != "blob" ]]; then
     fail "'$release_notes' must be a file in the tagged commit (found '${notes_type:-nothing}')."
 fi
 
-printf '✅ Release ref validated: %s peels to %s, is reachable from %s, and contains %s.\n' \
+notes_content="$(git -C "$repo_root" cat-file blob "${tag_commit}:${release_notes}")"
+status_marker_count="$(printf '%s\n' "$notes_content" | LC_ALL=C awk '
+    /<!--[[:space:]]*release-status[[:space:]]*:/ { count += 1 }
+    END { print count + 0 }
+')"
+ready_marker='<!-- release-status: ready -->'
+
+if [[ "$status_marker_count" != "1" ]]; then
+    fail "'$release_notes' must contain exactly one release-status marker as its first line; use '$ready_marker' only when the notes are publishable (found $status_marker_count)."
+fi
+
+first_line="${notes_content%%$'\n'*}"
+case "$first_line" in
+    "$ready_marker")
+        ;;
+    '<!-- release-status: draft -->'|'<!-- release-status: unreleased -->')
+        release_status="${first_line#'<!-- release-status: '}"
+        release_status="${release_status%' -->'}"
+        fail "'$release_notes' is marked '$release_status'; replace its first line with '$ready_marker' only when the release notes are publishable."
+        ;;
+    *)
+        fail "'$release_notes' must begin with the exact marker '$ready_marker' when the release notes are publishable."
+        ;;
+esac
+
+printf '✅ Release ref validated: %s peels to exact %s at %s and contains ready release notes %s.\n' \
     "$release_tag" "$tag_commit" "$main_ref" "$release_notes"

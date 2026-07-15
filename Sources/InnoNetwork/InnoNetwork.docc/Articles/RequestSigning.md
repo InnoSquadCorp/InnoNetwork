@@ -3,6 +3,9 @@
 Sign the final encoded request with access to the exact data or file bytes that
 the transport will send.
 
+> Important: This page documents the unreleased 5.0 preview on `main`, not a
+> tagged 5.0 release.
+
 ## Overview
 
 Use ``RequestSigner`` when authentication depends on the request body, final
@@ -10,7 +13,7 @@ URL, method, or headers. ``RefreshTokenPolicy`` remains the right abstraction
 for session-rotated bearer tokens; a signer covers request-minted JWTs, HMAC,
 AWS Signature Version 4, and similar per-attempt authentication schemes.
 
-The 5.0 execution order is fixed:
+The planned 5.0 execution order is fixed in the current preview:
 
 1. Encode the endpoint payload and create a stable snapshot for caller-owned
    files when signing requires one.
@@ -33,8 +36,8 @@ Header values returned by a signer use single-value replacement semantics.
 | Custom canonical string or nonce scheme | Implement ``RequestSigner``. |
 | Chunk-signed streaming protocol | Use a protocol-specific transport; opaque `httpBodyStream` values are intentionally unsupported. |
 
-Despite their legacy `Interceptor` suffixes, the shipped HMAC, JWT, and AWS
-types conform to ``RequestSigner`` in 5.0.
+Despite their legacy `Interceptor` suffixes, the HMAC, JWT, and AWS types in
+the preview conform to ``RequestSigner`` as planned for 5.0.
 
 ## Configure HMAC signing
 

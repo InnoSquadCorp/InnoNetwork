@@ -6,10 +6,10 @@ runtime library never resolves codegen dependencies.
 
 ## Status
 
-**Preview.** The 5.x line ships this tool as a
-starting point so adopters with 100+ endpoint backends can avoid
-hand-rolling `APIDefinition` structs. The current state covers the
-common case (JSON + YAML input, `components.schemas` → Codable
+**Preview.** The unreleased 5.0 work on `main` includes this tool as a starting
+point so adopters with 100+ endpoint backends can avoid hand-rolling
+`APIDefinition` structs. It has no tagged 5.x compatibility promise yet. The
+current state covers the common case (JSON + YAML input, `components.schemas` → Codable
 struct, request/response `$ref` → typed `Parameter` / `APIResponse`)
 and tracks the remaining surface for follow-up work:
 

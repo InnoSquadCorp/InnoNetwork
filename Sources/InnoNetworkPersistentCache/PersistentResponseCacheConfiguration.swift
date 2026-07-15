@@ -7,7 +7,8 @@ import InnoNetwork
 /// current hardened defaults (50 MB total, 1,000 entries,
 /// 5 MB per entry, no authenticated responses, no `Cache-Control: private`
 /// responses, no `Set-Cookie` responses,
-/// `.completeUntilFirstUserAuthentication` data protection).
+/// `.completeUntilFirstUserAuthentication` data protection on iOS-family
+/// platforms).
 public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     /// File protection class applied to the cache directory, index, and body files.
     public enum DataProtectionClass: Sendable, Equatable {

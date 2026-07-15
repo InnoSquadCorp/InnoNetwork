@@ -5,7 +5,8 @@
 Use `@_spi(GeneratedClientSupport)` only when adapting a generated client or SDK
 wrapper that cannot be represented with `APIDefinition`, `MultipartAPIDefinition`,
 or `StreamingAPIDefinition`. App feature code should stay on the public endpoint
-protocols so it inherits the 5.x stability contract.
+protocols intended for the future 5.x stability contract. The current `main`
+preview has no SemVer guarantee until `5.0.0` is tagged.
 
 ## Cookie Isolation
 

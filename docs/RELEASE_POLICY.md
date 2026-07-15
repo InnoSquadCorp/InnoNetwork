@@ -14,11 +14,19 @@
 ## Release Process
 
 1. Update `CHANGELOG.md`
-2. Confirm `docs/releases/<version>.md`
-3. Push an unprefixed annotated SemVer tag such as `5.0.0`. The tagged commit
-   must be reachable from the freshly fetched `origin/main` and already contain
-   `docs/releases/<version>.md`; the workflow rejects lightweight tags,
-   off-main commits, stale main refs, and missing release notes before build.
+2. Confirm `docs/releases/<version>.md`. While the release is being prepared,
+   its first byte must begin the exact marker
+   `<!-- release-status: draft -->`; leading blank lines are not allowed.
+   Change it to the exact top-of-file
+   `<!-- release-status: ready -->` marker only after the release contents and
+   required validation are deliberately approved. Unknown, missing, misplaced,
+   or draft markers block release publication.
+3. Push an unprefixed annotated SemVer tag such as `5.0.0` only from a commit
+   whose matching release notes are marked `ready`. The tagged commit
+   must exactly match the freshly fetched `origin/main` HEAD and already
+   contain `docs/releases/<version>.md`; the workflow rejects lightweight
+   tags, older or off-main commits, stale main refs, missing release notes,
+   and non-ready release notes before build.
 4. Let the `Release` workflow run:
    - root tests in serial coverage mode and bounded target-sharded mode
    - root macro tests, negative compile fixtures, and fail-closed runtime/macro

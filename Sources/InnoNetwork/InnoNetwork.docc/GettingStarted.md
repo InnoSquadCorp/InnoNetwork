@@ -4,6 +4,11 @@ Build a client with safe defaults, model a named request as an explicit struct
 with ``APIDefinition(method:path:auth:)``, and call it through
 ``DefaultNetworkClient``.
 
+> Important: This page follows the unreleased 5.0 preview on `main`.
+> `4.0.0` remains the latest tagged stable release. Pin a reviewed revision
+> for preview evaluation and do not ship a moving branch dependency in
+> production.
+
 ## Create a client
 
 ```swift
@@ -100,9 +105,10 @@ Stay on ``NetworkClient/request(_:)`` for normal typed requests and
 ``NetworkClient/upload(_:)`` for multipart uploads.
 
 Low-level generated-client hooks are `@_spi(GeneratedClientSupport)`, outside
-the 5.0 SemVer contract, and may break in a minor release. Use them only when a
-wrapper owns an exact source pin and migration budget. The root macro does not
-bridge or expose this SPI.
+the draft 5.0 public contract, and may change at any time during the preview or
+break in a minor release after 5.0 is tagged. Use them only when a wrapper owns
+an exact source pin and migration budget. The root macro does not bridge or
+expose this SPI.
 
 ## When to use advanced configuration
 

@@ -38,10 +38,11 @@ import Foundation
 /// and outside the scope of a generic networking library.
 ///
 /// Despite its legacy `Interceptor` suffix, this type conforms to
-/// ``RequestSigner`` in 5.0. The header is produced after ordinary request
-/// interceptors and refresh-token adaptation, so the token provider observes
-/// the final URL and method. If both a refresh policy and this provider are
-/// configured, this later request-minted JWT intentionally wins.
+/// ``RequestSigner`` in the unreleased 5.0 preview. The header is produced
+/// after ordinary request interceptors and refresh-token adaptation, so the
+/// token provider observes the final URL and method. If both a refresh policy
+/// and this provider are configured, this later request-minted JWT
+/// intentionally wins.
 public struct JWTBearerInterceptor: RequestSigner {
     /// Closure that mints the JWT for a given request. Invoked once per
     /// request attempt; rate-limit and cache inside the closure if the

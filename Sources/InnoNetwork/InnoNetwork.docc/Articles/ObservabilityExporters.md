@@ -112,8 +112,12 @@ they're frequent and not interesting on their own unless they fail.
 
 ## Versioning and compatibility
 
-Adapter packages should pin their InnoNetwork dependency to a minor
-range (`from: "5.0.0"`) and bump on every observability surface change.
-The 5.x line aims to keep changes additive; adapters should include a
-`default:` case in event switches so new ``NetworkEvent`` cases do not
-break compilation before the adapter has mapped them.
+The current observability surface belongs to the unreleased 5.0 preview.
+Adapter packages evaluating it should pin a reviewed `main` revision and bump
+that revision deliberately on every observability surface change; do not ship
+a moving branch dependency in production. Released applications should remain
+on the tagged 4.x line until `5.0.0` exists. After 5.0 is tagged, adapter
+packages can pin a 5.x minor range. The planned 5.x line aims to keep changes
+additive; adapters should include a `default:` case in event switches so new
+``NetworkEvent`` cases do not break compilation before the adapter has mapped
+them.

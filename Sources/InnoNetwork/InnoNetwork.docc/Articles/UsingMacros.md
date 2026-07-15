@@ -135,6 +135,13 @@ or incomplete, including:
 - using computed, static, or lazy `body` / `query` properties in simple mode
 - declaring only one half of the manual `Parameter` + `parameters` pair
 - asking a custom or dynamic method to infer a simple `body` / `query` payload
+- declaring a simple-mode stored property that is not consumed by a path
+  placeholder or the inferred payload
+- using tuple or other destructuring bindings in simple mode
+
+Declare a complete `Parameter` + `parameters` pair when a custom payload model
+needs stored values or binding shapes that simple inference cannot consume.
+That explicit contract is the escape hatch from simple-mode inference.
 
 Simple string interpolation in `path:` receives a Fix-It to use `{property}`
 placeholder syntax. A redundant `typealias Parameter = EmptyParameter` emits a
@@ -149,17 +156,22 @@ types through the core endpoint contract.
 ## Disabling macro support
 
 Consumers that never use macros can disable the default trait on the package
-dependency:
+dependency. The following dependency tracks the unreleased 5.0 preview because
+the current macro API has not been tagged:
 
 ```swift
 dependencies: [
     .package(
         url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
-        from: "5.0.0",
+        branch: "main",
         traits: []
     )
 ]
 ```
+
+Do not ship a moving `main` dependency in production. Pin a reviewed revision
+while evaluating the preview, or use the tagged 4.x line until `5.0.0` is
+released. The 4.x package does not expose the 5.0 macro contract shown here.
 
 With `traits: []`, the macro declaration is absent and the compiler plug-in
 products are excluded from the target graph and compilation. SwiftPM still

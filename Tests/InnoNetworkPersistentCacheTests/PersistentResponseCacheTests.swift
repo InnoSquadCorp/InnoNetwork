@@ -1420,17 +1420,21 @@ struct PersistentResponseCacheTests {
         // cache-owned path rather than changing backup policy for the root.
         #expect(try backupExclusionIsApplied(to: directory) == false)
 
-        for originalURL in [indexURL, keyURL] + bodyURLs {
-            var url = originalURL
-            var values = URLResourceValues()
-            values.isExcludedFromBackup = false
-            try url.setResourceValues(values)
+        for url in [indexURL, keyURL] + bodyURLs {
+            try removeBackupExclusion(from: url)
+            #expect(
+                try backupExclusionIsApplied(to: url) == false,
+                "Backup exclusion setup was not cleared for \(url.path)"
+            )
         }
 
         _ = try PersistentResponseCache(configuration: configuration)
 
         for url in [indexURL, keyURL] + bodyURLs {
-            #expect(try backupExclusionIsApplied(to: url))
+            #expect(
+                try backupExclusionIsApplied(to: url),
+                "Backup exclusion was not repaired for \(url.path)"
+            )
         }
     }
 
@@ -1688,6 +1692,25 @@ struct PersistentResponseCacheTests {
         return extendedAttributes?["com.apple.metadata:com_apple_backup_excludeItem"] != nil
         #else
         return try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true
+        #endif
+    }
+
+    private func removeBackupExclusion(from url: URL) throws {
+        #if os(macOS)
+        let result: Int32 = url.withUnsafeFileSystemRepresentation { path -> Int32 in
+            guard let path else { return -1 }
+            return "com.apple.metadata:com_apple_backup_excludeItem".withCString { name in
+                removexattr(path, name, 0)
+            }
+        }
+        if result != 0 {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        #else
+        var resourceURL = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = false
+        try resourceURL.setResourceValues(values)
         #endif
     }
 
