@@ -385,6 +385,26 @@ struct InnoNetworkClientTransportTests {
         )
     }
 
+    @Test("Successful CONNECT responses are classified as no-body", arguments: [200, 201, 250, 299])
+    func successfulConnectResponsesAreNoBody(statusCode: Int) {
+        #expect(
+            InnoNetworkClientTransport.responseMustNotCarryBody(
+                requestMethod: "connect",
+                statusCode: statusCode
+            )
+        )
+    }
+
+    @Test("Unsuccessful CONNECT responses may carry an ordinary body", arguments: [300, 400, 407, 500])
+    func unsuccessfulConnectResponsesMayCarryBody(statusCode: Int) {
+        #expect(
+            InnoNetworkClientTransport.responseMustNotCarryBody(
+                requestMethod: "CONNECT",
+                statusCode: statusCode
+            ) == false
+        )
+    }
+
     @Test("Surfaces typed error for a non-HTTP response")
     func surfacesTypedErrorForNonHTTPResponse() async throws {
         let baseURL = URL(string: "https://api.example.com")!

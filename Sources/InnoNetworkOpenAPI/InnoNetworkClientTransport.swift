@@ -277,6 +277,8 @@ public final class InnoNetworkClientTransport: ClientTransport {
         statusCode: Int
     ) -> Bool {
         requestMethod.caseInsensitiveCompare("HEAD") == .orderedSame
+            || (requestMethod.caseInsensitiveCompare("CONNECT") == .orderedSame
+                && (200..<300).contains(statusCode))
             || (100..<200).contains(statusCode)
             || statusCode == 204
             || statusCode == 205
