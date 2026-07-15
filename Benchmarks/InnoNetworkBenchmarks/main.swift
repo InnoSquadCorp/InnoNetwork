@@ -315,6 +315,13 @@ private actor BenchmarkCounter {
 }
 
 private enum InnoNetworkBenchmarks {
+    /// The in-memory benchmark sessions implement only `data(for:)`.
+    /// Preserve the production presets' 5 MiB ceiling while selecting their
+    /// supported buffered transport explicitly; bounded streaming must not
+    /// fall back after `bytes(for:context:)` reports that it is unsupported.
+    private static let inMemorySessionBufferingPolicy: ResponseBodyBufferingPolicy =
+        .buffered(maxBytes: NetworkConfiguration.defaultInlineResponseBodyByteLimit)
+
     static func runMain() async throws {
         let options = try BenchmarkOptions.parse(arguments: Array(CommandLine.arguments.dropFirst()))
         let results = try await runBenchmarks(options: options)
@@ -754,8 +761,9 @@ private enum InnoNetworkBenchmarks {
     private static func benchmarkRequestPipeline(iterations: Int) async throws -> BenchmarkResult {
         try await measure(name: "request-pipeline", group: "client", iterations: iterations) {
             let client = DefaultNetworkClient(
-                configuration: NetworkConfiguration.safeDefaults(
-                    baseURL: URL(string: "https://benchmark.invalid")!
+                configuration: NetworkConfiguration(
+                    baseURL: URL(string: "https://benchmark.invalid")!,
+                    responseBodyBufferingPolicy: inMemorySessionBufferingPolicy
                 ),
                 session: InstantMockSession.shared
             )
@@ -770,7 +778,10 @@ private enum InnoNetworkBenchmarks {
             let client = DefaultNetworkClient(
                 configuration: NetworkConfiguration.advanced(
                     baseURL: URL(string: "https://benchmark.invalid")!,
-                    resilience: ResiliencePack(coalescing: .getOnly)
+                    resilience: ResiliencePack(
+                        coalescing: .getOnly,
+                        bodyBuffering: inMemorySessionBufferingPolicy
+                    )
                 ),
                 session: DelayedMockSession(delayNanoseconds: 100_000)
             )
@@ -793,8 +804,9 @@ private enum InnoNetworkBenchmarks {
         try await measure(name: "concurrent-50-requests", group: "client", iterations: iterations) {
             let session = InstantMockSession.shared
             let client = DefaultNetworkClient(
-                configuration: NetworkConfiguration.safeDefaults(
-                    baseURL: URL(string: "https://benchmark.invalid")!
+                configuration: NetworkConfiguration(
+                    baseURL: URL(string: "https://benchmark.invalid")!,
+                    responseBodyBufferingPolicy: inMemorySessionBufferingPolicy
                 ),
                 session: session
             )
@@ -848,6 +860,9 @@ private enum InnoNetworkBenchmarks {
             let client = DefaultNetworkClient(
                 configuration: NetworkConfiguration.advanced(
                     baseURL: URL(string: "https://benchmark.invalid")!,
+                    resilience: ResiliencePack(
+                        bodyBuffering: inMemorySessionBufferingPolicy
+                    ),
                     auth: AuthPack(additionalDecodingInterceptors: interceptors)
                 ),
                 session: InstantMockSession.shared

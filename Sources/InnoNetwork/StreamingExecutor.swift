@@ -164,9 +164,9 @@ package struct StreamingExecutor: Sendable {
                 let nsError = surfaced as NSError
                 await eventHub.publish(
                     .requestFailed(
-                    requestID: requestID,
-                    errorCode: nsError.code,
-                    message: surfaced.observabilityCategory
+                        requestID: requestID,
+                        errorCode: nsError.code,
+                        message: surfaced.observabilityCategory
                     ),
                     requestID: requestID,
                     observers: configuration.eventObservers

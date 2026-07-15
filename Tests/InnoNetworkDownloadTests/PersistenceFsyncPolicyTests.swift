@@ -188,10 +188,11 @@ struct PersistenceFsyncPolicyTests {
         }
 
         for originalURL in ownedURLs.dropFirst(2) {
-            var url = originalURL
-            var values = URLResourceValues()
-            values.isExcludedFromBackup = false
-            try url.setResourceValues(values)
+            try removeDownloadBackupExclusion(from: originalURL)
+            #expect(
+                try downloadBackupExclusionIsApplied(to: originalURL) == false,
+                "Backup exclusion setup was not cleared for \(originalURL.path)"
+            )
         }
 
         _ = DownloadTaskPersistence(
@@ -393,6 +394,25 @@ private func downloadBackupExclusionIsApplied(to url: URL) throws -> Bool {
     return extendedAttributes?["com.apple.metadata:com_apple_backup_excludeItem"] != nil
     #else
     return try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true
+    #endif
+}
+
+private func removeDownloadBackupExclusion(from url: URL) throws {
+    #if os(macOS)
+    let result: Int32 = url.withUnsafeFileSystemRepresentation { path -> Int32 in
+        guard let path else { return -1 }
+        return "com.apple.metadata:com_apple_backup_excludeItem".withCString { name in
+            removexattr(path, name, 0)
+        }
+    }
+    if result != 0 {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+    #else
+    var resourceURL = url
+    var values = URLResourceValues()
+    values.isExcludedFromBackup = false
+    try resourceURL.setResourceValues(values)
     #endif
 }
 #endif

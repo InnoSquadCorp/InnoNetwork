@@ -34,6 +34,20 @@ Each line of `events.log` is a self-describing event:
 Restoration reads `checkpoint.json` first, then replays any remaining `events.log`
 suffix in sequence order.
 
+## Storage protection
+
+InnoNetworkDownload marks every library-owned persistence directory and metadata file as
+excluded from backup on Darwin platforms. On iOS, tvOS, watchOS, and visionOS it also
+requests complete-until-first-user-authentication file protection. These attributes are
+reapplied when an existing store is opened, including its checkpoint, event log, and lock
+file.
+
+Protection is intentionally scoped to paths owned by the library. A caller-supplied
+`persistenceBaseDirectoryURL` is only the parent of the `InnoNetworkDownload` directory;
+the parent itself is not modified. Final download destinations are also caller-owned and
+never receive the persistence or staging attributes. Symbolic links are ignored so the
+library cannot change metadata on a target outside its storage tree.
+
 Checkpoints written before the optional `orderedRecordIDs` field cannot fully
 recover the latest task id for repeated same-URL records. The loader keeps
 restoration deterministic by applying `orderedRecordIDs` first when present,

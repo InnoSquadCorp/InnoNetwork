@@ -219,15 +219,15 @@ jobs:
           - destination: "generic/platform=iOS Simulator"
             runtime: "iOS"
             sdk: "iphonesimulator"
-          - destination: "generic/platform=tvOS Simulator"
+          - destination: "generic/platform=tvOS"
             runtime: "tvOS"
-            sdk: "appletvsimulator"
-          - destination: "generic/platform=watchOS Simulator"
+            sdk: "appletvos"
+          - destination: "generic/platform=watchOS"
             runtime: "watchOS"
-            sdk: "watchsimulator"
-          - destination: "generic/platform=visionOS Simulator"
+            sdk: "watchos"
+          - destination: "generic/platform=visionOS"
             runtime: "visionOS"
-            sdk: "xrsimulator"
+            sdk: "xros"
 
     steps:
       - name: Checkout
@@ -274,7 +274,7 @@ jobs:
             exit 1
           fi
           if ! awk -v platform="$platform" '
-            index($0, "platform:" platform) > 0 &&
+            index($0, "platform:" platform ",") > 0 &&
               $0 !~ /error:/ &&
               $0 !~ /variant:Designed for/ { found = 1 }
             END { exit found ? 0 : 1 }
@@ -290,6 +290,7 @@ jobs:
             -destination '${{ matrix.destination }}' \
             -skipMacroValidation \
             -derivedDataPath build/release-${{ matrix.sdk }} \
+            CODE_SIGNING_ALLOWED=NO \
             build
 
   publish-release:

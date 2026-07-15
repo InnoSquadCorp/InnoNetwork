@@ -408,17 +408,17 @@ jobs:
             runtime: "iOS"
             sdk: "iphonesimulator"
             required: true
-          - destination: "generic/platform=tvOS Simulator"
+          - destination: "generic/platform=tvOS"
             runtime: "tvOS"
-            sdk: "appletvsimulator"
+            sdk: "appletvos"
             required: true
-          - destination: "generic/platform=watchOS Simulator"
+          - destination: "generic/platform=watchOS"
             runtime: "watchOS"
-            sdk: "watchsimulator"
+            sdk: "watchos"
             required: true
-          - destination: "generic/platform=visionOS Simulator"
+          - destination: "generic/platform=visionOS"
             runtime: "visionOS"
-            sdk: "xrsimulator"
+            sdk: "xros"
             required: true
 
     steps:
@@ -466,7 +466,7 @@ jobs:
             skip_or_fail "xcodebuild could not enumerate destinations for the package scheme."
           fi
           if ! awk -v platform="$platform" '
-            index($0, "platform:" platform) > 0 &&
+            index($0, "platform:" platform ",") > 0 &&
               $0 !~ /error:/ &&
               $0 !~ /variant:Designed for/ { found = 1 }
             END { exit found ? 0 : 1 }
@@ -479,6 +479,7 @@ jobs:
             -destination "$destination" \
             -skipMacroValidation \
             -derivedDataPath build/apple-platform-smoke \
+            CODE_SIGNING_ALLOWED=NO \
             build
 
   consumer-smoke:

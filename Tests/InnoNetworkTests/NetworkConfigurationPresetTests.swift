@@ -10,9 +10,12 @@ struct NetworkConfigurationPresetTests {
         let baseURL = URL(string: "https://api.example.com")!
         let safe = NetworkConfiguration.safeDefaults(baseURL: baseURL)
         let advanced = NetworkConfiguration.advanced(baseURL: baseURL)
+        let expectedPolicy = ResponseBodyBufferingPolicy.streaming(
+            maxBytes: Int64(5 * 1024 * 1024)
+        )
 
-        #expect(safe.responseBodyBufferingPolicy == .streaming(maxBytes: 5 * 1024 * 1024))
-        #expect(advanced.responseBodyBufferingPolicy == .streaming(maxBytes: 5 * 1024 * 1024))
+        #expect(safe.responseBodyBufferingPolicy == expectedPolicy)
+        #expect(advanced.responseBodyBufferingPolicy == expectedPolicy)
     }
 
     @Test("Advanced configuration preserves explicit unbounded buffering opt-outs")

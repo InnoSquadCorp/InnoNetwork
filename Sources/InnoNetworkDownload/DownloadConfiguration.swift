@@ -147,9 +147,11 @@ public struct DownloadConfiguration: Sendable {
     ///
     /// When `nil` (the default), the append-log persistence store writes to
     /// `applicationSupportDirectory/InnoNetworkDownload/<sessionIdentifier>`.
-    /// Apps that want to keep download metadata out of iCloud backups should
-    /// supply a directory under `cachesDirectory`. The supplied URL must be a
-    /// directory the process can read and write.
+    /// Download-owned directories and metadata files are excluded from backup
+    /// regardless of this override. On iOS-family platforms they also use
+    /// complete-until-first-user-authentication file protection. The supplied
+    /// root itself and caller-owned final destinations are left unchanged.
+    /// The supplied URL must be a directory the process can read and write.
     public let persistenceBaseDirectoryURL: URL?
 
     /// Durability policy for the append-log persistence layer.
@@ -263,10 +265,10 @@ public struct DownloadConfiguration: Sendable {
         public var persistenceFsyncPolicy: PersistenceFsyncPolicy
         /// Snapshot/compaction thresholds for the append-log persistence layer.
         public var persistenceCompactionPolicy: PersistenceCompactionPolicy
-        /// Optional override for the persistence root directory. Set to a
-        /// `cachesDirectory`-rooted URL to keep download metadata out of
-        /// iCloud backups, or to a process-private temporary directory in
-        /// tests.
+        /// Optional override for the persistence root directory. Download-owned
+        /// paths are excluded from backup automatically; use this override to
+        /// select another process-private location or a temporary directory in
+        /// tests. The supplied root and caller-owned destinations are unchanged.
         public var persistenceBaseDirectoryURL: URL?
 
         fileprivate init(preset: DownloadConfiguration) {
