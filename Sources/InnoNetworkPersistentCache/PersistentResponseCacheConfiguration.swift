@@ -6,7 +6,8 @@ import InnoNetwork
 /// `directoryURL` is the only required parameter; the remaining knobs default
 /// to the values documented in the 4.0.0 RFC (50 MB total, 1,000 entries,
 /// 5 MB per entry, no authenticated responses, no `Cache-Control: private`
-/// responses, no `Set-Cookie` responses, `.completeUnlessOpen` data protection).
+/// responses, no `Set-Cookie` responses,
+/// `.completeUntilFirstUserAuthentication` data protection).
 public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     /// File protection class applied to the cache directory, index, and body files.
     public enum DataProtectionClass: Sendable, Equatable {
@@ -95,7 +96,9 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     public let persistenceFsyncPolicy: PersistenceFsyncPolicy
     /// File protection class applied after cache directory and file creation.
     ///
-    /// Defaults to ``DataProtectionClass/completeUnlessOpen``. Non-iOS-family
+    /// Defaults to ``DataProtectionClass/completeUntilFirstUserAuthentication``.
+    /// This keeps background cache reads available after the first unlock while
+    /// still protecting cache contents across device restarts. Non-iOS-family
     /// platforms treat this as a no-op even when Foundation exposes the
     /// constants.
     /// ``DataProtectionClass/none`` requests `NSFileProtectionNone` for
@@ -115,7 +118,7 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
         storesAuthenticatedResponses: Bool = false,
         storesSetCookieResponses: Bool = false,
         persistenceFsyncPolicy: PersistenceFsyncPolicy = .onCheckpoint,
-        dataProtectionClass: DataProtectionClass = .completeUnlessOpen,
+        dataProtectionClass: DataProtectionClass = .completeUntilFirstUserAuthentication,
         keyStorage: KeyStorage = .file
     ) {
         self.directoryURL = directoryURL

@@ -196,6 +196,61 @@ public struct APIDefinitionMacro: ExtensionMacro {
             }
             index = path.index(after: second)
         }
+
+        guard !containsDotSegment(path) else {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition path must not contain '.' or '..' segments, including percent-encoded spellings.",
+                id: "api-definition-dot-segment"
+            ).error(at: anchor)
+        }
+    }
+
+    private static func containsDotSegment(_ path: String) -> Bool {
+        var candidate = path
+        // Decode the whole path before splitting each round so encoded `/`
+        // separators cannot hide a static traversal segment.
+        for _ in 0...path.utf8.count {
+            if candidate.split(separator: "/", omittingEmptySubsequences: false).contains(where: {
+                $0 == "." || $0 == ".."
+            }) {
+                return true
+            }
+            guard let decoded = decodePercentEscapes(candidate), decoded != candidate else { break }
+            candidate = decoded
+        }
+        return false
+    }
+
+    private static func decodePercentEscapes(_ value: String) -> String? {
+        let input = Array(value.utf8)
+        var output: [UInt8] = []
+        output.reserveCapacity(input.count)
+        var index = 0
+        while index < input.count {
+            guard input[index] == 0x25 else {
+                output.append(input[index])
+                index += 1
+                continue
+            }
+            guard index + 2 < input.count,
+                let high = hexValue(input[index + 1]),
+                let low = hexValue(input[index + 2])
+            else {
+                return nil
+            }
+            output.append((high << 4) | low)
+            index += 3
+        }
+        return String(decoding: output, as: UTF8.self)
+    }
+
+    private static func hexValue(_ byte: UInt8) -> UInt8? {
+        switch byte {
+        case 48...57: return byte - 48
+        case 65...70: return byte - 55
+        case 97...102: return byte - 87
+        default: return nil
+        }
     }
 
     private static func isASCIIHexDigit(_ character: Character) -> Bool {

@@ -500,7 +500,7 @@ final class StubMessagingHarness: Sendable {
 
     /// Opens a connection against the stub, drives it to `.connected`, and
     /// returns the corresponding `WebSocketTask`.
-    func connectAndReady(url: URL = URL(string: "ws://stub.invalid/socket")!) async throws -> WebSocketTask {
+    func connectAndReady(url: URL = URL(string: "wss://stub.invalid/socket")!) async throws -> WebSocketTask {
         let task = await manager.connect(url: url)
         // startConnection returns after registering the stub task; taskIdentifier
         // is immediately available because the stub runs synchronously.

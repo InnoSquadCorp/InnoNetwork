@@ -5,6 +5,34 @@ import Testing
 
 @Suite("Network configuration presets")
 struct NetworkConfigurationPresetTests {
+    @Test("Safe and advanced presets cap inline responses at 5 MiB")
+    func presetsCapInlineResponsesAtFiveMiB() {
+        let baseURL = URL(string: "https://api.example.com")!
+        let safe = NetworkConfiguration.safeDefaults(baseURL: baseURL)
+        let advanced = NetworkConfiguration.advanced(baseURL: baseURL)
+
+        #expect(safe.responseBodyBufferingPolicy == .streaming(maxBytes: 5 * 1024 * 1024))
+        #expect(advanced.responseBodyBufferingPolicy == .streaming(maxBytes: 5 * 1024 * 1024))
+    }
+
+    @Test("Advanced configuration preserves explicit unbounded buffering opt-outs")
+    func advancedPreservesExplicitUnboundedBuffering() {
+        let baseURL = URL(string: "https://api.example.com")!
+        let streaming = NetworkConfiguration.advanced(
+            baseURL: baseURL,
+            resilience: ResiliencePack(bodyBuffering: .streaming(maxBytes: nil))
+        )
+        let buffered = NetworkConfiguration.advanced(
+            baseURL: baseURL,
+            resilience: ResiliencePack(bodyBuffering: .buffered(maxBytes: nil))
+        )
+
+        #expect(streaming.responseBodyBufferingPolicy == .streaming(maxBytes: nil))
+        #expect(streaming.responseBodyLimit == nil)
+        #expect(buffered.responseBodyBufferingPolicy == .buffered(maxBytes: nil))
+        #expect(buffered.responseBodyLimit == nil)
+    }
+
     @Test("recommendedForProduction enables conservative resilience defaults")
     func recommendedForProductionEnablesConservativeResilienceDefaults() {
         let configuration = NetworkConfiguration.recommendedForProduction(

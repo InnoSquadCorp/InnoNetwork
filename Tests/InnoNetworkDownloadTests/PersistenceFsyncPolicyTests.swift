@@ -146,6 +146,85 @@ struct PersistenceFsyncPolicyTests {
         #expect(record?.destinationURL == destination)
     }
 
+    #if canImport(Darwin)
+    @Test("Persistence-owned directories and files are excluded from backup")
+    func persistenceOwnedPathsAreExcludedFromBackup() async throws {
+        let fileManager = FileManager.default
+        let baseDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("inno-persistence-protection-\(UUID().uuidString)", isDirectory: true)
+        let sessionIdentifier = "test.storage-protection.\(UUID().uuidString)"
+        defer { try? fileManager.removeItem(at: baseDirectory) }
+
+        let destination = baseDirectory.appendingPathComponent("caller-owned.zip", isDirectory: false)
+        try fileManager.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
+        try Data("existing".utf8).write(to: destination)
+        var destinationResourceURL = destination
+        var includedInBackup = URLResourceValues()
+        includedInBackup.isExcludedFromBackup = false
+        try destinationResourceURL.setResourceValues(includedInBackup)
+
+        let persistence = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory,
+            compactionPolicy: .init(maxEvents: 1, maxLogBytes: 1, tombstoneRatio: 0)
+        )
+        try await persistence.upsert(
+            id: "task",
+            url: URL(string: "https://example.invalid/file.zip")!,
+            destinationURL: destination
+        )
+
+        let persistenceRoot = baseDirectory.appendingPathComponent("InnoNetworkDownload", isDirectory: true)
+        let sessionDirectory = persistenceRoot.appendingPathComponent(sessionIdentifier, isDirectory: true)
+        let ownedURLs = [
+            persistenceRoot,
+            sessionDirectory,
+            sessionDirectory.appendingPathComponent("checkpoint.json", isDirectory: false),
+            sessionDirectory.appendingPathComponent("events.log", isDirectory: false),
+            sessionDirectory.appendingPathComponent(".lock", isDirectory: false),
+        ]
+        for url in ownedURLs {
+            #expect(try downloadBackupExclusionIsApplied(to: url))
+        }
+
+        for originalURL in ownedURLs.dropFirst(2) {
+            var url = originalURL
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = false
+            try url.setResourceValues(values)
+        }
+
+        _ = DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+
+        for url in ownedURLs {
+            #expect(try downloadBackupExclusionIsApplied(to: url))
+        }
+
+        #expect(try downloadBackupExclusionIsApplied(to: destination) == false)
+    }
+
+    @Test("Download storage protection never follows symbolic links")
+    func downloadStorageProtectionDoesNotFollowSymbolicLinks() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "inno-download-protection-symlink-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let targetURL = directory.appendingPathComponent("caller-owned.txt", isDirectory: false)
+        let linkURL = directory.appendingPathComponent("download-link", isDirectory: false)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("caller".utf8).write(to: targetURL)
+        try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: targetURL)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        DownloadOwnedStorageProtection.apply(to: linkURL)
+
+        #expect(try downloadBackupExclusionIsApplied(to: targetURL) == false)
+    }
+    #endif
+
     @Test("PersistenceFsyncPolicy is Equatable across cases")
     func equality() {
         #expect(DownloadConfiguration.PersistenceFsyncPolicy.always == .always)
@@ -304,3 +383,16 @@ struct PersistenceFsyncPolicyTests {
         #expect((await manager.allTasks()).isEmpty)
     }
 }
+
+#if canImport(Darwin)
+private func downloadBackupExclusionIsApplied(to url: URL) throws -> Bool {
+    #if os(macOS)
+    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+    let extendedAttributesKey = FileAttributeKey(rawValue: "NSFileExtendedAttributes")
+    let extendedAttributes = attributes[extendedAttributesKey] as? [String: Data]
+    return extendedAttributes?["com.apple.metadata:com_apple_backup_excludeItem"] != nil
+    #else
+    return try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true
+    #endif
+}
+#endif

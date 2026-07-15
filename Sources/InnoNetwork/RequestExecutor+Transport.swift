@@ -19,7 +19,7 @@ extension RequestExecutor {
         configuration: NetworkConfiguration
     ) throws {
         guard let limit = configuration.responseBodyBufferingPolicy.maxBytes else { return }
-        let observed = Int64(data.count)
+        let observed = Int64(clamping: data.count)
         if observed > limit {
             throw NetworkError.underlying(
                 SendableUnderlyingError(

@@ -71,6 +71,24 @@ package struct WebSocketConnectionCoordinator {
             }
         }
 
+        do {
+            guard let adaptedURL = request.url else {
+                throw WebSocketError.invalidURL("Handshake adapter removed the request URL")
+            }
+            try NetworkURLAdmission.validate(
+                adaptedURL,
+                policy: .webSocket(allowsInsecure: configuration.allowsInsecureWebSocket)
+            )
+        } catch {
+            guard isTransportAdmissionOpen(), await task.isConnecting(generation: generation) else {
+                return .cancelled
+            }
+            return .failed(
+                generation: generation,
+                underlying: SendableUnderlyingError(error)
+            )
+        }
+
         return .prepared(WebSocketPreparedConnection(generation: generation, request: request))
     }
 

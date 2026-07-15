@@ -154,8 +154,10 @@ extension AppendLogDownloadTaskStore {
         fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy,
         fsync: @Sendable (Int32) -> Int32
     ) throws {
-        if !fileManager.fileExists(atPath: logURL.path()) {
+        let logWasCreated = !fileManager.fileExists(atPath: logURL.path())
+        if logWasCreated {
             try Data().write(to: logURL)
+            DownloadOwnedStorageProtection.apply(to: logURL, fileManager: fileManager)
         }
 
         let handle = try FileHandle(forWritingTo: logURL)

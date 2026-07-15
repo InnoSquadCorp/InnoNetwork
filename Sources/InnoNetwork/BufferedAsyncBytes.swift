@@ -46,7 +46,19 @@ struct BufferedAsyncBytes<Base: AsyncSequence>: AsyncSequence where Base.Element
             chunk.reserveCapacity(chunkSize)
             while chunk.count < chunkSize {
                 guard let byte = try await iterator.next() else { break }
-                observedBytes += 1
+                let (nextObservedBytes, overflowed) = observedBytes.addingReportingOverflow(1)
+                guard !overflowed else {
+                    throw NetworkError.underlying(
+                        SendableUnderlyingError(
+                            domain: NetworkError.errorDomain,
+                            code: NetworkErrorCode.responseBodyLimitExceeded.rawValue,
+                            message:
+                                "Response body exceeded the largest representable byte count of \(Int64.max)."
+                        ),
+                        nil
+                    )
+                }
+                observedBytes = nextObservedBytes
                 if let maxBytes, observedBytes > maxBytes {
                     throw NetworkError.underlying(
                         SendableUnderlyingError(

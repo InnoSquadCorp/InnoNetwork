@@ -363,7 +363,7 @@ extension RequestExecutor {
             .requestStart(
                 requestID: requestID,
                 method: request.httpMethod ?? "UNKNOWN",
-                url: request.url?.absoluteString ?? "",
+                url: NetworkURLMetadataRedactor.string(from: request.url),
                 retryIndex: retryIndex
             ),
             requestID: requestID,
@@ -381,7 +381,7 @@ extension RequestExecutor {
             .requestAdapted(
                 requestID: requestID,
                 method: request.httpMethod ?? "UNKNOWN",
-                url: request.url?.absoluteString ?? "",
+                url: NetworkURLMetadataRedactor.string(from: request.url),
                 retryIndex: retryIndex
             ),
             requestID: requestID,
@@ -399,7 +399,7 @@ extension RequestExecutor {
             .requestFailed(
                 requestID: requestID,
                 errorCode: nsError.code,
-                message: networkError.localizedDescription
+                message: networkError.observabilityCategory
             ),
             requestID: requestID,
             observers: configuration.eventObservers

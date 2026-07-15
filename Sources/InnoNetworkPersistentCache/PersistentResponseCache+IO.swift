@@ -99,15 +99,41 @@ extension PersistentResponseCache {
         return fsync(fd)
     }
 
-    /// Apply the configured data-protection class to `url`. Module-internal
-    /// so ``PersistentCacheDiskKeyNormalizer`` — which lives in its own
-    /// file — can request the same protection on the HMAC key it manages
-    /// alongside the cache.
+    /// Apply the cache-owned storage policy to `url`. Backup exclusion is
+    /// unconditional on Darwin because cache contents are reproducible;
+    /// iOS-family platforms additionally receive the configured data-
+    /// protection class. Module-internal so the HMAC key uses the same policy.
     static func applyDataProtection(
         _ dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
         to url: URL,
         fileManager: FileManager
     ) {
+        applyDataProtection(
+            dataProtectionClass,
+            to: url,
+            fileManager: fileManager,
+            excludesFromBackup: true
+        )
+    }
+
+    static func applyDataProtection(
+        _ dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
+        to url: URL,
+        fileManager: FileManager,
+        excludesFromBackup: Bool
+    ) {
+        let resourceValues = try? url.resourceValues(forKeys: [.isSymbolicLinkKey])
+        guard resourceValues?.isSymbolicLink != true else { return }
+
+        #if canImport(Darwin)
+        if excludesFromBackup {
+            var resourceURL = url
+            var backupResourceValues = URLResourceValues()
+            backupResourceValues.isExcludedFromBackup = true
+            try? resourceURL.setResourceValues(backupResourceValues)
+        }
+        #endif
+
         #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
         try? fileManager.setAttributes(
             [.protectionKey: dataProtectionClass.fileProtectionType],

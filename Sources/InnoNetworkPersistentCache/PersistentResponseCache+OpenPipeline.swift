@@ -222,8 +222,9 @@ extension PersistentResponseCache {
 
         // The cache is best-effort durable: corrupt indexes and unknown
         // index versions both fall through to the same self-healing reset
-        // path. There is no inter-version migration: the 4.0.0 format is
-        // the first published one.
+        // path. Version 3 changed cache-key semantics to preserve query-item
+        // order; older entries are intentionally cold-reset because two
+        // wire-distinct targets may have occupied the same version-2 slot.
         if let data = try? Data(contentsOf: indexURL),
             let index = try? JSONDecoder.persistentCache.decode(Index.self, from: data),
             index.version == formatVersion
@@ -264,7 +265,7 @@ extension PersistentResponseCache {
         guard
             let bodyURLs = try? fileManager.contentsOfDirectory(
                 at: bodiesDirectoryURL,
-                includingPropertiesForKeys: [.isRegularFileKey],
+                includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
                 options: [.skipsHiddenFiles]
             )
         else {
@@ -272,9 +273,13 @@ extension PersistentResponseCache {
         }
 
         for bodyURL in bodyURLs {
-            let isRegularFile =
-                (try? bodyURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false
-            guard isRegularFile else { continue }
+            let resourceValues = try? bodyURL.resourceValues(
+                forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+            )
+            guard
+                resourceValues?.isRegularFile == true,
+                resourceValues?.isSymbolicLink != true
+            else { continue }
             applyDataProtection(dataProtectionClass, to: bodyURL, fileManager: fileManager)
         }
     }

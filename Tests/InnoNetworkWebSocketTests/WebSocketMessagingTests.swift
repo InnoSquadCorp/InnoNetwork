@@ -82,7 +82,7 @@ struct WebSocketMessagingTests {
     @Test("send and ping while connecting are rejected without URL task side effects")
     func sendAndPingWhileConnectingAreRejected() async throws {
         let harness = StubMessagingHarness()
-        let task = await harness.manager.connect(url: URL(string: "ws://stub.invalid/socket")!)
+        let task = await harness.manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
 
         #expect(await task.state == .connecting)
 

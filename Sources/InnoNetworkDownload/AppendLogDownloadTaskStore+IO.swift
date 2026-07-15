@@ -13,7 +13,11 @@ extension AppendLogDownloadTaskStore {
     }
 
     static func ensureDirectoryExists(at directoryURL: URL, fileManager: FileManager) throws {
+        let alreadyExists = fileManager.fileExists(atPath: directoryURL.path)
         try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        if !alreadyExists {
+            DownloadOwnedStorageProtection.apply(to: directoryURL, fileManager: fileManager)
+        }
     }
 
     static func writeAtomically(
@@ -34,6 +38,7 @@ extension AppendLogDownloadTaskStore {
         }
 
         try data.write(to: tempURL, options: .atomic)
+        DownloadOwnedStorageProtection.apply(to: tempURL, fileManager: fileManager)
 
         // For checkpoint writes (.always or .onCheckpoint), fsync the temp
         // file before the atomic rename so the rename observes a fully
@@ -51,6 +56,9 @@ extension AppendLogDownloadTaskStore {
         } else {
             try fileManager.moveItem(at: tempURL, to: fileURL)
         }
+        // Atomic replacement may swap in a new inode, so apply attributes
+        // again only after the final path is installed.
+        DownloadOwnedStorageProtection.apply(to: fileURL, fileManager: fileManager)
 
         if fsyncBeforeRename {
             try fsyncParentDirectory(of: fileURL, fsync: fsync)
@@ -117,8 +125,12 @@ extension AppendLogDownloadTaskStore {
         fileManager: FileManager
     ) throws -> Int32 {
         try ensureDirectoryExists(at: lockURL.deletingLastPathComponent(), fileManager: fileManager)
+        let alreadyExists = fileManager.fileExists(atPath: lockURL.path)
         let descriptor = open(lockURL.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else { throw CocoaError(.fileReadUnknown) }
+        if !alreadyExists {
+            DownloadOwnedStorageProtection.apply(to: lockURL, fileManager: fileManager)
+        }
         return descriptor
     }
 

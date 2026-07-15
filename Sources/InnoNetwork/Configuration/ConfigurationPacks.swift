@@ -53,7 +53,13 @@ public struct ResiliencePack: Sendable {
         if let coalescing { builder.requestCoalescingPolicy = coalescing }
         if let circuitBreaker { builder.circuitBreakerPolicy = circuitBreaker }
         if let idempotency { builder.idempotencyKeyPolicy = idempotency }
-        if let bodyBuffering { builder.responseBodyBufferingPolicy = bodyBuffering }
+        if let bodyBuffering {
+            builder.responseBodyBufferingPolicy = bodyBuffering
+            // Keep the deprecated compatibility alias synchronized so the
+            // builder does not re-apply the preset's byte ceiling when an
+            // adopter explicitly selects an unbounded policy.
+            builder.responseBodyLimit = bodyBuffering.maxBytes
+        }
         if let customExecutionPolicies { builder.customExecutionPolicies = customExecutionPolicies }
     }
 }

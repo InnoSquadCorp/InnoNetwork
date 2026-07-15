@@ -389,11 +389,19 @@ public actor DownloadManager {
 
     @discardableResult
     public func download(url: URL, to destinationURL: URL) async -> DownloadTask {
+        let task = DownloadTask(url: url, destinationURL: destinationURL)
         guard await waitForRestore() else {
             // Preserve API shape for cancellation-aware callers without mutating manager state.
-            return DownloadTask(url: url, destinationURL: destinationURL)
+            return task
         }
-        let task = DownloadTask(url: url, destinationURL: destinationURL)
+        guard admitsDownloadURL(url) else {
+            await runtimeRegistry.add(task)
+            await failureCoordinator.markTaskFailed(
+                task,
+                reason: .invalidURL("Rejected by URL admission policy")
+            )
+            return task
+        }
         await runtimeRegistry.add(task)
         await transferCoordinator.startDownload(task)
         return task
@@ -493,6 +501,13 @@ public actor DownloadManager {
     public func resume(_ task: DownloadTask) async {
         guard await waitForRestore() else { return }
         guard await task.state == .paused else { return }
+        guard admitsDownloadURL(task.url) else {
+            await failureCoordinator.markTaskFailed(
+                task,
+                reason: .invalidURL("Rejected by URL admission policy")
+            )
+            return
+        }
 
         if let resumeData = await task.resumeData {
             do {
@@ -684,10 +699,26 @@ public actor DownloadManager {
     public func retry(_ task: DownloadTask) async {
         guard await waitForRestore() else { return }
         guard await task.state == .failed else { return }
+        // A rejected task remains public so the caller can inspect its typed
+        // failure. Re-check before resetting it: otherwise `retry(_:)` could
+        // turn that terminal object into a transport-policy bypass.
+        guard admitsDownloadURL(task.url) else { return }
         let nextGeneration = await task.generation + 1
         await task.reset()
         await task.startAttempt(generation: nextGeneration, attempt: 0)
         await transferCoordinator.startDownload(task)
+    }
+
+    private func admitsDownloadURL(_ url: URL) -> Bool {
+        do {
+            try NetworkURLAdmission.validate(
+                url,
+                policy: .http(allowsInsecure: configuration.allowsInsecureHTTP)
+            )
+            return true
+        } catch {
+            return false
+        }
     }
 
     public func task(withId id: String) async -> DownloadTask? {

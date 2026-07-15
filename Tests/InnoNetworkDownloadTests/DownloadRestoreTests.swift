@@ -73,6 +73,51 @@ struct DownloadRestoreTests {
         #expect(await restoredTask.resumeData == nil)
     }
 
+    @Test("Restore quarantines persisted resume data whose source URL is no longer admitted")
+    func rejectedPausedRecordIsPrunedBeforeResume() async throws {
+        let rejectedID = "rejected-paused-\(UUID().uuidString)"
+        let rejectedRecord = DownloadTaskPersistence.Record(
+            id: rejectedID,
+            url: URL(string: "http://example.invalid/paused.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-paused.zip"),
+            resumeData: Data("legacy-http-resume-data".utf8)
+        )
+        let harness = try StubDownloadHarness(
+            label: "restore-rejected-paused",
+            prepopulatedRecords: [rejectedRecord]
+        )
+
+        #expect(await harness.manager.waitForRestoration())
+        #expect(await harness.manager.task(withId: rejectedID) == nil)
+        #expect(await harness.persistence.record(forID: rejectedID) == nil)
+        #expect(harness.stubSession.lastResumeData == nil)
+        #expect(harness.stubSession.createdTasks.isEmpty)
+        await harness.manager.shutdown()
+    }
+
+    @Test("Restore keeps plain HTTP resume data when explicitly opted in")
+    func optedInHTTPPausedRecordRestores() async throws {
+        let pausedID = "opted-in-http-paused-\(UUID().uuidString)"
+        let resumeData = Data("opted-in-http-resume-data".utf8)
+        let pausedRecord = DownloadTaskPersistence.Record(
+            id: pausedID,
+            url: URL(string: "http://localhost/paused.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-paused.zip"),
+            resumeData: resumeData
+        )
+        let harness = try StubDownloadHarness(
+            allowsInsecureHTTP: true,
+            label: "restore-opted-in-http-paused",
+            prepopulatedRecords: [pausedRecord]
+        )
+
+        #expect(await harness.manager.waitForRestoration())
+        let restoredTask = try #require(await harness.manager.task(withId: pausedID))
+        #expect(await restoredTask.state == .paused)
+        #expect(await restoredTask.resumeData == resumeData)
+        await harness.manager.shutdown()
+    }
+
     @Test("Foreign system tasks are cancelled during restore")
     func foreignSystemTasksAreCancelled() async throws {
         let foreignURL = URL(string: "https://example.invalid/foreign.zip")!

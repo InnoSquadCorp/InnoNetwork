@@ -22,6 +22,7 @@ public struct DownloadConfiguration: Sendable {
                 // metered links surprise users. Apps that explicitly want
                 // cellular call ``DownloadConfiguration/cellularEnabled()``.
                 allowsCellularAccess: false,
+                allowsInsecureHTTP: false,
                 sessionIdentifier: sessionIdentifier,
                 sharedContainerIdentifier: nil,
                 networkMonitor: NetworkMonitor.shared,
@@ -48,6 +49,7 @@ public struct DownloadConfiguration: Sendable {
                 timeoutForResource: 60 * 60 * 24,
                 taskInactivityTimeout: nil,
                 allowsCellularAccess: false,
+                allowsInsecureHTTP: false,
                 sessionIdentifier: sessionIdentifier,
                 sharedContainerIdentifier: nil,
                 networkMonitor: NetworkMonitor.shared,
@@ -110,6 +112,9 @@ public struct DownloadConfiguration: Sendable {
     /// `nil` if you want the watchdog disabled.
     public let taskInactivityTimeout: Duration?
     public let allowsCellularAccess: Bool
+    /// Allows plain `http` download sources. Defaults to `false`; production
+    /// downloads should use HTTPS.
+    public let allowsInsecureHTTP: Bool
     /// Background `URLSession` identifier and persistence scope.
     ///
     /// The preset factories use a shared identifier intended for a single download manager per process.
@@ -235,6 +240,8 @@ public struct DownloadConfiguration: Sendable {
         /// in safe and advanced presets; opt in when the product explicitly
         /// accepts cellular transfer cost.
         public var allowsCellularAccess: Bool
+        /// Allows plain `http` download sources. Defaults to `false`.
+        public var allowsInsecureHTTP: Bool
         /// Background session identifier and persistence scope.
         ///
         /// Override this when you need more than one download manager in the same process.
@@ -274,6 +281,7 @@ public struct DownloadConfiguration: Sendable {
             self.timeoutForResource = preset.timeoutForResource
             self.taskInactivityTimeout = preset.taskInactivityTimeout
             self.allowsCellularAccess = preset.allowsCellularAccess
+            self.allowsInsecureHTTP = preset.allowsInsecureHTTP
             self.sessionIdentifier = preset.sessionIdentifier
             self.sharedContainerIdentifier = preset.sharedContainerIdentifier
             self.networkMonitor = preset.networkMonitor
@@ -299,6 +307,7 @@ public struct DownloadConfiguration: Sendable {
                 timeoutForResource: timeoutForResource,
                 taskInactivityTimeout: taskInactivityTimeout,
                 allowsCellularAccess: allowsCellularAccess,
+                allowsInsecureHTTP: allowsInsecureHTTP,
                 sessionIdentifier: sessionIdentifier,
                 sharedContainerIdentifier: sharedContainerIdentifier,
                 networkMonitor: networkMonitor,
@@ -364,6 +373,7 @@ public struct DownloadConfiguration: Sendable {
         timeoutForResource: TimeInterval = 60 * 60 * 24,
         taskInactivityTimeout: Duration? = nil,
         allowsCellularAccess: Bool = true,
+        allowsInsecureHTTP: Bool = false,
         sessionIdentifier: String = "com.innonetwork.download",
         sharedContainerIdentifier: String? = nil,
         networkMonitor: (any NetworkMonitoring)? = NetworkMonitor.shared,
@@ -389,6 +399,7 @@ public struct DownloadConfiguration: Sendable {
         // task after one poll" generator. Pass `nil` to disable the watchdog.
         self.taskInactivityTimeout = taskInactivityTimeout.map { max($0, .milliseconds(100)) }
         self.allowsCellularAccess = allowsCellularAccess
+        self.allowsInsecureHTTP = allowsInsecureHTTP
         self.sessionIdentifier = sessionIdentifier
         self.sharedContainerIdentifier = sharedContainerIdentifier
         self.networkMonitor = networkMonitor
@@ -419,6 +430,7 @@ public struct DownloadConfiguration: Sendable {
             timeoutForResource: timeoutForResource,
             taskInactivityTimeout: taskInactivityTimeout,
             allowsCellularAccess: true,
+            allowsInsecureHTTP: allowsInsecureHTTP,
             sessionIdentifier: sessionIdentifier,
             sharedContainerIdentifier: sharedContainerIdentifier,
             networkMonitor: networkMonitor,

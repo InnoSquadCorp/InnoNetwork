@@ -51,7 +51,7 @@ package struct RetryCoordinator {
                     .requestFailed(
                         requestID: requestID,
                         errorCode: cancellationError.errorCode,
-                        message: cancellationError.errorDescription ?? "cancelled"
+                        message: cancellationError.observabilityCategory
                     ),
                     requestID: requestID,
                     observers: eventObservers
@@ -230,7 +230,7 @@ package struct RetryCoordinator {
                 requestID: requestID,
                 retryIndex: retryIndex,
                 delay: delay,
-                reason: error.localizedDescription
+                reason: error.observabilityCategory
             ),
             requestID: requestID,
             observers: eventObservers

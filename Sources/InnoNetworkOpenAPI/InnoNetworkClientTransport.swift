@@ -41,6 +41,7 @@ public final class InnoNetworkClientTransport: ClientTransport {
     public let responseBodyByteLimit: Int
 
     private let session: URLSession
+    private let allowsInsecureHTTP: Bool
     private static let responseBodyChunkSize = 16 * 1024
 
     /// Construct a transport backed by the supplied `URLSession`.
@@ -53,18 +54,23 @@ public final class InnoNetworkClientTransport: ClientTransport {
     ///     HTTP/3, TLS, or delegate-owned behavior. `NetworkConfiguration`
     ///     trust policies are evaluated by InnoNetwork's request pipeline and
     ///     are not copied into this bare generated-client transport.
+    ///   - allowsInsecureHTTP: Allows an `http` base URL. Defaults to `false`.
+    ///     Keep this disabled outside intentional loopback, LAN, or staging
+    ///     environments.
     ///   - requestBodyByteLimit: Maximum collected size for outgoing
     ///     request bodies.
     ///   - responseBodyByteLimit: Maximum streamed size for incoming
     ///     response bodies.
     public init(
         session: URLSession,
+        allowsInsecureHTTP: Bool = false,
         requestBodyByteLimit: Int = 50 * 1024 * 1024,
         responseBodyByteLimit: Int = 50 * 1024 * 1024
     ) {
         self.session = session
-        self.requestBodyByteLimit = requestBodyByteLimit
-        self.responseBodyByteLimit = responseBodyByteLimit
+        self.allowsInsecureHTTP = allowsInsecureHTTP
+        self.requestBodyByteLimit = max(0, requestBodyByteLimit)
+        self.responseBodyByteLimit = max(0, responseBodyByteLimit)
     }
 
     public func send(
@@ -85,12 +91,15 @@ public final class InnoNetworkClientTransport: ClientTransport {
             throw InnoNetworkClientTransportError.nonHTTPResponse(urlResponse)
         }
 
-        let normalizedResponseLimit = max(0, responseBodyByteLimit)
-        if !Self.statusCodeMustNotCarryBody(httpResponse.statusCode),
-            urlResponse.expectedContentLength > Int64(normalizedResponseLimit)
+        let responseMustNotCarryBody = Self.responseMustNotCarryBody(
+            requestMethod: request.method.rawValue,
+            statusCode: httpResponse.statusCode
+        )
+        if !responseMustNotCarryBody,
+            urlResponse.expectedContentLength > Int64(clamping: responseBodyByteLimit)
         {
             throw InnoNetworkClientTransportError.responseBodyTooLarge(
-                limit: normalizedResponseLimit,
+                limit: responseBodyByteLimit,
                 received: Int(clamping: urlResponse.expectedContentLength)
             )
         }
@@ -99,7 +108,8 @@ public final class InnoNetworkClientTransport: ClientTransport {
         let responseBody = makeResponseBody(
             responseBytes,
             response: httpResponse,
-            limit: normalizedResponseLimit
+            limit: responseBodyByteLimit,
+            mustNotCarryBody: responseMustNotCarryBody
         )
         return (response, responseBody)
     }
@@ -109,10 +119,51 @@ public final class InnoNetworkClientTransport: ClientTransport {
         body: HTTPBody?,
         baseURL: URL
     ) async throws -> URLRequest {
-        guard
-            let path = request.path,
-            let resolved = URL(string: path, relativeTo: baseURL)
+        guard let path = request.path, !path.contains("#"),
+            let requestTarget = URLComponents(string: path),
+            requestTarget.scheme == nil,
+            requestTarget.host == nil,
+            requestTarget.user == nil,
+            requestTarget.password == nil,
+            requestTarget.fragment == nil
         else {
+            throw InnoNetworkClientTransportError.invalidRequestURL(
+                baseURL: baseURL,
+                path: request.path
+            )
+        }
+
+        let resolved: URL
+        do {
+            try NetworkURLAdmission.validate(
+                baseURL,
+                policy: .http(allowsInsecure: allowsInsecureHTTP)
+            )
+            let pathURL = try EndpointPathBuilder.makeURL(
+                baseURL: baseURL,
+                endpointPath: requestTarget.percentEncodedPath,
+                allowsInsecureHTTP: allowsInsecureHTTP
+            )
+            guard var components = URLComponents(url: pathURL, resolvingAgainstBaseURL: false) else {
+                throw InnoNetworkClientTransportError.invalidRequestURL(
+                    baseURL: baseURL,
+                    path: request.path
+                )
+            }
+            components.percentEncodedQuery = requestTarget.percentEncodedQuery
+            guard let admittedURL = components.url else {
+                throw InnoNetworkClientTransportError.invalidRequestURL(
+                    baseURL: baseURL,
+                    path: request.path
+                )
+            }
+            resolved = try NetworkURLAdmission.validate(
+                admittedURL,
+                policy: .http(allowsInsecure: allowsInsecureHTTP)
+            )
+        } catch let error as InnoNetworkClientTransportError {
+            throw error
+        } catch {
             throw InnoNetworkClientTransportError.invalidRequestURL(
                 baseURL: baseURL,
                 path: request.path
@@ -142,9 +193,10 @@ public final class InnoNetworkClientTransport: ClientTransport {
     private func makeResponseBody(
         _ bytes: URLSession.AsyncBytes,
         response: HTTPURLResponse,
-        limit: Int
+        limit: Int,
+        mustNotCarryBody: Bool
     ) -> HTTPBody? {
-        guard !Self.statusCodeMustNotCarryBody(response.statusCode) else { return nil }
+        guard !mustNotCarryBody else { return nil }
         if response.expectedContentLength == 0 { return nil }
 
         let bodyLength: HTTPBody.Length =
@@ -160,7 +212,14 @@ public final class InnoNetworkClientTransport: ClientTransport {
 
                 do {
                     while let byte = try await iterator.next() {
-                        received += 1
+                        let (nextReceived, overflowed) = received.addingReportingOverflow(1)
+                        guard !overflowed else {
+                            throw InnoNetworkClientTransportError.responseBodyTooLarge(
+                                limit: limit,
+                                received: Int.max
+                            )
+                        }
+                        received = nextReceived
                         if received > limit {
                             throw InnoNetworkClientTransportError.responseBodyTooLarge(
                                 limit: limit,
@@ -213,8 +272,15 @@ public final class InnoNetworkClientTransport: ClientTransport {
         return HTTPResponse(status: status, headerFields: headerFields)
     }
 
-    private static func statusCodeMustNotCarryBody(_ statusCode: Int) -> Bool {
-        statusCode == 204 || statusCode == 205 || statusCode == 304
+    package static func responseMustNotCarryBody(
+        requestMethod: String,
+        statusCode: Int
+    ) -> Bool {
+        requestMethod.caseInsensitiveCompare("HEAD") == .orderedSame
+            || (100..<200).contains(statusCode)
+            || statusCode == 204
+            || statusCode == 205
+            || statusCode == 304
     }
 }
 
@@ -239,9 +305,9 @@ public enum InnoNetworkClientTransportError: Error, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case .invalidRequestURL(let baseURL, let path):
-            "InnoNetworkClientTransport: could not resolve request URL "
-                + "from base \(baseURL.absoluteString) and path \(path ?? "<nil>")"
+        case .invalidRequestURL:
+            // Invalid URL inputs may contain userinfo or query credentials.
+            "InnoNetworkClientTransport: could not resolve or admit request URL"
         case .nonHTTPResponse(let response):
             "InnoNetworkClientTransport: expected HTTPURLResponse, got \(type(of: response))"
         case .invalidStatusCode(let code):

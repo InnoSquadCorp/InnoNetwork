@@ -213,6 +213,90 @@ struct DownloadManagerHardeningTests {
         await harness.manager.shutdown()
     }
 
+    @Test("Download source admission rejects insecure and ambiguous URLs before URLSession")
+    func downloadURLAdmissionRejectsBeforeTransport() async throws {
+        let rejectedURLs = [
+            URL(string: "http://example.invalid/archive.zip")!,
+            URL(string: "https://user:secret@example.invalid/archive.zip")!,
+            URL(string: "https://example.invalid/a/%2e%2e/archive.zip")!,
+            URL(string: "https://example.invalid/archive.zip#fragment")!,
+        ]
+
+        for (index, url) in rejectedURLs.enumerated() {
+            let harness = try StubDownloadHarness(label: "url-admission-\(index)")
+            let task = await harness.manager.download(
+                url: url,
+                to: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            )
+
+            #expect(await task.state == .failed)
+            guard case .invalidURL(let reason) = await task.error else {
+                Issue.record("Expected a sanitized invalidURL failure")
+                await harness.manager.shutdown()
+                continue
+            }
+            #expect(reason == "Rejected by URL admission policy")
+            #expect(harness.stubSession.lastURL == nil)
+            #expect(harness.stubSession.createdTasks.isEmpty)
+            await harness.manager.shutdown()
+        }
+    }
+
+    @Test("Download configuration can explicitly opt into plain HTTP")
+    func downloadHTTPOptIn() async throws {
+        let harness = try StubDownloadHarness(allowsInsecureHTTP: true, label: "http-opt-in")
+        let url = URL(string: "http://localhost/archive.zip")!
+        let task = await harness.manager.download(
+            url: url,
+            to: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        )
+
+        #expect(await task.state == .downloading)
+        #expect(harness.stubSession.lastURL == url)
+        #expect(harness.stubSession.createdTasks.count == 1)
+        await harness.manager.shutdown()
+    }
+
+    @Test("Rejected download tasks cannot bypass URL admission through retry")
+    func rejectedDownloadRetryRemainsTransportFree() async throws {
+        let harness = try StubDownloadHarness(label: "rejected-retry")
+        let task = await harness.manager.download(
+            url: URL(string: "http://example.invalid/archive.zip")!,
+            to: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        )
+
+        await harness.manager.retry(task)
+
+        #expect(await task.state == .failed)
+        #expect(harness.stubSession.lastURL == nil)
+        #expect(harness.stubSession.createdTasks.isEmpty)
+        await harness.manager.shutdown()
+    }
+
+    @Test("Paused tasks are re-admitted before opaque resume data reaches URLSession")
+    func resumeDataCannotBypassURLAdmission() async throws {
+        let harness = try StubDownloadHarness(label: "rejected-resume")
+        let task = DownloadTask(
+            url: URL(string: "http://example.invalid/archive.zip")!,
+            destinationURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+            resumeData: Data("opaque-resume-data".utf8)
+        )
+        await task.restoreState(.paused)
+
+        await harness.manager.resume(task)
+
+        #expect(await task.state == .failed)
+        guard case .invalidURL(let reason) = await task.error else {
+            Issue.record("Expected a sanitized invalidURL failure")
+            await harness.manager.shutdown()
+            return
+        }
+        #expect(reason == "Rejected by URL admission policy")
+        #expect(harness.stubSession.lastResumeData == nil)
+        #expect(harness.stubSession.createdTasks.isEmpty)
+        await harness.manager.shutdown()
+    }
+
     @Test(
         "directory downloads fall back for unsafe filenames",
         arguments: [

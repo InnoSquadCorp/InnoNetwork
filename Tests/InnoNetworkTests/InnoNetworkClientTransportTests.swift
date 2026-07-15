@@ -108,6 +108,18 @@ struct InnoNetworkClientTransportTests {
         #expect(transport.responseBodyByteLimit == 2048)
     }
 
+    @Test("Negative byte limits normalize to zero")
+    func negativeByteLimitsNormalizeToZero() {
+        let transport = InnoNetworkClientTransport(
+            session: URLSession(configuration: .ephemeral),
+            requestBodyByteLimit: -1,
+            responseBodyByteLimit: -1
+        )
+
+        #expect(transport.requestBodyByteLimit == 0)
+        #expect(transport.responseBodyByteLimit == 0)
+    }
+
     @Test("Surfaces a typed error for an unresolvable request URL")
     func surfacesTypedErrorForUnresolvableURL() async throws {
         let transport = InnoNetworkClientTransport(session: URLSession(configuration: .ephemeral))
@@ -127,6 +139,84 @@ struct InnoNetworkClientTransportTests {
                 return
             }
         }
+    }
+
+    @Test(
+        "Rejects OpenAPI request targets that can override or traverse the configured origin",
+        arguments: [
+            "https://evil.example/users",
+            "//evil.example/users",
+            "/../admin",
+            "/%2E%2E/admin",
+            "/%25252525252E%25252525252E/admin",
+            "/users#token=secret",
+        ]
+    )
+    func rejectsOriginOverridesAndTraversal(path: String) async throws {
+        let transport = InnoNetworkClientTransport(session: URLSession(configuration: .ephemeral))
+
+        await #expect(throws: InnoNetworkClientTransportError.self) {
+            _ = try await transport.send(
+                HTTPRequest(method: .get, scheme: nil, authority: nil, path: path),
+                body: nil,
+                baseURL: URL(string: "https://api.example.com/v1")!,
+                operationID: "rejected-target"
+            )
+        }
+    }
+
+    @Test("Combines the base path with a relative OpenAPI path and preserves query order")
+    func combinesBasePathAndRelativeTarget() async throws {
+        let baseURL = URL(string: "https://api.example.com/root")!
+        let expectedURL = URL(string: "https://api.example.com/root/users?b=2&a=1")!
+        OpenAPIClientTransportURLProtocol.register(
+            url: expectedURL,
+            response: .http(statusCode: 204, headers: nil, chunks: [])
+        )
+        let transport = InnoNetworkClientTransport(session: makeOpenAPIClientTransportURLSession())
+
+        let (response, body) = try await transport.send(
+            HTTPRequest(method: .get, scheme: nil, authority: nil, path: "/users?b=2&a=1"),
+            body: nil,
+            baseURL: baseURL,
+            operationID: "combined-target"
+        )
+
+        #expect(response.status.code == 204)
+        #expect(body == nil)
+    }
+
+    @Test("Plain HTTP OpenAPI base URLs require explicit opt-in")
+    func plainHTTPRequiresExplicitOptIn() async throws {
+        let baseURL = URL(string: "http://127.0.0.1:8080")!
+        let expectedURL = baseURL.appendingPathComponent("health")
+        let request = HTTPRequest(method: .get, scheme: nil, authority: nil, path: "/health")
+        let defaultTransport = InnoNetworkClientTransport(session: URLSession(configuration: .ephemeral))
+
+        await #expect(throws: InnoNetworkClientTransportError.self) {
+            _ = try await defaultTransport.send(
+                request,
+                body: nil,
+                baseURL: baseURL,
+                operationID: "http-rejected"
+            )
+        }
+
+        OpenAPIClientTransportURLProtocol.register(
+            url: expectedURL,
+            response: .http(statusCode: 204, headers: nil, chunks: [])
+        )
+        let optedInTransport = InnoNetworkClientTransport(
+            session: makeOpenAPIClientTransportURLSession(),
+            allowsInsecureHTTP: true
+        )
+        let (response, _) = try await optedInTransport.send(
+            request,
+            body: nil,
+            baseURL: baseURL,
+            operationID: "http-opted-in"
+        )
+        #expect(response.status.code == 204)
     }
 
     @Test("Streams response body through HTTPBody")
@@ -255,6 +345,44 @@ struct InnoNetworkClientTransportTests {
 
         #expect(response.status.code == statusCode)
         #expect(responseBody == nil)
+    }
+
+    @Test("HEAD skips oversized Content-Length precheck and returns no body")
+    func headReturnsNoBody() async throws {
+        let baseURL = URL(string: "https://api.example.com")!
+        let streamURL = baseURL.appendingPathComponent("head")
+        OpenAPIClientTransportURLProtocol.register(
+            url: streamURL,
+            response: .http(
+                statusCode: 200,
+                headers: ["Content-Length": "4096"],
+                chunks: []
+            )
+        )
+        let transport = InnoNetworkClientTransport(
+            session: makeOpenAPIClientTransportURLSession(),
+            responseBodyByteLimit: 1
+        )
+
+        let (response, responseBody) = try await transport.send(
+            HTTPRequest(method: .head, scheme: nil, authority: nil, path: "/head"),
+            body: nil,
+            baseURL: baseURL,
+            operationID: "head"
+        )
+
+        #expect(response.status.code == 200)
+        #expect(responseBody == nil)
+    }
+
+    @Test("Informational responses are classified as no-body", arguments: [100, 101, 150, 199])
+    func informationalResponsesAreNoBody(statusCode: Int) {
+        #expect(
+            InnoNetworkClientTransport.responseMustNotCarryBody(
+                requestMethod: "GET",
+                statusCode: statusCode
+            )
+        )
     }
 
     @Test("Surfaces typed error for a non-HTTP response")

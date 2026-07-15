@@ -3,11 +3,11 @@ import Testing
 
 @testable import InnoNetwork
 
-@Suite("ResponseCacheKey query normalization")
+@Suite("ResponseCacheKey query identity")
 struct ResponseCacheKeyQueryNormalizationTests {
 
-    @Test("Query items are sorted so reordered URLs collapse to a single key")
-    func reorderedQueryItemsShareKey() throws {
+    @Test("Reordered query items remain distinct cache keys")
+    func reorderedQueryItemsRemainDistinct() throws {
         let urlA = try #require(URL(string: "https://api.example.com/v1/items?b=2&a=1&c=3"))
         let urlB = try #require(URL(string: "https://api.example.com/v1/items?a=1&b=2&c=3"))
         let urlC = try #require(URL(string: "https://api.example.com/v1/items?c=3&a=1&b=2"))
@@ -16,19 +16,22 @@ struct ResponseCacheKeyQueryNormalizationTests {
         let keyB = try #require(ResponseCacheKey(request: URLRequest(url: urlB)))
         let keyC = try #require(ResponseCacheKey(request: URLRequest(url: urlC)))
 
-        #expect(keyA == keyB)
-        #expect(keyB == keyC)
+        #expect(keyA != keyB)
+        #expect(keyB != keyC)
+        #expect(keyA != keyC)
     }
 
-    @Test("Query items with repeated names sort by value as a stable secondary key")
-    func repeatedQueryNamesAreStable() throws {
+    @Test("Repeated query names preserve value order")
+    func repeatedQueryNamesPreserveOrder() throws {
         let urlA = try #require(URL(string: "https://api.example.com/items?tag=z&tag=a"))
         let urlB = try #require(URL(string: "https://api.example.com/items?tag=a&tag=z"))
 
         let keyA = try #require(ResponseCacheKey(request: URLRequest(url: urlA)))
         let keyB = try #require(ResponseCacheKey(request: URLRequest(url: urlB)))
 
-        #expect(keyA == keyB)
+        #expect(keyA != keyB)
+        #expect(keyA.url == "https://api.example.com/items?tag=z&tag=a")
+        #expect(keyB.url == "https://api.example.com/items?tag=a&tag=z")
     }
 
     @Test("Different fragments are still treated as the same key")
@@ -45,7 +48,7 @@ struct ResponseCacheKeyQueryNormalizationTests {
     @Test("URL scheme and host casing are normalized")
     func schemeAndHostCasingNormalize() async throws {
         let urlA = try #require(URL(string: "HTTPS://API.EXAMPLE.COM/v1/items?b=2&a=1"))
-        let urlB = try #require(URL(string: "https://api.example.com/v1/items?a=1&b=2"))
+        let urlB = try #require(URL(string: "https://api.example.com/v1/items?b=2&a=1"))
 
         let keyA = try #require(ResponseCacheKey(request: URLRequest(url: urlA)))
         let keyB = try #require(ResponseCacheKey(request: URLRequest(url: urlB)))
@@ -61,11 +64,11 @@ struct ResponseCacheKeyQueryNormalizationTests {
         )
         let keyB = ResponseCacheKey(
             method: "GET",
-            url: "https://api.example.com/v1/items?a=1&b=2"
+            url: "https://api.example.com/v1/items?b=2&a=1"
         )
 
         #expect(keyA == keyB)
-        #expect(keyA.url == "https://api.example.com/v1/items?a=1&b=2")
+        #expect(keyA.url == "https://api.example.com/v1/items?b=2&a=1")
     }
 
     @Test("Direct cache key initializer preserves unparsable URL strings")
@@ -236,12 +239,12 @@ struct InMemoryResponseCacheLRUTests {
         )
         let second = ResponseCacheKey(
             method: "GET",
-            url: "https://example.com/items?a=1&b=2#two",
+            url: "https://example.com/items?b=2&a=1#two",
             headers: ["Accept-Language": "ko-KR"]
         )
         let third = ResponseCacheKey(
             method: "HEAD",
-            url: "https://example.com/items?a=1&b=2",
+            url: "https://example.com/items?b=2&a=1",
             headers: ["X-Variant": "metadata"]
         )
         let other = makeKey("https://example.com/items?a=1&b=3")

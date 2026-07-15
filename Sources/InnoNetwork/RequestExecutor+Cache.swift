@@ -188,14 +188,14 @@ extension RequestExecutor {
                         let surfaced =
                             configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
                         Logger.API.error(
-                            "Background revalidation failed: \(surfaced.localizedDescription, privacy: .public)"
+                            "Background revalidation failed: \(surfaced.observabilityCategory, privacy: .public)"
                         )
                         await eventHub.publish(
                             .cacheRevalidation(
                                 originalID: originalRequestID,
                                 state: .failed(
                                     errorCode: surfaced.errorCode,
-                                    message: surfaced.localizedDescription
+                                    message: surfaced.observabilityCategory
                                 )
                             ),
                             requestID: revalidationID,

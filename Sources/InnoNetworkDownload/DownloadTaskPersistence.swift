@@ -162,9 +162,11 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         fsync: @escaping @Sendable (Int32) -> Int32 = Darwin.fsync
     ) {
         let baseDirectory = baseDirectoryURL ?? Self.defaultBaseDirectory(fileManager: fileManager)
-        let directoryURL =
+        let persistenceRootURL =
             baseDirectory
             .appendingPathComponent("InnoNetworkDownload", isDirectory: true)
+        let directoryURL =
+            persistenceRootURL
             .appendingPathComponent(sessionIdentifier, isDirectory: true)
         let checkpointURL = directoryURL.appendingPathComponent("checkpoint.json", isDirectory: false)
         let logURL = directoryURL.appendingPathComponent("events.log", isDirectory: false)
@@ -172,7 +174,10 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         let initialState: StoreState
 
         do {
+            try Self.ensureDirectoryExists(at: persistenceRootURL, fileManager: fileManager)
             try Self.ensureDirectoryExists(at: directoryURL, fileManager: fileManager)
+            DownloadOwnedStorageProtection.apply(to: persistenceRootURL, fileManager: fileManager)
+            DownloadOwnedStorageProtection.apply(to: directoryURL, fileManager: fileManager)
             initialState = try Self.withDirectoryLock(lockURL: lockURL, fileManager: fileManager) {
                 try Self.loadState(
                     directoryURL: directoryURL,
@@ -192,6 +197,14 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
                 tombstoneCount: 0,
                 logSize: 0
             )
+        }
+
+        // Resource attributes can be stripped by restores or external file
+        // management. Reapply them whenever the store reopens, including when
+        // no mutation follows this initialization.
+        for url in [checkpointURL, logURL, lockURL]
+        where fileManager.fileExists(atPath: url.path) {
+            DownloadOwnedStorageProtection.apply(to: url, fileManager: fileManager)
         }
 
         self.fileManager = fileManager

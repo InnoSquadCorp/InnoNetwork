@@ -22,6 +22,7 @@ struct WebSocketConfigurationTests {
         #expect(config.maxReconnectDelay == 0)
         #expect(config.maxReconnectAttempts == 5)
         #expect(config.allowsCellularAccess == true)
+        #expect(config.allowsInsecureWebSocket == false)
     }
 
     @Test("maxReconnectDelay is opt-in by default")
@@ -59,11 +60,85 @@ struct WebSocketConfigurationTests {
             $0.connectionTimeout = 60
             $0.reconnectDelay = 2
             $0.maxReconnectAttempts = 12
+            $0.allowsInsecureWebSocket = true
         }
 
         #expect(config.connectionTimeout == 60)
         #expect(config.reconnectDelay == 2)
         #expect(config.maxReconnectAttempts == 12)
+        #expect(config.allowsInsecureWebSocket)
+    }
+
+    @Test("WebSocket admission rejects insecure and ambiguous URLs before URLSession")
+    func webSocketURLAdmissionRejectsBeforeTransport() async {
+        let rejectedURLs = [
+            URL(string: "ws://example.invalid/socket")!,
+            URL(string: "wss://user:secret@example.invalid/socket")!,
+            URL(string: "wss://example.invalid/a/%2e%2e/socket")!,
+            URL(string: "wss://example.invalid/socket#fragment")!,
+        ]
+
+        for (index, url) in rejectedURLs.enumerated() {
+            let configuration = WebSocketConfiguration(
+                heartbeatInterval: 0,
+                maxReconnectAttempts: 0,
+                sessionIdentifier: makeWebSocketTestSessionIdentifier("url-admission-\(index)")
+            )
+            let session = StubWebSocketURLSession()
+            let callbacks = WebSocketSessionDelegateCallbacks()
+            let delegate = WebSocketSessionDelegate(
+                callbacks: callbacks,
+                backgroundCompletionStore: BackgroundCompletionStore()
+            )
+            let manager = WebSocketManager(
+                configuration: configuration,
+                urlSession: session,
+                delegate: delegate,
+                callbacks: callbacks
+            )
+
+            let task = await manager.connect(url: url)
+            #expect(await task.state == .failed)
+            #expect(await task.error == .invalidURL("Rejected by URL admission policy"))
+            #expect(session.requests.isEmpty)
+            #expect(session.createdTasks.isEmpty)
+
+            let shutdown = Task { await manager.shutdown() }
+            #expect(await session.waitForInvalidation())
+            callbacks.handleInvalidation(nil)
+            await shutdown.value
+        }
+    }
+
+    @Test("WebSocket configuration can explicitly opt into plain WS")
+    func webSocketInsecureOptIn() async {
+        let configuration = WebSocketConfiguration(
+            heartbeatInterval: 0,
+            maxReconnectAttempts: 0,
+            allowsInsecureWebSocket: true,
+            sessionIdentifier: makeWebSocketTestSessionIdentifier("ws-opt-in")
+        )
+        let session = StubWebSocketURLSession()
+        let callbacks = WebSocketSessionDelegateCallbacks()
+        let delegate = WebSocketSessionDelegate(
+            callbacks: callbacks,
+            backgroundCompletionStore: BackgroundCompletionStore()
+        )
+        let manager = WebSocketManager(
+            configuration: configuration,
+            urlSession: session,
+            delegate: delegate,
+            callbacks: callbacks
+        )
+
+        _ = await manager.connect(url: URL(string: "ws://localhost/socket")!)
+        #expect(session.requests.count == 1)
+        #expect(session.lastRequest?.url?.scheme == "ws")
+
+        let shutdown = Task { await manager.shutdown() }
+        #expect(await session.waitForInvalidation())
+        callbacks.handleInvalidation(nil)
+        await shutdown.value
     }
 
     @Test("Custom configuration is applied correctly")
@@ -170,6 +245,45 @@ struct WebSocketConfigurationTests {
             closeCode: .normalClosure,
             reason: nil
         )
+    }
+
+    @Test("Handshake adapters cannot bypass URL admission")
+    func handshakeAdapterURLIsRevalidated() async {
+        let config = WebSocketConfiguration(
+            heartbeatInterval: 0,
+            reconnectDelay: 0,
+            maxReconnectAttempts: 0,
+            sessionIdentifier: makeWebSocketTestSessionIdentifier("adapter-url-admission"),
+            handshakeRequestAdapters: [
+                WebSocketHandshakeRequestAdapter { request in
+                    var adapted = request
+                    adapted.url = URL(string: "ws://user:secret@example.invalid/a/%2e%2e/socket")!
+                    return adapted
+                }
+            ]
+        )
+        let session = StubWebSocketURLSession()
+        let callbacks = WebSocketSessionDelegateCallbacks()
+        let delegate = WebSocketSessionDelegate(
+            callbacks: callbacks,
+            backgroundCompletionStore: BackgroundCompletionStore()
+        )
+        let manager = WebSocketManager(
+            configuration: config,
+            urlSession: session,
+            delegate: delegate,
+            callbacks: callbacks
+        )
+
+        let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        #expect(await task.state == .failed)
+        #expect(session.requests.isEmpty)
+        #expect(session.createdTasks.isEmpty)
+
+        let shutdown = Task { await manager.shutdown() }
+        #expect(await session.waitForInvalidation())
+        callbacks.handleInvalidation(nil)
+        await shutdown.value
     }
 
     @Test("URLSessionConfiguration is created correctly")
@@ -1092,7 +1206,7 @@ struct WebSocketListenerLifecycleTests {
         )
         let recorder = WebSocketEventRecorder()
 
-        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
         _ = await manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
@@ -1151,7 +1265,7 @@ struct WebSocketListenerLifecycleTests {
         )
         let recorder = WebSocketEventRecorder()
 
-        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
         _ = await manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
@@ -1289,7 +1403,7 @@ struct WebSocketListenerLifecycleTests {
             )
         )
 
-        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
         let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
 
         await task.setAutoReconnectEnabled(false)
@@ -1327,7 +1441,7 @@ struct WebSocketListenerLifecycleTests {
         )
         let recorder = WebSocketEventRecorder()
 
-        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
         _ = await manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
@@ -1381,7 +1495,7 @@ struct WebSocketListenerLifecycleTests {
         )
         let recorder = WebSocketEventRecorder()
 
-        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
         _ = await manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
@@ -1580,7 +1694,7 @@ struct WebSocketListenerLifecycleTests {
     func terminalHandshakeFailureRemovesRuntime() async throws {
         let harness = StubMessagingHarness(reconnectDelay: 0, maxReconnectAttempts: 3)
         let recorder = WebSocketEventRecorder()
-        let task = await harness.manager.connect(url: URL(string: "ws://stub.invalid/socket")!)
+        let task = await harness.manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
         _ = await harness.manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
@@ -1680,7 +1794,7 @@ struct WebSocketListenerLifecycleTests {
         )
         let manager = WebSocketManager(configuration: config)
 
-        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
         let _ = await manager.addEventListener(for: task) { _ in }
 
         let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
@@ -1710,7 +1824,7 @@ struct WebSocketListenerLifecycleTests {
             )
         )
 
-        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
         let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
 
         manager.handleDisconnected(
@@ -1733,7 +1847,7 @@ struct WebSocketListenerLifecycleTests {
             )
         )
 
-        let task = await manager.connect(url: URL(string: "ws://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
         let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
 
         manager.handleDisconnected(

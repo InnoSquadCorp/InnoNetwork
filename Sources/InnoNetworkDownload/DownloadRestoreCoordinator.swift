@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetwork
 import OSLog
 
 package struct DownloadRestoreCoordinator {
@@ -89,6 +90,10 @@ package struct DownloadRestoreCoordinator {
         var pendingMissingSystemTaskIDs: [String] = []
         let persistedTasks = await persistence.allRecords()
         for record in persistedTasks where !restoredTaskIDs.contains(record.id) {
+            guard admitsDownloadURL(record.url) else {
+                await pruneRejectedRecord(record.id)
+                continue
+            }
             if let resumeData = record.resumeData {
                 let restoredTask = DownloadTask(
                     url: record.url,
@@ -123,6 +128,12 @@ package struct DownloadRestoreCoordinator {
     }
 
     private func restoreTrackedTask(for urlTask: any DownloadURLTask) async -> DownloadTask? {
+        guard let requestURL = urlTask.originalRequest?.url,
+            admitsDownloadURL(requestURL)
+        else {
+            return nil
+        }
+
         let taskID: String
 
         if let description = urlTask.taskDescription, !description.isEmpty {
@@ -135,10 +146,20 @@ package struct DownloadRestoreCoordinator {
         }
 
         if let existingTask = await runtimeRegistry.task(withId: taskID) {
-            return existingTask
+            // A duplicate system task must not steal an existing logical ID
+            // and redirect its destination to a different admitted URL.
+            return existingTask.url == requestURL ? existingTask : nil
         }
 
         guard let record = await persistence.record(forID: taskID) else { return nil }
+        guard admitsDownloadURL(record.url), record.url == requestURL else {
+            // A persisted source and the live URLSession request must describe
+            // the same admitted transfer. Otherwise adopting the live task
+            // could write bytes from a different origin to the persisted
+            // destination, and its opaque resume data could revive that URL.
+            await pruneRejectedRecord(record.id)
+            return nil
+        }
         let restoredTask = DownloadTask(
             url: record.url,
             destinationURL: record.destinationURL,
@@ -147,5 +168,27 @@ package struct DownloadRestoreCoordinator {
         )
         await runtimeRegistry.add(restoredTask)
         return restoredTask
+    }
+
+    private func admitsDownloadURL(_ url: URL) -> Bool {
+        do {
+            try NetworkURLAdmission.validate(
+                url,
+                policy: .http(allowsInsecure: configuration.allowsInsecureHTTP)
+            )
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func pruneRejectedRecord(_ id: String) async {
+        do {
+            try await persistence.remove(id: id)
+        } catch {
+            Self.logger.fault(
+                "Failed to prune URL-policy-rejected task \(id, privacy: .private(mask: .hash)) from persistence: \(String(describing: error), privacy: .private(mask: .hash)). The record remains quarantined and will be retried on the next launch."
+            )
+        }
     }
 }

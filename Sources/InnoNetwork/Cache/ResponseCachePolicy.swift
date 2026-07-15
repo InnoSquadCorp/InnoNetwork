@@ -114,15 +114,11 @@ public struct ResponseCacheKey: Hashable, Sendable {
         components.scheme = components.scheme?.lowercased()
         components.host = components.host?.lowercased()
         components.fragment = nil
-        // Sort query items so semantically-equal requests with reordered query
-        // strings (e.g. `?a=1&b=2` vs `?b=2&a=1`) collapse to a single cache
-        // slot. Stable secondary sort by value keeps repeated names well-defined.
-        if let items = components.queryItems, items.count > 1 {
-            components.queryItems = items.sorted { lhs, rhs in
-                if lhs.name != rhs.name { return lhs.name < rhs.name }
-                return (lhs.value ?? "") < (rhs.value ?? "")
-            }
-        }
+        // Query order is intentionally preserved. Although many origins treat
+        // reordered query items as equivalent, signatures, duplicate-key
+        // semantics, and order-sensitive application routers may not. A cache
+        // must never collapse two wire-distinct targets without an explicit
+        // origin contract that proves they are equivalent.
         return components.url?.absoluteString
     }
 }
@@ -300,7 +296,7 @@ package extension ResponseCacheKey {
 /// every method/header variant for a target URI when
 /// ``invalidateTargetURI(_:)`` is called. The target URI uses the same
 /// normalization as ``ResponseCacheKey``: lowercase scheme/host, stripped
-/// fragment, and stable-sorted query items.
+/// fragment, and query items preserved in wire order.
 public protocol ResponseCache: Sendable {
     func get(_ key: ResponseCacheKey) async -> CachedResponse?
     func set(_ key: ResponseCacheKey, _ value: CachedResponse) async

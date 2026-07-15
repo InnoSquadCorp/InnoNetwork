@@ -694,6 +694,41 @@ struct MacroExpansionTests {
         )
     }
 
+    @Test("APIDefinition macro rejects static dot segments and encoded bypasses")
+    func apiDefinitionDotSegments() {
+        for path in [
+            "/v1/../admin",
+            "/v1/%2e%2E/admin",
+            "/v1/%252e%252E/admin",
+            "/v1/%2F..%2Fadmin",
+            "/v1/%252525252525252e%252525252525252E/admin",
+        ] {
+            assertMacroExpansion(
+                """
+                @APIDefinition(method: .get, path: "\(path)", auth: .anonymous)
+                struct AdminEndpoint {
+                    typealias APIResponse = User
+                }
+                """,
+                expandedSource:
+                    """
+                    struct AdminEndpoint {
+                        typealias APIResponse = User
+                    }
+                    """,
+                diagnostics: [
+                    DiagnosticSpec(
+                        message:
+                            "@APIDefinition path must not contain '.' or '..' segments, including percent-encoded spellings.",
+                        line: 1,
+                        column: 36
+                    )
+                ],
+                macros: macros
+            )
+        }
+    }
+
     @Test("APIDefinition macro warns about redundant EmptyParameter")
     func apiDefinitionRedundantEmptyParameterWarning() {
         assertMacroExpansion(

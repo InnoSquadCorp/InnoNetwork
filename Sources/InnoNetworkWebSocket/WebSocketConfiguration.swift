@@ -51,6 +51,7 @@ public struct WebSocketConfiguration: Sendable {
                 maxReconnectAttempts: 5,
                 reconnectMaxTotalDuration: 0,
                 allowsCellularAccess: true,
+                allowsInsecureWebSocket: false,
                 sessionIdentifier: "com.innonetwork.websocket",
                 requestHeaders: [:],
                 handshakeRequestAdapters: [],
@@ -77,6 +78,7 @@ public struct WebSocketConfiguration: Sendable {
                 maxReconnectAttempts: 8,
                 reconnectMaxTotalDuration: 0,
                 allowsCellularAccess: true,
+                allowsInsecureWebSocket: false,
                 sessionIdentifier: "com.innonetwork.websocket",
                 requestHeaders: [:],
                 handshakeRequestAdapters: [],
@@ -142,6 +144,9 @@ public struct WebSocketConfiguration: Sendable {
     public let reconnectMaxTotalDuration: TimeInterval
     /// Whether cellular data is allowed for socket connections.
     public let allowsCellularAccess: Bool
+    /// Allows plain `ws` connections. Defaults to `false`; production
+    /// sockets should use WSS.
+    public let allowsInsecureWebSocket: Bool
     /// Reserved for API compatibility with managers that support background sessions.
     /// WebSocketManager currently uses a default URLSession configuration.
     public let sessionIdentifier: String
@@ -206,6 +211,8 @@ public struct WebSocketConfiguration: Sendable {
         /// ``WebSocketConfiguration/reconnectMaxTotalDuration``.
         public var reconnectMaxTotalDuration: TimeInterval
         public var allowsCellularAccess: Bool
+        /// Allows plain `ws` connections. Defaults to `false`.
+        public var allowsInsecureWebSocket: Bool
         public var sessionIdentifier: String
         public var requestHeaders: [String: String]
         public var handshakeRequestAdapters: [WebSocketHandshakeRequestAdapter]
@@ -237,6 +244,7 @@ public struct WebSocketConfiguration: Sendable {
             self.maxReconnectAttempts = preset.maxReconnectAttempts
             self.reconnectMaxTotalDuration = preset.reconnectMaxTotalDuration
             self.allowsCellularAccess = preset.allowsCellularAccess
+            self.allowsInsecureWebSocket = preset.allowsInsecureWebSocket
             self.sessionIdentifier = preset.sessionIdentifier
             self.requestHeaders = preset.requestHeaders
             self.handshakeRequestAdapters = preset.handshakeRequestAdapters
@@ -262,6 +270,7 @@ public struct WebSocketConfiguration: Sendable {
                 maxReconnectAttempts: maxReconnectAttempts,
                 reconnectMaxTotalDuration: reconnectMaxTotalDuration,
                 allowsCellularAccess: allowsCellularAccess,
+                allowsInsecureWebSocket: allowsInsecureWebSocket,
                 sessionIdentifier: sessionIdentifier,
                 requestHeaders: requestHeaders,
                 handshakeRequestAdapters: handshakeRequestAdapters,
@@ -298,6 +307,7 @@ public struct WebSocketConfiguration: Sendable {
         maxReconnectAttempts: Int = 5,
         reconnectMaxTotalDuration: TimeInterval = 0,
         allowsCellularAccess: Bool = true,
+        allowsInsecureWebSocket: Bool = false,
         sessionIdentifier: String = "com.innonetwork.websocket",
         requestHeaders: [String: String] = [:],
         handshakeRequestAdapters: [WebSocketHandshakeRequestAdapter] = [],
@@ -320,6 +330,7 @@ public struct WebSocketConfiguration: Sendable {
         self.maxReconnectAttempts = max(0, maxReconnectAttempts)
         self.reconnectMaxTotalDuration = max(0, reconnectMaxTotalDuration)
         self.allowsCellularAccess = allowsCellularAccess
+        self.allowsInsecureWebSocket = allowsInsecureWebSocket
         self.sessionIdentifier = sessionIdentifier
         self.requestHeaders = requestHeaders
         self.handshakeRequestAdapters = handshakeRequestAdapters

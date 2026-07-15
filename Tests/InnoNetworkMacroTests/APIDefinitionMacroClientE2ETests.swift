@@ -12,7 +12,7 @@ struct APIDefinitionMacroClientE2ETests {
         let expected = MacroClientUser(id: 42, name: "Blob")
         try session.setMockJSON(expected)
         let client = DefaultNetworkClient(
-            configuration: .safeDefaults(baseURL: URL(string: "https://api.example.com/v1")!),
+            configuration: makeMacroClientTestConfiguration(),
             session: session
         )
 
@@ -42,7 +42,7 @@ struct APIDefinitionMacroClientE2ETests {
         let expected = MacroClientUser(id: 43, name: "Ada")
         try session.setMockJSON(expected)
         let client = DefaultNetworkClient(
-            configuration: .safeDefaults(baseURL: URL(string: "https://api.example.com/v1")!),
+            configuration: makeMacroClientTestConfiguration(),
             session: session
         )
         let body = MacroClientCreateUserBody(name: "Ada", role: "admin")
@@ -65,7 +65,7 @@ struct APIDefinitionMacroClientE2ETests {
     func requiredAuthWithoutPolicyFailsBeforeTransport() async throws {
         let session = MockURLSession()
         let client = DefaultNetworkClient(
-            configuration: .safeDefaults(baseURL: URL(string: "https://api.example.com/v1")!),
+            configuration: makeMacroClientTestConfiguration(),
             session: session
         )
 
@@ -96,6 +96,9 @@ struct APIDefinitionMacroClientE2ETests {
         let client = DefaultNetworkClient(
             configuration: .advanced(
                 baseURL: URL(string: "https://api.example.com/v1")!,
+                resilience: ResiliencePack(
+                    bodyBuffering: .buffered(maxBytes: 5 * 1024 * 1024)
+                ),
                 auth: AuthPack(refreshToken: policy)
             ),
             session: session
@@ -109,6 +112,15 @@ struct APIDefinitionMacroClientE2ETests {
         #expect(requests.count == 1)
         #expect(requests.first?.value(forHTTPHeaderField: "Authorization") == "Bearer fresh-token")
     }
+}
+
+private func makeMacroClientTestConfiguration() -> NetworkConfiguration {
+    .advanced(
+        baseURL: URL(string: "https://api.example.com/v1")!,
+        resilience: ResiliencePack(
+            bodyBuffering: .buffered(maxBytes: 5 * 1024 * 1024)
+        )
+    )
 }
 
 private struct MacroClientUser: Codable, Equatable, Sendable {

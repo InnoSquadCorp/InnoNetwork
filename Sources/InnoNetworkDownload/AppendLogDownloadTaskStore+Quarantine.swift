@@ -32,17 +32,18 @@ extension AppendLogDownloadTaskStore {
         )
         do {
             try fileManager.moveItem(at: url, to: corruptedURL)
+            DownloadOwnedStorageProtection.apply(to: corruptedURL, fileManager: fileManager)
             return
         } catch {
             quarantineLogger.fault(
-                "Failed to quarantine corrupt persistence file at \(url.path(), privacy: .public): \(error.localizedDescription, privacy: .public). Falling back to removeItem."
+                "Failed to quarantine corrupt persistence file at \(url.path(), privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .private(mask: .hash)). Falling back to removeItem."
             )
         }
         do {
             try fileManager.removeItem(at: url)
         } catch {
             quarantineLogger.fault(
-                "Fallback removeItem also failed for \(url.path(), privacy: .public): \(error.localizedDescription, privacy: .public). Subsequent boots will re-read the corrupt file."
+                "Fallback removeItem also failed for \(url.path(), privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .private(mask: .hash)). Subsequent boots will re-read the corrupt file."
             )
         }
     }

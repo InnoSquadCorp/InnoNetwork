@@ -47,12 +47,12 @@ struct PersistentResponseCacheTests {
         )
         let second = ResponseCacheKey(
             method: "GET",
-            url: "https://example.com/items?a=1&b=2#second",
+            url: "https://example.com/items?b=2&a=1#second",
             headers: ["Accept-Language": "ko-KR"]
         )
         let third = ResponseCacheKey(
             method: "HEAD",
-            url: "https://example.com/items?a=1&b=2",
+            url: "https://example.com/items?b=2&a=1",
             headers: ["X-Variant": "metadata"]
         )
         let other = ResponseCacheKey(method: "GET", url: "https://example.com/items?a=1&b=3")
@@ -75,6 +75,23 @@ struct PersistentResponseCacheTests {
         #expect(await reopened.get(second) == nil)
         #expect(await reopened.get(third) == nil)
         #expect(await reopened.get(other)?.data == Data("other".utf8))
+    }
+
+    @Test("Query order remains distinct across persistent-cache reopen")
+    func queryOrderRemainsDistinctAcrossReopen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let first = ResponseCacheKey(method: "GET", url: "https://example.com/items?a=1&b=2")
+        let second = ResponseCacheKey(method: "GET", url: "https://example.com/items?b=2&a=1")
+
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(first, CachedResponse(data: Data("first".utf8)))
+        await writer.set(second, CachedResponse(data: Data("second".utf8)))
+
+        let reader = try PersistentResponseCache(configuration: configuration)
+        #expect(await reader.get(first)?.data == Data("first".utf8))
+        #expect(await reader.get(second)?.data == Data("second".utf8))
     }
 
     @Test("Same key with different Vary snapshots stores distinct persistent variants")
@@ -1117,6 +1134,35 @@ struct PersistentResponseCacheTests {
         #expect(await cache.get(key) != nil)
     }
 
+    @Test("Version 2 index cold-resets after query-order key change")
+    func versionTwoIndexColdResets() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let legacyKey = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/items?a=1&b=2"
+        )
+
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(legacyKey, CachedResponse(data: Data("legacy".utf8)))
+        #expect(try existingBodyURLs(in: directory).count == 1)
+
+        var index = try indexObject(in: directory)
+        index["version"] = 2
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        let legacyIndexData = try JSONSerialization.data(withJSONObject: index, options: [.sortedKeys])
+        try legacyIndexData.write(to: indexURL, options: .atomic)
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+        #expect(await reopened.get(legacyKey) == nil)
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+
+        let newKey = ResponseCacheKey(method: "GET", url: "https://example.com/recovered")
+        await reopened.set(newKey, CachedResponse(data: Data("new".utf8)))
+        #expect(try indexObject(in: directory)["version"] as? Int == 3)
+    }
+
     @Test("Recovery preserves unrelated files in the cache directory")
     func recoveryDoesNotWipeUserDirectory() async throws {
         let directory = makeDirectory()
@@ -1171,7 +1217,10 @@ struct PersistentResponseCacheTests {
         let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
         #expect(FileManager.default.fileExists(atPath: bodiesURL.path))
         #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
-        #expect(recorder.protectionWrites(for: bodiesURL.path) == [.completeUnlessOpen, .completeUnlessOpen])
+        #expect(
+            recorder.protectionWrites(for: bodiesURL.path)
+                == [.completeUntilFirstUserAuthentication, .completeUntilFirstUserAuthentication]
+        )
         #else
         #expect(recorder.protectionWrites(for: bodiesURL.path).isEmpty)
         #endif
@@ -1340,13 +1389,72 @@ struct PersistentResponseCacheTests {
     }
     #endif
 
-    @Test("PersistentResponseCacheConfiguration defaults to completeUnlessOpen protection")
-    func defaultDataProtectionClassIsCompleteUnlessOpen() async {
+    @Test("PersistentResponseCacheConfiguration defaults to first-unlock protection")
+    func defaultDataProtectionClassIsCompleteUntilFirstUserAuthentication() async {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
-        #expect(configuration.dataProtectionClass == .completeUnlessOpen)
+        #expect(configuration.dataProtectionClass == .completeUntilFirstUserAuthentication)
     }
+
+    #if canImport(Darwin)
+    @Test("Cache-owned directories and files are excluded from backup and repaired on reopen")
+    func cacheOwnedPathsAreExcludedFromBackup() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/backup-exclusion")
+
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("cached".utf8)))
+
+        let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        let keyURL = hmacKeyURL(in: directory)
+        let bodyURLs = try existingBodyURLs(in: directory)
+        let ownedURLs = [bodiesURL, indexURL, keyURL] + bodyURLs
+        for url in ownedURLs {
+            #expect(try backupExclusionIsApplied(to: url))
+        }
+        // `directoryURL` may contain caller-owned sentinels. Exclude each
+        // cache-owned path rather than changing backup policy for the root.
+        #expect(try backupExclusionIsApplied(to: directory) == false)
+
+        for originalURL in [indexURL, keyURL] + bodyURLs {
+            var url = originalURL
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = false
+            try url.setResourceValues(values)
+        }
+
+        _ = try PersistentResponseCache(configuration: configuration)
+
+        for url in [indexURL, keyURL] + bodyURLs {
+            #expect(try backupExclusionIsApplied(to: url))
+        }
+    }
+
+    @Test("Storage protection never follows symbolic links outside the cache")
+    func storageProtectionDoesNotFollowSymbolicLinks() throws {
+        let directory = makeDirectory()
+        let targetURL = directory.appendingPathComponent("caller-owned.txt", isDirectory: false)
+        let linkURL = directory.appendingPathComponent("cache-link", isDirectory: false)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("caller".utf8).write(to: targetURL)
+        try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: targetURL)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        PersistentResponseCache.applyDataProtection(
+            .completeUntilFirstUserAuthentication,
+            to: linkURL,
+            fileManager: .default
+        )
+
+        #if canImport(Darwin)
+        #expect(try backupExclusionIsApplied(to: targetURL) == false)
+        #endif
+    }
+    #endif
 
     @Test("Reopen reapplies data protection to existing index, HMAC key, and body files")
     func reopenReappliesDataProtectionToExistingCacheFiles() async throws {
@@ -1367,10 +1475,19 @@ struct PersistentResponseCacheTests {
         let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
         let hmacKeyURL = hmacKeyURL(in: directory)
         #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
-        #expect(recorder.protectionWrites(for: indexURL.path).contains(.completeUnlessOpen))
-        #expect(recorder.protectionWrites(for: hmacKeyURL.path).contains(.completeUnlessOpen))
+        #expect(
+            recorder.protectionWrites(for: indexURL.path)
+                .contains(.completeUntilFirstUserAuthentication)
+        )
+        #expect(
+            recorder.protectionWrites(for: hmacKeyURL.path)
+                .contains(.completeUntilFirstUserAuthentication)
+        )
         for bodyURL in bodyURLs {
-            #expect(recorder.protectionWrites(for: bodyURL.path).contains(.completeUnlessOpen))
+            #expect(
+                recorder.protectionWrites(for: bodyURL.path)
+                    .contains(.completeUntilFirstUserAuthentication)
+            )
         }
         #else
         #expect(recorder.protectionWrites(for: indexURL.path).isEmpty)
@@ -1557,6 +1674,21 @@ struct PersistentResponseCacheTests {
 
     private func hmacKeyURL(in directory: URL) -> URL {
         directory.appendingPathComponent("cache-key-hmac.key", isDirectory: false)
+    }
+
+    private func backupExclusionIsApplied(to url: URL) throws -> Bool {
+        #if os(macOS)
+        // Foundation writes the standard backup-exclusion xattr on macOS but
+        // `resourceValues` reports `false` because the key is iOS-oriented.
+        // Inspect the resulting xattr so this test validates the write rather
+        // than Foundation's platform-specific readback behavior.
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        let extendedAttributesKey = FileAttributeKey(rawValue: "NSFileExtendedAttributes")
+        let extendedAttributes = attributes[extendedAttributesKey] as? [String: Data]
+        return extendedAttributes?["com.apple.metadata:com_apple_backup_excludeItem"] != nil
+        #else
+        return try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true
+        #endif
     }
 
     private func testFixtureError(_ message: String) -> NSError {

@@ -785,6 +785,28 @@ struct EndpointBuilderTests {
                 == "a%2Fb%20100%25%20%E2%9C%93")
     }
 
+    @Test("Dynamic dot segments are encoded then rejected before transport")
+    func dynamicDotSegmentsFailClosedBeforeTransport() async throws {
+        for value in [".", "..", "../admin"] {
+            let encoded = EndpointPathEncoding.percentEncodedSegment(value)
+            if value == "." { #expect(encoded == "%2E") }
+            if value == ".." { #expect(encoded == "%2E%2E") }
+
+            let mockSession = MockURLSession()
+            let client = DefaultNetworkClient(
+                configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com"),
+                session: mockSession
+            )
+
+            await #expect(throws: NetworkError.self) {
+                try await client.request(
+                    EndpointBuilder<EmptyResponse>.get("/users/\(encoded)")
+                )
+            }
+            #expect(mockSession.capturedRequest == nil)
+        }
+    }
+
     @Test("Dynamic path segments support primitive, UUID, and raw-value identifiers")
     func dynamicPathSegmentsSupportIdentifierTypes() async throws {
         enum Scope: String, Sendable {

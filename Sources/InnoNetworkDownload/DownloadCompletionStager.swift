@@ -31,6 +31,7 @@ package struct DownloadCompletionStager: Sendable {
     package func stage(_ sourceURL: URL, taskIdentifier: Int) throws -> URL {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        DownloadOwnedStorageProtection.apply(to: directoryURL, fileManager: fileManager)
 
         let stagedURL = directoryURL.appendingPathComponent(
             "download-\(taskIdentifier)-\(UUID().uuidString).tmp",

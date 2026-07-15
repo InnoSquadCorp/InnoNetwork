@@ -49,7 +49,7 @@ package struct StreamingExecutor: Sendable {
                 .requestFailed(
                     requestID: requestID,
                     errorCode: nsError.code,
-                    message: mapped.localizedDescription
+                    message: mapped.observabilityCategory
                 ),
                 requestID: requestID,
                 observers: configuration.eventObservers
@@ -145,7 +145,7 @@ package struct StreamingExecutor: Sendable {
                         .requestFailed(
                             requestID: requestID,
                             errorCode: nsError.code,
-                            message: surfaced.localizedDescription
+                            message: surfaced.observabilityCategory
                         ),
                         requestID: requestID,
                         observers: configuration.eventObservers
@@ -164,9 +164,9 @@ package struct StreamingExecutor: Sendable {
                 let nsError = surfaced as NSError
                 await eventHub.publish(
                     .requestFailed(
-                        requestID: requestID,
-                        errorCode: nsError.code,
-                        message: surfaced.localizedDescription
+                    requestID: requestID,
+                    errorCode: nsError.code,
+                    message: surfaced.observabilityCategory
                     ),
                     requestID: requestID,
                     observers: configuration.eventObservers
@@ -222,7 +222,7 @@ package struct StreamingExecutor: Sendable {
                 .requestStart(
                     requestID: requestID,
                     method: urlRequest.httpMethod ?? "UNKNOWN",
-                    url: urlRequest.url?.absoluteString ?? "",
+                    url: NetworkURLMetadataRedactor.string(from: urlRequest.url),
                     retryIndex: retryIndex
                 ),
                 requestID: requestID,
@@ -244,7 +244,7 @@ package struct StreamingExecutor: Sendable {
                 .requestAdapted(
                     requestID: requestID,
                     method: urlRequest.httpMethod ?? "UNKNOWN",
-                    url: urlRequest.url?.absoluteString ?? "",
+                    url: NetworkURLMetadataRedactor.string(from: urlRequest.url),
                     retryIndex: retryIndex
                 ),
                 requestID: requestID,
@@ -457,7 +457,7 @@ package struct StreamingExecutor: Sendable {
                 requestID: requestID,
                 retryIndex: state.retryIndex,
                 delay: delay,
-                reason: networkError.localizedDescription
+                reason: networkError.observabilityCategory
             ),
             requestID: requestID,
             observers: configuration.eventObservers

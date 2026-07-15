@@ -36,7 +36,11 @@ import OSLog
 /// `max-age` clamping) on top of the wrapped policy without changing this
 /// storage layer.
 public actor PersistentResponseCache: ResponseCache {
-    static let formatVersion = 2
+    /// Version 3 preserves query-item order in cache keys. Version 2
+    /// canonicalized reordered queries into the same slot, so it cannot be
+    /// migrated without risking a response being served for a wire-distinct
+    /// target. The open pipeline therefore cold-resets older indexes.
+    static let formatVersion = 3
     static let logger = Logger(subsystem: "innosquad.network", category: "PersistentResponseCache")
 
     // Visibility note: nested types and static helpers are intentionally
@@ -142,7 +146,8 @@ public actor PersistentResponseCache: ResponseCache {
         Self.applyDataProtection(
             configuration.dataProtectionClass,
             to: configuration.directoryURL,
-            fileManager: fileManager
+            fileManager: fileManager,
+            excludesFromBackup: false
         )
         Self.applyDataProtection(configuration.dataProtectionClass, to: bodiesDirectoryURL, fileManager: fileManager)
         let keyResult = try PersistentCacheDiskKeyNormalizer.loadOrCreate(

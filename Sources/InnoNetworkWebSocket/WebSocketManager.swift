@@ -347,6 +347,23 @@ public actor WebSocketManager {
         // returned when this manager has already shut down. Assign it before
         // admission so a different manager cannot adopt that failed handle.
         _ = await task.assignOwnerIfUnowned(runtimeRegistry.callbackContextID)
+        do {
+            try NetworkURLAdmission.validate(
+                url,
+                policy: .webSocket(allowsInsecure: configuration.allowsInsecureWebSocket)
+            )
+        } catch {
+            let admissionError = WebSocketError.invalidURL("Rejected by URL admission policy")
+            _ = await task.applyLifecycleEvent(
+                .failure(
+                    generation: nil,
+                    disposition: .transportFailure(admissionError),
+                    error: admissionError
+                ),
+                context: .init(reconnectAction: .terminal)
+            )
+            return task
+        }
         guard beginShutdownTrackedOperation() else {
             let error = Self.managerShutdownError()
             _ = await task.applyLifecycleEvent(

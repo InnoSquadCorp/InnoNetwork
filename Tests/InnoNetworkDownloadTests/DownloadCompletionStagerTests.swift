@@ -140,7 +140,57 @@ struct DownloadCompletionStagerTests {
         #expect(!fileManager.fileExists(atPath: sourceURL.path))
         #expect(stagedURL.deletingLastPathComponent() == stagingDirectoryURL)
         #expect(try Data(contentsOf: stagedURL) == payload)
+        #if canImport(Darwin)
+        #expect(try completionStagingBackupExclusionIsApplied(to: stagingDirectoryURL))
+        #endif
     }
+
+    #if canImport(Darwin)
+    @Test("Completion staging never transfers library backup metadata to the caller destination")
+    func completionDoesNotMutateFinalDestinationMetadata() async throws {
+        let fileManager = FileManager.default
+        let rootURL = fileManager.temporaryDirectory.appendingPathComponent(
+            "InnoNetworkDownloadDestinationMetadataTests-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let sourceDirectoryURL = rootURL.appendingPathComponent("URLSession", isDirectory: true)
+        let stagingDirectoryURL = rootURL.appendingPathComponent("Staging", isDirectory: true)
+        let sourceURL = sourceDirectoryURL.appendingPathComponent("download.tmp", isDirectory: false)
+        let destinationURL = rootURL.appendingPathComponent("Caller", isDirectory: true)
+            .appendingPathComponent("payload.bin", isDirectory: false)
+        try fileManager.createDirectory(at: sourceDirectoryURL, withIntermediateDirectories: true)
+        try Data("payload".utf8).write(to: sourceURL)
+        var mutableSourceURL = sourceURL
+        var includedInBackup = URLResourceValues()
+        includedInBackup.isExcludedFromBackup = false
+        try mutableSourceURL.setResourceValues(includedInBackup)
+        defer { try? fileManager.removeItem(at: rootURL) }
+
+        let stagedURL = try DownloadCompletionStager(directoryURL: stagingDirectoryURL)
+            .stage(sourceURL, taskIdentifier: 17)
+        let configuration = DownloadConfiguration.default
+        let coordinator = DownloadTransferCoordinator(
+            session: StubDownloadURLSession(),
+            runtimeRegistry: DownloadRuntimeRegistry(),
+            persistence: DownloadTaskPersistence(store: InMemoryDownloadTaskStore()),
+            eventHub: TaskEventHub(
+                policy: configuration.eventDeliveryPolicy,
+                metricsReporter: configuration.eventMetricsReporter,
+                hubKind: .downloadTask
+            )
+        )
+        let task = DownloadTask(
+            url: URL(string: "https://example.invalid/payload.bin")!,
+            destinationURL: destinationURL
+        )
+        await task.updateState(.waiting)
+        await task.updateState(.downloading)
+
+        try await coordinator.completeDownload(task: task, temporaryLocation: stagedURL)
+
+        #expect(try completionStagingBackupExclusionIsApplied(to: destinationURL) == false)
+    }
+    #endif
 
     @Test("Staging failure reports an error without losing the URLSession file")
     func delegateReportsStagingFailure() throws {
@@ -256,6 +306,19 @@ struct DownloadCompletionStagerTests {
         #expect(fileManager.fileExists(atPath: stagedURL.path) == false)
     }
 }
+
+#if canImport(Darwin)
+private func completionStagingBackupExclusionIsApplied(to url: URL) throws -> Bool {
+    #if os(macOS)
+    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+    let extendedAttributesKey = FileAttributeKey(rawValue: "NSFileExtendedAttributes")
+    let extendedAttributes = attributes[extendedAttributesKey] as? [String: Data]
+    return extendedAttributes?["com.apple.metadata:com_apple_backup_excludeItem"] != nil
+    #else
+    return try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true
+    #endif
+}
+#endif
 
 
 private func enqueueCompletionWithoutInstallingHandler(location: URL) {

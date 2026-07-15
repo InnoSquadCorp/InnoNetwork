@@ -16,7 +16,7 @@ struct WebSocketDelegateOrderingTests {
     @Test("Connected → disconnected callbacks deliver events in arrival order")
     func connectedThenDisconnectedDeliversInOrder() async throws {
         let harness = StubMessagingHarness()
-        let task = await harness.manager.connect(url: URL(string: "ws://stub.invalid/ordering")!)
+        let task = await harness.manager.connect(url: URL(string: "wss://stub.invalid/ordering")!)
 
         let recorder = WebSocketEventRecorder()
         _ = await harness.manager.addEventListener(for: task) { event in
@@ -58,7 +58,7 @@ struct WebSocketDelegateOrderingTests {
     @Test("Repeated connected/disconnected pairs preserve FIFO order")
     func repeatedPairsPreserveFIFO() async throws {
         let harness = StubMessagingHarness()
-        let task = await harness.manager.connect(url: URL(string: "ws://stub.invalid/fifo")!)
+        let task = await harness.manager.connect(url: URL(string: "wss://stub.invalid/fifo")!)
 
         let recorder = WebSocketEventRecorder()
         _ = await harness.manager.addEventListener(for: task) { event in
@@ -131,7 +131,7 @@ struct WebSocketDelegateOrderingTests {
             await gate.enterAndWaitUntilReleased()
         }
 
-        let task = await harness.manager.connect(url: URL(string: "ws://stub.invalid/backpressure")!)
+        let task = await harness.manager.connect(url: URL(string: "wss://stub.invalid/backpressure")!)
 
         let recorder = WebSocketEventRecorder()
         _ = await harness.manager.addEventListener(for: task) { event in
@@ -171,7 +171,7 @@ struct WebSocketDelegateOrderingTests {
     @Test("Terminal cleanup does not wait for listener handler completion")
     func terminalCleanupDoesNotWaitForListenerHandlerCompletion() async throws {
         let harness = StubMessagingHarness()
-        let task = await harness.manager.connect(url: URL(string: "ws://stub.invalid/terminal-listener")!)
+        let task = await harness.manager.connect(url: URL(string: "wss://stub.invalid/terminal-listener")!)
         let gate = DelegateBackpressureGate()
         let streamProbe = WebSocketStreamFinishProbe()
         let stream = await harness.manager.events(for: task)
@@ -210,7 +210,7 @@ struct WebSocketDelegateOrderingTests {
     @Test("Terminal cleanup does not wait for an older listener event")
     func terminalCleanupDoesNotWaitForOlderListenerEventCompletion() async throws {
         let harness = StubMessagingHarness()
-        let task = await harness.manager.connect(url: URL(string: "ws://stub.invalid/terminal-backlog")!)
+        let task = await harness.manager.connect(url: URL(string: "wss://stub.invalid/terminal-backlog")!)
         let gate = DelegateBackpressureGate()
         let recorder = WebSocketEventRecorder()
         let streamProbe = WebSocketStreamFinishProbe()

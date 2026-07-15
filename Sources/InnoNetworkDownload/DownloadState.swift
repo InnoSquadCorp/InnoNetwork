@@ -16,7 +16,7 @@ public extension DownloadState {
     var nextStates: Set<Self> {
         switch self {
         case .idle:
-            [.waiting, .downloading, .cancelled]
+            [.waiting, .downloading, .failed, .cancelled]
         case .waiting:
             [.downloading, .failed, .cancelled]
         case .downloading:

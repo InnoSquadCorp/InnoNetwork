@@ -9,6 +9,9 @@ public struct NetworkConfiguration: Sendable {
     /// streaming frame before it is rejected with
     /// ``NetworkErrorCode/streamFrameTooLarge``.
     public static let defaultStreamingLineByteLimit: Int = 1 << 20
+    /// Default maximum size for an inline response collected by the
+    /// production-facing configuration presets.
+    package static let defaultInlineResponseBodyByteLimit: Int64 = 5 * 1024 * 1024
 
     package enum Presets {
         static func safeDefaults(baseURL: URL) -> NetworkConfiguration {
@@ -32,7 +35,9 @@ public struct NetworkConfiguration: Sendable {
                 responseInterceptors: [],
                 customExecutionPolicies: [],
                 idempotencyKeyPolicy: .disabled,
-                responseBodyBufferingPolicy: .streaming(),
+                responseBodyBufferingPolicy: .streaming(
+                    maxBytes: NetworkConfiguration.defaultInlineResponseBodyByteLimit
+                ),
                 streamingLineByteLimit: NetworkConfiguration.defaultStreamingLineByteLimit,
                 redirectPolicy: DefaultRedirectPolicy()
             )
@@ -63,7 +68,9 @@ public struct NetworkConfiguration: Sendable {
                 responseInterceptors: [],
                 customExecutionPolicies: [],
                 idempotencyKeyPolicy: .disabled,
-                responseBodyBufferingPolicy: .streaming(),
+                responseBodyBufferingPolicy: .streaming(
+                    maxBytes: NetworkConfiguration.defaultInlineResponseBodyByteLimit
+                ),
                 streamingLineByteLimit: NetworkConfiguration.defaultStreamingLineByteLimit,
                 redirectPolicy: DefaultRedirectPolicy()
             )
@@ -163,11 +170,15 @@ public struct NetworkConfiguration: Sendable {
     /// the failing response body is worth the privacy trade-off.
     public let captureFailurePayload: Bool
 
-    /// Inline response body collection policy. The 4.0.0 default is
-    /// ``ResponseBodyBufferingPolicy/streaming(maxBytes:)`` so real
-    /// `URLSession` transports collect `bytes(for:)` with an optional memory
-    /// bound before cache writes or decoder handoff. Test doubles that only
-    /// implement `data(for:)` fall back to buffered transport.
+    /// Inline response body collection policy. ``safeDefaults(baseURL:)``
+    /// and ``advanced(baseURL:resilience:auth:observability:cache:transport:)``
+    /// use ``ResponseBodyBufferingPolicy/streaming(maxBytes:)`` with a 5 MiB
+    /// ceiling. Callers that intentionally need an unbounded inline response
+    /// can opt out explicitly with `.streaming(maxBytes: nil)` or
+    /// `.buffered(maxBytes: nil)`. Test doubles that only implement
+    /// `data(for:)` must select a buffered policy explicitly when exercising
+    /// transport; bounded streaming fails closed instead of allocating the
+    /// complete response before enforcing its ceiling.
     public let responseBodyBufferingPolicy: ResponseBodyBufferingPolicy
 
     /// Compatibility alias for the optional maximum body size in

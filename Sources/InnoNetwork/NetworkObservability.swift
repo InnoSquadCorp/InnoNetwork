@@ -1,6 +1,125 @@
 import Foundation
 import OSLog
 
+/// Produces URL metadata that is useful for request bucketing without
+/// exposing credentials or request parameters. Kept module-internal so the
+/// observability and curl surfaces share one fail-closed policy without
+/// adding another public customization point.
+enum NetworkURLMetadataRedactor {
+    static func string(
+        from url: URL?,
+        includesQueryValues: Bool = false,
+        nilFallback: String = ""
+    ) -> String {
+        guard let url else { return nilFallback }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return fallbackString(from: url)
+        }
+
+        components.user = nil
+        components.password = nil
+        components.percentEncodedUser = nil
+        components.percentEncodedPassword = nil
+        // Avoid writing `components.path` back when no JWT was found. Doing
+        // so decodes reserved percent escapes such as `%2F` and silently
+        // changes the request path rendered by curl and event metadata.
+        let decodedPath = components.path
+        let maskedPath = DefaultNetworkLogger.maskJWTLikeTokens(in: decodedPath)
+        if maskedPath != decodedPath {
+            components.path = maskedPath
+        }
+        components.fragment = nil
+
+        if !includesQueryValues, let queryItems = components.queryItems {
+            components.queryItems = queryItems.map { item in
+                URLQueryItem(
+                    name: item.name,
+                    value: item.value == nil ? nil : "<redacted>"
+                )
+            }
+        }
+
+        return components.string ?? fallbackString(from: url)
+    }
+
+    private static func fallbackString(from url: URL) -> String {
+        let scheme = url.scheme ?? "http"
+        let host = url.host ?? ""
+        let path = DefaultNetworkLogger.maskJWTLikeTokens(in: url.path)
+        return "\(scheme)://\(host)\(path)"
+    }
+}
+
+extension NetworkError {
+    /// Stable, payload-free classification for events. Error codes remain the
+    /// machine-readable primary key; this string keeps dashboards useful
+    /// without forwarding decoder messages, custom trust text, URLs, or
+    /// response-derived values into observers.
+    var observabilityCategory: String {
+        switch self {
+        case .configuration(let reason):
+            switch reason {
+            case .invalidBaseURL:
+                return "configuration.invalid_base_url"
+            case .invalidRequest:
+                return "configuration.invalid_request"
+            case .offline:
+                return "configuration.offline"
+            }
+        case .decoding(let stage, _, _):
+            switch stage {
+            case .responseBody:
+                return "decoding.response_body"
+            case .streamFrame:
+                return "decoding.stream_frame"
+            }
+        case .statusCode(let response):
+            return "http.status.\(response.statusCode)"
+        case .underlying(let error, _):
+            return "transport.\(error.code)"
+        case .reachability(let reason, _, _):
+            switch reason {
+            case .notConnectedToInternet:
+                return "reachability.not_connected"
+            case .dnsLookupFailed:
+                return "reachability.dns_lookup_failed"
+            case .cannotFindHost:
+                return "reachability.cannot_find_host"
+            case .networkConnectionLost:
+                return "reachability.connection_lost"
+            }
+        case .trustEvaluationFailed(let reason):
+            switch reason {
+            case .unsupportedAuthenticationMethod:
+                return "trust.unsupported_authentication_method"
+            case .missingServerTrust:
+                return "trust.missing_server_trust"
+            case .systemTrustEvaluationFailed:
+                return "trust.system_evaluation_failed"
+            case .hostNotPinned:
+                return "trust.host_not_pinned"
+            case .publicKeyExtractionFailed:
+                return "trust.public_key_extraction_failed"
+            case .pinMismatch:
+                return "trust.pin_mismatch"
+            case .custom:
+                return "trust.custom"
+            }
+        case .cancelled:
+            return "cancelled"
+        case .timeout(let reason, _):
+            switch reason {
+            case .requestTimeout:
+                return "timeout.request"
+            case .resourceTimeout:
+                return "timeout.resource"
+            case .connectionTimeout:
+                return "timeout.connection"
+            }
+        }
+    }
+}
+
 public enum NetworkEvent: Sendable {
     case requestStart(
         requestID: UUID,
@@ -102,7 +221,7 @@ public struct OSLogNetworkEventObserver: NetworkEventObserving {
             )
         case .cacheRevalidation(let originalID, let state):
             Logger.API.debug(
-                "cache_revalidation original_id=\(originalID.uuidString, privacy: .public) state=\(String(describing: state), privacy: .public)"
+                "cache_revalidation original_id=\(originalID.uuidString, privacy: .public) state=\(String(describing: state), privacy: .private)"
             )
         }
         #endif

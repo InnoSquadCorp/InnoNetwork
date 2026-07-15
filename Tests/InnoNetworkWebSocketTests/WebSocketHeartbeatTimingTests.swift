@@ -603,7 +603,7 @@ final class HeartbeatTestHarness: Sendable {
         maxMissedPongs: Int,
         beforeSendPingDispatch: (@Sendable () async -> Void)? = nil
     ) {
-        let url = URL(string: "ws://stub.invalid/hb")!
+        let url = URL(string: "wss://stub.invalid/hb")!
         self.task = WebSocketTask(url: url)
         self.stubTask = StubWebSocketURLTask()
         self.clock = TestClock()
