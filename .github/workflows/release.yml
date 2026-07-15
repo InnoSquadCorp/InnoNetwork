@@ -255,31 +255,15 @@ jobs:
       - name: Resolve dependencies
         run: xcrun swift package resolve
 
-      - name: Require SDK and destination
+      - name: Require SDK
         run: |
           set -euo pipefail
 
           sdk="${{ matrix.sdk }}"
-          destination="${{ matrix.destination }}"
           runtime="${{ matrix.runtime }}"
 
           if ! xcrun --sdk "$sdk" --show-sdk-path >/dev/null 2>&1; then
             echo "::error::Required $runtime SDK $sdk is not installed on the release runner."
-            exit 1
-          fi
-
-          platform="${destination##*platform=}"
-          if ! destination_listing="$(xcodebuild -scheme InnoNetwork-Package -showdestinations 2>&1)"; then
-            echo "::error::Unable to enumerate destinations for required $runtime release build."
-            exit 1
-          fi
-          if ! awk -v platform="$platform" '
-            index($0, "platform:" platform ",") > 0 &&
-              $0 !~ /error:/ &&
-              $0 !~ /variant:Designed for/ { found = 1 }
-            END { exit found ? 0 : 1 }
-          ' <<<"$destination_listing"; then
-            echo "::error::Required $runtime destination $platform is not installed on the release runner."
             exit 1
           fi
 

@@ -399,27 +399,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Every declared platform is an unconditional hard gate.
         include:
           - destination: "platform=macOS"
             runtime: "macOS"
             sdk: "macosx"
-            required: true
           - destination: "generic/platform=iOS Simulator"
             runtime: "iOS"
             sdk: "iphonesimulator"
-            required: true
           - destination: "generic/platform=tvOS"
             runtime: "tvOS"
             sdk: "appletvos"
-            required: true
           - destination: "generic/platform=watchOS"
             runtime: "watchOS"
             sdk: "watchos"
-            required: true
           - destination: "generic/platform=visionOS"
             runtime: "visionOS"
             sdk: "xros"
-            required: true
 
     steps:
       - name: Checkout
@@ -444,36 +440,16 @@ jobs:
 
           runtime="${{ matrix.runtime }}"
           sdk="${{ matrix.sdk }}"
-          required="${{ matrix.required }}"
           destination="${{ matrix.destination }}"
 
-          skip_or_fail() {
-            local reason="$1"
-            if [[ "$required" == "true" ]]; then
-              echo "::error::Required $runtime platform is unavailable: $reason"
-              exit 1
-            fi
-            echo "::notice::Skipping optional $runtime smoke: $reason"
-            exit 0
-          }
-
           if ! xcrun --sdk "$sdk" --show-sdk-path >/dev/null 2>&1; then
-            skip_or_fail "SDK $sdk is not installed on the pinned runner."
+            echo "::error::Required $runtime SDK $sdk is not installed on the pinned runner."
+            exit 1
           fi
 
-          platform="${destination##*platform=}"
-          if ! destination_listing="$(xcodebuild -scheme InnoNetwork-Package -showdestinations 2>&1)"; then
-            skip_or_fail "xcodebuild could not enumerate destinations for the package scheme."
-          fi
-          if ! awk -v platform="$platform" '
-            index($0, "platform:" platform ",") > 0 &&
-              $0 !~ /error:/ &&
-              $0 !~ /variant:Designed for/ { found = 1 }
-            END { exit found ? 0 : 1 }
-          ' <<<"$destination_listing"; then
-            skip_or_fail "no compatible $platform destination is installed for the pinned Xcode."
-          fi
-
+          # The build is the authoritative destination check. In particular,
+          # Xcode 26.0.1 can omit generic device rows from `-showdestinations`
+          # even when the matching device SDK is installed and buildable.
           xcodebuild \
             -scheme InnoNetwork-Package \
             -destination "$destination" \
