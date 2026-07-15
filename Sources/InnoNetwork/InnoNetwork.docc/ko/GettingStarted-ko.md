@@ -1,7 +1,8 @@
 # 시작하기
 
-안전한 기본값으로 클라이언트를 만들고, ``APIDefinition`` 으로 요청을 모델링한
-다음 ``DefaultNetworkClient`` 를 통해 호출하는 방법을 설명합니다.
+안전한 기본값으로 클라이언트를 만들고, 명시적인 구조체와
+``APIDefinition(method:path:auth:)`` macro 로 요청을 모델링한 다음
+``DefaultNetworkClient`` 를 통해 호출하는 방법을 설명합니다.
 
 > 한국어 번역본 (영문 원본 → <doc:GettingStarted>) 입니다. 두 문서의 내용이
 > 일치하지 않을 때는 영문 원본의 정의를 우선합니다.
@@ -19,9 +20,10 @@ let client = DefaultNetworkClient(
 )
 ```
 
-`safeDefaults(baseURL:)` 는 4.x 의 권장 출발점입니다. 재시도, 회로 차단기,
-RFC 9111 호환 캐시 어댑터, redaction 정책이 모두 합리적인 디폴트로 설정되어
-있어 호출부에서 별도 튜닝 없이 시작할 수 있습니다.
+`safeDefaults(baseURL:)` 는 prototype, test, 또는 회복탄력성 정책을 다른 계층에서
+소유하는 통합의 안전한 출발점입니다. 프로덕션 앱은 보수적인 retry, circuit breaker,
+idempotency key, body-size guardrail 을 추가하는
+`recommendedForProduction(baseURL:)` 를 우선 검토하세요.
 
 ## 요청 정의
 
@@ -33,23 +35,29 @@ struct User: Decodable, Sendable {
     let name: String
 }
 
-struct GetUser: APIDefinition {
-    typealias Parameter = EmptyParameter
+@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+struct GetUser {
     typealias APIResponse = User
 
-    var method: HTTPMethod { .get }
-    var path: String { "/users/1" }
+    let id: Int
 }
 ```
 
-`APIDefinition` 은 InnoNetwork 의 1차 시민 요청 모델입니다. 응답 타입을
-`APIResponse` 에 명시하면 ``NetworkClient/request(_:)`` 가 그 타입으로
-디코딩한 결과를 그대로 반환합니다.
+구조체가 endpoint 계약의 단일 기준입니다. 기본으로 활성화된 macro 는 conformance,
+method, percent-encoded path, auth scope, 빈 payload witness 만 생성합니다.
+`APIResponse` 와 `auth: .public` / `.required` 선택은 자동 추론하지 않고 반드시
+명시하게 합니다.
+
+GET 의 저장 `query` 또는 GET 이 아닌 메서드의 저장 `body` 프로퍼티는
+`Parameter` / `parameters` 로 생성됩니다. 복잡한 형태는 `Parameter` 와
+`parameters` 를 모두 직접 선언하면 그 구현이 우선합니다. header, interceptor,
+transport, decoder 도 구조체에 그대로 명시합니다. 전체 규칙은 <doc:UsingMacros> 를
+참고하세요.
 
 ## 요청 실행
 
 ```swift
-let user = try await client.request(GetUser())
+let user = try await client.request(GetUser(id: 1))
 print(user.name)
 ```
 
@@ -58,10 +66,10 @@ print(user.name)
 `as NetworkError` 캐스팅 없이 `do/catch` 블록에서 곧바로 case 별 분기로
 처리할 수 있습니다.
 
-## 간단한 호출은 `EndpointBuilder` 사용
+## 런타임 조합 호출은 `EndpointBuilder` 사용
 
-요청이 메서드, 경로, 쿼리/바디 파라미터, 헤더, 컨텐츠 타입, 허용 status code,
-응답 디코딩만 필요하다면 ``EndpointBuilder`` 가 더 가볍습니다.
+메서드, 경로, 응답 형태가 런타임에 조합되거나 이름 있는 계약이 필요 없는 일회성
+요청이라면 ``EndpointBuilder`` 를 사용합니다.
 
 ```swift
 let users = try await client.request(
@@ -72,19 +80,28 @@ let users = try await client.request(
 )
 ```
 
-엔드포인트가 자체 인터셉터, 별도 인코더/디코더, multipart 업로드, 스트리밍을
-가져야 한다면 전용 ``APIDefinition`` 구조체를 유지하세요.
+애플리케이션의 이름 있는 API catalog 는 macro-assisted endpoint 구조체로 유지하고,
+multipart 및 streaming 은 각각 전용 definition protocol 을 사용하세요.
 
 엔드포인트 경로는 설정된 base URL 의 경로 뒤에 그대로 이어붙여집니다. 슬래시(`/`)
-로 시작하더라도 base URL 의 경로는 보존되며, 쿼리는 `parameters`/``URLQueryEncoder``
-나 ``EndpointBuilder/query(_:)`` 에서 표현해야 합니다. 경로에 직접 `?` 나 `#` 가
-들어 있으면 ``NetworkError/configuration(reason:)`` 으로 거부됩니다.
+로 시작하더라도 base URL 의 경로는 보존됩니다. 쿼리는 macro endpoint 의 `query`,
+manual endpoint 의 `parameters`, 또는 ``EndpointBuilder/query(_:)`` 에서 표현합니다.
+macro path 의 `?` / `#` 는 컴파일 시점에, hand-written/runtime path 는
+``NetworkError/configuration(reason:)`` 으로 거부됩니다.
+
+macro 는 root `InnoNetwork` product 의 기본 `Macros` trait 로 제공됩니다. 사용하지 않는
+consumer 는 dependency 에 `traits: []` 를 지정해 macro API 와 compiler plug-in compile 을
+제외할 수 있습니다. 다만 SwiftPM 은 manifest-level dependency 를 resolve/fetch 할 수 있고,
+trait 는 graph 전체에서 package 단위로 합쳐져 다른 dependency 가 기본 trait 를 켜면 다시
+활성화될 수 있습니다.
 
 ## 요청 실행 계약
 
 일반 요청은 ``NetworkClient/request(_:)``, multipart 업로드는
-``NetworkClient/upload(_:)`` 만 사용하세요. 그 외의 저수준 실행 훅은 4.0.0 의
-안정 공개 표면이 아니며, 향후 통합 후보로만 간주합니다.
+``NetworkClient/upload(_:)`` 만 사용하세요. 저수준 generated-client 훅은
+`@_spi(GeneratedClientSupport)` 이며 5.0 SemVer 계약 밖에 있습니다. minor release 에서도
+변경될 수 있으므로 exact source pin 과 migration budget 을 소유한 wrapper 만 사용하세요.
+root macro 는 이 SPI 를 노출하거나 bridge 하지 않습니다.
 
 ## 고급 설정으로 전환할 때
 

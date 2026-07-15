@@ -19,6 +19,13 @@ Versioning.
 
 ### Breaking
 
+- The nested `Packages/InnoNetworkCodegen` package and `#endpoint` expression
+  macro are removed. `@APIDefinition(method:path:auth:)` now comes from
+  `import InnoNetwork`, requires an explicit `.public` / `.required` auth
+  choice, and requires `typealias APIResponse` on the annotated struct.
+- Public optional overloads of
+  `EndpointPathEncoding.percentEncodedSegment(_:)` are removed. Unwrap optional
+  path values and define their nil behavior before encoding.
 - `RequestExecutionNext.execute(_:)` is replaced by
   `RequestExecutionNext.execute()`. Request mutation belongs in a
   `RequestInterceptor`; execution policies can observe, short-circuit, or
@@ -44,15 +51,20 @@ curated release summary.
 
 ### Added
 
+- The root package's default `Macros` trait enables macro-assisted explicit
+  endpoint structs. GET `query` and non-GET `body` stored properties derive
+  payload witnesses, while a complete manual `Parameter` + `parameters` pair
+  remains authoritative. Fail-closed diagnostics reject incomplete, unsafe, or
+  ambiguous declarations.
 - `RequestSigner` and `RequestBody` provide late, body-aware authentication
   after request encoding, interceptors, and refresh-token application. The
   HMAC, request-minted JWT, and AWS SigV4 reference implementations support
   stable data and file payloads through this contract.
 - Release provenance validation now requires annotated unprefixed SemVer tags
-  on `origin/main`, deterministic root and codegen CycloneDX 1.5 SBOMs, and
-  signed benchmark/SBOM release artifacts.
+  on `origin/main`, deterministic default-trait and core-only CycloneDX 1.5
+  SBOMs, and signed benchmark/SBOM release artifacts.
 - CI builds DocC for all eight public products and fails closed when core or
-  codegen coverage artifacts are missing, empty, or contain absolute
+  macro coverage artifacts are missing, empty, or contain absolute
   source paths.
 
 ### Fixed
@@ -84,7 +96,7 @@ curated release summary.
   reentrant shutdown from one of those callbacks initiates teardown and returns
   so a later external call can await the full boundary.
 - Guarded benchmarks build in release mode, and 5.0 publishes an explicit API,
-  migration, codegen-distribution, and release-integrity contract.
+  migration, macro-trait, and release-integrity contract.
 - Hosted benchmark baselines are recalibrated from a complete release-mode
   artifact after the systematic shift was confirmed across three successful
   runs, so debug-build overhead no longer distorts regression deltas.

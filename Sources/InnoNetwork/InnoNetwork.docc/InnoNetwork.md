@@ -6,6 +6,12 @@ Type-safe networking for Apple platforms with explicit request modeling, transpo
 
 `InnoNetwork` is the core module of the package. It focuses on request execution and response decoding while keeping transport concerns visible instead of hiding them behind opaque convenience APIs.
 
+Model a named API catalog as explicit endpoint structs. The default-enabled
+``APIDefinition(method:path:auth:)`` macro derives repetitive protocol
+witnesses and validates the declaration, while each struct keeps its stored
+inputs, `APIResponse`, and custom policy visible. Use ``EndpointBuilder`` for
+one-off or runtime-composed requests.
+
 Use this module when you need:
 
 - typed request definitions with ``APIDefinition``
@@ -33,6 +39,7 @@ reason to tune those defaults.
 - ``DefaultNetworkClient``
 - ``NetworkClient``
 - ``APIDefinition``
+- <doc:UsingMacros>
 - ``EndpointBuilder``
 - ``MultipartAPIDefinition``
 
@@ -59,7 +66,6 @@ reason to tune those defaults.
 - <doc:OpenAPIGeneratorAdapter>
 - <doc:OpenAPIGeneratorRecipe>
 - <doc:ObservabilityExporters>
-- <doc:UsingMacros>
 
 ### Resilience
 

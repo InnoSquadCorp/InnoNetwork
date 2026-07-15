@@ -4,6 +4,12 @@ InnoNetwork's public request API remains `DefaultNetworkClient.request(_:)`.
 5.0 preserves the resilience stages while making request identity and late,
 body-aware signing explicit around the raw transport attempt.
 
+Named application endpoints should remain explicit value types. The root
+`@APIDefinition(method:path:auth:)` macro derives their repetitive conformance
+witnesses, but the struct still owns stored inputs, `APIResponse`, and any
+custom transport or policy. `EndpointBuilder` remains the stable escape for a
+one-off or runtime-composed request.
+
 ## Request Path
 
 ```text
@@ -76,13 +82,19 @@ Auth-required requests fail before transport with
 `NetworkError.configuration(reason: .invalidRequest(...))` when the client
 configuration has no `RefreshTokenPolicy`.
 
-## Optional Codegen
+## Macro Boundary
 
-`InnoNetworkCodegen` is a separate package under
-`Packages/InnoNetworkCodegen`. Consumers that depend only on the root
-`InnoNetwork` package do not resolve, fetch, or build `swift-syntax`; macro
-users opt into that package explicitly from a complete local checkout. Its
-distribution is experimental: a remote InnoNetwork release tag exposes only
-the root manifest and cannot vend the nested codegen package. Macro usage is
-documented in
+The root package's default `Macros` trait exposes `@APIDefinition` through
+`import InnoNetwork`. It derives method, percent-encoded path, auth scope, and
+simple body/query payload witnesses. Missing response/auth contracts and
+ambiguous definitions fail at compile time. It does not generate client
+methods or absorb headers, interceptors, transport, decoding, multipart, or
+streaming responsibilities.
+
+Core-only consumers can request `traits: []` consistently across their
+dependency graph. This excludes the macro API and compiler plug-in compilation,
+although SwiftPM can still resolve or fetch package-level `swift-syntax` while
+evaluating manifests. Package traits are unified across the resolved graph, so
+another dependency that enables default traits can re-enable `Macros`.
+Macro usage is documented in
 [`UsingMacros.md`](../Sources/InnoNetwork/InnoNetwork.docc/Articles/UsingMacros.md).

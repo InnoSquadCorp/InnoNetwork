@@ -1,101 +1,140 @@
 # Using Macros
 
-`InnoNetworkCodegen` is a separate package for compile-time endpoint helpers.
-Importing only the root `InnoNetwork` package does not resolve, fetch, or build
-`swift-syntax`. The nested package is experimental and supported only from a
-complete local repository checkout. An InnoNetwork release tag exposes the
-root manifest and therefore does not vend `InnoNetworkCodegen` as a remotely
-consumable product. Macro users opt into `Packages/InnoNetworkCodegen`
-explicitly during local workspace development.
+Define an endpoint as an explicit value and let ``APIDefinition(method:path:auth:)``
+derive only its repetitive protocol witnesses. The struct remains the source of
+truth for the endpoint contract: its stored inputs and explicit `APIResponse`
+show what goes in and what comes back.
 
 ```swift
 import InnoNetwork
-import InnoNetworkCodegen
 
-@APIDefinition(method: .get, path: "/users/{id}")
+@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
 struct GetUser {
     typealias APIResponse = User
 
     let id: Int
 }
 
-let endpoint = #endpoint(.get, "/users/1", as: User.self)
+let user = try await client.request(GetUser(id: 42))
 ```
 
-The attached ``APIDefinition(method:path:)`` macro generates the conformance,
-uses `EmptyParameter`, and interpolates stored properties that match path
-placeholders such as `{id}`. Placeholder values are passed through
-``EndpointPathEncoding/percentEncodedSegment(_:)`` so each value stays within a
-single path segment even when it contains spaces, slashes, or non-ASCII text.
-Generated witnesses follow the access level of the attached type:
+The macro is part of the root `InnoNetwork` product. The package's default
+`Macros` trait enables it, so macro users need neither another package nor
+another import.
 
-- `public` or `open` endpoint types receive `public` witnesses.
-- `package` endpoint types receive `package` witnesses.
-- default/internal endpoint types omit an explicit access modifier.
+## What the macro owns
 
-This keeps app-internal endpoints usable without accidentally emitting public
-members inside an internal expansion while preserving the existing public
-expansion for exported SDK endpoints.
+The macro adds ``APIDefinition`` conformance and derives:
 
-The expansion emits the module-qualified call
-`InnoNetwork.EndpointPathEncoding.percentEncodedSegment(...)` to avoid
-ambiguity when consumer code imports another module that re-exports a same-named
-type. Do not declare a nested type named `InnoNetwork` in scopes where
-`@APIDefinition` is applied — it shadows the module reference and breaks the
-generated path expression.
+- `method` and a percent-encoded `path`
+- `Parameter` and `parameters` for the supported simple payload shape
+- `Auth = AuthRequiredScope` when `auth: .required` is selected
 
-The ``endpoint(_:_:as:)`` expression macro expands to the fluent
-``EndpointBuilder`` API:
+It deliberately does **not** synthesize `APIResponse`, headers, interceptors,
+signers, transport, decoding, or execution policies. Keep those decisions on
+the endpoint struct when it owns them. Authentication is also mandatory at the
+attribute: every endpoint must choose `.public` or `.required` rather than
+silently inheriting a security policy.
 
-```swift
-EndpointBuilder<EmptyResponse, PublicAuthScope>(method: .get, path: "/users/1")
-    .decoding(User.self)
-```
+Path placeholders must match stored properties declared directly on the
+struct. Values pass through
+``EndpointPathEncoding/percentEncodedSegment(_:)``, so a slash, space, percent
+sign, or non-ASCII scalar stays inside one path segment.
 
-The first two arguments (`method`, `path`) must be passed positionally; only
-the response metatype is labeled `as:`. Adding `method:` or `path:` labels is
-rejected with a diagnostic so call sites stay consistent.
+## Query and body inference
 
-Keep hand-written ``APIDefinition`` types for endpoints that need custom
-parameters, interceptors, multipart uploads, streaming, or non-standard
-decoding. The macro declarations have a provisional source contract for local
-workspace users, while package distribution remains experimental.
-
-## When the macro pays off
-
-Use ``APIDefinition(method:path:)`` when the endpoint is mostly method, path
-placeholders, and standard JSON decoding:
+A stored `query` property is the simple GET shape:
 
 ```swift
-// Hand-written endpoint.
-struct GetUser: APIDefinition {
-    typealias Parameter = EmptyParameter
-    typealias APIResponse = User
+@APIDefinition(method: .get, path: "/users", auth: .public)
+struct ListUsers {
+    typealias APIResponse = [User]
 
-    let id: Int
-    var method: HTTPMethod { .get }
-    var path: String { "/users/\(id)" }
-}
-
-// Macro endpoint.
-@APIDefinition(method: .get, path: "/users/{id}")
-struct GetUser {
-    typealias APIResponse = User
-    let id: Int
+    let query: ListUsersQuery
 }
 ```
 
-The macro is intentionally not a replacement for the full protocol. Prefer a
-hand-written conformance when the endpoint needs request parameters,
-interceptors, custom transport policies, multipart upload, streaming, custom
-auth scope documentation, or a public SDK surface where explicit witnesses are
-clearer than generated ones.
+A stored `body` property is the simple non-GET shape:
 
-## Common failure cases
+```swift
+@APIDefinition(method: .post, path: "/users", auth: .required)
+struct CreateUser {
+    typealias APIResponse = User
 
-- Missing `typealias APIResponse` leaves the generated conformance incomplete.
-- A placeholder such as `/users/{id}` requires a stored property named `id`.
-- A nested type or local declaration named `InnoNetwork` can shadow the module
-  used by the generated path encoder call.
-- Public SDK endpoint types should be marked `public`; otherwise the generated
-  witnesses intentionally stay internal and cannot satisfy exported clients.
+    let body: CreateUserRequest
+}
+```
+
+An endpoint cannot infer both roles. GET bodies, non-GET query inference, and
+dynamic method expressions are rejected because their transport meaning is not
+safe to guess. Optional `body` or `query` aliases are supported; `nil` means no
+payload.
+
+For an advanced payload shape, declare the complete `Parameter` + `parameters`
+pair. That pair is authoritative and turns off simple body/query inference:
+
+```swift
+@APIDefinition(method: .get, path: "/users/search", auth: .public)
+struct SearchUsers {
+    typealias APIResponse = [User]
+    typealias Parameter = SearchPayload
+
+    let filters: SearchPayload
+
+    var parameters: Parameter? { filters }
+    var transport: TransportPolicy<[User]> { .query() }
+}
+```
+
+This escape hatch keeps custom encoding, computed payloads, and endpoint policy
+explicit without giving up compile-time path and auth validation. Multipart
+and streaming endpoints continue to use their dedicated protocols.
+
+## Diagnostics are fail closed
+
+`@APIDefinition` emits a compile error when the declaration would be ambiguous
+or incomplete, including:
+
+- attaching the macro to anything other than a struct
+- omitting `typealias APIResponse`
+- omitting `auth:` or passing anything other than `.public` / `.required`
+- duplicating generated conformance, `method`, `path`, or `Auth` witnesses
+- using a missing, optional, opaque, or unsupported generic path placeholder
+- putting query/fragment text or an invalid percent escape in `path:`
+- using computed, static, or lazy `body` / `query` properties in simple mode
+- declaring only one half of the manual `Parameter` + `parameters` pair
+
+Simple string interpolation in `path:` receives a Fix-It to use `{property}`
+placeholder syntax. A redundant `typealias Parameter = EmptyParameter` emits a
+warning because the macro already derives it for an empty request.
+
+The 4.x `#endpoint` expression macro is removed in 5.0. For an unnamed or
+runtime-composed request, use the stable ``EndpointBuilder`` API. For generated
+OpenAPI clients, keep `swift-http-types` and OpenAPI Runtime integration behind
+the optional `InnoNetworkOpenAPI` companion product rather than exposing those
+types through the core endpoint contract.
+
+## Disabling macro support
+
+Consumers that never use macros can disable the default trait on the package
+dependency:
+
+```swift
+dependencies: [
+    .package(
+        url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
+        from: "5.0.0",
+        traits: []
+    )
+]
+```
+
+With `traits: []`, the macro declaration is absent and the compiler plug-in
+products are excluded from the target graph and compilation. SwiftPM still
+resolves package-level manifest dependencies, so it may resolve or fetch the
+`swift-syntax` source package even though it does not build the macro plug-in.
+This is a SwiftPM manifest-resolution limitation, not a runtime dependency of
+`InnoNetwork`. Traits are unified for each package across the resolved graph;
+if another dependency enables the default `Macros` trait, it is enabled for
+that shared package instance. A core-only graph must therefore request
+`traits: []` consistently along every dependency path.

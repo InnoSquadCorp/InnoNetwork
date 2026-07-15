@@ -20,6 +20,8 @@ Sources/InnoNetwork/Auth/**             @ethan-is
 # Public API contracts. Changes here force a parity check against
 # Scripts/symbols/*.allowlist (enforced by check_docs_contract_sync.sh).
 API_STABILITY.md                        @ethan-is
+Sources/InnoNetwork/APIDefinition+Macro.swift @ethan-is
+Sources/InnoNetworkMacros/**            @ethan-is
 Scripts/symbols/**                      @ethan-is
 
 # CI / supply-chain — keep release tooling under maintainer review.

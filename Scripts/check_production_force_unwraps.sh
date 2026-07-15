@@ -6,6 +6,7 @@ cd "$repo_root"
 
 production_paths=(
   Sources/InnoNetwork
+  Sources/InnoNetworkMacros
   Sources/InnoNetworkAuthAWS
   Sources/InnoNetworkDownload
   Sources/InnoNetworkOpenAPI

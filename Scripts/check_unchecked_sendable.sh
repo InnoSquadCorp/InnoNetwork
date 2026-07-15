@@ -3,11 +3,11 @@
 #
 # Two zones with different rules:
 #
-#   1. Production library targets (Sources/InnoNetwork{,AuthAWS,Download,
-#      PersistentCache,WebSocket,Trust,OpenAPI}) — `@unchecked Sendable` is
-#      forbidden. Strict-concurrency static analysis must succeed by
-#      construction; if a real escape hatch is needed, design a proper
-#      actor or use the per-call locking primitives already in the
+#   1. Production library and macro targets (Sources/InnoNetwork{,Macros,
+#      AuthAWS,Download,PersistentCache,WebSocket,Trust,OpenAPI}) —
+#      `@unchecked Sendable` is forbidden. Strict-concurrency static analysis
+#      must succeed by construction; if a real escape hatch is needed, design
+#      a proper actor or use the per-call locking primitives already in the
 #      library, do not push the burden onto reviewers.
 #
 #   2. InnoNetworkTestSupport — `@unchecked Sendable` is allowed because
@@ -32,6 +32,7 @@ cd "$repo_root"
 
 production_paths=(
     "Sources/InnoNetwork"
+    "Sources/InnoNetworkMacros"
     "Sources/InnoNetworkAuthAWS"
     "Sources/InnoNetworkDownload"
     "Sources/InnoNetworkPersistentCache"

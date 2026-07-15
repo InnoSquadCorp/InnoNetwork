@@ -1,6 +1,8 @@
 # Getting Started
 
-Build a client with safe defaults, model a request with ``APIDefinition``, and call it through ``DefaultNetworkClient``.
+Build a client with safe defaults, model a named request as an explicit struct
+with ``APIDefinition(method:path:auth:)``, and call it through
+``DefaultNetworkClient``.
 
 ## Create a client
 
@@ -31,27 +33,37 @@ struct User: Decodable, Sendable {
     let name: String
 }
 
-struct GetUser: APIDefinition {
-    typealias Parameter = EmptyParameter
+@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+struct GetUser {
     typealias APIResponse = User
 
-    var method: HTTPMethod { .get }
-    var path: String { "/users/1" }
+    let id: Int
 }
 ```
+
+The endpoint remains an ordinary value type and the source of truth for its
+contract. The default-enabled macro derives conformance, method,
+percent-encoded path, auth scope, and the empty payload witnesses. It requires
+`APIResponse` and an explicit `.public` / `.required` auth choice instead of
+guessing either policy.
+
+A stored `query` property derives payload witnesses for GET, while a stored
+`body` property does so for non-GET methods. For a custom shape, declare the
+complete `Parameter` + `parameters` pair; custom headers, interceptors,
+transport, and decoding also stay visible on the struct. See <doc:UsingMacros>
+for the complete expansion and diagnostic contract.
 
 ## Execute the request
 
 ```swift
-let user = try await client.request(GetUser())
+let user = try await client.request(GetUser(id: 1))
 print(user.name)
 ```
 
-## Use `EndpointBuilder` for simple calls
+## Use `EndpointBuilder` for runtime-composed calls
 
-Use ``EndpointBuilder`` when a request only needs method, path, query/body
-parameters, headers, content type, acceptable status codes, and response
-decoding:
+Use ``EndpointBuilder`` when a request is intentionally one-off or its method,
+path, or response shape is assembled at runtime:
 
 ```swift
 let users = try await client.request(
@@ -62,24 +74,33 @@ let users = try await client.request(
 )
 ```
 
-Keep a dedicated ``APIDefinition`` when the endpoint owns custom
-interceptors, encoders/decoders, multipart upload behavior, or streaming.
+Keep macro-assisted, explicit endpoint structs for the application's named API
+catalog. Multipart and streaming endpoints use their dedicated definition
+protocols.
 
 Endpoint paths are appended after the configured base URL path even when they
-start with `/`. Keep query values in `parameters`/``URLQueryEncoder`` or
-``EndpointBuilder/query(_:)``; a literal `?` or `#` in the endpoint path is
+start with `/`. Keep query values in a macro endpoint's `query` property, a
+manual endpoint's `parameters`, or ``EndpointBuilder/query(_:)``. The macro
+rejects a literal `?` or `#` at compile time; hand-written/runtime paths are
 rejected as ``NetworkError/configuration(reason:)`` with
 ``NetworkConfigurationFailureReason/invalidRequest(_:)``.
+
+The macro ships from `import InnoNetwork` through the default `Macros` package
+trait. Consumers that never use it can request `traits: []`; this excludes the
+macro API and compiler plug-in compilation, although SwiftPM can still resolve
+or fetch manifest-level dependencies. Traits are unified per package across
+the resolved graph, so another dependency enabling defaults can re-enable the
+trait.
 
 ## Request execution contract
 
 Stay on ``NetworkClient/request(_:)`` for normal typed requests and
 ``NetworkClient/upload(_:)`` for multipart uploads.
 
-Lower-level request execution hooks may appear in the source tree while the
-package is being prepared, but they are not part of the 4.0.0 stable public
-contract. Treat them as future integration candidates unless your wrapper owns
-the source pin and migration budget.
+Low-level generated-client hooks are `@_spi(GeneratedClientSupport)`, outside
+the 5.0 SemVer contract, and may break in a minor release. Use them only when a
+wrapper owns an exact source pin and migration budget. The root macro does not
+bridge or expose this SPI.
 
 ## When to use advanced configuration
 

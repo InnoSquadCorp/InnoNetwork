@@ -22,19 +22,20 @@ The `CI` workflow must pass all of the following:
    four-process bound. Direct bundle loading avoids SwiftPM's shared `.build`
    lock; the script also proves that every discovered test belongs to exactly
    one shard.
-5. `rg -n "@unchecked Sendable" Sources/InnoNetwork Sources/InnoNetworkDownload Sources/InnoNetworkPersistentCache Sources/InnoNetworkWebSocket` returns no matches
+5. `rg -n "@unchecked Sendable"` across production targets, including
+   `Sources/InnoNetworkMacros`, returns no matches.
 6. `bash Scripts/check_shared_coders_mutation.sh` confirms the shared default
    JSON coders are never mutated after construction.
 7. `bash Scripts/check_production_force_unwraps.sh` returns no matches in
    production source targets. Tests and smoke fixtures are excluded.
 8. `bash Scripts/check_no_print_in_production.sh` returns no matches in
    production source targets. Tests and smoke fixtures are excluded.
-9. Core and codegen coverage reports are generated from explicit source roots
-   under `.build/coverage/` and `.build/coverage-codegen/`, then uploaded as
+9. Runtime and macro coverage reports are generated from explicit, disjoint
+   source roots under `.build/coverage/` and `.build/coverage-macros/`, then uploaded as
    separate workflow artifacts. Missing profiling data, test executables,
    source files, or LCOV records fail the job; artifact upload also uses
    `if-no-files-found: error`. Codecov receives only those explicit reports
-   with `disable_search: true`, using separate `core` and `codegen` flags.
+   with `disable_search: true`, using separate `core` and `macros` flags.
    Dedicated upload jobs authenticate with short-lived GitHub OIDC credentials
    instead of a repository secret, so dependency builds and tests never receive
    `id-token: write`. They download a fixed Codecov CLI release and verify its
@@ -49,16 +50,21 @@ The `CI` workflow must pass all of the following:
    hosted runner exposes a compatible SDK and destination; a missing optional
    platform component emits an explicit notice, while a source or build
    failure on an available destination still fails the job.
-11. Consumer smoke first asserts that the root package dependency graph does not
-   contain `swift-syntax`, then builds separate core-only, aggregate,
-   download-only, websocket-only, test-support, generated-client, and codegen
-   usage packages. Macro tests run with coverage from
-   `Packages/InnoNetworkCodegen` so the codegen dependency graph and report
-   stay isolated from root package consumers.
+11. Consumer smoke verifies `Macros` is a default trait, the default target
+   graph includes `swift-syntax`, and the `--disable-default-traits` target
+   graph excludes it. It builds the root `InnoNetwork` target with default
+   traits disabled, then builds separate core-only (`traits: []`), aggregate,
+   download-only, websocket-only, test-support, generated-client, and macro
+   usage packages. SwiftPM can still resolve or fetch manifest-level
+   dependencies during a core-only build; the invariant is that macro products
+   are absent from the target graph and compilation. Traits are unified per
+   package, so another dependency enabling default traits re-enables `Macros`.
 12. `bash Scripts/check_provisional_enum_cases.sh` confirms guarded public enum
     cases still match their migration-review allowlist.
-13. The codegen package runs its complete test target rather than a named-test
-    filter, so newly added macro suites are included automatically.
+13. Macro tests run from source with
+    `--disable-experimental-prebuilts --filter InnoNetworkMacroTests`, and
+    `Scripts/check_macro_compile_failures.sh` verifies that invalid definitions
+    fail with the intended diagnostic rather than compiling silently.
 14. The CI benchmark smoke job runs
     `swift run -c release InnoNetworkBenchmarks --quick`
     and uploads the JSON summary to prove the benchmark CLI still builds and
@@ -104,6 +110,7 @@ bash Scripts/run_bounded_parallel_tests.sh
 xcrun swift test --no-parallel --enable-code-coverage
 rg -n "@unchecked Sendable" \
   Sources/InnoNetwork \
+  Sources/InnoNetworkMacros \
   Sources/InnoNetworkDownload \
   Sources/InnoNetworkPersistentCache \
   Sources/InnoNetworkWebSocket
@@ -112,14 +119,35 @@ bash Scripts/check_no_print_in_production.sh
 bash Scripts/check_shared_coders_mutation.sh
 bash Scripts/check_provisional_enum_cases.sh
 
+# Verify default and core-only macro trait profiles.
+xcrun swift package show-traits
+xcrun swift package show-dependencies --format flatlist
+xcrun swift package --disable-default-traits \
+  show-dependencies --format flatlist
+xcrun swift build --disable-default-traits --target InnoNetwork
+xcrun swift build --package-path Examples/CoreSmoke
+xcrun swift build --package-path Examples/MacroUsage
+
 # Render the same explicit coverage artifacts CI uploads. These commands fail
 # instead of silently accepting missing or empty coverage inputs.
-bash Scripts/generate_coverage_report.sh .build .build/coverage Sources
-xcrun swift test --package-path Packages/InnoNetworkCodegen --enable-code-coverage
+# Match the runtime report's explicit exclusion of macro implementation files.
+runtime_source_roots=()
+while IFS= read -r source_root; do
+  runtime_source_roots+=("$source_root")
+done < <(
+  find Sources -mindepth 1 -maxdepth 1 -type d \
+    ! -name InnoNetworkMacros -print | sort
+)
 bash Scripts/generate_coverage_report.sh \
-  Packages/InnoNetworkCodegen/.build \
-  .build/coverage-codegen \
-  Packages/InnoNetworkCodegen/Sources
+  .build .build/coverage "${runtime_source_roots[@]}"
+
+xcrun swift test --disable-experimental-prebuilts \
+  --filter InnoNetworkMacroTests --enable-code-coverage
+bash Scripts/generate_coverage_report.sh \
+  .build \
+  .build/coverage-macros \
+  Sources/InnoNetworkMacros
+bash Scripts/check_macro_compile_failures.sh
 
 # Optional: replay the benchmark smoke guard locally.
 xcrun swift run -c release InnoNetworkBenchmarks --quick \

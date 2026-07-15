@@ -60,8 +60,34 @@ jobs:
       - name: Resolve dependencies
         run: xcrun swift package resolve
 
-      - name: Resolve codegen dependencies
-        run: xcrun swift package resolve --package-path Packages/InnoNetworkCodegen
+      - name: Verify macro trait dependency graphs
+        run: |
+          set -euo pipefail
+          mkdir -p .build
+
+          xcrun swift package show-traits | tee .build/root-traits.txt
+          if ! grep -Eq '^Macros .*\(default\)$' .build/root-traits.txt; then
+            echo "::error::The Macros package trait must remain enabled by default."
+            exit 1
+          fi
+
+          xcrun swift package show-dependencies --format flatlist \
+            | tee .build/default-trait-dependencies.txt
+          if ! grep -Fxq "swift-syntax" .build/default-trait-dependencies.txt; then
+            echo "::error::The default Macros trait graph must include swift-syntax."
+            exit 1
+          fi
+
+          xcrun swift package --disable-default-traits \
+            show-dependencies --format flatlist \
+            | tee .build/core-only-dependencies.txt
+          if grep -Fxq "swift-syntax" .build/core-only-dependencies.txt; then
+            echo "::error::The core-only target graph must exclude swift-syntax."
+            exit 1
+          fi
+
+      - name: Build root core without default traits
+        run: xcrun swift build --disable-default-traits --target InnoNetwork
 
       - name: Verify docs and stability contract
         run: bash Scripts/check_docs_contract_sync.sh
@@ -77,6 +103,9 @@ jobs:
 
       - name: Verify provisionally stable enum case ledger
         run: bash Scripts/check_provisional_enum_cases.sh
+
+      - name: Verify macro compile-failure diagnostics
+        run: bash Scripts/check_macro_compile_failures.sh
 
       - name: Enforce @unchecked Sendable policy
         run: bash Scripts/check_unchecked_sendable.sh
@@ -97,6 +126,14 @@ jobs:
 
       - name: Build consumer smoke package
         working-directory: Examples/ConsumerSmoke
+        run: xcrun swift build
+
+      - name: Build core-only consumer smoke package
+        working-directory: Examples/CoreSmoke
+        run: xcrun swift build
+
+      - name: Build macro usage package
+        working-directory: Examples/MacroUsage
         run: xcrun swift build
 
       - name: Run quick benchmarks
@@ -125,41 +162,56 @@ jobs:
       - name: Run serial tests with coverage
         run: xcrun swift test --no-parallel --enable-code-coverage
 
-      - name: Generate core coverage report
+      - name: Generate runtime coverage report
         run: |
+          set -euo pipefail
+
+          runtime_source_roots=()
+          while IFS= read -r source_root; do
+            runtime_source_roots+=("$source_root")
+          done < <(
+            find Sources -mindepth 1 -maxdepth 1 -type d \
+              ! -name InnoNetworkMacros -print | sort
+          )
+
           bash Scripts/generate_coverage_report.sh \
             .build \
             .build/release-artifacts/coverage-core \
-            Sources
+            "${runtime_source_roots[@]}"
 
       - name: Run bounded target-sharded tests
         run: bash Scripts/run_bounded_parallel_tests.sh
 
-      - name: Run codegen tests with coverage
-        run: xcrun swift test --package-path Packages/InnoNetworkCodegen --enable-code-coverage
+      - name: Run macro tests from source with coverage
+        run: |
+          xcrun swift test \
+            --disable-experimental-prebuilts \
+            --filter InnoNetworkMacroTests \
+            --enable-code-coverage
 
-      - name: Generate codegen coverage report
+      - name: Generate macro coverage report
         run: |
           bash Scripts/generate_coverage_report.sh \
-            Packages/InnoNetworkCodegen/.build \
-            .build/release-artifacts/coverage-codegen \
-            Packages/InnoNetworkCodegen/Sources
+            .build \
+            .build/release-artifacts/coverage-macros \
+            Sources/InnoNetworkMacros
 
       - name: Build DocC archives
         run: |
           xcodebuild docbuild \
             -scheme InnoNetwork-Package \
             -destination 'generic/platform=macOS' \
+            -skipMacroValidation \
             -derivedDataPath .build/DocC
 
       - name: Generate SBOMs (CycloneDX 1.5)
         env:
           SBOM_VERSION: ${{ github.ref_name }}
         run: |
-          PACKAGE_PATH=. \
+          SBOM_TRAIT_PROFILE=default \
             bash Scripts/generate-sbom.sh .build/release-artifacts/sbom.cdx.json
-          PACKAGE_PATH=Packages/InnoNetworkCodegen \
-            bash Scripts/generate-sbom.sh .build/release-artifacts/sbom-codegen.cdx.json
+          SBOM_TRAIT_PROFILE=core-only \
+            bash Scripts/generate-sbom.sh .build/release-artifacts/sbom-core-only.cdx.json
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -168,9 +220,9 @@ jobs:
           path: |
             .build/release-artifacts/benchmarks.json
             .build/release-artifacts/sbom.cdx.json
-            .build/release-artifacts/sbom-codegen.cdx.json
+            .build/release-artifacts/sbom-core-only.cdx.json
             .build/release-artifacts/coverage-core/
-            .build/release-artifacts/coverage-codegen/
+            .build/release-artifacts/coverage-macros/
           if-no-files-found: error
 
   publish-release:
@@ -211,7 +263,7 @@ jobs:
           artifacts=(
             .release-artifacts/benchmarks.json
             .release-artifacts/sbom.cdx.json
-            .release-artifacts/sbom-codegen.cdx.json
+            .release-artifacts/sbom-core-only.cdx.json
           )
           for artifact in "${artifacts[@]}"; do
             if [[ ! -f "$artifact" ]]; then
@@ -255,6 +307,6 @@ jobs:
             .release-artifacts/sbom.cdx.json
             .release-artifacts/sbom.cdx.json.sig
             .release-artifacts/sbom.cdx.json.crt
-            .release-artifacts/sbom-codegen.cdx.json
-            .release-artifacts/sbom-codegen.cdx.json.sig
-            .release-artifacts/sbom-codegen.cdx.json.crt
+            .release-artifacts/sbom-core-only.cdx.json
+            .release-artifacts/sbom-core-only.cdx.json.sig
+            .release-artifacts/sbom-core-only.cdx.json.crt

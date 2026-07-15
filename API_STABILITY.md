@@ -123,7 +123,7 @@ and treat any 5.y → 5.(y+1) bump as a code-level review boundary.
 - `MultipartResponseDecoder` buffered multipart response parsing surface
 - `MultipartStreamingResponseDecoder` streaming multipart response parsing surface
 - `InnoNetworkOpenAPI` companion product
-- `InnoNetworkCodegen` separate package and macro declarations
+- `@APIDefinition(method:path:auth:)`, `APIAuthentication`, and the default-enabled `Macros` package trait
 - `PersistentResponseCache` statistics and telemetry surfaces
 - `WebSocketError.unsupportedProtocolFeature`
 - `WebSocketProtocolFeature`
@@ -163,11 +163,11 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 
 | Surface | Promotion target | Required evidence |
 | --- | --- | --- |
-| `EndpointBuilder` onboarding path | Stable since 4.0.0 | README first-30-minute flow, stable example smoke, and migration cookbook examples compile. |
+| `EndpointBuilder` runtime-composed path | Stable since 4.0.0 | Runtime-composed request examples, stable example smoke, and migration cookbook shapes stay green. |
 | `InnoNetworkAuthAWS` | 5.x minor after adopter validation | AWS SigV4 vector tests, product README/DocC scope, and explicit "reference signer, not AWS SDK replacement" wording. |
 | `PersistentResponseCache` statistics and telemetry | 5.x minor | Reentrancy invariant docs plus persistent cache key-rotation/statistics tests. |
 | `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | 5.x minor | The subset is documented as RFC 9111-aware, with directive tests for the supported rules. |
-| `InnoNetworkCodegen` macros | No automatic promotion | Promote only if the before/after ROI is clear; otherwise keep provisional or deprecate. |
+| Root `@APIDefinition` macro | No automatic promotion | Promote only after the explicit-struct expansion, diagnostics, and trait opt-out have sustained adopter validation. |
 
 - `default` aliases — may add new defaults; never removed within 5.x.
 - Benchmark runner CLI flags and JSON keys — may evolve to reflect new
@@ -263,7 +263,9 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   exercised.
 - `InnoNetworkOpenAPI` — adapter protocols may add optional requirements with
   default implementations to track Swift OpenAPI Generator and HTTPTypes
-  conventions without pulling those packages into the core runtime.
+  conventions without exposing HTTPTypes through the core public
+  request/header/response model. The direct `swift-http-types` dependency
+  remains owned by the optional companion target.
 - `PersistentResponseCache` statistics and telemetry — event reasons may grow
   as additional scrub cases are surfaced.
 - `ResponseCache.invalidateTargetURI(_:)` — the protocol requirement has a
@@ -281,7 +283,8 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 - `WebSocketError.unsupportedProtocolFeature` and `WebSocketProtocolFeature`
   — feature cases may grow as optional transports add or reject more protocol
   extensions.
-- `InnoNetworkCodegen` — macro signatures may add optional arguments.
+- `@APIDefinition(method:path:auth:)` — the signature may add optional
+  arguments, but `APIResponse` and authentication intent remain explicit.
 - `DecodingInterceptor` — protocol may grow new optional hooks with
   default implementations as additional decode-boundary use cases
   surface.
@@ -430,24 +433,32 @@ release line.
   `VCRRedactionPolicy`, `VCRRequest`, `VCRResponse`, `VCRURLSession`, and
   `WebSocketEventRecorder`.
 
-### InnoNetworkCodegen Package (Experimental Distribution)
+### Root Macro Surface (Provisionally Stable)
 
-- `APIDefinition(method:path:)` attached macro.
-- `endpoint(_:_:as:)` freestanding expression macro.
+- `APIDefinition(method:path:auth:)` attached macro.
+- `APIAuthentication.public` and `APIAuthentication.required`.
+- The default-enabled `Macros` package trait and `traits: []` opt-out.
 
-The macro declarations retain their provisional source contract for local
-workspace users, but the package distribution contract is **experimental**.
-`Packages/InnoNetworkCodegen` is a nested SwiftPM package with a path dependency
-on the repository root. SwiftPM resolves a repository URL from its root
-manifest, which does not vend an `InnoNetworkCodegen` product; consequently an
-InnoNetwork release tag cannot be used as a remote dependency for this nested
-package. Remote availability requires a separately distributed package or a
-future root-package graph change.
+The root `InnoNetwork` product exports the macro declaration when `Macros` is
+enabled; no separate package or import is required. Expansion is
+source-generation behavior, not a replacement runtime client API. The
+annotated struct remains the endpoint contract and must declare
+`APIResponse`; the macro derives conformance, method, path, auth scope, and the
+supported simple payload witnesses. A complete `Parameter` + `parameters` pair
+remains authoritative for advanced endpoint shapes.
 
-Macro expansion is source-generation behavior, not a new runtime public API.
-The attached macro emits witnesses at the attached type's visibility
-(`public`, `package`, or implicit internal) so generated clients can export
-public endpoint types deliberately while app-internal endpoints remain internal.
+The attached macro emits witnesses at the type's visibility (`public`,
+`package`, or implicit internal). It fails closed on incomplete or ambiguous
+definitions, including omitted auth, missing response type, invalid path
+placeholders, and conflicting generated witnesses. The removed 4.x
+`endpoint(_:_:as:)` expression macro has no 5.x compatibility contract;
+``EndpointBuilder`` is the runtime-composed alternative.
+
+`traits: []` removes the macro declaration and compiler plug-in products from
+the consumer target graph and compilation. SwiftPM still resolves package-level
+manifest dependencies and may resolve or fetch `swift-syntax`. Traits are
+unified per package across a resolved graph, so another dependency enabling
+the default `Macros` trait re-enables it for the shared package instance.
 
 ### SPI
 
@@ -495,24 +506,17 @@ and without a `[Breaking]` callout in `CHANGELOG.md`. SPI changes still
 appear in the changelog, but in a dedicated `[SPI]` subsection that
 does not require a major version bump.
 
-**2. `InnoNetworkCodegen` is co-updated for every SPI break.**
+**2. The root macro does not bridge the generated-client SPI.**
 
-Whenever an SPI symbol changes shape, the matching
-`Packages/InnoNetworkCodegen` macros and recipe templates ship updated
-expansions in the **same release** of InnoNetwork. Consumers who use
-the macro path (`@APIDefinition(...)` and `endpoint(_:_:as:)`) and pin
-both packages to the same InnoNetwork tag therefore never observe an
-SPI break — the regenerated witnesses absorb the new shape.
-
-This guarantee is *only* extended to `InnoNetworkCodegen`. Third-party
-generators (custom OpenAPI adapters, in-house DSLs, hand-written `@_spi`
-imports) must validate their integration against each new InnoNetwork
-release.
+`@APIDefinition` derives only stable/provisional endpoint protocol witnesses
+and does not import `@_spi(GeneratedClientSupport)`. SPI changes therefore do
+not require a corresponding macro expansion migration. Third-party generators
+(custom OpenAPI adapters, in-house DSLs, hand-written `@_spi` imports) must
+still validate their integration against each new InnoNetwork release.
 
 **3. External `@_spi` imports are opt-in and unsupported.**
 
-Code outside the `InnoNetwork` and `InnoNetworkCodegen` packages that
-writes:
+Code outside the `InnoNetwork` package that writes:
 
 ```swift
 @_spi(GeneratedClientSupport) import InnoNetwork
@@ -604,11 +608,10 @@ requires `@_spi` import.
   Retry scheduling, auth refresh replay, response-cache substitution,
   coalescing, and circuit-breaker state remain owned by built-in pipeline
   stages that may evolve internally.
-- `InnoNetworkCodegen` is a separate compile-time package under
-  `Packages/InnoNetworkCodegen`. Importing the root `InnoNetwork` package does
-  not resolve or build `swift-syntax`; macro users opt into that dependency by
-  using the nested package from a complete local checkout. The nested package
-  is not remotely consumable from the root package's release tag.
+- The root `@APIDefinition` macro is default-enabled by the `Macros` package
+  trait. Core-only consumers can request `traits: []` consistently across the
+  graph to exclude the macro declaration and compiler plug-in compilation;
+  SwiftPM may still resolve or fetch manifest-level `swift-syntax` sources.
 - Persistence and telemetry formats are not external storage contracts.
 - Benchmark guard thresholds, guarded benchmark selection, and baseline
   contents are operational policy rather than public compatibility surface.

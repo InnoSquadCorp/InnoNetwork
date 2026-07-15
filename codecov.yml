@@ -1,23 +1,30 @@
 # Codecov configuration for InnoNetwork.
 #
-# The CI workflow (.github/workflows/ci.yml) uploads explicit core and codegen
+# The CI workflow (.github/workflows/ci.yml) uploads explicit runtime and macro
 # LCOV reports. This file controls how Codecov interprets those reports and
 # when it should fail a pull request.
 
 codecov:
   require_ci_to_pass: true
   notify:
-    # Wait for the core and codegen uploads before posting the report.
+    # Wait for the runtime and macro uploads before posting the report.
     wait_for_ci: true
 
 flags:
   core:
     paths:
-      - "Sources/**/*"
+      - "Sources/InnoNetwork/**/*"
+      - "Sources/InnoNetworkAuthAWS/**/*"
+      - "Sources/InnoNetworkDownload/**/*"
+      - "Sources/InnoNetworkOpenAPI/**/*"
+      - "Sources/InnoNetworkPersistentCache/**/*"
+      - "Sources/InnoNetworkTestSupport/**/*"
+      - "Sources/InnoNetworkTrust/**/*"
+      - "Sources/InnoNetworkWebSocket/**/*"
     carryforward: false
-  codegen:
+  macros:
     paths:
-      - "Packages/InnoNetworkCodegen/Sources/**/*"
+      - "Sources/InnoNetworkMacros/**/*"
     carryforward: false
 
 coverage:

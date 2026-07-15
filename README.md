@@ -36,10 +36,11 @@ root runtime package provides eight public products:
 | `InnoNetworkTrust` | You need optional public-key pinning via `PublicKeyPinningEvaluator` and `TrustPolicy.custom(_:)`. |
 | `InnoNetworkTestSupport` | You need consumer-test helpers such as `MockURLSession`, `StubNetworkClient`, or WebSocket recorders. Do not link it into production binaries. |
 
-For the first 30 minutes, use `EndpointBuilder`. It gives you typed
-responses, auth scopes, transport policy, and decoding without creating a
-new type per endpoint. Reach for macros, streaming, multipart, WebSocket,
-OpenAPI, or persistent cache after the basic request path is working.
+For application API catalogs, start with an explicit endpoint struct and the
+default-enabled `@APIDefinition` macro. The struct remains the source of truth;
+the macro derives repetitive witnesses and fails the build when method, path,
+payload, response, or auth declarations are incomplete. Use `EndpointBuilder`
+for one-off or runtime-composed requests that do not deserve a named contract.
 
 The packages are built around Swift Concurrency, explicit transport
 policies, and operational visibility that can scale from app prototypes
@@ -83,24 +84,22 @@ around each of these.
 
 ## Choosing the Right Entry Point
 
-InnoNetwork ships several layers. Pick the highest one that matches your
-situation. Most app teams should start with `EndpointBuilder` and move down
-only when an endpoint needs an owned type or a specialized transport.
+InnoNetwork ships several layers. Pick the highest one that preserves the
+contract your application needs. Most app teams should use macro-assisted,
+explicit `APIDefinition` structs for their API catalog.
 
 ```text
-Do you just need method + path + headers + query/body + decoding?
-├─ yes ─► EndpointBuilder
-│          (e.g. EndpointBuilder<EmptyResponse, PublicAuthScope>.get("/users").decoding(User.self))
+Does this endpoint belong in the application's named API catalog?
+├─ yes ─► @APIDefinition on an explicit struct
+│          (the struct owns inputs, APIResponse, and any custom policy)
 └─ no
    │
-   Does the endpoint own interceptors, custom transport, multipart, or streaming?
-   ├─ yes ─► APIDefinition / MultipartAPIDefinition / StreamingAPIDefinition
-   │        (dedicated value type per endpoint)
+   Is it a one-off or runtime-composed HTTP request?
+   ├─ yes ─► EndpointBuilder
    └─ no
       │
-      Are you generating client code or want macro-generated endpoint structs?
-      ├─ yes ─► InnoNetworkOpenAPI or InnoNetworkCodegen
-      │        (advanced entry points; see "Advanced Surfaces" below)
+      Does it need multipart, streaming, or generated OpenAPI transport?
+      ├─ yes ─► MultipartAPIDefinition / StreamingAPIDefinition / InnoNetworkOpenAPI
       └─ no
          │
          Are you building an SDK or library wrapper that needs raw
@@ -139,7 +138,7 @@ dependencies: [
 
 > Use `from: "5.0.0"` (`.upToNextMajor`) only if you exclusively call
 > the **Stable** ledger in `API_STABILITY.md`. Provisionally stable
-> APIs (test support, signing, code generation, and resilience policy
+> APIs (test support, signing, macros, and resilience policy
 > surfaces) may change in any minor release.
 >
 > InnoNetwork also intentionally requires Swift 6.2+ and current Apple OS
@@ -148,7 +147,7 @@ dependencies: [
 > but apps with older deployment targets should keep a thin compatibility
 > client until they can raise their platform floor.
 
-### First 30 Minutes: EndpointBuilder
+### First 30 Minutes: Explicit Endpoints, Macro-Assisted
 
 ```swift
 import Foundation
@@ -169,74 +168,69 @@ struct Post: Decodable, Sendable {
     let title: String
 }
 
+@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+struct GetUser {
+    typealias APIResponse = User
+
+    let id: Int
+}
+
+@APIDefinition(method: .post, path: "/posts", auth: .public)
+struct CreatePostEndpoint {
+    typealias APIResponse = Post
+
+    let body: CreatePost
+}
+
 let client = DefaultNetworkClient(
     configuration: .safeDefaults(
         baseURL: URL(string: "https://api.example.com/v1")!
     )
 )
 
-let user = try await client.request(
-    EndpointBuilder<EmptyResponse, PublicAuthScope>
-        .get("/users/1")
-        .decoding(User.self)
-)
-
+let user = try await client.request(GetUser(id: 1))
 let created = try await client.request(
-    EndpointBuilder<EmptyResponse, PublicAuthScope>
-        .post("/posts")
-        .body(CreatePost(title: "Hello", body: "World"))
-        .header("Idempotency-Key", value: UUID().uuidString)
-        .decoding(Post.self)
+    CreatePostEndpoint(body: CreatePost(title: "Hello", body: "World"))
 )
 
 print(user)
 ```
 
-`EndpointBuilder` is the default onboarding path. It keeps the call site
-compact while still flowing through retry, auth refresh, interceptors,
-coalescing, cache, trust, tracing, and event observers configured on the
-client.
+`GetUser` and `CreatePostEndpoint` remain ordinary, explicit value types. The
+macro adds `APIDefinition` conformance, `method`, `path`, and the simple
+`Parameter` / `parameters` witnesses. `APIResponse` stays visible, and every
+attribute must choose `auth: .public` or `.required`; the macro never guesses a
+security boundary. A stored `query` is inferred for GET, and a stored `body` is
+inferred for non-GET methods.
+
+Use `EndpointBuilder` when a request is genuinely local or runtime-composed:
 
 ```swift
-let users = try await client.request(
+let previewPath = "/users/preview"
+let preview = try await client.request(
     EndpointBuilder<EmptyResponse, PublicAuthScope>
-        .get("/users")
-        .query(["limit": 20])
-        .decoding([User].self)
-)
-
-// form-url-encoded body
-let token = try await client.request(
-    EndpointBuilder<EmptyResponse, PublicAuthScope>
-        .post("/login")
-        .body(credentials)
-        .transport(.formURLEncoded())
-        .decoding(Token.self)
-)
-
-let me = try await client.request(
-    EndpointBuilder<EmptyResponse, AuthRequiredScope>
-        .get("/me")
+        .get(previewPath)
         .decoding(User.self)
 )
 ```
 
-Use a dedicated `APIDefinition` type after the first path is working and an
-endpoint needs a named contract, custom transport, per-endpoint interceptors,
-multipart upload, or streaming response.
+For a custom payload, declare the complete `Parameter` + `parameters` pair.
+It is the authoritative escape hatch; headers, interceptors, transport,
+decoding, and policy overrides likewise stay explicit on the struct.
 
 ```swift
 struct UserPatch: Encodable, Sendable {
     let displayName: String
 }
 
-struct UpdateUser: APIDefinition {
+@APIDefinition(method: .patch, path: "/me", auth: .public)
+struct UpdateUser {
     typealias Parameter = UserPatch
     typealias APIResponse = User
 
-    let parameters: UserPatch?
-    var method: HTTPMethod { .patch }
-    var path: String { "/me" }
+    let patch: UserPatch
+
+    var parameters: Parameter? { patch }
 
     var transport: TransportPolicy<User> {
         .json(decoder: snakeCaseDecoder)
@@ -244,23 +238,31 @@ struct UpdateUser: APIDefinition {
 }
 ```
 
-`APIDefinition` exposes one transport-shape entry point — `transport: TransportPolicy<APIResponse>`.
-The default is method-aware (`GET` → `.query()`, otherwise `.json()`), so most
-hand-written endpoints don't override it. Use the `TransportPolicy` factories
-when you need a different shape:
+`APIDefinition` exposes one transport-shape entry point —
+`transport: TransportPolicy<APIResponse>`. The default is method-aware
+(`GET` → `.query()`, otherwise `.json()`), so most endpoint structs do not
+override it.
 
 ```swift
 let patched = try await client.request(
-    UpdateUser(parameters: UserPatch(displayName: "Taylor"))
+    UpdateUser(patch: UserPatch(displayName: "Taylor"))
 )
 ```
+
+The macro comes from `import InnoNetwork` through the package's default
+`Macros` trait. No separate codegen package or import is required. Consumers
+that never use macros can set `traits: []` on the InnoNetwork package
+dependency; this removes the macro declaration and compiler plug-in products
+from their target graph and compilation. SwiftPM may still resolve or fetch
+the package-level `swift-syntax` dependency while evaluating the manifest.
+Traits are unified per package across the resolved graph, so every dependency
+path must keep `Macros` disabled; another dependency that enables the default
+trait re-enables it for that package instance.
 
 ### Advanced Surfaces
 
 Use these after the first request path is stable:
 
-- `@APIDefinition` / `#endpoint` in `InnoNetworkCodegen` when generated
-  endpoint structs are worth the additional build-time dependency.
 - `MultipartAPIDefinition` for upload payloads that need explicit part
   boundaries, metadata, and retry idempotency.
 - `StreamingAPIDefinition` for SSE, NDJSON, logs, or other line-delimited
@@ -269,24 +271,6 @@ Use these after the first request path is stable:
 - `InnoNetworkOpenAPI` for generated clients or OpenAPI Runtime transport.
 - `InnoNetworkPersistentCache` when an API needs on-disk RFC-aware response
   caching beyond the in-memory default.
-
-The `@APIDefinition` and `#endpoint` macros expand into the same value
-types you would write by hand. They live in a separate
-`Packages/InnoNetworkCodegen` package so root package consumers do not
-resolve `swift-syntax`. Codegen distribution is experimental and supported
-from a complete local checkout only: the root release tag does not vend the
-nested product. Local workspace targets can opt in with the nested package,
-then `import InnoNetworkCodegen`.
-
-```swift
-@APIDefinition(method: .get, path: "/users/{id}")
-struct GetUser {
-    let id: Int
-    typealias APIResponse = User
-}
-
-let macroUser = try await client.request(GetUser(id: 1))
-```
 
 ### Download
 
@@ -409,15 +393,16 @@ for await event in await manager.events(for: task) {
 - `WebSocketEventRecorder` for websocket integration assertions
 - intended for test targets, not production binaries
 
-### Separate `InnoNetworkCodegen` Package
+### Macro Support
 
-- optional `@APIDefinition` and `#endpoint` macros
-- depends on `swift-syntax` from `Packages/InnoNetworkCodegen` only
-- keeps `swift-syntax` out of the root `InnoNetwork` package dependency graph
-- experimental local-checkout distribution; the root release tag does not vend
-  the nested product
-- follows the root deployment floors: iOS 16, macOS 14, tvOS 16, watchOS 9,
-  and visionOS 1
+- default-enabled `@APIDefinition(method:path:auth:)` from `import InnoNetwork`
+- explicit endpoint structs remain the source of truth
+- `APIResponse` and authentication intent stay mandatory and visible
+- simple GET `query` or non-GET `body` properties derive payload witnesses
+- complete `Parameter` + `parameters` declarations remain authoritative
+- compile-time diagnostics reject incomplete or ambiguous definitions
+- `traits: []` excludes macro APIs and compiler plug-in compilation for
+  core-only consumers
 
 ## Platform Matrix
 
@@ -621,54 +606,34 @@ let cache = CachePack(
 See `docs/rfcs/RFC9111-Compliance.md` for the exact directive coverage
 and the trade-offs.
 
-### Optional Macros
+### Macro-First Endpoint Definitions
 
-Add the separate `InnoNetworkCodegen` package only when you want compile-time
-endpoint helpers. Inside this repository, examples use a local path dependency
-to `Packages/InnoNetworkCodegen`; published consumers should depend on the
-dedicated codegen package once it is distributed independently.
+The default `Macros` trait exposes `@APIDefinition` directly from
+`import InnoNetwork`:
 
 ```swift
 import InnoNetwork
-import InnoNetworkCodegen
 
-@APIDefinition(method: .get, path: "/users/{id}")
+@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
 struct GetUser {
-    let id: Int
-    typealias APIResponse = User
-}
-
-let endpoint = #endpoint(.get, "/users/1", as: User.self)
-```
-
-The macro saves boilerplate for the simple, common endpoint shape:
-
-```swift
-// Hand-written
-struct GetUser: APIDefinition {
-    typealias Parameter = EmptyParameter
     typealias APIResponse = User
 
     let id: Int
-    var method: HTTPMethod { .get }
-    var path: String { "/users/\(id)" }
-}
-
-// Macro
-@APIDefinition(method: .get, path: "/users/{id}")
-struct GetUser {
-    let id: Int
-    typealias APIResponse = User
 }
 ```
 
-Use the macro when the endpoint is method + path placeholders + standard
-decoding. Keep a hand-written `APIDefinition` when the endpoint owns custom
-parameters, interceptors, multipart, streaming, non-standard decoding, or an
-SDK surface where generated witnesses would hide important policy choices.
+The attribute derives conformance, method, percent-encoded path, auth scope,
+and simple payload witnesses. It does not hide the response model or endpoint
+policy: `APIResponse`, stored inputs, headers, interceptors, transport, and
+decoding choices remain visible on the struct. A complete `Parameter` +
+`parameters` pair overrides body/query inference for advanced endpoints.
+
+Invalid definitions fail at compile time with a diagnostic and, where safe, a
+Fix-It. The 4.x `#endpoint` expression macro is removed; use `EndpointBuilder`
+when a request does not need an explicit endpoint type.
 
 See [Using Macros](Sources/InnoNetwork/InnoNetwork.docc/Articles/UsingMacros.md)
-for the supported scope.
+for payload rules, diagnostics, and core-only trait opt-out.
 
 ## Error Handling
 

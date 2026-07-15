@@ -5,12 +5,12 @@ import SwiftSyntaxMacros
 
 /// Implements the attached ``APIDefinition`` macro expansion.
 public struct APIDefinitionMacro: ExtensionMacro {
-    /// Expands `@APIDefinition(method:path:)` into an `APIDefinition`
+    /// Expands `@APIDefinition(method:path:auth:)` into an `APIDefinition`
     /// conformance extension.
     ///
     /// - Parameters:
-    ///   - node: Attribute syntax containing the labeled `method:` and
-    ///     `path:` arguments.
+    ///   - node: Attribute syntax containing the labeled `method:`, `path:`,
+    ///     and `auth:` arguments.
     ///   - declaration: Type declaration the macro is attached to.
     ///   - type: Syntax for the annotated type name.
     ///   - protocols: Protocols requested by the compiler for the extension.
@@ -18,8 +18,8 @@ public struct APIDefinitionMacro: ExtensionMacro {
     /// - Returns: A single extension declaration that synthesizes the
     ///   protocol mechanics not explicitly owned by the annotated struct.
     /// - Throws: ``InnoNetworkMacroDiagnostic`` when required arguments are
-    ///   missing, `path:` is not a static string literal, or a path placeholder
-    ///   does not match a stored property.
+    ///   missing, `auth:` is not explicit, `path:` is not a static string
+    ///   literal, or a path placeholder does not match a stored property.
     public static func expansion(
         of node: AttributeSyntax,
         attachedTo declaration: some DeclGroupSyntax,

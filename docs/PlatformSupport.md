@@ -48,15 +48,18 @@ because the package does not compile on Linux.
 
 ## Supply-chain provenance
 
-Tagged releases produce two artifacts that consumers can verify:
+Tagged releases produce trait-profile artifacts that consumers can verify:
 
 - `sbom.cdx.json` — CycloneDX 1.5 software bill of materials describing the
-  resolved package graph and build inputs. The root package records
-  `swift-http-types` and `swift-openapi-runtime` for the `InnoNetworkOpenAPI`
-  companion product. The separate `Packages/InnoNetworkCodegen` package records
-  SwiftPM's `swift-syntax` package when macro/codegen helpers are built.
+  default-trait package graph and build inputs. It includes the root macro
+  toolchain inputs. The root manifest also records `swift-http-types` and
+  `swift-openapi-runtime` for the optional `InnoNetworkOpenAPI` companion
+  product; those types do not replace the core request/header/response API.
+- `sbom-core-only.cdx.json` — the root manifest's core-only (`traits: []`)
+  profile. Macro products and compiler plug-in compilation are excluded, but
+  SwiftPM may still resolve or fetch package-level manifest dependencies.
 - `benchmarks.json` — frozen benchmark output from the release validation
   job.
 
-Both artifacts are signed with sigstore cosign keyless signatures. See
+All three artifacts are signed with sigstore cosign keyless signatures. See
 [SECURITY.md](../SECURITY.md) for the exact `cosign verify-blob` invocation.

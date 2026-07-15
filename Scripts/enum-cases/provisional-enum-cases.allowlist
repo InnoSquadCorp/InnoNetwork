@@ -1,6 +1,9 @@
 # Enum cases whose public/provisionally-stable shape requires migration review.
 # Format: EnumName.caseName
 
+APIAuthentication.public
+APIAuthentication.required
+
 MultipartUploadStrategy.alwaysStream
 MultipartUploadStrategy.inMemory
 MultipartUploadStrategy.streamingThreshold

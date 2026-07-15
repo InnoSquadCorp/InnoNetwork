@@ -5,7 +5,7 @@ specific OpenAPI or RPC generator.
 
 > Important: prefer the stable ``APIDefinition`` and
 > ``RequestExecutionPolicy`` paths first. The low-level execution path remains
-> SPI and is not part of the 4.0.0 stability promise.
+> SPI and is not part of the 5.0 stability promise.
 
 ## Choose the integration path
 
@@ -25,6 +25,25 @@ represented as `Encodable`:
 - custom serialization outside `Encodable`
 - generator-owned request metadata and headers
 - custom decoding or validation per operation
+
+When a generator emits one concrete Swift type per fixed REST operation, it
+can use the root macro without entering SPI:
+
+```swift
+import InnoNetwork
+
+@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+struct GeneratedGetUser {
+    typealias APIResponse = User
+
+    let id: Int
+}
+```
+
+The generated struct remains the source of truth. The macro requires the
+response type and auth choice to stay explicit, and derives only repetitive
+protocol witnesses. A generic adapter whose method or path is dynamic should
+use the hand-written conformance below instead.
 
 ## Path 1: Generated REST contract to `APIDefinition`
 
@@ -104,7 +123,7 @@ change outside the default import contract.
 > [`API_STABILITY.md` →
 > "@_spi(GeneratedClientSupport) Compatibility Contract"](../../../../API_STABILITY.md#_spigeneratedclientsupport-compatibility-contract).
 > SPI symbols may break in any minor release; pin to an exact InnoNetwork tag
-> if you import them outside `InnoNetworkCodegen`.
+> if you import them at all.
 
 ## Repository sample
 
@@ -115,5 +134,10 @@ path:
 - a generated REST-style operation adapted onto ``APIDefinition``
 - a richer generated operation adapted onto SPI ``SingleRequestExecutable``
 
-Use the `APIDefinition` and ``RequestExecutionPolicy`` portions as the 4.0.0
+Use the `APIDefinition` and ``RequestExecutionPolicy`` portions as the 5.0
 guidance. Treat the richer wrapper portion as revision-pinned SPI material.
+
+Generated OpenAPI Runtime clients should use the optional
+`InnoNetworkOpenAPI` companion product. Its `swift-http-types` dependency stays
+at that adapter boundary; adopting the root `InnoNetwork` product does not
+change the core public request, header, or response models to HTTPTypes.

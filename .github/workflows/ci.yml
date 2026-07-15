@@ -210,9 +210,23 @@ jobs:
           xcrun swift test --no-parallel --enable-code-coverage
           echo "✅ Tests completed successfully!"
 
-      - name: Generate coverage report
+      - name: Generate runtime coverage report
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
-        run: bash Scripts/generate_coverage_report.sh .build .build/coverage Sources
+        run: |
+          set -euo pipefail
+
+          runtime_source_roots=()
+          while IFS= read -r source_root; do
+            runtime_source_roots+=("$source_root")
+          done < <(
+            find Sources -mindepth 1 -maxdepth 1 -type d \
+              ! -name InnoNetworkMacros -print | sort
+          )
+
+          bash Scripts/generate_coverage_report.sh \
+            .build \
+            .build/coverage \
+            "${runtime_source_roots[@]}"
 
       - name: Upload coverage artifact
         if: always() && steps.toolchain-compatibility.outputs.compatible == 'true'
@@ -464,7 +478,6 @@ jobs:
           xcodebuild \
             -scheme InnoNetwork-Package \
             -destination "$destination" \
-            -skipPackagePluginValidation \
             -skipMacroValidation \
             -derivedDataPath build/apple-platform-smoke \
             build
@@ -472,7 +485,7 @@ jobs:
   consumer-smoke:
     name: Consumer Smoke
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -487,15 +500,34 @@ jobs:
           xcodebuild -version
           xcrun swift --version
 
-      - name: Verify root package does not resolve swift-syntax
+      - name: Verify macro trait dependency graphs
         run: |
-          set -eo pipefail
+          set -euo pipefail
           mkdir -p .build
-          xcrun swift package show-dependencies | tee .build/root-dependencies.txt
-          if grep -q "swift-syntax" .build/root-dependencies.txt; then
-            echo "::error::Root InnoNetwork package must not resolve swift-syntax; codegen lives in Packages/InnoNetworkCodegen."
+
+          xcrun swift package show-traits | tee .build/root-traits.txt
+          if ! grep -Eq '^Macros .*\(default\)$' .build/root-traits.txt; then
+            echo "::error::The Macros package trait must remain enabled by default."
             exit 1
           fi
+
+          xcrun swift package show-dependencies --format flatlist \
+            | tee .build/default-trait-dependencies.txt
+          if ! grep -Fxq "swift-syntax" .build/default-trait-dependencies.txt; then
+            echo "::error::The default Macros trait graph must include swift-syntax."
+            exit 1
+          fi
+
+          xcrun swift package --disable-default-traits \
+            show-dependencies --format flatlist \
+            | tee .build/core-only-dependencies.txt
+          if grep -Fxq "swift-syntax" .build/core-only-dependencies.txt; then
+            echo "::error::The core-only target graph must exclude swift-syntax."
+            exit 1
+          fi
+
+      - name: Build root core without default traits
+        run: xcrun swift build --disable-default-traits --target InnoNetwork
 
       - name: Build core-only consumer smoke package
         working-directory: Examples/CoreSmoke
@@ -525,22 +557,29 @@ jobs:
         working-directory: Examples/GeneratedClientRecipe
         run: xcrun swift build
 
-      - name: Test codegen package (with code coverage)
-        run: xcrun swift test --package-path Packages/InnoNetworkCodegen --enable-code-coverage
+      - name: Test macros from source (with code coverage)
+        run: |
+          xcrun swift test \
+            --disable-experimental-prebuilts \
+            --filter InnoNetworkMacroTests \
+            --enable-code-coverage
 
-      - name: Generate codegen coverage report
+      - name: Verify macro compile-failure diagnostics
+        run: bash Scripts/check_macro_compile_failures.sh
+
+      - name: Generate macro coverage report
         run: |
           bash Scripts/generate_coverage_report.sh \
-            Packages/InnoNetworkCodegen/.build \
-            .build/coverage-codegen \
-            Packages/InnoNetworkCodegen/Sources
+            .build \
+            .build/coverage-macros \
+            Sources/InnoNetworkMacros
 
-      - name: Upload codegen coverage artifact
+      - name: Upload macro coverage artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: innonetwork-coverage-codegen
-          path: .build/coverage-codegen/
+          name: innonetwork-coverage-macros
+          path: .build/coverage-macros/
           if-no-files-found: error
 
       - name: Build openapi-to-innonetwork CLI
@@ -555,8 +594,8 @@ jobs:
         working-directory: Examples/MacroUsage
         run: xcrun swift build
 
-  upload-codegen-coverage:
-    name: Upload Codegen Coverage
+  upload-macro-coverage:
+    name: Upload Macro Coverage
     needs: consumer-smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -568,11 +607,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Download codegen coverage artifact
+      - name: Download macro coverage artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: innonetwork-coverage-codegen
-          path: .build/coverage-codegen
+          name: innonetwork-coverage-macros
+          path: .build/coverage-macros
 
       - name: Install Codecov CLI v11.3.1
         id: install-codecov-cli
@@ -596,16 +635,16 @@ jobs:
         if: ${{ always() && steps.install-codecov-cli.outcome != 'success' }}
         run: echo "::notice::Codecov CLI installation failed; retaining the uploaded coverage artifact without a Codecov upload."
 
-      - name: Upload codegen coverage to Codecov
+      - name: Upload macro coverage to Codecov
         if: steps.install-codecov-cli.outcome == 'success'
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         with:
           binary: ${{ runner.temp }}/codecov-v11.3.1
           use_oidc: true
-          files: .build/coverage-codegen/coverage.lcov
+          files: .build/coverage-macros/coverage.lcov
           disable_search: true
-          flags: codegen
-          name: codegen-coverage
+          flags: macros
+          name: macro-coverage
           fail_ci_if_error: ${{ github.event_name == 'push' && github.repository == 'InnoSquadCorp/InnoNetwork' }}
 
   benchmark-smoke:

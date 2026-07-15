@@ -219,7 +219,7 @@ expected_provisionally=(
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
 '`MultipartStreamingResponseDecoder` streaming multipart response parsing surface'
 '`InnoNetworkOpenAPI` companion product'
-'`InnoNetworkCodegen` separate package and macro declarations'
+'`@APIDefinition(method:path:auth:)`, `APIAuthentication`, and the default-enabled `Macros` package trait'
 '`PersistentResponseCache` statistics and telemetry surfaces'
 '`WebSocketError.unsupportedProtocolFeature`'
 '`WebSocketProtocolFeature`'
@@ -243,6 +243,7 @@ expected_provisionally=(
 )
 
 expected_shipping_public_declarations=(
+  APIAuthentication
   APIDefinition
   AnyEncodable
   AnyRequestExecutionPolicy
@@ -653,19 +654,41 @@ validate_persistent_cache_operations_api() {
     "$repo_root/Sources/InnoNetworkPersistentCache/PersistentResponseCacheConfiguration.swift"
 }
 
-validate_codegen_product() {
-  local codegen_package="$repo_root/Packages/InnoNetworkCodegen/Package.swift"
-  local codegen_macros="$repo_root/Packages/InnoNetworkCodegen/Sources/InnoNetworkCodegen/Macros.swift"
-  require_not_contains 'https://github.com/swiftlang/swift-syntax.git' "$repo_root/Package.swift"
-  require_contains 'name: "InnoNetworkCodegen"' "$codegen_package"
-  require_contains 'targets: ["InnoNetworkCodegen"]' "$codegen_package"
-  require_contains 'name: "InnoNetworkMacros"' "$codegen_package"
-  require_contains 'https://github.com/swiftlang/swift-syntax.git' "$codegen_package"
-  require_contains 'exact: "603.0.2"' "$codegen_package"
-  require_contains 'public macro APIDefinition' "$codegen_macros"
-  require_contains 'public macro endpoint' "$codegen_macros"
-  require_contains '`APIDefinition(method:path:)`' "$api_stability"
-  require_contains '`endpoint(_:_:as:)`' "$api_stability"
+validate_macro_surface() {
+  local macro_declaration="$repo_root/Sources/InnoNetwork/APIDefinition+Macro.swift"
+
+  [[ ! -e "$repo_root/Packages/InnoNetworkCodegen/Package.swift" ]] \
+    || fail "the retired Packages/InnoNetworkCodegen package manifest must not be restored"
+  require_contains 'name: "Macros"' "$repo_root/Package.swift"
+  require_contains '.default(enabledTraits: ["Macros"])' "$repo_root/Package.swift"
+  require_contains 'name: "InnoNetworkMacros"' "$repo_root/Package.swift"
+  require_contains 'condition: .when(traits: ["Macros"])' "$repo_root/Package.swift"
+  require_contains 'https://github.com/swiftlang/swift-syntax.git' "$repo_root/Package.swift"
+  require_contains 'exact: "603.0.2"' "$repo_root/Package.swift"
+  require_contains '#if Macros' "$macro_declaration"
+  require_contains 'public enum APIAuthentication: Sendable' "$macro_declaration"
+  require_contains 'public macro APIDefinition(' "$macro_declaration"
+  require_contains '#externalMacro(module: "InnoNetworkMacros", type: "APIDefinitionMacro")' \
+    "$macro_declaration"
+  require_not_contains 'public macro endpoint' "$macro_declaration"
+  require_contains '`@APIDefinition(method:path:auth:)`' "$api_stability"
+  require_contains '`APIAuthentication`' "$api_stability"
+  require_contains '`Macros` package trait' "$api_stability"
+
+  local legacy_macro_pattern='#endpoint|public[[:space:]]+macro[[:space:]]+endpoint'
+  if has_rg; then
+    if rg -n --glob '*.swift' "$legacy_macro_pattern" \
+      "$repo_root/Package.swift" "$repo_root/Sources" > /dev/null; then
+      rg -n --glob '*.swift' "$legacy_macro_pattern" \
+        "$repo_root/Package.swift" "$repo_root/Sources" >&2
+      fail "the removed #endpoint macro surfaced in a shipping manifest or source target"
+    fi
+  elif grep -ERn --include='*.swift' "$legacy_macro_pattern" \
+    "$repo_root/Package.swift" "$repo_root/Sources" > /dev/null; then
+    grep -ERn --include='*.swift' "$legacy_macro_pattern" \
+      "$repo_root/Package.swift" "$repo_root/Sources" >&2
+    fail "the removed #endpoint macro surfaced in a shipping manifest or source target"
+  fi
 }
 
 collect_public_symbols() {
@@ -771,9 +794,10 @@ def flush(buffered, out):
         token = match.strip()
         if not token:
             continue
-        # Strip trailing parenthesized signature so `endpoint(_:_:as:)`
-        # collapses to `endpoint`. The allowlist tracks the type-level
-        # name; macro/function shape is owned by validate_codegen_product.
+        # Strip a trailing parenthesized signature to its base identifier.
+        # The allowlist tracks both type-level names and callable declarations;
+        # the exact public macro shape is additionally owned by
+        # validate_macro_surface.
         token = re.sub(r"\(.*\)$", "", token)
         token = token.rstrip(".,;:")
         out.append(token)
@@ -834,11 +858,10 @@ PYEOF
     'where'
     'AuthPack'
     'EmptyResponse'
-    # Macro identifiers live in the InnoNetworkCodegen sub-package and
-    # are validated by validate_codegen_product, not by the runtime
-    # allowlist. Listing them here exempts them from the parity gate.
-    'endpoint'
-    'APIDefinition'
+    # SwiftPM trait tokens are manifest contracts validated by
+    # validate_macro_surface; they do not have symbol-graph entries.
+    'Macros'
+    'traits: []'
     # Swift attribute / SwiftPM / file-path references appear in
     # explanatory bullets within the ledger and have no symbol-graph
     # counterpart.
@@ -930,13 +953,20 @@ validate_troubleshooting_and_examples_docs() {
 
 validate_release_quality_gates() {
   require_contains 'Sources/InnoNetworkPersistentCache' "$repo_root/Scripts/check_unchecked_sendable.sh"
+  require_contains 'Sources/InnoNetworkMacros' "$repo_root/Scripts/check_unchecked_sendable.sh"
+  require_contains 'Sources/InnoNetworkMacros' "$repo_root/Scripts/check_production_force_unwraps.sh"
+  require_contains 'Sources/InnoNetworkMacros' "$repo_root/Scripts/check_no_print_in_production.sh"
   require_contains 'bash Scripts/check_unchecked_sendable.sh' "$repo_root/.github/workflows/ci.yml"
   require_contains 'bash Scripts/check_production_force_unwraps.sh' "$repo_root/.github/workflows/ci.yml"
+  require_contains 'bash Scripts/check_macro_compile_failures.sh' "$repo_root/.github/workflows/ci.yml"
+  require_contains 'bash Scripts/check_macro_compile_failures.sh' "$repo_root/.github/workflows/release.yml"
   require_contains 'bash Scripts/check_production_force_unwraps.sh' "$repo_root/docs/CI_DoC.md"
   [[ -x "$repo_root/Scripts/check_production_force_unwraps.sh" ]] \
     || fail "production force-unwrap gate is not executable"
   [[ -x "$repo_root/Scripts/check_unchecked_sendable.sh" ]] \
     || fail "unchecked-sendable gate is not executable"
+  [[ -x "$repo_root/Scripts/check_macro_compile_failures.sh" ]] \
+    || fail "macro compile-failure gate is not executable"
 }
 
 documented_provisionally=()
@@ -1239,8 +1269,8 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_openapi_companion_product
       continue
       ;;
-    '`InnoNetworkCodegen` separate package and macro declarations')
-      validate_codegen_product
+    '`@APIDefinition(method:path:auth:)`, `APIAuthentication`, and the default-enabled `Macros` package trait')
+      validate_macro_surface
       continue
       ;;
     '`PersistentResponseCache` statistics and telemetry surfaces')

@@ -21,7 +21,9 @@
    off-main commits, stale main refs, and missing release notes before build.
 4. Let the `Release` workflow run:
    - root tests in serial coverage mode and bounded target-sharded mode
-   - codegen tests with coverage plus fail-closed core/codegen LCOV generation
+   - root macro tests, negative compile fixtures, and fail-closed runtime/macro
+     LCOV generation
+   - default and core-only trait graph/build checks
    - docs contract sync
    - doc smoke build/run
    - consumer smoke build
@@ -29,9 +31,10 @@
      request pipeline, event hub, response cache, download restore, and
      WebSocket lifecycle/send set
    - DocC build smoke
-   - resolved CycloneDX SBOM generation for both the root and codegen packages
-   - sigstore signing and GitHub Release creation with the benchmark and both
-     SBOM artifact sets
+   - resolved CycloneDX SBOM generation for the default-trait root graph and
+     the core-only (`traits: []`) profile
+   - sigstore signing and GitHub Release creation with the benchmark,
+     `sbom.cdx.json`, and `sbom-core-only.cdx.json` artifact sets
 5. Re-check `API_STABILITY.md` and `Scripts/symbols/*.allowlist`
    together whenever a release branch changes public or SPI declarations.
 6. Re-run DocC/sample smoke after documentation-only release edits so

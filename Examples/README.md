@@ -142,9 +142,11 @@ endpoint execution in new code.
 
 ### [CoreSmoke](./CoreSmoke)
 
-Compile-only package that depends only on the root `InnoNetwork` product. CI
-uses it with the root dependency-graph check to protect runtime-only consumers
-from accidental macro or codegen dependencies.
+Compile-only package that depends on the root `InnoNetwork` product with
+`traits: []`. CI uses it to verify that the macro declaration and compiler
+plug-in compilation are excluded for core-only consumers. SwiftPM can still
+resolve or fetch package-level manifest dependencies; traits are also unified
+per package if another dependency enables them.
 
 ### [ConsumerSmoke](./ConsumerSmoke)
 
@@ -159,9 +161,9 @@ the 5.x Stable public contract.
 
 ### [MacroUsage](./MacroUsage)
 
-Compile-only package for the separate `Packages/InnoNetworkCodegen` package. It
-keeps macro usage outside the root runtime package so `InnoNetwork`-only users
-do not resolve `swift-syntax`.
+Compile-only package for the root package's default `Macros` trait. It imports
+only `InnoNetwork` and verifies explicit endpoint structs with path values, GET
+query inference, non-GET body inference, and required-auth scope generation.
 
 ### [TestSupportSmoke](./TestSupportSmoke)
 

@@ -2,10 +2,14 @@
 #
 # Emits a CycloneDX 1.5 SBOM (JSON) from SwiftPM's resolved dependency graph.
 # The default package is the repository root. Set PACKAGE_PATH to generate an
-# SBOM for another package, for example Packages/InnoNetworkCodegen.
+# SBOM for another package.
 #
 # Output is written to the path supplied as the first argument, defaulting
 # to .build/release-artifacts/sbom.cdx.json.
+#
+# Set SBOM_TRAIT_PROFILE to `default` (the default) or `core-only`. The latter
+# resolves the graph with `--disable-default-traits`, so release artifacts can
+# publish both the macro-first dependency view and the opt-out core view.
 #
 # The SBOM_* metadata overrides and SBOM_DEPENDENCY_JSON are primarily useful
 # for deterministic, network-free tests. SBOM_DEPENDENCY_JSON must name a file
@@ -16,6 +20,16 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output="${1:-.build/release-artifacts/sbom.cdx.json}"
 package_path="${PACKAGE_PATH:-$repo_root}"
+trait_profile="${SBOM_TRAIT_PROFILE:-default}"
+
+case "$trait_profile" in
+    default | core-only) ;;
+    *)
+        printf 'Unsupported SBOM trait profile: %s (expected default or core-only)\n' \
+            "$trait_profile" >&2
+        exit 1
+        ;;
+esac
 
 if [[ "$package_path" != /* ]]; then
     package_path="$repo_root/$package_path"
@@ -43,7 +57,11 @@ else
         exit 1
     }
     temporary_dependency_json="$(mktemp "${TMPDIR:-/tmp}/innonetwork-sbom-dependencies.XXXXXX")"
-    xcrun swift package --package-path "$package_path" \
+    package_arguments=(--package-path "$package_path")
+    if [[ "$trait_profile" == "core-only" ]]; then
+        package_arguments+=(--disable-default-traits)
+    fi
+    xcrun swift package "${package_arguments[@]}" \
         show-dependencies --format json > "$temporary_dependency_json"
     dependency_json="$temporary_dependency_json"
 fi
@@ -59,6 +77,7 @@ SBOM_SERIAL_NUMBER="$serial" \
 SBOM_TIMESTAMP="$timestamp" \
 SBOM_REVISION="$revision" \
 SBOM_SWIFT_VERSION="$swift_version" \
+SBOM_TRAIT_PROFILE="$trait_profile" \
 python3 - "$dependency_json" "$output" <<'PY'
 import datetime
 import json
@@ -240,7 +259,7 @@ document = {
                 {
                     "type": "application",
                     "name": "Scripts/generate-sbom.sh",
-                    "version": "2.0.0",
+                    "version": "2.1.0",
                 }
             ]
         },
@@ -255,6 +274,7 @@ document = {
                 {"name": "swift:identity", "value": root_identity},
                 {"name": "swift:revision", "value": os.environ["SBOM_REVISION"]},
                 {"name": "swift:toolchain", "value": os.environ["SBOM_SWIFT_VERSION"]},
+                {"name": "swift:trait-profile", "value": os.environ["SBOM_TRAIT_PROFILE"]},
             ],
         },
     },
@@ -343,4 +363,5 @@ except OSError as error:
     fail(f"could not write output: {error}")
 PY
 
-printf 'Generated %s (revision %s, version %s)\n' "$output" "$revision" "$version"
+printf 'Generated %s (revision %s, version %s, traits %s)\n' \
+    "$output" "$revision" "$version" "$trait_profile"

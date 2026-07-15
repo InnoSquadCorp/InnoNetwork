@@ -15,6 +15,9 @@ contract:
   hysteresis have deterministic tests;
 - release provenance, recursive CycloneDX SBOMs, coverage, release-mode
   benchmarks, and all-product DocC are enforced by CI; and
+- explicit endpoint structs become the macro-first catalog shape: the root
+  `@APIDefinition` macro derives boilerplate, requires visible response/auth
+  intent, and fails closed on unsafe or ambiguous definitions; and
 - the seven deprecated configuration modifiers and package-internal reducer
   vocabulary are removed from the public API.
 
@@ -125,11 +128,11 @@ chunk-signing remain explicitly deferred to protocol-specific transports.
 
 | Surface | Current state | Promotion target | Done criteria |
 | --- | --- | --- | --- |
-| `EndpointBuilder` onboarding path | Stable candidate before 4.0.0 | Stable at 4.0.0 | README first-30-minute flow, stable example smoke, and migration cookbook examples stay green. |
+| `EndpointBuilder` runtime-composed path | Stable candidate before 4.0.0 | Stable at 4.0.0 | Runtime-composed request examples and migration cookbook shapes stay green. |
 | `InnoNetworkAuthAWS` | Provisionally Stable | 5.x minor after field validation | AWS SigV4 vector tests, README/DocC reference-signer scope, and one adopter migration note. |
 | `PersistentResponseCache` telemetry/statistics | Provisionally Stable | 5.x minor | Reentrancy invariant documented, persistent cache tests cover key rotation and stats. |
 | `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | Provisionally Stable | 5.x minor | Directive subset is documented as RFC 9111-aware, not full compliance, with cache policy tests. |
-| Macro package | Provisionally Stable | No automatic promotion | Before/after ROI remains clear; deprecate instead of promoting if handwritten endpoints stay simpler. |
+| Root `@APIDefinition` macro | Provisionally Stable | No automatic promotion | Explicit structs remain the source of truth; diagnostics, body/query inference, and the core-only trait opt-out sustain adopter validation. |
 
 ## Post-5.0 RFC Parking Lot
 

@@ -17,6 +17,10 @@ policy observed.
 | Public `StateReducer` / `StateReduction` | An application-owned reducer type, or a feature-local reducer |
 | Body signing in `RequestInterceptor` | `RequestSigner.signatureHeaders(for:body:)` |
 | `await manager.retry(task)` while continuing to use `task` | Capture `WebSocketRetryResult?`, use its fresh `task`, and consume its pre-registered `events` stream |
+| `import InnoNetworkCodegen` | Remove it; the attached macro ships from `import InnoNetwork` |
+| `@APIDefinition(method:path:)` | Add the mandatory `auth: .public` or `.required` argument |
+| `#endpoint(method, path, as: Response.self)` | Use a named macro-assisted endpoint struct or runtime `EndpointBuilder` |
+| Passing an optional directly to `EndpointPathEncoding.percentEncodedSegment` | Unwrap it and define the nil behavior before encoding |
 
 ## Request execution policies preserve request identity
 
@@ -164,13 +168,63 @@ as application data, validate the target explicitly, and start a new typed
 request. Do not forward authorization, cookie, proxy authorization, API-key,
 or signature headers across authority boundaries.
 
-## Code generation remains local and experimental
+## Move macro definitions to the root package
 
-`Packages/InnoNetworkCodegen` is a nested SwiftPM package with a path
-dependency on the repository root. The root 5.0 tag does not vend an
-`InnoNetworkCodegen` product, so the nested package is supported only from a
-complete local checkout. Its macro contract remains experimental until it is
-distributed as an independent package or moved into the root package graph.
+The 4.x nested `Packages/InnoNetworkCodegen` package and `#endpoint`
+expression macro are removed. The root package now enables the attached macro
+by default, so remove `import InnoNetworkCodegen` and keep `import InnoNetwork`:
+
+```swift
+// 4.x
+import InnoNetwork
+import InnoNetworkCodegen
+
+@APIDefinition(method: .get, path: "/users/{id}")
+struct GetUser {
+    typealias APIResponse = User
+    let id: Int
+}
+
+// 5.0
+import InnoNetwork
+
+@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+struct GetUser {
+    typealias APIResponse = User
+    let id: Int
+}
+```
+
+This is macro-first without making the macro the endpoint abstraction. The
+explicit struct remains the source of truth: `APIResponse`, stored request
+inputs, and any custom headers, interceptors, transport, decoder, or policy
+remain on it. The macro derives conformance, method, percent-encoded path, auth
+scope, and the supported simple payload shape. A stored `query` is inferred
+only for GET; a stored `body` is inferred only for non-GET methods. Declare the
+complete `Parameter` + `parameters` pair when the endpoint needs a custom
+payload contract.
+
+Definitions now fail closed when response or auth intent is missing, a path is
+unsafe or references an unsupported property, or generated witnesses conflict.
+Optional values are no longer accepted by the public path-segment encoder;
+unwrap them and decide whether nil means omit, substitute, or reject before
+constructing a path.
+
+Consumers that do not use macros can disable the default trait:
+
+```swift
+.package(
+    url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
+    from: "5.0.0",
+    traits: []
+)
+```
+
+This excludes the macro declaration and compiler plug-in products from the
+target graph and compilation. SwiftPM can still resolve or fetch the
+manifest-level `swift-syntax` dependency. Traits are unified per package across
+the resolved graph, so every dependency path must keep `Macros` disabled for a
+core-only build.
 
 ## Pre-flight checklist
 
@@ -185,7 +239,12 @@ distributed as an independent package or moved into the root package graph.
   event stream, and attach any additional listeners to its fresh task.
 - [ ] Keep automatic-reconnect observers on the existing task; do not create a
   second task for a transport-generation change.
-- [ ] Build codegen users from a complete local checkout.
+- [ ] Remove the nested codegen package/import, add explicit `auth:` to every
+  macro endpoint, and replace `#endpoint` call sites.
+- [ ] Decide whether each optional path value is omitted, substituted, or
+  rejected before segment encoding.
+- [ ] If using `traits: []`, verify no other dependency path re-enables the
+  default `Macros` trait.
 
 ## See also
 

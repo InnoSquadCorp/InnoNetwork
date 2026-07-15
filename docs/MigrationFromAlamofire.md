@@ -1,8 +1,8 @@
 # Migration From Alamofire
 
 Use this cookbook when an app has a small Alamofire layer and wants to move the
-first endpoint to InnoNetwork without adopting macros, streaming, or custom
-transport hooks. For deeper behaviour mapping, see
+first endpoint to explicit, macro-assisted InnoNetwork value types without
+adopting streaming or custom transport hooks. For deeper behaviour mapping, see
 [`docs/MigrationGuides.md`](MigrationGuides.md) and the DocC
 `MigrationFromAlamofire` article.
 
@@ -46,10 +46,30 @@ final class API {
 }
 ```
 
-## After: EndpointBuilder first path
+## After: explicit endpoint structs
 
 ```swift
+import Foundation
 import InnoNetwork
+
+@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+struct GetUser {
+    typealias APIResponse = User
+    let id: Int
+}
+
+@APIDefinition(method: .post, path: "/posts", auth: .public)
+struct CreatePostRequest {
+    typealias APIResponse = EmptyResponse
+
+    let body: CreatePost
+    let token: String
+
+    var headers: HTTPHeaders {
+        ["Authorization": "Bearer \(token)",
+         "Idempotency-Key": UUID().uuidString]
+    }
+}
 
 let client = DefaultNetworkClient(
     configuration: .recommendedForProduction(
@@ -57,22 +77,18 @@ let client = DefaultNetworkClient(
     )
 )
 
-let user = try await client.request(
-    EndpointBuilder<EmptyResponse, PublicAuthScope>
-        .get("/users/\(id)")
-        .decoding(User.self)
-)
+let user = try await client.request(GetUser(id: id))
 
 let token = currentAccessToken
 let _: EmptyResponse = try await client.request(
-    EndpointBuilder<EmptyResponse, PublicAuthScope>
-        .post("/posts")
-        .body(CreatePost(title: "Hello", body: "World"))
-        .header("Authorization", value: "Bearer \(token)")
-        .header("Idempotency-Key", value: UUID().uuidString)
+    CreatePostRequest(
+        body: CreatePost(title: "Hello", body: "World"),
+        token: token
+    )
 )
 ```
 
-Start with `EndpointBuilder`, move auth refresh into `RefreshTokenPolicy`, and
-only introduce `APIDefinition` when the endpoint itself needs custom transport,
-per-endpoint interceptors, multipart, or streaming.
+The manual bearer header above is a transitional migration shape. Move token
+ownership into `RefreshTokenPolicy`, then change the attribute to
+`auth: .required` and remove the token property/header. Use `EndpointBuilder`
+only for a request that is intentionally one-off or runtime-composed.

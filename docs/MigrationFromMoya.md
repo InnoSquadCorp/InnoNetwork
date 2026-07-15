@@ -1,9 +1,9 @@
 # Migration From Moya
 
 Use this cookbook when a Moya `TargetType` file has become the shared API
-surface and you want a smaller first step into InnoNetwork. Start with
-`EndpointBuilder`; keep protocol-based endpoint types for operations that
-really own transport or interceptor policy.
+surface and you want a smaller first step into InnoNetwork. Convert each case
+to an explicit endpoint struct; let `@APIDefinition` derive only its repetitive
+protocol witnesses.
 
 ## Before: Moya target
 
@@ -45,10 +45,37 @@ let response = try await provider.request(.detail(id: 1))
 let user = try JSONDecoder().decode(User.self, from: response.data)
 ```
 
-## After: EndpointBuilder first path
+## After: explicit endpoint structs
 
 ```swift
+import Foundation
 import InnoNetwork
+
+@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+struct GetUser {
+    typealias APIResponse = User
+    let id: Int
+
+    var headers: HTTPHeaders { ["Accept": "application/json"] }
+}
+
+struct UpdateNameBody: Encodable, Sendable {
+    let displayName: String
+}
+
+@APIDefinition(method: .patch, path: "/me", auth: .public)
+struct UpdateName {
+    typealias APIResponse = User
+
+    let body: UpdateNameBody
+    let token: String
+
+    var headers: HTTPHeaders {
+        ["Accept": "application/json",
+         "Authorization": "Bearer \(token)",
+         "Idempotency-Key": UUID().uuidString]
+    }
+}
 
 let client = DefaultNetworkClient(
     configuration: .recommendedForProduction(
@@ -56,24 +83,19 @@ let client = DefaultNetworkClient(
     )
 )
 
-let user = try await client.request(
-    EndpointBuilder<EmptyResponse, PublicAuthScope>
-        .get("/users/1")
-        .header("Accept", value: "application/json")
-        .decoding(User.self)
-)
+let user = try await client.request(GetUser(id: 1))
 
 let token = currentAccessToken
 let updated = try await client.request(
-    EndpointBuilder<EmptyResponse, PublicAuthScope>
-        .patch("/me")
-        .body(["displayName": "Taylor"])
-        .header("Authorization", value: "Bearer \(token)")
-        .header("Idempotency-Key", value: UUID().uuidString)
-        .decoding(User.self)
+    UpdateName(
+        body: UpdateNameBody(displayName: "Taylor"),
+        token: token
+    )
 )
 ```
 
 Convert one case at a time. If a Moya case has plugin-specific behaviour,
-move that logic to `NetworkConfiguration` interceptors or a dedicated
-`APIDefinition` rather than recreating a large enum immediately.
+move that logic to `NetworkConfiguration` interceptors or keep it explicit on
+the endpoint struct rather than recreating a large enum. The manual bearer
+header is transitional: move token ownership to `RefreshTokenPolicy`, change
+the endpoint to `auth: .required`, and remove the token property/header.

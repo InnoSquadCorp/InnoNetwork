@@ -36,6 +36,7 @@ jobs:
           xcodebuild docbuild \
             -scheme InnoNetwork-Package \
             -destination 'generic/platform=macOS' \
+            -skipMacroValidation \
             -derivedDataPath .build/DocC
 
       - name: Transform DocC archives for static hosting
