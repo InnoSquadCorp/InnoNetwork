@@ -59,6 +59,19 @@ package enum NetworkURLAdmission {
         return url
     }
 
+    /// Validates the final URL carried by a request immediately before a
+    /// transport boundary. Request interceptors and authentication policies
+    /// can replace the complete `URLRequest`, so validating only the URL that
+    /// `RequestBuilder` originally produced is insufficient.
+    @discardableResult
+    package static func validate(_ request: URLRequest, policy: Policy) throws -> URLRequest {
+        guard let url = request.url else {
+            throw invalidURL("Network requests must include an absolute URL.")
+        }
+        try validate(url, policy: policy)
+        return request
+    }
+
     /// Rejects RFC 3986 dot segments, including recursively percent-encoded
     /// spellings such as `%2e`, `%2E%2E`, and `%252e%252e`.
     package static func validatePercentEncodedPath(_ path: String) throws {

@@ -258,8 +258,6 @@ public actor PersistentResponseCache: ResponseCache {
             recordMiss()
             return nil
         }
-        let bodyURL = bodiesDirectoryURL.appendingPathComponent(entry.bodyFileName, isDirectory: false)
-
         // Body reads (potentially up to `maxEntryBytes`, default 5 MB) run on
         // a detached task so the actor can process unrelated requests while
         // slow flash blocks the read. The actor remains the single writer of
@@ -268,7 +266,11 @@ public actor PersistentResponseCache: ResponseCache {
         // entry when the actor resumes.
         let data: Data
         do {
-            data = try await Self.readBodyData(at: bodyURL)
+            data = try await Self.readBodyData(
+                fileName: entry.bodyFileName,
+                in: bodiesDirectoryURL,
+                maximumByteCount: configuration.maxEntryBytes
+            )
         } catch {
             if isCurrentEntry(id: id, entry: entry) {
                 scrubEntry(id: id, entry: entry, reason: .missingBody)
@@ -393,7 +395,6 @@ public actor PersistentResponseCache: ResponseCache {
             return
         }
         let bodyFileName = "\(id)-\(UUID().uuidString).body"
-        let bodyURL = bodiesDirectoryURL.appendingPathComponent(bodyFileName, isDirectory: false)
         let headerByteCost: Int = value.headers.reduce(0) { partialResult, header in
             partialResult + header.key.utf8.count + header.value.utf8.count
         }
@@ -426,7 +427,8 @@ public actor PersistentResponseCache: ResponseCache {
         do {
             try await Self.writeBodyData(
                 value.data,
-                to: bodyURL,
+                fileName: bodyFileName,
+                in: bodiesDirectoryURL,
                 dataProtectionClass: configuration.dataProtectionClass
             )
             rollbackIndex = index

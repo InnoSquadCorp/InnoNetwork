@@ -69,10 +69,17 @@ extension URLSession: URLSessionProtocol {
         // our policy.
         let delegate = RequestTaskDelegate(request: request, context: context)
         do {
-            return try await data(for: request, delegate: delegate)
+            let result = try await data(for: request, delegate: delegate)
+            if let redirectFailure = delegate.redirectFailure {
+                throw redirectFailure
+            }
+            return result
         } catch {
             if let trustFailureReason = delegate.trustFailureReason {
                 throw TrustEvaluationError.failed(trustFailureReason, error)
+            }
+            if let redirectFailure = delegate.redirectFailure {
+                throw redirectFailure
             }
             throw error
         }
@@ -83,10 +90,17 @@ extension URLSession: URLSessionProtocol {
     ) {
         let delegate = RequestTaskDelegate(request: request, context: context)
         do {
-            return try await bytes(for: request, delegate: delegate)
+            let result = try await bytes(for: request, delegate: delegate)
+            if let redirectFailure = delegate.redirectFailure {
+                throw redirectFailure
+            }
+            return result
         } catch {
             if let trustFailureReason = delegate.trustFailureReason {
                 throw TrustEvaluationError.failed(trustFailureReason, error)
+            }
+            if let redirectFailure = delegate.redirectFailure {
+                throw redirectFailure
             }
             throw error
         }
@@ -97,10 +111,17 @@ extension URLSession: URLSessionProtocol {
     ) {
         let delegate = RequestTaskDelegate(request: request, context: context)
         do {
-            return try await upload(for: request, fromFile: fileURL, delegate: delegate)
+            let result = try await upload(for: request, fromFile: fileURL, delegate: delegate)
+            if let redirectFailure = delegate.redirectFailure {
+                throw redirectFailure
+            }
+            return result
         } catch {
             if let trustFailureReason = delegate.trustFailureReason {
                 throw TrustEvaluationError.failed(trustFailureReason, error)
+            }
+            if let redirectFailure = delegate.redirectFailure {
+                throw redirectFailure
             }
             throw error
         }
@@ -112,6 +133,7 @@ private final class RequestTaskDelegate: NSObject, URLSessionDataDelegate {
     private let request: URLRequest
     private let context: NetworkRequestContext
     private let trustFailureReasonLock = OSAllocatedUnfairLock<TrustFailureReason?>(initialState: nil)
+    private let redirectFailureLock = OSAllocatedUnfairLock<NetworkError?>(initialState: nil)
 
     init(request: URLRequest, context: NetworkRequestContext) {
         self.request = request
@@ -120,6 +142,10 @@ private final class RequestTaskDelegate: NSObject, URLSessionDataDelegate {
 
     var trustFailureReason: TrustFailureReason? {
         trustFailureReasonLock.withLock { $0 }
+    }
+
+    var redirectFailure: NetworkError? {
+        redirectFailureLock.withLock { $0 }
     }
 
     func urlSession(
@@ -161,12 +187,41 @@ private final class RequestTaskDelegate: NSObject, URLSessionDataDelegate {
         }
         let policy = context.redirectPolicy
         let originalRequest = request
-        let result = policy.redirect(
-            request: newRequest,
-            response: response,
-            originalRequest: originalRequest
-        )
-        completionHandler(result)
+        guard
+            let result = policy.redirect(
+                request: newRequest,
+                response: response,
+                originalRequest: originalRequest
+            )
+        else {
+            completionHandler(nil)
+            return
+        }
+        do {
+            try NetworkURLAdmission.validate(
+                result,
+                policy: .http(allowsInsecure: context.allowsInsecureHTTP)
+            )
+            completionHandler(result)
+        } catch let error as NetworkError {
+            redirectFailureLock.withLock { failure in
+                if failure == nil {
+                    failure = error
+                }
+            }
+            completionHandler(nil)
+        } catch {
+            // NetworkURLAdmission currently throws only NetworkError. Keep the
+            // callback total if that implementation changes in the future.
+            redirectFailureLock.withLock { failure in
+                if failure == nil {
+                    failure = .configuration(
+                        reason: .invalidRequest("Redirect target failed network URL admission.")
+                    )
+                }
+            }
+            completionHandler(nil)
+        }
     }
 
     func urlSession(

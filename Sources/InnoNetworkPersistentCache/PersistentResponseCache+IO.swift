@@ -9,15 +9,116 @@ import Glibc
 
 // Split out of `PersistentResponseCache.swift` so body read/write, index
 // persistence, fsync helpers, identifier hashing, and data-protection
-// application live together. All helpers stay `static`; this file only
-// relocates code, no behaviour changes.
+// application live together. All helpers stay `static` so cache-owned file
+// admission is shared by live reads/writes and the open-time recovery path.
 extension PersistentResponseCache {
 
+    enum BodyFileAccessError: Error, Sendable {
+        case invalidReference
+        case cannotOpenDirectory
+        case cannotOpenFile
+        case notRegularFile
+    }
+
+    /// Returns a cache-owned body URL only when `fileName` exactly matches
+    /// the format emitted by `set`: a lowercase SHA-256 identifier, a UUID,
+    /// and the `.body` suffix. Persisted index contents are untrusted input;
+    /// validating the basename here prevents traversal through a corrupt or
+    /// tampered `bodyFileName` field.
+    static func validatedBodyURL(fileName: String, in bodiesDirectoryURL: URL) throws -> URL {
+        let bytes = Array(fileName.utf8)
+        let expectedByteCount = 64 + 1 + 36 + 5
+        guard bytes.count == expectedByteCount else {
+            throw BodyFileAccessError.invalidReference
+        }
+        guard
+            bytes[..<64].allSatisfy({ byte in
+                (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)
+                    || (UInt8(ascii: "a")...UInt8(ascii: "f")).contains(byte)
+            })
+        else {
+            throw BodyFileAccessError.invalidReference
+        }
+        guard bytes[64] == UInt8(ascii: "-") else {
+            throw BodyFileAccessError.invalidReference
+        }
+
+        let uuidStart = 65
+        let uuidEnd = uuidStart + 36
+        let uuidString = String(decoding: bytes[uuidStart..<uuidEnd], as: UTF8.self)
+        guard
+            let uuid = UUID(uuidString: uuidString),
+            uuid.uuidString == uuidString,
+            String(decoding: bytes[uuidEnd...], as: UTF8.self) == ".body"
+        else {
+            throw BodyFileAccessError.invalidReference
+        }
+
+        let standardizedDirectoryURL = bodiesDirectoryURL.standardizedFileURL
+        let directoryValues = try standardizedDirectoryURL.resourceValues(
+            forKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+        )
+        guard
+            directoryValues.isDirectory == true,
+            directoryValues.isSymbolicLink != true
+        else {
+            throw BodyFileAccessError.invalidReference
+        }
+
+        let bodyURL =
+            standardizedDirectoryURL
+            .appendingPathComponent(fileName, isDirectory: false)
+            .standardizedFileURL
+        guard bodyURL.deletingLastPathComponent() == standardizedDirectoryURL else {
+            throw BodyFileAccessError.invalidReference
+        }
+        return bodyURL
+    }
+
     /// Read a body file off the actor's executor. Wrapping the synchronous
-    /// `Data(contentsOf:)` in a detached task lets the cache actor service
-    /// other requests while slow flash satisfies the read.
-    static func readBodyData(at url: URL) async throws -> Data {
-        try await Task.detached { try Data(contentsOf: url) }.value
+    /// descriptor read in a detached task lets the cache actor service other
+    /// requests while slow flash satisfies the read. `openat` anchors the
+    /// lookup to the already-opened bodies directory and `O_NOFOLLOW` rejects
+    /// both directory and body-file symlinks.
+    static func readBodyData(
+        fileName: String,
+        in bodiesDirectoryURL: URL,
+        maximumByteCount: Int
+    ) async throws -> Data {
+        guard maximumByteCount > 0 else {
+            throw BodyFileAccessError.invalidReference
+        }
+        _ = try validatedBodyURL(fileName: fileName, in: bodiesDirectoryURL)
+        return try await Task.detached {
+            let fileDescriptor = try openRegularBodyFile(
+                fileName: fileName,
+                in: bodiesDirectoryURL
+            )
+            let fileHandle = FileHandle(fileDescriptor: fileDescriptor, closeOnDealloc: true)
+            defer { try? fileHandle.close() }
+
+            // Read at most the configured limit plus one sentinel byte. The
+            // caller uses that extra byte to classify the body as oversized,
+            // while a file that grows after the open-time size check cannot
+            // force an unbounded allocation here.
+            var data = Data()
+            let chunkSize = 64 * 1024
+            while data.count < maximumByteCount {
+                let remainingByteCount = maximumByteCount - data.count
+                let nextByteCount = min(chunkSize, remainingByteCount)
+                guard
+                    let chunk = try fileHandle.read(upToCount: nextByteCount),
+                    !chunk.isEmpty
+                else {
+                    return data
+                }
+                data.append(chunk)
+            }
+            if let overflowByte = try fileHandle.read(upToCount: 1) {
+                data.append(overflowByte)
+            }
+            return data
+        }.value
     }
 
     /// Write a body file off the actor's executor and apply the configured
@@ -27,9 +128,11 @@ extension PersistentResponseCache {
     /// `fileManager` only affects on-actor metadata, not body bytes.
     static func writeBodyData(
         _ data: Data,
-        to url: URL,
+        fileName: String,
+        in bodiesDirectoryURL: URL,
         dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass
     ) async throws {
+        let url = try validatedBodyURL(fileName: fileName, in: bodiesDirectoryURL)
         try await Task.detached {
             try data.write(to: url, options: .atomic)
             applyDataProtection(dataProtectionClass, to: url, fileManager: .default)
@@ -53,15 +156,66 @@ extension PersistentResponseCache {
     }
 
     static func removeBody(fileName: String, in bodiesDirectoryURL: URL, fileManager: FileManager) {
-        let bodyURL = bodiesDirectoryURL.appendingPathComponent(fileName, isDirectory: false)
+        guard let bodyURL = try? validatedBodyURL(fileName: fileName, in: bodiesDirectoryURL) else {
+            return
+        }
+        // `removeItem` unlinks a symbolic link itself rather than following
+        // it to the destination. Keeping the injected FileManager here also
+        // preserves the cache's testability and existing storage abstraction.
         try? fileManager.removeItem(at: bodyURL)
     }
 
-    static func fileSize(at url: URL, fileManager: FileManager) -> Int? {
-        guard let size = try? fileManager.attributesOfItem(atPath: url.path)[.size] as? NSNumber else {
+    static func fileSize(
+        fileName: String,
+        in bodiesDirectoryURL: URL,
+        fileManager: FileManager
+    ) -> Int? {
+        guard
+            let bodyURL = try? validatedBodyURL(fileName: fileName, in: bodiesDirectoryURL),
+            let resourceValues = try? bodyURL.resourceValues(
+                forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+            ),
+            resourceValues.isRegularFile == true,
+            resourceValues.isSymbolicLink != true,
+            let size = try? fileManager.attributesOfItem(atPath: bodyURL.path)[.size] as? NSNumber
+        else {
             return nil
         }
         return size.intValue
+    }
+
+    private static func openRegularBodyFile(
+        fileName: String,
+        in bodiesDirectoryURL: URL
+    ) throws -> Int32 {
+        _ = try validatedBodyURL(fileName: fileName, in: bodiesDirectoryURL)
+        let standardizedDirectoryURL = bodiesDirectoryURL.standardizedFileURL
+        let directoryDescriptor = standardizedDirectoryURL.withUnsafeFileSystemRepresentation {
+            representation -> Int32 in
+            guard let representation else { return -1 }
+            return open(representation, O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW)
+        }
+        guard directoryDescriptor >= 0 else {
+            throw BodyFileAccessError.cannotOpenDirectory
+        }
+        defer { close(directoryDescriptor) }
+
+        let fileDescriptor = fileName.withCString { representation in
+            openat(directoryDescriptor, representation, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        }
+        guard fileDescriptor >= 0 else {
+            throw BodyFileAccessError.cannotOpenFile
+        }
+
+        var fileStatus = stat()
+        guard
+            fstat(fileDescriptor, &fileStatus) == 0,
+            (fileStatus.st_mode & S_IFMT) == S_IFREG
+        else {
+            close(fileDescriptor)
+            throw BodyFileAccessError.notRegularFile
+        }
+        return fileDescriptor
     }
 
     static func fsyncFile(at url: URL) {

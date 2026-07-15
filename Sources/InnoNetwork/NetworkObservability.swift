@@ -235,6 +235,9 @@ public struct NetworkRequestContext: Sendable {
     public let trustPolicy: TrustPolicy
     public let eventObservers: [any NetworkEventObserving]
     public let redirectPolicy: any RedirectPolicy
+    /// Redirect targets must use the same transport-scheme admission policy
+    /// as the request that created this context.
+    package let allowsInsecureHTTP: Bool
     /// Signed requests cannot follow a URLSession-generated redirect because
     /// the follow-up URL/method would not pass through the async signer stage.
     package let allowsAutomaticRedirects: Bool
@@ -256,6 +259,7 @@ public struct NetworkRequestContext: Sendable {
         self.trustPolicy = trustPolicy
         self.eventObservers = eventObservers
         self.redirectPolicy = redirectPolicy
+        self.allowsInsecureHTTP = false
         self.allowsAutomaticRedirects = true
         self.allowsURLCacheStorage = true
     }
@@ -267,6 +271,7 @@ public struct NetworkRequestContext: Sendable {
         trustPolicy: TrustPolicy,
         eventObservers: [any NetworkEventObserving],
         redirectPolicy: any RedirectPolicy,
+        allowsInsecureHTTP: Bool,
         allowsAutomaticRedirects: Bool,
         allowsURLCacheStorage: Bool
     ) {
@@ -276,6 +281,7 @@ public struct NetworkRequestContext: Sendable {
         self.trustPolicy = trustPolicy
         self.eventObservers = eventObservers
         self.redirectPolicy = redirectPolicy
+        self.allowsInsecureHTTP = allowsInsecureHTTP
         self.allowsAutomaticRedirects = allowsAutomaticRedirects
         self.allowsURLCacheStorage = allowsURLCacheStorage
     }
@@ -288,6 +294,7 @@ public struct NetworkRequestContext: Sendable {
             trustPolicy: trustPolicy,
             eventObservers: eventObservers,
             redirectPolicy: redirectPolicy,
+            allowsInsecureHTTP: allowsInsecureHTTP,
             allowsAutomaticRedirects: false,
             allowsURLCacheStorage: false
         )

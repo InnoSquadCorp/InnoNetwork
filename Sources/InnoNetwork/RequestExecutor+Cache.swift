@@ -225,7 +225,10 @@ extension RequestExecutor {
             metricsReporter: context.metricsReporter,
             trustPolicy: context.trustPolicy,
             eventObservers: context.eventObservers,
-            redirectPolicy: context.redirectPolicy
+            redirectPolicy: context.redirectPolicy,
+            allowsInsecureHTTP: context.allowsInsecureHTTP,
+            allowsAutomaticRedirects: context.allowsAutomaticRedirects,
+            allowsURLCacheStorage: context.allowsURLCacheStorage
         )
         return try await performSignedTransportResult(
             request: request,

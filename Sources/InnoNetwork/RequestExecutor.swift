@@ -177,7 +177,10 @@ package struct RequestExecutor {
                 metricsReporter: configuration.metricsReporter,
                 trustPolicy: configuration.trustPolicy,
                 eventObservers: configuration.eventObservers,
-                redirectPolicy: configuration.redirectPolicy
+                redirectPolicy: configuration.redirectPolicy,
+                allowsInsecureHTTP: configuration.allowsInsecureHTTP,
+                allowsAutomaticRedirects: true,
+                allowsURLCacheStorage: true
             )
 
             return PreparedExecutionRequest(

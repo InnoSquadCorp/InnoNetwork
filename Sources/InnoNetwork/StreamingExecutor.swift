@@ -240,6 +240,15 @@ package struct StreamingExecutor: Sendable {
             )
             retryRequest = urlRequest
 
+            // Streaming applies endpoint/session interceptors, auth tokens,
+            // and signing headers in one stage. Validate the resulting
+            // request before publishing it as adapted or opening URLSession
+            // bytes so no adapter can bypass the builder's URL policy.
+            try NetworkURLAdmission.validate(
+                urlRequest,
+                policy: .http(allowsInsecure: configuration.allowsInsecureHTTP)
+            )
+
             await eventHub.publish(
                 .requestAdapted(
                     requestID: requestID,
@@ -257,7 +266,10 @@ package struct StreamingExecutor: Sendable {
                 metricsReporter: configuration.metricsReporter,
                 trustPolicy: configuration.trustPolicy,
                 eventObservers: configuration.eventObservers,
-                redirectPolicy: configuration.redirectPolicy
+                redirectPolicy: configuration.redirectPolicy,
+                allowsInsecureHTTP: configuration.allowsInsecureHTTP,
+                allowsAutomaticRedirects: true,
+                allowsURLCacheStorage: true
             )
             let hasRequestSigners =
                 !configuration.requestSigners.isEmpty || !request.requestSigners.isEmpty

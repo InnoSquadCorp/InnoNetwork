@@ -160,6 +160,130 @@ struct URLProtocolIntegrationTests {
             }
         }
     }
+
+    @Test("Custom redirect target is re-admitted and surfaces a typed failure")
+    func customRedirectTargetIsReadmitted() async throws {
+        let baseURL = URL(string: "https://redirect-admission-\(UUID().uuidString).example.com")!
+        let source = baseURL.appendingPathComponent("/source")
+        let target = URL(string: "https://user:password@target.example.com/private")!
+        StubURLProtocol.register(
+            url: source,
+            response: .redirect(statusCode: 302, location: target)
+        )
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                redirectPolicy: PassThroughRedirectPolicy()
+            ),
+            session: makeStubURLSession()
+        )
+
+        await expectRedirectAdmissionFailure {
+            _ = try await client.request(RedirectEndpoint(path: "/source"))
+        }
+
+        let captured = StubURLProtocol.capturedRequestURLs()
+        #expect(captured.contains(source))
+        #expect(!captured.contains(target))
+    }
+
+    @Test("Global HTTP admission rejects downgrade even when redirect policy allows it")
+    func globalAdmissionRejectsPolicyAllowedDowngrade() async throws {
+        let baseURL = URL(string: "https://redirect-downgrade-\(UUID().uuidString).example.com")!
+        let source = baseURL.appendingPathComponent("/source")
+        let target = URL(string: "http://redirect-target-\(UUID().uuidString).example.com/final")!
+        StubURLProtocol.register(
+            url: source,
+            response: .redirect(statusCode: 302, location: target)
+        )
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                redirectPolicy: DefaultRedirectPolicy(allowsHTTPSDowngrade: true)
+            ),
+            session: makeStubURLSession()
+        )
+
+        await expectRedirectAdmissionFailure {
+            _ = try await client.request(RedirectEndpoint(path: "/source"))
+        }
+
+        let captured = StubURLProtocol.capturedRequestURLs()
+        #expect(captured.contains(source))
+        #expect(!captured.contains(target))
+    }
+
+    @Test("Explicit insecure-HTTP opt-in is preserved through redirect context")
+    func explicitInsecureHTTPOptInAllowsPolicyApprovedDowngrade() async throws {
+        let baseURL = URL(string: "https://redirect-http-opt-in-\(UUID().uuidString).example.com")!
+        let source = baseURL.appendingPathComponent("/source")
+        let target = URL(string: "http://redirect-http-target-\(UUID().uuidString).example.com/final")!
+        StubURLProtocol.register(
+            url: source,
+            response: .redirect(statusCode: 302, location: target)
+        )
+        StubURLProtocol.register(
+            url: target,
+            response: .success(
+                statusCode: 200,
+                data: Data(#"{"message":"redirected-over-opted-in-http"}"#.utf8),
+                headers: ["Content-Type": "application/json"]
+            )
+        )
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                redirectPolicy: DefaultRedirectPolicy(allowsHTTPSDowngrade: true),
+                allowsInsecureHTTP: true
+            ),
+            session: makeStubURLSession()
+        )
+
+        let response = try await client.request(RedirectEndpoint(path: "/source"))
+
+        #expect(response.message == "redirected-over-opted-in-http")
+        let captured = StubURLProtocol.capturedRequestURLs()
+        #expect(captured.contains(source))
+        #expect(captured.contains(target))
+    }
+}
+
+
+private struct PassThroughRedirectPolicy: RedirectPolicy {
+    func redirect(
+        request: URLRequest,
+        response: HTTPURLResponse,
+        originalRequest: URLRequest
+    ) -> URLRequest? {
+        _ = (response, originalRequest)
+        return request
+    }
+}
+
+
+private func expectRedirectAdmissionFailure(
+    _ operation: () async throws -> Void
+) async {
+    do {
+        try await operation()
+        Issue.record("Expected redirect URL admission to fail")
+    } catch let error as NetworkError {
+        guard case .configuration(let reason) = error else {
+            Issue.record("Expected NetworkError.configuration, got \(error)")
+            return
+        }
+        switch reason {
+        case .invalidBaseURL, .invalidRequest:
+            break
+        case .offline:
+            Issue.record("Expected redirect URL admission failure, got \(reason)")
+        }
+    } catch {
+        Issue.record("Expected NetworkError.configuration, got \(error)")
+    }
 }
 
 private struct RedirectMessage: Decodable, Sendable {

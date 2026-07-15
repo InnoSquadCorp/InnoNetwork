@@ -27,6 +27,13 @@ struct PersistentResponseCacheTests {
 
         let writer = try PersistentResponseCache(configuration: configuration)
         await writer.set(key, response)
+        let bodyFileName = try #require(existingBodyURLs(in: directory).first?.lastPathComponent)
+        #expect(
+            (try? PersistentResponseCache.validatedBodyURL(
+                fileName: bodyFileName,
+                in: directory.appendingPathComponent("bodies", isDirectory: true)
+            )) != nil
+        )
 
         let reader = try PersistentResponseCache(configuration: configuration)
         let cached = try #require(await reader.get(key))
@@ -994,6 +1001,62 @@ struct PersistentResponseCacheTests {
         )
     }
 
+    @Test("Tampered body traversal cannot read or delete a caller-owned file")
+    func tamperedBodyTraversalCannotEscapeCacheDirectory() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/traversal")
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("cached".utf8)))
+
+        let sentinelURL = directory.appendingPathComponent("sentinel.txt", isDirectory: false)
+        let sentinel = Data("caller-owned".utf8)
+        try sentinel.write(to: sentinelURL, options: .atomic)
+        PersistentResponseCache.removeBody(
+            fileName: "../sentinel.txt",
+            in: directory.appendingPathComponent("bodies", isDirectory: true),
+            fileManager: .default
+        )
+        #expect(try Data(contentsOf: sentinelURL) == sentinel)
+        try rewriteFirstIndexEntryBodyFileName(in: directory, bodyFileName: "../sentinel.txt")
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+
+        #expect(await reopened.get(key) == nil)
+        await reopened.invalidate(key)
+        #expect(try Data(contentsOf: sentinelURL) == sentinel)
+        #expect(try indexEntryCount(in: directory) == 0)
+    }
+
+    @Test("Reopen rejects a body symlink without reading or deleting its target")
+    func reopenRejectsBodySymlinkWithoutFollowingTarget() async throws {
+        let directory = makeDirectory()
+        let sentinelURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("innonetwork-external-sentinel-\(UUID().uuidString).txt")
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: sentinelURL)
+        }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/symlink")
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("cached".utf8)))
+
+        let bodyURL = try #require(existingBodyURLs(in: directory).first)
+        let sentinel = Data("outside-cache".utf8)
+        try sentinel.write(to: sentinelURL, options: .atomic)
+        try FileManager.default.removeItem(at: bodyURL)
+        try FileManager.default.createSymbolicLink(at: bodyURL, withDestinationURL: sentinelURL)
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+
+        #expect(await reopened.get(key) == nil)
+        #expect(try Data(contentsOf: sentinelURL) == sentinel)
+        #expect(!FileManager.default.fileExists(atPath: bodyURL.path))
+        #expect(try indexEntryCount(in: directory) == 0)
+    }
+
     @Test("statistics snapshot exposes entry and byte budgets")
     func statisticsSnapshotExposesBudgets() async throws {
         let directory = makeDirectory()
@@ -1105,6 +1168,12 @@ struct PersistentResponseCacheTests {
         let bodyURL = try #require(existingBodyURLs(in: directory).first)
 
         try Data(repeating: 9, count: 128).write(to: bodyURL, options: .atomic)
+        let boundedRead = try await PersistentResponseCache.readBodyData(
+            fileName: bodyURL.lastPathComponent,
+            in: directory.appendingPathComponent("bodies", isDirectory: true),
+            maximumByteCount: 64
+        )
+        #expect(boundedRead.count == 65)
         let priorEvictions = await cache.statistics().evictionCount
 
         #expect(await cache.get(key) == nil)
@@ -1623,6 +1692,27 @@ struct PersistentResponseCacheTests {
         }
 
         entry["headers"] = headers
+        entries[entryID] = entry
+        index["entries"] = entries
+
+        let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
+        let data = try JSONSerialization.data(withJSONObject: index, options: [.sortedKeys])
+        try data.write(to: indexURL, options: .atomic)
+    }
+
+    private func rewriteFirstIndexEntryBodyFileName(
+        in directory: URL,
+        bodyFileName: String
+    ) throws {
+        var index = try indexObject(in: directory)
+        guard var entries = index["entries"] as? [String: Any],
+            let entryID = entries.keys.sorted().first,
+            var entry = entries[entryID] as? [String: Any]
+        else {
+            throw testFixtureError("Missing persistent cache entry to rewrite")
+        }
+
+        entry["bodyFileName"] = bodyFileName
         entries[entryID] = entry
         index["entries"] = entries
 

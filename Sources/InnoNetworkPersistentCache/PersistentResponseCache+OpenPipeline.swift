@@ -4,7 +4,7 @@ import OSLog
 // Split out of `PersistentResponseCache.swift` so the open-time recovery
 // pipeline — policy-rejected scrub, budget enforcement, unreferenced-body
 // sweep, index load, and cold-start reset — lives in one place. All helpers
-// stay `static`; this file only relocates code, no behaviour changes.
+// stay `static` and share the body-file admission rules from `+IO.swift`.
 extension PersistentResponseCache {
 
     static func reindexVaryVariantsOnOpen(
@@ -79,8 +79,13 @@ extension PersistentResponseCache {
         var evictedBytes = 0
 
         for (id, entry) in loadedIndex.entries {
-            let bodyURL = bodiesDirectoryURL.appendingPathComponent(entry.bodyFileName, isDirectory: false)
-            guard let bodySize = fileSize(at: bodyURL, fileManager: fileManager) else {
+            guard
+                let bodySize = fileSize(
+                    fileName: entry.bodyFileName,
+                    in: bodiesDirectoryURL,
+                    fileManager: fileManager
+                )
+            else {
                 budgetedIndex.entries.removeValue(forKey: id)
                 scrubbedMissingCount += 1
                 scrubbedMissingBytes += entry.byteCost
@@ -168,7 +173,7 @@ extension PersistentResponseCache {
         do {
             bodyURLs = try fileManager.contentsOfDirectory(
                 at: bodiesDirectoryURL,
-                includingPropertiesForKeys: [.isRegularFileKey],
+                includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
                 options: [.skipsHiddenFiles]
             )
         } catch {
@@ -181,9 +186,13 @@ extension PersistentResponseCache {
         var scrubbedCount = 0
         var deleteFailureCount = 0
         for bodyURL in bodyURLs {
-            let isRegularFile =
-                (try? bodyURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false
-            guard isRegularFile, bodyURL.pathExtension == "body" else { continue }
+            let resourceValues = try? bodyURL.resourceValues(
+                forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+            )
+            let isCacheBodyEntry =
+                resourceValues?.isRegularFile == true
+                || resourceValues?.isSymbolicLink == true
+            guard isCacheBodyEntry, bodyURL.pathExtension == "body" else { continue }
             guard !referencedBodyFileNames.contains(bodyURL.lastPathComponent) else { continue }
             do {
                 try fileManager.removeItem(at: bodyURL)

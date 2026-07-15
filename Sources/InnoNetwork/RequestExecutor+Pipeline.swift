@@ -40,6 +40,15 @@ extension RequestExecutor {
         var replayedAfterRefresh = false
 
         while true {
+            // Interceptors and token applicators can replace the entire
+            // request, and a 401 refresh creates another adapted request on
+            // replay. Re-run admission for every transport iteration before
+            // cache lookup, signing, coalescing, or URLSession sees it.
+            try NetworkURLAdmission.validate(
+                request,
+                policy: .http(allowsInsecure: configuration.allowsInsecureHTTP)
+            )
+
             // A signer may establish or change the authentication principal
             // (for example JWT Bearer or AWS SigV4). Until signers can expose
             // a stable, non-secret principal partition, an unsigned request is
