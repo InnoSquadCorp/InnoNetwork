@@ -63,6 +63,7 @@ and own application reducer types in their feature or architecture layer.
 - `NetworkError.category`
 - `NetworkError.isRetriableHint`
 - `NetworkError.isUserVisible`
+- `HTTPMethod`
 - `SessionAuthentication`
 - `EventDeliveryPolicy`
 - `WebSocketCloseCode`
@@ -124,7 +125,7 @@ below for the currently released 4.x line and explicit preview opt-in.
 - `MultipartResponseDecoder` buffered multipart response parsing surface
 - `MultipartStreamingResponseDecoder` streaming multipart response parsing surface
 - `InnoNetworkOpenAPI` companion product
-- `@APIDefinition(method:path:auth:)`, `SessionAuthentication`, and the default-enabled `Macros` package trait
+- `@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait
 - `PersistentResponseCache` statistics and telemetry surfaces
 - `WebSocketError.unsupportedProtocolFeature`
 - `WebSocketProtocolFeature`
@@ -146,9 +147,11 @@ below for the currently released 4.x line and explicit preview opt-in.
 - `ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.0.0 baseline)
 - `NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.0.0 baseline)
 
-## Provisionally Stable Evolution Boundaries
+## 5.x Evolution Boundaries
 
-Per-symbol evolution allowances intended for the future 5.x line:
+Per-symbol compatibility boundaries intended for the future 5.x line follow.
+Stable entries describe commitments that stay source-compatible throughout
+5.x; Provisionally Stable entries describe their explicitly allowed evolution.
 
 Promotion from Provisionally Stable to Stable requires all of the following:
 
@@ -445,9 +448,11 @@ planned 5.x release line.
 ### Root Macro Surface (Provisionally Stable)
 
 - `APIDefinition(method:path:auth:)` attached macro.
-- `SessionAuthentication.anonymous`, `SessionAuthentication.optional`, and
-  `SessionAuthentication.required`.
 - The default-enabled `Macros` package trait and `traits: []` opt-out.
+
+The macro's `auth:` argument consumes the Stable `SessionAuthentication`
+values. Their compatibility tier does not inherit the macro surface's
+Provisionally Stable status.
 
 The root `InnoNetwork` product exports the macro declaration when `Macros` is
 enabled; no separate package or import is required. Expansion is

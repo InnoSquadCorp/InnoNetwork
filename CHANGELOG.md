@@ -89,6 +89,10 @@ draft release summary.
 
 ### Fixed
 
+- The API stability contract now classifies core `HTTPMethod` and
+  `SessionAuthentication` as Stable only, and keeps Stable and Provisionally
+  Stable code spans disjoint so symbols cannot silently receive contradictory
+  5.x compatibility promises.
 - `NetworkMonitor` now keeps `NWPathMonitor` actor-isolated instead of relying
   on its newer OS-only `Sendable` conformance, preserving clean compilation at
   the declared iOS 16, tvOS 16, and watchOS 9 deployment floors.

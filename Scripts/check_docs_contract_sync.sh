@@ -194,6 +194,7 @@ expected_stable=(
 '`NetworkError.category`'
 '`NetworkError.isRetriableHint`'
 '`NetworkError.isUserVisible`'
+'`HTTPMethod`'
 '`SessionAuthentication`'
 '`EventDeliveryPolicy`'
 '`WebSocketCloseCode`'
@@ -236,7 +237,7 @@ expected_provisionally=(
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
 '`MultipartStreamingResponseDecoder` streaming multipart response parsing surface'
 '`InnoNetworkOpenAPI` companion product'
-'`@APIDefinition(method:path:auth:)`, `SessionAuthentication`, and the default-enabled `Macros` package trait'
+'`@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait'
 '`PersistentResponseCache` statistics and telemetry surfaces'
 '`WebSocketError.unsupportedProtocolFeature`'
 '`WebSocketProtocolFeature`'
@@ -258,6 +259,23 @@ expected_provisionally=(
 '`ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.0.0 baseline)'
 '`NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.0.0 baseline)'
 )
+
+stable_code_spans="$(
+  printf '%s\n' "${expected_stable[@]}" \
+    | awk -F'`' '{ for (field_index = 2; field_index <= NF; field_index += 2) print $field_index }' \
+    | sort -u
+)"
+provisional_code_spans="$(
+  printf '%s\n' "${expected_provisionally[@]}" \
+    | awk -F'`' '{ for (field_index = 2; field_index <= NF; field_index += 2) print $field_index }' \
+    | sort -u
+)"
+overlapping_code_spans="$(comm -12 <(printf '%s\n' "$stable_code_spans") <(printf '%s\n' "$provisional_code_spans"))"
+if [[ -n "$overlapping_code_spans" ]]; then
+  echo "Code spans present in both stability ledgers:" >&2
+  printf '%s\n' "$overlapping_code_spans" >&2
+  fail "Stable and Provisionally Stable ledgers must be disjoint"
+fi
 
 expected_shipping_public_declarations=(
   APIDefinition
@@ -1193,6 +1211,10 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public var isUserVisible: Bool'
       target="$repo_root/Sources/InnoNetwork/NetworkError+Classification.swift"
       ;;
+    '`HTTPMethod`')
+      pattern='public struct HTTPMethod: RawRepresentable, Sendable, Hashable'
+      target="$repo_root/Sources/InnoNetwork/HTTPMethod.swift"
+      ;;
     '`SessionAuthentication`')
       pattern='public enum SessionAuthentication'
       target="$repo_root/Sources/InnoNetwork/Endpoint.swift"
@@ -1275,7 +1297,7 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_openapi_companion_product
       continue
       ;;
-    '`@APIDefinition(method:path:auth:)`, `SessionAuthentication`, and the default-enabled `Macros` package trait')
+    '`@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait')
       validate_macro_surface
       continue
       ;;
