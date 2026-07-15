@@ -7,6 +7,7 @@ import os
 @Suite("Request Execution Policy Tests")
 struct RequestExecutionPolicyTests {
     private struct DataEcho: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = Data
 

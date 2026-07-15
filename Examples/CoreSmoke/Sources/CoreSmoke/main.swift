@@ -7,6 +7,7 @@ private struct CoreUser: Decodable, Sendable {
 }
 
 private struct CoreRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = CoreUser
 
@@ -22,7 +23,7 @@ let client = DefaultNetworkClient(
 
 _ = client
 _ = CoreRequest()
-_ = EndpointBuilder<EmptyResponse, PublicAuthScope>.get("/users")
+_ = EndpointBuilder<EmptyResponse>.get("/users")
     .query(["limit": 20])
     .decoding([CoreUser].self)
 _ = NetworkConfiguration.advanced(

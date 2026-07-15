@@ -121,7 +121,11 @@ package actor RefreshTokenCoordinator {
         to request: URLRequest
     ) async throws -> RefreshTokenApplication {
         guard policy.appliesToRequest(request) else {
-            return RefreshTokenApplication(request: request, generation: successfulRefreshGeneration)
+            return RefreshTokenApplication(
+                request: request,
+                generation: successfulRefreshGeneration,
+                didApplyToken: false
+            )
         }
 
         // The provider is external async work, so the actor may process a
@@ -132,13 +136,49 @@ package actor RefreshTokenCoordinator {
             let token = try await policy.currentTokenProvider()
             guard generation == successfulRefreshGeneration else { continue }
             guard let token else {
-                return RefreshTokenApplication(request: request, generation: generation)
+                return RefreshTokenApplication(
+                    request: request,
+                    generation: generation,
+                    didApplyToken: false
+                )
             }
             return RefreshTokenApplication(
                 request: policy.tokenApplicator(token, Self.removingAuthorizationHeaders(from: request)),
-                generation: generation
+                generation: generation,
+                didApplyToken: true
             )
         }
+    }
+
+    /// Applies an existing token or proactively refreshes before transport.
+    /// Required-auth endpoints use this path so a missing current token cannot
+    /// silently turn their first attempt into an anonymous request.
+    package func applyRequiredTokenWithGeneration(
+        to request: URLRequest
+    ) async throws -> RefreshTokenApplication {
+        guard policy.appliesToRequest(request) else {
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "Session-auth-required endpoint is excluded by RefreshTokenPolicy.appliesTo."
+                )
+            )
+        }
+
+        let current = try await applyCurrentTokenWithGeneration(to: request)
+        if current.didApplyToken { return current }
+
+        try Task.checkCancellation()
+        let resolution = try await resolveRefresh(expectedGeneration: nil)
+        guard case .refreshed(let token) = resolution else {
+            // `expectedGeneration == nil` always starts or joins a refresh.
+            return try await applyRequiredTokenWithGeneration(to: request)
+        }
+        try Task.checkCancellation()
+        return RefreshTokenApplication(
+            request: policy.tokenApplicator(token, Self.removingAuthorizationHeaders(from: request)),
+            generation: successfulRefreshGeneration,
+            didApplyToken: true
+        )
     }
 
     package func refreshAndApply(to request: URLRequest) async throws -> URLRequest {
@@ -161,7 +201,11 @@ package actor RefreshTokenCoordinator {
     ) async throws -> RefreshTokenApplication {
         try Task.checkCancellation()
         guard policy.appliesToRequest(request) else {
-            return RefreshTokenApplication(request: request, generation: successfulRefreshGeneration)
+            return RefreshTokenApplication(
+                request: request,
+                generation: successfulRefreshGeneration,
+                didApplyToken: false
+            )
         }
 
         // `resolveRefresh` checks the generation in the same actor-isolated
@@ -176,7 +220,8 @@ package actor RefreshTokenCoordinator {
         try Task.checkCancellation()
         return RefreshTokenApplication(
             request: policy.tokenApplicator(token, Self.removingAuthorizationHeaders(from: request)),
-            generation: successfulRefreshGeneration
+            generation: successfulRefreshGeneration,
+            didApplyToken: true
         )
     }
 
@@ -321,6 +366,7 @@ package actor RefreshTokenCoordinator {
 package struct RefreshTokenApplication: Sendable {
     package let request: URLRequest
     package let generation: UInt64
+    package let didApplyToken: Bool
 }
 
 

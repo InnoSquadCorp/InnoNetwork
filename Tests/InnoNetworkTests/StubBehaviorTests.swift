@@ -11,6 +11,7 @@ private struct StubProfile: Decodable, Sendable, Equatable {
 
 
 private struct StubbedProfileRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = StubProfile
 

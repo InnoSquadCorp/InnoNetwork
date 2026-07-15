@@ -12,6 +12,7 @@ private struct CreatedUser: Codable, Sendable, Equatable {
 
 
 private struct PlainPost: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     struct Body: Encodable, Sendable {
         let name: String
     }
@@ -30,6 +31,7 @@ private struct PlainPost: APIDefinition {
 
 
 private struct IdempotentPost: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     struct Body: Encodable, Sendable {
         let name: String
     }

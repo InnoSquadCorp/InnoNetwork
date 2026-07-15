@@ -15,6 +15,7 @@ struct OpenAPICompanionTests {
 
         var method: HTTPMethod { .get }
         var path: String { "/users/1" }
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         var headers: HTTPHeaders {
             HTTPHeaders(["X-Client": "openapi"])
         }

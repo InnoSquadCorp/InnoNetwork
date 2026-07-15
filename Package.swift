@@ -312,6 +312,7 @@ let package = Package(
             name: "InnoNetworkMacroTests",
             dependencies: [
                 "InnoNetwork",
+                "InnoNetworkTestSupport",
                 .target(
                     name: "InnoNetworkMacros",
                     condition: .when(traits: ["Macros"])

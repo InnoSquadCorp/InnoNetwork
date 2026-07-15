@@ -4,6 +4,7 @@ import Testing
 @testable import InnoNetwork
 
 struct SimpleGetRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = MockUser
 
@@ -13,6 +14,7 @@ struct SimpleGetRequest: APIDefinition {
 
 
 struct SimplePostRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     struct PostParam: Encodable, Sendable {
         let name: String
         let email: String
@@ -126,6 +128,7 @@ struct MockNetworkTests {
     @Test("Empty response for EmptyResponse type succeeds")
     func emptyResponseSuccess() async throws {
         struct EmptyDeleteRequest: APIDefinition {
+            var sessionAuthentication: SessionAuthentication { .anonymous }
             typealias Parameter = EmptyParameter
             typealias APIResponse = EmptyResponse
 
@@ -217,6 +220,7 @@ struct FormURLEncodedTests {
     @Test("Form URL-encoded request uses correct content type")
     func formURLEncodedContentType() async throws {
         struct FormLoginRequest: APIDefinition {
+            var sessionAuthentication: SessionAuthentication { .anonymous }
             struct LoginParam: Encodable, Sendable {
                 let username: String
                 let password: String
@@ -307,6 +311,7 @@ struct MultipartFormDataTests {
     @Test("Multipart upload request works correctly")
     func multipartUploadRequest() async throws {
         struct UploadAvatarRequest: MultipartAPIDefinition {
+            var sessionAuthentication: SessionAuthentication { .anonymous }
             typealias APIResponse = MockUser
 
             var multipartFormData: MultipartFormData

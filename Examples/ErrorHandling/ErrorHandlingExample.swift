@@ -34,6 +34,7 @@ struct User: Decodable {
 
 // Valid API request
 struct ValidRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = Post
 
@@ -44,6 +45,7 @@ struct ValidRequest: APIDefinition {
 
 // Request that will fail with 404
 struct NotFoundRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = Post
 
@@ -54,6 +56,7 @@ struct NotFoundRequest: APIDefinition {
 
 // Invalid request configuration: endpoint paths must not include query strings.
 struct InvalidRequestConfigurationRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = Post
 
@@ -64,6 +67,7 @@ struct InvalidRequestConfigurationRequest: APIDefinition {
 
 // Request with custom headers (for testing)
 struct PostWithBody: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     struct PostParameter: Encodable {
         let title: String
         let body: String

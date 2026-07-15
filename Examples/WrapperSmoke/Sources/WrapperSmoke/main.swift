@@ -11,6 +11,7 @@ private protocol WrapperRequestContract: Sendable {
 
     var method: HTTPMethod { get }
     var path: String { get }
+    var sessionAuthentication: SessionAuthentication { get }
     var headers: HTTPHeaders { get }
     var queryItems: [URLQueryItem] { get }
 }
@@ -20,6 +21,7 @@ private struct WrappedUserRequest: WrapperRequestContract {
 
     var method: HTTPMethod { .get }
     var path: String { "/users/1" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     var headers: HTTPHeaders { [.accept("application/json")] }
     var queryItems: [URLQueryItem] { [] }
 }
@@ -34,6 +36,7 @@ private struct WrapperExecutable<Base: WrapperRequestContract>: SingleRequestExe
     var responseInterceptors: [ResponseInterceptor] { [] }
     var method: HTTPMethod { base.method }
     var path: String { base.path }
+    var sessionAuthentication: SessionAuthentication { base.sessionAuthentication }
     var headers: HTTPHeaders { base.headers }
 
     func makePayload() throws -> RequestPayload {

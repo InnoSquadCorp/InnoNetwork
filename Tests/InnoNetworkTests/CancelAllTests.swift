@@ -42,6 +42,7 @@ private final class HangingURLSession: URLSessionProtocol, Sendable {
 struct CancelAllTests {
 
     private struct LongPollRequest: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = EmptyResponse
 
@@ -121,6 +122,7 @@ struct CancelAllTests {
     }
 
     private struct EmptyEcho: APIDefinition, HTTPEmptyResponseDecodable {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = EmptyEcho
         var method: HTTPMethod { .get }

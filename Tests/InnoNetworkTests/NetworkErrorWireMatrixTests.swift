@@ -145,7 +145,7 @@ struct NetworkErrorWireMatrixTests {
     }
 
     @Test("configuration invalid request case is emitted before transport")
-    func configurationInvalidRequestFromAuthScope() async throws {
+    func configurationInvalidRequestFromRequiredSessionAuthentication() async throws {
         let client = DefaultNetworkClient(
             configuration: matrixConfiguration(),
             session: MatrixSession { _ in
@@ -226,15 +226,16 @@ private struct MatrixEndpoint: APIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/matrix" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
 }
 
 private struct MatrixAuthRequiredEndpoint: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = MatrixPayload
-    typealias Auth = AuthRequiredScope
 
     var method: HTTPMethod { .get }
     var path: String { "/matrix" }
+    var sessionAuthentication: SessionAuthentication { .required }
 }
 
 private struct OfflineMatrixPolicy: RequestExecutionPolicy {

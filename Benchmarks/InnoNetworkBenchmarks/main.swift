@@ -1150,6 +1150,7 @@ private struct BenchmarkUserRequest: APIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/users/1" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
 }
 
 /// `URLSessionProtocol` stub that returns a fixed JSON payload immediately,

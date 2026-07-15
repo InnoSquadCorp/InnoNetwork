@@ -7,6 +7,7 @@ import Testing
 struct AcceptableStatusCodesTests {
 
     private struct EmptyEcho: APIDefinition, HTTPEmptyResponseDecodable {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = EmptyEcho
         var method: HTTPMethod { .get }
@@ -97,6 +98,7 @@ struct AcceptableStatusCodesTests {
     // MARK: - Per-endpoint override
 
     private struct EndpointAccepts304: APIDefinition, HTTPEmptyResponseDecodable {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = EndpointAccepts304
         var method: HTTPMethod { .get }
@@ -113,6 +115,7 @@ struct AcceptableStatusCodesTests {
     }
 
     private struct EndpointRejectsEverythingButCreated: APIDefinition, HTTPEmptyResponseDecodable {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = EndpointRejectsEverythingButCreated
         var method: HTTPMethod { .post }

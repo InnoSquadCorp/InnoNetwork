@@ -167,6 +167,7 @@ private struct RedirectMessage: Decodable, Sendable {
 }
 
 private struct RedirectEndpoint: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = RedirectMessage
 
@@ -175,6 +176,7 @@ private struct RedirectEndpoint: APIDefinition {
 }
 
 private struct HeaderEchoEndpoint: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = RedirectMessage
 
@@ -188,6 +190,7 @@ private struct HeaderEchoEndpoint: APIDefinition {
 }
 
 private struct BinaryEndpoint: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = Data
 

@@ -4,6 +4,7 @@ import Testing
 @testable import InnoNetwork
 
 private struct TimingOutAPIRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = EmptyEcho
 
@@ -13,6 +14,7 @@ private struct TimingOutAPIRequest: APIDefinition {
 
 
 private struct EmptyEcho: APIDefinition, HTTPEmptyResponseDecodable {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = EmptyEcho
     var method: HTTPMethod { .get }

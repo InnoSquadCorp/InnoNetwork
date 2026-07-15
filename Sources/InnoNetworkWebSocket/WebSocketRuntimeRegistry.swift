@@ -345,16 +345,24 @@ package actor WebSocketRuntimeRegistry {
     /// `setOn...Handler` callbacks and handshake adapters. Task event listeners
     /// retain `TaskEventHub`'s configured asynchronous delivery semantics.
     package func invokeUserCallback<Result: Sendable>(
-        _ operation: @escaping @Sendable () async -> Result
-    ) async -> Result {
+        _ operation: @escaping @Sendable () async throws -> Result
+    ) async rethrows -> Result {
         let admission = admitUserCallback()
-        let result = await WebSocketRuntimeWorkerContext.$workerID.withValue(nil) {
-            await WebSocketUserCallbackContext.$token.withValue(admission.token) {
-                await operation()
+        do {
+            let result = try await WebSocketRuntimeWorkerContext.$workerID.withValue(nil) {
+                try await WebSocketUserCallbackContext.$token.withValue(admission.token) {
+                    try await operation()
+                }
             }
+            finishUserCallback(admission)
+            return result
+        } catch {
+            // Throwing handshake adapters are still admitted user callbacks.
+            // Always release their admission so shutdown cannot wait forever
+            // for a callback that already unwound with an error.
+            finishUserCallback(admission)
+            throw error
         }
-        finishUserCallback(admission)
-        return result
     }
 
     private func prepareUserCallback(

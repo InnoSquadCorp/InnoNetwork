@@ -7,6 +7,7 @@ import Testing
 struct ResponseBodyLimitTests {
 
     private struct DataEcho: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = Data
         var method: HTTPMethod { .get }

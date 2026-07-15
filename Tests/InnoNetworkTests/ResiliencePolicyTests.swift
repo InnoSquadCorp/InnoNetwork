@@ -15,6 +15,7 @@ private struct ResilienceGetRequest: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = ResilienceUser
 
+    var sessionAuthentication: SessionAuthentication = .anonymous
     var method: HTTPMethod { .get }
     var path: String { "/users/1" }
 }
@@ -25,6 +26,7 @@ private struct CacheableEmptyRequest: APIDefinition, HTTPEmptyResponseDecodable 
 
     var method: HTTPMethod { .get }
     var path: String { "/empty" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     var acceptableStatusCodes: Set<Int>? { [204] }
 
     static func emptyResponseValue() -> CacheableEmptyRequest {
@@ -40,6 +42,7 @@ private struct AuthorizedResilienceGetRequest: APIDefinition {
     let token: String
     var method: HTTPMethod { .get }
     var path: String { "/users/1" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     var requestInterceptors: [RequestInterceptor] {
         [StaticAuthorizationInterceptor(token: token)]
     }
@@ -51,6 +54,7 @@ private struct InterceptedResilienceGetRequest: APIDefinition {
     typealias APIResponse = ResilienceUser
 
     let interceptors: [RequestInterceptor]
+    var sessionAuthentication: SessionAuthentication = .anonymous
 
     var method: HTTPMethod { .get }
     var path: String { "/users/1" }
@@ -120,6 +124,7 @@ private struct ResiliencePostRequest: APIDefinition {
     let parameters: Body?
     var method: HTTPMethod { .post }
     var path: String { "/users" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
 
     init(name: String = "Jane") {
         self.parameters = Body(name: name)
@@ -136,6 +141,7 @@ private struct ResilienceMutationRequest: APIDefinition {
 
     var method: HTTPMethod { mutationMethod }
     var path: String { "/users/1" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     var acceptableStatusCodes: Set<Int>? { acceptedStatusCodes }
 
     init(method: HTTPMethod, acceptedStatusCodes: Set<Int>? = nil) {
@@ -156,6 +162,7 @@ private struct IdempotentResiliencePostRequest: APIDefinition {
     let parameters: Body?
     var method: HTTPMethod { .post }
     var path: String { "/users" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     var headers: HTTPHeaders {
         var headers = HTTPHeaders.default
         headers.add(name: "Idempotency-Key", value: "create-user-1")
@@ -612,7 +619,9 @@ struct ResiliencePolicyTests {
             session: session
         )
 
-        let user = try await client.request(ResilienceGetRequest())
+        let user = try await client.request(
+            ResilienceGetRequest(sessionAuthentication: .optional)
+        )
 
         #expect(user == ResilienceUser(id: 1, name: "refreshed"))
         #expect(await refreshCount.count == 1)
@@ -646,7 +655,8 @@ struct ResiliencePolicyTests {
             InterceptedResilienceGetRequest(
                 interceptors: [
                     HeaderSettingInterceptor(field: "X-Request-Signature", value: "signed")
-                ]
+                ],
+                sessionAuthentication: .optional
             )
         )
         let capturedRequests = await session.capturedRequests
@@ -686,7 +696,9 @@ struct ResiliencePolicyTests {
         )
 
         await #expect(throws: NetworkError.self) {
-            try await client.request(ResilienceGetRequest())
+            try await client.request(
+                ResilienceGetRequest(sessionAuthentication: .optional)
+            )
         }
 
         #expect(await session.requestCount == 1)
@@ -722,7 +734,9 @@ struct ResiliencePolicyTests {
         try await withThrowingTaskGroup(of: ResilienceUser.self) { group in
             for _ in 0..<10 {
                 group.addTask {
-                    try await client.request(ResilienceGetRequest())
+                    try await client.request(
+                        ResilienceGetRequest(sessionAuthentication: .optional)
+                    )
                 }
             }
 
@@ -766,11 +780,15 @@ struct ResiliencePolicyTests {
         )
 
         let cancelled = Task {
-            try await client.request(ResilienceGetRequest())
+            try await client.request(
+                ResilienceGetRequest(sessionAuthentication: .optional)
+            )
         }
         await refreshGate.waitUntilEntered()
         let remaining = Task {
-            try await client.request(ResilienceGetRequest())
+            try await client.request(
+                ResilienceGetRequest(sessionAuthentication: .optional)
+            )
         }
         await session.waitForOldTokenRequests(count: 2)
         cancelled.cancel()
@@ -811,7 +829,9 @@ struct ResiliencePolicyTests {
             try await withThrowingTaskGroup(of: ResilienceUser.self) { group in
                 for _ in 0..<5 {
                     group.addTask {
-                        try await client.request(ResilienceGetRequest())
+                        try await client.request(
+                            ResilienceGetRequest(sessionAuthentication: .optional)
+                        )
                     }
                 }
                 for try await _ in group {}
@@ -837,7 +857,9 @@ struct ResiliencePolicyTests {
         )
 
         await #expect(throws: NetworkError.self) {
-            try await client.request(ResilienceGetRequest())
+            try await client.request(
+                ResilienceGetRequest(sessionAuthentication: .optional)
+            )
         }
         #expect(await session.requestCount == 2)
     }

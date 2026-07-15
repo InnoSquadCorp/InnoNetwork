@@ -1,18 +1,4 @@
 #if Macros
-/// Authentication requirement declared by ``APIDefinition(method:path:auth:)``.
-///
-/// Authentication is intentionally explicit at every macro call site. A
-/// request that accidentally defaults to public access can cross a security
-/// boundary, so the macro does not infer this value from configuration or
-/// interceptor presence.
-public enum APIAuthentication: Sendable {
-    /// The endpoint can execute without a configured refresh-token policy.
-    case `public`
-
-    /// The endpoint requires the authenticated execution preflight.
-    case required
-}
-
 /// Derives boilerplate ``APIDefinition`` conformance for a request type.
 ///
 /// The macro generates an extension that conforms the annotated type to
@@ -23,7 +9,7 @@ public enum APIAuthentication: Sendable {
 /// - An explicit `Parameter` + `parameters` pair remains authoritative for
 ///   advanced endpoints.
 /// - Endpoints without either shape derive `Parameter = EmptyParameter`.
-/// - `auth: .required` derives `Auth = AuthRequiredScope`.
+/// - `auth:` derives the explicit ``SessionAuthentication`` witness.
 ///
 /// The macro never synthesizes `APIResponse`; callers must keep that type
 /// alias visible on the annotated type. It also leaves headers, interceptors,
@@ -38,16 +24,17 @@ public enum APIAuthentication: Sendable {
 ///     superclass or extension are not considered. Wrap dynamic values into a
 ///     stored property first if you need them in the path.
 ///   - auth: Explicit authentication requirement. Callers must choose
-///     `.public` or `.required`; the macro never guesses this policy.
+///     `.anonymous`, `.optional`, or `.required`; the macro never guesses
+///     this policy.
 @attached(
     extension,
     conformances: APIDefinition,
-    names: named(Parameter), named(Auth), named(parameters), named(method), named(path)
+    names: named(Parameter), named(parameters), named(method), named(path), named(sessionAuthentication)
 )
 public macro APIDefinition(
     method: HTTPMethod,
     path: String,
-    auth: APIAuthentication
+    auth: SessionAuthentication
 ) =
     #externalMacro(module: "InnoNetworkMacros", type: "APIDefinitionMacro")
 #endif

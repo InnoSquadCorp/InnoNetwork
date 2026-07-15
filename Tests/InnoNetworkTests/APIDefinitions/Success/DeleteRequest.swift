@@ -10,6 +10,7 @@ import Foundation
 @testable import InnoNetwork
 
 struct DeleteRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
 
     typealias APIResponse = EmptyResponse

@@ -15,6 +15,7 @@ struct HTTPBinLiveTests {
 
         var method: HTTPMethod { .get }
         var path: String { "/get" }
+        var sessionAuthentication: SessionAuthentication { .anonymous }
     }
 
     @Test("httpbin /get returns 200 with the expected URL echoed back", .liveOnly)
@@ -49,6 +50,7 @@ struct HTTPBinLiveTests {
 
         var method: HTTPMethod { .post }
         var path: String { "/post" }
+        var sessionAuthentication: SessionAuthentication { .anonymous }
     }
 
     @Test("httpbin /post round-trips a JSON body", .liveOnly)
@@ -70,6 +72,7 @@ struct HTTPBinLiveTests {
 
         var method: HTTPMethod { .get }
         var path: String { "/status/503" }
+        var sessionAuthentication: SessionAuthentication { .anonymous }
 
         // 503 is OUTSIDE the default 200..<300 set, so we expect the executor
         // to throw NetworkError.statusCode(_) — this verifies live status-code

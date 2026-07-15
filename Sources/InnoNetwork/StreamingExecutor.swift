@@ -41,7 +41,7 @@ package struct StreamingExecutor: Sendable {
         continuation: AsyncThrowingStream<T.Output, Error>.Continuation
     ) async {
         do {
-            try Self.validateAuthScope(request, configuration: configuration)
+            try Self.validateSessionAuthentication(request, configuration: configuration)
         } catch {
             let mapped = Self.mapTransportError(error, startedAt: nil)
             let nsError = mapped as NSError
@@ -181,16 +181,20 @@ package struct StreamingExecutor: Sendable {
 
     // MARK: - Helpers
 
-    private static func validateAuthScope<T: StreamingAPIDefinition>(
+    private static func validateSessionAuthentication<T: StreamingAPIDefinition>(
         _ request: T,
         configuration: NetworkConfiguration
     ) throws {
-        _ = request
-        guard T.Auth.self == AuthRequiredScope.self, configuration.refreshTokenPolicy == nil else {
+        guard request.sessionAuthentication == .required,
+            configuration.refreshTokenPolicy == nil
+        else {
             return
         }
         throw NetworkError.configuration(
-            reason: .invalidRequest("Auth-required endpoints require NetworkConfiguration.refreshTokenPolicy."))
+            reason: .invalidRequest(
+                "Session-auth-required endpoints require NetworkConfiguration.refreshTokenPolicy."
+            )
+        )
     }
 
     private func runAttempt<T: StreamingAPIDefinition>(
@@ -231,6 +235,7 @@ package struct StreamingExecutor: Sendable {
                 endpointInterceptors: request.requestInterceptors,
                 sessionSigners: configuration.requestSigners,
                 endpointSigners: request.requestSigners,
+                sessionAuthentication: request.sessionAuthentication,
                 refreshCoordinator: executionRuntime.refreshCoordinator
             )
             retryRequest = urlRequest
@@ -603,6 +608,7 @@ package struct StreamingExecutor: Sendable {
         endpointInterceptors: [RequestInterceptor],
         sessionSigners: [RequestSigner],
         endpointSigners: [RequestSigner],
+        sessionAuthentication: SessionAuthentication,
         refreshCoordinator: RefreshTokenCoordinator?
     ) async throws -> URLRequest {
         var current = urlRequest
@@ -612,8 +618,22 @@ package struct StreamingExecutor: Sendable {
         for interceptor in endpointInterceptors {
             current = try await interceptor.adapt(current)
         }
-        if let refreshCoordinator {
-            current = try await refreshCoordinator.applyCurrentToken(to: current)
+        switch sessionAuthentication {
+        case .anonymous:
+            break
+        case .optional:
+            if let refreshCoordinator {
+                current = try await refreshCoordinator.applyCurrentToken(to: current)
+            }
+        case .required:
+            guard let refreshCoordinator else {
+                throw NetworkError.configuration(
+                    reason: .invalidRequest(
+                        "Session-auth-required endpoints require NetworkConfiguration.refreshTokenPolicy."
+                    )
+                )
+            }
+            current = try await refreshCoordinator.applyRequiredTokenWithGeneration(to: current).request
         }
         guard !sessionSigners.isEmpty || !endpointSigners.isEmpty else {
             return current

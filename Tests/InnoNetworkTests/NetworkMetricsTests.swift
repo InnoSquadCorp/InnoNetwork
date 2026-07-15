@@ -158,6 +158,7 @@ final class MetricsAwareMockSession: URLSessionProtocol, Sendable {
 }
 
 struct MetricsGetRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = String
 

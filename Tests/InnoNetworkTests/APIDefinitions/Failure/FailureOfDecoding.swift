@@ -10,6 +10,7 @@ import Foundation
 @testable import InnoNetwork
 
 struct FailureOfDecoding: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     struct GetResponse: Decodable, Sendable {
         let userId: Int
         let id: Int

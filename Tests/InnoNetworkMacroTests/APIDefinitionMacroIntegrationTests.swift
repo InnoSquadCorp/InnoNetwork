@@ -14,7 +14,7 @@ struct APIDefinitionMacroIntegrationTests {
         if case .some = endpoint.parameters {
             Issue.record("An endpoint without body or query must use EmptyParameter with nil parameters.")
         }
-        requirePublicAuth(MacroGetUser.self)
+        #expect(endpoint.sessionAuthentication == .anonymous)
     }
 
     @Test("GET query maps to Parameter and parameters")
@@ -24,6 +24,7 @@ struct APIDefinitionMacroIntegrationTests {
 
         #expect(endpoint.method == .get)
         #expect(endpoint.parameters == query)
+        #expect(endpoint.sessionAuthentication == .optional)
     }
 
     @Test("POST body maps to Parameter and required auth")
@@ -34,7 +35,7 @@ struct APIDefinitionMacroIntegrationTests {
         #expect(endpoint.method == .post)
         #expect(endpoint.path == "/users")
         #expect(endpoint.parameters == body)
-        requireAuth(MacroCreateUser.self)
+        #expect(endpoint.sessionAuthentication == .required)
     }
 
     @Test("complete manual payload witnesses remain authoritative")
@@ -82,14 +83,14 @@ private struct MacroCreateUserBody: Codable, Equatable, Sendable {
 private typealias MacroOptionalCreateUserBody = MacroCreateUserBody?
 private typealias MacroOptionalUserQuery = MacroUserQuery?
 
-@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
 private struct MacroGetUser {
     typealias APIResponse = MacroUser
 
     let id: String
 }
 
-@APIDefinition(method: .get, path: "/users", auth: .public)
+@APIDefinition(method: .get, path: "/users", auth: .optional)
 private struct MacroListUsers {
     typealias APIResponse = [MacroUser]
 
@@ -103,7 +104,7 @@ private struct MacroCreateUser {
     let body: MacroCreateUserBody
 }
 
-@APIDefinition(method: .get, path: "/users/search", auth: .public)
+@APIDefinition(method: .get, path: "/users/search", auth: .anonymous)
 private struct MacroManualSearch {
     typealias APIResponse = [MacroUser]
     typealias Parameter = MacroUserQuery
@@ -113,21 +114,18 @@ private struct MacroManualSearch {
     var parameters: Parameter? { payload }
 }
 
-@APIDefinition(method: .post, path: "/users/optional", auth: .public)
+@APIDefinition(method: .post, path: "/users/optional", auth: .anonymous)
 private struct MacroOptionalCreateUser {
     typealias APIResponse = MacroUser
 
     let body: MacroOptionalCreateUserBody
 }
 
-@APIDefinition(method: .get, path: "/users/optional", auth: .public)
+@APIDefinition(method: .get, path: "/users/optional", auth: .anonymous)
 private struct MacroOptionalListUsers {
     typealias APIResponse = [MacroUser]
 
     let query: MacroOptionalUserQuery
 }
 
-private func requireAuth<T: APIDefinition>(_: T.Type) where T.Auth == AuthRequiredScope {}
-
-private func requirePublicAuth<T: APIDefinition>(_: T.Type) where T.Auth == PublicAuthScope {}
 #endif

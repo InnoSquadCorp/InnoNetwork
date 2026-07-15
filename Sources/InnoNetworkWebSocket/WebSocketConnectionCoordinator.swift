@@ -1,8 +1,15 @@
 import Foundation
+import InnoNetwork
 
 package struct WebSocketPreparedConnection: Sendable {
     package let generation: Int
     package let request: URLRequest
+}
+
+package enum WebSocketConnectionPreparationOutcome: Sendable {
+    case prepared(WebSocketPreparedConnection)
+    case cancelled
+    case failed(generation: Int, underlying: SendableUnderlyingError)
 }
 
 package struct WebSocketConnectionCoordinator {
@@ -20,7 +27,7 @@ package struct WebSocketConnectionCoordinator {
         self.isTransportAdmissionOpen = isTransportAdmissionOpen
     }
 
-    package func prepareConnection(_ task: WebSocketTask) async -> WebSocketPreparedConnection? {
+    package func prepareConnection(_ task: WebSocketTask) async -> WebSocketConnectionPreparationOutcome {
         let generation = await task.connectionGeneration
 
         var request = URLRequest(url: task.url)
@@ -37,16 +44,34 @@ package struct WebSocketConnectionCoordinator {
             }
         }
 
-        guard isTransportAdmissionOpen(), await task.isConnecting(generation: generation) else { return nil }
+        guard isTransportAdmissionOpen(), await task.isConnecting(generation: generation) else {
+            return .cancelled
+        }
         for adapter in configuration.handshakeRequestAdapters {
             let requestToAdapt = request
-            request = await runtimeRegistry.invokeUserCallback {
-                await adapter.adapt(requestToAdapt)
+            do {
+                request = try await runtimeRegistry.invokeUserCallback {
+                    try await adapter.adapt(requestToAdapt)
+                }
+            } catch {
+                // Bind the error to the generation that entered adaptation.
+                // If disconnect, shutdown, or another lifecycle transition won
+                // while the user callback was suspended, discard the stale
+                // failure instead of applying it to a newer task state.
+                guard isTransportAdmissionOpen(), await task.isConnecting(generation: generation) else {
+                    return .cancelled
+                }
+                return .failed(
+                    generation: generation,
+                    underlying: SendableUnderlyingError(error)
+                )
             }
-            guard isTransportAdmissionOpen(), await task.isConnecting(generation: generation) else { return nil }
+            guard isTransportAdmissionOpen(), await task.isConnecting(generation: generation) else {
+                return .cancelled
+            }
         }
 
-        return WebSocketPreparedConnection(generation: generation, request: request)
+        return .prepared(WebSocketPreparedConnection(generation: generation, request: request))
     }
 
     private static func request(_ request: URLRequest, containsHeaderNamed name: String) -> Bool {

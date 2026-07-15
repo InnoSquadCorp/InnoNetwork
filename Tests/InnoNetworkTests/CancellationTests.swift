@@ -209,6 +209,7 @@ private actor BlockingResponseCache: ResponseCache {
 struct CancellationTests {
 
     private struct LongPollRequest: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = EmptyResponse
 
@@ -221,6 +222,7 @@ struct CancellationTests {
     }
 
     private struct CachedPayloadRequest: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = CachedPayload
 

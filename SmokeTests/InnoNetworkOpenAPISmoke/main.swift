@@ -28,6 +28,7 @@ private struct SmokeListUsers: OpenAPIRestOperation {
 
     var method: HTTPMethod { .get }
     var path: String { "/users" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
 }
 
 private let environment = ProcessInfo.processInfo.environment

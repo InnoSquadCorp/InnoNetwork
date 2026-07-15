@@ -8,6 +8,7 @@ import Testing
 private struct LineCounterStream: StreamingAPIDefinition {
     typealias Output = String
 
+    var sessionAuthentication: SessionAuthentication = .anonymous
     var method: HTTPMethod { .get }
     var path: String { "/events" }
 
@@ -19,10 +20,10 @@ private struct LineCounterStream: StreamingAPIDefinition {
 
 private struct AuthenticatedLineCounterStream: StreamingAPIDefinition {
     typealias Output = String
-    typealias Auth = AuthRequiredScope
 
     var method: HTTPMethod { .get }
     var path: String { "/events" }
+    var sessionAuthentication: SessionAuthentication { .required }
 
     func decode(line: String) throws -> String? {
         guard !line.isEmpty else { return nil }
@@ -35,6 +36,7 @@ private struct PathCounterStream: StreamingAPIDefinition {
 
     let path: String
     var method: HTTPMethod { .get }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
 
     func decode(line: String) throws -> String? {
         guard !line.isEmpty else { return nil }
@@ -47,6 +49,7 @@ private struct DuplicateAuthHeaderStream: StreamingAPIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/events" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     var headers: HTTPHeaders {
         var headers = HTTPHeaders.default
         headers.add(name: "Authorization", value: "Bearer stale")
@@ -210,6 +213,7 @@ private struct ResumableStream: StreamingAPIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/sse" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     var resumePolicy: StreamingResumePolicy
 
     init(resumePolicy: StreamingResumePolicy = .disabled) {
@@ -243,6 +247,7 @@ private struct ThrowingResumableStream: StreamingAPIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/sse" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     var resumePolicy: StreamingResumePolicy { .lastEventID(maxAttempts: 2, retryDelay: 0) }
 
     func decode(line: String) throws -> ResumableEvent? {
@@ -263,6 +268,7 @@ private struct UnsafeEventIDResumableStream: StreamingAPIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/sse" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     var resumePolicy: StreamingResumePolicy { .lastEventID(maxAttempts: 2, retryDelay: 0) }
 
     func decode(line: String) throws -> ResumableEvent? {
@@ -283,6 +289,7 @@ private struct MixedSafetyEventIDResumableStream: StreamingAPIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/sse" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     var resumePolicy: StreamingResumePolicy { .lastEventID(maxAttempts: 2, retryDelay: 0) }
 
     func decode(line: String) throws -> ResumableEvent? {
@@ -777,7 +784,7 @@ struct StreamingAPIDefinitionTests {
 
     @Test("stream() applies current token from RefreshTokenPolicy")
     func streamAppliesCurrentRefreshTokenPolicyToken() async throws {
-        let definition = LineCounterStream()
+        let definition = LineCounterStream(sessionAuthentication: .optional)
         let baseURL = uniqueStreamingBaseURL()
         let streamURL = baseURL.appendingPathComponent(definition.path)
 
@@ -863,6 +870,62 @@ struct StreamingAPIDefinitionTests {
         #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer auth-stream-token")
     }
 
+    @Test("Auth-required stream proactively refreshes a missing current token")
+    func authRequiredStreamRefreshesBeforeTransport() async throws {
+        actor RefreshProbe {
+            private(set) var currentCalls = 0
+            private(set) var refreshCalls = 0
+
+            func currentToken() -> String? {
+                currentCalls += 1
+                return nil
+            }
+
+            func refreshToken() -> String {
+                refreshCalls += 1
+                return "proactive-stream-token"
+            }
+        }
+
+        let definition = AuthenticatedLineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        let probe = RefreshProbe()
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 200, data: Data("authorized\n".utf8))
+            ]
+        )
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                refreshTokenPolicy: RefreshTokenPolicy(
+                    currentToken: { await probe.currentToken() },
+                    refreshToken: { await probe.refreshToken() }
+                )
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var values: [String] = []
+        for try await value in client.stream(definition) {
+            values.append(value)
+        }
+
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(values == ["authorized"])
+        #expect(captured.count == 1)
+        #expect(
+            captured.first?.value(forHTTPHeaderField: "Authorization")
+                == "Bearer proactive-stream-token"
+        )
+        #expect(await probe.currentCalls == 1)
+        #expect(await probe.refreshCalls == 1)
+    }
+
     @Test("stream() does not refresh-replay handshake authorization failures")
     func streamDoesNotRefreshReplayHandshakeAuthorizationFailures() async throws {
         actor RefreshCounter {
@@ -873,7 +936,7 @@ struct StreamingAPIDefinitionTests {
             }
         }
 
-        let definition = LineCounterStream()
+        let definition = LineCounterStream(sessionAuthentication: .optional)
         let baseURL = uniqueStreamingBaseURL()
         let streamURL = baseURL.appendingPathComponent(definition.path)
         let counter = RefreshCounter()

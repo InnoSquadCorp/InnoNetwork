@@ -35,6 +35,14 @@ public protocol Endpoint: Sendable {
     /// ``NetworkConfiguration/baseURL`` before request interceptors run.
     var path: String { get }
 
+    /// Session bearer authentication required by this endpoint.
+    ///
+    /// ``SessionAuthentication/anonymous`` skips ``RefreshTokenPolicy``,
+    /// ``SessionAuthentication/optional`` applies it when configured, and
+    /// ``SessionAuthentication/required`` obtains a token before transport.
+    /// Request signers remain an orthogonal endpoint/configuration capability.
+    var sessionAuthentication: SessionAuthentication { get }
+
     /// Headers attached before request interceptors and auth refresh policies
     /// adapt the request. The default implementation returns
     /// ``HTTPHeaders/default``.

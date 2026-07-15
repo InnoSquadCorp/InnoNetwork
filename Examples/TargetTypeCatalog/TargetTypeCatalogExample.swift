@@ -17,6 +17,7 @@ struct OrderReceipt: Decodable, Sendable {
 }
 
 struct ListProducts: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = [Product]
 
@@ -25,6 +26,7 @@ struct ListProducts: APIDefinition {
 }
 
 struct GetProduct: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = Product
 
@@ -35,6 +37,7 @@ struct GetProduct: APIDefinition {
 }
 
 struct SearchProducts: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     struct Query: Encodable, Sendable {
         let query: String
         let limit: Int
@@ -54,6 +57,7 @@ struct SearchProducts: APIDefinition {
 }
 
 struct CreateOrder: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     struct Body: Encodable, Sendable {
         let productID: Int
         let quantity: Int

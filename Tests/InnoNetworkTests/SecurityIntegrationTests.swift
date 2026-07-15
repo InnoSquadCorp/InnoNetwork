@@ -134,6 +134,7 @@ private struct SecurityUser: Codable, Sendable, Equatable {
 }
 
 private struct SecurityGetRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = SecurityUser
 

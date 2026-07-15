@@ -4,6 +4,7 @@ import Testing
 @testable import InnoNetwork
 
 struct BaseURLDispatchRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = BaseURLResponse
 

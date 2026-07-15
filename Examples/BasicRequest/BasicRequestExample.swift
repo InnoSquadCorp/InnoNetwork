@@ -34,6 +34,7 @@ struct Post: Codable, Sendable {
 // MARK: - 3. API Definitions
 
 struct GetTodos: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = [Todo]
 
@@ -42,6 +43,7 @@ struct GetTodos: APIDefinition {
 }
 
 struct GetPost: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = Post
 
@@ -52,6 +54,7 @@ struct GetPost: APIDefinition {
 }
 
 struct CreatePost: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     struct PostParameter: Encodable, Sendable {
         let title: String
         let body: String
@@ -72,6 +75,7 @@ struct CreatePost: APIDefinition {
 }
 
 struct UpdatePost: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     struct PostParameter: Encodable, Sendable {
         let id: Int
         let title: String
@@ -95,6 +99,7 @@ struct UpdatePost: APIDefinition {
 }
 
 struct PatchPost: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     struct PostParameter: Encodable, Sendable {
         let title: String?
         let body: String?
@@ -114,6 +119,7 @@ struct PatchPost: APIDefinition {
 }
 
 struct DeletePost: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = EmptyResponse
 

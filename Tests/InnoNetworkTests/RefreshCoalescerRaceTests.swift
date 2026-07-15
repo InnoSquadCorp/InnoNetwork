@@ -17,6 +17,7 @@ private struct ProtectedGet: APIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/me" }
+    var sessionAuthentication: SessionAuthentication { .optional }
 }
 
 

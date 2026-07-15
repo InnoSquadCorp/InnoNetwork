@@ -11,6 +11,7 @@ struct NetworkErrorRedactionTests {
     }
 
     private struct GetUser: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = UserOnlyResponse
         var method: HTTPMethod { .get }
@@ -18,6 +19,7 @@ struct NetworkErrorRedactionTests {
     }
 
     private struct RedactionStream: StreamingAPIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Output = String
 
         var method: HTTPMethod { .get }

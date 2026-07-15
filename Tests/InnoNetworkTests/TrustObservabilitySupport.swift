@@ -9,6 +9,7 @@ import Testing
 // without duplicating fixtures.
 
 struct TrustObservabilityRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = String
 

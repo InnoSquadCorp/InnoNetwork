@@ -21,6 +21,7 @@ struct ConditionalRevalidationContext {
 private struct PreparedExecutionRequest {
     var request: URLRequest
     let refreshGeneration: UInt64?
+    let refreshCoordinator: RefreshTokenCoordinator?
     let bodySource: BodySource
     let requestSigners: [RequestSigner]
     let cleanupFileURL: URL?
@@ -110,7 +111,7 @@ package struct RequestExecutor {
         retryIndex: Int,
         requestID: UUID
     ) async throws -> PreparedExecutionRequest {
-        try validateAuthScope(executable, configuration: configuration)
+        try validateSessionAuthentication(executable, configuration: configuration)
         let built = try requestBuilder.build(executable, configuration: configuration)
         var request = built.request
         let cleanupFileURL: URL?
@@ -134,13 +135,34 @@ package struct RequestExecutor {
             for interceptor in executable.requestInterceptors {
                 request = try await interceptor.adapt(request)
             }
+            let refreshCoordinator: RefreshTokenCoordinator?
             let refreshGeneration: UInt64?
-            if let refreshCoordinator = runtime.refreshCoordinator {
-                let application = try await refreshCoordinator.applyCurrentTokenWithGeneration(to: request)
+            switch executable.sessionAuthentication {
+            case .anonymous:
+                refreshCoordinator = nil
+                refreshGeneration = nil
+            case .optional:
+                refreshCoordinator = runtime.refreshCoordinator
+                if let refreshCoordinator {
+                    let application = try await refreshCoordinator.applyCurrentTokenWithGeneration(to: request)
+                    request = application.request
+                    refreshGeneration = application.generation
+                } else {
+                    refreshGeneration = nil
+                }
+            case .required:
+                // The synchronous preflight above guarantees this coordinator.
+                guard let requiredCoordinator = runtime.refreshCoordinator else {
+                    throw NetworkError.configuration(
+                        reason: .invalidRequest(
+                            "Session-auth-required endpoints require NetworkConfiguration.refreshTokenPolicy."
+                        )
+                    )
+                }
+                refreshCoordinator = requiredCoordinator
+                let application = try await requiredCoordinator.applyRequiredTokenWithGeneration(to: request)
                 request = application.request
                 refreshGeneration = application.generation
-            } else {
-                refreshGeneration = nil
             }
 
             let requestSigners = configuration.requestSigners + executable.requestSigners
@@ -161,6 +183,7 @@ package struct RequestExecutor {
             return PreparedExecutionRequest(
                 request: request,
                 refreshGeneration: refreshGeneration,
+                refreshCoordinator: refreshCoordinator,
                 bodySource: built.bodySource,
                 requestSigners: requestSigners,
                 cleanupFileURL: cleanupFileURL,
@@ -189,6 +212,7 @@ package struct RequestExecutor {
         var networkResponse = try await executeWithPolicies(
             request: prepared.request,
             refreshGeneration: prepared.refreshGeneration,
+            refreshCoordinator: prepared.refreshCoordinator,
             bodySource: prepared.bodySource,
             requestSigners: prepared.requestSigners,
             configuration: configuration,

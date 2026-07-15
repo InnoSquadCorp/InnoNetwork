@@ -62,10 +62,11 @@ private struct SignerPipelineEndpoint: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = SignerPipelineResponse
 
+    let endpointSigners: [RequestSigner]
+    var sessionAuthentication: SessionAuthentication = .anonymous
+
     var method: HTTPMethod { .get }
     var path: String { "/signed" }
-
-    let endpointSigners: [RequestSigner]
     var requestSigners: [RequestSigner] { endpointSigners }
 }
 
@@ -244,7 +245,12 @@ struct RequestSignerPipelineTests {
             session: session
         )
 
-        _ = try await client.request(SignerPipelineEndpoint(endpointSigners: []))
+        _ = try await client.request(
+            SignerPipelineEndpoint(
+                endpointSigners: [],
+                sessionAuthentication: .optional
+            )
+        )
 
         #expect(
             session.capturedRequest?.value(forHTTPHeaderField: "Authorization")
@@ -271,7 +277,8 @@ struct RequestSignerPipelineTests {
 
         _ = try await client.request(
             SignerPipelineEndpoint(
-                endpointSigners: [PipelineSigner(label: "endpoint", trace: trace)]
+                endpointSigners: [PipelineSigner(label: "endpoint", trace: trace)],
+                sessionAuthentication: .optional
             )
         )
 
@@ -304,7 +311,12 @@ struct RequestSignerPipelineTests {
             session: session
         )
 
-        _ = try await client.request(SignerPipelineEndpoint(endpointSigners: []))
+        _ = try await client.request(
+            SignerPipelineEndpoint(
+                endpointSigners: [],
+                sessionAuthentication: .optional
+            )
+        )
 
         #expect(trace.observedRequests.count == 2)
         #expect(trace.observedRequests[0].value(forHTTPHeaderField: "Authorization") == "Bearer current-token")

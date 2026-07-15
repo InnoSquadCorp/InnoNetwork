@@ -26,6 +26,7 @@ private struct SmokeGetUser: APIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/user/1" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
 }
 
 private struct SmokeLoginRequest: APIDefinition {
@@ -39,6 +40,7 @@ private struct SmokeLoginRequest: APIDefinition {
     let parameters: Parameter?
     var method: HTTPMethod { .post }
     var path: String { "/login" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     var contentType: ContentType { .formUrlEncoded }
 
     init(email: String, password: String) {
@@ -65,6 +67,7 @@ private struct SmokeUploadImage: MultipartAPIDefinition {
 
     var method: HTTPMethod { .post }
     var path: String { "/upload" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
 }
 
 private struct SmokeOpenAPIListUsers: OpenAPIRestOperation {
@@ -72,6 +75,7 @@ private struct SmokeOpenAPIListUsers: OpenAPIRestOperation {
 
     var method: HTTPMethod { .get }
     var path: String { "/openapi/users" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
 }
 
 private struct SmokeAlamofireStyleAdapter: RequestInterceptor {
@@ -105,6 +109,7 @@ private struct SmokeUserPosts: APIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/users/\(userID)/posts" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     var parameters: Parameter? { Parameter(page: page) }
     var transport: TransportPolicy<[SmokePost]> { .query() }
 }

@@ -59,10 +59,8 @@ import OSLog
     /// ``NetworkConfiguration/acceptableStatusCodes``.
     var acceptableStatusCodes: Set<Int>? { get }
 
-    /// Whether this request requires a configured ``RefreshTokenPolicy`` before
-    /// execution. Generated and fluent endpoint paths use this to make
-    /// auth-required APIs fail early when the client was configured as public.
-    var requiresRefreshTokenPolicy: Bool { get }
+    /// Session bearer-authentication policy carried from the endpoint.
+    var sessionAuthentication: SessionAuthentication { get }
 
     /// Optional per-request override for the request timeout. When non-nil
     /// the value replaces ``NetworkConfiguration/timeout`` on the built
@@ -108,9 +106,6 @@ import OSLog
     var bodyContentType: String? { nil }
     /// Default executable contracts do not add late request signers.
     var requestSigners: [RequestSigner] { [] }
-    /// Default executable contracts are public unless their adapter opts into
-    /// the auth-required lane.
-    var requiresRefreshTokenPolicy: Bool { false }
     /// Default timeout override is `nil` so the client configuration
     /// timeout applies.
     var timeoutOverride: TimeInterval? { nil }
@@ -147,7 +142,7 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
     package var path: String { base.path }
     package var headers: HTTPHeaders { base.headers }
     package var acceptableStatusCodes: Set<Int>? { base.acceptableStatusCodes }
-    package var requiresRefreshTokenPolicy: Bool { Base.Auth.self == AuthRequiredScope.self }
+    package var sessionAuthentication: SessionAuthentication { base.sessionAuthentication }
     package var timeoutOverride: TimeInterval? { base.timeoutOverride }
     package var cachePolicyOverride: URLRequest.CachePolicy? { base.cachePolicyOverride }
     package var priorityOverride: RequestPriority? { base.priorityOverride }
@@ -224,7 +219,7 @@ package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: S
     package var headers: HTTPHeaders { base.headers }
     package var acceptableStatusCodes: Set<Int>? { base.acceptableStatusCodes }
     package var bodyContentType: String? { base.multipartFormData.contentTypeHeader }
-    package var requiresRefreshTokenPolicy: Bool { Base.Auth.self == AuthRequiredScope.self }
+    package var sessionAuthentication: SessionAuthentication { base.sessionAuthentication }
     package var timeoutOverride: TimeInterval? { base.timeoutOverride }
     package var cachePolicyOverride: URLRequest.CachePolicy? { base.cachePolicyOverride }
     package var priorityOverride: RequestPriority? { base.priorityOverride }

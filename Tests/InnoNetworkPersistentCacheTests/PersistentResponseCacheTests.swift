@@ -233,7 +233,7 @@ struct PersistentResponseCacheTests {
         )
 
         let user = try await client.request(
-            EndpointBuilder<PersistentCacheUser, PublicAuthScope>(method: .get, path: "/users/1")
+            EndpointBuilder<PersistentCacheUser>(method: .get, path: "/users/1")
         )
 
         #expect(user == PersistentCacheUser(id: 1, name: "cached"))

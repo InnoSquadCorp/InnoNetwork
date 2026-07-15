@@ -10,20 +10,24 @@ import Foundation
 // callers.
 
 extension RequestExecutor {
-    func validateAuthScope<D: SingleRequestExecutable>(
+    func validateSessionAuthentication<D: SingleRequestExecutable>(
         _ executable: D,
         configuration: NetworkConfiguration
     ) throws {
-        guard executable.requiresRefreshTokenPolicy, configuration.refreshTokenPolicy == nil else {
+        guard executable.sessionAuthentication == .required, configuration.refreshTokenPolicy == nil else {
             return
         }
         throw NetworkError.configuration(
-            reason: .invalidRequest("Auth-required endpoints require NetworkConfiguration.refreshTokenPolicy."))
+            reason: .invalidRequest(
+                "Session-auth-required endpoints require NetworkConfiguration.refreshTokenPolicy."
+            )
+        )
     }
 
     func executeWithPolicies(
         request adaptedRequest: URLRequest,
         refreshGeneration initialRefreshGeneration: UInt64?,
+        refreshCoordinator: RefreshTokenCoordinator?,
         bodySource: BodySource,
         requestSigners: [RequestSigner],
         configuration: NetworkConfiguration,
@@ -123,7 +127,7 @@ extension RequestExecutor {
                 }
             }
 
-            if let refreshCoordinator = runtime.refreshCoordinator,
+            if let refreshCoordinator,
                 await refreshCoordinator.shouldRefresh(statusCode: networkResponse.statusCode, request: request),
                 !replayedAfterRefresh
             {

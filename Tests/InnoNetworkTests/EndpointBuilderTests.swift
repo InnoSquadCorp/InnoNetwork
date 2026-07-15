@@ -20,7 +20,45 @@ private struct EndpointHeaderInterceptor: RequestInterceptor {
 }
 
 
+private actor EndpointSessionAuthenticationProbe {
+    private var currentTokenCallCount = 0
+    private var refreshTokenCallCount = 0
+    private var currentTokenCallWaiter: (
+        minimum: Int,
+        continuation: CheckedContinuation<Void, Never>
+    )?
+
+    func currentToken(_ token: String?) -> String? {
+        currentTokenCallCount += 1
+        if let waiter = currentTokenCallWaiter,
+           currentTokenCallCount >= waiter.minimum
+        {
+            currentTokenCallWaiter = nil
+            waiter.continuation.resume()
+        }
+        return token
+    }
+
+    func refreshedToken(_ token: String) -> String {
+        refreshTokenCallCount += 1
+        return token
+    }
+
+    func counts() -> (current: Int, refresh: Int) {
+        (currentTokenCallCount, refreshTokenCallCount)
+    }
+
+    func waitForCurrentTokenCalls(_ minimum: Int) async {
+        guard currentTokenCallCount < minimum else { return }
+        await withCheckedContinuation { continuation in
+            currentTokenCallWaiter = (minimum, continuation)
+        }
+    }
+}
+
+
 private struct FragmentPathRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = EmptyResponse
 
@@ -33,7 +71,7 @@ private struct FragmentPathRequest: APIDefinition {
 struct EndpointBuilderTests {
     @Test
     func getProducesEmptyResponseEndpointWithDefaults() async {
-        let endpoint = EndpointBuilder<EmptyResponse, PublicAuthScope>.get("/users/42")
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/users/42")
 
         #expect(endpoint.method == .get)
         #expect(endpoint.path == "/users/42")
@@ -54,7 +92,7 @@ struct EndpointBuilderTests {
             let id: Int
         }
 
-        let endpoint: EndpointBuilder<User, PublicAuthScope> = EndpointBuilder<EmptyResponse, PublicAuthScope>.get(
+        let endpoint: EndpointBuilder<User> = EndpointBuilder<EmptyResponse>.get(
             "/users/42"
         ).decoding(User.self)
 
@@ -64,7 +102,9 @@ struct EndpointBuilderTests {
 
     @Test
     func authenticatedEndpointRequiresRefreshPolicy() async throws {
-        let endpoint = EndpointBuilder<EmptyResponse, AuthRequiredScope>.get("/me").decoding(EndpointAck.self)
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/me")
+            .authentication(.required)
+            .decoding(EndpointAck.self)
         let mockSession = MockURLSession()
         try mockSession.setMockJSON(EndpointAck(ok: true))
         let client = DefaultNetworkClient(
@@ -89,7 +129,9 @@ struct EndpointBuilderTests {
 
     @Test
     func authenticatedEndpointExecutesWithRefreshPolicy() async throws {
-        let endpoint = EndpointBuilder<EmptyResponse, AuthRequiredScope>.get("/me").decoding(EndpointAck.self)
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/me")
+            .authentication(.required)
+            .decoding(EndpointAck.self)
         let mockSession = MockURLSession()
         try mockSession.setMockJSON(EndpointAck(ok: true))
         let policy = RefreshTokenPolicy(
@@ -110,11 +152,265 @@ struct EndpointBuilderTests {
         #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Authorization") == "Bearer token-1")
     }
 
+    @Test("Anonymous session auth never consults or replays RefreshTokenPolicy")
+    func anonymousSessionAuthenticationBypassesRefreshPolicy() async throws {
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/public")
+            .decoding(EndpointAck.self)
+        let mockSession = MockURLSession()
+        let body = try JSONEncoder().encode(EndpointAck(ok: true))
+        mockSession.setScriptedResponses([
+            .http(statusCode: 401),
+            .http(statusCode: 200, data: body),
+        ])
+        let probe = EndpointSessionAuthenticationProbe()
+        let policy = RefreshTokenPolicy(
+            currentToken: { await probe.currentToken("should-not-be-read") },
+            refreshToken: { await probe.refreshedToken("should-not-be-refreshed") }
+        )
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                refreshTokenPolicy: policy
+            ),
+            session: mockSession
+        )
+
+        await #expect(throws: NetworkError.self) {
+            try await client.request(endpoint)
+        }
+
+        #expect(mockSession.capturedRequestsInOrder.count == 1)
+        #expect(
+            mockSession.capturedRequestsInOrder.first?
+                .value(forHTTPHeaderField: "Authorization") == nil
+        )
+        let counts = await probe.counts()
+        #expect(counts.current == 0)
+        #expect(counts.refresh == 0)
+    }
+
+    @Test("Optional session auth executes without RefreshTokenPolicy")
+    func optionalSessionAuthenticationAllowsMissingRefreshPolicy() async throws {
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/optionally-authenticated")
+            .authentication(.optional)
+            .decoding(EndpointAck.self)
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: mockSession
+        )
+
+        let response = try await client.request(endpoint)
+
+        #expect(response.ok)
+        #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Authorization") == nil)
+    }
+
+    @Test("Optional session auth applies the current token and refreshes one 401")
+    func optionalSessionAuthenticationUsesRefreshPolicyWhenPresent() async throws {
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/optionally-authenticated")
+            .authentication(.optional)
+            .decoding(EndpointAck.self)
+        let mockSession = MockURLSession()
+        let body = try JSONEncoder().encode(EndpointAck(ok: true))
+        mockSession.setScriptedResponses([
+            .http(statusCode: 401),
+            .http(statusCode: 200, data: body),
+        ])
+        let probe = EndpointSessionAuthenticationProbe()
+        let policy = RefreshTokenPolicy(
+            currentToken: { await probe.currentToken("current") },
+            refreshToken: { await probe.refreshedToken("refreshed") }
+        )
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                refreshTokenPolicy: policy
+            ),
+            session: mockSession
+        )
+
+        let response = try await client.request(endpoint)
+
+        #expect(response.ok)
+        #expect(mockSession.capturedRequestsInOrder.count == 2)
+        #expect(
+            mockSession.capturedRequestsInOrder[0]
+                .value(forHTTPHeaderField: "Authorization") == "Bearer current"
+        )
+        #expect(
+            mockSession.capturedRequestsInOrder[1]
+                .value(forHTTPHeaderField: "Authorization") == "Bearer refreshed"
+        )
+        let counts = await probe.counts()
+        #expect(counts.current == 1)
+        #expect(counts.refresh == 1)
+    }
+
+    @Test("Required session auth refreshes a missing token before first transport")
+    func requiredSessionAuthenticationRefreshesBeforeTransport() async throws {
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/me")
+            .authentication(.required)
+            .decoding(EndpointAck.self)
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let probe = EndpointSessionAuthenticationProbe()
+        let policy = RefreshTokenPolicy(
+            currentToken: { await probe.currentToken(nil) },
+            refreshToken: { await probe.refreshedToken("proactive") }
+        )
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                refreshTokenPolicy: policy
+            ),
+            session: mockSession
+        )
+
+        let response = try await client.request(endpoint)
+
+        #expect(response.ok)
+        #expect(mockSession.capturedRequestsInOrder.count == 1)
+        #expect(
+            mockSession.capturedRequest?.value(forHTTPHeaderField: "Authorization")
+                == "Bearer proactive"
+        )
+        let counts = await probe.counts()
+        #expect(counts.current == 1)
+        #expect(counts.refresh == 1)
+    }
+
+    @Test("Concurrent required-auth requests single-flight a proactive refresh")
+    func concurrentRequiredSessionAuthenticationSingleFlightsRefresh() async throws {
+        let requestCount = 8
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/me")
+            .authentication(.required)
+            .decoding(EndpointAck.self)
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let probe = EndpointSessionAuthenticationProbe()
+        let policy = RefreshTokenPolicy(
+            currentToken: { await probe.currentToken(nil) },
+            refreshToken: {
+                await probe.waitForCurrentTokenCalls(requestCount)
+                return await probe.refreshedToken("single-flight")
+            }
+        )
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                refreshTokenPolicy: policy
+            ),
+            session: mockSession
+        )
+
+        let responses = try await withThrowingTaskGroup(
+            of: EndpointAck.self,
+            returning: [EndpointAck].self
+        ) { group in
+            for _ in 0..<requestCount {
+                group.addTask {
+                    try await client.request(endpoint)
+                }
+            }
+
+            var responses: [EndpointAck] = []
+            for try await response in group {
+                responses.append(response)
+            }
+            return responses
+        }
+
+        #expect(responses.count == requestCount)
+        #expect(responses.allSatisfy { $0.ok })
+        #expect(mockSession.capturedRequestsInOrder.count == requestCount)
+        #expect(
+            mockSession.capturedRequestsInOrder.allSatisfy {
+                $0.value(forHTTPHeaderField: "Authorization") == "Bearer single-flight"
+            }
+        )
+        let counts = await probe.counts()
+        #expect(counts.current == requestCount)
+        #expect(counts.refresh == 1)
+    }
+
+    @Test("Required-auth refresh failure reaches no transport")
+    func requiredSessionAuthenticationRefreshFailureSkipsTransport() async throws {
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/me")
+            .authentication(.required)
+            .decoding(EndpointAck.self)
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let probe = EndpointSessionAuthenticationProbe()
+        let policy = RefreshTokenPolicy(
+            currentToken: { await probe.currentToken(nil) },
+            refreshToken: {
+                _ = await probe.refreshedToken("unused")
+                throw URLError(.userAuthenticationRequired)
+            }
+        )
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                refreshTokenPolicy: policy
+            ),
+            session: mockSession
+        )
+
+        await #expect(throws: NetworkError.self) {
+            try await client.request(endpoint)
+        }
+
+        #expect(mockSession.capturedRequestsInOrder.isEmpty)
+        let counts = await probe.counts()
+        #expect(counts.current == 1)
+        #expect(counts.refresh == 1)
+    }
+
+    @Test("Required session auth rejected by appliesTo fails before transport")
+    func requiredSessionAuthenticationFailsWhenPolicyDoesNotApply() async throws {
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/me")
+            .authentication(.required)
+            .decoding(EndpointAck.self)
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let probe = EndpointSessionAuthenticationProbe()
+        let policy = RefreshTokenPolicy(
+            appliesTo: { _ in false },
+            currentToken: { await probe.currentToken("current") },
+            refreshToken: { await probe.refreshedToken("refreshed") }
+        )
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                refreshTokenPolicy: policy
+            ),
+            session: mockSession
+        )
+
+        do {
+            _ = try await client.request(endpoint)
+            Issue.record("Expected required session auth to fail before transport")
+        } catch let error as NetworkError {
+            guard case .configuration(reason: .invalidRequest(let message)) = error else {
+                Issue.record("Expected invalid-request configuration, got \(error)")
+                return
+            }
+            #expect(message.contains("appliesTo"))
+        }
+
+        #expect(mockSession.capturedRequest == nil)
+        let counts = await probe.counts()
+        #expect(counts.current == 0)
+        #expect(counts.refresh == 0)
+    }
+
     @Test
     func decodingPreservesNoneEncodingEmptyAwareDecoder() {
         let decoder = JSONDecoder()
 
-        let endpoint: EndpointBuilder<EndpointAck, PublicAuthScope> = EndpointBuilder<EmptyResponse, PublicAuthScope>
+        let endpoint: EndpointBuilder<EndpointAck> = EndpointBuilder<EmptyResponse>
             .post("/upload")
             .transport(.multipart(decoder: decoder))
             .decoding(EndpointAck.self)
@@ -133,7 +429,7 @@ struct EndpointBuilderTests {
 
     @Test
     func decodingPreservesCustomNoneTransportShape() async throws {
-        let endpoint: EndpointBuilder<EndpointAck, PublicAuthScope> = EndpointBuilder<EmptyResponse, PublicAuthScope>
+        let endpoint: EndpointBuilder<EndpointAck> = EndpointBuilder<EmptyResponse>
             .post("/custom")
             .transport(.custom(encoding: .none) { _, _ in EmptyResponse() })
             .decoding(EndpointAck.self)
@@ -165,7 +461,7 @@ struct EndpointBuilderTests {
 
     @Test
     func decodingPreservesCustomNoneTransportValidation() async throws {
-        let endpoint: EndpointBuilder<EndpointAck, PublicAuthScope> = EndpointBuilder<EmptyResponse, PublicAuthScope>
+        let endpoint: EndpointBuilder<EndpointAck> = EndpointBuilder<EmptyResponse>
             .post("/custom")
             .transport(
                 .custom(encoding: .none) { _, response in
@@ -205,7 +501,7 @@ struct EndpointBuilderTests {
             let title: String
         }
 
-        let endpoint = EndpointBuilder<EmptyResponse, PublicAuthScope>.post("/posts")
+        let endpoint = EndpointBuilder<EmptyResponse>.post("/posts")
             .body(CreatePost(title: "hello"))
             .decoding(EmptyResponse.self)
 
@@ -219,7 +515,7 @@ struct EndpointBuilderTests {
 
     @Test
     func headerCaseInsensitivelyReplacesValues() async {
-        let endpoint = EndpointBuilder<EmptyResponse, PublicAuthScope>.get("/items")
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/items")
             .header("X-Trace-ID", value: "abc")
             .header("x-trace-id", value: "def")
 
@@ -229,7 +525,7 @@ struct EndpointBuilderTests {
 
     @Test
     func acceptableStatusCodesOverrideIsCarriedThroughDecoding() async {
-        let endpoint = EndpointBuilder<EmptyResponse, PublicAuthScope>.get("/maybe")
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/maybe")
             .acceptableStatusCodes([200, 304])
             .decoding(EmptyResponse.self)
 
@@ -238,7 +534,7 @@ struct EndpointBuilderTests {
 
     @Test
     func transportBuilderUpdatesEndpointEncodingWithoutStoringContentTypeHeader() async {
-        let endpoint = EndpointBuilder<EmptyResponse, PublicAuthScope>.post("/login")
+        let endpoint = EndpointBuilder<EmptyResponse>.post("/login")
             .transport(.formURLEncoded())
 
         if case .formURLEncoded = endpoint.transport.requestEncoding {
@@ -266,7 +562,7 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        let endpoint = EndpointBuilder<EmptyResponse, PublicAuthScope>.get("/users")
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/users")
             .query(SearchQuery(limit: 10, sort: "name"))
             .decoding(SearchResponse.self)
 
@@ -291,7 +587,7 @@ struct EndpointBuilderTests {
         )
 
         _ = try await client.request(
-            EndpointBuilder<EmptyResponse, PublicAuthScope>.get("/users/1").decoding(EndpointAck.self))
+            EndpointBuilder<EmptyResponse>.get("/users/1").decoding(EndpointAck.self))
 
         #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == nil)
     }
@@ -306,7 +602,7 @@ struct EndpointBuilderTests {
         )
 
         _ = try await client.request(
-            EndpointBuilder<EmptyResponse, PublicAuthScope>.post("/ping").decoding(EndpointAck.self))
+            EndpointBuilder<EmptyResponse>.post("/ping").decoding(EndpointAck.self))
 
         #expect(mockSession.capturedRequest?.httpBody == nil)
         #expect(mockSession.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == nil)
@@ -328,7 +624,7 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        let endpoint = EndpointBuilder<EmptyResponse, PublicAuthScope>.post("/posts")
+        let endpoint = EndpointBuilder<EmptyResponse>.post("/posts")
             .body(CreatePost(title: "hello"))
             .decoding(CreatedPost.self)
 
@@ -354,7 +650,7 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        let endpoint = EndpointBuilder<EmptyResponse, PublicAuthScope>.post("/login")
+        let endpoint = EndpointBuilder<EmptyResponse>.post("/login")
             .transport(.formURLEncoded())
             .body(Login(username: "test"))
             .decoding(LoginResponse.self)
@@ -378,7 +674,7 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        let endpoint = EndpointBuilder<EmptyResponse, PublicAuthScope>.post("/login")
+        let endpoint = EndpointBuilder<EmptyResponse>.post("/login")
             .transport(.formURLEncoded())
             .transport(.query())
             .query(Login(username: "test"))
@@ -401,7 +697,7 @@ struct EndpointBuilderTests {
             let title: String
         }
 
-        let endpoint = EndpointBuilder<EmptyResponse, PublicAuthScope>.post("/posts")
+        let endpoint = EndpointBuilder<EmptyResponse>.post("/posts")
             .headers(headers)
             .body(CreatePost(title: "hello"))
             .decoding(EndpointAck.self)
@@ -438,7 +734,7 @@ struct EndpointBuilderTests {
         )
 
         _ = try await client.request(
-            EndpointBuilder<EmptyResponse, PublicAuthScope>.post("/posts")
+            EndpointBuilder<EmptyResponse>.post("/posts")
                 .body(CreatePost(title: "hello"))
                 .decoding(EndpointAck.self)
         )
@@ -456,7 +752,7 @@ struct EndpointBuilderTests {
         )
 
         _ = try await client.request(
-            EndpointBuilder<EmptyResponse, PublicAuthScope>.get("/files/a%2Fb").decoding(EndpointAck.self))
+            EndpointBuilder<EmptyResponse>.get("/files/a%2Fb").decoding(EndpointAck.self))
 
         #expect(mockSession.capturedRequest?.url?.absoluteString == "https://api.example.com/api/v1/files/a%2Fb")
     }
@@ -477,7 +773,7 @@ struct EndpointBuilderTests {
         )
 
         _ = try await client.request(
-            EndpointBuilder<EmptyResponse, PublicAuthScope>.get(path).decoding(EndpointAck.self))
+            EndpointBuilder<EmptyResponse>.get(path).decoding(EndpointAck.self))
 
         #expect(mockSession.capturedRequest?.url?.absoluteString == expectedURL)
     }
@@ -516,7 +812,7 @@ struct EndpointBuilderTests {
         )
 
         await #expect(throws: NetworkError.self) {
-            try await client.request(EndpointBuilder<EmptyResponse, PublicAuthScope>.get(path))
+            try await client.request(EndpointBuilder<EmptyResponse>.get(path))
         }
         #expect(mockSession.capturedRequest == nil)
     }
@@ -548,7 +844,7 @@ struct EndpointBuilderTests {
             session: mockSession
         )
 
-        let endpoint = EndpointBuilder<EmptyResponse, PublicAuthScope>.get("/empty")
+        let endpoint = EndpointBuilder<EmptyResponse>.get("/empty")
             .acceptableStatusCodes([304])
             .decoding(AcceptedResponse.self)
 

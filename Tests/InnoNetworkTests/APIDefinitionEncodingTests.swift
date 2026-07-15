@@ -48,6 +48,7 @@ private func makeSnakeCaseQueryEncoder() -> URLQueryEncoder {
 }
 
 private struct CustomJSONEncodingRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EncodingPayload
     typealias APIResponse = EmptyResponse
 
@@ -62,6 +63,7 @@ private struct CustomJSONEncodingRequest: APIDefinition {
 }
 
 private struct CustomQueryEncodingRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EncodingPayload
     typealias APIResponse = EmptyResponse
 
@@ -76,6 +78,7 @@ private struct CustomQueryEncodingRequest: APIDefinition {
 }
 
 private struct CustomFormEncodingRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EncodingPayload
     typealias APIResponse = EmptyResponse
 
@@ -90,6 +93,7 @@ private struct CustomFormEncodingRequest: APIDefinition {
 }
 
 private struct TopLevelArrayQueryRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = [String]
     typealias APIResponse = EmptyResponse
 
@@ -104,6 +108,7 @@ private struct TopLevelArrayQueryRequest: APIDefinition {
 }
 
 private struct MissingTopLevelArrayQueryRootKeyRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = [String]
     typealias APIResponse = EmptyResponse
 
@@ -114,6 +119,7 @@ private struct MissingTopLevelArrayQueryRootKeyRequest: APIDefinition {
 }
 
 private struct TopLevelScalarFormRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = String
     typealias APIResponse = EmptyResponse
 
@@ -128,6 +134,7 @@ private struct TopLevelScalarFormRequest: APIDefinition {
 }
 
 private struct MissingTopLevelScalarFormRootKeyRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = String
     typealias APIResponse = EmptyResponse
 
@@ -142,6 +149,7 @@ private struct MissingTopLevelScalarFormRootKeyRequest: APIDefinition {
 }
 
 private struct DictionaryQueryRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = [String: Int]
     typealias APIResponse = EmptyResponse
 
@@ -161,6 +169,7 @@ private struct SnakeCaseProbe: Encodable {
 }
 
 private struct CustomEmptyRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = CustomEmptyResponse
 
@@ -169,6 +178,7 @@ private struct CustomEmptyRequest: APIDefinition {
 }
 
 private struct MisconfiguredMultipartTransportRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EncodingPayload
     typealias APIResponse = EmptyResponse
 
@@ -183,6 +193,7 @@ private struct MisconfiguredMultipartTransportRequest: APIDefinition {
 }
 
 private struct MisconfiguredNoneEncodingRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EncodingPayload
     typealias APIResponse = EmptyResponse
 

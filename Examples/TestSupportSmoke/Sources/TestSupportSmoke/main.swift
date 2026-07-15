@@ -8,6 +8,7 @@ private struct SmokeResponse: Codable, Sendable {
 
 
 private struct SmokeRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = SmokeResponse
 

@@ -5,6 +5,7 @@ import os
 @testable import InnoNetwork
 
 private struct ExplicitDecoderRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = String
 
@@ -31,6 +32,7 @@ private final class TransportAccessCounter: Sendable {
 }
 
 private struct CountingTransportBodyRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     struct Parameter: Encodable, Sendable {
         let message: String
     }

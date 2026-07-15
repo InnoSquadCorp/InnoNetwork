@@ -39,7 +39,20 @@ extension WebSocketManager {
             await failUnsupportedURLSessionFeature(.permessageDeflate, for: task)
             return
         }
-        guard let prepared = await connectionCoordinator.prepareConnection(task) else { return }
+        let prepared: WebSocketPreparedConnection
+        switch await connectionCoordinator.prepareConnection(task) {
+        case .prepared(let connection):
+            prepared = connection
+        case .cancelled:
+            return
+        case .failed(let generation, let underlying):
+            await failHandshakeRequestAdaptation(
+                for: task,
+                generation: generation,
+                underlying: underlying
+            )
+            return
+        }
 
         guard await acquireTaskLifecycleGate(taskID: task.id) else { return }
         defer { releaseTaskLifecycleGate(taskID: task.id) }
@@ -85,6 +98,42 @@ extension WebSocketManager {
                 self?.handleError(taskIdentifier: taskIdentifier, error: error)
             }
         )
+    }
+
+    /// Routes a throwing handshake adapter through the same generation-aware
+    /// reducer path as URLSession transport failures. No Foundation task exists
+    /// yet, so this path validates the logical task directly rather than looking
+    /// up a transport callback mapping.
+    func failHandshakeRequestAdaptation(
+        for task: WebSocketTask,
+        generation: Int,
+        underlying: SendableUnderlyingError
+    ) async {
+        await acquireTaskLifecycleGateUnconditionally(taskID: task.id)
+
+        guard await isCurrentTransportCandidate(task, generation: generation) else {
+            releaseTaskLifecycleGate(taskID: task.id)
+            return
+        }
+
+        let error = WebSocketError.connectionFailed(underlying)
+        let disposition = WebSocketCloseDisposition.transportFailure(error)
+        let reconnectAction = await reconnectCoordinator.reconnectAction(
+            task: task,
+            closeDisposition: disposition
+        )
+        let transition = await task.applyLifecycleEvent(
+            .failure(
+                generation: generation,
+                disposition: disposition,
+                error: error
+            ),
+            context: .init(
+                reconnectAction: reconnectAction,
+                attempt: await task.attemptedReconnectCount
+            )
+        )
+        await executeLifecycleEffectsAfterLockedApply(transition, for: task)
     }
 
     func isCurrentTransportCandidate(_ task: WebSocketTask, generation: Int) async -> Bool {

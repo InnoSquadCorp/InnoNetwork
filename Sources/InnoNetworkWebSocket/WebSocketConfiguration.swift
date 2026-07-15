@@ -16,7 +16,7 @@ public enum WebSocketSendOverflowPolicy: Sendable, Equatable {
 }
 
 
-/// Async hook applied to every WebSocket handshake request before the
+/// Async, throwing hook applied to every WebSocket handshake request before the
 /// underlying `URLSessionWebSocketTask` is created.
 ///
 /// Use this when a reconnect attempt must fetch fresh authentication headers
@@ -24,14 +24,14 @@ public enum WebSocketSendOverflowPolicy: Sendable, Equatable {
 /// ``WebSocketConfiguration/requestHeaders`` are applied first, then
 /// subprotocol headers, then adapters in array order.
 public struct WebSocketHandshakeRequestAdapter: Sendable {
-    private let adaptRequest: @Sendable (URLRequest) async -> URLRequest
+    private let adaptRequest: @Sendable (URLRequest) async throws -> URLRequest
 
-    public init(_ adaptRequest: @escaping @Sendable (URLRequest) async -> URLRequest) {
+    public init(_ adaptRequest: @escaping @Sendable (URLRequest) async throws -> URLRequest) {
         self.adaptRequest = adaptRequest
     }
 
-    public func adapt(_ request: URLRequest) async -> URLRequest {
-        await adaptRequest(request)
+    public func adapt(_ request: URLRequest) async throws -> URLRequest {
+        try await adaptRequest(request)
     }
 }
 
@@ -147,8 +147,11 @@ public struct WebSocketConfiguration: Sendable {
     public let sessionIdentifier: String
     /// Additional HTTP headers sent when establishing the WebSocket handshake.
     public let requestHeaders: [String: String]
-    /// Async request adapters applied after static headers and subprotocol
-    /// negotiation headers, before creating each `URLSessionWebSocketTask`.
+    /// Async, throwing request adapters applied after static headers and
+    /// subprotocol negotiation headers, before creating each
+    /// `URLSessionWebSocketTask`. A thrown error is surfaced through the task's
+    /// normal connection-failure lifecycle and may participate in automatic
+    /// reconnect according to the configured retry budget.
     public let handshakeRequestAdapters: [WebSocketHandshakeRequestAdapter]
     public let eventDeliveryPolicy: EventDeliveryPolicy
     public let eventMetricsReporter: (any EventPipelineMetricsReporting)?

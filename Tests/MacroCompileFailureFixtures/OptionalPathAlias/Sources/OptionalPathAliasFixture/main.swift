@@ -6,7 +6,7 @@ private struct User: Decodable, Sendable {
     let id: Int
 }
 
-@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
 private struct GetUser {
     typealias APIResponse = User
 

@@ -9,6 +9,7 @@ private struct ConsumerUser: Decodable, Sendable {
 }
 
 private struct ConsumerRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = ConsumerUser
 

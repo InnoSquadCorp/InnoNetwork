@@ -11,6 +11,7 @@ struct DecodingInterceptorTests {
     }
 
     private struct GetEnvelope: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = EnvelopeBody
         var method: HTTPMethod { .get }

@@ -12,6 +12,8 @@ public protocol OpenAPIRestOperation: Sendable {
     var method: HTTPMethod { get }
     /// Path relative to the configured base URL.
     var path: String { get }
+    /// Session bearer-authentication policy for this operation.
+    var sessionAuthentication: SessionAuthentication { get }
     /// Additional request headers.
     var headers: HTTPHeaders { get }
     /// Encodable request parameters, or `nil` when the operation has no input.
@@ -59,6 +61,8 @@ public struct OpenAPIRequest<Operation: OpenAPIRestOperation>: APIDefinition {
     public var method: HTTPMethod { operation.method }
     /// Path forwarded from the operation.
     public var path: String { operation.path }
+    /// Authentication policy forwarded from the operation.
+    public var sessionAuthentication: SessionAuthentication { operation.sessionAuthentication }
     /// Headers forwarded from the operation.
     public var headers: HTTPHeaders { operation.headers }
     /// Parameters forwarded from the operation.

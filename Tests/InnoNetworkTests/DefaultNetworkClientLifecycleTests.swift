@@ -8,6 +8,7 @@ private struct LifecycleResponse: Codable, Equatable, Sendable {
 }
 
 private struct LifecycleEndpoint: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = LifecycleResponse
 

@@ -168,6 +168,7 @@ struct GetProfile: APIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/me" }
+    var sessionAuthentication: SessionAuthentication { .required }
 }
 
 @main

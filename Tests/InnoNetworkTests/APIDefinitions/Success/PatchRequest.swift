@@ -10,6 +10,7 @@ import Foundation
 @testable import InnoNetwork
 
 struct PatchRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     let parameters: PatchParameter?
 
     struct PatchResponse: Decodable, Sendable {

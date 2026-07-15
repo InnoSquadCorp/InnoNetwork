@@ -1,16 +1,22 @@
 import Foundation
 
-/// Marker protocol used to describe whether an endpoint requires the
-/// configured refresh-token lane before it can execute.
-public protocol AuthScope: Sendable {}
-
-/// Default auth scope for public endpoints that can execute without a
-/// ``RefreshTokenPolicy``.
-public enum PublicAuthScope: AuthScope {}
-
-/// Auth scope for endpoints that require ``NetworkConfiguration`` to include
-/// a ``RefreshTokenPolicy``.
-public enum AuthRequiredScope: AuthScope {}
+/// Session bearer authentication required by an endpoint.
+///
+/// This value governs only ``RefreshTokenPolicy``. Request interceptors and
+/// request signers are explicit, orthogonal capabilities because the library
+/// cannot infer whether an arbitrary adapter or signature establishes the
+/// principal expected by a server.
+public enum SessionAuthentication: Sendable, Hashable {
+    /// Never invoke the configured refresh-token policy for this endpoint.
+    case anonymous
+    /// Apply a current token and allow refresh replay when a policy is
+    /// configured, but permit an anonymous request when it is absent.
+    case optional
+    /// Require a refresh-token policy and obtain a token before the first
+    /// transport attempt. Token acquisition failures are surfaced without
+    /// sending an anonymous request.
+    case required
+}
 
 /// Fluent, builder-style alternative to declaring a custom ``APIDefinition``.
 ///
@@ -23,13 +29,13 @@ public enum AuthRequiredScope: AuthScope {}
 ///
 /// ```swift
 /// let user = try await client.request(
-///     EndpointBuilder<EmptyResponse, PublicAuthScope>
+///     EndpointBuilder<EmptyResponse>
 ///         .get("/users/\(id)")
 ///         .decoding(User.self)
 /// )
 ///
 /// let post = try await client.request(
-///     EndpointBuilder<EmptyResponse, PublicAuthScope>
+///     EndpointBuilder<EmptyResponse>
 ///         .post("/posts")
 ///         .body(CreatePost(title: "Hello", body: "World"))
 ///         .header("Idempotency-Key", value: idempotencyKey)
@@ -38,7 +44,7 @@ public enum AuthRequiredScope: AuthScope {}
 ///
 /// // form-url-encoded login
 /// let token = try await client.request(
-///     EndpointBuilder<EmptyResponse, PublicAuthScope>
+///     EndpointBuilder<EmptyResponse>
 ///         .post("/login")
 ///         .body(credentials)
 ///         .transport(.formURLEncoded())
@@ -55,13 +61,13 @@ public enum AuthRequiredScope: AuthScope {}
 /// For multipart uploads, streaming requests, or per-endpoint interceptor
 /// chains, keep using a dedicated type that conforms to ``APIDefinition``,
 /// ``MultipartAPIDefinition``, or ``StreamingAPIDefinition``.
-public struct EndpointBuilder<Response: Decodable & Sendable, Scope: AuthScope>: APIDefinition {
+public struct EndpointBuilder<Response: Decodable & Sendable>: APIDefinition {
     public typealias Parameter = AnyEncodable
     public typealias APIResponse = Response
-    public typealias Auth = Scope
 
     public let method: HTTPMethod
     public let path: String
+    public let sessionAuthentication: SessionAuthentication
     public let parameters: AnyEncodable?
     public let headers: HTTPHeaders
     public let acceptableStatusCodes: Set<Int>?
@@ -70,6 +76,7 @@ public struct EndpointBuilder<Response: Decodable & Sendable, Scope: AuthScope>:
     public init(
         method: HTTPMethod,
         path: String,
+        authentication: SessionAuthentication = .anonymous,
         parameters: AnyEncodable? = nil,
         headers: HTTPHeaders = .default,
         acceptableStatusCodes: Set<Int>? = nil,
@@ -77,6 +84,7 @@ public struct EndpointBuilder<Response: Decodable & Sendable, Scope: AuthScope>:
     ) {
         self.method = method
         self.path = path
+        self.sessionAuthentication = authentication
         self.parameters = parameters
         self.acceptableStatusCodes = acceptableStatusCodes
         let resolvedTransport = transport ?? Self.defaultTransport(for: method)
@@ -126,6 +134,7 @@ extension EndpointBuilder {
         Self(
             method: method,
             path: path,
+            authentication: sessionAuthentication,
             parameters: AnyEncodable(query),
             headers: headers,
             acceptableStatusCodes: acceptableStatusCodes,
@@ -140,6 +149,7 @@ extension EndpointBuilder {
         Self(
             method: method,
             path: path,
+            authentication: sessionAuthentication,
             parameters: AnyEncodable(body),
             headers: headers,
             acceptableStatusCodes: acceptableStatusCodes,
@@ -155,6 +165,7 @@ extension EndpointBuilder {
         return Self(
             method: method,
             path: path,
+            authentication: sessionAuthentication,
             parameters: parameters,
             headers: newHeaders,
             acceptableStatusCodes: acceptableStatusCodes,
@@ -170,6 +181,7 @@ extension EndpointBuilder {
         Self(
             method: method,
             path: path,
+            authentication: sessionAuthentication,
             parameters: parameters,
             headers: headers,
             acceptableStatusCodes: acceptableStatusCodes,
@@ -184,6 +196,7 @@ extension EndpointBuilder {
         Self(
             method: method,
             path: path,
+            authentication: sessionAuthentication,
             parameters: parameters,
             headers: headers,
             acceptableStatusCodes: acceptableStatusCodes,
@@ -198,9 +211,25 @@ extension EndpointBuilder {
         Self(
             method: method,
             path: path,
+            authentication: sessionAuthentication,
             parameters: parameters,
             headers: headers,
             acceptableStatusCodes: codes,
+            transport: transport
+        )
+    }
+
+    /// Returns a copy with an explicit session bearer-authentication policy.
+    /// Request signers remain independent and continue to run according to the
+    /// endpoint and client configuration.
+    public func authentication(_ authentication: SessionAuthentication) -> Self {
+        Self(
+            method: method,
+            path: path,
+            authentication: authentication,
+            parameters: parameters,
+            headers: headers,
+            acceptableStatusCodes: acceptableStatusCodes,
             transport: transport
         )
     }
@@ -210,7 +239,7 @@ extension EndpointBuilder {
 // MARK: - Decoding promotion
 
 extension EndpointBuilder where Response == EmptyResponse {
-    /// Promotes a `EndpointBuilder<EmptyResponse, Scope>` (the result of
+    /// Promotes an `EndpointBuilder<EmptyResponse>` (the result of
     /// `.get(_:)`, `.post(_:)`, etc.) into an endpoint that decodes the
     /// supplied type.
     /// This is the terminal step of the builder; the returned value can be
@@ -219,10 +248,11 @@ extension EndpointBuilder where Response == EmptyResponse {
     /// The current request-encoding shape (set via ``query(_:)``, ``body(_:)``,
     /// or ``transport(_:)``) is carried over. Response decoding is reset to
     /// the default JSON decoder for the new response type.
-    public func decoding<T: Decodable & Sendable>(_ type: T.Type) -> EndpointBuilder<T, Scope> {
-        EndpointBuilder<T, Scope>(
+    public func decoding<T: Decodable & Sendable>(_ type: T.Type) -> EndpointBuilder<T> {
+        EndpointBuilder<T>(
             method: method,
             path: path,
+            authentication: sessionAuthentication,
             parameters: parameters,
             headers: headers,
             acceptableStatusCodes: acceptableStatusCodes,

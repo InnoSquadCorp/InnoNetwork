@@ -225,6 +225,7 @@ struct InFlightRegistryRaceTests {
     // MARK: - DefaultNetworkClient.perform deregister guarantees
 
     private struct LongPollRequest: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = EmptyResponse
         var method: HTTPMethod { .get }

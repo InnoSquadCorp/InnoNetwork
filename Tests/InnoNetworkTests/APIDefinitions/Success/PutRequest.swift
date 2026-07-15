@@ -10,6 +10,7 @@ import Foundation
 @testable import InnoNetwork
 
 struct PutRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     let parameters: PutParameter?
 
     struct PutResponse: Decodable, Sendable {

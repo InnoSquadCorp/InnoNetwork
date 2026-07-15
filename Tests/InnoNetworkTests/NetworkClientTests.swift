@@ -4,6 +4,7 @@ import Testing
 @testable import InnoNetwork
 
 struct GetProfile: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = Profile
 

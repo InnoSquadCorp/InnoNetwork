@@ -198,6 +198,7 @@ struct MultipartUploadStrategyTests {
         let multipartFormData: MultipartFormData
         var method: HTTPMethod { .post }
         var path: String { "/upload" }
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         var uploadStrategy: MultipartUploadStrategy { .inMemory(maxBytes: 16 << 20) }
     }
 
@@ -206,6 +207,7 @@ struct MultipartUploadStrategyTests {
         let multipartFormData: MultipartFormData
         var method: HTTPMethod { .post }
         var path: String { "/upload" }
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         var uploadStrategy: MultipartUploadStrategy { .alwaysStream }
     }
 
@@ -215,6 +217,7 @@ struct MultipartUploadStrategyTests {
         let threshold: Int64
         var method: HTTPMethod { .post }
         var path: String { "/upload" }
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         var uploadStrategy: MultipartUploadStrategy { .streamingThreshold(bytes: threshold) }
     }
 
@@ -247,6 +250,7 @@ struct MultipartUploadStrategyTests {
             let multipartFormData: MultipartFormData
             var method: HTTPMethod { .post }
             var path: String { "/upload" }
+            var sessionAuthentication: SessionAuthentication { .anonymous }
             var uploadStrategy: MultipartUploadStrategy { .inMemory(maxBytes: 1024) }
         }
         let executable = MultipartSingleRequestExecutable(
@@ -317,6 +321,7 @@ struct MultipartUploadStrategyTests {
         let multipartFormData: MultipartFormData
         var method: HTTPMethod { .post }
         var path: String { "/upload" }
+        var sessionAuthentication: SessionAuthentication { .anonymous }
     }
 
     @Test("Default uploadStrategy is MultipartUploadStrategy.platformDefault")
@@ -347,30 +352,74 @@ struct MultipartUploadStrategyTests {
         let multipartFormData: MultipartFormData
         var method: HTTPMethod { .post }
         var path: String { "/upload" }
+        var sessionAuthentication: SessionAuthentication { .anonymous }
     }
 
     private struct AuthenticatedMultipartUpload: MultipartAPIDefinition {
         typealias APIResponse = EmptyResponse
-        typealias Auth = AuthRequiredScope
         let multipartFormData: MultipartFormData
         var method: HTTPMethod { .post }
         var path: String { "/upload" }
+        var sessionAuthentication: SessionAuthentication { .required }
     }
 
-    @Test("Multipart endpoint with default Auth scope does not require refresh policy")
+    @Test("Multipart endpoint with default session auth does not require refresh policy")
     func publicMultipartDoesNotRequireRefreshPolicy() {
         let executable = MultipartSingleRequestExecutable(
             base: PublicMultipartUpload(multipartFormData: Self.makeFormData())
         )
-        #expect(executable.requiresRefreshTokenPolicy == false)
+        #expect(executable.sessionAuthentication == .anonymous)
     }
 
-    @Test("Multipart endpoint with AuthRequiredScope requires refresh policy")
+    @Test("Multipart endpoint with required session auth requires refresh policy")
     func authenticatedMultipartRequiresRefreshPolicy() {
         let executable = MultipartSingleRequestExecutable(
             base: AuthenticatedMultipartUpload(multipartFormData: Self.makeFormData())
         )
-        #expect(executable.requiresRefreshTokenPolicy == true)
+        #expect(executable.sessionAuthentication == .required)
+    }
+
+    @Test("Required-auth multipart proactively refreshes a missing current token")
+    func authenticatedMultipartRefreshesBeforeTransport() async throws {
+        actor RefreshProbe {
+            private(set) var currentCalls = 0
+            private(set) var refreshCalls = 0
+
+            func currentToken() -> String? {
+                currentCalls += 1
+                return nil
+            }
+
+            func refreshToken() -> String {
+                refreshCalls += 1
+                return "proactive-multipart-token"
+            }
+        }
+
+        let mockSession = MockURLSession()
+        let probe = RefreshProbe()
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                refreshTokenPolicy: RefreshTokenPolicy(
+                    currentToken: { await probe.currentToken() },
+                    refreshToken: { await probe.refreshToken() }
+                )
+            ),
+            session: mockSession
+        )
+
+        _ = try await client.upload(
+            AuthenticatedMultipartUpload(multipartFormData: Self.makeFormData())
+        )
+
+        #expect(mockSession.capturedRequestsInOrder.count == 1)
+        #expect(
+            mockSession.capturedRequest?.value(forHTTPHeaderField: "Authorization")
+                == "Bearer proactive-multipart-token"
+        )
+        #expect(await probe.currentCalls == 1)
+        #expect(await probe.refreshCalls == 1)
     }
 
     @Test("append(_:Double:name:) rejects NaN and infinity")

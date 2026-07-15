@@ -349,6 +349,7 @@ private struct RetryClockPayload: Codable, Sendable, Equatable {
 }
 
 private struct RetryClockRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = RetryClockPayload
 

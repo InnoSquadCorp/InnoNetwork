@@ -97,6 +97,7 @@ private enum FileUploadPayloadStrategy: Sendable {
 
 
 private struct FileUploadTestExecutable: SingleRequestExecutable {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias APIResponse = EchoResponse
 
     let fileURL: URL
@@ -193,6 +194,7 @@ private actor BlockingFileSigner: RequestSigner {
 
 
 private struct InvalidGETTemporaryFileExecutable: SingleRequestExecutable {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias APIResponse = EchoResponse
 
     let fileURL: URL

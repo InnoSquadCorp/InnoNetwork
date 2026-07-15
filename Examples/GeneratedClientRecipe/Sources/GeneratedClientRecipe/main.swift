@@ -20,6 +20,7 @@ private enum GeneratedSDK {
 
         let method: HTTPMethod = .get
         let path: String = "/v1/users"
+        let sessionAuthentication: SessionAuthentication = .anonymous
         let parameters: ListUsersQuery?
 
         init(limit: Int) {
@@ -36,6 +37,7 @@ private enum GeneratedSDK {
 
         let method: HTTPMethod = .post
         let path: String = "/v1/reports"
+        let sessionAuthentication: SessionAuthentication = .anonymous
         let headers: HTTPHeaders = [
             .accept("application/json"),
             .contentType("application/json"),
@@ -51,6 +53,7 @@ private protocol GeneratedRESTContract: Sendable {
     var parameters: Parameter? { get }
     var method: HTTPMethod { get }
     var path: String { get }
+    var sessionAuthentication: SessionAuthentication { get }
 }
 
 private protocol GeneratedExecutableContract: Sendable {
@@ -58,6 +61,7 @@ private protocol GeneratedExecutableContract: Sendable {
 
     var method: HTTPMethod { get }
     var path: String { get }
+    var sessionAuthentication: SessionAuthentication { get }
     var headers: HTTPHeaders { get }
 
     func makePayload() throws -> RequestPayload
@@ -86,6 +90,7 @@ private struct GeneratedRESTRequest<Operation: GeneratedRESTContract>: APIDefini
     var parameters: Parameter? { operation.parameters }
     var method: HTTPMethod { operation.method }
     var path: String { operation.path }
+    var sessionAuthentication: SessionAuthentication { operation.sessionAuthentication }
 }
 
 private struct GeneratedExecutable<Operation: GeneratedExecutableContract>: SingleRequestExecutable {
@@ -98,6 +103,7 @@ private struct GeneratedExecutable<Operation: GeneratedExecutableContract>: Sing
     var responseInterceptors: [ResponseInterceptor] { [] }
     var method: HTTPMethod { operation.method }
     var path: String { operation.path }
+    var sessionAuthentication: SessionAuthentication { operation.sessionAuthentication }
     var headers: HTTPHeaders { operation.headers }
 
     func makePayload() throws -> RequestPayload {

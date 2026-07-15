@@ -60,6 +60,7 @@ private struct ResponseRewritingInterceptor: ResponseInterceptor {
 
 
 private struct StampedTraceRequest: APIDefinition {
+    var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
     typealias APIResponse = StampedTraceResponse
 

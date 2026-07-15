@@ -949,6 +949,54 @@ struct WebSocketManagerShutdownTests {
         await shutdown.value
     }
 
+    @Test("throwing handshake adapter fails through lifecycle without creating transport")
+    func throwingHandshakeAdapterFailsWithoutCreatingTransport() async {
+        let invocationCount = OSAllocatedUnfairLock<Int>(initialState: 0)
+        let observedErrors = OSAllocatedUnfairLock<[WebSocketError]>(initialState: [])
+        let configuration = WebSocketConfiguration(
+            heartbeatInterval: 0,
+            reconnectDelay: 0,
+            reconnectJitterRatio: 0,
+            maxReconnectAttempts: 1,
+            sessionIdentifier: makeWebSocketTestSessionIdentifier("adapter-throws"),
+            handshakeRequestAdapters: [
+                WebSocketHandshakeRequestAdapter { _ in
+                    invocationCount.withLock { $0 += 1 }
+                    throw ThrowingHandshakeAdapterTestError.tokenUnavailable
+                }
+            ]
+        )
+        let harness = makeShutdownHarness(configuration: configuration)
+        await harness.manager.setOnErrorHandler { _, error in
+            observedErrors.withLock { $0.append(error) }
+        }
+
+        let task = await harness.manager.connect(
+            url: URL(string: "wss://example.invalid/adapter-throws")!
+        )
+
+        #expect(
+            await waitForWebSocketState(task) { $0 == .failed },
+            "adapter failures should exhaust the configured reconnect budget instead of leaving the task connecting"
+        )
+        #expect(invocationCount.withLock { $0 } == 2)
+        #expect(harness.session.createdTasks.isEmpty)
+        #expect(
+            observedErrors.withLock { errors in
+                errors.contains { error in
+                    guard case .connectionFailed(let underlying) = error else { return false }
+                    return underlying.message.contains("Handshake token lookup failed")
+                }
+            },
+            "the first adapter failure should remain observable before reconnect exhaustion"
+        )
+
+        async let shutdown: Void = harness.manager.shutdown()
+        #expect(await harness.session.waitForInvalidation())
+        harness.callbacks.handleInvalidation(nil)
+        await shutdown
+    }
+
     @Test("late manual pong cannot publish into a fresh retry task")
     func lateManualPongDoesNotCrossFreshRetryTask() async throws {
         let harness = makeShutdownHarness()
@@ -3881,6 +3929,15 @@ struct WebSocketConfigurationHardeningTests {
         #expect(config.maximumMessageSize == 8 * 1024 * 1024)
         #expect(config.permessageDeflateEnabled == true)
         #expect(config.reconnectMaxTotalDuration == 90)
+    }
+}
+
+
+private enum ThrowingHandshakeAdapterTestError: Error, Sendable, LocalizedError {
+    case tokenUnavailable
+
+    var errorDescription: String? {
+        "Handshake token lookup failed"
     }
 }
 

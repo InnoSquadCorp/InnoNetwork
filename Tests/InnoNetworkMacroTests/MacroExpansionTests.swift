@@ -16,7 +16,7 @@ struct MacroExpansionTests {
     func apiDefinitionPublicExpansion() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+            @APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
             public struct GetUser {
                 public let id: Int
                 public typealias APIResponse = User
@@ -29,12 +29,15 @@ struct MacroExpansionTests {
                     public typealias APIResponse = User
                 }
 
-                extension GetUser: APIDefinition {
-                    public typealias Parameter = EmptyParameter
-                    public var method: HTTPMethod {
+                extension GetUser: InnoNetwork.APIDefinition {
+                    public typealias Parameter = InnoNetwork.EmptyParameter
+                    public var sessionAuthentication: InnoNetwork.SessionAuthentication {
+                        .anonymous
+                    }
+                    public var method: InnoNetwork.HTTPMethod {
                         .get
                     }
-                    public var path: String {
+                    public var path: Swift.String {
                         "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))"
                     }
                 }
@@ -47,7 +50,7 @@ struct MacroExpansionTests {
     func apiDefinitionInternalExpansion() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .post, path: "/users/{id}/avatar", auth: .public)
+            @APIDefinition(method: .post, path: "/users/{id}/avatar", auth: .anonymous)
             struct UpdateAvatar {
                 let id: Int
                 typealias APIResponse = Avatar
@@ -60,12 +63,15 @@ struct MacroExpansionTests {
                     typealias APIResponse = Avatar
                 }
 
-                extension UpdateAvatar: APIDefinition {
-                    internal typealias Parameter = EmptyParameter
-                    internal var method: HTTPMethod {
+                extension UpdateAvatar: InnoNetwork.APIDefinition {
+                    internal typealias Parameter = InnoNetwork.EmptyParameter
+                    internal var sessionAuthentication: InnoNetwork.SessionAuthentication {
+                        .anonymous
+                    }
+                    internal var method: InnoNetwork.HTTPMethod {
                         .post
                     }
-                    internal var path: String {
+                    internal var path: Swift.String {
                         "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))/avatar"
                     }
                 }
@@ -78,7 +84,7 @@ struct MacroExpansionTests {
     func apiDefinitionPackageExpansion() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .delete, path: "/users/{id}", auth: .public)
+            @APIDefinition(method: .delete, path: "/users/{id}", auth: .anonymous)
             package struct DeleteUser {
                 package let id: Int
                 package typealias APIResponse = EmptyResponse
@@ -91,12 +97,15 @@ struct MacroExpansionTests {
                     package typealias APIResponse = EmptyResponse
                 }
 
-                extension DeleteUser: APIDefinition {
-                    package typealias Parameter = EmptyParameter
-                    package var method: HTTPMethod {
+                extension DeleteUser: InnoNetwork.APIDefinition {
+                    package typealias Parameter = InnoNetwork.EmptyParameter
+                    package var sessionAuthentication: InnoNetwork.SessionAuthentication {
+                        .anonymous
+                    }
+                    package var method: InnoNetwork.HTTPMethod {
                         .delete
                     }
-                    package var path: String {
+                    package var path: Swift.String {
                         "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))"
                     }
                 }
@@ -109,7 +118,7 @@ struct MacroExpansionTests {
     func apiDefinitionUnknownPlaceholderDiagnostic() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{missing}", auth: .public)
+            @APIDefinition(method: .get, path: "/users/{missing}", auth: .anonymous)
             public struct GetUser {
                 public let id: Int
                 public typealias APIResponse = User
@@ -137,7 +146,7 @@ struct MacroExpansionTests {
     func apiDefinitionOptionalPlaceholderDiagnostic() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+            @APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
             public struct GetUser {
                 public let id: Int?
                 public typealias APIResponse = User
@@ -165,7 +174,7 @@ struct MacroExpansionTests {
     func apiDefinitionImplicitlyUnwrappedOptionalPlaceholderDiagnostic() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+            @APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
             struct GetUser {
                 let id: Int!
                 typealias APIResponse = User
@@ -193,7 +202,7 @@ struct MacroExpansionTests {
     func apiDefinitionOptionalGenericPlaceholderDiagnostic() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+            @APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
             struct GetUser {
                 let id: Optional<Int>
                 typealias APIResponse = User
@@ -221,7 +230,7 @@ struct MacroExpansionTests {
     func apiDefinitionGenericParameterPlaceholderDiagnostic() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+            @APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
             struct GetUser<T> {
                 let id: T
                 typealias APIResponse = User
@@ -250,7 +259,7 @@ struct MacroExpansionTests {
     func apiDefinitionOpaqueTypePlaceholderDiagnostic() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+            @APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
             struct GetUser {
                 let id: some LosslessStringConvertible
                 typealias APIResponse = User
@@ -279,7 +288,7 @@ struct MacroExpansionTests {
     func apiDefinitionInterpolationFixIt() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/\\(id)", auth: .public)
+            @APIDefinition(method: .get, path: "/users/\\(id)", auth: .anonymous)
             struct GetUser {
                 let id: Int
                 typealias APIResponse = User
@@ -312,7 +321,7 @@ struct MacroExpansionTests {
     func apiDefinitionNoFixItForComplexInterpolation() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users/\\(user.id)", auth: .public)
+            @APIDefinition(method: .get, path: "/users/\\(user.id)", auth: .anonymous)
             struct GetUser {
                 let user: User
                 typealias APIResponse = User
@@ -341,7 +350,7 @@ struct MacroExpansionTests {
     func apiDefinitionQueryExpansion() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users", auth: .public)
+            @APIDefinition(method: .get, path: "/users", auth: .anonymous)
             struct ListUsers {
                 typealias APIResponse = [User]
                 let query: ListUsersQuery
@@ -354,7 +363,7 @@ struct MacroExpansionTests {
                     let query: ListUsersQuery
                 }
 
-                extension ListUsers: APIDefinition {
+                extension ListUsers: InnoNetwork.APIDefinition {
                     internal typealias Parameter = ListUsersQuery
                     internal var parameters: Parameter? {
                         func normalized<Value>(_ value: Value) -> Value? {
@@ -368,10 +377,13 @@ struct MacroExpansionTests {
                         }
                         return normalized(query)
                     }
-                    internal var method: HTTPMethod {
+                    internal var sessionAuthentication: InnoNetwork.SessionAuthentication {
+                        .anonymous
+                    }
+                    internal var method: InnoNetwork.HTTPMethod {
                         .get
                     }
-                    internal var path: String {
+                    internal var path: Swift.String {
                         "/users"
                     }
                 }
@@ -397,7 +409,7 @@ struct MacroExpansionTests {
                     let body: CreateUserRequest
                 }
 
-                extension CreateUser: APIDefinition {
+                extension CreateUser: InnoNetwork.APIDefinition {
                     internal typealias Parameter = CreateUserRequest
                     internal var parameters: Parameter? {
                         func normalized<Value>(_ value: Value) -> Value? {
@@ -411,11 +423,13 @@ struct MacroExpansionTests {
                         }
                         return normalized(body)
                     }
-                    internal typealias Auth = AuthRequiredScope
-                    internal var method: HTTPMethod {
+                    internal var sessionAuthentication: InnoNetwork.SessionAuthentication {
+                        .required
+                    }
+                    internal var method: InnoNetwork.HTTPMethod {
                         .post
                     }
-                    internal var path: String {
+                    internal var path: Swift.String {
                         "/users"
                     }
                 }
@@ -428,7 +442,7 @@ struct MacroExpansionTests {
     func apiDefinitionManualParameterExpansion() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .post, path: "/users", auth: .public)
+            @APIDefinition(method: .post, path: "/users", auth: .anonymous)
             struct CreateUser {
                 typealias APIResponse = User
                 typealias Parameter = CreateUserRequest
@@ -445,11 +459,14 @@ struct MacroExpansionTests {
                     var transport: TransportPolicy<User> { .json() }
                 }
 
-                extension CreateUser: APIDefinition {
-                    internal var method: HTTPMethod {
+                extension CreateUser: InnoNetwork.APIDefinition {
+                    internal var sessionAuthentication: InnoNetwork.SessionAuthentication {
+                        .anonymous
+                    }
+                    internal var method: InnoNetwork.HTTPMethod {
                         .post
                     }
-                    internal var path: String {
+                    internal var path: Swift.String {
                         "/users"
                     }
                 }
@@ -462,7 +479,7 @@ struct MacroExpansionTests {
     func apiDefinitionRejectsClass() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users", auth: .public)
+            @APIDefinition(method: .get, path: "/users", auth: .anonymous)
             final class GetUsers {
                 typealias APIResponse = [User]
             }
@@ -489,7 +506,7 @@ struct MacroExpansionTests {
     func apiDefinitionMissingResponse() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users", auth: .public)
+            @APIDefinition(method: .get, path: "/users", auth: .anonymous)
             struct GetUsers {}
             """,
             expandedSource:
@@ -512,7 +529,7 @@ struct MacroExpansionTests {
     func apiDefinitionDuplicateConformance() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users", auth: .public)
+            @APIDefinition(method: .get, path: "/users", auth: .anonymous)
             struct GetUsers: APIDefinition {
                 typealias APIResponse = [User]
             }
@@ -539,7 +556,7 @@ struct MacroExpansionTests {
     func apiDefinitionBodyQueryConflict() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .post, path: "/users", auth: .public)
+            @APIDefinition(method: .post, path: "/users", auth: .anonymous)
             struct SearchUsers {
                 typealias APIResponse = [User]
                 let body: SearchBody
@@ -569,7 +586,7 @@ struct MacroExpansionTests {
     func apiDefinitionInferredBodyType() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .post, path: "/users", auth: .public)
+            @APIDefinition(method: .post, path: "/users", auth: .anonymous)
             struct CreateUser {
                 typealias APIResponse = User
                 let body = CreateUserRequest(name: "Blob")
@@ -597,7 +614,7 @@ struct MacroExpansionTests {
     func apiDefinitionGetBody() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users", auth: .public)
+            @APIDefinition(method: .get, path: "/users", auth: .anonymous)
             struct SearchUsers {
                 typealias APIResponse = [User]
                 let body: SearchBody
@@ -626,7 +643,7 @@ struct MacroExpansionTests {
     func apiDefinitionPartialManualContract() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .post, path: "/users", auth: .public)
+            @APIDefinition(method: .post, path: "/users", auth: .anonymous)
             struct CreateUser {
                 typealias APIResponse = User
                 typealias Parameter = CreateUserRequest
@@ -654,7 +671,7 @@ struct MacroExpansionTests {
     func apiDefinitionPathComponent() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users?page=1", auth: .public)
+            @APIDefinition(method: .get, path: "/users?page=1", auth: .anonymous)
             struct ListUsers {
                 typealias APIResponse = [User]
             }
@@ -681,7 +698,7 @@ struct MacroExpansionTests {
     func apiDefinitionRedundantEmptyParameterWarning() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users", auth: .public)
+            @APIDefinition(method: .get, path: "/users", auth: .anonymous)
             struct ListUsers {
                 typealias APIResponse = [User]
                 typealias Parameter = EmptyParameter
@@ -694,11 +711,14 @@ struct MacroExpansionTests {
                     typealias Parameter = EmptyParameter
                 }
 
-                extension ListUsers: APIDefinition {
-                    internal var method: HTTPMethod {
+                extension ListUsers: InnoNetwork.APIDefinition {
+                    internal var sessionAuthentication: InnoNetwork.SessionAuthentication {
+                        .anonymous
+                    }
+                    internal var method: InnoNetwork.HTTPMethod {
                         .get
                     }
-                    internal var path: String {
+                    internal var path: Swift.String {
                         "/users"
                     }
                 }
@@ -720,7 +740,7 @@ struct MacroExpansionTests {
     func apiDefinitionComputedBody() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .post, path: "/users", auth: .public)
+            @APIDefinition(method: .post, path: "/users", auth: .anonymous)
             struct CreateUser {
                 typealias APIResponse = User
                 var body: CreateUserRequest { CreateUserRequest() }
@@ -749,7 +769,7 @@ struct MacroExpansionTests {
     func apiDefinitionStaticQuery() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/users", auth: .public)
+            @APIDefinition(method: .get, path: "/users", auth: .anonymous)
             struct ListUsers {
                 typealias APIResponse = [User]
                 static let query = ListUsersQuery()
@@ -778,7 +798,7 @@ struct MacroExpansionTests {
     func apiDefinitionFullWidthPercentEscape() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: .get, path: "/files/%ＦＦ", auth: .public)
+            @APIDefinition(method: .get, path: "/files/%ＦＦ", auth: .anonymous)
             struct GetFile {
                 typealias APIResponse = FileResponse
             }
@@ -804,7 +824,7 @@ struct MacroExpansionTests {
     func apiDefinitionDynamicPayloadMethod() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: EndpointMethods.create, path: "/users", auth: .public)
+            @APIDefinition(method: EndpointMethods.create, path: "/users", auth: .anonymous)
             struct CreateUser {
                 typealias APIResponse = User
                 let body: CreateUserRequest
@@ -833,7 +853,7 @@ struct MacroExpansionTests {
     func apiDefinitionQualifiedCases() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: InnoNetwork.HTTPMethod.post, path: "/users", auth: InnoNetwork.APIAuthentication.required)
+            @APIDefinition(method: InnoNetwork.HTTPMethod.post, path: "/users", auth: InnoNetwork.SessionAuthentication.required)
             struct CreateUser {
                 typealias APIResponse = User
                 let body: CreateUserRequest
@@ -846,7 +866,7 @@ struct MacroExpansionTests {
                     let body: CreateUserRequest
                 }
 
-                extension CreateUser: APIDefinition {
+                extension CreateUser: InnoNetwork.APIDefinition {
                     internal typealias Parameter = CreateUserRequest
                     internal var parameters: Parameter? {
                         func normalized<Value>(_ value: Value) -> Value? {
@@ -860,15 +880,104 @@ struct MacroExpansionTests {
                         }
                         return normalized(body)
                     }
-                    internal typealias Auth = AuthRequiredScope
-                    internal var method: HTTPMethod {
+                    internal var sessionAuthentication: InnoNetwork.SessionAuthentication {
+                        .required
+                    }
+                    internal var method: InnoNetwork.HTTPMethod {
                         InnoNetwork.HTTPMethod.post
                     }
-                    internal var path: String {
+                    internal var path: Swift.String {
                         "/users"
                     }
                 }
                 """,
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro rejects stored values that would be silently dropped")
+    func apiDefinitionRejectsUnusedStoredProperty() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .post, path: "/users", auth: .anonymous)
+            struct CreateUser {
+                typealias APIResponse = User
+                let request: CreateUserRequest
+            }
+            """,
+            expandedSource:
+                """
+                struct CreateUser {
+                    typealias APIResponse = User
+                    let request: CreateUserRequest
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition stored property 'request' is not used by the route or inferred payload. In simple mode place GET values in 'query' and non-GET values in 'body', or declare a complete Parameter + parameters fallback.",
+                    line: 4,
+                    column: 9
+                )
+            ],
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro rejects tuple-destructured stored values")
+    func apiDefinitionRejectsTupleStoredPropertyPattern() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .get, path: "/users", auth: .anonymous)
+            struct ListUsers {
+                typealias APIResponse = [User]
+                let (page, limit): (Int, Int)
+            }
+            """,
+            expandedSource:
+                """
+                struct ListUsers {
+                    typealias APIResponse = [User]
+                    let (page, limit): (Int, Int)
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition simple mode requires each stored property to use a single identifier; tuple and other destructuring patterns cannot be inferred. Declare individual stored properties or use a complete Parameter + parameters fallback.",
+                    line: 4,
+                    column: 9
+                )
+            ],
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro rejects nested destructuring before route inference")
+    func apiDefinitionRejectsNestedStoredPropertyPattern() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .get, path: "/users/{page}", auth: .anonymous)
+            struct ListUsers {
+                typealias APIResponse = [User]
+                let (page, (offset, limit)): (Int, (Int, Int))
+            }
+            """,
+            expandedSource:
+                """
+                struct ListUsers {
+                    typealias APIResponse = [User]
+                    let (page, (offset, limit)): (Int, (Int, Int))
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition simple mode requires each stored property to use a single identifier; tuple and other destructuring patterns cannot be inferred. Declare individual stored properties or use a complete Parameter + parameters fallback.",
+                    line: 4,
+                    column: 9
+                )
+            ],
             macros: macros
         )
     }

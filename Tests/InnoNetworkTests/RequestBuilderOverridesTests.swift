@@ -8,6 +8,7 @@ import os
 struct RequestBuilderOverridesTests {
 
     private struct OverrideEndpoint: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = BaseURLResponse
 
@@ -22,6 +23,7 @@ struct RequestBuilderOverridesTests {
     }
 
     private struct InheritsClientDefaultsEndpoint: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = BaseURLResponse
 
@@ -34,6 +36,7 @@ struct RequestBuilderOverridesTests {
     }
 
     private struct GetWithJSONBodyEndpoint: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = GetWithBodyParameters
         typealias APIResponse = BaseURLResponse
 
@@ -44,6 +47,7 @@ struct RequestBuilderOverridesTests {
     }
 
     private struct DuplicateAuthHeaderEndpoint: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
         typealias Parameter = EmptyParameter
         typealias APIResponse = BaseURLResponse
 

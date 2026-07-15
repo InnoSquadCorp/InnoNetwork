@@ -45,7 +45,8 @@ public struct APIDefinitionMacro: ExtensionMacro {
                 id: "api-definition-missing-response"
             ).error(at: structDeclaration.name)
         }
-        for ownedMember in ["method", "path"] where declaresVariable(named: ownedMember, in: structDeclaration) {
+        for ownedMember in ["method", "path", "sessionAuthentication"]
+        where declaresVariable(named: ownedMember, in: structDeclaration) {
             throw InnoNetworkMacroDiagnostic(
                 "@APIDefinition owns the generated \(ownedMember) witness; remove the explicit \(ownedMember) property.",
                 id: "api-definition-explicit-\(ownedMember)-conflict"
@@ -61,14 +62,27 @@ public struct APIDefinitionMacro: ExtensionMacro {
         let pathLiteral = try stringLiteralArgument(named: "path", in: arguments)
         try validatePathLiteral(pathLiteral, anchor: pathArgument.expression)
         if !hasCompleteManualPayloadContract(in: structDeclaration) {
+            try validateSimpleStoredPropertyPatterns(in: structDeclaration)
             try validateSimplePayloadDeclarations(in: structDeclaration)
         }
         let properties = storedProperties(in: declaration)
-        let path = try interpolatedPath(pathLiteral, properties: properties, anchor: pathArgument.expression)
+        var pathProperties: Set<String> = []
+        let path = try interpolatedPath(
+            pathLiteral,
+            properties: properties,
+            usedProperties: &pathProperties,
+            anchor: pathArgument.expression
+        )
+        if !hasCompleteManualPayloadContract(in: structDeclaration) {
+            try validateEveryStoredPropertyIsConsumed(
+                in: structDeclaration,
+                pathProperties: pathProperties
+            )
+        }
         let typeName = type.trimmedDescription
         let accessPrefix = witnessAccessPrefix(in: declaration)
         if let parameterAlias = typeAlias(named: "Parameter", in: declaration),
-            parameterAlias.initializer.value.trimmedDescription == "EmptyParameter",
+            isEmptyParameterType(parameterAlias.initializer.value),
             !declaresVariable(named: "parameters", in: declaration),
             properties["body"] == nil,
             properties["query"] == nil
@@ -88,17 +102,11 @@ public struct APIDefinitionMacro: ExtensionMacro {
             anchor: methodArgument.expression,
             accessPrefix: accessPrefix
         )
-        if declaresTypeAlias(named: "Auth", in: declaration) {
-            throw InnoNetworkMacroDiagnostic(
-                "@APIDefinition auth: owns the Auth witness; remove the explicit typealias Auth.",
-                id: "api-definition-explicit-auth-conflict"
-            ).error(at: declaration)
-        }
-        if authentication == .required {
-            witnesses.append("\(accessPrefix)typealias Auth = AuthRequiredScope")
-        }
-        witnesses.append("\(accessPrefix)var method: HTTPMethod { \(method) }")
-        witnesses.append("\(accessPrefix)var path: String { \"\(path)\" }")
+        witnesses.append(
+            "\(accessPrefix)var sessionAuthentication: InnoNetwork.SessionAuthentication { .\(authentication.caseName) }"
+        )
+        witnesses.append("\(accessPrefix)var method: InnoNetwork.HTTPMethod { \(method) }")
+        witnesses.append("\(accessPrefix)var path: Swift.String { \"\(path)\" }")
         let witnessSource =
             witnesses
             .map {
@@ -111,7 +119,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
         return [
             try ExtensionDeclSyntax(
                 """
-                extension \(raw: typeName): APIDefinition {
+                extension \(raw: typeName): InnoNetwork.APIDefinition {
                     \(raw: witnessSource)
                 }
                 """
@@ -120,19 +128,30 @@ public struct APIDefinitionMacro: ExtensionMacro {
     }
 
     private enum Authentication {
-        case publicAccess
+        case anonymous
+        case optional
         case required
+
+        var caseName: String {
+            switch self {
+            case .anonymous: return "anonymous"
+            case .optional: return "optional"
+            case .required: return "required"
+            }
+        }
     }
 
     private static func authentication(from argument: LabeledExprSyntax) throws -> Authentication {
         switch enumCaseName(from: argument.expression) {
-        case "public":
-            return .publicAccess
+        case "anonymous":
+            return .anonymous
+        case "optional":
+            return .optional
         case "required":
             return .required
         default:
             throw InnoNetworkMacroDiagnostic(
-                "@APIDefinition auth: must be the explicit .public or .required enum case.",
+                "@APIDefinition auth: must be the explicit .anonymous, .optional, or .required enum case.",
                 id: "api-definition-invalid-auth"
             ).error(at: argument.expression)
         }
@@ -326,6 +345,72 @@ public struct APIDefinitionMacro: ExtensionMacro {
         }
     }
 
+    /// Simple mode can only map identifier-named stored values to path and
+    /// payload roles. Reject destructuring up front so tuple-bound values do
+    /// not disappear from the generated request without a diagnostic.
+    private static func validateSimpleStoredPropertyPatterns(
+        in declaration: some DeclGroupSyntax
+    ) throws {
+        for member in declaration.memberBlock.members {
+            guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
+            for binding in variable.bindings {
+                guard isEligibleStoredInstanceProperty(variable: variable, binding: binding),
+                    !binding.pattern.is(IdentifierPatternSyntax.self)
+                else {
+                    continue
+                }
+                throw InnoNetworkMacroDiagnostic(
+                    "@APIDefinition simple mode requires each stored property to use a single identifier; tuple and other destructuring patterns cannot be inferred. Declare individual stored properties or use a complete Parameter + parameters fallback.",
+                    id: "api-definition-nonidentifier-stored-property"
+                ).error(at: binding.pattern)
+            }
+        }
+    }
+
+    /// Simple mode is deliberately fail-closed: every stored value must be
+    /// part of the route, the inferred payload, or an explicit endpoint
+    /// witness. Without this check a misspelled `body`/`query` property still
+    /// compiles while the generated request silently drops the value.
+    private static func validateEveryStoredPropertyIsConsumed(
+        in declaration: some DeclGroupSyntax,
+        pathProperties: Set<String>
+    ) throws {
+        let endpointWitnesses: Set<String> = [
+            "headers",
+            "logger",
+            "requestInterceptors",
+            "requestSigners",
+            "responseInterceptors",
+            "acceptableStatusCodes",
+            "transport",
+            "timeoutOverride",
+            "cachePolicyOverride",
+            "priorityOverride",
+            "allowsCellularAccessOverride",
+            "allowsExpensiveNetworkAccessOverride",
+            "allowsConstrainedNetworkAccessOverride",
+        ]
+        let consumed = pathProperties
+            .union(["body", "query"])
+            .union(endpointWitnesses)
+
+        for member in declaration.memberBlock.members {
+            guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
+            for binding in variable.bindings {
+                guard isEligibleStoredInstanceProperty(variable: variable, binding: binding),
+                    let identifier = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
+                    !consumed.contains(identifier)
+                else {
+                    continue
+                }
+                throw InnoNetworkMacroDiagnostic(
+                    "@APIDefinition stored property '\(identifier)' is not used by the route or inferred payload. In simple mode place GET values in 'query' and non-GET values in 'body', or declare a complete Parameter + parameters fallback.",
+                    id: "api-definition-unused-stored-property"
+                ).error(at: binding.pattern)
+            }
+        }
+    }
+
     private static func storedProperties(in declaration: some DeclGroupSyntax) -> [String: StoredProperty] {
         let genericParameters = genericParameterNames(in: declaration)
         var properties: [String: StoredProperty] = [:]
@@ -376,7 +461,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
         }
 
         if let parameterAlias, !hasParameters {
-            if parameterAlias.initializer.value.trimmedDescription == "EmptyParameter" {
+            if isEmptyParameterType(parameterAlias.initializer.value) {
                 if properties["body"] != nil || properties["query"] != nil {
                     throw InnoNetworkMacroDiagnostic(
                         "@APIDefinition body/query inference conflicts with the explicit EmptyParameter alias; remove the alias or use a complete Parameter + parameters fallback.",
@@ -457,7 +542,12 @@ public struct APIDefinitionMacro: ExtensionMacro {
             ]
         }
 
-        return ["\(accessPrefix)typealias Parameter = EmptyParameter"]
+        return ["\(accessPrefix)typealias Parameter = InnoNetwork.EmptyParameter"]
+    }
+
+    private static func isEmptyParameterType(_ type: TypeSyntax) -> Bool {
+        let source = type.trimmedDescription
+        return source == "EmptyParameter" || source == "InnoNetwork.EmptyParameter"
     }
 
     private enum MethodKind {
@@ -794,6 +884,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
     private static func interpolatedPath(
         _ path: String,
         properties: [String: StoredProperty],
+        usedProperties: inout Set<String>,
         anchor: some SyntaxProtocol
     ) throws -> String {
         var result = ""
@@ -835,6 +926,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
                 case .concrete:
                     break
                 }
+                usedProperties.insert(name)
                 result += "\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(\(name)))"
                 index = path.index(after: close)
             } else if character == "}" {

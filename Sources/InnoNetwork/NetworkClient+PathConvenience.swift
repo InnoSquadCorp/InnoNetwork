@@ -12,11 +12,11 @@ extension NetworkClient {
     /// )
     /// ```
     ///
-    /// The endpoint is materialized with ``PublicAuthScope`` and the default
+    /// The endpoint is materialized with anonymous session authentication and the default
     /// ``TransportPolicy`` for the chosen method (`.query()` for GET,
     /// `.json()` otherwise) — the same defaults `EndpointBuilder` would
     /// pick for the equivalent builder chain. Endpoints that need
-    /// authenticated scopes, custom headers, body parameters, or
+    /// authenticated sessions, custom headers, body parameters, or
     /// per-endpoint interceptors should keep using ``EndpointBuilder``
     /// builders or a hand-written ``APIDefinition``.
     ///
@@ -34,7 +34,7 @@ extension NetworkClient {
         tag: CancellationTag? = nil
     ) async throws -> T {
         try await self.request(
-            EndpointBuilder<T, PublicAuthScope>(method: method, path: path),
+            EndpointBuilder<T>(method: method, path: path),
             tag: tag
         )
     }

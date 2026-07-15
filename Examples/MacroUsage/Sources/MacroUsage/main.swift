@@ -14,13 +14,13 @@ struct CreateUserRequest: Encodable, Sendable {
     let name: String
 }
 
-@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
 struct GetUser {
     let id: Int
     typealias APIResponse = User
 }
 
-@APIDefinition(method: .get, path: "/users", auth: .public)
+@APIDefinition(method: .get, path: "/users", auth: .anonymous)
 struct ListUsers {
     typealias APIResponse = [User]
     let query: ListUsersQuery
