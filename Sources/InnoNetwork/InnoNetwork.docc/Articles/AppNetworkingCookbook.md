@@ -62,7 +62,7 @@ struct AppNetworking: Sendable {
 
 `PersistentResponseCache` refuses credential-like request keys,
 `Cache-Control: private`, and `Set-Cookie` responses by default, and applies
-`.completeUnlessOpen` data protection to its files. Even with
+`.completeUntilFirstUserAuthentication` data protection to its files. Even with
 `storesAuthenticatedResponses: true`, responses to requests carrying
 `Authorization` are stored only when the origin explicitly permits it with
 `Cache-Control: public`, `must-revalidate`, or `s-maxage`.
@@ -75,8 +75,8 @@ not fully visible at the cache abstraction boundary.
 
 ## Typed Auth Boundary
 
-Use `EndpointBuilder<EmptyResponse, AuthRequiredScope>` for requests that must
-not run unless the client has a refresh policy.
+Use `.authentication(.required)` for requests that must not run unless the
+client has a refresh policy capable of supplying a token.
 
 ```swift
 struct Profile: Decodable, Sendable {
@@ -85,18 +85,20 @@ struct Profile: Decodable, Sendable {
 }
 
 let profile = try await networking.api.request(
-    EndpointBuilder<EmptyResponse, AuthRequiredScope>
+    EndpointBuilder<EmptyResponse>
         .get("/me")
+        .authentication(.required)
         .decoding(Profile.self)
 )
 ```
 
-Public calls use `EndpointBuilder<EmptyResponse, PublicAuthScope>`:
+Anonymous calls choose `.anonymous` explicitly:
 
 ```swift
 let catalog = try await networking.api.request(
-    EndpointBuilder<EmptyResponse, PublicAuthScope>
+    EndpointBuilder<EmptyResponse>
         .get("/catalog")
+        .authentication(.anonymous)
         .decoding(Catalog.self)
 )
 ```

@@ -20,9 +20,13 @@ request must use the full InnoNetwork execution pipeline.
 
 The 5.x preview tool accepts JSON or YAML input, emits Codable schema structs
 for `components.schemas`, and wires typed `Parameter` / `APIResponse` aliases
-when operations use `$ref`. It still always emits `PublicAuthScope` and rejects
-path templates; authenticated mapping and broader OpenAPI coverage remain
-follow-up work.
+when operations use `$ref`. It explicitly emits
+`sessionAuthentication: SessionAuthentication { .anonymous }` for every
+operation and rejects path templates; security-scheme mapping and broader
+OpenAPI coverage remain follow-up work. The generator does not infer auth from
+operation names, headers, or status codes. Replace auth-required operations
+with app-owned definitions or run deterministic post-processing after every
+generation before shipping them.
 
 ```bash
 cd Tools/openapi-to-innonetwork

@@ -13,7 +13,7 @@ one-off or runtime-composed request.
 ## Request Path
 
 ```text
-auth-scope preflight
+session-authentication preflight
   -> build request and body
   -> configuration request interceptors
   -> endpoint request interceptors
@@ -67,27 +67,33 @@ response-cache freshness, or circuit-breaker state; those remain owned by the
 built-in policy layers so cancellation, metrics, and cache semantics stay
 consistent.
 
-## Auth Scope
+## Session Authentication
 
-`APIDefinition` now carries an auth marker:
+Every `APIDefinition` declares how it participates in the configured bearer
+token refresh policy:
 
 ```swift
-associatedtype Auth: AuthScope = PublicAuthScope
+var sessionAuthentication: SessionAuthentication { get }
 ```
 
-Fluent public endpoints use `EndpointBuilder<Response, PublicAuthScope>`.
-Authenticated fluent calls use `EndpointBuilder<Response, AuthRequiredScope>`,
-or a custom `APIDefinition` with `typealias Auth = AuthRequiredScope`.
-Auth-required requests fail before transport with
+Fluent calls use `EndpointBuilder<Response>` and choose
+`.authentication(.anonymous)`, `.authentication(.optional)`, or
+`.authentication(.required)`. A custom `APIDefinition` exposes the same choice
+through its `sessionAuthentication` property. Required requests fail before transport with
 `NetworkError.configuration(reason: .invalidRequest(...))` when the client
-configuration has no `RefreshTokenPolicy`.
+configuration has no `RefreshTokenPolicy`; token acquisition failures also
+surface without sending an anonymous request. Anonymous endpoints never invoke
+the policy, while optional endpoints may use it when configured but can proceed
+without one.
 
 ## Macro Boundary
 
 The root package's default `Macros` trait exposes `@APIDefinition` through
-`import InnoNetwork`. It derives method, percent-encoded path, auth scope, and
-simple body/query payload witnesses. Missing response/auth contracts and
-ambiguous definitions fail at compile time. It does not generate client
+`import InnoNetwork`. It derives method, percent-encoded path,
+`sessionAuthentication`, and simple body/query payload witnesses. Stored
+`query` values are inferred for GET/HEAD; stored `body` values are inferred for
+POST/PUT/PATCH/DELETE. Missing response/auth contracts and ambiguous
+definitions fail at compile time. It does not generate client
 methods or absorb headers, interceptors, transport, decoding, multipart, or
 streaming responsibilities.
 

@@ -10,7 +10,7 @@ InnoNetworkOpenAPI	swift.enum.case	InnoNetworkClientTransportError.invalidReques
 InnoNetworkOpenAPI	swift.enum.case	InnoNetworkClientTransportError.invalidStatusCode(_:)
 InnoNetworkOpenAPI	swift.enum.case	InnoNetworkClientTransportError.nonHTTPResponse(_:)
 InnoNetworkOpenAPI	swift.enum.case	InnoNetworkClientTransportError.responseBodyTooLarge(limit:received:)
-InnoNetworkOpenAPI	swift.init	InnoNetworkClientTransport.init(session:requestBodyByteLimit:responseBodyByteLimit:)
+InnoNetworkOpenAPI	swift.init	InnoNetworkClientTransport.init(session:allowsInsecureHTTP:requestBodyByteLimit:responseBodyByteLimit:)
 InnoNetworkOpenAPI	swift.init	OpenAPIRequest.init(_:)
 InnoNetworkOpenAPI	swift.method	InnoNetworkClientTransport.send(_:body:baseURL:operationID:)
 InnoNetworkOpenAPI	swift.property	InnoNetworkClientTransport.requestBodyByteLimit
@@ -21,12 +21,14 @@ InnoNetworkOpenAPI	swift.property	OpenAPIRequest.headers
 InnoNetworkOpenAPI	swift.property	OpenAPIRequest.method
 InnoNetworkOpenAPI	swift.property	OpenAPIRequest.parameters
 InnoNetworkOpenAPI	swift.property	OpenAPIRequest.path
+InnoNetworkOpenAPI	swift.property	OpenAPIRequest.sessionAuthentication
 InnoNetworkOpenAPI	swift.property	OpenAPIRequest.transport
 InnoNetworkOpenAPI	swift.property	OpenAPIRestOperation.acceptableStatusCodes
 InnoNetworkOpenAPI	swift.property	OpenAPIRestOperation.headers
 InnoNetworkOpenAPI	swift.property	OpenAPIRestOperation.method
 InnoNetworkOpenAPI	swift.property	OpenAPIRestOperation.parameters
 InnoNetworkOpenAPI	swift.property	OpenAPIRestOperation.path
+InnoNetworkOpenAPI	swift.property	OpenAPIRestOperation.sessionAuthentication
 InnoNetworkOpenAPI	swift.property	OpenAPIRestOperation.transport
 InnoNetworkOpenAPI	swift.protocol	OpenAPIRestOperation
 InnoNetworkOpenAPI	swift.struct	OpenAPIRequest

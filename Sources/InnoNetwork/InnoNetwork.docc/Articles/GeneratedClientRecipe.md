@@ -32,7 +32,7 @@ can use the root macro without entering SPI:
 ```swift
 import InnoNetwork
 
-@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
 struct GeneratedGetUser {
     typealias APIResponse = User
 
@@ -57,6 +57,7 @@ protocol GeneratedRESTContract: Sendable {
     var parameters: Parameter? { get }
     var method: HTTPMethod { get }
     var path: String { get }
+    var sessionAuthentication: SessionAuthentication { get }
 }
 
 struct GeneratedRESTRequest<Operation: GeneratedRESTContract>: APIDefinition {
@@ -68,6 +69,7 @@ struct GeneratedRESTRequest<Operation: GeneratedRESTContract>: APIDefinition {
     var parameters: Parameter? { operation.parameters }
     var method: HTTPMethod { operation.method }
     var path: String { operation.path }
+    var sessionAuthentication: SessionAuthentication { operation.sessionAuthentication }
 }
 ```
 
@@ -86,6 +88,7 @@ protocol GeneratedExecutableContract: Sendable {
 
     var method: HTTPMethod { get }
     var path: String { get }
+    var sessionAuthentication: SessionAuthentication { get }
     var headers: HTTPHeaders { get }
 
     func makePayload() throws -> RequestPayload
@@ -102,6 +105,7 @@ struct GeneratedExecutable<Operation: GeneratedExecutableContract>: SingleReques
     var responseInterceptors: [ResponseInterceptor] { [] }
     var method: HTTPMethod { operation.method }
     var path: String { operation.path }
+    var sessionAuthentication: SessionAuthentication { operation.sessionAuthentication }
     var headers: HTTPHeaders { operation.headers }
 
     func makePayload() throws -> RequestPayload {

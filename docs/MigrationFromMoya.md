@@ -51,7 +51,7 @@ let user = try JSONDecoder().decode(User.self, from: response.data)
 import Foundation
 import InnoNetwork
 
-@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
 struct GetUser {
     typealias APIResponse = User
     let id: Int
@@ -63,39 +63,34 @@ struct UpdateNameBody: Encodable, Sendable {
     let displayName: String
 }
 
-@APIDefinition(method: .patch, path: "/me", auth: .public)
+@APIDefinition(method: .patch, path: "/me", auth: .required)
 struct UpdateName {
     typealias APIResponse = User
 
     let body: UpdateNameBody
-    let token: String
 
     var headers: HTTPHeaders {
         ["Accept": "application/json",
-         "Authorization": "Bearer \(token)",
          "Idempotency-Key": UUID().uuidString]
     }
 }
 
 let client = DefaultNetworkClient(
-    configuration: .recommendedForProduction(
-        baseURL: URL(string: "https://api.example.com/v1")!
+    configuration: .advanced(
+        baseURL: URL(string: "https://api.example.com/v1")!,
+        auth: AuthPack(refreshToken: refreshPolicy)
     )
 )
 
 let user = try await client.request(GetUser(id: 1))
 
-let token = currentAccessToken
 let updated = try await client.request(
-    UpdateName(
-        body: UpdateNameBody(displayName: "Taylor"),
-        token: token
-    )
+    UpdateName(body: UpdateNameBody(displayName: "Taylor"))
 )
 ```
 
 Convert one case at a time. If a Moya case has plugin-specific behaviour,
 move that logic to `NetworkConfiguration` interceptors or keep it explicit on
-the endpoint struct rather than recreating a large enum. The manual bearer
-header is transitional: move token ownership to `RefreshTokenPolicy`, change
-the endpoint to `auth: .required`, and remove the token property/header.
+the endpoint struct rather than recreating a large enum. Keep bearer-token
+ownership in `RefreshTokenPolicy`; `auth: .required` prevents the update
+request from being sent anonymously when that policy cannot provide a token.

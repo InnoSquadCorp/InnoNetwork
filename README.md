@@ -59,10 +59,11 @@ wrapper or Alamofire-style helper:
   value type at compile time (e.g. `.contentType`, `.authorization`,
   custom phantom keys). Typos and value/type mismatches fail at build,
   not at runtime.
-- **`AuthScope` marker protocol** — every endpoint declares its auth
-  requirement (`PublicAuthScope`, `AuthRequiredScope`, custom scopes)
-  as a compile-time marker. The single-flight `RefreshTokenPolicy` only
-  refreshes for endpoints that opted in.
+- **Explicit session authentication** — every endpoint declares
+  `SessionAuthentication` as `.anonymous`, `.optional`, or `.required`.
+  Required endpoints fail before transport when no refresh policy can provide
+  a token; the single-flight `RefreshTokenPolicy` only refreshes endpoints
+  that opted in.
 - **Single-flight refresh + idempotency-aware retry** — concurrent 401s
   coalesce into one refresh call (`RefreshTokenCoordinator`). Retries
   follow RFC 9110: `GET`, `HEAD`, `OPTIONS`, and `TRACE` retry by default;
@@ -168,14 +169,14 @@ struct Post: Decodable, Sendable {
     let title: String
 }
 
-@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
 struct GetUser {
     typealias APIResponse = User
 
     let id: Int
 }
 
-@APIDefinition(method: .post, path: "/posts", auth: .public)
+@APIDefinition(method: .post, path: "/posts", auth: .anonymous)
 struct CreatePostEndpoint {
     typealias APIResponse = Post
 
@@ -199,17 +200,20 @@ print(user)
 `GetUser` and `CreatePostEndpoint` remain ordinary, explicit value types. The
 macro adds `APIDefinition` conformance, `method`, `path`, and the simple
 `Parameter` / `parameters` witnesses. `APIResponse` stays visible, and every
-attribute must choose `auth: .public` or `.required`; the macro never guesses a
-security boundary. A stored `query` is inferred for GET, and a stored `body` is
-inferred for non-GET methods.
+attribute must choose `auth: .anonymous`, `.optional`, or `.required`; the
+macro never guesses a security boundary. A stored `query` is inferred for GET
+and HEAD; a stored `body` is inferred only for POST, PUT, PATCH, and DELETE.
+OPTIONS, CONNECT, TRACE, custom, and dynamic methods require a complete
+`Parameter` + `parameters` payload contract.
 
 Use `EndpointBuilder` when a request is genuinely local or runtime-composed:
 
 ```swift
 let previewPath = "/users/preview"
 let preview = try await client.request(
-    EndpointBuilder<EmptyResponse, PublicAuthScope>
+    EndpointBuilder<EmptyResponse>
         .get(previewPath)
+        .authentication(.anonymous)
         .decoding(User.self)
 )
 ```
@@ -223,7 +227,7 @@ struct UserPatch: Encodable, Sendable {
     let displayName: String
 }
 
-@APIDefinition(method: .patch, path: "/me", auth: .public)
+@APIDefinition(method: .patch, path: "/me", auth: .anonymous)
 struct UpdateUser {
     typealias Parameter = UserPatch
     typealias APIResponse = User
@@ -239,9 +243,10 @@ struct UpdateUser {
 ```
 
 `APIDefinition` exposes one transport-shape entry point —
-`transport: TransportPolicy<APIResponse>`. The default is method-aware
-(`GET` → `.query()`, otherwise `.json()`), so most endpoint structs do not
-override it.
+`transport: TransportPolicy<APIResponse>`. For macro-assisted simple payloads,
+GET and HEAD use `.query()`, while POST, PUT, PATCH, and DELETE use `.json()`.
+Other methods keep their payload and any non-default transport explicit on the
+endpoint struct.
 
 ```swift
 let patched = try await client.request(
@@ -345,7 +350,8 @@ for await event in await manager.events(for: task) {
 - retry coordination, stable idempotency keys, auth refresh, request coalescing, response cache, and circuit breaker policies
 - streaming-by-default inline response buffering and public `RequestExecutionPolicy` hooks
 - W3C `traceparent` propagation and curl command export helpers
-- phantom auth scopes through `EndpointBuilder`, `PublicAuthScope`, and `AuthRequiredScope`
+- explicit `.anonymous`, `.optional`, and `.required` session authentication
+  through `APIDefinition` and `EndpointBuilder`
 - trust policy support and request lifecycle observability
 
 ### `InnoNetworkDownload`
@@ -370,7 +376,8 @@ for await event in await manager.events(for: task) {
 - actor-backed `ResponseCache` implementation for on-disk GET caching
 - default 50 MB / 1000 entry / 5 MB per-entry caps
 - refuses authenticated, `Cache-Control: private`, and `Set-Cookie` responses by default
-- applies `.completeUnlessOpen` data protection to cache files by default
+- applies `.completeUntilFirstUserAuthentication` data protection to cache files by default
+- excludes cache-owned indexes, keys, and bodies from backup while leaving the caller-supplied directory root unchanged
 - `dataProtectionClass: .none` requests `NSFileProtectionNone` for cache-owned paths
 - versioned index and hashed body files with corrupt-entry eviction
 
@@ -398,7 +405,10 @@ for await event in await manager.events(for: task) {
 - default-enabled `@APIDefinition(method:path:auth:)` from `import InnoNetwork`
 - explicit endpoint structs remain the source of truth
 - `APIResponse` and authentication intent stay mandatory and visible
-- simple GET `query` or non-GET `body` properties derive payload witnesses
+- simple GET/HEAD `query` or POST/PUT/PATCH/DELETE `body` properties derive
+  payload witnesses
+- OPTIONS, CONNECT, TRACE, custom, and dynamic methods require a complete
+  `Parameter` + `parameters` payload contract
 - complete `Parameter` + `parameters` declarations remain authoritative
 - compile-time diagnostics reject incomplete or ambiguous definitions
 - `traits: []` excludes macro APIs and compiler plug-in compilation for
@@ -614,7 +624,7 @@ The default `Macros` trait exposes `@APIDefinition` directly from
 ```swift
 import InnoNetwork
 
-@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
 struct GetUser {
     typealias APIResponse = User
 
@@ -622,11 +632,12 @@ struct GetUser {
 }
 ```
 
-The attribute derives conformance, method, percent-encoded path, auth scope,
-and simple payload witnesses. It does not hide the response model or endpoint
-policy: `APIResponse`, stored inputs, headers, interceptors, transport, and
-decoding choices remain visible on the struct. A complete `Parameter` +
-`parameters` pair overrides body/query inference for advanced endpoints.
+The attribute derives conformance, method, percent-encoded path,
+`sessionAuthentication`, and simple payload witnesses. It does not hide the
+response model or endpoint policy: `APIResponse`, stored inputs, headers,
+interceptors, transport, and decoding choices remain visible on the struct. A
+complete `Parameter` + `parameters` pair overrides body/query inference for
+advanced endpoints.
 
 Invalid definitions fail at compile time with a diagnostic and, where safe, a
 Fix-It. The 4.x `#endpoint` expression macro is removed; use `EndpointBuilder`

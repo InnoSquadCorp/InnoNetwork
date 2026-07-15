@@ -1121,7 +1121,7 @@ struct MacroExpansionTests {
             diagnostics: [
                 DiagnosticSpec(
                     message:
-                        "@APIDefinition stored property 'request' is not used by the route or inferred payload. In simple mode place GET values in 'query' and non-GET values in 'body', or declare a complete Parameter + parameters fallback.",
+                        "@APIDefinition stored property 'request' is not used by the route or inferred payload. In simple mode place GET/HEAD values in 'query' and POST/PUT/PATCH/DELETE values in 'body'; for every other method declare a complete Parameter + parameters fallback.",
                     line: 4,
                     column: 9
                 )

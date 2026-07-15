@@ -3,8 +3,8 @@ import InnoNetwork
 
 /// Configuration for ``PersistentResponseCache``.
 ///
-/// `directoryURL` is the only required parameter; the remaining knobs default
-/// to the values documented in the 4.0.0 RFC (50 MB total, 1,000 entries,
+/// `directoryURL` is the only required parameter; the remaining knobs use the
+/// current hardened defaults (50 MB total, 1,000 entries,
 /// 5 MB per entry, no authenticated responses, no `Cache-Control: private`
 /// responses, no `Set-Cookie` responses,
 /// `.completeUntilFirstUserAuthentication` data protection).
@@ -71,10 +71,12 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
         case never
     }
 
-    /// Directory the cache uses for its `index.json` and SHA-256-addressed
-    /// body files. The directory is created on first use. The cache writes
-    /// only to its own subtree (`index.json` and `bodies/`); other files
-    /// inside the directory are never deleted.
+    /// Directory the cache uses for `index.json`, SHA-256-addressed body
+    /// files, and the file-backed HMAC key when ``KeyStorage/file`` is used.
+    /// The directory is created on first use. Cache-owned artifacts are
+    /// excluded from backup, but the supplied root is not because it may also
+    /// contain app-owned files. Unrelated files inside the directory are never
+    /// deleted.
     public let directoryURL: URL
     /// Total byte budget across all body files. Eviction fires synchronously
     /// when this is exceeded.
@@ -108,8 +110,8 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     /// the cache key. Defaults to ``KeyStorage/file``.
     public let keyStorage: KeyStorage
 
-    /// Build a configuration. Only `directoryURL` is required; defaults match
-    /// the 4.0.0 RFC ("Implementation decisions" table).
+    /// Build a configuration. Only `directoryURL` is required; the remaining
+    /// arguments use the current hardened defaults.
     public init(
         directoryURL: URL,
         maxBytes: Int = 50 * 1024 * 1024,

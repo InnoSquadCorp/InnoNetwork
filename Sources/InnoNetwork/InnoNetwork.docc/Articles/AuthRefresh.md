@@ -20,10 +20,9 @@ let refreshPolicy = RefreshTokenPolicy(
 
 let client = DefaultNetworkClient(
     configuration: .advanced(
-        baseURL: URL(string: "https://api.example.com")!
-    ) { builder in
-        builder.refreshTokenPolicy = refreshPolicy
-    }
+        baseURL: URL(string: "https://api.example.com")!,
+        auth: AuthPack(refreshToken: refreshPolicy)
+    )
 )
 ```
 
@@ -56,16 +55,17 @@ succeeds, fails, or the coordinator is released.
 
 ## Mark Auth-Required Endpoints
 
-4.0.0 adds a type-level auth marker so an authenticated endpoint cannot
-silently run through a public client configuration:
+Choose `.required` explicitly so an authenticated endpoint cannot silently run
+through a client configuration that has no token provider:
 
 ```swift
 struct Profile: Decodable, Sendable {
     let id: String
 }
 
-let endpoint = EndpointBuilder<EmptyResponse, AuthRequiredScope>
+let endpoint = EndpointBuilder<EmptyResponse>
     .get("/me")
+    .authentication(.required)
     .decoding(Profile.self)
 
 let profile = try await client.request(endpoint)
@@ -77,15 +77,15 @@ Custom endpoint definitions can opt into the same preflight guard:
 struct GetProfile: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = Profile
-    typealias Auth = AuthRequiredScope
-
     let method: HTTPMethod = .get
     let path = "/me"
+    let sessionAuthentication: SessionAuthentication = .required
 }
 ```
 
 If the client has no ``NetworkConfiguration/refreshTokenPolicy``, the request
 fails before transport with ``NetworkError/configuration(reason:)`` and
-``NetworkConfigurationFailureReason/invalidRequest(_:)``.
-Public endpoints use ``PublicAuthScope`` by default and do not require a
-refresh policy.
+``NetworkConfigurationFailureReason/invalidRequest(_:)``. Named manual
+endpoints must also declare `sessionAuthentication`; use `.anonymous` when the
+request must never participate in bearer-token refresh, or `.optional` when it
+may use a configured token but is allowed to proceed without one.

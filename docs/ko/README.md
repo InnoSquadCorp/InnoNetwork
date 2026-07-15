@@ -47,7 +47,7 @@ dependencies: [
 import Foundation
 import InnoNetwork
 
-@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
 struct GetUser {
     typealias APIResponse = User
 
@@ -71,11 +71,11 @@ print(user)
 
 macro 를 사용해도 struct 가 endpoint 계약의 단일 기준입니다. `APIResponse`, 저장 프로퍼티,
 custom header/interceptor/transport/decoder 는 struct 에 명시적으로 남고, attribute 는
-`method`, `path`, `auth` 를 한눈에 보여 줍니다. `auth:` 는 `.public` 또는 `.required` 를
-반드시 선택해야 하며 자동 추론하지 않습니다.
+`method`, `path`, `auth` 를 한눈에 보여 줍니다. `auth:` 는 `.anonymous`, `.optional`,
+`.required` 중 하나를 반드시 선택해야 하며 자동 추론하지 않습니다.
 
-- GET 의 저장 `query` 프로퍼티는 `Parameter` / `parameters` 로 생성됩니다.
-- GET 이 아닌 메서드의 저장 `body` 프로퍼티도 같은 방식으로 생성됩니다.
+- GET/HEAD 의 저장 `query` 프로퍼티는 `Parameter` / `parameters` 로 생성됩니다.
+- POST/PUT/PATCH/DELETE 의 저장 `body` 프로퍼티도 같은 방식으로 생성됩니다.
 - 복잡한 payload 는 `typealias Parameter` 와 `var parameters` 를 모두 직접 선언하면 그 구현이
   우선합니다.
 - `#endpoint` expression macro 는 5.0 에서 제거되었습니다. 이름 없는 일회성 요청은
@@ -129,9 +129,13 @@ for await event in await manager.events(for: task) {
 ## Endpoint 정의 — `transport` 단일 진입점
 
 `APIDefinition` 은 인코딩/디코딩 형태를 단일 프로퍼티 `transport: TransportPolicy<APIResponse>`
-로 노출합니다. 기본값은 메서드에 따라 자동 선택되어 (`GET` → `.query()`, 그 외 → `.json()`)
+로 노출합니다. 기본값은 메서드에 따라 자동 선택되어 (GET/HEAD → `.query()`, 그 외 → `.json()`)
 대부분의 endpoint 는 별도 override 없이 작동합니다. 다른 형태가 필요하면 `TransportPolicy`
 factory 를 사용하세요.
+
+아래 `/me` 예시는 `AuthPack(refreshToken:)` 으로 `RefreshTokenPolicy` 를
+설정한 client 를 전제로 합니다. `.required` 요청은 해당 정책이 없으면 transport 전에
+실패합니다.
 
 ```swift
 struct UpdateProfile: APIDefinition {
@@ -141,6 +145,7 @@ struct UpdateProfile: APIDefinition {
     let parameters: ProfileBody?
     var method: HTTPMethod { .patch }
     var path: String { "/me" }
+    var sessionAuthentication: SessionAuthentication { .required }
 
     var transport: TransportPolicy<Profile> {
         .json(decoder: snakeCaseDecoder)
@@ -149,16 +154,18 @@ struct UpdateProfile: APIDefinition {
 
 // form-url-encoded 로그인
 let token = try await client.request(
-    EndpointBuilder<EmptyResponse, PublicAuthScope>
+    EndpointBuilder<EmptyResponse>
         .post("/login")
         .body(credentials)
+        .authentication(.anonymous)
         .transport(.formURLEncoded())
         .decoding(Token.self)
 )
 
 let profile = try await client.request(
-    EndpointBuilder<EmptyResponse, AuthRequiredScope>
+    EndpointBuilder<EmptyResponse>
         .get("/me")
+        .authentication(.required)
         .decoding(Profile.self)
 )
 ```

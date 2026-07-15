@@ -35,7 +35,7 @@ struct User: Decodable, Sendable {
     let name: String
 }
 
-@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
 struct GetUser {
     typealias APIResponse = User
 
@@ -44,15 +44,15 @@ struct GetUser {
 ```
 
 구조체가 endpoint 계약의 단일 기준입니다. 기본으로 활성화된 macro 는 conformance,
-method, percent-encoded path, auth scope, 빈 payload witness 만 생성합니다.
-`APIResponse` 와 `auth: .public` / `.required` 선택은 자동 추론하지 않고 반드시
-명시하게 합니다.
+method, percent-encoded path, `sessionAuthentication`, 빈 payload witness 만
+생성합니다. `APIResponse` 와 `auth: .anonymous` / `.optional` / `.required`
+선택은 자동 추론하지 않고 반드시 명시하게 합니다.
 
-GET 의 저장 `query` 또는 GET 이 아닌 메서드의 저장 `body` 프로퍼티는
-`Parameter` / `parameters` 로 생성됩니다. 복잡한 형태는 `Parameter` 와
-`parameters` 를 모두 직접 선언하면 그 구현이 우선합니다. header, interceptor,
-transport, decoder 도 구조체에 그대로 명시합니다. 전체 규칙은 <doc:UsingMacros> 를
-참고하세요.
+GET/HEAD 의 저장 `query` 또는 POST/PUT/PATCH/DELETE 의 저장 `body` 프로퍼티는
+`Parameter` / `parameters` 로 생성됩니다. OPTIONS, CONNECT, TRACE, custom,
+dynamic method 는 `Parameter` 와 `parameters` 를 모두 직접 선언해야 합니다.
+header, interceptor, transport, decoder 도 구조체에 그대로 명시합니다. 전체 규칙은
+<doc:UsingMacros> 를 참고하세요.
 
 ## 요청 실행
 
@@ -73,8 +73,9 @@ print(user.name)
 
 ```swift
 let users = try await client.request(
-    EndpointBuilder<EmptyResponse, PublicAuthScope>
+    EndpointBuilder<EmptyResponse>
         .get("/users")
+        .authentication(.anonymous)
         .query(["limit": 20])
         .decoding([User].self)
 )

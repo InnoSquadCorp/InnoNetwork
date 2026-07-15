@@ -2,20 +2,15 @@
 # Maintained alongside Scripts/check_docs_contract_sync.sh.
 # Format: <module>\t<kind>\t<declaration>
 # All entries in this file must have module = InnoNetwork.
-InnoNetwork	swift.associatedtype	APIDefinition.Auth
 InnoNetwork	swift.associatedtype	APIDefinition.Parameter
 InnoNetwork	swift.associatedtype	Endpoint.APIResponse
-InnoNetwork	swift.associatedtype	MultipartAPIDefinition.Auth
 InnoNetwork	swift.associatedtype	SingleRequestExecutable.APIResponse
-InnoNetwork	swift.associatedtype	StreamingAPIDefinition.Auth
 InnoNetwork	swift.associatedtype	StreamingAPIDefinition.Output
 InnoNetwork	swift.class	ConcurrencyTokenBucket
 InnoNetwork	swift.class	DefaultNetworkClient
 InnoNetwork	swift.class	InMemoryResponseCache
 InnoNetwork	swift.class	NetworkMonitor
 InnoNetwork	swift.class	ServerSentEventDecoder
-InnoNetwork	swift.enum	APIAuthentication
-InnoNetwork	swift.enum	AuthRequiredScope
 InnoNetwork	swift.enum	CacheRevalidationState
 InnoNetwork	swift.enum	CircuitBreakerPolicy.ConfigurationError
 InnoNetwork	swift.enum	ContentType
@@ -25,7 +20,6 @@ InnoNetwork	swift.enum	EventPipelineHubKind
 InnoNetwork	swift.enum	EventPipelineMetric
 InnoNetwork	swift.enum	EventPipelineOverflowPolicy
 InnoNetwork	swift.enum	HMACRequestInterceptor.Algorithm
-InnoNetwork	swift.enum	HTTPMethod
 InnoNetwork	swift.enum	MultipartStreamingEvent
 InnoNetwork	swift.enum	MultipartUploadStrategy
 InnoNetwork	swift.enum	NetworkConfigurationFailureReason
@@ -35,7 +29,6 @@ InnoNetwork	swift.enum	NetworkErrorCode
 InnoNetwork	swift.enum	NetworkEvent
 InnoNetwork	swift.enum	NetworkInterfaceType
 InnoNetwork	swift.enum	NetworkReachabilityStatus
-InnoNetwork	swift.enum	PublicAuthScope
 InnoNetwork	swift.enum	RFC3986Encoding
 InnoNetwork	swift.enum	ReachabilityCheckExecutionPolicy.Mode
 InnoNetwork	swift.enum	ReachabilityReason
@@ -50,6 +43,7 @@ InnoNetwork	swift.enum	ResponseCacheHeaderPolicy
 InnoNetwork	swift.enum	ResponseCachePolicy
 InnoNetwork	swift.enum	ResponseDecodingStrategy
 InnoNetwork	swift.enum	RetryDecision
+InnoNetwork	swift.enum	SessionAuthentication
 InnoNetwork	swift.enum	SingleValueHeader
 InnoNetwork	swift.enum	StreamingBufferingPolicy
 InnoNetwork	swift.enum	StreamingResumePolicy
@@ -61,8 +55,6 @@ InnoNetwork	swift.enum	URLQueryArrayEncodingStrategy
 InnoNetwork	swift.enum	URLQueryEncoder.EncodingError
 InnoNetwork	swift.enum	URLQueryFloatEncodingStrategy
 InnoNetwork	swift.enum	URLQueryKeyEncodingStrategy
-InnoNetwork	swift.enum.case	APIAuthentication.public
-InnoNetwork	swift.enum.case	APIAuthentication.required
 InnoNetwork	swift.enum.case	CacheRevalidationState.completed(statusCode:)
 InnoNetwork	swift.enum.case	CacheRevalidationState.failed(errorCode:message:)
 InnoNetwork	swift.enum.case	CacheRevalidationState.notModified
@@ -96,11 +88,6 @@ InnoNetwork	swift.enum.case	EventPipelineOverflowPolicy.dropOldest
 InnoNetwork	swift.enum.case	HMACRequestInterceptor.Algorithm.sha256
 InnoNetwork	swift.enum.case	HMACRequestInterceptor.Algorithm.sha384
 InnoNetwork	swift.enum.case	HMACRequestInterceptor.Algorithm.sha512
-InnoNetwork	swift.enum.case	HTTPMethod.delete
-InnoNetwork	swift.enum.case	HTTPMethod.get
-InnoNetwork	swift.enum.case	HTTPMethod.patch
-InnoNetwork	swift.enum.case	HTTPMethod.post
-InnoNetwork	swift.enum.case	HTTPMethod.put
 InnoNetwork	swift.enum.case	MultipartStreamingEvent.bodyChunk(_:)
 InnoNetwork	swift.enum.case	MultipartStreamingEvent.partEnded
 InnoNetwork	swift.enum.case	MultipartStreamingEvent.partStarted(headers:)
@@ -190,6 +177,9 @@ InnoNetwork	swift.enum.case	ResponseDecodingStrategy.jsonAllowingEmpty(_:)
 InnoNetwork	swift.enum.case	RetryDecision.noRetry
 InnoNetwork	swift.enum.case	RetryDecision.retry
 InnoNetwork	swift.enum.case	RetryDecision.retryAfter(_:)
+InnoNetwork	swift.enum.case	SessionAuthentication.anonymous
+InnoNetwork	swift.enum.case	SessionAuthentication.optional
+InnoNetwork	swift.enum.case	SessionAuthentication.required
 InnoNetwork	swift.enum.case	StreamingBufferingPolicy.bufferingNewest(_:)
 InnoNetwork	swift.enum.case	StreamingBufferingPolicy.bufferingOldest(_:)
 InnoNetwork	swift.enum.case	StreamingBufferingPolicy.unbounded
@@ -235,14 +225,14 @@ InnoNetwork	swift.init	ConcurrencyLimitExecutionPolicy.init(bucket:)
 InnoNetwork	swift.init	ConcurrencyTokenBucket.init(maxConcurrent:)
 InnoNetwork	swift.init	ContentType.init(rawValue:)
 InnoNetwork	swift.init	CorrelationIDInterceptor.init(traceHeader:correlationHeader:)
-InnoNetwork	swift.init	CurlCommandOptions.init(redactedHeaderNames:includesBody:bodyFileURL:)
+InnoNetwork	swift.init	CurlCommandOptions.init(redactedHeaderNames:includesBody:includesQueryValues:bodyFileURL:)
 InnoNetwork	swift.init	DefaultNetworkClient.init(configuration:)
 InnoNetwork	swift.init	DefaultNetworkClient.init(configuration:session:)
 InnoNetwork	swift.init	DefaultNetworkLogger.init(options:cookieStorage:)
 InnoNetwork	swift.init	DefaultRedirectPolicy.init(additionalSensitiveHeaders:allowsHTTPSDowngrade:allowsCrossOriginUnsafeMethodRedirects:)
 InnoNetwork	swift.init	EmptyResponse.init()
 InnoNetwork	swift.init	EmptyResponse.init(from:)
-InnoNetwork	swift.init	EndpointBuilder.init(method:path:parameters:headers:acceptableStatusCodes:transport:)
+InnoNetwork	swift.init	EndpointBuilder.init(method:path:authentication:parameters:headers:acceptableStatusCodes:transport:)
 InnoNetwork	swift.init	EventDeliveryPolicy.init(maxBufferedEventsPerPartition:maxBufferedEventsPerConsumer:overflowPolicy:)
 InnoNetwork	swift.init	EventPipelineHubKind.init(rawValue:)
 InnoNetwork	swift.init	ExponentialBackoffRetryPolicy.init(maxRetries:maxTotalRetries:retryDelay:maxRetryAfterDelay:maxDelay:jitterRatio:waitsForNetworkChanges:networkChangeTimeout:idempotencyPolicy:)
@@ -322,6 +312,7 @@ InnoNetwork	swift.method	DefaultNetworkLogger.log(request:)
 InnoNetwork	swift.method	DefaultNetworkLogger.log(response:isError:)
 InnoNetwork	swift.method	DefaultRedirectPolicy.redirect(request:response:originalRequest:)
 InnoNetwork	swift.method	EndpointBuilder.acceptableStatusCodes(_:)
+InnoNetwork	swift.method	EndpointBuilder.authentication(_:)
 InnoNetwork	swift.method	EndpointBuilder.body(_:)
 InnoNetwork	swift.method	EndpointBuilder.decoding(_:)
 InnoNetwork	swift.method	EndpointBuilder.header(_:value:)
@@ -456,6 +447,7 @@ InnoNetwork	swift.property	CorrelationIDInterceptor.correlationHeader
 InnoNetwork	swift.property	CorrelationIDInterceptor.traceHeader
 InnoNetwork	swift.property	CurlCommandOptions.bodyFileURL
 InnoNetwork	swift.property	CurlCommandOptions.includesBody
+InnoNetwork	swift.property	CurlCommandOptions.includesQueryValues
 InnoNetwork	swift.property	CurlCommandOptions.redactedHeaderNames
 InnoNetwork	swift.property	DefaultRedirectPolicy.additionalSensitiveHeaders
 InnoNetwork	swift.property	DefaultRedirectPolicy.allowsCrossOriginUnsafeMethodRedirects
@@ -473,6 +465,7 @@ InnoNetwork	swift.property	Endpoint.priorityOverride
 InnoNetwork	swift.property	Endpoint.requestInterceptors
 InnoNetwork	swift.property	Endpoint.requestSigners
 InnoNetwork	swift.property	Endpoint.responseInterceptors
+InnoNetwork	swift.property	Endpoint.sessionAuthentication
 InnoNetwork	swift.property	Endpoint.timeoutOverride
 InnoNetwork	swift.property	Endpoint.transport
 InnoNetwork	swift.property	EndpointBuilder.acceptableStatusCodes
@@ -480,6 +473,7 @@ InnoNetwork	swift.property	EndpointBuilder.headers
 InnoNetwork	swift.property	EndpointBuilder.method
 InnoNetwork	swift.property	EndpointBuilder.parameters
 InnoNetwork	swift.property	EndpointBuilder.path
+InnoNetwork	swift.property	EndpointBuilder.sessionAuthentication
 InnoNetwork	swift.property	EndpointBuilder.transport
 InnoNetwork	swift.property	EventDeliveryPolicy.maxBufferedEventsPerConsumer
 InnoNetwork	swift.property	EventDeliveryPolicy.maxBufferedEventsPerPartition
@@ -527,6 +521,7 @@ InnoNetwork	swift.property	HTTPHeaders.description
 InnoNetwork	swift.property	HTTPHeaders.dictionary
 InnoNetwork	swift.property	HTTPHeaders.endIndex
 InnoNetwork	swift.property	HTTPHeaders.startIndex
+InnoNetwork	swift.property	HTTPMethod.rawValue
 InnoNetwork	swift.property	IdempotencyKeyPolicy.headerName
 InnoNetwork	swift.property	IdempotencyKeyPolicy.keyProvider
 InnoNetwork	swift.property	IdempotencyKeyPolicy.methods
@@ -680,8 +675,8 @@ InnoNetwork	swift.property	SingleRequestExecutable.path
 InnoNetwork	swift.property	SingleRequestExecutable.priorityOverride
 InnoNetwork	swift.property	SingleRequestExecutable.requestInterceptors
 InnoNetwork	swift.property	SingleRequestExecutable.requestSigners
-InnoNetwork	swift.property	SingleRequestExecutable.requiresRefreshTokenPolicy
 InnoNetwork	swift.property	SingleRequestExecutable.responseInterceptors
+InnoNetwork	swift.property	SingleRequestExecutable.sessionAuthentication
 InnoNetwork	swift.property	SingleRequestExecutable.timeoutOverride
 InnoNetwork	swift.property	StreamingAPIDefinition.acceptableStatusCodes
 InnoNetwork	swift.property	StreamingAPIDefinition.headers
@@ -690,6 +685,7 @@ InnoNetwork	swift.property	StreamingAPIDefinition.path
 InnoNetwork	swift.property	StreamingAPIDefinition.requestInterceptors
 InnoNetwork	swift.property	StreamingAPIDefinition.requestSigners
 InnoNetwork	swift.property	StreamingAPIDefinition.resumePolicy
+InnoNetwork	swift.property	StreamingAPIDefinition.sessionAuthentication
 InnoNetwork	swift.property	StreamingBufferingPolicy.maySilentlyDropOutputs
 InnoNetwork	swift.property	TraceContextInterceptor.generateWhenMissing
 InnoNetwork	swift.property	TraceContextInterceptor.sampled
@@ -720,7 +716,6 @@ InnoNetwork	swift.property	W3CTraceContext.traceID
 InnoNetwork	swift.property	W3CTraceContext.traceparent
 InnoNetwork	swift.property	W3CTraceContext.version
 InnoNetwork	swift.protocol	APIDefinition
-InnoNetwork	swift.protocol	AuthScope
 InnoNetwork	swift.protocol	DecodingInterceptor
 InnoNetwork	swift.protocol	Endpoint
 InnoNetwork	swift.protocol	EventPipelineMetricsReporting
@@ -772,6 +767,7 @@ InnoNetwork	swift.struct	HMACRequestInterceptor
 InnoNetwork	swift.struct	HTTPHeader
 InnoNetwork	swift.struct	HTTPHeaderName
 InnoNetwork	swift.struct	HTTPHeaders
+InnoNetwork	swift.struct	HTTPMethod
 InnoNetwork	swift.struct	IdempotencyKeyPolicy
 InnoNetwork	swift.struct	JWTBearerInterceptor
 InnoNetwork	swift.struct	MultipartFormData
@@ -870,6 +866,15 @@ InnoNetwork	swift.type.property	HTTPHeaderName.setCookie
 InnoNetwork	swift.type.property	HTTPHeaderName.userAgent
 InnoNetwork	swift.type.property	HTTPHeaderName.wwwAuthenticate
 InnoNetwork	swift.type.property	HTTPHeaders.default
+InnoNetwork	swift.type.property	HTTPMethod.connect
+InnoNetwork	swift.type.property	HTTPMethod.delete
+InnoNetwork	swift.type.property	HTTPMethod.get
+InnoNetwork	swift.type.property	HTTPMethod.head
+InnoNetwork	swift.type.property	HTTPMethod.options
+InnoNetwork	swift.type.property	HTTPMethod.patch
+InnoNetwork	swift.type.property	HTTPMethod.post
+InnoNetwork	swift.type.property	HTTPMethod.put
+InnoNetwork	swift.type.property	HTTPMethod.trace
 InnoNetwork	swift.type.property	IdempotencyKeyPolicy.disabled
 InnoNetwork	swift.type.property	MultipartUploadStrategy.platformDefault
 InnoNetwork	swift.type.property	NetworkConfiguration.defaultAcceptableStatusCodes
@@ -891,5 +896,4 @@ InnoNetwork	swift.type.property	RetryIdempotencyPolicy.methodAgnostic
 InnoNetwork	swift.type.property	RetryIdempotencyPolicy.safeMethodsAndIdempotencyKey
 InnoNetwork	swift.type.property	SendableUnderlyingError.maxUnderlyingDepth
 InnoNetwork	swift.typealias	EndpointBuilder.APIResponse
-InnoNetwork	swift.typealias	EndpointBuilder.Auth
 InnoNetwork	swift.typealias	EndpointBuilder.Parameter

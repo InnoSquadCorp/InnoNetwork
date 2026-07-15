@@ -8,7 +8,7 @@ show what goes in and what comes back.
 ```swift
 import InnoNetwork
 
-@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
 struct GetUser {
     typealias APIResponse = User
 
@@ -28,13 +28,13 @@ The macro adds ``APIDefinition`` conformance and derives:
 
 - `method` and a percent-encoded `path`
 - `Parameter` and `parameters` for the supported simple payload shape
-- `Auth = AuthRequiredScope` when `auth: .required` is selected
+- `sessionAuthentication` from the explicit `auth:` choice
 
 It deliberately does **not** synthesize `APIResponse`, headers, interceptors,
 signers, transport, decoding, or execution policies. Keep those decisions on
 the endpoint struct when it owns them. Authentication is also mandatory at the
-attribute: every endpoint must choose `.public` or `.required` rather than
-silently inheriting a security policy.
+attribute: every endpoint must choose `.anonymous`, `.optional`, or `.required`
+rather than silently inheriting a security policy.
 
 Path placeholders must match stored properties declared directly on the
 struct. Values pass through
@@ -43,10 +43,10 @@ sign, or non-ASCII scalar stays inside one path segment.
 
 ## Query and body inference
 
-A stored `query` property is the simple GET shape:
+A stored `query` property is the simple GET or HEAD shape:
 
 ```swift
-@APIDefinition(method: .get, path: "/users", auth: .public)
+@APIDefinition(method: .get, path: "/users", auth: .anonymous)
 struct ListUsers {
     typealias APIResponse = [User]
 
@@ -54,7 +54,7 @@ struct ListUsers {
 }
 ```
 
-A stored `body` property is the simple non-GET shape:
+A stored `body` property is the simple POST, PUT, PATCH, or DELETE shape:
 
 ```swift
 @APIDefinition(method: .post, path: "/users", auth: .required)
@@ -65,16 +65,16 @@ struct CreateUser {
 }
 ```
 
-An endpoint cannot infer both roles. GET bodies, non-GET query inference, and
-dynamic method expressions are rejected because their transport meaning is not
-safe to guess. Optional `body` or `query` aliases are supported; `nil` means no
-payload.
+An endpoint cannot infer both roles. GET/HEAD bodies, query inference for the
+body methods, and simple payload inference for OPTIONS, CONNECT, TRACE, custom,
+or dynamic methods are rejected because their transport meaning is not safe to
+guess. Optional `body` or `query` aliases are supported; `nil` means no payload.
 
 For an advanced payload shape, declare the complete `Parameter` + `parameters`
 pair. That pair is authoritative and turns off simple body/query inference:
 
 ```swift
-@APIDefinition(method: .get, path: "/users/search", auth: .public)
+@APIDefinition(method: .get, path: "/users/search", auth: .anonymous)
 struct SearchUsers {
     typealias APIResponse = [User]
     typealias Parameter = SearchPayload
@@ -90,6 +90,35 @@ This escape hatch keeps custom encoding, computed payloads, and endpoint policy
 explicit without giving up compile-time path and auth validation. Multipart
 and streaming endpoints continue to use their dedicated protocols.
 
+## Custom HTTP methods
+
+``HTTPMethod/init(rawValue:)`` validates an RFC 9110 method token and returns
+`nil` for whitespace, control characters, separators, non-ASCII values, or an
+empty string. Handle that result when a method comes from configuration instead
+of passing unchecked text to the transport:
+
+```swift
+enum ConfigurationError: Error {
+    case invalidHTTPMethod(String)
+}
+
+guard let method = HTTPMethod(rawValue: configuredMethod) else {
+    throw ConfigurationError.invalidHTTPMethod(configuredMethod)
+}
+
+let result = try await client.request(
+    EndpointBuilder<EmptyResponse>(method: method, path: "/resources")
+        .authentication(.anonymous)
+        .decoding([Resource].self)
+)
+```
+
+For a fixed custom method in `@APIDefinition`, keep the payload contract
+explicit with a complete `Parameter` + `parameters` pair. Simple `body` or
+`query` inference intentionally accepts only GET/HEAD, while `body` inference
+accepts only POST/PUT/PATCH/DELETE. The macro cannot safely guess where
+OPTIONS, CONNECT, TRACE, custom, or dynamic methods carry their payload.
+
 ## Diagnostics are fail closed
 
 `@APIDefinition` emits a compile error when the declaration would be ambiguous
@@ -97,12 +126,15 @@ or incomplete, including:
 
 - attaching the macro to anything other than a struct
 - omitting `typealias APIResponse`
-- omitting `auth:` or passing anything other than `.public` / `.required`
-- duplicating generated conformance, `method`, `path`, or `Auth` witnesses
+- omitting `auth:` or passing anything other than `.anonymous`, `.optional`, or
+  `.required`
+- duplicating generated conformance, `method`, `path`, or
+  `sessionAuthentication` witnesses
 - using a missing, optional, opaque, or unsupported generic path placeholder
 - putting query/fragment text or an invalid percent escape in `path:`
 - using computed, static, or lazy `body` / `query` properties in simple mode
 - declaring only one half of the manual `Parameter` + `parameters` pair
+- asking a custom or dynamic method to infer a simple `body` / `query` payload
 
 Simple string interpolation in `path:` receives a Fix-It to use `{property}`
 placeholder syntax. A redundant `typealias Parameter = EmptyParameter` emits a

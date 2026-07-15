@@ -10,8 +10,15 @@ responses to survive process restarts.
 
 By default the cache rejects responses tied to credential-like request headers,
 `Set-Cookie`, and `Cache-Control: private`. It also applies
-``PersistentResponseCacheConfiguration/DataProtectionClass/completeUnlessOpen``
-file protection on supported Apple platforms.
+``PersistentResponseCacheConfiguration/DataProtectionClass/completeUntilFirstUserAuthentication``
+file protection on supported Apple platforms, keeping background reads
+available after the first device unlock while protecting data across restarts.
+
+Reproducible cache-owned artifacts are excluded from backup on Darwin: the
+`bodies/` directory, `index.json`, file-backed HMAC key, and individual body
+files. The caller-supplied directory root is not marked as excluded because it
+may also contain app-owned files. Protection and backup-exclusion metadata are
+reapplied after atomic replacement and when an existing cache is reopened.
 
 Sensitive request-header values that participate in disk cache keys are stored
 as managed HMAC-SHA256 values instead of raw text or unsalted fingerprints.

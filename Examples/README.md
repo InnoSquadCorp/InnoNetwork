@@ -162,8 +162,9 @@ the 5.x Stable public contract.
 ### [MacroUsage](./MacroUsage)
 
 Compile-only package for the root package's default `Macros` trait. It imports
-only `InnoNetwork` and verifies explicit endpoint structs with path values, GET
-query inference, non-GET body inference, and required-auth scope generation.
+only `InnoNetwork` and verifies explicit endpoint structs with path values,
+GET/HEAD query inference, POST/PUT/PATCH/DELETE body inference, and explicit
+session-authentication generation.
 
 ### [TestSupportSmoke](./TestSupportSmoke)
 
@@ -221,12 +222,9 @@ let client = DefaultNetworkClient(
 Define your API endpoint:
 
 ```swift
-struct GetUser: APIDefinition {
-    typealias Parameter = EmptyParameter
+@APIDefinition(method: .get, path: "/user/1", auth: .anonymous)
+struct GetUser {
     typealias APIResponse = User
-
-    var method: HTTPMethod { .get }
-    var path: String { "/user/1" }
 }
 
 let user = try await client.request(GetUser())
@@ -235,21 +233,19 @@ let user = try await client.request(GetUser())
 ### With Parameters
 
 ```swift
-struct CreatePost: APIDefinition {
+@APIDefinition(method: .post, path: "/posts", auth: .anonymous)
+struct CreatePost {
     struct PostParameter: Encodable, Sendable {
         let title: String
         let body: String
     }
 
-    typealias Parameter = PostParameter
     typealias APIResponse = Post
 
-    let parameters: PostParameter?
-    var method: HTTPMethod { .post }
-    var path: String { "/posts" }
+    let body: PostParameter
 
     init(title: String, body: String) {
-        self.parameters = PostParameter(title: title, body: body)
+        self.body = PostParameter(title: title, body: body)
     }
 }
 ```
@@ -268,22 +264,20 @@ var headers: HTTPHeaders {
 ### Form URL-encoded
 
 ```swift
-struct LoginRequest: APIDefinition {
+@APIDefinition(method: .post, path: "/login", auth: .anonymous)
+struct LoginRequest {
     struct LoginParameter: Encodable, Sendable {
         let email: String
         let password: String
     }
 
-    typealias Parameter = LoginParameter
     typealias APIResponse = AuthResponse
 
-    let parameters: LoginParameter?
-    var method: HTTPMethod { .post }
-    var path: String { "/login" }
+    let body: LoginParameter
     var transport: TransportPolicy<AuthResponse> { .formURLEncoded() }
 
     init(email: String, password: String) {
-        self.parameters = LoginParameter(email: email, password: password)
+        self.body = LoginParameter(email: email, password: password)
     }
 }
 ```
@@ -308,6 +302,7 @@ struct UploadImage: MultipartAPIDefinition {
 
     var method: HTTPMethod { .post }
     var path: String { "/upload" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
 }
 
 let response = try await client.upload(UploadImage())

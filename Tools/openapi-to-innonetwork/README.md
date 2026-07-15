@@ -20,7 +20,7 @@ and tracks the remaining surface for follow-up work:
 | Generated shape | ✅ Typed `Parameter` / `APIResponse` from `$ref`; falls back to `EmptyParameter` / `EmptyResponse` when absent |
 | Response status codes | ✅ `200`/`201` body schema; `202`/`204` → `EmptyResponse` |
 | Schema property types | ✅ string / integer / number / boolean / array / `$ref` (incl. format hints: `int64`, `date-time`, `uri`) |
-| Auth scope | ⚠️ always `PublicAuthScope`; configurable mapping is a follow-up |
+| Session authentication | ⚠️ always emits `SessionAuthentication.anonymous`; security-scheme mapping is a follow-up |
 | Schema variants (oneOf / allOf / discriminator / nullable) | ⚠️ unsupported; properties using these generate compileable `AnyCodable` placeholders |
 | Path templating (`/users/{id}`) | ❌ rejected at generation time — see "Scope" below |
 | SPI integration | ⚠️ not used; the standard `APIDefinition` surface is the integration point |
@@ -61,6 +61,14 @@ boundaries are enforced at generation time, not silently degraded.
 - **Server variables**, **security schemes**, **parameter `in: query`
   / `in: path` / `in: header` schemas**, **content types other than
   `application/json`** — out of scope for the 5.x preview.
+
+Because security schemes are not interpreted, every generated operation
+declares `sessionAuthentication` as `.anonymous`. Do not ship an authenticated
+operation unchanged. Until configurable mapping exists, either replace that
+operation with an app-owned `APIDefinition` or apply deterministic
+post-processing after every generation to select `.optional` or `.required`.
+The generator never infers this policy from path names, headers, or response
+status codes.
 
 ### Compatibility note
 
@@ -125,6 +133,7 @@ public struct ListUsers: APIDefinition {
 
     public var method: HTTPMethod { .get }
     public var path: String { "/users" }
+    public var sessionAuthentication: SessionAuthentication { .anonymous }
 
     public init() {}
 }

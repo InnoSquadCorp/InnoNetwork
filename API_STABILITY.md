@@ -4,8 +4,10 @@ This document defines the compatibility contract for the InnoNetwork 5.x
 release line. `5.0.0` is the public baseline for this contract.
 
 The 5.0.0 baseline intentionally removes the deprecated 4.x
-`NetworkConfiguration.with(...)` modifier family and moves the shared
-`StateReducer` / `StateReduction` lifecycle vocabulary to package scope.
+`NetworkConfiguration.with(...)` modifier family, replaces the type-level
+auth-scope markers with an explicit `SessionAuthentication` value on every
+endpoint shape, and moves the shared `StateReducer` / `StateReduction`
+lifecycle vocabulary to package scope.
 Consumers should migrate configuration to
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.
@@ -58,9 +60,7 @@ and own application reducer types in their feature or architecture layer.
 - `NetworkError.category`
 - `NetworkError.isRetriableHint`
 - `NetworkError.isUserVisible`
-- `AuthScope`
-- `PublicAuthScope`
-- `AuthRequiredScope`
+- `SessionAuthentication`
 - `EventDeliveryPolicy`
 - `WebSocketCloseCode`
 - `EndpointBuilder`, `EndpointPathEncoding` (promoted from Provisionally Stable in 4.x.x; the path-encoding shape and decoding helpers are SemVer-protected)
@@ -123,7 +123,7 @@ and treat any 5.y → 5.(y+1) bump as a code-level review boundary.
 - `MultipartResponseDecoder` buffered multipart response parsing surface
 - `MultipartStreamingResponseDecoder` streaming multipart response parsing surface
 - `InnoNetworkOpenAPI` companion product
-- `@APIDefinition(method:path:auth:)`, `APIAuthentication`, and the default-enabled `Macros` package trait
+- `@APIDefinition(method:path:auth:)`, `SessionAuthentication`, and the default-enabled `Macros` package trait
 - `PersistentResponseCache` statistics and telemetry surfaces
 - `WebSocketError.unsupportedProtocolFeature`
 - `WebSocketProtocolFeature`
@@ -198,13 +198,11 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   always forwards the executor-owned request; request mutation belongs in a
   `RequestInterceptor`. Built-in retry, refresh, cache, coalescing, and circuit
   breaker behavior remains provided by `NetworkConfiguration`.
-- `AuthScope` — marker scopes can be added in future minors; the
-  public/auth-required split remains source-compatible for 5.0.0.
-- `MultipartAPIDefinition.Auth` — the multipart protocol carries the same
-  `Auth: AuthScope` associated type as `APIDefinition`, defaulted to
-  `PublicAuthScope`. Existing multipart endpoints stay source-compatible;
-  authenticated multipart uploads must declare `typealias Auth = AuthRequiredScope`
-  to participate in `RefreshTokenPolicy` validation.
+- `SessionAuthentication` — every buffered, multipart, streaming, macro, and
+  OpenAPI endpoint carries one explicit runtime policy. `.anonymous` skips
+  `RefreshTokenPolicy`, `.optional` applies it only when configured, and
+  `.required` fails before transport when no policy or token can be obtained.
+  Request interceptors and signers remain orthogonal capabilities.
 - `WebSocketCloseDisposition` — additional enum cases may appear as new
   close-code classifications are formalized.
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, retry, response cache,
@@ -294,8 +292,10 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 - `TraceContextInterceptor` and `W3CTraceContext` — W3C header propagation
   remains additive; future minors may add richer correlation helpers without
   changing `NetworkEvent` case shape.
-- `CurlCommandOptions` — the default redaction list may expand as additional
-  sensitive headers become common; callers can still provide an explicit set.
+- `CurlCommandOptions` — query values and request bodies remain redacted by
+  default. The sensitive-header list may expand as additional credentials
+  become common; callers can explicitly opt into query values, bodies, or a
+  custom header-redaction set for controlled debugging.
 - `IdempotencyKeyPolicy` — retry attempts reuse one request-scoped key for
   unsafe methods; future minors may add provider hooks without changing the
   request-ID invariant.
@@ -346,14 +346,14 @@ release line.
 ### InnoNetwork
 
 - `APIDefinition`, `AnyEncodable`, `AnyRequestExecutionPolicy`,
-  `AnyResponseDecoder`, `AuthRequiredScope`,
+  `AnyResponseDecoder`,
   `CachedResponse`, `CacheRevalidationState`, `CancellationTag`,
   `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
   `ContentType`, `CorrelationIDInterceptor`, `CurlCommandOptions`,
   `DecodingStage`,
   `DefaultNetworkClient`, `DefaultRedirectPolicy`,
   `DefaultNetworkLogger`, `EmptyParameter`, `EmptyResponse`,
-  `AuthScope`, `EndpointPathEncoding`, `Endpoint`,
+  `EndpointPathEncoding`, `Endpoint`,
   `HTTPEmptyResponseDecodable`, `HTTPHeader`, `HTTPHeaders`, `HTTPMethod`,
   `IdempotencyKeyPolicy`, `InMemoryResponseCache`, `MultipartAPIDefinition`, `MultipartFormData`,
   `MultipartPart`, `MultipartResponseDecoder`,
@@ -365,7 +365,7 @@ release line.
   `NetworkLoggingOptions`, `NetworkLogger`, `NetworkMetricsReporting`,
   `NetworkMonitor`, `NetworkMonitoring`, `NetworkReachabilityStatus`,
   `NetworkRequestContext`, `NetworkSnapshot`, `NoOpNetworkEventObserver`,
-  `NoOpNetworkLogger`, `OSLogNetworkEventObserver`, `PublicAuthScope`,
+  `NoOpNetworkLogger`, `OSLogNetworkEventObserver`,
   `RedirectPolicy`, `RefreshFailureCooldown`, `RefreshTokenPolicy`,
   `RequestCoalescingPolicy`, `RequestEncodingPolicy`,
   `RequestPriority`, `RequestBody`,
@@ -376,7 +376,7 @@ release line.
   `ResponseDecodingStrategy`, `ResponseInterceptor`,
   `RetryDecision`, `RetryIdempotencyPolicy`, `RetryPolicy`,
   `RFC3986Encoding`, `EndpointBuilder`, `SendableUnderlyingError`, `ServerSentEvent`,
-  `ServerSentEventDecoder`,
+  `ServerSentEventDecoder`, `SessionAuthentication`,
   `StreamingAPIDefinition`, `StreamingBufferingPolicy`,
   `StreamingResumePolicy`, `TimeoutReason`, `TraceContextInterceptor`,
   `TransportPolicy`, `TrustChallengeOutcome`, `TrustEvaluating`, `TrustFailureReason`, `TrustPolicy`,
@@ -436,16 +436,18 @@ release line.
 ### Root Macro Surface (Provisionally Stable)
 
 - `APIDefinition(method:path:auth:)` attached macro.
-- `APIAuthentication.public` and `APIAuthentication.required`.
+- `SessionAuthentication.anonymous`, `SessionAuthentication.optional`, and
+  `SessionAuthentication.required`.
 - The default-enabled `Macros` package trait and `traits: []` opt-out.
 
 The root `InnoNetwork` product exports the macro declaration when `Macros` is
 enabled; no separate package or import is required. Expansion is
 source-generation behavior, not a replacement runtime client API. The
 annotated struct remains the endpoint contract and must declare
-`APIResponse`; the macro derives conformance, method, path, auth scope, and the
-supported simple payload witnesses. A complete `Parameter` + `parameters` pair
-remains authoritative for advanced endpoint shapes.
+`APIResponse`; the macro derives conformance, method, path, explicit session
+authentication, and the supported simple payload witnesses. A complete
+`Parameter` + `parameters` pair remains authoritative for advanced endpoint
+shapes.
 
 The attached macro emits witnesses at the type's visibility (`public`,
 `package`, or implicit internal). It fails closed on incomplete or ambiguous
@@ -477,8 +479,6 @@ release without a deprecation window. Callers must opt in with
 | `DefaultNetworkClient.perform(_:)` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
 | `DefaultNetworkClient.perform(executable:)` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
 | `SingleRequestExecutable` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
-| `APISingleRequestExecutable` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
-| `MultipartSingleRequestExecutable` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
 | `RequestPayload` | `@_spi(GeneratedClientSupport) public` | Best-effort, no ABI guarantee |
 
 See `Examples/WrapperSmoke` and `Examples/GeneratedClientRecipe` for the
@@ -549,6 +549,8 @@ requires `@_spi` import.
 - package/internal request/response policy layers
 - package/internal request execution pipeline stages that power auth refresh,
   coalescing, response cache, and circuit breaker features
+- package-scoped `APISingleRequestExecutable` and
+  `MultipartSingleRequestExecutable` adapters used only by the built-in client
 - package-scoped `StateReducer` / `StateReduction` lifecycle vocabulary used
   by shipping modules; it is not part of the consumer-facing 5.x API
 - benchmark baseline contents and update cadence
@@ -563,8 +565,7 @@ requires `@_spi` import.
   defaults are not guaranteed to stay numerically identical across releases.
   The underlying advanced builders are package implementation details.
 - `LowLevelNetworkClient`, `perform(_:)`, `perform(executable:)`,
-  `SingleRequestExecutable`, `APISingleRequestExecutable`,
-  `MultipartSingleRequestExecutable`, and `RequestPayload` are SPI surfaces.
+  `SingleRequestExecutable`, and `RequestPayload` are SPI surfaces.
   They are best-effort, are not part of the default SwiftPM import contract,
   and may evolve in any minor release without a deprecation window — see the
   SPI table under "Public Declaration Ledger" for the full list.

@@ -52,43 +52,38 @@ final class API {
 import Foundation
 import InnoNetwork
 
-@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
 struct GetUser {
     typealias APIResponse = User
     let id: Int
 }
 
-@APIDefinition(method: .post, path: "/posts", auth: .public)
+@APIDefinition(method: .post, path: "/posts", auth: .required)
 struct CreatePostRequest {
     typealias APIResponse = EmptyResponse
 
     let body: CreatePost
-    let token: String
 
     var headers: HTTPHeaders {
-        ["Authorization": "Bearer \(token)",
-         "Idempotency-Key": UUID().uuidString]
+        ["Idempotency-Key": UUID().uuidString]
     }
 }
 
 let client = DefaultNetworkClient(
-    configuration: .recommendedForProduction(
-        baseURL: URL(string: "https://api.example.com/v1")!
+    configuration: .advanced(
+        baseURL: URL(string: "https://api.example.com/v1")!,
+        auth: AuthPack(refreshToken: refreshPolicy)
     )
 )
 
 let user = try await client.request(GetUser(id: id))
 
-let token = currentAccessToken
 let _: EmptyResponse = try await client.request(
-    CreatePostRequest(
-        body: CreatePost(title: "Hello", body: "World"),
-        token: token
-    )
+    CreatePostRequest(body: CreatePost(title: "Hello", body: "World"))
 )
 ```
 
-The manual bearer header above is a transitional migration shape. Move token
-ownership into `RefreshTokenPolicy`, then change the attribute to
-`auth: .required` and remove the token property/header. Use `EndpointBuilder`
-only for a request that is intentionally one-off or runtime-composed.
+Bearer-token ownership stays in `RefreshTokenPolicy`; `auth: .required`
+prevents the create request from being sent anonymously when that policy
+cannot provide a token. Use `EndpointBuilder` only for a request that is
+intentionally one-off or runtime-composed.

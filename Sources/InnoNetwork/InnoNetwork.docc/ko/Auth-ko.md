@@ -47,16 +47,17 @@ let client = DefaultNetworkClient(
 
 ## 인증 필요 엔드포인트 표시
 
-4.0.0 부터 타입 레벨의 인증 표지가 도입되어, 인증이 필요한 엔드포인트가
-공개용 클라이언트 설정에서 조용히 실행되는 사고를 막아 줍니다.
+`.required` 를 명시하면 인증이 필요한 endpoint 가 token provider 없는 client
+설정에서 조용히 실행되는 사고를 막을 수 있습니다.
 
 ```swift
 struct Profile: Decodable, Sendable {
     let id: String
 }
 
-let endpoint = EndpointBuilder<EmptyResponse, AuthRequiredScope>
+let endpoint = EndpointBuilder<EmptyResponse>
     .get("/me")
+    .authentication(.required)
     .decoding(Profile.self)
 
 let profile = try await client.request(endpoint)
@@ -68,10 +69,9 @@ let profile = try await client.request(endpoint)
 struct GetProfile: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = Profile
-    typealias Auth = AuthRequiredScope
-
     let method: HTTPMethod = .get
     let path = "/me"
+    let sessionAuthentication: SessionAuthentication = .required
 }
 ```
 
@@ -79,8 +79,9 @@ struct GetProfile: APIDefinition {
 transport 단계 전에 ``NetworkError/configuration(reason:)`` 과
 ``NetworkConfigurationFailureReason/invalidRequest(_:)`` 로 거부됩니다.
 
-공개 엔드포인트는 별도 표시 없이 ``PublicAuthScope`` 가 적용되며 refresh
-policy 가 없어도 동작합니다.
+이름 있는 수동 endpoint 도 `sessionAuthentication` 을 반드시 선언합니다.
+bearer token refresh 에 참여하지 않는 요청은 `.anonymous`, token 이 있으면 사용하되
+없어도 전송할 수 있는 요청은 `.optional` 을 선택합니다.
 
 ## 동시성/취소 모델 메모
 

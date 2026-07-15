@@ -45,6 +45,11 @@ struct CodeGeneratorTests {
         #expect(body.contains("public struct HealthCheck: APIDefinition"))
         #expect(body.contains("public var path: String { \"/health\" }"))
         #expect(body.contains("public var method: HTTPMethod { .get }"))
+        #expect(
+            body.contains(
+                "public var sessionAuthentication: SessionAuthentication { .anonymous }"
+            )
+        )
     }
 
     @Test

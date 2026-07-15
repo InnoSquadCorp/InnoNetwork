@@ -103,8 +103,15 @@ implementation:
 | Per-entry hard cap | 5 MB | `maxEntryBytes` |
 | Credential-like request keys | rejected | `storesAuthenticatedResponses`; `Authorization` entries also require `public`, `must-revalidate`, or `s-maxage` |
 | `Set-Cookie` responses | rejected | `storesSetCookieResponses` |
-| File protection class | `.completeUnlessOpen` | `dataProtectionClass` |
+| File protection class | `.completeUntilFirstUserAuthentication` | `dataProtectionClass` |
+| Backup inclusion | cache-owned artifacts excluded; caller-supplied root unchanged | not configurable |
 | Index durability | `.onCheckpoint` (no fsync) | `persistenceFsyncPolicy` |
+
+The backup-exclusion boundary covers `bodies/`, `index.json`, a file-backed
+HMAC key, and individual body files. It deliberately does not modify the
+caller-supplied directory root, which may contain unrelated app data. The
+cache reapplies both the configured protection class and backup-exclusion
+metadata after atomic writes and while reopening existing storage.
 
 `statistics()` reports cumulative `hitCount` / `missCount` / `evictionCount`
 since the actor was constructed; the counters seed from the open-time

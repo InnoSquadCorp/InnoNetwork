@@ -117,17 +117,22 @@ performance one.
 iOS file protection class governs whether the cache is readable when
 the device is locked.
 
-- ``.completeUnlessOpen`` is the safest default that still lets a
-  background download or notification handler open the file.
-- Apps that share the cache via an app group container need
-  ``.completeUntilFirstUserAuthentication`` so the extension can read
-  after first unlock.
+- The current default is ``.completeUntilFirstUserAuthentication``, allowing
+  the app and app-group extensions to read the cache after first unlock while
+  protecting it across device restarts.
+- Apps that require access only while unlocked can select ``.complete``;
+  ``.completeUnlessOpen`` remains available for an already-open descriptor.
 - The companion's configuration must expose the protection class so
   apps can pick — and document the trade-off so callers don't pick
   ``.none`` for convenience.
 - ``.none`` is an explicit opt-out that requests `NSFileProtectionNone`
   on cache-owned paths, including existing `index.json` and body files on
   reopen. It is not a "skip applying protection" mode.
+- Reproducible cache-owned artifacts (`bodies/`, `index.json`, a file-backed
+  HMAC key, and individual body files) are excluded from backup on Darwin.
+  The caller-supplied directory root is not marked as excluded because it may
+  contain unrelated app data. Protection and backup-exclusion metadata are
+  reapplied after atomic replacement and on reopen.
 
 ### 6. Migration and versioning
 
@@ -145,20 +150,19 @@ The on-disk format will change. Plan for it from day one:
   upgrade is acceptable; partial migration is not (it bakes
   long-tail correctness bugs into the store).
 
-## Implementation decisions (4.0.0)
+## Current implementation decisions
 
-The six policies above were resolved during the 4.0.0 implementation as
-follows. The shipped behaviour is what callers should rely on; the
-historical discussion above is preserved for context only.
+The shipped behaviour callers should rely on is summarized below; the earlier
+design discussion remains for context only.
 
-| Policy | 4.0.0 decision |
+| Policy | Current decision |
 |---|---|
 | Cache key | `(canonical method, URL, vary dimensions)` hashed into a SHA-256 body filename. Vary dimensions reuse `InMemoryResponseCache`'s normalization (lowercased header name, trimmed value; `*` ⇒ do-not-store). |
 | Freshness | Default executor precedence remains caller-declared `ResponseCachePolicy`; `ResponseCachePolicy.rfc9111Compliant(wrapping:)` clamps with origin `max-age`, uses `Expires` fallback when no valid `max-age` exists, and uses `Last-Modified` heuristic freshness when both are absent. `no-store` and `private` short-circuit to do-not-store. |
 | Target URI invalidation | Unsafe methods with 2xx/3xx origin responses call `ResponseCache.invalidateTargetURI(_:)`, removing every stored method/header variant for the normalized request target URI. |
 | Eviction | LRU with both 50 MB total byte budget and 1,000-entry budget, whichever fires first. Per-entry hard cap 5 MB. Eviction is synchronous on write. |
 | Privacy | Credential-like request keys are not stored unless the caller opts in via configuration. `Authorization` entries also require RFC 9111 §3.5 permission (`public`, `must-revalidate`, or `s-maxage`). `Cache-Control: private` short-circuits to do-not-store. Responses with `Set-Cookie` are rejected unless the caller opts in. Persisted request metadata fingerprints credential-like headers. |
-| Data protection | Configurable; default `.completeUnlessOpen`. App-group integrators may select `.completeUntilFirstUserAuthentication`; `.none` requests `NSFileProtectionNone` for cache-owned paths. |
+| Data protection | Configurable; default `.completeUntilFirstUserAuthentication`. `.complete` and `.completeUnlessOpen` remain opt-ins; `.none` requests `NSFileProtectionNone` for cache-owned paths. Cache-owned artifacts are excluded from backup while the caller-supplied root is left unchanged. |
 | Migration | Versioned `index.json`. Unknown index versions and decode failures evict only the index and bodies subtree, leaving the user-supplied directory root untouched, and the store starts fresh. |
 
 ## Out of scope (still deferred)

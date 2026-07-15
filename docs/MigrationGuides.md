@@ -25,6 +25,7 @@ struct GetProfile: APIDefinition {
 
     var method: HTTPMethod { .get }
     var path: String { "/me" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
 }
 
 let client = DefaultNetworkClient(
@@ -80,16 +81,18 @@ network boundary return typed endpoint definitions instead of generic tasks.
 
 ```swift
 enum UserEndpoints {
-    static func profile(id: String) -> EndpointBuilder<UserDTO, PublicAuthScope> {
-        EndpointBuilder<EmptyResponse, PublicAuthScope>
+    static func profile(id: String) -> EndpointBuilder<UserDTO> {
+        EndpointBuilder<EmptyResponse>
             .get("/users/\(id)")
+            .authentication(.anonymous)
             .decoding(UserDTO.self)
     }
 
-    static func posts(id: String, page: Int) -> EndpointBuilder<[PostDTO], PublicAuthScope> {
-        EndpointBuilder<EmptyResponse, PublicAuthScope>
+    static func posts(id: String, page: Int) -> EndpointBuilder<[PostDTO]> {
+        EndpointBuilder<EmptyResponse>
             .get("/users/\(id)/posts")
             .query(["page": page])
+            .authentication(.anonymous)
             .decoding([PostDTO].self)
     }
 }
@@ -105,28 +108,36 @@ Migration notes:
   owns custom transport, multipart upload, streaming, or interceptors.
 - For a smaller before/after, use [`MigrationFromMoya.md`](MigrationFromMoya.md).
 
-## Removed Fluent Endpoint Names
+## Removed Auth-Scope Generics
 
-The 4.0.0 public surface uses the final builder vocabulary so auth scope is
-visible in source:
+InnoNetwork 5.0 replaces the phantom auth-scope generic with the runtime
+``SessionAuthentication`` policy. Keep the response type as the builder's only
+generic argument and choose authentication explicitly in the builder chain:
 
-| Previous usage | Replacement |
+| 4.x usage | 5.0 replacement |
 | --- | --- |
-| `Endpoint<Response>` | `EndpointBuilder<Response, PublicAuthScope>` |
-| `AuthenticatedEndpoint<Response>` | `EndpointBuilder<Response, AuthRequiredScope>` |
-| `ScopedEndpoint<Response, Scope>` | `EndpointBuilder<Response, Scope>` |
+| 4.x public-scope builder | `EndpointBuilder<Response>` plus `.authentication(.anonymous)` |
+| 4.x auth-required builder | `EndpointBuilder<Response>` plus `.authentication(.required)` |
+| 4.x `typealias Auth = ...` witness | `var sessionAuthentication: SessionAuthentication` |
 
-Builder entry points move to the empty-response scoped type:
+Builder entry points still start from `EndpointBuilder<EmptyResponse>`:
 
 ```swift
-let publicEndpoint = EndpointBuilder<EmptyResponse, PublicAuthScope>
+let publicEndpoint = EndpointBuilder<EmptyResponse>
     .get("/catalog")
+    .authentication(.anonymous)
     .decoding(Catalog.self)
 
-let authEndpoint = EndpointBuilder<EmptyResponse, AuthRequiredScope>
+let authEndpoint = EndpointBuilder<EmptyResponse>
     .get("/me")
+    .authentication(.required)
     .decoding(Profile.self)
 ```
+
+Use `.optional` only when a configured refresh policy may attach a token but
+the request is also allowed to proceed anonymously. A manual
+`APIDefinition` must expose the equivalent
+`sessionAuthentication: SessionAuthentication` witness.
 
 ## Feature Recipes
 

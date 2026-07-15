@@ -175,9 +175,7 @@ expected_stable=(
 '`NetworkError.category`'
 '`NetworkError.isRetriableHint`'
 '`NetworkError.isUserVisible`'
-'`AuthScope`'
-'`PublicAuthScope`'
-'`AuthRequiredScope`'
+'`SessionAuthentication`'
 '`EventDeliveryPolicy`'
 '`WebSocketCloseCode`'
 '`EndpointBuilder`, `EndpointPathEncoding` (promoted from Provisionally Stable in 4.x.x; the path-encoding shape and decoding helpers are SemVer-protected)'
@@ -219,7 +217,7 @@ expected_provisionally=(
 '`MultipartResponseDecoder` buffered multipart response parsing surface'
 '`MultipartStreamingResponseDecoder` streaming multipart response parsing surface'
 '`InnoNetworkOpenAPI` companion product'
-'`@APIDefinition(method:path:auth:)`, `APIAuthentication`, and the default-enabled `Macros` package trait'
+'`@APIDefinition(method:path:auth:)`, `SessionAuthentication`, and the default-enabled `Macros` package trait'
 '`PersistentResponseCache` statistics and telemetry surfaces'
 '`WebSocketError.unsupportedProtocolFeature`'
 '`WebSocketProtocolFeature`'
@@ -243,13 +241,11 @@ expected_provisionally=(
 )
 
 expected_shipping_public_declarations=(
-  APIAuthentication
   APIDefinition
   AnyEncodable
   AnyRequestExecutionPolicy
   AnyResponseDecoder
   AWSSigV4Interceptor
-  AuthRequiredScope
   CachedResponse
   CacheRevalidationState
   CancellationTag
@@ -274,7 +270,6 @@ expected_shipping_public_declarations=(
   DownloadTask
   EmptyParameter
   EmptyResponse
-  AuthScope
   EndpointPathEncoding
   Endpoint
   EventDeliveryPolicy
@@ -321,7 +316,6 @@ expected_shipping_public_declarations=(
   NoOpNetworkEventObserver
   NoOpNetworkLogger
   OSLogNetworkEventObserver
-  PublicAuthScope
   PersistentResponseCache
   PersistentResponseCacheConfiguration
   PersistentResponseCacheEvictionReason
@@ -360,6 +354,7 @@ expected_shipping_public_declarations=(
   SendableUnderlyingError
   ServerSentEvent
   ServerSentEventDecoder
+  SessionAuthentication
   StreamingAPIDefinition
   StreamingBufferingPolicy
   StreamingResumePolicy
@@ -666,13 +661,13 @@ validate_macro_surface() {
   require_contains 'https://github.com/swiftlang/swift-syntax.git' "$repo_root/Package.swift"
   require_contains 'exact: "603.0.2"' "$repo_root/Package.swift"
   require_contains '#if Macros' "$macro_declaration"
-  require_contains 'public enum APIAuthentication: Sendable' "$macro_declaration"
   require_contains 'public macro APIDefinition(' "$macro_declaration"
+  require_contains 'auth: SessionAuthentication' "$macro_declaration"
   require_contains '#externalMacro(module: "InnoNetworkMacros", type: "APIDefinitionMacro")' \
     "$macro_declaration"
   require_not_contains 'public macro endpoint' "$macro_declaration"
   require_contains '`@APIDefinition(method:path:auth:)`' "$api_stability"
-  require_contains '`APIAuthentication`' "$api_stability"
+  require_contains '`SessionAuthentication`' "$api_stability"
   require_contains '`Macros` package trait' "$api_stability"
 
   local legacy_macro_pattern='#endpoint|public[[:space:]]+macro[[:space:]]+endpoint'
@@ -926,7 +921,7 @@ validate_public_surface_ledger() {
 }
 
 validate_oss_readiness_public_api() {
-  require_contains 'public struct EndpointBuilder<Response: Decodable & Sendable, Scope: AuthScope>: APIDefinition' \
+  require_contains 'public struct EndpointBuilder<Response: Decodable & Sendable>: APIDefinition' \
     "$repo_root/Sources/InnoNetwork/Endpoint.swift"
   require_contains 'public enum EndpointPathEncoding' \
     "$repo_root/Sources/InnoNetwork/EndpointPathEncoding.swift"
@@ -1179,16 +1174,8 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public var isUserVisible: Bool'
       target="$repo_root/Sources/InnoNetwork/NetworkError+Classification.swift"
       ;;
-    '`AuthScope`')
-      pattern='public protocol AuthScope'
-      target="$repo_root/Sources/InnoNetwork/Endpoint.swift"
-      ;;
-    '`PublicAuthScope`')
-      pattern='public enum PublicAuthScope'
-      target="$repo_root/Sources/InnoNetwork/Endpoint.swift"
-      ;;
-    '`AuthRequiredScope`')
-      pattern='public enum AuthRequiredScope'
+    '`SessionAuthentication`')
+      pattern='public enum SessionAuthentication'
       target="$repo_root/Sources/InnoNetwork/Endpoint.swift"
       ;;
     '`EventDeliveryPolicy`')
@@ -1200,7 +1187,7 @@ for symbol in "${expected_stable[@]}"; do
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketCloseCode.swift"
       ;;
     '`EndpointBuilder`, `EndpointPathEncoding` (promoted from Provisionally Stable in 4.x.x; the path-encoding shape and decoding helpers are SemVer-protected)')
-      pattern='public struct EndpointBuilder<Response: Decodable & Sendable, Scope: AuthScope>: APIDefinition'
+      pattern='public struct EndpointBuilder<Response: Decodable & Sendable>: APIDefinition'
       target="$repo_root/Sources/InnoNetwork/Endpoint.swift"
       ;;
     '`DecodingInterceptor` (promoted from Provisionally Stable in 4.x.x)')
@@ -1269,7 +1256,7 @@ for symbol in "${expected_provisionally[@]}"; do
       validate_openapi_companion_product
       continue
       ;;
-    '`@APIDefinition(method:path:auth:)`, `APIAuthentication`, and the default-enabled `Macros` package trait')
+    '`@APIDefinition(method:path:auth:)`, `SessionAuthentication`, and the default-enabled `Macros` package trait')
       validate_macro_surface
       continue
       ;;

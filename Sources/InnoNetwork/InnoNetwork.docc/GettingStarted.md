@@ -33,7 +33,7 @@ struct User: Decodable, Sendable {
     let name: String
 }
 
-@APIDefinition(method: .get, path: "/users/{id}", auth: .public)
+@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
 struct GetUser {
     typealias APIResponse = User
 
@@ -43,15 +43,16 @@ struct GetUser {
 
 The endpoint remains an ordinary value type and the source of truth for its
 contract. The default-enabled macro derives conformance, method,
-percent-encoded path, auth scope, and the empty payload witnesses. It requires
-`APIResponse` and an explicit `.public` / `.required` auth choice instead of
-guessing either policy.
+percent-encoded path, `sessionAuthentication`, and the empty payload witnesses.
+It requires `APIResponse` and an explicit `.anonymous`, `.optional`, or
+`.required` auth choice instead of guessing either policy.
 
-A stored `query` property derives payload witnesses for GET, while a stored
-`body` property does so for non-GET methods. For a custom shape, declare the
-complete `Parameter` + `parameters` pair; custom headers, interceptors,
-transport, and decoding also stay visible on the struct. See <doc:UsingMacros>
-for the complete expansion and diagnostic contract.
+A stored `query` property derives payload witnesses for GET and HEAD. A stored
+`body` property does so only for POST, PUT, PATCH, and DELETE. OPTIONS, CONNECT,
+TRACE, custom, and dynamic methods require a complete `Parameter` +
+`parameters` pair; custom headers, interceptors, transport, and decoding also
+stay visible on the struct. See <doc:UsingMacros> for the complete expansion
+and diagnostic contract.
 
 ## Execute the request
 
@@ -67,8 +68,9 @@ path, or response shape is assembled at runtime:
 
 ```swift
 let users = try await client.request(
-    EndpointBuilder<EmptyResponse, PublicAuthScope>
+    EndpointBuilder<EmptyResponse>
         .get("/users")
+        .authentication(.anonymous)
         .query(["limit": 20])
         .decoding([User].self)
 )

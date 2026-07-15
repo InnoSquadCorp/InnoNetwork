@@ -202,9 +202,101 @@ jobs:
             .build/release-artifacts/coverage-macros/
           if-no-files-found: error
 
+  validate-platform-builds:
+    name: Validate ${{ matrix.runtime }} Build
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - destination: "platform=macOS"
+            runtime: "macOS"
+            sdk: "macosx"
+          - destination: "generic/platform=iOS Simulator"
+            runtime: "iOS"
+            sdk: "iphonesimulator"
+          - destination: "generic/platform=tvOS Simulator"
+            runtime: "tvOS"
+            sdk: "appletvsimulator"
+          - destination: "generic/platform=watchOS Simulator"
+            runtime: "watchOS"
+            sdk: "watchsimulator"
+          - destination: "generic/platform=visionOS Simulator"
+            runtime: "visionOS"
+            sdk: "xrsimulator"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: ${{ runner.os }}-release-${{ matrix.sdk }}-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-release-${{ matrix.sdk }}-xcode-26.0.1-
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Require SDK and destination
+        run: |
+          set -euo pipefail
+
+          sdk="${{ matrix.sdk }}"
+          destination="${{ matrix.destination }}"
+          runtime="${{ matrix.runtime }}"
+
+          if ! xcrun --sdk "$sdk" --show-sdk-path >/dev/null 2>&1; then
+            echo "::error::Required $runtime SDK $sdk is not installed on the release runner."
+            exit 1
+          fi
+
+          platform="${destination##*platform=}"
+          if ! destination_listing="$(xcodebuild -scheme InnoNetwork-Package -showdestinations 2>&1)"; then
+            echo "::error::Unable to enumerate destinations for required $runtime release build."
+            exit 1
+          fi
+          if ! awk -v platform="$platform" '
+            index($0, "platform:" platform) > 0 &&
+              $0 !~ /error:/ &&
+              $0 !~ /variant:Designed for/ { found = 1 }
+            END { exit found ? 0 : 1 }
+          ' <<<"$destination_listing"; then
+            echo "::error::Required $runtime destination $platform is not installed on the release runner."
+            exit 1
+          fi
+
+      - name: Build package for ${{ matrix.runtime }}
+        run: |
+          xcodebuild \
+            -scheme InnoNetwork-Package \
+            -destination '${{ matrix.destination }}' \
+            -skipMacroValidation \
+            -derivedDataPath build/release-${{ matrix.sdk }} \
+            build
+
   publish-release:
     name: Publish Release
-    needs: validate-release
+    needs:
+      - validate-release
+      - validate-platform-builds
     runs-on: ubuntu-latest
     permissions:
       contents: write

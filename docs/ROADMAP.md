@@ -52,8 +52,8 @@ into one release line:
 - `MultipartStreamingResponseDecoder` for large multipart response streams.
 - `InnoNetworkOpenAPI` companion product and VCR-style test support helpers.
 - Compile-time macro diagnostics for optional path placeholders.
-- Phantom auth scopes through `AuthScope`, `PublicAuthScope`,
-  `AuthRequiredScope`, and `EndpointBuilder`.
+- Phantom generic auth markers on `EndpointBuilder` (shipped in 4.x, then
+  replaced in 5.0 by explicit `SessionAuthentication` values).
 
 ## 4.x Typed-Throws Surface
 

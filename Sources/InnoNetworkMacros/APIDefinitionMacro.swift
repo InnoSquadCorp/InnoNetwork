@@ -460,7 +460,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
                     continue
                 }
                 throw InnoNetworkMacroDiagnostic(
-                    "@APIDefinition stored property '\(identifier)' is not used by the route or inferred payload. In simple mode place GET values in 'query' and non-GET values in 'body', or declare a complete Parameter + parameters fallback.",
+                    "@APIDefinition stored property '\(identifier)' is not used by the route or inferred payload. In simple mode place GET/HEAD values in 'query' and POST/PUT/PATCH/DELETE values in 'body'; for every other method declare a complete Parameter + parameters fallback.",
                     id: "api-definition-unused-stored-property"
                 ).error(at: binding.pattern)
             }

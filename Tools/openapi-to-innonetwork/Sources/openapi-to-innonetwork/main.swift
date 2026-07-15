@@ -510,6 +510,10 @@ struct CodeGenerator {
         }
         lines.append("    public var method: HTTPMethod { .\(method.lowercased()) }")
         lines.append("    public var path: String { \"\(path)\" }")
+        // The preview subset does not interpret OpenAPI security schemes.
+        // Emit the protocol witness explicitly instead of relying on a
+        // library default that could drift across generated clients.
+        lines.append("    public var sessionAuthentication: SessionAuthentication { .anonymous }")
         lines.append("")
         if parameterType != "EmptyParameter" {
             lines.append("    public init(parameters: \(parameterType)? = nil) {")
