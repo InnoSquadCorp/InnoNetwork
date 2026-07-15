@@ -73,6 +73,30 @@ Use ``NetworkMetricsReporting`` alongside observers when a vendor needs
 raw `URLSessionTaskMetrics`; event observers are for logical lifecycle
 events, while metrics reporters receive Foundation's transport metrics.
 
+## Privacy contract
+
+The core redacts lifecycle metadata before it calls any
+``NetworkEventObserving`` implementation:
+
+- events never contain request/response headers or bodies;
+- request URLs remove user-info and fragments, redact every query value, and
+  mask JWT-like path values; and
+- failure messages are stable categories such as `timeout.request` or
+  `configuration.invalid_request`, never `localizedDescription` or decoder,
+  trust, and response payload text.
+
+An exporter should treat these fields as the maximum safe default and must not
+reconstruct a raw URL or join an event with separately captured credentials or
+bodies. If a vendor SDK performs automatic HTTP body/header capture, disable
+that capture in the adapter configuration unless the application has an
+independently reviewed, sampled, and consented data policy.
+
+`DefaultNetworkLogger` follows the same boundary and redacts every header
+value, not only well-known credential header names. `URLRequest.curlCommand()`
+also redacts every header and query value and omits the body by default. Raw
+header/query/body output is available only through explicit local-diagnostic
+options and is not suitable for telemetry exporters.
+
 ## Example sketches
 
 ### OpenTelemetry

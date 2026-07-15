@@ -133,5 +133,20 @@ case "$first_line" in
         ;;
 esac
 
+# 5.0.0 changes the repository's documented stable line as well as the code.
+# A ready marker by itself is therefore insufficient: the tagged Git tree must
+# atomically move README, API stability, changelog, security, symbols, and
+# migration claims out of preview state. Later patch/minor releases keep using
+# their versioned ready marker above without replaying this one-time baseline
+# transition.
+if [[ "$release_tag" == "5.0.0" ]]; then
+    docs_state_validator="$repo_root/Scripts/validate_docs_release_state.sh"
+    [[ -f "$docs_state_validator" ]] \
+        || fail "required 5.0 documentation state validator is missing: '$docs_state_validator'."
+    if ! bash "$docs_state_validator" --expect ready --ref "$tag_commit"; then
+        fail "tagged 5.0.0 documentation does not form one coherent ready release state."
+    fi
+fi
+
 printf '✅ Release ref validated: %s peels to exact %s at %s and contains ready release notes %s.\n' \
     "$release_tag" "$tag_commit" "$main_ref" "$release_notes"

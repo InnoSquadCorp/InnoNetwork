@@ -31,7 +31,8 @@ struct ObservabilityLifecycleTests {
             networkMonitor: nil,
             metricsReporter: nil,
             trustPolicy: .systemDefault,
-            eventObservers: [observer]
+            eventObservers: [observer],
+            responseBodyBufferingPolicy: .buffered(maxBytes: 5 * 1024 * 1024)
         )
         let client = DefaultNetworkClient(configuration: networkConfiguration, session: session)
 
@@ -106,7 +107,8 @@ struct ObservabilityLifecycleTests {
             networkMonitor: nil,
             metricsReporter: nil,
             trustPolicy: .systemDefault,
-            eventObservers: [observer]
+            eventObservers: [observer],
+            responseBodyBufferingPolicy: .buffered(maxBytes: 5 * 1024 * 1024)
         )
         let client = DefaultNetworkClient(
             configuration: networkConfiguration,
@@ -181,7 +183,8 @@ struct ObservabilityLifecycleTests {
             networkMonitor: nil,
             metricsReporter: nil,
             trustPolicy: trustPolicy,
-            eventObservers: []
+            eventObservers: [],
+            responseBodyBufferingPolicy: .buffered(maxBytes: 5 * 1024 * 1024)
         )
         let client = DefaultNetworkClient(
             configuration: networkConfiguration,
@@ -216,7 +219,8 @@ struct ObservabilityLifecycleTests {
             networkMonitor: nil,
             metricsReporter: nil,
             trustPolicy: .systemDefault,
-            eventObservers: [slowObserver]
+            eventObservers: [slowObserver],
+            responseBodyBufferingPolicy: .buffered(maxBytes: 5 * 1024 * 1024)
         )
         let client = DefaultNetworkClient(
             configuration: networkConfiguration,

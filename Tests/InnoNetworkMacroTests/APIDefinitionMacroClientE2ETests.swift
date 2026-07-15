@@ -6,6 +6,51 @@ import Testing
 
 @Suite("APIDefinition macro to DefaultNetworkClient E2E")
 struct APIDefinitionMacroClientE2ETests {
+    @Test("Generated endpoint crosses a real URLSession and URLProtocol boundary")
+    func generatedEndpointCrossesURLProtocolBoundary() async throws {
+        let baseURL = URL(string: "https://macro-e2e-\(UUID().uuidString).example.com/v1")!
+        let expected = MacroClientUser(id: 42, name: "URLProtocol")
+        MacroClientURLProtocol.configure(
+            response: .http(
+                statusCode: 200,
+                data: try JSONEncoder().encode(expected),
+                headers: ["Content-Type": "application/json"],
+                url: baseURL
+            )
+        )
+
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [MacroClientURLProtocol.self]
+        sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        let session = URLSession(configuration: sessionConfiguration)
+        defer {
+            session.invalidateAndCancel()
+            MacroClientURLProtocol.reset()
+        }
+        let client = DefaultNetworkClient(
+            configuration: .safeDefaults(baseURL: baseURL),
+            session: session
+        )
+
+        let response = try await client.request(
+            MacroClientGetUser(
+                id: "team/a",
+                query: MacroClientUserQuery(page: 2, includeArchived: true)
+            )
+        )
+
+        #expect(response == expected)
+        let request = try #require(MacroClientURLProtocol.capturedRequest())
+        #expect(request.httpMethod == "GET")
+        let components = try #require(
+            request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
+        )
+        #expect(components.percentEncodedPath == "/v1/users/team%2Fa")
+        let queryItems = try #require(components.queryItems)
+        #expect(queryItems.contains(URLQueryItem(name: "page", value: "2")))
+        #expect(queryItems.contains(URLQueryItem(name: "includeArchived", value: "true")))
+    }
+
     @Test("GET expands a path placeholder, encodes query values, and decodes the response")
     func getPlaceholderQueryAndDecode() async throws {
         let session = MockURLSession()
@@ -175,6 +220,58 @@ private actor MacroClientAuthTrace {
 
     func snapshot() -> [String] {
         events
+    }
+}
+
+/// Private wire stub for the one macro/client transport test. Keeping this
+/// helper inside the test target proves the real URL loading boundary without
+/// adding another public symbol to `InnoNetworkTestSupport`.
+private final class MacroClientURLProtocol: URLProtocol {
+    nonisolated(unsafe) private static var response: MockURLSessionResponse?
+    nonisolated(unsafe) private static var capturedRequestStorage: URLRequest?
+    private static let lock = NSLock()
+
+    static func configure(response: MockURLSessionResponse) {
+        lock.lock()
+        Self.response = response
+        capturedRequestStorage = nil
+        lock.unlock()
+    }
+
+    static func capturedRequest() -> URLRequest? {
+        lock.lock()
+        defer { lock.unlock() }
+        return capturedRequestStorage
+    }
+
+    static func reset() {
+        lock.lock()
+        response = nil
+        capturedRequestStorage = nil
+        lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func stopLoading() {}
+
+    override func startLoading() {
+        Self.lock.lock()
+        Self.capturedRequestStorage = request
+        let response = Self.response
+        Self.lock.unlock()
+
+        guard let response else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unknown))
+            return
+        }
+        if let error = response.error {
+            client?.urlProtocol(self, didFailWithError: error)
+            return
+        }
+        client?.urlProtocol(self, didReceive: response.response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: response.data)
+        client?.urlProtocolDidFinishLoading(self)
     }
 }
 #endif

@@ -876,9 +876,16 @@ Operational items to verify before shipping a client built on InnoNetwork.
 
 ### Observability & Privacy
 
-- **Redaction defaults.** `NetworkLogger` and `OSLogNetworkEventObserver` mark URLs, headers,
-  and request bodies as `.private` by default. Do not flip them to `.public` outside of
-  controlled diagnostic builds.
+- **Redaction defaults.** `NetworkEvent` never carries headers or bodies. Before any observer
+  receives an event, URL user-info and fragments are removed, query values are redacted, and
+  JWT-like path values are masked; failures use stable payload-free categories. The secure
+  `NetworkLogger` additionally redacts every header value, cookie, body, query value, and
+  free-form error description. `NetworkLoggingOptions.verbose` is an explicit local-debugging
+  opt-in and must not be used in CI, shared logs, or production.
+- **cURL export.** `URLRequest.curlCommand()` omits request bodies and redacts every header and
+  query value by default. `includesHeaderValues`, `includesQueryValues`, and `includesBody` are
+  independent explicit opt-ins for a controlled local diagnostic path. URL user-info and
+  fragments are never exported.
 - **Failure payload capture.** `NetworkError.decoding(stage:, underlying:, response:)` carries a `Response`;
   by default that `response.data` is redacted to empty data unless you opt in via
   `NetworkConfiguration.captureFailurePayload = true`. Keep that flag off in release

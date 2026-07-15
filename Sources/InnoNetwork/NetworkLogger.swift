@@ -11,8 +11,10 @@ public struct NetworkLoggingOptions: Sendable {
     public let includeRequestBody: Bool
     public let includeResponseBody: Bool
     public let includeCookies: Bool
+    /// When `true`, query values, every header value, bodies, cookies, and
+    /// free-form error descriptions are redacted. Set this to `false` only in
+    /// a controlled local diagnostic path.
     public let redactSensitiveData: Bool
-    public let sensitiveHeaderNames: Set<String>
     /// When `true`, ``DefaultNetworkLogger`` emits logs in release builds as
     /// well as debug. Defaults to `false`, preserving the historical
     /// debug-only behaviour. Opt-in for production-grade observability —
@@ -26,41 +28,12 @@ public struct NetworkLoggingOptions: Sendable {
         includeResponseBody: Bool = false,
         includeCookies: Bool = false,
         redactSensitiveData: Bool = true,
-        sensitiveHeaderNames: Set<String> = [
-            "authorization",
-            "cookie",
-            "set-cookie",
-            "x-api-key",
-            "proxy-authorization",
-            // Server-issued challenges carry realm/scheme metadata that's
-            // typically benign, but commonly co-emit a Bearer error
-            // descriptor that reflects the *attempted* token back to the
-            // caller. Redact by default; opt-out by overriding
-            // `sensitiveHeaderNames`.
-            "www-authenticate",
-            "proxy-authenticate",
-            // Common bespoke auth carriers seen across iOS clients and
-            // gateways: refresh-token endpoints, vendor token mirrors,
-            // session-rotation handshakes. The names are not standardised,
-            // so the allowlist has to be defensive about variants.
-            "x-access-token",
-            "x-refresh-token",
-            "x-token",
-            "x-auth-token",
-            "x-csrf-token",
-            "x-session-token",
-        ],
         releaseLogging: Bool = false
     ) {
         self.includeRequestBody = includeRequestBody
         self.includeResponseBody = includeResponseBody
         self.includeCookies = includeCookies
         self.redactSensitiveData = redactSensitiveData
-        // Normalise to lowercase up front so the redaction comparison stays
-        // case-insensitive even when callers pass mixed-case names like
-        // `Authorization`. The comparison site uses `key.lowercased()`, so
-        // an upper-cased entry in the set would silently never match.
-        self.sensitiveHeaderNames = Set(sensitiveHeaderNames.map { $0.lowercased() })
         self.releaseLogging = releaseLogging
     }
 
@@ -188,7 +161,7 @@ public struct DefaultNetworkLogger: NetworkLogger {
 
         var log: String = "[ERR] ────────────────────────────"
         log.append("\n[ERR] code: \(error.errorCode)\n")
-        log.append("[ERR] \(error.errorDescription ?? "unknown error")\n")
+        log.append("[ERR] \(sanitize(error: error))\n")
         log.append("[ERR] END HTTP")
         emitErrorLog(log)
     }
@@ -196,19 +169,22 @@ public struct DefaultNetworkLogger: NetworkLogger {
     func sanitize(headers: [String: String]) -> [String: String] {
         var sanitized = headers
         for (key, value) in headers {
-            if options.redactSensitiveData,
-                options.sensitiveHeaderNames.contains(key.lowercased())
-            {
+            if options.redactSensitiveData {
                 sanitized[key] = "<redacted>"
             } else {
-                // Strip JWT-like tokens that escape the sensitive-header
-                // allowlist (e.g., custom auth headers, third-party trace
-                // tokens). Defence-in-depth so a non-redacted header value
-                // does not silently emit a Bearer JWT into logs.
+                // Even after the caller explicitly opts into header values,
+                // keep a defence-in-depth pass for copy/pasted JWTs.
                 sanitized[key] = Self.maskJWTLikeTokens(in: value)
             }
         }
         return sanitized
+    }
+
+    func sanitize(error: NetworkError) -> String {
+        guard !options.redactSensitiveData else {
+            return error.observabilityCategory
+        }
+        return Self.maskJWTLikeTokens(in: error.errorDescription ?? "unknown error")
     }
 
     func sanitize(cookies: [HTTPCookie]) -> String {
@@ -337,7 +313,6 @@ public struct DefaultNetworkLogger: NetworkLogger {
     /// redaction with `NetworkLoggingOptions.verbose`.
     func sanitize(url: URL?, nilFallback: String = "") -> String {
         guard let url else { return nilFallback }
-        guard options.redactSensitiveData else { return Self.maskJWTLikeTokens(in: url.absoluteString) }
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             // `URLComponents` parse failure on a `URL` is rare but possible
             // for malformed origins. Fall back to a manually-composed
@@ -356,7 +331,10 @@ public struct DefaultNetworkLogger: NetworkLogger {
         components.path = Self.maskJWTLikeTokens(in: components.path)
         components.fragment = nil
 
-        if let queryItems = components.queryItems, !queryItems.isEmpty {
+        if options.redactSensitiveData,
+            let queryItems = components.queryItems,
+            !queryItems.isEmpty
+        {
             components.queryItems = queryItems.map {
                 URLQueryItem(name: $0.name, value: $0.value == nil ? nil : "<redacted>")
             }

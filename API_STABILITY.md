@@ -300,10 +300,9 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 - `TraceContextInterceptor` and `W3CTraceContext` — W3C header propagation
   remains additive; future minors may add richer correlation helpers without
   changing `NetworkEvent` case shape.
-- `CurlCommandOptions` — query values and request bodies remain redacted by
-  default. The sensitive-header list may expand as additional credentials
-  become common; callers can explicitly opt into query values, bodies, or a
-  custom header-redaction set for controlled debugging.
+- `CurlCommandOptions` — every header value and query value remains redacted,
+  and request bodies remain omitted by default. Callers can explicitly opt
+  into header values, query values, or bodies for controlled local debugging.
 - `IdempotencyKeyPolicy` — retry attempts reuse one request-scoped key for
   unsafe methods; future minors may add provider hooks without changing the
   request-ID invariant.

@@ -599,13 +599,24 @@ upgrade. This is cache eviction, not application-data migration.
 - request bodies are omitted unless `CurlCommandOptions(includesBody: true)`;
 - query keys remain visible, but values are redacted unless
   `includesQueryValues: true`;
-- credential-like headers remain redacted; and
+- header names remain visible, but every value is redacted unless
+  `includesHeaderValues: true`; and
 - userinfo and fragments are always removed.
 
-Use body/query opt-ins only in a controlled local debugging path. They are not
-appropriate defaults for production logs. Network event URLs follow the same
-query/userinfo/fragment policy, mask JWT-like path values, and publish stable
-failure categories instead of potentially sensitive error payload text.
+Use header/query/body opt-ins only in a controlled local debugging path. They
+are not appropriate defaults for production logs. Network event URLs follow
+the same query/userinfo/fragment policy, mask JWT-like path values, and publish
+stable failure categories instead of potentially sensitive error payload text.
+`DefaultNetworkLogger` also redacts every request and response header value by
+default rather than trying to identify sensitive custom header names. Its
+secure error path logs the same stable failure category used by events.
+
+The 5.0 preview removes `CurlCommandOptions.redactedHeaderNames`,
+`CurlCommandOptions.defaultRedactedHeaderNames`, and
+`NetworkLoggingOptions.sensitiveHeaderNames`. Replace selective deny-lists with
+the fail-closed defaults. A controlled local diagnostic that truly needs raw
+header values can opt in with `includesHeaderValues: true` for cURL or
+`redactSensitiveData: false` / `NetworkLoggingOptions.verbose` for the logger.
 
 `PersistentResponseCacheConfiguration.dataProtectionClass` now defaults to
 `.completeUntilFirstUserAuthentication` instead of `.completeUnlessOpen`.
@@ -639,7 +650,11 @@ dependency-policy findings must be resolved.
 The 5.0 release notes begin with `<!-- release-status: draft -->` while this
 migration is under development. Do not tag from a draft. Release publication
 requires the exact top-of-file `<!-- release-status: ready -->` marker in
-addition to the remaining release checks.
+addition to the remaining release checks. The ready marker is not a standalone
+switch: README, API stability, CHANGELOG, security support, the public-symbol
+baseline, this guide, release-note status, and release date must move to the
+released 5.0 state in the same commit. The docs-state validator reads the
+tagged Git tree and fails closed on a mixed transition.
 
 ## Pre-flight checklist
 

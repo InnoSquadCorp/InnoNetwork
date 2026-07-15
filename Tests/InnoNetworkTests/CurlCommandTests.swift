@@ -5,13 +5,14 @@ import Testing
 
 @Suite("Curl Command Tests")
 struct CurlCommandTests {
-    @Test("curlCommand redacts sensitive headers by default")
-    func curlCommandRedactsSensitiveHeadersByDefault() {
+    @Test("curlCommand redacts every header value by default")
+    func curlCommandRedactsEveryHeaderValueByDefault() {
         var request = URLRequest(url: URL(string: "https://api.example.com/orders")!)
         request.httpMethod = "POST"
         request.setValue("Bearer secret", forHTTPHeaderField: "Authorization")
         request.setValue("abc-123", forHTTPHeaderField: "Idempotency-Key")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("alice@example.com", forHTTPHeaderField: "X-User-Email")
         request.httpBody = Data(#"{"name":"coffee"}"#.utf8)
 
         let command = request.curlCommand()
@@ -19,12 +20,14 @@ struct CurlCommandTests {
         #expect(command.contains("curl -X 'POST'"))
         #expect(command.contains("Authorization: <redacted>"))
         #expect(command.contains("Idempotency-Key: <redacted>"))
-        #expect(command.contains("Content-Type: application/json"))
+        #expect(command.contains("Content-Type: <redacted>"))
+        #expect(command.contains("X-User-Email: <redacted>"))
         #expect(!command.contains("--data-raw"))
         #expect(!command.contains("coffee"))
         #expect(command.contains("'https://api.example.com/orders'"))
         #expect(!command.contains("Bearer secret"))
         #expect(!command.contains("abc-123"))
+        #expect(!command.contains("alice@example.com"))
     }
 
     @Test("curlCommand can render file-backed bodies")
@@ -57,19 +60,27 @@ struct CurlCommandTests {
         #expect(!command.contains("fragment"))
     }
 
-    @Test("curlCommand exposes query values and body only through explicit opt-ins")
+    @Test("curlCommand exposes header, query, and body values only through explicit opt-ins")
     func curlCommandExplicitSensitiveDataOptIns() throws {
         let url = try #require(
             URL(string: "https://user:password@api.example.com/orders?token=local-debug#fragment")
         )
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.setValue("Bearer local-secret", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data(#"{"name":"coffee"}"#.utf8)
 
         let command = request.curlCommand(
-            options: CurlCommandOptions(includesBody: true, includesQueryValues: true)
+            options: CurlCommandOptions(
+                includesHeaderValues: true,
+                includesBody: true,
+                includesQueryValues: true
+            )
         )
 
+        #expect(command.contains("Authorization: Bearer local-secret"))
+        #expect(command.contains("Content-Type: application/json"))
         #expect(command.contains("token=local-debug"))
         #expect(command.contains(#"--data-raw '{"name":"coffee"}'"#))
         #expect(!command.contains("user:password"))

@@ -2,17 +2,9 @@ import Foundation
 
 /// Options used when rendering a `URLRequest` as a privacy-safe diagnostic curl command.
 public struct CurlCommandOptions: Sendable, Equatable {
-    /// Header names redacted by default, stored lowercase for comparison.
-    public static let defaultRedactedHeaderNames: Set<String> = [
-        "authorization",
-        "cookie",
-        "idempotency-key",
-        "proxy-authorization",
-        "set-cookie",
-    ]
-
-    /// Case-insensitive header names whose values should render as `<redacted>`.
-    public let redactedHeaderNames: Set<String>
+    /// Whether header values should be emitted. Header names remain visible
+    /// by default while every value renders as `<redacted>`.
+    public let includesHeaderValues: Bool
     /// Whether the rendered command should include a request body when known.
     public let includesBody: Bool
     /// Whether query values should be emitted. Query keys remain visible by
@@ -22,12 +14,12 @@ public struct CurlCommandOptions: Sendable, Equatable {
     public let bodyFileURL: URL?
 
     public init(
-        redactedHeaderNames: Set<String> = Self.defaultRedactedHeaderNames,
+        includesHeaderValues: Bool = false,
         includesBody: Bool = false,
         includesQueryValues: Bool = false,
         bodyFileURL: URL? = nil
     ) {
-        self.redactedHeaderNames = Set(redactedHeaderNames.map { $0.lowercased() })
+        self.includesHeaderValues = includesHeaderValues
         self.includesBody = includesBody
         self.includesQueryValues = includesQueryValues
         self.bodyFileURL = bodyFileURL
@@ -37,9 +29,9 @@ public struct CurlCommandOptions: Sendable, Equatable {
 public extension URLRequest {
     /// Returns a shell-escaped diagnostic curl command for the request.
     ///
-    /// Sensitive headers and query values are redacted by default; URL
-    /// user-info and fragments are always removed. Request bodies are omitted
-    /// unless ``CurlCommandOptions/includesBody`` is explicitly enabled.
+    /// Header and query values are redacted by default; URL user-info and
+    /// fragments are always removed. Request bodies are omitted unless
+    /// ``CurlCommandOptions/includesBody`` is explicitly enabled.
     /// Opted-in UTF-8 bodies use `--data-raw`; file-backed bodies use
     /// ``CurlCommandOptions/bodyFileURL``.
     func curlCommand(options: CurlCommandOptions = CurlCommandOptions()) -> String {
@@ -56,8 +48,7 @@ public extension URLRequest {
         }
 
         for (name, value) in (allHTTPHeaderFields ?? [:]).sorted(by: { $0.key.lowercased() < $1.key.lowercased() }) {
-            let renderedValue =
-                options.redactedHeaderNames.contains(name.lowercased()) ? "<redacted>" : value
+            let renderedValue = options.includesHeaderValues ? value : "<redacted>"
             parts.append("-H")
             parts.append(Self.shellEscape("\(name): \(renderedValue)"))
         }

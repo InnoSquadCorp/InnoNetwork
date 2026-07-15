@@ -20,7 +20,11 @@
    Change it to the exact top-of-file
    `<!-- release-status: ready -->` marker only after the release contents and
    required validation are deliberately approved. Unknown, missing, misplaced,
-   or draft markers block release publication.
+   or draft markers block release publication. For the `5.0.0` compatibility
+   reset, the marker must change in the same commit as README, API stability,
+   CHANGELOG, security-support, symbol-baseline, migration-guide, status-line,
+   and release-date claims. `Scripts/validate_docs_release_state.sh` rejects a
+   marker-only transition or a mixed draft/ready Git tree.
 3. Push an unprefixed annotated SemVer tag such as `5.0.0` only from a commit
    whose matching release notes are marked `ready`. The tagged commit
    must exactly match the freshly fetched `origin/main` HEAD and already

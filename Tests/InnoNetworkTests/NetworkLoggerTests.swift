@@ -44,7 +44,7 @@ struct NetworkLoggerTests {
 
         #expect(sanitizedHeaders["Authorization"] == "<redacted>")
         #expect(sanitizedHeaders["X-API-Key"] == "<redacted>")
-        #expect(sanitizedHeaders["Content-Type"] == "application/json")
+        #expect(sanitizedHeaders["Content-Type"] == "<redacted>")
     }
 
     @Test("Secure default redacts body and verbose mode keeps body")
@@ -88,9 +88,18 @@ struct NetworkLoggerTests {
     @Test("Verbose mode keeps URL query values")
     func verboseModeKeepsURLQueryValues() throws {
         let logger = DefaultNetworkLogger(options: .verbose)
-        let url = try #require(URL(string: "https://example.com/search?token=secret&email=a@example.com"))
+        let url = try #require(
+            URL(
+                string:
+                    "https://user:password@example.com/search?token=secret&email=a@example.com#access_token=fragment"
+            )
+        )
 
-        #expect(logger.sanitize(url: url) == url.absoluteString)
+        let sanitized = logger.sanitize(url: url)
+        #expect(sanitized.contains("token=secret"))
+        #expect(sanitized.contains("email=a@example.com"))
+        #expect(!sanitized.contains("user:password"))
+        #expect(!sanitized.contains("fragment"))
     }
 
     @Test("Verbose mode still masks JWT-like URL path segments")
@@ -100,9 +109,10 @@ struct NetworkLoggerTests {
         let url = try #require(URL(string: "https://example.com/files/\(token)/raw?token=secret"))
 
         let sanitized = logger.sanitize(url: url)
+        let components = try #require(URLComponents(string: sanitized))
 
         #expect(!sanitized.contains(token))
-        #expect(sanitized.contains("<redacted-jwt>"))
+        #expect(components.path.contains("<redacted-jwt>"))
         #expect(sanitized.contains("token=secret"))
     }
 
@@ -141,27 +151,32 @@ struct NetworkLoggerTests {
         #expect(!sanitizedCookies.contains(token))
     }
 
-    @Test("Custom sensitiveHeaderNames with mixed case still redact")
-    func customSensitiveHeaderNamesAreCaseInsensitive() {
-        // Callers passing mixed-case header names should still trigger
-        // redaction — the comparison site lowercases the request header
-        // key, so the stored set has to be lowercased at init.
-        let options = NetworkLoggingOptions(
-            sensitiveHeaderNames: [
-                "X-Custom-Token",
-                "X-INTERNAL-AUTH",
-            ]
-        )
-        let logger = DefaultNetworkLogger(options: options)
-        let sanitizedHeaders = logger.sanitize(headers: [
-            "x-custom-token": "abc",
-            "X-Internal-Auth": "def",
-            "X-Other": "kept",
-        ])
+    @Test("Secure logger redacts arbitrary headers and verbose mode is an explicit opt-in")
+    func arbitraryHeaderValuesRequireVerboseOptIn() {
+        let headers = [
+            "Content-Type": "application/json",
+            "X-User-Email": "alice@example.com",
+        ]
 
-        #expect(sanitizedHeaders["x-custom-token"] == "<redacted>")
-        #expect(sanitizedHeaders["X-Internal-Auth"] == "<redacted>")
-        #expect(sanitizedHeaders["X-Other"] == "kept")
+        let secureHeaders = DefaultNetworkLogger().sanitize(headers: headers)
+        let verboseHeaders = DefaultNetworkLogger(options: .verbose).sanitize(headers: headers)
+
+        #expect(secureHeaders["Content-Type"] == "<redacted>")
+        #expect(secureHeaders["X-User-Email"] == "<redacted>")
+        #expect(verboseHeaders == headers)
+    }
+
+    @Test("Secure logger classifies free-form errors without emitting their payload")
+    func freeFormErrorPayloadRequiresVerboseOptIn() {
+        let secret = "alice@example.com"
+        let error = NetworkError.configuration(reason: .invalidRequest(secret))
+
+        let secureMessage = DefaultNetworkLogger().sanitize(error: error)
+        let verboseMessage = DefaultNetworkLogger(options: .verbose).sanitize(error: error)
+
+        #expect(secureMessage == "configuration.invalid_request")
+        #expect(!secureMessage.contains(secret))
+        #expect(verboseMessage.contains(secret))
     }
 
     @Test("Logger accepts a non-shared cookie storage at init")

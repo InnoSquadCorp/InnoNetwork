@@ -4,6 +4,7 @@ set -euo pipefail
 
 scripts_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 validator_source="$scripts_root/validate_release_ref.sh"
+docs_state_validator_source="$scripts_root/validate_docs_release_state.sh"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/validate-release-ref.XXXXXX")"
 trap 'rm -rf "$test_root"' EXIT
 
@@ -21,16 +22,58 @@ new_repo() {
     git -C "$current_repo" config user.name "Release Validator Test"
     git -C "$current_repo" config user.email "release-validator@example.invalid"
 
-    mkdir -p "$current_repo/docs/releases" "$current_repo/Scripts"
+    mkdir -p "$current_repo/docs/releases" "$current_repo/Scripts/symbols"
+    cat > "$current_repo/API_STABILITY.md" <<'EOF'
+# API Stability (5.x)
+
+`5.0.0` is the public compatibility baseline for this contract.
+
+`.upToNextMajor(from: "5.0.0")`
+EOF
+    cat > "$current_repo/README.md" <<'EOF'
+# Fixture
+
+`5.0.0` is the latest tagged stable release.
+
+`.upToNextMajor(from: "5.0.0")`
+
+5.0 Release Notes: [docs/releases/5.0.0.md](docs/releases/5.0.0.md)
+EOF
+    cat > "$current_repo/CHANGELOG.md" <<'EOF'
+# Changelog
+
+## [Unreleased]
+
+## [5.0.0] - 2026-07-16
+EOF
+    cat > "$current_repo/SECURITY.md" <<'EOF'
+# Security
+
+`5.x` is the actively supported tagged public release line.
+EOF
+    cat > "$current_repo/Scripts/symbols/README.md" <<'EOF'
+# Symbols
+
+## Current sizes (5.0.0 release baseline)
+EOF
+    cat > "$current_repo/docs/Migration-5.0.0.md" <<'EOF'
+# Migration Guide: 5.0.0
+
+This guide describes the released 5.0.0 compatibility reset.
+EOF
     if [[ "$include_notes" == "1" ]]; then
-        printf '<!-- release-status: %s -->\n\n# Release %s\n' \
+        printf '<!-- release-status: %s -->\n# InnoNetwork %s Release Notes\n\nStatus: Ready for release\n\nRelease date: 2026-07-16\n' \
             "$release_status" "$version" > "$current_repo/docs/releases/${version}.md"
-    else
-        printf '# Fixture\n' > "$current_repo/README.md"
+        if [[ "$release_status" != "ready" ]]; then
+            sed -i.bak 's/Status: Ready for release/Status: Draft (unreleased)/' \
+                "$current_repo/docs/releases/${version}.md"
+            rm "$current_repo/docs/releases/${version}.md.bak"
+        fi
     fi
     git -C "$current_repo" add .
     git -C "$current_repo" commit -q -m "fixture"
     cp "$validator_source" "$current_repo/Scripts/validate_release_ref.sh"
+    cp "$docs_state_validator_source" "$current_repo/Scripts/validate_docs_release_state.sh"
 }
 
 annotate() {
@@ -87,6 +130,15 @@ expect_failure() {
 new_repo "5.0.0"
 annotate "$current_repo" "5.0.0"
 expect_success "annotated stable SemVer at exact main HEAD with ready notes" \
+    run_validator "$current_repo" "5.0.0"
+
+new_repo "5.0.0"
+printf '\n`4.0.0` is the latest tagged stable release.\n' >> "$current_repo/README.md"
+git -C "$current_repo" add README.md
+git -C "$current_repo" commit -q -m "contradict 5.0 release state"
+annotate "$current_repo" "5.0.0"
+expect_failure "ready 5.0 marker with contradictory repository docs is rejected" \
+    "tagged 5.0.0 documentation does not form one coherent ready release state" \
     run_validator "$current_repo" "5.0.0"
 
 new_repo "5.0.0-rc.1+build.7"
