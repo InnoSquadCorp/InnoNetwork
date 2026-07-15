@@ -17,15 +17,16 @@
 ///
 /// - Parameters:
 ///   - method: HTTP method expression returned by the generated `method`
-///     property.
-///   - path: Static route template. Placeholders such as `{id}` are expanded
-///     only when they match **stored** properties declared directly on the
-///     annotated type. Computed properties and members inherited from a
-///     superclass or extension are not considered. Wrap dynamic values into a
-///     stored property first if you need them in the path.
-///   - auth: Explicit authentication requirement. Callers must choose
-///     `.anonymous`, `.optional`, or `.required`; the macro never guesses
-///     this policy.
+///     property. Simple body/query inference accepts only the contextual
+///     `.get`, `.head`, `.post`, `.put`, `.patch`, or `.delete` spelling.
+///   - path: Single-line, non-raw static route literal. Placeholders such as
+///     `{id}` are expanded only when they match **stored** properties declared
+///     directly on the annotated type. Computed properties and members inherited
+///     from a superclass or extension are not considered. Wrap dynamic values
+///     into a stored property first if you need them in the path.
+///   - auth: Explicit authentication requirement. Callers must use the
+///     contextual `.anonymous`, `.optional`, or `.required` spelling; the macro
+///     never guesses this policy.
 @attached(
     extension,
     conformances: APIDefinition,

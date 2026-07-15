@@ -142,7 +142,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
     }
 
     private static func authentication(from argument: LabeledExprSyntax) throws -> Authentication {
-        switch enumCaseName(from: argument.expression) {
+        switch explicitCaseName(from: argument.expression) {
         case "anonymous":
             return .anonymous
         case "optional":
@@ -308,6 +308,12 @@ public struct APIDefinitionMacro: ExtensionMacro {
             throw InnoNetworkMacroDiagnostic(
                 "@APIDefinition \(name): must be a static string literal.",
                 id: "api-definition-nonliteral-\(name)"
+            ).error(at: argument.expression)
+        }
+        guard literal.openingPounds == nil, literal.openingQuote.text == "\"" else {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition \(name): must use a single-line non-raw string literal; raw and multiline literals are not supported.",
+                id: "api-definition-unsupported-literal-\(name)"
             ).error(at: argument.expression)
         }
 
@@ -613,7 +619,7 @@ public struct APIDefinitionMacro: ExtensionMacro {
     }
 
     private static func methodKind(_ method: ExprSyntax) -> MethodKind {
-        switch enumCaseName(from: method) {
+        switch explicitCaseName(from: method) {
         case "get":
             return .queryOnly(name: "GET")
         case "head":
@@ -628,8 +634,24 @@ public struct APIDefinitionMacro: ExtensionMacro {
     private static let simplePayloadMethodDiagnostic =
         "@APIDefinition simple body/query inference requires method: to be an explicit .get, .head, .post, .put, .patch, or .delete standard HTTPMethod member; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods."
 
-    private static func enumCaseName(from expression: ExprSyntax) -> String? {
-        expression.as(MemberAccessExprSyntax.self)?.declName.baseName.text
+    /// Returns a member name only for the leading-dot spelling the macro owns.
+    ///
+    /// Looking only at the terminal token is unsafe: a caller can declare an
+    /// unrelated `Policy.anonymous` whose value is `.required`, or a
+    /// `Methods.get` whose value is `.post`. The macro has no type information
+    /// at expansion time, so accepting those expressions would let the
+    /// generated authentication or payload contract diverge from runtime
+    /// behavior. Even `SessionAuthentication.anonymous` can be shadowed by a
+    /// caller-owned type with a same-named static value. Keep inference fully
+    /// fail-closed and accept only the contextual `.case` spelling.
+    private static func explicitCaseName(from expression: ExprSyntax) -> String? {
+        guard let member = expression.as(MemberAccessExprSyntax.self) else {
+            return nil
+        }
+        guard member.base == nil else {
+            return nil
+        }
+        return member.declName.baseName.text
     }
 
     private static func normalizedParametersWitness(

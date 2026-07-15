@@ -36,8 +36,10 @@ the endpoint struct when it owns them. Authentication is also mandatory at the
 attribute: every endpoint must choose `.anonymous`, `.optional`, or `.required`
 rather than silently inheriting a security policy.
 
-Path placeholders must match stored properties declared directly on the
-struct. Values pass through
+`path:` must be an ordinary single-line string literal; raw and multiline
+literals fail with a targeted diagnostic because their source spelling cannot
+be safely re-emitted as generated interpolation. Path placeholders must match
+stored properties declared directly on the struct. Values pass through
 ``EndpointPathEncoding/percentEncodedSegment(_:)``, so a slash, space, percent
 sign, or non-ASCII scalar stays inside one path segment.
 
@@ -128,10 +130,14 @@ or incomplete, including:
 - omitting `typealias APIResponse`
 - omitting `auth:` or passing anything other than `.anonymous`, `.optional`, or
   `.required`
+- qualifying an auth case or a standard method used for simple payload
+  inference; leading-dot cases keep the macro's syntax-only inference
+  unambiguous
 - duplicating generated conformance, `method`, `path`, or
   `sessionAuthentication` witnesses
 - using a missing, optional, opaque, or unsupported generic path placeholder
 - putting query/fragment text or an invalid percent escape in `path:`
+- using a raw or multiline `path:` literal
 - using computed, static, or lazy `body` / `query` properties in simple mode
 - declaring only one half of the manual `Parameter` + `parameters` pair
 - asking a custom or dynamic method to infer a simple `body` / `query` payload

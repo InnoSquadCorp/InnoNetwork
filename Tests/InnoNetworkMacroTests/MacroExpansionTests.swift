@@ -769,6 +769,71 @@ struct MacroExpansionTests {
         )
     }
 
+    @Test("APIDefinition macro rejects raw path literals before re-emitting them")
+    func apiDefinitionRawPathLiteral() {
+        assertMacroExpansion(
+            #"""
+            @APIDefinition(method: .get, path: #"/users/\(notInterpolation)/{id}"#, auth: .anonymous)
+            struct GetUser {
+                let id: Int
+                typealias APIResponse = User
+            }
+            """#,
+            expandedSource:
+                """
+                struct GetUser {
+                    let id: Int
+                    typealias APIResponse = User
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition path: must use a single-line non-raw string literal; raw and multiline literals are not supported.",
+                    line: 1,
+                    column: 36
+                )
+            ],
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro rejects multiline path literals before re-emitting them")
+    func apiDefinitionMultilinePathLiteral() {
+        assertMacroExpansion(
+            #"""
+            @APIDefinition(
+                method: .get,
+                path: """
+                /users
+                /{id}
+                """,
+                auth: .anonymous
+            )
+            struct ListUsers {
+                let id: Int
+                typealias APIResponse = [User]
+            }
+            """#,
+            expandedSource:
+                """
+                struct ListUsers {
+                    let id: Int
+                    typealias APIResponse = [User]
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition path: must use a single-line non-raw string literal; raw and multiline literals are not supported.",
+                    line: 3,
+                    column: 11
+                )
+            ],
+            macros: macros
+        )
+    }
+
     @Test("APIDefinition macro rejects static dot segments and encoded bypasses")
     func apiDefinitionDotSegments() {
         for path in [
@@ -1055,11 +1120,38 @@ struct MacroExpansionTests {
         )
     }
 
-    @Test("APIDefinition macro accepts qualified method and auth cases")
-    func apiDefinitionQualifiedCases() {
+    @Test("APIDefinition macro rejects a type-qualified auth case")
+    func apiDefinitionRejectsTypeQualifiedAuthCase() {
         assertMacroExpansion(
             """
-            @APIDefinition(method: InnoNetwork.HTTPMethod.post, path: "/users", auth: InnoNetwork.SessionAuthentication.required)
+            @APIDefinition(method: .get, path: "/users", auth: SessionAuthentication.required)
+            struct ListUsers {
+                typealias APIResponse = [User]
+            }
+            """,
+            expandedSource:
+                """
+                struct ListUsers {
+                    typealias APIResponse = [User]
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition auth: must be the explicit .anonymous, .optional, or .required enum case.",
+                    line: 1,
+                    column: 52
+                )
+            ],
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro rejects a type-qualified method during payload inference")
+    func apiDefinitionRejectsTypeQualifiedMethod() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: HTTPMethod.post, path: "/users", auth: .anonymous)
             struct CreateUser {
                 typealias APIResponse = User
                 let body: CreateUserRequest
@@ -1071,32 +1163,71 @@ struct MacroExpansionTests {
                     typealias APIResponse = User
                     let body: CreateUserRequest
                 }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition simple body/query inference requires method: to be an explicit .get, .head, .post, .put, .patch, or .delete standard HTTPMethod member; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
+                    line: 1,
+                    column: 24
+                )
+            ],
+            macros: macros
+        )
+    }
 
-                extension CreateUser: InnoNetwork.APIDefinition {
-                    internal typealias Parameter = CreateUserRequest
-                    internal var parameters: Parameter? {
-                        func normalized<Value>(_ value: Value) -> Value? {
-                            .some(value)
-                        }
-                        func normalized<Value>(_ value: Value?) -> Value?? {
-                            guard let value else {
-                                return nil
-                            }
-                            return .some(.some(value))
-                        }
-                        return normalized(body)
-                    }
-                    internal var sessionAuthentication: InnoNetwork.SessionAuthentication {
-                        .required
-                    }
-                    internal var method: InnoNetwork.HTTPMethod {
-                        InnoNetwork.HTTPMethod.post
-                    }
-                    internal var path: Swift.String {
-                        "/users"
-                    }
+    @Test("APIDefinition macro rejects auth aliases whose terminal name mimics a case")
+    func apiDefinitionRejectsQualifiedAuthAlias() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: .get, path: "/users", auth: PolicyAlias.anonymous)
+            struct ListUsers {
+                typealias APIResponse = [User]
+            }
+            """,
+            expandedSource:
+                """
+                struct ListUsers {
+                    typealias APIResponse = [User]
                 }
                 """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition auth: must be the explicit .anonymous, .optional, or .required enum case.",
+                    line: 1,
+                    column: 52
+                )
+            ],
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro rejects method aliases whose terminal name mimics a standard method")
+    func apiDefinitionRejectsQualifiedMethodAlias() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: MethodAlias.get, path: "/users", auth: .anonymous)
+            struct ListUsers {
+                typealias APIResponse = [User]
+                let query: ListUsersQuery
+            }
+            """,
+            expandedSource:
+                """
+                struct ListUsers {
+                    typealias APIResponse = [User]
+                    let query: ListUsersQuery
+                }
+                """,
+            diagnostics: [
+                DiagnosticSpec(
+                    message:
+                        "@APIDefinition simple body/query inference requires method: to be an explicit .get, .head, .post, .put, .patch, or .delete standard HTTPMethod member; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
+                    line: 1,
+                    column: 24
+                )
+            ],
             macros: macros
         )
     }

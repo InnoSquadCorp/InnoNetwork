@@ -1,0 +1,1 @@
+@APIDefinition auth: must be the explicit .anonymous, .optional, or .required enum case.

@@ -1,0 +1,1 @@
+@APIDefinition simple body/query inference requires method:
