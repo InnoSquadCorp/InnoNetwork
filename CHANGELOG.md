@@ -81,13 +81,17 @@ draft release summary.
 - CI builds DocC for all eight public products and fails closed when core or
   macro coverage artifacts are missing, empty, or contain absolute
   source paths.
-- CI and release validation now build the declared tvOS, watchOS, and visionOS
-  destinations as required gates, compile consumer fixtures at the package's
-  deployment floors, run generalized macro compile-failure fixtures, and treat
-  dependency review failures as blocking.
+- CI and release validation now cross-compile every public library product for
+  the declared tvOS, watchOS, and visionOS device SDKs at the package's
+  deployment floors as required gates, compile consumer fixtures at those
+  floors, run generalized macro compile-failure fixtures, and treat dependency
+  review failures as blocking.
 
 ### Fixed
 
+- `NetworkMonitor` now keeps `NWPathMonitor` actor-isolated instead of relying
+  on its newer OS-only `Sendable` conformance, preserving clean compilation at
+  the declared iOS 16, tvOS 16, and watchOS 9 deployment floors.
 - Inline response collection through `safeDefaults`, the `advanced` preset,
   and `recommendedForProduction` is bounded to 5 MiB by default. Explicit
   `.streaming(maxBytes: nil)` or `.buffered(maxBytes: nil)` remains the

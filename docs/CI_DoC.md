@@ -43,13 +43,13 @@ The `CI` workflow must pass all of the following:
    `latest` binary at upload time. Pull requests retain artifact-only fallback
    when CLI installation or an upload fails, while canonical `main` pushes
    require both uploads.
-10. `apple-platform-build-smoke` runs `xcodebuild ... build` for macOS, iOS,
-   tvOS, watchOS, and visionOS destinations. Simulator destinations are
-   build-only; SwiftPM test+coverage remains the runtime test gate. macOS and
-   iOS are required. tvOS, watchOS, and visionOS build whenever the pinned
-   hosted runner exposes a compatible SDK and destination; a missing optional
-   platform component emits an explicit notice, while a source or build
-   failure on an available destination still fails the job.
+10. `apple-platform-build-smoke` runs `xcodebuild ... build` for macOS and iOS.
+   For tvOS, watchOS, and visionOS it uses the installed device SDK plus the
+   package's minimum target triple to cross-compile every public library
+   product. This avoids depending on hosted-runner simulator runtimes that can
+   be pruned independently of their SDKs. All five platforms are unconditional
+   hard gates: a missing SDK, undiscoverable public product, or compile failure
+   fails CI. SwiftPM test+coverage remains the runtime test gate.
 11. Consumer smoke verifies `Macros` is a default trait, the default package
    graph includes `swift-syntax`, and the `InnoNetworkMacros` target
    dependency is conditioned on that trait. It then performs a clean

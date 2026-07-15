@@ -216,18 +216,23 @@ jobs:
           - destination: "platform=macOS"
             runtime: "macOS"
             sdk: "macosx"
+            builder: "xcodebuild"
           - destination: "generic/platform=iOS Simulator"
             runtime: "iOS"
             sdk: "iphonesimulator"
-          - destination: "generic/platform=tvOS"
+            builder: "xcodebuild"
+          - triple: "arm64-apple-tvos16.0"
             runtime: "tvOS"
             sdk: "appletvos"
-          - destination: "generic/platform=watchOS"
+            builder: "swiftpm-cross"
+          - triple: "arm64_32-apple-watchos9.0"
             runtime: "watchOS"
             sdk: "watchos"
-          - destination: "generic/platform=visionOS"
+            builder: "swiftpm-cross"
+          - triple: "arm64-apple-xros1.0"
             runtime: "visionOS"
             sdk: "xros"
+            builder: "swiftpm-cross"
 
     steps:
       - name: Checkout
@@ -269,6 +274,16 @@ jobs:
 
       - name: Build package for ${{ matrix.runtime }}
         run: |
+          set -euo pipefail
+
+          if [[ '${{ matrix.builder }}' == "swiftpm-cross" ]]; then
+            bash Scripts/build_apple_platform_targets.sh \
+              '${{ matrix.runtime }}' \
+              '${{ matrix.sdk }}' \
+              '${{ matrix.triple }}'
+            exit 0
+          fi
+
           xcodebuild \
             -scheme InnoNetwork-Package \
             -destination '${{ matrix.destination }}' \

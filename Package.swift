@@ -22,15 +22,11 @@ let package = Package(
     name: "InnoNetwork",
     defaultLocalization: "en",
     platforms: [
-        // 4.0.0 first public release floor. macOS sits at 14 (and not 13
-        // alongside iOS 16) because `NWPathMonitor`'s `Sendable`
-        // conformance is only available on macOS 14+; the rest of the
-        // surface works on macOS 13 but the network reachability path
-        // needs the newer SDK guarantee. The previous comment on this
-        // file claimed the 4.x line had been "bumped to iOS 18" — that
-        // was inherited from a stale draft and never matched the
-        // declared values below; corrected here so the manifest is
-        // self-consistent.
+        // 4.0.0 first public release floors. macOS 14 remains the established
+        // baseline for the package's modern concurrency contract. The network
+        // reachability implementation actor-isolates `NWPathMonitor`, so the
+        // lower iOS/tvOS/watchOS floors do not depend on that framework type's
+        // newer OS-only `Sendable` conformance.
         .iOS(.v16),
         .macOS(.v14),
         .tvOS(.v16),

@@ -404,18 +404,23 @@ jobs:
           - destination: "platform=macOS"
             runtime: "macOS"
             sdk: "macosx"
+            builder: "xcodebuild"
           - destination: "generic/platform=iOS Simulator"
             runtime: "iOS"
             sdk: "iphonesimulator"
-          - destination: "generic/platform=tvOS"
+            builder: "xcodebuild"
+          - triple: "arm64-apple-tvos16.0"
             runtime: "tvOS"
             sdk: "appletvos"
-          - destination: "generic/platform=watchOS"
+            builder: "swiftpm-cross"
+          - triple: "arm64_32-apple-watchos9.0"
             runtime: "watchOS"
             sdk: "watchos"
-          - destination: "generic/platform=visionOS"
+            builder: "swiftpm-cross"
+          - triple: "arm64-apple-xros1.0"
             runtime: "visionOS"
             sdk: "xros"
+            builder: "swiftpm-cross"
 
     steps:
       - name: Checkout
@@ -434,25 +439,30 @@ jobs:
       - name: Resolve dependencies
         run: xcrun swift package resolve
 
-      - name: Build package for destination
+      - name: Build package for ${{ matrix.runtime }}
         run: |
           set -euo pipefail
 
           runtime="${{ matrix.runtime }}"
           sdk="${{ matrix.sdk }}"
-          destination="${{ matrix.destination }}"
+          builder="${{ matrix.builder }}"
 
           if ! xcrun --sdk "$sdk" --show-sdk-path >/dev/null 2>&1; then
             echo "::error::Required $runtime SDK $sdk is not installed on the pinned runner."
             exit 1
           fi
 
-          # The build is the authoritative destination check. In particular,
-          # Xcode 26.0.1 can omit generic device rows from `-showdestinations`
-          # even when the matching device SDK is installed and buildable.
+          if [[ "$builder" == "swiftpm-cross" ]]; then
+            bash Scripts/build_apple_platform_targets.sh \
+              "$runtime" \
+              "$sdk" \
+              '${{ matrix.triple }}'
+            exit 0
+          fi
+
           xcodebuild \
             -scheme InnoNetwork-Package \
-            -destination "$destination" \
+            -destination '${{ matrix.destination }}' \
             -skipMacroValidation \
             -derivedDataPath build/apple-platform-smoke \
             CODE_SIGNING_ALLOWED=NO \

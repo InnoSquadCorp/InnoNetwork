@@ -1,47 +1,5 @@
 import Foundation
 @preconcurrency import Network
-import os
-
-private final class PathMonitorStorage: Sendable {
-    private let queue: DispatchQueue
-    private let activeMonitor: OSAllocatedUnfairLock<NWPathMonitor?>
-
-    init() {
-        self.queue = DispatchQueue(label: "com.innonetwork.networkmonitor")
-        self.activeMonitor = OSAllocatedUnfairLock(initialState: nil)
-    }
-
-    func makePathStream() -> AsyncStream<NWPath> {
-        // `NWPathMonitor.cancel()` is terminal: a cancelled monitor cannot be
-        // restarted. Recreate one per `makePathStream()` so that callers may
-        // stop and re-start observation without leaking the prior instance.
-        let monitor = NWPathMonitor()
-        activeMonitor.withLock { $0 = monitor }
-        return AsyncStream(bufferingPolicy: .bufferingNewest(64)) { [monitor] continuation in
-            monitor.pathUpdateHandler = { path in
-                continuation.yield(path)
-            }
-            continuation.onTermination = { _ in
-                monitor.pathUpdateHandler = nil
-            }
-        }
-    }
-
-    func start() {
-        let monitor = activeMonitor.withLock { $0 }
-        monitor?.start(queue: queue)
-    }
-
-    func cancel() {
-        let monitor = activeMonitor.withLock { state -> NWPathMonitor? in
-            let snapshot = state
-            state = nil
-            return snapshot
-        }
-        monitor?.cancel()
-    }
-}
-
 
 /// The type of network interface used for connectivity.
 public enum NetworkInterfaceType: String, Sendable {
@@ -122,19 +80,22 @@ public protocol NetworkMonitoring: Sendable {
 public actor NetworkMonitor: NetworkMonitoring {
     public static let shared = NetworkMonitor()
 
-    private let pathMonitor: PathMonitorStorage
+    private let pathMonitorQueue: DispatchQueue
+    private var activePathMonitor: NWPathMonitor?
     private var current: NetworkSnapshot?
     private var continuations: [UUID: AsyncStream<NetworkSnapshot>.Continuation] = [:]
     private var isMonitoring = false
+    private var monitoringGeneration: UInt64 = 0
     private var pathConsumerTask: Task<Void, Never>?
 
     public init() {
-        pathMonitor = PathMonitorStorage()
+        pathMonitorQueue = DispatchQueue(label: "com.innonetwork.networkmonitor")
     }
 
     deinit {
         pathConsumerTask?.cancel()
-        pathMonitor.cancel()
+        activePathMonitor?.pathUpdateHandler = nil
+        activePathMonitor?.cancel()
     }
 
     /// Begin observing path updates. Calling this before the first `currentSnapshot`
@@ -151,9 +112,12 @@ public actor NetworkMonitor: NetworkMonitoring {
     /// or `waitForChange(...)` will resume monitoring with a fresh consumer.
     public func stop() {
         guard isMonitoring else { return }
+        monitoringGeneration &+= 1
         pathConsumerTask?.cancel()
         pathConsumerTask = nil
-        pathMonitor.cancel()
+        activePathMonitor?.pathUpdateHandler = nil
+        activePathMonitor?.cancel()
+        activePathMonitor = nil
         for continuation in continuations.values {
             continuation.finish()
         }
@@ -207,33 +171,52 @@ public actor NetworkMonitor: NetworkMonitoring {
         }
     }
 
-    private func update(with path: NWPath) {
+    private func update(with path: NWPath, generation: UInt64) -> Bool {
+        guard isMonitoring, generation == monitoringGeneration else {
+            return false
+        }
         let snapshot = NetworkSnapshot(path: path)
         current = snapshot
         continuations.values.forEach { $0.yield(snapshot) }
+        return true
     }
 
     private func startMonitoringIfNeeded() {
         guard !isMonitoring else { return }
         isMonitoring = true
+        monitoringGeneration &+= 1
+        let generation = monitoringGeneration
 
         // Channelize NWPath callbacks through an AsyncStream so updates run
         // serially inside the actor instead of spawning a fresh Task per
         // emission. Under network flapping (elevators, transit, captive
         // portals) the previous design could pile up unbounded Tasks; this
-        // back-pressured loop processes paths in arrival order. The buffer
-        // is bounded so an unresponsive consumer cannot keep stale paths
-        // alive indefinitely.
-        let pathStream = pathMonitor.makePathStream()
+        // bounded loop keeps only the newest paths under pressure. A generation
+        // guard below prevents an already-dequeued path from a stopped monitor
+        // from mutating a newly started monitoring cycle.
+        // `NWPathMonitor.cancel()` is terminal, so every monitoring cycle owns
+        // a fresh instance. Keeping it actor-isolated avoids relying on the
+        // monitor's newer SDK-only `Sendable` conformance at the package's
+        // iOS 16 / tvOS 16 / watchOS 9 deployment floors.
+        let monitor = NWPathMonitor()
+        let pathStream = AsyncStream<NWPath>(bufferingPolicy: .bufferingNewest(64)) {
+            continuation in
+            monitor.pathUpdateHandler = { path in
+                continuation.yield(path)
+            }
+        }
+        activePathMonitor = monitor
 
         pathConsumerTask = Task { [weak self] in
             for await path in pathStream {
                 guard let self else { return }
-                await self.update(with: path)
+                guard await self.update(with: path, generation: generation) else {
+                    return
+                }
             }
         }
 
-        pathMonitor.start()
+        monitor.start(queue: pathMonitorQueue)
     }
 
     private func removeContinuation(_ id: UUID) {

@@ -541,10 +541,12 @@ macOS 14, tvOS 16, watchOS 9, and visionOS 1. Align copied or downstream smoke
 manifests so they test the same supported range.
 
 CI and release workflows now require macOS, iOS, tvOS, watchOS, and visionOS
-SDKs and destinations. A missing tvOS/watchOS/visionOS component fails the gate
-instead of producing an advisory skip. Dependency review is also blocking; the
-repository dependency graph must be enabled and dependency-policy findings
-must be resolved.
+SDKs. tvOS/watchOS/visionOS cross-compile every public library product with the
+package's minimum device target triple, so the gate does not depend on a hosted
+runner retaining simulator runtimes. A missing SDK or platform compile failure
+fails instead of producing an advisory skip. Dependency review is also
+blocking; the repository dependency graph must be enabled and
+dependency-policy findings must be resolved.
 
 The 5.0 release notes begin with `<!-- release-status: draft -->` while this
 migration is under development. Do not tag from a draft. Release publication
