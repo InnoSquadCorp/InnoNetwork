@@ -1066,6 +1066,8 @@ validate_release_quality_gates() {
     "$repo_root/.github/workflows/pr-dependency-submission.yml"
   require_contains 'Package.resolved as untrusted data' \
     "$repo_root/.github/workflows/pr-dependency-submission.yml"
+  require_contains "steps.fetch.outputs.current == 'true'" \
+    "$repo_root/.github/workflows/pr-dependency-submission.yml"
   require_contains '--package-resolved' \
     "$repo_root/.github/workflows/pr-dependency-submission.yml"
   require_not_contains 'pull_request_target' \
