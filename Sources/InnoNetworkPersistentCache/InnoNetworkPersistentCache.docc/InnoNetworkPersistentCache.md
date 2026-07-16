@@ -20,8 +20,11 @@ files. The caller-supplied directory root is not marked as excluded because it
 may also contain app-owned files. Protection and backup-exclusion metadata are
 reapplied after atomic replacement and when an existing cache is reopened.
 
-Sensitive request-header values that participate in disk cache keys are stored
-as managed HMAC-SHA256 values instead of raw text or unsalted fingerprints.
+The complete raw query and sensitive request-header values that participate in
+disk cache keys are stored as managed HMAC-SHA256 values instead of raw text or
+unsalted fingerprints. Query order, duplicate keys, empty items, and raw
+percent-encoding remain distinct through the HMAC input without appearing in
+the index.
 Entries that cannot satisfy the active privacy policy or storage budget are
 treated as misses and scrubbed from the cache's own files. Corrupt or
 unknown-version on-disk indexes are recovered automatically by resetting the

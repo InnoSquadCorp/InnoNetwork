@@ -638,10 +638,13 @@ signatures, duplicate-key behavior, and application routing, so
 Review tests or custom invalidation code that assumed reordered queries would
 collapse to one entry.
 
-The persistent cache index is version 3. Opening a version-2 or unknown index
-cold-resets the index and body store instead of migrating it. Treat the first
-5.0 launch as a cold cache; do not rely on a persistent response surviving the
-upgrade. This is cache eviction, not application-data migration.
+The persistent cache index is version 4. It HMAC-protects the complete raw
+query before writing a disk key, while retaining query ordering and duplicate
+keys in the digest input. Opening a version-3-or-older or unknown index
+cold-resets the index and body store instead of retaining legacy raw query
+material. Treat the first 5.0 launch as a cold cache; do not rely on a
+persistent response surviving the upgrade. This is cache eviction, not
+application-data migration.
 
 ## Re-audit diagnostic opt-ins and owned storage
 

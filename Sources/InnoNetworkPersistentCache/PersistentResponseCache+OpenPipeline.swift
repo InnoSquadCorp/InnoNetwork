@@ -274,9 +274,9 @@ extension PersistentResponseCache {
 
         // The cache is best-effort durable: corrupt indexes and unknown
         // index versions both fall through to the same self-healing reset
-        // path. Version 3 changed cache-key semantics to preserve query-item
-        // order; older entries are intentionally cold-reset because two
-        // wire-distinct targets may have occupied the same version-2 slot.
+        // path. Version 4 HMAC-protects the raw query while retaining its
+        // ordering in the digest input. Version-3 indexes are intentionally
+        // cold-reset so raw query material does not survive the upgrade.
         if let index = try? JSONDecoder.persistentCache.decode(Index.self, from: data),
             index.version == formatVersion
         {

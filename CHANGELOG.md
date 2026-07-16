@@ -198,9 +198,10 @@ draft release summary.
   Runtime 1.12's use of the `FoundationURL` trait. HTTPTypes remains confined
   to the optional `InnoNetworkOpenAPI` boundary; the core `InnoNetwork` public
   request, header, and response models do not expose it.
-- Response-cache keys preserve query-item ordering, and the persistent cache
-  format advances to version 3 so older keys are reset rather than reused with
-  incompatible semantics.
+- Response-cache keys preserve query-item ordering, and persistent cache format
+  version 4 HMAC-protects the complete raw query while retaining that ordering
+  in the digest input. Version-3-or-older indexes cold-reset so legacy raw query
+  material is not retained.
 - `APISingleRequestExecutable` snapshots its transport policy once so request
   encoding and decoding observe one policy value.
 - Scheduler-sensitive cancellation, refresh, and WebSocket tests use explicit
