@@ -97,12 +97,17 @@ draft release summary.
   failures remain fail-closed in the workflow.
 - The root `Package.resolved` is tracked as the repository's reproducible
   dependency input. CI rejects lock drift and deletion/untracked recreation;
-  independent example and tool lock files remain ignored. A main-only,
-  least-privilege dependency-submission workflow now converts the tested
-  CycloneDX graph into GitHub's snapshot schema to supplement the base branch's
-  dependency graph for subsequent Dependency Review comparisons. Pull-request
-  CI dry-runs the live conversion so unsupported package sources fail before
-  merge.
+  independent example and tool lock files remain ignored. Main and PR
+  dependency submission now share a strict `Package.resolved` converter, and
+  every `main` SHA receives a baseline snapshot while release CycloneDX
+  generation remains independent. A privileged
+  `workflow_run` follow-up checks out only trusted main code, reads the exact PR
+  head lockfile as bounded data, and never executes PR code; this also covers
+  Dependabot without granting the ordinary PR workflow write access. The
+  read-only `Dependency Review` job requires a present, empty snapshot-warning
+  header before review, so a missing Swift snapshot can no longer pass as an
+  empty false green. Same-version revision substitutions are rejected before
+  submission instead of disappearing from the version-based dependency diff.
 
 ### Fixed
 

@@ -24,8 +24,101 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout
+      - name: Checkout trusted dependency verifier
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+
+      - name: Verify immutable dependency transition
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          test "$(git rev-parse HEAD)" = "$BASE_SHA"
+          gh api \
+            --method GET \
+            -H 'Accept: application/vnd.github.raw+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "repos/$GITHUB_REPOSITORY/contents/Package.resolved" \
+            -f ref="$HEAD_SHA" > "$RUNNER_TEMP/head.Package.resolved"
+          python3 -I Scripts/generate_dependency_snapshot.py \
+            --verify-package-resolved-transition \
+            Package.resolved \
+            "$RUNNER_TEMP/head.Package.resolved"
+
+      - name: Wait for complete dependency snapshots
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 18); do
+            headers="$RUNNER_TEMP/dependency-review-$attempt.headers"
+            body="$RUNNER_TEMP/dependency-review-$attempt.json"
+            curl \
+              --fail-with-body \
+              --silent \
+              --show-error \
+              --retry 3 \
+              --dump-header "$headers" \
+              --output "$body" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'Cache-Control: no-cache' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/dependency-graph/compare/$BASE_SHA...$HEAD_SHA"
+
+            if python3 - "$headers" "$body" <<'PY'
+          import base64
+          import json
+          import sys
+          from pathlib import Path
+
+          headers = {}
+          for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+              name, separator, value = line.partition(":")
+              if separator:
+                  headers[name.lower()] = value.strip()
+
+          warning_header = "x-github-dependency-graph-snapshot-warnings"
+          if warning_header not in headers:
+              print("Dependency graph response omitted the snapshot warning header.")
+              raise SystemExit(1)
+          try:
+              warning = base64.b64decode(headers[warning_header], validate=True).decode()
+          except (ValueError, UnicodeError) as error:
+              print(f"Dependency graph returned an invalid snapshot warning: {error}")
+              raise SystemExit(1)
+
+          with Path(sys.argv[2]).open(encoding="utf-8") as source:
+              changes = json.load(source)
+          if not isinstance(changes, list):
+              print("Dependency graph comparison response is not an array.")
+              raise SystemExit(1)
+          if warning:
+              print(f"Dependency snapshots are not ready: {warning}")
+              raise SystemExit(1)
+          print(f"Dependency snapshots are complete ({len(changes)} change(s)).")
+          PY
+            then
+              break
+            fi
+
+            if [[ "$attempt" -eq 18 ]]; then
+              echo "::error::Dependency snapshots remained incomplete for 180 seconds."
+              exit 1
+            fi
+            sleep 10
+          done
 
       - name: Review dependency changes
         # GitHub's dependency-review API requires the repository dependency
@@ -33,8 +126,12 @@ jobs:
         # change is a required PR gate rather than an advisory signal.
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
+          base-ref: ${{ github.event.pull_request.base.sha }}
+          head-ref: ${{ github.event.pull_request.head.sha }}
           fail-on-severity: low
           fail-on-scopes: runtime, development, unknown
+          retry-on-snapshot-warnings: true
+          retry-on-snapshot-warnings-timeout: 180
 
   lint:
     name: Lint (swift-format)
@@ -198,14 +295,12 @@ jobs:
 
       - name: Verify resolved dependency snapshot
         if: matrix.xcode.required == true && steps.toolchain-compatibility.outputs.compatible == 'true'
-        env:
-          SBOM_VERSION: ${{ github.sha }}
         run: |
           output_root="$RUNNER_TEMP/innonetwork-dependency-dry-run"
           mkdir -p "$output_root"
-          bash Scripts/generate-sbom.sh "$output_root/sbom.cdx.json"
           python3 Scripts/generate_dependency_snapshot.py \
-            "$output_root/sbom.cdx.json" \
+            --package-resolved \
+            Package.resolved \
             "$output_root/snapshot.json"
 
       - name: Build (Swift 6 language mode)

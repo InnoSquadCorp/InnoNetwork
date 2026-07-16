@@ -3,17 +3,11 @@ name: Swift Dependency Submission
 on:
   push:
     branches: [main]
-    paths:
-      - Package.swift
-      - Package.resolved
-      - Scripts/generate-sbom.sh
-      - Scripts/generate_dependency_snapshot.py
-      - Scripts/tests/test_generate_dependency_snapshot.sh
-      - .github/workflows/dependency-submission.yml
   workflow_dispatch:
 
 concurrency:
-  group: swift-dependency-submission-${{ github.ref }}
+  # Every main SHA is a valid future PR base and therefore needs its own snapshot.
+  group: swift-dependency-submission-${{ github.sha }}
   cancel-in-progress: true
 
 permissions:
@@ -23,8 +17,8 @@ jobs:
   submit:
     name: Submit Swift Dependencies
     if: github.ref == 'refs/heads/main'
-    runs-on: macos-15
-    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
 
@@ -34,30 +28,21 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
-
       - name: Verify dependency snapshot fixtures
         run: bash Scripts/tests/test_generate_dependency_snapshot.sh
-
-      - name: Resolve dependencies
-        run: xcrun swift package --disable-automatic-resolution resolve
 
       - name: Verify resolved dependency lock
         run: |
           test -f Package.resolved
           git ls-files --error-unmatch Package.resolved >/dev/null
-          git diff --exit-code -- Package.resolved
 
       - name: Generate dependency snapshot
-        env:
-          SBOM_VERSION: ${{ github.sha }}
         run: |
           output_root="$RUNNER_TEMP/innonetwork-dependency-submission"
           mkdir -p "$output_root"
-          bash Scripts/generate-sbom.sh "$output_root/sbom.cdx.json"
           python3 Scripts/generate_dependency_snapshot.py \
-            "$output_root/sbom.cdx.json" \
+            --package-resolved \
+            Package.resolved \
             "$output_root/snapshot.json"
 
       - name: Submit dependency snapshot

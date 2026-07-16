@@ -82,9 +82,9 @@ require_line() {
   local needle="$1"
   local file="$2"
   if has_rg; then
-    rg -Fqx "$needle" "$file" > /dev/null || fail "missing line '$needle' in $file"
+    rg -Fqx -- "$needle" "$file" > /dev/null || fail "missing line '$needle' in $file"
   else
-    grep -Fqx "$needle" "$file" > /dev/null || fail "missing line '$needle' in $file"
+    grep -Fqx -- "$needle" "$file" > /dev/null || fail "missing line '$needle' in $file"
   fi
 }
 
@@ -92,9 +92,9 @@ require_contains() {
   local needle="$1"
   local file="$2"
   if has_rg; then
-    rg -Fq "$needle" "$file" || fail "missing '$needle' in $file"
+    rg -Fq -- "$needle" "$file" || fail "missing '$needle' in $file"
   else
-    grep -Fq "$needle" "$file" || fail "missing '$needle' in $file"
+    grep -Fq -- "$needle" "$file" || fail "missing '$needle' in $file"
   fi
 }
 
@@ -102,11 +102,11 @@ require_not_contains() {
   local needle="$1"
   local file="$2"
   if has_rg; then
-    if rg -Fq "$needle" "$file"; then
+    if rg -Fq -- "$needle" "$file"; then
       fail "unexpected '$needle' in $file"
     fi
   else
-    if grep -Fq "$needle" "$file"; then
+    if grep -Fq -- "$needle" "$file"; then
       fail "unexpected '$needle' in $file"
     fi
   fi
@@ -1040,10 +1040,49 @@ validate_release_quality_gates() {
   require_contains 'Dependency Review' "$repo_root/docs/CI_DoC.md"
   require_contains 'Scripts/generate_dependency_snapshot.py' \
     "$repo_root/.github/workflows/dependency-submission.yml"
+  require_contains '--package-resolved' \
+    "$repo_root/.github/workflows/dependency-submission.yml"
   require_contains 'contents: write' "$repo_root/.github/workflows/dependency-submission.yml"
+  require_not_contains 'paths:' "$repo_root/.github/workflows/dependency-submission.yml"
+  require_contains 'swift-dependency-submission-${{ github.sha }}' \
+    "$repo_root/.github/workflows/dependency-submission.yml"
+  require_contains 'workflow_run:' \
+    "$repo_root/.github/workflows/pr-dependency-submission.yml"
+  require_contains 'types: [in_progress]' \
+    "$repo_root/.github/workflows/pr-dependency-submission.yml"
+  require_contains 'permissions: {}' \
+    "$repo_root/.github/workflows/pr-dependency-submission.yml"
+  require_contains 'contents: write' \
+    "$repo_root/.github/workflows/pr-dependency-submission.yml"
+  require_contains 'persist-credentials: false' \
+    "$repo_root/.github/workflows/pr-dependency-submission.yml"
+  require_contains 'github.workflow_sha' \
+    "$repo_root/.github/workflows/pr-dependency-submission.yml"
+  require_contains 'DEPENDENCY_SNAPSHOT_SHA' \
+    "$repo_root/.github/workflows/pr-dependency-submission.yml"
+  require_contains 'DEPENDENCY_SNAPSHOT_REF' \
+    "$repo_root/.github/workflows/pr-dependency-submission.yml"
+  require_contains '--verify-package-resolved-transition' \
+    "$repo_root/.github/workflows/pr-dependency-submission.yml"
+  require_contains 'Package.resolved as untrusted data' \
+    "$repo_root/.github/workflows/pr-dependency-submission.yml"
+  require_contains '--package-resolved' \
+    "$repo_root/.github/workflows/pr-dependency-submission.yml"
+  require_not_contains 'pull_request_target' \
+    "$repo_root/.github/workflows/pr-dependency-submission.yml"
   require_contains 'bash Scripts/tests/test_generate_dependency_snapshot.sh' \
     "$repo_root/.github/workflows/ci.yml"
   require_contains 'Verify resolved dependency snapshot' "$repo_root/.github/workflows/ci.yml"
+  require_contains 'Wait for complete dependency snapshots' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'Verify immutable dependency transition' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains '--verify-package-resolved-transition' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'x-github-dependency-graph-snapshot-warnings' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'retry-on-snapshot-warnings: true' \
+    "$repo_root/.github/workflows/ci.yml"
   require_contains 'bash Scripts/tests/test_generate_dependency_snapshot.sh' \
     "$repo_root/.github/workflows/release.yml"
   require_contains 'Swift Dependency Submission' "$repo_root/docs/CI_DoC.md"

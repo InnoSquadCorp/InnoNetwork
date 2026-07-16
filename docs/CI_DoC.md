@@ -16,17 +16,29 @@ The `CI` workflow must pass all of the following:
    (`git ls-files --error-unmatch Package.resolved`), then
    `xcrun swift package resolve` must leave it unchanged. This is the
    reproducible CI lock and the input to the `Swift Dependency Submission`
-   workflow. That workflow reuses the release CycloneDX graph, converts it to
-   GitHub's snapshot schema, and submits it only from `main` with job-scoped
-   `contents: write`; all other workflows remain read-only by default. The
-   canonical macOS CI leg also converts the live resolved graph without
-   submitting it, so unsupported, malformed, or unresolved remote package
-   sources fail before merge. GitHub URL-style and SCP-style Git sources are
-   accepted; the submitted package source must resolve to an unambiguous
-   GitHub owner/repository pair.
+   workflow. Main and pull requests use the same strict, lockfile-only
+   converter; the richer release CycloneDX graph remains a separate release
+   artifact. The main workflow submits every `main` SHA with job-scoped
+   `contents: write`. A privileged `workflow_run` follow-up handles every PR,
+   including Dependabot, by checking out only the trusted workflow revision
+   and fetching the exact PR-head `Package.resolved` through the base
+   repository Contents API as bounded JSON data. It never checks out or
+   executes PR code, a PR artifact, `Package.swift`, or SwiftPM. The canonical
+   macOS CI leg dry-runs the same converter without submitting it, so malformed
+   locks and unsupported package sources fail before merge. Only HTTPS and
+   GitHub's `git` SSH/SCP source forms are accepted; every source must resolve
+   to one unambiguous GitHub owner/repository pair with both a semantic version
+   and immutable revision. Branch-only and revision-only pins fail closed, as
+   does changing a revision while retaining the same repository and version.
 2. The pull-request-only `Dependency Review` job is blocking at `low` severity
    across runtime, development, and unknown scopes. It receives only
-   `contents: read`; a graph failure is a failed check, not a skipped review.
+   `contents: read`. Before the pinned review action runs, CI polls the exact
+   base/head comparison and requires GitHub's snapshot-warning header to be
+   present and empty. A missing or incomplete graph therefore fails closed
+   instead of producing an empty false-green review. The same read-only job
+   checks out the exact trusted base verifier and revalidates the base/head
+   lock transition, so an older persisted head snapshot cannot hide a
+   same-version revision substitution after the PR base moves.
 3. `xcrun swift build`
 4. `xcrun swift test --no-parallel --enable-code-coverage`
 5. A separate blocking `bash Scripts/run_bounded_parallel_tests.sh` job builds
@@ -134,6 +146,14 @@ git ls-files --error-unmatch Package.resolved >/dev/null
 xcrun swift package resolve
 git diff --exit-code -- Package.resolved
 bash Scripts/tests/test_generate_dependency_snapshot.sh
+GITHUB_SHA="$(git rev-parse HEAD)" \
+GITHUB_REF="refs/heads/main" \
+GITHUB_REPOSITORY="InnoSquadCorp/InnoNetwork" \
+GITHUB_SERVER_URL="https://github.com" \
+GITHUB_RUN_ID="1" \
+GITHUB_RUN_ATTEMPT="1" \
+python3 Scripts/generate_dependency_snapshot.py \
+  --package-resolved Package.resolved /tmp/innonetwork-snapshot.json
 xcrun swift build
 # Match both blocking test lanes.
 bash Scripts/run_bounded_parallel_tests.sh
