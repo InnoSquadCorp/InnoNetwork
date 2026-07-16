@@ -3,7 +3,7 @@ import Testing
 
 @testable import InnoNetwork
 
-@Suite("Redirect policy — RFC 9110 §15.4.4 cross-origin sensitive header strip")
+@Suite("Redirect policy — cross-origin request boundary")
 struct RedirectPolicyTests {
     @Test("Same-origin redirect preserves Authorization header")
     func sameOriginPreservesAuthorization() async throws {
@@ -196,7 +196,34 @@ struct RedirectPolicyTests {
         #expect(result.value(forHTTPHeaderField: "X-Trace-ID") == "trace-1")
     }
 
-    @Test("Cross-origin 307/308 rejects unsafe-method replay", arguments: [307, 308])
+    @Test("Cross-origin redirect strips every caller-prepared original header")
+    func crossOriginStripsEveryOriginalHeader() throws {
+        let policy = DefaultRedirectPolicy()
+
+        var original = URLRequest(url: URL(string: "https://api.example.com/source")!)
+        original.setValue("tenant-a", forHTTPHeaderField: "X-Tenant-Context")
+        original.setValue("application/json", forHTTPHeaderField: "Accept")
+        var redirect = URLRequest(url: URL(string: "https://cdn.example.net/target")!)
+        redirect.allHTTPHeaderFields = original.allHTTPHeaderFields
+        redirect.setValue("trace-generated-for-hop", forHTTPHeaderField: "X-Redirect-Trace")
+
+        let response = HTTPURLResponse(
+            url: original.url!, statusCode: 302, httpVersion: "HTTP/1.1",
+            headerFields: ["Location": redirect.url!.absoluteString]
+        )!
+
+        let result = try #require(
+            policy.redirect(request: redirect, response: response, originalRequest: original)
+        )
+        #expect(result.value(forHTTPHeaderField: "X-Tenant-Context") == nil)
+        #expect(result.value(forHTTPHeaderField: "Accept") == nil)
+        #expect(result.value(forHTTPHeaderField: "X-Redirect-Trace") == "trace-generated-for-hop")
+    }
+
+    @Test(
+        "Every cross-origin redirect retaining an unsafe method is rejected",
+        arguments: [301, 302, 303, 307, 308]
+    )
     func rejectsCrossOriginUnsafeMethodReplay(statusCode: Int) async {
         let policy = DefaultRedirectPolicy()
 

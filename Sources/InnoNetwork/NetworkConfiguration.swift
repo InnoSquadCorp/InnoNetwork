@@ -198,8 +198,9 @@ public struct NetworkConfiguration: Sendable {
 
     /// Decides how the client reacts to HTTP redirects (3xx + `Location`).
     /// Defaults to ``DefaultRedirectPolicy``, which rejects HTTPS downgrades
-    /// and cross-origin 307/308 unsafe-method replay, and strips built-in or
-    /// caller-registered sensitive headers on other cross-origin hops.
+    /// and any cross-origin redirect that retains an unsafe method, and strips
+    /// every caller-prepared original header plus built-in or registered
+    /// sensitive session headers on other cross-origin hops.
     public let redirectPolicy: any RedirectPolicy
 
     /// When `false` (default), a `baseURL` with `http://` scheme is rejected

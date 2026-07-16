@@ -316,10 +316,11 @@ userinfo, a fragment, or path traversal.
 
 ## Redirect defaults are stricter
 
-The default redirect policy now denies HTTPS-to-HTTP downgrade, strips the
-expanded sensitive-header set when authority changes, and denies cross-origin
-`307`/`308` redirects for unsafe methods. Signed requests deny automatic
-redirects even when the target is same-origin.
+The default redirect policy now denies HTTPS-to-HTTP downgrade, strips every
+caller-prepared original header plus built-in and configured sensitive session
+headers when authority changes, and denies any cross-origin redirect that
+retains an unsafe method. Signed requests deny automatic redirects even when
+the target is same-origin.
 
 If an API contract requires a redirect that the defaults reject, treat the 3xx
 as application data, validate the target explicitly, and start a new typed
@@ -375,7 +376,7 @@ the reconnect budget.
 The safe and advanced download presets now use a foreground session.
 Foreground downloads apply `DefaultRedirectPolicy` and URL admission before
 following every redirect.
-HTTPS downgrade, unsafe cross-origin 307/308 replay, missing retained origin
+HTTPS downgrade, unsafe cross-origin method replay, missing retained origin
 metadata, and traversal targets terminate as `DownloadError.invalidURL`
 without retry. `DownloadConfiguration.allowsInsecureHTTP` permits an
 intentional plain-HTTP source and same-scheme foreground redirect; it does not

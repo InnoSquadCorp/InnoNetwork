@@ -5,10 +5,10 @@ import Foundation
 ///
 /// Apple's default `URLSession` behavior follows redirects automatically.
 /// ``DefaultRedirectPolicy`` adds explicit security boundaries around that
-/// behavior: it rejects HTTPS downgrades, prevents cross-origin replay of
-/// unsafe methods through 307/308 responses, and strips credential-bearing
-/// headers when the target origin (scheme + host + port) differs from the
-/// original request's.
+/// behavior: it rejects HTTPS downgrades, prevents any cross-origin redirect
+/// that retains an unsafe method, and strips every caller-prepared original
+/// header plus credential-bearing session headers when the target origin
+/// (scheme + host + port) differs from the original request's.
 ///
 /// Custom adopters can implement this protocol to forbid redirects entirely,
 /// limit redirect depth, restrict allowed schemes, or perform tenant-specific
@@ -39,12 +39,12 @@ public protocol RedirectPolicy: Sendable {
 ///
 /// Behavior:
 /// - HTTPS-to-HTTP redirects are rejected.
-/// - Cross-origin 307/308 redirects that preserve an unsafe method are
-///   rejected. This prevents automatic replay of POST/PUT/PATCH/DELETE bodies
-///   to another origin.
+/// - Cross-origin redirects that preserve an unsafe method are rejected,
+///   regardless of status code. This covers nonstandard 301/302 handling as
+///   well as 307/308 body replay.
 /// - Other cross-origin redirects (different scheme, host, or port from the
-///   original request) have built-in and caller-supplied sensitive headers
-///   stripped.
+///   original request) strip every header present on the original request,
+///   plus built-in and configured sensitive session headers.
 /// - Same-origin redirects pass through unchanged.
 /// - Non-HTTP(S) redirect targets are rejected (returns `nil`).
 ///
@@ -85,27 +85,28 @@ public struct DefaultRedirectPolicy: RedirectPolicy {
     /// when enabled, cross-origin sensitive headers are still stripped.
     public let allowsHTTPSDowngrade: Bool
 
-    /// Whether 307/308 responses may automatically preserve an unsafe method
-    /// across origins. Defaults to `false`.
+    /// Whether a redirect may automatically preserve an unsafe method across
+    /// origins. Defaults to `false`.
     ///
     /// `URLSession` does not reliably expose every streamed upload body in the
-    /// proposed redirect request. The secure default therefore rejects all
-    /// cross-origin 307/308 redirects for unsafe methods instead of attempting
-    /// to infer whether a body would be replayed. Set this only when the target
-    /// origins are independently trusted and the replay is intentional.
+    /// proposed redirect request. The secure default therefore rejects every
+    /// cross-origin proposal that still carries an unsafe method instead of
+    /// relying on status-specific rewrite assumptions. Set this only when the
+    /// target origins are independently trusted and the replay is intentional.
     public let allowsCrossOriginUnsafeMethodRedirects: Bool
 
     /// Creates the default redirect policy.
     ///
     /// - Parameters:
-    ///   - additionalSensitiveHeaders: Application-specific header names to
-    ///     strip in addition to ``sensitiveHeaders``. Built-in names cannot be
+    ///   - additionalSensitiveHeaders: Application-specific session-injected
+    ///     header names to strip in addition to ``sensitiveHeaders`` and every
+    ///     header present on the original request. Built-in names cannot be
     ///     removed.
     ///   - allowsHTTPSDowngrade: Whether HTTPS-to-HTTP redirects may be
     ///     followed. Enabling this can expose the redirected request to a
     ///     plaintext transport.
-    ///   - allowsCrossOriginUnsafeMethodRedirects: Whether cross-origin
-    ///     307/308 redirects may preserve unsafe methods and their bodies.
+    ///   - allowsCrossOriginUnsafeMethodRedirects: Whether a cross-origin
+    ///     redirect may preserve an unsafe method and its body.
     public init(
         additionalSensitiveHeaders: Set<String> = [],
         allowsHTTPSDowngrade: Bool = false,
@@ -141,7 +142,6 @@ public struct DefaultRedirectPolicy: RedirectPolicy {
         }
 
         if !allowsCrossOriginUnsafeMethodRedirects,
-            response.statusCode == 307 || response.statusCode == 308,
             !Self.isSameOrigin(redirectSourceURL, targetURL),
             !Self.isSafeMethod(request.httpMethod)
         {
@@ -151,7 +151,13 @@ public struct DefaultRedirectPolicy: RedirectPolicy {
         guard !Self.isSameOrigin(originalRequest.url, targetURL) else { return request }
 
         var stripped = request
-        let protectedHeaderNames = Self.sensitiveHeaders.union(additionalSensitiveHeaders)
+        let originalHeaderNames = Set(
+            (originalRequest.allHTTPHeaderFields?.keys ?? [:].keys).map { $0.lowercased() }
+        )
+        let protectedHeaderNames =
+            Self.sensitiveHeaders
+            .union(additionalSensitiveHeaders)
+            .union(originalHeaderNames)
         let headerNames = stripped.allHTTPHeaderFields?.keys ?? [:].keys
         for name in Array(headerNames) where protectedHeaderNames.contains(name.lowercased()) {
             stripped.setValue(nil, forHTTPHeaderField: name)

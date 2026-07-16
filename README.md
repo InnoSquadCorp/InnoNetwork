@@ -541,12 +541,14 @@ Core request clients and downloads default to HTTPS-only construction and safe
 redirect handling:
 
 - `DefaultRedirectPolicy` rejects HTTPS-to-HTTP downgrade redirects.
-- Cross-origin 307/308 redirects cannot automatically replay unsafe methods
-  such as POST, PUT, PATCH, or DELETE.
-- Other cross-origin redirects strip common authorization, cookie, API-key,
-  CSRF/session-token, and temporary AWS credential headers. Add proprietary
-  credential carriers with `additionalSensitiveHeaders`; built-in protection
-  remains enabled.
+- Any cross-origin redirect that retains an unsafe method such as POST, PUT,
+  PATCH, or DELETE is rejected, including nonstandard 301/302 proposals as
+  well as 307/308 replay.
+- Other cross-origin redirects strip every header prepared on the original
+  request, plus common authorization, cookie, API-key, CSRF/session-token, and
+  temporary AWS credential headers injected by the session. Register any
+  proprietary session-level credential carriers with
+  `additionalSensitiveHeaders`; built-in protection remains enabled.
 - Plain `http://` base URLs fail before transport unless the client opts in
   with `allowsInsecureHTTP = true`.
 - Foreground downloads — the configuration default — re-admit every redirect
