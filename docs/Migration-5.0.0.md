@@ -627,6 +627,26 @@ the OpenAPI document.
 server-supplied bytes for those responses; the HTTP semantics take precedence
 over misleading `Content-Length` or payload bytes.
 
+Generated-client transport redirects now use the same fail-closed default
+policy and per-hop URL admission as foreground core requests. If an operation
+previously depended on an HTTPS downgrade, a cross-origin unsafe-method replay,
+or a malformed target, it now throws
+`InnoNetworkClientTransportError.redirectRejected`. Treat the original 3xx as
+an application contract and issue a new validated request rather than relaxing
+the transport boundary.
+
+Cross-origin generated-client redirects no longer forward original request
+headers. Values configured through
+`URLSessionConfiguration.httpAdditionalHeaders` are explicitly cleared as well,
+because Foundation otherwise re-injects a removed value after the redirect
+delegate returns.
+
+Pass a default or ephemeral URLSession to `InnoNetworkClientTransport`.
+Background URLSession instances now throw
+`InnoNetworkClientTransportError.backgroundSessionUnsupported` before request
+dispatch because Foundation follows their redirects without invoking the task
+redirect delegate.
+
 Keep `swift-http-types` and OpenAPI Runtime models behind the optional
 `InnoNetworkOpenAPI` product. The 5.0 migration does not replace core
 `HTTPMethod`, `HTTPHeaders`, `Response`, or endpoint contracts with HTTPTypes.

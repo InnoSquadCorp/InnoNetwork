@@ -2,6 +2,7 @@ import Foundation
 import HTTPTypes
 import InnoNetwork
 import OpenAPIRuntime
+import os
 
 /// An `OpenAPIRuntime.ClientTransport` implementation that routes generated
 /// OpenAPI client traffic through a caller-supplied `URLSession`.
@@ -13,6 +14,15 @@ import OpenAPIRuntime
 /// generated calls through a URLSession that the host application has
 /// already configured (timeouts, cache policy, cookie storage, HTTP/3,
 /// custom delegate, etc.).
+///
+/// The transport owns each task's redirect callback so every proposed hop is
+/// checked by `DefaultRedirectPolicy` and `NetworkURLAdmission` before it is
+/// contacted. Other task-delegate callbacks that this transport does not
+/// implement continue to the supplied session's delegate. Background sessions
+/// are unsupported because Foundation follows their redirects without calling
+/// a task redirect delegate. On cross-origin hops, original request headers are
+/// stripped and values from `URLSessionConfiguration.httpAdditionalHeaders`
+/// are cleared so Foundation cannot re-inject them after the callback.
 ///
 /// `InnoNetworkClientTransport` does not currently flow requests through
 /// `DefaultNetworkClient`'s execution pipeline. The pipeline is shaped
@@ -53,7 +63,10 @@ public final class InnoNetworkClientTransport: ClientTransport {
     ///     mutate `URLSessionConfiguration` directly for cookie storage,
     ///     HTTP/3, TLS, or delegate-owned behavior. `NetworkConfiguration`
     ///     trust policies are evaluated by InnoNetwork's request pipeline and
-    ///     are not copied into this bare generated-client transport.
+    ///     are not copied into this bare generated-client transport. Supply a
+    ///     default or ephemeral session; background sessions are rejected
+    ///     before request dispatch because their redirects cannot be admitted
+    ///     per hop.
     ///   - allowsInsecureHTTP: Allows an `http` base URL. Defaults to `false`.
     ///     Keep this disabled outside intentional loopback, LAN, or staging
     ///     environments.
@@ -79,13 +92,41 @@ public final class InnoNetworkClientTransport: ClientTransport {
         baseURL: URL,
         operationID: String
     ) async throws -> (HTTPResponse, HTTPBody?) {
+        guard session.configuration.identifier == nil else {
+            throw InnoNetworkClientTransportError.backgroundSessionUnsupported
+        }
+
         let urlRequest = try await makeURLRequest(
             request: request,
             body: body,
             baseURL: baseURL
         )
 
-        let (responseBytes, urlResponse) = try await session.bytes(for: urlRequest)
+        let redirectDelegate = InnoNetworkOpenAPIRedirectDelegate(
+            originalRequest: urlRequest,
+            allowsInsecureHTTP: allowsInsecureHTTP,
+            sessionHeaderNames: Set(
+                session.configuration.httpAdditionalHeaders?.keys.compactMap { key in
+                    key as? String
+                } ?? []
+            )
+        )
+        let responseBytes: URLSession.AsyncBytes
+        let urlResponse: URLResponse
+        do {
+            (responseBytes, urlResponse) = try await session.bytes(
+                for: urlRequest,
+                delegate: redirectDelegate
+            )
+            if let redirectFailure = redirectDelegate.failure {
+                throw redirectFailure
+            }
+        } catch {
+            if let redirectFailure = redirectDelegate.failure {
+                throw redirectFailure
+            }
+            throw error
+        }
 
         guard let httpResponse = urlResponse as? HTTPURLResponse else {
             throw InnoNetworkClientTransportError.nonHTTPResponse(urlResponse)
@@ -296,6 +337,79 @@ public final class InnoNetworkClientTransport: ClientTransport {
     }
 }
 
+private final class InnoNetworkOpenAPIRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    private let originalRequest: URLRequest
+    private let allowsInsecureHTTP: Bool
+    private let redirectPolicy: DefaultRedirectPolicy
+    private let sessionHeaderNames: Set<String>
+    private let failureLock = OSAllocatedUnfairLock<InnoNetworkClientTransportError?>(
+        initialState: nil
+    )
+
+    init(
+        originalRequest: URLRequest,
+        allowsInsecureHTTP: Bool,
+        sessionHeaderNames: Set<String>
+    ) {
+        self.originalRequest = originalRequest
+        self.allowsInsecureHTTP = allowsInsecureHTTP
+        self.sessionHeaderNames = sessionHeaderNames
+        redirectPolicy = DefaultRedirectPolicy(additionalSensitiveHeaders: sessionHeaderNames)
+    }
+
+    var failure: InnoNetworkClientTransportError? {
+        failureLock.withLock { $0 }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        _ = (session, task)
+        guard
+            var admittedRequest = redirectPolicy.redirect(
+                request: newRequest,
+                response: response,
+                originalRequest: originalRequest
+            )
+        else {
+            reject(completionHandler: completionHandler)
+            return
+        }
+
+        do {
+            try NetworkURLAdmission.validate(
+                admittedRequest,
+                policy: .http(allowsInsecure: allowsInsecureHTTP)
+            )
+            if !DefaultRedirectPolicy.isSameOrigin(originalRequest.url, admittedRequest.url) {
+                // URLSession re-applies `httpAdditionalHeaders` after the
+                // redirect delegate returns when a field is absent. Preserve
+                // an explicit empty value so cross-origin hops cannot recover
+                // the caller's session-configured secret.
+                for name in sessionHeaderNames {
+                    admittedRequest.setValue("", forHTTPHeaderField: name)
+                }
+            }
+            completionHandler(admittedRequest)
+        } catch {
+            reject(completionHandler: completionHandler)
+        }
+    }
+
+    private func reject(completionHandler: @escaping (URLRequest?) -> Void) {
+        failureLock.withLock { failure in
+            if failure == nil {
+                failure = .redirectRejected
+            }
+        }
+        completionHandler(nil)
+    }
+}
+
 /// Errors raised by ``InnoNetworkClientTransport``.
 public enum InnoNetworkClientTransportError: Error, CustomStringConvertible {
     /// The combination of base URL and request path could not be resolved
@@ -310,6 +424,13 @@ public enum InnoNetworkClientTransportError: Error, CustomStringConvertible {
     /// Foundation rewrote a case-sensitive HTTP method token, so URLSession
     /// cannot transmit the generated request faithfully.
     case unsupportedRequestMethod(String)
+    /// The supplied session is a background URLSession. Foundation always
+    /// follows redirects for background tasks without consulting a task
+    /// redirect delegate, so the transport cannot enforce per-hop admission.
+    case backgroundSessionUnsupported
+    /// An automatic redirect failed the default redirect policy or URL
+    /// admission. The rejected URL is intentionally omitted from this error.
+    case redirectRejected
     /// The streamed response body exceeded
     /// ``InnoNetworkClientTransport/responseBodyByteLimit``. When the server
     /// reports an oversized `Content-Length`, this can be thrown by
@@ -329,6 +450,10 @@ public enum InnoNetworkClientTransportError: Error, CustomStringConvertible {
             "InnoNetworkClientTransport: server returned non-recognised status code \(code)"
         case .unsupportedRequestMethod(let method):
             "InnoNetworkClientTransport: URLSession cannot preserve HTTP method token '\(method)'"
+        case .backgroundSessionUnsupported:
+            "InnoNetworkClientTransport: background URLSession cannot enforce redirect admission"
+        case .redirectRejected:
+            "InnoNetworkClientTransport: automatic redirect was rejected"
         case .responseBodyTooLarge(let limit, let received):
             "InnoNetworkClientTransport: response body \(received) bytes exceeded limit \(limit)"
         }

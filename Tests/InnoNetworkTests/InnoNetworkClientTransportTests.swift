@@ -1,19 +1,21 @@
 import Foundation
 import HTTPTypes
-import InnoNetworkOpenAPI
 import OpenAPIRuntime
 import Testing
 
 @testable import InnoNetwork
+@testable import InnoNetworkOpenAPI
 
 private final class OpenAPIClientTransportURLProtocol: URLProtocol {
     enum ResponseSpec: Sendable {
         case http(statusCode: Int, headers: [String: String]?, chunks: [Data])
+        case redirect(statusCode: Int, target: URL)
         case nonHTTP(data: Data)
     }
 
     nonisolated(unsafe) private static var responses: [String: ResponseSpec] = [:]
     nonisolated(unsafe) private static var canonicalMethodOverrides: [String: String] = [:]
+    nonisolated(unsafe) private static var observedRequests: [String: URLRequest] = [:]
     private static let lock = NSLock()
 
     static func register(
@@ -49,6 +51,7 @@ private final class OpenAPIClientTransportURLProtocol: URLProtocol {
             return
         }
 
+        Self.record(request: request, url: url)
         guard let response = Self.dequeue(url: url) else {
             client?.urlProtocol(self, didFailWithError: URLError(.unknown))
             return
@@ -72,6 +75,28 @@ private final class OpenAPIClientTransportURLProtocol: URLProtocol {
                 client?.urlProtocol(self, didLoad: chunk)
             }
             client?.urlProtocolDidFinishLoading(self)
+        case .redirect(let statusCode, let target):
+            guard
+                let response = HTTPURLResponse(
+                    url: url,
+                    statusCode: statusCode,
+                    httpVersion: nil,
+                    headerFields: ["Location": target.absoluteString]
+                )
+            else {
+                client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+                return
+            }
+            var redirectedRequest = request
+            redirectedRequest.url = target
+            client?.urlProtocol(
+                self,
+                wasRedirectedTo: redirectedRequest,
+                redirectResponse: response
+            )
+            // Terminate the source protocol load after emitting the redirect.
+            // URLSession owns the target request from this point onward.
+            client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
         case .nonHTTP(let data):
             let response = URLResponse(
                 url: url,
@@ -87,17 +112,32 @@ private final class OpenAPIClientTransportURLProtocol: URLProtocol {
 
     override func stopLoading() {}
 
+    static func observedRequest(for url: URL) -> URLRequest? {
+        lock.lock()
+        defer { lock.unlock() }
+        return observedRequests[url.absoluteString]
+    }
+
     private static func dequeue(url: URL) -> ResponseSpec? {
         lock.lock()
         defer { lock.unlock() }
         canonicalMethodOverrides.removeValue(forKey: url.absoluteString)
         return responses.removeValue(forKey: url.absoluteString)
     }
+
+    private static func record(request: URLRequest, url: URL) {
+        lock.lock()
+        observedRequests[url.absoluteString] = request
+        lock.unlock()
+    }
 }
 
-private func makeOpenAPIClientTransportURLSession() -> URLSession {
+private func makeOpenAPIClientTransportURLSession(
+    additionalHeaders: [String: String] = [:]
+) -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [OpenAPIClientTransportURLProtocol.self]
+    configuration.httpAdditionalHeaders = additionalHeaders
     return URLSession(configuration: configuration)
 }
 
@@ -232,6 +272,160 @@ struct InnoNetworkClientTransportTests {
             operationID: "http-opted-in"
         )
         #expect(response.status.code == 204)
+    }
+
+    @Test("Rejects background sessions before generated-client dispatch")
+    func rejectsBackgroundSession() async throws {
+        let configuration = URLSessionConfiguration.background(
+            withIdentifier: "com.innosquad.InnoNetworkTests.OpenAPI.\(UUID().uuidString)"
+        )
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let transport = InnoNetworkClientTransport(session: session)
+
+        do {
+            _ = try await transport.send(
+                HTTPRequest(method: .get, scheme: nil, authority: nil, path: "/health"),
+                body: nil,
+                baseURL: URL(string: "https://api.example.com")!,
+                operationID: "background-rejected"
+            )
+            Issue.record("expected backgroundSessionUnsupported")
+        } catch let error as InnoNetworkClientTransportError {
+            guard case .backgroundSessionUnsupported = error else {
+                Issue.record("expected backgroundSessionUnsupported, got \(error)")
+                return
+            }
+        }
+    }
+
+    @Test("Rejects secure-to-plain redirect hops")
+    func rejectsSecureDowngradeRedirect() async throws {
+        let source = URL(string: "https://api.example.com/secure-start")!
+        let target = URL(string: "http://api.example.com/plain-target")!
+        OpenAPIClientTransportURLProtocol.register(
+            url: source,
+            response: .redirect(statusCode: 302, target: target)
+        )
+        let transport = InnoNetworkClientTransport(session: makeOpenAPIClientTransportURLSession())
+
+        do {
+            _ = try await transport.send(
+                HTTPRequest(method: .get, scheme: nil, authority: nil, path: "/secure-start"),
+                body: nil,
+                baseURL: URL(string: "https://api.example.com")!,
+                operationID: "downgrade-rejected"
+            )
+            Issue.record("expected redirectRejected")
+        } catch let error as InnoNetworkClientTransportError {
+            guard case .redirectRejected = error else {
+                Issue.record("expected redirectRejected, got \(error)")
+                return
+            }
+        }
+    }
+
+    @Test("Re-applies URL admission to every redirect target")
+    func readmitsEveryRedirectTarget() async throws {
+        let source = URL(string: "https://api.example.com/admission-start")!
+        let target = URL(string: "https://user:password@edge.example.net/private")!
+        OpenAPIClientTransportURLProtocol.register(
+            url: source,
+            response: .redirect(statusCode: 302, target: target)
+        )
+        let transport = InnoNetworkClientTransport(session: makeOpenAPIClientTransportURLSession())
+
+        do {
+            _ = try await transport.send(
+                HTTPRequest(method: .get, scheme: nil, authority: nil, path: "/admission-start"),
+                body: nil,
+                baseURL: URL(string: "https://api.example.com")!,
+                operationID: "redirect-readmission"
+            )
+            Issue.record("expected redirectRejected")
+        } catch let error as InnoNetworkClientTransportError {
+            guard case .redirectRejected = error else {
+                Issue.record("expected redirectRejected, got \(error)")
+                return
+            }
+        }
+        #expect(OpenAPIClientTransportURLProtocol.observedRequest(for: target) == nil)
+    }
+
+    @Test("Rejects cross-origin redirects that retain an unsafe method")
+    func rejectsCrossOriginUnsafeMethodRedirect() async throws {
+        let source = URL(string: "https://api.example.com/create")!
+        let target = URL(string: "https://edge.example.net/create")!
+        OpenAPIClientTransportURLProtocol.register(
+            url: source,
+            response: .redirect(statusCode: 307, target: target)
+        )
+        let transport = InnoNetworkClientTransport(session: makeOpenAPIClientTransportURLSession())
+
+        do {
+            _ = try await transport.send(
+                HTTPRequest(method: .post, scheme: nil, authority: nil, path: "/create"),
+                body: nil,
+                baseURL: URL(string: "https://api.example.com")!,
+                operationID: "unsafe-redirect-rejected"
+            )
+            Issue.record("expected redirectRejected")
+        } catch let error as InnoNetworkClientTransportError {
+            guard case .redirectRejected = error else {
+                Issue.record("expected redirectRejected, got \(error)")
+                return
+            }
+        }
+    }
+
+    @Test("Cross-origin redirects remove caller and session-configured header values")
+    func crossOriginRedirectStripsCallerHeaders() async throws {
+        let source = URL(string: "https://api.example.com/start")!
+        let target = URL(string: "https://edge.example.net/final")!
+        OpenAPIClientTransportURLProtocol.register(
+            url: source,
+            response: .redirect(statusCode: 302, target: target)
+        )
+        OpenAPIClientTransportURLProtocol.register(
+            url: target,
+            response: .http(statusCode: 204, headers: nil, chunks: [])
+        )
+        let traceHeader = try #require(HTTPField.Name("X-Trace-ID"))
+        let authHeader = try #require(HTTPField.Name("Authorization"))
+        let request = HTTPRequest(
+            method: .get,
+            scheme: nil,
+            authority: nil,
+            path: "/start",
+            headerFields: [
+                traceHeader: "caller-trace",
+                authHeader: "Bearer secret",
+            ]
+        )
+        let transport = InnoNetworkClientTransport(
+            session: makeOpenAPIClientTransportURLSession(
+                additionalHeaders: ["X-Session-Secret": "session-secret"]
+            )
+        )
+
+        let (response, _) = try await transport.send(
+            request,
+            body: nil,
+            baseURL: URL(string: "https://api.example.com")!,
+            operationID: "cross-origin-stripped"
+        )
+
+        #expect(response.status.code == 204)
+        let redirectedRequest = try #require(
+            OpenAPIClientTransportURLProtocol.observedRequest(for: target)
+        )
+        let originalRequest = try #require(
+            OpenAPIClientTransportURLProtocol.observedRequest(for: source)
+        )
+        #expect(originalRequest.value(forHTTPHeaderField: "X-Session-Secret") == "session-secret")
+        #expect(redirectedRequest.value(forHTTPHeaderField: "X-Trace-ID") == nil)
+        #expect(redirectedRequest.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(redirectedRequest.value(forHTTPHeaderField: "X-Session-Secret") == "")
     }
 
     @Test("Streams response body through HTTPBody")
