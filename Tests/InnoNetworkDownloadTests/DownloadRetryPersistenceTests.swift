@@ -354,6 +354,7 @@ struct DownloadRetryPersistenceTests {
             )
         )
         #expect(clock.enqueuedCount == 0)
+        #expect(await waitForResumeCount(harness.stubTask, atLeast: 1))
         #expect(harness.stubTask.resumeCount == 1)
         await harness.manager.shutdown()
     }

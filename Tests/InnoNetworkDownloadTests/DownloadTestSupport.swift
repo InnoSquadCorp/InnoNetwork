@@ -72,6 +72,25 @@ func waitForRuntimeTaskIdentifier(
 }
 
 
+/// Waits for a stub transport to observe the requested number of `resume()` calls.
+/// Runtime registration happens immediately before resume and is not itself a
+/// synchronization point for the transport side effect.
+func waitForResumeCount(
+    _ task: StubDownloadURLTask,
+    atLeast count: Int,
+    timeout: TimeInterval = 2.0
+) async -> Bool {
+    let deadline = ContinuousClock.now + .seconds(timeout)
+    while ContinuousClock.now < deadline {
+        if task.resumeCount >= count {
+            return true
+        }
+        await Task.yield()
+    }
+    return task.resumeCount >= count
+}
+
+
 /// Waits for `task.state` to satisfy `predicate`.
 func waitForTaskState(
     _ task: DownloadTask,

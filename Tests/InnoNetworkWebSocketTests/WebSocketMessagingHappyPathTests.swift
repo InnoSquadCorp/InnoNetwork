@@ -322,7 +322,11 @@ struct WebSocketMessagingHappyPathTests {
         harness.stubTask.scriptReceive(.success(.string("two")))
         harness.stubTask.scriptReceive(.success(.string("three")))
 
-        let collected = await recorder.waitForCount(3, timeout: 1.0)
+        // Coverage instrumentation and hosted-runner contention can delay the
+        // event-listener executor even after the stub has synchronously queued
+        // every receive. Keep the assertion bounded, but use the same window
+        // as the dedicated receive-loop ordering tests.
+        let collected = await recorder.waitForCount(3, timeout: 5.0)
         #expect(collected)
 
         let strings = recorder.snapshot().compactMap { event -> String? in
