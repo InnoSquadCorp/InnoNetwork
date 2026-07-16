@@ -223,7 +223,11 @@ struct DownloadRestorationLifecycleTests {
             }
         )
         #expect(try Data(contentsOf: destinationURL) == payload)
-        #expect(await harness.persistence.record(forID: id) == nil)
+        #expect(
+            await waitForLifecycleCondition {
+                await harness.persistence.record(forID: id) == nil
+            }
+        )
         await harness.manager.shutdown()
     }
 
