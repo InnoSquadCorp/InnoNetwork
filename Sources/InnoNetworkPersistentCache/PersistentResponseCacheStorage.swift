@@ -123,10 +123,17 @@ extension PersistentResponseCache {
 
         func readIndexData() throws -> Data {
             do {
-                return try readData(
+                let data = try readData(
                     directoryDescriptor: rootDescriptor,
-                    name: "index.json"
+                    name: "index.json",
+                    maximumByteCount: PersistentResponseCache.maximumIndexByteCount
                 )
+                guard data.count <= PersistentResponseCache.maximumIndexByteCount else {
+                    throw IndexFileAccessError.tooLarge(
+                        maximumByteCount: PersistentResponseCache.maximumIndexByteCount
+                    )
+                }
+                return data
             } catch let error as FileAccessError {
                 switch error {
                 case .cannotOpen(let errorCode):

@@ -84,6 +84,7 @@ extension PersistentResponseCache {
         case cannotOpenFile(errno: Int32)
         case cannotInspectFile(errno: Int32)
         case notRegularFile
+        case tooLarge(maximumByteCount: Int)
     }
 
     enum BodyFileAccessError: Error, Sendable, Equatable {
@@ -299,7 +300,7 @@ extension PersistentResponseCache {
                 .cannotOpenFile(let errorCode),
                 .cannotInspectFile(let errorCode):
                 return errorCode == ENOENT
-            case .notRegularFile:
+            case .notRegularFile, .tooLarge:
                 return false
             }
         }
@@ -329,7 +330,7 @@ extension PersistentResponseCache {
     static func shouldResetIndex(after error: Error) -> Bool {
         guard let accessError = error as? IndexFileAccessError else { return false }
         switch accessError {
-        case .notRegularFile:
+        case .notRegularFile, .tooLarge:
             return true
         case .cannotOpenDirectory(let errorCode),
             .cannotOpenFile(let errorCode),

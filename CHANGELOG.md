@@ -76,6 +76,7 @@ draft release summary.
   `parameters` pair remains authoritative. Fail-closed diagnostics reject
   incomplete, unsafe, traversal-bearing, or ambiguous declarations, and reject
   custom-method simple payload inference.
+
 - Macro expansion is covered by an end-to-end test that executes the generated
   endpoint through `DefaultNetworkClient`, including path substitution, query
   encoding, explicit authentication, and response decoding.
@@ -111,6 +112,9 @@ draft release summary.
 
 ### Fixed
 
+- Persistent-cache index reads are capped at 16 MiB before JSON decoding;
+  oversized indexes now cold-reset only cache-owned state instead of allowing
+  unbounded initialization memory growth.
 - Download persistence now anchors its owned root and session with directory
   file descriptors and performs lock, checkpoint, append-log, temporary, and
   quarantine operations through `openat`-family calls with no-follow and inode
