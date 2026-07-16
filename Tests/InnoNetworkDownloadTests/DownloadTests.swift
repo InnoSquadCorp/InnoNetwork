@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 import os
@@ -886,14 +887,24 @@ struct DownloadTaskPersistenceTests {
         do {
             _ = try DownloadTaskPersistence(
                 sessionIdentifier: sessionIdentifier,
-                fileManager: FailingLogResetFileManager(),
-                baseDirectoryURL: baseDirectoryURL
+                baseDirectoryURL: baseDirectoryURL,
+                fileOperations: .init(renameEntry: { descriptor, oldName, newName in
+                    if oldName.hasPrefix("events.tmp-"), newName == "events.log" {
+                        errno = EIO
+                        return -1
+                    }
+                    return oldName.withCString { oldPointer in
+                        newName.withCString { newPointer in
+                            Darwin.renameat(descriptor, oldPointer, descriptor, newPointer)
+                        }
+                    }
+                })
             )
             Issue.record("Expected append-log reset failure to fail initialization")
-        } catch let error as CocoaError {
-            #expect(error.code == .fileWriteUnknown)
+        } catch let error as POSIXError {
+            #expect(error.code == .EIO)
         } catch {
-            Issue.record("Expected CocoaError.fileWriteUnknown, got \(error)")
+            Issue.record("Expected POSIXError.EIO, got \(error)")
         }
 
         let checkpointURL = storeDirectory.appendingPathComponent("checkpoint.json")
@@ -907,17 +918,6 @@ struct DownloadTaskPersistenceTests {
             baseDirectoryURL: baseDirectoryURL
         )
         #expect(await reader.record(forID: "task-valid")?.destinationURL == destinationURL)
-    }
-}
-
-private final class FailingLogResetFileManager: FileManager, @unchecked Sendable {
-    override func moveItem(at sourceURL: URL, to destinationURL: URL) throws {
-        if sourceURL.lastPathComponent.hasPrefix("events.tmp-"),
-            destinationURL.lastPathComponent == "events.log"
-        {
-            throw CocoaError(.fileWriteUnknown)
-        }
-        try super.moveItem(at: sourceURL, to: destinationURL)
     }
 }
 

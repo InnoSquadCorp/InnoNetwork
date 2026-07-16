@@ -21,6 +21,7 @@ Each persisted session lives under `persistenceDirectory/<storage-component>/`:
 ```text
 <storage-component>/
 ├── checkpoint.json   # most recent compact snapshot
+├── .lock            # inter-process mutation lock
 └── events.log        # JSON Lines append log of incremental changes
 ```
 
@@ -47,14 +48,28 @@ suffix in sequence order.
 InnoNetworkDownload marks every library-owned persistence directory and metadata file as
 excluded from backup on Darwin platforms. On iOS, tvOS, watchOS, and visionOS it also
 requests complete-until-first-user-authentication file protection. These attributes are
-reapplied when an existing store is opened, including its checkpoint, event log, and lock
-file.
+applied through already-open file descriptors and reapplied when an existing store is
+opened, including its checkpoint, event log, and lock file.
 
 Protection is intentionally scoped to paths owned by the library. A caller-supplied
 `persistenceBaseDirectoryURL` is only the parent of the `InnoNetworkDownload` directory;
 the parent itself is not modified. Final download destinations are also caller-owned and
-never receive the persistence or staging attributes. Symbolic links are ignored so the
-library cannot change metadata on a target outside its storage tree.
+never receive the persistence or staging attributes.
+
+The complete caller-provided base path is a trusted anchor and may itself contain symbolic
+links (for example, a container path supplied by the OS). The library canonicalizes that
+base once, then creates and opens its own `InnoNetworkDownload` and session components
+relative to directory file descriptors with `O_NOFOLLOW`. Root, session, lock, checkpoint,
+log, temporary, and quarantine symlinks, hard links, and non-regular entries are rejected
+without blocking on FIFO endpoints. Every authoritative read, write,
+rename, unlink, size check, and lock remains relative to the retained session descriptor,
+so replacing the visible parent after initialization cannot redirect persistence I/O.
+
+This containment assumes the documented single, cooperating owner for a session identifier.
+App Group members that can mutate the same directory are inside that trust boundary and must
+honor the persistence lock. The store does not attempt to defeat a concurrently malicious
+process with the same container privileges; mutually untrusted components need separate
+private containers or an IPC broker that exclusively owns persistence.
 
 Checkpoints written before the optional `orderedRecordIDs` field cannot fully
 recover the latest task id for repeated same-URL records. The loader keeps
@@ -96,7 +111,7 @@ let configuration = DownloadConfiguration.advanced(
 Syntactically malformed or unsupported checkpoint data is quarantined so a valid append log
 can still be replayed. When an append log has a malformed suffix, the store first commits and
 fsyncs a checkpoint containing the valid prefix, then renames the source log to
-`events.corrupted-<timestamp>.log` and creates a fresh active log. When quarantine succeeds,
+`events.corrupted-<unique-id>.log` and creates a fresh active log. When quarantine succeeds,
 the corrupt copy stays on disk until the operator removes it, allowing support to inspect it
 after the fact.
 

@@ -111,6 +111,13 @@ draft release summary.
 
 ### Fixed
 
+- Download persistence now anchors its owned root and session with directory
+  file descriptors and performs lock, checkpoint, append-log, temporary, and
+  quarantine operations through `openat`-family calls with no-follow and inode
+  checks. Pre-existing managed-file symlinks, hard links, and FIFOs are rejected,
+  while replacing the visible session parent cannot redirect metadata I/O outside
+  the retained directory descriptor. The boundary assumes one cooperating owner;
+  a caller-provided base path remains the explicitly trusted, canonicalized anchor.
 - Download persistence now distinguishes malformed bytes from storage-access
   failures. Data Protection, permission, lock, and transient I/O errors fail
   initialization without quarantining valid state, while corrupt append-log

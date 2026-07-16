@@ -1,12 +1,97 @@
 import Darwin
 import Foundation
 
-// Split out of `DownloadTaskPersistence.swift` so the low-level disk I/O —
-// directory layout, atomic writes, fsync, file-size lookup, and the
-// inter-process flock dance — lives in one place. All helpers stay
-// `static` and side-effect-free at the type level; this file only relocates
-// code, no behaviour changes.
 extension AppendLogDownloadTaskStore {
+    struct FileIdentity: Equatable, Sendable {
+        let device: dev_t
+        let inode: ino_t
+        let type: mode_t
+
+        init(_ information: stat) {
+            device = information.st_dev
+            inode = information.st_ino
+            type = information.st_mode & S_IFMT
+        }
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.device == rhs.device
+                && lhs.inode == rhs.inode
+                && lhs.type == rhs.type
+        }
+    }
+
+    /// Package-only seams for failure and race tests. Production operations
+    /// remain descriptor-relative; tests can fail a rename/unlink or swap the
+    /// visible parent after the session descriptor has already been anchored.
+    package struct FileOperations: Sendable {
+        package var renameEntry: @Sendable (_ directoryDescriptor: Int32, _ oldName: String, _ newName: String) -> Int32
+        package var unlinkEntry: @Sendable (_ directoryDescriptor: Int32, _ name: String) -> Int32
+        package var temporaryName: @Sendable (_ destinationName: String) -> String
+        package var quarantineName: @Sendable (_ sourceName: String) -> String
+        package var willRenameTemporaryEntry: @Sendable (_ directoryDescriptor: Int32, _ temporaryName: String) -> Void
+        package var didOpenSessionDirectory: @Sendable (_ canonicalSessionDirectoryURL: URL) -> Void
+
+        package init(
+            renameEntry:
+                @escaping @Sendable (
+                    _ directoryDescriptor: Int32,
+                    _ oldName: String,
+                    _ newName: String
+                ) -> Int32 = { descriptor, oldName, newName in
+                    oldName.withCString { oldPointer in
+                        newName.withCString { newPointer in
+                            Darwin.renameat(descriptor, oldPointer, descriptor, newPointer)
+                        }
+                    }
+                },
+            unlinkEntry:
+                @escaping @Sendable (
+                    _ directoryDescriptor: Int32,
+                    _ name: String
+                ) -> Int32 = { descriptor, name in
+                    name.withCString { Darwin.unlinkat(descriptor, $0, 0) }
+                },
+            temporaryName: @escaping @Sendable (_ destinationName: String) -> String = { name in
+                let stem = URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent
+                return "\(stem).tmp-\(UUID().uuidString)"
+            },
+            quarantineName: @escaping @Sendable (_ sourceName: String) -> String = { name in
+                let url = URL(fileURLWithPath: name)
+                let stem = url.deletingPathExtension().lastPathComponent
+                let ext = url.pathExtension
+                let suffix = UUID().uuidString
+                return ext.isEmpty
+                    ? "\(stem).corrupted-\(suffix)"
+                    : "\(stem).corrupted-\(suffix).\(ext)"
+            },
+            willRenameTemporaryEntry:
+                @escaping @Sendable (
+                    _ directoryDescriptor: Int32,
+                    _ temporaryName: String
+                ) -> Void = { _, _ in },
+            didOpenSessionDirectory:
+                @escaping @Sendable (
+                    _ canonicalSessionDirectoryURL: URL
+                ) -> Void = { _ in }
+        ) {
+            self.renameEntry = renameEntry
+            self.unlinkEntry = unlinkEntry
+            self.temporaryName = temporaryName
+            self.quarantineName = quarantineName
+            self.willRenameTemporaryEntry = willRenameTemporaryEntry
+            self.didOpenSessionDirectory = didOpenSessionDirectory
+        }
+
+        static let live = Self()
+    }
+
+    struct AnchoredSessionDirectory: Sendable {
+        let descriptor: Int32
+    }
+
+    static let checkpointName = "checkpoint.json"
+    static let logName = "events.log"
+    static let lockName = ".lock"
 
     static func isMissingFileError(_ error: Error) -> Bool {
         let nsError = error as NSError
@@ -17,159 +102,374 @@ extension AppendLogDownloadTaskStore {
         return nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(ENOENT)
     }
 
-    /// Checks for a directory entry without collapsing access failures into
-    /// "missing" and without paying Foundation's thrown-error cost for the
-    /// expected empty-checkpoint path during every restore.
-    static func pathEntryExists(at url: URL) throws -> Bool {
-        var information = stat()
-        guard lstat(url.path, &information) != 0 else { return true }
-
-        let failure = errno
-        guard failure != ENOENT else { return false }
-        throw POSIXError(POSIXErrorCode(rawValue: failure) ?? .EIO)
+    static func posixError(_ code: Int32 = errno) -> POSIXError {
+        POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
     }
 
     static func defaultBaseDirectory(fileManager: FileManager) -> URL {
         fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     }
 
-    static func ensureDirectoryExists(at directoryURL: URL, fileManager: FileManager) throws {
-        let alreadyExists = fileManager.fileExists(atPath: directoryURL.path)
-        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        if !alreadyExists {
-            DownloadOwnedStorageProtection.apply(to: directoryURL, fileManager: fileManager)
+    /// Resolves only the caller-owned base path. Persistence-owned components
+    /// are subsequently created/opened with `mkdirat`/`openat(O_NOFOLLOW)` so
+    /// a shared container cannot redirect the root or session through a
+    /// symbolic link. Resolving the base keeps compatibility with callers
+    /// whose chosen App Group/container path itself contains ancestor links.
+    static func openAnchoredSessionDirectory(
+        baseDirectoryURL: URL,
+        sessionStorageComponent: String,
+        fileManager: FileManager,
+        operations: FileOperations
+    ) throws -> AnchoredSessionDirectory {
+        try fileManager.createDirectory(
+            at: baseDirectoryURL,
+            withIntermediateDirectories: true
+        )
+        let canonicalBaseURL = baseDirectoryURL.resolvingSymlinksInPath().standardizedFileURL
+        let baseDescriptor = open(
+            canonicalBaseURL.path,
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+        )
+        guard baseDescriptor >= 0 else { throw posixError() }
+        defer { close(baseDescriptor) }
+        try requireDirectory(descriptor: baseDescriptor)
+
+        let rootName = "InnoNetworkDownload"
+        let rootDescriptor = try openOrCreateDirectory(
+            parentDescriptor: baseDescriptor,
+            name: rootName
+        )
+        defer { close(rootDescriptor) }
+        let canonicalRootURL = canonicalBaseURL.appendingPathComponent(rootName, isDirectory: true)
+        DownloadOwnedStorageProtection.apply(toFileDescriptor: rootDescriptor)
+
+        let sessionDescriptor = try openOrCreateDirectory(
+            parentDescriptor: rootDescriptor,
+            name: sessionStorageComponent
+        )
+        let canonicalSessionURL = canonicalRootURL.appendingPathComponent(
+            sessionStorageComponent,
+            isDirectory: true
+        )
+        DownloadOwnedStorageProtection.apply(toFileDescriptor: sessionDescriptor)
+        operations.didOpenSessionDirectory(canonicalSessionURL)
+        return AnchoredSessionDirectory(descriptor: sessionDescriptor)
+    }
+
+    static func openOrCreateDirectory(
+        parentDescriptor: Int32,
+        name: String
+    ) throws -> Int32 {
+        let mkdirResult = name.withCString {
+            Darwin.mkdirat(parentDescriptor, $0, S_IRWXU)
+        }
+        if mkdirResult != 0, errno != EEXIST {
+            throw posixError()
+        }
+
+        let descriptor = name.withCString {
+            Darwin.openat(
+                parentDescriptor,
+                $0,
+                O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+            )
+        }
+        guard descriptor >= 0 else { throw posixError() }
+        do {
+            try requireDirectory(descriptor: descriptor)
+            return descriptor
+        } catch {
+            close(descriptor)
+            throw error
+        }
+    }
+
+    static func requireDirectory(descriptor: Int32) throws {
+        var information = stat()
+        guard fstat(descriptor, &information) == 0 else { throw posixError() }
+        guard information.st_mode & S_IFMT == S_IFDIR else { throw posixError(ENOTDIR) }
+    }
+
+    static func openRegularFile(
+        directoryDescriptor: Int32,
+        name: String,
+        flags: Int32,
+        mode: mode_t = S_IRUSR | S_IWUSR
+    ) throws -> (descriptor: Int32, identity: FileIdentity) {
+        let descriptor = name.withCString {
+            Darwin.openat(
+                directoryDescriptor,
+                $0,
+                flags | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK,
+                mode
+            )
+        }
+        guard descriptor >= 0 else { throw posixError() }
+        do {
+            var information = stat()
+            guard fstat(descriptor, &information) == 0 else { throw posixError() }
+            guard information.st_mode & S_IFMT == S_IFREG else { throw posixError(EINVAL) }
+            // Persistence owns every managed file and never creates hard
+            // links. Reject a pre-existing multi-link inode so appending to a
+            // tampered log cannot mutate bytes through a name outside the
+            // anchored session directory.
+            guard information.st_nlink == 1 else { throw posixError(EMLINK) }
+            return (descriptor, FileIdentity(information))
+        } catch {
+            close(descriptor)
+            throw error
+        }
+    }
+
+    static func openOrCreateRegularFile(
+        directoryDescriptor: Int32,
+        name: String,
+        existingFlags: Int32,
+        mode: mode_t = S_IRUSR | S_IWUSR
+    ) throws -> (descriptor: Int32, identity: FileIdentity, created: Bool) {
+        do {
+            let opened = try openRegularFile(
+                directoryDescriptor: directoryDescriptor,
+                name: name,
+                flags: existingFlags | O_CREAT | O_EXCL,
+                mode: mode
+            )
+            return (opened.descriptor, opened.identity, true)
+        } catch let error as POSIXError where error.code == .EEXIST {
+            let opened = try openRegularFile(
+                directoryDescriptor: directoryDescriptor,
+                name: name,
+                flags: existingFlags,
+                mode: mode
+            )
+            return (opened.descriptor, opened.identity, false)
+        }
+    }
+
+    static func entryIdentity(
+        directoryDescriptor: Int32,
+        name: String
+    ) throws -> FileIdentity? {
+        try entryInformation(
+            directoryDescriptor: directoryDescriptor,
+            name: name
+        ).map(FileIdentity.init)
+    }
+
+    static func entryInformation(
+        directoryDescriptor: Int32,
+        name: String
+    ) throws -> stat? {
+        var information = stat()
+        let result = name.withCString {
+            Darwin.fstatat(directoryDescriptor, $0, &information, AT_SYMLINK_NOFOLLOW)
+        }
+        if result == 0 { return information }
+        if errno == ENOENT { return nil }
+        throw posixError()
+    }
+
+    static func readData(
+        directoryDescriptor: Int32,
+        name: String,
+        reader: @Sendable (Int32) throws -> Data
+    ) throws -> (data: Data, identity: FileIdentity)? {
+        let opened: (descriptor: Int32, identity: FileIdentity)
+        do {
+            opened = try openRegularFile(
+                directoryDescriptor: directoryDescriptor,
+                name: name,
+                flags: O_RDONLY
+            )
+        } catch  where isMissingFileError(error) {
+            return nil
+        }
+        defer { close(opened.descriptor) }
+        return (try reader(opened.descriptor), opened.identity)
+    }
+
+    static func readAll(from descriptor: Int32) throws -> Data {
+        guard lseek(descriptor, 0, SEEK_SET) >= 0 else { throw posixError() }
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            let count = Darwin.read(descriptor, &buffer, buffer.count)
+            if count == 0 { return result }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw posixError()
+            }
+            result.append(contentsOf: buffer.prefix(count))
+        }
+    }
+
+    static func writeAll(_ data: Data, to descriptor: Int32) throws {
+        try data.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else { return }
+            var offset = 0
+            while offset < rawBuffer.count {
+                let count = Darwin.write(
+                    descriptor,
+                    baseAddress.advanced(by: offset),
+                    rawBuffer.count - offset
+                )
+                if count < 0 {
+                    if errno == EINTR { continue }
+                    throw posixError()
+                }
+                guard count > 0 else { throw posixError(EIO) }
+                offset += count
+            }
         }
     }
 
     static func writeAtomically(
         data: Data,
-        to fileURL: URL,
-        fileManager: FileManager,
+        destinationName: String,
+        directoryDescriptor: Int32,
+        operations: FileOperations,
         fsyncBeforeRename: Bool = false,
         fsync: @escaping @Sendable (Int32) -> Int32 = Darwin.fsync
     ) throws {
-        let tempURL =
-            fileURL
-            .deletingPathExtension()
-            .appendingPathExtension("tmp-\(UUID().uuidString)")
+        let temporaryName = operations.temporaryName(destinationName)
+        let opened = try openRegularFile(
+            directoryDescriptor: directoryDescriptor,
+            name: temporaryName,
+            flags: O_WRONLY | O_CREAT | O_EXCL
+        )
+        var shouldCleanupTemporaryEntry = true
         defer {
-            if fileManager.fileExists(atPath: tempURL.path()) {
-                try? fileManager.removeItem(at: tempURL)
+            close(opened.descriptor)
+            if shouldCleanupTemporaryEntry {
+                _ = operations.unlinkEntry(directoryDescriptor, temporaryName)
             }
         }
 
-        try data.write(to: tempURL, options: .atomic)
-        DownloadOwnedStorageProtection.apply(to: tempURL, fileManager: fileManager)
-
-        // For checkpoint writes (.always or .onCheckpoint), fsync the temp
-        // file before the atomic rename so the rename observes a fully
-        // committed payload. The empty resetLog path skips the fsync — the
-        // log truncation does not need durability beyond what the rename
-        // provides.
+        // Apply protection before writing any payload bytes. A crash during
+        // the write may leave the temporary inode behind, and resume metadata
+        // must never spend that interval with weaker attributes.
+        DownloadOwnedStorageProtection.apply(toFileDescriptor: opened.descriptor)
+        try writeAll(data, to: opened.descriptor)
         if fsyncBeforeRename {
-            let handle = try FileHandle(forReadingFrom: tempURL)
-            defer { try? handle.close() }
-            try fsyncFileDescriptor(handle.fileDescriptor, fsync: fsync)
+            try fsyncFileDescriptor(opened.descriptor, fsync: fsync)
         }
 
-        if fileManager.fileExists(atPath: fileURL.path()) {
-            _ = try fileManager.replaceItemAt(fileURL, withItemAt: tempURL)
-        } else {
-            try fileManager.moveItem(at: tempURL, to: fileURL)
+        operations.willRenameTemporaryEntry(directoryDescriptor, temporaryName)
+        guard
+            try entryIdentity(
+                directoryDescriptor: directoryDescriptor,
+                name: temporaryName
+            ) == opened.identity
+        else {
+            throw posixError(EBUSY)
         }
-        // Atomic replacement may swap in a new inode, so apply attributes
-        // again only after the final path is installed.
-        DownloadOwnedStorageProtection.apply(to: fileURL, fileManager: fileManager)
+        guard operations.renameEntry(directoryDescriptor, temporaryName, destinationName) == 0 else {
+            throw posixError()
+        }
+        shouldCleanupTemporaryEntry = false
 
+        guard
+            try entryIdentity(
+                directoryDescriptor: directoryDescriptor,
+                name: destinationName
+            ) == opened.identity
+        else {
+            // The visible entry no longer names the inode we installed. Do
+            // not unlink an identity we cannot prove belongs to this write.
+            throw posixError(EBUSY)
+        }
         if fsyncBeforeRename {
-            try fsyncParentDirectory(of: fileURL, fsync: fsync)
+            try fsyncFileDescriptor(directoryDescriptor, fsync: fsync)
         }
     }
 
-    static func resetLog(at logURL: URL, fileManager: FileManager) throws {
-        let emptyData = Data()
-        try writeAtomically(data: emptyData, to: logURL, fileManager: fileManager)
+    /// Kept for direct low-level tests. Store-authoritative writes use the
+    /// descriptor-relative overload above.
+    static func writeAtomically(
+        data: Data,
+        to fileURL: URL,
+        fileManager _: FileManager,
+        fsyncBeforeRename: Bool = false,
+        fsync: @escaping @Sendable (Int32) -> Int32 = Darwin.fsync
+    ) throws {
+        let parentURL = fileURL.deletingLastPathComponent().resolvingSymlinksInPath()
+        let descriptor = open(
+            parentURL.path,
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+        )
+        guard descriptor >= 0 else { throw posixError() }
+        defer { close(descriptor) }
+        try writeAtomically(
+            data: data,
+            destinationName: fileURL.lastPathComponent,
+            directoryDescriptor: descriptor,
+            operations: .live,
+            fsyncBeforeRename: fsyncBeforeRename,
+            fsync: fsync
+        )
+    }
+
+    static func resetLog(
+        directoryDescriptor: Int32,
+        operations: FileOperations
+    ) throws {
+        try writeAtomically(
+            data: Data(),
+            destinationName: logName,
+            directoryDescriptor: directoryDescriptor,
+            operations: operations
+        )
     }
 
     static func fsyncFileDescriptor(
         _ fileDescriptor: Int32,
         fsync: @Sendable (Int32) -> Int32
     ) throws {
-        guard fsync(fileDescriptor) == 0 else {
-            let code = POSIXErrorCode(rawValue: errno) ?? .EIO
-            throw POSIXError(code)
-        }
+        guard fsync(fileDescriptor) == 0 else { throw posixError() }
     }
 
-    static func fsyncParentDirectory(
-        of fileURL: URL,
-        fsync: @Sendable (Int32) -> Int32
-    ) throws {
-        let directoryURL = fileURL.deletingLastPathComponent()
-        let descriptor = open(directoryURL.path, O_RDONLY)
-        guard descriptor >= 0 else {
-            let code = POSIXErrorCode(rawValue: errno) ?? .EIO
-            throw POSIXError(code)
-        }
-        defer { close(descriptor) }
-        try fsyncFileDescriptor(descriptor, fsync: fsync)
-    }
-
-    static func fileSize(at url: URL, fileManager: FileManager) -> UInt64 {
+    static func fileSize(
+        directoryDescriptor: Int32,
+        name: String
+    ) throws -> UInt64 {
         guard
-            fileManager.fileExists(atPath: url.path()),
-            let attributes = try? fileManager.attributesOfItem(atPath: url.path()),
-            let fileSize = attributes[.size] as? NSNumber
-        else {
-            return 0
+            let information = try entryInformation(
+                directoryDescriptor: directoryDescriptor,
+                name: name
+            )
+        else { return 0 }
+        let type = information.st_mode & S_IFMT
+        guard type == S_IFREG else {
+            throw posixError(type == S_IFLNK ? ELOOP : EINVAL)
         }
-        return fileSize.uint64Value
-    }
-
-    static func withDirectoryLock<T>(
-        lockURL: URL,
-        fileManager: FileManager,
-        timeout: TimeInterval = 10,
-        _ work: () throws -> T
-    ) throws -> T {
-        let descriptor = try acquireDirectoryLockBlocking(
-            lockURL: lockURL,
-            fileManager: fileManager,
-            timeout: timeout
-        )
-        defer { releaseDirectoryLock(descriptor) }
-        return try work()
+        return UInt64(max(0, information.st_size))
     }
 
     static func openLockDescriptor(
-        lockURL: URL,
-        fileManager: FileManager
+        directoryDescriptor: Int32
     ) throws -> Int32 {
-        try ensureDirectoryExists(at: lockURL.deletingLastPathComponent(), fileManager: fileManager)
-        let alreadyExists = fileManager.fileExists(atPath: lockURL.path)
-        let descriptor = open(lockURL.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
-        guard descriptor >= 0 else { throw CocoaError(.fileReadUnknown) }
-        if !alreadyExists {
-            DownloadOwnedStorageProtection.apply(to: lockURL, fileManager: fileManager)
+        let opened = try openOrCreateRegularFile(
+            directoryDescriptor: directoryDescriptor,
+            name: lockName,
+            existingFlags: O_RDWR
+        )
+        if opened.created {
+            DownloadOwnedStorageProtection.apply(toFileDescriptor: opened.descriptor)
         }
-        return descriptor
+        return opened.descriptor
     }
 
     static func acquireDirectoryLockBlocking(
-        lockURL: URL,
-        fileManager: FileManager,
+        directoryDescriptor: Int32,
         timeout: TimeInterval
     ) throws -> Int32 {
-        let descriptor = try openLockDescriptor(lockURL: lockURL, fileManager: fileManager)
+        let descriptor = try openLockDescriptor(directoryDescriptor: directoryDescriptor)
         let clock = ContinuousClock()
         let deadline = clock.now + .seconds(timeout)
         while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
             let lockErrno = errno
-            if lockErrno != EWOULDBLOCK && lockErrno != EAGAIN {
-                close(descriptor)
-                throw CocoaError(.fileLocking)
-            }
-            if clock.now >= deadline {
+            if lockErrno == EINTR { continue }
+            if lockErrno != EWOULDBLOCK && lockErrno != EAGAIN || clock.now >= deadline {
                 close(descriptor)
                 throw CocoaError(.fileLocking)
             }
@@ -178,10 +478,6 @@ extension AppendLogDownloadTaskStore {
         return descriptor
     }
 
-    /// Polls a previously-opened lock file descriptor with cooperative
-    /// `Task.sleep` between attempts. The descriptor is opened ahead of time
-    /// by the caller so this method does not need to capture the actor's
-    /// non-Sendable `FileManager`.
     static func awaitDirectoryLock(
         descriptor: Int32,
         timeout: TimeInterval
@@ -190,11 +486,8 @@ extension AppendLogDownloadTaskStore {
         let deadline = clock.now + .seconds(timeout)
         while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
             let lockErrno = errno
-            if lockErrno != EWOULDBLOCK && lockErrno != EAGAIN {
-                close(descriptor)
-                throw CocoaError(.fileLocking)
-            }
-            if clock.now >= deadline {
+            if lockErrno == EINTR { continue }
+            if lockErrno != EWOULDBLOCK && lockErrno != EAGAIN || clock.now >= deadline {
                 close(descriptor)
                 throw CocoaError(.fileLocking)
             }
@@ -212,4 +505,5 @@ extension AppendLogDownloadTaskStore {
         flock(descriptor, LOCK_UN)
         close(descriptor)
     }
+
 }
