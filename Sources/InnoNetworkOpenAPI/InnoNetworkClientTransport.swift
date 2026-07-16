@@ -91,8 +91,15 @@ public final class InnoNetworkClientTransport: ClientTransport {
             throw InnoNetworkClientTransportError.nonHTTPResponse(urlResponse)
         }
 
+        // Redirect delegates may intentionally rewrite the method. Response
+        // semantics belong to the request that produced this response, not the
+        // pre-redirect request originally passed to the transport.
+        let responseRequestMethod =
+            responseBytes.task.currentRequest?.httpMethod
+            ?? urlRequest.httpMethod
+            ?? request.method.rawValue
         let responseMustNotCarryBody = Self.responseMustNotCarryBody(
-            requestMethod: request.method.rawValue,
+            requestMethod: responseRequestMethod,
             statusCode: httpResponse.statusCode
         )
         if !responseMustNotCarryBody,
@@ -172,6 +179,9 @@ public final class InnoNetworkClientTransport: ClientTransport {
 
         var urlRequest = URLRequest(url: resolved)
         urlRequest.httpMethod = request.method.rawValue
+        guard urlRequest.httpMethod == request.method.rawValue else {
+            throw InnoNetworkClientTransportError.unsupportedRequestMethod(request.method.rawValue)
+        }
 
         for field in request.headerFields {
             urlRequest.addValue(field.value, forHTTPHeaderField: field.name.canonicalName)
@@ -276,8 +286,8 @@ public final class InnoNetworkClientTransport: ClientTransport {
         requestMethod: String,
         statusCode: Int
     ) -> Bool {
-        requestMethod.caseInsensitiveCompare("HEAD") == .orderedSame
-            || (requestMethod.caseInsensitiveCompare("CONNECT") == .orderedSame
+        requestMethod == "HEAD"
+            || (requestMethod == "CONNECT"
                 && (200..<300).contains(statusCode))
             || (100..<200).contains(statusCode)
             || statusCode == 204
@@ -297,6 +307,9 @@ public enum InnoNetworkClientTransportError: Error, CustomStringConvertible {
     /// The origin returned a status code outside the IANA-recognised
     /// range, so `HTTPResponse.Status(code:)` rejected it.
     case invalidStatusCode(Int)
+    /// Foundation rewrote a case-sensitive HTTP method token, so URLSession
+    /// cannot transmit the generated request faithfully.
+    case unsupportedRequestMethod(String)
     /// The streamed response body exceeded
     /// ``InnoNetworkClientTransport/responseBodyByteLimit``. When the server
     /// reports an oversized `Content-Length`, this can be thrown by
@@ -314,6 +327,8 @@ public enum InnoNetworkClientTransportError: Error, CustomStringConvertible {
             "InnoNetworkClientTransport: expected HTTPURLResponse, got \(type(of: response))"
         case .invalidStatusCode(let code):
             "InnoNetworkClientTransport: server returned non-recognised status code \(code)"
+        case .unsupportedRequestMethod(let method):
+            "InnoNetworkClientTransport: URLSession cannot preserve HTTP method token '\(method)'"
         case .responseBodyTooLarge(let limit, let received):
             "InnoNetworkClientTransport: response body \(received) bytes exceeded limit \(limit)"
         }

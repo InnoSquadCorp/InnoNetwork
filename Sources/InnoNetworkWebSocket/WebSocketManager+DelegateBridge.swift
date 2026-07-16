@@ -23,6 +23,8 @@ extension WebSocketManager {
             await processDisconnected(taskIdentifier: taskIdentifier, closeCode: closeCode, reason: reason)
         case .mappedError(let taskIdentifier, let error):
             await processMappedError(taskIdentifier: taskIdentifier, error: error)
+        case .redirectRejected(let taskIdentifier, let error):
+            await processRedirectRejected(taskIdentifier: taskIdentifier, error: error)
         case .sessionError(let taskIdentifier, let error, let statusCode):
             await processSessionError(taskIdentifier: taskIdentifier, error: error, statusCode: statusCode)
         case .pingTimeout(let taskIdentifier):
@@ -52,6 +54,12 @@ extension WebSocketManager {
     nonisolated func handleSessionError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int? = nil) {
         delegateEventContinuation.yield(
             .sessionError(taskIdentifier: taskIdentifier, error: error, statusCode: statusCode)
+        )
+    }
+
+    nonisolated func handleRedirectRejected(taskIdentifier: Int, error: WebSocketError) {
+        delegateEventContinuation.yield(
+            .redirectRejected(taskIdentifier: taskIdentifier, error: error)
         )
     }
 
@@ -147,6 +155,25 @@ extension WebSocketManager {
             return
         }
         await handleMappedError(taskIdentifier: taskIdentifier, error: wsError)
+    }
+
+    func processRedirectRejected(taskIdentifier: Int, error: WebSocketError) async {
+        guard let callbackContext = await runtimeRegistry.callbackContext(for: taskIdentifier),
+            await acquireTaskLifecycleGate(
+                for: callbackContext,
+                taskIdentifier: taskIdentifier
+            )
+        else { return }
+
+        let transition = await callbackContext.task.applyLifecycleEvent(
+            .failure(
+                generation: callbackContext.generation,
+                disposition: .transportFailure(error),
+                error: error
+            ),
+            context: .init(reconnectAction: .terminal)
+        )
+        await executeLifecycleEffectsAfterLockedApply(transition, for: callbackContext.task)
     }
 
     func processPingTimeout(taskIdentifier: Int) async {

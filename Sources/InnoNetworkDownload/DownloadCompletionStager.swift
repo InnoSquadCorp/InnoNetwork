@@ -107,7 +107,10 @@ package struct DownloadCompletionStager: Sendable {
         return
             baseDirectory
             .appendingPathComponent("InnoNetworkDownload", isDirectory: true)
-            .appendingPathComponent(configuration.sessionIdentifier, isDirectory: true)
+            .appendingPathComponent(
+                DownloadSessionStorageKey.component(for: configuration.sessionIdentifier),
+                isDirectory: true
+            )
             .appendingPathComponent("CompletionStaging", isDirectory: true)
     }
 
@@ -657,8 +660,8 @@ package struct DownloadCompletionStager: Sendable {
     package static func isValidKey(_ key: String) -> Bool {
         key.utf8.count == 64
             && key.utf8.allSatisfy {
-                ($0 >= Character("0").asciiValue! && $0 <= Character("9").asciiValue!)
-                    || ($0 >= Character("a").asciiValue! && $0 <= Character("f").asciiValue!)
+                ($0 >= 0x30 && $0 <= 0x39)
+                    || ($0 >= 0x61 && $0 <= 0x66)
             }
     }
 

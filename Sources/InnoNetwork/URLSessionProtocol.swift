@@ -51,6 +51,16 @@ package protocol BoundedFileUploadSession: URLSessionProtocol {
     ) async throws -> (URLSession.AsyncBytes, URLResponse)
 }
 
+/// Package-only capability for deterministic first-party test sessions whose
+/// current response already exists as in-memory `Data`. It lets the executor
+/// preserve the public 5 MiB default for supported `InnoNetworkTestSupport`
+/// modes without pretending that arbitrary consumer sessions can enforce a
+/// bound before buffering. The normal post-transport body-limit checks remain
+/// authoritative for these test doubles.
+package protocol BoundedBufferedTestSession: URLSessionProtocol {
+    var allowsBoundedBufferedFallback: Bool { get }
+}
+
 public extension URLSessionProtocol {
     func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
         _ = context

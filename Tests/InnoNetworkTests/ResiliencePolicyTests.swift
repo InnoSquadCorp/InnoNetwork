@@ -590,7 +590,8 @@ private func makeLocalizedCacheConfiguration(
         ],
         responseInterceptors: responseInterceptors,
         responseCachePolicy: responseCachePolicy,
-        responseCache: responseCache
+        responseCache: responseCache,
+        responseBodyBufferingPolicy: .buffered(maxBytes: nil)
     )
 }
 
@@ -646,7 +647,8 @@ struct ResiliencePolicyTests {
                     HeaderSettingInterceptor(field: "X-Tenant-ID", value: "tenant-a"),
                     HeaderSettingInterceptor(field: "X-Trace-ID", value: "trace-123"),
                 ],
-                refreshTokenPolicy: policy
+                refreshTokenPolicy: policy,
+                responseBodyBufferingPolicy: .buffered(maxBytes: nil)
             ),
             session: session
         )
@@ -976,6 +978,20 @@ struct ResiliencePolicyTests {
         _ = try await client.request(ResiliencePostRequest())
 
         #expect(await session.requestCount == 2)
+    }
+
+    @Test("Coalescing method allowlists preserve case-sensitive tokens")
+    func coalescingMethodAllowlistIsCaseSensitive() throws {
+        var request = URLRequest(url: URL(string: "https://api.example.com/options")!)
+        request.httpMethod = "options"
+
+        let uppercasePolicy = RequestCoalescingPolicy(methods: ["OPTIONS"])
+        #expect(uppercasePolicy.methods == ["OPTIONS"])
+        #expect(RequestDedupKey(request: request, policy: uppercasePolicy) == nil)
+
+        let lowercasePolicy = RequestCoalescingPolicy(methods: ["options"])
+        let key = try #require(RequestDedupKey(request: request, policy: lowercasePolicy))
+        #expect(key.method == "options")
     }
 
     @Test("Coalescing keeps different Authorization headers separate")
@@ -1461,7 +1477,8 @@ struct ResiliencePolicyTests {
                 ],
                 requestCoalescingPolicy: .getOnly,
                 responseCachePolicy: .staleWhileRevalidate(maxAge: .seconds(1), staleWindow: .seconds(10)),
-                responseCache: cache
+                responseCache: cache,
+                responseBodyBufferingPolicy: .buffered(maxBytes: nil)
             ),
             session: session
         )
@@ -1657,7 +1674,8 @@ struct ResiliencePolicyTests {
                 HeaderSettingInterceptor(field: "Accept-Language", value: cacheFixtureAcceptLanguage)
             ],
             responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-            responseCache: cache
+            responseCache: cache,
+            responseBodyBufferingPolicy: .buffered(maxBytes: nil)
         )
         let client = DefaultNetworkClient(configuration: configuration, session: session)
 
@@ -1875,33 +1893,35 @@ struct ResiliencePolicyTests {
         }
     }
 
-    @Test("Unknown successful method is treated as unsafe for target URI invalidation")
-    func unknownSuccessfulMethodInvalidatesTargetURI() async throws {
-        let cache = InMemoryResponseCache()
-        let key = resilienceUserCacheKey()
-        await cache.set(
-            key,
-            CachedResponse(
-                data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale")),
-                headers: ["ETag": "old"]
+    @Test("Unknown and differently cased successful methods invalidate the target URI")
+    func customSuccessfulMethodsInvalidateTargetURI() async throws {
+        for method in ["PURGE", "options", "trace"] {
+            let cache = InMemoryResponseCache()
+            let key = resilienceUserCacheKey()
+            await cache.set(
+                key,
+                CachedResponse(
+                    data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale")),
+                    headers: ["ETag": "old"]
+                )
             )
-        )
-        let configuration = makeLocalizedCacheConfiguration(
-            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-            responseCache: cache
-        )
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "purged"))
-        ])
-        let client = DefaultNetworkClient(configuration: configuration, session: session)
-
-        _ = try await client.request(
-            InterceptedResilienceGetRequest(
-                interceptors: [HTTPMethodOverrideInterceptor(method: "PURGE")]
+            let configuration = makeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+                responseCache: cache
             )
-        )
+            let session = try SequenceURLSession(queue: [
+                queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: method))
+            ])
+            let client = DefaultNetworkClient(configuration: configuration, session: session)
 
-        #expect(await cache.get(key) == nil)
+            _ = try await client.request(
+                InterceptedResilienceGetRequest(
+                    interceptors: [HTTPMethodOverrideInterceptor(method: method)]
+                )
+            )
+
+            #expect(await cache.get(key) == nil)
+        }
     }
 
     @Test("Unsafe error responses and transport failures keep cached target URI")

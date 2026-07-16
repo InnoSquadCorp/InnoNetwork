@@ -16,13 +16,21 @@ point.
 
 ## On-disk layout
 
-Each persisted session lives under `persistenceDirectory/<sessionIdentifier>/`:
+Each persisted session lives under `persistenceDirectory/<storage-component>/`:
 
 ```text
-<sessionIdentifier>/
+<storage-component>/
 ├── checkpoint.json   # most recent compact snapshot
 └── events.log        # JSON Lines append log of incremental changes
 ```
+
+The component is the original value for a bounded lowercase ASCII identifier
+using reverse-DNS-safe characters (`a-z`, `0-9`, `.`, `-`, `_`). Path-like,
+uppercase, oversized, empty, or non-ASCII identifiers use a deterministic
+SHA-256 component instead. Foundation still receives the original session
+identifier; only library-owned filesystem paths use the mapped value. This
+keeps sessions distinct on case-insensitive filesystems and prevents nested or
+out-of-root storage.
 
 Each line of `events.log` is a self-describing event:
 

@@ -205,7 +205,8 @@ struct NetworkErrorWireMatrixTests {
     private func matrixConfiguration() -> NetworkConfiguration {
         NetworkConfiguration(
             baseURL: URL(string: "https://example.com")!,
-            networkMonitor: nil
+            networkMonitor: nil,
+            responseBodyBufferingPolicy: .buffered(maxBytes: nil)
         )
     }
 

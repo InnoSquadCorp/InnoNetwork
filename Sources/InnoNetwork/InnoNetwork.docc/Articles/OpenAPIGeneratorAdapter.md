@@ -20,6 +20,7 @@ struct ListUsersOperation: OpenAPIRestOperation {
 
     var method: HTTPMethod { .get }
     var path: String { "/users" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
 }
 
 let users = try await client.request(OpenAPIRequest(ListUsersOperation()))
@@ -57,6 +58,7 @@ protocol OpenAPIExecutableOperation: Sendable {
     var method: HTTPMethod { get }
     var path: String { get }
     var headers: HTTPHeaders { get }
+    var sessionAuthentication: SessionAuthentication { get }
 
     func makePayload() throws -> RequestPayload
     func decode(data: Data, response: Response) throws -> Output
@@ -73,6 +75,7 @@ struct OpenAPIExecutable<Operation: OpenAPIExecutableOperation>: SingleRequestEx
     var method: HTTPMethod { operation.method }
     var path: String { operation.path }
     var headers: HTTPHeaders { operation.headers }
+    var sessionAuthentication: SessionAuthentication { operation.sessionAuthentication }
 
     func makePayload() throws -> RequestPayload {
         try operation.makePayload()
@@ -87,6 +90,10 @@ struct OpenAPIExecutable<Operation: OpenAPIExecutableOperation>: SingleRequestEx
 The repository's `Examples/GeneratedClientRecipe` target is a compile-smoke
 sample for this SPI import shape without tying InnoNetwork to a specific
 OpenAPI generator version.
+
+The preview generator writes `.anonymous` because it does not interpret
+OpenAPI security schemes. Treat that value as a review marker, not as a
+security decision made by the generator.
 
 ## Dependency boundary
 

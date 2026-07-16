@@ -34,7 +34,11 @@ and own application reducer types in their feature or architecture layer.
 - `NetworkConfiguration.safeDefaults(baseURL:)`
 - `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 - `DownloadConfiguration.safeDefaults()`
+- `DownloadConfiguration.safeDefaults(sessionIdentifier:)`
 - `DownloadConfiguration.advanced(_:)`
+- `DownloadConfiguration.advanced(sessionIdentifier:_:)`
+- `DownloadConfiguration.cellularEnabled()`
+- `DownloadConfiguration.backgroundTransfersEnabled()`
 - `WebSocketConfiguration.safeDefaults()`
 - `WebSocketConfiguration.advanced(_:)`
 - `WebSocketHandshakeRequestAdapter`
@@ -193,7 +197,10 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 - `HTTPMethod` — the planned 5.0 value type accepts any valid, case-sensitive
   RFC 9110 method token through its failable `init(rawValue:)`; the standard
   GET, HEAD, POST, PUT, PATCH, DELETE, CONNECT, OPTIONS, and TRACE constants
-  will remain available throughout 5.x.
+  will remain available throughout 5.x. URLSession-backed execution fails
+  before transport if Foundation cannot preserve a token's exact spelling;
+  retry, redirect, cache, coalescing, and diagnostics never normalize method
+  case on the caller's behalf.
 - `ResponseBodyBufferingPolicy` — the default inline request path is
   streaming, with `responseBodyLimit` retained as a source-compatible alias
   for the policy's `maxBytes` value.
@@ -318,6 +325,14 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   construction surface was removed before the 4.0.0 baseline and is not part
   of the planned 5.x stable API. Use presets and the named configuration packs
   passed to `NetworkConfiguration.advanced(...)` instead.
+- `DownloadConfiguration.backgroundTransfersEnabled()` — the single public
+  opt-in for Foundation-managed background continuation. The underlying
+  foreground/background mode remains package-owned so the public contract
+  does not expose a second configuration vocabulary.
+- `DownloadConfiguration.init(...)` — the direct 22-parameter construction
+  surface is package-owned in 5.0. Use `safeDefaults(sessionIdentifier:)` or
+  `advanced(sessionIdentifier:_:)` so the secure preset defaults and manager
+  identity remain explicit.
 - `DownloadConfiguration.sharedContainerIdentifier` — additive App Group
   background-session storage knob. Default stays `nil`; future minors may add
   preset helpers, but the property and builder field remain source-compatible.

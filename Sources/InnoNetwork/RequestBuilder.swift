@@ -82,7 +82,7 @@ package struct RequestBuilder {
         }
 
         var request = URLRequest(url: targetURL)
-        request.httpMethod = executable.method.rawValue
+        try Self.assign(executable.method, to: &request)
         request.headers = executable.headers
         refreshDynamicDefaultHeaders(on: &request, configuration: configuration)
         if payload.hasBody, let bodyContentType {
@@ -100,6 +100,20 @@ package struct RequestBuilder {
         request.httpBody = httpBody
         didTransferPayloadOwnership = true
         return BuiltRequest(request: request, bodySource: bodySource)
+    }
+
+    /// Assigns an HTTP method without allowing Foundation to silently rewrite
+    /// its case-sensitive token (for example, `get` to `GET`). URLSession
+    /// cannot transmit those spellings faithfully, so fail before transport.
+    package static func assign(_ method: HTTPMethod, to request: inout URLRequest) throws {
+        request.httpMethod = method.rawValue
+        guard request.httpMethod == method.rawValue else {
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "URLSession cannot preserve the case-sensitive HTTP method token '\(method.rawValue)'."
+                )
+            )
+        }
     }
 
     private func refreshDynamicDefaultHeaders(

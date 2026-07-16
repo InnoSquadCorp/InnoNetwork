@@ -50,7 +50,7 @@ struct MockNetworkTests {
         try mockSession.setMockJSON(expectedUser)
 
         let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            configuration: .safeDefaults(baseURL: URL(string: "https://api.example.com/v1")!),
             session: mockSession
         )
 

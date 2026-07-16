@@ -253,7 +253,10 @@ struct PersistenceFsyncPolicyTests {
         )
 
         let persistenceRoot = baseDirectory.appendingPathComponent("InnoNetworkDownload", isDirectory: true)
-        let sessionDirectory = persistenceRoot.appendingPathComponent(sessionIdentifier, isDirectory: true)
+        let sessionDirectory = persistenceRoot.appendingPathComponent(
+            DownloadSessionStorageKey.component(for: sessionIdentifier),
+            isDirectory: true
+        )
         let ownedURLs = [
             persistenceRoot,
             sessionDirectory,

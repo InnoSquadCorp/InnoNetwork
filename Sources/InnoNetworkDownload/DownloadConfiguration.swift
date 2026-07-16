@@ -7,7 +7,7 @@ public struct DownloadConfiguration: Sendable {
 
     /// Selects whether Foundation performs transfers in-process or in its
     /// out-of-process background daemon.
-    public enum SessionMode: Sendable, Equatable {
+    package enum SessionMode: Sendable, Equatable {
         /// Uses an ephemeral session, allowing InnoNetwork to inspect and
         /// reject every redirect before it is followed. This is the secure
         /// default.
@@ -40,7 +40,6 @@ public struct DownloadConfiguration: Sendable {
                 // cellular call ``DownloadConfiguration/cellularEnabled()``.
                 allowsCellularAccess: false,
                 allowsInsecureHTTP: false,
-                sessionMode: .foreground,
                 sessionIdentifier: sessionIdentifier,
                 sharedContainerIdentifier: nil,
                 networkMonitor: NetworkMonitor.shared,
@@ -68,7 +67,6 @@ public struct DownloadConfiguration: Sendable {
                 taskInactivityTimeout: nil,
                 allowsCellularAccess: false,
                 allowsInsecureHTTP: false,
-                sessionMode: .foreground,
                 sessionIdentifier: sessionIdentifier,
                 sharedContainerIdentifier: nil,
                 networkMonitor: NetworkMonitor.shared,
@@ -142,7 +140,7 @@ public struct DownloadConfiguration: Sendable {
     /// out-of-process continuation, but Foundation follows redirects without
     /// consulting the delegate, so only initial and exposed final URLs can be
     /// validated by the library.
-    public let sessionMode: SessionMode
+    package let sessionMode: SessionMode
     /// Manager identifier and persistence scope. In background mode this is
     /// also the `URLSessionConfiguration` background-session identifier.
     ///
@@ -154,8 +152,11 @@ public struct DownloadConfiguration: Sendable {
     ///
     /// Mirrors `URLSessionConfiguration.sharedContainerIdentifier`. Leave `nil`
     /// for app-private background sessions; set this when an app extension must
-    /// observe or continue the same background download session. This value
-    /// is ignored in foreground mode.
+    /// observe or continue the same background download session. Exactly one
+    /// process may own that session identifier at a time. Cross-process
+    /// restoration also requires ``persistenceBaseDirectoryURL`` to point to a
+    /// shared writable App Group directory; this setting alone shares only
+    /// Foundation's session state. This value is ignored in foreground mode.
     public let sharedContainerIdentifier: String?
     public let networkMonitor: (any NetworkMonitoring)?
     /// When true, waits for network changes before retrying on download failure.
@@ -176,12 +177,20 @@ public struct DownloadConfiguration: Sendable {
     /// Optional override for the persistence root directory.
     ///
     /// When `nil` (the default), the append-log persistence store writes to
-    /// `applicationSupportDirectory/InnoNetworkDownload/<sessionIdentifier>`.
+    /// `applicationSupportDirectory/InnoNetworkDownload/<storage-component>`.
+    /// Conventional lowercase reverse-DNS identifiers are retained as the
+    /// component. Other values use a deterministic SHA-256 component so path
+    /// syntax, excessive length, Unicode, or case-insensitive aliases cannot
+    /// escape or share a session's storage directory.
     /// Download-owned directories and metadata files are excluded from backup
     /// regardless of this override. On iOS-family platforms they also use
     /// complete-until-first-user-authentication file protection. The supplied
     /// root itself and caller-owned final destinations are left unchanged.
     /// The supplied URL must be a directory the process can read and write.
+    /// When a host app and extension may be relaunched as alternate owners of
+    /// one background session, both targets must use the same App Group-backed
+    /// root so the library can correlate restored Foundation tasks with its
+    /// logical persistence records. Proactive live handoff is not supported.
     public let persistenceBaseDirectoryURL: URL?
 
     /// Durability policy for the append-log persistence layer.
@@ -274,10 +283,6 @@ public struct DownloadConfiguration: Sendable {
         public var allowsCellularAccess: Bool
         /// Allows plain `http` download sources. Defaults to `false`.
         public var allowsInsecureHTTP: Bool
-        /// Foundation session mode. Defaults to secure `.foreground`, which
-        /// enforces per-hop redirect admission. `.background` accepts
-        /// system-managed redirects in exchange for out-of-process transfer.
-        public var sessionMode: SessionMode
         /// Manager identifier and persistence scope. In background mode this
         /// is also the Foundation background-session identifier.
         ///
@@ -319,7 +324,6 @@ public struct DownloadConfiguration: Sendable {
             self.taskInactivityTimeout = preset.taskInactivityTimeout
             self.allowsCellularAccess = preset.allowsCellularAccess
             self.allowsInsecureHTTP = preset.allowsInsecureHTTP
-            self.sessionMode = preset.sessionMode
             self.sessionIdentifier = preset.sessionIdentifier
             self.sharedContainerIdentifier = preset.sharedContainerIdentifier
             self.networkMonitor = preset.networkMonitor
@@ -346,7 +350,6 @@ public struct DownloadConfiguration: Sendable {
                 taskInactivityTimeout: taskInactivityTimeout,
                 allowsCellularAccess: allowsCellularAccess,
                 allowsInsecureHTTP: allowsInsecureHTTP,
-                sessionMode: sessionMode,
                 sessionIdentifier: sessionIdentifier,
                 sharedContainerIdentifier: sharedContainerIdentifier,
                 networkMonitor: networkMonitor,
@@ -405,7 +408,7 @@ public struct DownloadConfiguration: Sendable {
         return builder.build()
     }
 
-    public init(
+    package init(
         maxConnectionsPerHost: Int = 3,
         maxRetryCount: Int = 3,
         maxTotalRetries: Int = 3,
@@ -418,7 +421,6 @@ public struct DownloadConfiguration: Sendable {
         taskInactivityTimeout: Duration? = nil,
         allowsCellularAccess: Bool = true,
         allowsInsecureHTTP: Bool = false,
-        sessionMode: SessionMode = .foreground,
         sessionIdentifier: String = "com.innonetwork.download",
         sharedContainerIdentifier: String? = nil,
         networkMonitor: (any NetworkMonitoring)? = NetworkMonitor.shared,
@@ -445,7 +447,7 @@ public struct DownloadConfiguration: Sendable {
         self.taskInactivityTimeout = taskInactivityTimeout.map { max($0, .milliseconds(100)) }
         self.allowsCellularAccess = allowsCellularAccess
         self.allowsInsecureHTTP = allowsInsecureHTTP
-        self.sessionMode = sessionMode
+        self.sessionMode = .foreground
         self.sessionIdentifier = sessionIdentifier
         self.sharedContainerIdentifier = sharedContainerIdentifier
         self.networkMonitor = networkMonitor
@@ -464,31 +466,49 @@ public struct DownloadConfiguration: Sendable {
     /// confirmed (UI affordance, settings screen, or large-file justification)
     /// that the user expects downloads to consume cellular bandwidth.
     public func cellularEnabled() -> DownloadConfiguration {
-        DownloadConfiguration(
-            maxConnectionsPerHost: maxConnectionsPerHost,
-            maxRetryCount: maxRetryCount,
-            maxTotalRetries: maxTotalRetries,
-            retryDelay: retryDelay,
-            exponentialBackoff: exponentialBackoff,
-            retryJitterRatio: retryJitterRatio,
-            maxRetryDelay: maxRetryDelay,
-            timeoutForRequest: timeoutForRequest,
-            timeoutForResource: timeoutForResource,
-            taskInactivityTimeout: taskInactivityTimeout,
-            allowsCellularAccess: true,
-            allowsInsecureHTTP: allowsInsecureHTTP,
-            sessionMode: sessionMode,
-            sessionIdentifier: sessionIdentifier,
-            sharedContainerIdentifier: sharedContainerIdentifier,
-            networkMonitor: networkMonitor,
-            waitsForNetworkChanges: waitsForNetworkChanges,
-            networkChangeTimeout: networkChangeTimeout,
-            eventDeliveryPolicy: eventDeliveryPolicy,
-            eventMetricsReporter: eventMetricsReporter,
-            persistenceFsyncPolicy: persistenceFsyncPolicy,
-            persistenceCompactionPolicy: persistenceCompactionPolicy,
-            persistenceBaseDirectoryURL: persistenceBaseDirectoryURL
-        )
+        DownloadConfiguration(copying: self, allowsCellularAccess: true)
+    }
+
+    /// Returns a copy configured for Foundation-managed background transfers.
+    ///
+    /// Background sessions can continue while the app is suspended or
+    /// terminated by the system, but Foundation follows their redirects without
+    /// consulting the redirect delegate. InnoNetwork can still validate the initial and
+    /// exposed final URLs, but it cannot enforce per-hop URL admission. Keep
+    /// the foreground default unless process-independent continuation is worth
+    /// that security trade-off.
+    public func backgroundTransfersEnabled() -> DownloadConfiguration {
+        DownloadConfiguration(copying: self, sessionMode: .background)
+    }
+
+    private init(
+        copying configuration: DownloadConfiguration,
+        sessionMode: SessionMode? = nil,
+        allowsCellularAccess: Bool? = nil
+    ) {
+        self.maxConnectionsPerHost = configuration.maxConnectionsPerHost
+        self.maxRetryCount = configuration.maxRetryCount
+        self.maxTotalRetries = configuration.maxTotalRetries
+        self.retryDelay = configuration.retryDelay
+        self.exponentialBackoff = configuration.exponentialBackoff
+        self.retryJitterRatio = configuration.retryJitterRatio
+        self.maxRetryDelay = configuration.maxRetryDelay
+        self.timeoutForRequest = configuration.timeoutForRequest
+        self.timeoutForResource = configuration.timeoutForResource
+        self.taskInactivityTimeout = configuration.taskInactivityTimeout
+        self.allowsCellularAccess = allowsCellularAccess ?? configuration.allowsCellularAccess
+        self.allowsInsecureHTTP = configuration.allowsInsecureHTTP
+        self.sessionMode = sessionMode ?? configuration.sessionMode
+        self.sessionIdentifier = configuration.sessionIdentifier
+        self.sharedContainerIdentifier = configuration.sharedContainerIdentifier
+        self.networkMonitor = configuration.networkMonitor
+        self.waitsForNetworkChanges = configuration.waitsForNetworkChanges
+        self.networkChangeTimeout = configuration.networkChangeTimeout
+        self.eventDeliveryPolicy = configuration.eventDeliveryPolicy
+        self.eventMetricsReporter = configuration.eventMetricsReporter
+        self.persistenceFsyncPolicy = configuration.persistenceFsyncPolicy
+        self.persistenceCompactionPolicy = configuration.persistenceCompactionPolicy
+        self.persistenceBaseDirectoryURL = configuration.persistenceBaseDirectoryURL
     }
 
     public static let `default` = safeDefaults()

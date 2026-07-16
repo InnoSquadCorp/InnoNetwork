@@ -229,6 +229,68 @@ struct RetryAfterParsingTests {
         #expect(policy.allowsRetry(for: trace))
     }
 
+    @Test("Retry-safe method matching preserves case-sensitive tokens", arguments: ["options", "trace"])
+    func retrySafeMethodMatchingIsCaseSensitive(method: String) {
+        var preparedRequest = URLRequest(url: URL(string: "https://example.com/custom")!)
+        preparedRequest.httpMethod = method
+        let request = preparedRequest
+
+        #expect(!RetryIdempotencyPolicy.safeMethodsAndIdempotencyKey.allowsRetry(for: request))
+
+        let explicitlyConfigured = RetryIdempotencyPolicy(
+            safeMethods: [method],
+            retriesUnsafeMethodsWithIdempotencyKey: false
+        )
+        #expect(explicitlyConfigured.safeMethods == [method])
+        #expect(explicitlyConfigured.allowsRetry(for: request))
+    }
+
+    @Test("Coordinator safety net does not promote lowercase custom methods", arguments: ["options", "trace"])
+    func coordinatorSafetyNetPreservesMethodCase(method: String) async throws {
+        struct AlwaysRetryPolicy: RetryPolicy {
+            let maxRetries = 1
+            let retryDelay: TimeInterval = 0
+
+            func shouldRetry(
+                error: NetworkError,
+                retryIndex: Int,
+                request: URLRequest?,
+                response: HTTPURLResponse?
+            ) -> RetryDecision {
+                .retry
+            }
+        }
+
+        var preparedRequest = URLRequest(url: URL(string: "https://example.com/custom")!)
+        preparedRequest.httpMethod = method
+        let request = preparedRequest
+        let attempts = OSAllocatedUnfairLockBox(value: 0)
+        let coordinator = RetryCoordinator(eventHub: NetworkEventHub())
+
+        do {
+            _ = try await coordinator.execute(
+                retryPolicy: AlwaysRetryPolicy(),
+                networkMonitor: nil,
+                requestID: UUID(),
+                eventObservers: []
+            ) { _, _ in
+                attempts.withLock { $0 += 1 }
+                throw RequestExecutionFailure(
+                    error: .timeout(reason: .requestTimeout),
+                    request: request
+                )
+            }
+            Issue.record("Expected timeout to surface without retry")
+        } catch let error as NetworkError {
+            guard case .timeout = error else {
+                Issue.record("Expected .timeout, got \(error)")
+                return
+            }
+        }
+
+        #expect(attempts.withLock { $0 } == 1)
+    }
+
     @Test("PUT and DELETE require an idempotency key by default")
     func putAndDeleteRequireIdempotencyKeyByDefault() {
         let policy = RetryIdempotencyPolicy.safeMethodsAndIdempotencyKey

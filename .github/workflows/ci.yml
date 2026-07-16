@@ -22,7 +22,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      pull-requests: read
 
     steps:
       - name: Checkout
@@ -33,6 +32,9 @@ jobs:
         # graph setting to be enabled. A missing graph or a rejected dependency
         # change is a required PR gate rather than an advisory signal.
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: low
+          fail-on-scopes: runtime, development, unknown
 
   lint:
     name: Lint (swift-format)
@@ -186,6 +188,13 @@ jobs:
       - name: Resolve dependencies
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: xcrun swift package resolve
+
+      - name: Verify resolved dependency lock
+        if: matrix.xcode.required == true && steps.toolchain-compatibility.outputs.compatible == 'true'
+        run: |
+          test -f Package.resolved
+          git ls-files --error-unmatch Package.resolved >/dev/null
+          git diff --exit-code -- Package.resolved
 
       - name: Build (Swift 6 language mode)
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
@@ -376,6 +385,9 @@ jobs:
       - name: Verify stable examples contract
         run: bash Scripts/check_stable_examples.sh
 
+      - name: Verify example deployment floors
+        run: python3 Scripts/check_example_platform_floors.py
+
       - name: Verify migration guide code blocks compile
         run: bash Scripts/check_migration_examples.sh
 
@@ -518,6 +530,10 @@ jobs:
 
       - name: Build generated client recipe package
         working-directory: Examples/GeneratedClientRecipe
+        run: xcrun swift build
+
+      - name: Build event policy observer package
+        working-directory: Examples/EventPolicyObserver
         run: xcrun swift build
 
       - name: Test macros from source (with code coverage)

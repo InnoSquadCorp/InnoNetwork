@@ -13,11 +13,17 @@ private final class OpenAPIClientTransportURLProtocol: URLProtocol {
     }
 
     nonisolated(unsafe) private static var responses: [String: ResponseSpec] = [:]
+    nonisolated(unsafe) private static var canonicalMethodOverrides: [String: String] = [:]
     private static let lock = NSLock()
 
-    static func register(url: URL, response: ResponseSpec) {
+    static func register(
+        url: URL,
+        response: ResponseSpec,
+        canonicalMethod: String? = nil
+    ) {
         lock.lock()
         responses[url.absoluteString] = response
+        canonicalMethodOverrides[url.absoluteString] = canonicalMethod
         lock.unlock()
     }
 
@@ -26,7 +32,15 @@ private final class OpenAPIClientTransportURLProtocol: URLProtocol {
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {
-        request
+        guard let url = request.url else { return request }
+        lock.lock()
+        let method = canonicalMethodOverrides[url.absoluteString]
+        lock.unlock()
+        guard let method else { return request }
+
+        var canonicalRequest = request
+        canonicalRequest.httpMethod = method
+        return canonicalRequest
     }
 
     override func startLoading() {
@@ -76,6 +90,7 @@ private final class OpenAPIClientTransportURLProtocol: URLProtocol {
     private static func dequeue(url: URL) -> ResponseSpec? {
         lock.lock()
         defer { lock.unlock() }
+        canonicalMethodOverrides.removeValue(forKey: url.absoluteString)
         return responses.removeValue(forKey: url.absoluteString)
     }
 }
@@ -375,6 +390,35 @@ struct InnoNetworkClientTransportTests {
         #expect(responseBody == nil)
     }
 
+    @Test("No-body classification uses URLSession's final request method")
+    func finalURLSessionRequestMethodControlsBodySemantics() async throws {
+        let baseURL = URL(string: "https://api.example.com")!
+        let streamURL = baseURL.appendingPathComponent("canonical-head")
+        OpenAPIClientTransportURLProtocol.register(
+            url: streamURL,
+            response: .http(
+                statusCode: 200,
+                headers: ["Content-Length": "4096"],
+                chunks: []
+            ),
+            canonicalMethod: "HEAD"
+        )
+        let transport = InnoNetworkClientTransport(
+            session: makeOpenAPIClientTransportURLSession(),
+            responseBodyByteLimit: 1
+        )
+
+        let (response, responseBody) = try await transport.send(
+            HTTPRequest(method: .get, scheme: nil, authority: nil, path: "/canonical-head"),
+            body: nil,
+            baseURL: baseURL,
+            operationID: "canonical-head"
+        )
+
+        #expect(response.status.code == 200)
+        #expect(responseBody == nil)
+    }
+
     @Test("Informational responses are classified as no-body", arguments: [100, 101, 150, 199])
     func informationalResponsesAreNoBody(statusCode: Int) {
         #expect(
@@ -389,10 +433,45 @@ struct InnoNetworkClientTransportTests {
     func successfulConnectResponsesAreNoBody(statusCode: Int) {
         #expect(
             InnoNetworkClientTransport.responseMustNotCarryBody(
-                requestMethod: "connect",
+                requestMethod: "CONNECT",
                 statusCode: statusCode
             )
         )
+    }
+
+    @Test("No-body classification preserves method-token case", arguments: ["head", "connect"])
+    func lowercaseCustomMethodsMayCarryBody(method: String) {
+        #expect(
+            InnoNetworkClientTransport.responseMustNotCarryBody(
+                requestMethod: method,
+                statusCode: 200
+            ) == false
+        )
+    }
+
+    @Test(
+        "OpenAPI transport rejects method spellings Foundation would rewrite",
+        arguments: ["get", "head", "connect"]
+    )
+    func rejectsFoundationCanonicalizedMethod(rawMethod: String) async throws {
+        let method = try #require(HTTPRequest.Method(rawValue: rawMethod))
+        let transport = InnoNetworkClientTransport(session: makeOpenAPIClientTransportURLSession())
+
+        do {
+            _ = try await transport.send(
+                HTTPRequest(method: method, scheme: nil, authority: nil, path: "/method"),
+                body: nil,
+                baseURL: URL(string: "https://api.example.com")!,
+                operationID: "case-sensitive-method"
+            )
+            Issue.record("Expected unsupportedRequestMethod")
+        } catch let error as InnoNetworkClientTransportError {
+            guard case .unsupportedRequestMethod(let rejectedMethod) = error else {
+                Issue.record("Expected unsupportedRequestMethod, got \(error)")
+                return
+            }
+            #expect(rejectedMethod == rawMethod)
+        }
     }
 
     @Test("Unsuccessful CONNECT responses may carry an ordinary body", arguments: [300, 400, 407, 500])

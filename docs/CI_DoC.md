@@ -12,25 +12,31 @@ This document defines the minimum completion criteria (DoC) for pull requests in
 
 The `CI` workflow must pass all of the following:
 
-1. `xcrun swift package resolve`
-2. `xcrun swift build`
-3. `xcrun swift test --no-parallel --enable-code-coverage`
-4. A separate blocking `bash Scripts/run_bounded_parallel_tests.sh` job builds
+1. The root `Package.resolved` must remain tracked
+   (`git ls-files --error-unmatch Package.resolved`), then
+   `xcrun swift package resolve` must leave it unchanged. This is both the
+   reproducible CI lock and GitHub's Swift dependency-graph input.
+2. The pull-request-only `Dependency Review` job is blocking at `low` severity
+   across runtime, development, and unknown scopes. It receives only
+   `contents: read`; a graph failure is a failed check, not a skipped review.
+3. `xcrun swift build`
+4. `xcrun swift test --no-parallel --enable-code-coverage`
+5. A separate blocking `bash Scripts/run_bounded_parallel_tests.sh` job builds
    the suite once, then loads its test bundle in four concurrent, target-filtered
    Swift Testing processes without coverage instrumentation. Every process uses
    `--no-parallel`, so the Swift 6.2 testing runtime cannot exceed the intended
    four-process bound. Direct bundle loading avoids SwiftPM's shared `.build`
    lock; the script also proves that every discovered test belongs to exactly
    one shard.
-5. `rg -n "@unchecked Sendable"` across production targets, including
+6. `rg -n "@unchecked Sendable"` across production targets, including
    `Sources/InnoNetworkMacros`, returns no matches.
-6. `bash Scripts/check_shared_coders_mutation.sh` confirms the shared default
+7. `bash Scripts/check_shared_coders_mutation.sh` confirms the shared default
    JSON coders are never mutated after construction.
-7. `bash Scripts/check_production_force_unwraps.sh` returns no matches in
+8. `bash Scripts/check_production_force_unwraps.sh` returns no matches in
    production source targets. Tests and smoke fixtures are excluded.
-8. `bash Scripts/check_no_print_in_production.sh` returns no matches in
+9. `bash Scripts/check_no_print_in_production.sh` returns no matches in
    production source targets. Tests and smoke fixtures are excluded.
-9. Runtime and macro coverage reports are generated from explicit, disjoint
+10. Runtime and macro coverage reports are generated from explicit, disjoint
    source roots under `.build/coverage/` and `.build/coverage-macros/`, then uploaded as
    separate workflow artifacts. Missing profiling data, test executables,
    source files, or LCOV records fail the job; artifact upload also uses
@@ -43,30 +49,37 @@ The `CI` workflow must pass all of the following:
    `latest` binary at upload time. Pull requests retain artifact-only fallback
    when CLI installation or an upload fails, while canonical `main` pushes
    require both uploads.
-10. `apple-platform-build-smoke` runs `xcodebuild ... build` for macOS and iOS.
+11. `apple-platform-build-smoke` runs `xcodebuild ... build` for macOS and iOS.
    For tvOS, watchOS, and visionOS it uses the installed device SDK plus the
    package's minimum target triple to cross-compile every public library
    product. This avoids depending on hosted-runner simulator runtimes that can
    be pruned independently of their SDKs. All five platforms are unconditional
    hard gates: a missing SDK, undiscoverable public product, or compile failure
    fails CI. SwiftPM test+coverage remains the runtime test gate.
-11. Consumer smoke verifies `Macros` is a default trait, the default package
+12. `python3 Scripts/check_example_platform_floors.py` discovers every
+    independent `Examples/*/Package.swift`, requires the root package's exact
+    deployment floors, and requires both CI and release workflows to build
+    every discovered example. A new correctly versioned example therefore
+    cannot silently miss either gate.
+13. Consumer smoke verifies `Macros` is a default trait, the default package
    graph includes `swift-syntax`, and the `InnoNetworkMacros` target
    dependency is conditioned on that trait. It then performs a clean
    `--disable-default-traits` root build and rejects compiled macro products
-   before building separate core-only (`traits: []`), aggregate, download-only,
-   websocket-only, test-support, generated-client, and macro usage packages.
+   before building separate core-only (`traits: []`), aggregate, wrapper,
+   download-only, websocket-only, test-support, generated-client, event-policy
+   observer, and macro usage packages, including
+   `Examples/WrapperSmoke` and `Examples/EventPolicyObserver`.
    SwiftPM 6.2 can still resolve, fetch, or list manifest-level dependencies
    during a core-only build; the invariant is that macro products are absent
    from compilation. Traits are unified per package, so another dependency
    enabling default traits re-enables `Macros`.
-12. `bash Scripts/check_provisional_enum_cases.sh` confirms guarded public enum
+14. `bash Scripts/check_provisional_enum_cases.sh` confirms guarded public enum
     cases still match their migration-review allowlist.
-13. Macro tests run from source with
+15. Macro tests run from source with
     `--disable-experimental-prebuilts --filter InnoNetworkMacroTests`, and
     `Scripts/check_macro_compile_failures.sh` verifies that invalid definitions
     fail with the intended diagnostic rather than compiling silently.
-14. The CI benchmark smoke job runs
+16. The CI benchmark smoke job runs
     `swift run -c release InnoNetworkBenchmarks --quick`
     and uploads the JSON summary to prove the benchmark CLI still builds and
     emits parseable results. Regression enforcement lives in the dedicated
@@ -77,6 +90,11 @@ The `CI` workflow must pass all of the following:
     and `--regression-reason` when a PR intentionally updates or accepts a
     baseline movement; both values appear in the JSON artifact and PR comment.
 
+The release workflow repeats the root lock, platform-floor, all-example,
+platform-build, and full-test gates. It also builds and tests
+`Tools/openapi-to-innonetwork`, matching the CI consumer-smoke contract before
+release artifacts are generated.
+
 ## Pass/Fail Policy
 
 - A PR is considered complete only when all CI checks are green.
@@ -86,7 +104,7 @@ The `CI` workflow must pass all of the following:
   force unwraps belong in tests or smoke-only targets.
 - Adding `print()` to production sources is a blocking failure. The rule is
   enforced by `bash Scripts/check_no_print_in_production.sh`, matching required
-  check 8 above.
+  check 9 above.
 
 ## Integration Tests Policy
 
@@ -104,7 +122,9 @@ Run the same commands locally:
 
 ```bash
 sudo xcode-select -s /Applications/Xcode_26.0.1.app
+git ls-files --error-unmatch Package.resolved >/dev/null
 xcrun swift package resolve
+git diff --exit-code -- Package.resolved
 xcrun swift build
 # Match both blocking test lanes.
 bash Scripts/run_bounded_parallel_tests.sh
@@ -119,12 +139,17 @@ bash Scripts/check_production_force_unwraps.sh
 bash Scripts/check_no_print_in_production.sh
 bash Scripts/check_shared_coders_mutation.sh
 bash Scripts/check_provisional_enum_cases.sh
+python3 Scripts/check_example_platform_floors.py
 
 # Verify default and core-only macro trait profiles.
 bash Scripts/check_macro_trait_graphs.sh
 bash Scripts/check_core_trait_build.sh
 xcrun swift build --package-path Examples/CoreSmoke
 xcrun swift build --package-path Examples/MacroUsage
+xcrun swift build --package-path Examples/WrapperSmoke
+xcrun swift build --package-path Examples/EventPolicyObserver
+xcrun swift build --package-path Tools/openapi-to-innonetwork
+xcrun swift test --package-path Tools/openapi-to-innonetwork
 
 # Render the same explicit coverage artifacts CI uploads. These commands fail
 # instead of silently accepting missing or empty coverage inputs.

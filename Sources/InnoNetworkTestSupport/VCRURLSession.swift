@@ -139,6 +139,11 @@ public struct VCRCassette: Codable, Equatable, Sendable {
 
 
 /// URLSessionProtocol wrapper that records and replays deterministic HTTP cassettes.
+///
+/// Replay mode works with bounded streaming presets because cassette bodies
+/// already exist in memory and are checked before the response pipeline. Record
+/// mode forwards to a backing session and therefore fails closed under bounded
+/// streaming; use an explicitly reviewed buffered policy while recording.
 public final class VCRURLSession: URLSessionProtocol, Sendable {
     private struct State {
         var cassette: VCRCassette
@@ -301,4 +306,9 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
     private func sha256Hex(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
+}
+
+
+extension VCRURLSession: BoundedBufferedTestSession {
+    package var allowsBoundedBufferedFallback: Bool { mode == .replay }
 }

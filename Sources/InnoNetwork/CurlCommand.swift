@@ -42,9 +42,9 @@ public extension URLRequest {
         var parts: [String] = []
         parts.reserveCapacity(4 + headerCount * 2 + 3)
         parts.append("curl")
-        if let method = httpMethod, method.uppercased() != "GET" {
+        if let method = httpMethod, method != HTTPMethod.get.rawValue {
             parts.append("-X")
-            parts.append(Self.shellEscape(method.uppercased()))
+            parts.append(Self.shellEscape(method))
         }
 
         for (name, value) in (allHTTPHeaderFields ?? [:]).sorted(by: { $0.key.lowercased() < $1.key.lowercased() }) {

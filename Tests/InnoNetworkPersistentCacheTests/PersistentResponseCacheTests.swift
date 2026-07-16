@@ -1774,12 +1774,22 @@ struct PersistentResponseCacheTests {
         #if os(macOS)
         // Foundation writes the standard backup-exclusion xattr on macOS but
         // `resourceValues` reports `false` because the key is iOS-oriented.
-        // Inspect the resulting xattr so this test validates the write rather
-        // than Foundation's platform-specific readback behavior.
-        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-        let extendedAttributesKey = FileAttributeKey(rawValue: "NSFileExtendedAttributes")
-        let extendedAttributes = attributes[extendedAttributesKey] as? [String: Data]
-        return extendedAttributes?["com.apple.metadata:com_apple_backup_excludeItem"] != nil
+        // Query the xattr directly because `attributesOfItem` can briefly
+        // return a stale extended-attribute dictionary after `removexattr`.
+        let result: (length: Int, errorCode: Int32) = url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return (-1, EINVAL) }
+            return "com.apple.metadata:com_apple_backup_excludeItem".withCString { name in
+                let length = getxattr(path, name, nil, 0, 0, 0)
+                return (length, length < 0 ? errno : 0)
+            }
+        }
+        if result.length >= 0 {
+            return true
+        }
+        if result.errorCode == ENOATTR {
+            return false
+        }
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(result.errorCode))
         #else
         return try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true
         #endif

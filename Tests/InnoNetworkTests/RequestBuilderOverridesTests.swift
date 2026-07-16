@@ -72,6 +72,15 @@ struct RequestBuilderOverridesTests {
         }
     }
 
+    private struct CaseSensitiveMethodEndpoint: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
+        typealias Parameter = EmptyParameter
+        typealias APIResponse = BaseURLResponse
+
+        let method: HTTPMethod
+        var path: String { "/users/1" }
+    }
+
     @Test("Per-request timeoutOverride wins over client configuration timeout")
     func perRequestTimeoutWins() async throws {
         let mockSession = MockURLSession()
@@ -109,6 +118,31 @@ struct RequestBuilderOverridesTests {
         #expect(captured?.allowsCellularAccess == true)
         #expect(captured?.allowsExpensiveNetworkAccess == true)
         #expect(captured?.allowsConstrainedNetworkAccess == true)
+    }
+
+    @Test(
+        "Methods whose spelling Foundation rewrites fail before transport",
+        arguments: ["get", "head", "connect"]
+    )
+    func foundationCanonicalizedMethodFailsClosed(rawMethod: String) async throws {
+        let method = try #require(HTTPMethod(rawValue: rawMethod))
+        let session = MockURLSession()
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com"),
+            session: session
+        )
+
+        do {
+            _ = try await client.request(CaseSensitiveMethodEndpoint(method: method))
+            Issue.record("Expected a case-sensitive method preservation error")
+        } catch let error as NetworkError {
+            guard case .configuration(reason: .invalidRequest(let message)) = error else {
+                Issue.record("Expected invalid-request configuration, got \(error)")
+                return
+            }
+            #expect(message.contains(rawMethod))
+        }
+        #expect(session.capturedRequest == nil)
     }
 
     @Test("GET requests with a body throw invalidRequestConfiguration")

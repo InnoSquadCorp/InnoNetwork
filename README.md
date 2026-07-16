@@ -327,9 +327,10 @@ for await event in await manager.events(for: task) {
 await manager.shutdown()
 ```
 
-`safeDefaults` and `advanced` use the secure foreground session mode. Choose
-`builder.sessionMode = .background` only when transfers must continue outside
-the app process; see the background-mode redirect trade-off below and in the
+`safeDefaults` and `advanced` use the secure foreground session mode. Call
+`backgroundTransfersEnabled()` on the finished configuration only when
+transfers must continue outside the app process; see the background-mode
+redirect trade-off below and in the
 [background download guide](Sources/InnoNetworkDownload/InnoNetworkDownload.docc/Articles/BackgroundDownloads.md).
 
 > The 4.0.0 line removes the global `DownloadManager.shared` singleton —
@@ -548,15 +549,16 @@ redirect handling:
   remains enabled.
 - Plain `http://` base URLs fail before transport unless the client opts in
   with `allowsInsecureHTTP = true`.
-- Foreground downloads — the `DownloadConfiguration.SessionMode` default —
-  re-admit every redirect target through the same URL guard. A rejected
+- Foreground downloads — the configuration default — re-admit every redirect
+  target through the same URL guard. A rejected
   downgrade, unsafe cross-origin replay, or traversal target fails as
   `DownloadError.invalidURL` without consuming retry budget.
-- Explicit `.background` download sessions trade that per-hop preflight for
-  process-independent continuation: Foundation follows background redirects
-  automatically without consulting the redirect delegate. Initial and final
-  URLs are still validated where Foundation exposes them, but that validation
-  cannot prevent an intermediate background redirect from being contacted.
+- `backgroundTransfersEnabled()` is the one explicit opt-in that trades that
+  per-hop preflight for process-independent continuation. Foundation follows
+  background redirects automatically without consulting the redirect
+  delegate. Initial and final URLs are still validated where Foundation
+  exposes them, but that validation cannot prevent an intermediate background
+  redirect from being contacted.
 - Download progress callbacks are coalesced before entering the actor, while
   completion callbacks remain lossless and FIFO. Final completed, failed, and
   cancelled events seal their task partition so late progress cannot displace
@@ -718,9 +720,9 @@ InnoNetwork favors explicit transport errors over opaque failures.
 
 ```swift
 do {
-    let user = try await client.request(GetUser())
+    let user = try await client.request(GetUser(id: 42))
     print(user)
-} catch let error as NetworkError {
+} catch {
     switch error {
     case .configuration(reason: .invalidBaseURL(let url)):
         print("Invalid base URL: \(url)")
@@ -853,8 +855,8 @@ Operational items to verify before shipping a client built on InnoNetwork.
 ### Background Operation
 
 - **Foreground is the secure default.** `DownloadConfiguration.safeDefaults`
-  and `advanced` use `.foreground`, which permits per-hop redirect admission.
-  Set `sessionMode = .background` only when the product requires transfers to
+  and `advanced` permit per-hop redirect admission. Call
+  `backgroundTransfersEnabled()` only when the product requires transfers to
   continue outside the app process and accepts Foundation-managed redirects.
 - **Background download Info.plist.** A background `URLSession` download does
   not itself require `UIBackgroundModes`. Declare a mode only for a separate

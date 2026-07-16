@@ -259,14 +259,13 @@ struct RequestExecutionPolicyTests {
 
     @Test("Streaming with maxBytes does not silently fall back to a buffered transport")
     func streamingWithMaxBytesDoesNotFallBack() async throws {
-        let mockSession = MockURLSession()
-        mockSession.setMockResponse(statusCode: 200, data: Data(repeating: 0xAB, count: 8_192))
+        let bufferedOnlySession = BufferedOnlyURLSession(data: Data(repeating: 0xAB, count: 8_192))
         let client = DefaultNetworkClient(
             configuration: makeTestNetworkConfiguration(
                 baseURL: "https://api.example.com",
                 responseBodyBufferingPolicy: .streaming(maxBytes: 1_024)
             ),
-            session: mockSession
+            session: bufferedOnlySession
         )
 
         do {
@@ -281,7 +280,7 @@ struct RequestExecutionPolicyTests {
                 Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
             }
         }
-        #expect(mockSession.capturedRequest == nil)
+        #expect(await bufferedOnlySession.capturedRequest == nil)
     }
 
     @Test("BufferedAsyncBytes emits 64 KiB chunks")
@@ -313,6 +312,28 @@ struct RequestExecutionPolicyTests {
                 Issue.record("Expected NetworkError.underlying with responseBodyLimitExceeded code, got \(error)")
             }
         }
+    }
+}
+
+
+private actor BufferedOnlyURLSession: URLSessionProtocol {
+    private let data: Data
+    private let response: URLResponse
+    private(set) var capturedRequest: URLRequest?
+
+    init(data: Data) {
+        self.data = data
+        self.response = HTTPURLResponse(
+            url: URL(string: "https://api.example.com/policy")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        capturedRequest = request
+        return (data, response)
     }
 }
 

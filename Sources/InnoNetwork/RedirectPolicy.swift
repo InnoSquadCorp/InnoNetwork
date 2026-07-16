@@ -164,7 +164,7 @@ public struct DefaultRedirectPolicy: RedirectPolicy {
     }
 
     private static func isSafeMethod(_ method: String?) -> Bool {
-        switch method?.uppercased() ?? "GET" {
+        switch method ?? HTTPMethod.get.rawValue {
         case "GET", "HEAD", "OPTIONS", "TRACE": return true
         default: return false
         }

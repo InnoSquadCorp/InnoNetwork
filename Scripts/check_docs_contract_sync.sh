@@ -55,6 +55,7 @@ required_feature_docs=(
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md"
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/UsingMacros.md"
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/InnoNetwork.md"
+  "$repo_root/Sources/InnoNetworkOpenAPI/InnoNetworkOpenAPI.docc/InnoNetworkOpenAPI.md"
   "$repo_root/Sources/InnoNetworkDownload/InnoNetworkDownload.docc/Articles/BackgroundDownloads.md"
   "$repo_root/Sources/InnoNetworkDownload/InnoNetworkDownload.docc/Articles/Persistence.md"
   "$repo_root/Sources/InnoNetworkWebSocket/InnoNetworkWebSocket.docc/Articles/FeatureScopedManagers.md"
@@ -158,7 +159,11 @@ expected_stable=(
 '`NetworkConfiguration.safeDefaults(baseURL:)`'
 '`NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`'
 '`DownloadConfiguration.safeDefaults()`'
+'`DownloadConfiguration.safeDefaults(sessionIdentifier:)`'
 '`DownloadConfiguration.advanced(_:)`'
+'`DownloadConfiguration.advanced(sessionIdentifier:_:)`'
+'`DownloadConfiguration.cellularEnabled()`'
+'`DownloadConfiguration.backgroundTransfersEnabled()`'
 '`WebSocketConfiguration.safeDefaults()`'
 '`WebSocketConfiguration.advanced(_:)`'
 '`WebSocketHandshakeRequestAdapter`'
@@ -950,6 +955,45 @@ validate_public_surface_ledger() {
   done < <(awk 'NF && $0 !~ /^#/ { print }' "$public_symbols_allowlist")
 }
 
+validate_public_surface_snapshot() {
+  local snapshot="$public_symbols_dir/README.md"
+  local entries=(
+    'core.allowlist|`InnoNetwork` (core)'
+    'websocket.allowlist|`InnoNetworkWebSocket`'
+    'download.allowlist|`InnoNetworkDownload`'
+    'testsupport.allowlist|`InnoNetworkTestSupport`'
+    'cache.allowlist|`InnoNetworkPersistentCache`'
+    'openapi.allowlist|`InnoNetworkOpenAPI`'
+    'trust.allowlist|`InnoNetworkTrust`'
+    'authaws.allowlist|`InnoNetworkAuthAWS`'
+  )
+
+  (( ${#allowlist_parts[@]} == ${#entries[@]} )) \
+    || fail "public surface snapshot does not cover every module allowlist"
+
+  local entry
+  local file_name
+  local product
+  local count
+  local total=0
+  for entry in "${entries[@]}"; do
+    IFS='|' read -r file_name product <<< "$entry"
+    count="$(awk 'NF && $0 !~ /^#/ { count += 1 } END { print count + 0 }' \
+      "$public_symbols_dir/$file_name")"
+    require_line "| $product | $count |" "$snapshot"
+    total=$((total + count))
+  done
+
+  local formatted_total
+  formatted_total="$(python3 - "$total" <<'PY'
+import sys
+print(f"{int(sys.argv[1]):,}")
+PY
+)"
+  require_line "| **Total** | **$formatted_total** |" "$snapshot"
+  require_contains "$formatted_total public" "$snapshot"
+}
+
 validate_oss_readiness_public_api() {
   require_contains 'public struct EndpointBuilder<Response: Decodable & Sendable>: APIDefinition' \
     "$repo_root/Sources/InnoNetwork/Endpoint.swift"
@@ -990,6 +1034,17 @@ validate_release_quality_gates() {
   require_contains 'bash Scripts/check_macro_compile_failures.sh' "$repo_root/.github/workflows/ci.yml"
   require_contains 'bash Scripts/check_macro_compile_failures.sh' "$repo_root/.github/workflows/release.yml"
   require_contains 'bash Scripts/check_production_force_unwraps.sh' "$repo_root/docs/CI_DoC.md"
+  require_contains 'git ls-files --error-unmatch Package.resolved' "$repo_root/.github/workflows/ci.yml"
+  require_contains 'git ls-files --error-unmatch Package.resolved' "$repo_root/.github/workflows/release.yml"
+  require_contains 'git ls-files --error-unmatch Package.resolved' "$repo_root/docs/CI_DoC.md"
+  require_contains 'Dependency Review' "$repo_root/docs/CI_DoC.md"
+  require_contains 'python3 Scripts/check_example_platform_floors.py' "$repo_root/.github/workflows/ci.yml"
+  require_contains 'python3 Scripts/check_example_platform_floors.py' "$repo_root/.github/workflows/release.yml"
+  require_contains 'python3 Scripts/check_example_platform_floors.py' "$repo_root/docs/CI_DoC.md"
+  require_contains 'Examples/WrapperSmoke' "$repo_root/docs/CI_DoC.md"
+  require_contains 'Examples/EventPolicyObserver' "$repo_root/docs/CI_DoC.md"
+  require_contains 'Tools/openapi-to-innonetwork' "$repo_root/.github/workflows/release.yml"
+  require_contains 'Tools/openapi-to-innonetwork' "$repo_root/docs/CI_DoC.md"
   [[ -x "$repo_root/Scripts/check_production_force_unwraps.sh" ]] \
     || fail "production force-unwrap gate is not executable"
   [[ -x "$repo_root/Scripts/check_unchecked_sendable.sh" ]] \
@@ -1092,8 +1147,24 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public static func safeDefaults()'
       target="$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
       ;;
+    '`DownloadConfiguration.safeDefaults(sessionIdentifier:)`')
+      pattern='public static func safeDefaults(sessionIdentifier: String)'
+      target="$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+      ;;
     '`DownloadConfiguration.advanced(_:)`')
       pattern='public static func advanced('
+      target="$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+      ;;
+    '`DownloadConfiguration.advanced(sessionIdentifier:_:)`')
+      pattern='Presets.advancedTuning(sessionIdentifier: sessionIdentifier)'
+      target="$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+      ;;
+    '`DownloadConfiguration.cellularEnabled()`')
+      pattern='public func cellularEnabled()'
+      target="$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+      ;;
+    '`DownloadConfiguration.backgroundTransfersEnabled()`')
+      pattern='public func backgroundTransfersEnabled()'
       target="$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
       ;;
     '`WebSocketConfiguration.safeDefaults()`')
@@ -1475,6 +1546,7 @@ done
 
 validate_spi_allowlist_drift
 validate_public_surface_ledger
+validate_public_surface_snapshot
 validate_ledger_to_allowlist_parity
 validate_release_quality_gates
 
@@ -1526,6 +1598,16 @@ require_contains 'invoke snapshotted callback' \
   "$repo_root/docs/TaskOwnership.md"
 require_contains '`InnoNetworkClientTransport`' \
   "$repo_root/docs/CodeGeneration.md"
+require_contains 'let sessionAuthentication: SessionAuthentication = .anonymous' \
+  "$repo_root/Sources/InnoNetworkOpenAPI/InnoNetworkOpenAPI.docc/InnoNetworkOpenAPI.md"
+require_contains 'var sessionAuthentication: SessionAuthentication { .anonymous }' \
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/OpenAPIGeneratorAdapter.md"
+require_contains 'var sessionAuthentication: SessionAuthentication { operation.sessionAuthentication }' \
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/OpenAPIGeneratorAdapter.md"
+require_contains 'successful CONNECT `2xx`' \
+  "$repo_root/Sources/InnoNetworkOpenAPI/InnoNetworkOpenAPI.docc/InnoNetworkOpenAPI.md"
+require_contains 'WebSocket handshake redirects now repeat URL admission on every hop.' \
+  "$repo_root/docs/Migration-5.0.0.md"
 
 for doc in "${required_meta_docs[@]}"; do
   [[ -f "$doc" ]] || fail "required OSS document is missing: $doc"
@@ -1583,6 +1665,11 @@ forbidden_pattern 'manager\.receive\(' \
   "$repo_root/docs" \
   "$repo_root/Sources" \
   "$repo_root/Tests"
+forbidden_pattern 'builder\.sessionMode|DownloadConfiguration\.SessionMode' \
+  "$repo_root/README.md" \
+  "$repo_root/docs" \
+  "$repo_root/Sources/InnoNetwork/InnoNetwork.docc" \
+  "$repo_root/Sources/InnoNetworkDownload/InnoNetworkDownload.docc"
 forbidden_pattern '4\.x preview' \
   "$repo_root/docs/CodeGeneration.md"
 forbidden_pattern 'introduced in 4\.1|After 5\.0' \

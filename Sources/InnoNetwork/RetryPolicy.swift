@@ -84,7 +84,10 @@ public struct RetryIdempotencyPolicy: Sendable, Equatable {
         retriesUnsafeMethodsWithIdempotencyKey: Bool = true,
         retriesAllMethods: Bool = false
     ) {
-        self.safeMethods = Set(safeMethods.map { $0.uppercased() })
+        // HTTP method tokens are case-sensitive. Preserve caller-provided
+        // extension methods exactly instead of granting a differently cased
+        // token the same retry semantics.
+        self.safeMethods = safeMethods
         self.idempotencyHeaderName = idempotencyHeaderName
         self.retriesUnsafeMethodsWithIdempotencyKey = retriesUnsafeMethodsWithIdempotencyKey
         self.retriesAllMethods = retriesAllMethods
@@ -93,7 +96,7 @@ public struct RetryIdempotencyPolicy: Sendable, Equatable {
     public func allowsRetry(for request: URLRequest?) -> Bool {
         guard !retriesAllMethods else { return true }
         guard let request else { return false }
-        let method = (request.httpMethod ?? "GET").uppercased()
+        let method = request.httpMethod ?? HTTPMethod.get.rawValue
         if safeMethods.contains(method) {
             return true
         }

@@ -10,6 +10,7 @@ InnoNetworkOpenAPI	swift.enum.case	InnoNetworkClientTransportError.invalidReques
 InnoNetworkOpenAPI	swift.enum.case	InnoNetworkClientTransportError.invalidStatusCode(_:)
 InnoNetworkOpenAPI	swift.enum.case	InnoNetworkClientTransportError.nonHTTPResponse(_:)
 InnoNetworkOpenAPI	swift.enum.case	InnoNetworkClientTransportError.responseBodyTooLarge(limit:received:)
+InnoNetworkOpenAPI	swift.enum.case	InnoNetworkClientTransportError.unsupportedRequestMethod(_:)
 InnoNetworkOpenAPI	swift.init	InnoNetworkClientTransport.init(session:allowsInsecureHTTP:requestBodyByteLimit:responseBodyByteLimit:)
 InnoNetworkOpenAPI	swift.init	OpenAPIRequest.init(_:)
 InnoNetworkOpenAPI	swift.method	InnoNetworkClientTransport.send(_:body:baseURL:operationID:)

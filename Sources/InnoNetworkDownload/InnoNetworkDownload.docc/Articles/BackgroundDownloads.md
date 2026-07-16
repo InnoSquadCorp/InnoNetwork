@@ -1,7 +1,8 @@
 # Background downloads
 
 Opt ``DownloadManager`` into process-independent transfers when downloads must
-continue after the app is suspended or terminated.
+continue after the app is suspended or terminated by the system. A user-initiated
+force quit cancels background transfers and prevents automatic relaunch.
 
 ## Overview
 
@@ -10,8 +11,8 @@ continue after the app is suspended or terminated.
 foreground session mode by default. Foreground mode lets InnoNetwork inspect
 each redirect before Foundation follows it.
 
-Set ``DownloadConfiguration/SessionMode/background`` explicitly when the
-transfer must continue outside the app process. Background mode uses
+Call ``DownloadConfiguration/backgroundTransfersEnabled()`` explicitly when
+the transfer must continue outside the app process. Background mode uses
 `URLSessionConfiguration.background(withIdentifier:)`; the system parks the
 connection in `nsurlsessiond`, schedules transfer based on radio and power
 state, and wakes the app when the transfer completes. The library adds task
@@ -32,7 +33,6 @@ observable after launch.
 let configuration = DownloadConfiguration.advanced(
     sessionIdentifier: "com.example.app.downloads"
 ) { builder in
-    builder.sessionMode = .background
     builder.allowsCellularAccess = true
     builder.maxConnectionsPerHost = 4
     builder.persistenceCompactionPolicy = .init(
@@ -40,12 +40,12 @@ let configuration = DownloadConfiguration.advanced(
         maxLogBytes: 1_048_576,
         tombstoneRatio: 0.25
     )
-}
+}.backgroundTransfersEnabled()
 ```
 
-- **Session mode.** `.background` is the explicit opt-in for
-  process-independent continuation. Omit it to retain the secure `.foreground`
-  default and per-hop redirect admission.
+- **Background transfer opt-in.** `backgroundTransfersEnabled()` is the only
+  public switch for process-independent continuation. Omit it to retain the
+  secure foreground default and per-hop redirect admission.
 - **Session identifier.** Must be globally unique within the app process and
   also scopes the persistence log. In background mode it is additionally the
   Foundation background-session identifier. Reusing it across managers is
@@ -53,8 +53,9 @@ let configuration = DownloadConfiguration.advanced(
 - **Shared container.** `sharedContainerIdentifier` is applied only to a
   background session. Set it when an App Group owns the transfer state. It does
   not authorize simultaneous managers in the app and extension: exactly one
-  process may own a given session identifier at a time. Coordinate an explicit
-  handoff before another process constructs that manager.
+  process may own a given session identifier at a time. Proactive live handoff
+  is not supported; a later process may use OS-driven reattachment only after
+  the previous process is gone.
 - **Destination ownership.** Give each active logical task an exclusive final
   destination path. A shared container does not serialize different session
   identifiers or different processes that write the same caller-owned file.
@@ -79,7 +80,7 @@ Add `remote-notification` only when a push notification is expected to trigger t
 
 ## Wiring the system completion handler
 
-When the system finishes a `.background` download while the app was suspended,
+When the system finishes a background download while the app was suspended,
 it relaunches the app and delivers a completion handler. Wire it through to the
 manager that owns the matching session identifier so the OS can release the
 wake-lock promptly. Foreground managers do not receive this callback:
@@ -178,9 +179,8 @@ explicitly allow background downloads over cellular, opt in:
 let configuration = DownloadConfiguration.advanced(
     sessionIdentifier: "com.example.app.downloads"
 ) { builder in
-    builder.sessionMode = .background
     builder.allowsCellularAccess = true
-}
+}.backgroundTransfersEnabled()
 ```
 
 ## Related

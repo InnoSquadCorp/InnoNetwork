@@ -42,7 +42,7 @@ final class StubDownloadHarness: Sendable {
         clock: any InnoNetworkClock = SystemClock(),
         eventDeliveryPolicy: EventDeliveryPolicy = .default,
         allowsInsecureHTTP: Bool = false,
-        sessionMode: DownloadConfiguration.SessionMode = .foreground,
+        backgroundTransfers: Bool = false,
         label: String = "stub",
         sessionIdentifier: String? = nil,
         persistenceBaseDirectoryURL: URL? = nil,
@@ -83,7 +83,7 @@ final class StubDownloadHarness: Sendable {
         self.store = store
         let persistence = DownloadTaskPersistence(store: store)
         self.persistence = persistence
-        let config = DownloadConfiguration(
+        let baseConfig = DownloadConfiguration(
             maxRetryCount: maxRetryCount,
             maxTotalRetries: maxTotalRetries ?? (maxRetryCount + 3),
             retryDelay: retryDelay,
@@ -91,7 +91,6 @@ final class StubDownloadHarness: Sendable {
             timeoutForResource: 60 * 60 * 24,
             taskInactivityTimeout: taskInactivityTimeout,
             allowsInsecureHTTP: allowsInsecureHTTP,
-            sessionMode: sessionMode,
             sessionIdentifier: identifier,
             networkMonitor: networkMonitor,
             waitsForNetworkChanges: waitsForNetworkChanges,
@@ -99,6 +98,10 @@ final class StubDownloadHarness: Sendable {
             eventDeliveryPolicy: eventDeliveryPolicy,
             persistenceBaseDirectoryURL: persistenceBaseDirectoryURL
         )
+        let config =
+            backgroundTransfers
+            ? baseConfig.backgroundTransfersEnabled()
+            : baseConfig
         let completionStager = DownloadCompletionStager(
             directoryURL: DownloadCompletionStager.directoryURL(for: config)
         )

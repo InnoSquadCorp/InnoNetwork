@@ -32,10 +32,31 @@ Two operational rules:
 
 - Order the array by preference. The server is required to echo back a
   value the client advertised, but is free to pick any of them.
+- Use protocol identifiers only; never place credentials or secret-bearing
+  tokens in a subprotocol value. `Sec-WebSocket-Protocol` is a required
+  handshake field and is therefore preserved across admitted secure
+  cross-origin redirects.
 - Treat an unexpected echo as a hard policy failure rather than a
   transport error — the connection negotiated successfully, but the
   application contract is wrong. Disconnect with a client-policy close
   reason and surface a categorized error to the caller.
+
+## Redirect admission and origin trust
+
+The built-in URLSession transport re-admits every handshake redirect before
+following it. The default contract permits any structurally valid secure `wss`
+target, including a different origin; it does not maintain a trusted-origin
+allowlist. Only connect to an endpoint whose redirect authorities are part of
+the same trust boundary.
+
+For a cross-origin redirect, InnoNetwork removes every caller-prepared request
+header, including authorization and application-specific values. It preserves
+only fields CFNetwork needs to complete the WebSocket handshake, including the
+subprotocol negotiation field described above. Credential decisions remain
+bound to the original handshake origin across every hop. A `wss` handshake can
+never downgrade to `ws`, even when plain WebSocket transport was explicitly
+enabled for an initial URL. An invalid, traversing, ambiguous, or downgraded
+redirect is terminal and does not schedule automatic reconnect.
 
 ## App-level protocol failure mapping
 

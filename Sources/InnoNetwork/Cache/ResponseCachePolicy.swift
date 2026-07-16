@@ -63,7 +63,9 @@ public struct ResponseCacheKey: Hashable, Sendable {
     public let headers: [String]
 
     public init(method: String, url: String, headers: [String: String] = [:]) {
-        self.method = method.uppercased()
+        // Method tokens are case-sensitive on the wire. Keep the exact token
+        // so custom methods cannot collide with differently cased methods.
+        self.method = method
         self.url = Self.normalizedTargetURI(url)
         self.headers = Self.normalizedHeaders(headers)
     }

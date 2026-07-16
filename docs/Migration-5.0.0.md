@@ -33,8 +33,11 @@ sent on the wire differ from the request or security policy a caller declared.
 | `#endpoint(method, path, as: Response.self)` | Use a named macro-assisted endpoint struct or runtime `EndpointBuilder` |
 | Passing an optional directly to `EndpointPathEncoding.percentEncodedSegment` | Unwrap it and define the nil behavior before encoding |
 | Assuming `safeDefaults` / `advanced` has an unbounded collected response, including for file uploads | Accept the 5 MiB default, configure another explicit bound, or deliberately select `.streaming(maxBytes: nil)` / `.buffered(maxBytes: nil)` |
+| Using `MockURLSession` or VCR replay mode with `safeDefaults` | No configuration change is required; fixture data is buffered by design and the response ceiling is enforced before the response pipeline |
+| Using VCR record mode with bounded streaming | Select an explicitly reviewed `.buffered(maxBytes:)` recording profile; record mode forwards to a backing session and fails closed under bounded streaming |
 | Plain HTTP downloads, OpenAPI base URLs, or plain WS sockets without an opt-in | Use HTTPS/WSS, or enable the matching scoped `allowsInsecureHTTP` / `allowsInsecureWebSocket` configuration only for an intentional environment |
-| Relying on a download preset to create a background session | Keep the secure `.foreground` default, or set `DownloadConfiguration.SessionMode.background` explicitly after reviewing its redirect trade-off |
+| Relying on a download preset to create a background session | Keep the secure foreground default, or call `backgroundTransfersEnabled()` after reviewing its redirect trade-off |
+| Constructing a `DownloadTask` directly | Start it through `DownloadManager.download(...)` and retain the returned manager-owned handle |
 | `OpenAPIRestOperation` without auth metadata | Add `var sessionAuthentication: SessionAuthentication` and review generated `.anonymous` witnesses against the service security scheme |
 
 ## Replace type-level auth scopes with one explicit value
@@ -138,8 +141,12 @@ guard let purge = HTTPMethod(rawValue: "PURGE") else {
 ```
 
 Whitespace, controls, non-ASCII values, separators, and an empty token are
-rejected. Method equality remains case-sensitive because the value sent on the
-wire is case-sensitive.
+rejected. Method equality and all retry, redirect, cache, coalescing, and curl
+policy matching remain case-sensitive. Foundation rewrites a few differently
+cased standard spellings (for example `get` to `GET`) when they are assigned to
+`URLRequest`; InnoNetwork now fails those requests before transport instead of
+silently changing the wire method. Use the uppercase standard constant when
+that standard method is intended.
 
 GET and HEAD now default to query transport. Request building rejects encoded
 bodies for GET, HEAD, and TRACE before any network I/O. The macro infers a
@@ -356,9 +363,18 @@ host, userinfo, fragment, origin-override, or traversal checks. If an existing
 route intentionally contains a literal dot segment, change the server route or
 request contract; there is no traversal-admission opt-out.
 
-The safe and advanced download presets now use
-`DownloadConfiguration.SessionMode.foreground`. Foreground downloads apply
-`DefaultRedirectPolicy` and URL admission before following every redirect.
+WebSocket handshake redirects now repeat URL admission on every hop. A secure
+WSS connection never downgrades to WS, even when the configuration permits an
+intentional plain-WS starting URL. Cross-origin redirects strip credential
+headers and arbitrary caller-prepared header names, while preserving the
+required WebSocket handshake and subprotocol negotiation fields. Credential
+decisions remain bound to the original handshake origin across multiple hops.
+A rejected target becomes a terminal `.invalidURL` failure and does not consume
+the reconnect budget.
+
+The safe and advanced download presets now use a foreground session.
+Foreground downloads apply `DefaultRedirectPolicy` and URL admission before
+following every redirect.
 HTTPS downgrade, unsafe cross-origin 307/308 replay, missing retained origin
 metadata, and traversal targets terminate as `DownloadError.invalidURL`
 without retry. `DownloadConfiguration.allowsInsecureHTTP` permits an
@@ -372,17 +388,38 @@ background session explicitly:
 let backgroundDownloads = DownloadConfiguration.advanced(
     sessionIdentifier: "com.example.app.downloads"
 ) { builder in
-    builder.sessionMode = .background
-}
+    builder.maxConnectionsPerHost = 4
+}.backgroundTransfersEnabled()
 ```
+
+Use a conventional reverse-DNS session identifier. It is still passed to
+Foundation unchanged, but persistence and completion staging now map any
+path-like, uppercase, oversized, empty, or non-ASCII identifier to one
+deterministic SHA-256 directory component. Conventional lowercase ASCII
+reverse-DNS identifiers retain their existing directory. If a preview build
+used values such as `../downloads`, `a/b`, or `com.Example.downloads`, audit the
+configured persistence base and migrate or remove the legacy out-of-root,
+nested, or case-aliased artifacts before rollout.
 
 This is a security/continuation trade-off. Foundation background sessions
 follow redirects automatically without invoking the redirect delegate, so
 InnoNetwork cannot run per-hop redirect policy or URL-admission preflight in
 that mode. Initial URLs and final URLs exposed at library lifecycle boundaries
 remain validated where applicable, but final validation cannot undo contact
-with an intermediate redirect target. Keep `.foreground` unless continuing
-outside the app process is a product requirement.
+with an intermediate redirect target. Keep the foreground default unless
+continuing outside the app process is a product requirement.
+
+`DownloadTask` construction is now package-owned. A task handle represents
+manager registration, persistence, callback correlation, and URLSession
+ownership; a caller-created actor could never establish those invariants. Use
+`DownloadManager.download(...)` and retain the returned handle for pause,
+resume, retry, cancellation, and event observation.
+
+The direct 22-parameter `DownloadConfiguration` initializer is package-owned
+in 5.0. Replace it with `safeDefaults(sessionIdentifier:)` for conservative
+defaults or `advanced(sessionIdentifier:_:)` for explicit tuning. This also
+removes the former ambiguity where `DownloadConfiguration()` enabled cellular
+access while `safeDefaults()` and `.default` did not.
 
 Download restoration and shutdown now form a strict lifecycle boundary:
 
@@ -419,7 +456,12 @@ explicitly abandoned and cleaned so they cannot block manual retry.
 
 App Group storage is not a multi-owner lock. Exactly one process may own a
 background session identifier at a time, and callers must give concurrent
-logical downloads distinct final destination paths.
+logical downloads distinct final destination paths. OS-driven reattachment by
+an alternate app/extension process requires both targets to share an App
+Group-backed `persistenceBaseDirectoryURL` in addition to Foundation's
+`sharedContainerIdentifier`; otherwise the restored system task has no matching
+InnoNetwork logical record and is cancelled. `shutdown()` cancels and removes
+the current owner's records, so it is not a proactive live-handoff operation.
 
 Apps should continue to treat `shutdown()` as the owner's final operation and
 create a fresh manager for later work. Existing event streams now receive one
@@ -466,6 +508,15 @@ not an early transport or peak-memory bound. Bounded `.streaming(maxBytes:)`
 checks `Content-Length` and observed bytes while receiving the body, explicitly
 cancels the underlying task when the ceiling is crossed, and fails closed when
 a custom session cannot provide streaming bytes.
+
+`MockURLSession` and VCR replay mode are the intentional test-only exception.
+Their scripted fixture or cassette body is already buffered, so they use
+`data(for:)` with bounded presets and the executor checks the same ceiling
+before cache insertion, interceptors, or decoding. VCR record mode forwards to
+a backing session and fails closed under bounded streaming; use a deliberately
+configured `.buffered(maxBytes:)` profile while recording. This preserves
+ordinary consumer tests without making buffered fallback a public capability
+or silently weakening production custom sessions.
 
 File-backed uploads choose their Foundation task shape from the presence of a
 response bound, regardless of whether the policy case is `.streaming` or
@@ -570,10 +621,10 @@ token. Do not treat generated `.anonymous` as a security decision made from
 the OpenAPI document.
 
 `InnoNetworkClientTransport` now returns `nil` for the generated-client
-`HTTPBody` on every HEAD response and status `1xx`, `204`, `205`, or `304`.
-Remove workarounds that attempted to decode server-supplied bytes for those
-responses; the HTTP semantics take precedence over misleading
-`Content-Length` or payload bytes.
+`HTTPBody` on every HEAD response, successful CONNECT `2xx`, and status `1xx`,
+`204`, `205`, or `304`. Remove workarounds that attempted to decode
+server-supplied bytes for those responses; the HTTP semantics take precedence
+over misleading `Content-Length` or payload bytes.
 
 Keep `swift-http-types` and OpenAPI Runtime models behind the optional
 `InnoNetworkOpenAPI` product. The 5.0 migration does not replace core
@@ -692,8 +743,8 @@ tagged Git tree and fails closed on a mixed transition.
   traversal.
 - [ ] Accept or explicitly replace the new 5 MiB collected-response cap; keep
   unbounded `nil` policies limited to reviewed payloads.
-- [ ] Regenerate/review OpenAPI auth witnesses and remove HEAD/1xx/204/205/304
-  response-body assumptions.
+- [ ] Regenerate/review OpenAPI auth witnesses and remove
+  HEAD/successful-CONNECT-2xx/1xx/204/205/304 response-body assumptions.
 - [ ] Expect a version-3 persistent-cache cold start and update query-order
   cache tests.
 - [ ] Review every curl body/query opt-in and any code that assumed

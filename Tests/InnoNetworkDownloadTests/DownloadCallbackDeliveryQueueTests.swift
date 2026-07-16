@@ -180,7 +180,7 @@ struct DownloadCallbackDeliveryQueueTests {
         }
 
         let harness = try StubDownloadHarness(
-            sessionMode: .background,
+            backgroundTransfers: true,
             label: "callback-progress-background"
         )
         let progressGate = CallbackBlocker()
@@ -241,7 +241,7 @@ struct DownloadCallbackDeliveryQueueTests {
         }
 
         let harness = try StubDownloadHarness(
-            sessionMode: .background,
+            backgroundTransfers: true,
             label: "callback-completed-background"
         )
         let completedGate = CallbackBlocker()

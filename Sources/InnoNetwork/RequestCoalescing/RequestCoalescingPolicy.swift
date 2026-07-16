@@ -48,7 +48,9 @@ public struct RequestCoalescingPolicy: Sendable, Equatable {
         excludedHeaderNames: Set<String> = []
     ) {
         self.isEnabled = isEnabled
-        self.methods = Set(methods.map { $0.uppercased() })
+        // HTTP method tokens are case-sensitive; a custom lowercase token
+        // must opt in independently from an uppercase standard method.
+        self.methods = methods
         self.excludedHeaderNames = Set(excludedHeaderNames.map { $0.lowercased() })
     }
 }
@@ -68,7 +70,7 @@ package struct RequestDedupKey: Hashable, Sendable {
 
     init?(request: URLRequest, policy: RequestCoalescingPolicy, refreshLane: UUID? = nil) {
         guard policy.isEnabled else { return nil }
-        let method = request.httpMethod?.uppercased() ?? "GET"
+        let method = request.httpMethod ?? HTTPMethod.get.rawValue
         guard policy.methods.contains(method) else { return nil }
         guard let url = request.url?.absoluteString else { return nil }
 

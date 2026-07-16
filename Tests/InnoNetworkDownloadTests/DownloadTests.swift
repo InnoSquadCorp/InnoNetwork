@@ -32,6 +32,30 @@ struct DownloadConfigurationTests {
         #expect(cellular.maxRetryCount == base.maxRetryCount)
     }
 
+    @Test("backgroundTransfersEnabled() is an explicit copy-based opt-in")
+    func backgroundTransfersEnabledPreservesConfiguration() {
+        let base = DownloadConfiguration.advanced(
+            sessionIdentifier: "test.background.opt-in"
+        ) { builder in
+            builder.maxConnectionsPerHost = 4
+            builder.sharedContainerIdentifier = "group.com.example.downloads"
+        }
+
+        #expect(base.sessionMode == .foreground)
+        #expect(base.makeURLSessionConfiguration().identifier == nil)
+
+        let background = base.backgroundTransfersEnabled()
+        #expect(background.sessionMode == .background)
+        #expect(background.maxConnectionsPerHost == base.maxConnectionsPerHost)
+        #expect(background.sessionIdentifier == base.sessionIdentifier)
+        #expect(background.sharedContainerIdentifier == base.sharedContainerIdentifier)
+        #expect(background.makeURLSessionConfiguration().identifier == base.sessionIdentifier)
+
+        let cellularBackground = background.cellularEnabled()
+        #expect(cellularBackground.sessionMode == .background)
+        #expect(cellularBackground.allowsCellularAccess)
+    }
+
     @Test("persistenceBaseDirectoryURL flows through the AdvancedBuilder")
     func persistenceBaseDirectoryURLRoundtrips() {
         let custom = URL(fileURLWithPath: "/tmp/inno-test-cache", isDirectory: true)
@@ -95,10 +119,9 @@ struct DownloadConfigurationTests {
         let config = DownloadConfiguration(
             maxConnectionsPerHost: 4,
             allowsCellularAccess: false,
-            sessionMode: .background,
             sessionIdentifier: "test.session",
             sharedContainerIdentifier: "group.com.example.downloads"
-        )
+        ).backgroundTransfersEnabled()
 
         let sessionConfig = config.makeURLSessionConfiguration()
 
@@ -478,7 +501,10 @@ struct DownloadTaskPersistenceTests {
     private func sessionDirectoryURL(sessionIdentifier: String, baseDirectoryURL: URL) -> URL {
         baseDirectoryURL
             .appendingPathComponent("InnoNetworkDownload", isDirectory: true)
-            .appendingPathComponent(sessionIdentifier, isDirectory: true)
+            .appendingPathComponent(
+                DownloadSessionStorageKey.component(for: sessionIdentifier),
+                isDirectory: true
+            )
     }
 
     private func clearPersistence(sessionIdentifier: String, baseDirectoryURL: URL) async throws {
@@ -817,7 +843,7 @@ struct DownloadBackgroundCompletionTests {
     @Test("An unscoped finish is not carried into a later background batch")
     func backgroundCompletionRequiresFinishAfterRegistration() async throws {
         let harness = try StubDownloadHarness(
-            sessionMode: .background,
+            backgroundTransfers: true,
             label: "background-completion-race"
         )
         #expect(await harness.manager.waitForRestoration())

@@ -138,7 +138,7 @@ struct DownloadManagerHardeningTests {
     func terminalFailureAdmissionDoesNotBlockBackgroundCompletion() async throws {
         let harness = try StubDownloadHarness(
             maxRetryCount: 0,
-            sessionMode: .background,
+            backgroundTransfers: true,
             label: "failure-admission-background"
         )
         let task = await harness.startDownload()
@@ -806,6 +806,74 @@ private actor SuspendedDownloadNetworkMonitor: NetworkMonitoring {
 @Suite("Download Persistence Hardening Tests")
 struct DownloadPersistenceHardeningTests {
 
+    @Test("Safe reverse-DNS session identifiers preserve their storage directory")
+    func safeSessionIdentifierKeepsExistingLayout() {
+        let identifier = "com.example.downloads_2"
+        #expect(DownloadSessionStorageKey.component(for: identifier) == identifier)
+    }
+
+    @Test("Session storage components are bounded and case-distinct")
+    func sessionStorageComponentBoundaries() {
+        let maximumRawIdentifier = String(repeating: "a", count: 128)
+        let oversizedIdentifier = String(repeating: "a", count: 129)
+        let lowercaseIdentifier = "com.example.downloads"
+        let mixedCaseIdentifier = "com.Example.downloads"
+
+        #expect(DownloadSessionStorageKey.component(for: maximumRawIdentifier) == maximumRawIdentifier)
+
+        for identifier in ["", oversizedIdentifier, mixedCaseIdentifier] {
+            let component = DownloadSessionStorageKey.component(for: identifier)
+            #expect(component.hasPrefix("~"))
+            #expect(component.utf8.count == 65)
+        }
+
+        let lowercaseComponent = DownloadSessionStorageKey.component(for: lowercaseIdentifier)
+        let mixedCaseComponent = DownloadSessionStorageKey.component(for: mixedCaseIdentifier)
+        #expect(lowercaseComponent == lowercaseIdentifier)
+        #expect(lowercaseComponent != mixedCaseComponent)
+        #expect(lowercaseComponent.lowercased() != mixedCaseComponent.lowercased())
+    }
+
+    @Test(
+        "Path-like session identifiers map both stores to one bounded component",
+        arguments: ["..", "../escape", "../../escape", "a/b", "~encoded", "com.Example", "세션"]
+    )
+    func pathLikeSessionIdentifiersStayInsideStorageRoot(sessionIdentifier: String) throws {
+        let fileManager = FileManager.default
+        let baseDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("inno-session-path-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: baseDirectory) }
+
+        let component = DownloadSessionStorageKey.component(for: sessionIdentifier)
+        #expect(component != sessionIdentifier)
+        #expect(!component.contains("/"))
+        #expect(component != ".")
+        #expect(component != "..")
+
+        _ = AppendLogDownloadTaskStore(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+
+        let storageRoot = baseDirectory.appendingPathComponent("InnoNetworkDownload", isDirectory: true)
+        let expectedSessionDirectory = storageRoot.appendingPathComponent(component, isDirectory: true)
+        var isDirectory: ObjCBool = false
+        #expect(fileManager.fileExists(atPath: expectedSessionDirectory.path, isDirectory: &isDirectory))
+        #expect(isDirectory.boolValue)
+        #expect(
+            try fileManager.contentsOfDirectory(atPath: storageRoot.path) == [component]
+        )
+
+        let configuration = DownloadConfiguration(
+            sessionIdentifier: sessionIdentifier,
+            persistenceBaseDirectoryURL: baseDirectory
+        )
+        #expect(
+            DownloadCompletionStager.directoryURL(for: configuration)
+                == expectedSessionDirectory.appendingPathComponent("CompletionStaging", isDirectory: true)
+        )
+    }
+
     @Test("stale empty store removes a record written later by another instance")
     func staleEmptyStoreRemoveUsesLockedDiskState() async throws {
         let baseDirectory = FileManager.default.temporaryDirectory
@@ -954,7 +1022,10 @@ struct DownloadPersistenceHardeningTests {
         let checkpointURL =
             baseDir
             .appendingPathComponent("InnoNetworkDownload", isDirectory: true)
-            .appendingPathComponent(sessionIdentifier, isDirectory: true)
+            .appendingPathComponent(
+                DownloadSessionStorageKey.component(for: sessionIdentifier),
+                isDirectory: true
+            )
             .appendingPathComponent("checkpoint.json", isDirectory: false)
         let checkpointData = try Data(contentsOf: checkpointURL)
         let checkpoint = try #require(

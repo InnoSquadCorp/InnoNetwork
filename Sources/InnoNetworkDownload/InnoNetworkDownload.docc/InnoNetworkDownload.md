@@ -15,9 +15,9 @@ Use this module when you need:
 
 Construct one ``DownloadManager`` per download domain with an explicit
 ``DownloadConfiguration`` and a unique session identifier. The safe and
-advanced presets use ``DownloadConfiguration/SessionMode/foreground`` so each
-redirect can be admitted before transport. Choose
-``DownloadConfiguration/SessionMode/background`` only when continuation
+advanced presets use a foreground session so each redirect can be admitted
+before transport. Call
+``DownloadConfiguration/backgroundTransfersEnabled()`` only when continuation
 outside the app process is worth Foundation automatically following redirects
 without per-hop library preflight; see <doc:BackgroundDownloads>.
 

@@ -65,6 +65,10 @@ extension WebSocketManager {
         guard await isCurrentTransportCandidate(task, generation: prepared.generation) else { return }
         guard let urlTask = makeWebSocketTaskIfRunning(with: prepared.request) else { return }
         urlTask.maximumMessageSize = configuration.maximumMessageSize
+        delegate.registerRedirectProtectedHeaderNames(
+            prepared.request.allHTTPHeaderFields?.keys ?? [:].keys,
+            for: urlTask.taskIdentifier
+        )
         await runtimeRegistry.setMapping(
             webSocketTask: task,
             for: urlTask.taskIdentifier,
@@ -76,10 +80,12 @@ extension WebSocketManager {
         // can resolve the task. Revalidate after those actor hops; stale tasks
         // are detached and cancelled without ever being resumed.
         guard await isCurrentTransportCandidate(task, generation: prepared.generation) else {
+            delegate.removeRedirectProtectedHeaderNames(for: urlTask.taskIdentifier)
             await runtimeRegistry.removeTaskRuntime(taskId: task.id)
             return
         }
         guard resumeWebSocketTaskIfRunning(urlTask) else {
+            delegate.removeRedirectProtectedHeaderNames(for: urlTask.taskIdentifier)
             await runtimeRegistry.removeTaskRuntime(taskId: task.id)
             return
         }

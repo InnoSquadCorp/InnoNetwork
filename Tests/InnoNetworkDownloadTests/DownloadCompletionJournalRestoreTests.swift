@@ -285,7 +285,10 @@ private final class JournalRestoreFixture {
             directoryURL:
                 persistenceBaseURL
                 .appendingPathComponent("InnoNetworkDownload", isDirectory: true)
-                .appendingPathComponent(sessionIdentifier, isDirectory: true)
+                .appendingPathComponent(
+                    DownloadSessionStorageKey.component(for: sessionIdentifier),
+                    isDirectory: true
+                )
                 .appendingPathComponent("CompletionStaging", isDirectory: true)
         )
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)

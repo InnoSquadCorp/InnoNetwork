@@ -30,6 +30,18 @@ let client = DefaultNetworkClient(
 )
 ```
 
+`MockURLSession` and VCR replay mode are deterministic buffered test sessions.
+They work with the 5 MiB `safeDefaults` response ceiling, which is checked
+before cache insertion, interceptors, or decoding. Their fixture/cassette body
+already exists in memory, so this test-only path does not model streaming peak
+memory or early transport cancellation.
+
+VCR record mode forwards to its backing session, so it fails closed with a
+bounded streaming policy instead of silently buffering a live response. Use an
+explicitly reviewed `.buffered(maxBytes:)` configuration while recording.
+Arbitrary custom `URLSessionProtocol` implementations likewise fail closed
+under a bounded streaming policy unless they implement streaming bytes.
+
 Use ``VCRRedactionPolicy`` before recording cassettes that may contain
 credentials or personal data. Request bodies are represented by a SHA-256
 digest, but response bodies remain part of the recorded cassette and must be

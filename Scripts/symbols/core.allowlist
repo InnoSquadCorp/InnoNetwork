@@ -225,7 +225,7 @@ InnoNetwork	swift.init	ConcurrencyLimitExecutionPolicy.init(bucket:)
 InnoNetwork	swift.init	ConcurrencyTokenBucket.init(maxConcurrent:)
 InnoNetwork	swift.init	ContentType.init(rawValue:)
 InnoNetwork	swift.init	CorrelationIDInterceptor.init(traceHeader:correlationHeader:)
-InnoNetwork	swift.init	CurlCommandOptions.init(redactedHeaderNames:includesBody:includesQueryValues:bodyFileURL:)
+InnoNetwork	swift.init	CurlCommandOptions.init(includesHeaderValues:includesBody:includesQueryValues:bodyFileURL:)
 InnoNetwork	swift.init	DefaultNetworkClient.init(configuration:)
 InnoNetwork	swift.init	DefaultNetworkClient.init(configuration:session:)
 InnoNetwork	swift.init	DefaultNetworkLogger.init(options:cookieStorage:)
@@ -255,7 +255,7 @@ InnoNetwork	swift.init	MultipartStreamingResponseDecoder.init(boundary:)
 InnoNetwork	swift.init	NetworkContext.init(traceID:correlationID:baggage:)
 InnoNetwork	swift.init	NetworkErrorCode.init(rawValue:)
 InnoNetwork	swift.init	NetworkInterfaceType.init(rawValue:)
-InnoNetwork	swift.init	NetworkLoggingOptions.init(includeRequestBody:includeResponseBody:includeCookies:redactSensitiveData:sensitiveHeaderNames:releaseLogging:)
+InnoNetwork	swift.init	NetworkLoggingOptions.init(includeRequestBody:includeResponseBody:includeCookies:redactSensitiveData:releaseLogging:)
 InnoNetwork	swift.init	NetworkMonitor.init()
 InnoNetwork	swift.init	NetworkRequestContext.init(requestID:retryIndex:metricsReporter:trustPolicy:eventObservers:redirectPolicy:)
 InnoNetwork	swift.init	NetworkSnapshot.init(status:interfaceTypes:)
@@ -447,8 +447,8 @@ InnoNetwork	swift.property	CorrelationIDInterceptor.correlationHeader
 InnoNetwork	swift.property	CorrelationIDInterceptor.traceHeader
 InnoNetwork	swift.property	CurlCommandOptions.bodyFileURL
 InnoNetwork	swift.property	CurlCommandOptions.includesBody
+InnoNetwork	swift.property	CurlCommandOptions.includesHeaderValues
 InnoNetwork	swift.property	CurlCommandOptions.includesQueryValues
-InnoNetwork	swift.property	CurlCommandOptions.redactedHeaderNames
 InnoNetwork	swift.property	DefaultRedirectPolicy.additionalSensitiveHeaders
 InnoNetwork	swift.property	DefaultRedirectPolicy.allowsCrossOriginUnsafeMethodRedirects
 InnoNetwork	swift.property	DefaultRedirectPolicy.allowsHTTPSDowngrade
@@ -588,7 +588,6 @@ InnoNetwork	swift.property	NetworkLoggingOptions.includeRequestBody
 InnoNetwork	swift.property	NetworkLoggingOptions.includeResponseBody
 InnoNetwork	swift.property	NetworkLoggingOptions.redactSensitiveData
 InnoNetwork	swift.property	NetworkLoggingOptions.releaseLogging
-InnoNetwork	swift.property	NetworkLoggingOptions.sensitiveHeaderNames
 InnoNetwork	swift.property	NetworkRequestContext.eventObservers
 InnoNetwork	swift.property	NetworkRequestContext.metricsReporter
 InnoNetwork	swift.property	NetworkRequestContext.redirectPolicy
@@ -847,7 +846,6 @@ InnoNetwork	swift.type.method	TransportPolicy.multipart(decoder:)
 InnoNetwork	swift.type.method	TransportPolicy.query(encoder:rootKey:decoder:)
 InnoNetwork	swift.type.method	W3CTraceContext.generated(sampled:)
 InnoNetwork	swift.type.property	CircuitBreakerOpenError.errorDomain
-InnoNetwork	swift.type.property	CurlCommandOptions.defaultRedactedHeaderNames
 InnoNetwork	swift.type.property	DefaultRedirectPolicy.sensitiveHeaders
 InnoNetwork	swift.type.property	EventDeliveryPolicy.default
 InnoNetwork	swift.type.property	HTTPHeader.defaultAcceptEncoding

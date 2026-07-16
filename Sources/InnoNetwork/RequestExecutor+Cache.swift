@@ -16,7 +16,7 @@ extension RequestExecutor {
         runtime: RequestExecutionRuntime
     ) async -> CachePreparation {
         guard let cacheKey,
-            request.httpMethod?.uppercased() == "GET",
+            request.httpMethod == HTTPMethod.get.rawValue,
             let cache = configuration.responseCache,
             configuration.responseCachePolicy.allowsCacheRead
         else {
@@ -471,7 +471,7 @@ extension RequestExecutor {
         configuration: NetworkConfiguration
     ) async {
         guard let cacheKey,
-            request.httpMethod?.uppercased() == "GET",
+            request.httpMethod == HTTPMethod.get.rawValue,
             let cache = configuration.responseCache,
             configuration.responseCachePolicy.allowsCacheWrite
         else {
@@ -529,7 +529,7 @@ extension RequestExecutor {
 
     private static func shouldInvalidateCacheForUnsafeMethod(_ method: String?, statusCode: Int) -> Bool {
         guard (200..<400).contains(statusCode),
-            let method = method?.uppercased()
+            let method
         else {
             return false
         }

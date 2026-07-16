@@ -17,6 +17,9 @@ The client transport carries URLSession-level behavior such as timeouts, cache
 policy, cookies, and HTTP protocol configuration. It does not pass generated
 requests through InnoNetwork interceptors, retry policy, cache policy, or trust
 evaluation. Use ``OpenAPIRequest`` when those pipeline features are required.
+HTTP method tokens remain case-sensitive: the URLSession-backed transport
+throws ``InnoNetworkClientTransportError/unsupportedRequestMethod(_:)`` when
+Foundation would rewrite a generated token instead of transmitting it exactly.
 
 ```swift
 import Foundation
@@ -33,6 +36,7 @@ struct ListPets: OpenAPIRestOperation {
 
     let method: HTTPMethod = .get
     let path = "/pets"
+    let sessionAuthentication: SessionAuthentication = .anonymous
 }
 
 let client = DefaultNetworkClient(
@@ -42,6 +46,14 @@ let client = DefaultNetworkClient(
 )
 let pets = try await client.request(OpenAPIRequest(ListPets()))
 ```
+
+Authentication is never inferred from an OpenAPI security scheme by this
+adapter. Review every generated operation and replace `.anonymous` with
+`.optional` or `.required` when the service contract calls for it.
+
+The generated-client transport follows HTTP no-body semantics: it returns no
+`HTTPBody` for HEAD, successful CONNECT `2xx`, informational `1xx`, `204`,
+`205`, and `304` responses, even if the server supplies bytes.
 
 ## Topics
 

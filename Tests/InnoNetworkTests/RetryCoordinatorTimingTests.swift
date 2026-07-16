@@ -68,7 +68,8 @@ struct RetryCoordinatorTimingTests {
         let client = DefaultNetworkClient(
             configuration: NetworkConfiguration(
                 baseURL: URL(string: "https://retry.example.com")!,
-                retryPolicy: FixedDelayRetryPolicy(maxRetries: 1, retryDelay: 5)
+                retryPolicy: FixedDelayRetryPolicy(maxRetries: 1, retryDelay: 5),
+                responseBodyBufferingPolicy: .buffered(maxBytes: nil)
             ),
             session: session,
             clock: clock

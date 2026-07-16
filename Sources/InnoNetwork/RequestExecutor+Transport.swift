@@ -226,6 +226,13 @@ extension RequestExecutor {
                     nil
                 )
             }
+            // Buffered transports (including explicitly buffered production
+            // sessions) have already materialized the payload, but the limit
+            // must still fail before response events, custom policy unwinding,
+            // auth refresh, cache mutation, or circuit-breaker status updates.
+            // Streaming collection enforces the same ceiling incrementally;
+            // this shared boundary also protects buffered implementations.
+            try enforceResponseBodyLimit(data: data, configuration: configuration)
             return TransportResult(data: data, response: httpResponse)
         } catch let networkError as NetworkError {
             // Already classified by an inner layer (e.g. responseBodyLimitExceeded
@@ -265,11 +272,23 @@ extension RequestExecutor {
                 case .configuration(reason: .invalidRequest):
                     // Falling back to a buffered transport silently bypasses
                     // the configured `maxBytes` ceiling, so honour the bound
-                    // by surfacing the original error instead of collecting
-                    // an unbounded body. Only the truly unbounded streaming
-                    // mode (`maxBytes == nil`) is allowed to fall back.
-                    guard maxBytes == nil else { throw error }
-                    return try await session.data(for: request, context: context)
+                    // by surfacing the original error instead of collecting an
+                    // unbounded body. The package's deterministic test-support
+                    // sessions are the sole bounded exception: their payload is
+                    // already an in-memory fixture and the executor enforces the
+                    // same limit before caching, interceptors, or decoding.
+                    let allowsBoundedBufferedFallback =
+                        (session as? any BoundedBufferedTestSession)?.allowsBoundedBufferedFallback == true
+                    guard maxBytes == nil || allowsBoundedBufferedFallback else {
+                        throw error
+                    }
+                    let result = try await session.data(for: request, context: context)
+                    // Test-support fixtures are already buffered, so enforce
+                    // the configured ceiling immediately. This keeps an
+                    // oversized fixture from reaching response events,
+                    // execution policies, auth refresh, or cache side effects.
+                    try enforceResponseBodyLimit(data: result.0, configuration: configuration)
+                    return result
                 default:
                     throw error
                 }
@@ -380,11 +399,11 @@ extension RequestExecutor {
     /// malformed peer that sends payload bytes remains bounded.
     static func responseMayCarryBody(request: URLRequest, response: URLResponse) -> Bool {
         let method = request.httpMethod
-        if method?.caseInsensitiveCompare(HTTPMethod.head.rawValue) == .orderedSame {
+        if method == HTTPMethod.head.rawValue {
             return false
         }
         guard let httpResponse = response as? HTTPURLResponse else { return true }
-        if method?.caseInsensitiveCompare(HTTPMethod.connect.rawValue) == .orderedSame,
+        if method == HTTPMethod.connect.rawValue,
             (200..<300).contains(httpResponse.statusCode)
         {
             return false

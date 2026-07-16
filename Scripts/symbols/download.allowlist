@@ -33,10 +33,9 @@ InnoNetworkDownload	swift.enum.case	DownloadState.idle
 InnoNetworkDownload	swift.enum.case	DownloadState.paused
 InnoNetworkDownload	swift.enum.case	DownloadState.waiting
 InnoNetworkDownload	swift.init	DownloadConfiguration.PersistenceCompactionPolicy.init(maxEvents:maxLogBytes:tombstoneRatio:)
-InnoNetworkDownload	swift.init	DownloadConfiguration.init(maxConnectionsPerHost:maxRetryCount:maxTotalRetries:retryDelay:exponentialBackoff:retryJitterRatio:maxRetryDelay:timeoutForRequest:timeoutForResource:taskInactivityTimeout:allowsCellularAccess:allowsInsecureHTTP:sessionIdentifier:sharedContainerIdentifier:networkMonitor:waitsForNetworkChanges:networkChangeTimeout:eventDeliveryPolicy:eventMetricsReporter:persistenceFsyncPolicy:persistenceCompactionPolicy:persistenceBaseDirectoryURL:)
 InnoNetworkDownload	swift.init	DownloadManager.init(configuration:)
 InnoNetworkDownload	swift.init	DownloadState.init(rawValue:)
-InnoNetworkDownload	swift.init	DownloadTask.init(url:destinationURL:id:resumeData:)
+InnoNetworkDownload	swift.method	DownloadConfiguration.backgroundTransfersEnabled()
 InnoNetworkDownload	swift.method	DownloadConfiguration.cellularEnabled()
 InnoNetworkDownload	swift.method	DownloadManager.activeTasks()
 InnoNetworkDownload	swift.method	DownloadManager.addEventListener(for:listener:)

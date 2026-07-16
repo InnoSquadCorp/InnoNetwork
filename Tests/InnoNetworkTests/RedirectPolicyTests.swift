@@ -217,6 +217,30 @@ struct RedirectPolicyTests {
         )
     }
 
+    @Test("Cross-origin 307/308 treats lowercase custom methods as unsafe")
+    func rejectsDifferentlyCasedSafeMethodTokens() {
+        let policy = DefaultRedirectPolicy()
+
+        for method in ["options", "trace"] {
+            for statusCode in [307, 308] {
+                var original = URLRequest(url: URL(string: "https://api.example.com/source")!)
+                original.httpMethod = method
+                var redirect = URLRequest(url: URL(string: "https://cdn.example.net/target")!)
+                redirect.httpMethod = method
+                let response = HTTPURLResponse(
+                    url: original.url!,
+                    statusCode: statusCode,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Location": redirect.url!.absoluteString]
+                )!
+
+                #expect(
+                    policy.redirect(request: redirect, response: response, originalRequest: original) == nil
+                )
+            }
+        }
+    }
+
     @Test("Cross-origin 307 for a safe method remains followable")
     func allowsCrossOriginSafeMethodRedirect() async throws {
         let policy = DefaultRedirectPolicy()

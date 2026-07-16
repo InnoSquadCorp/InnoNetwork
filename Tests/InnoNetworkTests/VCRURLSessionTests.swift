@@ -7,6 +7,18 @@ import Testing
 @Suite("VCR URLSession Test Support")
 struct VCRURLSessionTests {
 
+    private struct RawDataEndpoint: APIDefinition {
+        var sessionAuthentication: SessionAuthentication { .anonymous }
+        typealias Parameter = EmptyParameter
+        typealias APIResponse = Data
+        var method: HTTPMethod { .get }
+        var path: String { "/vcr" }
+
+        var transport: TransportPolicy<Data> {
+            .custom(encoding: .json(defaultRequestEncoder)) { data, _ in data }
+        }
+    }
+
     @Test("record mode stores a redacted deterministic cassette")
     func recordModeStoresRedactedCassette() async throws {
         let backing = MockURLSession()
@@ -30,6 +42,97 @@ struct VCRURLSessionTests {
         #expect(interaction.request.headers["authorization"] == "<redacted>")
         #expect(interaction.response.headers["set-cookie"] == "<redacted>")
         #expect(interaction.response.headers["x-trace"] == "abc")
+    }
+
+    @Test("bounded streaming fails closed before VCR record transport")
+    func boundedStreamingRejectsVCRRecordMode() async throws {
+        let backing = MockURLSession()
+        backing.setMockResponse(statusCode: 200, data: Data("unused".utf8))
+        let vcr = VCRURLSession(mode: .record, recordingSession: backing)
+        let client = DefaultNetworkClient(
+            configuration: .safeDefaults(baseURL: URL(string: "https://api.example.com")!),
+            session: vcr
+        )
+
+        do {
+            _ = try await client.request(RawDataEndpoint())
+            Issue.record("Expected bounded streaming to reject VCR record mode")
+        } catch let error {
+            guard case .configuration(reason: .invalidRequest) = error else {
+                Issue.record("Expected invalid-request configuration, got \(error)")
+                return
+            }
+        }
+
+        #expect(backing.capturedRequest == nil)
+        #expect(vcr.cassette.interactions.isEmpty)
+    }
+
+    @Test("bounded streaming replays an already-buffered VCR cassette")
+    func boundedStreamingAllowsVCRReplayMode() async throws {
+        let baseURL = URL(string: "https://api.example.com")!
+        let payload = Data("replayed".utf8)
+        let backing = MockURLSession()
+        backing.setMockResponse(statusCode: 200, data: payload)
+        let recorder = VCRURLSession(mode: .record, recordingSession: backing)
+        let recordClient = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                networkMonitor: nil,
+                responseBodyBufferingPolicy: .buffered(maxBytes: 5 * 1_024 * 1_024)
+            ),
+            session: recorder
+        )
+        _ = try await recordClient.request(RawDataEndpoint())
+
+        let replay = VCRURLSession(cassette: recorder.cassette, mode: .replay)
+        let replayClient = DefaultNetworkClient(
+            configuration: .safeDefaults(baseURL: baseURL),
+            session: replay
+        )
+
+        let received = try await replayClient.request(RawDataEndpoint())
+        #expect(received == payload)
+    }
+
+    @Test("VCR replay preserves the safe-default response ceiling")
+    func vcrReplayPreservesSafeDefaultLimit() async throws {
+        let baseURL = URL(string: "https://api.example.com")!
+        let limit: Int64 = 5 * 1_024 * 1_024
+        let payload = Data(repeating: 0xA5, count: Int(limit + 1))
+        let backing = MockURLSession()
+        backing.setMockResponse(statusCode: 200, data: payload)
+        let recorder = VCRURLSession(mode: .record, recordingSession: backing)
+        let recordClient = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                networkMonitor: nil,
+                responseBodyBufferingPolicy: .buffered(maxBytes: nil)
+            ),
+            session: recorder
+        )
+        _ = try await recordClient.request(RawDataEndpoint())
+
+        let replay = VCRURLSession(cassette: recorder.cassette, mode: .replay)
+        let replayClient = DefaultNetworkClient(
+            configuration: .safeDefaults(baseURL: baseURL),
+            session: replay
+        )
+
+        do {
+            _ = try await replayClient.request(RawDataEndpoint())
+            Issue.record("Expected the safe-default response ceiling")
+        } catch let error {
+            guard
+                case .underlying(let underlying, _) = error,
+                underlying.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue
+            else {
+                Issue.record("Expected responseBodyLimitExceeded, got \(error)")
+                return
+            }
+            #expect(underlying.message.contains("\(limit)"))
+            #expect(underlying.message.contains("\(payload.count)"))
+        }
     }
 
     @Test("cassette writes and loads deterministic JSON")

@@ -44,6 +44,17 @@ struct CurlCommandTests {
         #expect(command.contains("--data-binary '@/tmp/payload.bin'"))
     }
 
+    @Test("curlCommand preserves a custom method's case-sensitive wire token")
+    func curlCommandPreservesCustomMethodCase() {
+        var request = URLRequest(url: URL(string: "https://api.example.com/cache")!)
+        request.httpMethod = "purge"
+
+        let command = request.curlCommand()
+
+        #expect(command.contains("curl -X 'purge'"))
+        #expect(!command.contains("'PURGE'"))
+    }
+
     @Test("curlCommand strips URL credentials and fragment and redacts query values by default")
     func curlCommandRedactsURLMetadataByDefault() throws {
         let url = try #require(

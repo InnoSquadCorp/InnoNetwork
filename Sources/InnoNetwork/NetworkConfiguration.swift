@@ -176,12 +176,13 @@ public struct NetworkConfiguration: Sendable {
     /// ceiling for inline requests and file-backed uploads. Callers that
     /// intentionally need an unbounded response
     /// can opt out explicitly with `.streaming(maxBytes: nil)` or
-    /// `.buffered(maxBytes: nil)`. Test doubles that only implement
-    /// `data(for:)` must select a buffered policy explicitly when exercising
-    /// transport; bounded streaming fails closed instead of allocating the
-    /// complete response before enforcing its ceiling. Custom sessions that
-    /// support file uploads but not bounded upload-response streaming also
-    /// fail closed while a ceiling is active.
+    /// `.buffered(maxBytes: nil)`. InnoNetworkTestSupport's `MockURLSession`
+    /// and VCR replay mode can enforce bounded streaming over their already
+    /// buffered fixtures. Arbitrary custom sessions that only implement
+    /// `data(for:)` must select a buffered policy explicitly; bounded streaming
+    /// otherwise fails closed. Custom sessions that support file uploads but
+    /// not bounded upload-response streaming also fail closed while a ceiling
+    /// is active.
     public let responseBodyBufferingPolicy: ResponseBodyBufferingPolicy
 
     /// Compatibility alias for the optional maximum body size in

@@ -107,6 +107,7 @@ public actor WebSocketManager {
         case connected(taskIdentifier: Int, protocolName: String?)
         case disconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?)
         case mappedError(taskIdentifier: Int, error: WebSocketError)
+        case redirectRejected(taskIdentifier: Int, error: WebSocketError)
         case sessionError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int?)
         case pingTimeout(taskIdentifier: Int)
     }
@@ -171,7 +172,8 @@ public actor WebSocketManager {
         let backgroundCompletionStore = BackgroundCompletionStore()
         let delegate = WebSocketSessionDelegate(
             callbacks: callbacks,
-            backgroundCompletionStore: backgroundCompletionStore
+            backgroundCompletionStore: backgroundCompletionStore,
+            allowsInsecureWebSocket: configuration.allowsInsecureWebSocket
         )
 
         let sessionConfig = configuration.makeURLSessionConfiguration()
@@ -263,6 +265,9 @@ public actor WebSocketManager {
                     error: error,
                     statusCode: statusCode
                 )
+            },
+            onRedirectRejected: { [weak self] taskIdentifier, error in
+                self?.handleRedirectRejected(taskIdentifier: taskIdentifier, error: error)
             }
         )
     }

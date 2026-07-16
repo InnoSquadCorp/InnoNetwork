@@ -96,6 +96,7 @@ iOSInjectionProject/
 .swiftpm/
 **/.swiftpm/
 **/Package.resolved
+!/Package.resolved
 
 # Xcode user data (should be ignored)
 **/xcuserdata/
@@ -106,4 +107,3 @@ iOSInjectionProject/
 
 # DocC Documentation Build
 docs-build/
-

@@ -193,7 +193,7 @@ struct DownloadRestorationLifecycleTests {
         )
         let harness = try StubDownloadHarness(
             maxRetryCount: 0,
-            sessionMode: .background,
+            backgroundTransfers: true,
             label: "background-official-boundary",
             prepopulatedRecords: [record]
         )
@@ -241,7 +241,7 @@ struct DownloadRestorationLifecycleTests {
         )
         let harness = try StubDownloadHarness(
             maxRetryCount: 0,
-            sessionMode: .background,
+            backgroundTransfers: true,
             label: "background-provisional-failure",
             prepopulatedRecords: [record]
         )

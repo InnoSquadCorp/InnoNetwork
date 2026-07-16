@@ -56,19 +56,30 @@ struct ResponseCacheKeyQueryNormalizationTests {
         #expect(keyA == keyB)
     }
 
-    @Test("Direct cache key initializer normalizes valid URL strings")
+    @Test("Direct cache key initializer normalizes URLs without rewriting methods")
     func directInitializerNormalizesValidURLStrings() async {
         let keyA = ResponseCacheKey(
-            method: "get",
+            method: "PURGE",
             url: "HTTPS://API.EXAMPLE.COM/v1/items?b=2&a=1#section"
         )
         let keyB = ResponseCacheKey(
-            method: "GET",
+            method: "PURGE",
             url: "https://api.example.com/v1/items?b=2&a=1"
         )
 
         #expect(keyA == keyB)
+        #expect(keyA.method == "PURGE")
         #expect(keyA.url == "https://api.example.com/v1/items?b=2&a=1")
+    }
+
+    @Test("Differently cased custom methods remain distinct cache keys")
+    func methodTokensRemainCaseSensitive() {
+        let uppercase = ResponseCacheKey(method: "PURGE", url: "https://api.example.com/cache")
+        let lowercase = ResponseCacheKey(method: "purge", url: "https://api.example.com/cache")
+
+        #expect(uppercase != lowercase)
+        #expect(uppercase.method == "PURGE")
+        #expect(lowercase.method == "purge")
     }
 
     @Test("Direct cache key initializer preserves unparsable URL strings")

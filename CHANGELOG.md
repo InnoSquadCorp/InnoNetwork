@@ -29,7 +29,9 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   methods remain static constants; custom methods use the failable
   `init(rawValue:)`, which accepts only nonempty RFC 9110 tokens. Code that
   exhaustively switched over the former enum must use semantic helpers or a
-  default branch.
+  default branch. Retry, redirect, cache, coalescing, and curl diagnostics
+  preserve exact method-token case. URLSession-backed entry points fail before
+  transport when Foundation would silently rewrite the requested spelling.
 - `RequestExecutionNext.execute(_:)` is replaced by
   `RequestExecutionNext.execute()`. Request mutation belongs in a
   `RequestInterceptor`; execution policies can observe, short-circuit, or
@@ -55,6 +57,12 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   a fresh task and bounded event stream. The stream is registered before the
   replacement transport resumes, the source task stays terminal, and automatic
   reconnect still preserves its task ID.
+- Download presets now use secure foreground sessions. Process-independent
+  continuation is the explicit `backgroundTransfersEnabled()` opt-in, and
+  `DownloadTask` construction is manager-owned rather than publicly
+  fabricatable. The direct 22-parameter `DownloadConfiguration` initializer is
+  package-owned; use `safeDefaults(sessionIdentifier:)` or
+  `advanced(sessionIdentifier:_:)`.
 
 See [`docs/Migration-5.0.0.md`](docs/Migration-5.0.0.md) for before/after
 examples and [`docs/releases/5.0.0.md`](docs/releases/5.0.0.md) for the
@@ -83,9 +91,14 @@ draft release summary.
   source paths.
 - CI and release validation now cross-compile every public library product for
   the declared tvOS, watchOS, and visionOS device SDKs at the package's
-  deployment floors as required gates, compile consumer fixtures at those
-  floors, run generalized macro compile-failure fixtures, and treat dependency
-  review failures as blocking.
+  deployment floors as required gates. Every independent example manifest is
+  checked against the same floors, its consumer smoke target builds on the
+  host, generalized macro compile-failure fixtures run, and dependency review
+  failures remain fail-closed in the workflow.
+- The root `Package.resolved` is tracked as the repository's reproducible
+  dependency input and GitHub dependency-graph manifest. CI rejects lock drift
+  and deletion/untracked recreation; independent example and tool lock files
+  remain ignored.
 
 ### Fixed
 
@@ -101,9 +114,21 @@ draft release summary.
   `.streaming(maxBytes: nil)` or `.buffered(maxBytes: nil)` remains the
   deliberate unbounded opt-out, and byte-count arithmetic fails closed on
   overflow.
-- OpenAPI transport treats HEAD responses, informational 1xx responses, and
-  statuses 204, 205, and 304 as bodyless, while preserving base paths and query
-  ordering when adapting requests.
+- `InnoNetworkTestSupport`'s `MockURLSession` and VCR replay mode remain
+  compatible with the bounded `safeDefaults` profile. Their already-buffered
+  fixtures are rejected at the transport boundary before response events,
+  execution-policy response handling, auth refresh, cache, or interceptors.
+  VCR record mode and arbitrary custom sessions without streaming support fail
+  closed under bounded streaming policies.
+- OpenAPI transport treats HEAD responses, successful CONNECT `2xx`,
+  informational `1xx`, and statuses `204`, `205`, and `304` as bodyless, while
+  preserving base paths and query ordering when adapting requests.
+- WebSocket handshake redirects now pass through per-hop URL admission. Secure
+  handshakes cannot downgrade to plain WS, traversal targets fail terminally
+  without reconnect, and cross-origin redirects strip every caller-prepared
+  header plus built-in credential fields while preserving CFNetwork's required
+  handshake and subprotocol negotiation fields. The credential boundary stays
+  fixed to the original handshake origin across multi-hop redirects.
 - Curl export and observability redact query values, request bodies, URL
   credentials, fragments, sensitive path tokens, and error payload details by
   default. Controlled debugging can opt into query values or bodies explicitly.
@@ -112,6 +137,12 @@ draft release summary.
   watchOS, and visionOS they also apply
   `.completeUntilFirstUserAuthentication` Data Protection. Caller-owned final
   download files are not relabeled.
+- Download persistence and completion staging no longer use a path-like,
+  uppercase, oversized, empty, or non-ASCII `sessionIdentifier` as a raw path
+  component. Those identifiers map to one deterministic SHA-256 component,
+  preventing case-insensitive filesystem aliases, while conventional lowercase
+  reverse-DNS identifiers keep their existing layout and Foundation still
+  receives the original value.
 - Download completion staging, pause/resume transactions, temporary-file
   cleanup, and shutdown behavior are bounded and cancellation-safe.
 - WebSocket disconnect and shutdown teardown are bounded. The final terminal

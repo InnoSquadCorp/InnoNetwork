@@ -589,7 +589,7 @@ package struct StreamingExecutor: Sendable {
             allowsInsecureHTTP: configuration.allowsInsecureHTTP
         )
         var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = request.method.rawValue
+        try RequestBuilder.assign(request.method, to: &urlRequest)
         urlRequest.headers = request.headers
         urlRequest.cachePolicy = configuration.cachePolicy
         urlRequest.timeoutInterval = configuration.timeout

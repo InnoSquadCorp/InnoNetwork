@@ -275,7 +275,8 @@ struct NetworkMetricsTests {
             baseURL: URL(string: "https://example.com/api")!,
             retryPolicy: nil,
             networkMonitor: nil,
-            metricsReporter: recorder
+            metricsReporter: recorder,
+            responseBodyBufferingPolicy: .buffered(maxBytes: nil)
         )
 
         let client = DefaultNetworkClient(

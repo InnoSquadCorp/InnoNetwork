@@ -582,9 +582,10 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         let persistenceRootURL =
             baseDirectory
             .appendingPathComponent("InnoNetworkDownload", isDirectory: true)
+        let sessionStorageComponent = DownloadSessionStorageKey.component(for: sessionIdentifier)
         let directoryURL =
             persistenceRootURL
-            .appendingPathComponent(sessionIdentifier, isDirectory: true)
+            .appendingPathComponent(sessionStorageComponent, isDirectory: true)
         let checkpointURL = directoryURL.appendingPathComponent("checkpoint.json", isDirectory: false)
         let logURL = directoryURL.appendingPathComponent("events.log", isDirectory: false)
         let lockURL = directoryURL.appendingPathComponent(".lock", isDirectory: false)

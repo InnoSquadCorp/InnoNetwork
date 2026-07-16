@@ -60,6 +60,12 @@ private struct MockURLSessionState {
 
 
 /// In-memory `URLSessionProtocol` implementation for consumer tests.
+///
+/// The first-party executor recognizes this as an in-memory test session, so it
+/// works with `NetworkConfiguration.safeDefaults` even though it does not
+/// fabricate `URLSession.AsyncBytes`. The configured response ceiling is still
+/// checked before cache insertion, interceptors, or decoding; unlike a real
+/// streaming session, the fixture `Data` necessarily exists in memory first.
 public final class MockURLSession: URLSessionProtocol, Sendable {
     private let stateLock = OSAllocatedUnfairLock<MockURLSessionState>(
         initialState: MockURLSessionState(
@@ -163,4 +169,9 @@ public final class MockURLSession: URLSessionProtocol, Sendable {
             )!
         }
     }
+}
+
+
+extension MockURLSession: BoundedBufferedTestSession {
+    package var allowsBoundedBufferedFallback: Bool { true }
 }

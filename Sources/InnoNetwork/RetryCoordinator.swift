@@ -284,7 +284,7 @@ package struct RetryCoordinator {
         // Callers that need to retry transport-only timeouts for safe methods
         // can switch to `.methodAgnostic` and own the safety contract.
         guard let request else { return .noRetry }
-        let method = (request.httpMethod ?? "GET").uppercased()
+        let method = request.httpMethod ?? HTTPMethod.get.rawValue
         // Methods explicitly considered safe by the active policy (e.g.
         // GET/HEAD by default) are never converted to `.noRetry`.
         if idempotency.safeMethods.contains(method) { return decision }

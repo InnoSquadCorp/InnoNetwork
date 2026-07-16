@@ -41,6 +41,57 @@ struct ResponseBodyLimitTests {
         }
     }
 
+    private actor ResponseEventCounter: NetworkEventObserving {
+        private(set) var responseReceivedCount = 0
+        private var didReceiveRequestFailure = false
+        private var requestFailureWaiters: [CheckedContinuation<Void, Never>] = []
+
+        func handle(_ event: NetworkEvent) async {
+            switch event {
+            case .responseReceived:
+                responseReceivedCount += 1
+            case .requestFailed:
+                didReceiveRequestFailure = true
+                let waiters = requestFailureWaiters
+                requestFailureWaiters.removeAll(keepingCapacity: false)
+                for waiter in waiters {
+                    waiter.resume()
+                }
+            default:
+                break
+            }
+        }
+
+        func waitForRequestFailure() async {
+            guard !didReceiveRequestFailure else { return }
+            await withCheckedContinuation { continuation in
+                requestFailureWaiters.append(continuation)
+            }
+        }
+    }
+
+    private actor ExecutionPolicyResponseCounter {
+        private(set) var responseCount = 0
+
+        func recordResponse() {
+            responseCount += 1
+        }
+    }
+
+    private struct ResponseObservingExecutionPolicy: RequestExecutionPolicy {
+        let counter: ExecutionPolicyResponseCounter
+
+        func execute(
+            input: RequestExecutionInput,
+            context: RequestExecutionContext,
+            next: RequestExecutionNext
+        ) async throws -> Response {
+            let response = try await next.execute()
+            await counter.recordResponse()
+            return response
+        }
+    }
+
     @Test("Body under the limit passes through unchanged")
     func underLimitPasses() async throws {
         let payload = Data(repeating: 0xAA, count: 1_024)
@@ -104,6 +155,63 @@ struct ResponseBodyLimitTests {
                 Issue.record("Expected NetworkError.underlying with responseBodyLimitExceeded code, got \(error)")
             }
         }
+    }
+
+    @Test("MockURLSession preserves the safe-default 5 MiB response ceiling")
+    func mockSessionPreservesSafeDefaultLimit() async throws {
+        let limit: Int64 = 5 * 1_024 * 1_024
+        let payload = Data(repeating: 0xCD, count: Int(limit + 1))
+        let mockSession = MockURLSession()
+        mockSession.setMockResponse(statusCode: 200, data: payload)
+
+        let client = DefaultNetworkClient(
+            configuration: .safeDefaults(baseURL: URL(string: "https://api.example.com/v1")!),
+            session: mockSession
+        )
+
+        await expectResponseTooLarge(limit: limit, observed: Int64(payload.count)) {
+            _ = try await client.request(DataEcho())
+        }
+        #expect(mockSession.capturedRequest != nil)
+    }
+
+    @Test(
+        "Oversized buffered responses fail before response side effects",
+        arguments: [
+            ResponseBodyBufferingPolicy.streaming(maxBytes: 1_024),
+            .buffered(maxBytes: 1_024),
+        ]
+    )
+    func oversizedBufferedResponseFailsBeforeResponseSideEffects(
+        bufferingPolicy: ResponseBodyBufferingPolicy
+    ) async throws {
+        let payload = Data(repeating: 0xCE, count: 2_048)
+        let session = MockURLSession()
+        session.setMockResponse(statusCode: 200, data: payload)
+        let eventCounter = ResponseEventCounter()
+        let policyCounter = ExecutionPolicyResponseCounter()
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com/v1",
+                eventObservers: [eventCounter],
+                customExecutionPolicies: [ResponseObservingExecutionPolicy(counter: policyCounter)],
+                responseBodyBufferingPolicy: bufferingPolicy
+            ),
+            session: session
+        )
+
+        await expectResponseTooLarge(limit: 1_024, observed: Int64(payload.count)) {
+            _ = try await client.request(DataEcho())
+        }
+
+        // Observer handlers run asynchronously after NetworkEventHub hands
+        // events to its per-observer chain. Waiting for the terminal failure
+        // creates a FIFO barrier: any incorrectly published response event
+        // would have incremented the counter before this resumes.
+        await eventCounter.waitForRequestFailure()
+        #expect(await eventCounter.responseReceivedCount == 0)
+        #expect(await policyCounter.responseCount == 0)
+        #expect(session.capturedRequest != nil)
     }
 
     @Test("Fresh cache hit above the limit throws before decode")

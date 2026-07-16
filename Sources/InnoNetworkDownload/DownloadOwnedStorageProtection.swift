@@ -1,9 +1,9 @@
 import Foundation
 
-/// Applies the storage attributes shared by download-owned metadata files and
-/// staging directories. The staged payload inode is intentionally excluded:
-/// it is later moved to the caller's final destination, whose metadata
-/// InnoNetwork must not change.
+/// Applies the storage attributes shared by download-owned metadata, staging
+/// directories, and staged payloads. Final delivery copies only payload bytes
+/// into a caller-owned inode, so these library attributes never transfer to
+/// the caller's destination.
 enum DownloadOwnedStorageProtection {
     static func apply(to url: URL, fileManager: FileManager = .default) {
         let resourceValues = try? url.resourceValues(forKeys: [.isSymbolicLinkKey])

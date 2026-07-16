@@ -47,10 +47,9 @@ struct AppNetworking: Sendable {
         )
 
         let downloadConfiguration = DownloadConfiguration.advanced { builder in
-            builder.sessionMode = .background
             builder.sessionIdentifier = "com.example.app.downloads.media"
             builder.persistenceCompactionPolicy = .init()
-        }
+        }.backgroundTransfersEnabled()
 
         return AppNetworking(
             api: DefaultNetworkClient(configuration: apiConfiguration),
@@ -107,12 +106,12 @@ let catalog = try await networking.api.request(
 
 ## Background Download
 
-`DownloadConfiguration.advanced` defaults to `.foreground`. This example opts
-into `.background` so the system can continue transfers when the app is
-suspended. Background sessions automatically follow redirects, so the package
-cannot run its per-hop redirect-admission preflight; it validates the final URL
-where Foundation exposes it. Keep the foreground default when every redirect
-hop must be admitted before following it.
+`DownloadConfiguration.advanced` defaults to secure foreground transfers. This
+example calls `backgroundTransfersEnabled()` so the system can continue
+transfers when the app is suspended. Background sessions automatically follow
+redirects, so the package cannot run its per-hop redirect-admission preflight;
+it validates the final URL where Foundation exposes it. Keep the foreground
+default when every redirect hop must be admitted before following it.
 
 Download restoration is explicit at app launch. Public download APIs already
 wait on the internal restore gate, but `waitForRestoration()` is useful when
