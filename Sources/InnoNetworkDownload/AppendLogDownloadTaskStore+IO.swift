@@ -17,6 +17,18 @@ extension AppendLogDownloadTaskStore {
         return nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(ENOENT)
     }
 
+    /// Checks for a directory entry without collapsing access failures into
+    /// "missing" and without paying Foundation's thrown-error cost for the
+    /// expected empty-checkpoint path during every restore.
+    static func pathEntryExists(at url: URL) throws -> Bool {
+        var information = stat()
+        guard lstat(url.path, &information) != 0 else { return true }
+
+        let failure = errno
+        guard failure != ENOENT else { return false }
+        throw POSIXError(POSIXErrorCode(rawValue: failure) ?? .EIO)
+    }
+
     static func defaultBaseDirectory(fileManager: FileManager) -> URL {
         fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     }

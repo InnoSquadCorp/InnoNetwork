@@ -96,8 +96,9 @@ let configuration = DownloadConfiguration.advanced(
 Syntactically malformed or unsupported checkpoint data is quarantined so a valid append log
 can still be replayed. When an append log has a malformed suffix, the store first commits and
 fsyncs a checkpoint containing the valid prefix, then renames the source log to
-`events.corrupted-<timestamp>.log` and creates a fresh active log. The corrupt copy stays on
-disk until the operator removes it, so support can inspect it after the fact.
+`events.corrupted-<timestamp>.log` and creates a fresh active log. When quarantine succeeds,
+the corrupt copy stays on disk until the operator removes it, allowing support to inspect it
+after the fact.
 
 File-access failures are different from malformed data. Data Protection before first unlock,
 permission errors, lock failures, disk errors, and other transient I/O failures make

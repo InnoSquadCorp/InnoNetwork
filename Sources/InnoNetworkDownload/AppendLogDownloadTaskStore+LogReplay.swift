@@ -28,10 +28,15 @@ extension AppendLogDownloadTaskStore {
         var logEventCount = 0
         var tombstoneCount = 0
 
+        guard try pathEntryExists(at: logURL) else {
+            return (records, urlToID, nextSequence, logEventCount, tombstoneCount)
+        }
+
         let handle: FileHandle
         do {
             handle = try logFileHandleFactory(logURL)
         } catch  where isMissingFileError(error) {
+            // The entry can disappear between the probe and open.
             return (records, urlToID, nextSequence, logEventCount, tombstoneCount)
         }
         defer { try? handle.close() }

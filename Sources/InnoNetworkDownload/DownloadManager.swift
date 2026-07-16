@@ -86,6 +86,8 @@ public actor DownloadManager {
     /// - Throws: ``DownloadManagerError/duplicateSessionIdentifier(_:)`` if
     ///   another manager has already claimed the same session identifier, or
     ///   an error from creating, locking, or reading the persistence store.
+    ///   A transient store-access failure preserves the existing state so a
+    ///   later initialization attempt can restore it.
     public static func make(
         configuration: DownloadConfiguration = .default
     ) throws -> DownloadManager {

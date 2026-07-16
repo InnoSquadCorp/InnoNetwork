@@ -24,14 +24,19 @@ extension AppendLogDownloadTaskStore {
         var tombstoneCount = 0
 
         let checkpointData: Data?
-        do {
-            // File access failures are not proof of corruption. In
-            // particular, complete-until-first-user-authentication files can
-            // be temporarily unreadable before the first device unlock.
-            // Preserve the checkpoint and let initialization fail so a later
-            // attempt can recover the authoritative state.
-            checkpointData = try checkpointDataReader(checkpointURL)
-        } catch  where isMissingFileError(error) {
+        if try pathEntryExists(at: checkpointURL) {
+            do {
+                // File access failures are not proof of corruption. In
+                // particular, complete-until-first-user-authentication files
+                // can be temporarily unreadable before the first device
+                // unlock. Preserve the checkpoint and let initialization fail
+                // so a later attempt can recover the authoritative state.
+                checkpointData = try checkpointDataReader(checkpointURL)
+            } catch  where isMissingFileError(error) {
+                // The entry can disappear between the probe and open.
+                checkpointData = nil
+            }
+        } else {
             checkpointData = nil
         }
 
