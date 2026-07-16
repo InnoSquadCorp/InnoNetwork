@@ -73,6 +73,14 @@ Configure session-level behavior on the supplied `URLSession`; InnoNetwork
 retry, auth refresh, interceptors, response cache, request coalescing, circuit
 breaker, signing, and trust evaluation do not run on this path. Request and
 response body limits default to 50 MiB and can be overridden at initialization.
+The transport does retain the shared network URL boundary: it applies
+`DefaultRedirectPolicy`, re-admits every automatic redirect target, and throws
+`InnoNetworkClientTransportError.redirectRejected` instead of contacting a
+rejected hop. Cross-origin hops strip original request headers and clear values
+configured through `URLSessionConfiguration.httpAdditionalHeaders`. Supply a
+default or ephemeral URLSession. Background sessions throw
+`backgroundSessionUnsupported` before dispatch because Foundation follows their
+redirects without consulting the task redirect delegate.
 
 See
 [`SwiftOpenAPIGeneratorPath.md`](../Tools/openapi-to-innonetwork/SwiftOpenAPIGeneratorPath.md)

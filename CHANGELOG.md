@@ -114,6 +114,12 @@ draft release summary.
 
 ### Fixed
 
+- `InnoNetworkClientTransport` now applies the default redirect policy and URL
+  admission to every generated-client redirect hop, strips caller-prepared
+  headers and clears session-configured header values across origins, rejects
+  unsafe cross-origin replay and HTTPS downgrade, and refuses background
+  URLSession instances whose redirects Foundation does not expose to the task
+  delegate.
 - Persistent-cache index reads are capped at 16 MiB before JSON decoding;
   oversized indexes now cold-reset only cache-owned state instead of allowing
   unbounded initialization memory growth.

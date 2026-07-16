@@ -179,7 +179,7 @@ public struct DefaultRedirectPolicy: RedirectPolicy {
     /// Two URLs share an origin when their scheme, host (case-insensitive),
     /// and effective port match. A missing explicit port resolves to the
     /// scheme's default (80 for http, 443 for https).
-    static func isSameOrigin(_ lhs: URL?, _ rhs: URL?) -> Bool {
+    package static func isSameOrigin(_ lhs: URL?, _ rhs: URL?) -> Bool {
         guard let lhs, let rhs else { return false }
         guard let lhsScheme = lhs.scheme?.lowercased(),
             let rhsScheme = rhs.scheme?.lowercased(),

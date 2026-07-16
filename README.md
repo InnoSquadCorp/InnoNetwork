@@ -419,6 +419,9 @@ for await event in await manager.events(for: task) {
 - `OpenAPIRequest` for running generated or hand-written operations through the full `DefaultNetworkClient` pipeline
 - `OpenAPIRestOperation` bridge for generated operation metadata
 - `InnoNetworkClientTransport` for thin `swift-openapi-runtime` transport when URLSession-level behavior is enough
+- generated-client redirects use the default redirect policy plus per-hop URL
+  admission; background URLSession is rejected because Foundation bypasses
+  that callback
 
 ### `InnoNetworkTrust`
 

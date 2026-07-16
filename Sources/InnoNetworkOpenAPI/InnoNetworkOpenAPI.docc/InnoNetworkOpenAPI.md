@@ -20,6 +20,14 @@ evaluation. Use ``OpenAPIRequest`` when those pipeline features are required.
 HTTP method tokens remain case-sensitive: the URLSession-backed transport
 throws ``InnoNetworkClientTransportError/unsupportedRequestMethod(_:)`` when
 Foundation would rewrite a generated token instead of transmitting it exactly.
+The transport also applies `DefaultRedirectPolicy` and URL admission to every
+automatic redirect. Rejected hops throw
+``InnoNetworkClientTransportError/redirectRejected`` without including the
+target URL. Cross-origin hops strip original request headers and clear values
+from `URLSessionConfiguration.httpAdditionalHeaders`. Use a default or ephemeral
+URLSession; a background URLSession throws
+``InnoNetworkClientTransportError/backgroundSessionUnsupported`` before dispatch
+because Foundation does not expose its redirect decisions to the task delegate.
 
 ```swift
 import Foundation

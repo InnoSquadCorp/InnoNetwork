@@ -278,7 +278,11 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   default implementations to track Swift OpenAPI Generator and HTTPTypes
   conventions without exposing HTTPTypes through the core public
   request/header/response model. The direct `swift-http-types` dependency
-  remains owned by the optional companion target.
+  remains owned by the optional companion target. Its generated-client
+  transport owns task redirect decisions, repeats URL admission on every hop,
+  and rejects background URLSession instances that cannot provide that
+  callback; rejection errors remain payload-free so target URLs are not added
+  to diagnostics.
 - `PersistentResponseCache` statistics and telemetry — event reasons may grow
   as additional scrub cases are surfaced.
 - `ResponseCache.invalidateTargetURI(_:)` — the protocol requirement has a
