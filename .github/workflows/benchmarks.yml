@@ -7,8 +7,10 @@ on:
       - "Sources/**"
       - "Package.swift"
       - ".github/workflows/benchmarks.yml"
+      - "Scripts/compare_benchmark_runs.py"
       - "Scripts/render_benchmark_comment.py"
       - "Scripts/append_benchmark_trend.py"
+      - "Scripts/tests/test_compare_benchmark_runs.py"
   workflow_dispatch:
   schedule:
     - cron: "0 3 * * 1"
@@ -33,6 +35,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Select Xcode
         run: |
@@ -44,6 +50,7 @@ jobs:
           path: |
             .build/checkouts
             .build/repositories
+            .build/swiftpm-cache
           key: ${{ runner.os }}-bench-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
           restore-keys: |
             ${{ runner.os }}-bench-xcode-26.0.1-
@@ -53,13 +60,95 @@ jobs:
           xcodebuild -version
           xcrun swift --version
 
-      - name: Resolve dependencies
-        run: xcrun swift package resolve
+      - name: Test benchmark report tooling
+        run: python3 Scripts/tests/test_compare_benchmark_runs.py
 
-      - name: Run guarded quick benchmarks
+      - name: Build pull request benchmark binaries
+        if: github.event_name == 'pull_request'
         env:
-          MAX_REGRESSION_PERCENT: ${{ github.event_name == 'pull_request' && '20' || '10' }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          set -euo pipefail
+          base_scratch="$RUNNER_TEMP/innonetwork-benchmarks/base-build"
+          head_scratch="$RUNNER_TEMP/innonetwork-benchmarks/head-build"
+          shared_cache="$GITHUB_WORKSPACE/.build/swiftpm-cache"
+
+          git checkout --detach "$BASE_SHA"
+          xcrun swift build -c release \
+            --product InnoNetworkBenchmarks \
+            --scratch-path "$base_scratch" \
+            --cache-path "$shared_cache"
+          base_bin="$(xcrun swift build -c release --scratch-path "$base_scratch" --cache-path "$shared_cache" --show-bin-path)/InnoNetworkBenchmarks"
+          test -x "$base_bin"
+
+          git checkout --detach "$HEAD_SHA"
+          xcrun swift build -c release \
+            --product InnoNetworkBenchmarks \
+            --scratch-path "$head_scratch" \
+            --cache-path "$shared_cache"
+          head_bin="$(xcrun swift build -c release --scratch-path "$head_scratch" --cache-path "$shared_cache" --show-bin-path)/InnoNetworkBenchmarks"
+          test -x "$head_bin"
+
+          echo "BASE_BENCHMARK_BIN=$base_bin" >> "$GITHUB_ENV"
+          echo "HEAD_BENCHMARK_BIN=$head_bin" >> "$GITHUB_ENV"
+
+      - name: Compare interleaved pull request medians
+        if: github.event_name == 'pull_request'
+        env:
+          MAX_REGRESSION_PERCENT: "20"
+        run: |
+          set -euo pipefail
+          mkdir -p .build/benchmarks
+
+          run_sample() {
+            executable="$1"
+            output="$2"
+            "$executable" \
+              --json-path "$output" \
+              --baseline "${output}.missing" \
+              > "${output%.json}.log"
+          }
+
+          # Balance execution-order and thermal drift across both revisions:
+          # base/head, head/base, base/head.
+          run_sample "$BASE_BENCHMARK_BIN" .build/benchmarks/base-1.json
+          run_sample "$HEAD_BENCHMARK_BIN" .build/benchmarks/head-1.json
+          run_sample "$HEAD_BENCHMARK_BIN" .build/benchmarks/head-2.json
+          run_sample "$BASE_BENCHMARK_BIN" .build/benchmarks/base-2.json
+          run_sample "$BASE_BENCHMARK_BIN" .build/benchmarks/base-3.json
+          run_sample "$HEAD_BENCHMARK_BIN" .build/benchmarks/head-3.json
+
+          python3 Scripts/compare_benchmark_runs.py \
+            --base .build/benchmarks/base-1.json \
+            --base .build/benchmarks/base-2.json \
+            --base .build/benchmarks/base-3.json \
+            --head .build/benchmarks/head-1.json \
+            --head .build/benchmarks/head-2.json \
+            --head .build/benchmarks/head-3.json \
+            --output .build/benchmarks/results.json \
+            --guard-benchmark events/task-event-fanout-single \
+            --guard-benchmark persistence/download-persistence-restore \
+            --guard-benchmark persistence/append-log-compaction \
+            --guard-benchmark websocket/websocket-close-disposition-classify \
+            --guard-benchmark websocket/websocket-ping-context-create \
+            --guard-benchmark websocket/websocket-send-queue-reserve \
+            --guard-benchmark websocket/websocket-lifecycle-transition-table \
+            --guard-benchmark client/request-pipeline \
+            --guard-benchmark client/request-coalescing-shared-get \
+            --guard-benchmark client/decoding-interceptor-chain-1 \
+            --guard-benchmark client/decoding-interceptor-chain-3 \
+            --guard-benchmark client/decoding-interceptor-chain-8 \
+            --guard-benchmark cache/response-cache-lookup \
+            --guard-benchmark cache/response-cache-revalidation \
+            --max-regression-percent "$MAX_REGRESSION_PERCENT"
+
+      - name: Run guarded static-baseline benchmarks
+        if: github.event_name != 'pull_request'
+        env:
+          MAX_REGRESSION_PERCENT: "10"
+        run: |
+          xcrun swift package resolve
           mkdir -p .build/benchmarks
           status=1
           for attempt in 1 2 3; do
@@ -132,7 +221,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: innonetwork-benchmarks
-          path: .build/benchmarks/results.json
+          path: .build/benchmarks/
           if-no-files-found: error
 
   append-trend:

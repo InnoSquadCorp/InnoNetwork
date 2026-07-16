@@ -87,8 +87,14 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
 
 ## Baseline Policy
 
-- baseline 파일은 [Baselines/default.json](Baselines/default.json)입니다.
-- baseline 수치는 GitHub Actions `macos-15` hosted runner의 `--quick`
+- release와 scheduled/manual gate의 baseline 파일은
+  [Baselines/default.json](Baselines/default.json)입니다.
+- PR gate는 같은 `macos-15` hosted runner에서 base SHA와 head SHA를 각각
+  세 번 측정하고 중앙값을 비교합니다. 실행 순서도 `base/head`, `head/base`,
+  `base/head`로 교차해 두 번째 실행에만 thermal/scheduling 편향이 몰리지
+  않게 합니다. 여섯 측정 모두 `--quick`을 생략한 긴 sample을 사용하므로,
+  서로 다른 runner나 과거 정적 측정치의 편차도 PR 판정에 섞이지 않습니다.
+- 정적 baseline 수치는 scheduled/manual GitHub Actions run의 `--quick`
   결과를 기준으로 보정합니다. 로컬 개발 장비에서 더 빠르게 나오거나 느리게
   나오는 diff는 참고용입니다.
 - runner는 baseline 대비 diff를 항상 출력합니다.
@@ -180,13 +186,14 @@ function dispatch.
   debug 빌드 오버헤드가 throughput 비교에 섞이지 않게 합니다.
 - PR CI의 `Benchmark Smoke` job은 `--quick` benchmark를 실행해 CLI 빌드와 JSON
   summary 생성을 확인합니다.
-- PR benchmark workflow가 guarded benchmark set을 `20%` threshold로 검사하고,
+- PR benchmark workflow는 base와 head를 같은 runner에서 각각 세 번,
+  교차 순서의 non-quick profile로 측정하고 양쪽 중앙값을 비교한 뒤 guarded
+  benchmark set을 `20%` threshold로 검사합니다.
   JSON summary에서 Markdown comment를 렌더링해 guarded benchmark delta,
   per-benchmark threshold, regression reason을 PR에 남깁니다.
-- `decoding-interceptor-chain-{1,3,8}` guard는 PR benchmark workflow의
-  `--quick` run에서도 20,000회 sample을 사용합니다. 2,000회 sample이 hosted
-  runner에서 0.2초 안팎으로 끝나 regression gate가 scheduling noise에
-  과민해지는 것을 막기 위한 안정화 설정입니다.
+- `decoding-interceptor-chain-{1,3,8}` guard도 PR에서는 non-quick profile의
+  20,000회 sample을 사용해 짧은 microbenchmark가 scheduling noise에
+  과민해지는 것을 막습니다.
 - scheduled/manual benchmark workflow는 같은 guard 항목을 `10%` threshold로 검사하는 strict regression gate입니다.
 - scheduled/manual benchmark 결과는 `benchmark-trends` branch의
   `trends/benchmark-results.jsonl`에 누적됩니다.
