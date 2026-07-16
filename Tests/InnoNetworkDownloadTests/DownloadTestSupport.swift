@@ -85,7 +85,7 @@ func waitForResumeCount(
         if task.resumeCount >= count {
             return true
         }
-        await Task.yield()
+        try? await Task.sleep(nanoseconds: 10_000_000)
     }
     return task.resumeCount >= count
 }
