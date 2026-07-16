@@ -41,8 +41,10 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   `TransportPack` through `NetworkConfiguration.advanced(...)`.
 - `StateReducer` and `StateReduction` are package implementation vocabulary,
   not public API. Adopters should own reducer types at their feature boundary.
-- Redirect defaults deny HTTPS downgrade and unsafe cross-origin `307`/`308`
-  replay. Signed requests reject every automatic redirect.
+- Redirect defaults deny HTTPS downgrade and every cross-origin proposal that
+  retains an unsafe method. Other cross-origin hops strip every caller-prepared
+  original header plus built-in and configured sensitive session headers.
+  Signed requests reject every automatic redirect.
 - Core, OpenAPI, download, and WebSocket entry points reject malformed,
   origin-changing, traversal-bearing, or insecure absolute URLs by default.
   Plain HTTP and WebSocket connections require their explicit configuration

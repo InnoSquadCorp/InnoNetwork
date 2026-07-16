@@ -5,8 +5,8 @@ import Testing
 
 @Suite("Security integration scenarios")
 struct SecurityIntegrationTests {
-    @Test("Cross-origin redirect strips Authorization from a client-built request")
-    func crossOriginRedirectStripsAuthorization() async throws {
+    @Test("Cross-origin redirect strips every client-built request header")
+    func crossOriginRedirectStripsClientBuiltHeaders() async throws {
         let session = MockURLSession()
         try session.setMockJSON(SecurityUser(id: 1, name: "secure"))
         let configuration = makeTestNetworkConfiguration(
@@ -41,7 +41,7 @@ struct SecurityIntegrationTests {
         )
 
         #expect(result.value(forHTTPHeaderField: "Authorization") == nil)
-        #expect(result.value(forHTTPHeaderField: "X-Trace-ID") == "trace-1")
+        #expect(result.value(forHTTPHeaderField: "X-Trace-ID") == nil)
     }
 
     @Test("Plain HTTP baseURL is rejected before transport dispatch")
