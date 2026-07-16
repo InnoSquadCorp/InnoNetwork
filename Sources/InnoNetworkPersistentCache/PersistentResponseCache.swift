@@ -95,6 +95,7 @@ public actor PersistentResponseCache: ResponseCache {
 
     private let configuration: PersistentResponseCacheConfiguration
     private let fileManager: FileManager
+    private let storageIO: StorageIO
     private let bodiesDirectoryURL: URL
     private let indexURL: URL
     private let keyNormalizer: PersistentCacheDiskKeyNormalizer
@@ -127,18 +128,34 @@ public actor PersistentResponseCache: ResponseCache {
 
     /// Open or create a persistent response cache at `configuration.directoryURL`.
     ///
-    /// Throws if the directory cannot be created or the existing HMAC key
-    /// cannot currently be read. A key read failure is surfaced without
-    /// deleting cache state because protected data or file access can be
-    /// temporarily unavailable. Unknown index versions and decode failures are
-    /// not surfaced as errors — the cache resets its own state and continues,
-    /// so a corrupt cache from a prior version is safe to inherit.
+    /// Throws if the directory cannot be created or existing key/index data
+    /// cannot currently be read. Read failures are surfaced without deleting
+    /// cache state because protected data or file access can be temporarily
+    /// unavailable. Unknown index versions and decode failures after a
+    /// successful read are not surfaced as errors — the cache resets its own
+    /// state and continues, so a corrupt cache from a prior version is safe to
+    /// inherit.
     public init(
         configuration: PersistentResponseCacheConfiguration,
         fileManager: FileManager = .default
     ) throws {
+        try self.init(
+            configuration: configuration,
+            fileManager: fileManager,
+            storageIO: StorageIO()
+        )
+    }
+
+    /// Internal initializer that keeps filesystem failure injection out of the
+    /// public API while allowing deterministic protected-data recovery tests.
+    init(
+        configuration: PersistentResponseCacheConfiguration,
+        fileManager: FileManager,
+        storageIO: StorageIO
+    ) throws {
         self.configuration = configuration
         self.fileManager = fileManager
+        self.storageIO = storageIO
         self.bodiesDirectoryURL = configuration.directoryURL.appendingPathComponent("bodies", isDirectory: true)
         self.indexURL = configuration.directoryURL.appendingPathComponent("index.json", isDirectory: false)
 
@@ -175,7 +192,8 @@ public actor PersistentResponseCache: ResponseCache {
             from: indexURL,
             directoryURL: configuration.directoryURL,
             dataProtectionClass: configuration.dataProtectionClass,
-            fileManager: fileManager
+            fileManager: fileManager,
+            storageIO: storageIO
         )
         Self.applyDataProtectionToExistingCacheFiles(
             dataProtectionClass: configuration.dataProtectionClass,
@@ -208,7 +226,8 @@ public actor PersistentResponseCache: ResponseCache {
             configuration: configuration,
             indexURL: indexURL,
             bodiesDirectoryURL: bodiesDirectoryURL,
-            fileManager: fileManager
+            fileManager: fileManager,
+            storageIO: storageIO
         )
         let scrubbedBodies = Self.scrubUnreferencedBodiesOnOpen(
             budgetResult.index,
@@ -240,10 +259,12 @@ public actor PersistentResponseCache: ResponseCache {
         }
     }
 
-    /// Look up a cached response for `key`. Returns `nil` on miss or when the
-    /// body file cannot be read (the index entry is dropped). The recorded
-    /// `lastAccessedAt` is best-effort persisted; a failure to write the
-    /// index never demotes a successful read to a miss.
+    /// Look up a cached response for `key`. Returns `nil` on miss, deterministic
+    /// body corruption, or a transient read failure. Missing, invalid,
+    /// non-regular, and oversized bodies are scrubbed; transient protected-data
+    /// or storage failures preserve the entry for a later retry. The recorded
+    /// `lastAccessedAt` is best-effort persisted; a failure to write the index
+    /// never demotes a successful read to a miss.
     public func get(_ key: ResponseCacheKey) async -> CachedResponse? {
         let diskKey = DiskKey(key, normalizer: keyNormalizer)
         guard let selection = matchingEntry(for: diskKey) else {
@@ -266,13 +287,13 @@ public actor PersistentResponseCache: ResponseCache {
         // entry when the actor resumes.
         let data: Data
         do {
-            data = try await Self.readBodyData(
-                fileName: entry.bodyFileName,
-                in: bodiesDirectoryURL,
-                maximumByteCount: configuration.maxEntryBytes
+            data = try await storageIO.bodyReader(
+                entry.bodyFileName,
+                bodiesDirectoryURL,
+                configuration.maxEntryBytes
             )
         } catch {
-            if isCurrentEntry(id: id, entry: entry) {
+            if Self.shouldScrubBody(after: error), isCurrentEntry(id: id, entry: entry) {
                 scrubEntry(id: id, entry: entry, reason: .missingBody)
                 try? persistIndex()
             }

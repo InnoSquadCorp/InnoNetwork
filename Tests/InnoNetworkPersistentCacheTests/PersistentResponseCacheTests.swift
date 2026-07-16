@@ -6,6 +6,8 @@ import Testing
 
 #if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
 #endif
 
 #if canImport(Security)
@@ -531,6 +533,261 @@ struct PersistentResponseCacheTests {
         #expect(try Data(contentsOf: keyURL) == originalKey)
         #expect(try Data(contentsOf: indexURL(in: directory)) == originalIndex)
         #expect(try bodySnapshots(in: directory) == originalBodies)
+    }
+
+    @Test("Transient index read failure preserves the key, index, and bodies")
+    func transientIndexReadFailurePreservesCacheFiles() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/index-unavailable")
+        let payload = Data("cached-index".utf8)
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: payload))
+
+        let keyURL = hmacKeyURL(in: directory)
+        let originalKey = try Data(contentsOf: keyURL)
+        let originalIndex = try Data(contentsOf: indexURL(in: directory))
+        let originalBodies = try bodySnapshots(in: directory)
+
+        let storageIO = PersistentResponseCache.StorageIO(
+            indexReader: { _ in
+                throw CocoaError(.fileReadNoPermission)
+            }
+        )
+        do {
+            _ = try PersistentResponseCache(
+                configuration: configuration,
+                fileManager: .default,
+                storageIO: storageIO
+            )
+            Issue.record("Expected the transient index read failure to be surfaced")
+        } catch let error as CocoaError {
+            #expect(error.code == .fileReadNoPermission)
+        } catch {
+            Issue.record("Expected CocoaError.fileReadNoPermission, got \(error)")
+        }
+
+        #expect(try Data(contentsOf: keyURL) == originalKey)
+        #expect(try Data(contentsOf: indexURL(in: directory)) == originalIndex)
+        #expect(try bodySnapshots(in: directory) == originalBodies)
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+        #expect(await reopened.get(key)?.data == payload)
+    }
+
+    @Test("A missing index is the only index read failure treated as an empty cache")
+    func missingIndexReadStartsEmptyCache() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        #expect(PersistentResponseCache.isMissingFileError(CocoaError(.fileNoSuchFile)))
+        #expect(PersistentResponseCache.isMissingFileError(CocoaError(.fileReadNoSuchFile)))
+        #expect(!PersistentResponseCache.isMissingFileError(CocoaError(.fileReadNoPermission)))
+        let storageIO = PersistentResponseCache.StorageIO(
+            indexReader: { _ in
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(ENOENT))
+            }
+        )
+
+        let cache = try PersistentResponseCache(
+            configuration: configuration,
+            fileManager: .default,
+            storageIO: storageIO
+        )
+
+        #expect(await cache.statistics().entryCount == 0)
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+    }
+
+    @Test("The default live reader opens an existing cache directory with no index")
+    func defaultLiveMissingIndexStartsEmptyCache() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let first = try PersistentResponseCache(configuration: configuration)
+        #expect(await first.statistics().entryCount == 0)
+        #expect(!FileManager.default.fileExists(atPath: indexURL(in: directory).path))
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/live-missing-index")
+        let payload = Data("created-after-missing-index".utf8)
+        await reopened.set(key, CachedResponse(data: payload))
+
+        #expect(await reopened.get(key)?.data == payload)
+    }
+
+    @Test("A directory at the index path cold-resets cache-owned state")
+    func indexDirectoryColdResets() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/index-directory")
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("cached".utf8)))
+        #expect(try existingBodyURLs(in: directory).count == 1)
+
+        let index = indexURL(in: directory)
+        try FileManager.default.removeItem(at: index)
+        try FileManager.default.createDirectory(at: index, withIntermediateDirectories: false)
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+
+        #expect(await reopened.statistics().entryCount == 0)
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: index.path))
+    }
+
+    @Test("An index symlink cold-resets owned state without reading its target")
+    func indexSymlinkNeverReadsOutsideTarget() async throws {
+        let directory = makeDirectory()
+        let outsideDirectory = makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: outsideDirectory)
+        }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/index-symlink")
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("cached".utf8)))
+
+        try FileManager.default.createDirectory(
+            at: outsideDirectory,
+            withIntermediateDirectories: true
+        )
+        let outsideIndex = outsideDirectory.appendingPathComponent("outside-index.json")
+        let outsideData = Data("outside-sentinel".utf8)
+        try outsideData.write(to: outsideIndex)
+        let index = indexURL(in: directory)
+        try FileManager.default.removeItem(at: index)
+        try FileManager.default.createSymbolicLink(at: index, withDestinationURL: outsideIndex)
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+
+        #expect(await reopened.statistics().entryCount == 0)
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(try Data(contentsOf: outsideIndex) == outsideData)
+    }
+
+    @Test("A FIFO body is rejected without waiting for a writer")
+    func fifoBodyCannotBlockCacheOpen() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/body-fifo")
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("cached".utf8)))
+        let bodyURL = try #require(existingBodyURLs(in: directory).first)
+        try FileManager.default.removeItem(at: bodyURL)
+        #expect(mkfifo(bodyURL.path, S_IRUSR | S_IWUSR) == 0)
+
+        let openTask = Task.detached {
+            try? PersistentResponseCache(configuration: configuration)
+        }
+        let completedBeforeTimeout = await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                _ = await openTask.value
+                return true
+            }
+            group.addTask {
+                try? await Task.sleep(for: .milliseconds(250))
+                return false
+            }
+            let completed = await group.next() ?? false
+            if !completed {
+                // Unblock a regressed implementation so the test itself
+                // remains bounded even if O_NONBLOCK is accidentally removed.
+                let peer = open(bodyURL.path, O_RDWR | O_NONBLOCK | O_CLOEXEC)
+                if peer >= 0 { close(peer) }
+            }
+            group.cancelAll()
+            return completed
+        }
+        let reopened = try #require(await openTask.value)
+
+        #expect(completedBeforeTimeout)
+        #expect(await reopened.statistics().entryCount == 0)
+    }
+
+    @Test("Transient open-time body inspection failure preserves cache files")
+    func transientBodyInspectionFailurePreservesCacheFiles() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/body-inspection-unavailable")
+        let payload = Data("cached-body".utf8)
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: payload))
+
+        let originalIndex = try Data(contentsOf: indexURL(in: directory))
+        let originalBodies = try bodySnapshots(in: directory)
+        let storageIO = PersistentResponseCache.StorageIO(
+            bodyInspector: { _, _ in
+                throw PersistentResponseCache.BodyFileAccessError.cannotInspectFile(errno: EIO)
+            }
+        )
+
+        do {
+            _ = try PersistentResponseCache(
+                configuration: configuration,
+                fileManager: .default,
+                storageIO: storageIO
+            )
+            Issue.record("Expected the transient body inspection failure to be surfaced")
+        } catch let error as PersistentResponseCache.BodyFileAccessError {
+            #expect(error == .cannotInspectFile(errno: EIO))
+        } catch {
+            Issue.record("Expected a body inspection EIO, got \(error)")
+        }
+
+        #expect(try Data(contentsOf: indexURL(in: directory)) == originalIndex)
+        #expect(try bodySnapshots(in: directory) == originalBodies)
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+        #expect(await reopened.get(key)?.data == payload)
+    }
+
+    @Test("Transient get body read failure preserves the entry for retry")
+    func transientBodyReadFailurePreservesEntryForRetry() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/body-read-unavailable")
+        let payload = Data("retry-body".utf8)
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: payload))
+
+        let originalIndex = try Data(contentsOf: indexURL(in: directory))
+        let originalBodies = try bodySnapshots(in: directory)
+        let transientReader = TransientPersistentCacheBodyReader()
+        let storageIO = PersistentResponseCache.StorageIO(
+            bodyReader: { fileName, directoryURL, maximumByteCount in
+                try await transientReader.read(
+                    fileName: fileName,
+                    in: directoryURL,
+                    maximumByteCount: maximumByteCount
+                )
+            }
+        )
+        let cache = try PersistentResponseCache(
+            configuration: configuration,
+            fileManager: .default,
+            storageIO: storageIO
+        )
+        let priorEvictionCount = await cache.statistics().evictionCount
+
+        #expect(await cache.get(key) == nil)
+        #expect(await cache.statistics().entryCount == 1)
+        #expect(await cache.statistics().evictionCount == priorEvictionCount)
+        #expect(
+            await cache.telemetrySnapshot()
+                .contains(.scrubbedEntries(reason: .missingBody, count: 1, byteCount: payload.count)) == false
+        )
+        #expect(try Data(contentsOf: indexURL(in: directory)) == originalIndex)
+        #expect(try bodySnapshots(in: directory) == originalBodies)
+
+        #expect(await cache.get(key)?.data == payload)
+        #expect(await transientReader.attemptCount == 2)
     }
 
     #if canImport(Security)
@@ -1913,6 +2170,26 @@ private final class RecordingFileManager: FileManager, @unchecked Sendable {
             recorder.record(protectionType, path: path)
         }
         try super.setAttributes(attributes, ofItemAtPath: path)
+    }
+}
+
+private actor TransientPersistentCacheBodyReader {
+    private(set) var attemptCount = 0
+
+    func read(
+        fileName: String,
+        in directoryURL: URL,
+        maximumByteCount: Int
+    ) async throws -> Data {
+        attemptCount += 1
+        if attemptCount == 1 {
+            throw PersistentResponseCache.BodyFileAccessError.cannotOpenFile(errno: EACCES)
+        }
+        return try await PersistentResponseCache.readBodyData(
+            fileName: fileName,
+            in: directoryURL,
+            maximumByteCount: maximumByteCount
+        )
     }
 }
 

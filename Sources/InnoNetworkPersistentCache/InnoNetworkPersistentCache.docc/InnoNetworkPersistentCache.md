@@ -27,6 +27,17 @@ treated as misses and scrubbed from the cache's own files. Corrupt or
 unknown-version on-disk indexes are recovered automatically by resetting the
 cache's own subtree (never the user-supplied directory root).
 
+A missing index opens as an empty cache. A directory, symbolic link, FIFO, or
+other non-regular entry at the index path is deterministic structural corruption
+and cold-resets only cache-owned state. Protected-data, permission, and transient
+storage errors while reading an existing index or inspecting body files instead
+fail initialization without deleting cache state; FIFO body entries are rejected
+without waiting for a peer. If an existing
+cache instance encounters the same kind of transient body-read error,
+``PersistentResponseCache/get(_:)`` returns a miss but preserves the entry for
+a later retry. Only verified missing, invalid, symbolic-link, non-regular, or
+oversized body state is scrubbed.
+
 Use ``PersistentResponseCache/statistics()`` for storage-pressure snapshots and
 ``PersistentResponseCache/telemetrySnapshot()`` or
 ``PersistentResponseCache/drainTelemetryEvents()`` to inspect scrub and

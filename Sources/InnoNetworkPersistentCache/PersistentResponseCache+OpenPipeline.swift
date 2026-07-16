@@ -67,10 +67,12 @@ extension PersistentResponseCache {
         configuration: PersistentResponseCacheConfiguration,
         indexURL: URL,
         bodiesDirectoryURL: URL,
-        fileManager: FileManager
+        fileManager: FileManager,
+        storageIO: StorageIO
     ) throws -> OpenResult {
         var budgetedIndex = loadedIndex
         var didMutate = false
+        var removableBodyFileNames: [String] = []
         var scrubbedMissingCount = 0
         var scrubbedMissingBytes = 0
         var scrubbedOversizedCount = 0
@@ -79,13 +81,16 @@ extension PersistentResponseCache {
         var evictedBytes = 0
 
         for (id, entry) in loadedIndex.entries {
-            guard
-                let bodySize = fileSize(
-                    fileName: entry.bodyFileName,
-                    in: bodiesDirectoryURL,
-                    fileManager: fileManager
+            let bodySize: Int
+            do {
+                bodySize = try storageIO.bodyInspector(
+                    entry.bodyFileName,
+                    bodiesDirectoryURL
                 )
-            else {
+            } catch {
+                guard shouldScrubBody(after: error) else {
+                    throw error
+                }
                 budgetedIndex.entries.removeValue(forKey: id)
                 scrubbedMissingCount += 1
                 scrubbedMissingBytes += entry.byteCost
@@ -94,7 +99,7 @@ extension PersistentResponseCache {
             }
             if bodySize > configuration.maxEntryBytes {
                 budgetedIndex.entries.removeValue(forKey: id)
-                removeBody(fileName: entry.bodyFileName, in: bodiesDirectoryURL, fileManager: fileManager)
+                removableBodyFileNames.append(entry.bodyFileName)
                 scrubbedOversizedCount += 1
                 scrubbedOversizedBytes += entry.byteCost
                 didMutate = true
@@ -116,7 +121,7 @@ extension PersistentResponseCache {
             cursor = sortedIDs.index(after: cursor)
             guard let victim = budgetedIndex.entries.removeValue(forKey: victimID) else { continue }
             runningTotalBytes -= victim.byteCost
-            removeBody(fileName: victim.bodyFileName, in: bodiesDirectoryURL, fileManager: fileManager)
+            removableBodyFileNames.append(victim.bodyFileName)
             evictedCount += 1
             evictedBytes += victim.byteCost
             didMutate = true
@@ -130,6 +135,13 @@ extension PersistentResponseCache {
                 configuration: configuration,
                 fileManager: fileManager
             )
+            for bodyFileName in removableBodyFileNames {
+                removeBody(
+                    fileName: bodyFileName,
+                    in: bodiesDirectoryURL,
+                    fileManager: fileManager
+                )
+            }
         }
         var telemetry: [PersistentResponseCacheTelemetryEvent] = []
         if scrubbedMissingCount > 0 {
@@ -221,10 +233,31 @@ extension PersistentResponseCache {
         from indexURL: URL,
         directoryURL: URL,
         dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
-        fileManager: FileManager
+        fileManager: FileManager,
+        storageIO: StorageIO
     ) throws -> OpenResult {
-        guard fileManager.fileExists(atPath: indexURL.path) else {
-            return OpenResult(index: Index(version: formatVersion, entries: [:]), telemetryEvents: [])
+        let data: Data
+        do {
+            data = try storageIO.indexReader(indexURL)
+        } catch {
+            if isMissingFileError(error) {
+                return OpenResult(
+                    index: Index(version: formatVersion, entries: [:]),
+                    telemetryEvents: []
+                )
+            }
+            guard shouldResetIndex(after: error) else { throw error }
+            let bodiesDirectoryURL = directoryURL.appendingPathComponent("bodies", isDirectory: true)
+            try resetCacheStorage(
+                indexURL: indexURL,
+                bodiesDirectoryURL: bodiesDirectoryURL,
+                dataProtectionClass: dataProtectionClass,
+                fileManager: fileManager
+            )
+            return OpenResult(
+                index: Index(version: formatVersion, entries: [:]),
+                telemetryEvents: []
+            )
         }
 
         let bodiesDirectoryURL = directoryURL.appendingPathComponent("bodies", isDirectory: true)
@@ -234,8 +267,7 @@ extension PersistentResponseCache {
         // path. Version 3 changed cache-key semantics to preserve query-item
         // order; older entries are intentionally cold-reset because two
         // wire-distinct targets may have occupied the same version-2 slot.
-        if let data = try? Data(contentsOf: indexURL),
-            let index = try? JSONDecoder.persistentCache.decode(Index.self, from: data),
+        if let index = try? JSONDecoder.persistentCache.decode(Index.self, from: data),
             index.version == formatVersion
         {
             return OpenResult(index: index, telemetryEvents: [])
