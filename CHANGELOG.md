@@ -166,8 +166,9 @@ draft release summary.
 ### Changed
 
 - `InnoNetworkOpenAPI` declares its direct `swift-http-types` dependency with a
-  compatible 1.x range from 1.5.1 instead of relying on
-  `swift-openapi-runtime` to expose it transitively. HTTPTypes remains confined
+  compatible 1.x range from 1.6.0 instead of relying on
+  `swift-openapi-runtime` to expose it transitively. The floor matches OpenAPI
+  Runtime 1.12's use of the `FoundationURL` trait. HTTPTypes remains confined
   to the optional `InnoNetworkOpenAPI` boundary; the core `InnoNetwork` public
   request, header, and response models do not expose it.
 - Response-cache keys preserve query-item ordering, and the persistent cache

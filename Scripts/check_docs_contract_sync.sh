@@ -627,7 +627,7 @@ validate_openapi_companion_product() {
   require_contains 'name: "InnoNetworkOpenAPI"' "$repo_root/Package.swift"
   require_contains 'targets: ["InnoNetworkOpenAPI"]' "$repo_root/Package.swift"
   require_contains 'https://github.com/apple/swift-http-types' "$repo_root/Package.swift"
-  require_contains '.upToNextMajor(from: "1.5.1")' "$repo_root/Package.swift"
+  require_contains '.upToNextMajor(from: "1.6.0")' "$repo_root/Package.swift"
   require_contains 'https://github.com/apple/swift-openapi-runtime' "$repo_root/Package.swift"
 
   local package_dump

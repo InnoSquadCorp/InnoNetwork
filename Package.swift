@@ -92,11 +92,12 @@ let package = Package(
         // `InnoNetworkOpenAPI` imports HTTPTypes directly at its generated-client
         // transport boundary. Keep that dependency explicit instead of relying
         // on swift-openapi-runtime to expose its own transitive dependency.
-        // Preserve the previously resolved 1.5.1 compatibility floor while
-        // allowing SwiftPM to select newer compatible 1.x releases.
+        // OpenAPI Runtime 1.12 enables HTTP Types' FoundationURL trait, which
+        // is available from 1.6.0. Keep that executable compatibility floor
+        // while allowing SwiftPM to select newer compatible 1.x releases.
         .package(
             url: "https://github.com/apple/swift-http-types",
-            .upToNextMajor(from: "1.5.1")
+            .upToNextMajor(from: "1.6.0")
         ),
         // The root package resolves `swift-openapi-runtime` because it ships
         // the optional `InnoNetworkOpenAPI` companion product. The 1.x range
