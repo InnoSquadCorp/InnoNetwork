@@ -41,6 +41,11 @@ public actor PersistentResponseCache: ResponseCache {
     /// migrated without risking a response being served for a wire-distinct
     /// target. The open pipeline therefore cold-resets older indexes.
     static let formatVersion = 3
+    /// Bounds untrusted `index.json` reads before JSON decoding. The default
+    /// 1,000-entry cache remains comfortably below this ceiling, while a
+    /// replaced or corrupt index cannot grow initialization memory without
+    /// limit on constrained Apple platforms.
+    static let maximumIndexByteCount = 16 * 1024 * 1024
     static let logger = Logger(subsystem: "innosquad.network", category: "PersistentResponseCache")
 
     // Visibility note: nested types and static helpers are intentionally

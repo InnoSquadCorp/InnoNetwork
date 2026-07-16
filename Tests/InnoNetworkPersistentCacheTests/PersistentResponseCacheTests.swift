@@ -576,6 +576,29 @@ struct PersistentResponseCacheTests {
         #expect(await reopened.get(key)?.data == payload)
     }
 
+    @Test("An oversized index cold-resets cache-owned state with a bounded read")
+    func oversizedIndexColdResetsCacheOwnedState() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/oversized-index")
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: Data("cached".utf8)))
+        #expect(try existingBodyURLs(in: directory).isEmpty == false)
+
+        let handle = try FileHandle(forWritingTo: indexURL(in: directory))
+        try handle.truncate(
+            atOffset: UInt64(PersistentResponseCache.maximumIndexByteCount + 1)
+        )
+        try handle.close()
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+
+        #expect(await reopened.statistics().entryCount == 0)
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: indexURL(in: directory).path))
+    }
+
     @Test("A missing index is the only index read failure treated as an empty cache")
     func missingIndexReadStartsEmptyCache() async throws {
         let directory = makeDirectory()
