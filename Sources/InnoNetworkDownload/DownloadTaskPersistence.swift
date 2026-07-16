@@ -1190,13 +1190,6 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         }
     }
 
-    private func mutate(
-        durability: MutationDurability = .configured,
-        _ transform: (inout StoreState) -> Event
-    ) async throws {
-        try await mutate(durability: durability) { state in [transform(&state)] }
-    }
-
     /// Read-after-write consistency note: while `mutate` is awaiting
     /// `awaitDirectoryLock` (after the descriptor was opened but before the
     /// flock returns) actor isolation is released, so concurrent reads

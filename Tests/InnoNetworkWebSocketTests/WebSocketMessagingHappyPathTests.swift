@@ -502,16 +502,21 @@ final class StubMessagingHarness: Sendable {
     /// returns the corresponding `WebSocketTask`.
     func connectAndReady(url: URL = URL(string: "wss://stub.invalid/socket")!) async throws -> WebSocketTask {
         let task = await manager.connect(url: url)
+        let connectedEvent = WebSocketEventCollector()
+        let readinessSubscription = await manager.addEventListener(for: task) { event in
+            if case .connected = event {
+                connectedEvent.record(event)
+            }
+        }
         // startConnection returns after registering the stub task; taskIdentifier
         // is immediately available because the stub runs synchronously.
         manager.handleConnected(taskIdentifier: stubTaskIdentifier, protocolName: nil)
 
-        let deadline = Date().addingTimeInterval(1.0)
-        while Date() < deadline {
-            if await task.state == .connected { return task }
-            try? await Task.sleep(nanoseconds: 10_000_000)
+        let didReceiveConnected = await connectedEvent.waitForCount(1, timeout: 1.0)
+        await manager.removeEventListener(readinessSubscription)
+        if !didReceiveConnected {
+            Issue.record("Stub task never published .connected within the timeout")
         }
-        Issue.record("Stub task never transitioned to .connected within the timeout")
         return task
     }
 

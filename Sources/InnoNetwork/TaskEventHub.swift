@@ -293,6 +293,15 @@ package actor TaskEventHub<Event: Sendable> {
     private struct PartitionKey: Hashable {
         let taskID: String
         let generation: UUID
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.taskID == rhs.taskID && lhs.generation == rhs.generation
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(taskID)
+            hasher.combine(generation)
+        }
     }
 
     private var partitions: [String: PartitionState] = [:]

@@ -55,20 +55,6 @@ final class DownloadUserCallbackToken: Sendable {
     func containsActiveCallback(for managerID: UUID) -> Bool {
         activeTaskID(for: managerID) != nil
     }
-
-    func containsActiveCallback(for managerID: UUID, taskID: String) -> Bool {
-        var candidate: DownloadUserCallbackToken? = self
-        while let token = candidate {
-            if token.managerID == managerID,
-                token.taskID == taskID,
-                token.isActive
-            {
-                return true
-            }
-            candidate = token.parent
-        }
-        return false
-    }
 }
 
 package actor DownloadRuntimeRegistry {
@@ -89,11 +75,6 @@ package actor DownloadRuntimeRegistry {
     private var _onStateChanged: (@Sendable (DownloadTask, DownloadState) async -> Void)?
     private var _onCompleted: (@Sendable (DownloadTask, URL) async -> Void)?
     private var _onFailed: (@Sendable (DownloadTask, DownloadError) async -> Void)?
-
-    package var onProgress: (@Sendable (DownloadTask, DownloadProgress) async -> Void)? { _onProgress }
-    package var onStateChanged: (@Sendable (DownloadTask, DownloadState) async -> Void)? { _onStateChanged }
-    package var onCompleted: (@Sendable (DownloadTask, URL) async -> Void)? { _onCompleted }
-    package var onFailed: (@Sendable (DownloadTask, DownloadError) async -> Void)? { _onFailed }
 
     package init() {}
 
@@ -119,26 +100,6 @@ package actor DownloadRuntimeRegistry {
 
     package var hasRestoreCompletionHandler: Bool {
         _onStateChanged != nil || _onCompleted != nil
-    }
-
-    package func notifyProgress(_ task: DownloadTask, _ progress: DownloadProgress) async {
-        guard let callback = prepareProgressCallback(task, progress) else { return }
-        await callback()
-    }
-
-    package func notifyStateChanged(_ task: DownloadTask, _ state: DownloadState) async {
-        guard let callback = prepareStateChangedCallback(task, state) else { return }
-        await callback()
-    }
-
-    package func notifyCompleted(_ task: DownloadTask, _ location: URL) async {
-        guard let callback = prepareCompletedCallback(task, location) else { return }
-        await callback()
-    }
-
-    package func notifyFailed(_ task: DownloadTask, _ error: DownloadError) async {
-        guard let callback = prepareFailedCallback(task, error) else { return }
-        await callback()
     }
 
     package func prepareProgressCallback(
@@ -289,18 +250,6 @@ package actor DownloadRuntimeRegistry {
 
     package func taskIdentifier(for taskId: String) -> Int? {
         taskIdToIdentifier[taskId]
-    }
-
-    /// Drops only the identifier ↔ task pairing while leaving the
-    /// `taskId → URLTask` handle in place. Callers that are also
-    /// retiring the URLTask must follow up with
-    /// ``removeTaskRuntime(taskId:)`` (or call it instead) to avoid
-    /// leaving the URLTask handle pinned in memory.
-    package func detachRuntime(taskIdentifier: Int) {
-        guard let task = identifierToTask.removeValue(forKey: taskIdentifier) else { return }
-        if taskIdToIdentifier[task.id] == taskIdentifier {
-            taskIdToIdentifier.removeValue(forKey: task.id)
-        }
     }
 
     /// Removes one concrete URLSession attempt without touching a newer

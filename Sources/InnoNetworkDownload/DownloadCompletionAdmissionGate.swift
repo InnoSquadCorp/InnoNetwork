@@ -12,6 +12,15 @@ package final class DownloadCompletionAdmissionGate: Sendable {
     private struct AttemptKey: Hashable, Sendable {
         let taskID: String
         let taskIdentifier: Int?
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.taskID == rhs.taskID && lhs.taskIdentifier == rhs.taskIdentifier
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(taskID)
+            hasher.combine(taskIdentifier)
+        }
     }
 
     private enum Phase: Sendable {
