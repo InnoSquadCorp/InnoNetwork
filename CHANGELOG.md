@@ -111,6 +111,11 @@ draft release summary.
 
 ### Fixed
 
+- Download persistence now distinguishes malformed bytes from storage-access
+  failures. Data Protection, permission, lock, and transient I/O errors fail
+  initialization without quarantining valid state, while corrupt append-log
+  recovery durably commits the valid prefix before moving or resetting the
+  authoritative log.
 - The API stability contract now classifies core `HTTPMethod` and
   `SessionAuthentication` as Stable only, and keeps Stable and Provisionally
   Stable code spans disjoint so symbols cannot silently receive contradictory

@@ -207,7 +207,7 @@ struct PersistenceFsyncPolicyTests {
             .appendingPathComponent("inno-fsync-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: baseDirectory) }
 
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: "test.fsync.\(UUID().uuidString)",
             baseDirectoryURL: baseDirectory,
             fsyncPolicy: policy
@@ -241,7 +241,7 @@ struct PersistenceFsyncPolicyTests {
         includedInBackup.isExcludedFromBackup = false
         try destinationResourceURL.setResourceValues(includedInBackup)
 
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectory,
             compactionPolicy: .init(maxEvents: 1, maxLogBytes: 1, tombstoneRatio: 0)
@@ -276,7 +276,7 @@ struct PersistenceFsyncPolicyTests {
             )
         }
 
-        _ = DownloadTaskPersistence(
+        _ = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectory
         )
@@ -345,7 +345,7 @@ struct PersistenceFsyncPolicyTests {
             .appendingPathComponent("inno-fsync-always-fail-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: baseDirectory) }
 
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: "test.fsync.always.fail.\(UUID().uuidString)",
             baseDirectoryURL: baseDirectory,
             fsyncPolicy: .always,
@@ -381,7 +381,7 @@ struct PersistenceFsyncPolicyTests {
         defer { try? FileManager.default.removeItem(at: baseDirectory) }
 
         let recorder = FsyncCallRecorder()
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: "test.commit.fsync.\(UUID().uuidString)",
             baseDirectoryURL: baseDirectory,
             fsyncPolicy: policy,
@@ -428,7 +428,7 @@ struct PersistenceFsyncPolicyTests {
         defer { try? FileManager.default.removeItem(at: baseDirectory) }
 
         let recorder = FsyncCallRecorder()
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: "test.commit.checkpoint.fsync.\(UUID().uuidString)",
             baseDirectoryURL: baseDirectory,
             fsyncPolicy: .never,
@@ -465,7 +465,7 @@ struct PersistenceFsyncPolicyTests {
             .appendingPathComponent("inno-commit-fsync-fail-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: baseDirectory) }
 
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: "test.commit.fsync.fail.\(UUID().uuidString)",
             baseDirectoryURL: baseDirectory,
             fsyncPolicy: .never,
@@ -496,13 +496,72 @@ struct PersistenceFsyncPolicyTests {
         }
     }
 
+    @Test("Corrupt-log recovery keeps the source log when checkpoint fsync fails")
+    func corruptLogRecoveryPreservesLogBeforeCheckpointDurability() async throws {
+        let fileManager = FileManager.default
+        let baseDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("inno-corrupt-log-fsync-\(UUID().uuidString)", isDirectory: true)
+        let sessionIdentifier = "test.corrupt.log.fsync.\(UUID().uuidString)"
+        defer { try? fileManager.removeItem(at: baseDirectory) }
+
+        let writer = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        let destinationURL = baseDirectory.appendingPathComponent("file.zip")
+        try await writer.upsert(
+            id: "task-valid",
+            url: URL(string: "https://example.invalid/corrupt-log.bin")!,
+            destinationURL: destinationURL
+        )
+
+        let storeDirectory =
+            baseDirectory
+            .appendingPathComponent("InnoNetworkDownload", isDirectory: true)
+            .appendingPathComponent(
+                DownloadSessionStorageKey.component(for: sessionIdentifier),
+                isDirectory: true
+            )
+        let checkpointURL = storeDirectory.appendingPathComponent("checkpoint.json")
+        let logURL = storeDirectory.appendingPathComponent("events.log")
+        let handle = try FileHandle(forWritingTo: logURL)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("not-json\n".utf8))
+        try handle.close()
+        let logBefore = try Data(contentsOf: logURL)
+
+        do {
+            _ = try DownloadTaskPersistence(
+                sessionIdentifier: sessionIdentifier,
+                baseDirectoryURL: baseDirectory,
+                fsync: failFsyncWithEIO
+            )
+            Issue.record("Expected recovery checkpoint fsync failure to throw")
+        } catch let error as POSIXError {
+            #expect(error.code == .EIO)
+        } catch {
+            Issue.record("Expected POSIXError.EIO, got \(error)")
+        }
+
+        #expect(fileManager.fileExists(atPath: checkpointURL.path) == false)
+        #expect(try Data(contentsOf: logURL) == logBefore)
+        let names = try fileManager.contentsOfDirectory(atPath: storeDirectory.path)
+        #expect(names.contains(where: { $0.hasPrefix("events.corrupted-") }) == false)
+
+        let reader = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        #expect(await reader.record(forID: "task-valid")?.destinationURL == destinationURL)
+    }
+
     @Test(".onCheckpoint policy surfaces checkpoint fsync failures")
     func onCheckpointPolicyThrowsWhenCheckpointFsyncFails() async throws {
         let baseDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("inno-fsync-checkpoint-fail-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: baseDirectory) }
 
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: "test.fsync.checkpoint.fail.\(UUID().uuidString)",
             baseDirectoryURL: baseDirectory,
             fsyncPolicy: .onCheckpoint,
@@ -539,7 +598,7 @@ struct PersistenceFsyncPolicyTests {
         defer { try? FileManager.default.removeItem(at: baseDirectory) }
 
         let recorder = FsyncCallRecorder()
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: "test.fsync.checkpoint.dir.\(UUID().uuidString)",
             baseDirectoryURL: baseDirectory,
             fsyncPolicy: .onCheckpoint,

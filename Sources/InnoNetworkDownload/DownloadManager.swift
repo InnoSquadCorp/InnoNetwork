@@ -84,7 +84,10 @@ public actor DownloadManager {
     ///   process.
     /// - Returns: A new `DownloadManager` ready to receive download requests.
     /// - Throws: ``DownloadManagerError/duplicateSessionIdentifier(_:)`` if
-    ///   another manager has already claimed the same session identifier.
+    ///   another manager has already claimed the same session identifier, or
+    ///   an error from creating, locking, or reading the persistence store.
+    ///   A transient store-access failure preserves the existing state so a
+    ///   later initialization attempt can restore it.
     public static func make(
         configuration: DownloadConfiguration = .default
     ) throws -> DownloadManager {
@@ -207,11 +210,14 @@ public actor DownloadManager {
     /// - Parameter configuration: Session, retry, event, and persistence
     ///   settings for this download domain.
     /// - Throws: ``DownloadManagerError/duplicateSessionIdentifier(_:)`` if
-    ///   another live manager has already claimed the same session identifier.
+    ///   another live manager has already claimed the same session identifier,
+    ///   or the underlying persistence directory cannot be created, locked,
+    ///   or read. Transient access failures preserve existing state so a later
+    ///   initialization attempt can restore it.
     public init(configuration: DownloadConfiguration = .default) throws {
         try self.init(
             configuration: configuration,
-            persistence: DownloadTaskPersistence(
+            persistence: try DownloadTaskPersistence(
                 sessionIdentifier: configuration.sessionIdentifier,
                 baseDirectoryURL: configuration.persistenceBaseDirectoryURL,
                 fsyncPolicy: configuration.persistenceFsyncPolicy,

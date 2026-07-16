@@ -34,14 +34,18 @@ writes a new checkpoint and truncates the event log.
 
 - **Disk full while appending**: surface the write error to the caller and do
   not mutate in-memory persistence state for that event.
-- **Disk full while compacting**: keep the old checkpoint/log pair and retry
-  compaction on a later write.
+- **Disk full while compacting**: keep a recoverable checkpoint/log pair and
+  retry compaction on a later write.
 - **Malformed event suffix**: keep the events replayed before the corrupt
-  suffix, quarantine the log, write a fresh checkpoint, and truncate the active
-  log.
+  suffix, durably write a fresh checkpoint, then quarantine the source log and
+  create an empty active log. A checkpoint write failure leaves the source log
+  untouched.
 - **Malformed checkpoint**: start from an empty snapshot and replay the event
   log. If both are corrupt, restoration produces no persisted records but the
   manager remains usable.
+- **File-access or lock failure**: fail initialization without quarantining or
+  deleting either state file. Data Protection, permission, and transient I/O
+  errors are not evidence of semantic corruption.
 - **Unknown future checkpoint version**: ignore the checkpoint, replay the
   current-version event log when possible, and rewrite a current checkpoint on
   the next compaction.

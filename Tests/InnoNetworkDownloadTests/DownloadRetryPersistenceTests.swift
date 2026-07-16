@@ -354,6 +354,7 @@ struct DownloadRetryPersistenceTests {
             )
         )
         #expect(clock.enqueuedCount == 0)
+        #expect(await waitForResumeCount(harness.stubTask, atLeast: 1))
         #expect(harness.stubTask.resumeCount == 1)
         await harness.manager.shutdown()
     }
@@ -519,7 +520,7 @@ struct DownloadRetryPersistenceTests {
             baseline: baseline,
             deadline: Date(timeIntervalSince1970: 123)
         )
-        let writer = DownloadTaskPersistence(
+        let writer = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectory
         )
@@ -537,7 +538,7 @@ struct DownloadRetryPersistenceTests {
             )
         )
 
-        let reader = DownloadTaskPersistence(
+        let reader = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectory
         )

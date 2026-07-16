@@ -1797,15 +1797,34 @@ struct PersistentResponseCacheTests {
 
     private func removeBackupExclusion(from url: URL) throws {
         #if os(macOS)
-        let result: Int32 = url.withUnsafeFileSystemRepresentation { path -> Int32 in
-            guard let path else { return -1 }
-            return "com.apple.metadata:com_apple_backup_excludeItem".withCString { name in
-                removexattr(path, name, 0)
+        // Foundation's metadata write can settle just after `setResourceValues`
+        // returns on a contended hosted runner. Establish a stable absent
+        // precondition instead of racing that write with a single removexattr.
+        var consecutiveAbsentObservations = 0
+        for attempt in 0..<10 {
+            let result: (status: Int32, errorCode: Int32) = url.withUnsafeFileSystemRepresentation { path in
+                guard let path else { return (-1, EINVAL) }
+                return "com.apple.metadata:com_apple_backup_excludeItem".withCString { name in
+                    let status = removexattr(path, name, 0)
+                    return (status, status == 0 ? 0 : errno)
+                }
+            }
+            if result.status != 0, result.errorCode != ENOATTR {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(result.errorCode))
+            }
+            if try backupExclusionIsApplied(to: url) == false {
+                consecutiveAbsentObservations += 1
+                if consecutiveAbsentObservations == 2 {
+                    return
+                }
+            } else {
+                consecutiveAbsentObservations = 0
+            }
+            if attempt < 9 {
+                usleep(5_000)
             }
         }
-        if result != 0 {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-        }
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(EBUSY))
         #else
         var resourceURL = url
         var values = URLResourceValues()

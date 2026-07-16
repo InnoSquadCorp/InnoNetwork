@@ -56,7 +56,7 @@ struct DownloadCompletionIntegrityRaceTests {
         let taskID = "destination-cas-\(UUID().uuidString)"
         let sourceURL = URL(string: "https://example.invalid/source.bin")!
         let destinationURL = baseDirectoryURL.appendingPathComponent("expected.bin")
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: "destination-cas-\(UUID().uuidString)",
             baseDirectoryURL: baseDirectoryURL
         )
