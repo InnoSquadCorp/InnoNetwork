@@ -30,7 +30,7 @@ cat > "$fixture" <<'JSON'
         {
           "identity": "gamma",
           "name": "Gamma",
-          "url": "https://example.invalid/gamma.git",
+          "url": "git@example.invalid:org/gamma.git",
           "version": "3.1.4",
           "path": "/Users/fixture/checkouts/gamma",
           "dependencies": []
@@ -47,7 +47,7 @@ cat > "$fixture" <<'JSON'
         {
           "identity": "gamma",
           "name": "Gamma",
-          "url": "https://example.invalid/gamma.git",
+          "url": "git@example.invalid:org/gamma.git",
           "version": "3.1.4",
           "path": "/Users/fixture/checkouts/gamma",
           "dependencies": []
@@ -117,6 +117,9 @@ assert list(components) == [
     "pkg:swift/local-helper",
 ]
 assert components["pkg:swift/gamma@3.1.4"]["version"] == "3.1.4"
+assert components["pkg:swift/gamma@3.1.4"]["externalReferences"] == [
+    {"type": "vcs", "url": "ssh://git@example.invalid/org/gamma.git"}
+]
 assert "version" not in components["pkg:swift/local-helper"]
 assert "externalReferences" not in components["pkg:swift/local-helper"]
 

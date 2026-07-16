@@ -96,9 +96,13 @@ draft release summary.
   host, generalized macro compile-failure fixtures run, and dependency review
   failures remain fail-closed in the workflow.
 - The root `Package.resolved` is tracked as the repository's reproducible
-  dependency input and GitHub dependency-graph manifest. CI rejects lock drift
-  and deletion/untracked recreation; independent example and tool lock files
-  remain ignored.
+  dependency input. CI rejects lock drift and deletion/untracked recreation;
+  independent example and tool lock files remain ignored. A main-only,
+  least-privilege dependency-submission workflow now converts the tested
+  CycloneDX graph into GitHub's snapshot schema to supplement the base branch's
+  dependency graph for subsequent Dependency Review comparisons. Pull-request
+  CI dry-runs the live conversion so unsupported package sources fail before
+  merge.
 
 ### Fixed
 

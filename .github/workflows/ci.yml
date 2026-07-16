@@ -196,6 +196,18 @@ jobs:
           git ls-files --error-unmatch Package.resolved >/dev/null
           git diff --exit-code -- Package.resolved
 
+      - name: Verify resolved dependency snapshot
+        if: matrix.xcode.required == true && steps.toolchain-compatibility.outputs.compatible == 'true'
+        env:
+          SBOM_VERSION: ${{ github.sha }}
+        run: |
+          output_root="$RUNNER_TEMP/innonetwork-dependency-dry-run"
+          mkdir -p "$output_root"
+          bash Scripts/generate-sbom.sh "$output_root/sbom.cdx.json"
+          python3 Scripts/generate_dependency_snapshot.py \
+            "$output_root/sbom.cdx.json" \
+            "$output_root/snapshot.json"
+
       - name: Build (Swift 6 language mode)
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: |
@@ -381,6 +393,9 @@ jobs:
 
       - name: Verify docs and stability contract
         run: bash Scripts/check_docs_contract_sync.sh
+
+      - name: Verify dependency snapshot conversion
+        run: bash Scripts/tests/test_generate_dependency_snapshot.sh
 
       - name: Verify stable examples contract
         run: bash Scripts/check_stable_examples.sh

@@ -57,7 +57,7 @@ else
         exit 1
     }
     temporary_dependency_json="$(mktemp "${TMPDIR:-/tmp}/innonetwork-sbom-dependencies.XXXXXX")"
-    package_arguments=(--package-path "$package_path")
+    package_arguments=(--package-path "$package_path" --disable-automatic-resolution)
     if [[ "$trait_profile" == "core-only" ]]; then
         package_arguments+=(--disable-default-traits)
     fi
@@ -137,6 +137,16 @@ def remote_source_url(node):
     scheme = urllib.parse.urlsplit(value).scheme.lower()
     if scheme in {"https", "http", "ssh", "git"}:
         return value
+    scp_match = re.fullmatch(
+        r"(?:(?P<user>[^@\s/:]+)@)?(?P<host>[^\s/:]+):(?P<path>.+)",
+        value,
+    )
+    if scp_match is not None:
+        user = scp_match.group("user")
+        authority = scp_match.group("host")
+        if user is not None:
+            authority = f"{user}@{authority}"
+        return f"ssh://{authority}/{scp_match.group('path')}"
     return None
 
 
@@ -259,7 +269,7 @@ document = {
                 {
                     "type": "application",
                     "name": "Scripts/generate-sbom.sh",
-                    "version": "2.1.0",
+                    "version": "2.2.0",
                 }
             ]
         },

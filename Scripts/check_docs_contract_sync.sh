@@ -1038,6 +1038,15 @@ validate_release_quality_gates() {
   require_contains 'git ls-files --error-unmatch Package.resolved' "$repo_root/.github/workflows/release.yml"
   require_contains 'git ls-files --error-unmatch Package.resolved' "$repo_root/docs/CI_DoC.md"
   require_contains 'Dependency Review' "$repo_root/docs/CI_DoC.md"
+  require_contains 'Scripts/generate_dependency_snapshot.py' \
+    "$repo_root/.github/workflows/dependency-submission.yml"
+  require_contains 'contents: write' "$repo_root/.github/workflows/dependency-submission.yml"
+  require_contains 'bash Scripts/tests/test_generate_dependency_snapshot.sh' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'Verify resolved dependency snapshot' "$repo_root/.github/workflows/ci.yml"
+  require_contains 'bash Scripts/tests/test_generate_dependency_snapshot.sh' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'Swift Dependency Submission' "$repo_root/docs/CI_DoC.md"
   require_contains 'python3 Scripts/check_example_platform_floors.py' "$repo_root/.github/workflows/ci.yml"
   require_contains 'python3 Scripts/check_example_platform_floors.py' "$repo_root/.github/workflows/release.yml"
   require_contains 'python3 Scripts/check_example_platform_floors.py' "$repo_root/docs/CI_DoC.md"

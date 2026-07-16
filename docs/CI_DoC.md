@@ -14,8 +14,16 @@ The `CI` workflow must pass all of the following:
 
 1. The root `Package.resolved` must remain tracked
    (`git ls-files --error-unmatch Package.resolved`), then
-   `xcrun swift package resolve` must leave it unchanged. This is both the
-   reproducible CI lock and GitHub's Swift dependency-graph input.
+   `xcrun swift package resolve` must leave it unchanged. This is the
+   reproducible CI lock and the input to the `Swift Dependency Submission`
+   workflow. That workflow reuses the release CycloneDX graph, converts it to
+   GitHub's snapshot schema, and submits it only from `main` with job-scoped
+   `contents: write`; all other workflows remain read-only by default. The
+   canonical macOS CI leg also converts the live resolved graph without
+   submitting it, so unsupported, malformed, or unresolved remote package
+   sources fail before merge. GitHub URL-style and SCP-style Git sources are
+   accepted; the submitted package source must resolve to an unambiguous
+   GitHub owner/repository pair.
 2. The pull-request-only `Dependency Review` job is blocking at `low` severity
    across runtime, development, and unknown scopes. It receives only
    `contents: read`; a graph failure is a failed check, not a skipped review.
@@ -125,6 +133,7 @@ sudo xcode-select -s /Applications/Xcode_26.0.1.app
 git ls-files --error-unmatch Package.resolved >/dev/null
 xcrun swift package resolve
 git diff --exit-code -- Package.resolved
+bash Scripts/tests/test_generate_dependency_snapshot.sh
 xcrun swift build
 # Match both blocking test lanes.
 bash Scripts/run_bounded_parallel_tests.sh
