@@ -12,8 +12,8 @@ extension AppendLogDownloadTaskStore {
         checkpointURL: URL,
         logURL: URL,
         fileManager: FileManager,
-        checkpointDataReader: @escaping @Sendable (URL) throws -> Data,
-        logFileHandleFactory: @escaping @Sendable (URL) throws -> FileHandle,
+        checkpointDataReader: (@Sendable (URL) throws -> Data)?,
+        logFileHandleFactory: (@Sendable (URL) throws -> FileHandle)?,
         fsync: @escaping @Sendable (Int32) -> Int32
     ) throws -> StoreState {
         try ensureDirectoryExists(at: directoryURL, fileManager: fileManager)
@@ -31,7 +31,11 @@ extension AppendLogDownloadTaskStore {
                 // can be temporarily unreadable before the first device
                 // unlock. Preserve the checkpoint and let initialization fail
                 // so a later attempt can recover the authoritative state.
-                checkpointData = try checkpointDataReader(checkpointURL)
+                if let checkpointDataReader {
+                    checkpointData = try checkpointDataReader(checkpointURL)
+                } else {
+                    checkpointData = try Data(contentsOf: checkpointURL)
+                }
             } catch  where isMissingFileError(error) {
                 // The entry can disappear between the probe and open.
                 checkpointData = nil
@@ -79,7 +83,7 @@ extension AppendLogDownloadTaskStore {
             nextSequence: nextSequence,
             logEventCount: logEventCount,
             tombstoneCount: tombstoneCount,
-            logSize: fileSize(at: logURL, fileManager: fileManager)
+            logSize: replayResult.logSize
         )
     }
 

@@ -13,14 +13,15 @@ extension AppendLogDownloadTaskStore {
         initialURLToID: [URL: [String]],
         checkpointURL: URL,
         fileManager: FileManager,
-        logFileHandleFactory: @escaping @Sendable (URL) throws -> FileHandle,
+        logFileHandleFactory: (@Sendable (URL) throws -> FileHandle)?,
         fsync: @escaping @Sendable (Int32) -> Int32
     ) throws -> (
         records: [String: DownloadTaskPersistence.Record],
         urlToID: [URL: [String]],
         nextSequence: Int64,
         logEventCount: Int,
-        tombstoneCount: Int
+        tombstoneCount: Int,
+        logSize: UInt64
     ) {
         var records = initialRecords
         var urlToID = initialURLToID
@@ -29,17 +30,28 @@ extension AppendLogDownloadTaskStore {
         var tombstoneCount = 0
 
         guard try pathEntryExists(at: logURL) else {
-            return (records, urlToID, nextSequence, logEventCount, tombstoneCount)
+            return (records, urlToID, nextSequence, logEventCount, tombstoneCount, 0)
         }
 
         let handle: FileHandle
         do {
-            handle = try logFileHandleFactory(logURL)
+            if let logFileHandleFactory {
+                handle = try logFileHandleFactory(logURL)
+            } else {
+                handle = try FileHandle(forReadingFrom: logURL)
+            }
         } catch  where isMissingFileError(error) {
             // The entry can disappear between the probe and open.
-            return (records, urlToID, nextSequence, logEventCount, tombstoneCount)
+            return (records, urlToID, nextSequence, logEventCount, tombstoneCount, 0)
         }
         defer { try? handle.close() }
+
+        var logInformation = stat()
+        guard fstat(handle.fileDescriptor, &logInformation) == 0 else {
+            let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+            throw POSIXError(code)
+        }
+        let openedLogSize = UInt64(max(0, logInformation.st_size))
 
         var buffer = Data()
         var didReadAnyBytes = false
@@ -131,7 +143,7 @@ extension AppendLogDownloadTaskStore {
         }
 
         if !didReadAnyBytes {
-            return (records, urlToID, nextSequence, logEventCount, tombstoneCount)
+            return (records, urlToID, nextSequence, logEventCount, tombstoneCount, openedLogSize)
         }
 
         if !didEncounterCorruptSuffix, !buffer.isEmpty {
@@ -162,7 +174,14 @@ extension AppendLogDownloadTaskStore {
             try resetLog(at: logURL, fileManager: fileManager)
         }
 
-        return (records, urlToID, nextSequence, logEventCount, tombstoneCount)
+        return (
+            records,
+            urlToID,
+            nextSequence,
+            logEventCount,
+            tombstoneCount,
+            didEncounterCorruptSuffix ? 0 : openedLogSize
+        )
     }
 
     static func append(

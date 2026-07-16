@@ -276,10 +276,8 @@ package actor DownloadTaskPersistence {
         baseDirectoryURL: URL? = nil,
         fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy = .onCheckpoint,
         compactionPolicy: DownloadConfiguration.PersistenceCompactionPolicy = .default,
-        checkpointDataReader: @escaping @Sendable (URL) throws -> Data = { try Data(contentsOf: $0) },
-        logFileHandleFactory: @escaping @Sendable (URL) throws -> FileHandle = {
-            try FileHandle(forReadingFrom: $0)
-        },
+        checkpointDataReader: (@Sendable (URL) throws -> Data)? = nil,
+        logFileHandleFactory: (@Sendable (URL) throws -> FileHandle)? = nil,
         fsync: @escaping @Sendable (Int32) -> Int32 = Darwin.fsync
     ) throws {
         self.store = try AppendLogDownloadTaskStore(
@@ -573,8 +571,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     private let lockURL: URL
     private let fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy
     private let compactionPolicy: DownloadConfiguration.PersistenceCompactionPolicy
-    private let checkpointDataReader: @Sendable (URL) throws -> Data
-    private let logFileHandleFactory: @Sendable (URL) throws -> FileHandle
+    private let checkpointDataReader: (@Sendable (URL) throws -> Data)?
+    private let logFileHandleFactory: (@Sendable (URL) throws -> FileHandle)?
     private let fsync: @Sendable (Int32) -> Int32
     private var state: StoreState
 
@@ -584,10 +582,8 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         baseDirectoryURL: URL? = nil,
         fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy = .onCheckpoint,
         compactionPolicy: DownloadConfiguration.PersistenceCompactionPolicy = .default,
-        checkpointDataReader: @escaping @Sendable (URL) throws -> Data = { try Data(contentsOf: $0) },
-        logFileHandleFactory: @escaping @Sendable (URL) throws -> FileHandle = {
-            try FileHandle(forReadingFrom: $0)
-        },
+        checkpointDataReader: (@Sendable (URL) throws -> Data)? = nil,
+        logFileHandleFactory: (@Sendable (URL) throws -> FileHandle)? = nil,
         fsync: @escaping @Sendable (Int32) -> Int32 = Darwin.fsync
     ) throws {
         let baseDirectory = baseDirectoryURL ?? Self.defaultBaseDirectory(fileManager: fileManager)
