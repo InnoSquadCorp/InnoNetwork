@@ -13,11 +13,95 @@ import Glibc
 // admission is shared by live reads/writes and the open-time recovery path.
 extension PersistentResponseCache {
 
-    enum BodyFileAccessError: Error, Sendable {
-        case invalidReference
-        case cannotOpenDirectory
-        case cannotOpenFile
+    /// Module-internal filesystem boundary used to make protected-data and
+    /// transient I/O recovery deterministic in tests without widening the
+    /// public cache API.
+    struct StorageIO: Sendable {
+        let indexReader: @Sendable (URL) throws -> Data
+        let bodyInspector: @Sendable (_ fileName: String, _ directoryURL: URL) throws -> Int
+        let bodyReader:
+            @Sendable (_ fileName: String, _ directoryURL: URL, _ maximumByteCount: Int) async throws -> Data
+
+        init(
+            indexReader: @escaping @Sendable (URL) throws -> Data = {
+                try PersistentResponseCache.readIndexData(at: $0)
+            },
+            bodyInspector: @escaping @Sendable (_ fileName: String, _ directoryURL: URL) throws -> Int = {
+                try PersistentResponseCache.inspectBodyFile(fileName: $0, in: $1)
+            },
+            bodyReader:
+                @escaping @Sendable (
+                    _ fileName: String,
+                    _ directoryURL: URL,
+                    _ maximumByteCount: Int
+                ) async throws -> Data = {
+                    try await PersistentResponseCache.readBodyData(
+                        fileName: $0,
+                        in: $1,
+                        maximumByteCount: $2
+                    )
+                }
+        ) {
+            self.indexReader = indexReader
+            self.bodyInspector = bodyInspector
+            self.bodyReader = bodyReader
+        }
+    }
+
+    enum IndexFileAccessError: Error, Sendable, Equatable {
+        case cannotOpenDirectory(errno: Int32)
+        case cannotOpenFile(errno: Int32)
+        case cannotInspectFile(errno: Int32)
         case notRegularFile
+    }
+
+    enum BodyFileAccessError: Error, Sendable, Equatable {
+        case invalidReference
+        case cannotOpenDirectory(errno: Int32)
+        case cannotOpenFile(errno: Int32)
+        case cannotInspectFile(errno: Int32)
+        case notRegularFile
+    }
+
+    /// Reads the index only after a descriptor-relative, no-follow admission
+    /// check. O_NONBLOCK ensures a tampered FIFO/device entry cannot hang the
+    /// synchronous cache initializer before its file type is inspected.
+    static func readIndexData(at indexURL: URL) throws -> Data {
+        let directoryURL = indexURL.deletingLastPathComponent().resolvingSymlinksInPath()
+        let directoryDescriptor: Int32 = directoryURL.withUnsafeFileSystemRepresentation { representation in
+            guard let representation else { return -1 }
+            return open(representation, O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW)
+        }
+        guard directoryDescriptor >= 0 else {
+            throw IndexFileAccessError.cannotOpenDirectory(errno: errno)
+        }
+        defer { close(directoryDescriptor) }
+
+        let fileDescriptor = indexURL.lastPathComponent.withCString {
+            openat(
+                directoryDescriptor,
+                $0,
+                O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
+            )
+        }
+        guard fileDescriptor >= 0 else {
+            throw IndexFileAccessError.cannotOpenFile(errno: errno)
+        }
+
+        var fileStatus = stat()
+        guard fstat(fileDescriptor, &fileStatus) == 0 else {
+            let errorCode = errno
+            close(fileDescriptor)
+            throw IndexFileAccessError.cannotInspectFile(errno: errorCode)
+        }
+        guard (fileStatus.st_mode & S_IFMT) == S_IFREG else {
+            close(fileDescriptor)
+            throw IndexFileAccessError.notRegularFile
+        }
+
+        let handle = FileHandle(fileDescriptor: fileDescriptor, closeOnDealloc: true)
+        defer { try? handle.close() }
+        return try handle.readToEnd() ?? Data()
     }
 
     /// Returns a cache-owned body URL only when `fileName` exactly matches
@@ -90,11 +174,11 @@ extension PersistentResponseCache {
         }
         _ = try validatedBodyURL(fileName: fileName, in: bodiesDirectoryURL)
         return try await Task.detached {
-            let fileDescriptor = try openRegularBodyFile(
+            let openedFile = try openRegularBodyFile(
                 fileName: fileName,
                 in: bodiesDirectoryURL
             )
-            let fileHandle = FileHandle(fileDescriptor: fileDescriptor, closeOnDealloc: true)
+            let fileHandle = FileHandle(fileDescriptor: openedFile.descriptor, closeOnDealloc: true)
             defer { try? fileHandle.close() }
 
             // Read at most the configured limit plus one sentinel byte. The
@@ -165,29 +249,28 @@ extension PersistentResponseCache {
         try? fileManager.removeItem(at: bodyURL)
     }
 
-    static func fileSize(
+    static func inspectBodyFile(
         fileName: String,
-        in bodiesDirectoryURL: URL,
-        fileManager: FileManager
-    ) -> Int? {
+        in bodiesDirectoryURL: URL
+    ) throws -> Int {
+        let openedFile = try openRegularBodyFile(
+            fileName: fileName,
+            in: bodiesDirectoryURL
+        )
+        defer { close(openedFile.descriptor) }
         guard
-            let bodyURL = try? validatedBodyURL(fileName: fileName, in: bodiesDirectoryURL),
-            let resourceValues = try? bodyURL.resourceValues(
-                forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
-            ),
-            resourceValues.isRegularFile == true,
-            resourceValues.isSymbolicLink != true,
-            let size = try? fileManager.attributesOfItem(atPath: bodyURL.path)[.size] as? NSNumber
+            openedFile.status.st_size >= 0,
+            let size = Int(exactly: openedFile.status.st_size)
         else {
-            return nil
+            throw BodyFileAccessError.invalidReference
         }
-        return size.intValue
+        return size
     }
 
     private static func openRegularBodyFile(
         fileName: String,
         in bodiesDirectoryURL: URL
-    ) throws -> Int32 {
+    ) throws -> (descriptor: Int32, status: stat) {
         _ = try validatedBodyURL(fileName: fileName, in: bodiesDirectoryURL)
         let standardizedDirectoryURL = bodiesDirectoryURL.standardizedFileURL
         let directoryDescriptor = standardizedDirectoryURL.withUnsafeFileSystemRepresentation {
@@ -196,26 +279,107 @@ extension PersistentResponseCache {
             return open(representation, O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW)
         }
         guard directoryDescriptor >= 0 else {
-            throw BodyFileAccessError.cannotOpenDirectory
+            let errorCode = errno
+            throw BodyFileAccessError.cannotOpenDirectory(errno: errorCode)
         }
         defer { close(directoryDescriptor) }
 
         let fileDescriptor = fileName.withCString { representation in
-            openat(directoryDescriptor, representation, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+            openat(
+                directoryDescriptor,
+                representation,
+                O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
+            )
         }
         guard fileDescriptor >= 0 else {
-            throw BodyFileAccessError.cannotOpenFile
+            let errorCode = errno
+            throw BodyFileAccessError.cannotOpenFile(errno: errorCode)
         }
 
         var fileStatus = stat()
-        guard
-            fstat(fileDescriptor, &fileStatus) == 0,
-            (fileStatus.st_mode & S_IFMT) == S_IFREG
-        else {
+        guard fstat(fileDescriptor, &fileStatus) == 0 else {
+            let errorCode = errno
+            close(fileDescriptor)
+            throw BodyFileAccessError.cannotInspectFile(errno: errorCode)
+        }
+        guard (fileStatus.st_mode & S_IFMT) == S_IFREG else {
             close(fileDescriptor)
             throw BodyFileAccessError.notRegularFile
         }
-        return fileDescriptor
+        return (descriptor: fileDescriptor, status: fileStatus)
+    }
+
+    /// Returns `true` only when an I/O operation proved the path is absent.
+    /// Every other error can be transient (protected data, permissions,
+    /// coordinated access, or storage I/O) and must not be treated as
+    /// corruption.
+    static func isMissingFileError(_ error: Error) -> Bool {
+        if let accessError = error as? IndexFileAccessError {
+            switch accessError {
+            case .cannotOpenDirectory(let errorCode),
+                .cannotOpenFile(let errorCode),
+                .cannotInspectFile(let errorCode):
+                return errorCode == ENOENT
+            case .notRegularFile:
+                return false
+            }
+        }
+
+        if let accessError = error as? BodyFileAccessError {
+            switch accessError {
+            case .cannotOpenDirectory(let errorCode),
+                .cannotOpenFile(let errorCode),
+                .cannotInspectFile(let errorCode):
+                return errorCode == ENOENT
+            case .invalidReference, .notRegularFile:
+                return false
+            }
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain {
+            return nsError.code == CocoaError.fileNoSuchFile.rawValue
+                || nsError.code == CocoaError.fileReadNoSuchFile.rawValue
+        }
+        return nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(ENOENT)
+    }
+
+    /// Index entries with a deterministic path/type violation can be reset.
+    /// Access, Data Protection, and storage-I/O failures remain retryable and
+    /// must preserve every cache-owned artifact.
+    static func shouldResetIndex(after error: Error) -> Bool {
+        guard let accessError = error as? IndexFileAccessError else { return false }
+        switch accessError {
+        case .notRegularFile:
+            return true
+        case .cannotOpenDirectory(let errorCode),
+            .cannotOpenFile(let errorCode),
+            .cannotInspectFile(let errorCode):
+            return errorCode == ELOOP || errorCode == ENOTDIR || errorCode == EISDIR
+        }
+    }
+
+    /// Classify only deterministic structural failures as scrub-worthy. All
+    /// other errors preserve the entry so a later unlock or transient storage
+    /// recovery can retry the same body.
+    static func shouldScrubBody(after error: Error) -> Bool {
+        if let accessError = error as? BodyFileAccessError {
+            switch accessError {
+            case .invalidReference, .notRegularFile:
+                return true
+            case .cannotOpenDirectory(let errorCode),
+                .cannotOpenFile(let errorCode),
+                .cannotInspectFile(let errorCode):
+                return errorCode == ENOENT || errorCode == ENOTDIR || errorCode == ELOOP
+            }
+        }
+
+        if isMissingFileError(error) {
+            return true
+        }
+        let nsError = error as NSError
+        return nsError.domain == NSPOSIXErrorDomain
+            && (nsError.code == Int(ENOTDIR) || nsError.code == Int(ELOOP))
     }
 
     static func fsyncFile(at url: URL) {

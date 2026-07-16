@@ -123,6 +123,13 @@ draft release summary.
   initialization without quarantining valid state, while corrupt append-log
   recovery durably commits the valid prefix before moving or resetting the
   authoritative log.
+- Persistent response-cache initialization now treats only a missing index as
+  empty and resets only successfully read malformed or unsupported index data.
+  Index symlinks, directories, FIFOs, and other non-regular entries are rejected
+  without following or blocking on them.
+  Protected-data, permission, and transient I/O failures preserve index/body
+  files and fail initialization; transient live body reads return a miss while
+  retaining the entry for a later retry.
 - The API stability contract now classifies core `HTTPMethod` and
   `SessionAuthentication` as Stable only, and keeps Stable and Provisionally
   Stable code spans disjoint so symbols cannot silently receive contradictory
@@ -173,9 +180,8 @@ draft release summary.
 - WebSocket reconnect-budget exhaustion emits one authoritative public error,
   and pong publication is attempted before its snapshotted manager handler;
   ordinary overflow and asynchronous listener delivery still apply.
-- Refresh generations, transient persistent-cache key reads, shared cache
-  lookups, and circuit-breaker half-open hysteresis preserve their state under
-  cancellation and concurrent replay.
+- Refresh generations, shared cache lookups, and circuit-breaker half-open
+  hysteresis preserve their state under cancellation and concurrent replay.
 - Request event partitions preserve terminal events already queued behind a
   slow observer. Finish waits for partition-to-observer handoff without making
   request completion depend on observer handler latency.
