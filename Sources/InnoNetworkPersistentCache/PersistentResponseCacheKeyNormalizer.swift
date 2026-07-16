@@ -38,10 +38,10 @@ struct PersistentCacheKeychainOperations {
 }
 #endif
 
-/// Normalizes per-request cache key headers, blinding sensitive values via
-/// HMAC-SHA256 with a per-cache-directory random key. The HMAC key is
-/// generated on first use and persisted alongside the index so the cache stays
-/// portable across process launches.
+/// Normalizes persistent cache identities, blinding the raw URL query and
+/// sensitive header values via HMAC-SHA256 with a per-cache-directory random
+/// key. The HMAC key is generated on first use and persisted alongside the
+/// index so the cache stays portable across process launches.
 struct PersistentCacheDiskKeyNormalizer: Sendable {
     static let keyFileName = "cache-key-hmac.key"
     private static let expectedKeyByteCount = 32  // SymmetricKeySize.bits256
@@ -420,6 +420,22 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
 
     func normalizeHeaders(_ headers: [String]) -> [String] {
         headers.map(normalizeHeader).sorted()
+    }
+
+    /// Replaces the complete raw query with one HMAC value. Hashing the raw
+    /// percent-encoded bytes as a single ordered string preserves duplicate
+    /// keys, ordering, empty items, and encoding distinctions without storing
+    /// query names or values in `index.json`.
+    func normalizeURL(_ url: String) -> String {
+        guard let querySeparator = url.firstIndex(of: "?") else { return url }
+        let queryStart = url.index(after: querySeparator)
+        let queryEnd = url[queryStart...].firstIndex(of: "#") ?? url.endIndex
+        let rawQuery = String(url[queryStart..<queryEnd])
+        let baseURL = String(url[..<querySeparator])
+        let digest = authenticationCodeHex(
+            for: "persistent-cache-query-v1\0\(rawQuery)"
+        )
+        return "\(baseURL)?__innonetwork_query_hmac_sha256=\(digest)"
     }
 
     private func normalizeHeader(_ header: String) -> String {

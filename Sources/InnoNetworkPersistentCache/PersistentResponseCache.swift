@@ -36,11 +36,11 @@ import OSLog
 /// `max-age` clamping) on top of the wrapped policy without changing this
 /// storage layer.
 public actor PersistentResponseCache: ResponseCache {
-    /// Version 3 preserves query-item order in cache keys. Version 2
-    /// canonicalized reordered queries into the same slot, so it cannot be
-    /// migrated without risking a response being served for a wire-distinct
-    /// target. The open pipeline therefore cold-resets older indexes.
-    static let formatVersion = 3
+    /// Version 4 replaces the raw query component stored by version 3 with a
+    /// per-cache HMAC. Older indexes cannot be migrated without retaining the
+    /// query material that this format is designed to remove, so the open
+    /// pipeline cold-resets them. Query order remains part of the HMAC input.
+    static let formatVersion = 4
     /// Bounds untrusted `index.json` reads before JSON decoding. The default
     /// 1,000-entry cache remains comfortably below this ceiling, while a
     /// replaced or corrupt index cannot grow initialization memory without
@@ -60,7 +60,7 @@ public actor PersistentResponseCache: ResponseCache {
 
         init(_ key: ResponseCacheKey, normalizer: PersistentCacheDiskKeyNormalizer) {
             self.method = key.method
-            self.url = key.url
+            self.url = normalizer.normalizeURL(key.url)
             self.headers = normalizer.normalizeHeaders(key.headers)
         }
 
@@ -516,7 +516,9 @@ public actor PersistentResponseCache: ResponseCache {
     /// Remove every persisted entry whose normalized target URI matches
     /// `targetURI`, regardless of request method or Vary/header dimensions.
     public func invalidateTargetURI(_ targetURI: String) async {
-        let normalizedTargetURI = ResponseCacheKey.normalizedTargetURI(targetURI)
+        let normalizedTargetURI = keyNormalizer.normalizeURL(
+            ResponseCacheKey.normalizedTargetURI(targetURI)
+        )
         let matches = index.entries.filter { _, entry in
             entry.key.url == normalizedTargetURI
         }

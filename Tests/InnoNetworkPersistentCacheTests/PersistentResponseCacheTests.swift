@@ -103,6 +103,31 @@ struct PersistentResponseCacheTests {
         #expect(await reader.get(second)?.data == Data("second".utf8))
     }
 
+    @Test("Persistent query identity is HMAC protected on disk")
+    func persistentQueryIdentityIsHMACProtectedOnDisk() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(
+            method: "GET",
+            url: "https://example.com/search?token=low-entropy-secret&scope=admin"
+        )
+        let cache = try PersistentResponseCache(configuration: configuration)
+
+        await cache.set(key, CachedResponse(data: Data("private-query".utf8)))
+
+        let indexText = try String(contentsOf: indexURL(in: directory), encoding: .utf8)
+        #expect(!indexText.contains("low-entropy-secret"))
+        #expect(!indexText.contains("token="))
+        #expect(!indexText.contains("scope="))
+        #expect(indexText.contains("__innonetwork_query_hmac_sha256="))
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+        #expect(await reopened.get(key)?.data == Data("private-query".utf8))
+        await reopened.invalidateTargetURI(key.url)
+        #expect(await reopened.get(key) == nil)
+    }
+
     @Test("Same key with different Vary snapshots stores distinct persistent variants")
     func sameKeyDifferentVarySnapshotsDoNotOverwrite() async throws {
         let directory = makeDirectory()
@@ -1631,8 +1656,8 @@ struct PersistentResponseCacheTests {
         #expect(await cache.get(key) != nil)
     }
 
-    @Test("Version 2 index cold-resets after query-order key change")
-    func versionTwoIndexColdResets() async throws {
+    @Test("Version 3 index cold-resets before query HMAC storage")
+    func versionThreeIndexColdResets() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
@@ -1646,7 +1671,7 @@ struct PersistentResponseCacheTests {
         #expect(try existingBodyURLs(in: directory).count == 1)
 
         var index = try indexObject(in: directory)
-        index["version"] = 2
+        index["version"] = 3
         let indexURL = directory.appendingPathComponent("index.json", isDirectory: false)
         let legacyIndexData = try JSONSerialization.data(withJSONObject: index, options: [.sortedKeys])
         try legacyIndexData.write(to: indexURL, options: .atomic)
@@ -1657,7 +1682,7 @@ struct PersistentResponseCacheTests {
 
         let newKey = ResponseCacheKey(method: "GET", url: "https://example.com/recovered")
         await reopened.set(newKey, CachedResponse(data: Data("new".utf8)))
-        #expect(try indexObject(in: directory)["version"] as? Int == 3)
+        #expect(try indexObject(in: directory)["version"] as? Int == 4)
     }
 
     @Test("Recovery preserves unrelated files in the cache directory")
