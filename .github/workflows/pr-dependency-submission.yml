@@ -3,8 +3,9 @@ name: Swift PR Dependency Submission
 on:
   workflow_run:
     workflows: [CI]
-    # `in_progress` also fires for a rerun, while `requested` does not.
-    types: [in_progress]
+    # `requested` starts the first submission before runner queues drain;
+    # `in_progress` also covers manual reruns, where `requested` is omitted.
+    types: [requested, in_progress]
 
 concurrency:
   group: swift-pr-dependency-submission-${{ github.event.workflow_run.head_sha }}

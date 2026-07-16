@@ -1048,7 +1048,7 @@ validate_release_quality_gates() {
     "$repo_root/.github/workflows/dependency-submission.yml"
   require_contains 'workflow_run:' \
     "$repo_root/.github/workflows/pr-dependency-submission.yml"
-  require_contains 'types: [in_progress]' \
+  require_contains 'types: [requested, in_progress]' \
     "$repo_root/.github/workflows/pr-dependency-submission.yml"
   require_contains 'permissions: {}' \
     "$repo_root/.github/workflows/pr-dependency-submission.yml"
