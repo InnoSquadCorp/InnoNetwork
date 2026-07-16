@@ -96,6 +96,7 @@ public actor PersistentResponseCache: ResponseCache {
     private let configuration: PersistentResponseCacheConfiguration
     private let fileManager: FileManager
     private let storageIO: StorageIO
+    private let storage: AnchoredStorage
     private let bodiesDirectoryURL: URL
     private let indexURL: URL
     private let keyNormalizer: PersistentCacheDiskKeyNormalizer
@@ -156,22 +157,20 @@ public actor PersistentResponseCache: ResponseCache {
         self.configuration = configuration
         self.fileManager = fileManager
         self.storageIO = storageIO
-        self.bodiesDirectoryURL = configuration.directoryURL.appendingPathComponent("bodies", isDirectory: true)
-        self.indexURL = configuration.directoryURL.appendingPathComponent("index.json", isDirectory: false)
-
-        try fileManager.createDirectory(at: bodiesDirectoryURL, withIntermediateDirectories: true)
-        Self.applyDataProtection(
-            configuration.dataProtectionClass,
-            to: configuration.directoryURL,
-            fileManager: fileManager,
-            excludesFromBackup: false
+        let storage = try AnchoredStorage.open(
+            directoryURL: configuration.directoryURL,
+            dataProtectionClass: configuration.dataProtectionClass,
+            fileManager: fileManager
         )
-        Self.applyDataProtection(configuration.dataProtectionClass, to: bodiesDirectoryURL, fileManager: fileManager)
+        self.storage = storage
+        self.bodiesDirectoryURL = storage.bodiesURL
+        self.indexURL = storage.rootURL.appendingPathComponent("index.json", isDirectory: false)
         let keyResult = try PersistentCacheDiskKeyNormalizer.loadOrCreate(
             directoryURL: configuration.directoryURL,
             dataProtectionClass: configuration.dataProtectionClass,
             keyStorage: configuration.keyStorage,
-            fileManager: fileManager
+            fileManager: fileManager,
+            storage: storage
         )
         // If the existing HMAC key had the wrong length, or was missing while
         // cache state remained, we had to regenerate it. Any prior on-disk
@@ -184,7 +183,8 @@ public actor PersistentResponseCache: ResponseCache {
                 indexURL: indexURL,
                 bodiesDirectoryURL: bodiesDirectoryURL,
                 dataProtectionClass: configuration.dataProtectionClass,
-                fileManager: fileManager
+                fileManager: fileManager,
+                storage: storage
             )
         }
         self.keyNormalizer = keyResult.normalizer
@@ -193,13 +193,13 @@ public actor PersistentResponseCache: ResponseCache {
             directoryURL: configuration.directoryURL,
             dataProtectionClass: configuration.dataProtectionClass,
             fileManager: fileManager,
-            storageIO: storageIO
+            storageIO: storageIO,
+            storage: storage
         )
-        Self.applyDataProtectionToExistingCacheFiles(
-            dataProtectionClass: configuration.dataProtectionClass,
-            indexURL: indexURL,
-            bodiesDirectoryURL: bodiesDirectoryURL,
-            fileManager: fileManager
+        storage.applyProtectionToExistingFiles(
+            keyFileName: configuration.keyStorage == .file
+                ? PersistentCacheDiskKeyNormalizer.keyFileName
+                : nil
         )
         let reindexed = try Self.reindexVaryVariantsOnOpen(
             loadResult.index,
@@ -211,15 +211,16 @@ public actor PersistentResponseCache: ResponseCache {
                 to: indexURL,
                 directoryURL: configuration.directoryURL,
                 configuration: configuration,
-                fileManager: fileManager
+                fileManager: fileManager,
+                storage: storage
             )
         }
         let policyScrubResult = try Self.scrubPolicyRejectedEntriesOnOpen(
             reindexed,
             configuration: configuration,
             indexURL: indexURL,
-            bodiesDirectoryURL: bodiesDirectoryURL,
-            fileManager: fileManager
+            fileManager: fileManager,
+            storage: storage
         )
         let budgetResult = try Self.enforceBudgetsOnOpen(
             policyScrubResult.index,
@@ -227,12 +228,14 @@ public actor PersistentResponseCache: ResponseCache {
             indexURL: indexURL,
             bodiesDirectoryURL: bodiesDirectoryURL,
             fileManager: fileManager,
-            storageIO: storageIO
+            storageIO: storageIO,
+            storage: storage
         )
         let scrubbedBodies = Self.scrubUnreferencedBodiesOnOpen(
             budgetResult.index,
             bodiesDirectoryURL: bodiesDirectoryURL,
-            fileManager: fileManager
+            fileManager: fileManager,
+            storage: storage
         )
         self.index = budgetResult.index
         self.entryIDsByDiskKey = Self.makeEntryIDsByDiskKey(from: budgetResult.index)
@@ -288,6 +291,7 @@ public actor PersistentResponseCache: ResponseCache {
         let data: Data
         do {
             data = try await storageIO.bodyReader(
+                storage,
                 entry.bodyFileName,
                 bodiesDirectoryURL,
                 configuration.maxEntryBytes
@@ -449,8 +453,7 @@ public actor PersistentResponseCache: ResponseCache {
             try await Self.writeBodyData(
                 value.data,
                 fileName: bodyFileName,
-                in: bodiesDirectoryURL,
-                dataProtectionClass: configuration.dataProtectionClass
+                storage: storage
             )
             rollbackIndex = index
             rollbackRunningTotalBytes = runningTotalBytes
@@ -520,15 +523,14 @@ public actor PersistentResponseCache: ResponseCache {
         try? persistIndex()
     }
 
-    /// Clear all entries. Resets the index and recreates the bodies directory.
-    /// The user-supplied configuration directory itself is left in place.
+    /// Clear all entries through the descriptors retained when the cache was
+    /// opened. The user-supplied root and cache-owned bodies directory stay in
+    /// place, even if either visible path has since been replaced.
     public func removeAll() async {
         index.entries.removeAll()
         entryIDsByDiskKey.removeAll(keepingCapacity: true)
         runningTotalBytes = 0
-        try? fileManager.removeItem(at: bodiesDirectoryURL)
-        try? fileManager.createDirectory(at: bodiesDirectoryURL, withIntermediateDirectories: true)
-        Self.applyDataProtection(configuration.dataProtectionClass, to: bodiesDirectoryURL, fileManager: fileManager)
+        try? storage.resetBodies()
         try? persistIndex()
     }
 
@@ -673,7 +675,7 @@ public actor PersistentResponseCache: ResponseCache {
     }
 
     private func removeBody(fileName: String) {
-        Self.removeBody(fileName: fileName, in: bodiesDirectoryURL, fileManager: fileManager)
+        Self.removeBody(fileName: fileName, storage: storage)
     }
 
     private func persistIndex(durable: Bool = true) throws {
@@ -683,6 +685,7 @@ public actor PersistentResponseCache: ResponseCache {
             directoryURL: configuration.directoryURL,
             configuration: configuration,
             fileManager: fileManager,
+            storage: storage,
             durable: durable
         )
         // Any successful flush — durable or not — clears the read-path

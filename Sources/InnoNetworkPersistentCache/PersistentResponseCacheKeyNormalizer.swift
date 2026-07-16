@@ -3,6 +3,12 @@ import Foundation
 import InnoNetwork
 import OSLog
 
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
 #if canImport(Security)
 import Security
 
@@ -37,7 +43,7 @@ struct PersistentCacheKeychainOperations {
 /// generated on first use and persisted alongside the index so the cache stays
 /// portable across process launches.
 struct PersistentCacheDiskKeyNormalizer: Sendable {
-    private static let keyFileName = "cache-key-hmac.key"
+    static let keyFileName = "cache-key-hmac.key"
     private static let expectedKeyByteCount = 32  // SymmetricKeySize.bits256
     private static let logger = Logger(subsystem: "innosquad.network.cache", category: "KeyStorage")
     private let key: SymmetricKey
@@ -60,10 +66,16 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
         dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
         keyStorage: PersistentResponseCacheConfiguration.KeyStorage = .file,
         fileManager: FileManager,
+        storage: PersistentResponseCache.AnchoredStorage? = nil,
         keyFileReader: @Sendable (URL) throws -> Data = { try Data(contentsOf: $0) }
     ) throws -> LoadOrCreateResult {
         switch keyStorage {
         case .file:
+            if let storage {
+                return try loadOrCreateFromAnchoredFile(
+                    storage: storage
+                )
+            }
             return try loadOrCreateFromFile(
                 directoryURL: directoryURL,
                 dataProtectionClass: dataProtectionClass,
@@ -76,7 +88,8 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
                 directoryURL: directoryURL,
                 service: service,
                 accessGroup: accessGroup,
-                fileManager: fileManager
+                fileManager: fileManager,
+                storage: storage
             )
             #else
             // Security framework unavailable on this platform — fall back
@@ -84,6 +97,9 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
             logger.warning(
                 "PersistentResponseCache requested keychain key storage, but Security is unavailable; using file key storage instead."
             )
+            if let storage {
+                return try loadOrCreateFromAnchoredFile(storage: storage)
+            }
             return try loadOrCreateFromFile(
                 directoryURL: directoryURL,
                 dataProtectionClass: dataProtectionClass,
@@ -148,11 +164,72 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
             )
         }
 
-        let regenerated = hasPersistedCacheWithoutKey(directoryURL: directoryURL, fileManager: fileManager)
+        let regenerated = try hasPersistedCacheWithoutKey(
+            directoryURL: directoryURL,
+            fileManager: fileManager
+        )
         return try createAndStoreKey(
             at: keyURL,
             dataProtectionClass: dataProtectionClass,
             fileManager: fileManager,
+            regenerated: regenerated
+        )
+    }
+
+    private static func loadOrCreateFromAnchoredFile(
+        storage: PersistentResponseCache.AnchoredStorage
+    ) throws -> LoadOrCreateResult {
+        if let information = try storage.rootEntryInformation(named: keyFileName) {
+            let isRegularSingleLink =
+                information.st_mode & S_IFMT == S_IFREG
+                && information.st_nlink == 1
+            guard isRegularSingleLink else {
+                storage.removeRootEntry(named: keyFileName)
+                return try createAndStoreKey(
+                    storage: storage,
+                    regenerated: true
+                )
+            }
+
+            let data = try storage.readRootFile(
+                named: keyFileName,
+                maximumByteCount: expectedKeyByteCount
+            )
+            if data.count == expectedKeyByteCount {
+                storage.applyProtectionToRootFile(named: keyFileName)
+                return LoadOrCreateResult(
+                    normalizer: PersistentCacheDiskKeyNormalizer(key: SymmetricKey(data: data)),
+                    regenerated: false
+                )
+            }
+
+            storage.removeRootEntry(named: keyFileName)
+            return try createAndStoreKey(
+                storage: storage,
+                regenerated: true
+            )
+        }
+
+        let regenerated = try hasPersistedCacheWithoutKey(
+            directoryURL: storage.rootURL,
+            fileManager: .default,
+            storage: storage
+        )
+        return try createAndStoreKey(
+            storage: storage,
+            regenerated: regenerated
+        )
+    }
+
+    private static func createAndStoreKey(
+        storage: PersistentResponseCache.AnchoredStorage,
+        regenerated: Bool
+    ) throws -> LoadOrCreateResult {
+        let key = SymmetricKey(size: .bits256)
+        let data = key.withUnsafeBytes { Data($0) }
+        try storage.writeRootFile(data, named: keyFileName)
+        return LoadOrCreateResult(
+            normalizer: PersistentCacheDiskKeyNormalizer(key: key),
             regenerated: regenerated
         )
     }
@@ -179,6 +256,7 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
         service: String,
         accessGroup: String?,
         fileManager: FileManager,
+        storage: PersistentResponseCache.AnchoredStorage? = nil,
         keychainOperations: PersistentCacheKeychainOperations = .live
     ) throws -> LoadOrCreateResult {
         let account = keychainAccount(for: directoryURL)
@@ -241,9 +319,10 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
             regenerated = true
 
         case errSecItemNotFound:
-            regenerated = hasPersistedCacheWithoutKey(
+            regenerated = try hasPersistedCacheWithoutKey(
                 directoryURL: directoryURL,
-                fileManager: fileManager
+                fileManager: fileManager,
+                storage: storage
             )
 
         default:
@@ -299,7 +378,23 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
     }
     #endif
 
-    private static func hasPersistedCacheWithoutKey(directoryURL: URL, fileManager: FileManager) -> Bool {
+    private static func hasPersistedCacheWithoutKey(
+        directoryURL: URL,
+        fileManager: FileManager,
+        storage: PersistentResponseCache.AnchoredStorage? = nil
+    ) throws -> Bool {
+        if let storage {
+            if try storage.rootEntryInformation(named: "index.json") != nil {
+                return true
+            }
+            return try storage.bodyEntryNames().contains { name in
+                guard let information = try storage.bodyEntryInformation(named: name) else {
+                    return false
+                }
+                return information.st_mode & S_IFMT == S_IFREG
+            }
+        }
+
         let indexURL = directoryURL.appendingPathComponent("index.json", isDirectory: false)
         if fileManager.fileExists(atPath: indexURL.path) {
             return true

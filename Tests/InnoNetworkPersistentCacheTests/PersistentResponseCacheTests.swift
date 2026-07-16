@@ -1314,6 +1314,154 @@ struct PersistentResponseCacheTests {
         #expect(try indexEntryCount(in: directory) == 0)
     }
 
+    @Test("An open cache remains anchored when its visible root is replaced")
+    func openCacheIgnoresVisibleRootReplacement() async throws {
+        let directory = makeDirectory()
+        let anchoredRoot = directory.deletingLastPathComponent()
+            .appendingPathComponent("innonetwork-anchored-root-\(UUID().uuidString)", isDirectory: true)
+        let outsideDirectory = makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: anchoredRoot)
+            try? FileManager.default.removeItem(at: outsideDirectory)
+        }
+
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let firstKey = ResponseCacheKey(method: "GET", url: "https://example.com/root-before-swap")
+        let secondKey = ResponseCacheKey(method: "GET", url: "https://example.com/root-after-swap")
+        await cache.set(firstKey, CachedResponse(data: Data("before".utf8)))
+
+        try FileManager.default.moveItem(at: directory, to: anchoredRoot)
+        try FileManager.default.createDirectory(at: outsideDirectory, withIntermediateDirectories: true)
+        let sentinelURL = outsideDirectory.appendingPathComponent("caller-owned.txt")
+        let sentinel = Data("outside-root".utf8)
+        try sentinel.write(to: sentinelURL)
+        try FileManager.default.createSymbolicLink(at: directory, withDestinationURL: outsideDirectory)
+
+        await cache.set(secondKey, CachedResponse(data: Data("after".utf8)))
+
+        #expect(await cache.get(firstKey)?.data == Data("before".utf8))
+        #expect(await cache.get(secondKey)?.data == Data("after".utf8))
+        #expect(try Data(contentsOf: sentinelURL) == sentinel)
+        #expect(!FileManager.default.fileExists(atPath: outsideDirectory.appendingPathComponent("index.json").path))
+        #expect(try existingBodyURLs(in: anchoredRoot).count == 2)
+
+        await cache.removeAll()
+
+        #expect(try Data(contentsOf: sentinelURL) == sentinel)
+        #expect(try existingBodyURLs(in: anchoredRoot).isEmpty)
+        #expect(try indexEntryCount(in: anchoredRoot) == 0)
+    }
+
+    @Test("An open cache remains anchored when its visible bodies directory is replaced")
+    func openCacheIgnoresVisibleBodiesReplacement() async throws {
+        let directory = makeDirectory()
+        let outsideDirectory = makeDirectory()
+        let anchoredBodies = directory.appendingPathComponent("anchored-bodies", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: outsideDirectory)
+        }
+
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let firstKey = ResponseCacheKey(method: "GET", url: "https://example.com/bodies-before-swap")
+        let secondKey = ResponseCacheKey(method: "GET", url: "https://example.com/bodies-after-swap")
+        await cache.set(firstKey, CachedResponse(data: Data("before".utf8)))
+
+        let visibleBodies = directory.appendingPathComponent("bodies", isDirectory: true)
+        try FileManager.default.moveItem(at: visibleBodies, to: anchoredBodies)
+        try FileManager.default.createDirectory(at: outsideDirectory, withIntermediateDirectories: true)
+        let sentinelURL = outsideDirectory.appendingPathComponent("caller-owned.txt")
+        let sentinel = Data("outside-bodies".utf8)
+        try sentinel.write(to: sentinelURL)
+        try FileManager.default.createSymbolicLink(at: visibleBodies, withDestinationURL: outsideDirectory)
+
+        await cache.set(secondKey, CachedResponse(data: Data("after".utf8)))
+
+        #expect(await cache.get(firstKey)?.data == Data("before".utf8))
+        #expect(await cache.get(secondKey)?.data == Data("after".utf8))
+        #expect(try Data(contentsOf: sentinelURL) == sentinel)
+        #expect(
+            try FileManager.default.contentsOfDirectory(at: outsideDirectory, includingPropertiesForKeys: nil)
+                .map(\.lastPathComponent) == ["caller-owned.txt"]
+        )
+
+        await cache.removeAll()
+
+        #expect(try Data(contentsOf: sentinelURL) == sentinel)
+        #expect(
+            try FileManager.default.contentsOfDirectory(at: anchoredBodies, includingPropertiesForKeys: nil).isEmpty)
+    }
+
+    @Test("Reopen rejects a hard-linked body without mutating its other link")
+    func reopenRejectsHardLinkedBodyWithoutMutatingOutsideFile() async throws {
+        let directory = makeDirectory()
+        let outsideDirectory = makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: outsideDirectory)
+        }
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/body-hard-link")
+        let writer = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        await writer.set(key, CachedResponse(data: Data("cached".utf8)))
+
+        let bodyURL = try #require(existingBodyURLs(in: directory).first)
+        try FileManager.default.createDirectory(at: outsideDirectory, withIntermediateDirectories: true)
+        let outsideURL = outsideDirectory.appendingPathComponent("outside-body.txt")
+        let sentinel = Data("outside-hard-link".utf8)
+        try sentinel.write(to: outsideURL)
+        try FileManager.default.removeItem(at: bodyURL)
+        try createHardLink(from: outsideURL, to: bodyURL)
+
+        let reopened = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+
+        #expect(await reopened.get(key) == nil)
+        #expect(try Data(contentsOf: outsideURL) == sentinel)
+        #expect(!FileManager.default.fileExists(atPath: bodyURL.path))
+        #expect(try indexEntryCount(in: directory) == 0)
+    }
+
+    @Test("Reopen replaces a hard-linked key without mutating its other link")
+    func reopenReplacesHardLinkedKeyWithoutMutatingOutsideFile() async throws {
+        let directory = makeDirectory()
+        let outsideDirectory = makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: outsideDirectory)
+        }
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/key-hard-link")
+        let writer = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        await writer.set(key, CachedResponse(data: Data("cached".utf8)))
+
+        let keyURL = hmacKeyURL(in: directory)
+        try FileManager.default.createDirectory(at: outsideDirectory, withIntermediateDirectories: true)
+        let outsideURL = outsideDirectory.appendingPathComponent("outside-key.bin")
+        let sentinel = Data(repeating: 0xA5, count: 32)
+        try sentinel.write(to: outsideURL)
+        try FileManager.default.removeItem(at: keyURL)
+        try createHardLink(from: outsideURL, to: keyURL)
+
+        let reopened = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+
+        #expect(await reopened.get(key) == nil)
+        #expect(try Data(contentsOf: outsideURL) == sentinel)
+        #expect(try Data(contentsOf: keyURL) != sentinel)
+        #expect(try existingBodyURLs(in: directory).isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: indexURL(in: directory).path))
+    }
+
     @Test("statistics snapshot exposes entry and byte budgets")
     func statisticsSnapshotExposesBudgets() async throws {
         let directory = makeDirectory()
@@ -2088,6 +2236,18 @@ struct PersistentResponseCacheTests {
         values.isExcludedFromBackup = false
         try resourceURL.setResourceValues(values)
         #endif
+    }
+
+    private func createHardLink(from sourceURL: URL, to destinationURL: URL) throws {
+        let result = sourceURL.withUnsafeFileSystemRepresentation { sourcePath in
+            destinationURL.withUnsafeFileSystemRepresentation { destinationPath in
+                guard let sourcePath, let destinationPath else { return Int32(-1) }
+                return link(sourcePath, destinationPath)
+            }
+        }
+        guard result == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
     }
 
     private func testFixtureError(_ message: String) -> NSError {
