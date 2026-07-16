@@ -276,8 +276,13 @@ package actor DownloadTaskPersistence {
         baseDirectoryURL: URL? = nil,
         fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy = .onCheckpoint,
         compactionPolicy: DownloadConfiguration.PersistenceCompactionPolicy = .default,
-        checkpointDataReader: (@Sendable (URL) throws -> Data)? = nil,
-        logFileHandleFactory: (@Sendable (URL) throws -> FileHandle)? = nil,
+        checkpointDataReader: @escaping @Sendable (Int32) throws -> Data = {
+            try AppendLogDownloadTaskStore.readAll(from: $0)
+        },
+        logFileHandleFactory: @escaping @Sendable (Int32) throws -> FileHandle = {
+            FileHandle(fileDescriptor: $0, closeOnDealloc: true)
+        },
+        fileOperations: AppendLogDownloadTaskStore.FileOperations = .live,
         fsync: @escaping @Sendable (Int32) -> Int32 = Darwin.fsync
     ) throws {
         self.store = try AppendLogDownloadTaskStore(
@@ -288,6 +293,7 @@ package actor DownloadTaskPersistence {
             compactionPolicy: compactionPolicy,
             checkpointDataReader: checkpointDataReader,
             logFileHandleFactory: logFileHandleFactory,
+            fileOperations: fileOperations,
             fsync: fsync
         )
     }
@@ -564,15 +570,12 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         var logSize: UInt64
     }
 
-    private let fileManager: FileManager
-    private let directoryURL: URL
-    private let checkpointURL: URL
-    private let logURL: URL
-    private let lockURL: URL
+    private let directoryDescriptor: Int32
     private let fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy
     private let compactionPolicy: DownloadConfiguration.PersistenceCompactionPolicy
-    private let checkpointDataReader: (@Sendable (URL) throws -> Data)?
-    private let logFileHandleFactory: (@Sendable (URL) throws -> FileHandle)?
+    private let checkpointDataReader: @Sendable (Int32) throws -> Data
+    private let logFileHandleFactory: @Sendable (Int32) throws -> FileHandle
+    private let fileOperations: FileOperations
     private let fsync: @Sendable (Int32) -> Int32
     private var state: StoreState
 
@@ -582,56 +585,69 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         baseDirectoryURL: URL? = nil,
         fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy = .onCheckpoint,
         compactionPolicy: DownloadConfiguration.PersistenceCompactionPolicy = .default,
-        checkpointDataReader: (@Sendable (URL) throws -> Data)? = nil,
-        logFileHandleFactory: (@Sendable (URL) throws -> FileHandle)? = nil,
+        checkpointDataReader: @escaping @Sendable (Int32) throws -> Data = {
+            try AppendLogDownloadTaskStore.readAll(from: $0)
+        },
+        logFileHandleFactory: @escaping @Sendable (Int32) throws -> FileHandle = {
+            FileHandle(fileDescriptor: $0, closeOnDealloc: true)
+        },
+        fileOperations: FileOperations = .live,
         fsync: @escaping @Sendable (Int32) -> Int32 = Darwin.fsync
     ) throws {
         let baseDirectory = baseDirectoryURL ?? Self.defaultBaseDirectory(fileManager: fileManager)
-        let persistenceRootURL =
-            baseDirectory
-            .appendingPathComponent("InnoNetworkDownload", isDirectory: true)
         let sessionStorageComponent = DownloadSessionStorageKey.component(for: sessionIdentifier)
-        let directoryURL =
-            persistenceRootURL
-            .appendingPathComponent(sessionStorageComponent, isDirectory: true)
-        let checkpointURL = directoryURL.appendingPathComponent("checkpoint.json", isDirectory: false)
-        let logURL = directoryURL.appendingPathComponent("events.log", isDirectory: false)
-        let lockURL = directoryURL.appendingPathComponent(".lock", isDirectory: false)
-        try Self.ensureDirectoryExists(at: persistenceRootURL, fileManager: fileManager)
-        try Self.ensureDirectoryExists(at: directoryURL, fileManager: fileManager)
-        DownloadOwnedStorageProtection.apply(to: persistenceRootURL, fileManager: fileManager)
-        DownloadOwnedStorageProtection.apply(to: directoryURL, fileManager: fileManager)
-        let initialState = try Self.withDirectoryLock(lockURL: lockURL, fileManager: fileManager) {
-            try Self.loadState(
-                directoryURL: directoryURL,
-                checkpointURL: checkpointURL,
-                logURL: logURL,
-                fileManager: fileManager,
+        let anchoredDirectory = try Self.openAnchoredSessionDirectory(
+            baseDirectoryURL: baseDirectory,
+            sessionStorageComponent: sessionStorageComponent,
+            fileManager: fileManager,
+            operations: fileOperations
+        )
+        let initialState: StoreState
+        do {
+            let lockDescriptor = try Self.acquireDirectoryLockBlocking(
+                directoryDescriptor: anchoredDirectory.descriptor,
+                timeout: 10
+            )
+            defer { Self.releaseDirectoryLock(lockDescriptor) }
+            initialState = try Self.loadState(
+                directoryDescriptor: anchoredDirectory.descriptor,
                 checkpointDataReader: checkpointDataReader,
                 logFileHandleFactory: logFileHandleFactory,
+                operations: fileOperations,
                 fsync: fsync
             )
+        } catch {
+            close(anchoredDirectory.descriptor)
+            throw error
         }
 
         // Resource attributes can be stripped by restores or external file
         // management. Reapply them whenever the store reopens, including when
         // no mutation follows this initialization.
-        for url in [checkpointURL, logURL, lockURL]
-        where fileManager.fileExists(atPath: url.path) {
-            DownloadOwnedStorageProtection.apply(to: url, fileManager: fileManager)
+        for name in [Self.checkpointName, Self.logName, Self.lockName] {
+            guard
+                let descriptor = try? Self.openRegularFile(
+                    directoryDescriptor: anchoredDirectory.descriptor,
+                    name: name,
+                    flags: O_RDONLY
+                ).descriptor
+            else { continue }
+            defer { close(descriptor) }
+            DownloadOwnedStorageProtection.apply(toFileDescriptor: descriptor)
         }
 
-        self.fileManager = fileManager
-        self.directoryURL = directoryURL
-        self.checkpointURL = checkpointURL
-        self.logURL = logURL
-        self.lockURL = lockURL
+        self.directoryDescriptor = anchoredDirectory.descriptor
         self.fsyncPolicy = fsyncPolicy
         self.compactionPolicy = compactionPolicy
         self.checkpointDataReader = checkpointDataReader
         self.logFileHandleFactory = logFileHandleFactory
+        self.fileOperations = fileOperations
         self.fsync = fsync
         self.state = initialState
+    }
+
+    deinit {
+        close(directoryDescriptor)
     }
 
     package func upsert(id: String, url: URL, destinationURL: URL, resumeData: Data?) async throws {
@@ -1205,6 +1221,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         let compactionPolicy = self.compactionPolicy
         let checkpointDataReader = self.checkpointDataReader
         let logFileHandleFactory = self.logFileHandleFactory
+        let fileOperations = self.fileOperations
         let fsync = self.fsync
         let effectiveFsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy =
             switch durability {
@@ -1213,16 +1230,16 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             case .crashCriticalCommit:
                 .always
             }
-        let descriptorRaw = try Self.openLockDescriptor(lockURL: lockURL, fileManager: fileManager)
+        let descriptorRaw = try Self.openLockDescriptor(
+            directoryDescriptor: directoryDescriptor
+        )
         let descriptor = try await Self.awaitDirectoryLock(descriptor: descriptorRaw, timeout: 10)
         defer { Self.releaseDirectoryLock(descriptor) }
         var diskState = try Self.loadState(
-            directoryURL: directoryURL,
-            checkpointURL: checkpointURL,
-            logURL: logURL,
-            fileManager: fileManager,
+            directoryDescriptor: directoryDescriptor,
             checkpointDataReader: checkpointDataReader,
             logFileHandleFactory: logFileHandleFactory,
+            operations: fileOperations,
             fsync: fsync
         )
 
@@ -1234,25 +1251,30 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
 
         try Self.append(
             events: events,
-            to: logURL,
-            fileManager: fileManager,
+            directoryDescriptor: directoryDescriptor,
             fsyncPolicy: effectiveFsyncPolicy,
             fsync: fsync
         )
         diskState.logEventCount += events.count
-        diskState.logSize = Self.fileSize(at: logURL, fileManager: fileManager)
+        diskState.logSize = try Self.fileSize(
+            directoryDescriptor: directoryDescriptor,
+            name: Self.logName
+        )
         diskState.nextSequence += Int64(events.count)
 
         if Self.shouldCompact(state: diskState, policy: compactionPolicy) {
             try Self.writeCheckpoint(
                 records: diskState.records,
                 urlToID: diskState.urlToID,
-                to: checkpointURL,
-                fileManager: fileManager,
+                directoryDescriptor: directoryDescriptor,
+                operations: fileOperations,
                 fsyncPolicy: effectiveFsyncPolicy,
                 fsync: fsync
             )
-            try Self.resetLog(at: logURL, fileManager: fileManager)
+            try Self.resetLog(
+                directoryDescriptor: directoryDescriptor,
+                operations: fileOperations
+            )
             diskState.logEventCount = 0
             diskState.tombstoneCount = 0
             diskState.logSize = 0

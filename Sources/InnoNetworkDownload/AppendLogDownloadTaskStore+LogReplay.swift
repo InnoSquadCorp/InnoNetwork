@@ -8,12 +8,11 @@ import Foundation
 extension AppendLogDownloadTaskStore {
 
     static func replayLog(
-        at logURL: URL,
+        directoryDescriptor: Int32,
         onto initialRecords: [String: DownloadTaskPersistence.Record],
         initialURLToID: [URL: [String]],
-        checkpointURL: URL,
-        fileManager: FileManager,
-        logFileHandleFactory: (@Sendable (URL) throws -> FileHandle)?,
+        logFileHandleFactory: @escaping @Sendable (Int32) throws -> FileHandle,
+        operations: FileOperations,
         fsync: @escaping @Sendable (Int32) -> Int32
     ) throws -> (
         records: [String: DownloadTaskPersistence.Record],
@@ -29,20 +28,23 @@ extension AppendLogDownloadTaskStore {
         var logEventCount = 0
         var tombstoneCount = 0
 
-        guard try pathEntryExists(at: logURL) else {
+        let opened: (descriptor: Int32, identity: FileIdentity)
+        do {
+            opened = try openRegularFile(
+                directoryDescriptor: directoryDescriptor,
+                name: logName,
+                flags: O_RDONLY
+            )
+        } catch  where isMissingFileError(error) {
             return (records, urlToID, nextSequence, logEventCount, tombstoneCount, 0)
         }
 
         let handle: FileHandle
         do {
-            if let logFileHandleFactory {
-                handle = try logFileHandleFactory(logURL)
-            } else {
-                handle = try FileHandle(forReadingFrom: logURL)
-            }
-        } catch  where isMissingFileError(error) {
-            // The entry can disappear between the probe and open.
-            return (records, urlToID, nextSequence, logEventCount, tombstoneCount, 0)
+            handle = try logFileHandleFactory(opened.descriptor)
+        } catch {
+            close(opened.descriptor)
+            throw error
         }
         defer { try? handle.close() }
 
@@ -165,13 +167,21 @@ extension AppendLogDownloadTaskStore {
             try writeCheckpoint(
                 records: records,
                 urlToID: urlToID,
-                to: checkpointURL,
-                fileManager: fileManager,
+                directoryDescriptor: directoryDescriptor,
+                operations: operations,
                 fsyncPolicy: .onCheckpoint,
                 fsync: fsync
             )
-            quarantineFileIfNeeded(logURL, fileManager: fileManager)
-            try resetLog(at: logURL, fileManager: fileManager)
+            try quarantineFileIfNeeded(
+                logName,
+                expectedIdentity: opened.identity,
+                directoryDescriptor: directoryDescriptor,
+                operations: operations
+            )
+            try resetLog(
+                directoryDescriptor: directoryDescriptor,
+                operations: operations
+            )
         }
 
         return (
@@ -186,26 +196,25 @@ extension AppendLogDownloadTaskStore {
 
     static func append(
         events: [Event],
-        to logURL: URL,
-        fileManager: FileManager,
+        directoryDescriptor: Int32,
         fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy,
         fsync: @Sendable (Int32) -> Int32
     ) throws {
-        let logWasCreated = !fileManager.fileExists(atPath: logURL.path())
-        if logWasCreated {
-            try Data().write(to: logURL)
-            DownloadOwnedStorageProtection.apply(to: logURL, fileManager: fileManager)
+        let opened = try openOrCreateRegularFile(
+            directoryDescriptor: directoryDescriptor,
+            name: logName,
+            existingFlags: O_WRONLY | O_APPEND
+        )
+        defer { close(opened.descriptor) }
+        if opened.created {
+            DownloadOwnedStorageProtection.apply(toFileDescriptor: opened.descriptor)
         }
-
-        let handle = try FileHandle(forWritingTo: logURL)
-        defer { try? handle.close() }
-        try handle.seekToEnd()
 
         let encoder = JSONEncoder()
         for event in events {
             let data = try encoder.encode(event)
-            try handle.write(contentsOf: data)
-            try handle.write(contentsOf: Data([0x0A]))
+            try writeAll(data, to: opened.descriptor)
+            try writeAll(Data([0x0A]), to: opened.descriptor)
         }
 
         // .always policy forces buffered writes through to stable storage
@@ -213,12 +222,12 @@ extension AppendLogDownloadTaskStore {
         // the cost — the next checkpoint or the OS flush is responsible for
         // durability.
         if fsyncPolicy == .always {
-            try fsyncFileDescriptor(handle.fileDescriptor, fsync: fsync)
+            try fsyncFileDescriptor(opened.descriptor, fsync: fsync)
             // The append is not crash-durable if the log's directory entry can
             // still be lost. Sync the parent even for an existing path because
             // a prior `.never` mutation may have created or replaced the log
             // without establishing that directory durability.
-            try fsyncParentDirectory(of: logURL, fsync: fsync)
+            try fsyncFileDescriptor(directoryDescriptor, fsync: fsync)
         }
     }
 

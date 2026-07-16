@@ -8,45 +8,30 @@ import Foundation
 extension AppendLogDownloadTaskStore {
 
     static func loadState(
-        directoryURL: URL,
-        checkpointURL: URL,
-        logURL: URL,
-        fileManager: FileManager,
-        checkpointDataReader: (@Sendable (URL) throws -> Data)?,
-        logFileHandleFactory: (@Sendable (URL) throws -> FileHandle)?,
+        directoryDescriptor: Int32,
+        checkpointDataReader: @escaping @Sendable (Int32) throws -> Data,
+        logFileHandleFactory: @escaping @Sendable (Int32) throws -> FileHandle,
+        operations: FileOperations,
         fsync: @escaping @Sendable (Int32) -> Int32
     ) throws -> StoreState {
-        try ensureDirectoryExists(at: directoryURL, fileManager: fileManager)
         var records: [String: DownloadTaskPersistence.Record] = [:]
         var urlToID: [URL: [String]] = [:]
         var nextSequence: Int64 = 0
         var logEventCount = 0
         var tombstoneCount = 0
 
-        let checkpointData: Data?
-        if try pathEntryExists(at: checkpointURL) {
-            do {
-                // File access failures are not proof of corruption. In
-                // particular, complete-until-first-user-authentication files
-                // can be temporarily unreadable before the first device
-                // unlock. Preserve the checkpoint and let initialization fail
-                // so a later attempt can recover the authoritative state.
-                if let checkpointDataReader {
-                    checkpointData = try checkpointDataReader(checkpointURL)
-                } else {
-                    checkpointData = try Data(contentsOf: checkpointURL)
-                }
-            } catch  where isMissingFileError(error) {
-                // The entry can disappear between the probe and open.
-                checkpointData = nil
-            }
-        } else {
-            checkpointData = nil
-        }
+        // Descriptor-relative open is both the existence check and the read.
+        // ENOENT alone means absent; protected-data, permission, I/O, symlink,
+        // and type failures preserve the authoritative file and propagate.
+        let checkpointRead = try readData(
+            directoryDescriptor: directoryDescriptor,
+            name: checkpointName,
+            reader: checkpointDataReader
+        )
 
-        if let checkpointData {
+        if let checkpointRead {
             do {
-                let envelope = try JSONDecoder().decode(Envelope.self, from: checkpointData)
+                let envelope = try JSONDecoder().decode(Envelope.self, from: checkpointRead.data)
                 guard envelope.version == 1 else {
                     throw CocoaError(.coderInvalidValue)
                 }
@@ -56,19 +41,23 @@ extension AppendLogDownloadTaskStore {
                     orderedRecordIDs: envelope.orderedRecordIDs
                 )
             } catch {
-                quarantineFileIfNeeded(checkpointURL, fileManager: fileManager)
+                try quarantineFileIfNeeded(
+                    checkpointName,
+                    expectedIdentity: checkpointRead.identity,
+                    directoryDescriptor: directoryDescriptor,
+                    operations: operations
+                )
                 records = [:]
                 urlToID = [:]
             }
         }
 
         let replayResult = try replayLog(
-            at: logURL,
+            directoryDescriptor: directoryDescriptor,
             onto: records,
             initialURLToID: urlToID,
-            checkpointURL: checkpointURL,
-            fileManager: fileManager,
             logFileHandleFactory: logFileHandleFactory,
+            operations: operations,
             fsync: fsync
         )
         records = replayResult.records
@@ -90,8 +79,8 @@ extension AppendLogDownloadTaskStore {
     static func writeCheckpoint(
         records: [String: DownloadTaskPersistence.Record],
         urlToID: [URL: [String]],
-        to checkpointURL: URL,
-        fileManager: FileManager,
+        directoryDescriptor: Int32,
+        operations: FileOperations,
         fsyncPolicy: DownloadConfiguration.PersistenceFsyncPolicy,
         fsync: @escaping @Sendable (Int32) -> Int32
     ) throws {
@@ -102,8 +91,9 @@ extension AppendLogDownloadTaskStore {
         let data = try JSONEncoder().encode(envelope)
         try writeAtomically(
             data: data,
-            to: checkpointURL,
-            fileManager: fileManager,
+            destinationName: checkpointName,
+            directoryDescriptor: directoryDescriptor,
+            operations: operations,
             fsyncBeforeRename: fsyncPolicy != .never,
             fsync: fsync
         )

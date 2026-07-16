@@ -1,50 +1,64 @@
+import Darwin
 import Foundation
 import OSLog
 
-// Split out of `DownloadTaskPersistence.swift` so the quarantine policy
-// (rename → fallback removeItem → fault log) lives alongside its dedicated
-// logger. All helpers stay `static`; this file only relocates code, no
-// behaviour changes.
 extension AppendLogDownloadTaskStore {
-
     static let quarantineLogger = Logger(
         subsystem: "innosquad.network.download",
         category: "Persistence"
     )
 
-    /// Renames a corrupt state file out of the way so restoration can proceed
-    /// with a clean slate. If the rename fails (e.g. directory ACLs are too
-    /// tight or the destination already exists) we fall back to `removeItem`
-    /// — leaving the corrupt file in place would cause every subsequent boot
-    /// to re-discover the same corruption and start with an empty in-memory
-    /// state on each launch. Both failures are surfaced as `fault` so an
-    /// operator can investigate; staying silent here previously masked an
-    /// infinite empty-state loop.
-    static func quarantineFileIfNeeded(_ url: URL, fileManager: FileManager) {
-        guard fileManager.fileExists(atPath: url.path()) else { return }
-        let timestamp = Int(Date.now.timeIntervalSince1970)
-        let directory = url.deletingLastPathComponent()
-        let name = url.deletingPathExtension().lastPathComponent
-        let ext = url.pathExtension
-        let corruptedURL = directory.appendingPathComponent(
-            ext.isEmpty ? "\(name).corrupted-\(timestamp)" : "\(name).corrupted-\(timestamp).\(ext)",
-            isDirectory: false
-        )
-        do {
-            try fileManager.moveItem(at: url, to: corruptedURL)
-            DownloadOwnedStorageProtection.apply(to: corruptedURL, fileManager: fileManager)
+    /// Quarantines the inode that was decoded/replayed and verifies its
+    /// identity again after the move. Cooperating owners serialize through
+    /// the session lock; a hostile concurrent replacement fails closed after
+    /// the move. Descriptor-relative operations ensure that such a race never
+    /// follows a symlink target outside the anchored session directory.
+    static func quarantineFileIfNeeded(
+        _ name: String,
+        expectedIdentity: FileIdentity,
+        directoryDescriptor: Int32,
+        operations: FileOperations
+    ) throws {
+        guard
+            let currentIdentity = try entryIdentity(
+                directoryDescriptor: directoryDescriptor,
+                name: name
+            )
+        else { return }
+        guard currentIdentity == expectedIdentity else {
+            throw posixError(EBUSY)
+        }
+
+        let corruptedName = operations.quarantineName(name)
+        if operations.renameEntry(directoryDescriptor, name, corruptedName) == 0 {
+            guard
+                try entryIdentity(
+                    directoryDescriptor: directoryDescriptor,
+                    name: corruptedName
+                ) == expectedIdentity
+            else {
+                throw posixError(EBUSY)
+            }
+            let opened = try openRegularFile(
+                directoryDescriptor: directoryDescriptor,
+                name: corruptedName,
+                flags: O_RDONLY
+            )
+            defer { close(opened.descriptor) }
+            guard opened.identity == expectedIdentity else {
+                throw posixError(EBUSY)
+            }
+            DownloadOwnedStorageProtection.apply(toFileDescriptor: opened.descriptor)
             return
-        } catch {
-            quarantineLogger.fault(
-                "Failed to quarantine corrupt persistence file at \(url.path(), privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .private(mask: .hash)). Falling back to removeItem."
-            )
         }
-        do {
-            try fileManager.removeItem(at: url)
-        } catch {
-            quarantineLogger.fault(
-                "Fallback removeItem also failed for \(url.path(), privacy: .private(mask: .hash)): \(error.localizedDescription, privacy: .private(mask: .hash)). Subsequent boots will re-read the corrupt file."
-            )
-        }
+
+        let renameError = posixError()
+        quarantineLogger.fault(
+            "Failed to quarantine corrupt persistence entry \(name, privacy: .private(mask: .hash)): \(renameError.localizedDescription, privacy: .private(mask: .hash)). Preserving the entry."
+        )
+        // There is no portable compare-and-unlink primitive. Retain the
+        // corrupt entry rather than risk deleting a replacement installed
+        // between an identity check and `unlinkat`.
+        throw renameError
     }
 }
