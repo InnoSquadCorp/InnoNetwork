@@ -17,34 +17,65 @@ extension PersistentResponseCache {
     /// transient I/O recovery deterministic in tests without widening the
     /// public cache API.
     struct StorageIO: Sendable {
-        let indexReader: @Sendable (URL) throws -> Data
-        let bodyInspector: @Sendable (_ fileName: String, _ directoryURL: URL) throws -> Int
+        let indexReader: @Sendable (_ storage: AnchoredStorage, _ indexURL: URL) throws -> Data
+        let bodyInspector: @Sendable (_ storage: AnchoredStorage, _ fileName: String, _ directoryURL: URL) throws -> Int
         let bodyReader:
-            @Sendable (_ fileName: String, _ directoryURL: URL, _ maximumByteCount: Int) async throws -> Data
+            @Sendable (
+                _ storage: AnchoredStorage,
+                _ fileName: String,
+                _ directoryURL: URL,
+                _ maximumByteCount: Int
+            ) async throws -> Data
 
         init(
-            indexReader: @escaping @Sendable (URL) throws -> Data = {
-                try PersistentResponseCache.readIndexData(at: $0)
-            },
-            bodyInspector: @escaping @Sendable (_ fileName: String, _ directoryURL: URL) throws -> Int = {
-                try PersistentResponseCache.inspectBodyFile(fileName: $0, in: $1)
-            },
+            indexReader: (@Sendable (URL) throws -> Data)? = nil,
+            bodyInspector: (@Sendable (_ fileName: String, _ directoryURL: URL) throws -> Int)? = nil,
             bodyReader:
-                @escaping @Sendable (
-                    _ fileName: String,
-                    _ directoryURL: URL,
-                    _ maximumByteCount: Int
-                ) async throws -> Data = {
-                    try await PersistentResponseCache.readBodyData(
-                        fileName: $0,
-                        in: $1,
-                        maximumByteCount: $2
-                    )
-                }
+                (
+                    @Sendable (
+                        _ fileName: String,
+                        _ directoryURL: URL,
+                        _ maximumByteCount: Int
+                    ) async throws -> Data
+                )? = nil
         ) {
-            self.indexReader = indexReader
-            self.bodyInspector = bodyInspector
-            self.bodyReader = bodyReader
+            if let indexReader {
+                self.indexReader = { _, indexURL in
+                    try indexReader(indexURL)
+                }
+            } else {
+                self.indexReader = { storage, _ in
+                    try storage.readIndexData()
+                }
+            }
+            if let bodyInspector {
+                self.bodyInspector = { _, fileName, directoryURL in
+                    try bodyInspector(fileName, directoryURL)
+                }
+            } else {
+                self.bodyInspector = { storage, fileName, _ in
+                    try validateBodyFileName(fileName)
+                    return try storage.inspectBody(fileName: fileName)
+                }
+            }
+            if let bodyReader {
+                self.bodyReader = { _, fileName, directoryURL, maximumByteCount in
+                    try await bodyReader(fileName, directoryURL, maximumByteCount)
+                }
+            } else {
+                self.bodyReader = { storage, fileName, _, maximumByteCount in
+                    try validateBodyFileName(fileName)
+                    guard maximumByteCount > 0 else {
+                        throw BodyFileAccessError.invalidReference
+                    }
+                    return try await Task.detached {
+                        try storage.readBodyData(
+                            fileName: fileName,
+                            maximumByteCount: maximumByteCount
+                        )
+                    }.value
+                }
+            }
         }
     }
 
@@ -63,53 +94,12 @@ extension PersistentResponseCache {
         case notRegularFile
     }
 
-    /// Reads the index only after a descriptor-relative, no-follow admission
-    /// check. O_NONBLOCK ensures a tampered FIFO/device entry cannot hang the
-    /// synchronous cache initializer before its file type is inspected.
-    static func readIndexData(at indexURL: URL) throws -> Data {
-        let directoryURL = indexURL.deletingLastPathComponent().resolvingSymlinksInPath()
-        let directoryDescriptor: Int32 = directoryURL.withUnsafeFileSystemRepresentation { representation in
-            guard let representation else { return -1 }
-            return open(representation, O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW)
-        }
-        guard directoryDescriptor >= 0 else {
-            throw IndexFileAccessError.cannotOpenDirectory(errno: errno)
-        }
-        defer { close(directoryDescriptor) }
-
-        let fileDescriptor = indexURL.lastPathComponent.withCString {
-            openat(
-                directoryDescriptor,
-                $0,
-                O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
-            )
-        }
-        guard fileDescriptor >= 0 else {
-            throw IndexFileAccessError.cannotOpenFile(errno: errno)
-        }
-
-        var fileStatus = stat()
-        guard fstat(fileDescriptor, &fileStatus) == 0 else {
-            let errorCode = errno
-            close(fileDescriptor)
-            throw IndexFileAccessError.cannotInspectFile(errno: errorCode)
-        }
-        guard (fileStatus.st_mode & S_IFMT) == S_IFREG else {
-            close(fileDescriptor)
-            throw IndexFileAccessError.notRegularFile
-        }
-
-        let handle = FileHandle(fileDescriptor: fileDescriptor, closeOnDealloc: true)
-        defer { try? handle.close() }
-        return try handle.readToEnd() ?? Data()
-    }
-
     /// Returns a cache-owned body URL only when `fileName` exactly matches
     /// the format emitted by `set`: a lowercase SHA-256 identifier, a UUID,
     /// and the `.body` suffix. Persisted index contents are untrusted input;
     /// validating the basename here prevents traversal through a corrupt or
     /// tampered `bodyFileName` field.
-    static func validatedBodyURL(fileName: String, in bodiesDirectoryURL: URL) throws -> URL {
+    static func validateBodyFileName(_ fileName: String) throws {
         let bytes = Array(fileName.utf8)
         let expectedByteCount = 64 + 1 + 36 + 5
         guard bytes.count == expectedByteCount else {
@@ -137,6 +127,10 @@ extension PersistentResponseCache {
         else {
             throw BodyFileAccessError.invalidReference
         }
+    }
+
+    static func validatedBodyURL(fileName: String, in bodiesDirectoryURL: URL) throws -> URL {
+        try validateBodyFileName(fileName)
 
         let standardizedDirectoryURL = bodiesDirectoryURL.standardizedFileURL
         let directoryValues = try standardizedDirectoryURL.resourceValues(
@@ -213,13 +207,11 @@ extension PersistentResponseCache {
     static func writeBodyData(
         _ data: Data,
         fileName: String,
-        in bodiesDirectoryURL: URL,
-        dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass
+        storage: AnchoredStorage
     ) async throws {
-        let url = try validatedBodyURL(fileName: fileName, in: bodiesDirectoryURL)
+        try validateBodyFileName(fileName)
         try await Task.detached {
-            try data.write(to: url, options: .atomic)
-            applyDataProtection(dataProtectionClass, to: url, fileManager: .default)
+            try storage.writeBody(data, fileName: fileName)
         }.value
     }
 
@@ -229,42 +221,29 @@ extension PersistentResponseCache {
         directoryURL: URL,
         configuration: PersistentResponseCacheConfiguration,
         fileManager: FileManager,
+        storage: AnchoredStorage,
         durable: Bool = true
     ) throws {
         let data = try JSONEncoder.persistentCache.encode(index)
-        try data.write(to: indexURL, options: .atomic)
-        applyDataProtection(configuration.dataProtectionClass, to: indexURL, fileManager: fileManager)
-        guard durable, configuration.persistenceFsyncPolicy == .always else { return }
-        fsyncFile(at: indexURL)
-        fsyncDirectory(at: directoryURL)
+        try storage.writeIndex(
+            data,
+            durable: durable && configuration.persistenceFsyncPolicy == .always
+        )
+        _ = (indexURL, directoryURL, fileManager)
     }
 
+    static func removeBody(fileName: String, storage: AnchoredStorage) {
+        guard (try? validateBodyFileName(fileName)) != nil else { return }
+        _ = storage.removeBody(fileName: fileName)
+    }
+
+    /// Retained as a path-based test seam. Production cache operations use
+    /// the descriptor-anchored overload above.
     static func removeBody(fileName: String, in bodiesDirectoryURL: URL, fileManager: FileManager) {
         guard let bodyURL = try? validatedBodyURL(fileName: fileName, in: bodiesDirectoryURL) else {
             return
         }
-        // `removeItem` unlinks a symbolic link itself rather than following
-        // it to the destination. Keeping the injected FileManager here also
-        // preserves the cache's testability and existing storage abstraction.
         try? fileManager.removeItem(at: bodyURL)
-    }
-
-    static func inspectBodyFile(
-        fileName: String,
-        in bodiesDirectoryURL: URL
-    ) throws -> Int {
-        let openedFile = try openRegularBodyFile(
-            fileName: fileName,
-            in: bodiesDirectoryURL
-        )
-        defer { close(openedFile.descriptor) }
-        guard
-            openedFile.status.st_size >= 0,
-            let size = Int(exactly: openedFile.status.st_size)
-        else {
-            throw BodyFileAccessError.invalidReference
-        }
-        return size
     }
 
     private static func openRegularBodyFile(
@@ -380,26 +359,6 @@ extension PersistentResponseCache {
         let nsError = error as NSError
         return nsError.domain == NSPOSIXErrorDomain
             && (nsError.code == Int(ENOTDIR) || nsError.code == Int(ELOOP))
-    }
-
-    static func fsyncFile(at url: URL) {
-        let fd = url.withUnsafeFileSystemRepresentation { rep -> Int32 in
-            guard let rep else { return -1 }
-            return open(rep, O_RDONLY | O_CLOEXEC)
-        }
-        guard fd >= 0 else { return }
-        defer { close(fd) }
-        _ = syncFileDescriptor(fd)
-    }
-
-    static func fsyncDirectory(at url: URL) {
-        let fd = url.withUnsafeFileSystemRepresentation { rep -> Int32 in
-            guard let rep else { return -1 }
-            return open(rep, O_RDONLY | O_CLOEXEC)
-        }
-        guard fd >= 0 else { return }
-        defer { close(fd) }
-        _ = syncFileDescriptor(fd)
     }
 
     @discardableResult

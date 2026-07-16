@@ -1,6 +1,12 @@
 import Foundation
 import OSLog
 
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
 // Split out of `PersistentResponseCache.swift` so the open-time recovery
 // pipeline — policy-rejected scrub, budget enforcement, unreferenced-body
 // sweep, index load, and cold-start reset — lives in one place. All helpers
@@ -26,8 +32,8 @@ extension PersistentResponseCache {
         _ loadedIndex: Index,
         configuration: PersistentResponseCacheConfiguration,
         indexURL: URL,
-        bodiesDirectoryURL: URL,
-        fileManager: FileManager
+        fileManager: FileManager,
+        storage: AnchoredStorage
     ) throws -> OpenResult {
         var scrubbedIndex = loadedIndex
         let rejectedEntries = loadedIndex.entries.filter { _, entry in
@@ -41,14 +47,15 @@ extension PersistentResponseCache {
         for (id, entry) in rejectedEntries {
             scrubbedIndex.entries.removeValue(forKey: id)
             removedBytes += entry.byteCost
-            removeBody(fileName: entry.bodyFileName, in: bodiesDirectoryURL, fileManager: fileManager)
+            removeBody(fileName: entry.bodyFileName, storage: storage)
         }
         try persistIndex(
             scrubbedIndex,
             to: indexURL,
             directoryURL: configuration.directoryURL,
             configuration: configuration,
-            fileManager: fileManager
+            fileManager: fileManager,
+            storage: storage
         )
         return OpenResult(
             index: scrubbedIndex,
@@ -68,7 +75,8 @@ extension PersistentResponseCache {
         indexURL: URL,
         bodiesDirectoryURL: URL,
         fileManager: FileManager,
-        storageIO: StorageIO
+        storageIO: StorageIO,
+        storage: AnchoredStorage
     ) throws -> OpenResult {
         var budgetedIndex = loadedIndex
         var didMutate = false
@@ -84,6 +92,7 @@ extension PersistentResponseCache {
             let bodySize: Int
             do {
                 bodySize = try storageIO.bodyInspector(
+                    storage,
                     entry.bodyFileName,
                     bodiesDirectoryURL
                 )
@@ -133,14 +142,11 @@ extension PersistentResponseCache {
                 to: indexURL,
                 directoryURL: configuration.directoryURL,
                 configuration: configuration,
-                fileManager: fileManager
+                fileManager: fileManager,
+                storage: storage
             )
             for bodyFileName in removableBodyFileNames {
-                removeBody(
-                    fileName: bodyFileName,
-                    in: bodiesDirectoryURL,
-                    fileManager: fileManager
-                )
+                removeBody(fileName: bodyFileName, storage: storage)
             }
         }
         var telemetry: [PersistentResponseCacheTelemetryEvent] = []
@@ -178,16 +184,13 @@ extension PersistentResponseCache {
     static func scrubUnreferencedBodiesOnOpen(
         _ loadedIndex: Index,
         bodiesDirectoryURL: URL,
-        fileManager: FileManager
+        fileManager: FileManager,
+        storage: AnchoredStorage
     ) -> Int {
         let referencedBodyFileNames = Set(loadedIndex.entries.values.map(\.bodyFileName))
-        let bodyURLs: [URL]
+        let bodyFileNames: [String]
         do {
-            bodyURLs = try fileManager.contentsOfDirectory(
-                at: bodiesDirectoryURL,
-                includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
-                options: [.skipsHiddenFiles]
-            )
+            bodyFileNames = try storage.bodyEntryNames()
         } catch {
             logger.warning(
                 "persistent_cache_body_sweep_enumeration_failed error=\(String(describing: error), privacy: .private)"
@@ -197,24 +200,28 @@ extension PersistentResponseCache {
 
         var scrubbedCount = 0
         var deleteFailureCount = 0
-        for bodyURL in bodyURLs {
-            let resourceValues = try? bodyURL.resourceValues(
-                forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
-            )
-            let isCacheBodyEntry =
-                resourceValues?.isRegularFile == true
-                || resourceValues?.isSymbolicLink == true
-            guard isCacheBodyEntry, bodyURL.pathExtension == "body" else { continue }
-            guard !referencedBodyFileNames.contains(bodyURL.lastPathComponent) else { continue }
+        for bodyFileName in bodyFileNames {
+            guard !referencedBodyFileNames.contains(bodyFileName) else { continue }
+            let information: stat
             do {
-                try fileManager.removeItem(at: bodyURL)
-                scrubbedCount += 1
+                guard let entryInformation = try storage.bodyEntryInformation(named: bodyFileName) else {
+                    continue
+                }
+                information = entryInformation
             } catch {
                 deleteFailureCount += 1
-                logger.debug(
-                    "persistent_cache_body_sweep_delete_failed file=\(bodyURL.lastPathComponent, privacy: .public) error=\(String(describing: error), privacy: .private)"
-                )
                 continue
+            }
+            let type = information.st_mode & S_IFMT
+            guard type == S_IFREG || type == S_IFLNK || type == S_IFIFO else { continue }
+            guard bodyFileName.hasSuffix(".body") else { continue }
+            if storage.removeBody(fileName: bodyFileName) {
+                scrubbedCount += 1
+            } else if errno != ENOENT {
+                deleteFailureCount += 1
+                logger.debug(
+                    "persistent_cache_body_sweep_delete_failed file=\(bodyFileName, privacy: .public) errno=\(errno, privacy: .public)"
+                )
             }
         }
         if deleteFailureCount > 0 {
@@ -222,6 +229,7 @@ extension PersistentResponseCache {
                 "persistent_cache_body_sweep_delete_failures count=\(deleteFailureCount, privacy: .public)"
             )
         }
+        _ = (bodiesDirectoryURL, fileManager)
         return scrubbedCount
     }
 
@@ -234,11 +242,12 @@ extension PersistentResponseCache {
         directoryURL: URL,
         dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
         fileManager: FileManager,
-        storageIO: StorageIO
+        storageIO: StorageIO,
+        storage: AnchoredStorage
     ) throws -> OpenResult {
         let data: Data
         do {
-            data = try storageIO.indexReader(indexURL)
+            data = try storageIO.indexReader(storage, indexURL)
         } catch {
             if isMissingFileError(error) {
                 return OpenResult(
@@ -252,7 +261,8 @@ extension PersistentResponseCache {
                 indexURL: indexURL,
                 bodiesDirectoryURL: bodiesDirectoryURL,
                 dataProtectionClass: dataProtectionClass,
-                fileManager: fileManager
+                fileManager: fileManager,
+                storage: storage
             )
             return OpenResult(
                 index: Index(version: formatVersion, entries: [:]),
@@ -277,7 +287,8 @@ extension PersistentResponseCache {
             indexURL: indexURL,
             bodiesDirectoryURL: bodiesDirectoryURL,
             dataProtectionClass: dataProtectionClass,
-            fileManager: fileManager
+            fileManager: fileManager,
+            storage: storage
         )
         return OpenResult(index: Index(version: formatVersion, entries: [:]), telemetryEvents: [])
     }
@@ -286,42 +297,12 @@ extension PersistentResponseCache {
         indexURL: URL,
         bodiesDirectoryURL: URL,
         dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
-        fileManager: FileManager
+        fileManager: FileManager,
+        storage: AnchoredStorage
     ) throws {
-        try? fileManager.removeItem(at: indexURL)
-        try? fileManager.removeItem(at: bodiesDirectoryURL)
-        try fileManager.createDirectory(at: bodiesDirectoryURL, withIntermediateDirectories: true)
-        applyDataProtection(dataProtectionClass, to: bodiesDirectoryURL, fileManager: fileManager)
+        storage.removeRootEntry(named: "index.json")
+        try storage.resetBodies()
+        _ = (indexURL, bodiesDirectoryURL, dataProtectionClass, fileManager)
     }
 
-    static func applyDataProtectionToExistingCacheFiles(
-        dataProtectionClass: PersistentResponseCacheConfiguration.DataProtectionClass,
-        indexURL: URL,
-        bodiesDirectoryURL: URL,
-        fileManager: FileManager
-    ) {
-        if fileManager.fileExists(atPath: indexURL.path) {
-            applyDataProtection(dataProtectionClass, to: indexURL, fileManager: fileManager)
-        }
-        guard
-            let bodyURLs = try? fileManager.contentsOfDirectory(
-                at: bodiesDirectoryURL,
-                includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
-                options: [.skipsHiddenFiles]
-            )
-        else {
-            return
-        }
-
-        for bodyURL in bodyURLs {
-            let resourceValues = try? bodyURL.resourceValues(
-                forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
-            )
-            guard
-                resourceValues?.isRegularFile == true,
-                resourceValues?.isSymbolicLink != true
-            else { continue }
-            applyDataProtection(dataProtectionClass, to: bodyURL, fileManager: fileManager)
-        }
-    }
 }
