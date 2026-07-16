@@ -508,7 +508,7 @@ struct DownloadTaskPersistenceTests {
     }
 
     private func clearPersistence(sessionIdentifier: String, baseDirectoryURL: URL) async throws {
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
@@ -525,13 +525,13 @@ struct DownloadTaskPersistenceTests {
         let url = URL(string: "https://example.com/file.zip")!
         let destinationURL = URL(fileURLWithPath: "/tmp/\(UUID().uuidString).zip")
 
-        let writer = DownloadTaskPersistence(
+        let writer = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
         try await writer.upsert(id: taskID, url: url, destinationURL: destinationURL)
 
-        let reader = DownloadTaskPersistence(
+        let reader = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
@@ -556,7 +556,7 @@ struct DownloadTaskPersistenceTests {
         let keptDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-kept.zip")
         let removedDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-removed.zip")
 
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
@@ -578,11 +578,11 @@ struct DownloadTaskPersistenceTests {
 
         let keptID = "task-kept"
         let staleID = "task-stale"
-        let firstStore = DownloadTaskPersistence(
+        let firstStore = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
-        let secondStore = DownloadTaskPersistence(
+        let secondStore = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
@@ -600,7 +600,7 @@ struct DownloadTaskPersistenceTests {
 
         try await firstStore.prune(keeping: [keptID])
 
-        let reader = DownloadTaskPersistence(
+        let reader = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
@@ -619,7 +619,7 @@ struct DownloadTaskPersistenceTests {
         let firstDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-first.zip")
         let secondDestination = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-second.zip")
 
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
@@ -641,7 +641,7 @@ struct DownloadTaskPersistenceTests {
         let checkpointURL = storeDirectory.appendingPathComponent("checkpoint.json")
         try Data("not-json".utf8).write(to: checkpointURL)
 
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
@@ -653,17 +653,125 @@ struct DownloadTaskPersistenceTests {
         #expect(files.contains("checkpoint.json") == false)
     }
 
+    @Test("Checkpoint access failures preserve authoritative download state")
+    func checkpointAccessFailureIsNotQuarantined() async throws {
+        let sessionIdentifier = "test.persistence.checkpoint-access.\(UUID().uuidString)"
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        defer { try? FileManager.default.removeItem(at: baseDirectoryURL) }
+
+        let writer = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL,
+            compactionPolicy: .init(
+                maxEvents: 1,
+                maxLogBytes: UInt64.max,
+                tombstoneRatio: 1
+            )
+        )
+        let destinationURL = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-checkpoint.zip")
+        try await writer.upsert(
+            id: "task-valid",
+            url: URL(string: "https://example.com/checkpoint.zip")!,
+            destinationURL: destinationURL
+        )
+
+        let storeDirectory = sessionDirectoryURL(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        let checkpointURL = storeDirectory.appendingPathComponent("checkpoint.json")
+        let logURL = storeDirectory.appendingPathComponent("events.log")
+        let checkpointBefore = try Data(contentsOf: checkpointURL)
+        let logBefore = try Data(contentsOf: logURL)
+
+        do {
+            _ = try DownloadTaskPersistence(
+                sessionIdentifier: sessionIdentifier,
+                baseDirectoryURL: baseDirectoryURL,
+                checkpointDataReader: { _ in
+                    throw CocoaError(.fileReadNoPermission)
+                }
+            )
+            Issue.record("Expected protected checkpoint access to fail initialization")
+        } catch let error as CocoaError {
+            #expect(error.code == .fileReadNoPermission)
+        } catch {
+            Issue.record("Expected CocoaError.fileReadNoPermission, got \(error)")
+        }
+
+        #expect(try Data(contentsOf: checkpointURL) == checkpointBefore)
+        #expect(try Data(contentsOf: logURL) == logBefore)
+        let names = try FileManager.default.contentsOfDirectory(atPath: storeDirectory.path)
+        #expect(names.contains(where: { $0.contains(".corrupted-") }) == false)
+
+        let reader = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        #expect(await reader.record(forID: "task-valid")?.destinationURL == destinationURL)
+    }
+
+    @Test("Append-log access failures preserve authoritative download state")
+    func logAccessFailureIsNotQuarantined() async throws {
+        let sessionIdentifier = "test.persistence.log-access.\(UUID().uuidString)"
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        defer { try? FileManager.default.removeItem(at: baseDirectoryURL) }
+
+        let writer = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        let destinationURL = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-log.zip")
+        try await writer.upsert(
+            id: "task-valid",
+            url: URL(string: "https://example.com/log.zip")!,
+            destinationURL: destinationURL
+        )
+
+        let storeDirectory = sessionDirectoryURL(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        let logURL = storeDirectory.appendingPathComponent("events.log")
+        let logBefore = try Data(contentsOf: logURL)
+
+        do {
+            _ = try DownloadTaskPersistence(
+                sessionIdentifier: sessionIdentifier,
+                baseDirectoryURL: baseDirectoryURL,
+                logFileHandleFactory: { _ in
+                    throw CocoaError(.fileReadNoPermission)
+                }
+            )
+            Issue.record("Expected protected append-log access to fail initialization")
+        } catch let error as CocoaError {
+            #expect(error.code == .fileReadNoPermission)
+        } catch {
+            Issue.record("Expected CocoaError.fileReadNoPermission, got \(error)")
+        }
+
+        #expect(try Data(contentsOf: logURL) == logBefore)
+        let names = try FileManager.default.contentsOfDirectory(atPath: storeDirectory.path)
+        #expect(names.contains(where: { $0.contains(".corrupted-") }) == false)
+
+        let reader = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        #expect(await reader.record(forID: "task-valid")?.destinationURL == destinationURL)
+    }
+
     @Test("Append log preserves concurrent updates across store instances")
     func appendLogPreservesConcurrentUpdates() async throws {
         let sessionIdentifier = "test.persistence.concurrent.\(UUID().uuidString)"
         let baseDirectoryURL = makeBaseDirectoryURL()
         try await clearPersistence(sessionIdentifier: sessionIdentifier, baseDirectoryURL: baseDirectoryURL)
 
-        let firstStore = DownloadTaskPersistence(
+        let firstStore = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
-        let secondStore = DownloadTaskPersistence(
+        let secondStore = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
@@ -680,7 +788,7 @@ struct DownloadTaskPersistenceTests {
         )
         _ = try await (writeA, writeB)
 
-        let reader = DownloadTaskPersistence(
+        let reader = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
@@ -692,7 +800,7 @@ struct DownloadTaskPersistenceTests {
     func appendLogCompactsAfterThreshold() async throws {
         let sessionIdentifier = "test.persistence.compaction.\(UUID().uuidString)"
         let baseDirectoryURL = makeBaseDirectoryURL()
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
@@ -718,7 +826,7 @@ struct DownloadTaskPersistenceTests {
     func corruptedLogTailReplaysValidPrefix() async throws {
         let sessionIdentifier = "test.persistence.log-tail.\(UUID().uuidString)"
         let baseDirectoryURL = makeBaseDirectoryURL()
-        let writer = DownloadTaskPersistence(
+        let writer = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
@@ -737,7 +845,7 @@ struct DownloadTaskPersistenceTests {
         handle.write(Data("not-json\n".utf8))
         try handle.close()
 
-        let reader = DownloadTaskPersistence(
+        let reader = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectoryURL
         )
@@ -746,6 +854,70 @@ struct DownloadTaskPersistenceTests {
 
         let files = try FileManager.default.contentsOfDirectory(atPath: storeDirectory.path)
         #expect(files.contains(where: { $0.hasPrefix("events.corrupted-") }))
+    }
+
+    @Test("A reset failure after corrupt-log recovery restores from the committed checkpoint")
+    func corruptLogResetFailureKeepsCommittedCheckpoint() async throws {
+        let sessionIdentifier = "test.persistence.log-reset.\(UUID().uuidString)"
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        defer { try? FileManager.default.removeItem(at: baseDirectoryURL) }
+
+        let writer = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        let destinationURL = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-reset.zip")
+        try await writer.upsert(
+            id: "task-valid",
+            url: URL(string: "https://example.com/reset.zip")!,
+            destinationURL: destinationURL
+        )
+
+        let storeDirectory = sessionDirectoryURL(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        let logURL = storeDirectory.appendingPathComponent("events.log")
+        let handle = try FileHandle(forWritingTo: logURL)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("not-json\n".utf8))
+        try handle.close()
+
+        do {
+            _ = try DownloadTaskPersistence(
+                sessionIdentifier: sessionIdentifier,
+                fileManager: FailingLogResetFileManager(),
+                baseDirectoryURL: baseDirectoryURL
+            )
+            Issue.record("Expected append-log reset failure to fail initialization")
+        } catch let error as CocoaError {
+            #expect(error.code == .fileWriteUnknown)
+        } catch {
+            Issue.record("Expected CocoaError.fileWriteUnknown, got \(error)")
+        }
+
+        let checkpointURL = storeDirectory.appendingPathComponent("checkpoint.json")
+        #expect(FileManager.default.fileExists(atPath: checkpointURL.path))
+        let names = try FileManager.default.contentsOfDirectory(atPath: storeDirectory.path)
+        #expect(names.contains(where: { $0.hasPrefix("events.corrupted-") }))
+        #expect(names.contains("events.log") == false)
+
+        let reader = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        #expect(await reader.record(forID: "task-valid")?.destinationURL == destinationURL)
+    }
+}
+
+private final class FailingLogResetFileManager: FileManager, @unchecked Sendable {
+    override func moveItem(at sourceURL: URL, to destinationURL: URL) throws {
+        if sourceURL.lastPathComponent.hasPrefix("events.tmp-"),
+            destinationURL.lastPathComponent == "events.log"
+        {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try super.moveItem(at: sourceURL, to: destinationURL)
     }
 }
 

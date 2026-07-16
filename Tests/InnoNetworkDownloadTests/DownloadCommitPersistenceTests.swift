@@ -82,7 +82,7 @@ struct DownloadCommitPersistenceTests {
                 maxLogBytes: UInt64.max,
                 tombstoneRatio: 1
             )
-            let writer = DownloadTaskPersistence(
+            let writer = try DownloadTaskPersistence(
                 sessionIdentifier: fixture.sessionIdentifier,
                 baseDirectoryURL: fixture.baseDirectory,
                 compactionPolicy: policy
@@ -99,7 +99,7 @@ struct DownloadCommitPersistenceTests {
             )
             #expect(try await writer.beginCommit(id: fixture.id, metadata: metadata))
 
-            let committingReader = DownloadTaskPersistence(
+            let committingReader = try DownloadTaskPersistence(
                 sessionIdentifier: fixture.sessionIdentifier,
                 baseDirectoryURL: fixture.baseDirectory,
                 compactionPolicy: policy
@@ -117,7 +117,7 @@ struct DownloadCommitPersistenceTests {
                 )
             )
 
-            let terminalReader = DownloadTaskPersistence(
+            let terminalReader = try DownloadTaskPersistence(
                 sessionIdentifier: fixture.sessionIdentifier,
                 baseDirectoryURL: fixture.baseDirectory,
                 compactionPolicy: policy
@@ -141,7 +141,7 @@ struct DownloadCommitPersistenceTests {
                 maxLogBytes: UInt64.max,
                 tombstoneRatio: 1
             )
-            let writer = DownloadTaskPersistence(
+            let writer = try DownloadTaskPersistence(
                 sessionIdentifier: fixture.sessionIdentifier,
                 baseDirectoryURL: fixture.baseDirectory,
                 compactionPolicy: policy
@@ -159,7 +159,7 @@ struct DownloadCommitPersistenceTests {
             #expect(try await writer.beginCommit(id: fixture.id, metadata: metadata))
             #expect(try await writer.abandonCommit(id: fixture.id, metadata: metadata))
 
-            let reader = DownloadTaskPersistence(
+            let reader = try DownloadTaskPersistence(
                 sessionIdentifier: fixture.sessionIdentifier,
                 baseDirectoryURL: fixture.baseDirectory,
                 compactionPolicy: policy
@@ -402,7 +402,7 @@ struct DownloadCommitPersistenceTests {
     func genericMutationsPreserveCommittingRecord() async throws {
         let fixture = makeDiskFixture(label: "generic-guard")
         defer { try? FileManager.default.removeItem(at: fixture.baseDirectory) }
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: fixture.sessionIdentifier,
             baseDirectoryURL: fixture.baseDirectory
         )
@@ -481,7 +481,7 @@ struct DownloadCommitPersistenceTests {
     func multiStoreCommitRace() async throws {
         let fixture = makeDiskFixture(label: "multi-store")
         defer { try? FileManager.default.removeItem(at: fixture.baseDirectory) }
-        let seed = DownloadTaskPersistence(
+        let seed = try DownloadTaskPersistence(
             sessionIdentifier: fixture.sessionIdentifier,
             baseDirectoryURL: fixture.baseDirectory
         )
@@ -490,11 +490,11 @@ struct DownloadCommitPersistenceTests {
             url: fixture.url,
             destinationURL: fixture.destinationURL
         )
-        let first = DownloadTaskPersistence(
+        let first = try DownloadTaskPersistence(
             sessionIdentifier: fixture.sessionIdentifier,
             baseDirectoryURL: fixture.baseDirectory
         )
-        let second = DownloadTaskPersistence(
+        let second = try DownloadTaskPersistence(
             sessionIdentifier: fixture.sessionIdentifier,
             baseDirectoryURL: fixture.baseDirectory
         )
@@ -521,7 +521,7 @@ struct DownloadCommitPersistenceTests {
         #expect(didFirstBegin != didSecondBegin)
         let winningMetadata = didFirstBegin ? firstMetadata : secondMetadata
 
-        let afterBegin = DownloadTaskPersistence(
+        let afterBegin = try DownloadTaskPersistence(
             sessionIdentifier: fixture.sessionIdentifier,
             baseDirectoryURL: fixture.baseDirectory
         )
@@ -540,7 +540,7 @@ struct DownloadCommitPersistenceTests {
         let (didFinish, didAbandon) = try await (finish, abandon)
         #expect(didFinish != didAbandon)
 
-        let verifier = DownloadTaskPersistence(
+        let verifier = try DownloadTaskPersistence(
             sessionIdentifier: fixture.sessionIdentifier,
             baseDirectoryURL: fixture.baseDirectory
         )

@@ -850,7 +850,7 @@ struct DownloadPersistenceHardeningTests {
         #expect(component != ".")
         #expect(component != "..")
 
-        _ = AppendLogDownloadTaskStore(
+        _ = try AppendLogDownloadTaskStore(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectory
         )
@@ -881,11 +881,11 @@ struct DownloadPersistenceHardeningTests {
         let sessionIdentifier = "stale-empty-remove"
         defer { try? FileManager.default.removeItem(at: baseDirectory) }
 
-        let staleRemover = AppendLogDownloadTaskStore(
+        let staleRemover = try AppendLogDownloadTaskStore(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectory
         )
-        let writer = AppendLogDownloadTaskStore(
+        let writer = try AppendLogDownloadTaskStore(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectory
         )
@@ -898,7 +898,7 @@ struct DownloadPersistenceHardeningTests {
 
         try await staleRemover.remove(id: "task")
 
-        let verifier = AppendLogDownloadTaskStore(
+        let verifier = try AppendLogDownloadTaskStore(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectory
         )
@@ -912,7 +912,7 @@ struct DownloadPersistenceHardeningTests {
         let sessionIdentifier = "stale-resume-update"
         defer { try? FileManager.default.removeItem(at: baseDirectory) }
 
-        let writer = AppendLogDownloadTaskStore(
+        let writer = try AppendLogDownloadTaskStore(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectory
         )
@@ -925,11 +925,11 @@ struct DownloadPersistenceHardeningTests {
 
         // Both actors load the record before one removes it, leaving the
         // other actor's in-memory state intentionally stale.
-        let staleUpdater = AppendLogDownloadTaskStore(
+        let staleUpdater = try AppendLogDownloadTaskStore(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectory
         )
-        let remover = AppendLogDownloadTaskStore(
+        let remover = try AppendLogDownloadTaskStore(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectory
         )
@@ -940,7 +940,7 @@ struct DownloadPersistenceHardeningTests {
             lifecycle: .paused
         )
 
-        let verifier = AppendLogDownloadTaskStore(
+        let verifier = try AppendLogDownloadTaskStore(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDirectory
         )
@@ -953,7 +953,7 @@ struct DownloadPersistenceHardeningTests {
             .appendingPathComponent("inno-persist-hardening-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: baseDir) }
 
-        let persistence = DownloadTaskPersistence(
+        let persistence = try DownloadTaskPersistence(
             sessionIdentifier: "url-index-test",
             baseDirectoryURL: baseDir
         )
@@ -981,14 +981,14 @@ struct DownloadPersistenceHardeningTests {
         let url = URL(string: "https://example.invalid/b.bin")!
         let dest = URL(fileURLWithPath: "/tmp/b.bin")
 
-        let first = DownloadTaskPersistence(
+        let first = try DownloadTaskPersistence(
             sessionIdentifier: "url-reload-test",
             baseDirectoryURL: baseDir
         )
         try await first.upsert(id: "persisted", url: url, destinationURL: dest)
 
         // Reopening the same directory must reload the reverse index.
-        let reloaded = DownloadTaskPersistence(
+        let reloaded = try DownloadTaskPersistence(
             sessionIdentifier: "url-reload-test",
             baseDirectoryURL: baseDir
         )
@@ -1011,7 +1011,7 @@ struct DownloadPersistenceHardeningTests {
         let firstDest = URL(fileURLWithPath: "/tmp/first.bin")
         let secondDest = URL(fileURLWithPath: "/tmp/second.bin")
 
-        let writer = DownloadTaskPersistence(
+        let writer = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDir,
             compactionPolicy: compactionPolicy
@@ -1034,7 +1034,7 @@ struct DownloadPersistenceHardeningTests {
         let orderedRecordIDs = try #require(checkpoint["orderedRecordIDs"] as? [String])
         #expect(orderedRecordIDs == ["newer", "older"])
 
-        let reloaded = DownloadTaskPersistence(
+        let reloaded = try DownloadTaskPersistence(
             sessionIdentifier: sessionIdentifier,
             baseDirectoryURL: baseDir,
             compactionPolicy: compactionPolicy

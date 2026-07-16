@@ -12,7 +12,9 @@ extension AppendLogDownloadTaskStore {
         onto initialRecords: [String: DownloadTaskPersistence.Record],
         initialURLToID: [URL: [String]],
         checkpointURL: URL,
-        fileManager: FileManager
+        fileManager: FileManager,
+        logFileHandleFactory: @escaping @Sendable (URL) throws -> FileHandle,
+        fsync: @escaping @Sendable (Int32) -> Int32
     ) throws -> (
         records: [String: DownloadTaskPersistence.Record],
         urlToID: [URL: [String]],
@@ -26,7 +28,12 @@ extension AppendLogDownloadTaskStore {
         var logEventCount = 0
         var tombstoneCount = 0
 
-        let handle = try FileHandle(forReadingFrom: logURL)
+        let handle: FileHandle
+        do {
+            handle = try logFileHandleFactory(logURL)
+        } catch  where isMissingFileError(error) {
+            return (records, urlToID, nextSequence, logEventCount, tombstoneCount)
+        }
         defer { try? handle.close() }
 
         var buffer = Data()
@@ -134,19 +141,19 @@ extension AppendLogDownloadTaskStore {
         }
 
         if didEncounterCorruptSuffix {
-            // Recovery path: a partial / corrupt suffix of the log forced us
-            // to rewrite the checkpoint. fsync defensively so the recovery
-            // does not have to be redone if the process crashes again before
-            // the OS flushes.
-            quarantineFileIfNeeded(logURL, fileManager: fileManager)
+            // Commit the valid prefix before moving or resetting the only
+            // authoritative log. If checkpoint persistence fails (for
+            // example, disk-full or a temporarily unavailable protected
+            // volume), the original log remains intact for a later retry.
             try writeCheckpoint(
                 records: records,
                 urlToID: urlToID,
                 to: checkpointURL,
                 fileManager: fileManager,
                 fsyncPolicy: .onCheckpoint,
-                fsync: Darwin.fsync
+                fsync: fsync
             )
+            quarantineFileIfNeeded(logURL, fileManager: fileManager)
             try resetLog(at: logURL, fileManager: fileManager)
         }
 

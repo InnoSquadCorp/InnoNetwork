@@ -11,7 +11,10 @@ extension AppendLogDownloadTaskStore {
         directoryURL: URL,
         checkpointURL: URL,
         logURL: URL,
-        fileManager: FileManager
+        fileManager: FileManager,
+        checkpointDataReader: @escaping @Sendable (URL) throws -> Data,
+        logFileHandleFactory: @escaping @Sendable (URL) throws -> FileHandle,
+        fsync: @escaping @Sendable (Int32) -> Int32
     ) throws -> StoreState {
         try ensureDirectoryExists(at: directoryURL, fileManager: fileManager)
         var records: [String: DownloadTaskPersistence.Record] = [:]
@@ -20,10 +23,21 @@ extension AppendLogDownloadTaskStore {
         var logEventCount = 0
         var tombstoneCount = 0
 
-        if fileManager.fileExists(atPath: checkpointURL.path()) {
+        let checkpointData: Data?
+        do {
+            // File access failures are not proof of corruption. In
+            // particular, complete-until-first-user-authentication files can
+            // be temporarily unreadable before the first device unlock.
+            // Preserve the checkpoint and let initialization fail so a later
+            // attempt can recover the authoritative state.
+            checkpointData = try checkpointDataReader(checkpointURL)
+        } catch  where isMissingFileError(error) {
+            checkpointData = nil
+        }
+
+        if let checkpointData {
             do {
-                let data = try Data(contentsOf: checkpointURL)
-                let envelope = try JSONDecoder().decode(Envelope.self, from: data)
+                let envelope = try JSONDecoder().decode(Envelope.self, from: checkpointData)
                 guard envelope.version == 1 else {
                     throw CocoaError(.coderInvalidValue)
                 }
@@ -39,20 +53,20 @@ extension AppendLogDownloadTaskStore {
             }
         }
 
-        if fileManager.fileExists(atPath: logURL.path()) {
-            let replayResult = try replayLog(
-                at: logURL,
-                onto: records,
-                initialURLToID: urlToID,
-                checkpointURL: checkpointURL,
-                fileManager: fileManager
-            )
-            records = replayResult.records
-            urlToID = replayResult.urlToID
-            nextSequence = replayResult.nextSequence
-            logEventCount = replayResult.logEventCount
-            tombstoneCount = replayResult.tombstoneCount
-        }
+        let replayResult = try replayLog(
+            at: logURL,
+            onto: records,
+            initialURLToID: urlToID,
+            checkpointURL: checkpointURL,
+            fileManager: fileManager,
+            logFileHandleFactory: logFileHandleFactory,
+            fsync: fsync
+        )
+        records = replayResult.records
+        urlToID = replayResult.urlToID
+        nextSequence = replayResult.nextSequence
+        logEventCount = replayResult.logEventCount
+        tombstoneCount = replayResult.tombstoneCount
 
         return StoreState(
             records: records,

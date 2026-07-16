@@ -93,11 +93,17 @@ let configuration = DownloadConfiguration.advanced(
 
 ## Corrupt file handling
 
-A read failure during restoration (truncated JSON, wrong sequence ordering, file system
-fault) does not block startup. The store renames the corrupt file to
-`events.corrupted-<timestamp>.log` and continues with whatever is recoverable, then writes a
-fresh checkpoint. The corrupt copy stays on disk until the operator removes it, so support
-can inspect it after the fact.
+Syntactically malformed or unsupported checkpoint data is quarantined so a valid append log
+can still be replayed. When an append log has a malformed suffix, the store first commits and
+fsyncs a checkpoint containing the valid prefix, then renames the source log to
+`events.corrupted-<timestamp>.log` and creates a fresh active log. The corrupt copy stays on
+disk until the operator removes it, so support can inspect it after the fact.
+
+File-access failures are different from malformed data. Data Protection before first unlock,
+permission errors, lock failures, disk errors, and other transient I/O failures make
+``DownloadManager/init(configuration:)`` throw without moving or deleting the checkpoint or
+append log. Retry initialization after the storage boundary becomes available; the preserved
+files remain authoritative for restoration.
 
 ## File locking
 

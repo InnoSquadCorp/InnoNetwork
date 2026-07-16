@@ -587,7 +587,7 @@ private enum InnoNetworkBenchmarks {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         return try await measure(name: "append-log-write", group: "persistence", iterations: iterations) {
-            let persistence = DownloadTaskPersistence(
+            let persistence = try DownloadTaskPersistence(
                 sessionIdentifier: "bench.append",
                 baseDirectoryURL: directory
             )
@@ -605,7 +605,7 @@ private enum InnoNetworkBenchmarks {
         let directory = try makeTemporaryDirectory(prefix: "replay")
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let seed = DownloadTaskPersistence(sessionIdentifier: "bench.replay", baseDirectoryURL: directory)
+        let seed = try DownloadTaskPersistence(sessionIdentifier: "bench.replay", baseDirectoryURL: directory)
         for index in 0..<iterations {
             try await seed.upsert(
                 id: "task-\(index)",
@@ -615,7 +615,10 @@ private enum InnoNetworkBenchmarks {
         }
 
         return try await measure(name: "append-log-replay", group: "persistence", iterations: iterations) {
-            let replayed = DownloadTaskPersistence(sessionIdentifier: "bench.replay", baseDirectoryURL: directory)
+            let replayed = try DownloadTaskPersistence(
+                sessionIdentifier: "bench.replay",
+                baseDirectoryURL: directory
+            )
             for _ in 0..<iterations {
                 _ = await replayed.allRecords()
             }
@@ -627,7 +630,7 @@ private enum InnoNetworkBenchmarks {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         return try await measure(name: "append-log-compaction", group: "persistence", iterations: iterations) {
-            let persistence = DownloadTaskPersistence(
+            let persistence = try DownloadTaskPersistence(
                 sessionIdentifier: "bench.compact",
                 baseDirectoryURL: directory
             )
@@ -645,7 +648,7 @@ private enum InnoNetworkBenchmarks {
         let directory = try makeTemporaryDirectory(prefix: "restore")
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let seed = DownloadTaskPersistence(sessionIdentifier: "bench.restore", baseDirectoryURL: directory)
+        let seed = try DownloadTaskPersistence(sessionIdentifier: "bench.restore", baseDirectoryURL: directory)
         for index in 0..<200 {
             try await seed.upsert(
                 id: "task-\(index)",
@@ -656,7 +659,10 @@ private enum InnoNetworkBenchmarks {
 
         return try await measure(name: "download-persistence-restore", group: "persistence", iterations: iterations) {
             for _ in 0..<iterations {
-                let restored = DownloadTaskPersistence(sessionIdentifier: "bench.restore", baseDirectoryURL: directory)
+                let restored = try DownloadTaskPersistence(
+                    sessionIdentifier: "bench.restore",
+                    baseDirectoryURL: directory
+                )
                 _ = await restored.allRecords()
             }
         }

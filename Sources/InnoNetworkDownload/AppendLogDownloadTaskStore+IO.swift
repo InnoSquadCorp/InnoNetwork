@@ -8,6 +8,15 @@ import Foundation
 // code, no behaviour changes.
 extension AppendLogDownloadTaskStore {
 
+    static func isMissingFileError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain {
+            return nsError.code == CocoaError.Code.fileNoSuchFile.rawValue
+                || nsError.code == CocoaError.Code.fileReadNoSuchFile.rawValue
+        }
+        return nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(ENOENT)
+    }
+
     static func defaultBaseDirectory(fileManager: FileManager) -> URL {
         fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     }
