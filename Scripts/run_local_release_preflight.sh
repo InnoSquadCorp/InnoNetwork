@@ -106,6 +106,8 @@ run_release_script_fixtures() {
   bash Scripts/tests/test_generate_dependency_snapshot.sh
   bash Scripts/tests/test_check_guarded_benchmark_contract.sh
   python3 Scripts/tests/test_run_with_guarded_benchmarks.py
+  bash Scripts/tests/test_build_consumer_examples.sh
+  python3 Scripts/tests/test_check_example_platform_floors.py
   bash Scripts/tests/test_check_docc_archives.sh
 }
 
@@ -139,23 +141,7 @@ run_documentation_smoke() {
 }
 
 run_consumer_examples() {
-  local manifests=()
-  local manifest
-  local package_path
-  while IFS= read -r manifest; do
-    manifests+=("$manifest")
-  done < <(find Examples -mindepth 2 -maxdepth 2 -name Package.swift -print | sort)
-
-  if [[ ${#manifests[@]} -eq 0 ]]; then
-    echo "local-release-preflight: no independent consumer examples were discovered" >&2
-    exit 1
-  fi
-
-  for manifest in "${manifests[@]}"; do
-    package_path="$(dirname "$manifest")"
-    echo "Building consumer example: $package_path"
-    xcrun swift build --package-path "$package_path"
-  done
+  bash Scripts/build_consumer_examples.sh
 }
 
 run_openapi_generator() {

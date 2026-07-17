@@ -508,7 +508,10 @@ jobs:
         run: bash Scripts/check_stable_examples.sh
 
       - name: Verify example deployment floors
-        run: python3 Scripts/check_example_platform_floors.py
+        run: |
+          python3 Scripts/check_example_platform_floors.py
+          python3 Scripts/tests/test_check_example_platform_floors.py
+          bash Scripts/tests/test_build_consumer_examples.sh
 
       - name: Verify migration guide code blocks compile
         run: bash Scripts/check_migration_examples.sh
@@ -626,37 +629,8 @@ jobs:
       - name: Build root core without default traits
         run: bash Scripts/check_core_trait_build.sh
 
-      - name: Build core-only consumer smoke package
-        working-directory: Examples/CoreSmoke
-        run: xcrun swift build
-
-      - name: Build aggregate consumer smoke package
-        working-directory: Examples/ConsumerSmoke
-        run: xcrun swift build
-
-      - name: Build wrapper consumer smoke package
-        working-directory: Examples/WrapperSmoke
-        run: xcrun swift build
-
-      - name: Build download-only consumer smoke package
-        working-directory: Examples/DownloadManager
-        run: xcrun swift build
-
-      - name: Build websocket-only consumer smoke package
-        working-directory: Examples/WebSocketChat
-        run: xcrun swift build
-
-      - name: Build test-support consumer smoke package
-        working-directory: Examples/TestSupportSmoke
-        run: xcrun swift build
-
-      - name: Build generated client recipe package
-        working-directory: Examples/GeneratedClientRecipe
-        run: xcrun swift build
-
-      - name: Build event policy observer package
-        working-directory: Examples/EventPolicyObserver
-        run: xcrun swift build
+      - name: Build all independent consumer examples
+        run: bash Scripts/build_consumer_examples.sh
 
       - name: Test macros from source (with code coverage)
         run: |
@@ -690,10 +664,6 @@ jobs:
       - name: Test openapi-to-innonetwork CLI
         working-directory: Tools/openapi-to-innonetwork
         run: xcrun swift test
-
-      - name: Build macro usage package
-        working-directory: Examples/MacroUsage
-        run: xcrun swift build
 
   upload-macro-coverage:
     name: Upload Macro Coverage

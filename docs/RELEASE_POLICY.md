@@ -38,7 +38,7 @@
    - default trait graph and clean core-only build checks
    - docs contract sync
    - doc smoke build/run
-   - consumer smoke build
+   - every independently discovered consumer example build
    - release-mode benchmark quick run with enforced baselines for the guarded
      request pipeline, event hub, response cache, download restore, and
      WebSocket lifecycle/send set

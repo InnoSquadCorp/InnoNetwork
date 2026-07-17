@@ -78,9 +78,10 @@ The `CI` workflow must pass all of the following:
    fails CI. SwiftPM test+coverage remains the runtime test gate.
 12. `python3 Scripts/check_example_platform_floors.py` discovers every
     independent `Examples/*/Package.swift`, requires the root package's exact
-    deployment floors, and requires both CI and release workflows to build
-    every discovered example. A new correctly versioned example therefore
-    cannot silently miss either gate.
+    deployment floors, and requires CI and release to invoke the same automatic
+    example builder. `Scripts/build_consumer_examples.sh` discovers the same
+    manifests at execution time, so a new correctly versioned example cannot
+    silently miss CI, release, or local preflight.
 13. Consumer smoke verifies `Macros` is a default trait, the default package
    graph includes `swift-syntax`, and the `InnoNetworkMacros` target
    dependency is conditioned on that trait. It then performs a clean
@@ -185,10 +186,7 @@ python3 Scripts/check_example_platform_floors.py
 # Verify default and core-only macro trait profiles.
 bash Scripts/check_macro_trait_graphs.sh
 bash Scripts/check_core_trait_build.sh
-xcrun swift build --package-path Examples/CoreSmoke
-xcrun swift build --package-path Examples/MacroUsage
-xcrun swift build --package-path Examples/WrapperSmoke
-xcrun swift build --package-path Examples/EventPolicyObserver
+bash Scripts/build_consumer_examples.sh
 xcrun swift build --package-path Tools/openapi-to-innonetwork
 xcrun swift test --package-path Tools/openapi-to-innonetwork
 

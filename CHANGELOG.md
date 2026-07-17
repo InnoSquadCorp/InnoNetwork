@@ -137,6 +137,10 @@ draft release summary.
   bounded tests. Its `--full` mode also generates coverage and both SBOM
   profiles, enforces the 10% benchmark guards, verifies all eight public DocC
   archives, and builds macOS, iOS, tvOS, watchOS, and visionOS locally.
+- `Scripts/build_consumer_examples.sh` is now the shared CI, release, and local
+  builder for every independent `Examples/*/Package.swift`. New examples are
+  discovered automatically after their deployment floors pass validation,
+  instead of requiring duplicated workflow step updates.
 - `Benchmarks/guarded-benchmarks.txt` is the reviewed source of truth for the
   protected performance set. A shared runner injects that ordered set into CI,
   scheduled/manual benchmarks, release validation, contributor docs, and the
