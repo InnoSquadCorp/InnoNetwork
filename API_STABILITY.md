@@ -9,8 +9,9 @@ and may still change before release.
 The planned 5.0.0 baseline will remove the deprecated 4.x
 `NetworkConfiguration.with(...)` modifier family, replace the type-level
 auth-scope markers with an explicit `SessionAuthentication` value on every
-endpoint shape, and move the shared `StateReducer` / `StateReduction`
-lifecycle vocabulary to package scope.
+endpoint shape, remove the raw-string `NetworkClient.request(_:method:tag:)`
+shortcut, and move the shared `StateReducer` / `StateReduction` lifecycle
+vocabulary to package scope.
 Preview adopters should migrate configuration to
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.
@@ -28,7 +29,6 @@ and own application reducer types in their feature or architecture layer.
 - `DefaultNetworkClient.shutdown()`
 - `NetworkClient.request(_:)`
 - `NetworkClient.request(_:tag:)`
-- `NetworkClient.request(_:method:tag:)`
 - `NetworkClient.upload(_:)`
 - `NetworkClient.upload(_:tag:)`
 - `NetworkConfiguration.safeDefaults(baseURL:)`

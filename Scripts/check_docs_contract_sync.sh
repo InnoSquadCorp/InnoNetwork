@@ -153,7 +153,6 @@ expected_stable=(
 '`DefaultNetworkClient.shutdown()`'
 '`NetworkClient.request(_:)`'
 '`NetworkClient.request(_:tag:)`'
-'`NetworkClient.request(_:method:tag:)`'
 '`NetworkClient.upload(_:)`'
 '`NetworkClient.upload(_:tag:)`'
 '`NetworkConfiguration.safeDefaults(baseURL:)`'
@@ -1172,10 +1171,6 @@ for symbol in "${expected_stable[@]}"; do
     '`NetworkClient.request(_:tag:)`')
       pattern='    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError) -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
-      ;;
-    '`NetworkClient.request(_:method:tag:)`')
-      pattern='    public func request<T: Decodable & Sendable>('
-      target="$repo_root/Sources/InnoNetwork/NetworkClient+PathConvenience.swift"
       ;;
     '`NetworkClient.upload(_:)`')
       pattern='    func upload<T: MultipartAPIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse'

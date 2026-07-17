@@ -31,6 +31,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | `import InnoNetworkCodegen` | Remove it; the attached macro ships from `import InnoNetwork` |
 | `@APIDefinition(method:path:)` | Add mandatory `auth: .anonymous`, `.optional`, or `.required` |
 | `#endpoint(method, path, as: Response.self)` | Use a named macro-assisted endpoint struct or runtime `EndpointBuilder` |
+| `client.request(path, method:tag:)` | Use a named `APIDefinition` or an explicit `EndpointBuilder` |
 | Passing an optional directly to `EndpointPathEncoding.percentEncodedSegment` | Unwrap it and define the nil behavior before encoding |
 | Assuming `safeDefaults` / `advanced` has an unbounded collected response, including for file uploads | Accept the 5 MiB default, configure another explicit bound, or deliberately select `.streaming(maxBytes: nil)` / `.buffered(maxBytes: nil)` |
 | Using `MockURLSession` or VCR replay mode with `safeDefaults` | No configuration change is required; fixture data is buffered by design and the response ceiling is enforced before the response pipeline |
@@ -104,6 +105,42 @@ let endpoint = EndpointBuilder<EmptyResponse>
 
 The non-generic builder initializer also accepts
 `authentication: SessionAuthentication`; its default is `.anonymous`.
+
+## Replace raw-string requests with an explicit endpoint contract
+
+The 4.x `NetworkClient.request(_:method:tag:)` overload inferred only the
+decoded response type. It silently selected anonymous session authentication
+and method-derived transport defaults, so the call site could not show the
+complete security and payload contract. The overload is removed in 5.0.
+
+Prefer a named endpoint for application API catalogs. The struct remains the
+source of truth while the macro derives repetitive witnesses:
+
+```swift
+// 4.x
+let user: User = try await client.request("/users/\(id)")
+
+// 5.0
+@APIDefinition(method: .get, path: "/users/{id}", auth: .required)
+struct GetUser {
+    typealias APIResponse = User
+    let id: Int
+}
+
+let user = try await client.request(GetUser(id: id))
+```
+
+For a genuinely one-off or runtime-composed request, keep the choices visible
+with `EndpointBuilder`:
+
+```swift
+let user = try await client.request(
+    EndpointBuilder<EmptyResponse>
+        .get("/users/\(id)")
+        .authentication(.required)
+        .decoding(User.self)
+)
+```
 
 ## Treat HTTP methods as an open token set
 

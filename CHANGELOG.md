@@ -25,6 +25,10 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
 - Public optional overloads of
   `EndpointPathEncoding.percentEncodedSegment(_:)` are removed. Unwrap optional
   path values and define their nil behavior before encoding.
+- The raw-string `NetworkClient.request(_:method:tag:)` convenience is removed.
+  Use a named macro-assisted or manual `APIDefinition` for catalog requests, or
+  an `EndpointBuilder` with an explicit authentication choice for one-off and
+  runtime-composed requests.
 - `HTTPMethod` is now an extensible, `RawRepresentable` value type. Standard
   methods remain static constants; custom methods use the failable
   `init(rawValue:)`, which accepts only nonempty RFC 9110 tokens. Code that
