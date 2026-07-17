@@ -228,7 +228,9 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   `TRACE` as safe, while `PUT` and `DELETE` require `Idempotency-Key` or an
   explicit method-agnostic policy. Response cache writes for requests carrying
   `Authorization` require both the caller's privacy opt-in and an RFC 9111
-  permission directive (`public`, `must-revalidate`, or `s-maxage`).
+  permission directive (`public`, `must-revalidate`, or `s-maxage`). Core
+  URLSession transports clear session-configured additional-header values on
+  cross-origin redirects while preserving them on same-origin hops.
 - `NetworkConfigurationFailureReason` — typed payload for
   ``NetworkError/configuration(reason:)``. Carries
   `invalidBaseURL` / `invalidRequest` / `offline` cases. The standalone

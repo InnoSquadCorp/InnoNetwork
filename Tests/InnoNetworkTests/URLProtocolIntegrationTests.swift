@@ -86,6 +86,80 @@ struct URLProtocolIntegrationTests {
         #expect(captured.first?.value(forHTTPHeaderField: "X-Test-Marker") == "marker-value")
     }
 
+    @Test("Cross-origin redirects clear URLSession additional header values")
+    func crossOriginRedirectClearsSessionHeaderValues() async throws {
+        let baseURL = URL(string: "https://session-header-source-\(UUID().uuidString).example.com")!
+        let source = baseURL.appendingPathComponent("/source")
+        let target = URL(
+            string: "https://session-header-target-\(UUID().uuidString).example.net/final"
+        )!
+        StubURLProtocol.register(
+            url: source,
+            response: .redirect(statusCode: 302, location: target)
+        )
+        StubURLProtocol.register(
+            url: target,
+            response: .success(
+                statusCode: 200,
+                data: Data(#"{"message":"redirected"}"#.utf8),
+                headers: ["Content-Type": "application/json"]
+            )
+        )
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(baseURL: baseURL),
+            session: makeStubURLSession(
+                additionalHeaders: ["X-Session-Secret": "session-secret"]
+            )
+        )
+
+        let response = try await client.request(RedirectEndpoint(path: "/source"))
+
+        #expect(response.message == "redirected")
+        let sourceRequest = try #require(
+            StubURLProtocol.capturedRequests().first { $0.url == source }
+        )
+        let targetRequest = try #require(
+            StubURLProtocol.capturedRequests().first { $0.url == target }
+        )
+        #expect(sourceRequest.value(forHTTPHeaderField: "X-Session-Secret") == "session-secret")
+        #expect(targetRequest.value(forHTTPHeaderField: "X-Session-Secret") == "")
+    }
+
+    @Test("Same-origin redirects preserve URLSession additional header values")
+    func sameOriginRedirectPreservesSessionHeaderValues() async throws {
+        let baseURL = URL(string: "https://session-header-same-\(UUID().uuidString).example.com")!
+        let source = baseURL.appendingPathComponent("/source")
+        let target = baseURL.appendingPathComponent("/final")
+        StubURLProtocol.register(
+            url: source,
+            response: .redirect(statusCode: 302, location: target)
+        )
+        StubURLProtocol.register(
+            url: target,
+            response: .success(
+                statusCode: 200,
+                data: Data(#"{"message":"redirected"}"#.utf8),
+                headers: ["Content-Type": "application/json"]
+            )
+        )
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(baseURL: baseURL),
+            session: makeStubURLSession(
+                additionalHeaders: ["X-Session-Default": "session-default"]
+            )
+        )
+
+        let response = try await client.request(RedirectEndpoint(path: "/source"))
+
+        #expect(response.message == "redirected")
+        let targetRequest = try #require(
+            StubURLProtocol.capturedRequests().first { $0.url == target }
+        )
+        #expect(targetRequest.value(forHTTPHeaderField: "X-Session-Default") == "session-default")
+    }
+
     // The two streaming-buffering tests below stay at the URLProtocol
     // integration level because `URLSession.AsyncBytes` is not externally
     // constructible — `MockURLSession.bytes(for:)` cannot synthesise a
@@ -769,10 +843,13 @@ private struct UploadFramingSigner: RequestSigner {
     }
 }
 
-private func makeStubURLSession() -> URLSession {
+private func makeStubURLSession(
+    additionalHeaders: [String: String] = [:]
+) -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [StubURLProtocol.self]
     configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    configuration.httpAdditionalHeaders = additionalHeaders
     return URLSession(configuration: configuration)
 }
 
