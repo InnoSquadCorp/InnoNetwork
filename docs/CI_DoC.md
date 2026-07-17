@@ -107,7 +107,9 @@ The `CI` workflow must pass all of the following:
 15. Macro tests run from source with
     `--disable-experimental-prebuilts --filter InnoNetworkMacroTests`, and
     `Scripts/check_macro_compile_failures.sh` verifies that invalid definitions
-    fail with the intended diagnostic rather than compiling silently.
+    fail with the intended diagnostic rather than compiling silently. The
+    fixtures also require an unannotated request value to receive the targeted
+    `@APIDefinition` correction at the `NetworkClient.request` boundary.
 16. The CI benchmark smoke job runs
     `swift run -c release InnoNetworkBenchmarks --quick`
     and uploads the JSON summary to prove the benchmark CLI still builds and

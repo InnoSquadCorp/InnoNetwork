@@ -132,6 +132,9 @@ draft release summary.
   `parameters` pair remains authoritative. Fail-closed diagnostics reject
   incomplete, unsafe, traversal-bearing, or ambiguous declarations, and reject
   custom-method simple payload inference.
+- Passing an unannotated endpoint struct to either `NetworkClient.request`
+  overload now produces an actionable error requesting `@APIDefinition` or a
+  manual conformance instead of a generic protocol-conformance diagnostic.
 - Macro method and authentication arguments accept contextual, type-qualified,
   and module-qualified standard members. Recognized members are canonicalized
   before generation so aliases and caller-owned lookalike types cannot change

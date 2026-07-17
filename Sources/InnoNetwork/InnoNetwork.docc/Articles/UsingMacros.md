@@ -162,6 +162,18 @@ Simple string interpolation in `path:` receives a Fix-It to use `{property}`
 placeholder syntax. A redundant `typealias Parameter = EmptyParameter` emits a
 warning because the macro already derives it for an empty request.
 
+Swift cannot distinguish an endpoint that accidentally omitted the attribute
+from an ordinary struct at its declaration. When that value first reaches
+`NetworkClient.request`, both the ordinary and cancellation-tag overloads fail
+with a targeted diagnostic:
+
+> Request types must conform to APIDefinition. Add
+> @APIDefinition(method:path:auth:) to the endpoint struct, or provide a manual
+> conformance.
+
+This keeps the explicit struct as the source of truth while turning the first
+provable misuse into an actionable macro-first correction.
+
 The 4.x `#endpoint` expression macro is removed in 5.0. For an unnamed or
 runtime-composed request, use the stable ``EndpointBuilder`` API. For generated
 OpenAPI clients, keep `swift-http-types` and OpenAPI Runtime integration behind
