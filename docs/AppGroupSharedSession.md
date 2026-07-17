@@ -20,7 +20,7 @@ download sessions and for isolated extension HTTP clients.
 ## What InnoNetwork supports out of the box
 
 - After `backgroundTransfersEnabled()` opt-in,
-  `DownloadManager.make(configuration:)` builds a background `URLSession` whose
+  `DownloadManager(configuration:)` builds a background `URLSession` whose
   identifier is whatever you pass through
   ``DownloadConfiguration/safeDefaults(sessionIdentifier:)`` or the advanced
   builder. That identifier then scopes the OS-managed download queue, but it
@@ -132,7 +132,7 @@ let configuration = DownloadConfiguration.advanced { builder in
     )
 }.backgroundTransfersEnabled()
 
-let manager = try DownloadManager.make(configuration: configuration)
+let manager = try DownloadManager(configuration: configuration)
 ```
 
 `DownloadConfiguration.safeDefaults(...)` keeps both sharing settings `nil`;

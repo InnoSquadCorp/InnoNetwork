@@ -31,6 +31,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | `WebSocketManager.handleBackgroundSessionCompletion(_:completion:)` | Remove the call; route download identifiers to `DownloadManager`, otherwise invoke the app callback directly |
 | `WebSocketConfiguration.sessionIdentifier` / `AdvancedBuilder.sessionIdentifier` | Remove the value; WebSocket sessions are foreground-only and the identifier was never applied |
 | `DownloadConfiguration.default` / `WebSocketConfiguration.default` | Call the matching `safeDefaults()` factory; zero-argument manager initialization remains available |
+| `DownloadManager.make(configuration:)` | Call the throwing `DownloadManager(configuration:)` initializer |
 | Direct `WebSocketConfiguration(...)` initialization | Use `safeDefaults()` or set explicit overrides through `advanced(_:)` |
 | Constructing a `WebSocketTask` directly | Obtain the handle from `await manager.connect(url:subprotocols:)` or an accepted `retry(_:)` result |
 | `import InnoNetworkCodegen` | Remove it; the attached macro ships from `import InnoNetwork` |
@@ -417,9 +418,26 @@ let downloadConfiguration = DownloadConfiguration.safeDefaults()
 let socketConfiguration = WebSocketConfiguration.safeDefaults()
 ```
 
-Manager convenience remains unchanged. `try DownloadManager()` and
+Zero-argument construction remains available. `try DownloadManager()` and
 `WebSocketManager()` still select their secure presets without requiring a
 configuration argument.
+
+## Use the DownloadManager initializer
+
+`DownloadManager.make(configuration:)` was an exact forwarding alias for the
+public throwing initializer, including the same default configuration and
+errors. In 5.0 the initializer is the single construction path:
+
+```swift
+// 4.x
+let manager = try DownloadManager.make(configuration: configuration)
+
+// 5.0
+let manager = try DownloadManager(configuration: configuration)
+```
+
+This changes only the spelling. Ownership, restoration, duplicate-session
+validation, and shutdown behavior remain unchanged.
 
 The direct 21-parameter `WebSocketConfiguration` initializer is also
 package-owned in 5.0. Move explicit tuning into the advanced builder:

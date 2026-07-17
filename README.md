@@ -314,7 +314,7 @@ import InnoNetworkDownload
 // instance binds a unique URLSession identifier and DownloadConfiguration,
 // so a media downloader can be WiFi-only and resumable while a documents
 // downloader uses a different retry budget.
-let manager = try DownloadManager.make(
+let manager = try DownloadManager(
     configuration: .safeDefaults(sessionIdentifier: "com.example.app.media")
 )
 let task = await manager.download(
@@ -340,8 +340,8 @@ redirect trade-off below and in the
 
 > The 4.0.0 line removes the global `DownloadManager.shared` singleton —
 > every feature now constructs and owns its own manager via
-> ``DownloadManager.make(configuration:)`` with a unique session identifier.
-> The throwing factory surfaces ``DownloadManagerError`` (e.g.,
+> ``DownloadManager/init(configuration:)`` with a unique session identifier.
+> The throwing initializer surfaces ``DownloadManagerError`` (e.g.,
 > `duplicateSessionIdentifier`) directly so the failure mode is explicit.
 
 #### Destination filename policy

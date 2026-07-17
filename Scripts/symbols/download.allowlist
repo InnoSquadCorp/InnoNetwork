@@ -137,6 +137,5 @@ InnoNetworkDownload	swift.type.method	DownloadConfiguration.advanced(_:)
 InnoNetworkDownload	swift.type.method	DownloadConfiguration.advanced(sessionIdentifier:_:)
 InnoNetworkDownload	swift.type.method	DownloadConfiguration.safeDefaults()
 InnoNetworkDownload	swift.type.method	DownloadConfiguration.safeDefaults(sessionIdentifier:)
-InnoNetworkDownload	swift.type.method	DownloadManager.make(configuration:)
 InnoNetworkDownload	swift.type.property	DownloadConfiguration.PersistenceCompactionPolicy.default
 InnoNetworkDownload	swift.type.property	DownloadProgress.zero
