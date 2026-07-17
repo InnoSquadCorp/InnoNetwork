@@ -104,6 +104,7 @@ run_release_script_fixtures() {
   bash Scripts/tests/test_validate_release_ref.sh
   bash Scripts/tests/test_generate_sbom.sh
   bash Scripts/tests/test_generate_dependency_snapshot.sh
+  bash Scripts/tests/test_check_guarded_benchmark_contract.sh
 }
 
 run_dependency_lock() {
@@ -116,6 +117,7 @@ run_static_contracts() {
   bash Scripts/format.sh --lint
   bash Scripts/check_macro_trait_graphs.sh
   bash Scripts/check_core_trait_build.sh
+  bash Scripts/check_guarded_benchmark_contract.sh
   bash Scripts/check_docs_contract_sync.sh
   bash Scripts/check_stable_examples.sh
   python3 Scripts/check_example_platform_floors.py
