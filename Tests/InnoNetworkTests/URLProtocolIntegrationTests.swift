@@ -224,7 +224,7 @@ struct URLProtocolIntegrationTests {
         do {
             _ = try await client.request(BinaryEndpoint(path: "/large"))
             Issue.record("Expected response-too-large NetworkError.underlying")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .underlying(let underlying, _)
             where underlying.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue:

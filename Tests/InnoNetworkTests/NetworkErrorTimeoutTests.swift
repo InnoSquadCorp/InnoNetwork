@@ -53,7 +53,7 @@ struct NetworkErrorTimeoutTests {
         do {
             _ = try await client.request(TimingOutAPIRequest())
             Issue.record("Expected timeout error")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .timeout(.requestTimeout, let underlying):
                 #expect(underlying?.domain == NSURLErrorDomain)
@@ -77,7 +77,7 @@ struct NetworkErrorTimeoutTests {
         do {
             _ = try await client.request(TimingOutAPIRequest())
             Issue.record("Expected timeout error")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .timeout(.requestTimeout, let underlying):
                 #expect(underlying?.domain == NSURLErrorDomain)
@@ -99,7 +99,7 @@ struct NetworkErrorTimeoutTests {
         do {
             _ = try await client.request(TimingOutAPIRequest())
             Issue.record("Expected connection timeout")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .timeout(.connectionTimeout, let underlying):
                 #expect(underlying?.domain == NSURLErrorDomain)
@@ -121,7 +121,7 @@ struct NetworkErrorTimeoutTests {
         do {
             _ = try await client.request(TimingOutAPIRequest())
             Issue.record("Expected reachability DNS error")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .reachability(.cannotFindHost, let underlying, nil):
                 #expect(underlying.domain == NSURLErrorDomain)
@@ -210,7 +210,7 @@ struct NetworkErrorTimeoutTests {
         do {
             _ = try await client.request(TimingOutAPIRequest())
             Issue.record("Expected cancellation")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .cancelled: break
             default: Issue.record("Expected NetworkError.cancelled, got \(error)")
@@ -229,7 +229,7 @@ struct NetworkErrorTimeoutTests {
         do {
             _ = try await client.request(TimingOutAPIRequest())
             Issue.record("Expected reachability error")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .reachability(.networkConnectionLost, let underlying, nil):
                 #expect(underlying.code == URLError.Code.networkConnectionLost.rawValue)
@@ -417,7 +417,7 @@ struct NetworkErrorTimeoutTests {
         do {
             _ = try await client.request(TimingOutAPIRequest())
             Issue.record("Expected reachability error")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .reachability(.notConnectedToInternet, let underlying, nil):
                 #expect(underlying.code == URLError.Code.notConnectedToInternet.rawValue)

@@ -203,7 +203,7 @@ struct RequestExecutionPolicyTests {
         do {
             _ = try await client.request(DataEcho())
             Issue.record("Expected ThrowingPolicy.PolicyError to propagate")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .underlying:
                 // Throwing policies surface as `.underlying`; transport never fired.
@@ -211,8 +211,6 @@ struct RequestExecutionPolicyTests {
             default:
                 Issue.record("Expected NetworkError.underlying wrapping PolicyError, got \(error)")
             }
-        } catch {
-            Issue.record("Expected NetworkError, got \(error)")
         }
         #expect(mockSession.capturedRequest == nil)
     }
@@ -247,7 +245,7 @@ struct RequestExecutionPolicyTests {
         do {
             _ = try await client.request(DataEcho())
             Issue.record("Expected NetworkError.underlying for non-HTTP response")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .underlying(let underlying, _):
                 #expect(underlying.message.contains("non-HTTP response"))
@@ -271,7 +269,7 @@ struct RequestExecutionPolicyTests {
         do {
             _ = try await client.request(DataEcho())
             Issue.record("Expected NetworkError.invalidRequestConfiguration")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .configuration(reason: .invalidRequest):
                 // Expected: streaming bytes() not supported, no buffered fallback.
