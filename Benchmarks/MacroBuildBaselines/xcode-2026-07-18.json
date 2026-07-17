@@ -1,0 +1,189 @@
+{
+  "driver": "xcode",
+  "repeat": 5,
+  "results": [
+    {
+      "driver": "xcode",
+      "endpoint_count": 0,
+      "median_seconds": 17.478466542001115,
+      "phase": "clean",
+      "profile": "core-only",
+      "samples_seconds": [
+        24.72286329200142,
+        17.420925124984933,
+        17.351335417013615,
+        17.96636395799578,
+        17.478466542001115
+      ]
+    },
+    {
+      "driver": "xcode",
+      "endpoint_count": 0,
+      "median_seconds": 3.3273214169894345,
+      "phase": "noop-incremental",
+      "profile": "core-only",
+      "samples_seconds": [
+        3.5773884580121376,
+        3.4098566659959033,
+        2.9099561249895487,
+        3.3273214169894345,
+        2.832842250005342
+      ]
+    },
+    {
+      "driver": "xcode",
+      "endpoint_count": 0,
+      "median_seconds": 17.017640791018493,
+      "phase": "clean",
+      "profile": "macros-0",
+      "samples_seconds": [
+        17.466896625002846,
+        16.196626040997216,
+        17.834345958021004,
+        16.775494750007056,
+        17.017640791018493
+      ]
+    },
+    {
+      "driver": "xcode",
+      "endpoint_count": 0,
+      "median_seconds": 2.9778902909893077,
+      "phase": "noop-incremental",
+      "profile": "macros-0",
+      "samples_seconds": [
+        3.2766678750049323,
+        2.8990745000191964,
+        3.1288170000188984,
+        2.9778902909893077,
+        2.969153834012104
+      ]
+    },
+    {
+      "driver": "xcode",
+      "endpoint_count": 10,
+      "median_seconds": 17.54028958300478,
+      "phase": "clean",
+      "profile": "macros-10",
+      "samples_seconds": [
+        17.56025533299544,
+        18.709703625005204,
+        17.48269312499906,
+        17.54028958300478,
+        17.528285207983572
+      ]
+    },
+    {
+      "driver": "xcode",
+      "endpoint_count": 10,
+      "median_seconds": 3.1729370419925544,
+      "phase": "noop-incremental",
+      "profile": "macros-10",
+      "samples_seconds": [
+        2.989352874981705,
+        3.378437292005401,
+        3.203945334011223,
+        3.1471227089932654,
+        3.1729370419925544
+      ]
+    },
+    {
+      "driver": "xcode",
+      "endpoint_count": 10,
+      "median_seconds": 3.628423542017117,
+      "phase": "endpoint-edit",
+      "profile": "macros-10",
+      "samples_seconds": [
+        3.6298545000026934,
+        3.6654512920067646,
+        3.469250333000673,
+        3.492434999992838,
+        3.628423542017117
+      ]
+    },
+    {
+      "driver": "xcode",
+      "endpoint_count": 50,
+      "median_seconds": 17.735452833003365,
+      "phase": "clean",
+      "profile": "macros-50",
+      "samples_seconds": [
+        17.805771708022803,
+        17.654040458000964,
+        17.68611041700933,
+        17.791461916989647,
+        17.735452833003365
+      ]
+    },
+    {
+      "driver": "xcode",
+      "endpoint_count": 50,
+      "median_seconds": 3.2723019160039257,
+      "phase": "noop-incremental",
+      "profile": "macros-50",
+      "samples_seconds": [
+        3.6973351250053383,
+        3.0623156249930616,
+        3.16106391599169,
+        3.284711874992354,
+        3.2723019160039257
+      ]
+    },
+    {
+      "driver": "xcode",
+      "endpoint_count": 50,
+      "median_seconds": 3.7586231250024866,
+      "phase": "endpoint-edit",
+      "profile": "macros-50",
+      "samples_seconds": [
+        3.7586231250024866,
+        3.84348312500515,
+        3.6705685410124715,
+        3.720839916000841,
+        3.947215291991597
+      ]
+    },
+    {
+      "driver": "xcode",
+      "endpoint_count": 200,
+      "median_seconds": 18.76601416702033,
+      "phase": "clean",
+      "profile": "macros-200",
+      "samples_seconds": [
+        18.76601416702033,
+        18.59429337500478,
+        18.18657020799583,
+        19.179282375000184,
+        18.802090167009737
+      ]
+    },
+    {
+      "driver": "xcode",
+      "endpoint_count": 200,
+      "median_seconds": 3.243745374988066,
+      "phase": "noop-incremental",
+      "profile": "macros-200",
+      "samples_seconds": [
+        3.1207813750079367,
+        3.106894500000635,
+        3.4695592500211205,
+        3.243745374988066,
+        3.4593965410022065
+      ]
+    },
+    {
+      "driver": "xcode",
+      "endpoint_count": 200,
+      "median_seconds": 4.766338583023753,
+      "phase": "endpoint-edit",
+      "profile": "macros-200",
+      "samples_seconds": [
+        4.598177416977705,
+        4.790210916020442,
+        4.766338583023753,
+        4.652431499998784,
+        5.090383500006283
+      ]
+    }
+  ],
+  "schemaVersion": 1
+}

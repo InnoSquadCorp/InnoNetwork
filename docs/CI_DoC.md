@@ -120,6 +120,11 @@ The `CI` workflow must pass all of the following:
     `--guard-threshold group/name=percent` for benchmark-specific exceptions
     and `--regression-reason` when a PR intentionally updates or accepts a
     baseline movement; both values appear in the JSON artifact and PR comment.
+17. `python3 Scripts/check_macro_build_baseline_contract.py` validates the
+    committed five-repeat SwiftPM and Xcode macro-consumer baselines. It fails
+    on missing Core-only or 0/10/50/200-endpoint phases, short sample sets,
+    invalid medians, or missing provenance. Absolute local timings are not CI
+    thresholds; future comparisons use same-runner medians.
 
 The release workflow repeats the root lock, platform-floor, all-example,
 platform-build, and full-test gates. It also builds and tests

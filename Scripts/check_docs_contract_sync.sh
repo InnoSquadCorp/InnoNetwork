@@ -1029,6 +1029,18 @@ validate_release_quality_gates() {
     "$repo_root/.github/workflows/release.yml"
   require_contains 'bash Scripts/check_guarded_benchmark_contract.sh' \
     "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'python3 Scripts/check_macro_build_baseline_contract.py' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'python3 Scripts/check_macro_build_baseline_contract.py' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'python3 Scripts/check_macro_build_baseline_contract.py' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'python3 Scripts/tests/test_check_macro_build_baseline_contract.py' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'python3 Scripts/tests/test_check_macro_build_baseline_contract.py' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'python3 Scripts/tests/test_check_macro_build_baseline_contract.py' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
   require_contains 'bash Scripts/tests/test_check_guarded_benchmark_contract.sh' \
     "$repo_root/.github/workflows/benchmarks.yml"
   require_contains 'bash Scripts/tests/test_check_guarded_benchmark_contract.sh' \
@@ -1193,6 +1205,8 @@ validate_release_quality_gates() {
     || fail "unchecked-sendable gate is not executable"
   [[ -x "$repo_root/Scripts/check_macro_compile_failures.sh" ]] \
     || fail "macro compile-failure gate is not executable"
+  [[ -x "$repo_root/Scripts/check_macro_build_baseline_contract.py" ]] \
+    || fail "macro build baseline gate is not executable"
 }
 
 documented_provisionally=()

@@ -1,0 +1,189 @@
+{
+  "driver": "swiftpm",
+  "repeat": 5,
+  "results": [
+    {
+      "driver": "swiftpm",
+      "endpoint_count": 0,
+      "median_seconds": 15.08382724999683,
+      "phase": "clean",
+      "profile": "core-only",
+      "samples_seconds": [
+        20.23713658298948,
+        15.08382724999683,
+        14.179528124979697,
+        15.3141043340147,
+        14.625160208001034
+      ]
+    },
+    {
+      "driver": "swiftpm",
+      "endpoint_count": 0,
+      "median_seconds": 2.224780541000655,
+      "phase": "noop-incremental",
+      "profile": "core-only",
+      "samples_seconds": [
+        2.3549822909990326,
+        2.224780541000655,
+        2.3179426249989774,
+        2.11689808400115,
+        2.1883928750175983
+      ]
+    },
+    {
+      "driver": "swiftpm",
+      "endpoint_count": 0,
+      "median_seconds": 15.336615292006172,
+      "phase": "clean",
+      "profile": "macros-0",
+      "samples_seconds": [
+        15.222053999983473,
+        15.34966645797249,
+        15.414878084004158,
+        15.237592374993255,
+        15.336615292006172
+      ]
+    },
+    {
+      "driver": "swiftpm",
+      "endpoint_count": 0,
+      "median_seconds": 2.290724416001467,
+      "phase": "noop-incremental",
+      "profile": "macros-0",
+      "samples_seconds": [
+        2.2216388749948237,
+        2.0911497920169495,
+        2.5421240409777965,
+        2.6048850840015803,
+        2.290724416001467
+      ]
+    },
+    {
+      "driver": "swiftpm",
+      "endpoint_count": 10,
+      "median_seconds": 15.169819083996117,
+      "phase": "clean",
+      "profile": "macros-10",
+      "samples_seconds": [
+        15.169819083996117,
+        15.181343707983615,
+        15.113314707996324,
+        14.545908625004813,
+        15.730726125009824
+      ]
+    },
+    {
+      "driver": "swiftpm",
+      "endpoint_count": 10,
+      "median_seconds": 2.274175708007533,
+      "phase": "noop-incremental",
+      "profile": "macros-10",
+      "samples_seconds": [
+        2.404594999999972,
+        2.2709833330009133,
+        2.47366483299993,
+        2.1576093749899883,
+        2.274175708007533
+      ]
+    },
+    {
+      "driver": "swiftpm",
+      "endpoint_count": 10,
+      "median_seconds": 1.0478393330122344,
+      "phase": "endpoint-edit",
+      "profile": "macros-10",
+      "samples_seconds": [
+        1.0564256659999955,
+        1.0588636670145206,
+        1.0452853750030044,
+        1.0478393330122344,
+        1.047070333006559
+      ]
+    },
+    {
+      "driver": "swiftpm",
+      "endpoint_count": 50,
+      "median_seconds": 15.706413957988843,
+      "phase": "clean",
+      "profile": "macros-50",
+      "samples_seconds": [
+        15.706413957988843,
+        15.088540583004942,
+        16.14164279200486,
+        15.892400082986569,
+        15.011184458009666
+      ]
+    },
+    {
+      "driver": "swiftpm",
+      "endpoint_count": 50,
+      "median_seconds": 2.354861833009636,
+      "phase": "noop-incremental",
+      "profile": "macros-50",
+      "samples_seconds": [
+        2.354861833009636,
+        2.5336794999893755,
+        2.3945010419993196,
+        2.3515998749935534,
+        2.2890625419968273
+      ]
+    },
+    {
+      "driver": "swiftpm",
+      "endpoint_count": 50,
+      "median_seconds": 1.300890291982796,
+      "phase": "endpoint-edit",
+      "profile": "macros-50",
+      "samples_seconds": [
+        1.3141642090049572,
+        1.2943852079915814,
+        1.320892375020776,
+        1.2924773329868913,
+        1.300890291982796
+      ]
+    },
+    {
+      "driver": "swiftpm",
+      "endpoint_count": 200,
+      "median_seconds": 16.68086029100232,
+      "phase": "clean",
+      "profile": "macros-200",
+      "samples_seconds": [
+        16.544873790990096,
+        16.150296625011833,
+        16.68086029100232,
+        16.84339737499249,
+        17.031504457991105
+      ]
+    },
+    {
+      "driver": "swiftpm",
+      "endpoint_count": 200,
+      "median_seconds": 2.292718040989712,
+      "phase": "noop-incremental",
+      "profile": "macros-200",
+      "samples_seconds": [
+        2.1337257499981206,
+        2.18996624997817,
+        2.299223833018914,
+        2.3331527920090593,
+        2.292718040989712
+      ]
+    },
+    {
+      "driver": "swiftpm",
+      "endpoint_count": 200,
+      "median_seconds": 2.294005957985064,
+      "phase": "endpoint-edit",
+      "profile": "macros-200",
+      "samples_seconds": [
+        2.2832740000158083,
+        2.294005957985064,
+        2.7073267080122605,
+        2.2417311659955885,
+        2.297265624976717
+      ]
+    }
+  ],
+  "schemaVersion": 1
+}

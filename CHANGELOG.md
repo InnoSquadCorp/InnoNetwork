@@ -150,7 +150,11 @@ draft release summary.
 - The public macro declaration's DocC now states those same accepted method and
   authentication spellings, and the docs contract fails if it regresses to the
   former contextual-only wording.
-
+- Five-repeat SwiftPM and Xcode consumer-build baselines now cover Core-only
+  and macro-enabled 0/10/50/200-endpoint profiles. Raw samples, provenance,
+  medians, and phase completeness are committed and validated in CI, release,
+  and local preflight without treating machine-specific absolute time as a
+  portable failure threshold.
 - Macro expansion is covered by an end-to-end test that executes the generated
   endpoint through `DefaultNetworkClient`, including path substitution, query
   encoding, explicit authentication, and response decoding.

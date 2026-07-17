@@ -31,6 +31,7 @@ jobs:
           bash Scripts/tests/test_generate_dependency_snapshot.sh
           bash Scripts/tests/test_check_guarded_benchmark_contract.sh
           python3 Scripts/tests/test_run_with_guarded_benchmarks.py
+          python3 Scripts/tests/test_check_macro_build_baseline_contract.py
           bash Scripts/tests/test_build_consumer_examples.sh
           python3 Scripts/tests/test_check_example_platform_floors.py
           python3 Scripts/tests/test_check_apple_platform_build_contract.py
@@ -86,6 +87,9 @@ jobs:
 
       - name: Verify guarded benchmark contract
         run: bash Scripts/check_guarded_benchmark_contract.sh
+
+      - name: Verify repeated macro build baselines
+        run: python3 Scripts/check_macro_build_baseline_contract.py
 
       - name: Verify stable examples contract
         run: bash Scripts/check_stable_examples.sh

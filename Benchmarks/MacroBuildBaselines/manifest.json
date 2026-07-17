@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-18",
+  "repositoryRevision": "a755957e1d22abf465277778e6ba988c5c866b4b",
+  "environment": {
+    "hardware": "Apple M4 Pro, 14 cores, 48 GB",
+    "macOS": "26.5 (25F71)",
+    "xcode": "26.6 (17F113)",
+    "swift": "6.3.3 (swiftlang-6.3.3.1.3)"
+  },
+  "baselines": {
+    "swiftpm": "swiftpm-2026-07-18.json",
+    "xcode": "xcode-2026-07-18.json"
+  }
+}
