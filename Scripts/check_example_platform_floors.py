@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Validate independent example floors and mandatory workflow build coverage."""
+"""Validate independent example floors and shared builder adoption."""
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -15,6 +16,7 @@ WORKFLOW_PATHS = (
     Path(".github/workflows/ci.yml"),
     Path(".github/workflows/release.yml"),
 )
+BUILDER_INVOCATION = "bash Scripts/build_consumer_examples.sh"
 
 
 def platform_floors(manifest: Path) -> dict[str, str]:
@@ -35,7 +37,12 @@ def platform_floors(manifest: Path) -> dict[str, str]:
 
 
 def main() -> int:
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = Path(
+        os.environ.get(
+            "INNO_EXAMPLE_PLATFORM_ROOT",
+            Path(__file__).resolve().parent.parent,
+        )
+    )
     root_manifest = repo_root / "Package.swift"
     try:
         expected = platform_floors(root_manifest)
@@ -49,13 +56,18 @@ def main() -> int:
         return 1
 
     failures: list[str] = []
-    workflow_sources: dict[Path, str] = {}
     for workflow_path in WORKFLOW_PATHS:
         absolute_path = repo_root / workflow_path
         if not absolute_path.is_file():
             failures.append(f"{workflow_path}: missing workflow")
             continue
-        workflow_sources[workflow_path] = absolute_path.read_text(encoding="utf-8")
+        source = absolute_path.read_text(encoding="utf-8")
+        invocation_count = source.count(BUILDER_INVOCATION)
+        if invocation_count != 1:
+            failures.append(
+                f"{workflow_path}: expected one shared example builder invocation, "
+                f"found {invocation_count}"
+            )
 
     for manifest in manifests:
         try:
@@ -68,14 +80,6 @@ def main() -> int:
                 f"{manifest.relative_to(repo_root)}: expected {expected}, found {actual}"
             )
 
-        example_directory = manifest.parent.relative_to(repo_root).as_posix()
-        working_directory = f"working-directory: {example_directory}"
-        for workflow_path, source in workflow_sources.items():
-            if working_directory not in source:
-                failures.append(
-                    f"{workflow_path}: does not build {example_directory}"
-                )
-
     if failures:
         print("example-platform-floors: FAILED", file=sys.stderr)
         for failure in failures:
@@ -84,7 +88,7 @@ def main() -> int:
 
     print(
         "example-platform-floors: OK "
-        f"({len(manifests)} manifests match {expected} and both workflows build all examples)"
+        f"({len(manifests)} manifests match {expected} and both workflows use the shared builder)"
     )
     return 0
 

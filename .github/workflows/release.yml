@@ -31,6 +31,8 @@ jobs:
           bash Scripts/tests/test_generate_dependency_snapshot.sh
           bash Scripts/tests/test_check_guarded_benchmark_contract.sh
           python3 Scripts/tests/test_run_with_guarded_benchmarks.py
+          bash Scripts/tests/test_build_consumer_examples.sh
+          python3 Scripts/tests/test_check_example_platform_floors.py
           bash Scripts/tests/test_check_docc_archives.sh
           bash Scripts/tests/test_run_local_release_preflight.sh
 
@@ -119,41 +121,8 @@ jobs:
           xcrun swift build --target InnoNetworkDocSmoke
           xcrun swift run InnoNetworkDocSmoke
 
-      - name: Build consumer smoke package
-        working-directory: Examples/ConsumerSmoke
-        run: xcrun swift build
-
-      - name: Build core-only consumer smoke package
-        working-directory: Examples/CoreSmoke
-        run: xcrun swift build
-
-      - name: Build macro usage package
-        working-directory: Examples/MacroUsage
-        run: xcrun swift build
-
-      - name: Build wrapper consumer smoke package
-        working-directory: Examples/WrapperSmoke
-        run: xcrun swift build
-
-      - name: Build download-only consumer smoke package
-        working-directory: Examples/DownloadManager
-        run: xcrun swift build
-
-      - name: Build websocket-only consumer smoke package
-        working-directory: Examples/WebSocketChat
-        run: xcrun swift build
-
-      - name: Build test-support consumer smoke package
-        working-directory: Examples/TestSupportSmoke
-        run: xcrun swift build
-
-      - name: Build generated client recipe package
-        working-directory: Examples/GeneratedClientRecipe
-        run: xcrun swift build
-
-      - name: Build event policy observer package
-        working-directory: Examples/EventPolicyObserver
-        run: xcrun swift build
+      - name: Build all independent consumer examples
+        run: bash Scripts/build_consumer_examples.sh
 
       - name: Build openapi-to-innonetwork CLI
         working-directory: Tools/openapi-to-innonetwork
