@@ -10,19 +10,19 @@ the source code and these files fails CI.
 
 | Product | Public declarations |
 |---|---:|
-| `InnoNetwork` (core) | 890 |
-| `InnoNetworkWebSocket` | 171 |
-| `InnoNetworkDownload` | 137 |
+| `InnoNetwork` (core) | 884 |
+| `InnoNetworkWebSocket` | 165 |
+| `InnoNetworkDownload` | 131 |
 | `InnoNetworkTestSupport` | 86 |
 | `InnoNetworkPersistentCache` | 51 |
 | `InnoNetworkOpenAPI` | 35 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
-| **Total** | **1,397** |
+| **Total** | **1,379** |
 
 ## Why this matters
 
-For a single-maintainer client-side Swift networking library, 1,397 public
+For a single-maintainer client-side Swift networking library, 1,379 public
 declarations is unusually large — roughly 4× `Get`'s surface and ~10× the
 `URLSession`-only "two functions and a `Decoder`" baseline.
 
@@ -42,9 +42,10 @@ visibility, not `public`.
 
 ## Reduction roadmap
 
-The planned 5.0 baseline will remove the seven deprecated configuration
-modifiers and the package lifecycle reducer vocabulary from this inventory.
-Before the tag, any further demotion still requires a dependency-graph audit:
+The 5.0 preview has removed the deprecated configuration modifiers, package
+lifecycle reducer vocabulary, manual task-listener subscriptions, public
+transition-table helpers, and optional observability no-op implementations
+from this inventory. Before the tag, any further demotion still requires a dependency-graph audit:
 which package target uses the symbol, which DocC link references it, and
 whether a consumer recipe exposes it. After 5.0.0, further demotions require
 another major release as well as that audit. The allowlists remain the measured

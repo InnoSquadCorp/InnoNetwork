@@ -16,11 +16,11 @@ public enum DownloadEvent: Sendable {
     case failed(DownloadError)
 }
 
-public struct DownloadEventSubscription: Hashable, Sendable {
+package struct DownloadEventSubscription: Hashable, Sendable {
     fileprivate let taskId: String
     fileprivate let listenerID: UUID
 
-    public var id: UUID { listenerID }
+    package var id: UUID { listenerID }
 }
 
 public enum DownloadManagerError: Error, Sendable, Equatable {
@@ -1409,7 +1409,7 @@ public actor DownloadManager {
         await eventHub.listenerCount(taskID: task.id)
     }
 
-    public func addEventListener(
+    package func addEventListener(
         for task: DownloadTask,
         listener: @escaping @Sendable (DownloadEvent) async -> Void
     ) async -> DownloadEventSubscription {
@@ -1426,7 +1426,7 @@ public actor DownloadManager {
         return DownloadEventSubscription(taskId: task.id, listenerID: listenerID)
     }
 
-    public func removeEventListener(_ subscription: DownloadEventSubscription) async {
+    package func removeEventListener(_ subscription: DownloadEventSubscription) async {
         await eventHub.removeListener(taskID: subscription.taskId, listenerID: subscription.listenerID)
     }
 

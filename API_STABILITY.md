@@ -28,6 +28,11 @@ is removed; the throwing initializer is the single construction path.
 its cache-owned initializer moves to package scope. The initializer for the
 library-produced `CircuitBreakerOpenError` diagnostic is package-owned while
 its public domain and read-only fields remain available for inspection.
+Task-scoped Download and WebSocket observation uses `events(for:)`; manual
+listener subscription tokens and add/remove methods move to package scope.
+Lifecycle transition tables are also manager-owned, while public state values
+retain `isTerminal` for application observation. Optional observability hooks
+use `nil` or an empty observer collection instead of public no-op helper types.
 Preview adopters should migrate configuration to
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.
@@ -411,8 +416,8 @@ planned 5.x release line.
   `NetworkEvent`, `NetworkEventObserving`, `NetworkInterfaceType`,
   `NetworkLoggingOptions`, `NetworkLogger`, `NetworkMetricsReporting`,
   `NetworkMonitor`, `NetworkMonitoring`, `NetworkReachabilityStatus`,
-  `NetworkRequestContext`, `NetworkSnapshot`, `NoOpNetworkEventObserver`,
-  `NoOpNetworkLogger`, `OSLogNetworkEventObserver`,
+  `NetworkRequestContext`, `NetworkSnapshot`, `NoOpNetworkLogger`,
+  `OSLogNetworkEventObserver`,
   `RedirectPolicy`, `RefreshFailureCooldown`, `RefreshTokenPolicy`,
   `RequestCoalescingPolicy`, `RequestEncodingPolicy`,
   `RequestPriority`, `RequestBody`,
@@ -436,19 +441,19 @@ planned 5.x release line.
   `EventPipelineConsumerDeliveryLatencyMetric`,
   `EventPipelineConsumerStateMetric`, `EventPipelineHubKind`,
   `EventPipelineMetric`, `EventPipelineMetricsReporting`,
-  `EventPipelineOverflowPolicy`, `EventPipelinePartitionStateMetric`,
-  `ExponentialBackoffRetryPolicy`, and `NoOpEventPipelineMetricsReporter`.
+  `EventPipelineOverflowPolicy`, `EventPipelinePartitionStateMetric`, and
+  `ExponentialBackoffRetryPolicy`.
 
 ### InnoNetworkDownload
 
 - `DownloadConfiguration`, `DownloadError`, `DownloadEvent`,
-  `DownloadEventSubscription`, `DownloadManager`, `DownloadManagerError`,
+  `DownloadManager`, `DownloadManagerError`,
   `DownloadProgress`, `DownloadState`, and `DownloadTask`.
 
 ### InnoNetworkWebSocket
 
 - `WebSocketCloseCode`, `WebSocketCloseDisposition`, `WebSocketConfiguration`,
-  `WebSocketError`, `WebSocketEvent`, `WebSocketEventSubscription`,
+  `WebSocketError`, `WebSocketEvent`,
   `WebSocketHandshakeRequestAdapter`, `WebSocketManager`,
   `WebSocketPingContext`, `WebSocketPongContext`, `WebSocketProtocolFeature`,
   `WebSocketSendOverflowPolicy`, `WebSocketState`, and `WebSocketTask`.

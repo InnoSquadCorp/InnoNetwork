@@ -76,14 +76,12 @@ InnoNetworkWebSocket	swift.init	WebSocketProtocolFeature.init(rawValue:)
 InnoNetworkWebSocket	swift.init	WebSocketState.init(rawValue:)
 InnoNetworkWebSocket	swift.method	WebSocketHandshakeRequestAdapter.adapt(_:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.activeTasks()
-InnoNetworkWebSocket	swift.method	WebSocketManager.addEventListener(for:listener:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.allTasks()
 InnoNetworkWebSocket	swift.method	WebSocketManager.connect(url:subprotocols:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.disconnect(_:closeCode:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.disconnectAll(closeCode:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.events(for:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.ping(_:)
-InnoNetworkWebSocket	swift.method	WebSocketManager.removeEventListener(_:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.retry(_:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.send(_:message:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.send(_:string:)
@@ -95,7 +93,6 @@ InnoNetworkWebSocket	swift.method	WebSocketManager.setOnPongHandler(_:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.setOnStringHandler(_:)
 InnoNetworkWebSocket	swift.method	WebSocketManager.shutdown()
 InnoNetworkWebSocket	swift.method	WebSocketManager.task(withId:)
-InnoNetworkWebSocket	swift.method	WebSocketState.canTransition(to:)
 InnoNetworkWebSocket	swift.method	WebSocketTask.hash(into:)
 InnoNetworkWebSocket	swift.property	WebSocketCloseCode.rawValue
 InnoNetworkWebSocket	swift.property	WebSocketCloseDisposition.shouldReconnect
@@ -142,7 +139,6 @@ InnoNetworkWebSocket	swift.property	WebSocketConfiguration.requestHeaders
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.sendQueueLimit
 InnoNetworkWebSocket	swift.property	WebSocketConfiguration.sendQueueOverflowPolicy
 InnoNetworkWebSocket	swift.property	WebSocketError.errorDescription
-InnoNetworkWebSocket	swift.property	WebSocketEventSubscription.id
 InnoNetworkWebSocket	swift.property	WebSocketPingContext.attemptNumber
 InnoNetworkWebSocket	swift.property	WebSocketPingContext.dispatchedAt
 InnoNetworkWebSocket	swift.property	WebSocketPongContext.attemptNumber
@@ -151,7 +147,6 @@ InnoNetworkWebSocket	swift.property	WebSocketProtocolFeature.description
 InnoNetworkWebSocket	swift.property	WebSocketRetryResult.events
 InnoNetworkWebSocket	swift.property	WebSocketRetryResult.task
 InnoNetworkWebSocket	swift.property	WebSocketState.isTerminal
-InnoNetworkWebSocket	swift.property	WebSocketState.nextStates
 InnoNetworkWebSocket	swift.property	WebSocketTask.attemptedReconnectCount
 InnoNetworkWebSocket	swift.property	WebSocketTask.autoReconnectEnabled
 InnoNetworkWebSocket	swift.property	WebSocketTask.awaitingCloseHandshake
@@ -166,7 +161,6 @@ InnoNetworkWebSocket	swift.property	WebSocketTask.successfulReconnectCount
 InnoNetworkWebSocket	swift.property	WebSocketTask.url
 InnoNetworkWebSocket	swift.struct	WebSocketConfiguration
 InnoNetworkWebSocket	swift.struct	WebSocketConfiguration.AdvancedBuilder
-InnoNetworkWebSocket	swift.struct	WebSocketEventSubscription
 InnoNetworkWebSocket	swift.struct	WebSocketHandshakeRequestAdapter
 InnoNetworkWebSocket	swift.struct	WebSocketPingContext
 InnoNetworkWebSocket	swift.struct	WebSocketPongContext

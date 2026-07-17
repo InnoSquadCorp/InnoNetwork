@@ -295,7 +295,6 @@ expected_shipping_public_declarations=(
   DownloadConfiguration
   DownloadError
   DownloadEvent
-  DownloadEventSubscription
   DownloadManager
   DownloadManagerError
   DownloadProgress
@@ -345,8 +344,6 @@ expected_shipping_public_declarations=(
   NetworkReachabilityStatus
   NetworkRequestContext
   NetworkSnapshot
-  NoOpEventPipelineMetricsReporter
-  NoOpNetworkEventObserver
   NoOpNetworkLogger
   OSLogNetworkEventObserver
   PersistentResponseCache
@@ -411,7 +408,6 @@ expected_shipping_public_declarations=(
   WebSocketConfiguration
   WebSocketError
   WebSocketEvent
-  WebSocketEventSubscription
   WebSocketHandshakeRequestAdapter
   WebSocketManager
   WebSocketPingContext

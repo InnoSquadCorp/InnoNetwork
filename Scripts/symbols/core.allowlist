@@ -258,8 +258,6 @@ InnoNetwork	swift.init	NetworkLoggingOptions.init(includeRequestBody:includeResp
 InnoNetwork	swift.init	NetworkMonitor.init()
 InnoNetwork	swift.init	NetworkRequestContext.init(requestID:retryIndex:metricsReporter:trustPolicy:eventObservers:redirectPolicy:)
 InnoNetwork	swift.init	NetworkSnapshot.init(status:interfaceTypes:)
-InnoNetwork	swift.init	NoOpEventPipelineMetricsReporter.init()
-InnoNetwork	swift.init	NoOpNetworkEventObserver.init()
 InnoNetwork	swift.init	NoOpNetworkLogger.init()
 InnoNetwork	swift.init	OSLogNetworkEventObserver.init()
 InnoNetwork	swift.init	ObservabilityPack.init(eventObservers:eventDeliveryPolicy:eventMetricsReporter:networkMonitor:metricsReporter:)
@@ -370,8 +368,6 @@ InnoNetwork	swift.method	NetworkMonitor.stop()
 InnoNetwork	swift.method	NetworkMonitor.waitForChange(from:timeout:)
 InnoNetwork	swift.method	NetworkMonitoring.currentSnapshot()
 InnoNetwork	swift.method	NetworkMonitoring.waitForChange(from:timeout:)
-InnoNetwork	swift.method	NoOpEventPipelineMetricsReporter.report(_:)
-InnoNetwork	swift.method	NoOpNetworkEventObserver.handle(_:)
 InnoNetwork	swift.method	NoOpNetworkLogger.log(error:)
 InnoNetwork	swift.method	NoOpNetworkLogger.log(request:)
 InnoNetwork	swift.method	NoOpNetworkLogger.log(response:isError:)
@@ -775,8 +771,6 @@ InnoNetwork	swift.struct	NetworkContext
 InnoNetwork	swift.struct	NetworkLoggingOptions
 InnoNetwork	swift.struct	NetworkRequestContext
 InnoNetwork	swift.struct	NetworkSnapshot
-InnoNetwork	swift.struct	NoOpEventPipelineMetricsReporter
-InnoNetwork	swift.struct	NoOpNetworkEventObserver
 InnoNetwork	swift.struct	NoOpNetworkLogger
 InnoNetwork	swift.struct	OSLogNetworkEventObserver
 InnoNetwork	swift.struct	ObservabilityPack

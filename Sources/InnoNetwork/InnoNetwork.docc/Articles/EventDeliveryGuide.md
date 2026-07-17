@@ -173,9 +173,9 @@ let config = WebSocketConfiguration.advanced {
 
 - ``EventDeliveryPolicy/default``: balanced for interactive UX; safe
   starting point.
-- No-op reporter (``NoOpEventPipelineMetricsReporter``) wires up in tests or
-  benchmarks that need to exercise the metrics pipeline without side effects.
-  It does not provide an allocation-counting guarantee.
+- Leave the reporter unset when metrics are not needed. The no-op implementation
+  used by InnoNetwork's own tests is package-owned and is not part of the
+  consumer contract.
 
 Revisit the policy when you ship operational metrics that show overflow or
 consumer latency p95 creeping up — that is the earliest signal that the
