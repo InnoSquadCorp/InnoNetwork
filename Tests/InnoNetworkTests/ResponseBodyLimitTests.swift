@@ -101,7 +101,7 @@ struct ResponseBodyLimitTests {
         let client = DefaultNetworkClient(
             configuration: makeTestNetworkConfiguration(
                 baseURL: "https://api.example.com/v1",
-                responseBodyLimit: 8_192
+                responseBodyBufferingPolicy: .buffered(maxBytes: 8_192)
             ),
             session: mockSession
         )
@@ -119,7 +119,7 @@ struct ResponseBodyLimitTests {
         let client = DefaultNetworkClient(
             configuration: makeTestNetworkConfiguration(
                 baseURL: "https://api.example.com/v1",
-                responseBodyLimit: 4_096
+                responseBodyBufferingPolicy: .buffered(maxBytes: 4_096)
             ),
             session: mockSession
         )
@@ -137,7 +137,7 @@ struct ResponseBodyLimitTests {
         let client = DefaultNetworkClient(
             configuration: makeTestNetworkConfiguration(
                 baseURL: "https://api.example.com/v1",
-                responseBodyLimit: 1_024
+                responseBodyBufferingPolicy: .buffered(maxBytes: 1_024)
             ),
             session: mockSession
         )
@@ -229,7 +229,7 @@ struct ResponseBodyLimitTests {
                 baseURL: "https://api.example.com/v1",
                 responseCachePolicy: .cacheFirst(maxAge: .seconds(600)),
                 responseCache: cache,
-                responseBodyLimit: 1_024
+                responseBodyBufferingPolicy: .buffered(maxBytes: 1_024)
             ),
             session: mockSession
         )
@@ -252,7 +252,7 @@ struct ResponseBodyLimitTests {
                 baseURL: "https://api.example.com/v1",
                 responseCachePolicy: .cacheFirst(maxAge: .seconds(600)),
                 responseCache: cache,
-                responseBodyLimit: 1_024
+                responseBodyBufferingPolicy: .buffered(maxBytes: 1_024)
             ),
             session: mockSession
         )
@@ -294,7 +294,7 @@ struct ResponseBodyLimitTests {
                 baseURL: "https://api.example.com/v1",
                 responseCachePolicy: .staleWhileRevalidate(maxAge: .seconds(1), staleWindow: .seconds(10)),
                 responseCache: cache,
-                responseBodyLimit: 1_024
+                responseBodyBufferingPolicy: .buffered(maxBytes: 1_024)
             ),
             session: mockSession
         )
@@ -320,7 +320,7 @@ struct ResponseBodyLimitTests {
             configuration: makeTestNetworkConfiguration(
                 baseURL: "https://api.example.com/v1",
                 responseInterceptors: [ReplacingResponseBody(data: oversizedPayload)],
-                responseBodyLimit: 1_024
+                responseBodyBufferingPolicy: .buffered(maxBytes: 1_024)
             ),
             session: mockSession
         )
@@ -340,7 +340,7 @@ struct ResponseBodyLimitTests {
             configuration: makeTestNetworkConfiguration(
                 baseURL: "https://api.example.com/v1",
                 decodingInterceptors: [ReplacingDecodableData(data: oversizedPayload)],
-                responseBodyLimit: 1_024
+                responseBodyBufferingPolicy: .buffered(maxBytes: 1_024)
             ),
             session: mockSession
         )
@@ -365,21 +365,13 @@ struct ResponseBodyLimitTests {
         #expect(received.count == payload.count)
     }
 
-    @Test("ResponseBodyBufferingPolicy carries the configured limit")
-    func bufferingPolicyCarriesLimit() {
+    @Test("NetworkConfiguration preserves the response buffering policy")
+    func configurationPreservesBufferingPolicy() {
         let streaming = NetworkConfiguration(
             baseURL: URL(string: "https://api.example.com")!,
             responseBodyBufferingPolicy: .streaming(maxBytes: 2_048)
         )
-        #expect(streaming.responseBodyLimit == 2_048)
-
-        let compatibilityAlias = NetworkConfiguration(
-            baseURL: URL(string: "https://api.example.com")!,
-            responseBodyBufferingPolicy: .buffered(maxBytes: 8_192),
-            responseBodyLimit: 1_024
-        )
-        #expect(compatibilityAlias.responseBodyBufferingPolicy == .buffered(maxBytes: 1_024))
-        #expect(compatibilityAlias.responseBodyLimit == 1_024)
+        #expect(streaming.responseBodyBufferingPolicy == .streaming(maxBytes: 2_048))
     }
 
     @Test("HEAD response metadata does not trigger Content-Length preflight")

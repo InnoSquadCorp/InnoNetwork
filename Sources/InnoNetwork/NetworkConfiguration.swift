@@ -185,11 +185,6 @@ public struct NetworkConfiguration: Sendable {
     /// is active.
     public let responseBodyBufferingPolicy: ResponseBodyBufferingPolicy
 
-    /// Compatibility alias for the optional maximum body size in
-    /// ``responseBodyBufferingPolicy``. New code should set
-    /// ``responseBodyBufferingPolicy`` directly.
-    public let responseBodyLimit: Int64?
-
     /// Maximum UTF-8 byte length accepted for one line-delimited streaming
     /// frame before decoding. Defaults to 1 MiB. Values below 1 are
     /// normalised to 1 so a misconfigured client cannot disable the guard by
@@ -275,7 +270,6 @@ public struct NetworkConfiguration: Sendable {
         package var acceptLanguageProvider: @Sendable () -> String
         package var captureFailurePayload: Bool
         package var responseBodyBufferingPolicy: ResponseBodyBufferingPolicy
-        package var responseBodyLimit: Int64?
         package var streamingLineByteLimit: Int
         package var redirectPolicy: any RedirectPolicy
         package var allowsInsecureHTTP: Bool
@@ -310,7 +304,6 @@ public struct NetworkConfiguration: Sendable {
             self.acceptLanguageProvider = preset.acceptLanguageProvider
             self.captureFailurePayload = preset.captureFailurePayload
             self.responseBodyBufferingPolicy = preset.responseBodyBufferingPolicy
-            self.responseBodyLimit = preset.responseBodyLimit
             self.streamingLineByteLimit = preset.streamingLineByteLimit
             self.redirectPolicy = preset.redirectPolicy
             self.allowsInsecureHTTP = preset.allowsInsecureHTTP
@@ -348,7 +341,6 @@ public struct NetworkConfiguration: Sendable {
                 acceptLanguageProvider: acceptLanguageProvider,
                 captureFailurePayload: captureFailurePayload,
                 responseBodyBufferingPolicy: responseBodyBufferingPolicy,
-                responseBodyLimit: responseBodyLimit,
                 streamingLineByteLimit: streamingLineByteLimit,
                 redirectPolicy: redirectPolicy,
                 allowsInsecureHTTP: allowsInsecureHTTP
@@ -450,14 +442,10 @@ public struct NetworkConfiguration: Sendable {
         responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(
             maxBytes: NetworkConfiguration.defaultResponseBodyByteLimit
         ),
-        responseBodyLimit: Int64? = nil,
         streamingLineByteLimit: Int = NetworkConfiguration.defaultStreamingLineByteLimit,
         redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy(),
         allowsInsecureHTTP: Bool = false
     ) {
-        let resolvedBufferingPolicy =
-            responseBodyLimit.map { responseBodyBufferingPolicy.replacingMaxBytes($0) }
-            ?? responseBodyBufferingPolicy
         self.baseURL = baseURL
         self.timeout = timeout
         self.cachePolicy = cachePolicy
@@ -487,8 +475,7 @@ public struct NetworkConfiguration: Sendable {
         self.userAgentProvider = userAgentProvider
         self.acceptLanguageProvider = acceptLanguageProvider
         self.captureFailurePayload = captureFailurePayload
-        self.responseBodyBufferingPolicy = resolvedBufferingPolicy
-        self.responseBodyLimit = resolvedBufferingPolicy.maxBytes
+        self.responseBodyBufferingPolicy = responseBodyBufferingPolicy
         self.streamingLineByteLimit = max(1, streamingLineByteLimit)
         self.redirectPolicy = redirectPolicy
         self.allowsInsecureHTTP = allowsInsecureHTTP
@@ -531,7 +518,6 @@ public struct NetworkConfiguration: Sendable {
         responseBodyBufferingPolicy: ResponseBodyBufferingPolicy = .streaming(
             maxBytes: NetworkConfiguration.defaultResponseBodyByteLimit
         ),
-        responseBodyLimit: Int64? = nil,
         streamingLineByteLimit: Int = NetworkConfiguration.defaultStreamingLineByteLimit,
         redirectPolicy: any RedirectPolicy = DefaultRedirectPolicy(),
         allowsInsecureHTTP: Bool = false
@@ -567,7 +553,6 @@ public struct NetworkConfiguration: Sendable {
             acceptLanguageProvider: acceptLanguageProvider,
             captureFailurePayload: captureFailurePayload,
             responseBodyBufferingPolicy: responseBodyBufferingPolicy,
-            responseBodyLimit: responseBodyLimit,
             streamingLineByteLimit: streamingLineByteLimit,
             redirectPolicy: redirectPolicy,
             allowsInsecureHTTP: allowsInsecureHTTP

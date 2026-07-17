@@ -18,9 +18,7 @@ struct NetworkConfigurationPresetTests {
             bounded.responseBodyBufferingPolicy
                 == .streaming(maxBytes: Int64(5 * 1024 * 1024))
         )
-        #expect(bounded.responseBodyLimit == Int64(5 * 1024 * 1024))
         #expect(explicitlyUnbounded.responseBodyBufferingPolicy == .streaming(maxBytes: nil))
-        #expect(explicitlyUnbounded.responseBodyLimit == nil)
     }
 
     @Test("Safe and advanced presets cap inline responses at 5 MiB")
@@ -49,9 +47,7 @@ struct NetworkConfigurationPresetTests {
         )
 
         #expect(streaming.responseBodyBufferingPolicy == .streaming(maxBytes: nil))
-        #expect(streaming.responseBodyLimit == nil)
         #expect(buffered.responseBodyBufferingPolicy == .buffered(maxBytes: nil))
-        #expect(buffered.responseBodyLimit == nil)
     }
 
     @Test("recommendedForProduction enables conservative resilience defaults")

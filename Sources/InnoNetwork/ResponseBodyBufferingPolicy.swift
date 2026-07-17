@@ -28,14 +28,4 @@ public enum ResponseBodyBufferingPolicy: Sendable, Equatable {
             return maxBytes.map { max(0, $0) }
         }
     }
-
-    package func replacingMaxBytes(_ maxBytes: Int64?) -> ResponseBodyBufferingPolicy {
-        let normalized = maxBytes.map { max(0, $0) }
-        switch self {
-        case .streaming:
-            return .streaming(maxBytes: normalized)
-        case .buffered:
-            return .buffered(maxBytes: normalized)
-        }
-    }
 }
