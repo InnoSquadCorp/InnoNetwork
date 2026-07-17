@@ -13,18 +13,15 @@ package final class WebSocketSessionDelegate: NSObject, URLSessionWebSocketDeleg
     ]
 
     private let callbacks: WebSocketSessionDelegateCallbacks
-    private let backgroundCompletionStore: BackgroundCompletionStore
     private let allowsInsecureWebSocket: Bool
     private let rejectedRedirectTaskIdentifiers = OSAllocatedUnfairLock<Set<Int>>(initialState: [])
     private let redirectProtectedHeaderNames = OSAllocatedUnfairLock<[Int: Set<String>]>(initialState: [:])
 
     package init(
         callbacks: WebSocketSessionDelegateCallbacks,
-        backgroundCompletionStore: BackgroundCompletionStore,
         allowsInsecureWebSocket: Bool = false
     ) {
         self.callbacks = callbacks
-        self.backgroundCompletionStore = backgroundCompletionStore
         self.allowsInsecureWebSocket = allowsInsecureWebSocket
         super.init()
     }
@@ -169,16 +166,6 @@ package final class WebSocketSessionDelegate: NSObject, URLSessionWebSocketDeleg
         )
     }
 
-    package func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        _ = session
-        Task {
-            guard let completion = await backgroundCompletionStore.take() else { return }
-            await MainActor.run {
-                completion()
-            }
-        }
-    }
-
     package func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
         _ = session
         rejectedRedirectTaskIdentifiers.withLock { $0.removeAll(keepingCapacity: false) }
@@ -296,22 +283,5 @@ package final class WebSocketSessionDelegateCallbacks: Sendable {
 
     package func handleInvalidation(_ error: SendableUnderlyingError?) {
         invalidationHandlerLock.withLock { $0 }?(error)
-    }
-}
-
-
-package actor BackgroundCompletionStore {
-    private var completion: (@Sendable () -> Void)?
-
-    package init() {}
-
-    package func set(_ completion: @escaping @Sendable () -> Void) {
-        self.completion = completion
-    }
-
-    package func take() -> (@Sendable () -> Void)? {
-        let stored = completion
-        completion = nil
-        return stored
     }
 }

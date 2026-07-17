@@ -3714,7 +3714,6 @@ struct WebSocketManagerShutdownTests {
         let callbacks = WebSocketSessionDelegateCallbacks()
         let delegate = WebSocketSessionDelegate(
             callbacks: callbacks,
-            backgroundCompletionStore: BackgroundCompletionStore()
         )
         let manager = WebSocketManager(
             configuration: configuration,

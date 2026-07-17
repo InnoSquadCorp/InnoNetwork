@@ -126,7 +126,6 @@ struct WebSocketHeartbeatTests {
         let callbacks = WebSocketSessionDelegateCallbacks()
         let delegate = WebSocketSessionDelegate(
             callbacks: callbacks,
-            backgroundCompletionStore: BackgroundCompletionStore()
         )
         let manager = WebSocketManager(
             configuration: WebSocketConfiguration(
