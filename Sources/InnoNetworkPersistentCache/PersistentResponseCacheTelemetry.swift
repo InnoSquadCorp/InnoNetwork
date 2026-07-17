@@ -29,7 +29,8 @@ public struct PersistentResponseCacheStatistics: Sendable, Equatable {
     /// retain the per-reason breakdown.
     public let evictionCount: Int
 
-    /// Builds a statistics snapshot.
+    /// Builds the cache-owned statistics snapshot returned by
+    /// ``PersistentResponseCache/statistics()``.
     ///
     /// - Parameters:
     ///   - entryCount: Number of indexed entries.
@@ -37,14 +38,12 @@ public struct PersistentResponseCacheStatistics: Sendable, Equatable {
     ///   - maxEntries: Configured entry cap.
     ///   - maxBytes: Configured byte cap.
     ///   - hitCount: In-process count of cache hits since the actor was
-    ///     constructed. Defaults to `0` for source compatibility with
-    ///     callers that built statistics by hand before the metric existed.
+    ///     constructed.
     ///   - missCount: In-process count of cache misses since the actor was
-    ///     constructed. Defaults to `0` for source compatibility.
+    ///     constructed.
     ///   - evictionCount: In-process count of evicted/scrubbed entries
-    ///     since the actor was constructed. Defaults to `0` for source
-    ///     compatibility.
-    public init(
+    ///     since the actor was constructed.
+    package init(
         entryCount: Int,
         byteCount: Int,
         maxEntries: Int,

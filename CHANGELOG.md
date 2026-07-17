@@ -49,6 +49,9 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
 - `DownloadManager.make(configuration:)` is removed because it exactly
   forwards to the public throwing initializer. Use
   `DownloadManager(configuration:)` as the single construction path.
+- `PersistentResponseCacheStatistics` construction is package-owned. Obtain
+  authoritative snapshots from `await cache.statistics()`; the public
+  properties remain readable for dashboards and back-pressure decisions.
 - The direct 21-parameter `WebSocketConfiguration` initializer is
   package-owned. Use `safeDefaults()` for the secure preset or `advanced(_:)`
   for explicit tuning.
