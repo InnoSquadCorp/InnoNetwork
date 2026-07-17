@@ -5,8 +5,10 @@
 # illustrative — they show side-by-side "before / after" fragments with
 # `// ...` placeholders that are not meant to compile on their own.
 # A small subset of blocks, however, are full enough to compile against
-# the current public surface, and those *should* be verified so the
-# guide cannot drift past a renamed or removed API.
+# the current public surface, and those *must* be verified so the
+# guide cannot drift past a renamed or removed API. The current 5.0 guide
+# intentionally covers at least three independent migration axes; dropping
+# every marker (or most of that coverage) is a contract failure, not a no-op.
 #
 # To opt a code block in, place the HTML comment marker
 #
@@ -47,6 +49,21 @@ mkdir -p "$smoke_root/Sources"
 manifest_products=""
 manifest_targets=""
 extracted=0
+marked=0
+
+for doc in "${migration_docs[@]}"; do
+    marker_count="$(grep -Fxc '<!-- compile-check -->' "$doc" || true)"
+    marked=$((marked + marker_count))
+done
+
+current_migration="$repo_root/docs/Migration-5.0.0.md"
+if [[ -f "$current_migration" ]]; then
+    current_marker_count="$(grep -Fxc '<!-- compile-check -->' "$current_migration" || true)"
+    if (( current_marker_count < 3 )); then
+        echo "Migration-5.0.0.md must retain at least 3 compile-checked current-API examples; found $current_marker_count." >&2
+        exit 1
+    fi
+fi
 
 for doc in "${migration_docs[@]}"; do
     doc_name="$(basename "$doc" .md)"
@@ -103,9 +120,15 @@ PY
     )
 done
 
-if (( extracted == 0 )); then
-    echo "✅ No migration code blocks opted in via <!-- compile-check -->; nothing to compile."
-    exit 0
+if (( marked == 0 )); then
+    echo "No migration code blocks are opted in via <!-- compile-check -->; refusing a false-green docs gate." >&2
+    exit 1
+fi
+
+if (( extracted != marked )); then
+    echo "Found $marked compile-check marker(s), but extracted only $extracted Swift block(s)." >&2
+    echo "Each marker must immediately precede a fenced swift block, with only blank lines between them." >&2
+    exit 1
 fi
 
 cat > "$smoke_root/Package.swift" <<EOF
@@ -125,7 +148,7 @@ let package = Package(
     products: [
 $manifest_products    ],
     dependencies: [
-        .package(path: "$repo_root")
+        .package(name: "InnoNetwork", path: "$repo_root")
     ],
     targets: [
 $manifest_targets    ]

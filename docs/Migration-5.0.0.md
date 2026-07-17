@@ -180,9 +180,19 @@ default:
 Create a custom extension method only from a valid RFC 9110 token and handle
 the failable initializer:
 
+<!-- compile-check -->
 ```swift
-guard let purge = HTTPMethod(rawValue: "PURGE") else {
-    throw ConfigurationError.invalidHTTPMethod
+import InnoNetwork
+
+enum ConfigurationError: Error {
+    case invalidHTTPMethod
+}
+
+func makePurgeMethod() throws -> HTTPMethod {
+    guard let purge = HTTPMethod(rawValue: "PURGE") else {
+        throw ConfigurationError.invalidHTTPMethod
+    }
+    return purge
 }
 ```
 
@@ -661,7 +671,13 @@ Keep the default for ordinary JSON. For a known larger payload, set a
 bounded product-specific ceiling. Reserve `nil` for a deliberate unbounded
 decision:
 
+<!-- compile-check -->
 ```swift
+import Foundation
+import InnoNetwork
+
+let baseURL = URL(string: "https://api.example.com")!
+
 let bounded = NetworkConfiguration.advanced(
     baseURL: baseURL,
     resilience: ResiliencePack(
@@ -724,9 +740,15 @@ struct GetUser {
     typealias APIResponse = User
     let id: Int
 }
+```
 
-// 5.0
+In 5.0, the same explicit endpoint struct compiles from the root product alone:
+
+<!-- compile-check -->
+```swift
 import InnoNetwork
+
+struct User: Codable, Sendable {}
 
 @APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
 struct GetUser {

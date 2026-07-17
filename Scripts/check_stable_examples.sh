@@ -84,7 +84,7 @@ let package = Package(
     products: [
 $manifest_products    ],
     dependencies: [
-        .package(path: "$repo_root")
+        .package(name: "InnoNetwork", path: "$repo_root")
     ],
     targets: [
 $manifest_targets    ]
