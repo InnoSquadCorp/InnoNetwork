@@ -228,6 +228,11 @@ and HEAD; a stored `body` is inferred only for POST, PUT, PATCH, and DELETE.
 OPTIONS, CONNECT, TRACE, custom, and dynamic methods require a complete
 `Parameter` + `parameters` payload contract.
 
+Path placeholder values must be non-optional. Direct `T?`, `Optional<T>`, and
+`Swift.Optional<T>` spellings fail during macro expansion; aliases that resolve
+to an Optional fail at the generated call site with the same targeted guidance
+to unwrap the value and define its nil behavior.
+
 Use `EndpointBuilder` when a request is genuinely local or runtime-composed:
 
 ```swift

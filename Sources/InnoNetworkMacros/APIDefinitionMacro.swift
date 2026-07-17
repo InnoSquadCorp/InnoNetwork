@@ -106,7 +106,13 @@ public struct APIDefinitionMacro: ExtensionMacro {
             "\(accessPrefix)var sessionAuthentication: InnoNetwork.SessionAuthentication { .\(authentication.caseName) }"
         )
         witnesses.append("\(accessPrefix)var method: InnoNetwork.HTTPMethod { \(method) }")
-        witnesses.append("\(accessPrefix)var path: Swift.String { \"\(path)\" }")
+        witnesses.append(
+            pathWitness(
+                path,
+                hasPlaceholders: !pathProperties.isEmpty,
+                accessPrefix: accessPrefix
+            )
+        )
         let witnessSource =
             witnesses
             .map {
@@ -672,6 +678,28 @@ public struct APIDefinitionMacro: ExtensionMacro {
         """
     }
 
+    private static func pathWitness(
+        _ path: String,
+        hasPlaceholders: Bool,
+        accessPrefix: String
+    ) -> String {
+        guard hasPlaceholders else {
+            return "\(accessPrefix)var path: Swift.String { \"\(path)\" }"
+        }
+        return """
+            \(accessPrefix)var path: Swift.String {
+                func _innoNetworkRequirePathValue<Value>(_ value: Value) -> Value {
+                    value
+                }
+                @available(*, unavailable, message: "@APIDefinition path placeholder values cannot be Optional; unwrap the value and define its nil behavior before constructing the endpoint.")
+                func _innoNetworkRequirePathValue<Value>(_ value: Value?) -> Value {
+                    fatalError()
+                }
+                return "\(path)"
+            }
+            """
+    }
+
     private static func parameterTypeName(
         for property: StoredProperty,
         role: String,
@@ -855,9 +883,9 @@ public struct APIDefinitionMacro: ExtensionMacro {
     /// Limitation: when `type` is `nil` (e.g. inferred-type bindings such as
     /// `let value = expression`) we conservatively return `false`. The macro
     /// only inspects syntactic types, so optional inference through a typealias
-    /// expansion or a generic placeholder is not detected — placeholders that
-    /// rely on those forms must be declared with explicit optional syntax to
-    /// be recognized.
+    /// expansion or a generic placeholder is not detected here. Generated path
+    /// witnesses add a type-check-time unavailable overload so an alias that
+    /// resolves to Optional still receives targeted guidance.
     private static func isOptionalType(_ type: TypeSyntax?) -> Bool {
         guard let type else { return false }
         if type.is(OptionalTypeSyntax.self) || type.is(ImplicitlyUnwrappedOptionalTypeSyntax.self) {
@@ -1010,7 +1038,8 @@ public struct APIDefinitionMacro: ExtensionMacro {
                     break
                 }
                 usedProperties.insert(name)
-                result += "\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(\(name)))"
+                result +=
+                    "\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(\(name))))"
                 index = path.index(after: close)
             } else if character == "}" {
                 throw InnoNetworkMacroDiagnostic(

@@ -1,1 +1,1 @@
-percentEncodedSegment
+@APIDefinition path placeholder values cannot be Optional; unwrap the value and define its nil behavior before constructing the endpoint.

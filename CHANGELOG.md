@@ -114,6 +114,9 @@ draft release summary.
 
 ### Fixed
 
+- `@APIDefinition` path placeholders whose property typealiases resolve to
+  Optional now fail with targeted unwrap-and-define-nil-behavior guidance
+  instead of exposing the generated path encoder's generic constraint error.
 - Core URLSession transports now suppress every
   `URLSessionConfiguration.httpAdditionalHeaders` value on cross-origin
   redirects. Foundation otherwise re-injected session defaults after the
