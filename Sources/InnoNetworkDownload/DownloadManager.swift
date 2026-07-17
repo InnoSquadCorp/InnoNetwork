@@ -16,13 +16,6 @@ public enum DownloadEvent: Sendable {
     case failed(DownloadError)
 }
 
-package struct DownloadEventSubscription: Hashable, Sendable {
-    fileprivate let taskId: String
-    fileprivate let listenerID: UUID
-
-    package var id: UUID { listenerID }
-}
-
 public enum DownloadManagerError: Error, Sendable, Equatable {
     case duplicateSessionIdentifier(String)
 }
@@ -1409,25 +1402,20 @@ public actor DownloadManager {
         await eventHub.listenerCount(taskID: task.id)
     }
 
-    package func addEventListener(
+    func addEventListener(
         for task: DownloadTask,
         listener: @escaping @Sendable (DownloadEvent) async -> Void
-    ) async -> DownloadEventSubscription {
+    ) async {
         guard await runtimeRegistry.owns(task) else {
-            return DownloadEventSubscription(taskId: "", listenerID: UUID())
+            return
         }
-        let listenerID = await eventHub.addListener(taskID: task.id, listener: listener)
+        _ = await eventHub.addListener(taskID: task.id, listener: listener)
         if !provisionalBackgroundRestoreFailureIDs.contains(task.id),
             let terminal = await task.terminalEvent()
         {
             await eventHub.publishTerminalAndFinish(terminal, for: task.id)
             await acknowledgeRestoredCompletionIfNeeded(taskID: task.id)
         }
-        return DownloadEventSubscription(taskId: task.id, listenerID: listenerID)
-    }
-
-    package func removeEventListener(_ subscription: DownloadEventSubscription) async {
-        await eventHub.removeListener(taskID: subscription.taskId, listenerID: subscription.listenerID)
     }
 
     public func events(for task: DownloadTask) async -> AsyncStream<DownloadEvent> {

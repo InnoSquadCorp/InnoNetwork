@@ -140,11 +140,3 @@ public struct EventPipelineAggregateSnapshotMetric: Sendable {
 public protocol EventPipelineMetricsReporting: Sendable {
     func report(_ metric: EventPipelineMetric)
 }
-
-package struct NoOpEventPipelineMetricsReporter: EventPipelineMetricsReporting {
-    package init() {}
-
-    package func report(_ metric: EventPipelineMetric) {
-        _ = metric
-    }
-}

@@ -139,7 +139,7 @@ struct NetworkConfigurationPresetTests {
         let configuration = NetworkConfiguration.advanced(
             baseURL: baseURL,
             observability: ObservabilityPack(
-                eventObservers: [NoOpNetworkEventObserver()]
+                eventObservers: [TestNetworkEventObserver()]
             )
         )
 
@@ -147,6 +147,12 @@ struct NetworkConfigurationPresetTests {
         #expect(configuration.baseURL == baseURL)
         #expect(configuration.retryPolicy == nil)
         #expect(configuration.circuitBreakerPolicy == nil)
+    }
+}
+
+private struct TestNetworkEventObserver: NetworkEventObserving {
+    func handle(_ event: NetworkEvent) async {
+        _ = event
     }
 }
 
