@@ -55,20 +55,11 @@ xcodebuild docbuild \
   -destination 'generic/platform=macOS' \
   -derivedDataPath .build/DocC
 
+bash Scripts/check_docc_archives.sh .build/DocC
+
 mkdir -p .build/docc-site
 
-doc_modules=(
-  InnoNetwork
-  InnoNetworkAuthAWS
-  InnoNetworkDownload
-  InnoNetworkWebSocket
-  InnoNetworkPersistentCache
-  InnoNetworkOpenAPI
-  InnoNetworkTrust
-  InnoNetworkTestSupport
-)
-
-for module in "${doc_modules[@]}"; do
+while IFS= read -r module; do
   archive="$(find .build/DocC/Build/Products -type d \
     -path "*/${module}.doccarchive" -print -quit)"
   xcrun docc process-archive transform-for-static-hosting "$archive" \
@@ -78,7 +69,7 @@ for module in "${doc_modules[@]}"; do
   slug="$(printf '%s' "$module" | tr '[:upper:]' '[:lower:]')"
   test -s ".build/docc-site/$module/documentation/$slug/index.html"
   test -s ".build/docc-site/$module/data/documentation/$slug.json"
-done
+done < docs/public-docc-products.txt
 ```
 
 Replace the first `InnoNetwork` in each `--hosting-base-path` with the actual
@@ -93,5 +84,6 @@ machines.
 
 - Ensure GitHub Pages is enabled in repository settings.
 - The workflow uses `actions/upload-pages-artifact` and `actions/deploy-pages`.
-- A product addition or rename must update its DocC catalog, the workflow's
-  module list, this route list, and `docs/site/index.html` together.
+- A library product addition or rename must update its DocC catalog,
+  `docs/public-docc-products.txt`, this route list, and `docs/site/index.html`
+  together. The archive contract rejects drift from `Package.swift`.

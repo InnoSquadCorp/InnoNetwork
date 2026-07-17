@@ -31,6 +31,9 @@ jobs:
           xcodebuild -version
           xcrun swift --version
 
+      - name: Verify DocC archive contract fixtures
+        run: bash Scripts/tests/test_check_docc_archives.sh
+
       - name: Build DocC archives
         run: |
           xcodebuild docbuild \
@@ -38,6 +41,9 @@ jobs:
             -destination 'generic/platform=macOS' \
             -skipMacroValidation \
             -derivedDataPath .build/DocC
+
+      - name: Verify public DocC archives
+        run: bash Scripts/check_docc_archives.sh .build/DocC
 
       - name: Transform DocC archives for static hosting
         env:
@@ -50,17 +56,7 @@ jobs:
           mkdir -p "$SITE_DIR"
           touch "$SITE_DIR/.nojekyll"
 
-          doc_modules=(
-            InnoNetwork
-            InnoNetworkAuthAWS
-            InnoNetworkDownload
-            InnoNetworkWebSocket
-            InnoNetworkPersistentCache
-            InnoNetworkOpenAPI
-            InnoNetworkTrust
-            InnoNetworkTestSupport
-          )
-          for module in "${doc_modules[@]}"; do
+          while IFS= read -r module; do
             archive="$(find .build/DocC/Build/Products -type d -path "*/${module}.doccarchive" -print -quit)"
             if [[ -z "$archive" || ! -d "$archive" ]]; then
               echo "Missing DocC archive for module: $module"
@@ -70,7 +66,7 @@ jobs:
             xcrun docc process-archive transform-for-static-hosting "$archive" \
               --output-path "$SITE_DIR/$module" \
               --hosting-base-path "$BASE_PATH/$module"
-          done
+          done < docs/public-docc-products.txt
 
           cp docs/site/index.html "$SITE_DIR/index.html"
 
@@ -79,21 +75,10 @@ jobs:
           set -euo pipefail
 
           SITE_DIR=".build/docc-site"
-          doc_modules=(
-            InnoNetwork
-            InnoNetworkAuthAWS
-            InnoNetworkDownload
-            InnoNetworkWebSocket
-            InnoNetworkPersistentCache
-            InnoNetworkOpenAPI
-            InnoNetworkTrust
-            InnoNetworkTestSupport
-          )
-
           test -f "$SITE_DIR/.nojekyll"
           test -s "$SITE_DIR/index.html"
 
-          for module in "${doc_modules[@]}"; do
+          while IFS= read -r module; do
             slug="$(printf '%s' "$module" | tr '[:upper:]' '[:lower:]')"
             route="./${module}/documentation/${slug}"
 
@@ -101,7 +86,7 @@ jobs:
             test -s "$SITE_DIR/${module}/documentation/${slug}/index.html"
             test -s "$SITE_DIR/${module}/data/documentation/${slug}.json"
             grep -Fq "href=\"${route}" "$SITE_DIR/index.html"
-          done
+          done < docs/public-docc-products.txt
 
       - name: Setup Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
@@ -125,6 +110,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
@@ -136,26 +124,15 @@ jobs:
           set -euo pipefail
 
           base_url="${SITE_URL%/}"
-          doc_modules=(
-            InnoNetwork
-            InnoNetworkAuthAWS
-            InnoNetworkDownload
-            InnoNetworkWebSocket
-            InnoNetworkPersistentCache
-            InnoNetworkOpenAPI
-            InnoNetworkTrust
-            InnoNetworkTestSupport
-          )
-
           curl --fail --location --silent --show-error \
             --retry 12 --retry-delay 5 --retry-all-errors \
             --connect-timeout 10 --max-time 30 \
             "$base_url/" >/dev/null
 
-          for module in "${doc_modules[@]}"; do
+          while IFS= read -r module; do
             slug="$(printf '%s' "$module" | tr '[:upper:]' '[:lower:]')"
             curl --fail --location --silent --show-error \
               --retry 12 --retry-delay 5 --retry-all-errors \
               --connect-timeout 10 --max-time 30 \
               "$base_url/${module}/documentation/${slug}/" >/dev/null
-          done
+          done < docs/public-docc-products.txt

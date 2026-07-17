@@ -30,6 +30,7 @@ jobs:
           bash Scripts/tests/test_generate_sbom.sh
           bash Scripts/tests/test_generate_dependency_snapshot.sh
           bash Scripts/tests/test_check_guarded_benchmark_contract.sh
+          bash Scripts/tests/test_check_docc_archives.sh
           bash Scripts/tests/test_run_local_release_preflight.sh
 
       - name: Validate release ref
@@ -228,6 +229,9 @@ jobs:
             -destination 'generic/platform=macOS' \
             -skipMacroValidation \
             -derivedDataPath .build/DocC
+
+      - name: Verify public DocC archives
+        run: bash Scripts/check_docc_archives.sh .build/DocC
 
       - name: Generate SBOMs (CycloneDX 1.5)
         env:

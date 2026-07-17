@@ -105,6 +105,7 @@ run_release_script_fixtures() {
   bash Scripts/tests/test_generate_sbom.sh
   bash Scripts/tests/test_generate_dependency_snapshot.sh
   bash Scripts/tests/test_check_guarded_benchmark_contract.sh
+  bash Scripts/tests/test_check_docc_archives.sh
 }
 
 run_dependency_lock() {
@@ -225,33 +226,12 @@ run_sbom_artifacts() {
 }
 
 run_all_product_docc() {
-  local public_products=(
-    "InnoNetwork"
-    "InnoNetworkAuthAWS"
-    "InnoNetworkDownload"
-    "InnoNetworkOpenAPI"
-    "InnoNetworkPersistentCache"
-    "InnoNetworkTestSupport"
-    "InnoNetworkTrust"
-    "InnoNetworkWebSocket"
-  )
-  local product
-  local archive
-
   xcodebuild docbuild \
     -scheme InnoNetwork-Package \
     -destination 'generic/platform=macOS' \
     -skipMacroValidation \
     -derivedDataPath "$artifacts_dir/DocC"
-
-  for product in "${public_products[@]}"; do
-    archive="$artifacts_dir/DocC/Build/Products/Debug/$product.doccarchive"
-    if [[ ! -d "$archive" ]]; then
-      echo "local-release-preflight: expected DocC archive is missing: $archive" >&2
-      exit 1
-    fi
-  done
-  echo "Generated ${#public_products[@]} public product DocC archives."
+  bash Scripts/check_docc_archives.sh "$artifacts_dir/DocC"
 }
 
 run_apple_platform_builds() {

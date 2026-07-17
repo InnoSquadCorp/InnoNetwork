@@ -128,6 +128,10 @@ draft release summary.
 - CI builds DocC for all eight public products and fails closed when core or
   macro coverage artifacts are missing, empty, or contain absolute
   source paths.
+- `docs/public-docc-products.txt` now owns the ordered DocC product contract.
+  Local preflight, release validation, and Pages publication require exactly
+  one archive for every SwiftPM library product; fixture tests reject missing,
+  duplicate, or package-divergent product declarations.
 - `Scripts/run_local_release_preflight.sh` provides one pre-tag entry point for
   deterministic contracts, every consumer example, the OpenAPI generator, and
   bounded tests. Its `--full` mode also generates coverage and both SBOM
