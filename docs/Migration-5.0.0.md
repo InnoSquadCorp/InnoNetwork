@@ -33,6 +33,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | `#endpoint(method, path, as: Response.self)` | Use a named macro-assisted endpoint struct or runtime `EndpointBuilder` |
 | `client.request(path, method:tag:)` | Use a named `APIDefinition` or an explicit `EndpointBuilder` |
 | Passing an optional directly to `EndpointPathEncoding.percentEncodedSegment` | Unwrap it and define the nil behavior before encoding |
+| `NetworkConfiguration.responseBodyLimit` | Read and configure `responseBodyBufferingPolicy`; choose `.streaming(maxBytes:)` or `.buffered(maxBytes:)` |
 | Assuming `safeDefaults` / `advanced` has an unbounded collected response, including for file uploads | Accept the 5 MiB default, configure another explicit bound, or deliberately select `.streaming(maxBytes: nil)` / `.buffered(maxBytes: nil)` |
 | Using `MockURLSession` or VCR replay mode with `safeDefaults` | No configuration change is required; fixture data is buffered by design and the response ceiling is enforced before the response pipeline |
 | Using VCR record mode with bounded streaming | Select an explicitly reviewed `.buffered(maxBytes:)` recording profile; record mode forwards to a backing session and fails closed under bounded streaming |
@@ -514,6 +515,13 @@ authoritative terminal outcome before ending, including under saturated
 `.dropNewest` or `.dropOldest` delivery policies.
 
 ## Choose a response ceiling deliberately
+
+`NetworkConfiguration.responseBodyLimit`, the 4.x compatibility alias for
+the active policy's byte ceiling, is removed. Collection mode and limit now
+have one source of truth: `responseBodyBufferingPolicy`. Configure it through
+`ResiliencePack(bodyBuffering:)` when using `advanced(...)`, and pattern
+match the public enum when an application needs to inspect the selected mode
+or associated limit.
 
 `NetworkConfiguration.safeDefaults(baseURL:)`,
 `NetworkConfiguration.advanced(...)`, and

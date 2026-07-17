@@ -562,7 +562,6 @@ InnoNetwork	swift.property	NetworkConfiguration.requestInterceptors
 InnoNetwork	swift.property	NetworkConfiguration.requestPriority
 InnoNetwork	swift.property	NetworkConfiguration.requestSigners
 InnoNetwork	swift.property	NetworkConfiguration.responseBodyBufferingPolicy
-InnoNetwork	swift.property	NetworkConfiguration.responseBodyLimit
 InnoNetwork	swift.property	NetworkConfiguration.responseCache
 InnoNetwork	swift.property	NetworkConfiguration.responseCachePolicy
 InnoNetwork	swift.property	NetworkConfiguration.responseInterceptors

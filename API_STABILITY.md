@@ -10,8 +10,9 @@ The planned 5.0.0 baseline will remove the deprecated 4.x
 `NetworkConfiguration.with(...)` modifier family, replace the type-level
 auth-scope markers with an explicit `SessionAuthentication` value on every
 endpoint shape, remove the raw-string `NetworkClient.request(_:method:tag:)`
-shortcut, and move the shared `StateReducer` / `StateReduction` lifecycle
-vocabulary to package scope.
+shortcut and `NetworkConfiguration.responseBodyLimit` compatibility alias,
+and move the shared `StateReducer` / `StateReduction` lifecycle vocabulary
+to package scope.
 Preview adopters should migrate configuration to
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.
@@ -202,8 +203,8 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   retry, redirect, cache, coalescing, and diagnostics never normalize method
   case on the caller's behalf.
 - `ResponseBodyBufferingPolicy` — the default inline request path is
-  streaming, with `responseBodyLimit` retained as a source-compatible alias
-  for the policy's `maxBytes` value.
+  streaming. Its `streaming(maxBytes:)` and `buffered(maxBytes:)` cases are
+  the single source of truth for collection mode and byte ceiling.
 - `NetworkConfiguration.streamingLineByteLimit` — controls the maximum UTF-8
   byte length for one line-delimited streaming frame. The default remains
   `NetworkConfiguration.defaultStreamingLineByteLimit` (1 MiB), and values
