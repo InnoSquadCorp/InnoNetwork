@@ -1837,4 +1837,6 @@ forbidden_pattern 'wraps everything that follows|wraps the core retry/refresh/tr
   "$repo_root/Sources/InnoNetwork" \
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc"
 
+bash "$repo_root/Scripts/check_public_api_budget.sh"
+
 echo "docs-contract-sync: OK"

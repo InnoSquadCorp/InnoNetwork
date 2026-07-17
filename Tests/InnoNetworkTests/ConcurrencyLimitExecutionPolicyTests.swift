@@ -6,9 +6,23 @@ import Testing
 @Suite
 struct ConcurrencyLimitExecutionPolicyTests {
     @Test
+    func publicInitializerClampsCapacityToOne() {
+        let policy = ConcurrencyLimitExecutionPolicy(maxConcurrent: 0)
+
+        #expect(policy.maxConcurrent == 1)
+    }
+
+    @Test
+    func copiedPolicyValuesShareOneAdmissionQueue() {
+        let policy = ConcurrencyLimitExecutionPolicy(maxConcurrent: 2)
+        let copy = policy
+
+        #expect(policy.bucket === copy.bucket)
+    }
+
+    @Test
     func policyForwardsRequestThroughChain() async throws {
-        let bucket = ConcurrencyTokenBucket(maxConcurrent: 2)
-        let policy = ConcurrencyLimitExecutionPolicy(bucket: bucket)
+        let policy = ConcurrencyLimitExecutionPolicy(maxConcurrent: 2)
 
         let url = URL(string: "https://api.example.com/x")!
         let response = try await policy.execute(
@@ -40,8 +54,8 @@ struct ConcurrencyLimitExecutionPolicyTests {
 
     @Test
     func policyAcquiresAndReleasesAroundChain() async throws {
-        let bucket = ConcurrencyTokenBucket(maxConcurrent: 1)
-        let policy = ConcurrencyLimitExecutionPolicy(bucket: bucket)
+        let policy = ConcurrencyLimitExecutionPolicy(maxConcurrent: 1)
+        let bucket = policy.bucket
 
         let url = URL(string: "https://api.example.com/x")!
         let observedAvailable = ObservedAvailable()
@@ -80,8 +94,8 @@ struct ConcurrencyLimitExecutionPolicyTests {
 
     @Test
     func policyReleasesBeforeRethrowingChainFailure() async throws {
-        let bucket = ConcurrencyTokenBucket(maxConcurrent: 1)
-        let policy = ConcurrencyLimitExecutionPolicy(bucket: bucket)
+        let policy = ConcurrencyLimitExecutionPolicy(maxConcurrent: 1)
+        let bucket = policy.bucket
         let url = URL(string: "https://api.example.com/x")!
 
         do {

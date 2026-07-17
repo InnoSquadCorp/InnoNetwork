@@ -267,21 +267,13 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   ``NetworkError/configuration(reason:)`` with
   ``NetworkConfigurationFailureReason/offline(_:)``.
 - `ConcurrencyLimitExecutionPolicy` — `RequestExecutionPolicy` that
-  funnels each transport attempt through a `ConcurrencyTokenBucket`
-  with cancellation-aware `acquire` / awaited `release` semantics.
-  Registered via `ResiliencePack.customExecutionPolicies`. Surface stays
-  source-compatible across the planned 5.x bucket integration that may
-  move the policy into a built-in pre-flight stage.
-- `ConcurrencyTokenBucket` — bounded counting semaphore actor for
-  capping in-flight work. Raw bucket users can still protect custom
-  async work directly, but request execution paths should prefer
-  `ConcurrencyLimitExecutionPolicy` over paired
-  `RequestInterceptor` / `ResponseInterceptor` wiring because the policy
-  owns release on success, failure, and cancellation. `acquire()` is
-  `async throws` in the 4.0.0 baseline so queued cancellation removes the
-  waiter
-  before a future token can be consumed; direct callers must use
-  `try await`.
+  funnels each transport attempt through a package-owned FIFO admission queue
+  with cancellation-aware acquire / awaited-release semantics. Construct it
+  with `init(maxConcurrent:)` and register it via
+  `ResiliencePack.customExecutionPolicies`. Reuse the same policy value across
+  configurations to share one cap. The raw semaphore is not public, preventing
+  interceptor pairs that leak capacity when transport errors skip response
+  processing.
 - `ResiliencePack`, `AuthPack`, `ObservabilityPack`, `CachePack`,
   `TransportPack` — configuration packs accepted as named arguments by
   `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`.
@@ -402,6 +394,7 @@ planned 5.x release line.
   `AnyResponseDecoder`,
   `CachedResponse`, `CacheRevalidationState`, `CancellationTag`,
   `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
+  `ConcurrencyLimitExecutionPolicy`,
   `ContentType`, `CorrelationIDInterceptor`, `CurlCommandOptions`,
   `DecodingStage`,
   `DefaultNetworkClient`, `DefaultRedirectPolicy`,
