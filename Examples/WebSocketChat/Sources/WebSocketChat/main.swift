@@ -98,7 +98,6 @@ let manager = WebSocketManager(
         maxReconnectDelay: safeDefaults.maxReconnectDelay,
         maxReconnectAttempts: 0,
         allowsCellularAccess: safeDefaults.allowsCellularAccess,
-        sessionIdentifier: safeDefaults.sessionIdentifier,
         requestHeaders: safeDefaults.requestHeaders,
         eventDeliveryPolicy: safeDefaults.eventDeliveryPolicy,
         eventMetricsReporter: safeDefaults.eventMetricsReporter

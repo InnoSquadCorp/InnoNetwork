@@ -65,7 +65,6 @@ struct WebSocketSendQueueTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: makeWebSocketTestSessionIdentifier("send-overflow-fail"),
                 sendQueueLimit: 2,
                 sendQueueOverflowPolicy: .fail
             )
@@ -103,7 +102,6 @@ struct WebSocketSendQueueTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: makeWebSocketTestSessionIdentifier("send-overflow-drop"),
                 sendQueueLimit: 1,
                 sendQueueOverflowPolicy: .dropNewest
             )
@@ -130,7 +128,6 @@ struct WebSocketSendQueueTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: makeWebSocketTestSessionIdentifier("send-overflow-release"),
                 sendQueueLimit: 4,
                 sendQueueOverflowPolicy: .fail
             )

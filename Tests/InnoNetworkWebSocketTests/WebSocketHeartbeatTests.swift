@@ -103,7 +103,6 @@ struct WebSocketHeartbeatTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: makeWebSocketTestSessionIdentifier("heartbeat-disconnect")
             )
         )
 
@@ -136,7 +135,6 @@ struct WebSocketHeartbeatTests {
                 maxMissedPongs: 2,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 1,
-                sessionIdentifier: makeWebSocketTestSessionIdentifier("heartbeat-final-timeout")
             ),
             urlSession: stubSession,
             delegate: delegate,

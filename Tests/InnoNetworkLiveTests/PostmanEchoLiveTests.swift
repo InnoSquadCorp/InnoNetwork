@@ -12,8 +12,7 @@ struct PostmanEchoLiveTests {
             configuration: WebSocketConfiguration(
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
-                maxReconnectAttempts: 0,
-                sessionIdentifier: "test.live.postman.\(UUID().uuidString)"
+                maxReconnectAttempts: 0
             )
         )
 

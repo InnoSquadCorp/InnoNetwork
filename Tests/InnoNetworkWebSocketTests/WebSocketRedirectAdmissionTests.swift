@@ -189,7 +189,6 @@ struct WebSocketRedirectAdmissionTests {
                 "Authorization": "Bearer secret",
                 "X-Tenant-Secret": "tenant-secret",
             ]
-            builder.sessionIdentifier = makeWebSocketTestSessionIdentifier("redirect-loopback")
         }
         let manager = WebSocketManager(configuration: configuration)
         let task = await manager.connect(url: server.sourceURL, subprotocols: ["chat.v2"])
@@ -223,7 +222,6 @@ struct WebSocketRedirectAdmissionTests {
             heartbeatInterval: 0,
             reconnectDelay: 0,
             maxReconnectAttempts: 3,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("redirect-terminal")
         )
         let session = StubWebSocketURLSession()
         let callbacks = WebSocketSessionDelegateCallbacks()

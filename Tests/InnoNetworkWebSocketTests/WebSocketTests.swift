@@ -78,11 +78,10 @@ struct WebSocketConfigurationTests {
             URL(string: "wss://example.invalid/socket#fragment")!,
         ]
 
-        for (index, url) in rejectedURLs.enumerated() {
+        for url in rejectedURLs {
             let configuration = WebSocketConfiguration(
                 heartbeatInterval: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: makeWebSocketTestSessionIdentifier("url-admission-\(index)")
             )
             let session = StubWebSocketURLSession()
             let callbacks = WebSocketSessionDelegateCallbacks()
@@ -116,7 +115,6 @@ struct WebSocketConfigurationTests {
             heartbeatInterval: 0,
             maxReconnectAttempts: 0,
             allowsInsecureWebSocket: true,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("ws-opt-in")
         )
         let session = StubWebSocketURLSession()
         let callbacks = WebSocketSessionDelegateCallbacks()
@@ -253,7 +251,6 @@ struct WebSocketConfigurationTests {
             heartbeatInterval: 0,
             reconnectDelay: 0,
             maxReconnectAttempts: 0,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("adapter-url-admission"),
             handshakeRequestAdapters: [
                 WebSocketHandshakeRequestAdapter { request in
                     var adapted = request
@@ -292,7 +289,6 @@ struct WebSocketConfigurationTests {
             maxConnectionsPerHost: 4,
             connectionTimeout: 45,
             allowsCellularAccess: false,
-            sessionIdentifier: "test.websocket"
         )
 
         let sessionConfig = config.makeURLSessionConfiguration()
@@ -1115,7 +1111,6 @@ struct WebSocketManagerTests {
             configuration: WebSocketConfiguration(
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
-                sessionIdentifier: "test.websocket.disconnect-state.\(UUID().uuidString)"
             )
         )
 
@@ -1190,7 +1185,6 @@ struct WebSocketListenerLifecycleTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 2,
-                sessionIdentifier: "test.websocket.reconnect-runtime.\(UUID().uuidString)"
             )
         )
         let recorder = WebSocketEventRecorder()
@@ -1249,7 +1243,6 @@ struct WebSocketListenerLifecycleTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: "test.websocket.reconnect-zero.\(UUID().uuidString)"
             )
         )
         let recorder = WebSocketEventRecorder()
@@ -1278,7 +1271,6 @@ struct WebSocketListenerLifecycleTests {
             heartbeatInterval: 0,
             reconnectDelay: 0,
             maxReconnectAttempts: 3,
-            sessionIdentifier: "test.websocket.listener.retry.\(UUID().uuidString)"
         )
         let manager = WebSocketManager(configuration: config)
 
@@ -1307,7 +1299,6 @@ struct WebSocketListenerLifecycleTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: "test.websocket.disconnect-reason.\(UUID().uuidString)"
             )
         )
         let recorder = WebSocketEventRecorder()
@@ -1342,7 +1333,6 @@ struct WebSocketListenerLifecycleTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: "test.websocket.manual-disconnect-reason.\(UUID().uuidString)"
             )
         )
         let recorder = WebSocketEventRecorder()
@@ -1388,7 +1378,6 @@ struct WebSocketListenerLifecycleTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: "test.websocket.manual-close-ack.\(UUID().uuidString)"
             )
         )
 
@@ -1425,7 +1414,6 @@ struct WebSocketListenerLifecycleTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: "test.websocket.manual-close-cancelled.\(UUID().uuidString)"
             )
         )
         let recorder = WebSocketEventRecorder()
@@ -1479,7 +1467,6 @@ struct WebSocketListenerLifecycleTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: "test.websocket.disconnecting-duplicate.\(UUID().uuidString)"
             )
         )
         let recorder = WebSocketEventRecorder()
@@ -1779,7 +1766,6 @@ struct WebSocketListenerLifecycleTests {
             heartbeatInterval: 0,
             reconnectDelay: 0,
             maxReconnectAttempts: 1,
-            sessionIdentifier: "test.websocket.listener.terminal.\(UUID().uuidString)"
         )
         let manager = WebSocketManager(configuration: config)
 
@@ -1809,7 +1795,6 @@ struct WebSocketListenerLifecycleTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 3,
-                sessionIdentifier: "test.websocket.server-normal-close.\(UUID().uuidString)"
             )
         )
 
@@ -1832,7 +1817,6 @@ struct WebSocketListenerLifecycleTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 2,
-                sessionIdentifier: "test.websocket.retryable-close.\(UUID().uuidString)"
             )
         )
 
