@@ -32,6 +32,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | `WebSocketConfiguration.sessionIdentifier` / `AdvancedBuilder.sessionIdentifier` | Remove the value; WebSocket sessions are foreground-only and the identifier was never applied |
 | `DownloadConfiguration.default` / `WebSocketConfiguration.default` | Call the matching `safeDefaults()` factory; zero-argument manager initialization remains available |
 | Direct `WebSocketConfiguration(...)` initialization | Use `safeDefaults()` or set explicit overrides through `advanced(_:)` |
+| Constructing a `WebSocketTask` directly | Obtain the handle from `await manager.connect(url:subprotocols:)` or an accepted `retry(_:)` result |
 | `import InnoNetworkCodegen` | Remove it; the attached macro ships from `import InnoNetwork` |
 | `@APIDefinition(method:path:)` | Add mandatory `auth: .anonymous`, `.optional`, or `.required` |
 | `#endpoint(method, path, as: Response.self)` | Use a named macro-assisted endpoint struct or runtime `EndpointBuilder` |
@@ -286,6 +287,29 @@ Issue a new typed request after validating an intentional redirect target.
 
 See the [Request Signing guide](../Sources/InnoNetwork/InnoNetwork.docc/Articles/RequestSigning.md)
 for custom signer and file-lifetime examples.
+
+## Obtain WebSocket tasks from their manager
+
+`WebSocketTask` construction is package-owned in 5.0. A caller-created task
+had no public operation that could register it with a manager or move it out
+of its initial state, so it could not represent a live connection. Start the
+connection through its owner instead:
+
+```swift
+// 4.x
+let task = WebSocketTask(url: socketURL, subprotocols: ["chat.v1"])
+
+// 5.0
+let task = await manager.connect(
+    url: socketURL,
+    subprotocols: ["chat.v1"]
+)
+```
+
+The returned handle remains the source of task identity, lifecycle state,
+events, counters, and explicit retry. Do not synthesize task IDs for
+restoration; create a new manager-owned connection and retain the returned
+handle.
 
 ## WebSocket explicit retry creates a fresh task
 

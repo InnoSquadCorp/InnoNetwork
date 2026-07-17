@@ -21,7 +21,7 @@ public actor WebSocketTask: Identifiable {
     private var _reconnectWindowStartedAt: Date?
     /// Explicit retry retires this handle permanently and creates a fresh
     /// task. Keeping the claim on the task actor makes the one-shot boundary
-    /// global even when two managers race to adopt the same unowned task.
+    /// atomic even when multiple retry calls race on the same owned task.
     private var explicitRetryClaimed = false
     private var ownerManagerID: UUID?
 
@@ -72,7 +72,7 @@ public actor WebSocketTask: Identifiable {
     package var connectionGeneration: Int { lifecycleState.generation }
     package var currentLifecycleState: WebSocketLifecycleState { lifecycleState }
 
-    public init(url: URL, subprotocols: [String]? = nil, id: String = UUID().uuidString) {
+    package init(url: URL, subprotocols: [String]? = nil, id: String = UUID().uuidString) {
         self.id = id
         self.url = url
         self.subprotocols = subprotocols
@@ -181,10 +181,9 @@ public actor WebSocketTask: Identifiable {
         lifecycleState.generation == generation && lifecycleState.publicState == .connected
     }
 
-    /// Assigns this task to its creating manager. Publicly constructed tasks
-    /// may start unowned and are atomically adopted by the first manager that
-    /// accepts an explicit retry; an already-owned task cannot be handed to a
-    /// different manager after terminal cleanup.
+    /// Assigns this task to its creating manager. Manager-created tasks are
+    /// assigned before connection admission, and an already-owned task cannot
+    /// be handed to a different manager after terminal cleanup.
     package func assignOwnerIfUnowned(_ managerID: UUID) -> Bool {
         if let ownerManagerID {
             return ownerManagerID == managerID
