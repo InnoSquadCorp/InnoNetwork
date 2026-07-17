@@ -57,12 +57,15 @@ into one release line:
 
 ## 4.x Typed-Throws Surface
 
-`NetworkClient.request(_:)`, `request(_:tag:)`,
-`request(_:method:tag:)`, `upload(_:)`, and `upload(_:tag:)` now expose
-`async throws(NetworkError)`. This shipped in the 4.x public contract and is
-unchanged in 5.0. Interceptors and execution policies that
-produce arbitrary errors are normalized before they leave the client
+`NetworkClient.request(_:)`, `request(_:tag:)`, `upload(_:)`, and
+`upload(_:tag:)` expose `async throws(NetworkError)`. This shipped in the 4.x
+public contract and is unchanged in 5.0. Interceptors and execution policies
+that produce arbitrary errors are normalized before they leave the client
 surface so callers can switch on `NetworkError` directly.
+
+The raw-string `request(_:method:tag:)` convenience from 4.x is removed in
+5.0. Named requests use macro-assisted or manual `APIDefinition` structs;
+runtime-composed requests use `EndpointBuilder` with explicit authentication.
 
 The previous 5.0 candidate on this axis was not typed throws. The large
 `NetworkConfiguration.init(...)` compatibility initializer was removed from
