@@ -493,6 +493,7 @@ jobs:
         run: |
           bash Scripts/check_guarded_benchmark_contract.sh
           bash Scripts/tests/test_check_guarded_benchmark_contract.sh
+          python3 Scripts/tests/test_run_with_guarded_benchmarks.py
 
       - name: Verify dependency snapshot conversion
         run: bash Scripts/tests/test_generate_dependency_snapshot.sh

@@ -30,6 +30,7 @@ jobs:
           bash Scripts/tests/test_generate_sbom.sh
           bash Scripts/tests/test_generate_dependency_snapshot.sh
           bash Scripts/tests/test_check_guarded_benchmark_contract.sh
+          python3 Scripts/tests/test_run_with_guarded_benchmarks.py
           bash Scripts/tests/test_check_docc_archives.sh
           bash Scripts/tests/test_run_local_release_preflight.sh
 
@@ -165,25 +166,12 @@ jobs:
       - name: Run quick benchmarks
         run: |
           mkdir -p .build/release-artifacts
-          xcrun swift run -c release InnoNetworkBenchmarks \
-            --quick \
-            --json-path .build/release-artifacts/benchmarks.json \
-            --enforce-baseline \
-            --max-regression-percent 10 \
-            --guard-benchmark events/task-event-fanout-single \
-            --guard-benchmark persistence/download-persistence-restore \
-            --guard-benchmark persistence/append-log-compaction \
-            --guard-benchmark websocket/websocket-close-disposition-classify \
-            --guard-benchmark websocket/websocket-ping-context-create \
-            --guard-benchmark websocket/websocket-send-queue-reserve \
-            --guard-benchmark websocket/websocket-lifecycle-transition-table \
-            --guard-benchmark client/request-pipeline \
-            --guard-benchmark client/request-coalescing-shared-get \
-            --guard-benchmark client/decoding-interceptor-chain-1 \
-            --guard-benchmark client/decoding-interceptor-chain-3 \
-            --guard-benchmark client/decoding-interceptor-chain-8 \
-            --guard-benchmark cache/response-cache-lookup \
-            --guard-benchmark cache/response-cache-revalidation
+          python3 Scripts/run_with_guarded_benchmarks.py -- \
+            xcrun swift run -c release InnoNetworkBenchmarks \
+              --quick \
+              --json-path .build/release-artifacts/benchmarks.json \
+              --enforce-baseline \
+              --max-regression-percent 10
 
       - name: Run serial tests with coverage
         run: xcrun swift test --no-parallel --enable-code-coverage
