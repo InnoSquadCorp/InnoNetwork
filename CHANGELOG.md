@@ -46,6 +46,9 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   removed because they duplicate `safeDefaults()`. Use the named factory when
   passing a configuration explicitly; `DownloadManager()` and
   `WebSocketManager()` keep their zero-argument defaults.
+- The direct 21-parameter `WebSocketConfiguration` initializer is
+  package-owned. Use `safeDefaults()` for the secure preset or `advanced(_:)`
+  for explicit tuning.
 - `HTTPMethod` is now an extensible, `RawRepresentable` value type. Standard
   methods remain static constants; custom methods use the failable
   `init(rawValue:)`, which accepts only nonempty RFC 9110 tokens. Code that
