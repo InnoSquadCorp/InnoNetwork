@@ -180,15 +180,6 @@ public protocol NetworkEventObserving: Sendable {
     func handle(_ event: NetworkEvent) async
 }
 
-/// An observer that intentionally ignores all events.
-package struct NoOpNetworkEventObserver: NetworkEventObserving {
-    package init() {}
-
-    package func handle(_ event: NetworkEvent) async {
-        _ = event
-    }
-}
-
 /// An observer that mirrors request lifecycle events to `OSLog`.
 public struct OSLogNetworkEventObserver: NetworkEventObserving {
     public init() {}

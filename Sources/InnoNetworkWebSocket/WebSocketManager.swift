@@ -945,7 +945,7 @@ public actor WebSocketManager {
         await eventHub.listenerCount(taskID: task.id)
     }
 
-    /// Adds a package-owned event listener for a socket task.
+    /// Adds a module-owned event listener for a socket task.
     ///
     /// - Parameters:
     ///   - task: Target task to observe.
@@ -953,7 +953,7 @@ public actor WebSocketManager {
     /// - Returns: A subscription token used to remove the listener later.
     /// - Note: Listener callbacks are invoked from an internal async context, not the main actor.
     /// - Note: Registration after shutdown begins returns an inert subscription.
-    package func addEventListener(
+    func addEventListener(
         for task: WebSocketTask,
         listener: @escaping @Sendable (WebSocketEvent) async -> Void
     ) async -> WebSocketEventSubscription {
@@ -975,10 +975,10 @@ public actor WebSocketManager {
         return WebSocketEventSubscription(taskId: task.id, listenerID: listenerID)
     }
 
-    /// Removes a package-owned event listener using its subscription token.
+    /// Removes a module-owned event listener using its subscription token.
     ///
     /// - Parameter subscription: Token returned by `addEventListener(for:listener:)`.
-    package func removeEventListener(_ subscription: WebSocketEventSubscription) async {
+    func removeEventListener(_ subscription: WebSocketEventSubscription) async {
         await eventHub.removeListener(taskID: subscription.taskId, listenerID: subscription.listenerID)
     }
 

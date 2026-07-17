@@ -29,7 +29,8 @@ its cache-owned initializer moves to package scope. The initializer for the
 library-produced `CircuitBreakerOpenError` diagnostic is package-owned while
 its public domain and read-only fields remain available for inspection.
 Task-scoped Download and WebSocket observation uses `events(for:)`; manual
-listener subscription tokens and add/remove methods move to package scope.
+listener subscription tokens and add/remove methods are no longer consumer
+API. Any listener-based test plumbing is an implementation detail.
 Lifecycle transition tables are also manager-owned, while public state values
 retain `isTerminal` for application observation. Optional observability hooks
 use `nil` or an empty observer collection instead of public no-op helper types.
