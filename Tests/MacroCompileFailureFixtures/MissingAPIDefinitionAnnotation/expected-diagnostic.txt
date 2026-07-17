@@ -1,0 +1,1 @@
+Request types must conform to APIDefinition. Add @APIDefinition(method:path:auth:) to the endpoint struct, or provide a manual conformance.

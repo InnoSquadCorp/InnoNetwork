@@ -35,6 +35,33 @@ public protocol NetworkClient: Sendable {
 }
 
 extension NetworkClient {
+    /// Emits a targeted diagnostic when an endpoint declaration reaches the
+    /// request boundary without conforming to ``APIDefinition``.
+    ///
+    /// Swift cannot infer that an otherwise ordinary struct was intended to
+    /// be an endpoint until it is used as one. This unavailable fallback keeps
+    /// the valid constrained overload preferred while replacing the generic
+    /// conformance error at that first provable boundary with an actionable
+    /// macro-first correction.
+    @available(
+        *,
+        unavailable,
+        message: "Request types must conform to APIDefinition. Add @APIDefinition(method:path:auth:) to the endpoint struct, or provide a manual conformance."
+    )
+    public func request<T>(_: T) async throws(NetworkError) -> Never {
+        fatalError("unavailable")
+    }
+
+    /// Emits the same endpoint diagnostic for the cancellation-tag overload.
+    @available(
+        *,
+        unavailable,
+        message: "Request types must conform to APIDefinition. Add @APIDefinition(method:path:auth:) to the endpoint struct, or provide a manual conformance."
+    )
+    public func request<T>(_: T, tag _: CancellationTag?) async throws(NetworkError) -> Never {
+        fatalError("unavailable")
+    }
+
     /// Default forwarder that calls ``request(_:tag:)`` with `tag: nil`.
     ///
     /// Conformers that need explicit observation of ungrouped requests may

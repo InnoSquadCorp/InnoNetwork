@@ -500,7 +500,10 @@ The attached macro emits witnesses at the type's visibility (`public`,
 definitions, including omitted auth, missing response type, invalid path
 placeholders, and conflicting generated witnesses. Optional aliases used by a
 path placeholder receive a targeted generated-code diagnostic without adding
-a runtime or public helper symbol. The removed 4.x
+a runtime or public helper symbol. An unannotated struct cannot expose endpoint
+intent at its declaration; passing one to either `NetworkClient.request`
+overload instead emits a targeted unavailable-overload diagnostic requesting
+the macro or a manual conformance. The removed 4.x
 `endpoint(_:_:as:)` expression macro has no 5.x compatibility contract;
 ``EndpointBuilder`` is the runtime-composed alternative.
 

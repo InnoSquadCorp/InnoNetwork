@@ -720,8 +720,12 @@ complete `Parameter` + `parameters` pair overrides body/query inference for
 advanced endpoints.
 
 Invalid definitions fail at compile time with a diagnostic and, where safe, a
-Fix-It. The 4.x `#endpoint` expression macro is removed; use `EndpointBuilder`
-when a request does not need an explicit endpoint type.
+Fix-It. If an otherwise ordinary struct omits `@APIDefinition`, Swift cannot
+know its intent at the declaration. Passing it to either `request` overload is
+the first provable endpoint boundary and produces a targeted error that asks
+for the macro or a manual `APIDefinition` conformance. The 4.x `#endpoint`
+expression macro is removed; use `EndpointBuilder` when a request does not need
+an explicit endpoint type.
 
 See [Using Macros](Sources/InnoNetwork/InnoNetwork.docc/Articles/UsingMacros.md)
 for payload rules, diagnostics, and core-only trait opt-out.
