@@ -273,6 +273,11 @@ draft release summary.
 
 ### Changed
 
+- `DownloadManager` and `WebSocketManager` keep their existing actor-owned
+  lifecycle guarantees while their transfer commands, shutdown coordination,
+  messaging, observation, and destination resolution are split into focused
+  implementation units. This is an internal responsibility-boundary change;
+  the public manager APIs and event ordering remain unchanged.
 - `InnoNetworkOpenAPI` declares its direct `swift-http-types` dependency with a
   compatible 1.x range from 1.6.0 instead of relying on
   `swift-openapi-runtime` to expose it transitively. The floor matches OpenAPI
