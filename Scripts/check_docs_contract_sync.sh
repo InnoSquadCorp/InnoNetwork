@@ -1700,6 +1700,11 @@ forbidden_pattern 'manager\.receive\(' \
   "$repo_root/docs" \
   "$repo_root/Sources" \
   "$repo_root/Tests"
+forbidden_pattern 'DownloadManager\.make|make\(configuration:\)|DownloadConfiguration\.default|WebSocketConfiguration\.default' \
+  "$repo_root/README.md" \
+  "${example_docs[@]}" \
+  "$repo_root/Sources/InnoNetworkDownload" \
+  "$repo_root/Sources/InnoNetworkWebSocket"
 forbidden_pattern 'builder\.sessionMode|DownloadConfiguration\.SessionMode' \
   "$repo_root/README.md" \
   "$repo_root/docs" \
