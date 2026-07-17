@@ -33,6 +33,11 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   mode and its optional byte ceiling together with
   `ResponseBodyBufferingPolicy.streaming(maxBytes:)` or
   `.buffered(maxBytes:)`.
+- The no-op
+  `WebSocketManager.handleBackgroundSessionCompletion(_:completion:)` method
+  is removed. WebSockets do not use Foundation background sessions; route
+  download callbacks to `DownloadManager` and complete unrelated identifiers
+  at the application boundary.
 - `HTTPMethod` is now an extensible, `RawRepresentable` value type. Standard
   methods remain static constants; custom methods use the failable
   `init(rawValue:)`, which accepts only nonempty RFC 9110 tokens. Code that

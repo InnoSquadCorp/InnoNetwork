@@ -28,6 +28,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | Body signing in `RequestInterceptor` | `RequestSigner.signatureHeaders(for:body:)` |
 | `await manager.retry(task)` while continuing to use `task` | Capture `WebSocketRetryResult?`, use its fresh `task`, and consume its pre-registered `events` stream |
 | `await handshakeAdapter.adapt(request)` | `try await handshakeAdapter.adapt(request)`; adapter closures may throw |
+| `WebSocketManager.handleBackgroundSessionCompletion(_:completion:)` | Remove the call; route download identifiers to `DownloadManager`, otherwise invoke the app callback directly |
 | `import InnoNetworkCodegen` | Remove it; the attached macro ships from `import InnoNetwork` |
 | `@APIDefinition(method:path:)` | Add mandatory `auth: .anonymous`, `.optional`, or `.required` |
 | `#endpoint(method, path, as: Response.self)` | Use a named macro-assisted endpoint struct or runtime `EndpointBuilder` |
@@ -351,6 +352,20 @@ generation wins while the adapter is suspended, the stale result or failure is
 discarded. The adapted URL is admitted again before `URLSessionWebSocketTask`
 creation, so an adapter cannot silently replace WSS with disallowed WS or add
 userinfo, a fragment, or path traversal.
+
+## Remove the WebSocket background completion no-op
+
+`WebSocketManager.handleBackgroundSessionCompletion(_:completion:)` is
+removed. WebSocket tasks run in foreground/default sessions and cannot resume
+through Foundation's background-transfer callback. The 4.x method ignored the
+identifier and invoked the completion immediately, which made it look like the
+manager owned lifecycle work that it did not perform.
+
+Continue forwarding real background download identifiers to
+`DownloadManager.handleBackgroundSessionCompletion(_:completion:)`. If an
+application router receives an identifier that belongs to no background
+transfer owner, invoke the app-provided completion directly according to that
+router's policy.
 
 ## Redirect defaults are stricter
 
