@@ -24,6 +24,9 @@ sent on the wire differ from the request or security policy a caller declared.
 | `.with(refresh:)` | `AuthPack(refreshToken:)` |
 | `.with(eventObservers:)` | `ObservabilityPack(eventObservers:)` |
 | `.with(cache:)` | `CachePack(responseCache:)` |
+| `NetworkConfiguration.recommendedForProduction(baseURL:)` | Start with `safeDefaults(baseURL:)`; add only server-approved policies through `advanced(...)` |
+| Mutating a configuration-pack property after initialization | Construct a new immutable pack with the desired named initializer arguments |
+| `NoOpNetworkLogger()` in a generated executable | Omit the logger witness to inherit the SPI default, or define a private no-op logger in the adapter |
 | Public `StateReducer` / `StateReduction` | An application-owned reducer type, or a feature-local reducer |
 | Body signing in `RequestInterceptor` | `RequestSigner.signatureHeaders(for:body:)` |
 | `await manager.retry(task)` while continuing to use `task` | Capture `WebSocketRetryResult?`, use its fresh `task`, and consume its pre-registered `events` stream |
@@ -714,9 +717,8 @@ have one source of truth: `responseBodyBufferingPolicy`. Configure it through
 match the public enum when an application needs to inspect the selected mode
 or associated limit.
 
-`NetworkConfiguration.safeDefaults(baseURL:)`,
-`NetworkConfiguration.advanced(...)`, and
-`NetworkConfiguration.recommendedForProduction(baseURL:)` now use streaming
+`NetworkConfiguration.safeDefaults(baseURL:)` and
+`NetworkConfiguration.advanced(...)` now use streaming
 collection with a 5 MiB maximum for inline requests and file-backed uploads.
 This is a behavior change for clients
 that previously relied on an unbounded default.

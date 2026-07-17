@@ -22,6 +22,14 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   the same policy value across configurations when clients should share one
   cap. This removes the unsafe public acquire/release pairing surface while
   preserving FIFO admission and cancellation behavior.
+- `NetworkConfiguration.recommendedForProduction(baseURL:)` is removed. Start
+  with `safeDefaults(baseURL:)` and add only server-approved policies through
+  the named `advanced(...)` packs.
+- Configuration-pack stored properties are no longer public mutable surface;
+  construct immutable packs through their named initializers. The package-only
+  `NoOpNetworkLogger`, redirect sensitive-header set, and diagnostic URL helper
+  also leave the public contract. Generated-client SPI executables inherit
+  logger and empty-interceptor defaults when those witnesses are omitted.
 - The nested `Packages/InnoNetworkCodegen` package and `#endpoint` expression
   macro are removed. `@APIDefinition(method:path:auth:)` now comes from
   `import InnoNetwork`, requires an explicit `.anonymous` / `.optional` /
@@ -232,8 +240,8 @@ draft release summary.
 - `NetworkMonitor` now keeps `NWPathMonitor` actor-isolated instead of relying
   on its newer OS-only `Sendable` conformance, preserving clean compilation at
   the declared iOS 16, tvOS 16, and watchOS 9 deployment floors.
-- Inline response collection through `safeDefaults`, the `advanced` preset,
-  and `recommendedForProduction` is bounded to 5 MiB by default. Explicit
+- Inline response collection through `safeDefaults` and the `advanced` preset
+  is bounded to 5 MiB by default. Explicit
   `.streaming(maxBytes: nil)` or `.buffered(maxBytes: nil)` remains the
   deliberate unbounded opt-out, and byte-count arithmetic fails closed on
   overflow.

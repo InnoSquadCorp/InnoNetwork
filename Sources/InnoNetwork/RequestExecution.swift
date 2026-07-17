@@ -97,6 +97,12 @@ import OSLog
 }
 
 @_spi(GeneratedClientSupport) public extension SingleRequestExecutable {
+    /// Default lifecycle logger for generated executables.
+    var logger: NetworkLogger { DefaultNetworkLogger() }
+    /// Default executable contracts do not add request interceptors.
+    var requestInterceptors: [RequestInterceptor] { [] }
+    /// Default executable contracts do not add response interceptors.
+    var responseInterceptors: [ResponseInterceptor] { [] }
     /// Default override is `nil`, meaning the session-wide
     /// ``NetworkConfiguration/acceptableStatusCodes`` applies.
     var acceptableStatusCodes: Set<Int>? { nil }

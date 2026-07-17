@@ -576,7 +576,7 @@ extension NetworkError {
     /// parameters) — are stripped so a non-HTTP response or other
     /// boundary failure does not leak them through `localizedDescription`
     /// or downstream event sinks.
-    public static func diagnosticURLString(for url: URL?) -> String {
+    package static func diagnosticURLString(for url: URL?) -> String {
         guard let url else { return "<unknown>" }
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             let path = DefaultNetworkLogger.maskJWTLikeTokens(in: url.path)

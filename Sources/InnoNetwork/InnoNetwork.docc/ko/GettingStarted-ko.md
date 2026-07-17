@@ -24,10 +24,9 @@ let client = DefaultNetworkClient(
 )
 ```
 
-`safeDefaults(baseURL:)` 는 prototype, test, 또는 회복탄력성 정책을 다른 계층에서
-소유하는 통합의 안전한 출발점입니다. 프로덕션 앱은 보수적인 retry, circuit breaker,
-idempotency key, body-size guardrail 을 추가하는
-`recommendedForProduction(baseURL:)` 를 우선 검토하세요.
+`safeDefaults(baseURL:)` 는 prototype, test, 일반적인 production 통합의 안전한
+출발점입니다. retry, circuit breaker, idempotency 동작은 보편적인 production
+label이 아니라 서버 계약에 맞춰야 하므로 기본값에서는 명시적으로 opt-in 합니다.
 
 ## 요청 정의
 

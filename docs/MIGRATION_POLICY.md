@@ -30,7 +30,7 @@
 - The full `NetworkConfiguration.init(...)` initializer was removed from the
   public API before the 4.0.0 baseline, so it is not part of the 4.x source
   compatibility promise. New code should use `safeDefaults(baseURL:)`,
-  `recommendedForProduction(baseURL:)`, `advanced(baseURL:resilience:auth:observability:cache:transport:)`,
-  or configuration packs. The deprecated fluent modifiers are removed on the
+  `advanced(baseURL:resilience:auth:observability:cache:transport:)`, or
+  configuration packs. The deprecated fluent modifiers are removed on the
   unreleased 5.0 preview and are planned for 5.0.0, with a field-by-field
   mapping in `Migration-5.0.0.md`.

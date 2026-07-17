@@ -31,9 +31,6 @@ private struct WrapperExecutable<Base: WrapperRequestContract>: SingleRequestExe
 
     let base: Base
 
-    var logger: NetworkLogger { NoOpNetworkLogger() }
-    var requestInterceptors: [RequestInterceptor] { [] }
-    var responseInterceptors: [ResponseInterceptor] { [] }
     var method: HTTPMethod { base.method }
     var path: String { base.path }
     var sessionAuthentication: SessionAuthentication { base.sessionAuthentication }

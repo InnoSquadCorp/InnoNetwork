@@ -23,10 +23,9 @@ let client = DefaultNetworkClient(
 ```
 
 ``NetworkConfiguration/safeDefaults(baseURL:)`` is the secure baseline for
-prototypes, tests, and integrations that already own resilience policy
-elsewhere. For app-facing production clients, use
-``NetworkConfiguration/recommendedForProduction(baseURL:)`` to opt into the
-production retry, circuit-breaker, idempotency-key, and body-size guardrails.
+prototypes, tests, and production integrations. It keeps resilience features
+opt-in because retry, circuit-breaker, and idempotency behavior must match the
+server contract rather than a generic "production" label.
 
 ## Define a request
 
@@ -113,8 +112,8 @@ expose this SPI.
 
 ## When to use advanced configuration
 
-Use ``NetworkConfiguration/recommendedForProduction(baseURL:)`` for production
-clients unless you need to change one of these:
+Keep ``NetworkConfiguration/safeDefaults(baseURL:)`` until the integration has
+an explicit requirement for one of these:
 
 - retry policy semantics
 - trust evaluation behavior

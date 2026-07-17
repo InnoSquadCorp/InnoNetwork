@@ -352,43 +352,6 @@ public struct NetworkConfiguration: Sendable {
         Presets.safeDefaults(baseURL: baseURL)
     }
 
-    /// Production-oriented preset for apps that want conservative resilience
-    /// defaults without hand-wiring every policy.
-    ///
-    /// The preset keeps caching, auth refresh, and custom execution policies
-    /// opt-in, but enables bounded retries for transient failures, a per-host
-    /// circuit breaker, automatic idempotency keys for unsafe methods, and
-    /// streaming response body collection capped at 5 MiB.
-    public static func recommendedForProduction(baseURL: URL) -> NetworkConfiguration {
-        NetworkConfiguration.advanced(
-            baseURL: baseURL,
-            resilience: ResiliencePack(
-                retry: ExponentialBackoffRetryPolicy(
-                    maxRetries: 2,
-                    maxTotalRetries: 3,
-                    retryDelay: 0.5,
-                    maxRetryAfterDelay: 30,
-                    maxDelay: 8,
-                    jitterRatio: 0.2,
-                    waitsForNetworkChanges: true,
-                    networkChangeTimeout: 10
-                ),
-                circuitBreaker: CircuitBreakerPolicy(
-                    failureThreshold: 5,
-                    windowSize: 10,
-                    resetAfter: .seconds(30),
-                    maxResetAfter: .seconds(300)
-                ),
-                idempotency: .automaticForUnsafeMethods(),
-                bodyBuffering: .streaming(maxBytes: 5 * 1024 * 1024)
-            ),
-            transport: TransportPack(
-                timeout: 30,
-                cachePolicy: .useProtocolCachePolicy
-            )
-        )
-    }
-
     /// Composes a configuration from the five thematic packs. Each
     /// pack is optional; omitted packs leave the underlying tuned
     /// defaults from `Presets.advancedTuning(baseURL:)` untouched.

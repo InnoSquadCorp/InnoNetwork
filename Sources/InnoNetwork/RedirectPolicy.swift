@@ -59,7 +59,7 @@ public struct DefaultRedirectPolicy: RedirectPolicy {
     /// These defaults cover standardized authorization/cookie fields and
     /// common API-key, bearer-token, CSRF-token, session-token, and AWS
     /// temporary-credential carriers. They cannot be removed by configuration.
-    public static let sensitiveHeaders: Set<String> = [
+    package static let sensitiveHeaders: Set<String> = [
         "authorization",
         "cookie",
         "proxy-authorization",

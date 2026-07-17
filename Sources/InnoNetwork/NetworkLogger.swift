@@ -345,12 +345,12 @@ public struct DefaultNetworkLogger: NetworkLogger {
     }
 }
 
-public struct NoOpNetworkLogger: NetworkLogger {
-    public init() {}
+package struct NoOpNetworkLogger: NetworkLogger {
+    package init() {}
 
-    public func log(request: URLRequest) {}
+    package func log(request: URLRequest) {}
 
-    public func log(response: Response, isError: Bool) {}
+    package func log(response: Response, isError: Bool) {}
 
-    public func log(error: NetworkError) {}
+    package func log(error: NetworkError) {}
 }

@@ -483,16 +483,15 @@ tagged production dependency.
 
 ## Configuration
 
-Use `safeDefaults` as the secure baseline for prototypes, tests, and clients
-that already own retry/cache policy elsewhere. Use
-`recommendedForProduction(baseURL:)` for app-facing production clients: it
-keeps the safe baseline and adds conservative retry, circuit-breaker,
-idempotency-key, and body-size guardrails. Use `advanced` only when you need
-explicit operational tuning.
+Use `safeDefaults` as the secure baseline for prototypes, tests, and production
+clients that do not yet have measured reasons for additional policy. Use
+`advanced` only when the integration explicitly needs retry, cache, auth,
+observability, or transport tuning. There is intentionally no universal
+"production" preset: retry, circuit-breaker, and idempotency semantics depend
+on the server contract and should not be enabled by a generic label.
 
-In the 5.0 preview, `safeDefaults`, the `advanced` preset, and
-`recommendedForProduction` cap collected responses, including file-upload
-responses, at 5 MiB by default.
+In the 5.0 preview, `safeDefaults` and the `advanced` preset cap collected
+responses, including file-upload responses, at 5 MiB by default.
 Set an explicit `.streaming(maxBytes: nil)` or `.buffered(maxBytes: nil)` only
 when an unbounded response is a deliberate, reviewed choice.
 
@@ -511,7 +510,7 @@ import InnoNetwork
 import InnoNetworkDownload
 import InnoNetworkWebSocket
 
-let network = NetworkConfiguration.recommendedForProduction(
+let network = NetworkConfiguration.safeDefaults(
     baseURL: URL(string: "https://api.example.com")!
 )
 
