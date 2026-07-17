@@ -42,10 +42,9 @@ an eligible terminal source and returns a result containing a fresh task with a
 new `id` plus a bounded stream registered before transport resume. It does
 not reset or reconnect the source state machine.
 
-The public transition contract is
-[`WebSocketState.swift`](../Sources/InnoNetworkWebSocket/WebSocketState.swift):
-the `nextStates` and `canTransition(to:)` accessors document which projected
-states can follow each other. Production state mutation goes through
+The public contract exposes the current `WebSocketState` projection and its
+`isTerminal` classification. The transition table is manager-owned rather than
+an application API: production state mutation goes through
 [`WebSocketLifecycleReducer.swift`](../Sources/InnoNetworkWebSocket/WebSocketLifecycleReducer.swift),
 which returns the next internal lifecycle state plus ordered effects such as
 runtime cleanup, event publication, reconnect scheduling, and terminal finish.
@@ -200,8 +199,8 @@ remain installed until manager shutdown.
 
 ## Related
 
-- [`WebSocketState.swift`](../Sources/InnoNetworkWebSocket/WebSocketState.swift) — state enum and
-  transitions.
+- [`WebSocketState.swift`](../Sources/InnoNetworkWebSocket/WebSocketState.swift) — public state
+  projection and package-owned transition invariant.
 - [`WebSocketCloseDisposition.swift`](../Sources/InnoNetworkWebSocket/WebSocketCloseDisposition.swift) —
   close-code classification.
 - [`WebSocketReconnectCoordinator.swift`](../Sources/InnoNetworkWebSocket/WebSocketReconnectCoordinator.swift) —

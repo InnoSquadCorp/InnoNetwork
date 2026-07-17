@@ -181,10 +181,10 @@ public protocol NetworkEventObserving: Sendable {
 }
 
 /// An observer that intentionally ignores all events.
-public struct NoOpNetworkEventObserver: NetworkEventObserving {
-    public init() {}
+package struct NoOpNetworkEventObserver: NetworkEventObserving {
+    package init() {}
 
-    public func handle(_ event: NetworkEvent) async {
+    package func handle(_ event: NetworkEvent) async {
         _ = event
     }
 }

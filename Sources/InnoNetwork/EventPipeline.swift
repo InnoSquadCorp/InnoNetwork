@@ -141,10 +141,10 @@ public protocol EventPipelineMetricsReporting: Sendable {
     func report(_ metric: EventPipelineMetric)
 }
 
-public struct NoOpEventPipelineMetricsReporter: EventPipelineMetricsReporting {
-    public init() {}
+package struct NoOpEventPipelineMetricsReporter: EventPipelineMetricsReporting {
+    package init() {}
 
-    public func report(_ metric: EventPipelineMetric) {
+    package func report(_ metric: EventPipelineMetric) {
         _ = metric
     }
 }

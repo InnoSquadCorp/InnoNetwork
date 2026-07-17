@@ -11,9 +11,9 @@ public enum DownloadState: String, Sendable {
     case cancelled
 }
 
-public extension DownloadState {
+extension DownloadState {
     /// Returns all documented next states from the current lifecycle point.
-    var nextStates: Set<Self> {
+    package var nextStates: Set<Self> {
         switch self {
         case .idle:
             [.waiting, .downloading, .failed, .cancelled]
@@ -36,7 +36,7 @@ public extension DownloadState {
     }
 
     /// Whether the state ends the download lifecycle.
-    var isTerminal: Bool {
+    public var isTerminal: Bool {
         switch self {
         case .completed, .failed, .cancelled:
             return true
@@ -49,7 +49,7 @@ public extension DownloadState {
     ///
     /// This is an invariant helper for session/task lifecycle modeling. It is
     /// not enforced by a generic state machine runtime.
-    func canTransition(to next: Self) -> Bool {
+    package func canTransition(to next: Self) -> Bool {
         next == self || nextStates.contains(next)
     }
 }

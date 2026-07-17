@@ -170,6 +170,15 @@ only `InnoNetwork` and verifies explicit endpoint structs with path values,
 GET/HEAD query inference, POST/PUT/PATCH/DELETE body inference, and explicit
 session-authentication generation.
 
+### [MacroAdopterSmoke](./MacroAdopterSmoke)
+
+Executable downstream-package smoke for the macro-first path. It imports only
+the public `InnoNetwork` and `InnoNetworkTestSupport` products, declares
+explicit endpoint structs with `@APIDefinition`, and executes GET and POST
+requests through `DefaultNetworkClient`. CI verifies path/query encoding, JSON
+body inference, response decoding, and required-auth token application at
+runtime.
+
 ### [TestSupportSmoke](./TestSupportSmoke)
 
 Compile-only package that imports `InnoNetworkTestSupport` the way consumer test

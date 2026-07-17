@@ -128,18 +128,19 @@ public struct WebSocketPongContext: Sendable, Hashable {
     }
 }
 
-/// Subscription handle returned when registering a WebSocket event listener.
+/// Package-owned subscription handle used by internal listener-based delivery
+/// tests and callback plumbing.
 ///
 /// Pass this value back to the manager when the listener should be removed.
-public struct WebSocketEventSubscription: Hashable, Sendable {
+package struct WebSocketEventSubscription: Hashable, Sendable {
     /// Internal WebSocket task identifier the listener is attached to.
     let taskId: String
 
     /// Internal listener UUID used to route events within the manager.
     let listenerID: UUID
 
-    /// Public listener UUID for diagnostics and listener correlation.
-    public var id: UUID { listenerID }
+    /// Listener UUID for package diagnostics and listener correlation.
+    package var id: UUID { listenerID }
 }
 
 enum WebSocketInternalError: Error {

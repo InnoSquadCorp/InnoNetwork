@@ -48,6 +48,9 @@ sent on the wire differ from the request or security policy a caller declared.
 | Plain HTTP downloads, OpenAPI base URLs, or plain WS sockets without an opt-in | Use HTTPS/WSS, or enable the matching scoped `allowsInsecureHTTP` / `allowsInsecureWebSocket` configuration only for an intentional environment |
 | Relying on a download preset to create a background session | Keep the secure foreground default, or call `backgroundTransfersEnabled()` after reviewing its redirect trade-off |
 | Constructing a `DownloadTask` directly | Start it through `DownloadManager.download(...)` and retain the returned manager-owned handle |
+| `addEventListener(for:listener:)`, `removeEventListener(_:)`, and task subscription tokens | Iterate the task-scoped `events(for:)` `AsyncStream`; manager-wide callback setters remain available for integrations that cannot own a stream task |
+| `DownloadState.nextStates` / `canTransition(to:)` or `WebSocketState.nextStates` / `canTransition(to:)` | Observe the state value and `isTerminal`; lifecycle transitions are manager-owned invariants |
+| `NoOpNetworkEventObserver` / `NoOpEventPipelineMetricsReporter` | Omit the observer from the collection or leave the optional metrics reporter unset |
 | `OpenAPIRestOperation` without auth metadata | Add `var sessionAuthentication: SessionAuthentication` and review generated `.anonymous` witnesses against the service security scheme |
 
 ## Replace type-level auth scopes with one explicit value

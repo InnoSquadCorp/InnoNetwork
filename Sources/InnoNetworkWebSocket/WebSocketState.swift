@@ -11,11 +11,11 @@ public enum WebSocketState: String, Sendable {
     case failed
 }
 
-public extension WebSocketState {
+extension WebSocketState {
     /// Returns all documented next states from the current lifecycle point.
     /// Terminal states have no next state on the same task; explicit retry
     /// creates and returns a fresh ``WebSocketTask``.
-    var nextStates: Set<Self> {
+    package var nextStates: Set<Self> {
         switch self {
         case .idle:
             [.connecting]
@@ -35,7 +35,7 @@ public extension WebSocketState {
     }
 
     /// Whether the socket is in a terminal state from the manager's perspective.
-    var isTerminal: Bool {
+    public var isTerminal: Bool {
         switch self {
         case .disconnected, .failed:
             return true
@@ -48,7 +48,7 @@ public extension WebSocketState {
     ///
     /// This keeps reconnect and disconnect semantics explicit without turning
     /// the whole networking stack into a generic automata framework.
-    func canTransition(to next: Self) -> Bool {
+    package func canTransition(to next: Self) -> Bool {
         next == self || nextStates.contains(next)
     }
 }
