@@ -18,6 +18,9 @@ contract:
 - explicit endpoint structs become the macro-first catalog shape: the root
   `@APIDefinition` macro derives boilerplate, requires visible response/auth
   intent, and fails closed on unsafe or ambiguous definitions; and
+- small integrations can start with `DefaultNetworkClient(baseURL:)`, while
+  typed one-off requests use the existing `EndpointBuilder<Response>` surface
+  without opting into unrelated policy models; and
 - the seven deprecated configuration modifiers and package-internal reducer
   vocabulary are removed from the public API.
 

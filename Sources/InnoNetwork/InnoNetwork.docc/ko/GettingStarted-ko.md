@@ -18,13 +18,12 @@ import Foundation
 import InnoNetwork
 
 let client = DefaultNetworkClient(
-    configuration: .safeDefaults(
-        baseURL: URL(string: "https://api.example.com/v1")!
-    )
+    baseURL: URL(string: "https://api.example.com/v1")!
 )
 ```
 
-`safeDefaults(baseURL:)` 는 prototype, test, 일반적인 production 통합의 안전한
+`DefaultNetworkClient(baseURL:)` 는 `safeDefaults(baseURL:)` 설정을 그대로 사용하는
+client 입니다. prototype, test, 일반적인 production 통합의 안전한
 출발점입니다. retry, circuit breaker, idempotency 동작은 보편적인 production
 label이 아니라 서버 계약에 맞춰야 하므로 기본값에서는 명시적으로 opt-in 합니다.
 
@@ -76,11 +75,10 @@ print(user.name)
 
 ```swift
 let users = try await client.request(
-    EndpointBuilder<EmptyResponse>
+    EndpointBuilder<[User]>
         .get("/users")
         .authentication(.anonymous)
         .query(["limit": 20])
-        .decoding([User].self)
 )
 ```
 
@@ -120,4 +118,5 @@ root macro 는 이 SPI 를 노출하거나 bridge 하지 않습니다.
 - 메트릭/관측 가능성(observability) 리포터 추가
 
 위 항목 이외의 튜닝은 가능한 한 안전한 기본값 위에서 endpoint 단위로 조정하는
-편이 향후 마이너 릴리스의 변경 면적을 줄입니다.
+편이 향후 마이너 릴리스의 변경 면적을 줄입니다. 해당 조건이 없다면 작은 앱은
+`DefaultNetworkClient(baseURL:)` 그대로 사용하면 되며 별도 정책 설정은 필요하지 않습니다.

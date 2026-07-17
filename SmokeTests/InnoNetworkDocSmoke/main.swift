@@ -156,11 +156,11 @@ private func compileWebSocketArticleExamples() async {
 
 private func runDocSmoke() {
     let client = DefaultNetworkClient(
-        configuration: .safeDefaults(
-            baseURL: URL(string: "https://api.example.com/v1")!
-        )
+        baseURL: URL(string: "https://api.example.com/v1")!
     )
+    let typedOneOff = EndpointBuilder<SmokeUser>.get("/user/1")
     _ = client
+    _ = typedOneOff
 
     let networkAdvanced = NetworkConfiguration.advanced(
         baseURL: URL(string: "https://api.example.com/v1")!,

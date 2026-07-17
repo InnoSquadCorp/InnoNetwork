@@ -126,6 +126,11 @@ draft release summary.
 
 ### Added
 
+- `DefaultNetworkClient(baseURL:)` creates the ordinary safe-default client
+  without exposing configuration policy to small integrations.
+- Typed one-off requests can start directly from
+  `EndpointBuilder<Response>.get/post/put/patch/delete`; the existing
+  `EndpointBuilder<EmptyResponse>.decoding(_:)` composition remains available.
 - The root package's default `Macros` trait enables macro-assisted explicit
   endpoint structs. GET/HEAD `query` and POST/PUT/PATCH/DELETE `body` stored
   properties derive payload witnesses, while a complete manual `Parameter` +

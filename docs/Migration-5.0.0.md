@@ -27,6 +27,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | `NetworkConfiguration.recommendedForProduction(baseURL:)` | Start with `safeDefaults(baseURL:)`; add only server-approved policies through `advanced(...)` |
 | Mutating a configuration-pack property after initialization | Construct a new immutable pack with the desired named initializer arguments |
 | `NoOpNetworkLogger()` in a generated executable | Omit the logger witness to inherit the SPI default, or define a private no-op logger in the adapter |
+| `DefaultNetworkClient(configuration: .safeDefaults(baseURL: url))` | `DefaultNetworkClient(baseURL: url)` when no custom policy is needed (optional simplification) |
 | Public `StateReducer` / `StateReduction` | An application-owned reducer type, or a feature-local reducer |
 | Body signing in `RequestInterceptor` | `RequestSigner.signatureHeaders(for:body:)` |
 | `await manager.retry(task)` while continuing to use `task` | Capture `WebSocketRetryResult?`, use its fresh `task`, and consume its pre-registered `events` stream |

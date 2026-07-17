@@ -242,9 +242,7 @@ First, configure your API:
 import InnoNetwork
 
 let client = DefaultNetworkClient(
-    configuration: NetworkConfiguration.safeDefaults(
-        baseURL: URL(string: "https://api.example.com/v1")!
-    )
+    baseURL: URL(string: "https://api.example.com/v1")!
 )
 ```
 

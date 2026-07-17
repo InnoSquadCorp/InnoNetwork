@@ -83,9 +83,7 @@ struct User: Decodable, Sendable {
 }
 
 let client = DefaultNetworkClient(
-    configuration: .safeDefaults(
-        baseURL: URL(string: "https://api.example.com/v1")!
-    )
+    baseURL: URL(string: "https://api.example.com/v1")!
 )
 
 let user = try await client.request(GetUser(id: 1))
@@ -177,19 +175,17 @@ struct UpdateProfile: APIDefinition {
 
 // form-url-encoded 로그인
 let token = try await client.request(
-    EndpointBuilder<EmptyResponse>
+    EndpointBuilder<Token>
         .post("/login")
         .body(credentials)
         .authentication(.anonymous)
         .transport(.formURLEncoded())
-        .decoding(Token.self)
 )
 
 let profile = try await client.request(
-    EndpointBuilder<EmptyResponse>
+    EndpointBuilder<Profile>
         .get("/me")
         .authentication(.required)
-        .decoding(Profile.self)
 )
 ```
 
