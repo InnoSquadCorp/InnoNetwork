@@ -872,7 +872,6 @@ struct WebSocketManagerShutdownTests {
             heartbeatInterval: 0,
             reconnectDelay: 0,
             maxReconnectAttempts: 0,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("adapter-shutdown"),
             handshakeRequestAdapters: [
                 WebSocketHandshakeRequestAdapter { request in
                     guard let manager = managerBox.withLock({ $0 }) else { return request }
@@ -912,7 +911,6 @@ struct WebSocketManagerShutdownTests {
             heartbeatInterval: 0,
             reconnectDelay: 0,
             maxReconnectAttempts: 0,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("adapter-disconnect"),
             handshakeRequestAdapters: [
                 WebSocketHandshakeRequestAdapter { request in
                     await adapterGate.arriveAndWait()
@@ -958,7 +956,6 @@ struct WebSocketManagerShutdownTests {
             reconnectDelay: 0,
             reconnectJitterRatio: 0,
             maxReconnectAttempts: 1,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("adapter-throws"),
             handshakeRequestAdapters: [
                 WebSocketHandshakeRequestAdapter { _ in
                     invocationCount.withLock { $0 += 1 }
@@ -1548,7 +1545,6 @@ struct WebSocketManagerShutdownTests {
             heartbeatInterval: 0,
             reconnectDelay: 0,
             maxReconnectAttempts: 0,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("terminal-handler-snapshot"),
             eventDeliveryPolicy: EventDeliveryPolicy(
                 maxBufferedEventsPerPartition: 1,
                 maxBufferedEventsPerConsumer: 1,
@@ -1823,7 +1819,6 @@ struct WebSocketManagerShutdownTests {
             reconnectDelay: 60,
             reconnectJitterRatio: 0,
             maxReconnectAttempts: 3,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("retryable-error-callback-commit")
         )
         let harness = makeShutdownHarness(configuration: configuration)
         let urlTask = StubWebSocketURLTask(taskIdentifier: 9_274)
@@ -1894,7 +1889,6 @@ struct WebSocketManagerShutdownTests {
             heartbeatInterval: 0,
             reconnectDelay: 0,
             maxReconnectAttempts: 0,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("terminal-overflow"),
             eventDeliveryPolicy: EventDeliveryPolicy(
                 maxBufferedEventsPerPartition: 1,
                 maxBufferedEventsPerConsumer: 1,
@@ -1961,7 +1955,6 @@ struct WebSocketManagerShutdownTests {
             heartbeatInterval: 0,
             reconnectDelay: 0,
             maxReconnectAttempts: 0,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("terminal-stream-overflow"),
             eventDeliveryPolicy: EventDeliveryPolicy(
                 maxBufferedEventsPerPartition: 1,
                 maxBufferedEventsPerConsumer: 1,
@@ -2069,7 +2062,6 @@ struct WebSocketManagerShutdownTests {
                 reconnectDelay: 1,
                 reconnectJitterRatio: 0,
                 maxReconnectAttempts: 2,
-                sessionIdentifier: makeWebSocketTestSessionIdentifier("heartbeat-admission-race")
             ),
             clock: clock
         )
@@ -2157,7 +2149,6 @@ struct WebSocketManagerShutdownTests {
             reconnectDelay: 0,
             reconnectJitterRatio: 0,
             maxReconnectAttempts: 3,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("reconnect-self-disconnect"),
             handshakeRequestAdapters: [
                 WebSocketHandshakeRequestAdapter { request in
                     let invocation = adapterInvocationCount.withLock { count -> Int in
@@ -2395,7 +2386,6 @@ struct WebSocketManagerShutdownTests {
             reconnectDelay: 0,
             reconnectJitterRatio: 0,
             maxReconnectAttempts: 3,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("retry-callback-disconnect")
         )
         let harness = makeShutdownHarness(configuration: configuration)
         let urlTask = StubWebSocketURLTask(taskIdentifier: 9_321)
@@ -2442,7 +2432,6 @@ struct WebSocketManagerShutdownTests {
             reconnectDelay: 0,
             reconnectJitterRatio: 0,
             maxReconnectAttempts: 3,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("stale-reconnect-effects")
         )
         let harness = makeShutdownHarness(configuration: configuration)
         let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_331)
@@ -2512,7 +2501,6 @@ struct WebSocketManagerShutdownTests {
             reconnectDelay: 0,
             reconnectJitterRatio: 0,
             maxReconnectAttempts: 0,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("terminal-callback-retry-registration")
         )
         let harness = makeShutdownHarness(configuration: configuration)
         let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_343)
@@ -2704,7 +2692,6 @@ struct WebSocketManagerShutdownTests {
             reconnectDelay: 60,
             reconnectJitterRatio: 0,
             maxReconnectAttempts: 3,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("nonterminal-effect-gate")
         )
         let harness = makeShutdownHarness(configuration: configuration)
         let urlTask = StubWebSocketURLTask(taskIdentifier: 9_335)
@@ -2996,7 +2983,6 @@ struct WebSocketManagerShutdownTests {
             pongTimeout: 0.25,
             reconnectDelay: 0,
             maxReconnectAttempts: 0,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("callback-gated-ping-outcome")
         )
         let harness = makeShutdownHarness(configuration: configuration)
         let sourceURLTask = StubWebSocketURLTask(taskIdentifier: 9_364)
@@ -3126,7 +3112,6 @@ struct WebSocketManagerShutdownTests {
             reconnectDelay: 0,
             reconnectJitterRatio: 0,
             maxReconnectAttempts: 0,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("heartbeat-callback-retry")
         )
         let harness = makeShutdownHarness(configuration: configuration)
         let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_352)
@@ -3328,7 +3313,6 @@ struct WebSocketManagerShutdownTests {
             heartbeatInterval: 0,
             reconnectDelay: 0,
             maxReconnectAttempts: 0,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("ordinary-terminal-overflow"),
             eventDeliveryPolicy: EventDeliveryPolicy(
                 maxBufferedEventsPerPartition: 1,
                 maxBufferedEventsPerConsumer: 1,
@@ -3400,7 +3384,6 @@ struct WebSocketManagerShutdownTests {
             heartbeatInterval: 0,
             reconnectDelay: 0,
             maxReconnectAttempts: 0,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("close-terminal-outcome"),
             eventDeliveryPolicy: EventDeliveryPolicy(
                 maxBufferedEventsPerPartition: 1,
                 maxBufferedEventsPerConsumer: 1,
@@ -3526,7 +3509,6 @@ struct WebSocketManagerShutdownTests {
             heartbeatInterval: 0,
             reconnectDelay: 0,
             maxReconnectAttempts: 3,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("send-generation-slot"),
             sendQueueLimit: 1,
             sendQueueOverflowPolicy: .fail
         )
@@ -3680,7 +3662,6 @@ struct WebSocketManagerShutdownTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: makeWebSocketTestSessionIdentifier("deflate"),
                 permessageDeflateEnabled: true
             )
         )
@@ -3726,7 +3707,6 @@ struct WebSocketManagerShutdownTests {
             heartbeatInterval: 0,
             reconnectDelay: 0,
             maxReconnectAttempts: 0,
-            sessionIdentifier: makeWebSocketTestSessionIdentifier("shutdown")
         ),
         clock: any InnoNetworkClock = SystemClock()
     ) -> ShutdownHarness {

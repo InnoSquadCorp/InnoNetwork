@@ -460,7 +460,6 @@ final class StubMessagingHarness: Sendable {
     let stubTask: StubWebSocketURLTask
     let stubTaskIdentifier: Int
     private let callbacks: WebSocketSessionDelegateCallbacks
-    private let sessionIdentifier: String
 
     init(
         heartbeatInterval: TimeInterval = 0,
@@ -471,7 +470,6 @@ final class StubMessagingHarness: Sendable {
         clock: any InnoNetworkClock = SystemClock(),
         stubTask: StubWebSocketURLTask = StubWebSocketURLTask()
     ) {
-        let identifier = "test.websocket.stub.\(UUID().uuidString)"
         let stubSession = StubWebSocketURLSession()
         stubSession.enqueue(stubTask)
 
@@ -481,7 +479,6 @@ final class StubMessagingHarness: Sendable {
             backgroundCompletionStore: BackgroundCompletionStore()
         )
 
-        self.sessionIdentifier = identifier
         self.stubSession = stubSession
         self.stubTask = stubTask
         self.stubTaskIdentifier = stubTask.taskIdentifier
@@ -492,7 +489,6 @@ final class StubMessagingHarness: Sendable {
                 pongTimeout: pongTimeout,
                 reconnectDelay: reconnectDelay,
                 maxReconnectAttempts: maxReconnectAttempts,
-                sessionIdentifier: identifier,
                 closeHandshakeTimeout: closeHandshakeTimeout
             ),
             urlSession: stubSession,

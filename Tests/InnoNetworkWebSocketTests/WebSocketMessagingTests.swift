@@ -13,7 +13,6 @@ struct WebSocketMessagingTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: makeWebSocketTestSessionIdentifier("send-data-disconnected")
             )
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
@@ -30,7 +29,6 @@ struct WebSocketMessagingTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: makeWebSocketTestSessionIdentifier("send-string-disconnected")
             )
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
@@ -47,7 +45,6 @@ struct WebSocketMessagingTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: makeWebSocketTestSessionIdentifier("ping-disconnected")
             )
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/socket")!)
@@ -64,7 +61,6 @@ struct WebSocketMessagingTests {
                 heartbeatInterval: 0,
                 reconnectDelay: 0,
                 maxReconnectAttempts: 0,
-                sessionIdentifier: makeWebSocketTestSessionIdentifier("send-post-disconnect")
             )
         )
 

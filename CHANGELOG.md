@@ -38,6 +38,10 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   is removed. WebSockets do not use Foundation background sessions; route
   download callbacks to `DownloadManager` and complete unrelated identifiers
   at the application boundary.
+- `WebSocketConfiguration.sessionIdentifier` and the matching advanced
+  builder field are removed. The value was never applied to the default
+  foreground `URLSession` used by WebSockets and provided no isolation or
+  restoration semantics.
 - `HTTPMethod` is now an extensible, `RawRepresentable` value type. Standard
   methods remain static constants; custom methods use the failable
   `init(rawValue:)`, which accepts only nonempty RFC 9110 tokens. Code that

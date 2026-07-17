@@ -2,12 +2,6 @@ import Foundation
 
 @testable import InnoNetworkWebSocket
 
-/// Produces a unique sessionIdentifier for a WebSocket test.
-func makeWebSocketTestSessionIdentifier(_ label: String) -> String {
-    "test.websocket.\(label).\(UUID().uuidString)"
-}
-
-
 /// Waits for the manager runtime to assign a WebSocket task identifier.
 func waitForWebSocketRuntimeTaskIdentifier(
     manager: WebSocketManager,
