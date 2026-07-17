@@ -133,6 +133,10 @@ draft release summary.
   bounded tests. Its `--full` mode also generates coverage and both SBOM
   profiles, enforces the 10% benchmark guards, verifies all eight public DocC
   archives, and builds macOS, iOS, tvOS, watchOS, and visionOS locally.
+- `Benchmarks/guarded-benchmarks.txt` is the reviewed source of truth for the
+  protected performance set. CI, scheduled/manual benchmarks, release
+  validation, contributor docs, and the local preflight fail when their
+  repeated CLI declarations drift from it or reference a missing baseline.
 - CI and release validation now cross-compile every public library product for
   the declared tvOS, watchOS, and visionOS device SDKs at the package's
   deployment floors as required gates. Every independent example manifest is

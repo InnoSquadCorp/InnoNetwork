@@ -29,6 +29,7 @@ jobs:
           bash Scripts/tests/test_validate_release_ref.sh
           bash Scripts/tests/test_generate_sbom.sh
           bash Scripts/tests/test_generate_dependency_snapshot.sh
+          bash Scripts/tests/test_check_guarded_benchmark_contract.sh
           bash Scripts/tests/test_run_local_release_preflight.sh
 
       - name: Validate release ref
@@ -77,6 +78,9 @@ jobs:
 
       - name: Verify docs and stability contract
         run: bash Scripts/check_docs_contract_sync.sh
+
+      - name: Verify guarded benchmark contract
+        run: bash Scripts/check_guarded_benchmark_contract.sh
 
       - name: Verify stable examples contract
         run: bash Scripts/check_stable_examples.sh

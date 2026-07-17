@@ -213,7 +213,10 @@ bash Scripts/generate_coverage_report.sh \
   Sources/InnoNetworkMacros
 bash Scripts/check_macro_compile_failures.sh
 
-# Optional: replay the benchmark smoke guard locally.
+# Optional: replay the benchmark smoke guard locally. The protected identifiers
+# must match Benchmarks/guarded-benchmarks.txt; the contract checker fails when
+# this command or any workflow drifts from that source of truth.
+bash Scripts/check_guarded_benchmark_contract.sh
 xcrun swift run -c release InnoNetworkBenchmarks --quick \
   --enforce-baseline \
   --guard-benchmark events/task-event-fanout-single \

@@ -1018,6 +1018,22 @@ validate_troubleshooting_and_examples_docs() {
 }
 
 validate_release_quality_gates() {
+  require_contains 'bash Scripts/check_guarded_benchmark_contract.sh' \
+    "$repo_root/.github/workflows/benchmarks.yml"
+  require_contains 'bash Scripts/check_guarded_benchmark_contract.sh' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'bash Scripts/check_guarded_benchmark_contract.sh' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'bash Scripts/check_guarded_benchmark_contract.sh' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'bash Scripts/tests/test_check_guarded_benchmark_contract.sh' \
+    "$repo_root/.github/workflows/benchmarks.yml"
+  require_contains 'bash Scripts/tests/test_check_guarded_benchmark_contract.sh' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'bash Scripts/tests/test_check_guarded_benchmark_contract.sh' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'guarded-benchmarks.txt' \
+    "$repo_root/Benchmarks/README.md"
   require_contains 'bash Scripts/run_local_release_preflight.sh --full' \
     "$repo_root/docs/CI_DoC.md"
   require_contains 'bash Scripts/run_local_release_preflight.sh --full' \

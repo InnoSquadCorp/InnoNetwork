@@ -489,6 +489,11 @@ jobs:
       - name: Verify docs and stability contract
         run: bash Scripts/check_docs_contract_sync.sh
 
+      - name: Verify guarded benchmark contract
+        run: |
+          bash Scripts/check_guarded_benchmark_contract.sh
+          bash Scripts/tests/test_check_guarded_benchmark_contract.sh
+
       - name: Verify dependency snapshot conversion
         run: bash Scripts/tests/test_generate_dependency_snapshot.sh
 
