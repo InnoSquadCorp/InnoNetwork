@@ -135,10 +135,11 @@ or incomplete, including:
 - attaching the macro to anything other than a struct
 - omitting `typealias APIResponse`
 - omitting `auth:` or passing anything other than `.anonymous`, `.optional`, or
-  `.required`
-- qualifying an auth case or a standard method used for simple payload
-  inference; leading-dot cases keep the macro's syntax-only inference
-  unambiguous
+  `.required`; `SessionAuthentication.required` and
+  `InnoNetwork.SessionAuthentication.required` are also accepted
+- using an alias or arbitrary qualified base for a standard method used in
+  simple payload inference; `.get`, `HTTPMethod.get`, and
+  `InnoNetwork.HTTPMethod.get` are canonicalized to the same generated witness
 - duplicating generated conformance, `method`, `path`, or
   `sessionAuthentication` witnesses
 - using a missing, optional, opaque, or unsupported generic path placeholder;

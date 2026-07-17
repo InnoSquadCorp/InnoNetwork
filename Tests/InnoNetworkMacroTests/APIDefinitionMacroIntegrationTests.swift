@@ -90,14 +90,18 @@ private struct MacroGetUser {
     let id: String
 }
 
-@APIDefinition(method: .get, path: "/users", auth: .optional)
+@APIDefinition(method: HTTPMethod.get, path: "/users", auth: SessionAuthentication.optional)
 private struct MacroListUsers {
     typealias APIResponse = [MacroUser]
 
     let query: MacroUserQuery
 }
 
-@APIDefinition(method: .post, path: "/users", auth: .required)
+@APIDefinition(
+    method: InnoNetwork.HTTPMethod.post,
+    path: "/users",
+    auth: InnoNetwork.SessionAuthentication.required
+)
 private struct MacroCreateUser {
     typealias APIResponse = MacroUser
 

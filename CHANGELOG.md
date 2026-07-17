@@ -114,6 +114,13 @@ draft release summary.
   `parameters` pair remains authoritative. Fail-closed diagnostics reject
   incomplete, unsafe, traversal-bearing, or ambiguous declarations, and reject
   custom-method simple payload inference.
+- Macro method and authentication arguments accept contextual, type-qualified,
+  and module-qualified standard members. Recognized members are canonicalized
+  before generation so aliases and caller-owned lookalike types cannot change
+  the inferred payload or authentication contract. The macro implementation is
+  split into argument, declaration, payload, and path components, and an
+  independent consumer harness measures Core-only and 0/10/50/200-endpoint
+  clean and incremental builds with both SwiftPM and Xcode.
 
 - Macro expansion is covered by an end-to-end test that executes the generated
   endpoint through `DefaultNetworkClient`, including path substitution, query

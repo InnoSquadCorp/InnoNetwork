@@ -1036,7 +1036,7 @@ struct MacroExpansionTests {
             diagnostics: [
                 DiagnosticSpec(
                     message:
-                        "@APIDefinition simple body/query inference requires method: to be an explicit .get, .head, .post, .put, .patch, or .delete standard HTTPMethod member; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
+                        "@APIDefinition simple body/query inference requires method: to be .get, .head, .post, .put, .patch, or .delete, optionally qualified by HTTPMethod or InnoNetwork.HTTPMethod; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
                     line: 1,
                     column: 24
                 )
@@ -1068,7 +1068,7 @@ struct MacroExpansionTests {
             diagnostics: [
                 DiagnosticSpec(
                     message:
-                        "@APIDefinition simple body/query inference requires method: to be an explicit .get, .head, .post, .put, .patch, or .delete standard HTTPMethod member; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
+                        "@APIDefinition simple body/query inference requires method: to be .get, .head, .post, .put, .patch, or .delete, optionally qualified by HTTPMethod or InnoNetwork.HTTPMethod; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
                     line: 1,
                     column: 24
                 )
@@ -1097,7 +1097,7 @@ struct MacroExpansionTests {
             diagnostics: [
                 DiagnosticSpec(
                     message:
-                        "@APIDefinition simple body/query inference requires method: to be an explicit .get, .head, .post, .put, .patch, or .delete standard HTTPMethod member; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
+                        "@APIDefinition simple body/query inference requires method: to be .get, .head, .post, .put, .patch, or .delete, optionally qualified by HTTPMethod or InnoNetwork.HTTPMethod; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
                     line: 1,
                     column: 24
                 )
@@ -1141,8 +1141,8 @@ struct MacroExpansionTests {
         )
     }
 
-    @Test("APIDefinition macro rejects a type-qualified auth case")
-    func apiDefinitionRejectsTypeQualifiedAuthCase() {
+    @Test("APIDefinition macro accepts and canonicalizes type-qualified auth")
+    func apiDefinitionAcceptsTypeQualifiedAuthCase() {
         assertMacroExpansion(
             """
             @APIDefinition(method: .get, path: "/users", auth: SessionAuthentication.required)
@@ -1155,21 +1155,26 @@ struct MacroExpansionTests {
                 struct ListUsers {
                     typealias APIResponse = [User]
                 }
+
+                extension ListUsers: InnoNetwork.APIDefinition {
+                    internal typealias Parameter = InnoNetwork.EmptyParameter
+                    internal var sessionAuthentication: InnoNetwork.SessionAuthentication {
+                        .required
+                    }
+                    internal var method: InnoNetwork.HTTPMethod {
+                        .get
+                    }
+                    internal var path: Swift.String {
+                        "/users"
+                    }
+                }
                 """,
-            diagnostics: [
-                DiagnosticSpec(
-                    message:
-                        "@APIDefinition auth: must be the explicit .anonymous, .optional, or .required enum case.",
-                    line: 1,
-                    column: 52
-                )
-            ],
             macros: macros
         )
     }
 
-    @Test("APIDefinition macro rejects a type-qualified method during payload inference")
-    func apiDefinitionRejectsTypeQualifiedMethod() {
+    @Test("APIDefinition macro accepts and canonicalizes type-qualified methods")
+    func apiDefinitionAcceptsTypeQualifiedMethod() {
         assertMacroExpansion(
             """
             @APIDefinition(method: HTTPMethod.post, path: "/users", auth: .anonymous)
@@ -1184,15 +1189,78 @@ struct MacroExpansionTests {
                     typealias APIResponse = User
                     let body: CreateUserRequest
                 }
+
+                extension CreateUser: InnoNetwork.APIDefinition {
+                    internal typealias Parameter = CreateUserRequest
+                    internal var parameters: Parameter? {
+                        func normalized<Value>(_ value: Value) -> Value? {
+                            .some(value)
+                        }
+                        func normalized<Value>(_ value: Value?) -> Value?? {
+                            guard let value else {
+                                return nil
+                            }
+                            return .some(.some(value))
+                        }
+                        return normalized(body)
+                    }
+                    internal var sessionAuthentication: InnoNetwork.SessionAuthentication {
+                        .anonymous
+                    }
+                    internal var method: InnoNetwork.HTTPMethod {
+                        .post
+                    }
+                    internal var path: Swift.String {
+                        "/users"
+                    }
+                }
                 """,
-            diagnostics: [
-                DiagnosticSpec(
-                    message:
-                        "@APIDefinition simple body/query inference requires method: to be an explicit .get, .head, .post, .put, .patch, or .delete standard HTTPMethod member; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
-                    line: 1,
-                    column: 24
-                )
-            ],
+            macros: macros
+        )
+    }
+
+    @Test("APIDefinition macro accepts module-qualified method and auth cases")
+    func apiDefinitionAcceptsModuleQualifiedCases() {
+        assertMacroExpansion(
+            """
+            @APIDefinition(method: InnoNetwork.HTTPMethod.get, path: "/users", auth: InnoNetwork.SessionAuthentication.optional)
+            struct ListUsers {
+                typealias APIResponse = [User]
+                let query: ListUsersQuery
+            }
+            """,
+            expandedSource:
+                """
+                struct ListUsers {
+                    typealias APIResponse = [User]
+                    let query: ListUsersQuery
+                }
+
+                extension ListUsers: InnoNetwork.APIDefinition {
+                    internal typealias Parameter = ListUsersQuery
+                    internal var parameters: Parameter? {
+                        func normalized<Value>(_ value: Value) -> Value? {
+                            .some(value)
+                        }
+                        func normalized<Value>(_ value: Value?) -> Value?? {
+                            guard let value else {
+                                return nil
+                            }
+                            return .some(.some(value))
+                        }
+                        return normalized(query)
+                    }
+                    internal var sessionAuthentication: InnoNetwork.SessionAuthentication {
+                        .optional
+                    }
+                    internal var method: InnoNetwork.HTTPMethod {
+                        .get
+                    }
+                    internal var path: Swift.String {
+                        "/users"
+                    }
+                }
+                """,
             macros: macros
         )
     }
@@ -1215,7 +1283,7 @@ struct MacroExpansionTests {
             diagnostics: [
                 DiagnosticSpec(
                     message:
-                        "@APIDefinition auth: must be the explicit .anonymous, .optional, or .required enum case.",
+                        "@APIDefinition auth: must be .anonymous, .optional, or .required, optionally qualified by SessionAuthentication or InnoNetwork.SessionAuthentication.",
                     line: 1,
                     column: 52
                 )
@@ -1244,7 +1312,7 @@ struct MacroExpansionTests {
             diagnostics: [
                 DiagnosticSpec(
                     message:
-                        "@APIDefinition simple body/query inference requires method: to be an explicit .get, .head, .post, .put, .patch, or .delete standard HTTPMethod member; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
+                        "@APIDefinition simple body/query inference requires method: to be .get, .head, .post, .put, .patch, or .delete, optionally qualified by HTTPMethod or InnoNetwork.HTTPMethod; use a complete Parameter + parameters fallback for OPTIONS, CONNECT, TRACE, custom, or dynamic methods.",
                     line: 1,
                     column: 24
                 )
