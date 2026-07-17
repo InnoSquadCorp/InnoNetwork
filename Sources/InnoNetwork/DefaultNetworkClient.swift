@@ -46,7 +46,10 @@ extension NetworkClient {
     @available(
         *,
         unavailable,
-        message: "Request types must conform to APIDefinition. Add @APIDefinition(method:path:auth:) to the endpoint struct, or provide a manual conformance."
+        message: """
+            Request types must conform to APIDefinition. \
+            Add @APIDefinition(method:path:auth:) to the endpoint struct, or provide a manual conformance.
+            """
     )
     public func request<T>(_: T) async throws(NetworkError) -> Never {
         fatalError("unavailable")
@@ -56,7 +59,10 @@ extension NetworkClient {
     @available(
         *,
         unavailable,
-        message: "Request types must conform to APIDefinition. Add @APIDefinition(method:path:auth:) to the endpoint struct, or provide a manual conformance."
+        message: """
+            Request types must conform to APIDefinition. \
+            Add @APIDefinition(method:path:auth:) to the endpoint struct, or provide a manual conformance.
+            """
     )
     public func request<T>(_: T, tag _: CancellationTag?) async throws(NetworkError) -> Never {
         fatalError("unavailable")
