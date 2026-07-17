@@ -29,6 +29,7 @@ jobs:
           bash Scripts/tests/test_validate_release_ref.sh
           bash Scripts/tests/test_generate_sbom.sh
           bash Scripts/tests/test_generate_dependency_snapshot.sh
+          bash Scripts/tests/test_run_local_release_preflight.sh
 
       - name: Validate release ref
         env:
