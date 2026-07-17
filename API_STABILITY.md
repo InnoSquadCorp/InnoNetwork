@@ -13,6 +13,8 @@ endpoint shape, remove the raw-string `NetworkClient.request(_:method:tag:)`
 shortcut and `NetworkConfiguration.responseBodyLimit` compatibility alias,
 and move the shared `StateReducer` / `StateReduction` lifecycle vocabulary
 to package scope.
+The WebSocket manager's background-session completion no-op is also removed;
+only `DownloadManager` owns Foundation background transfer callbacks.
 Preview adopters should migrate configuration to
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.

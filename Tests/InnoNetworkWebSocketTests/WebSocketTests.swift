@@ -1145,17 +1145,6 @@ struct WebSocketManagerTests {
         #expect(await waitForTaskRemoval(manager: manager, taskID: reconnectingTask.id))
     }
 
-    @Test("Background completion callback is immediate for websocket manager")
-    func backgroundCompletionImmediate() async {
-        let manager = WebSocketManager()
-
-        await confirmation("background completion called") { confirm in
-            manager.handleBackgroundSessionCompletion("websocket.any-id") {
-                confirm()
-            }
-        }
-    }
-
     private func waitForTaskRemoval(
         manager: WebSocketManager,
         taskID: String,

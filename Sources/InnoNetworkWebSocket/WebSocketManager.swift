@@ -1016,26 +1016,6 @@ public actor WebSocketManager {
         return await eventHub.stream(for: task.id)
     }
 
-    /// Completes AppDelegate-style background URLSession callbacks immediately.
-    ///
-    /// `WebSocketManager` does not own background URLSession processing, so the
-    /// identifier is intentionally ignored. The method is `nonisolated` so it
-    /// can be called without `await`, mirroring
-    /// `handleEventsForBackgroundURLSession` callback semantics.
-    ///
-    /// - Parameters:
-    ///   - identifier: Accepted for API compatibility with background session
-    ///     completion callbacks.
-    ///   - completion: Called immediately to satisfy the callback contract.
-    nonisolated public func handleBackgroundSessionCompletion(
-        _ identifier: String,
-        completion: @escaping @Sendable () -> Void
-    ) {
-        webSocketManagerLogger.debug(
-            "Ignoring background completion identifier for WebSocket runtime: \(identifier, privacy: .public)")
-        completion()
-    }
-
     nonisolated var isShutdown: Bool {
         shutdownLock.withLock { $0 }
     }
