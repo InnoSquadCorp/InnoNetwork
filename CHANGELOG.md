@@ -52,6 +52,9 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
 - `PersistentResponseCacheStatistics` construction is package-owned. Obtain
   authoritative snapshots from `await cache.statistics()`; the public
   properties remain readable for dashboards and back-pressure decisions.
+- `CircuitBreakerOpenError` construction is package-owned because the built-in
+  breaker alone produces it. Its public `errorDomain` and read-only fields stay
+  available for diagnostics.
 - The direct 21-parameter `WebSocketConfiguration` initializer is
   package-owned. Use `safeDefaults()` for the secure preset or `advanced(_:)`
   for explicit tuning.

@@ -218,7 +218,6 @@ InnoNetwork	swift.init	CachePack.init(responseCachePolicy:responseCache:captureF
 InnoNetwork	swift.init	CachedResponse.init(data:statusCode:headers:storedAt:requiresRevalidation:varyHeaders:)
 InnoNetwork	swift.init	CancellationTag.init(_:)
 InnoNetwork	swift.init	CancellationTag.init(stringLiteral:)
-InnoNetwork	swift.init	CircuitBreakerOpenError.init(host:retryAfter:)
 InnoNetwork	swift.init	CircuitBreakerPolicy.init(failureThreshold:windowSize:resetAfter:maxResetAfter:numberOfProbesRequiredToClose:countsTransportSecurityFailures:)
 InnoNetwork	swift.init	CircuitBreakerPolicy.init(validatedFailureThreshold:windowSize:resetAfter:maxResetAfter:numberOfProbesRequiredToClose:countsTransportSecurityFailures:)
 InnoNetwork	swift.init	ConcurrencyLimitExecutionPolicy.init(bucket:)

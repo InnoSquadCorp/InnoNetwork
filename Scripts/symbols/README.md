@@ -10,7 +10,7 @@ the source code and these files fails CI.
 
 | Product | Public declarations |
 |---|---:|
-| `InnoNetwork` (core) | 891 |
+| `InnoNetwork` (core) | 890 |
 | `InnoNetworkWebSocket` | 171 |
 | `InnoNetworkDownload` | 137 |
 | `InnoNetworkTestSupport` | 86 |
@@ -18,11 +18,11 @@ the source code and these files fails CI.
 | `InnoNetworkOpenAPI` | 35 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
-| **Total** | **1,398** |
+| **Total** | **1,397** |
 
 ## Why this matters
 
-For a single-maintainer client-side Swift networking library, 1,398 public
+For a single-maintainer client-side Swift networking library, 1,397 public
 declarations is unusually large — roughly 4× `Get`'s surface and ~10× the
 `URLSession`-only "two functions and a `Decoder`" baseline.
 

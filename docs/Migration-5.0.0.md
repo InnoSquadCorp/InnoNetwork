@@ -33,6 +33,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | `DownloadConfiguration.default` / `WebSocketConfiguration.default` | Call the matching `safeDefaults()` factory; zero-argument manager initialization remains available |
 | `DownloadManager.make(configuration:)` | Call the throwing `DownloadManager(configuration:)` initializer |
 | Constructing `PersistentResponseCacheStatistics` directly | Read the cache-owned snapshot from `await cache.statistics()`; use an application-owned fixture type for isolated presentation tests |
+| Constructing `CircuitBreakerOpenError` directly | Inspect the `SendableUnderlyingError` carried by `NetworkError.underlying`; custom policies should return their own error type |
 | Direct `WebSocketConfiguration(...)` initialization | Use `safeDefaults()` or set explicit overrides through `advanced(_:)` |
 | Constructing a `WebSocketTask` directly | Obtain the handle from `await manager.connect(url:subprotocols:)` or an accepted `retry(_:)` result |
 | `import InnoNetworkCodegen` | Remove it; the attached macro ships from `import InnoNetwork` |
@@ -448,6 +449,12 @@ the owning cache actor constructs it. Replace direct initialization with
 `await cache.statistics()`. Presentation or dashboard tests that do not own a
 cache should use an application fixture rather than synthesizing a library
 runtime snapshot.
+
+`CircuitBreakerOpenError` follows the same producer-owned rule. The built-in
+breaker converts it to `SendableUnderlyingError` before surfacing
+`NetworkError.underlying`, so callers should inspect that wrapper's `domain`,
+`code`, and message. Custom execution policies should define and throw their
+own domain-specific error instead of synthesizing a built-in breaker result.
 
 ## Tune WebSocket configuration through presets
 
