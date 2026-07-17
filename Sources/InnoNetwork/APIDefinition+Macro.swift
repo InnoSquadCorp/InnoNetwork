@@ -17,16 +17,21 @@
 ///
 /// - Parameters:
 ///   - method: HTTP method expression returned by the generated `method`
-///     property. Simple body/query inference accepts only the contextual
-///     `.get`, `.head`, `.post`, `.put`, `.patch`, or `.delete` spelling.
+///     property. Simple body/query inference accepts a standard member in
+///     contextual (`.get`), type-qualified (`HTTPMethod.get`), or
+///     module-qualified (`InnoNetwork.HTTPMethod.get`) form. Arbitrary aliases
+///     and unrelated qualified bases are rejected because their source
+///     spelling cannot prove the payload semantics.
 ///   - path: Single-line, non-raw static route literal. Placeholders such as
 ///     `{id}` are expanded only when they match **stored** properties declared
 ///     directly on the annotated type. Computed properties and members inherited
 ///     from a superclass or extension are not considered. Wrap dynamic values
 ///     into a stored property first if you need them in the path.
 ///   - auth: Explicit authentication requirement. Callers must use the
-///     contextual `.anonymous`, `.optional`, or `.required` spelling; the macro
-///     never guesses this policy.
+///     contextual (`.anonymous`), type-qualified
+///     (`SessionAuthentication.anonymous`), or module-qualified
+///     (`InnoNetwork.SessionAuthentication.anonymous`) form. The macro never
+///     guesses this policy or accepts arbitrary aliases.
 @attached(
     extension,
     conformances: APIDefinition,

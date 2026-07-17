@@ -684,6 +684,14 @@ validate_macro_surface() {
   require_contains '#if Macros' "$macro_declaration"
   require_contains 'public macro APIDefinition(' "$macro_declaration"
   require_contains 'auth: SessionAuthentication' "$macro_declaration"
+  require_contains 'contextual (`.get`), type-qualified (`HTTPMethod.get`), or' \
+    "$macro_declaration"
+  require_contains 'module-qualified (`InnoNetwork.HTTPMethod.get`) form' \
+    "$macro_declaration"
+  require_contains '(`SessionAuthentication.anonymous`), or module-qualified' \
+    "$macro_declaration"
+  require_contains '(`InnoNetwork.SessionAuthentication.anonymous`) form' \
+    "$macro_declaration"
   require_contains '#externalMacro(module: "InnoNetworkMacros", type: "APIDefinitionMacro")' \
     "$macro_declaration"
   require_not_contains 'public macro endpoint' "$macro_declaration"
