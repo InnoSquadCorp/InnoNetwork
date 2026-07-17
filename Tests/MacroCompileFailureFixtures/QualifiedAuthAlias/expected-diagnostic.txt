@@ -1,1 +1,1 @@
-@APIDefinition auth: must be the explicit .anonymous, .optional, or .required enum case.
+@APIDefinition auth: must be .anonymous, .optional, or .required, optionally qualified by SessionAuthentication or InnoNetwork.SessionAuthentication.
