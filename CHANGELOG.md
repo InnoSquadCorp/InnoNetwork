@@ -153,6 +153,9 @@ draft release summary.
   checked against the same floors, its consumer smoke target builds on the
   host, generalized macro compile-failure fixtures run, and dependency review
   failures remain fail-closed in the workflow.
+- `Scripts/check_apple_platform_build_contract.py` derives all five deployment
+  floors from `Package.swift` and rejects CI, release, local-preflight, or
+  cross-build-helper destinations and target triples that drift from them.
 - The root `Package.resolved` is tracked as the repository's reproducible
   dependency input. CI rejects lock drift and deletion/untracked recreation;
   independent example and tool lock files remain ignored. Main and PR

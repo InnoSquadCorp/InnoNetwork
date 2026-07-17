@@ -33,6 +33,7 @@ jobs:
           python3 Scripts/tests/test_run_with_guarded_benchmarks.py
           bash Scripts/tests/test_build_consumer_examples.sh
           python3 Scripts/tests/test_check_example_platform_floors.py
+          python3 Scripts/tests/test_check_apple_platform_build_contract.py
           bash Scripts/tests/test_check_docc_archives.sh
           bash Scripts/tests/test_run_local_release_preflight.sh
 
@@ -90,7 +91,9 @@ jobs:
         run: bash Scripts/check_stable_examples.sh
 
       - name: Verify example deployment floors
-        run: python3 Scripts/check_example_platform_floors.py
+        run: |
+          python3 Scripts/check_example_platform_floors.py
+          python3 Scripts/check_apple_platform_build_contract.py
 
       - name: Verify migration guide code blocks compile
         run: bash Scripts/check_migration_examples.sh

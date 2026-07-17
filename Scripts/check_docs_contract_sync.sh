@@ -1081,8 +1081,6 @@ validate_release_quality_gates() {
   if [[ "$docc_product_loop_count" != "3" ]]; then
     fail "DocC Pages must use docs/public-docc-products.txt in all three product loops"
   fi
-  require_contains 'arm64-apple-xros1.0' \
-    "$repo_root/Scripts/run_local_release_preflight.sh"
   require_contains 'Sources/InnoNetworkPersistentCache' "$repo_root/Scripts/check_unchecked_sendable.sh"
   require_contains 'Sources/InnoNetworkMacros' "$repo_root/Scripts/check_unchecked_sendable.sh"
   require_contains 'Sources/InnoNetworkMacros' "$repo_root/Scripts/check_production_force_unwraps.sh"
@@ -1165,6 +1163,18 @@ validate_release_quality_gates() {
   require_contains 'python3 Scripts/tests/test_check_example_platform_floors.py' \
     "$repo_root/.github/workflows/release.yml"
   require_contains 'python3 Scripts/tests/test_check_example_platform_floors.py' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'python3 Scripts/check_apple_platform_build_contract.py' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'python3 Scripts/check_apple_platform_build_contract.py' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'python3 Scripts/check_apple_platform_build_contract.py' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'python3 Scripts/tests/test_check_apple_platform_build_contract.py' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'python3 Scripts/tests/test_check_apple_platform_build_contract.py' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'python3 Scripts/tests/test_check_apple_platform_build_contract.py' \
     "$repo_root/Scripts/run_local_release_preflight.sh"
   require_contains 'Tools/openapi-to-innonetwork' "$repo_root/.github/workflows/release.yml"
   require_contains 'Tools/openapi-to-innonetwork' "$repo_root/docs/CI_DoC.md"

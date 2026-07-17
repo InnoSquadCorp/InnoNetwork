@@ -108,6 +108,7 @@ run_release_script_fixtures() {
   python3 Scripts/tests/test_run_with_guarded_benchmarks.py
   bash Scripts/tests/test_build_consumer_examples.sh
   python3 Scripts/tests/test_check_example_platform_floors.py
+  python3 Scripts/tests/test_check_apple_platform_build_contract.py
   bash Scripts/tests/test_check_docc_archives.sh
 }
 
@@ -125,6 +126,7 @@ run_static_contracts() {
   bash Scripts/check_docs_contract_sync.sh
   bash Scripts/check_stable_examples.sh
   python3 Scripts/check_example_platform_floors.py
+  python3 Scripts/check_apple_platform_build_contract.py
   bash Scripts/check_migration_examples.sh
   bash Scripts/check_changelog_sync.sh
   bash Scripts/check_provisional_enum_cases.sh
