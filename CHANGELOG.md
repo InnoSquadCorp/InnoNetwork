@@ -147,6 +147,9 @@ draft release summary.
   split into argument, declaration, payload, and path components, and an
   independent consumer harness measures Core-only and 0/10/50/200-endpoint
   clean and incremental builds with both SwiftPM and Xcode.
+- The public macro declaration's DocC now states those same accepted method and
+  authentication spellings, and the docs contract fails if it regresses to the
+  former contextual-only wording.
 
 - Macro expansion is covered by an end-to-end test that executes the generated
   endpoint through `DefaultNetworkClient`, including path substitution, query
