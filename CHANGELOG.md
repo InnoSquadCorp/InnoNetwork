@@ -49,6 +49,9 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
 - The direct 21-parameter `WebSocketConfiguration` initializer is
   package-owned. Use `safeDefaults()` for the secure preset or `advanced(_:)`
   for explicit tuning.
+- `WebSocketTask` construction is package-owned. Obtain handles from
+  `WebSocketManager.connect(url:subprotocols:)` or an accepted explicit retry
+  so every task is registered with its owning manager.
 - `HTTPMethod` is now an extensible, `RawRepresentable` value type. Standard
   methods remain static constants; custom methods use the failable
   `init(rawValue:)`, which accepts only nonempty RFC 9110 tokens. Code that

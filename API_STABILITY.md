@@ -20,7 +20,9 @@ callbacks. The duplicate `DownloadConfiguration.default` and
 `WebSocketConfiguration.default` aliases are removed in favor of the existing
 `safeDefaults()` factories; zero-argument manager construction remains
 unchanged. The direct 21-parameter `WebSocketConfiguration` initializer is
-package-owned; explicit tuning goes through `advanced(_:)`.
+package-owned; explicit tuning goes through `advanced(_:)`. `WebSocketTask`
+construction is manager-owned so every public handle has connection and
+ownership state.
 Preview adopters should migrate configuration to
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.
