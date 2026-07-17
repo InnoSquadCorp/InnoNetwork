@@ -796,11 +796,12 @@ compatibility baseline. The current `main` branch is preparing the breaking
 - Release rules and compatibility policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration expectations: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
 
-`safeDefaults` is the recommended public path. `default` aliases are available
-as `safeDefaults` aliases, but new examples and new integrations should prefer
-`safeDefaults`.
+`safeDefaults` is the canonical secure entry point. The duplicate legacy
+configuration aliases are absent from the 5.0 preview; examples and new
+integrations use the named factory so the selected policy is visible.
 
-`request` and `upload` are the recommended request execution APIs. Use
+`NetworkClient.request` and `UploadNetworkClient.upload` are the recommended
+capability boundaries (`DefaultNetworkClient` supports both). Use
 `RequestExecutionPolicy` to observe or wrap a transport attempt and to adapt
 its response. Execution policies cannot replace the executor-owned request;
 use `RequestInterceptor` for URL, header, or body mutation. SPI lower-level
