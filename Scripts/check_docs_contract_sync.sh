@@ -1018,6 +1018,7 @@ validate_troubleshooting_and_examples_docs() {
 }
 
 validate_release_quality_gates() {
+  local docc_product_loop_count
   require_contains 'bash Scripts/check_guarded_benchmark_contract.sh' \
     "$repo_root/.github/workflows/benchmarks.yml"
   require_contains 'bash Scripts/check_guarded_benchmark_contract.sh' \
@@ -1046,8 +1047,30 @@ validate_release_quality_gates() {
     "$repo_root/.github/workflows/release.yml"
   require_contains 'xcodebuild docbuild' \
     "$repo_root/Scripts/run_local_release_preflight.sh"
-  require_contains '"InnoNetworkAuthAWS"' \
+  require_contains 'bash Scripts/check_docc_archives.sh' \
     "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'bash Scripts/check_docc_archives.sh' \
+    "$repo_root/.github/workflows/docc-pages.yml"
+  require_contains 'bash Scripts/check_docc_archives.sh' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'bash Scripts/check_docc_archives.sh' \
+    "$repo_root/docs/DocC_Deployment.md"
+  require_contains 'bash Scripts/tests/test_check_docc_archives.sh' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'bash Scripts/tests/test_check_docc_archives.sh' \
+    "$repo_root/.github/workflows/docc-pages.yml"
+  require_contains 'bash Scripts/tests/test_check_docc_archives.sh' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'bash Scripts/tests/test_check_docc_archives.sh' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'docs/public-docc-products.txt' \
+    "$repo_root/.github/workflows/docc-pages.yml"
+  docc_product_loop_count="$(grep -F -c \
+    'done < docs/public-docc-products.txt' \
+    "$repo_root/.github/workflows/docc-pages.yml")"
+  if [[ "$docc_product_loop_count" != "3" ]]; then
+    fail "DocC Pages must use docs/public-docc-products.txt in all three product loops"
+  fi
   require_contains 'arm64-apple-xros1.0' \
     "$repo_root/Scripts/run_local_release_preflight.sh"
   require_contains 'Sources/InnoNetworkPersistentCache' "$repo_root/Scripts/check_unchecked_sendable.sh"
