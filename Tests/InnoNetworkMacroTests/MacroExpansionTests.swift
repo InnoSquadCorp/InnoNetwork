@@ -38,7 +38,14 @@ struct MacroExpansionTests {
                         .get
                     }
                     public var path: Swift.String {
-                        "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))"
+                        func _innoNetworkRequirePathValue<Value>(_ value: Value) -> Value {
+                            value
+                        }
+                        @available(*, unavailable, message: "@APIDefinition path placeholder values cannot be Optional; unwrap the value and define its nil behavior before constructing the endpoint.")
+                        func _innoNetworkRequirePathValue<Value>(_ value: Value?) -> Value {
+                            fatalError()
+                        }
+                        return "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(id)))"
                     }
                 }
                 """,
@@ -72,7 +79,14 @@ struct MacroExpansionTests {
                         .post
                     }
                     internal var path: Swift.String {
-                        "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))/avatar"
+                        func _innoNetworkRequirePathValue<Value>(_ value: Value) -> Value {
+                            value
+                        }
+                        @available(*, unavailable, message: "@APIDefinition path placeholder values cannot be Optional; unwrap the value and define its nil behavior before constructing the endpoint.")
+                        func _innoNetworkRequirePathValue<Value>(_ value: Value?) -> Value {
+                            fatalError()
+                        }
+                        return "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(id)))/avatar"
                     }
                 }
                 """,
@@ -106,7 +120,14 @@ struct MacroExpansionTests {
                         .delete
                     }
                     package var path: Swift.String {
-                        "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(id))"
+                        func _innoNetworkRequirePathValue<Value>(_ value: Value) -> Value {
+                            value
+                        }
+                        @available(*, unavailable, message: "@APIDefinition path placeholder values cannot be Optional; unwrap the value and define its nil behavior before constructing the endpoint.")
+                        func _innoNetworkRequirePathValue<Value>(_ value: Value?) -> Value {
+                            fatalError()
+                        }
+                        return "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(id)))"
                     }
                 }
                 """,

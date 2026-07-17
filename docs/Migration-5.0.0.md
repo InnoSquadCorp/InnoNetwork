@@ -583,7 +583,10 @@ compile errors, so declared request input cannot disappear silently. A complete
 payload modeling and disables simple payload inference.
 Optional values are no longer accepted by the public path-segment encoder;
 unwrap them and decide whether nil means omit, substitute, or reject before
-constructing a path.
+constructing a path. `@APIDefinition` reports this directly for `T?`,
+`Optional<T>`, and `Swift.Optional<T>` properties. A property whose typealias
+resolves to Optional now receives the same targeted generated-code diagnostic
+instead of an unrelated generic-constraint error.
 
 Consumers that do not use macros can disable the default trait:
 

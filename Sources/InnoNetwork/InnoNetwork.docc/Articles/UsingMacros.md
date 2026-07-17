@@ -43,6 +43,12 @@ stored properties declared directly on the struct. Values pass through
 ``EndpointPathEncoding/percentEncodedSegment(_:)``, so a slash, space, percent
 sign, or non-ASCII scalar stays inside one path segment.
 
+Placeholder values must be non-optional. The macro diagnoses direct `T?`,
+`Optional<T>`, and `Swift.Optional<T>` declarations during expansion. If a
+property uses an alias that resolves to Optional, the generated path witness
+adds a type-check-time diagnostic with the same action: unwrap the value and
+define what nil means before constructing the endpoint.
+
 ## Query and body inference
 
 A stored `query` property is the simple GET or HEAD shape:
@@ -135,7 +141,9 @@ or incomplete, including:
   unambiguous
 - duplicating generated conformance, `method`, `path`, or
   `sessionAuthentication` witnesses
-- using a missing, optional, opaque, or unsupported generic path placeholder
+- using a missing, optional, opaque, or unsupported generic path placeholder;
+  Optional aliases receive the same targeted error during generated-code type
+  checking
 - putting query/fragment text or an invalid percent escape in `path:`
 - using a raw or multiline `path:` literal
 - using computed, static, or lazy `body` / `query` properties in simple mode

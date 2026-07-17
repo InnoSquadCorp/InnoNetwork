@@ -486,7 +486,9 @@ shapes.
 The attached macro emits witnesses at the type's visibility (`public`,
 `package`, or implicit internal). It fails closed on incomplete or ambiguous
 definitions, including omitted auth, missing response type, invalid path
-placeholders, and conflicting generated witnesses. The removed 4.x
+placeholders, and conflicting generated witnesses. Optional aliases used by a
+path placeholder receive a targeted generated-code diagnostic without adding
+a runtime or public helper symbol. The removed 4.x
 `endpoint(_:_:as:)` expression macro has no 5.x compatibility contract;
 ``EndpointBuilder`` is the runtime-composed alternative.
 
