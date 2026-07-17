@@ -32,6 +32,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | `WebSocketConfiguration.sessionIdentifier` / `AdvancedBuilder.sessionIdentifier` | Remove the value; WebSocket sessions are foreground-only and the identifier was never applied |
 | `DownloadConfiguration.default` / `WebSocketConfiguration.default` | Call the matching `safeDefaults()` factory; zero-argument manager initialization remains available |
 | `DownloadManager.make(configuration:)` | Call the throwing `DownloadManager(configuration:)` initializer |
+| Constructing `PersistentResponseCacheStatistics` directly | Read the cache-owned snapshot from `await cache.statistics()`; use an application-owned fixture type for isolated presentation tests |
 | Direct `WebSocketConfiguration(...)` initialization | Use `safeDefaults()` or set explicit overrides through `advanced(_:)` |
 | Constructing a `WebSocketTask` directly | Obtain the handle from `await manager.connect(url:subprotocols:)` or an accepted `retry(_:)` result |
 | `import InnoNetworkCodegen` | Remove it; the attached macro ships from `import InnoNetwork` |
@@ -438,6 +439,17 @@ let manager = try DownloadManager(configuration: configuration)
 
 This changes only the spelling. Ownership, restoration, duplicate-session
 validation, and shutdown behavior remain unchanged.
+
+## Read persistent cache statistics from the cache
+
+`PersistentResponseCacheStatistics` follows the same ownership rule as the
+event-pipeline metric snapshots in 5.0: its properties remain public, but only
+the owning cache actor constructs it. Replace direct initialization with
+`await cache.statistics()`. Presentation or dashboard tests that do not own a
+cache should use an application fixture rather than synthesizing a library
+runtime snapshot.
+
+## Tune WebSocket configuration through presets
 
 The direct 21-parameter `WebSocketConfiguration` initializer is also
 package-owned in 5.0. Move explicit tuning into the advanced builder:

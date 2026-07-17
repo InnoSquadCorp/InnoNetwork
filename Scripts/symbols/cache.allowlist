@@ -26,7 +26,6 @@ InnoNetworkPersistentCache	swift.enum.case	PersistentResponseCacheTelemetryEvent
 InnoNetworkPersistentCache	swift.init	PersistentResponseCache.init(configuration:fileManager:)
 InnoNetworkPersistentCache	swift.init	PersistentResponseCacheConfiguration.init(directoryURL:maxBytes:maxEntries:maxEntryBytes:storesAuthenticatedResponses:storesSetCookieResponses:persistenceFsyncPolicy:dataProtectionClass:keyStorage:)
 InnoNetworkPersistentCache	swift.init	PersistentResponseCacheEvictionReason.init(rawValue:)
-InnoNetworkPersistentCache	swift.init	PersistentResponseCacheStatistics.init(entryCount:byteCount:maxEntries:maxBytes:hitCount:missCount:evictionCount:)
 InnoNetworkPersistentCache	swift.method	PersistentResponseCache.drainTelemetryEvents()
 InnoNetworkPersistentCache	swift.method	PersistentResponseCache.get(_:)
 InnoNetworkPersistentCache	swift.method	PersistentResponseCache.invalidate(_:)
