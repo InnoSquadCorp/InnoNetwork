@@ -159,20 +159,16 @@ public actor WebSocketManager {
     /// Creates a WebSocket manager backed by a URLSession WebSocket runtime.
     ///
     /// The initializer builds a `WebSocketSessionDelegate` with
-    /// `WebSocketSessionDelegateCallbacks` and `BackgroundCompletionStore`,
-    /// then creates a `URLSession` from
-    /// ``WebSocketConfiguration/makeURLSessionConfiguration()``. The manager
-    /// owns that delegate and uses its background-completion store to satisfy
-    /// URLSession-style completion callbacks.
+    /// `WebSocketSessionDelegateCallbacks`, then creates a foreground
+    /// `URLSession` from
+    /// ``WebSocketConfiguration/makeURLSessionConfiguration()``.
     ///
     /// - Parameter configuration: WebSocket runtime configuration. Defaults to
     ///   ``WebSocketConfiguration/default``.
     public init(configuration: WebSocketConfiguration = .default) {
         let callbacks = WebSocketSessionDelegateCallbacks()
-        let backgroundCompletionStore = BackgroundCompletionStore()
         let delegate = WebSocketSessionDelegate(
             callbacks: callbacks,
-            backgroundCompletionStore: backgroundCompletionStore,
             allowsInsecureWebSocket: configuration.allowsInsecureWebSocket
         )
 

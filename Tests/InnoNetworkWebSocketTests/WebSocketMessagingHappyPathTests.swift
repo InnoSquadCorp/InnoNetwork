@@ -476,7 +476,6 @@ final class StubMessagingHarness: Sendable {
         let callbacks = WebSocketSessionDelegateCallbacks()
         let delegate = WebSocketSessionDelegate(
             callbacks: callbacks,
-            backgroundCompletionStore: BackgroundCompletionStore()
         )
 
         self.stubSession = stubSession

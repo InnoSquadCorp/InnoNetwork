@@ -227,7 +227,6 @@ struct WebSocketRedirectAdmissionTests {
         let callbacks = WebSocketSessionDelegateCallbacks()
         let delegate = WebSocketSessionDelegate(
             callbacks: callbacks,
-            backgroundCompletionStore: BackgroundCompletionStore()
         )
         let delegateSession = URLSession(configuration: .ephemeral)
         let source = URL(string: "wss://socket.example.com/start")!
@@ -325,7 +324,6 @@ private func makeRedirectDelegateContext(
     return WebSocketRedirectDelegateContext(
         delegate: WebSocketSessionDelegate(
             callbacks: callbacks,
-            backgroundCompletionStore: BackgroundCompletionStore(),
             allowsInsecureWebSocket: allowsInsecureWebSocket
         ),
         decisions: decisions,
