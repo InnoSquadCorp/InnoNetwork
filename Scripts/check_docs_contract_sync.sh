@@ -225,7 +225,6 @@ documented_sorted="$(printf '%s\n' "${documented_stable[@]:-}" | sort)"
 }
 
 expected_provisionally=(
-'`default` aliases on configuration types'
 'benchmark runner CLI flags and JSON summary presentation details'
 'troubleshooting guidance and examples in README/DocC'
 '`InnoNetworkTestSupport` library product and its `public` symbols'
@@ -479,11 +478,6 @@ validate_protocol_symbol() {
     in_protocol { body = body " " $0 }
     END { exit found ? 0 : 1 }
   ' "$target" || fail "symbol '$expected' is not present in $protocol_name protocol"
-}
-
-validate_default_aliases() {
-  require_contains 'public static let `default` = safeDefaults()' "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
-  require_contains 'public static let `default` = safeDefaults()' "$repo_root/Sources/InnoNetworkWebSocket/WebSocketConfiguration.swift"
 }
 
 validate_benchmark_docs() {
@@ -1373,10 +1367,6 @@ done
 
 for symbol in "${expected_provisionally[@]}"; do
   case "$symbol" in
-    '`default` aliases on configuration types')
-      validate_default_aliases
-      continue
-      ;;
     'benchmark runner CLI flags and JSON summary presentation details')
       validate_benchmark_docs
       continue

@@ -8,9 +8,9 @@ import os
 @Suite("WebSocket Configuration Tests")
 struct WebSocketConfigurationTests {
 
-    @Test("Default configuration has expected values")
-    func defaultConfiguration() {
-        let config = WebSocketConfiguration.default
+    @Test("Safe defaults configuration has expected values")
+    func safeDefaultsConfiguration() {
+        let config = WebSocketConfiguration.safeDefaults()
 
         #expect(config.maxConnectionsPerHost == 5)
         #expect(config.connectionTimeout == 30)
@@ -27,7 +27,6 @@ struct WebSocketConfigurationTests {
 
     @Test("maxReconnectDelay is opt-in by default")
     func maxReconnectDelayDefaultIsDisabled() {
-        #expect(WebSocketConfiguration.default.maxReconnectDelay == 0)
         #expect(WebSocketConfiguration.safeDefaults().maxReconnectDelay == 0)
     }
 
@@ -41,17 +40,6 @@ struct WebSocketConfigurationTests {
     func advancedBuilderDefaultsToDisabledCap() {
         let config = WebSocketConfiguration.advanced { _ in }
         #expect(config.maxReconnectDelay == 0)
-    }
-
-    @Test("safeDefaults matches default configuration")
-    func safeDefaultsMatchesDefault() {
-        let config = WebSocketConfiguration.safeDefaults()
-        let defaultConfig = WebSocketConfiguration.default
-
-        #expect(config.maxConnectionsPerHost == defaultConfig.maxConnectionsPerHost)
-        #expect(config.connectionTimeout == defaultConfig.connectionTimeout)
-        #expect(config.heartbeatInterval == defaultConfig.heartbeatInterval)
-        #expect(config.maxReconnectAttempts == defaultConfig.maxReconnectAttempts)
     }
 
     @Test("advanced builder can override reconnect tuning")
@@ -168,7 +156,6 @@ struct WebSocketConfigurationTests {
 
     @Test("closeHandshakeTimeout default is three seconds and clamps negatives")
     func closeHandshakeTimeoutClampingAndDefault() {
-        #expect(WebSocketConfiguration.default.closeHandshakeTimeout == .seconds(3))
         #expect(WebSocketConfiguration.safeDefaults().closeHandshakeTimeout == .seconds(3))
         let custom = WebSocketConfiguration(closeHandshakeTimeout: .seconds(7))
         #expect(custom.closeHandshakeTimeout == .seconds(7))

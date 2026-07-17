@@ -75,8 +75,8 @@ public actor DownloadManager {
     /// Equivalent to ``init(configuration:)``, but discoverable via type-level
     /// autocomplete and consistent with the `make(...)` style used elsewhere
     /// in the package (e.g., `URLQueryEncoder`, observability builders). Use
-    /// this when you need explicit failure handling instead of relying on
-    /// ``shared``'s fallback behavior.
+    /// this when factory-style construction reads more clearly at the call
+    /// site.
     ///
     /// - Parameter configuration: The configuration to bind. Pass
     ///   ``DownloadConfiguration/safeDefaults(sessionIdentifier:)`` with a
@@ -89,7 +89,7 @@ public actor DownloadManager {
     ///   A transient store-access failure preserves the existing state so a
     ///   later initialization attempt can restore it.
     public static func make(
-        configuration: DownloadConfiguration = .default
+        configuration: DownloadConfiguration = .safeDefaults()
     ) throws -> DownloadManager {
         try DownloadManager(configuration: configuration)
     }
@@ -214,7 +214,7 @@ public actor DownloadManager {
     ///   or the underlying persistence directory cannot be created, locked,
     ///   or read. Transient access failures preserve existing state so a later
     ///   initialization attempt can restore it.
-    public init(configuration: DownloadConfiguration = .default) throws {
+    public init(configuration: DownloadConfiguration = .safeDefaults()) throws {
         try self.init(
             configuration: configuration,
             persistence: try DownloadTaskPersistence(
@@ -227,7 +227,7 @@ public actor DownloadManager {
     }
 
     package init(
-        configuration: DownloadConfiguration = .default,
+        configuration: DownloadConfiguration = .safeDefaults(),
         persistence: DownloadTaskPersistence,
         clock: any InnoNetworkClock = SystemClock()
     ) throws {
