@@ -131,15 +131,13 @@ struct EndpointBuilderTests {
         do {
             _ = try await client.request(endpoint)
             Issue.record("Expected auth-required endpoint to reject a public client configuration")
-        } catch let error as NetworkError {
+        } catch let error {
             guard case .configuration(reason: .invalidRequest(let message)) = error else {
                 Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
                 return
             }
             #expect(message.contains("refreshTokenPolicy"))
             #expect(mockSession.capturedRequest == nil)
-        } catch {
-            Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
         }
     }
 
@@ -408,7 +406,7 @@ struct EndpointBuilderTests {
         do {
             _ = try await client.request(endpoint)
             Issue.record("Expected required session auth to fail before transport")
-        } catch let error as NetworkError {
+        } catch let error {
             guard case .configuration(reason: .invalidRequest(let message)) = error else {
                 Issue.record("Expected invalid-request configuration, got \(error)")
                 return
@@ -500,14 +498,12 @@ struct EndpointBuilderTests {
         do {
             _ = try await client.request(endpoint)
             Issue.record("Expected promoted custom .none transport validation to run")
-        } catch let error as NetworkError {
+        } catch let error {
             guard case .configuration(reason: .invalidRequest(let message)) = error else {
                 Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
                 return
             }
             #expect(message == "custom .none transport was not preserved")
-        } catch {
-            Issue.record("Expected NetworkError.invalidRequestConfiguration, got \(error)")
         }
     }
 

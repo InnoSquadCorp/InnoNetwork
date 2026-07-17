@@ -89,7 +89,7 @@ struct HTTPBinLiveTests {
         do {
             _ = try await client.request(HTTPBin503())
             Issue.record("Expected NetworkError.statusCode(503)")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .statusCode(let response):
                 #expect(response.statusCode == 503)

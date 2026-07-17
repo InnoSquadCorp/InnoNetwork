@@ -135,7 +135,7 @@ struct NetworkErrorRedactionTests {
         do {
             _ = try await client.request(GetUser())
             Issue.record("Expected NetworkError.decoding")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .decoding(let stage, _, let response):
                 #expect(stage == .responseBody)
@@ -146,8 +146,6 @@ struct NetworkErrorRedactionTests {
             default:
                 Issue.record("Expected .decoding, got \(error)")
             }
-        } catch {
-            Issue.record("Unexpected error: \(error)")
         }
     }
 
@@ -167,15 +165,13 @@ struct NetworkErrorRedactionTests {
         do {
             _ = try await client.request(GetUser())
             Issue.record("Expected NetworkError.decoding")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .decoding(_, _, let response):
                 #expect(String(data: response.data, encoding: .utf8) == Self.pii)
             default:
                 Issue.record("Expected .decoding, got \(error)")
             }
-        } catch {
-            Issue.record("Unexpected error: \(error)")
         }
     }
 
@@ -208,7 +204,7 @@ struct NetworkErrorRedactionTests {
         do {
             _ = try await client.request(GetUser())
             Issue.record("Expected NetworkError.statusCode")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .statusCode(let response):
                 #expect(response.data.isEmpty)
@@ -216,8 +212,6 @@ struct NetworkErrorRedactionTests {
             default:
                 Issue.record("Expected .statusCode, got \(error)")
             }
-        } catch {
-            Issue.record("Unexpected error: \(error)")
         }
     }
 

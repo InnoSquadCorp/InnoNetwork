@@ -52,7 +52,7 @@ struct HMACRequestInterceptorTests {
             signatureHeaderName: "X-Hub-Signature-256",
             keyIDHeaderName: "X-Hub-Key-ID"
         )
-        var request = URLRequest(url: URL(string: "https://api.example.com/x")!)
+        let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
         let headers = try await interceptor.signatureHeaders(for: request, body: .data(Data("{}".utf8)))
 
         #expect(headers.value(for: "X-Hub-Signature-256") != nil)
@@ -83,7 +83,7 @@ struct HMACRequestInterceptorTests {
         let sha256 = HMACRequestInterceptor(keyID: "id", secret: secret, algorithm: .sha256)
         let sha512 = HMACRequestInterceptor(keyID: "id", secret: secret, algorithm: .sha512)
 
-        var request = URLRequest(url: URL(string: "https://api.example.com/x")!)
+        let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
         let h256Headers = try await sha256.signatureHeaders(for: request, body: .data(body))
         let h512Headers = try await sha512.signatureHeaders(for: request, body: .data(body))
 

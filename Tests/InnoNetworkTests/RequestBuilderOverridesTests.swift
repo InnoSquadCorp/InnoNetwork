@@ -135,7 +135,7 @@ struct RequestBuilderOverridesTests {
         do {
             _ = try await client.request(CaseSensitiveMethodEndpoint(method: method))
             Issue.record("Expected a case-sensitive method preservation error")
-        } catch let error as NetworkError {
+        } catch let error {
             guard case .configuration(reason: .invalidRequest(let message)) = error else {
                 Issue.record("Expected invalid-request configuration, got \(error)")
                 return
@@ -173,14 +173,12 @@ struct RequestBuilderOverridesTests {
         do {
             _ = try await client.request(HeadWithJSONBodyEndpoint())
             Issue.record("Expected the HEAD request body to be rejected")
-        } catch let error as NetworkError {
+        } catch let error {
             guard case .configuration(reason: .invalidRequest(let message)) = error else {
                 Issue.record("Expected invalid-request configuration, got \(error)")
                 return
             }
             #expect(message.contains("HTTP HEAD"))
-        } catch {
-            Issue.record("Expected NetworkError, got \(error)")
         }
 
         #expect(mockSession.capturedRequest == nil)

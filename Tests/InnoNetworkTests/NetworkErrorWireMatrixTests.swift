@@ -135,7 +135,7 @@ struct NetworkErrorWireMatrixTests {
         do {
             _ = try await client.request(MatrixEndpoint())
             Issue.record("Expected invalid base URL configuration error")
-        } catch let error as NetworkError {
+        } catch let error {
             guard case .configuration(reason: .invalidBaseURL) = error else {
                 Issue.record("Expected .configuration(.invalidBaseURL), got \(error)")
                 return
@@ -157,7 +157,7 @@ struct NetworkErrorWireMatrixTests {
         do {
             _ = try await client.request(MatrixAuthRequiredEndpoint())
             Issue.record("Expected invalid request configuration error")
-        } catch let error as NetworkError {
+        } catch let error {
             guard case .configuration(reason: .invalidRequest) = error else {
                 Issue.record("Expected .configuration(.invalidRequest), got \(error)")
                 return
@@ -183,7 +183,7 @@ struct NetworkErrorWireMatrixTests {
         do {
             _ = try await client.request(MatrixEndpoint())
             Issue.record("Expected offline configuration error")
-        } catch let error as NetworkError {
+        } catch let error {
             guard case .configuration(reason: .offline) = error else {
                 Issue.record("Expected .configuration(.offline), got \(error)")
                 return

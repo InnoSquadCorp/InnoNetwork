@@ -145,7 +145,7 @@ struct ResponseBodyLimitTests {
         do {
             _ = try await client.request(DataEcho())
             Issue.record("Expected response-too-large NetworkError.underlying")
-        } catch let error as NetworkError {
+        } catch let error {
             switch error {
             case .underlying(let underlying, _)
             where underlying.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue:
@@ -260,7 +260,7 @@ struct ResponseBodyLimitTests {
         do {
             _ = try await client.request(DataEcho())
             Issue.record("Expected response-too-large NetworkError.underlying")
-        } catch is NetworkError {
+        } catch {
             // Expected.
         }
 
