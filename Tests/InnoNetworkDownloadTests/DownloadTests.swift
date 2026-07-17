@@ -8,9 +8,9 @@ import os
 @Suite("Download Configuration Tests")
 struct DownloadConfigurationTests {
 
-    @Test("Default configuration has expected values")
-    func defaultConfiguration() {
-        let config = DownloadConfiguration.default
+    @Test("Safe defaults configuration has expected values")
+    func safeDefaultsConfiguration() {
+        let config = DownloadConfiguration.safeDefaults()
 
         #expect(config.maxConnectionsPerHost == 3)
         #expect(config.maxRetryCount == 3)
@@ -72,17 +72,6 @@ struct DownloadConfigurationTests {
             builder.sharedContainerIdentifier = "group.com.example.downloads"
         }
         #expect(config.sharedContainerIdentifier == "group.com.example.downloads")
-    }
-
-    @Test("safeDefaults matches default configuration")
-    func safeDefaultsMatchesDefault() {
-        let config = DownloadConfiguration.safeDefaults()
-        let defaultConfig = DownloadConfiguration.default
-
-        #expect(config.maxConnectionsPerHost == defaultConfig.maxConnectionsPerHost)
-        #expect(config.maxRetryCount == defaultConfig.maxRetryCount)
-        #expect(config.maxTotalRetries == defaultConfig.maxTotalRetries)
-        #expect(config.retryDelay == defaultConfig.retryDelay)
     }
 
     @Test("advanced builder can override high-tuning configuration")
@@ -1062,7 +1051,7 @@ struct DownloadTransferCoordinatorTests {
         let missingTemporaryLocation = directory.appendingPathComponent("missing-\(UUID().uuidString).tmp")
         let runtimeRegistry = DownloadRuntimeRegistry()
         let persistence = DownloadTaskPersistence(store: InMemoryDownloadTaskStore())
-        let configuration = DownloadConfiguration.default
+        let configuration = DownloadConfiguration.safeDefaults()
         let coordinator = DownloadTransferCoordinator(
             session: StubDownloadURLSession(),
             runtimeRegistry: runtimeRegistry,

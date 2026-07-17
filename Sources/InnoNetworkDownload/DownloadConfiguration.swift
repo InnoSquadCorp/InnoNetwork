@@ -511,8 +511,6 @@ public struct DownloadConfiguration: Sendable {
         self.persistenceBaseDirectoryURL = configuration.persistenceBaseDirectoryURL
     }
 
-    public static let `default` = safeDefaults()
-
     func makeURLSessionConfiguration() -> URLSessionConfiguration {
         let config: URLSessionConfiguration
         switch sessionMode {

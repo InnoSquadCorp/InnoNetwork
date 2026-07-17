@@ -175,4 +175,3 @@ InnoNetworkWebSocket	swift.struct	WebSocketPongContext
 InnoNetworkWebSocket	swift.struct	WebSocketRetryResult
 InnoNetworkWebSocket	swift.type.method	WebSocketConfiguration.advanced(_:)
 InnoNetworkWebSocket	swift.type.method	WebSocketConfiguration.safeDefaults()
-InnoNetworkWebSocket	swift.type.property	WebSocketConfiguration.default

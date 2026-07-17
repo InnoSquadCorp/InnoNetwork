@@ -15,7 +15,7 @@ let webSocketManagerLogger = Logger(
 /// Swift actor. Callers must now `await` every public method:
 ///
 /// ```swift
-/// let manager = WebSocketManager(configuration: .default)
+/// let manager = WebSocketManager(configuration: .safeDefaults())
 /// let task = await manager.connect(url: url)
 /// for await event in await manager.events(for: task) { ... }
 /// await manager.disconnect(task)
@@ -164,8 +164,8 @@ public actor WebSocketManager {
     /// ``WebSocketConfiguration/makeURLSessionConfiguration()``.
     ///
     /// - Parameter configuration: WebSocket runtime configuration. Defaults to
-    ///   ``WebSocketConfiguration/default``.
-    public init(configuration: WebSocketConfiguration = .default) {
+    ///   ``WebSocketConfiguration/safeDefaults()``.
+    public init(configuration: WebSocketConfiguration = .safeDefaults()) {
         let callbacks = WebSocketSessionDelegateCallbacks()
         let delegate = WebSocketSessionDelegate(
             callbacks: callbacks,

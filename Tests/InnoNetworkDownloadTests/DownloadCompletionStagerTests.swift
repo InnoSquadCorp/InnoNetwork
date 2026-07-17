@@ -177,7 +177,7 @@ struct DownloadCompletionStagerTests {
 
         let stagedURL = try DownloadCompletionStager(directoryURL: stagingDirectoryURL)
             .stage(sourceURL, taskIdentifier: 17)
-        let configuration = DownloadConfiguration.default
+        let configuration = DownloadConfiguration.safeDefaults()
         let persistence = DownloadTaskPersistence(store: InMemoryDownloadTaskStore())
         let coordinator = DownloadTransferCoordinator(
             session: StubDownloadURLSession(),
@@ -268,7 +268,7 @@ struct DownloadCompletionStagerTests {
         let stagedURL = rootURL.appendingPathComponent("staged-download.tmp", isDirectory: false)
         try Data("staged-payload".utf8).write(to: stagedURL)
 
-        let configuration = DownloadConfiguration.default
+        let configuration = DownloadConfiguration.safeDefaults()
         let persistence = DownloadTaskPersistence(store: InMemoryDownloadTaskStore())
         let coordinator = DownloadTransferCoordinator(
             session: StubDownloadURLSession(),

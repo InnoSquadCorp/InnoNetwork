@@ -16,7 +16,10 @@ to package scope.
 The WebSocket manager's background-session completion no-op and its unused
 `WebSocketConfiguration.sessionIdentifier` compatibility field are also
 removed; only `DownloadManager` owns Foundation background transfer
-callbacks.
+callbacks. The duplicate `DownloadConfiguration.default` and
+`WebSocketConfiguration.default` aliases are removed in favor of the existing
+`safeDefaults()` factories; zero-argument manager construction remains
+unchanged.
 Preview adopters should migrate configuration to
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.
@@ -122,7 +125,6 @@ future 5.x line they may grow new cases, parameters, or shape, with each change
 shipping release notes and a migration path. See "Version Pinning Guidance"
 below for the currently released 4.x line and explicit preview opt-in.
 
-- `default` aliases on configuration types
 - benchmark runner CLI flags and JSON summary presentation details
 - troubleshooting guidance and examples in README/DocC
 - `InnoNetworkTestSupport` library product and its `public` symbols

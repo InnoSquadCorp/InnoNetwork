@@ -42,6 +42,10 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   builder field are removed. The value was never applied to the default
   foreground `URLSession` used by WebSockets and provided no isolation or
   restoration semantics.
+- `DownloadConfiguration.default` and `WebSocketConfiguration.default` are
+  removed because they duplicate `safeDefaults()`. Use the named factory when
+  passing a configuration explicitly; `DownloadManager()` and
+  `WebSocketManager()` keep their zero-argument defaults.
 - `HTTPMethod` is now an extensible, `RawRepresentable` value type. Standard
   methods remain static constants; custom methods use the failable
   `init(rawValue:)`, which accepts only nonempty RFC 9110 tokens. Code that

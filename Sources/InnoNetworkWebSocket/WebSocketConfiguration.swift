@@ -333,8 +333,6 @@ public struct WebSocketConfiguration: Sendable {
         self.permessageDeflateEnabled = permessageDeflateEnabled
     }
 
-    public static let `default` = safeDefaults()
-
     func makeURLSessionConfiguration() -> URLSessionConfiguration {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = connectionTimeout

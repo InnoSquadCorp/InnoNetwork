@@ -30,6 +30,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | `await handshakeAdapter.adapt(request)` | `try await handshakeAdapter.adapt(request)`; adapter closures may throw |
 | `WebSocketManager.handleBackgroundSessionCompletion(_:completion:)` | Remove the call; route download identifiers to `DownloadManager`, otherwise invoke the app callback directly |
 | `WebSocketConfiguration.sessionIdentifier` / `AdvancedBuilder.sessionIdentifier` | Remove the value; WebSocket sessions are foreground-only and the identifier was never applied |
+| `DownloadConfiguration.default` / `WebSocketConfiguration.default` | Call the matching `safeDefaults()` factory; zero-argument manager initialization remains available |
 | `import InnoNetworkCodegen` | Remove it; the attached macro ships from `import InnoNetwork` |
 | `@APIDefinition(method:path:)` | Add mandatory `auth: .anonymous`, `.optional`, or `.required` |
 | `#endpoint(method, path, as: Response.self)` | Use a named macro-assisted endpoint struct or runtime `EndpointBuilder` |
@@ -373,6 +374,27 @@ Continue forwarding real background download identifiers to
 application router receives an identifier that belongs to no background
 transfer owner, invoke the app-provided completion directly according to that
 router's policy.
+
+## Replace configuration `default` aliases
+
+`DownloadConfiguration.default` and `WebSocketConfiguration.default` are
+removed because both were exact aliases for the more explicit
+`safeDefaults()` factories. Replace only call sites that pass or retain a
+configuration value:
+
+```swift
+// 4.x
+let downloadConfiguration = DownloadConfiguration.default
+let socketConfiguration = WebSocketConfiguration.default
+
+// 5.0
+let downloadConfiguration = DownloadConfiguration.safeDefaults()
+let socketConfiguration = WebSocketConfiguration.safeDefaults()
+```
+
+Manager convenience remains unchanged. `try DownloadManager()` and
+`WebSocketManager()` still select their secure presets without requiring a
+configuration argument.
 
 ## Redirect defaults are stricter
 
