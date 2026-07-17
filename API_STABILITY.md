@@ -25,7 +25,9 @@ construction is manager-owned so every public handle has connection and
 ownership state. The duplicate `DownloadManager.make(configuration:)` factory
 is removed; the throwing initializer is the single construction path.
 `PersistentResponseCacheStatistics` remains a public read-only snapshot, but
-its cache-owned initializer moves to package scope.
+its cache-owned initializer moves to package scope. The initializer for the
+library-produced `CircuitBreakerOpenError` diagnostic is package-owned while
+its public domain and read-only fields remain available for inspection.
 Preview adopters should migrate configuration to
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.

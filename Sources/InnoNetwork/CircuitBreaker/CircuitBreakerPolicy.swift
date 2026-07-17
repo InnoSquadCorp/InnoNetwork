@@ -116,7 +116,7 @@ public struct CircuitBreakerOpenError: Error, Sendable, Equatable, LocalizedErro
     public let host: String
     public let retryAfter: TimeInterval
 
-    public init(host: String, retryAfter: TimeInterval) {
+    package init(host: String, retryAfter: TimeInterval) {
         self.host = host
         self.retryAfter = max(0, retryAfter)
     }
