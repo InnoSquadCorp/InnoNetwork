@@ -45,6 +45,7 @@
    - DocC build smoke
    - resolved CycloneDX SBOM generation for the default-trait root graph and
      the core-only (`traits: []`) profile
+   - Package.swift-aligned macOS, iOS, tvOS, watchOS, and visionOS build tuples
    - sigstore signing and GitHub Release creation with the benchmark,
      `sbom.cdx.json`, and `sbom-core-only.cdx.json` artifact sets
 5. Re-check `API_STABILITY.md` and `Scripts/symbols/*.allowlist`

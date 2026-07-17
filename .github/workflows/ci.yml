@@ -512,6 +512,8 @@ jobs:
           python3 Scripts/check_example_platform_floors.py
           python3 Scripts/tests/test_check_example_platform_floors.py
           bash Scripts/tests/test_build_consumer_examples.sh
+          python3 Scripts/check_apple_platform_build_contract.py
+          python3 Scripts/tests/test_check_apple_platform_build_contract.py
 
       - name: Verify migration guide code blocks compile
         run: bash Scripts/check_migration_examples.sh

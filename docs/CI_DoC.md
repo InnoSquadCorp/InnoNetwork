@@ -75,7 +75,11 @@ The `CI` workflow must pass all of the following:
    product. This avoids depending on hosted-runner simulator runtimes that can
    be pruned independently of their SDKs. All five platforms are unconditional
    hard gates: a missing SDK, undiscoverable public product, or compile failure
-   fails CI. SwiftPM test+coverage remains the runtime test gate.
+   fails CI. `Scripts/check_apple_platform_build_contract.py` derives the five
+   deployment floors from `Package.swift` and requires CI, release, local
+   preflight, and the cross-build helper to retain the exact matching
+   destinations and target triples. SwiftPM test+coverage remains the runtime
+   test gate.
 12. `python3 Scripts/check_example_platform_floors.py` discovers every
     independent `Examples/*/Package.swift`, requires the root package's exact
     deployment floors, and requires CI and release to invoke the same automatic
@@ -182,6 +186,7 @@ bash Scripts/check_no_print_in_production.sh
 bash Scripts/check_shared_coders_mutation.sh
 bash Scripts/check_provisional_enum_cases.sh
 python3 Scripts/check_example_platform_floors.py
+python3 Scripts/check_apple_platform_build_contract.py
 
 # Verify default and core-only macro trait profiles.
 bash Scripts/check_macro_trait_graphs.sh
