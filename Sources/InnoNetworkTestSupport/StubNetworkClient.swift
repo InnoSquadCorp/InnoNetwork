@@ -33,17 +33,25 @@ public struct StubRequestKey: Hashable, Sendable {
 
 /// Explicit test/preview client for returning canned responses without
 /// changing production `APIDefinition` behavior.
-public final class StubNetworkClient: NetworkClient, Sendable {
+public final class StubNetworkClient: NetworkClient, UploadNetworkClient, Sendable {
     private struct StubEntry: Sendable {
         let response: any Sendable
         let behavior: StubBehavior
     }
 
     private let fallback: (any NetworkClient)?
+    private let uploadFallback: (any UploadNetworkClient)?
     private let stubs = OSAllocatedUnfairLock<[StubRequestKey: StubEntry]>(initialState: [:])
 
-    public init(fallback: (any NetworkClient)? = nil) {
+    /// Creates a stub with independently injectable request and upload
+    /// fallbacks. When `fallback` also supports ``UploadNetworkClient``, it is
+    /// reused automatically unless `uploadFallback` is supplied explicitly.
+    public init(
+        fallback: (any NetworkClient)? = nil,
+        uploadFallback: (any UploadNetworkClient)? = nil
+    ) {
         self.fallback = fallback
+        self.uploadFallback = uploadFallback ?? (fallback as? any UploadNetworkClient)
     }
 
     public func register<Response: Decodable & Sendable>(
@@ -62,36 +70,6 @@ public final class StubNetworkClient: NetworkClient, Sendable {
         behavior: StubBehavior = .immediate
     ) {
         register(response, for: StubRequestKey(request), behavior: behavior)
-    }
-
-    public func request<Request: APIDefinition>(_ request: Request) async throws(NetworkError) -> Request.APIResponse {
-        let key = StubRequestKey(request)
-        if let entry = stubs.withLock({ $0[key] }) {
-            switch entry.behavior {
-            case .never:
-                break
-            case .immediate:
-                return try cast(entry.response, for: key)
-            case .delayed(let seconds):
-                if seconds > 0 {
-                    do {
-                        try await Task.sleep(for: .seconds(seconds))
-                    } catch is CancellationError {
-                        throw NetworkError.cancelled
-                    } catch {
-                        throw NetworkError.mapTransportError(error)
-                    }
-                }
-                return try cast(entry.response, for: key)
-            }
-        }
-
-        if let fallback {
-            return try await fallback.request(request)
-        }
-
-        throw NetworkError.configuration(
-            reason: .invalidRequest("No stub registered for \(request.method.rawValue) \(request.path)."))
     }
 
     public func request<Request: APIDefinition>(
@@ -127,24 +105,12 @@ public final class StubNetworkClient: NetworkClient, Sendable {
             reason: .invalidRequest("No stub registered for \(request.method.rawValue) \(request.path)."))
     }
 
-    public func upload<Request: MultipartAPIDefinition>(_ request: Request) async throws(NetworkError)
-        -> Request.APIResponse
-    {
-        if let fallback {
-            return try await fallback.upload(request)
-        }
-
-        throw NetworkError.configuration(
-            reason: .invalidRequest(
-                "StubNetworkClient does not provide multipart upload stubs without a fallback client."))
-    }
-
     public func upload<Request: MultipartAPIDefinition>(
         _ request: Request,
         tag: CancellationTag?
     ) async throws(NetworkError) -> Request.APIResponse {
-        if let fallback {
-            return try await fallback.upload(request, tag: tag)
+        if let uploadFallback {
+            return try await uploadFallback.upload(request, tag: tag)
         }
 
         throw NetworkError.configuration(

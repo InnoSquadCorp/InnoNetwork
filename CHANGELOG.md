@@ -12,6 +12,11 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
 
 ### Breaking
 
+- `NetworkClient` is request-only. Multipart execution moves to the independent
+  `UploadNetworkClient` capability; `DefaultNetworkClient` and
+  `StubNetworkClient` conform to both. Existentials that invoke `upload` must
+  depend on `any UploadNetworkClient`, or on the composition only when they
+  genuinely consume both capabilities.
 - The nested `Packages/InnoNetworkCodegen` package and `#endpoint` expression
   macro are removed. `@APIDefinition(method:path:auth:)` now comes from
   `import InnoNetwork`, requires an explicit `.anonymous` / `.optional` /

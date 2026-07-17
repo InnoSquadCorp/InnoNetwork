@@ -53,6 +53,7 @@ retain those values.
 - <doc:GettingStarted>
 - ``DefaultNetworkClient``
 - ``NetworkClient``
+- ``UploadNetworkClient``
 - ``APIDefinition``
 - <doc:UsingMacros>
 - ``EndpointBuilder``
