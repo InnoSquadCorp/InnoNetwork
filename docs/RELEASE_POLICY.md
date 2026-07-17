@@ -51,6 +51,10 @@
    together whenever a release branch changes public or SPI declarations.
 6. Re-run DocC/sample smoke after documentation-only release edits so
    examples, symbol links, and docs-contract wording stay in sync.
+7. Run `bash Scripts/run_local_release_preflight.sh --full` before changing the
+   release status to ready. It reproduces the pre-tag validation, coverage,
+   benchmark, SBOM, DocC, and five-platform build gates locally; tag identity,
+   signing, and publication remain GitHub-only responsibilities.
 
 ## Benchmarks
 

@@ -142,6 +142,18 @@ Run the same commands locally:
 
 ```bash
 sudo xcode-select -s /Applications/Xcode_26.0.1.app
+# Preferred local entry point. The default fast mode runs the deterministic
+# contracts, all independent consumer packages, the OpenAPI generator suite,
+# and the same bounded root test shards used by CI.
+bash Scripts/run_local_release_preflight.sh
+
+# Before approving a release-state commit, replay every locally reproducible
+# release gate: coverage, 10% guarded benchmarks, both SBOM profiles,
+# all-product DocC, and macOS/iOS/tvOS/watchOS/visionOS builds. Generated
+# evidence remains under .build/local-release-preflight/ for inspection.
+bash Scripts/run_local_release_preflight.sh --full
+
+# The commands below document the individual gates for diagnosis.
 git ls-files --error-unmatch Package.resolved >/dev/null
 xcrun swift package resolve
 git diff --exit-code -- Package.resolved

@@ -1018,6 +1018,22 @@ validate_troubleshooting_and_examples_docs() {
 }
 
 validate_release_quality_gates() {
+  require_contains 'bash Scripts/run_local_release_preflight.sh --full' \
+    "$repo_root/docs/CI_DoC.md"
+  require_contains 'bash Scripts/run_local_release_preflight.sh --full' \
+    "$repo_root/docs/RELEASE_POLICY.md"
+  require_contains 'bash Scripts/run_bounded_parallel_tests.sh' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'bash Scripts/tests/test_run_local_release_preflight.sh' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'bash Scripts/tests/test_run_local_release_preflight.sh' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'xcodebuild docbuild' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains '"InnoNetworkAuthAWS"' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'arm64-apple-xros1.0' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
   require_contains 'Sources/InnoNetworkPersistentCache' "$repo_root/Scripts/check_unchecked_sendable.sh"
   require_contains 'Sources/InnoNetworkMacros' "$repo_root/Scripts/check_unchecked_sendable.sh"
   require_contains 'Sources/InnoNetworkMacros' "$repo_root/Scripts/check_production_force_unwraps.sh"

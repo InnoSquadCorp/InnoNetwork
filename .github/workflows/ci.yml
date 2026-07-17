@@ -492,6 +492,9 @@ jobs:
       - name: Verify dependency snapshot conversion
         run: bash Scripts/tests/test_generate_dependency_snapshot.sh
 
+      - name: Verify local release preflight contract
+        run: bash Scripts/tests/test_run_local_release_preflight.sh
+
       - name: Verify stable examples contract
         run: bash Scripts/check_stable_examples.sh
 

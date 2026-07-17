@@ -128,6 +128,11 @@ draft release summary.
 - CI builds DocC for all eight public products and fails closed when core or
   macro coverage artifacts are missing, empty, or contain absolute
   source paths.
+- `Scripts/run_local_release_preflight.sh` provides one pre-tag entry point for
+  deterministic contracts, every consumer example, the OpenAPI generator, and
+  bounded tests. Its `--full` mode also generates coverage and both SBOM
+  profiles, enforces the 10% benchmark guards, verifies all eight public DocC
+  archives, and builds macOS, iOS, tvOS, watchOS, and visionOS locally.
 - CI and release validation now cross-compile every public library product for
   the declared tvOS, watchOS, and visionOS device SDKs at the package's
   deployment floors as required gates. Every independent example manifest is
