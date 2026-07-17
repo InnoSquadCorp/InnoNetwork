@@ -35,6 +35,12 @@ task when the ceiling is exceeded. A bounded file upload uses a streamed data
 task with an explicit `Content-Length`; an explicitly unbounded file upload
 uses the native file-backed upload task.
 
+Core URLSession transports enforce redirect policy and URL admission per hop.
+On cross-origin redirects they also clear values configured through
+`URLSessionConfiguration.httpAdditionalHeaders`, preventing Foundation from
+restoring a session default after the policy removes it. Same-origin redirects
+retain those values.
+
 ## Topics
 
 ### Tutorials

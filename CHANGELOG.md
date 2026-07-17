@@ -114,6 +114,11 @@ draft release summary.
 
 ### Fixed
 
+- Core URLSession transports now suppress every
+  `URLSessionConfiguration.httpAdditionalHeaders` value on cross-origin
+  redirects. Foundation otherwise re-injected session defaults after the
+  redirect policy removed them; same-origin redirects continue to receive the
+  configured values.
 - `InnoNetworkClientTransport` now applies the default redirect policy and URL
   admission to every generated-client redirect hop, strips caller-prepared
   headers and clears session-configured header values across origins, rejects

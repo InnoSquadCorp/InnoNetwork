@@ -549,9 +549,12 @@ redirect handling:
   well as 307/308 replay.
 - Other cross-origin redirects strip every header prepared on the original
   request, plus common authorization, cookie, API-key, CSRF/session-token, and
-  temporary AWS credential headers injected by the session. Register any
-  proprietary session-level credential carriers with
-  `additionalSensitiveHeaders`; built-in protection remains enabled.
+  temporary AWS credential headers. Core URLSession transports also clear
+  every value from `URLSessionConfiguration.httpAdditionalHeaders` on a
+  cross-origin hop so Foundation cannot re-inject a removed session default;
+  same-origin redirects retain those values. Register proprietary credential
+  carriers with `additionalSensitiveHeaders` when using the policy outside
+  that transport integration; built-in protection remains enabled.
 - Plain `http://` base URLs fail before transport unless the client opts in
   with `allowsInsecureHTTP = true`.
 - Foreground downloads — the configuration default — re-admit every redirect

@@ -91,7 +91,11 @@ extension URLSession: URLSessionProtocol {
         // can enforce downgrade, unsafe replay, and sensitive-header
         // boundaries. URLSession's native redirect handling does not apply
         // our policy.
-        let delegate = RequestTaskDelegate(request: request, context: context)
+        let delegate = RequestTaskDelegate(
+            request: request,
+            context: context,
+            sessionHeaderNames: redirectSensitiveSessionHeaderNames
+        )
         do {
             let result = try await data(for: request, delegate: delegate)
             if let redirectFailure = delegate.redirectFailure {
@@ -113,7 +117,11 @@ extension URLSession: URLSessionProtocol {
         URLSession.AsyncBytes, URLResponse
     ) {
         try validateRedirectControllableSession()
-        let delegate = RequestTaskDelegate(request: request, context: context)
+        let delegate = RequestTaskDelegate(
+            request: request,
+            context: context,
+            sessionHeaderNames: redirectSensitiveSessionHeaderNames
+        )
         do {
             let result = try await bytes(for: request, delegate: delegate)
             if let redirectFailure = delegate.redirectFailure {
@@ -135,7 +143,11 @@ extension URLSession: URLSessionProtocol {
         Data, URLResponse
     ) {
         try validateRedirectControllableSession()
-        let delegate = RequestTaskDelegate(request: request, context: context)
+        let delegate = RequestTaskDelegate(
+            request: request,
+            context: context,
+            sessionHeaderNames: redirectSensitiveSessionHeaderNames
+        )
         do {
             let result = try await upload(for: request, fromFile: fileURL, delegate: delegate)
             if let redirectFailure = delegate.redirectFailure {
@@ -201,7 +213,8 @@ extension URLSession: BoundedFileUploadSession {
         let delegate = RequestTaskDelegate(
             request: request,
             context: context,
-            uploadBodyFileURL: fileURL
+            uploadBodyFileURL: fileURL,
+            sessionHeaderNames: redirectSensitiveSessionHeaderNames
         )
         do {
             let result = try await bytes(for: streamingRequest, delegate: delegate)
@@ -222,6 +235,14 @@ extension URLSession: BoundedFileUploadSession {
 }
 
 private extension URLSession {
+    var redirectSensitiveSessionHeaderNames: Set<String> {
+        Set(
+            configuration.httpAdditionalHeaders?.keys.compactMap { key in
+                key as? String
+            } ?? []
+        )
+    }
+
     func validateRedirectControllableSession() throws {
         guard configuration.identifier == nil else {
             throw NetworkError.configuration(
@@ -238,13 +259,20 @@ private final class RequestTaskDelegate: NSObject, URLSessionDataDelegate {
     private let request: URLRequest
     private let context: NetworkRequestContext
     private let uploadBodyFileURL: URL?
+    private let sessionHeaderNames: Set<String>
     private let trustFailureReasonLock = OSAllocatedUnfairLock<TrustFailureReason?>(initialState: nil)
     private let redirectFailureLock = OSAllocatedUnfairLock<NetworkError?>(initialState: nil)
 
-    init(request: URLRequest, context: NetworkRequestContext, uploadBodyFileURL: URL? = nil) {
+    init(
+        request: URLRequest,
+        context: NetworkRequestContext,
+        uploadBodyFileURL: URL? = nil,
+        sessionHeaderNames: Set<String>
+    ) {
         self.request = request
         self.context = context
         self.uploadBodyFileURL = uploadBodyFileURL
+        self.sessionHeaderNames = sessionHeaderNames
     }
 
     var trustFailureReason: TrustFailureReason? {
@@ -307,7 +335,7 @@ private final class RequestTaskDelegate: NSObject, URLSessionDataDelegate {
         let policy = context.redirectPolicy
         let originalRequest = request
         guard
-            let result = policy.redirect(
+            var result = policy.redirect(
                 request: newRequest,
                 response: response,
                 originalRequest: originalRequest
@@ -321,6 +349,15 @@ private final class RequestTaskDelegate: NSObject, URLSessionDataDelegate {
                 result,
                 policy: .http(allowsInsecure: context.allowsInsecureHTTP)
             )
+            if !DefaultRedirectPolicy.isSameOrigin(originalRequest.url, result.url) {
+                // Foundation re-applies `httpAdditionalHeaders` after this
+                // callback when a field is absent. An explicit empty value
+                // prevents session-configured credentials from crossing an
+                // origin boundary outside the redirect policy's control.
+                for name in sessionHeaderNames {
+                    result.setValue("", forHTTPHeaderField: name)
+                }
+            }
             completionHandler(result)
         } catch let error as NetworkError {
             redirectFailureLock.withLock { failure in

@@ -322,6 +322,13 @@ headers when authority changes, and denies any cross-origin redirect that
 retains an unsafe method. Signed requests deny automatic redirects even when
 the target is same-origin.
 
+For core URLSession-backed requests, every header value configured through
+`URLSessionConfiguration.httpAdditionalHeaders` is now explicitly cleared on
+cross-origin redirect hops. Foundation otherwise restores a removed session
+default after the redirect callback returns. Same-origin redirects continue to
+receive those configured values. If a target origin needs a credential, issue
+a separate validated request with credentials scoped to that origin.
+
 If an API contract requires a redirect that the defaults reject, treat the 3xx
 as application data, validate the target explicitly, and start a new typed
 request. Do not forward authorization, cookie, proxy authorization, API-key,
