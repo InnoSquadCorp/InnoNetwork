@@ -185,6 +185,26 @@ Custom conformers implement the tag-aware primitive for their capability. The
 untagged overload forwards `tag: nil` by default, preserving the grouped
 cancellation contract without duplicate boilerplate.
 
+## Construct concurrency limiting through its policy
+
+The raw `ConcurrencyTokenBucket` actor is no longer public. It was easy to
+acquire in a request interceptor and accidentally skip release when a
+transport failure prevented the response interceptor from running. The
+execution policy owns both sides of that lifecycle.
+
+```swift
+// 4.x
+let bucket = ConcurrencyTokenBucket(maxConcurrent: 4)
+let limit = ConcurrencyLimitExecutionPolicy(bucket: bucket)
+
+// 5.0
+let limit = ConcurrencyLimitExecutionPolicy(maxConcurrent: 4)
+```
+
+Register `limit` in `ResiliencePack.customExecutionPolicies`. Reuse the same
+policy value in multiple configurations when those clients should share the
+cap; construct separate values for independent limits.
+
 ## Treat HTTP methods as an open token set
 
 `HTTPMethod` is no longer an enum that can be switched exhaustively. It is a

@@ -17,6 +17,11 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   `StubNetworkClient` conform to both. Existentials that invoke `upload` must
   depend on `any UploadNetworkClient`, or on the composition only when they
   genuinely consume both capabilities.
+- `ConcurrencyTokenBucket` is package-owned. Configure bounded transport
+  concurrency with `ConcurrencyLimitExecutionPolicy(maxConcurrent:)`; reuse
+  the same policy value across configurations when clients should share one
+  cap. This removes the unsafe public acquire/release pairing surface while
+  preserving FIFO admission and cancellation behavior.
 - The nested `Packages/InnoNetworkCodegen` package and `#endpoint` expression
   macro are removed. `@APIDefinition(method:path:auth:)` now comes from
   `import InnoNetwork`, requires an explicit `.anonymous` / `.optional` /

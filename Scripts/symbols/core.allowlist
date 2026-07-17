@@ -6,7 +6,6 @@ InnoNetwork	swift.associatedtype	APIDefinition.Parameter
 InnoNetwork	swift.associatedtype	Endpoint.APIResponse
 InnoNetwork	swift.associatedtype	SingleRequestExecutable.APIResponse
 InnoNetwork	swift.associatedtype	StreamingAPIDefinition.Output
-InnoNetwork	swift.class	ConcurrencyTokenBucket
 InnoNetwork	swift.class	DefaultNetworkClient
 InnoNetwork	swift.class	InMemoryResponseCache
 InnoNetwork	swift.class	NetworkMonitor
@@ -220,8 +219,7 @@ InnoNetwork	swift.init	CancellationTag.init(_:)
 InnoNetwork	swift.init	CancellationTag.init(stringLiteral:)
 InnoNetwork	swift.init	CircuitBreakerPolicy.init(failureThreshold:windowSize:resetAfter:maxResetAfter:numberOfProbesRequiredToClose:countsTransportSecurityFailures:)
 InnoNetwork	swift.init	CircuitBreakerPolicy.init(validatedFailureThreshold:windowSize:resetAfter:maxResetAfter:numberOfProbesRequiredToClose:countsTransportSecurityFailures:)
-InnoNetwork	swift.init	ConcurrencyLimitExecutionPolicy.init(bucket:)
-InnoNetwork	swift.init	ConcurrencyTokenBucket.init(maxConcurrent:)
+InnoNetwork	swift.init	ConcurrencyLimitExecutionPolicy.init(maxConcurrent:)
 InnoNetwork	swift.init	ContentType.init(rawValue:)
 InnoNetwork	swift.init	CorrelationIDInterceptor.init(traceHeader:correlationHeader:)
 InnoNetwork	swift.init	CurlCommandOptions.init(includesHeaderValues:includesBody:includesQueryValues:bodyFileURL:)
@@ -288,8 +286,6 @@ InnoNetwork	swift.method	AnyEncodable.encode(to:)
 InnoNetwork	swift.method	AnyRequestExecutionPolicy.execute(input:context:next:)
 InnoNetwork	swift.method	AnyResponseDecoder.decode(data:response:)
 InnoNetwork	swift.method	ConcurrencyLimitExecutionPolicy.execute(input:context:next:)
-InnoNetwork	swift.method	ConcurrencyTokenBucket.acquire()
-InnoNetwork	swift.method	ConcurrencyTokenBucket.release()
 InnoNetwork	swift.method	CorrelationIDInterceptor.adapt(_:)
 InnoNetwork	swift.method	DecodingInterceptor.didDecode(_:response:)
 InnoNetwork	swift.method	DecodingInterceptor.willDecode(data:response:)
@@ -433,10 +429,7 @@ InnoNetwork	swift.property	CircuitBreakerPolicy.maxResetAfter
 InnoNetwork	swift.property	CircuitBreakerPolicy.numberOfProbesRequiredToClose
 InnoNetwork	swift.property	CircuitBreakerPolicy.resetAfter
 InnoNetwork	swift.property	CircuitBreakerPolicy.windowSize
-InnoNetwork	swift.property	ConcurrencyLimitExecutionPolicy.bucket
-InnoNetwork	swift.property	ConcurrencyTokenBucket.available
-InnoNetwork	swift.property	ConcurrencyTokenBucket.maxConcurrent
-InnoNetwork	swift.property	ConcurrencyTokenBucket.queuedWaitersCount
+InnoNetwork	swift.property	ConcurrencyLimitExecutionPolicy.maxConcurrent
 InnoNetwork	swift.property	CorrelationIDInterceptor.correlationHeader
 InnoNetwork	swift.property	CorrelationIDInterceptor.traceHeader
 InnoNetwork	swift.property	CurlCommandOptions.bodyFileURL
