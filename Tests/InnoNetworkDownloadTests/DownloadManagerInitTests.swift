@@ -6,38 +6,8 @@ import Testing
 @Suite("Download Manager Init Tests")
 struct DownloadManagerInitTests {
 
-    @Test("make(configuration:) constructs a manager without throwing for a unique identifier")
-    func makeSucceedsForUniqueIdentifier() throws {
-        let identifier = "test.make.\(UUID().uuidString)"
-        let configuration = DownloadConfiguration.safeDefaults(sessionIdentifier: identifier)
-
-        _ = try DownloadManager.make(configuration: configuration)
-    }
-
-    @Test("make(configuration:) throws duplicateSessionIdentifier on conflict")
-    func makeThrowsOnDuplicate() throws {
-        let identifier = "test.make.duplicate.\(UUID().uuidString)"
-        let configuration = DownloadConfiguration.safeDefaults(sessionIdentifier: identifier)
-
-        // First manager succeeds and registers the identifier in
-        // DownloadManager.activeSessionIdentifiers; the closure-scoped binding
-        // keeps it alive until the assertion below runs.
-        let first = try DownloadManager.make(configuration: configuration)
-        defer { _ = first }
-
-        do {
-            _ = try DownloadManager.make(configuration: configuration)
-            Issue.record("Expected duplicateSessionIdentifier but factory returned successfully")
-        } catch let error as DownloadManagerError {
-            switch error {
-            case .duplicateSessionIdentifier(let conflicting):
-                #expect(conflicting == identifier)
-            }
-        }
-    }
-
-    @Test("Throwing init still surfaces duplicateSessionIdentifier (parity with make)")
-    func throwingInitParity() throws {
+    @Test("Throwing init surfaces duplicateSessionIdentifier")
+    func throwingInitRejectsDuplicate() throws {
         let identifier = "test.init.duplicate.\(UUID().uuidString)"
         let configuration = DownloadConfiguration.safeDefaults(sessionIdentifier: identifier)
 

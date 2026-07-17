@@ -53,7 +53,7 @@ struct AppNetworking: Sendable {
 
         return AppNetworking(
             api: DefaultNetworkClient(configuration: apiConfiguration),
-            downloads: try DownloadManager.make(configuration: downloadConfiguration),
+            downloads: try DownloadManager(configuration: downloadConfiguration),
             realtime: WebSocketManager(configuration: .safeDefaults())
         )
     }

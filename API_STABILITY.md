@@ -22,7 +22,8 @@ callbacks. The duplicate `DownloadConfiguration.default` and
 unchanged. The direct 21-parameter `WebSocketConfiguration` initializer is
 package-owned; explicit tuning goes through `advanced(_:)`. `WebSocketTask`
 construction is manager-owned so every public handle has connection and
-ownership state.
+ownership state. The duplicate `DownloadManager.make(configuration:)` factory
+is removed; the throwing initializer is the single construction path.
 Preview adopters should migrate configuration to
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.
@@ -698,8 +699,7 @@ entries live under `[4.0.0]`.
 
 - **What changed.** `DownloadManager.shared` is removed. There is no
   global singleton; every `DownloadManager` is constructed explicitly
-  through `DownloadManager.make(configuration:)` (or
-  `DownloadManager(configuration:)`).
+  through `DownloadManager(configuration:)`.
 - **Why.** The 4.x accessor trapped via `fatalError` on duplicate
   session identifiers, then briefly mitigated to an Optional that hid
   the failure mode behind a silent `nil`. Both shapes forced every
@@ -712,7 +712,7 @@ entries live under `[4.0.0]`.
   manager owned by the feature module:
 
   ```swift
-  let manager = try DownloadManager.make(
+  let manager = try DownloadManager(
       configuration: .safeDefaults(sessionIdentifier: "com.example.media")
   )
   ```

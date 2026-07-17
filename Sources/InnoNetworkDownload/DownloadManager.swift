@@ -70,30 +70,6 @@ public actor DownloadManager {
     // share the same os.log category. Not part of the public API surface.
     static let logger = Logger(subsystem: "innosquad.network.download", category: "DownloadManager")
 
-    /// Recommended throwing factory for constructing a `DownloadManager`.
-    ///
-    /// Equivalent to ``init(configuration:)``, but discoverable via type-level
-    /// autocomplete and consistent with the `make(...)` style used elsewhere
-    /// in the package (e.g., `URLQueryEncoder`, observability builders). Use
-    /// this when factory-style construction reads more clearly at the call
-    /// site.
-    ///
-    /// - Parameter configuration: The configuration to bind. Pass
-    ///   ``DownloadConfiguration/safeDefaults(sessionIdentifier:)`` with a
-    ///   unique identifier when multiple managers must coexist in the same
-    ///   process.
-    /// - Returns: A new `DownloadManager` ready to receive download requests.
-    /// - Throws: ``DownloadManagerError/duplicateSessionIdentifier(_:)`` if
-    ///   another manager has already claimed the same session identifier, or
-    ///   an error from creating, locking, or reading the persistence store.
-    ///   A transient store-access failure preserves the existing state so a
-    ///   later initialization attempt can restore it.
-    public static func make(
-        configuration: DownloadConfiguration = .safeDefaults()
-    ) throws -> DownloadManager {
-        try DownloadManager(configuration: configuration)
-    }
-
     private static let activeSessionIdentifiers = OSAllocatedUnfairLock(initialState: Set<String>())
 
     // Several stored properties below drop `private` (defaulting to `internal`)

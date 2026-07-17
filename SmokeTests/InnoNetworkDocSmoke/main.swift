@@ -127,7 +127,7 @@ private func compileBackgroundDownloadArticleExamples() async throws {
         )
     }
 
-    let manager = try DownloadManager.make(configuration: configuration)
+    let manager = try DownloadManager(configuration: configuration)
     _ = await manager.waitForRestoration()
 
     let task = await manager.download(
