@@ -127,6 +127,9 @@ jobs:
       - name: Build all independent consumer examples
         run: bash Scripts/build_consumer_examples.sh
 
+      - name: Run macro adopter smoke
+        run: xcrun swift run --package-path Examples/MacroAdopterSmoke
+
       - name: Build openapi-to-innonetwork CLI
         working-directory: Tools/openapi-to-innonetwork
         run: xcrun swift build

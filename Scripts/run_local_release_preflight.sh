@@ -144,6 +144,7 @@ run_documentation_smoke() {
 
 run_consumer_examples() {
   bash Scripts/build_consumer_examples.sh
+  xcrun swift run --package-path Examples/MacroAdopterSmoke
 }
 
 run_openapi_generator() {

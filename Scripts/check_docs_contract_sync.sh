@@ -1009,6 +1009,7 @@ validate_troubleshooting_and_examples_docs() {
   require_contains '### 3. [Auth](./Auth)' "$repo_root/Examples/README.md"
   require_contains '### [ConsumerSmoke](./ConsumerSmoke)' "$repo_root/Examples/README.md"
   require_contains '### [CoreSmoke](./CoreSmoke)' "$repo_root/Examples/README.md"
+  require_contains '### [MacroAdopterSmoke](./MacroAdopterSmoke)' "$repo_root/Examples/README.md"
   require_contains '### [TestSupportSmoke](./TestSupportSmoke)' "$repo_root/Examples/README.md"
   require_contains '### [WrapperSmoke](./WrapperSmoke)' "$repo_root/Examples/README.md"
 }
@@ -1148,6 +1149,13 @@ validate_release_quality_gates() {
   require_contains 'bash Scripts/build_consumer_examples.sh' \
     "$repo_root/Scripts/run_local_release_preflight.sh"
   require_contains 'bash Scripts/build_consumer_examples.sh' "$repo_root/docs/CI_DoC.md"
+  require_contains 'xcrun swift run --package-path Examples/MacroAdopterSmoke' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'xcrun swift run --package-path Examples/MacroAdopterSmoke' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'xcrun swift run --package-path Examples/MacroAdopterSmoke' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'Examples/MacroAdopterSmoke' "$repo_root/docs/CI_DoC.md"
   require_contains 'bash Scripts/tests/test_build_consumer_examples.sh' \
     "$repo_root/.github/workflows/ci.yml"
   require_contains 'bash Scripts/tests/test_build_consumer_examples.sh' \

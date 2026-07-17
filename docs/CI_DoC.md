@@ -93,7 +93,11 @@ The `CI` workflow must pass all of the following:
    before building separate core-only (`traits: []`), aggregate, wrapper,
    download-only, websocket-only, test-support, generated-client, event-policy
    observer, and macro usage packages, including
-   `Examples/WrapperSmoke` and `Examples/EventPolicyObserver`.
+   `Examples/WrapperSmoke` and `Examples/EventPolicyObserver`. The independent
+   `Examples/MacroAdopterSmoke` executable then runs macro-generated GET and
+   POST endpoints through the public `DefaultNetworkClient` and
+   `InnoNetworkTestSupport` boundary so path/query/body/auth generation is a
+   runtime release gate rather than compile-only evidence.
    SwiftPM 6.2 can still resolve, fetch, or list manifest-level dependencies
    during a core-only build; the invariant is that macro products are absent
    from compilation. Traits are unified per package, so another dependency
