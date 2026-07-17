@@ -32,23 +32,6 @@ public protocol NetworkClient: Sendable {
     ///   validating, or decoding the request.
     func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError) -> T.APIResponse
 
-    /// Executes a multipart request modeled with ``MultipartAPIDefinition``.
-    ///
-    /// Prefer this entry point for upload-style integrations.
-    ///
-    /// - Parameter request: The multipart request definition to execute.
-    /// - Returns: The decoded `APIResponse` produced by the multipart request.
-    /// - Throws: A ``NetworkError`` produced while building, sending,
-    ///   validating, or decoding the multipart request.
-    func upload<T: MultipartAPIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse
-
-    /// Executes a multipart upload and registers it under the supplied
-    /// ``CancellationTag``. See ``request(_:tag:)`` for semantics.
-    ///
-    /// Conformers must implement this overload explicitly; see
-    /// ``request(_:tag:)`` for the grouped-cancellation contract.
-    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError)
-        -> T.APIResponse
 }
 
 extension NetworkClient {
@@ -64,8 +47,30 @@ extension NetworkClient {
         try await self.request(request, tag: nil)
     }
 
-    /// Default forwarder that calls ``upload(_:tag:)`` with `tag: nil`. See
-    /// ``request(_:)`` for the rationale.
+}
+
+/// Multipart-upload capability for clients that execute
+/// ``MultipartAPIDefinition`` values.
+///
+/// Keep request-only dependencies typed as ``NetworkClient``. Require this
+/// protocol only at boundaries that actually upload multipart content; the
+/// narrower contract lets lightweight clients and test doubles implement one
+/// capability without inheriting unrelated requirements.
+public protocol UploadNetworkClient: Sendable {
+    /// Executes a multipart request modeled with ``MultipartAPIDefinition``.
+    func upload<T: MultipartAPIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse
+
+    /// Executes a multipart upload and registers it under the supplied
+    /// ``CancellationTag``.
+    ///
+    /// Conformers implement this tag-aware primitive explicitly so grouped
+    /// cancellation cannot silently discard its tag.
+    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError)
+        -> T.APIResponse
+}
+
+extension UploadNetworkClient {
+    /// Default forwarder that calls ``upload(_:tag:)`` with `tag: nil`.
     public func upload<T: MultipartAPIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse {
         try await self.upload(request, tag: nil)
     }
@@ -73,9 +78,10 @@ extension NetworkClient {
 
 /// Low-level typed execution contract for framework authors and policy layers.
 ///
-/// Application integrations should continue to depend on ``NetworkClient`` and use
-/// ``NetworkClient/request(_:)`` or ``NetworkClient/upload(_:)``. Reach for this
-/// protocol only when you need direct access to the execution pipeline.
+/// Application integrations should continue to depend on ``NetworkClient``
+/// for ordinary requests and ``UploadNetworkClient`` for multipart uploads.
+/// Reach for this protocol only when you need direct access to the execution
+/// pipeline.
 ///
 /// > Important: `LowLevelNetworkClient` is exposed through
 /// > `@_spi(GeneratedClientSupport)` and is **best-effort**: it is not part of
@@ -164,14 +170,14 @@ package struct StreamingResumeState: Sendable {
 }
 
 
-/// The default ``NetworkClient`` implementation.
+/// The default ``NetworkClient`` and ``UploadNetworkClient`` implementation.
 ///
 /// `DefaultNetworkClient` keeps request execution non-actor-isolated so
 /// concurrent `request(_:)` invocations execute in parallel as soon as they
 /// reach ``URLSessionProtocol/data(for:context:)``. Shared lifecycle state
 /// lives behind small lock/actor boundaries: in-flight request cancellation,
 /// event publication, refresh coordination, and the terminal shutdown latch.
-public final class DefaultNetworkClient: NetworkClient, Sendable {
+public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sendable {
     private let configuration: NetworkConfiguration
     private let session: URLSessionProtocol
     private let ownedSession: URLSession?

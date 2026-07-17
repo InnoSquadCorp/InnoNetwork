@@ -102,7 +102,8 @@ trait.
 ## Request execution contract
 
 Stay on ``NetworkClient/request(_:)`` for normal typed requests and
-``NetworkClient/upload(_:)`` for multipart uploads.
+``UploadNetworkClient/upload(_:)`` for multipart uploads. Require both
+protocols only at a boundary that actually performs both operations.
 
 Low-level generated-client hooks are `@_spi(GeneratedClientSupport)`, outside
 the draft 5.0 public contract, and may change at any time during the preview or

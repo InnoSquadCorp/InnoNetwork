@@ -353,8 +353,6 @@ InnoNetwork	swift.method	MultipartResponseDecoder.decode(_:contentType:)
 InnoNetwork	swift.method	MultipartStreamingResponseDecoder.decode(_:contentType:)
 InnoNetwork	swift.method	NetworkClient.request(_:)
 InnoNetwork	swift.method	NetworkClient.request(_:tag:)
-InnoNetwork	swift.method	NetworkClient.upload(_:)
-InnoNetwork	swift.method	NetworkClient.upload(_:tag:)
 InnoNetwork	swift.method	NetworkConfiguration.makeURLSessionConfiguration()
 InnoNetwork	swift.method	NetworkError.redactingFailurePayload()
 InnoNetwork	swift.method	NetworkEventObserving.handle(_:)
@@ -403,6 +401,8 @@ InnoNetwork	swift.method	URLSessionProtocol.bytes(for:context:)
 InnoNetwork	swift.method	URLSessionProtocol.data(for:)
 InnoNetwork	swift.method	URLSessionProtocol.data(for:context:)
 InnoNetwork	swift.method	URLSessionProtocol.upload(for:fromFile:context:)
+InnoNetwork	swift.method	UploadNetworkClient.upload(_:)
+InnoNetwork	swift.method	UploadNetworkClient.upload(_:tag:)
 InnoNetwork	swift.property	APIDefinition.parameters
 InnoNetwork	swift.property	APIDefinition.transport
 InnoNetwork	swift.property	AuthPack.additionalDecodingInterceptors
@@ -732,6 +732,7 @@ InnoNetwork	swift.protocol	StreamingAPIDefinition
 InnoNetwork	swift.protocol	StreamingResumeStrategy
 InnoNetwork	swift.protocol	TrustEvaluating
 InnoNetwork	swift.protocol	URLSessionProtocol
+InnoNetwork	swift.protocol	UploadNetworkClient
 InnoNetwork	swift.struct	AnyEncodable
 InnoNetwork	swift.struct	AnyRequestExecutionPolicy
 InnoNetwork	swift.struct	AnyResponseDecoder

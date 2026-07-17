@@ -51,8 +51,8 @@ and own application reducer types in their feature or architecture layer.
 - `DefaultNetworkClient.shutdown()`
 - `NetworkClient.request(_:)`
 - `NetworkClient.request(_:tag:)`
-- `NetworkClient.upload(_:)`
-- `NetworkClient.upload(_:tag:)`
+- `UploadNetworkClient.upload(_:)`
+- `UploadNetworkClient.upload(_:tag:)`
 - `NetworkConfiguration.safeDefaults(baseURL:)`
 - `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 - `DownloadConfiguration.safeDefaults()`
@@ -412,7 +412,8 @@ planned 5.x release line.
   `MultipartPart`, `MultipartResponseDecoder`,
   `MultipartStreamingEvent`, `MultipartStreamingResponseDecoder`,
   `MultipartUploadStrategy`,
-  `NetworkClient`, `NetworkConfiguration`, `NetworkContext`, `NetworkError`,
+  `NetworkClient`, `UploadNetworkClient`, `NetworkConfiguration`,
+  `NetworkContext`, `NetworkError`,
   `NetworkErrorCategory`,
   `NetworkEvent`, `NetworkEventObserving`, `NetworkInterfaceType`,
   `NetworkLoggingOptions`, `NetworkLogger`, `NetworkMetricsReporting`,
@@ -732,12 +733,11 @@ entries live under `[4.0.0]`.
   with a UUID-suffixed session identifier to avoid cross-test
   collisions.
 
-### `NetworkClient` migrates to `throws(NetworkError)`
+### Client capabilities migrate to `throws(NetworkError)`
 
-- **What changed.** Every `NetworkClient` primitive
-  (`request(_:)`, `request(_:tag:)`, `upload(_:)`, `upload(_:tag:)`) now
-  declares `async throws(NetworkError)`. The default forwarders in the
-  protocol extension match. `NetworkError.mapTransportError(_:)` is
+- **What changed.** Every `NetworkClient` and `UploadNetworkClient` primitive
+  now declares `async throws(NetworkError)`. The default forwarders in the
+  protocol extensions match. `NetworkError.mapTransportError(_:)` is
   promoted from `internal` to `public` so out-of-package conformers can
   map foreign errors (`URLError`, `CancellationError`, custom transport
   failures) to the canonical `NetworkError` representation.
@@ -750,16 +750,16 @@ entries live under `[4.0.0]`.
   semantics.
 - **Migration.** Call sites using `try await client.request(...)`
   compile unchanged. Conformers (mocks, fakes, decorators) must update
-  the four method signatures to `async throws(NetworkError) -> ...`
+  their method signatures to `async throws(NetworkError) -> ...`
   and convert any `throw error` that re-throws an arbitrary `Error`
   into either a `NetworkError` case or
   `NetworkError.mapTransportError(error)`.
 
-### `NetworkClient` gains `tag:` overloads
+### Client capabilities expose `tag:` overloads
 
-- **What changed.** `NetworkClient` now declares
-  `request(_:tag:)` and `upload(_:tag:)` alongside the existing
-  un-tagged variants. The new methods accept an optional
+- **What changed.** `NetworkClient` declares `request(_:tag:)`, while
+  `UploadNetworkClient` declares `upload(_:tag:)`, alongside their untagged
+  forwarders. The primitive methods accept an optional
   `CancellationTag` so callers can group requests for bulk cancellation
   via `DefaultNetworkClient.cancelAll(matching:)`.
 - **Why.** `DefaultNetworkClient` already exposed the tagged path; the
@@ -767,12 +767,26 @@ entries live under `[4.0.0]`.
   `NetworkClient` could not opt into grouped cancellation without a
   cast. The 4.x asymmetry surfaced repeatedly in test stubs and
   generated clients.
-- **Migration.** Existing call sites compile unchanged. `NetworkClient`
-  conformers must implement the tagged overloads explicitly so grouped
+- **Migration.** Existing call sites compile unchanged. Capability protocol
+  conformers must implement their tagged primitive explicitly so grouped
   cancellation cannot be silently dropped by a default forwarding
   implementation. Stubs that do not own cancellable runtime work may
   forward to their untagged path, but wrappers around another
-  `NetworkClient` should preserve the tag when delegating.
+  matching capability protocol should preserve the tag when delegating.
+
+### Request and multipart upload capabilities are independent
+
+- **What changed.** `NetworkClient` contains only `APIDefinition` request
+  execution. Multipart execution moves to the independent
+  `UploadNetworkClient` protocol. `DefaultNetworkClient` and
+  `StubNetworkClient` conform to both.
+- **Why.** Request-only clients, decorators, and test doubles no longer need
+  placeholder upload implementations. Upload-only boundaries likewise depend
+  on the smallest contract they consume.
+- **Migration.** Most concrete `DefaultNetworkClient` call sites are unchanged.
+  Change an existential that invokes `upload` from `any NetworkClient` to
+  `any UploadNetworkClient`; require `any NetworkClient & UploadNetworkClient`
+  only when one dependency truly needs both capabilities.
 
 ### `Endpoint` extracted from endpoint protocols
 

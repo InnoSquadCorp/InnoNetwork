@@ -153,8 +153,8 @@ expected_stable=(
 '`DefaultNetworkClient.shutdown()`'
 '`NetworkClient.request(_:)`'
 '`NetworkClient.request(_:tag:)`'
-'`NetworkClient.upload(_:)`'
-'`NetworkClient.upload(_:tag:)`'
+'`UploadNetworkClient.upload(_:)`'
+'`UploadNetworkClient.upload(_:tag:)`'
 '`NetworkConfiguration.safeDefaults(baseURL:)`'
 '`NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`'
 '`DownloadConfiguration.safeDefaults()`'
@@ -1260,11 +1260,11 @@ for symbol in "${expected_stable[@]}"; do
       pattern='    func request<T: APIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError) -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
-    '`NetworkClient.upload(_:)`')
+    '`UploadNetworkClient.upload(_:)`')
       pattern='    func upload<T: MultipartAPIDefinition>(_ request: T) async throws(NetworkError) -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
-    '`NetworkClient.upload(_:tag:)`')
+    '`UploadNetworkClient.upload(_:tag:)`')
       pattern='    func upload<T: MultipartAPIDefinition>(_ request: T, tag: CancellationTag?) async throws(NetworkError) -> T.APIResponse'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
@@ -1446,8 +1446,11 @@ for symbol in "${expected_stable[@]}"; do
   esac
 
   case "$symbol" in
-    '`NetworkClient.request(_:)`' | '`NetworkClient.request(_:tag:)`' | '`NetworkClient.upload(_:)`' | '`NetworkClient.upload(_:tag:)`')
+    '`NetworkClient.request(_:)`' | '`NetworkClient.request(_:tag:)`')
       validate_protocol_symbol "NetworkClient" "$target" "$pattern"
+      ;;
+    '`UploadNetworkClient.upload(_:)`' | '`UploadNetworkClient.upload(_:tag:)`')
+      validate_protocol_symbol "UploadNetworkClient" "$target" "$pattern"
       ;;
     *)
       if has_rg; then

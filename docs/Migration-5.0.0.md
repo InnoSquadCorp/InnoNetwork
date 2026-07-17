@@ -154,6 +154,37 @@ let user = try await client.request(
 )
 ```
 
+## Depend on request and upload capabilities separately
+
+`NetworkClient` now describes only ordinary `APIDefinition` requests.
+Multipart execution moved to `UploadNetworkClient`, so request-only wrappers
+and test doubles no longer implement upload methods they cannot meaningfully
+support. `DefaultNetworkClient` and `StubNetworkClient` conform to both, so
+calls made on those concrete types do not change.
+
+Update only existential and generic boundaries that invoke `upload`:
+
+```swift
+// 4.x
+struct AvatarService {
+    let client: any NetworkClient
+}
+
+// 5.0 — this service only uploads
+struct AvatarService {
+    let client: any UploadNetworkClient
+}
+
+// Require the composition only when the same dependency performs both.
+struct ProfileService {
+    let client: any NetworkClient & UploadNetworkClient
+}
+```
+
+Custom conformers implement the tag-aware primitive for their capability. The
+untagged overload forwards `tag: nil` by default, preserving the grouped
+cancellation contract without duplicate boilerplate.
+
 ## Treat HTTP methods as an open token set
 
 `HTTPMethod` is no longer an enum that can be switched exhaustively. It is a

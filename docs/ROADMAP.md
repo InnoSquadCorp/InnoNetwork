@@ -57,9 +57,11 @@ into one release line:
 
 ## 4.x Typed-Throws Surface
 
-`NetworkClient.request(_:)`, `request(_:tag:)`, `upload(_:)`, and
-`upload(_:tag:)` expose `async throws(NetworkError)`. This shipped in the 4.x
-public contract and is unchanged in 5.0. Interceptors and execution policies
+`NetworkClient.request(_:)` / `request(_:tag:)` and
+`UploadNetworkClient.upload(_:)` / `upload(_:tag:)` expose
+`async throws(NetworkError)`. The typed-throws behavior shipped in 4.x; 5.0
+separates request and upload requirements into independent capabilities.
+Interceptors and execution policies
 that produce arbitrary errors are normalized before they leave the client
 surface so callers can switch on `NetworkError` directly.
 
