@@ -19,7 +19,8 @@ removed; only `DownloadManager` owns Foundation background transfer
 callbacks. The duplicate `DownloadConfiguration.default` and
 `WebSocketConfiguration.default` aliases are removed in favor of the existing
 `safeDefaults()` factories; zero-argument manager construction remains
-unchanged.
+unchanged. The direct 21-parameter `WebSocketConfiguration` initializer is
+package-owned; explicit tuning goes through `advanced(_:)`.
 Preview adopters should migrate configuration to
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.

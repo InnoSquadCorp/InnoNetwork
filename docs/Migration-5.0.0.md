@@ -31,6 +31,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | `WebSocketManager.handleBackgroundSessionCompletion(_:completion:)` | Remove the call; route download identifiers to `DownloadManager`, otherwise invoke the app callback directly |
 | `WebSocketConfiguration.sessionIdentifier` / `AdvancedBuilder.sessionIdentifier` | Remove the value; WebSocket sessions are foreground-only and the identifier was never applied |
 | `DownloadConfiguration.default` / `WebSocketConfiguration.default` | Call the matching `safeDefaults()` factory; zero-argument manager initialization remains available |
+| Direct `WebSocketConfiguration(...)` initialization | Use `safeDefaults()` or set explicit overrides through `advanced(_:)` |
 | `import InnoNetworkCodegen` | Remove it; the attached macro ships from `import InnoNetwork` |
 | `@APIDefinition(method:path:)` | Add mandatory `auth: .anonymous`, `.optional`, or `.required` |
 | `#endpoint(method, path, as: Response.self)` | Use a named macro-assisted endpoint struct or runtime `EndpointBuilder` |
@@ -395,6 +396,27 @@ let socketConfiguration = WebSocketConfiguration.safeDefaults()
 Manager convenience remains unchanged. `try DownloadManager()` and
 `WebSocketManager()` still select their secure presets without requiring a
 configuration argument.
+
+The direct 21-parameter `WebSocketConfiguration` initializer is also
+package-owned in 5.0. Move explicit tuning into the advanced builder:
+
+```swift
+// 4.x
+let configuration = WebSocketConfiguration(
+    heartbeatInterval: 10,
+    maxReconnectAttempts: 2
+)
+
+// 5.0
+let configuration = WebSocketConfiguration.advanced { configuration in
+    configuration.heartbeatInterval = 10
+    configuration.maxReconnectAttempts = 2
+}
+```
+
+`advanced(_:)` retains its documented advanced-tuning seed. Set every field
+whose value is part of the integration contract instead of assuming it starts
+from the `safeDefaults()` preset.
 
 ## Redirect defaults are stricter
 

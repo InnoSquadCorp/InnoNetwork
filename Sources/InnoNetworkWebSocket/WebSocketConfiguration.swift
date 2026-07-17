@@ -287,7 +287,7 @@ public struct WebSocketConfiguration: Sendable {
         return builder.build()
     }
 
-    public init(
+    package init(
         maxConnectionsPerHost: Int = 5,
         connectionTimeout: TimeInterval = 30,
         heartbeatInterval: TimeInterval = 30,

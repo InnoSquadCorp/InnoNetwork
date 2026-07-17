@@ -85,23 +85,10 @@ private func writeStandardError(_ message: String) {
     FileHandle.standardError.write(Data(message.utf8))
 }
 
-let safeDefaults = WebSocketConfiguration.safeDefaults()
 let manager = WebSocketManager(
-    configuration: WebSocketConfiguration(
-        maxConnectionsPerHost: safeDefaults.maxConnectionsPerHost,
-        connectionTimeout: safeDefaults.connectionTimeout,
-        heartbeatInterval: safeDefaults.heartbeatInterval,
-        pongTimeout: safeDefaults.pongTimeout,
-        maxMissedPongs: safeDefaults.maxMissedPongs,
-        reconnectDelay: safeDefaults.reconnectDelay,
-        reconnectJitterRatio: safeDefaults.reconnectJitterRatio,
-        maxReconnectDelay: safeDefaults.maxReconnectDelay,
-        maxReconnectAttempts: 0,
-        allowsCellularAccess: safeDefaults.allowsCellularAccess,
-        requestHeaders: safeDefaults.requestHeaders,
-        eventDeliveryPolicy: safeDefaults.eventDeliveryPolicy,
-        eventMetricsReporter: safeDefaults.eventMetricsReporter
-    )
+    configuration: .advanced { configuration in
+        configuration.maxReconnectAttempts = 0
+    }
 )
 
 // RTT observability via the current source callback. Treat richer pong context
