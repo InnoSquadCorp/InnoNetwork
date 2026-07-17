@@ -206,9 +206,7 @@ struct CreatePostEndpoint {
 }
 
 let client = DefaultNetworkClient(
-    configuration: .safeDefaults(
-        baseURL: URL(string: "https://api.example.com/v1")!
-    )
+    baseURL: URL(string: "https://api.example.com/v1")!
 )
 
 let user = try await client.request(GetUser(id: 1))
@@ -238,12 +236,17 @@ Use `EndpointBuilder` when a request is genuinely local or runtime-composed:
 ```swift
 let previewPath = "/users/preview"
 let preview = try await client.request(
-    EndpointBuilder<EmptyResponse>
+    EndpointBuilder<User>
         .get(previewPath)
         .authentication(.anonymous)
-        .decoding(User.self)
 )
 ```
+
+`DefaultNetworkClient(baseURL:)` is exactly the `safeDefaults` client path.
+Move to `init(configuration:)` only when the server contract requires an
+explicit policy. `EndpointBuilder<Response>.get/post/...` infers the default
+JSON response decoder from `Response`; the existing `.decoding(_:)` promotion
+remains available when builder composition starts from `EmptyResponse`.
 
 For a custom payload, declare the complete `Parameter` + `parameters` pair.
 It is the authoritative escape hatch; headers, interceptors, transport,

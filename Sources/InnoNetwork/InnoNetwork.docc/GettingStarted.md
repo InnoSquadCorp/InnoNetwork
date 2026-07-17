@@ -16,16 +16,16 @@ import Foundation
 import InnoNetwork
 
 let client = DefaultNetworkClient(
-    configuration: .safeDefaults(
-        baseURL: URL(string: "https://api.example.com/v1")!
-    )
+    baseURL: URL(string: "https://api.example.com/v1")!
 )
 ```
 
-``NetworkConfiguration/safeDefaults(baseURL:)`` is the secure baseline for
-prototypes, tests, and production integrations. It keeps resilience features
-opt-in because retry, circuit-breaker, and idempotency behavior must match the
-server contract rather than a generic "production" label.
+``DefaultNetworkClient/init(baseURL:)`` creates exactly the
+``NetworkConfiguration/safeDefaults(baseURL:)`` client. It is the secure
+baseline for prototypes, tests, and production integrations. It keeps
+resilience features opt-in because retry, circuit-breaker, and idempotency
+behavior must match the server contract rather than a generic "production"
+label.
 
 ## Define a request
 
@@ -72,11 +72,10 @@ path, or response shape is assembled at runtime:
 
 ```swift
 let users = try await client.request(
-    EndpointBuilder<EmptyResponse>
+    EndpointBuilder<[User]>
         .get("/users")
         .authentication(.anonymous)
         .query(["limit": 20])
-        .decoding([User].self)
 )
 ```
 
@@ -120,4 +119,8 @@ an explicit requirement for one of these:
 - event delivery policy
 - metrics or observability reporters
 
-For those cases, switch to ``NetworkConfiguration/advanced(baseURL:resilience:auth:observability:cache:transport:)`` and keep the tuning local to the integration that actually needs it.
+For those cases, switch to
+``NetworkConfiguration/advanced(baseURL:resilience:auth:observability:cache:transport:)``
+and keep the tuning local to the integration that actually needs it.
+If none applies, keep `DefaultNetworkClient(baseURL:)`; there is no required
+policy checklist to complete for a small app.

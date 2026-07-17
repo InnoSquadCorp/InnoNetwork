@@ -87,6 +87,22 @@ struct EndpointBuilderTests {
         #expect(endpoint.acceptableStatusCodes == nil)
     }
 
+    @Test("Typed GET entry point decodes JSON without a promotion step")
+    func typedGetEntryPointDecodesResponse() async throws {
+        let endpoint = EndpointBuilder<EndpointAck>.get("/health")
+        let mockSession = MockURLSession()
+        try mockSession.setMockJSON(EndpointAck(ok: true))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com"),
+            session: mockSession
+        )
+
+        let response = try await client.request(endpoint)
+
+        #expect(response.ok)
+        #expect(mockSession.capturedRequest?.url?.path == "/health")
+    }
+
     @Test("HEAD builder defaults to query-string transport")
     func headProducesQueryTransportByDefault() {
         let endpoint = EndpointBuilder<EmptyResponse>(

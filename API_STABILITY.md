@@ -48,6 +48,7 @@ and own application reducer types in their feature or architecture layer.
 - `RequestEncodingPolicy`
 - `ResponseDecodingStrategy`
 - `DefaultNetworkClient`
+- `DefaultNetworkClient.init(baseURL:)`
 - `DefaultNetworkClient.shutdown()`
 - `NetworkClient.request(_:)`
 - `NetworkClient.request(_:tag:)`

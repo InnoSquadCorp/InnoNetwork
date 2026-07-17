@@ -4,17 +4,19 @@ This example demonstrates how to make basic HTTP requests (GET, POST, PUT, PATCH
 
 ## Setup
 
-First, configure the API:
+For a client that needs no custom policy, provide only the base URL:
 
 ```swift
 import InnoNetwork
 
-let configuration = NetworkConfiguration.safeDefaults(
+let client = DefaultNetworkClient(
     baseURL: URL(string: "https://jsonplaceholder.typicode.com")!
 )
-
-let client = DefaultNetworkClient(configuration: configuration)
 ```
+
+This initializer uses `NetworkConfiguration.safeDefaults(baseURL:)`. Switch to
+the configuration initializer only when the integration needs an explicit
+policy.
 
 ## Running the Examples
 
@@ -69,7 +71,9 @@ struct GetTodos: APIDefinition {
 Use the `DefaultNetworkClient` to make requests:
 
 ```swift
-let client = DefaultNetworkClient(configuration: configuration)
+let client = DefaultNetworkClient(
+    baseURL: URL(string: "https://jsonplaceholder.typicode.com")!
+)
 let todos = try await client.request(GetTodos())
 ```
 

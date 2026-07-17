@@ -21,11 +21,11 @@ private struct ConsumerRequest: APIDefinition {
 // MARK: - Core configuration smoke
 
 let client = DefaultNetworkClient(
-    configuration: .safeDefaults(
-        baseURL: URL(string: "https://api.example.com")!
-    )
+    baseURL: URL(string: "https://api.example.com")!
 )
+private let typedOneOff = EndpointBuilder<ConsumerUser>.get("/users/1")
 _ = client
+_ = typedOneOff
 _ = ConsumerRequest()
 _ = DownloadConfiguration.safeDefaults(sessionIdentifier: "com.example.consumer.downloads")
 _ = WebSocketConfiguration.safeDefaults()

@@ -29,17 +29,14 @@ public enum SessionAuthentication: Sendable, Hashable {
 ///
 /// ```swift
 /// let user = try await client.request(
-///     EndpointBuilder<EmptyResponse>
-///         .get("/users/\(id)")
-///         .decoding(User.self)
+///     EndpointBuilder<User>.get("/users/\(id)")
 /// )
 ///
 /// let post = try await client.request(
-///     EndpointBuilder<EmptyResponse>
+///     EndpointBuilder<Post>
 ///         .post("/posts")
 ///         .body(CreatePost(title: "Hello", body: "World"))
 ///         .header("Idempotency-Key", value: idempotencyKey)
-///         .decoding(Post.self)
 /// )
 ///
 /// // form-url-encoded login
@@ -101,23 +98,28 @@ public struct EndpointBuilder<Response: Decodable & Sendable>: APIDefinition {
 
 // MARK: - Builder entry points
 
-extension EndpointBuilder where Response == EmptyResponse {
+extension EndpointBuilder {
+    /// Creates a GET endpoint that decodes `Response` as JSON by default.
     public static func get(_ path: String) -> Self {
         Self(method: .get, path: path)
     }
 
+    /// Creates a POST endpoint that encodes and decodes JSON by default.
     public static func post(_ path: String) -> Self {
         Self(method: .post, path: path)
     }
 
+    /// Creates a PUT endpoint that encodes and decodes JSON by default.
     public static func put(_ path: String) -> Self {
         Self(method: .put, path: path)
     }
 
+    /// Creates a PATCH endpoint that encodes and decodes JSON by default.
     public static func patch(_ path: String) -> Self {
         Self(method: .patch, path: path)
     }
 
+    /// Creates a DELETE endpoint that encodes and decodes JSON by default.
     public static func delete(_ path: String) -> Self {
         Self(method: .delete, path: path)
     }
@@ -240,9 +242,8 @@ extension EndpointBuilder {
 // MARK: - Decoding promotion
 
 extension EndpointBuilder where Response == EmptyResponse {
-    /// Promotes an `EndpointBuilder<EmptyResponse>` (the result of
-    /// `.get(_:)`, `.post(_:)`, etc.) into an endpoint that decodes the
-    /// supplied type.
+    /// Promotes an `EndpointBuilder<EmptyResponse>` into an endpoint that
+    /// decodes the supplied type.
     /// This is the terminal step of the builder; the returned value can be
     /// passed directly to ``NetworkClient/request(_:)``.
     ///

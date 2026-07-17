@@ -16,7 +16,7 @@ governance decision.
 
 | Product | Public declarations |
 |---|---:|
-| `InnoNetwork` (core) | 838 |
+| `InnoNetwork` (core) | 839 |
 | `InnoNetworkWebSocket` | 165 |
 | `InnoNetworkDownload` | 131 |
 | `InnoNetworkTestSupport` | 84 |
@@ -24,11 +24,11 @@ governance decision.
 | `InnoNetworkOpenAPI` | 35 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
-| **Total** | **1,331** |
+| **Total** | **1,332** |
 
 ## Why this matters
 
-For a single-maintainer client-side Swift networking library, 1,331 public
+For a single-maintainer client-side Swift networking library, 1,332 public
 declarations is unusually large — roughly 4× `Get`'s surface and ~10× the
 `URLSession`-only "two functions and a `Decoder`" baseline.
 

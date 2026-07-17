@@ -214,6 +214,16 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
     private let executionRuntime: RequestExecutionRuntime
     private let shutdownLock = OSAllocatedUnfairLock<Bool>(initialState: false)
 
+    /// Creates a client with ``NetworkConfiguration/safeDefaults(baseURL:)``.
+    ///
+    /// Use this focused entry point for small integrations that need no custom
+    /// retry, cache, authentication, observability, or transport policy. Move
+    /// to ``init(configuration:)`` only when the server contract justifies one
+    /// of those explicit policies.
+    public convenience init(baseURL: URL) {
+        self.init(configuration: .safeDefaults(baseURL: baseURL))
+    }
+
     /// Creates a client backed by a fresh `URLSession` derived from the
     /// provided configuration.
     ///

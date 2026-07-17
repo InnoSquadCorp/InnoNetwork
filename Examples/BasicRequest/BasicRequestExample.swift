@@ -9,13 +9,7 @@
 import Foundation
 import InnoNetwork
 
-// MARK: - 1. Client Configuration
-
-private let clientConfiguration = NetworkConfiguration.safeDefaults(
-    baseURL: URL(string: "https://jsonplaceholder.typicode.com")!
-)
-
-// MARK: - 2. Data Models
+// MARK: - 1. Data Models
 
 struct Todo: Decodable, Sendable {
     let id: Int
@@ -31,7 +25,7 @@ struct Post: Codable, Sendable {
     let userId: Int
 }
 
-// MARK: - 3. API Definitions
+// MARK: - 2. API Definitions
 
 struct GetTodos: APIDefinition {
     var sessionAuthentication: SessionAuthentication { .anonymous }
@@ -129,14 +123,16 @@ struct DeletePost: APIDefinition {
     var path: String { "/posts/\(postId)" }
 }
 
-// MARK: - 4. Usage Examples
+// MARK: - 3. Usage Examples
 
 @MainActor
 class BasicRequestExample {
     let client: DefaultNetworkClient
 
     init() {
-        self.client = DefaultNetworkClient(configuration: clientConfiguration)
+        self.client = DefaultNetworkClient(
+            baseURL: URL(string: "https://jsonplaceholder.typicode.com")!
+        )
     }
 
     func getAllTodos() async {

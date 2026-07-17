@@ -149,6 +149,7 @@ expected_stable=(
 '`RequestEncodingPolicy`'
 '`ResponseDecodingStrategy`'
 '`DefaultNetworkClient`'
+'`DefaultNetworkClient.init(baseURL:)`'
 '`DefaultNetworkClient.shutdown()`'
 '`NetworkClient.request(_:)`'
 '`NetworkClient.request(_:tag:)`'
@@ -1242,6 +1243,10 @@ for symbol in "${expected_stable[@]}"; do
       ;;
     '`DefaultNetworkClient`')
       pattern='public final class DefaultNetworkClient'
+      target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
+      ;;
+    '`DefaultNetworkClient.init(baseURL:)`')
+      pattern='    public convenience init(baseURL: URL)'
       target="$repo_root/Sources/InnoNetwork/DefaultNetworkClient.swift"
       ;;
     '`DefaultNetworkClient.shutdown()`')
