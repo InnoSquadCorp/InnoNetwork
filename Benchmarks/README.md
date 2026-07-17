@@ -102,8 +102,10 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
 - `--guard-benchmark group/name`는 회귀 판정 대상을 고정합니다. 지정하지 않으면 현재 실행된 전체 benchmark를 검사합니다.
 - [guarded-benchmarks.txt](guarded-benchmarks.txt)는 PR, scheduled/manual,
   release, 로컬 프리플라이트가 공유하는 보호 대상의 source of truth입니다.
-  `Scripts/check_guarded_benchmark_contract.sh`가 모든 선언과 기본 baseline의
-  일치를 검증합니다.
+  `Scripts/run_with_guarded_benchmarks.py`가 이 목록을 CLI 인자로 주입하고,
+  `Scripts/check_guarded_benchmark_contract.sh`가 모든 실행 경로와 기본
+  baseline의 일치를 검증합니다. 새 보호 대상을 추가할 때 workflow의 명령을
+  복사해 수정할 필요가 없습니다.
 - `--max-regression-percent <Double>`는 허용 가능한 최대 성능 저하 폭을 정합니다.
 - `--guard-threshold group/name=<Double>`는 특정 guarded benchmark의
   threshold를 global 값과 다르게 지정합니다.

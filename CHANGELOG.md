@@ -138,9 +138,11 @@ draft release summary.
   profiles, enforces the 10% benchmark guards, verifies all eight public DocC
   archives, and builds macOS, iOS, tvOS, watchOS, and visionOS locally.
 - `Benchmarks/guarded-benchmarks.txt` is the reviewed source of truth for the
-  protected performance set. CI, scheduled/manual benchmarks, release
-  validation, contributor docs, and the local preflight fail when their
-  repeated CLI declarations drift from it or reference a missing baseline.
+  protected performance set. A shared runner injects that ordered set into CI,
+  scheduled/manual benchmarks, release validation, contributor docs, and the
+  local preflight, eliminating five repeated CLI declarations. The contract
+  fails closed when a consumer bypasses the runner or a guard is absent from
+  the default baseline.
 - CI and release validation now cross-compile every public library product for
   the declared tvOS, watchOS, and visionOS device SDKs at the package's
   deployment floors as required gates. Every independent example manifest is

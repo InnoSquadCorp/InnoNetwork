@@ -9,6 +9,7 @@ trap 'rm -rf "$work_dir"' EXIT
 fixture_files=(
   "Benchmarks/Baselines/default.json"
   "Benchmarks/guarded-benchmarks.txt"
+  "Scripts/guarded_benchmarks.py"
   ".github/workflows/benchmarks.yml"
   ".github/workflows/release.yml"
   "Scripts/run_local_release_preflight.sh"
@@ -41,13 +42,13 @@ import sys
 
 path = pathlib.Path(sys.argv[1])
 lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-identifier = "events/task-event-fanout-single"
+invocation = "python3 Scripts/run_with_guarded_benchmarks.py --"
 for index, line in enumerate(lines):
-    if f"--guard-benchmark {identifier}" in line:
+    if invocation in line:
         del lines[index]
         break
 else:
-    raise SystemExit(f"fixture declaration not found: {identifier}")
+    raise SystemExit(f"fixture runner invocation not found: {invocation}")
 path.write_text("".join(lines), encoding="utf-8")
 PY
 if run_checker "$missing_declaration_root" \
@@ -56,8 +57,21 @@ if run_checker "$missing_declaration_root" \
   echo "Expected a missing workflow declaration to fail." >&2
   exit 1
 fi
-grep -Fq '.github/workflows/release.yml does not match the guard set' \
+grep -Fq '.github/workflows/release.yml must invoke the guarded benchmark runner' \
   "$work_dir/missing-declaration.stderr"
+
+direct_declaration_root="$work_dir/direct-declaration"
+make_fixture "$direct_declaration_root"
+printf '\n# --guard-benchmark events/task-event-fanout-single\n' \
+  >> "$direct_declaration_root/.github/workflows/release.yml"
+if run_checker "$direct_declaration_root" \
+  > "$work_dir/direct-declaration.stdout" \
+  2> "$work_dir/direct-declaration.stderr"; then
+  echo "Expected a direct guarded benchmark declaration to fail." >&2
+  exit 1
+fi
+grep -Fq 'bypasses the guarded benchmark runner' \
+  "$work_dir/direct-declaration.stderr"
 
 missing_baseline_root="$work_dir/missing-baseline"
 make_fixture "$missing_baseline_root"

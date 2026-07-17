@@ -11,7 +11,10 @@ on:
       - "Scripts/render_benchmark_comment.py"
       - "Scripts/append_benchmark_trend.py"
       - "Scripts/check_guarded_benchmark_contract.sh"
+      - "Scripts/guarded_benchmarks.py"
+      - "Scripts/run_with_guarded_benchmarks.py"
       - "Scripts/tests/test_check_guarded_benchmark_contract.sh"
+      - "Scripts/tests/test_run_with_guarded_benchmarks.py"
       - "Scripts/tests/test_compare_benchmark_runs.py"
   workflow_dispatch:
   schedule:
@@ -63,7 +66,9 @@ jobs:
           xcrun swift --version
 
       - name: Test benchmark report tooling
-        run: python3 Scripts/tests/test_compare_benchmark_runs.py
+        run: |
+          python3 Scripts/tests/test_compare_benchmark_runs.py
+          python3 Scripts/tests/test_run_with_guarded_benchmarks.py
 
       - name: Verify guarded benchmark contract
         run: |
@@ -126,7 +131,8 @@ jobs:
           run_sample "$BASE_BENCHMARK_BIN" .build/benchmarks/base-3.json
           run_sample "$HEAD_BENCHMARK_BIN" .build/benchmarks/head-3.json
 
-          python3 Scripts/compare_benchmark_runs.py \
+          python3 Scripts/run_with_guarded_benchmarks.py -- \
+            python3 Scripts/compare_benchmark_runs.py \
             --base .build/benchmarks/base-1.json \
             --base .build/benchmarks/base-2.json \
             --base .build/benchmarks/base-3.json \
@@ -134,20 +140,6 @@ jobs:
             --head .build/benchmarks/head-2.json \
             --head .build/benchmarks/head-3.json \
             --output .build/benchmarks/results.json \
-            --guard-benchmark events/task-event-fanout-single \
-            --guard-benchmark persistence/download-persistence-restore \
-            --guard-benchmark persistence/append-log-compaction \
-            --guard-benchmark websocket/websocket-close-disposition-classify \
-            --guard-benchmark websocket/websocket-ping-context-create \
-            --guard-benchmark websocket/websocket-send-queue-reserve \
-            --guard-benchmark websocket/websocket-lifecycle-transition-table \
-            --guard-benchmark client/request-pipeline \
-            --guard-benchmark client/request-coalescing-shared-get \
-            --guard-benchmark client/decoding-interceptor-chain-1 \
-            --guard-benchmark client/decoding-interceptor-chain-3 \
-            --guard-benchmark client/decoding-interceptor-chain-8 \
-            --guard-benchmark cache/response-cache-lookup \
-            --guard-benchmark cache/response-cache-revalidation \
             --max-regression-percent "$MAX_REGRESSION_PERCENT"
 
       - name: Run guarded static-baseline benchmarks
@@ -160,25 +152,12 @@ jobs:
           status=1
           for attempt in 1 2 3; do
             echo "Guarded benchmark attempt ${attempt}/3"
-            if xcrun swift run -c release InnoNetworkBenchmarks \
-              --quick \
-              --json-path .build/benchmarks/results.json \
-              --enforce-baseline \
-              --guard-benchmark events/task-event-fanout-single \
-              --guard-benchmark persistence/download-persistence-restore \
-              --guard-benchmark persistence/append-log-compaction \
-              --guard-benchmark websocket/websocket-close-disposition-classify \
-              --guard-benchmark websocket/websocket-ping-context-create \
-              --guard-benchmark websocket/websocket-send-queue-reserve \
-              --guard-benchmark websocket/websocket-lifecycle-transition-table \
-              --guard-benchmark client/request-pipeline \
-              --guard-benchmark client/request-coalescing-shared-get \
-              --guard-benchmark client/decoding-interceptor-chain-1 \
-              --guard-benchmark client/decoding-interceptor-chain-3 \
-              --guard-benchmark client/decoding-interceptor-chain-8 \
-              --guard-benchmark cache/response-cache-lookup \
-              --guard-benchmark cache/response-cache-revalidation \
-              --max-regression-percent "$MAX_REGRESSION_PERCENT"; then
+            if python3 Scripts/run_with_guarded_benchmarks.py -- \
+              xcrun swift run -c release InnoNetworkBenchmarks \
+                --quick \
+                --json-path .build/benchmarks/results.json \
+                --enforce-baseline \
+                --max-regression-percent "$MAX_REGRESSION_PERCENT"; then
               exit 0
             else
               status=$?

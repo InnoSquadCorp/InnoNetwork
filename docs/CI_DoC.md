@@ -213,25 +213,12 @@ bash Scripts/generate_coverage_report.sh \
   Sources/InnoNetworkMacros
 bash Scripts/check_macro_compile_failures.sh
 
-# Optional: replay the benchmark smoke guard locally. The protected identifiers
-# must match Benchmarks/guarded-benchmarks.txt; the contract checker fails when
-# this command or any workflow drifts from that source of truth.
+# Optional: replay the benchmark smoke guard locally. The runner reads every
+# protected identifier from Benchmarks/guarded-benchmarks.txt and appends the
+# corresponding CLI arguments to the wrapped command.
 bash Scripts/check_guarded_benchmark_contract.sh
-xcrun swift run -c release InnoNetworkBenchmarks --quick \
-  --enforce-baseline \
-  --guard-benchmark events/task-event-fanout-single \
-  --guard-benchmark persistence/download-persistence-restore \
-  --guard-benchmark persistence/append-log-compaction \
-  --guard-benchmark websocket/websocket-close-disposition-classify \
-  --guard-benchmark websocket/websocket-ping-context-create \
-  --guard-benchmark websocket/websocket-send-queue-reserve \
-  --guard-benchmark websocket/websocket-lifecycle-transition-table \
-  --guard-benchmark client/request-pipeline \
-  --guard-benchmark client/request-coalescing-shared-get \
-  --guard-benchmark client/decoding-interceptor-chain-1 \
-  --guard-benchmark client/decoding-interceptor-chain-3 \
-  --guard-benchmark client/decoding-interceptor-chain-8 \
-  --guard-benchmark cache/response-cache-lookup \
-  --guard-benchmark cache/response-cache-revalidation \
-  --max-regression-percent 20
+python3 Scripts/run_with_guarded_benchmarks.py -- \
+  xcrun swift run -c release InnoNetworkBenchmarks --quick \
+    --enforce-baseline \
+    --max-regression-percent 20
 ```
