@@ -179,9 +179,8 @@ public actor DownloadManager {
     ///
     /// Each manager owns an actor-isolated runtime registry, append-log
     /// persistence store, event hub, and background `URLSession`. The session
-    /// identifier must be unique within the process; use
-    /// ``make(configuration:)`` when callers want the duplicate-identifier
-    /// error surfaced through a factory-style API.
+    /// identifier must be unique within the process. This throwing initializer
+    /// surfaces duplicate-identifier and persistence setup failures directly.
     ///
     /// - Parameter configuration: Session, retry, event, and persistence
     ///   settings for this download domain.
