@@ -101,9 +101,6 @@ struct GeneratedExecutable<Operation: GeneratedExecutableContract>: SingleReques
 
     let operation: Operation
 
-    var logger: NetworkLogger { NoOpNetworkLogger() }
-    var requestInterceptors: [RequestInterceptor] { [] }
-    var responseInterceptors: [ResponseInterceptor] { [] }
     var method: HTTPMethod { operation.method }
     var path: String { operation.path }
     var sessionAuthentication: SessionAuthentication { operation.sessionAuthentication }

@@ -133,8 +133,7 @@ require_line "## Stable" "$api_stability"
 require_line "## Provisionally Stable" "$api_stability"
 require_line "## Internal/Operational" "$api_stability"
 require_contains 'baseline caps inline' "$api_stability"
-require_contains '`safeDefaults`, the' "$api_stability"
-require_contains '`advanced` preset, and `recommendedForProduction`' "$api_stability"
+require_contains '`safeDefaults` and the `advanced` preset' "$api_stability"
 
 if [[ "$docs_release_state" == "draft" ]]; then
   require_contains 'branch: "main"' "$api_stability"
@@ -240,7 +239,7 @@ expected_provisionally=(
 '`RequestSigner` and `RequestBody` late body-aware signing contract'
 '`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens'
 '`InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing'
-'`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`'
+'`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, and `RequestPriority`'
 '`HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)'
 '`MultipartUploadStrategy.threshold(bytes:)`'
 '`StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance'
@@ -253,7 +252,7 @@ expected_provisionally=(
 '`ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.0.0 baseline)'
 '`DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.0.0 baseline)'
 '`ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.0.0 baseline)'
-'`NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.0.0 baseline)'
+'`NetworkConfiguration.streamingLineByteLimit` and the `TransportPack.init(...streamingLineByteLimit:...)` argument (4.0.0 baseline)'
 )
 
 stable_code_spans="$(
@@ -344,7 +343,6 @@ expected_shipping_public_declarations=(
   NetworkReachabilityStatus
   NetworkRequestContext
   NetworkSnapshot
-  NoOpNetworkLogger
   OSLogNetworkEventObserver
   PersistentResponseCache
   PersistentResponseCacheConfiguration
@@ -594,8 +592,6 @@ validate_operational_dx_public_api() {
     "$repo_root/Sources/InnoNetwork/CurlCommand.swift"
   require_contains 'public enum RequestPriority: Sendable, Equatable' \
     "$repo_root/Sources/InnoNetwork/RequestPriority.swift"
-  require_contains 'public static func recommendedForProduction(baseURL: URL) -> NetworkConfiguration' \
-    "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
 }
 
 validate_multipart_response_api() {
@@ -1539,7 +1535,7 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/DecodingInterceptor.swift"
       continue
       ;;
-    '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`')
+    '`StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, and `RequestPriority`')
       validate_operational_dx_public_api
       continue
       ;;
@@ -1659,12 +1655,12 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/RequestExecutor+Cache.swift"
       continue
       ;;
-    '`NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.0.0 baseline)')
+    '`NetworkConfiguration.streamingLineByteLimit` and the `TransportPack.init(...streamingLineByteLimit:...)` argument (4.0.0 baseline)')
       require_contains 'public static let defaultStreamingLineByteLimit' \
         "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
       require_contains 'public let streamingLineByteLimit: Int' \
         "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
-      require_contains 'public var streamingLineByteLimit: Int?' \
+      require_contains 'private let streamingLineByteLimit: Int?' \
         "$repo_root/Sources/InnoNetwork/Configuration/ConfigurationPacks.swift"
       require_contains 'configuration.streamingLineByteLimit' \
         "$repo_root/Sources/InnoNetwork/StreamingExecutor.swift"

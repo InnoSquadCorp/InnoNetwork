@@ -72,7 +72,7 @@ runtime-composed requests use `EndpointBuilder` with explicit authentication.
 The previous 5.0 candidate on this axis was not typed throws. The large
 `NetworkConfiguration.init(...)` compatibility initializer was removed from
 the public API before the 4.0.0 baseline, so 4.x examples and docs should use
-`safeDefaults(baseURL:)`, `recommendedForProduction(baseURL:)`,
+`safeDefaults(baseURL:)`,
 `advanced(baseURL:resilience:auth:observability:cache:transport:)`, or the
 configuration-pack surface.
 

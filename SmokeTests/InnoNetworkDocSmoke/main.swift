@@ -171,11 +171,6 @@ private func runDocSmoke() {
     )
     _ = networkAdvanced
 
-    let production = NetworkConfiguration.recommendedForProduction(
-        baseURL: URL(string: "https://api.example.com/v1")!
-    )
-    _ = production
-
     let awsSigner = AWSSigV4Interceptor(
         accessKeyID: "AKIDEXAMPLE",
         secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",

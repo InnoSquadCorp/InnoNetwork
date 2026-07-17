@@ -4,9 +4,10 @@ import Foundation
 //
 // `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 // composes the five thematic packs below. Each pack is a Sendable
-// struct whose fields are all optional (or empty-array) with `nil`/`[]`
-// defaults; the pack mutates the internal builder, leaving fields it
-// does not carry untouched.
+// struct whose initializer arguments are all optional (or empty-array) with
+// `nil`/`[]` defaults. The stored inputs stay private: packs are immutable
+// configuration commands rather than a second readable/mutable mirror of
+// `NetworkConfiguration`.
 //
 // Usage:
 //
@@ -22,15 +23,15 @@ import Foundation
 /// Groups retry, request coalescing, circuit breaker, idempotency,
 /// response-body buffering, and custom execution policies.
 public struct ResiliencePack: Sendable {
-    public var retry: RetryPolicy?
-    public var coalescing: RequestCoalescingPolicy?
-    public var circuitBreaker: CircuitBreakerPolicy?
-    public var idempotency: IdempotencyKeyPolicy?
-    public var bodyBuffering: ResponseBodyBufferingPolicy?
+    private let retry: RetryPolicy?
+    private let coalescing: RequestCoalescingPolicy?
+    private let circuitBreaker: CircuitBreakerPolicy?
+    private let idempotency: IdempotencyKeyPolicy?
+    private let bodyBuffering: ResponseBodyBufferingPolicy?
     /// Custom ``RequestExecutionPolicy`` instances inserted around the
     /// single transport attempt. Replaces the builder slot wholesale;
     /// pass `nil` (the default) to leave the underlying value alone.
-    public var customExecutionPolicies: [any RequestExecutionPolicy]?
+    private let customExecutionPolicies: [any RequestExecutionPolicy]?
 
     public init(
         retry: RetryPolicy? = nil,
@@ -65,15 +66,14 @@ public struct ResiliencePack: Sendable {
 /// `additionalRequestInterceptors`, `additionalSigners`,
 /// `additionalResponseInterceptors`, and
 /// `additionalDecodingInterceptors` are **appended** to the builder's
-/// existing chains rather than replacing them, so the pack composes
-/// cleanly with `recommendedForProduction(baseURL:)` and other presets
-/// that already populate these slots.
+/// existing chains rather than replacing them, so the pack composes cleanly
+/// with any preset that already populates these slots.
 public struct AuthPack: Sendable {
-    public var refreshToken: RefreshTokenPolicy?
-    public var additionalRequestInterceptors: [RequestInterceptor]
-    public var additionalSigners: [RequestSigner]
-    public var additionalResponseInterceptors: [ResponseInterceptor]
-    public var additionalDecodingInterceptors: [DecodingInterceptor]
+    private let refreshToken: RefreshTokenPolicy?
+    private let additionalRequestInterceptors: [RequestInterceptor]
+    private let additionalSigners: [RequestSigner]
+    private let additionalResponseInterceptors: [ResponseInterceptor]
+    private let additionalDecodingInterceptors: [DecodingInterceptor]
 
     public init(
         refreshToken: RefreshTokenPolicy? = nil,
@@ -109,11 +109,11 @@ public struct AuthPack: Sendable {
 /// Groups event observers, event delivery policy, and metrics
 /// reporters (network and event-pipeline).
 public struct ObservabilityPack: Sendable {
-    public var eventObservers: [any NetworkEventObserving]
-    public var eventDeliveryPolicy: EventDeliveryPolicy?
-    public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
-    public var networkMonitor: (any NetworkMonitoring)?
-    public var metricsReporter: (any NetworkMetricsReporting)?
+    private let eventObservers: [any NetworkEventObserving]
+    private let eventDeliveryPolicy: EventDeliveryPolicy?
+    private let eventMetricsReporter: (any EventPipelineMetricsReporting)?
+    private let networkMonitor: (any NetworkMonitoring)?
+    private let metricsReporter: (any NetworkMetricsReporting)?
 
     public init(
         eventObservers: [any NetworkEventObserving] = [],
@@ -143,9 +143,9 @@ public struct ObservabilityPack: Sendable {
 /// Groups response cache policy, the cache backend, and the
 /// failure-payload capture toggle.
 public struct CachePack: Sendable {
-    public var responseCachePolicy: ResponseCachePolicy?
-    public var responseCache: (any ResponseCache)?
-    public var captureFailurePayload: Bool?
+    private let responseCachePolicy: ResponseCachePolicy?
+    private let responseCache: (any ResponseCache)?
+    private let captureFailurePayload: Bool?
 
     public init(
         responseCachePolicy: ResponseCachePolicy? = nil,
@@ -169,19 +169,19 @@ public struct CachePack: Sendable {
 /// policy, acceptable status codes, and the default `User-Agent` /
 /// `Accept-Language` providers.
 public struct TransportPack: Sendable {
-    public var timeout: TimeInterval?
-    public var cachePolicy: URLRequest.CachePolicy?
-    public var requestPriority: RequestPriority?
-    public var allowsCellularAccess: Bool?
-    public var allowsExpensiveNetworkAccess: Bool?
-    public var allowsConstrainedNetworkAccess: Bool?
-    public var redirectPolicy: (any RedirectPolicy)?
-    public var streamingLineByteLimit: Int?
-    public var allowsInsecureHTTP: Bool?
-    public var trustPolicy: TrustPolicy?
-    public var acceptableStatusCodes: Set<Int>?
-    public var userAgentProvider: (@Sendable () -> String)?
-    public var acceptLanguageProvider: (@Sendable () -> String)?
+    private let timeout: TimeInterval?
+    private let cachePolicy: URLRequest.CachePolicy?
+    private let requestPriority: RequestPriority?
+    private let allowsCellularAccess: Bool?
+    private let allowsExpensiveNetworkAccess: Bool?
+    private let allowsConstrainedNetworkAccess: Bool?
+    private let redirectPolicy: (any RedirectPolicy)?
+    private let streamingLineByteLimit: Int?
+    private let allowsInsecureHTTP: Bool?
+    private let trustPolicy: TrustPolicy?
+    private let acceptableStatusCodes: Set<Int>?
+    private let userAgentProvider: (@Sendable () -> String)?
+    private let acceptLanguageProvider: (@Sendable () -> String)?
 
     public init(
         timeout: TimeInterval? = nil,

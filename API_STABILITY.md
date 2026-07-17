@@ -157,7 +157,7 @@ below for the currently released 4.x line and explicit preview opt-in.
 - `RequestSigner` and `RequestBody` late body-aware signing contract
 - `JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens
 - `InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing
-- `StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, `RequestPriority`, and `NetworkConfiguration.recommendedForProduction(baseURL:)`
+- `StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, and `RequestPriority`
 - `HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)
 - `MultipartUploadStrategy.threshold(bytes:)`
 - `StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance
@@ -170,7 +170,7 @@ below for the currently released 4.x line and explicit preview opt-in.
 - `ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.0.0 baseline)
 - `DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.0.0 baseline)
 - `ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.0.0 baseline)
-- `NetworkConfiguration.streamingLineByteLimit` and `TransportPack.streamingLineByteLimit` (4.0.0 baseline)
+- `NetworkConfiguration.streamingLineByteLimit` and the `TransportPack.init(...streamingLineByteLimit:...)` argument (4.0.0 baseline)
 
 ## 5.x Evolution Boundaries
 
@@ -334,12 +334,9 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   request-ID invariant.
 - `RequestPriority` and network-condition request controls — additional
   platform mappings may be added while preserving current defaults.
-- `NetworkConfiguration.recommendedForProduction(baseURL:)` — the preset may
-  tune default policy values in minors, but it remains a convenience builder
-  over documented public policies. The planned 5.0 baseline caps inline
-  response body collection at 5 MiB by default in `safeDefaults`, the
-  `advanced` preset, and `recommendedForProduction`; explicit nil limits
-  remain the opt-out.
+- `NetworkConfiguration` response buffering — the planned 5.0 baseline caps inline
+  response collection at 5 MiB in `safeDefaults` and the `advanced` preset;
+  explicit nil limits remain the opt-out.
 - `NetworkConfiguration.init(...)` — the direct 32-parameter public
   construction surface was removed before the 4.0.0 baseline and is not part
   of the planned 5.x stable API. Use presets and the named configuration packs
@@ -411,7 +408,7 @@ planned 5.x release line.
   `NetworkEvent`, `NetworkEventObserving`, `NetworkInterfaceType`,
   `NetworkLoggingOptions`, `NetworkLogger`, `NetworkMetricsReporting`,
   `NetworkMonitor`, `NetworkMonitoring`, `NetworkReachabilityStatus`,
-  `NetworkRequestContext`, `NetworkSnapshot`, `NoOpNetworkLogger`,
+  `NetworkRequestContext`, `NetworkSnapshot`,
   `OSLogNetworkEventObserver`,
   `RedirectPolicy`, `RefreshFailureCooldown`, `RefreshTokenPolicy`,
   `RequestCoalescingPolicy`, `RequestEncodingPolicy`,

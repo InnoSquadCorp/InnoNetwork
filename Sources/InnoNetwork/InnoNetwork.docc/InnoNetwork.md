@@ -19,12 +19,10 @@ Use this module when you need:
 - request encoding choices that stay explicit
 - trust policy, retry policy, and observability that can be tuned when production needs it
 
-Start prototypes and tests with ``NetworkConfiguration/safeDefaults(baseURL:)``.
-For app-facing production clients, prefer
-``NetworkConfiguration/recommendedForProduction(baseURL:)`` so retry,
-circuit-breaker, idempotency-key, and body-size guardrails are enabled
-explicitly. Reach for advanced configuration only when you have an operational
-reason to tune those defaults.
+Start prototypes, tests, and ordinary production clients with
+``NetworkConfiguration/safeDefaults(baseURL:)``. Reach for advanced
+configuration only when the server contract or measured operations require a
+specific retry, circuit-breaker, idempotency, cache, or observability policy.
 
 ``ResponseBodyBufferingPolicy/buffered(maxBytes:)`` performs post-buffer size
 validation for inline requests: `URLSession.data(for:)` has already collected
