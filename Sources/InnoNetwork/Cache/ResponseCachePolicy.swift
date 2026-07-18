@@ -70,24 +70,25 @@ public struct ResponseCacheKey: Hashable, Sendable {
         self.headers = Self.normalizedHeaders(headers)
     }
 
+    // `Authorization` is intentionally part of the cache key so that
+    // user-scoped responses are not shared across identities. Token
+    // rotations therefore produce new keys and the cache acts per-identity.
+    // `Accept-Language` intentionally remains part of the key: many APIs
+    // localize representations without changing the URL.
+    private static let excludedHeaderNames: Set<String> = [
+        "accept-encoding",
+        "content-type",
+        "date",
+        "if-modified-since",
+        "if-none-match",
+        "user-agent",
+    ]
+
     package init?(request: URLRequest) {
         guard let url = Self.normalizedTargetURI(request.url) else { return nil }
-        // `Authorization` is intentionally part of the cache key so that
-        // user-scoped responses are not shared across identities. Token
-        // rotations therefore produce new keys and the cache acts per-identity.
-        // `Accept-Language` intentionally remains part of the key: many APIs
-        // localize representations without changing the URL.
-        let excludedHeaderNames: Set<String> = [
-            "accept-encoding",
-            "content-type",
-            "date",
-            "if-modified-since",
-            "if-none-match",
-            "user-agent",
-        ]
         let headers =
             (request.allHTTPHeaderFields ?? [:])
-            .filter { !excludedHeaderNames.contains($0.key.lowercased()) }
+            .filter { !Self.excludedHeaderNames.contains($0.key.lowercased()) }
         self.init(method: request.httpMethod ?? "GET", url: url, headers: headers)
     }
 

@@ -55,7 +55,15 @@ extension RequestExecutor {
             // not a safe cache identity: two endpoint signers could otherwise
             // share one response before the second signer is even invoked.
             let allowsRequestSharing = requestSigners.isEmpty
-            let cacheKey = allowsRequestSharing ? ResponseCacheKey(request: request) : nil
+            // The key only ever feeds cache lookup, revalidation, and store —
+            // every consumer additionally guards on a configured
+            // `responseCache` — so skip the header/URL normalization cost
+            // entirely for the common cache-less configuration. Coalescing
+            // partitions on `allowsRequestSharing`, not on this key.
+            let cacheKey: ResponseCacheKey? =
+                allowsRequestSharing && configuration.responseCache != nil
+                ? ResponseCacheKey(request: request)
+                : nil
             let cachePreparation = await prepareCacheLookup(
                 cacheKey: cacheKey,
                 request: request,
