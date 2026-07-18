@@ -75,7 +75,7 @@ struct GetProfile: APIDefinition {
 }
 ```
 
-클라이언트에 ``NetworkConfiguration/refreshTokenPolicy`` 가 없으면 요청은
+클라이언트가 `AuthPack(refreshToken:)` 없이 생성되었으면 요청은
 transport 단계 전에 ``NetworkError/configuration(reason:)`` 과
 ``NetworkConfigurationFailureReason/invalidRequest(_:)`` 로 거부됩니다.
 

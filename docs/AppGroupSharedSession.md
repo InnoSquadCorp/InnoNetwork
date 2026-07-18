@@ -30,10 +30,10 @@ download sessions and for isolated extension HTTP clients.
   owner process is no longer attached. Use **different** identifiers when both
   processes may run concurrently. Without the opt-in, both presets remain
   foreground sessions.
-- ``DownloadConfiguration/sharedContainerIdentifier`` maps directly to
-  `URLSessionConfiguration.sharedContainerIdentifier`, so the system can
-  place background-session state inside the App Group container when both
-  targets participate in the same group.
+- `DownloadPersistencePack(sharedContainerIdentifier:)` maps directly to
+  `URLSessionConfiguration.sharedContainerIdentifier`, so the system can place
+  background-session state inside the App Group container when both targets
+  participate in the same group.
 - A per-process `URLSessionConfiguration` (built from
   `NetworkConfiguration.makeURLSessionConfiguration()`, see
   [Cookies.md](Cookies.md) and [HTTP3.md](HTTP3.md)) composes with the

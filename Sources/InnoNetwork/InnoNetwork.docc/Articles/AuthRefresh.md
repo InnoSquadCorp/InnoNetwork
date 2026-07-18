@@ -83,8 +83,8 @@ struct GetProfile: APIDefinition {
 }
 ```
 
-If the client has no ``NetworkConfiguration/refreshTokenPolicy``, the request
-fails before transport with ``NetworkError/configuration(reason:)`` and
+If the client was not built with `AuthPack(refreshToken:)`, the request fails
+before transport with ``NetworkError/configuration(reason:)`` and
 ``NetworkConfigurationFailureReason/invalidRequest(_:)``. Named manual
 endpoints must also declare `sessionAuthentication`; use `.anonymous` when the
 request must never participate in bearer-token refresh, or `.optional` when it

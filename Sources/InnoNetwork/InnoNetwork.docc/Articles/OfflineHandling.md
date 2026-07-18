@@ -156,9 +156,8 @@ guard snapshot.interfaceTypes.contains(.wifi) else {
 try await downloader.startLargeMediaDownload()
 ```
 
-This pairs naturally with the cellular knobs documented on
-``NetworkConfiguration/allowsCellularAccess`` and
-``DownloadConfiguration/allowsCellularAccess``.
+This pairs naturally with the `allowsCellularAccess` inputs on
+``TransportPack`` and ``DownloadTransferPack``.
 
 ## See also
 

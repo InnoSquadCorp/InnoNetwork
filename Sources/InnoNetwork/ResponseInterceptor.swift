@@ -11,8 +11,8 @@ import Foundation
 ///    response — status code, headers, payload data — exactly as produced
 ///    by the network layer (after coalescing, caching, and circuit
 ///    breaker policies have settled).
-/// 2. Configuration-level interceptors run last
-///    (`NetworkConfiguration.responseInterceptors`). By the time they
+/// 2. Configuration-level interceptors supplied through ``AuthPack`` run last.
+///    By the time they
 ///    execute, per-endpoint adapters have finished, so a session-level
 ///    interceptor sees the same response shape it would in a session-only
 ///    setup.

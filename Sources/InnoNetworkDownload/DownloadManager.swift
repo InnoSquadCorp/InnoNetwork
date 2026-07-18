@@ -112,7 +112,7 @@ public actor DownloadManager {
     let delegateEventChannel: DownloadDelegateEventChannel
     /// Background task that polls in-flight downloads and cancels any that
     /// have not received a progress callback for at least
-    /// ``DownloadConfiguration/taskInactivityTimeout``. `nil` when the
+    /// `taskInactivityTimeout` from ``DownloadTransferPack``. `nil` when the
     /// configuration disables the watchdog.
     var inactivityWatchdogTask: Task<Void, Never>?
     /// Serializes pause production per logical task while the manager actor is

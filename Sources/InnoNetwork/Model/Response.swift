@@ -76,8 +76,8 @@ public struct Response: CustomDebugStringConvertible, Equatable, Sendable {
 
     /// Returns a copy of the response with `data` zeroed out, used by the
     /// failure-payload redaction path so callers cannot accidentally observe
-    /// the raw response body when ``NetworkConfiguration/captureFailurePayload``
-    /// is disabled. Status code and HTTPURLResponse metadata are preserved;
+    /// the raw response body when failure-payload capture is disabled through
+    /// ``CachePack``. Status code and HTTPURLResponse metadata are preserved;
     /// any `user:password@` userinfo on the request URL is stripped so
     /// embedded credentials cannot leak to crash logs or analytics.
     public func redactingData() -> Response {

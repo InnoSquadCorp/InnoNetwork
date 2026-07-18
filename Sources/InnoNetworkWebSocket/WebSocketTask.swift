@@ -49,7 +49,7 @@ public actor WebSocketTask: Identifiable {
 
     /// Number of `send(_:message:)` / `send(_:string:)` operations currently
     /// awaiting completion on this task. Used by the manager's send-queue
-    /// guard to enforce ``WebSocketConfiguration/sendQueueLimit``.
+    /// guard to enforce `sendQueueLimit` from ``WebSocketMessagingPack``.
     public var inFlightSendCount: Int { _inFlightSends }
 
     /// Most recent lifecycle error, including terminal failures and caller-initiated close context.
@@ -158,7 +158,7 @@ public actor WebSocketTask: Identifiable {
     /// Marks the start of a reconnect window if one is not already in flight.
     /// The reconnect coordinator stamps this on the first reconnect attempt
     /// after a clean connection and uses ``reconnectWindowStartedAt`` to
-    /// enforce ``WebSocketConfiguration/reconnectMaxTotalDuration``.
+    /// enforce `maxTotalDuration` from ``WebSocketReconnectPack``.
     package func beginReconnectWindowIfNeeded(now: Date) {
         if _reconnectWindowStartedAt == nil {
             _reconnectWindowStartedAt = now

@@ -896,8 +896,9 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - **Background download Info.plist.** A background `URLSession` download does
   not itself require `UIBackgroundModes`. Declare a mode only for a separate
   wake-up mechanism owned by the app, such as `remote-notification`.
-- **Session identifier uniqueness.** Each `DownloadConfiguration.sessionIdentifier` must be
-  unique among live managers in the app process. The library rejects reuse with
+- **Session identifier uniqueness.** Each `sessionIdentifier` passed to a
+  download configuration factory must be unique among live managers in the
+  app process. The library rejects reuse with
   `DownloadManagerError.duplicateSessionIdentifier`; for background sessions,
   the identifier is also the Foundation background-session identifier. App
   Groups do not make concurrent app/extension ownership safe: coordinate so
@@ -925,8 +926,9 @@ Operational items to verify before shipping a client built on InnoNetwork.
   fragments are never exported.
 - **Failure payload capture.** `NetworkError.decoding(stage:, underlying:, response:)` carries a `Response`;
   by default that `response.data` is redacted to empty data unless you opt in via
-  `NetworkConfiguration.captureFailurePayload = true`. Keep that flag off in release
-  configurations to avoid storing PII inside crash logs or analytics.
+  `CachePack(captureFailurePayload: true)` in an advanced configuration. Keep
+  that flag off in release configurations to avoid storing PII inside crash
+  logs or analytics.
 - **Event observer attachment.** Attach observers (`NetworkEventObserving`) at app start and
   detach on logout / account switch. Observers receive every request event, including ones
   triggered after a user-initiated cancellation.

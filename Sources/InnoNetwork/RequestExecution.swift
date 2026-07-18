@@ -56,19 +56,19 @@ import OSLog
 
     /// Optional override for the set of acceptable HTTP status codes on this
     /// request. When `nil`, the executor falls back to
-    /// ``NetworkConfiguration/acceptableStatusCodes``.
+    /// the acceptable status codes supplied through ``TransportPack``.
     var acceptableStatusCodes: Set<Int>? { get }
 
     /// Session bearer-authentication policy carried from the endpoint.
     var sessionAuthentication: SessionAuthentication { get }
 
     /// Optional per-request override for the request timeout. When non-nil
-    /// the value replaces ``NetworkConfiguration/timeout`` on the built
+    /// the value replaces the client-level transport timeout on the built
     /// `URLRequest`.
     var timeoutOverride: TimeInterval? { get }
 
     /// Optional per-request override for `URLRequest.cachePolicy`. When
-    /// non-nil the value replaces ``NetworkConfiguration/cachePolicy`` on
+    /// non-nil the value replaces the client-level cache policy on
     /// the built `URLRequest`.
     var cachePolicyOverride: URLRequest.CachePolicy? { get }
     /// Optional per-request override for request priority.
@@ -104,7 +104,7 @@ import OSLog
     /// Default executable contracts do not add response interceptors.
     var responseInterceptors: [ResponseInterceptor] { [] }
     /// Default override is `nil`, meaning the session-wide
-    /// ``NetworkConfiguration/acceptableStatusCodes`` applies.
+    /// the client-level acceptable status code policy applies.
     var acceptableStatusCodes: Set<Int>? { nil }
     /// Default body content type is absent; custom executables that return
     /// ``RequestPayload/data(_:)`` or file payloads should override this when

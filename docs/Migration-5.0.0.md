@@ -26,6 +26,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | `.with(cache:)` | `CachePack(responseCache:)` |
 | `NetworkConfiguration.recommendedForProduction(baseURL:)` | Start with `safeDefaults(baseURL:)`; add only server-approved policies through `advanced(...)` |
 | Mutating a configuration-pack property after initialization | Construct a new immutable pack with the desired named initializer arguments |
+| Reading Core, Download, or WebSocket configuration runtime fields | Keep an application-owned input model when inspection is required; build the opaque configuration command through `safeDefaults` or named packs passed to `advanced(...)` |
 | `NoOpNetworkLogger()` in a generated executable | Omit the logger witness to inherit the SPI default, or define a private no-op logger in the adapter |
 | `DefaultNetworkClient(configuration: .safeDefaults(baseURL: url))` | `DefaultNetworkClient(baseURL: url)` when no custom policy is needed (optional simplification) |
 | Public `StateReducer` / `StateReduction` | An application-owned reducer type, or a feature-local reducer |
@@ -45,7 +46,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | `#endpoint(method, path, as: Response.self)` | Use a named macro-assisted endpoint struct or runtime `EndpointBuilder` |
 | `client.request(path, method:tag:)` | Use a named `APIDefinition` or an explicit `EndpointBuilder` |
 | Passing an optional directly to `EndpointPathEncoding.percentEncodedSegment` | Unwrap it and define the nil behavior before encoding |
-| `NetworkConfiguration.responseBodyLimit` | Read and configure `responseBodyBufferingPolicy`; choose `.streaming(maxBytes:)` or `.buffered(maxBytes:)` |
+| `NetworkConfiguration.responseBodyLimit` | Configure `ResiliencePack(bodyBuffering:)` with `.streaming(maxBytes:)` or `.buffered(maxBytes:)` |
 | Assuming `safeDefaults` / `advanced` has an unbounded collected response, including for file uploads | Accept the 5 MiB default, configure another explicit bound, or deliberately select `.streaming(maxBytes: nil)` / `.buffered(maxBytes: nil)` |
 | Using `MockURLSession` or VCR replay mode with `safeDefaults` | No configuration change is required; fixture data is buffered by design and the response ceiling is enforced before the response pipeline |
 | Using VCR record mode with bounded streaming | Select an explicitly reviewed `.buffered(maxBytes:)` recording profile; record mode forwards to a backing session and fails closed under bounded streaming |
@@ -618,7 +619,7 @@ Foreground downloads apply `DefaultRedirectPolicy` and URL admission before
 following every redirect.
 HTTPS downgrade, unsafe cross-origin method replay, missing retained origin
 metadata, and traversal targets terminate as `DownloadError.invalidURL`
-without retry. `DownloadConfiguration.allowsInsecureHTTP` permits an
+without retry. `DownloadTransferPack(allowsInsecureHTTP: true)` permits an
 intentional plain-HTTP source and same-scheme foreground redirect; it does not
 enable an HTTPS downgrade through the foreground redirect policy.
 

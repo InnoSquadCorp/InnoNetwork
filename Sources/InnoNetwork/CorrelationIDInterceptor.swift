@@ -3,8 +3,8 @@ import Foundation
 /// Request interceptor that copies values from the surrounding
 /// ``NetworkContext/current`` onto the outgoing `URLRequest` as headers.
 ///
-/// Add it to the session-level interceptor chain on
-/// ``NetworkConfiguration/requestInterceptors`` so every request picks up
+/// Add it through the `additionalRequestInterceptors` input of ``AuthPack`` so
+/// every request picks up
 /// the trace/correlation IDs bound by the caller without each
 /// ``APIDefinition`` re-implementing the wiring:
 ///

@@ -12,7 +12,7 @@ without losing the single-flight refresh guarantee.
 | `RequestInterceptor.adapt(_:for:_:completion:)` | ``RequestInterceptor/adapt(_:)``                  |
 | `RequestInterceptor.retry(_:for:dueTo:completion:)` | ``RetryPolicy`` + ``RefreshTokenPolicy`` (split)  |
 | `RequestModifier`                        | per-``APIDefinition`` ``RequestInterceptor``             |
-| `EventMonitor`                           | ``NetworkEventObserving`` via ``NetworkConfiguration/eventObservers`` |
+| `EventMonitor`                           | ``NetworkEventObserving`` via `ObservabilityPack(eventObservers:)` |
 | `Authenticator` / `AuthenticationInterceptor` | ``RefreshTokenPolicy``                              |
 | `ResponseSerializer`                     | ``ResponseInterceptor`` + decoder configuration          |
 | `RetryResult.retryWithDelay(_:)`         | return value of ``RetryPolicy/shouldRetry(error:retryIndex:request:response:)`` |
@@ -141,7 +141,7 @@ struct RequestIDInterceptor: RequestInterceptor {
 
 Throw to abort; `async`/`throws` replaces Alamofire's completion-handler
 result. Attach to a session via
-``NetworkConfiguration/requestInterceptors`` or to a single endpoint
+`AuthPack(additionalRequestInterceptors:)` or to a single endpoint
 via ``APIDefinition/requestInterceptors`` — see <doc:Interceptors> for
 the onion order.
 

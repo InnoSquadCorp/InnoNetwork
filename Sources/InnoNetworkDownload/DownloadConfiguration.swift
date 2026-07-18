@@ -2,6 +2,14 @@ import Foundation
 import InnoNetwork
 
 /// Configures download transport behavior, retry policy, and event delivery.
+/// An immutable command that configures ``DownloadManager``.
+///
+/// Start with ``safeDefaults(sessionIdentifier:)`` and opt into only the
+/// transfer, retry, observability, or persistence packs the product requires.
+/// Runtime fields intentionally stay package-owned so the public contract has
+/// one configuration vocabulary: factory and pack inputs. Applications that
+/// need to inspect chosen settings should keep their app-owned input model
+/// alongside the configuration they build.
 public struct DownloadConfiguration: Sendable {
     private static let defaultSessionIdentifier = "com.innonetwork.download"
 
@@ -85,22 +93,22 @@ public struct DownloadConfiguration: Sendable {
         }
     }
 
-    public let maxConnectionsPerHost: Int
-    public let maxRetryCount: Int
+    package let maxConnectionsPerHost: Int
+    package let maxRetryCount: Int
     /// Maximum total retry count even if the counter is reset due to network changes.
-    public let maxTotalRetries: Int
+    package let maxTotalRetries: Int
     /// Base retry delay in seconds before jitter / exponential backoff is applied.
-    public let retryDelay: TimeInterval
+    package let retryDelay: TimeInterval
     /// When `true`, each retry grows its base delay as
     /// `retryDelay * 2^(retryCount - 1)` and then samples the final wait from
     /// `base ± (base * retryJitterRatio)`, clamped to ``maxRetryDelay`` when
     /// the user-facing cap is enabled. Default is `false` so 4.x retains the
     /// fixed-delay behavior that earlier releases shipped.
-    public let exponentialBackoff: Bool
+    package let exponentialBackoff: Bool
     /// Jitter ratio applied symmetrically around the exponential-backoff base
     /// delay (`0.0...1.0`). Only consulted when ``exponentialBackoff`` is
     /// enabled. Values outside the range are clamped.
-    public let retryJitterRatio: Double
+    package let retryJitterRatio: Double
     /// Upper bound in seconds on the exponential-backoff retry delay after
     /// symmetric jitter is applied.
     ///
@@ -110,9 +118,9 @@ public struct DownloadConfiguration: Sendable {
     ///
     /// Only consulted when ``exponentialBackoff`` is enabled. Negative values
     /// clamp to `0` (cap disabled).
-    public let maxRetryDelay: TimeInterval
-    public let timeoutForRequest: TimeInterval
-    public let timeoutForResource: TimeInterval
+    package let maxRetryDelay: TimeInterval
+    package let timeoutForRequest: TimeInterval
+    package let timeoutForResource: TimeInterval
     /// Optional per-task inactivity watchdog. When set, the manager cancels a
     /// downloading task if no progress callback or first-observed download
     /// activity has been seen for at least this duration. `nil` disables the
@@ -127,14 +135,14 @@ public struct DownloadConfiguration: Sendable {
     /// `Duration.zero` (or pathologically small values) cannot turn the
     /// watchdog into a "cancel every task after one poll" generator. Pass
     /// `nil` if you want the watchdog disabled.
-    public let taskInactivityTimeout: Duration?
-    public let allowsCellularAccess: Bool
+    package let taskInactivityTimeout: Duration?
+    package let allowsCellularAccess: Bool
     /// Allows plain `http` download sources and same-scheme redirect targets.
     /// Defaults to `false`; production downloads should use HTTPS. This does
     /// not permit HTTPS-to-HTTP downgrade redirects in foreground mode, where
     /// the download delegate enforces the default redirect policy. Background
     /// sessions do not expose per-hop redirect decisions to the delegate.
-    public let allowsInsecureHTTP: Bool
+    package let allowsInsecureHTTP: Bool
     /// Foundation session mode. Foreground mode is the secure default and
     /// enforces admission before every redirect. Background mode preserves
     /// out-of-process continuation, but Foundation follows redirects without
@@ -146,7 +154,7 @@ public struct DownloadConfiguration: Sendable {
     ///
     /// The preset factories use a shared identifier intended for a single download manager per process.
     /// Override this value when you need multiple independent managers or persistence domains.
-    public let sessionIdentifier: String
+    package let sessionIdentifier: String
     /// Optional App Group container identifier used by the background
     /// `URLSession` to store in-flight transfer state in a shared container.
     ///
@@ -157,23 +165,23 @@ public struct DownloadConfiguration: Sendable {
     /// restoration also requires ``persistenceBaseDirectoryURL`` to point to a
     /// shared writable App Group directory; this setting alone shares only
     /// Foundation's session state. This value is ignored in foreground mode.
-    public let sharedContainerIdentifier: String?
-    public let networkMonitor: (any NetworkMonitoring)?
+    package let sharedContainerIdentifier: String?
+    package let networkMonitor: (any NetworkMonitoring)?
     /// When true, waits for network changes before retrying on download failure.
-    public let waitsForNetworkChanges: Bool
-    public let networkChangeTimeout: TimeInterval?
+    package let waitsForNetworkChanges: Bool
+    package let networkChangeTimeout: TimeInterval?
     /// Event buffering policy used for task listeners and async streams.
-    public let eventDeliveryPolicy: EventDeliveryPolicy
+    package let eventDeliveryPolicy: EventDeliveryPolicy
     /// Optional reporter that receives raw and aggregate event pipeline metrics.
-    public let eventMetricsReporter: (any EventPipelineMetricsReporting)?
+    package let eventMetricsReporter: (any EventPipelineMetricsReporting)?
     /// Controls how aggressively the append-log persistence calls `fsync(_:)`
     /// on the events log and checkpoint files. See
     /// ``PersistenceFsyncPolicy`` for the trade-offs. Defaults to
     /// ``PersistenceFsyncPolicy/onCheckpoint``.
-    public let persistenceFsyncPolicy: PersistenceFsyncPolicy
+    package let persistenceFsyncPolicy: PersistenceFsyncPolicy
     /// Controls when the append-log persistence layer rewrites a compact
     /// checkpoint and clears accumulated mutation events.
-    public let persistenceCompactionPolicy: PersistenceCompactionPolicy
+    package let persistenceCompactionPolicy: PersistenceCompactionPolicy
     /// Optional override for the persistence root directory.
     ///
     /// When `nil` (the default), the append-log persistence store writes to
@@ -191,7 +199,7 @@ public struct DownloadConfiguration: Sendable {
     /// one background session, both targets must use the same App Group-backed
     /// root so the library can correlate restored Foundation tasks with its
     /// logical persistence records. Proactive live handoff is not supported.
-    public let persistenceBaseDirectoryURL: URL?
+    package let persistenceBaseDirectoryURL: URL?
 
     /// Durability policy for the append-log persistence layer.
     ///

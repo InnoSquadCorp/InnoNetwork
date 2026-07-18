@@ -30,8 +30,9 @@ For most apps, treat the WebSocket as foreground-only:
    scene leaves the foreground.
 2. Subscribe to `UIScene.didActivateNotification` and call
    ``WebSocketManager/connect(url:subprotocols:)`` again on resume.
-3. Disable the heartbeat (``WebSocketConfiguration/heartbeatInterval``
-   = `0`) for backgrounded scenes — the OS does not deliver application
+3. Disable the heartbeat by rebuilding the manager configuration with
+   `WebSocketLivenessPack(heartbeatInterval: 0)` for backgrounded scenes — the
+   OS does not deliver application
    pings reliably while suspended, so a heartbeat schedule will fire a
    spurious `.error(.pingTimeout)` immediately on resume.
 

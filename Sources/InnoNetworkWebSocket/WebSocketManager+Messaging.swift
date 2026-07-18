@@ -21,7 +21,7 @@ extension WebSocketManager {
         }
     }
 
-    /// Reserves a send slot under ``WebSocketConfiguration/sendQueueLimit``,
+    /// Reserves a send slot under `sendQueueLimit` from ``WebSocketMessagingPack``,
     /// dispatches the body, and releases the slot. Honours the configured
     /// ``WebSocketSendOverflowPolicy`` when the limit is exhausted.
     private func sendGuarded(

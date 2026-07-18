@@ -96,8 +96,9 @@ this stays robust to library changes.
 the failed decode. By default, `response.data` is redacted to empty data before the
 error is surfaced.
 The original response body is preserved **only** when the consumer opts in via
-`NetworkConfiguration.captureFailurePayload = true`. Keep that flag off in production
-to avoid leaking PII into crash reports, analytics, or logs.
+`CachePack(captureFailurePayload: true)` in an advanced configuration. Keep
+that flag off in production to avoid leaking PII into crash reports,
+analytics, or logs.
 
 ## NSError bridging
 

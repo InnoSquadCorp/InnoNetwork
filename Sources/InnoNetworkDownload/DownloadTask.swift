@@ -42,7 +42,7 @@ public actor DownloadTask: Identifiable {
     /// `DownloadManager`. Progress callbacks update it directly; the
     /// inactivity watchdog may seed it when a task is downloading but has
     /// not produced its first progress event yet. Consumed by
-    /// ``DownloadConfiguration/taskInactivityTimeout``.
+    /// `taskInactivityTimeout` from ``DownloadTransferPack``.
     private var _lastProgressAt: ContinuousClock.Instant?
     /// Serializes competing completion, failure, and cancellation paths. A
     /// completion may need to stage/move a file before it can expose the final

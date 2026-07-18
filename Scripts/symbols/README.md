@@ -23,26 +23,26 @@ Stable compatibility promise.
 
 | Product | Public declarations |
 |---|---:|
-| `InnoNetwork` (core) | 839 |
-| `InnoNetworkWebSocket` | 153 |
-| `InnoNetworkDownload` | 115 |
+| `InnoNetwork` (core) | 804 |
+| `InnoNetworkWebSocket` | 132 |
+| `InnoNetworkDownload` | 93 |
 | `InnoNetworkTestSupport` | 84 |
 | `InnoNetworkPersistentCache` | 51 |
 | `InnoNetworkOpenAPI` | 35 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
-| **Total** | **1,304** |
+| **Total** | **1,226** |
 
 | Compatibility tier | Public declarations |
 |---|---:|
 | Stable consumer API | 304 |
-| Provisionally Stable consumer API | 967 |
+| Provisionally Stable consumer API | 889 |
 | `@_spi(GeneratedClientSupport)` | 33 |
-| **Total** | **1,304** |
+| **Total** | **1,226** |
 
 ## Why this matters
 
-For a single-maintainer client-side Swift networking library, 1,304 public
+For a single-maintainer client-side Swift networking library, 1,226 public
 declarations is unusually large — roughly 4× `Get`'s surface and ~10× the
 `URLSession`-only "two functions and a `Decoder`" baseline.
 
@@ -62,7 +62,9 @@ visibility, not `public`.
 
 ## Reduction roadmap
 
-The 5.0 preview has removed the deprecated configuration modifiers, package
+The 5.0 preview has removed the deprecated configuration modifiers, readable
+configuration-state mirrors (configuration is now an opaque command composed
+through presets and packs), package
 lifecycle reducer vocabulary, manual task-listener subscriptions, public
 transition-table helpers, and optional observability no-op implementations
 from this inventory. Before the tag, any further demotion still requires a dependency-graph audit:

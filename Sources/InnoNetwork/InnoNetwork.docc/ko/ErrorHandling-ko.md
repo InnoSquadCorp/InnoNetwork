@@ -75,9 +75,10 @@ do {
 를 함께 들고 옵니다. 기본 동작은 오류가 노출되기 전에 `response.data` 를 빈
 Data 로 redact 하는 것입니다.
 
-원본 응답 본문은 `NetworkConfiguration.captureFailurePayload = true` 로 명시
-opt-in 한 경우에만 보존됩니다. 프로덕션에서는 PII 가 크래시 리포트, 분석,
-로그에 유출되지 않도록 이 플래그를 꺼 두세요.
+원본 응답 본문은 advanced configuration에
+`CachePack(captureFailurePayload: true)` 를 전달해 명시적으로 opt-in 한
+경우에만 보존됩니다. 프로덕션에서는 PII 가 크래시 리포트, 분석, 로그에
+유출되지 않도록 이 플래그를 꺼 두세요.
 
 ## NSError 브리지
 

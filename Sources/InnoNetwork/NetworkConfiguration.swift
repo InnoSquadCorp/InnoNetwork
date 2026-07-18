@@ -1,14 +1,24 @@
 import Foundation
 import OSLog
 
+/// An immutable command that configures ``DefaultNetworkClient``.
+///
+/// Create values with ``safeDefaults(baseURL:)`` or compose explicit policy
+/// packs with
+/// ``advanced(baseURL:resilience:auth:observability:cache:transport:)``.
+/// Runtime fields intentionally stay package-owned: exposing the same policy
+/// twice as both readable state and pack input would enlarge the compatibility
+/// surface without adding a supported mutation path. Applications that need
+/// to inspect their chosen settings should keep that app-owned input model
+/// alongside the configuration they build.
 public struct NetworkConfiguration: Sendable {
     /// The default range of HTTP status codes treated as successful responses.
     /// `2xx` per RFC 9110 §15.3.
-    public static let defaultAcceptableStatusCodes: Set<Int> = Set(200..<300)
+    package static let defaultAcceptableStatusCodes: Set<Int> = Set(200..<300)
     /// Default maximum UTF-8 byte length accepted for a single line-delimited
     /// streaming frame before it is rejected with
     /// ``NetworkErrorCode/streamFrameTooLarge``.
-    public static let defaultStreamingLineByteLimit: Int = 1 << 20
+    package static let defaultStreamingLineByteLimit: Int = 1 << 20
     /// Default maximum size for a collected response, including file-upload
     /// responses, in production-facing configuration presets.
     package static let defaultResponseBodyByteLimit: Int64 = 5 * 1024 * 1024
@@ -77,87 +87,87 @@ public struct NetworkConfiguration: Sendable {
         }
     }
 
-    public let baseURL: URL
-    public let timeout: TimeInterval
-    public let cachePolicy: URLRequest.CachePolicy
+    package let baseURL: URL
+    package let timeout: TimeInterval
+    package let cachePolicy: URLRequest.CachePolicy
     /// Default priority hint applied to requests that do not override it.
-    public let requestPriority: RequestPriority
+    package let requestPriority: RequestPriority
     /// Default cellular-access policy applied to built `URLRequest` values.
-    public let allowsCellularAccess: Bool
+    package let allowsCellularAccess: Bool
     /// Default expensive-network policy applied to built `URLRequest` values.
-    public let allowsExpensiveNetworkAccess: Bool
+    package let allowsExpensiveNetworkAccess: Bool
     /// Default Low Data Mode policy applied to built `URLRequest` values.
-    public let allowsConstrainedNetworkAccess: Bool
-    public let retryPolicy: RetryPolicy?
-    public let networkMonitor: (any NetworkMonitoring)?
-    public let metricsReporter: (any NetworkMetricsReporting)?
-    public let trustPolicy: TrustPolicy
-    public let eventObservers: [any NetworkEventObserving]
-    public let eventDeliveryPolicy: EventDeliveryPolicy
-    public let eventMetricsReporter: (any EventPipelineMetricsReporting)?
+    package let allowsConstrainedNetworkAccess: Bool
+    package let retryPolicy: RetryPolicy?
+    package let networkMonitor: (any NetworkMonitoring)?
+    package let metricsReporter: (any NetworkMetricsReporting)?
+    package let trustPolicy: TrustPolicy
+    package let eventObservers: [any NetworkEventObserving]
+    package let eventDeliveryPolicy: EventDeliveryPolicy
+    package let eventMetricsReporter: (any EventPipelineMetricsReporting)?
     /// HTTP status codes that the request executor treats as successful.
     /// Responses with a status code outside this set throw
     /// ``NetworkError/statusCode(_:)``. Defaults to ``defaultAcceptableStatusCodes``
     /// (`200..<300`); override to allow values like `304` or `205` to flow
     /// through to consumer code without error mapping.
-    public let acceptableStatusCodes: Set<Int>
+    package let acceptableStatusCodes: Set<Int>
     /// Request interceptors applied to **every** request dispatched through
     /// this client, before any per-``APIDefinition`` interceptors. Use this
     /// slot for cross-cutting concerns (Bearer auth, distributed-tracing
     /// headers, request IDs) so each ``APIDefinition`` does not have to
     /// re-declare them.
-    public let requestInterceptors: [RequestInterceptor]
+    package let requestInterceptors: [RequestInterceptor]
     /// Header-only request signers applied after every request interceptor
     /// and after the active refresh-token policy attaches its current token.
     /// Configuration signers run before endpoint-level signers.
-    public let requestSigners: [RequestSigner]
+    package let requestSigners: [RequestSigner]
     /// Response interceptors applied to **every** response, after any
     /// per-``APIDefinition`` interceptors. The order is intentionally an
     /// onion: the request chain runs outer→inner (config first), and the
     /// response chain unwinds inner→outer (config last) so a session-level
     /// interceptor can observe the same response shape its peer would have
     /// produced under a per-endpoint setup.
-    public let responseInterceptors: [ResponseInterceptor]
+    package let responseInterceptors: [ResponseInterceptor]
     /// Decoding interceptors applied around the response decode boundary
     /// for **every** request. Hooks fire after all response interceptors
     /// have settled, immediately before and after the configured decoder
     /// runs. Use them for envelope unwrapping, payload sanitization,
     /// decode metrics, or typed-value normalization. See
     /// ``DecodingInterceptor`` for ordering and failure semantics.
-    public let decodingInterceptors: [DecodingInterceptor]
+    package let decodingInterceptors: [DecodingInterceptor]
     /// Optional token refresh policy. When configured, the client applies the
     /// current token before transport, refreshes once on matching auth status
     /// codes, and replays the fully adapted request at most one time.
-    public let refreshTokenPolicy: RefreshTokenPolicy?
+    package let refreshTokenPolicy: RefreshTokenPolicy?
     /// Optional raw-transport coalescing policy. Disabled by default.
-    public let requestCoalescingPolicy: RequestCoalescingPolicy
+    package let requestCoalescingPolicy: RequestCoalescingPolicy
     /// Optional response cache policy. Disabled by default.
-    public let responseCachePolicy: ResponseCachePolicy
+    package let responseCachePolicy: ResponseCachePolicy
     /// Cache storage used when ``responseCachePolicy`` is enabled.
-    public let responseCache: (any ResponseCache)?
+    package let responseCache: (any ResponseCache)?
     /// Optional per-host circuit breaker policy. Disabled by default.
-    public let circuitBreakerPolicy: CircuitBreakerPolicy?
+    package let circuitBreakerPolicy: CircuitBreakerPolicy?
     /// Custom public execution policies wrapped around each raw transport
     /// attempt after request adaptation/auth application and before response
     /// interceptors, status validation, cache writes, and decoding.
-    public let customExecutionPolicies: [any RequestExecutionPolicy]
+    package let customExecutionPolicies: [any RequestExecutionPolicy]
     /// Optional policy that attaches one stable idempotency key to every
     /// retry attempt for the same logical request.
-    public let idempotencyKeyPolicy: IdempotencyKeyPolicy
+    package let idempotencyKeyPolicy: IdempotencyKeyPolicy
 
     /// Produces the default `User-Agent` value at request-build time.
     ///
     /// The provider is evaluated for each request when the endpoint still
     /// carries the library default `User-Agent`, allowing tests and apps with
     /// custom bundle metadata to avoid a process-start snapshot.
-    public let userAgentProvider: @Sendable () -> String
+    package let userAgentProvider: @Sendable () -> String
 
     /// Produces the default `Accept-Language` value at request-build time.
     ///
     /// The provider is evaluated for each request when the endpoint still
     /// carries the library default `Accept-Language`, so locale changes can
     /// be reflected without rebuilding endpoint types.
-    public let acceptLanguageProvider: @Sendable () -> String
+    package let acceptLanguageProvider: @Sendable () -> String
 
     /// When `false` (default), response bodies attached to ``NetworkError``
     /// cases (`decoding`, `statusCode`, and `underlying` when present) are
@@ -168,7 +178,7 @@ public struct NetworkConfiguration: Sendable {
     ///
     /// Set this to `true` only in diagnostic configurations where capturing
     /// the failing response body is worth the privacy trade-off.
-    public let captureFailurePayload: Bool
+    package let captureFailurePayload: Bool
 
     /// Response body collection policy. ``safeDefaults(baseURL:)``
     /// and ``advanced(baseURL:resilience:auth:observability:cache:transport:)``
@@ -183,20 +193,20 @@ public struct NetworkConfiguration: Sendable {
     /// otherwise fails closed. Custom sessions that support file uploads but
     /// not bounded upload-response streaming also fail closed while a ceiling
     /// is active.
-    public let responseBodyBufferingPolicy: ResponseBodyBufferingPolicy
+    package let responseBodyBufferingPolicy: ResponseBodyBufferingPolicy
 
     /// Maximum UTF-8 byte length accepted for one line-delimited streaming
     /// frame before decoding. Defaults to 1 MiB. Values below 1 are
     /// normalised to 1 so a misconfigured client cannot disable the guard by
     /// accident.
-    public let streamingLineByteLimit: Int
+    package let streamingLineByteLimit: Int
 
     /// Decides how the client reacts to HTTP redirects (3xx + `Location`).
     /// Defaults to ``DefaultRedirectPolicy``, which rejects HTTPS downgrades
     /// and any cross-origin redirect that retains an unsafe method, and strips
     /// every caller-prepared original header plus built-in or registered
     /// sensitive session headers on other cross-origin hops.
-    public let redirectPolicy: any RedirectPolicy
+    package let redirectPolicy: any RedirectPolicy
 
     /// When `false` (default), a `baseURL` with `http://` scheme is rejected
     /// at request-build time with ``NetworkError/configuration(reason:)`` and
@@ -207,7 +217,7 @@ public struct NetworkConfiguration: Sendable {
     /// targets without ATS enforcement. Set to `true` only when the
     /// non-encrypted endpoint is intentional (loopback, private LAN, opt-in
     /// staging).
-    public let allowsInsecureHTTP: Bool
+    package let allowsInsecureHTTP: Bool
 
     /// Build a `URLSessionConfiguration` derived from `URLSessionConfiguration.default`.
     /// Provided as a convenience for callers that construct their own

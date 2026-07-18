@@ -32,7 +32,7 @@ public protocol Endpoint: Sendable {
     ///
     /// Values may contain path placeholders already expanded by callers or
     /// generated clients. The executor combines this path with
-    /// ``NetworkConfiguration/baseURL`` before request interceptors run.
+    /// the client's configured base URL before request interceptors run.
     var path: String { get }
 
     /// Session bearer authentication required by this endpoint.
@@ -73,7 +73,7 @@ public protocol Endpoint: Sendable {
     /// Per-endpoint override for the set of acceptable HTTP status codes.
     ///
     /// When `nil`, the executor falls back to
-    /// ``NetworkConfiguration/acceptableStatusCodes``.
+    /// the acceptable status codes supplied through ``TransportPack``.
     var acceptableStatusCodes: Set<Int>? { get }
 
     /// Single transport-shape entry point describing how the response
@@ -82,19 +82,19 @@ public protocol Endpoint: Sendable {
     var transport: TransportPolicy<APIResponse> { get }
 
     /// Per-endpoint override for the request timeout. When non-nil the
-    /// value replaces ``NetworkConfiguration/timeout`` on the built
+    /// value replaces the client-level transport timeout on the built
     /// `URLRequest`. Defaults to `nil` so endpoints inherit the client
     /// timeout.
     var timeoutOverride: TimeInterval? { get }
 
     /// Per-endpoint override for `URLRequest.cachePolicy`. When non-nil
-    /// the value replaces ``NetworkConfiguration/cachePolicy`` on the
+    /// the value replaces the client-level cache policy on the
     /// built `URLRequest`. Defaults to `nil` so endpoints inherit the
     /// client cache policy.
     var cachePolicyOverride: URLRequest.CachePolicy? { get }
 
     /// Per-endpoint override for request priority. Defaults to `nil` so
-    /// endpoints inherit ``NetworkConfiguration/requestPriority``.
+    /// endpoints inherit the priority supplied through ``TransportPack``.
     var priorityOverride: RequestPriority? { get }
 
     /// Per-endpoint override for cellular access. Defaults to `nil`.

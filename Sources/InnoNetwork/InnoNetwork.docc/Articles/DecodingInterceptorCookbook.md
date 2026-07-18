@@ -16,9 +16,9 @@ is the raw transport body. Once the executor reaches the decode boundary, the
 - ``DecodingInterceptor/didDecode(_:response:)`` — observe or normalize the
   typed value the decoder produced.
 
-Interceptors are applied in declaration order on
-``NetworkConfiguration/decodingInterceptors``. The first interceptor in the
-array runs first on `willDecode` and first on `didDecode`. Throwing from
+Interceptors supplied through `AuthPack(additionalDecodingInterceptors:)` are
+applied in declaration order. The first interceptor in the array runs first
+on `willDecode` and first on `didDecode`. Throwing from
 either hook aborts the current attempt and routes the error through the
 configured ``RetryPolicy`` exactly like a transport failure — pick a
 ``NetworkError`` category that reflects how the policy should classify the
@@ -90,8 +90,8 @@ the same retry classification a server-side rejection would.
 
 ## Recipe 3 — Choosing between session and endpoint placement
 
-``DecodingInterceptor`` only attaches at the session level
-(``NetworkConfiguration/decodingInterceptors``). Unlike ``RequestInterceptor``
+``DecodingInterceptor`` only attaches at the session level through
+`AuthPack(additionalDecodingInterceptors:)`. Unlike ``RequestInterceptor``
 and ``ResponseInterceptor``, there is no per-``APIDefinition`` decoding slot:
 envelope shapes and sentinel conventions are session-wide concerns by nature.
 

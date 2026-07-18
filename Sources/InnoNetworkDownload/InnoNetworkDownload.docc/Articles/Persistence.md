@@ -131,8 +131,9 @@ and the manager's session-identifier guard surfaces the conflict before it gets 
 
 ## Tuning fsync semantics
 
-`DownloadConfiguration.persistenceFsyncPolicy` controls how aggressively the store calls
-`Darwin.fsync(_:)` on the events log and on checkpoint writes. The default is
+The `fsyncPolicy` input of ``DownloadPersistencePack`` controls how
+aggressively the store calls `Darwin.fsync(_:)` on the events log and on
+checkpoint writes. The default is
 ``DownloadConfiguration/PersistenceFsyncPolicy/onCheckpoint``.
 
 | Policy | Event append | Checkpoint write | Loss on crash |
@@ -179,10 +180,10 @@ policy change, or cache invalidation, the transfer may restart from byte 0.
 The persistence store itself is package-internal. Applications customize its behavior
 through public configuration:
 
-- Use a stable, app-unique ``DownloadConfiguration/sessionIdentifier`` for each background
-  session.
-- Tune durability with ``DownloadConfiguration/persistenceFsyncPolicy``.
-- Tune append-log growth with ``DownloadConfiguration/persistenceCompactionPolicy``.
+- Pass a stable, app-unique `sessionIdentifier` to the configuration factory
+  for each background session.
+- Tune durability with `DownloadPersistencePack(fsyncPolicy:)`.
+- Tune append-log growth with `DownloadPersistencePack(compactionPolicy:)`.
 
 The checkpoint and append-log file formats are internal implementation details. Do not parse
 or mutate them from application code; use ``DownloadManager`` APIs to observe and control

@@ -250,11 +250,11 @@ expected_provisionally=(
 '`NetworkErrorCode` SSOT enum (4.0.0 baseline) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case'
 '`NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.0.0 baseline)'
 '`MultipartUploadStrategy.inMemory(maxBytes:)` (4.0.0 baseline) — the explicit cap and encoder accumulator guard are part of the contract'
-'`DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.0.0 baseline)'
+'`DownloadTransferPack.init(...taskInactivityTimeout:...)` and `DownloadTask.lastProgressAt` (4.0.0 behavior carried into the 5.0 pack contract)'
 '`ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.0.0 baseline)'
-'`DownloadConfiguration.sharedContainerIdentifier` and the `DownloadPersistencePack.init(...sharedContainerIdentifier:...)` argument (4.0.0 baseline)'
+'`DownloadPersistencePack.init(...sharedContainerIdentifier:...)` (4.0.0 behavior carried into the 5.0 pack contract)'
 '`ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.0.0 baseline)'
-'`NetworkConfiguration.streamingLineByteLimit` and the `TransportPack.init(...streamingLineByteLimit:...)` argument (4.0.0 baseline)'
+'`TransportPack.init(...streamingLineByteLimit:...)` (4.0.0 behavior carried into the 5.0 pack contract)'
 )
 
 stable_code_spans="$(
@@ -1701,9 +1701,9 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/Model/MultipartFormData.swift"
       continue
       ;;
-    '`DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.0.0 baseline)')
-      require_contains 'public let taskInactivityTimeout: Duration?' \
-        "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+    '`DownloadTransferPack.init(...taskInactivityTimeout:...)` and `DownloadTask.lastProgressAt` (4.0.0 behavior carried into the 5.0 pack contract)')
+      require_contains 'taskInactivityTimeout: Duration? = nil' \
+        "$repo_root/Sources/InnoNetworkDownload/DownloadConfigurationPacks.swift"
       require_contains 'public var lastProgressAt: ContinuousClock.Instant?' \
         "$repo_root/Sources/InnoNetworkDownload/DownloadTask.swift"
       continue
@@ -1723,9 +1723,7 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/Cache/RFC9111CompliantCachePolicy.swift"
       continue
       ;;
-    '`DownloadConfiguration.sharedContainerIdentifier` and the `DownloadPersistencePack.init(...sharedContainerIdentifier:...)` argument (4.0.0 baseline)')
-      require_contains 'public let sharedContainerIdentifier: String?' \
-        "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+    '`DownloadPersistencePack.init(...sharedContainerIdentifier:...)` (4.0.0 behavior carried into the 5.0 pack contract)')
       require_contains 'sharedContainerIdentifier: String? = nil' \
         "$repo_root/Sources/InnoNetworkDownload/DownloadConfigurationPacks.swift"
       require_contains 'config.sharedContainerIdentifier = sharedContainerIdentifier' \
@@ -1743,11 +1741,11 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/RequestExecutor+Cache.swift"
       continue
       ;;
-    '`NetworkConfiguration.streamingLineByteLimit` and the `TransportPack.init(...streamingLineByteLimit:...)` argument (4.0.0 baseline)')
-      require_contains 'public static let defaultStreamingLineByteLimit' \
+    '`TransportPack.init(...streamingLineByteLimit:...)` (4.0.0 behavior carried into the 5.0 pack contract)')
+      require_contains 'package static let defaultStreamingLineByteLimit' \
         "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
-      require_contains 'public let streamingLineByteLimit: Int' \
-        "$repo_root/Sources/InnoNetwork/NetworkConfiguration.swift"
+      require_contains 'streamingLineByteLimit: Int? = nil' \
+        "$repo_root/Sources/InnoNetwork/Configuration/ConfigurationPacks.swift"
       require_contains 'private let streamingLineByteLimit: Int?' \
         "$repo_root/Sources/InnoNetwork/Configuration/ConfigurationPacks.swift"
       require_contains 'configuration.streamingLineByteLimit' \

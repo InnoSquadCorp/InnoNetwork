@@ -149,7 +149,7 @@ public protocol StreamingAPIDefinition: Sendable {
 
     /// Per-endpoint override for the set of acceptable HTTP status codes used
     /// when validating the streaming response handshake. When `nil`, falls
-    /// back to ``NetworkConfiguration/acceptableStatusCodes``.
+    /// back to the acceptable status codes supplied through ``TransportPack``.
     var acceptableStatusCodes: Set<Int>? { get }
 
     /// Resume policy applied when a mid-stream transport disconnect occurs.

@@ -24,7 +24,10 @@ Create feature-scoped ``WebSocketManager`` instances so reconnect, heartbeat,
 send-buffer, and event-delivery policy stay owned by the feature that opens the
 socket. See <doc:FeatureScopedManagers>.
 
-Event delivery for socket tasks flows through the shared event hub. Tune buffering, overflow behavior, and metrics integration via ``WebSocketConfiguration/eventDeliveryPolicy`` — see the [event delivery guide](https://innosquadcorp.github.io/InnoNetwork/InnoNetwork/documentation/innonetwork/eventdeliveryguide) in the core module.
+Event delivery for socket tasks flows through the shared event hub. Tune
+buffering, overflow behavior, and metrics integration through
+``WebSocketObservabilityPack`` — see the [event delivery guide](https://innosquadcorp.github.io/InnoNetwork/InnoNetwork/documentation/innonetwork/eventdeliveryguide)
+in the core module.
 
 ### Observing heartbeat attempts
 

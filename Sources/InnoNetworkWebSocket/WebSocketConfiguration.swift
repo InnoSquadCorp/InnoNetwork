@@ -36,6 +36,15 @@ public struct WebSocketHandshakeRequestAdapter: Sendable {
 }
 
 
+/// An immutable command that configures ``WebSocketManager``.
+///
+/// Start with ``safeDefaults()`` and use the thematic packs accepted by
+/// ``advanced(connection:liveness:reconnect:messaging:observability:)`` only
+/// when measured requirements justify them. Runtime fields intentionally stay
+/// package-owned so factory and pack inputs remain the single public
+/// configuration vocabulary. Applications that need to inspect chosen
+/// settings should keep their app-owned input model alongside the
+/// configuration they build.
 public struct WebSocketConfiguration: Sendable {
     package enum Presets {
         static func safeDefaults() -> WebSocketConfiguration {
@@ -97,25 +106,25 @@ public struct WebSocketConfiguration: Sendable {
 
     /// Maximum number of concurrent socket connections per host.
     /// Values lower than `1` are clamped to `1`.
-    public let maxConnectionsPerHost: Int
+    package let maxConnectionsPerHost: Int
     /// Connection timeout in seconds used for initial handshake requests.
     /// Negative values are clamped to `0`.
-    public let connectionTimeout: TimeInterval
+    package let connectionTimeout: TimeInterval
     /// Heartbeat ping interval in seconds.
     /// Set to `0` to disable heartbeat.
-    public let heartbeatInterval: TimeInterval
+    package let heartbeatInterval: TimeInterval
     /// Maximum time in seconds to wait for each pong response.
     /// Negative values are clamped to `0`.
-    public let pongTimeout: TimeInterval
+    package let pongTimeout: TimeInterval
     /// Number of consecutive missed pongs tolerated before declaring ping timeout.
     /// Values lower than `1` are clamped to `1`.
-    public let maxMissedPongs: Int
+    package let maxMissedPongs: Int
     /// Base reconnect delay in seconds before jitter/backoff is applied.
     /// Negative values are clamped to `0`.
-    public let reconnectDelay: TimeInterval
+    package let reconnectDelay: TimeInterval
     /// Jitter ratio applied to reconnect delay (`0.0...1.0`).
     /// Values outside the range are clamped.
-    public let reconnectJitterRatio: Double
+    package let reconnectJitterRatio: Double
     /// Optional upper bound in seconds on the exponential-backoff reconnect
     /// delay. When enabled, the randomized delay is sampled from a bounded
     /// range derived from the capped base so it never exceeds the ceiling.
@@ -124,10 +133,10 @@ public struct WebSocketConfiguration: Sendable {
     /// - `<= 0`: cap disabled — the reconnect backoff remains unbounded.
     ///
     /// Negative values are clamped to `0` (cap disabled).
-    public let maxReconnectDelay: TimeInterval
+    package let maxReconnectDelay: TimeInterval
     /// Number of reconnect retries after the initial connection attempt.
     /// Total connection attempts are `1 + maxReconnectAttempts`.
-    public let maxReconnectAttempts: Int
+    package let maxReconnectAttempts: Int
     /// Optional cumulative wall-clock budget in seconds covering all reconnect
     /// attempts within a single disconnect window. The reconnect coordinator
     /// stamps the first attempt and refuses further retries once `now` exceeds
@@ -139,32 +148,32 @@ public struct WebSocketConfiguration: Sendable {
     /// - `<= 0`: unlimited (default — preserves legacy behaviour).
     ///
     /// Negative values are clamped to `0` (disabled).
-    public let reconnectMaxTotalDuration: TimeInterval
+    package let reconnectMaxTotalDuration: TimeInterval
     /// Whether cellular data is allowed for socket connections.
-    public let allowsCellularAccess: Bool
+    package let allowsCellularAccess: Bool
     /// Allows plain `ws` connections. Defaults to `false`; production
     /// sockets should use WSS.
-    public let allowsInsecureWebSocket: Bool
+    package let allowsInsecureWebSocket: Bool
     /// Additional HTTP headers sent when establishing the WebSocket handshake.
-    public let requestHeaders: [String: String]
+    package let requestHeaders: [String: String]
     /// Async, throwing request adapters applied after static headers and
     /// subprotocol negotiation headers, before creating each
     /// `URLSessionWebSocketTask`. A thrown error is surfaced through the task's
     /// normal connection-failure lifecycle and may participate in automatic
     /// reconnect according to the configured retry budget.
-    public let handshakeRequestAdapters: [WebSocketHandshakeRequestAdapter]
-    public let eventDeliveryPolicy: EventDeliveryPolicy
-    public let eventMetricsReporter: (any EventPipelineMetricsReporting)?
+    package let handshakeRequestAdapters: [WebSocketHandshakeRequestAdapter]
+    package let eventDeliveryPolicy: EventDeliveryPolicy
+    package let eventMetricsReporter: (any EventPipelineMetricsReporting)?
 
     /// Maximum number of concurrent `send(_:message:)` / `send(_:string:)`
     /// operations allowed per task. Operations beyond this limit are
     /// rejected or dropped per ``sendQueueOverflowPolicy``.
     /// Values lower than `1` are clamped to `1`. Default is `256`.
-    public let sendQueueLimit: Int
+    package let sendQueueLimit: Int
 
     /// Behaviour when ``sendQueueLimit`` is exceeded for a task. Default is
     /// ``WebSocketSendOverflowPolicy/fail``.
-    public let sendQueueOverflowPolicy: WebSocketSendOverflowPolicy
+    package let sendQueueOverflowPolicy: WebSocketSendOverflowPolicy
 
     /// Maximum time the manager waits for the WebSocket close handshake to
     /// complete after `cancel(with:reason:)` is issued. When the timer fires
@@ -174,13 +183,13 @@ public struct WebSocketConfiguration: Sendable {
     ///
     /// Default is `.seconds(3)`. Negative values are clamped to `.zero`,
     /// which effectively short-circuits the handshake wait.
-    public let closeHandshakeTimeout: Duration
+    package let closeHandshakeTimeout: Duration
 
     /// Maximum payload size in bytes that the underlying
     /// `URLSessionWebSocketTask` will buffer for a single inbound message
     /// before failing the receive. Applied after the task is created. The
     /// platform default is 1 MiB; values lower than `1` are clamped to `1`.
-    public let maximumMessageSize: Int
+    package let maximumMessageSize: Int
 
     /// Configuration intent for `permessage-deflate`.
     ///
@@ -190,7 +199,7 @@ public struct WebSocketConfiguration: Sendable {
     /// ``WebSocketError/unsupportedProtocolFeature(_:)`` instead of opening
     /// a silently uncompressed socket. Optional transports may honour the
     /// flag. See `<doc:WebSocketProtocolPolicy>` for migration notes.
-    public let permessageDeflateEnabled: Bool
+    package let permessageDeflateEnabled: Bool
 
     /// Internal builder used by the pack-based `advanced(...)` factory.
     package struct AdvancedBuilder: Sendable {

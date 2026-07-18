@@ -13,9 +13,9 @@ InnoNetwork exposes two interceptor protocols:
 
 Each protocol has two attachment points:
 
-- **Session-level**, on ``NetworkConfiguration/requestInterceptors`` and
-  ``NetworkConfiguration/responseInterceptors``. These run for **every**
-  request the client dispatches.
+- **Session-level**, through `AuthPack(additionalRequestInterceptors:)` and
+  `AuthPack(additionalResponseInterceptors:)`. These run for **every** request
+  the client dispatches.
 - **Per-request**, on ``APIDefinition/requestInterceptors`` and
   ``APIDefinition/responseInterceptors``. These run only for the specific
   endpoint that declares them.
@@ -171,10 +171,10 @@ preserving repeatable header values.
 
 ## Streaming responses
 
-``DefaultNetworkClient/stream(_:)`` runs session-level
-``NetworkConfiguration/requestInterceptors`` before opening the stream and
-session-level ``NetworkConfiguration/responseInterceptors`` once the HTTP
-headers arrive. The response passed to those response interceptors contains
+``DefaultNetworkClient/stream(_:)`` runs session-level request interceptors
+from ``AuthPack`` before opening the stream and session-level response
+interceptors once the HTTP headers arrive. The response passed to those
+response interceptors contains
 status and header metadata only; ``Response/data`` is empty because the stream
 body is decoded line-by-line afterward.
 

@@ -106,10 +106,10 @@ What shipped:
   migrate by constructing `PublicKeyPinningEvaluator(policy:)` and
   passing it to `TrustPolicy.custom(_:)`. No re-export shim; the
   hard rename is announced in `CHANGELOG.md`.
-- `NetworkConfiguration.trustPolicy` keeps its public type. The
-  configuration value continues to flow through the same execution
-  pipeline (`RequestExecutionPolicy`, `NetworkObservability`); only
-  the declaration site of the pinning evaluator moves.
+- `TrustPolicy` remains public and is supplied through ``TransportPack``. The
+  value continues to flow through the same execution pipeline
+  (`RequestExecutionPolicy`, `NetworkObservability`); only the declaration
+  site of the pinning evaluator moves.
 
 ## 5.0 Body-Aware Reference Signers — AWS SigV4 and JWT Bearer
 

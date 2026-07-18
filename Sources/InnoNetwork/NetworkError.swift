@@ -29,7 +29,7 @@ import Foundation
 ///   `URLSessionConfiguration.timeoutIntervalForResource` budget.
 ///   `URLRequest.timeoutInterval` remains a request-level timeout and must
 ///   not be passed as that resource budget. The built-in request and stream
-///   executors pass `nil` for `NetworkConfiguration.timeout` because that
+///   executors pass `nil` for the configured transport timeout because that
 ///   value is applied to `URLRequest.timeoutInterval`. These overloads return
 ///   ``resourceTimeout`` for `URLError.timedOut` only when the task
 ///   interval reaches the resource budget; otherwise it falls back to
@@ -494,8 +494,8 @@ public extension NetworkError {
     /// Returns a copy of the error with any attached failure payload
     /// (`Response.data`) zeroed out. Status code, request, and headers are
     /// preserved so callers can still classify the failure. Used by the
-    /// request executor when ``NetworkConfiguration/captureFailurePayload``
-    /// is disabled (the default), so PII in failure bodies cannot leak into
+    /// request executor when failure-payload capture is disabled through
+    /// ``CachePack`` (the default), so PII in failure bodies cannot leak into
     /// logs, crash reports, or analytics through the error chain.
     func redactingFailurePayload() -> NetworkError {
         switch self {

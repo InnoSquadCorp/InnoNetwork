@@ -21,7 +21,10 @@ callbacks. The duplicate `DownloadConfiguration.default` and
 `safeDefaults()` factories; zero-argument manager construction remains
 unchanged. The direct 21-parameter `WebSocketConfiguration` initializer is
 package-owned; explicit tuning goes through thematic packs passed to
-`advanced(...)`. `WebSocketTask`
+`advanced(...)`. Core, Download, and WebSocket configuration values are opaque
+commands: their runtime fields are package-owned, while presets, pack inputs,
+and documented escape-hatch methods form the public configuration contract.
+`WebSocketTask`
 construction is manager-owned so every public handle has connection and
 ownership state. The duplicate `DownloadManager.make(configuration:)` factory
 is removed; the throwing initializer is the single construction path.
@@ -172,11 +175,11 @@ acquiring a 5.x compatibility promise.
 - `NetworkErrorCode` SSOT enum (4.0.0 baseline) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case
 - `NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.0.0 baseline)
 - `MultipartUploadStrategy.inMemory(maxBytes:)` (4.0.0 baseline) — the explicit cap and encoder accumulator guard are part of the contract
-- `DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.0.0 baseline)
+- `DownloadTransferPack.init(...taskInactivityTimeout:...)` and `DownloadTask.lastProgressAt` (4.0.0 behavior carried into the 5.0 pack contract)
 - `ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.0.0 baseline)
-- `DownloadConfiguration.sharedContainerIdentifier` and the `DownloadPersistencePack.init(...sharedContainerIdentifier:...)` argument (4.0.0 baseline)
+- `DownloadPersistencePack.init(...sharedContainerIdentifier:...)` (4.0.0 behavior carried into the 5.0 pack contract)
 - `ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.0.0 baseline)
-- `NetworkConfiguration.streamingLineByteLimit` and the `TransportPack.init(...streamingLineByteLimit:...)` argument (4.0.0 baseline)
+- `TransportPack.init(...streamingLineByteLimit:...)` (4.0.0 behavior carried into the 5.0 pack contract)
 
 ## 5.x Evolution Boundaries
 
@@ -231,10 +234,9 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 - `ResponseBodyBufferingPolicy` — the default inline request path is
   streaming. Its `streaming(maxBytes:)` and `buffered(maxBytes:)` cases are
   the single source of truth for collection mode and byte ceiling.
-- `NetworkConfiguration.streamingLineByteLimit` — controls the maximum UTF-8
-  byte length for one line-delimited streaming frame. The default remains
-  `NetworkConfiguration.defaultStreamingLineByteLimit` (1 MiB), and values
-  below 1 are normalized to 1.
+- `TransportPack.init(...streamingLineByteLimit:...)` — controls the maximum
+  UTF-8 byte length for one line-delimited streaming frame. The preset default
+  remains 1 MiB, and values below 1 are normalized to 1.
 - `RequestExecutionPolicy` — custom policies may observe and wrap raw
   transport attempts or adapt their responses. `RequestExecutionNext.execute()`
   always forwards the executor-owned request; request mutation belongs in a
@@ -352,6 +354,10 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   construction surface was removed before the 4.0.0 baseline and is not part
   of the planned 5.x stable API. Use presets and the named configuration packs
   passed to `NetworkConfiguration.advanced(...)` instead.
+- Core, Download, and WebSocket configuration runtime fields are package-owned.
+  Configuration values are immutable commands, not readable state mirrors;
+  applications that need inspection retain their own input model and build a
+  configuration through presets and packs.
 - `DownloadConfiguration.backgroundTransfersEnabled()` — the single public
   opt-in for Foundation-managed background continuation. The underlying
   foreground/background mode remains package-owned so the public contract
@@ -361,10 +367,9 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   `advanced(sessionIdentifier:transfer:retry:observability:persistence:)` so
   the secure preset defaults and manager
   identity remain explicit.
-- `DownloadConfiguration.sharedContainerIdentifier` — additive App Group
-  background-session storage knob. Default stays `nil`; future minors may add
-  preset helpers, but the property and `DownloadPersistencePack` argument
-  remain source-compatible.
+- `DownloadPersistencePack.init(...sharedContainerIdentifier:...)` — additive
+  App Group background-session storage knob. Default stays `nil`; future
+  minors may add preset helpers while preserving the pack input.
 - `HTTPHeader`, `HTTPHeaders`, and default header providers — default
   `User-Agent` / `Accept-Language` values are evaluated at request-build time
   so applications can inject bundle or locale ownership without relying on a
@@ -398,8 +403,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 planned 5.x release line.
 
-The machine-checked snapshot currently partitions all 1,304 declarations into
-304 Stable consumer declarations, 967 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 1,226 declarations into
+304 Stable consumer declarations, 889 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in

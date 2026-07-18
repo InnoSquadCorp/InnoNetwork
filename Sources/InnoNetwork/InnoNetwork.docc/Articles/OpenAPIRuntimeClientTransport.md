@@ -62,9 +62,10 @@ sessionConfig.tlsMinimumSupportedProtocolVersion = .TLSv13
 let session = URLSession(configuration: sessionConfig)
 ```
 
-`NetworkConfiguration.trustPolicy` is evaluated by InnoNetwork's request
-pipeline; it is not representable on `URLSessionConfiguration` and is not
-copied into this bare generated-client transport. Use `OpenAPIRequest` +
+The ``TrustPolicy`` supplied through ``TransportPack`` is evaluated by
+InnoNetwork's request pipeline; it is not representable on
+`URLSessionConfiguration` and is not copied into this bare generated-client
+transport. Use `OpenAPIRequest` +
 ``DefaultNetworkClient`` when a generated operation must use the full
 InnoNetwork pipeline.
 

@@ -62,7 +62,7 @@ public enum WebSocketError: Error, Sendable, Equatable {
     case pingTimeout
     case maxReconnectAttemptsExceeded
     /// Reconnect was attempted but the configured
-    /// ``WebSocketConfiguration/reconnectMaxTotalDuration`` window elapsed
+    /// `maxTotalDuration` from ``WebSocketReconnectPack`` elapsed
     /// before the connection re-established, even though the per-task
     /// `maxReconnectAttempts` budget had not been exhausted. Distinct from
     /// ``maxReconnectAttemptsExceeded`` so observers can decide whether to

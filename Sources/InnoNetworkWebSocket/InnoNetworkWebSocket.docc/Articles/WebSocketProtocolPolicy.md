@@ -84,18 +84,19 @@ disposition mapping the manager uses to gate reconnect.
 the server will either reject the handshake or assume frames are
 deflated and corrupt them.
 
-If ``WebSocketConfiguration/permessageDeflateEnabled`` is set on the built-in
-URLSession transport, ``WebSocketManager`` fails the connection before creating
-a socket and publishes ``WebSocketError/unsupportedProtocolFeature(_:)`` through
-the normal error callback/event path. That makes compression misconfiguration
+If `WebSocketMessagingPack(permessageDeflateEnabled: true)` is used with the
+built-in URLSession transport, ``WebSocketManager`` fails the connection
+before creating a socket and publishes
+``WebSocketError/unsupportedProtocolFeature(_:)`` through the normal error
+callback/event path. That makes compression misconfiguration
 visible during rollout instead of silently opening an uncompressed connection.
 Deployments that require compression should move to an optional transport that
 can negotiate RFC 7692 end to end.
 
 ## Heartbeat tuning
 
-``WebSocketConfiguration/heartbeatInterval`` (set to `0` to disable)
-governs how often the manager sends a ping; the paired pong timeout
+`WebSocketLivenessPack(heartbeatInterval:)` (set to `0` to disable) governs
+how often the manager sends a ping; the paired pong timeout
 sits on the same configuration. Tune the two together rather than in
 isolation:
 

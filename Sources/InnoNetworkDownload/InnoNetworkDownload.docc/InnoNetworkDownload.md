@@ -21,7 +21,10 @@ before transport. Call
 outside the app process is worth Foundation automatically following redirects
 without per-hop library preflight; see <doc:BackgroundDownloads>.
 
-Download task events flow through the shared event hub. Tune buffering, overflow behavior, and metrics integration via ``DownloadConfiguration/eventDeliveryPolicy`` — see the [event delivery guide](https://innosquadcorp.github.io/InnoNetwork/InnoNetwork/documentation/innonetwork/eventdeliveryguide) in the core module.
+Download task events flow through the shared event hub. Tune buffering,
+overflow behavior, and metrics integration through
+``DownloadObservabilityPack`` — see the [event delivery guide](https://innosquadcorp.github.io/InnoNetwork/InnoNetwork/documentation/innonetwork/eventdeliveryguide)
+in the core module.
 
 ## Topics
 

@@ -36,7 +36,7 @@ public enum WebSocketEvent: Sendable {
     case error(WebSocketError)
     /// Emitted when a `send(_:message:)` / `send(_:string:)` call is dropped
     /// because the per-task in-flight count is at
-    /// ``WebSocketConfiguration/sendQueueLimit`` and the configured
+    /// `sendQueueLimit` from ``WebSocketMessagingPack`` and the configured
     /// ``WebSocketSendOverflowPolicy`` is ``WebSocketSendOverflowPolicy/dropNewest``.
     /// Drops do not throw; observers can use this event to surface back-
     /// pressure or report telemetry.

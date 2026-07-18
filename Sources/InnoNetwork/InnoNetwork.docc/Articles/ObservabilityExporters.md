@@ -8,8 +8,8 @@ without coupling the core library to any specific telemetry vendor.
 
 InnoNetwork's observability surface is intentionally vendor-neutral.
 ``NetworkEvent`` exposes structured request lifecycle events, and
-``NetworkConfiguration/eventObservers`` attaches observers to the
-client. A vendor SDK adapter is glue code: it forwards those events to
+`ObservabilityPack(eventObservers:)` attaches observers to the client. A
+vendor SDK adapter is glue code: it forwards those events to
 the vendor's tracer/span/breadcrumb API in the format the vendor
 expects.
 

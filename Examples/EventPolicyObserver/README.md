@@ -4,9 +4,9 @@ Reference implementations of `EventPipelineMetricsReporting` that
 complement the DocC article
 [event delivery guide](../../Sources/InnoNetwork/InnoNetwork.docc/Articles/EventDeliveryGuide.md).
 
-Three reporters are included and can be wired into any
-`WebSocketConfiguration.eventMetricsReporter` or
-`DownloadConfiguration.eventMetricsReporter`:
+Three reporters are included and can be wired through the
+`eventMetricsReporter` input of `WebSocketObservabilityPack` or
+`DownloadObservabilityPack`:
 
 | Reporter | Backing API | Use case |
 |---|---|---|

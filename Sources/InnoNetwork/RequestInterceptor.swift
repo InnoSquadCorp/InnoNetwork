@@ -4,8 +4,8 @@ import Foundation
 ///
 /// Interceptors compose in an onion model around each request attempt:
 ///
-/// 1. Configuration-level interceptors run first
-///    (`NetworkConfiguration.requestInterceptors`). They apply to every
+/// 1. Configuration-level interceptors supplied through ``AuthPack`` run first.
+///    They apply to every
 ///    endpoint that uses the same client and are intended for cross-cutting
 ///    concerns like auth headers, request IDs, or telemetry tags.
 /// 2. Per-endpoint interceptors run next
