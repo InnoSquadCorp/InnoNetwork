@@ -26,4 +26,5 @@ Scripts/symbols/**                      @ethan-is
 
 # CI / supply-chain — keep release tooling under maintainer review.
 .github/workflows/**                    @ethan-is
+.github/required-status-checks.json     @ethan-is
 .github/CODEOWNERS                      @ethan-is

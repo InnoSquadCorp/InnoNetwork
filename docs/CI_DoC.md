@@ -10,6 +10,15 @@ This document defines the minimum completion criteria (DoC) for pull requests in
 
 ## Required CI Checks
 
+`.github/required-status-checks.json` is the machine-readable merge-gate
+contract. It requires dependency review, formatting and dead-code checks, the
+pinned SwiftPM build/test and bounded-shard lanes, docs and consumer smoke,
+benchmark smoke, all five declared Apple platform builds, and CodeQL.
+`Scripts/check_required_status_checks.py` validates both this policy and an
+exported live GitHub ruleset so remote protection cannot quietly fall back to a
+single check. Coverage upload jobs remain post-merge evidence rather than
+merge gates because they depend on an external service.
+
 The `CI` workflow must pass all of the following:
 
 1. The root `Package.resolved` must remain tracked
@@ -140,6 +149,10 @@ release artifacts are generated.
 ## Pass/Fail Policy
 
 - A PR is considered complete only when all CI checks are green.
+- During the unreleased 5.0 preview, organization administrators may use the
+  documented ruleset bypass for the staged direct-to-`main` workflow. The same
+  checks still run on the resulting `main` SHA and must be green before the
+  next stage proceeds. Remove or narrow that bypass before tagging 5.0.0.
 - If any check fails, the PR is not merge-ready.
 - Concurrency regressions and `@unchecked Sendable` additions in production sources are blocking failures.
 - Force unwrap additions in production sources are blocking failures; fixture

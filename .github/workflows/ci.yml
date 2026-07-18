@@ -503,7 +503,10 @@ jobs:
           python3 Scripts/tests/test_check_macro_build_baseline_contract.py
 
       - name: Verify public API tier fixtures
-        run: python3 Scripts/tests/test_check_public_api_tiers.py
+        run: |
+          python3 Scripts/tests/test_check_public_api_tiers.py
+          python3 Scripts/check_required_status_checks.py
+          python3 Scripts/tests/test_check_required_status_checks.py
 
       - name: Verify dependency snapshot conversion
         run: bash Scripts/tests/test_generate_dependency_snapshot.sh

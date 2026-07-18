@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "checks": [
+    {
+      "context": "Dependency Review",
+      "integration_id": 15368
+    },
+    {
+      "context": "Lint (swift-format)",
+      "integration_id": 15368
+    },
+    {
+      "context": "Lint (Periphery)",
+      "integration_id": 15368
+    },
+    {
+      "context": "Build and Test (SwiftPM) — Xcode 26.0.1",
+      "integration_id": 15368
+    },
+    {
+      "context": "Test (Bounded Target Shards) — Xcode 26.0.1",
+      "integration_id": 15368
+    },
+    {
+      "context": "Docs / Contract Sync",
+      "integration_id": 15368
+    },
+    {
+      "context": "Consumer Smoke",
+      "integration_id": 15368
+    },
+    {
+      "context": "Benchmark Smoke",
+      "integration_id": 15368
+    },
+    {
+      "context": "Apple Platform Build Smoke (platform=macOS, macOS, macosx, xcodebuild)",
+      "integration_id": 15368
+    },
+    {
+      "context": "Apple Platform Build Smoke (generic/platform=iOS Simulator, iOS, iphonesimulator, xcodebuild)",
+      "integration_id": 15368
+    },
+    {
+      "context": "Apple Platform Build Smoke (arm64-apple-tvos16.0, tvOS, appletvos, swiftpm-cross)",
+      "integration_id": 15368
+    },
+    {
+      "context": "Apple Platform Build Smoke (arm64_32-apple-watchos9.0, watchOS, watchos, swiftpm-cross)",
+      "integration_id": 15368
+    },
+    {
+      "context": "Apple Platform Build Smoke (arm64-apple-xros1.0, visionOS, xros, swiftpm-cross)",
+      "integration_id": 15368
+    },
+    {
+      "context": "CodeQL / Swift (swift)",
+      "integration_id": 15368
+    }
+  ]
+}

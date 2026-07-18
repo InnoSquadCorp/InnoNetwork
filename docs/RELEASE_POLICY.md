@@ -61,6 +61,12 @@
    release status to ready. It reproduces the pre-tag validation, coverage,
    benchmark, SBOM, DocC, and five-platform build gates locally; tag identity,
    signing, and publication remain GitHub-only responsibilities.
+9. Before tagging, export the active repository ruleset and run
+   `python3 Scripts/check_required_status_checks.py --ruleset-json <path>`.
+   It must match `.github/required-status-checks.json`. Narrow or remove the
+   temporary organization-administrator direct-push bypass used during the
+   unreleased 5.0 staging cycle; the tag must not be the first point at which
+   merge protection drift is discovered.
 
 ## Benchmarks
 

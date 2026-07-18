@@ -1061,6 +1061,18 @@ validate_release_quality_gates() {
     "$repo_root/.github/workflows/release.yml"
   require_contains 'python3 Scripts/tests/test_check_public_api_tiers.py' \
     "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'python3 Scripts/check_required_status_checks.py' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'python3 Scripts/check_required_status_checks.py' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'python3 Scripts/check_required_status_checks.py' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'python3 Scripts/tests/test_check_required_status_checks.py' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'python3 Scripts/tests/test_check_required_status_checks.py' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'python3 Scripts/tests/test_check_required_status_checks.py' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
   require_contains 'bash Scripts/tests/test_check_guarded_benchmark_contract.sh' \
     "$repo_root/.github/workflows/benchmarks.yml"
   require_contains 'bash Scripts/tests/test_check_guarded_benchmark_contract.sh' \
