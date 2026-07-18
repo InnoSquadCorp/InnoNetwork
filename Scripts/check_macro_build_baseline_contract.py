@@ -7,6 +7,7 @@ import json
 import math
 import re
 import statistics
+import subprocess
 from datetime import date
 from pathlib import Path
 
@@ -53,6 +54,51 @@ def positive_number(value: object, label: str) -> float:
     if not math.isfinite(number) or number <= 0:
         fail(f"{label} must be finite and positive")
     return number
+
+
+def git_output(repository: Path, *arguments: str) -> str:
+    process = subprocess.run(
+        ["git", *arguments],
+        cwd=repository,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if process.returncode != 0:
+        detail = process.stderr.strip() or process.stdout.strip() or "git command failed"
+        fail(detail)
+    return process.stdout.strip()
+
+
+def validate_repository_provenance(
+    revision: str,
+    expected_tree: str,
+    repository: Path = REPOSITORY,
+) -> None:
+    try:
+        actual_tree = git_output(repository, "rev-parse", f"{revision}^{{tree}}")
+    except SystemExit:
+        fail(
+            f"repositoryRevision {revision} is not available; "
+            "fetch the canonical repository history before validating"
+        )
+    ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", revision, "HEAD"],
+        cwd=repository,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if ancestor.returncode == 1:
+        fail(f"repositoryRevision {revision} is not an ancestor of HEAD")
+    if ancestor.returncode != 0:
+        detail = ancestor.stderr.strip() or "git merge-base failed"
+        fail(detail)
+    if actual_tree != expected_tree:
+        fail(
+            f"repositoryTree {expected_tree} does not match "
+            f"{revision}^{{tree}} ({actual_tree})"
+        )
 
 
 def validate_baseline(driver: str, path: Path) -> dict[tuple[str, str], float]:
@@ -118,6 +164,7 @@ def validate_documentation(
     required_values = [
         manifest["capturedAt"],
         manifest["repositoryRevision"],
+        manifest["repositoryTree"],
         *manifest["environment"].values(),
         *manifest["baselines"].values(),
     ]
@@ -145,8 +192,8 @@ def validate_documentation(
 
 def main() -> None:
     manifest = load_object(MANIFEST)
-    if manifest.get("schemaVersion") != 1:
-        fail("manifest.json must use schemaVersion 1")
+    if manifest.get("schemaVersion") != 2:
+        fail("manifest.json must use schemaVersion 2")
     captured_at = manifest.get("capturedAt")
     if not isinstance(captured_at, str):
         fail("manifest.json capturedAt must be an ISO date")
@@ -157,6 +204,13 @@ def main() -> None:
     revision = manifest.get("repositoryRevision")
     if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
         fail("manifest.json repositoryRevision must be a full lowercase Git SHA")
+    repository_tree = manifest.get("repositoryTree")
+    if (
+        not isinstance(repository_tree, str)
+        or re.fullmatch(r"[0-9a-f]{40}", repository_tree) is None
+    ):
+        fail("manifest.json repositoryTree must be a full lowercase Git tree SHA")
+    validate_repository_provenance(revision, repository_tree)
     environment = manifest.get("environment")
     expected_environment = {"hardware", "macOS", "xcode", "swift"}
     if not isinstance(environment, dict) or set(environment) != expected_environment:

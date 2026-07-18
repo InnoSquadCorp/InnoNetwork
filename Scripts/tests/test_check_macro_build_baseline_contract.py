@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 from copy import deepcopy
@@ -51,9 +52,76 @@ def expect_failure(
             raise AssertionError(f"invalid baseline unexpectedly passed: {expected}")
 
 
+def run_git(repository: Path, *arguments: str) -> str:
+    process = subprocess.run(
+        ["git", *arguments],
+        cwd=repository,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return process.stdout.strip()
+
+
+def expect_provenance_failure(
+    validator: ModuleType,
+    revision: str,
+    tree: str,
+    repository: Path,
+    expected: str,
+) -> None:
+    try:
+        validator.validate_repository_provenance(revision, tree, repository)
+    except SystemExit as error:
+        if expected not in str(error):
+            raise AssertionError(f"wanted {expected!r}, got {error!r}") from error
+    else:
+        raise AssertionError(f"invalid provenance unexpectedly passed: {expected}")
+
+
+def validate_provenance_fixtures(validator: ModuleType) -> None:
+    with tempfile.TemporaryDirectory(prefix="macro-build-provenance-test-") as directory:
+        repository = Path(directory)
+        run_git(repository, "init", "--quiet")
+        run_git(repository, "config", "user.name", "Fixture")
+        run_git(repository, "config", "user.email", "fixture@example.com")
+        source = repository / "source.txt"
+        source.write_text("baseline\n", encoding="utf-8")
+        run_git(repository, "add", "source.txt")
+        run_git(repository, "commit", "--quiet", "-m", "baseline")
+        revision = run_git(repository, "rev-parse", "HEAD")
+        tree = run_git(repository, "rev-parse", "HEAD^{tree}")
+
+        source.write_text("head\n", encoding="utf-8")
+        run_git(repository, "commit", "--quiet", "-am", "head")
+        validator.validate_repository_provenance(revision, tree, repository)
+        expect_provenance_failure(
+            validator,
+            revision,
+            "0" * 40,
+            repository,
+            "does not match",
+        )
+
+        run_git(repository, "checkout", "--quiet", "--orphan", "unrelated")
+        run_git(repository, "rm", "--quiet", "-f", "source.txt")
+        unrelated = repository / "unrelated.txt"
+        unrelated.write_text("unrelated\n", encoding="utf-8")
+        run_git(repository, "add", "unrelated.txt")
+        run_git(repository, "commit", "--quiet", "-m", "unrelated")
+        expect_provenance_failure(
+            validator,
+            revision,
+            tree,
+            repository,
+            "is not an ancestor of HEAD",
+        )
+
+
 def main() -> None:
     validator = load_validator()
     validator.main()
+    validate_provenance_fixtures(validator)
     source = json.loads(SWIFTPM_BASELINE.read_text(encoding="utf-8"))
 
     short_repeat = deepcopy(source)

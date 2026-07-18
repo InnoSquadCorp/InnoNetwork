@@ -1,7 +1,8 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "capturedAt": "2026-07-18",
-  "repositoryRevision": "a755957e1d22abf465277778e6ba988c5c866b4b",
+  "repositoryRevision": "b9fffeebc1838253a74dc27f5293495a179acf8b",
+  "repositoryTree": "84ebf27ada6af702949755f845adb2b0f7f6fe69",
   "environment": {
     "hardware": "Apple M4 Pro, 14 cores, 48 GB",
     "macOS": "26.5 (25F71)",

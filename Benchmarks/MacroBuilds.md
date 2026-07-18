@@ -42,7 +42,8 @@ profile and records the median. Each repetition starts in a new temporary
 package (and a new DerivedData directory for Xcode), then performs a clean
 build, a no-op incremental build, and—when endpoints exist—a one-endpoint edit.
 
-- Source revision: `a755957e1d22abf465277778e6ba988c5c866b4b`
+- Source revision: `b9fffeebc1838253a74dc27f5293495a179acf8b`
+- Source tree: `84ebf27ada6af702949755f845adb2b0f7f6fe69`
 - Host: Apple M4 Pro, 14 cores, 48 GB; macOS 26.5 (25F71)
 - Toolchain: Xcode 26.6 (17F113), Swift 6.3.3 (swiftlang-6.3.3.1.3)
 - Matrix: Core-only plus macro-enabled 0, 10, 50, and 200 endpoints
