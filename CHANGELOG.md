@@ -130,6 +130,11 @@ draft release summary.
 
 ### Added
 
+- `stream(_:)` and `stream(_:bufferingPolicy:)` now document a concrete
+  failure-type contract: every failure the returned stream finishes with is a
+  `NetworkError`, so `catch let error as NetworkError` is exhaustive. The
+  channel stays declared as `any Error` only because the standard library
+  constrains `AsyncThrowingStream` construction to that failure type.
 - `DefaultNetworkClient(baseURL:)` creates the ordinary safe-default client
   without exposing configuration policy to small integrations.
 - Typed one-off requests can start directly from

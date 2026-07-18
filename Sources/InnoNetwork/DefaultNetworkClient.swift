@@ -350,6 +350,13 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
     /// interceptors are not part of ``StreamingAPIDefinition`` and therefore
     /// are not run for streams.
     ///
+    /// Every failure this stream finishes with is a ``NetworkError``. The
+    /// channel is declared as `any Error` only because the standard library
+    /// constrains `AsyncThrowingStream` construction to that failure type;
+    /// callers can rely on `catch let error as NetworkError` being
+    /// exhaustive. This guarantee is part of the documented API contract
+    /// (see `API_STABILITY.md`).
+    ///
     /// - Parameter request: The streaming endpoint to subscribe to.
     /// - Returns: An `AsyncThrowingStream<T.Output, Error>` whose values are
     ///   the non-nil results of ``StreamingAPIDefinition/decode(line:)``.
@@ -366,6 +373,9 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
     /// ``StreamingResumePolicy/lastEventID(maxAttempts:retryDelay:)`` is active
     /// because the resume cursor must not advance past values a slow consumer
     /// never received.
+    ///
+    /// Every failure this stream finishes with is a ``NetworkError``; see
+    /// ``stream(_:)`` for the contract details.
     public func stream<T: StreamingAPIDefinition>(
         _ request: T,
         bufferingPolicy: StreamingBufferingPolicy

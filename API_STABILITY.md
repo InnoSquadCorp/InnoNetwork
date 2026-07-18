@@ -336,6 +336,12 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 - `StreamingBufferingPolicy` — bounded buffering cases may gain additional
   policy knobs, but `stream(_:)` stays lossless by default for 5.x and bounded
   buffers remain incompatible with `StreamingResumePolicy.lastEventID`.
+- `stream(_:)` / `stream(_:bufferingPolicy:)` — every failure the returned
+  stream finishes with is a `NetworkError`. The channel is declared
+  `any Error` only because the standard library constrains
+  `AsyncThrowingStream` construction to that failure type; the concrete
+  failure type is a documented contract for 5.x, so
+  `catch let error as NetworkError` is exhaustive.
 - `TraceContextInterceptor` and `W3CTraceContext` — W3C header propagation
   remains additive; future minors may add richer correlation helpers without
   changing `NetworkEvent` case shape.

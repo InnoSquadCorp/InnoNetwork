@@ -693,6 +693,30 @@ struct StreamingAPIDefinitionTests {
         #expect(SequencedStreamingURLProtocol.capturedRequests(for: streamURL).isEmpty)
     }
 
+    @Test("stream() failures are always NetworkError even after shutdown")
+    func streamFailureTypeContractAfterShutdown() async throws {
+        // The documented API contract (API_STABILITY.md) guarantees that the
+        // AsyncThrowingStream failure is always a NetworkError even though
+        // the stdlib forces the channel to be declared as `any Error`. Pin
+        // the synchronous rejection path here; transport-side failures are
+        // covered by streamUnsupportedTransportThrows.
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: MockURLSession()
+        )
+        await client.shutdown()
+
+        var iterator = client.stream(LineCounterStream()).makeAsyncIterator()
+        do {
+            _ = try await iterator.next()
+            Issue.record("Expected a failure from a shut-down client stream")
+        } catch let error as NetworkError {
+            #expect(error.category == .cancellation)
+        } catch {
+            Issue.record("Expected NetworkError, got \(type(of: error)): \(error)")
+        }
+    }
+
     @Test("stream() response interceptor status rewrite controls validation")
     func streamResponseInterceptorStatusRewriteControlsValidation() async throws {
         let definition = LineCounterStream()
