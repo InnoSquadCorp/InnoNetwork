@@ -201,15 +201,17 @@ extension RequestExecutor {
                 runtime: runtime,
                 allowsRequestCoalescing: allowsRequestCoalescing
             )
-            await eventHub.publish(
-                .responseReceived(
+            if !configuration.eventObservers.isEmpty {
+                await eventHub.publish(
+                    .responseReceived(
+                        requestID: requestID,
+                        statusCode: result.response.statusCode,
+                        byteCount: result.data.count
+                    ),
                     requestID: requestID,
-                    statusCode: result.response.statusCode,
-                    byteCount: result.data.count
-                ),
-                requestID: requestID,
-                observers: configuration.eventObservers
-            )
+                    observers: configuration.eventObservers
+                )
+            }
             return Response(
                 statusCode: result.response.statusCode,
                 data: result.data,
@@ -376,6 +378,10 @@ extension RequestExecutor {
         requestID: UUID,
         configuration: NetworkConfiguration
     ) async {
+        // Publish is a no-op without observers, but its arguments are
+        // evaluated eagerly at this call site: URL metadata redaction plus an
+        // actor hop per event. Skip both for the common observer-less client.
+        guard !configuration.eventObservers.isEmpty else { return }
         await eventHub.publish(
             .requestStart(
                 requestID: requestID,
@@ -394,6 +400,7 @@ extension RequestExecutor {
         requestID: UUID,
         configuration: NetworkConfiguration
     ) async {
+        guard !configuration.eventObservers.isEmpty else { return }
         await eventHub.publish(
             .requestAdapted(
                 requestID: requestID,
@@ -411,6 +418,7 @@ extension RequestExecutor {
         requestID: UUID,
         configuration: NetworkConfiguration
     ) async {
+        guard !configuration.eventObservers.isEmpty else { return }
         let nsError = networkError as NSError
         await eventHub.publish(
             .requestFailed(

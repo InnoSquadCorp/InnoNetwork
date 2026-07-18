@@ -249,15 +249,17 @@ package struct RequestExecutor {
         }
 
         executable.logger.log(response: networkResponse, isError: false)
-        await eventHub.publish(
-            .requestFinished(
+        if !configuration.eventObservers.isEmpty {
+            await eventHub.publish(
+                .requestFinished(
+                    requestID: requestID,
+                    statusCode: networkResponse.statusCode,
+                    byteCount: networkResponse.data.count
+                ),
                 requestID: requestID,
-                statusCode: networkResponse.statusCode,
-                byteCount: networkResponse.data.count
-            ),
-            requestID: requestID,
-            observers: configuration.eventObservers
-        )
+                observers: configuration.eventObservers
+            )
+        }
 
         return networkResponse
     }
