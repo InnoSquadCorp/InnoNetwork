@@ -216,6 +216,11 @@ draft release summary.
 
 ### Fixed
 
+- `InnoNetworkClientTransportError` now conforms to `Sendable` and
+  `LocalizedError`, matching every other public error type in the package.
+  Transport failures can cross isolation boundaries under Swift 6 strict
+  checking, and `localizedDescription` carries the transport diagnostic
+  instead of the generic Foundation fallback.
 - `@APIDefinition` path placeholders whose property typealiases resolve to
   Optional now fail with targeted unwrap-and-define-nil-behavior guidance
   instead of exposing the generated path encoder's generic constraint error.

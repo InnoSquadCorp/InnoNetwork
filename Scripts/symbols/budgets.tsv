@@ -3,8 +3,8 @@ authaws.allowlist	10
 cache.allowlist	51
 core.allowlist	804
 download.allowlist	93
-openapi.allowlist	35
+openapi.allowlist	36
 testsupport.allowlist	84
 trust.allowlist	17
 websocket.allowlist	132
-TOTAL	1226
+TOTAL	1227

@@ -411,7 +411,12 @@ private final class InnoNetworkOpenAPIRedirectDelegate: NSObject, URLSessionTask
 }
 
 /// Errors raised by ``InnoNetworkClientTransport``.
-public enum InnoNetworkClientTransportError: Error, CustomStringConvertible {
+///
+/// Conforms to `Sendable` like every other public error in the package so
+/// values can cross isolation boundaries under Swift 6 strict checking, and
+/// to `LocalizedError` so `localizedDescription` carries the transport
+/// diagnostic instead of the generic Foundation fallback.
+public enum InnoNetworkClientTransportError: Error, CustomStringConvertible, LocalizedError, Sendable {
     /// The combination of base URL and request path could not be resolved
     /// to a concrete URL.
     case invalidRequestURL(baseURL: URL, path: String?)
@@ -438,6 +443,13 @@ public enum InnoNetworkClientTransportError: Error, CustomStringConvertible {
     /// the body is returned. For unknown lengths, it can be thrown later while
     /// the generated client consumes the returned `HTTPBody`.
     case responseBodyTooLarge(limit: Int, received: Int)
+
+    /// `LocalizedError` witness so `error.localizedDescription` surfaces the
+    /// transport diagnostic. Mirrors ``description``; both strings already
+    /// omit credential-bearing URL components by construction.
+    public var errorDescription: String? {
+        description
+    }
 
     public var description: String {
         switch self {

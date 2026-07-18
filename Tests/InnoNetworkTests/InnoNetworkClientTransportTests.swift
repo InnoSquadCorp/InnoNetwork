@@ -703,4 +703,20 @@ struct InnoNetworkClientTransportTests {
             }
         }
     }
+
+    @Test("transport error localizedDescription carries the transport diagnostic")
+    func transportErrorLocalizedDescriptionMatchesDescription() {
+        let errors: [InnoNetworkClientTransportError] = [
+            .invalidRequestURL(baseURL: URL(string: "https://api.example.com")!, path: "/x"),
+            .invalidStatusCode(1099),
+            .unsupportedRequestMethod("PATCHx"),
+            .backgroundSessionUnsupported,
+            .redirectRejected,
+            .responseBodyTooLarge(limit: 1, received: 2),
+        ]
+        for error in errors {
+            #expect(error.errorDescription == error.description)
+            #expect(error.localizedDescription == error.description)
+        }
+    }
 }

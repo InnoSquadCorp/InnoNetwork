@@ -19,6 +19,7 @@ InnoNetworkOpenAPI	swift.method	InnoNetworkClientTransport.send(_:body:baseURL:o
 InnoNetworkOpenAPI	swift.property	InnoNetworkClientTransport.requestBodyByteLimit
 InnoNetworkOpenAPI	swift.property	InnoNetworkClientTransport.responseBodyByteLimit
 InnoNetworkOpenAPI	swift.property	InnoNetworkClientTransportError.description
+InnoNetworkOpenAPI	swift.property	InnoNetworkClientTransportError.errorDescription
 InnoNetworkOpenAPI	swift.property	OpenAPIRequest.acceptableStatusCodes
 InnoNetworkOpenAPI	swift.property	OpenAPIRequest.headers
 InnoNetworkOpenAPI	swift.property	OpenAPIRequest.method
