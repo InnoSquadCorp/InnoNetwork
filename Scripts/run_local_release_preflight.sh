@@ -102,6 +102,7 @@ mkdir -p "$artifacts_dir"
 run_release_script_fixtures() {
   bash Scripts/tests/test_validate_docs_release_state.sh
   bash Scripts/tests/test_validate_release_ref.sh
+  bash Scripts/tests/test_validate_release_candidate.sh
   bash Scripts/tests/test_generate_sbom.sh
   bash Scripts/tests/test_generate_dependency_snapshot.sh
   bash Scripts/tests/test_check_guarded_benchmark_contract.sh
@@ -111,6 +112,8 @@ run_release_script_fixtures() {
   python3 Scripts/tests/test_check_example_platform_floors.py
   python3 Scripts/tests/test_check_apple_platform_build_contract.py
   bash Scripts/tests/test_check_docc_archives.sh
+  python3 Scripts/check_release_workflow_contract.py
+  python3 Scripts/tests/test_check_release_workflow_contract.py
 }
 
 run_dependency_lock() {

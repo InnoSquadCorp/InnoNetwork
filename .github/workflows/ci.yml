@@ -508,6 +508,12 @@ jobs:
       - name: Verify local release preflight contract
         run: bash Scripts/tests/test_run_local_release_preflight.sh
 
+      - name: Verify release workflow contract
+        run: |
+          bash Scripts/tests/test_validate_release_candidate.sh
+          python3 Scripts/check_release_workflow_contract.py
+          python3 Scripts/tests/test_check_release_workflow_contract.py
+
       - name: Verify DocC archive contract
         run: bash Scripts/tests/test_check_docc_archives.sh
 

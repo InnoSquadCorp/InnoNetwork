@@ -25,13 +25,18 @@
    CHANGELOG, security-support, symbol-baseline, migration-guide, status-line,
    and release-date claims. `Scripts/validate_docs_release_state.sh` rejects a
    marker-only transition or a mixed draft/ready Git tree.
-3. Push an unprefixed annotated SemVer tag such as `5.0.0` only from a commit
+3. Before tagging, run the `Release` workflow manually from `main`. A manual
+   dispatch executes the full validation and five-platform matrix, produces
+   candidate artifacts, and structurally skips the signing/publication job.
+   `Scripts/validate_release_candidate.sh` fetches canonical `origin/main` and
+   rejects a stale, detached, or side-branch candidate.
+4. Push an unprefixed annotated SemVer tag such as `5.0.0` only from a commit
    whose matching release notes are marked `ready`. The tagged commit
    must exactly match the freshly fetched `origin/main` HEAD and already
    contain `docs/releases/<version>.md`; the workflow rejects lightweight
    tags, older or off-main commits, stale main refs, missing release notes,
    and non-ready release notes before build.
-4. Let the `Release` workflow run:
+5. Let the tag-triggered `Release` workflow run:
    - root tests in serial coverage mode and bounded target-sharded mode
    - root macro tests, negative compile fixtures, and fail-closed runtime/macro
      LCOV generation
@@ -48,11 +53,11 @@
    - Package.swift-aligned macOS, iOS, tvOS, watchOS, and visionOS build tuples
    - sigstore signing and GitHub Release creation with the benchmark,
      `sbom.cdx.json`, and `sbom-core-only.cdx.json` artifact sets
-5. Re-check `API_STABILITY.md` and `Scripts/symbols/*.allowlist`
+6. Re-check `API_STABILITY.md` and `Scripts/symbols/*.allowlist`
    together whenever a release branch changes public or SPI declarations.
-6. Re-run DocC/sample smoke after documentation-only release edits so
+7. Re-run DocC/sample smoke after documentation-only release edits so
    examples, symbol links, and docs-contract wording stay in sync.
-7. Run `bash Scripts/run_local_release_preflight.sh --full` before changing the
+8. Run `bash Scripts/run_local_release_preflight.sh --full` before changing the
    release status to ready. It reproduces the pre-tag validation, coverage,
    benchmark, SBOM, DocC, and five-platform build gates locally; tag identity,
    signing, and publication remain GitHub-only responsibilities.

@@ -1069,6 +1069,25 @@ validate_release_quality_gates() {
     "$repo_root/.github/workflows/ci.yml"
   require_contains 'bash Scripts/tests/test_run_local_release_preflight.sh' \
     "$repo_root/.github/workflows/release.yml"
+  require_contains 'bash Scripts/tests/test_validate_release_candidate.sh' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'bash Scripts/tests/test_validate_release_candidate.sh' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'bash Scripts/tests/test_validate_release_candidate.sh' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'python3 Scripts/check_release_workflow_contract.py' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'python3 Scripts/check_release_workflow_contract.py' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'python3 Scripts/tests/test_check_release_workflow_contract.py' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'python3 Scripts/tests/test_check_release_workflow_contract.py' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'workflow_dispatch:' "$repo_root/.github/workflows/release.yml"
+  require_contains 'Scripts/validate_release_candidate.sh' \
+    "$repo_root/docs/RELEASE_POLICY.md"
+  require_contains 'Scripts/check_release_workflow_contract.py' \
+    "$repo_root/docs/CI_DoC.md"
   require_contains 'xcodebuild docbuild' \
     "$repo_root/Scripts/run_local_release_preflight.sh"
   require_contains 'bash Scripts/check_docc_archives.sh' \

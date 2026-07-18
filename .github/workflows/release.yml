@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "*.*.*"
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}
@@ -27,6 +28,7 @@ jobs:
         run: |
           bash Scripts/tests/test_validate_docs_release_state.sh
           bash Scripts/tests/test_validate_release_ref.sh
+          bash Scripts/tests/test_validate_release_candidate.sh
           bash Scripts/tests/test_generate_sbom.sh
           bash Scripts/tests/test_generate_dependency_snapshot.sh
           bash Scripts/tests/test_check_guarded_benchmark_contract.sh
@@ -37,8 +39,10 @@ jobs:
           python3 Scripts/tests/test_check_apple_platform_build_contract.py
           bash Scripts/tests/test_check_docc_archives.sh
           bash Scripts/tests/test_run_local_release_preflight.sh
+          python3 Scripts/tests/test_check_release_workflow_contract.py
 
       - name: Validate release ref
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_TAG_REF: ${{ github.ref }}
@@ -47,6 +51,16 @@ jobs:
           RELEASE_MAIN_REF: refs/remotes/origin/main
           RELEASE_FETCH_MAIN: '1'
         run: bash Scripts/validate_release_ref.sh
+
+      - name: Validate release candidate
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_CANDIDATE_REF: ${{ github.sha }}
+          RELEASE_REMOTE: origin
+          RELEASE_MAIN_REMOTE_REF: refs/heads/main
+          RELEASE_MAIN_REF: refs/remotes/origin/main
+          RELEASE_FETCH_MAIN: '1'
+        run: bash Scripts/validate_release_candidate.sh
 
       - name: Select Xcode
         run: |
@@ -202,7 +216,7 @@ jobs:
 
       - name: Generate SBOMs (CycloneDX 1.5)
         env:
-          SBOM_VERSION: ${{ github.ref_name }}
+          SBOM_VERSION: ${{ github.event_name == 'push' && github.ref_name || format('candidate-{0}', github.sha) }}
         run: |
           SBOM_TRAIT_PROFILE=default \
             bash Scripts/generate-sbom.sh .build/release-artifacts/sbom.cdx.json
@@ -313,6 +327,7 @@ jobs:
 
   publish-release:
     name: Publish Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs:
       - validate-release
       - validate-platform-builds

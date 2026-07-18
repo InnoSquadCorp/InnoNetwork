@@ -125,6 +125,12 @@ The `CI` workflow must pass all of the following:
     on missing Core-only or 0/10/50/200-endpoint phases, short sample sets,
     invalid medians, or missing provenance. Absolute local timings are not CI
     thresholds; future comparisons use same-runner medians.
+18. `python3 Scripts/check_release_workflow_contract.py` requires a manual
+    `workflow_dispatch` validation path, tag-only release-ref validation, and a
+    job-level tag-only guard on publication. Manual runs validate the selected
+    commit against freshly fetched `origin/main` with
+    `Scripts/validate_release_candidate.sh`; they can upload candidate evidence
+    but cannot sign artifacts or create a GitHub Release.
 
 The release workflow repeats the root lock, platform-floor, all-example,
 platform-build, and full-test gates. It also builds and tests
