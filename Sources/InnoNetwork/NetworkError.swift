@@ -364,20 +364,6 @@ public extension NetworkError {
         }
     }
 
-    /// Depending on error type, returns an underlying `Error`.
-    internal var underlyingError: SendableUnderlyingError? {
-        switch self {
-        case .configuration: return nil
-        case .decoding(_, let error, _): return error
-        case .statusCode: return nil
-        case .underlying(let error, _): return error
-        case .reachability(_, let error, _): return error
-        case .trustEvaluationFailed: return nil
-        case .cancelled: return nil
-        case .timeout(_, let underlying): return underlying
-        }
-    }
-
     /// Returns `true` for any failure produced inside the response-decoding
     /// pipeline. Built-in retry policies treat decoding failures as terminal
     /// because retrying the same request against the same server yields the
@@ -389,6 +375,26 @@ public extension NetworkError {
             return true
         }
         return false
+    }
+}
+
+extension NetworkError {
+    /// Depending on error type, returns an underlying `Error`.
+    ///
+    /// Kept out of the `public extension` block above so its access level is
+    /// explicit at the declaration instead of silently overriding the
+    /// extension default.
+    var underlyingError: SendableUnderlyingError? {
+        switch self {
+        case .configuration: return nil
+        case .decoding(_, let error, _): return error
+        case .statusCode: return nil
+        case .underlying(let error, _): return error
+        case .reachability(_, let error, _): return error
+        case .trustEvaluationFailed: return nil
+        case .cancelled: return nil
+        case .timeout(_, let underlying): return underlying
+        }
     }
 }
 
