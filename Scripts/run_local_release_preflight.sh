@@ -108,6 +108,7 @@ run_release_script_fixtures() {
   bash Scripts/tests/test_check_guarded_benchmark_contract.sh
   python3 Scripts/tests/test_run_with_guarded_benchmarks.py
   python3 Scripts/tests/test_check_macro_build_baseline_contract.py
+  python3 Scripts/tests/test_check_public_api_tiers.py
   bash Scripts/tests/test_build_consumer_examples.sh
   python3 Scripts/tests/test_check_example_platform_floors.py
   python3 Scripts/tests/test_check_apple_platform_build_contract.py

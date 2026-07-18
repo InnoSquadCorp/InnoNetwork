@@ -32,3 +32,4 @@ if ((total > total_budget)); then
 fi
 
 echo "public-api-budget: OK ($total/$total_budget)"
+python3 "$repo_root/Scripts/check_public_api_tiers.py" "$repo_root"

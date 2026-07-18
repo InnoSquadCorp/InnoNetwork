@@ -924,8 +924,12 @@ validate_public_surface_ledger() {
 
   local expected_file
   local actual_file
+  local expected_spi_file
+  local actual_spi_file
   expected_file="$(mktemp)"
   actual_file="$(mktemp)"
+  expected_spi_file="$(mktemp)"
+  actual_spi_file="$(mktemp)"
 
   awk 'NF && $0 !~ /^#/ { print }' "$public_symbols_allowlist" | sort -u > "$expected_file"
   collect_public_symbols > "$actual_file"
@@ -934,7 +938,15 @@ validate_public_surface_ledger() {
     fail "public symbol graph drifted; update Scripts/symbols/*.allowlist and API_STABILITY.md"
   fi
 
-  rm -f "$expected_file" "$actual_file"
+  awk 'NF && $0 !~ /^#/ { print }' "$public_symbols_dir/spi-symbols.tsv" \
+    | sort -u > "$expected_spi_file"
+  python3 "$repo_root/Scripts/collect_public_symbols.py" "$repo_root" --only-spi \
+    > "$actual_spi_file"
+  if ! diff -u "$expected_spi_file" "$actual_spi_file" >&2; then
+    fail "SPI symbol graph drifted; update Scripts/symbols/spi-symbols.tsv and API_STABILITY.md"
+  fi
+
+  rm -f "$expected_file" "$actual_file" "$expected_spi_file" "$actual_spi_file"
 
   for declaration in "${expected_shipping_public_declarations[@]}" "${expected_spi_public_declarations[@]}" \
     "${expected_test_support_public_declarations[@]}"; do
@@ -1042,6 +1054,12 @@ validate_release_quality_gates() {
   require_contains 'python3 Scripts/tests/test_check_macro_build_baseline_contract.py' \
     "$repo_root/.github/workflows/release.yml"
   require_contains 'python3 Scripts/tests/test_check_macro_build_baseline_contract.py' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'python3 Scripts/tests/test_check_public_api_tiers.py' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'python3 Scripts/tests/test_check_public_api_tiers.py' \
+    "$repo_root/.github/workflows/release.yml"
+  require_contains 'python3 Scripts/tests/test_check_public_api_tiers.py' \
     "$repo_root/Scripts/run_local_release_preflight.sh"
   require_contains 'bash Scripts/tests/test_check_guarded_benchmark_contract.sh' \
     "$repo_root/.github/workflows/benchmarks.yml"

@@ -141,13 +141,16 @@ supported after 5.0.0, but they may still change before that tag. During the
 future 5.x line they may grow new cases, parameters, or shape, with each change
 shipping release notes and a migration path. See "Version Pinning Guidance"
 below for the currently released 4.x line and explicit preview opt-in.
+For budget enforcement, every non-SPI public declaration that is not matched
+by the explicit Stable ledger is classified as Provisionally Stable. This
+conservative default prevents an undocumented declaration from accidentally
+acquiring a 5.x compatibility promise.
 
 - benchmark runner CLI flags and JSON summary presentation details
 - troubleshooting guidance and examples in README/DocC
 - `InnoNetworkTestSupport` library product and its `public` symbols
-  (currently `MockURLSession`, `MockURLSessionResponse`,
-  `WebSocketEventRecorder`, `StubBehavior`, `StubNetworkClient`, and
-  `StubRequestKey`)
+  (including `MockURLSession`, `StubNetworkClient`, `WebSocketEventRecorder`,
+  and the `VCRCassette` / `VCRURLSession` record-and-replay family)
 - `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, retry, response cache, redirect, encoding utility, and circuit breaker policy surfaces
 - `MultipartResponseDecoder` buffered multipart response parsing surface
@@ -394,6 +397,14 @@ compares them with `Scripts/symbols/*.allowlist`. That catches nested public
 types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 planned 5.x release line.
+
+The machine-checked snapshot currently partitions all 1,304 declarations into
+304 Stable consumer declarations, 967 Provisionally Stable consumer
+declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
+exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
+paths, while the compiler-authored SPI flag is snapshotted in
+`Scripts/symbols/spi-symbols.tsv`; anything else defaults to Provisionally
+Stable.
 
 ### InnoNetwork
 

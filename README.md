@@ -48,6 +48,21 @@ the macro derives repetitive witnesses and fails the build when method, path,
 payload, response, or auth declarations are incomplete. Use `EndpointBuilder`
 for one-off or runtime-composed requests that do not deserve a named contract.
 
+### Small-app baseline
+
+Start with only the `InnoNetwork` product and
+`DefaultNetworkClient(baseURL:)`. A named endpoint struct plus
+`@APIDefinition` needs no configuration pack or optional product. Add an
+advanced pack only when a concrete retry, auth, cache, transport, or
+observability requirement appears; add Download, WebSocket, persistent cache,
+OpenAPI, AWS auth, or pinning products only for the capability named in the
+table above. If the application has only one or two uncomplicated requests and
+no shared policy, direct `URLSession` is intentionally the smaller choice.
+
+Applications that prefer manual `APIDefinition` conformances can disable the
+macro target with `traits: []`. This is an opt-out for build topology, not a
+second runtime API.
+
 The packages are built around Swift Concurrency, explicit transport
 policies, and operational visibility that can scale from app prototypes
 to production clients.

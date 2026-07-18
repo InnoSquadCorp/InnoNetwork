@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
+import argparse
 import json
-import sys
 from pathlib import Path
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        raise SystemExit("Usage: collect_public_symbols.py <repo-root>")
-    repo_root = Path(sys.argv[1])
+    parser = argparse.ArgumentParser(
+        description="Collect the package's supported public symbol-graph rows."
+    )
+    parser.add_argument("repo_root", type=Path)
+    parser.add_argument(
+        "--only-spi",
+        action="store_true",
+        help="emit only symbols marked SPI by the Swift symbol graph",
+    )
+    args = parser.parse_args()
+    repo_root = args.repo_root
     symbolgraph_dirs = [path for path in (repo_root / ".build").glob("*/symbolgraph") if path.is_dir()]
     if not symbolgraph_dirs:
         raise SystemExit("No Swift symbol graph directory was generated.")
@@ -54,6 +62,8 @@ def main() -> None:
         seen_modules.add(module)
         for symbol in data.get("symbols", []):
             if symbol.get("accessLevel") != "public":
+                continue
+            if args.only_spi and symbol.get("spi") is not True:
                 continue
             kind = symbol.get("kind", {}).get("identifier")
             if kind not in included_kinds:

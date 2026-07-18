@@ -12,6 +12,13 @@ quietly ratcheting the total surface upward. Reducing a product lowers its
 budget in the same commit, while increasing a budget requires an explicit API
 governance decision.
 
+`stable-rules.tsv`, `spi-symbols.tsv`, and `tier-budgets.tsv` add a semantic
+partition on top of the raw product counts. Stable rules are an explicit map
+from the Stable ledger in `API_STABILITY.md`; compiler-marked SPI declarations
+are snapshotted separately; every remaining consumer declaration defaults to
+Provisionally Stable. A new public symbol therefore cannot silently inherit a
+Stable compatibility promise.
+
 ## Current sizes (2026-07, unreleased 5.0 preview snapshot)
 
 | Product | Public declarations |
@@ -24,6 +31,13 @@ governance decision.
 | `InnoNetworkOpenAPI` | 35 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
+| **Total** | **1,304** |
+
+| Compatibility tier | Public declarations |
+|---|---:|
+| Stable consumer API | 304 |
+| Provisionally Stable consumer API | 967 |
+| `@_spi(GeneratedClientSupport)` | 33 |
 | **Total** | **1,304** |
 
 ## Why this matters
@@ -71,6 +85,9 @@ bash Scripts/check_docs_contract_sync.sh
 
 # Validate declaration ceilings without rebuilding symbol graphs
 bash Scripts/check_public_api_budget.sh
+
+# Exercise failure-mode fixtures for the tier classifier
+python3 Scripts/tests/test_check_public_api_tiers.py
 ```
 
 When intentionally adding a new public declaration, run the regenerate step
