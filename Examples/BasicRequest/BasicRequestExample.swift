@@ -27,49 +27,37 @@ struct Post: Codable, Sendable {
 
 // MARK: - 2. API Definitions
 
-struct GetTodos: APIDefinition {
-    var sessionAuthentication: SessionAuthentication { .anonymous }
-    typealias Parameter = EmptyParameter
+@APIDefinition(method: .get, path: "/todos", auth: .anonymous)
+struct GetTodos {
     typealias APIResponse = [Todo]
-
-    var method: HTTPMethod { .get }
-    var path: String { "/todos" }
 }
 
-struct GetPost: APIDefinition {
-    var sessionAuthentication: SessionAuthentication { .anonymous }
-    typealias Parameter = EmptyParameter
+@APIDefinition(method: .get, path: "/posts/{postId}", auth: .anonymous)
+struct GetPost {
     typealias APIResponse = Post
 
     let postId: Int
-
-    var method: HTTPMethod { .get }
-    var path: String { "/posts/\(postId)" }
 }
 
-struct CreatePost: APIDefinition {
-    var sessionAuthentication: SessionAuthentication { .anonymous }
+@APIDefinition(method: .post, path: "/posts", auth: .anonymous)
+struct CreatePost {
     struct PostParameter: Encodable, Sendable {
         let title: String
         let body: String
         let userId: Int
     }
 
-    typealias Parameter = PostParameter
     typealias APIResponse = Post
 
-    var parameters: PostParameter?
-
-    var method: HTTPMethod { .post }
-    var path: String { "/posts" }
+    let body: PostParameter
 
     init(title: String, body: String, userId: Int = 1) {
-        self.parameters = PostParameter(title: title, body: body, userId: userId)
+        self.body = PostParameter(title: title, body: body, userId: userId)
     }
 }
 
-struct UpdatePost: APIDefinition {
-    var sessionAuthentication: SessionAuthentication { .anonymous }
+@APIDefinition(method: .put, path: "/posts/{postId}", auth: .anonymous)
+struct UpdatePost {
     struct PostParameter: Encodable, Sendable {
         let id: Int
         let title: String
@@ -77,50 +65,38 @@ struct UpdatePost: APIDefinition {
         let userId: Int
     }
 
-    typealias Parameter = PostParameter
     typealias APIResponse = Post
 
-    var parameters: PostParameter?
     let postId: Int
-
-    var method: HTTPMethod { .put }
-    var path: String { "/posts/\(postId)" }
+    let body: PostParameter
 
     init(id: Int, title: String, body: String, userId: Int = 1) {
         self.postId = id
-        self.parameters = PostParameter(id: id, title: title, body: body, userId: userId)
+        self.body = PostParameter(id: id, title: title, body: body, userId: userId)
     }
 }
 
-struct PatchPost: APIDefinition {
-    var sessionAuthentication: SessionAuthentication { .anonymous }
+@APIDefinition(method: .patch, path: "/posts/1", auth: .anonymous)
+struct PatchPost {
     struct PostParameter: Encodable, Sendable {
         let title: String?
         let body: String?
     }
 
-    typealias Parameter = PostParameter
     typealias APIResponse = Post
 
-    var parameters: PostParameter?
-
-    var method: HTTPMethod { .patch }
-    var path: String { "/posts/1" }
+    let body: PostParameter
 
     init(title: String? = nil, body: String? = nil) {
-        self.parameters = PostParameter(title: title, body: body)
+        self.body = PostParameter(title: title, body: body)
     }
 }
 
-struct DeletePost: APIDefinition {
-    var sessionAuthentication: SessionAuthentication { .anonymous }
-    typealias Parameter = EmptyParameter
+@APIDefinition(method: .delete, path: "/posts/{postId}", auth: .anonymous)
+struct DeletePost {
     typealias APIResponse = EmptyResponse
 
     let postId: Int
-
-    var method: HTTPMethod { .delete }
-    var path: String { "/posts/\(postId)" }
 }
 
 // MARK: - 3. Usage Examples

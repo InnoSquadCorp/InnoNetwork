@@ -4,6 +4,10 @@ Build a client with safe defaults, model a named request as an explicit struct
 with ``APIDefinition(method:path:auth:)``, and call it through
 ``DefaultNetworkClient``.
 
+The ordinary path has only three concepts: one endpoint struct, one macro
+attribute, and one `client.request(...)` call. Configuration packs and optional
+products are not prerequisites.
+
 > Important: This page follows the unreleased 5.0 preview on `main`.
 > `4.0.0` remains the latest tagged stable release. Pin a reviewed revision
 > for preview evaluation and do not ship a moving branch dependency in
@@ -124,3 +128,8 @@ For those cases, switch to
 and keep the tuning local to the integration that actually needs it.
 If none applies, keep `DefaultNetworkClient(baseURL:)`; there is no required
 policy checklist to complete for a small app.
+
+Configuration values are opaque immutable commands. Tune them through the
+named pack inputs rather than reading a second mirror of runtime state. If an
+application must present or audit selected settings, retain an app-owned input
+model and build the configuration from it.

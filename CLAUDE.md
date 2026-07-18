@@ -48,7 +48,7 @@ InnoNetwork is a type-safe Swift network library shipped as **8 products**:
 - Async/await + `typed throws` (`async throws(NetworkError)`)
 - Type-safe request/response via generics + `APIDefinition`
 - Content types: JSON, Form URL-encoded, Multipart/Form-data, custom
-- Interceptors (request/response), single-flight refresh token (`AuthScope` marker)
+- Interceptors (request/response), single-flight refresh token with explicit `SessionAuthentication`
 - RFC 9110 idempotency-aware retry, circuit breaker, request coalescing
 - RFC 9111 cache adapter (`rfc9111Compliant(wrapping:)`)
 - Phantom-typed HTTP headers, observability/metrics/logger with redaction
@@ -101,7 +101,7 @@ swift test --list-tests
 전체 8개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
 
 ### Sources/InnoNetwork (Core)
-- `APIDefinition.swift` / `APIDefinition+Macros.swift` — endpoint 선언 프로토콜 + `@APIDefinition` 매크로 옵트인
+- `APIDefinition.swift` / `APIDefinition+Macro.swift` — endpoint 선언 프로토콜 + `@APIDefinition` 매크로
 - `DefaultNetworkClient.swift` — `NetworkClient` 구현 (불변 final class + Sendable)
 - `RequestExecutor.swift` + `RequestExecutor+Pipeline.swift` / `+Cache.swift` / `+Transport.swift` — 요청 실행 파이프라인
 - `NetworkError.swift` / `NetworkErrorCode.swift` / `SendableUnderlyingError.swift` — 에러 모델 (typed throws 대상)
@@ -163,41 +163,42 @@ swift test --list-tests
 ### API Definition
 
 ```swift
-// Simple GET
-struct GetUser: APIDefinition {
-    typealias Parameter = EmptyParameter
+// Named API catalog entries keep their explicit struct while the macro derives
+// repetitive conformance witnesses and validates the contract.
+@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)
+struct GetUser {
     typealias APIResponse = User
 
-    var method: HTTPMethod { .get }
-    var path: String { "/user/\(id)" }
     let id: Int
-
-    init(id: Int) { self.id = id }
 }
 
-// With parameters
-struct CreatePost: APIDefinition {
+@APIDefinition(method: .post, path: "/posts", auth: .required)
+struct CreatePost {
     struct Params: Encodable, Sendable { let title: String; let body: String }
-    typealias Parameter = Params
     typealias APIResponse = Post
 
-    let parameters: Params?
-    var method: HTTPMethod { .post }
-    var path: String { "/posts" }
+    let body: Params
 
     init(title: String, body: String) {
-        self.parameters = Params(title: title, body: body)
+        self.body = Params(title: title, body: body)
     }
 }
 
 // Multipart upload
 struct UploadPhoto: MultipartAPIDefinition {
     typealias APIResponse = UploadResponse
+    var sessionAuthentication: SessionAuthentication { .required }
 
     var multipartFormData: MultipartFormData {
-        MultipartFormData()
-            .addText(name: "title", value: title)
-            .addFile(data: imageData, fileName: "photo.jpg", name: "image", mimeType: "image/jpeg")
+        var formData = MultipartFormData()
+        formData.append(title, name: "title")
+        formData.append(
+            imageData,
+            name: "image",
+            fileName: "photo.jpg",
+            mimeType: "image/jpeg"
+        )
+        return formData
     }
 
     var method: HTTPMethod { .post }
@@ -215,7 +216,9 @@ struct UploadPhoto: MultipartAPIDefinition {
 ### Using the Client
 
 ```swift
-let client = try DefaultNetworkClient(configuration: MyAPI())
+let client = DefaultNetworkClient(
+    baseURL: URL(string: "https://api.example.com")!
+)
 
 // Regular request
 let user = try await client.request(GetUser(id: 1))
@@ -264,17 +267,22 @@ await manager.cancel(task)
 ### Interceptors
 
 ```swift
-struct AuthInterceptor: RequestInterceptor {
+struct TenantInterceptor: RequestInterceptor {
+    let tenantID: String
+
     func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
         var request = urlRequest
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(tenantID, forHTTPHeaderField: "X-Tenant-ID")
         return request
     }
 }
 
-struct GetProfile: APIDefinition {
-    var requestInterceptors: [RequestInterceptor] { [AuthInterceptor()] }
-    // ...
+@APIDefinition(method: .get, path: "/profile", auth: .required)
+struct GetProfile {
+    typealias APIResponse = Profile
+    var requestInterceptors: [RequestInterceptor] {
+        [TenantInterceptor(tenantID: "consumer-app")]
+    }
 }
 ```
 

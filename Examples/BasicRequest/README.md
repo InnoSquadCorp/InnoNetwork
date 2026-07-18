@@ -54,17 +54,19 @@ These examples use JSONPlaceholder (https://jsonplaceholder.typicode.com), a fre
 
 ### API Definition
 
-Each API endpoint is defined as a `struct` or `actor` conforming to `APIDefinition`:
+Each named endpoint remains an explicit struct. The default-enabled macro
+derives `APIDefinition` conformance and validates the method, path, payload,
+response, and authentication contract:
 
 ```swift
-struct GetTodos: APIDefinition {
-    typealias Parameter = EmptyParameter
+@APIDefinition(method: .get, path: "/todos", auth: .anonymous)
+struct GetTodos {
     typealias APIResponse = [Todo]
-
-    var method: HTTPMethod { .get }
-    var path: String { "/todos" }
 }
 ```
+
+Use a manual conformance only when the endpoint needs a shape the macro cannot
+derive; manual endpoints must declare `sessionAuthentication` explicitly.
 
 ### Making Requests
 
@@ -82,22 +84,20 @@ let todos = try await client.request(GetTodos())
 For requests with parameters:
 
 ```swift
-struct CreatePost: APIDefinition {
+@APIDefinition(method: .post, path: "/posts", auth: .anonymous)
+struct CreatePost {
     struct PostParameter: Encodable, Sendable {
         let title: String
         let body: String
         let userId: Int
     }
 
-    typealias Parameter = PostParameter
     typealias APIResponse = Post
 
-    let parameters: PostParameter?
-    var method: HTTPMethod { .post }
-    var path: String { "/posts" }
+    let body: PostParameter
 
     init(title: String, body: String, userId: Int = 1) {
-        self.parameters = PostParameter(title: title, body: body, userId: userId)
+        self.body = PostParameter(title: title, body: body, userId: userId)
     }
 }
 
@@ -113,22 +113,20 @@ let newPost = try await client.request(CreatePost(
 For form-encoded requests:
 
 ```swift
-struct LoginRequest: APIDefinition {
+@APIDefinition(method: .post, path: "/login", auth: .anonymous)
+struct LoginRequest {
     struct LoginParameter: Encodable, Sendable {
         let email: String
         let password: String
     }
 
-    typealias Parameter = LoginParameter
     typealias APIResponse = AuthResponse
 
-    let parameters: LoginParameter?
-    var method: HTTPMethod { .post }
-    var path: String { "/login" }
-    var contentType: ContentType { .formUrlEncoded }
+    let body: LoginParameter
+    var transport: TransportPolicy<AuthResponse> { .formURLEncoded() }
 
     init(email: String, password: String) {
-        self.parameters = LoginParameter(email: email, password: password)
+        self.body = LoginParameter(email: email, password: password)
     }
 }
 
@@ -145,6 +143,8 @@ For file uploads:
 ```swift
 struct UploadImage: MultipartAPIDefinition {
     typealias APIResponse = UploadResponse
+
+    var sessionAuthentication: SessionAuthentication { .anonymous }
 
     var multipartFormData: MultipartFormData {
         var formData = MultipartFormData()

@@ -11,17 +11,17 @@
 [![Supply Chain](https://img.shields.io/badge/supply%20chain-SHA--pinned%20Actions%20%2B%20Dependabot-blue)](#production-checklist)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-InnoNetwork is a Swift package for type-safe networking on Apple platforms. The
-root runtime package provides eight public products:
+InnoNetwork is a Swift package for type-safe networking on Apple platforms.
+Most applications import only the root `InnoNetwork` product and use three
+concepts:
 
-- `InnoNetwork` for request/response APIs
-- `InnoNetworkAuthAWS` for the optional AWS SigV4 reference signer
-- `InnoNetworkDownload` for download lifecycle management
-- `InnoNetworkWebSocket` for connection-oriented realtime flows
-- `InnoNetworkPersistentCache` for a conservative on-disk response cache
-- `InnoNetworkTrust` for optional public-key pinning evaluation
-- `InnoNetworkTestSupport` for consumer test targets
-- `InnoNetworkOpenAPI` for generated-client transport support
+1. an explicit endpoint `struct` that owns inputs and `APIResponse`
+2. `@APIDefinition` to derive and validate repetitive protocol witnesses
+3. `DefaultNetworkClient.request(_:)` to execute the typed request
+
+Everything else—including Download, WebSocket, persistent cache, OpenAPI, AWS
+signing, pinning, and test support—is an optional product selected only when
+that capability is required.
 
 > **Release status:** `4.0.0` is the latest tagged stable release and the
 > actively security-supported line. The `main` branch is an unreleased,
@@ -33,7 +33,7 @@ root runtime package provides eight public products:
 
 | Product | Use When |
 | --- | --- |
-| `InnoNetwork` | You need the core typed request pipeline: interceptors, retry, refresh, circuit breaker, coalescing, cache, tracing, trust, and observability. |
+| `InnoNetwork` | Start here for named typed HTTP endpoints and the async request pipeline. Advanced policy remains opt-in. |
 | `InnoNetworkAuthAWS` | You need the optional AWS SigV4 reference signer. It is a single-shot signer, not an AWS SDK replacement. |
 | `InnoNetworkDownload` | You need foreground/background download lifecycle management with pause, resume, retry, persistence, and event streams. |
 | `InnoNetworkWebSocket` | You need long-lived bidirectional connections with heartbeat, reconnect, close taxonomy, and event delivery. |
@@ -525,18 +525,10 @@ file-backed upload-task path.
 ```swift
 import Foundation
 import InnoNetwork
-import InnoNetworkDownload
-import InnoNetworkWebSocket
 
 let network = NetworkConfiguration.safeDefaults(
     baseURL: URL(string: "https://api.example.com")!
 )
-
-let download = DownloadConfiguration.safeDefaults(
-    sessionIdentifier: "com.example.app.downloads"
-)
-
-let socket = WebSocketConfiguration.safeDefaults()
 
 let tunedNetwork = NetworkConfiguration.advanced(
     baseURL: URL(string: "https://api.example.com")!,
@@ -557,8 +549,11 @@ let tunedNetwork = NetworkConfiguration.advanced(
 ```
 
 Auth refresh, coalescing, caching, and circuit breaking are opt-in. The
-request execution pipeline stays internal; public configuration exposes only
-the built-in policies.
+request execution pipeline stays internal. Configuration values are opaque
+immutable commands: use presets and named pack inputs, and keep an
+application-owned settings model only when product code must inspect the
+chosen values. Optional Download and WebSocket products follow the same
+`safeDefaults`-first rule.
 
 ### Transport security defaults
 

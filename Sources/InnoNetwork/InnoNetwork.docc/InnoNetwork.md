@@ -50,10 +50,14 @@ retain those values.
 
 - <doc:GettingStarted>
 - ``DefaultNetworkClient``
-- ``NetworkClient``
-- ``UploadNetworkClient``
 - ``APIDefinition``
 - <doc:UsingMacros>
+- ``NetworkError``
+
+### More Request Shapes
+
+- ``NetworkClient``
+- ``UploadNetworkClient``
 - ``EndpointBuilder``
 - ``MultipartAPIDefinition``
 
@@ -70,7 +74,6 @@ retain those values.
 
 - ``HTTPMethod``
 - ``ContentType``
-- ``NetworkError``
 - ``NetworkErrorCategory``
 - ``MultipartResponseDecoder``
 - ``MultipartPart``
