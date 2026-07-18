@@ -226,10 +226,11 @@ for preview CI, or stay on the tagged 4.x line until `5.0.0` is released.
 3. Copy the `.swift` file to your project
 4. Run the code
 
-Or directly execute the example files as Swift scripts:
+From the repository root, maintainers can compile the three stable copyable
+examples against the current package with:
 
 ```bash
-swift BasicRequest/BasicRequestExample.swift
+bash Scripts/check_stable_examples.sh
 ```
 
 ## API Basics

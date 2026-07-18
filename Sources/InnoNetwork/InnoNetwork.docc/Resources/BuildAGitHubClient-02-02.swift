@@ -7,13 +7,9 @@ struct User: Decodable, Sendable {
     let name: String?
 }
 
-struct GetUser: APIDefinition {
+@APIDefinition(method: .get, path: "/users/{login}", auth: .anonymous)
+struct GetUser {
     typealias APIResponse = User
 
     let login: String
-
-    var method: HTTPMethod { .get }
-    var path: String {
-        "/users/\(EndpointPathEncoding.percentEncodedSegment(login))"
-    }
 }

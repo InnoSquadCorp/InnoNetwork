@@ -159,15 +159,12 @@ factory 를 사용하세요.
 실패합니다.
 
 ```swift
-struct UpdateProfile: APIDefinition {
+@APIDefinition(method: .patch, path: "/me", auth: .required)
+struct UpdateProfile {
     typealias Parameter = ProfileBody
     typealias APIResponse = Profile
 
     let parameters: ProfileBody?
-    var method: HTTPMethod { .patch }
-    var path: String { "/me" }
-    var sessionAuthentication: SessionAuthentication { .required }
-
     var transport: TransportPolicy<Profile> {
         .json(decoder: snakeCaseDecoder)
     }

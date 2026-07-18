@@ -16,28 +16,20 @@ struct OrderReceipt: Decodable, Sendable {
     let status: String
 }
 
-struct ListProducts: APIDefinition {
-    var sessionAuthentication: SessionAuthentication { .anonymous }
-    typealias Parameter = EmptyParameter
+@APIDefinition(method: .get, path: "/products", auth: .anonymous)
+struct ListProducts {
     typealias APIResponse = [Product]
-
-    var method: HTTPMethod { .get }
-    var path: String { "/products" }
 }
 
-struct GetProduct: APIDefinition {
-    var sessionAuthentication: SessionAuthentication { .anonymous }
-    typealias Parameter = EmptyParameter
+@APIDefinition(method: .get, path: "/products/{id}", auth: .anonymous)
+struct GetProduct {
     typealias APIResponse = Product
 
     let id: Int
-
-    var method: HTTPMethod { .get }
-    var path: String { "/products/\(id)" }
 }
 
-struct SearchProducts: APIDefinition {
-    var sessionAuthentication: SessionAuthentication { .anonymous }
+@APIDefinition(method: .get, path: "/products/search", auth: .anonymous)
+struct SearchProducts {
     struct Query: Encodable, Sendable {
         let query: String
         let limit: Int
@@ -48,16 +40,13 @@ struct SearchProducts: APIDefinition {
 
     let parameters: Query?
 
-    var method: HTTPMethod { .get }
-    var path: String { "/products/search" }
-
     init(query: String, limit: Int = 20) {
         parameters = Query(query: query, limit: limit)
     }
 }
 
-struct CreateOrder: APIDefinition {
-    var sessionAuthentication: SessionAuthentication { .anonymous }
+@APIDefinition(method: .post, path: "/orders", auth: .anonymous)
+struct CreateOrder {
     struct Body: Encodable, Sendable {
         let productID: Int
         let quantity: Int
@@ -67,9 +56,6 @@ struct CreateOrder: APIDefinition {
     typealias APIResponse = OrderReceipt
 
     let parameters: Body?
-
-    var method: HTTPMethod { .post }
-    var path: String { "/orders" }
 
     init(productID: Int, quantity: Int) {
         parameters = Body(productID: productID, quantity: quantity)

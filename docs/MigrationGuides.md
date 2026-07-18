@@ -24,13 +24,9 @@ types. `DefaultNetworkClient` owns URL construction, policy application,
 status validation, and decoding.
 
 ```swift
-struct GetProfile: APIDefinition {
-    typealias Parameter = EmptyParameter
+@APIDefinition(method: .get, path: "/me", auth: .anonymous)
+struct GetProfile {
     typealias APIResponse = Profile
-
-    var method: HTTPMethod { .get }
-    var path: String { "/me" }
-    var sessionAuthentication: SessionAuthentication { .anonymous }
 }
 
 let client = DefaultNetworkClient(

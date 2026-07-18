@@ -56,14 +56,12 @@ that re-uses the generated input and output types directly:
 import InnoNetwork
 import MyAppOpenAPI  // generator output target
 
-struct ListUsers: APIDefinition {
+@APIDefinition(method: .get, path: "/v1/users", auth: .anonymous)
+struct ListUsers {
     typealias Parameter = Operations.ListUsers.Input
     typealias APIResponse = Operations.ListUsers.Output
 
     let parameters: Parameter?
-
-    var method: HTTPMethod { .get }
-    var path: String { "/v1/users" }
 }
 ```
 

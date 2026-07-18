@@ -109,14 +109,12 @@ struct RequestIDStamper: RequestInterceptor {
     }
 }
 
-struct CreateOrder: APIDefinition {
+@APIDefinition(method: .post, path: "/orders", auth: .anonymous)
+struct CreateOrder {
     typealias Parameter = CreateOrderInput
     typealias APIResponse = CreateOrderOutput
 
     let parameters: CreateOrderInput?
-    var method: HTTPMethod { .post }
-    var path: String { "/orders" }
-
     var requestInterceptors: [RequestInterceptor] {
         [RequestIDStamper(prefix: "orders")]
     }

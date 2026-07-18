@@ -63,14 +63,12 @@ Use an idempotency key for any unsafe method where the server can deduplicate
 duplicate submissions:
 
 ```swift
-struct CreateOrder: APIDefinition {
+@APIDefinition(method: .post, path: "/orders", auth: .anonymous)
+struct CreateOrder {
     typealias Parameter = CreateOrderInput
     typealias APIResponse = CreateOrderOutput
 
     let parameters: CreateOrderInput?
-    var method: HTTPMethod { .post }
-    var path: String { "/orders" }
-
     var headers: HTTPHeaders {
         var headers = HTTPHeaders.default
         headers.add(name: "Idempotency-Key", value: "order-\(parameters?.clientID ?? "unknown")")

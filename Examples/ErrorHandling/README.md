@@ -29,13 +29,17 @@ InnoNetwork provides the following error families:
 - `NetworkError.cancelled`: Request was cancelled.
 - `NetworkError.timeout`: Request, resource, or connection timeout.
 
-## Running the Examples
+## Validating the Examples
 
-To run these examples:
+From the repository root, maintainers can compile the copyable source against
+the current package with:
 
 ```bash
-swift ErrorHandlingExample.swift
+bash Scripts/check_stable_examples.sh
 ```
+
+To execute the live scenarios, copy `ErrorHandlingExample.swift` into an app
+or executable target that depends on InnoNetwork.
 
 ## Covered Scenarios
 
@@ -119,13 +123,3 @@ do {
     print("Error Description: \(error.localizedDescription)")
 }
 ```
-
-## Running the Examples
-
-```bash
-# From the InnoNetwork directory
-cd Examples/ErrorHandling
-swift ErrorHandlingExample.swift
-```
-
-This will execute all error handling scenarios and show how each error type is handled.

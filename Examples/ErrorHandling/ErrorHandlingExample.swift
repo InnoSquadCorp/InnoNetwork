@@ -33,28 +33,20 @@ struct User: Decodable {
 // MARK: - 3. API Definitions
 
 // Valid API request
-struct ValidRequest: APIDefinition {
-    var sessionAuthentication: SessionAuthentication { .anonymous }
-    typealias Parameter = EmptyParameter
+@APIDefinition(method: .get, path: "/posts/1", auth: .anonymous)
+struct ValidRequest {
     typealias APIResponse = Post
-
-    var method: HTTPMethod { .get }
-    var path: String { "/posts/1" }
-
 }
 
 // Request that will fail with 404
-struct NotFoundRequest: APIDefinition {
-    var sessionAuthentication: SessionAuthentication { .anonymous }
-    typealias Parameter = EmptyParameter
+@APIDefinition(method: .get, path: "/posts/99999", auth: .anonymous)
+struct NotFoundRequest {
     typealias APIResponse = Post
-
-    var method: HTTPMethod { .get }
-    var path: String { "/posts/99999" }
-
 }
 
-// Invalid request configuration: endpoint paths must not include query strings.
+// Deliberately uses the manual escape hatch: @APIDefinition would reject this
+// invalid query-bearing path at compile time, while this scenario demonstrates
+// the equivalent runtime guard for hand-written conformances.
 struct InvalidRequestConfigurationRequest: APIDefinition {
     var sessionAuthentication: SessionAuthentication { .anonymous }
     typealias Parameter = EmptyParameter
@@ -66,8 +58,8 @@ struct InvalidRequestConfigurationRequest: APIDefinition {
 }
 
 // Request with custom headers (for testing)
-struct PostWithBody: APIDefinition {
-    var sessionAuthentication: SessionAuthentication { .anonymous }
+@APIDefinition(method: .post, path: "/posts", auth: .anonymous)
+struct PostWithBody {
     struct PostParameter: Encodable {
         let title: String
         let body: String
@@ -78,9 +70,6 @@ struct PostWithBody: APIDefinition {
     typealias APIResponse = Post
 
     let parameters: PostParameter?
-
-    var method: HTTPMethod { .post }
-    var path: String { "/posts" }
 
     init(title: String, body: String, userId: Int = 1) {
         self.parameters = PostParameter(title: title, body: body, userId: userId)

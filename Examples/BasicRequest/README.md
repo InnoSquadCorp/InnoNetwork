@@ -20,17 +20,18 @@ policy.
 
 ## Running the Examples
 
-To run these examples:
+To use these examples:
 
 1. Add InnoNetwork package to your project
 2. Copy the example code into a Swift file
 3. Import InnoNetwork
 4. Run the code
 
-Or directly execute the example file as a Swift script:
+From the repository root, maintainers can compile the copyable source against
+the current package with the stable-example contract:
 
 ```bash
-swift BasicRequestExample.swift
+bash Scripts/check_stable_examples.sh
 ```
 
 ## Covered Scenarios

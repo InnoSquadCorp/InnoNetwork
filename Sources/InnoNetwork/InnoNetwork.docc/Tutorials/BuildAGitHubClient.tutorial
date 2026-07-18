@@ -34,28 +34,28 @@
 
     @Section(title: "Describe the endpoint") {
         @ContentAndMedia {
-            Each endpoint is a value type that conforms to
-            ``APIDefinition``. You declare the HTTP method, path, and
-            response type once. The compiler then enforces matching shapes
-            at every call site.
+            Each endpoint is an explicit value type annotated with
+            ``APIDefinition(method:path:auth:)``. You declare the HTTP method,
+            path, authentication intent, inputs, and response type once. The
+            compiler then derives repetitive witnesses and enforces matching
+            shapes at every call site.
         }
 
         @Steps {
             @Step {
                 Declare a `GetUser` value that stores the `login`
-                parameter. In the next step you will make this value
-                conform to ``APIDefinition`` and map that parameter into
-                the request path.
+                parameter. In the next step you will attach the macro and map
+                that parameter into the request path.
 
                 @Code(name: "GitHubClient.swift", file: BuildAGitHubClient-02-01.swift)
             }
 
             @Step {
-                Implement `method` and `path`. Encode `login` with
-                ``EndpointPathEncoding/percentEncodedSegment(_:)`` so it
-                remains one path segment even if it contains reserved
-                characters. `Parameter` defaults to ``EmptyParameter`` for
-                simple GET requests, so you do not need to declare it.
+                Attach ``APIDefinition(method:path:auth:)`` with a `{login}`
+                placeholder and explicit anonymous authentication. The macro
+                percent-encodes the stored value as one path segment and
+                derives the empty GET payload witnesses. Keep `APIResponse`
+                visible on the struct.
 
                 @Code(name: "GitHubClient.swift", file: BuildAGitHubClient-02-02.swift)
             }
@@ -72,7 +72,8 @@
 
         @Steps {
             @Step {
-                Build a ``DefaultNetworkClient`` with the recommended
+                Build a ``DefaultNetworkClient`` from the base URL. This
+                convenience initializer uses the recommended
                 ``NetworkConfiguration/safeDefaults(baseURL:)`` preset.
 
                 @Code(name: "GitHubClient.swift", file: BuildAGitHubClient-03-01.swift)
@@ -118,9 +119,9 @@
                 Automatic retry of every failed request.
 
                 @Justification(reaction: "Try again") {
-                    Retry is opt-in via ``RetryPolicy`` on
-                    ``NetworkConfiguration`` — it is not implied by
-                    ``APIDefinition`` itself.
+                    Retry is opt-in through ``ResiliencePack`` in an advanced
+                    configuration — it is not implied by ``APIDefinition``
+                    itself.
                 }
             }
         }
