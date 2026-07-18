@@ -1033,6 +1033,26 @@ validate_troubleshooting_and_examples_docs() {
   require_contains '### [WrapperSmoke](./WrapperSmoke)' "$repo_root/Examples/README.md"
 }
 
+validate_agent_guidelines_doc() {
+  # CLAUDE.md is the AI-agent and contributor entry point (AGENTS.md resolves
+  # to it), but it was previously the one contributor document outside this
+  # guard and its snippets drifted off the 5.0 API. Anchor the shapes that
+  # drifted so a future API change fails closed here instead of silently
+  # misleading the next contributor or agent.
+  local claude_md="$repo_root/CLAUDE.md"
+  # The macro-first catalog shape is the documented default endpoint style.
+  require_contains '@APIDefinition(method: .get, path: "/users/{id}", auth: .anonymous)' "$claude_md"
+  # Client construction is the non-throwing baseURL initializer.
+  require_contains 'let client = DefaultNetworkClient(' "$claude_md"
+  require_not_contains 'try DefaultNetworkClient(' "$claude_md"
+  # The removed 4.x configuration modifier family must not resurface.
+  require_not_contains 'NetworkConfiguration.with(' "$claude_md"
+  # Download construction stays the throwing initializer with safeDefaults.
+  require_contains '.safeDefaults(sessionIdentifier:' "$claude_md"
+  # package-scoped test helpers are documented as internal, not consumer API.
+  require_contains 'package`-scoped' "$claude_md"
+}
+
 validate_release_quality_gates() {
   local docc_product_loop_count
   require_contains 'bash Scripts/check_guarded_benchmark_contract.sh' \
@@ -1763,6 +1783,7 @@ validate_public_surface_ledger
 validate_public_surface_snapshot
 validate_ledger_to_allowlist_parity
 validate_release_quality_gates
+validate_agent_guidelines_doc
 
 require_contains "API Stability" "$readme"
 require_contains ".safeDefaults(" "$readme"

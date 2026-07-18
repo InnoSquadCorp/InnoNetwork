@@ -73,12 +73,13 @@ InnoNetwork is a type-safe Swift network library shipped as **8 products**:
 - Public Key Pinning (SPKI/DER) — opt-in product so non-pinning apps don't pay binary cost
 
 **InnoNetworkTestSupport:**
-- `MockURLSession`, `StubNetworkClient`, `VCRURLSession`, `FaultInjection`, `TestClock`, `WebSocketEventRecorder`
+- Public consumer helpers: `MockURLSession`, `StubNetworkClient`, `VCRURLSession`, `WebSocketEventRecorder`
+- `FaultInjection` and `TestClock` are `package`-scoped: they serve this repository's own test targets and are not part of the shipped consumer surface
 
 **Platform:**
 - Swift 6.2+ (package enforces `swiftLanguageMode(.v6)`)
 - iOS 16.0+ / macOS 14.0+ / tvOS 16.0+ / watchOS 9.0+ / visionOS 1.0+
-- Apple-only (intentional). Full Sendable compliance, no `@unchecked Sendable` in production code
+- Apple-only (intentional). Full Sendable compliance, no `@unchecked Sendable` in the runtime modules (the only occurrences live in `InnoNetworkTestSupport`'s package-scoped lock-backed test fakes)
 
 ## Development Commands
 
@@ -150,7 +151,7 @@ swift test --list-tests
 
 ### Sources/InnoNetworkTestSupport
 - `MockURLSession.swift` / `StubNetworkClient.swift` / `VCRURLSession.swift` — 1차 시민 테스트 fake
-- `FaultInjection.swift` / `TestClock.swift` — deterministic timing/failure
+- `FaultInjection.swift` / `TestClock.swift` — deterministic timing/failure (package-scoped, not consumer API)
 - `WebSocketEventRecorder.swift`
 
 ### Benchmarks / SmokeTests
