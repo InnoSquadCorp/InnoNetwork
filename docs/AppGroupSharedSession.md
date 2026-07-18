@@ -23,7 +23,8 @@ download sessions and for isolated extension HTTP clients.
   `DownloadManager(configuration:)` builds a background `URLSession` whose
   identifier is whatever you pass through
   ``DownloadConfiguration/safeDefaults(sessionIdentifier:)`` or the advanced
-  builder. That identifier then scopes the OS-managed download queue, but it
+  factory's `sessionIdentifier` argument. That identifier then scopes the
+  OS-managed download queue, but it
   does not permit concurrent process ownership. A host app and extension may
   use the **same** identifier only for OS-driven reattachment after the previous
   owner process is no longer attached. Use **different** identifiers when both
@@ -123,14 +124,16 @@ let groupContainer = FileManager.default.containerURL(
     forSecurityApplicationGroupIdentifier: "group.com.example.app.media"
 )!
 
-let configuration = DownloadConfiguration.advanced { builder in
-    builder.sessionIdentifier = "com.example.app.downloads.shared"
-    builder.sharedContainerIdentifier = "group.com.example.app.media"
-    builder.persistenceBaseDirectoryURL = groupContainer.appending(
-        path: "InnoNetworkPersistence",
-        directoryHint: .isDirectory
+let configuration = DownloadConfiguration.advanced(
+    sessionIdentifier: "com.example.app.downloads.shared",
+    persistence: DownloadPersistencePack(
+        sharedContainerIdentifier: "group.com.example.app.media",
+        baseDirectoryURL: groupContainer.appending(
+            path: "InnoNetworkPersistence",
+            directoryHint: .isDirectory
+        )
     )
-}.backgroundTransfersEnabled()
+).backgroundTransfersEnabled()
 
 let manager = try DownloadManager(configuration: configuration)
 ```

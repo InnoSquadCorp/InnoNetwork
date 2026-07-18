@@ -20,7 +20,8 @@ callbacks. The duplicate `DownloadConfiguration.default` and
 `WebSocketConfiguration.default` aliases are removed in favor of the existing
 `safeDefaults()` factories; zero-argument manager construction remains
 unchanged. The direct 21-parameter `WebSocketConfiguration` initializer is
-package-owned; explicit tuning goes through `advanced(_:)`. `WebSocketTask`
+package-owned; explicit tuning goes through thematic packs passed to
+`advanced(...)`. `WebSocketTask`
 construction is manager-owned so every public handle has connection and
 ownership state. The duplicate `DownloadManager.make(configuration:)` factory
 is removed; the throwing initializer is the single construction path.
@@ -58,12 +59,13 @@ and own application reducer types in their feature or architecture layer.
 - `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 - `DownloadConfiguration.safeDefaults()`
 - `DownloadConfiguration.safeDefaults(sessionIdentifier:)`
-- `DownloadConfiguration.advanced(_:)`
-- `DownloadConfiguration.advanced(sessionIdentifier:_:)`
+- `DownloadConfiguration.advanced(sessionIdentifier:transfer:retry:observability:persistence:)`
+- `DownloadTransferPack`, `DownloadRetryPack`, `DownloadObservabilityPack`, and `DownloadPersistencePack`
 - `DownloadConfiguration.cellularEnabled()`
 - `DownloadConfiguration.backgroundTransfersEnabled()`
 - `WebSocketConfiguration.safeDefaults()`
-- `WebSocketConfiguration.advanced(_:)`
+- `WebSocketConfiguration.advanced(connection:liveness:reconnect:messaging:observability:)`
+- `WebSocketConnectionPack`, `WebSocketLivenessPack`, `WebSocketReconnectPack`, `WebSocketMessagingPack`, and `WebSocketObservabilityPack`
 - `WebSocketHandshakeRequestAdapter`
 - `DownloadManager`
 - `WebSocketManager`
@@ -169,7 +171,7 @@ below for the currently released 4.x line and explicit preview opt-in.
 - `MultipartUploadStrategy.inMemory(maxBytes:)` (4.0.0 baseline) — the explicit cap and encoder accumulator guard are part of the contract
 - `DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.0.0 baseline)
 - `ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.0.0 baseline)
-- `DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.0.0 baseline)
+- `DownloadConfiguration.sharedContainerIdentifier` and the `DownloadPersistencePack.init(...sharedContainerIdentifier:...)` argument (4.0.0 baseline)
 - `ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.0.0 baseline)
 - `NetworkConfiguration.streamingLineByteLimit` and the `TransportPack.init(...streamingLineByteLimit:...)` argument (4.0.0 baseline)
 
@@ -282,6 +284,11 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   is now `package`-only. The pack APIs stay source-compatible throughout
   5.x; future minors may add fields to existing packs without
   breaking call sites because every field defaults to `nil`.
+- Download and WebSocket configuration packs — immutable thematic values
+  accepted by each optional product's `advanced(...)` factory. Their
+  initializers retain complete advanced-preset defaults so callers can set one
+  named argument without publishing a mutable mirror of every configuration
+  property. The underlying builders are package-only.
 - `HMACRequestInterceptor` — reference HMAC body-signing interceptor
   (SHA-256 / SHA-384 / SHA-512). Header names and key id are
   provider-tunable; data and stable file bodies are supported while opaque
@@ -348,11 +355,13 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   does not expose a second configuration vocabulary.
 - `DownloadConfiguration.init(...)` — the direct 22-parameter construction
   surface is package-owned in 5.0. Use `safeDefaults(sessionIdentifier:)` or
-  `advanced(sessionIdentifier:_:)` so the secure preset defaults and manager
+  `advanced(sessionIdentifier:transfer:retry:observability:persistence:)` so
+  the secure preset defaults and manager
   identity remain explicit.
 - `DownloadConfiguration.sharedContainerIdentifier` — additive App Group
   background-session storage knob. Default stays `nil`; future minors may add
-  preset helpers, but the property and builder field remain source-compatible.
+  preset helpers, but the property and `DownloadPersistencePack` argument
+  remain source-compatible.
 - `HTTPHeader`, `HTTPHeaders`, and default header providers — default
   `User-Agent` / `Accept-Language` values are evaluated at request-build time
   so applications can inject bundle or locale ownership without relying on a

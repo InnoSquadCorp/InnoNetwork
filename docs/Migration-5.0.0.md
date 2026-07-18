@@ -38,7 +38,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | `DownloadManager.make(configuration:)` | Call the throwing `DownloadManager(configuration:)` initializer |
 | Constructing `PersistentResponseCacheStatistics` directly | Read the cache-owned snapshot from `await cache.statistics()`; use an application-owned fixture type for isolated presentation tests |
 | Constructing `CircuitBreakerOpenError` directly | Inspect the `SendableUnderlyingError` carried by `NetworkError.underlying`; custom policies should return their own error type |
-| Direct `WebSocketConfiguration(...)` initialization | Use `safeDefaults()` or set explicit overrides through `advanced(_:)` |
+| Direct `WebSocketConfiguration(...)` initialization | Use `safeDefaults()` or pass immutable thematic packs to `advanced(...)` |
 | Constructing a `WebSocketTask` directly | Obtain the handle from `await manager.connect(url:subprotocols:)` or an accepted `retry(_:)` result |
 | `import InnoNetworkCodegen` | Remove it; the attached macro ships from `import InnoNetwork` |
 | `@APIDefinition(method:path:)` | Add mandatory `auth: .anonymous`, `.optional`, or `.required` |
@@ -527,7 +527,7 @@ own domain-specific error instead of synthesizing a built-in breaker result.
 ## Tune WebSocket configuration through presets
 
 The direct 21-parameter `WebSocketConfiguration` initializer is also
-package-owned in 5.0. Move explicit tuning into the advanced builder:
+package-owned in 5.0. Move explicit tuning into the thematic advanced packs:
 
 ```swift
 // 4.x
@@ -537,15 +537,15 @@ let configuration = WebSocketConfiguration(
 )
 
 // 5.0
-let configuration = WebSocketConfiguration.advanced { configuration in
-    configuration.heartbeatInterval = 10
-    configuration.maxReconnectAttempts = 2
-}
+let configuration = WebSocketConfiguration.advanced(
+    liveness: WebSocketLivenessPack(heartbeatInterval: 10),
+    reconnect: WebSocketReconnectPack(maxAttempts: 2)
+)
 ```
 
-`advanced(_:)` retains its documented advanced-tuning seed. Set every field
-whose value is part of the integration contract instead of assuming it starts
-from the `safeDefaults()` preset.
+`advanced(...)` retains its documented advanced-tuning seed. Each immutable
+pack exposes one initializer for its cohesive policy area; omitted arguments
+retain that area's advanced defaults.
 
 ## Redirect defaults are stricter
 
@@ -585,13 +585,13 @@ let localClientConfiguration = NetworkConfiguration.advanced(
     transport: TransportPack(allowsInsecureHTTP: true)
 )
 
-let localDownloadConfiguration = DownloadConfiguration.advanced {
-    $0.allowsInsecureHTTP = true
-}
+let localDownloadConfiguration = DownloadConfiguration.advanced(
+    transfer: DownloadTransferPack(allowsInsecureHTTP: true)
+)
 
-let localSocketConfiguration = WebSocketConfiguration.advanced {
-    $0.allowsInsecureWebSocket = true
-}
+let localSocketConfiguration = WebSocketConfiguration.advanced(
+    connection: WebSocketConnectionPack(allowsInsecureWebSocket: true)
+)
 
 let localGeneratedClientTransport = InnoNetworkClientTransport(
     session: session,
@@ -627,10 +627,9 @@ background session explicitly:
 
 ```swift
 let backgroundDownloads = DownloadConfiguration.advanced(
-    sessionIdentifier: "com.example.app.downloads"
-) { builder in
-    builder.maxConnectionsPerHost = 4
-}.backgroundTransfersEnabled()
+    sessionIdentifier: "com.example.app.downloads",
+    transfer: DownloadTransferPack(maxConnectionsPerHost: 4)
+).backgroundTransfersEnabled()
 ```
 
 Use a conventional reverse-DNS session identifier. It is still passed to

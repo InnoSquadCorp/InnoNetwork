@@ -9,11 +9,12 @@ let cache = InMemoryResponseCache(maxBytes: 10 * 1024 * 1024)
 
 let client = DefaultNetworkClient(
     configuration: .advanced(
-        baseURL: URL(string: "https://api.example.com")!
-    ) { builder in
-        builder.responseCache = cache
-        builder.responseCachePolicy = .cacheFirst(maxAge: .seconds(60))
-    }
+        baseURL: URL(string: "https://api.example.com")!,
+        cache: CachePack(
+            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+            responseCache: cache
+        )
+    )
 )
 ```
 
@@ -106,10 +107,9 @@ Request coalescing can be enabled separately with ``RequestCoalescingPolicy``:
 ```swift
 let client = DefaultNetworkClient(
     configuration: .advanced(
-        baseURL: URL(string: "https://api.example.com")!
-    ) { builder in
-        builder.requestCoalescingPolicy = .getOnly
-    }
+        baseURL: URL(string: "https://api.example.com")!,
+        resilience: ResiliencePack(coalescing: .getOnly)
+    )
 )
 ```
 
@@ -121,10 +121,15 @@ Use ``CircuitBreakerPolicy`` when repeated per-host failures should short-circui
 before transport:
 
 ```swift
-builder.circuitBreakerPolicy = CircuitBreakerPolicy(
-    failureThreshold: 3,
-    windowSize: 5,
-    resetAfter: .seconds(30)
+let configuration = NetworkConfiguration.advanced(
+    baseURL: URL(string: "https://api.example.com")!,
+    resilience: ResiliencePack(
+        circuitBreaker: CircuitBreakerPolicy(
+            failureThreshold: 3,
+            windowSize: 5,
+            resetAfter: .seconds(30)
+        )
+    )
 )
 ```
 

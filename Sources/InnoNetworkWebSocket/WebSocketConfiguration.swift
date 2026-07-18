@@ -192,41 +192,42 @@ public struct WebSocketConfiguration: Sendable {
     /// flag. See `<doc:WebSocketProtocolPolicy>` for migration notes.
     public let permessageDeflateEnabled: Bool
 
-    public struct AdvancedBuilder: Sendable {
-        public var maxConnectionsPerHost: Int
-        public var connectionTimeout: TimeInterval
-        public var heartbeatInterval: TimeInterval
-        public var pongTimeout: TimeInterval
-        public var maxMissedPongs: Int
-        public var reconnectDelay: TimeInterval
-        public var reconnectJitterRatio: Double
-        public var maxReconnectDelay: TimeInterval
-        public var maxReconnectAttempts: Int
+    /// Internal builder used by the pack-based `advanced(...)` factory.
+    package struct AdvancedBuilder: Sendable {
+        package var maxConnectionsPerHost: Int
+        package var connectionTimeout: TimeInterval
+        package var heartbeatInterval: TimeInterval
+        package var pongTimeout: TimeInterval
+        package var maxMissedPongs: Int
+        package var reconnectDelay: TimeInterval
+        package var reconnectJitterRatio: Double
+        package var maxReconnectDelay: TimeInterval
+        package var maxReconnectAttempts: Int
         /// Cumulative reconnect-window budget in seconds. See
         /// ``WebSocketConfiguration/reconnectMaxTotalDuration``.
-        public var reconnectMaxTotalDuration: TimeInterval
-        public var allowsCellularAccess: Bool
+        package var reconnectMaxTotalDuration: TimeInterval
+        package var allowsCellularAccess: Bool
         /// Allows plain `ws` connections. Defaults to `false`.
-        public var allowsInsecureWebSocket: Bool
-        public var requestHeaders: [String: String]
-        public var handshakeRequestAdapters: [WebSocketHandshakeRequestAdapter]
-        public var eventDeliveryPolicy: EventDeliveryPolicy
-        public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
-        public var sendQueueLimit: Int
-        public var sendQueueOverflowPolicy: WebSocketSendOverflowPolicy
+        package var allowsInsecureWebSocket: Bool
+        package var requestHeaders: [String: String]
+        package var handshakeRequestAdapters: [WebSocketHandshakeRequestAdapter]
+        package var eventDeliveryPolicy: EventDeliveryPolicy
+        package var eventMetricsReporter: (any EventPipelineMetricsReporting)?
+        package var sendQueueLimit: Int
+        package var sendQueueOverflowPolicy: WebSocketSendOverflowPolicy
         /// Maximum time the manager waits for the WebSocket close handshake
         /// to complete after `cancel(with:reason:)` is issued before
         /// finalizing the disconnect locally. Negative values are clamped to
         /// `.zero` when the configuration is built. See
         /// ``WebSocketConfiguration/closeHandshakeTimeout`` for full
         /// semantics.
-        public var closeHandshakeTimeout: Duration
+        package var closeHandshakeTimeout: Duration
         /// See ``WebSocketConfiguration/maximumMessageSize``.
-        public var maximumMessageSize: Int
+        package var maximumMessageSize: Int
         /// See ``WebSocketConfiguration/permessageDeflateEnabled``.
-        public var permessageDeflateEnabled: Bool
+        package var permessageDeflateEnabled: Bool
 
-        fileprivate init(preset: WebSocketConfiguration) {
+        package init(preset: WebSocketConfiguration) {
             self.maxConnectionsPerHost = preset.maxConnectionsPerHost
             self.connectionTimeout = preset.connectionTimeout
             self.heartbeatInterval = preset.heartbeatInterval
@@ -250,7 +251,7 @@ public struct WebSocketConfiguration: Sendable {
             self.permessageDeflateEnabled = preset.permessageDeflateEnabled
         }
 
-        fileprivate func build() -> WebSocketConfiguration {
+        package func build() -> WebSocketConfiguration {
             WebSocketConfiguration(
                 maxConnectionsPerHost: maxConnectionsPerHost,
                 connectionTimeout: connectionTimeout,
@@ -281,9 +282,21 @@ public struct WebSocketConfiguration: Sendable {
         Presets.safeDefaults()
     }
 
-    public static func advanced(_ configure: (inout AdvancedBuilder) -> Void) -> WebSocketConfiguration {
+    /// Composes an advanced configuration from explicit thematic packs.
+    /// Omitted packs preserve the documented high-tuning preset.
+    public static func advanced(
+        connection: WebSocketConnectionPack = WebSocketConnectionPack(),
+        liveness: WebSocketLivenessPack = WebSocketLivenessPack(),
+        reconnect: WebSocketReconnectPack = WebSocketReconnectPack(),
+        messaging: WebSocketMessagingPack = WebSocketMessagingPack(),
+        observability: WebSocketObservabilityPack = WebSocketObservabilityPack()
+    ) -> WebSocketConfiguration {
         var builder = AdvancedBuilder(preset: Presets.advancedTuning())
-        configure(&builder)
+        connection.apply(to: &builder)
+        liveness.apply(to: &builder)
+        reconnect.apply(to: &builder)
+        messaging.apply(to: &builder)
+        observability.apply(to: &builder)
         return builder.build()
     }
 

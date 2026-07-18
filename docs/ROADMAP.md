@@ -166,12 +166,13 @@ NetworkConfiguration.advanced(
 )
 ```
 
-Five Pack value types (`ResiliencePack`, `AuthPack`, `ObservabilityPack`,
-`CachePack`, `TransportPack`) carry the full configuration surface; the
-underlying `AdvancedBuilder` is now `package`-only and unreachable from
-client code. The closure-based `advanced(baseURL:_:)` factory was
-removed in 4.x; adopters migrate by replacing closure mutations with
-the equivalent Pack fields.
+Core's five pack value types (`ResiliencePack`, `AuthPack`,
+`ObservabilityPack`, `CachePack`, `TransportPack`) carry its full
+configuration surface. Download and WebSocket use the same model through
+module-scoped transfer/retry/persistence and
+connection/liveness/reconnect/messaging packs. Every underlying
+`AdvancedBuilder` is `package`-only and unreachable from client code. Adopters
+migrate by replacing closure mutations with equivalent named pack arguments.
 
 ## Explicitly Deferred
 

@@ -3898,13 +3898,15 @@ struct WebSocketConfigurationHardeningTests {
         #expect(config.permessageDeflateEnabled == false)
     }
 
-    @Test("AdvancedBuilder roundtrips the new fields without loss")
-    func advancedBuilderRoundtripsHardeningFields() {
-        let config = WebSocketConfiguration.advanced { builder in
-            builder.maximumMessageSize = 8 * 1024 * 1024
-            builder.permessageDeflateEnabled = true
-            builder.reconnectMaxTotalDuration = 90
-        }
+    @Test("Advanced packs roundtrip hardening fields without loss")
+    func advancedPacksRoundtripHardeningFields() {
+        let config = WebSocketConfiguration.advanced(
+            reconnect: WebSocketReconnectPack(maxTotalDuration: 90),
+            messaging: WebSocketMessagingPack(
+                maximumMessageSize: 8 * 1024 * 1024,
+                permessageDeflateEnabled: true
+            )
+        )
         #expect(config.maximumMessageSize == 8 * 1024 * 1024)
         #expect(config.permessageDeflateEnabled == true)
         #expect(config.reconnectMaxTotalDuration == 90)

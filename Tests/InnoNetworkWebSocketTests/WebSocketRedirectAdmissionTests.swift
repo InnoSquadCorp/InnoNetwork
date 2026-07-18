@@ -181,15 +181,17 @@ struct WebSocketRedirectAdmissionTests {
     func realRedirectPreservesRequiredHandshakeFields() async throws {
         let server = try WebSocketRedirectLoopbackServer()
         defer { server.stop() }
-        let configuration = WebSocketConfiguration.advanced { builder in
-            builder.allowsInsecureWebSocket = true
-            builder.heartbeatInterval = 0
-            builder.maxReconnectAttempts = 0
-            builder.requestHeaders = [
-                "Authorization": "Bearer secret",
-                "X-Tenant-Secret": "tenant-secret",
-            ]
-        }
+        let configuration = WebSocketConfiguration.advanced(
+            connection: WebSocketConnectionPack(
+                allowsInsecureWebSocket: true,
+                requestHeaders: [
+                    "Authorization": "Bearer secret",
+                    "X-Tenant-Secret": "tenant-secret",
+                ]
+            ),
+            liveness: WebSocketLivenessPack(heartbeatInterval: 0),
+            reconnect: WebSocketReconnectPack(maxAttempts: 0)
+        )
         let manager = WebSocketManager(configuration: configuration)
         let task = await manager.connect(url: server.sourceURL, subprotocols: ["chat.v2"])
 

@@ -116,16 +116,19 @@ private struct SmokeUserPosts: APIDefinition {
 
 private func compileBackgroundDownloadArticleExamples() async throws {
     let configuration = DownloadConfiguration.advanced(
-        sessionIdentifier: "com.example.docsmoke.background.\(UUID().uuidString)"
-    ) { builder in
-        builder.allowsCellularAccess = true
-        builder.maxConnectionsPerHost = 4
-        builder.persistenceCompactionPolicy = .init(
-            maxEvents: 1_000,
-            maxLogBytes: 1_048_576,
-            tombstoneRatio: 0.25
+        sessionIdentifier: "com.example.docsmoke.background.\(UUID().uuidString)",
+        transfer: DownloadTransferPack(
+            maxConnectionsPerHost: 4,
+            allowsCellularAccess: true
+        ),
+        persistence: DownloadPersistencePack(
+            compactionPolicy: .init(
+                maxEvents: 1_000,
+                maxLogBytes: 1_048_576,
+                tombstoneRatio: 0.25
+            )
         )
-    }
+    )
 
     let manager = try DownloadManager(configuration: configuration)
     _ = await manager.waitForRestoration()
@@ -140,11 +143,13 @@ private func compileBackgroundDownloadArticleExamples() async throws {
 }
 
 private func compileWebSocketArticleExamples() async {
-    let configuration = WebSocketConfiguration.advanced { builder in
-        builder.heartbeatInterval = 20
-        builder.pongTimeout = 5
-        builder.sendQueueLimit = 32
-    }
+    let configuration = WebSocketConfiguration.advanced(
+        liveness: WebSocketLivenessPack(
+            heartbeatInterval: 20,
+            pongTimeout: 5
+        ),
+        messaging: WebSocketMessagingPack(sendQueueLimit: 32)
+    )
     let manager = WebSocketManager(configuration: configuration)
     let task = await manager.connect(
         url: URL(string: "wss://echo.example.com/socket")!
@@ -192,18 +197,20 @@ private func runDocSmoke() {
     let downloadDefaults = DownloadConfiguration.safeDefaults(
         sessionIdentifier: "com.example.docsmoke.downloads"
     )
-    let downloadAdvanced = DownloadConfiguration.advanced { builder in
-        builder.maxTotalRetries = 5
-        builder.waitsForNetworkChanges = true
-    }
+    let downloadAdvanced = DownloadConfiguration.advanced(
+        retry: DownloadRetryPack(
+            maxTotalRetries: 5,
+            waitsForNetworkChanges: true
+        )
+    )
     _ = downloadDefaults
     _ = downloadAdvanced
 
     let webSocketDefaults = WebSocketConfiguration.safeDefaults()
-    let webSocketAdvanced = WebSocketConfiguration.advanced { builder in
-        builder.heartbeatInterval = 15
-        builder.maxReconnectAttempts = 8
-    }
+    let webSocketAdvanced = WebSocketConfiguration.advanced(
+        liveness: WebSocketLivenessPack(heartbeatInterval: 15),
+        reconnect: WebSocketReconnectPack(maxAttempts: 8)
+    )
     _ = webSocketDefaults
     _ = webSocketAdvanced
 

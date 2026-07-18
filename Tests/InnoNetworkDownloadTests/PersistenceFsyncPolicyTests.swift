@@ -161,24 +161,28 @@ struct PersistenceFsyncPolicyTests {
         #expect(configuration.persistenceCompactionPolicy == .default)
     }
 
-    @Test("Advanced builder propagates the override")
-    func advancedBuilderRoundTrips() {
+    @Test("Persistence pack propagates the override")
+    func persistencePackRoundTrips() {
         let always = DownloadConfiguration.advanced(
-            sessionIdentifier: "test.fsync.always.\(UUID().uuidString)"
-        ) { builder in
-            builder.persistenceFsyncPolicy = .always
-            builder.persistenceCompactionPolicy = .init(maxEvents: 16, maxLogBytes: 4_096, tombstoneRatio: 0.5)
-        }
+            sessionIdentifier: "test.fsync.always.\(UUID().uuidString)",
+            persistence: DownloadPersistencePack(
+                fsyncPolicy: .always,
+                compactionPolicy: .init(
+                    maxEvents: 16,
+                    maxLogBytes: 4_096,
+                    tombstoneRatio: 0.5
+                )
+            )
+        )
         #expect(always.persistenceFsyncPolicy == .always)
         #expect(always.persistenceCompactionPolicy.maxEvents == 16)
         #expect(always.persistenceCompactionPolicy.maxLogBytes == 4_096)
         #expect(always.persistenceCompactionPolicy.tombstoneRatio == 0.5)
 
         let never = DownloadConfiguration.advanced(
-            sessionIdentifier: "test.fsync.never.\(UUID().uuidString)"
-        ) { builder in
-            builder.persistenceFsyncPolicy = .never
-        }
+            sessionIdentifier: "test.fsync.never.\(UUID().uuidString)",
+            persistence: DownloadPersistencePack(fsyncPolicy: .never)
+        )
         #expect(never.persistenceFsyncPolicy == .never)
     }
 

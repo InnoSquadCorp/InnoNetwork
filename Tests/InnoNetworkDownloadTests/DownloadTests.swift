@@ -36,11 +36,12 @@ struct DownloadConfigurationTests {
     @Test("backgroundTransfersEnabled() is an explicit copy-based opt-in")
     func backgroundTransfersEnabledPreservesConfiguration() {
         let base = DownloadConfiguration.advanced(
-            sessionIdentifier: "test.background.opt-in"
-        ) { builder in
-            builder.maxConnectionsPerHost = 4
-            builder.sharedContainerIdentifier = "group.com.example.downloads"
-        }
+            sessionIdentifier: "test.background.opt-in",
+            transfer: DownloadTransferPack(maxConnectionsPerHost: 4),
+            persistence: DownloadPersistencePack(
+                sharedContainerIdentifier: "group.com.example.downloads"
+            )
+        )
 
         #expect(base.sessionMode == .foreground)
         #expect(base.makeURLSessionConfiguration().identifier == nil)
@@ -57,34 +58,72 @@ struct DownloadConfigurationTests {
         #expect(cellularBackground.allowsCellularAccess)
     }
 
-    @Test("persistenceBaseDirectoryURL flows through the AdvancedBuilder")
+    @Test("persistenceBaseDirectoryURL flows through DownloadPersistencePack")
     func persistenceBaseDirectoryURLRoundtrips() {
         let custom = URL(fileURLWithPath: "/tmp/inno-test-cache", isDirectory: true)
-        let config = DownloadConfiguration.advanced { builder in
-            builder.persistenceBaseDirectoryURL = custom
-        }
+        let config = DownloadConfiguration.advanced(
+            persistence: DownloadPersistencePack(baseDirectoryURL: custom)
+        )
         #expect(config.persistenceBaseDirectoryURL == custom)
     }
 
-    @Test("sharedContainerIdentifier flows through the AdvancedBuilder")
-    func sharedContainerIdentifierRoundtripsThroughAdvancedBuilder() {
-        let config = DownloadConfiguration.advanced { builder in
-            builder.sharedContainerIdentifier = "group.com.example.downloads"
-        }
+    @Test("sharedContainerIdentifier flows through DownloadPersistencePack")
+    func sharedContainerIdentifierRoundtripsThroughPersistencePack() {
+        let config = DownloadConfiguration.advanced(
+            persistence: DownloadPersistencePack(
+                sharedContainerIdentifier: "group.com.example.downloads"
+            )
+        )
         #expect(config.sharedContainerIdentifier == "group.com.example.downloads")
     }
 
-    @Test("advanced builder can override high-tuning configuration")
-    func advancedBuilderOverrides() {
-        let config = DownloadConfiguration.advanced {
-            $0.maxConnectionsPerHost = 9
-            $0.waitsForNetworkChanges = true
-            $0.networkChangeTimeout = 30
-        }
+    @Test("advanced packs can override high-tuning configuration")
+    func advancedPacksOverride() {
+        let config = DownloadConfiguration.advanced(
+            transfer: DownloadTransferPack(maxConnectionsPerHost: 9),
+            retry: DownloadRetryPack(
+                waitsForNetworkChanges: true,
+                networkChangeTimeout: 30
+            )
+        )
 
         #expect(config.maxConnectionsPerHost == 9)
         #expect(config.waitsForNetworkChanges == true)
         #expect(config.networkChangeTimeout == 30)
+    }
+
+    @Test("advanced pack defaults preserve the high-tuning preset")
+    func advancedPackDefaultsPreservePreset() {
+        let config = DownloadConfiguration.advanced()
+
+        #expect(config.maxConnectionsPerHost == 6)
+        #expect(config.maxRetryCount == 5)
+        #expect(config.maxTotalRetries == 8)
+        #expect(config.retryDelay == 0.5)
+        #expect(config.exponentialBackoff == false)
+        #expect(config.retryJitterRatio == 0.2)
+        #expect(config.maxRetryDelay == 30)
+        #expect(config.timeoutForRequest == 60)
+        #expect(config.timeoutForResource == 60 * 60 * 24)
+        #expect(config.taskInactivityTimeout == nil)
+        #expect(config.allowsCellularAccess == false)
+        #expect(config.allowsInsecureHTTP == false)
+        #expect(config.sessionIdentifier == "com.innonetwork.download")
+        #expect(config.sharedContainerIdentifier == nil)
+        #expect(config.networkMonitor != nil)
+        #expect(config.waitsForNetworkChanges)
+        #expect(config.networkChangeTimeout == 20)
+        #expect(config.eventDeliveryPolicy.maxBufferedEventsPerPartition == 512)
+        #expect(config.eventDeliveryPolicy.maxBufferedEventsPerConsumer == 512)
+        #expect(config.eventMetricsReporter == nil)
+        #expect(config.persistenceFsyncPolicy == .onCheckpoint)
+        #expect(config.persistenceCompactionPolicy == .default)
+        #expect(config.persistenceBaseDirectoryURL == nil)
+
+        let withoutMonitor = DownloadConfiguration.advanced(
+            retry: DownloadRetryPack(networkMonitor: nil)
+        )
+        #expect(withoutMonitor.networkMonitor == nil)
     }
 
     @Test("Custom configuration is applied correctly")

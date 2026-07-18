@@ -30,6 +30,10 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   `NoOpNetworkLogger`, redirect sensitive-header set, and diagnostic URL helper
   also leave the public contract. Generated-client SPI executables inherit
   logger and empty-interceptor defaults when those witnesses are omitted.
+- Download and WebSocket advanced configuration now use immutable thematic
+  packs, matching Core. Their mutable `AdvancedBuilder` types are package-only;
+  configuration values remain public read-only properties on the final
+  configuration structs.
 - The nested `Packages/InnoNetworkCodegen` package and `#endpoint` expression
   macro are removed. `@APIDefinition(method:path:auth:)` now comes from
   `import InnoNetwork`, requires an explicit `.anonymous` / `.optional` /
@@ -74,8 +78,8 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   breaker alone produces it. Its public `errorDomain` and read-only fields stay
   available for diagnostics.
 - The direct 21-parameter `WebSocketConfiguration` initializer is
-  package-owned. Use `safeDefaults()` for the secure preset or `advanced(_:)`
-  for explicit tuning.
+  package-owned. Use `safeDefaults()` for the secure preset or the named packs
+  accepted by `advanced(...)` for explicit tuning.
 - `WebSocketTask` construction is package-owned. Obtain handles from
   `WebSocketManager.connect(url:subprotocols:)` or an accepted explicit retry
   so every task is registered with its owning manager.

@@ -36,25 +36,54 @@ struct WebSocketConfigurationTests {
         #expect(config.maxReconnectDelay == 0)
     }
 
-    @Test("advanced builder starts with cap disabled")
-    func advancedBuilderDefaultsToDisabledCap() {
-        let config = WebSocketConfiguration.advanced { _ in }
+    @Test("advanced packs start with cap disabled")
+    func advancedPacksDefaultToDisabledCap() {
+        let config = WebSocketConfiguration.advanced()
         #expect(config.maxReconnectDelay == 0)
     }
 
-    @Test("advanced builder can override reconnect tuning")
-    func advancedBuilderOverrides() {
-        let config = WebSocketConfiguration.advanced {
-            $0.connectionTimeout = 60
-            $0.reconnectDelay = 2
-            $0.maxReconnectAttempts = 12
-            $0.allowsInsecureWebSocket = true
-        }
+    @Test("advanced packs can override reconnect tuning")
+    func advancedPacksOverride() {
+        let config = WebSocketConfiguration.advanced(
+            connection: WebSocketConnectionPack(
+                connectionTimeout: 60,
+                allowsInsecureWebSocket: true
+            ),
+            reconnect: WebSocketReconnectPack(delay: 2, maxAttempts: 12)
+        )
 
         #expect(config.connectionTimeout == 60)
         #expect(config.reconnectDelay == 2)
         #expect(config.maxReconnectAttempts == 12)
         #expect(config.allowsInsecureWebSocket)
+    }
+
+    @Test("advanced pack defaults preserve the high-tuning preset")
+    func advancedPackDefaultsPreservePreset() {
+        let config = WebSocketConfiguration.advanced()
+
+        #expect(config.maxConnectionsPerHost == 8)
+        #expect(config.connectionTimeout == 45)
+        #expect(config.heartbeatInterval == 15)
+        #expect(config.pongTimeout == 5)
+        #expect(config.maxMissedPongs == 2)
+        #expect(config.reconnectDelay == 0.5)
+        #expect(config.reconnectJitterRatio == 0.1)
+        #expect(config.maxReconnectDelay == 0)
+        #expect(config.maxReconnectAttempts == 8)
+        #expect(config.reconnectMaxTotalDuration == 0)
+        #expect(config.allowsCellularAccess)
+        #expect(config.allowsInsecureWebSocket == false)
+        #expect(config.requestHeaders.isEmpty)
+        #expect(config.handshakeRequestAdapters.isEmpty)
+        #expect(config.eventDeliveryPolicy.maxBufferedEventsPerPartition == 512)
+        #expect(config.eventDeliveryPolicy.maxBufferedEventsPerConsumer == 512)
+        #expect(config.eventMetricsReporter == nil)
+        #expect(config.sendQueueLimit == 512)
+        #expect(config.sendQueueOverflowPolicy == .fail)
+        #expect(config.closeHandshakeTimeout == .seconds(3))
+        #expect(config.maximumMessageSize == 1 * 1024 * 1024)
+        #expect(config.permessageDeflateEnabled == false)
     }
 
     @Test("WebSocket admission rejects insecure and ambiguous URLs before URLSession")
@@ -161,9 +190,9 @@ struct WebSocketConfigurationTests {
         #expect(custom.closeHandshakeTimeout == .seconds(7))
         let clamped = WebSocketConfiguration(closeHandshakeTimeout: .seconds(-2))
         #expect(clamped.closeHandshakeTimeout == .zero)
-        let advanced = WebSocketConfiguration.advanced {
-            $0.closeHandshakeTimeout = .milliseconds(500)
-        }
+        let advanced = WebSocketConfiguration.advanced(
+            liveness: WebSocketLivenessPack(closeHandshakeTimeout: .milliseconds(500))
+        )
         #expect(advanced.closeHandshakeTimeout == .milliseconds(500))
     }
 
@@ -1048,10 +1077,9 @@ struct WebSocketManagerTests {
     func retryCoordinatorRetriesRetryableHandshakeFailures() async {
         let task = WebSocketTask(url: URL(string: "wss://example.com/socket")!)
         let coordinator = WebSocketReconnectCoordinator(
-            configuration: .advanced {
-                $0.maxReconnectAttempts = 2
-                $0.reconnectDelay = 0
-            },
+            configuration: .advanced(
+                reconnect: WebSocketReconnectPack(delay: 0, maxAttempts: 2)
+            ),
             runtimeRegistry: WebSocketRuntimeRegistry()
         )
 

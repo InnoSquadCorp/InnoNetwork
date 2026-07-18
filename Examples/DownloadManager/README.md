@@ -32,7 +32,7 @@ parse errors, and `exit(0)`s (with a guidance note) when
 ## Configuration
 
 The sample constructs its configuration via
-`DownloadConfiguration.advanced { ... }` with exponential backoff
+`DownloadConfiguration.advanced(retry: DownloadRetryPack(...))` with exponential backoff
 enabled:
 
 - `retryDelay = 1.0` — base delay

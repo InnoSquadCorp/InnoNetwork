@@ -672,10 +672,12 @@ private enum InnoNetworkBenchmarks {
         try await measure(name: "websocket-reconnect-decision", group: "websocket", iterations: iterations) {
             let runtimeRegistry = WebSocketRuntimeRegistry()
             let coordinator = WebSocketReconnectCoordinator(
-                configuration: .advanced {
-                    $0.reconnectDelay = 0
-                    $0.maxReconnectAttempts = max(iterations, 8)
-                },
+                configuration: .advanced(
+                    reconnect: WebSocketReconnectPack(
+                        delay: 0,
+                        maxAttempts: max(iterations, 8)
+                    )
+                ),
                 runtimeRegistry: runtimeRegistry
             )
 

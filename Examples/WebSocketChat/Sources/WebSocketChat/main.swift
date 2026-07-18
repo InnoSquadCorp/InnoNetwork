@@ -86,9 +86,9 @@ private func writeStandardError(_ message: String) {
 }
 
 let manager = WebSocketManager(
-    configuration: .advanced { configuration in
-        configuration.maxReconnectAttempts = 0
-    }
+    configuration: .advanced(
+        reconnect: WebSocketReconnectPack(maxAttempts: 0)
+    )
 )
 
 // RTT observability via the current source callback. Treat richer pong context

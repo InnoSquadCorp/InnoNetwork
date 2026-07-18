@@ -17,11 +17,13 @@ struct ChatSocket {
     private let manager: WebSocketManager
 
     init() {
-        let configuration = WebSocketConfiguration.advanced { builder in
-            builder.heartbeatInterval = 20
-            builder.pongTimeout = 5
-            builder.sendQueueLimit = 32
-        }
+        let configuration = WebSocketConfiguration.advanced(
+            liveness: WebSocketLivenessPack(
+                heartbeatInterval: 20,
+                pongTimeout: 5
+            ),
+            messaging: WebSocketMessagingPack(sendQueueLimit: 32)
+        )
         self.manager = WebSocketManager(configuration: configuration)
     }
 

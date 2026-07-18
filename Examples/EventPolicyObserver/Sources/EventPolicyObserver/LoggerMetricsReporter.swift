@@ -10,9 +10,11 @@ import os
 /// Use pattern:
 ///
 /// ```swift
-/// let configuration = WebSocketConfiguration.advanced {
-///     $0.eventMetricsReporter = LoggerMetricsReporter()
-/// }
+/// let configuration = WebSocketConfiguration.advanced(
+///     observability: WebSocketObservabilityPack(
+///         eventMetricsReporter: LoggerMetricsReporter()
+///     )
+/// )
 /// ```
 ///
 /// In production you usually want either this **or** `SignPostMetricsReporter`,

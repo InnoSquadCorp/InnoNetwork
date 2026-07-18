@@ -144,14 +144,16 @@ struct LoggingMetricsReporter: EventPipelineMetricsReporting {
     }
 }
 
-let config = WebSocketConfiguration.advanced {
-    $0.eventDeliveryPolicy = EventDeliveryPolicy(
-        maxBufferedEventsPerPartition: 1024,
-        maxBufferedEventsPerConsumer: 512,
-        overflowPolicy: .dropOldest
+let config = WebSocketConfiguration.advanced(
+    observability: WebSocketObservabilityPack(
+        eventDeliveryPolicy: EventDeliveryPolicy(
+            maxBufferedEventsPerPartition: 1024,
+            maxBufferedEventsPerConsumer: 512,
+            overflowPolicy: .dropOldest
+        ),
+        eventMetricsReporter: LoggingMetricsReporter()
     )
-    $0.eventMetricsReporter = LoggingMetricsReporter()
-}
+)
 ```
 
 ## Interpreting aggregate snapshots

@@ -253,65 +253,63 @@ public struct DownloadConfiguration: Sendable {
         public static let `default` = PersistenceCompactionPolicy()
     }
 
-    /// Mutable builder seeded from the advanced tuning preset.
-    ///
-    /// Use this to override the high-tuning defaults returned by `advanced(_:)`.
-    public struct AdvancedBuilder: Sendable {
+    /// Internal builder used by the pack-based `advanced(...)` factory.
+    package struct AdvancedBuilder: Sendable {
         /// Maximum simultaneous connections per host. Defaults to `6` in the advanced preset.
-        public var maxConnectionsPerHost: Int
+        package var maxConnectionsPerHost: Int
         /// Maximum retry attempts for a single failure chain. Defaults to `5` in the advanced preset.
-        public var maxRetryCount: Int
+        package var maxRetryCount: Int
         /// Maximum cumulative retries even after network change resets. Defaults to `8` in the advanced preset.
-        public var maxTotalRetries: Int
+        package var maxTotalRetries: Int
         /// Base retry delay in seconds. Defaults to `0.5` in the advanced preset.
-        public var retryDelay: TimeInterval
+        package var retryDelay: TimeInterval
         /// Enables exponential backoff for retries. Defaults to `false`.
-        public var exponentialBackoff: Bool
+        package var exponentialBackoff: Bool
         /// Jitter ratio applied symmetrically around the exponential backoff base delay (`0.0...1.0`). Defaults to `0.2`.
-        public var retryJitterRatio: Double
+        package var retryJitterRatio: Double
         /// Upper bound on the exponential-backoff retry delay. `<= 0` disables the user-facing cap and falls back to the runtime-safe maximum delay. Defaults to `30` in the advanced preset.
-        public var maxRetryDelay: TimeInterval
+        package var maxRetryDelay: TimeInterval
         /// Request timeout in seconds. Defaults to `60` in the advanced preset.
-        public var timeoutForRequest: TimeInterval
+        package var timeoutForRequest: TimeInterval
         /// Resource timeout in seconds. Defaults to `24h` in both presets.
-        public var timeoutForResource: TimeInterval
+        package var timeoutForResource: TimeInterval
         /// Optional per-task inactivity watchdog. `nil` disables it (default).
-        public var taskInactivityTimeout: Duration?
+        package var taskInactivityTimeout: Duration?
         /// Whether downloads may use cellular connectivity. Defaults to `false`
         /// in safe and advanced presets; opt in when the product explicitly
         /// accepts cellular transfer cost.
-        public var allowsCellularAccess: Bool
+        package var allowsCellularAccess: Bool
         /// Allows plain `http` download sources. Defaults to `false`.
-        public var allowsInsecureHTTP: Bool
+        package var allowsInsecureHTTP: Bool
         /// Manager identifier and persistence scope. In background mode this
         /// is also the Foundation background-session identifier.
         ///
         /// Override this when you need more than one download manager in the same process.
-        public var sessionIdentifier: String
+        package var sessionIdentifier: String
         /// Optional App Group container identifier threaded to
         /// `URLSessionConfiguration.sharedContainerIdentifier`.
-        public var sharedContainerIdentifier: String?
+        package var sharedContainerIdentifier: String?
         /// Optional network monitor used for retry and restore coordination.
-        public var networkMonitor: (any NetworkMonitoring)?
+        package var networkMonitor: (any NetworkMonitoring)?
         /// Whether retry logic waits for a network change before retrying. Defaults to `true`.
-        public var waitsForNetworkChanges: Bool
+        package var waitsForNetworkChanges: Bool
         /// Maximum time to wait for a network change before failing the retry. Defaults to `20` seconds.
-        public var networkChangeTimeout: TimeInterval?
+        package var networkChangeTimeout: TimeInterval?
         /// Event buffering and overflow policy for listeners and async streams.
-        public var eventDeliveryPolicy: EventDeliveryPolicy
+        package var eventDeliveryPolicy: EventDeliveryPolicy
         /// Optional reporter that receives raw and aggregate event pipeline metrics.
-        public var eventMetricsReporter: (any EventPipelineMetricsReporting)?
+        package var eventMetricsReporter: (any EventPipelineMetricsReporting)?
         /// `fsync(_:)` policy for the append-log persistence layer.
-        public var persistenceFsyncPolicy: PersistenceFsyncPolicy
+        package var persistenceFsyncPolicy: PersistenceFsyncPolicy
         /// Snapshot/compaction thresholds for the append-log persistence layer.
-        public var persistenceCompactionPolicy: PersistenceCompactionPolicy
+        package var persistenceCompactionPolicy: PersistenceCompactionPolicy
         /// Optional override for the persistence root directory. Download-owned
         /// paths are excluded from backup automatically; use this override to
         /// select another process-private location or a temporary directory in
         /// tests. The supplied root and caller-owned destinations are unchanged.
-        public var persistenceBaseDirectoryURL: URL?
+        package var persistenceBaseDirectoryURL: URL?
 
-        fileprivate init(preset: DownloadConfiguration) {
+        package init(preset: DownloadConfiguration) {
             self.maxConnectionsPerHost = preset.maxConnectionsPerHost
             self.maxRetryCount = preset.maxRetryCount
             self.maxTotalRetries = preset.maxTotalRetries
@@ -336,7 +334,7 @@ public struct DownloadConfiguration: Sendable {
             self.persistenceBaseDirectoryURL = preset.persistenceBaseDirectoryURL
         }
 
-        fileprivate func build() -> DownloadConfiguration {
+        package func build() -> DownloadConfiguration {
             DownloadConfiguration(
                 maxConnectionsPerHost: maxConnectionsPerHost,
                 maxRetryCount: maxRetryCount,
@@ -383,28 +381,20 @@ public struct DownloadConfiguration: Sendable {
         Presets.safeDefaults(sessionIdentifier: sessionIdentifier)
     }
 
-    /// Returns an advanced configuration seeded from the high-tuning preset.
-    ///
-    /// Use this when you need explicit control over connection limits, retry behavior,
-    /// or event delivery settings. The builder starts from `Presets.advancedTuning()`.
-    public static func advanced(_ configure: (inout AdvancedBuilder) -> Void) -> DownloadConfiguration {
-        advanced(sessionIdentifier: defaultSessionIdentifier, configure)
-    }
-
-    /// Returns an advanced configuration seeded from the high-tuning preset.
-    ///
-    /// - Parameters:
-    ///   - sessionIdentifier: Manager identifier and persistence scope used by
-    ///     `DownloadManager`. In background mode this is also the Foundation
-    ///     background-session identifier.
-    ///     Supply a unique value when multiple download managers must coexist in the same process.
-    ///   - configure: Closure that mutates an `AdvancedBuilder` seeded from `Presets.advancedTuning()`.
+    /// Composes an advanced configuration from explicit thematic packs.
+    /// Omitted packs preserve the documented high-tuning preset.
     public static func advanced(
-        sessionIdentifier: String,
-        _ configure: (inout AdvancedBuilder) -> Void
+        sessionIdentifier: String = "com.innonetwork.download",
+        transfer: DownloadTransferPack = DownloadTransferPack(),
+        retry: DownloadRetryPack = DownloadRetryPack(),
+        observability: DownloadObservabilityPack = DownloadObservabilityPack(),
+        persistence: DownloadPersistencePack = DownloadPersistencePack()
     ) -> DownloadConfiguration {
         var builder = AdvancedBuilder(preset: Presets.advancedTuning(sessionIdentifier: sessionIdentifier))
-        configure(&builder)
+        transfer.apply(to: &builder)
+        retry.apply(to: &builder)
+        observability.apply(to: &builder)
+        persistence.apply(to: &builder)
         return builder.build()
     }
 

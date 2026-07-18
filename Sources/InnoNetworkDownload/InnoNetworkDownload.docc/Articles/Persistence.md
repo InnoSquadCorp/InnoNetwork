@@ -96,14 +96,15 @@ Tune the thresholds when a long-running process accumulates a very large downloa
 
 ```swift
 let configuration = DownloadConfiguration.advanced(
-    sessionIdentifier: "com.example.app.downloads"
-) { builder in
-    builder.persistenceCompactionPolicy = .init(
-        maxEvents: 500,
-        maxLogBytes: 512 * 1024,
-        tombstoneRatio: 0.2
+    sessionIdentifier: "com.example.app.downloads",
+    persistence: DownloadPersistencePack(
+        compactionPolicy: .init(
+            maxEvents: 500,
+            maxLogBytes: 512 * 1024,
+            tombstoneRatio: 0.2
+        )
     )
-}
+)
 ```
 
 ## Corrupt file handling
@@ -152,10 +153,11 @@ upgrade or downgrade between runs without migration:
 
 ```swift
 let configuration = DownloadConfiguration.advanced(
-    sessionIdentifier: "com.example.app.downloads"
-) { builder in
-    builder.persistenceFsyncPolicy = .always   // or .onCheckpoint, or .never
-}
+    sessionIdentifier: "com.example.app.downloads",
+    persistence: DownloadPersistencePack(
+        fsyncPolicy: .always   // or .onCheckpoint, or .never
+    )
+)
 ```
 
 ## Paused resume data durability

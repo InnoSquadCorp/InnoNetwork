@@ -57,16 +57,18 @@ manager-shutdown connection error, which remains observable on that stream.
 Use handshake adapters when reconnect attempts need fresh auth headers:
 
 ```swift
-let configuration = WebSocketConfiguration.advanced { builder in
-    builder.handshakeRequestAdapters = [
-        WebSocketHandshakeRequestAdapter { request in
-            var request = request
-            request.setValue("Bearer \(await tokenStore.currentAccessToken())",
-                             forHTTPHeaderField: "Authorization")
-            return request
-        }
-    ]
-}
+let configuration = WebSocketConfiguration.advanced(
+    connection: WebSocketConnectionPack(
+        handshakeRequestAdapters: [
+            WebSocketHandshakeRequestAdapter { request in
+                var request = request
+                request.setValue("Bearer \(await tokenStore.currentAccessToken())",
+                                 forHTTPHeaderField: "Authorization")
+                return request
+            }
+        ]
+    )
+)
 ```
 
 ## Backoff curve
@@ -113,9 +115,11 @@ Disable auto-reconnect when:
   ``WebSocketHandshakeRequestAdapter`` so the next attempt builds fresh headers.
 
 ```swift
-let configuration = WebSocketConfiguration.advanced { builder in
-    builder.maxReconnectAttempts = 0  // app drives reconnect manually
-}
+let configuration = WebSocketConfiguration.advanced(
+    reconnect: WebSocketReconnectPack(
+        maxAttempts: 0  // app drives reconnect manually
+    )
+)
 ```
 
 ## Task identity and listener retention

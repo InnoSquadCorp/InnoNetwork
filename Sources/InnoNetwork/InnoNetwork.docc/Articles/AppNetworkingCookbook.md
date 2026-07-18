@@ -46,10 +46,10 @@ struct AppNetworking: Sendable {
             )
         )
 
-        let downloadConfiguration = DownloadConfiguration.advanced { builder in
-            builder.sessionIdentifier = "com.example.app.downloads.media"
-            builder.persistenceCompactionPolicy = .init()
-        }.backgroundTransfersEnabled()
+        let downloadConfiguration = DownloadConfiguration.advanced(
+            sessionIdentifier: "com.example.app.downloads.media",
+            persistence: DownloadPersistencePack(compactionPolicy: .init())
+        ).backgroundTransfersEnabled()
 
         return AppNetworking(
             api: DefaultNetworkClient(configuration: apiConfiguration),

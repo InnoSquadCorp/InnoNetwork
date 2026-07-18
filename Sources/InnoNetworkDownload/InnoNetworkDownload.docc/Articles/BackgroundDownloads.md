@@ -31,16 +31,19 @@ observable after launch.
 
 ```swift
 let configuration = DownloadConfiguration.advanced(
-    sessionIdentifier: "com.example.app.downloads"
-) { builder in
-    builder.allowsCellularAccess = true
-    builder.maxConnectionsPerHost = 4
-    builder.persistenceCompactionPolicy = .init(
-        maxEvents: 1_000,
-        maxLogBytes: 1_048_576,
-        tombstoneRatio: 0.25
+    sessionIdentifier: "com.example.app.downloads",
+    transfer: DownloadTransferPack(
+        maxConnectionsPerHost: 4,
+        allowsCellularAccess: true
+    ),
+    persistence: DownloadPersistencePack(
+        compactionPolicy: .init(
+            maxEvents: 1_000,
+            maxLogBytes: 1_048_576,
+            tombstoneRatio: 0.25
+        )
     )
-}.backgroundTransfersEnabled()
+).backgroundTransfersEnabled()
 ```
 
 - **Background transfer opt-in.** `backgroundTransfersEnabled()` is the only
@@ -177,10 +180,9 @@ explicitly allow background downloads over cellular, opt in:
 
 ```swift
 let configuration = DownloadConfiguration.advanced(
-    sessionIdentifier: "com.example.app.downloads"
-) { builder in
-    builder.allowsCellularAccess = true
-}.backgroundTransfersEnabled()
+    sessionIdentifier: "com.example.app.downloads",
+    transfer: DownloadTransferPack(allowsCellularAccess: true)
+).backgroundTransfersEnabled()
 ```
 
 ## Related

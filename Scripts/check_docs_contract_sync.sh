@@ -159,12 +159,13 @@ expected_stable=(
 '`NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`'
 '`DownloadConfiguration.safeDefaults()`'
 '`DownloadConfiguration.safeDefaults(sessionIdentifier:)`'
-'`DownloadConfiguration.advanced(_:)`'
-'`DownloadConfiguration.advanced(sessionIdentifier:_:)`'
+'`DownloadConfiguration.advanced(sessionIdentifier:transfer:retry:observability:persistence:)`'
+'`DownloadTransferPack`, `DownloadRetryPack`, `DownloadObservabilityPack`, and `DownloadPersistencePack`'
 '`DownloadConfiguration.cellularEnabled()`'
 '`DownloadConfiguration.backgroundTransfersEnabled()`'
 '`WebSocketConfiguration.safeDefaults()`'
-'`WebSocketConfiguration.advanced(_:)`'
+'`WebSocketConfiguration.advanced(connection:liveness:reconnect:messaging:observability:)`'
+'`WebSocketConnectionPack`, `WebSocketLivenessPack`, `WebSocketReconnectPack`, `WebSocketMessagingPack`, and `WebSocketObservabilityPack`'
 '`WebSocketHandshakeRequestAdapter`'
 '`DownloadManager`'
 '`WebSocketManager`'
@@ -251,7 +252,7 @@ expected_provisionally=(
 '`MultipartUploadStrategy.inMemory(maxBytes:)` (4.0.0 baseline) — the explicit cap and encoder accumulator guard are part of the contract'
 '`DownloadConfiguration.taskInactivityTimeout` and `DownloadTask.lastProgressAt` (4.0.0 baseline)'
 '`ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.0.0 baseline)'
-'`DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.0.0 baseline)'
+'`DownloadConfiguration.sharedContainerIdentifier` and the `DownloadPersistencePack.init(...sharedContainerIdentifier:...)` argument (4.0.0 baseline)'
 '`ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.0.0 baseline)'
 '`NetworkConfiguration.streamingLineByteLimit` and the `TransportPack.init(...streamingLineByteLimit:...)` argument (4.0.0 baseline)'
 )
@@ -491,9 +492,10 @@ validate_doc_smoke_coverage() {
   require_contains '"InnoNetworkOpenAPI"' "$repo_root/Package.swift"
   require_contains 'compileBackgroundDownloadArticleExamples' "$doc_smoke"
   require_contains 'waitForRestoration()' "$doc_smoke"
-  require_contains 'persistenceCompactionPolicy' "$doc_smoke"
+  require_contains 'DownloadPersistencePack' "$doc_smoke"
   require_contains 'compileWebSocketArticleExamples' "$doc_smoke"
   require_contains 'WebSocketManager(configuration:' "$doc_smoke"
+  require_contains 'WebSocketLivenessPack' "$doc_smoke"
   require_contains 'FeatureScopedManagers' \
     "$repo_root/Sources/InnoNetworkWebSocket/InnoNetworkWebSocket.docc/InnoNetworkWebSocket.md"
 }
@@ -1326,13 +1328,16 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public static func safeDefaults(sessionIdentifier: String)'
       target="$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
       ;;
-    '`DownloadConfiguration.advanced(_:)`')
+    '`DownloadConfiguration.advanced(sessionIdentifier:transfer:retry:observability:persistence:)`')
       pattern='public static func advanced('
       target="$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
       ;;
-    '`DownloadConfiguration.advanced(sessionIdentifier:_:)`')
-      pattern='Presets.advancedTuning(sessionIdentifier: sessionIdentifier)'
-      target="$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+    '`DownloadTransferPack`, `DownloadRetryPack`, `DownloadObservabilityPack`, and `DownloadPersistencePack`')
+      for pack in DownloadTransferPack DownloadRetryPack DownloadObservabilityPack DownloadPersistencePack; do
+        require_contains "public struct $pack: Sendable" \
+          "$repo_root/Sources/InnoNetworkDownload/DownloadConfigurationPacks.swift"
+      done
+      continue
       ;;
     '`DownloadConfiguration.cellularEnabled()`')
       pattern='public func cellularEnabled()'
@@ -1346,9 +1351,16 @@ for symbol in "${expected_stable[@]}"; do
       pattern='public static func safeDefaults()'
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketConfiguration.swift"
       ;;
-    '`WebSocketConfiguration.advanced(_:)`')
+    '`WebSocketConfiguration.advanced(connection:liveness:reconnect:messaging:observability:)`')
       pattern='public static func advanced('
       target="$repo_root/Sources/InnoNetworkWebSocket/WebSocketConfiguration.swift"
+      ;;
+    '`WebSocketConnectionPack`, `WebSocketLivenessPack`, `WebSocketReconnectPack`, `WebSocketMessagingPack`, and `WebSocketObservabilityPack`')
+      for pack in WebSocketConnectionPack WebSocketLivenessPack WebSocketReconnectPack WebSocketMessagingPack WebSocketObservabilityPack; do
+        require_contains "public struct $pack: Sendable" \
+          "$repo_root/Sources/InnoNetworkWebSocket/WebSocketConfigurationPacks.swift"
+      done
+      continue
       ;;
     '`WebSocketHandshakeRequestAdapter`')
       pattern='public struct WebSocketHandshakeRequestAdapter'
@@ -1681,11 +1693,11 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/Cache/RFC9111CompliantCachePolicy.swift"
       continue
       ;;
-    '`DownloadConfiguration.sharedContainerIdentifier` and `DownloadConfiguration.AdvancedBuilder.sharedContainerIdentifier` (4.0.0 baseline)')
+    '`DownloadConfiguration.sharedContainerIdentifier` and the `DownloadPersistencePack.init(...sharedContainerIdentifier:...)` argument (4.0.0 baseline)')
       require_contains 'public let sharedContainerIdentifier: String?' \
         "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
-      require_contains 'public var sharedContainerIdentifier: String?' \
-        "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
+      require_contains 'sharedContainerIdentifier: String? = nil' \
+        "$repo_root/Sources/InnoNetworkDownload/DownloadConfigurationPacks.swift"
       require_contains 'config.sharedContainerIdentifier = sharedContainerIdentifier' \
         "$repo_root/Sources/InnoNetworkDownload/DownloadConfiguration.swift"
       continue

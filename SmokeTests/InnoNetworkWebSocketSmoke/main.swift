@@ -55,10 +55,10 @@ private func fail(_ message: String) -> Never {
     exit(1)
 }
 
-let configuration = WebSocketConfiguration.advanced { builder in
-    builder.heartbeatInterval = 15
-    builder.maxReconnectAttempts = 0
-}
+let configuration = WebSocketConfiguration.advanced(
+    liveness: WebSocketLivenessPack(heartbeatInterval: 15),
+    reconnect: WebSocketReconnectPack(maxAttempts: 0)
+)
 
 let manager = WebSocketManager(configuration: configuration)
 let task = await manager.connect(url: url)

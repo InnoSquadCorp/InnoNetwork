@@ -63,15 +63,16 @@ guard runIntegration else {
 // Showcases future-candidate exponential backoff tuning alongside the existing
 // event-stream consumption pattern.
 let configuration = DownloadConfiguration.advanced(
-    sessionIdentifier: "com.innonetwork.sample.download.\(UUID().uuidString)"
-) {
-    $0.maxRetryCount = 3
-    $0.maxTotalRetries = 5
-    $0.retryDelay = 1.0
-    $0.exponentialBackoff = true
-    $0.retryJitterRatio = 0.2
-    $0.maxRetryDelay = 60
-}
+    sessionIdentifier: "com.innonetwork.sample.download.\(UUID().uuidString)",
+    retry: DownloadRetryPack(
+        maxRetryCount: 3,
+        maxTotalRetries: 5,
+        retryDelay: 1.0,
+        exponentialBackoff: true,
+        retryJitterRatio: 0.2,
+        maxRetryDelay: 60
+    )
+)
 
 let manager: DownloadManager
 do {

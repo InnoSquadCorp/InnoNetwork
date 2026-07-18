@@ -83,8 +83,13 @@ If a consumer already owns duplicate-write protection outside InnoNetwork and
 needs the previous method-agnostic behaviour, opt in explicitly:
 
 ```swift
-builder.retryPolicy = ExponentialBackoffRetryPolicy(
-    idempotencyPolicy: .methodAgnostic
+let configuration = NetworkConfiguration.advanced(
+    baseURL: URL(string: "https://api.example.com")!,
+    resilience: ResiliencePack(
+        retry: ExponentialBackoffRetryPolicy(
+            idempotencyPolicy: .methodAgnostic
+        )
+    )
 )
 ```
 
