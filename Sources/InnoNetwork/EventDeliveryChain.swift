@@ -33,6 +33,7 @@ package actor EventDeliveryChain<Event: Sendable> {
     private let consumerID: String
     private let policy: EventDeliveryPolicy
     private let metricsReporter: (any EventPipelineMetricsReporting)?
+    private let clock: any InnoNetworkClock
     private var queue = FIFOBuffer<QueuedEvent>()
     private var drainTask: Task<Void, Never>?
     private var isClosed = false
@@ -43,19 +44,21 @@ package actor EventDeliveryChain<Event: Sendable> {
         consumerID: String,
         policy: EventDeliveryPolicy,
         metricsReporter: (any EventPipelineMetricsReporting)?,
+        clock: any InnoNetworkClock = SystemClock(),
         handler: @escaping Handler
     ) {
         self.partitionID = partitionID
         self.consumerID = consumerID
         self.policy = policy
         self.metricsReporter = metricsReporter
+        self.clock = clock
         self.handler = handler
     }
 
-    package func enqueue(_ event: Event, enqueuedAt: Date = .now) {
+    package func enqueue(_ event: Event, enqueuedAt: Date? = nil) {
         enqueue(
             event,
-            enqueuedAt: enqueuedAt,
+            enqueuedAt: enqueuedAt ?? clock.now(),
             deliveryCompletion: nil,
             guaranteesAdmission: false
         )
@@ -64,10 +67,10 @@ package actor EventDeliveryChain<Event: Sendable> {
     /// Enqueues the final terminal outcome even when a `.dropNewest` consumer
     /// queue is full. The oldest queued non-delivered event is displaced so
     /// the final terminal signal remains observable.
-    package func enqueueGuaranteed(_ event: Event, enqueuedAt: Date = .now) {
+    package func enqueueGuaranteed(_ event: Event, enqueuedAt: Date? = nil) {
         enqueue(
             event,
-            enqueuedAt: enqueuedAt,
+            enqueuedAt: enqueuedAt ?? clock.now(),
             deliveryCompletion: nil,
             guaranteesAdmission: true
         )
@@ -75,12 +78,12 @@ package actor EventDeliveryChain<Event: Sendable> {
 
     package func enqueueAndWaitForDelivery(
         _ event: Event,
-        enqueuedAt: Date = .now
+        enqueuedAt: Date? = nil
     ) async {
         await withCheckedContinuation { continuation in
             enqueue(
                 event,
-                enqueuedAt: enqueuedAt,
+                enqueuedAt: enqueuedAt ?? clock.now(),
                 deliveryCompletion: DeliveryCompletion(continuation),
                 guaranteesAdmission: false
             )
@@ -156,7 +159,7 @@ package actor EventDeliveryChain<Event: Sendable> {
             guard let queuedEvent = queue.popFirst() else { break }
             reportQueueState()
             await handler(queuedEvent.event)
-            reportDeliveryLatency(Date.now.timeIntervalSince(queuedEvent.enqueuedAt))
+            reportDeliveryLatency(clock.now().timeIntervalSince(queuedEvent.enqueuedAt))
             queuedEvent.deliveryCompletion?.resume()
         }
 
@@ -174,7 +177,7 @@ package actor EventDeliveryChain<Event: Sendable> {
                     consumerID: consumerID,
                     queueDepth: queue.count,
                     droppedEventCount: droppedEventCount,
-                    oldestQueuedEventAge: queue.first.map { Date.now.timeIntervalSince($0.enqueuedAt) }
+                    oldestQueuedEventAge: queue.first.map { clock.now().timeIntervalSince($0.enqueuedAt) }
                 )
             )
         )

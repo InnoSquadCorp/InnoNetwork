@@ -270,7 +270,8 @@ public actor DownloadManager {
         let eventHub = TaskEventHub<DownloadEvent>(
             policy: configuration.eventDeliveryPolicy,
             metricsReporter: configuration.eventMetricsReporter,
-            hubKind: .downloadTask
+            hubKind: .downloadTask,
+            clock: clock
         )
         let transferCoordinator = DownloadTransferCoordinator(
             session: urlSession,

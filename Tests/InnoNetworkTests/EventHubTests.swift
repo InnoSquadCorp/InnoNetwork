@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 
 @testable import InnoNetwork
@@ -975,6 +976,10 @@ struct EventHubTests {
     @Test("TaskEventHub reconciles AsyncStream consumer metrics between publishes")
     func taskEventHubReconcilesStreamConsumerMetrics() async throws {
         let recorder = EventPipelineMetricRecorder()
+        // The hub, its metrics proxy, and every age computation run on the
+        // injected virtual clock, so queued-event ages advance only when the
+        // test advances the clock — no wall-clock sleeps.
+        let clock = TestClock()
         let hub = TaskEventHub<Int>(
             policy: EventDeliveryPolicy(
                 maxBufferedEventsPerPartition: 8,
@@ -982,7 +987,8 @@ struct EventHubTests {
                 overflowPolicy: .dropOldest
             ),
             metricsReporter: recorder,
-            metricsSnapshotInterval: .milliseconds(30)
+            metricsSnapshotInterval: .milliseconds(30),
+            clock: clock
         )
         let stream = await hub.stream(for: "stream-reconcile")
         _ = stream
@@ -1000,7 +1006,11 @@ struct EventHubTests {
         )
         let initialOldestAge = try #require(initialMetric.oldestQueuedEventAge)
 
-        try await Task.sleep(for: .milliseconds(250))
+        // Both the hub's reconciliation loop and the proxy's snapshot loop
+        // park on the virtual clock. Advance past the aggregator's 1-second
+        // per-consumer emission throttle so the reconciled state is emitted.
+        #expect(await clock.waitForWaiters(count: 2))
+        clock.advance(by: .milliseconds(1_100))
 
         let reconciledBaselineMetrics = try await waitForConsumerMetrics(
             recorder: recorder,
@@ -1013,7 +1023,8 @@ struct EventHubTests {
         let reconciledBaselineOldestAge = try #require(reconciledBaselineMetric.oldestQueuedEventAge)
         #expect(reconciledBaselineOldestAge > initialOldestAge)
 
-        try await Task.sleep(for: .milliseconds(250))
+        #expect(await clock.waitForWaiters(count: 2))
+        clock.advance(by: .milliseconds(1_100))
 
         let latestMetrics = try await waitForConsumerMetrics(
             recorder: recorder,

@@ -13,21 +13,25 @@ package actor TaskEventHub<Event: Sendable> {
     private let metricsSnapshotInterval: Duration?
     private let partitionRetirementHook: (@Sendable (String, UUID) async -> Void)?
     private var streamMetricsReconciliationTask: Task<Void, Never>?
+    private let clock: any InnoNetworkClock
     private var metricsReporter: (any EventPipelineMetricsReporting)? { metricsProxy }
 
     package init(
         policy: EventDeliveryPolicy = .default,
         metricsReporter: (any EventPipelineMetricsReporting)? = nil,
         hubKind: EventPipelineHubKind = .genericTask,
-        metricsSnapshotInterval: Duration = .seconds(30)
+        metricsSnapshotInterval: Duration = .seconds(30),
+        clock: any InnoNetworkClock = SystemClock()
     ) {
         self.policy = policy
+        self.clock = clock
         self.metricsSnapshotInterval = metricsReporter == nil ? nil : metricsSnapshotInterval
         self.metricsProxy = metricsReporter.map {
             EventPipelineMetricsReporterProxy(
                 hubKind: hubKind,
                 reporter: $0,
-                snapshotInterval: metricsSnapshotInterval
+                snapshotInterval: metricsSnapshotInterval,
+                clock: clock
             )
         }
         self.partitionRetirementHook = nil
@@ -38,15 +42,18 @@ package actor TaskEventHub<Event: Sendable> {
         metricsReporter: (any EventPipelineMetricsReporting)? = nil,
         hubKind: EventPipelineHubKind = .genericTask,
         metricsSnapshotInterval: Duration = .seconds(30),
+        clock: any InnoNetworkClock = SystemClock(),
         partitionRetirementHook: @escaping @Sendable (String, UUID) async -> Void
     ) {
         self.policy = policy
+        self.clock = clock
         self.metricsSnapshotInterval = metricsReporter == nil ? nil : metricsSnapshotInterval
         self.metricsProxy = metricsReporter.map {
             EventPipelineMetricsReporterProxy(
                 hubKind: hubKind,
                 reporter: $0,
-                snapshotInterval: metricsSnapshotInterval
+                snapshotInterval: metricsSnapshotInterval,
+                clock: clock
             )
         }
         self.partitionRetirementHook = partitionRetirementHook
@@ -66,6 +73,7 @@ package actor TaskEventHub<Event: Sendable> {
             consumerID: listenerID.uuidString,
             policy: policy,
             metricsReporter: metricsReporter,
+            clock: clock,
             handler: listener
         )
         partitions[taskID] = partition
@@ -100,7 +108,7 @@ package actor TaskEventHub<Event: Sendable> {
     package func stream(for taskID: String) async -> AsyncStream<Event> {
         await waitForClosedPartitionRetirement(taskID: taskID)
         let continuationID = UUID()
-        let mailbox = StreamMailbox()
+        let mailbox = StreamMailbox(clock: clock)
         let removalToken = StreamRemovalToken { [weak self, mailbox] in
             // `AsyncStream(unfolding:)` cannot forcibly unwind a producer that
             // is suspended in a checked continuation. End the mailbox first so
@@ -266,7 +274,7 @@ package actor TaskEventHub<Event: Sendable> {
         partition.queue.append(
             PendingEvent(
                 event: event,
-                enqueuedAt: .now,
+                enqueuedAt: clock.now(),
                 listenerIDs: Array(partition.listeners.keys),
                 streamConsumerIDs: Array(partition.streamConsumers.keys),
                 completion: completion,
@@ -488,7 +496,7 @@ package actor TaskEventHub<Event: Sendable> {
                     partitionID: taskID,
                     queueDepth: partition.queue.count,
                     droppedEventCount: partition.droppedEventCount,
-                    oldestQueuedEventAge: partition.queue.first.map { Date.now.timeIntervalSince($0.enqueuedAt) }
+                    oldestQueuedEventAge: partition.queue.first.map { clock.now().timeIntervalSince($0.enqueuedAt) }
                 )
             )
         )
@@ -528,10 +536,11 @@ package actor TaskEventHub<Event: Sendable> {
 
         guard streamMetricsReconciliationTask == nil else { return }
 
+        let clock = self.clock
         streamMetricsReconciliationTask = Task { [weak self] in
             while !Task.isCancelled {
                 do {
-                    try await Task.sleep(for: metricsSnapshotInterval)
+                    try await clock.sleep(for: metricsSnapshotInterval)
                 } catch {
                     return
                 }

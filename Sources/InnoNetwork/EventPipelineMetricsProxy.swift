@@ -13,12 +13,14 @@ package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMe
     private let ingestTask: Task<Void, Never>
     private let snapshotTask: Task<Void, Never>
     private let reporterTask: Task<Void, Never>
+    private let clock: any InnoNetworkClock
 
     package init(
         hubKind: EventPipelineHubKind,
         reporter: any EventPipelineMetricsReporting,
         snapshotInterval: Duration = .seconds(30),
-        queueCapacity: Int = EventPipelineMetricsReporterProxy.queueCapacity
+        queueCapacity: Int = EventPipelineMetricsReporterProxy.queueCapacity,
+        clock: any InnoNetworkClock = SystemClock()
     ) {
         let queueCapacity = max(1, queueCapacity)
         let input = AsyncStream<EventPipelineMetric>.makeStream(
@@ -39,7 +41,7 @@ package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMe
             }
         let ingestTask = Task {
             for await metric in input.stream {
-                let emittedMetrics = await aggregator.ingest(metric)
+                let emittedMetrics = await aggregator.ingest(metric, now: clock.now())
                 for emittedMetric in emittedMetrics {
                     _ = emitToOutput(emittedMetric)
                 }
@@ -48,12 +50,13 @@ package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMe
         let snapshotTask = Task {
             while !Task.isCancelled {
                 do {
-                    try await Task.sleep(for: snapshotInterval)
+                    try await clock.sleep(for: snapshotInterval)
                 } catch {
                     return
                 }
                 let reporterHealth = dropTracker.consumeSnapshot()
                 let snapshot = await aggregator.makeSnapshot(
+                    now: clock.now(),
                     totalDroppedMetricCount: reporterHealth.totalDroppedMetricCount,
                     metricsOverflowCount: reporterHealth.metricsOverflowCount
                 )
@@ -89,6 +92,7 @@ package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMe
         self.ingestTask = ingestTask
         self.snapshotTask = snapshotTask
         self.reporterTask = reporterTask
+        self.clock = clock
     }
 
     deinit {
@@ -103,7 +107,7 @@ package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMe
     }
 
     package func reportTerminalConsumerState(_ state: EventPipelineConsumerStateMetric) async {
-        let emittedMetrics = await aggregator.recordAndEvictTerminalConsumerState(state)
+        let emittedMetrics = await aggregator.recordAndEvictTerminalConsumerState(state, now: clock.now())
         for emittedMetric in emittedMetrics {
             _ = emitToOutput(emittedMetric)
         }

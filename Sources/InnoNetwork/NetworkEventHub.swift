@@ -22,6 +22,7 @@ package actor NetworkEventHub {
     /// handlers remain asynchronous after that handoff.
     private var partitionClosureWaiters: [UUID: [CheckedContinuation<Void, Never>]] = [:]
     private let policy: EventDeliveryPolicy
+    private let clock: any InnoNetworkClock
     private let metricsProxy: EventPipelineMetricsReporterProxy?
     private let retirementSuspension: (@Sendable (UUID) async -> Void)?
     private var metricsReporter: (any EventPipelineMetricsReporting)? { metricsProxy }
@@ -31,15 +32,18 @@ package actor NetworkEventHub {
         metricsReporter: (any EventPipelineMetricsReporting)? = nil,
         hubKind: EventPipelineHubKind = .networkRequest,
         metricsSnapshotInterval: Duration = .seconds(30),
+        clock: any InnoNetworkClock = SystemClock(),
         retirementSuspension: (@Sendable (UUID) async -> Void)? = nil
     ) {
         self.policy = policy
+        self.clock = clock
         self.retirementSuspension = retirementSuspension
         self.metricsProxy = metricsReporter.map {
             EventPipelineMetricsReporterProxy(
                 hubKind: hubKind,
                 reporter: $0,
-                snapshotInterval: metricsSnapshotInterval
+                snapshotInterval: metricsSnapshotInterval,
+                clock: clock
             )
         }
     }
@@ -75,7 +79,7 @@ package actor NetworkEventHub {
             PendingEvent(
                 event: event,
                 observers: observers,
-                enqueuedAt: .now
+                enqueuedAt: clock.now()
             )
         )
         partitions[requestID] = partition
@@ -157,7 +161,8 @@ package actor NetworkEventHub {
             partitionID: partitionID,
             consumerID: consumerID,
             policy: policy,
-            metricsReporter: metricsReporter
+            metricsReporter: metricsReporter,
+            clock: clock
         ) { event in
             await observer.handle(event)
         }
@@ -214,7 +219,7 @@ package actor NetworkEventHub {
                     partitionID: requestID.uuidString,
                     queueDepth: partition.queue.count,
                     droppedEventCount: partition.droppedEventCount,
-                    oldestQueuedEventAge: partition.queue.first.map { Date.now.timeIntervalSince($0.enqueuedAt) }
+                    oldestQueuedEventAge: partition.queue.first.map { clock.now().timeIntervalSince($0.enqueuedAt) }
                 )
             )
         )

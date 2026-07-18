@@ -203,7 +203,8 @@ public actor WebSocketManager {
         self.eventHub = TaskEventHub(
             policy: configuration.eventDeliveryPolicy,
             metricsReporter: configuration.eventMetricsReporter,
-            hubKind: .webSocketTask
+            hubKind: .webSocketTask,
+            clock: clock
         )
         self.session = urlSession
         let invalidationBarrier = WebSocketInvalidationBarrier()

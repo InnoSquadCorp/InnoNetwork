@@ -43,6 +43,11 @@ extension TaskEventHub {
         }
 
         private let state = OSAllocatedUnfairLock(initialState: State())
+        private let clock: any InnoNetworkClock
+
+        init(clock: any InnoNetworkClock = SystemClock()) {
+            self.clock = clock
+        }
 
         func enqueue(
             _ event: Event,
@@ -138,7 +143,7 @@ extension TaskEventHub {
                     waiterCount: state.waiters.count,
                     droppedEventCount: state.droppedEventCount,
                     oldestQueuedEventAge: state.queue.first.map {
-                        Date.now.timeIntervalSince($0.enqueuedAt)
+                        clock.now().timeIntervalSince($0.enqueuedAt)
                     }
                 )
             }
