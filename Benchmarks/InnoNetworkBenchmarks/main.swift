@@ -460,6 +460,14 @@ private enum InnoNetworkBenchmarks {
                 iterations: interceptorIterations,
                 name: "decoding-interceptor-chain-8"))
 
+        // Streaming-collect measures the default `.streaming` buffering
+        // policy end to end through a URLProtocol-backed real URLSession —
+        // the production transport shape that byte-wise AsyncBytes
+        // collection previously left unmeasured.
+        let streamingCollectIterations = options.quick ? 30 : 120
+        results.append(
+            try await benchmarkStreamingCollect(iterations: streamingCollectIterations))
+
         return results
     }
 
@@ -777,6 +785,30 @@ private enum InnoNetworkBenchmarks {
             )
             for _ in 0..<iterations {
                 _ = try await client.request(BenchmarkUserRequest())
+            }
+        }
+    }
+
+    /// End-to-end streaming collection: one 1 MiB response per operation
+    /// through the default `.streaming` buffering policy and the
+    /// chunk-granular transport bridge.
+    private static func benchmarkStreamingCollect(iterations: Int) async throws -> BenchmarkResult {
+        let payloadBytes = 1 * 1024 * 1024
+        StreamingCollectURLProtocol.payload = Data(repeating: 0xAB, count: payloadBytes)
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [StreamingCollectURLProtocol.self]
+        let session = URLSession(configuration: sessionConfiguration)
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: URL(string: "https://benchmark.invalid")!,
+                responseBodyBufferingPolicy: .streaming(maxBytes: Int64(payloadBytes) * 2)
+            ),
+            session: session
+        )
+        return try await measure(name: "streaming-collect-1mib", group: "client", iterations: iterations) {
+            for _ in 0..<iterations {
+                let blob = try await client.request(BenchmarkStreamingBlobRequest())
+                precondition(blob.count == payloadBytes)
             }
         }
     }
@@ -1165,6 +1197,52 @@ private struct PassiveDecodingInterceptor: DecodingInterceptor {
     ) async throws -> APIResponse where APIResponse: Sendable {
         value
     }
+}
+
+private struct BenchmarkStreamingBlobRequest: APIDefinition {
+    typealias Parameter = EmptyParameter
+    typealias APIResponse = Data
+
+    var method: HTTPMethod { .get }
+    var path: String { "/blob" }
+    var sessionAuthentication: SessionAuthentication { .anonymous }
+    var transport: TransportPolicy<Data> {
+        .custom(encoding: .none) { data, _ in data }
+    }
+}
+
+/// Serves a fixed payload in 64 KiB chunks so the streaming-collect
+/// benchmark exercises the same wire-delivery shape as a real transport.
+private final class StreamingCollectURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var payload = Data()
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url,
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Length": "\(Self.payload.count)"]
+            )
+        else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        var offset = 0
+        let stride = 64 * 1024
+        while offset < Self.payload.count {
+            let end = Swift.min(offset + stride, Self.payload.count)
+            client?.urlProtocol(self, didLoad: Self.payload.subdata(in: offset..<end))
+            offset = end
+        }
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
 
 private struct BenchmarkUserRequest: APIDefinition {

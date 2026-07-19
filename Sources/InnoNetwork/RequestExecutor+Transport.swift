@@ -258,6 +258,25 @@ extension RequestExecutor {
     ) async throws -> (Data, URLResponse) {
         switch configuration.responseBodyBufferingPolicy {
         case .streaming(let maxBytes):
+            // Prefer chunk-granular delivery: URLSession.AsyncBytes vends one
+            // byte per resilience-boundary async call, which makes byte-wise
+            // collection orders of magnitude slower than chunked delivery.
+            // Custom consumer sessions without the package conformance keep
+            // the byte-wise seam below.
+            if let chunkedSession = session as? any ChunkedTransferSession {
+                let normalizedLimit = maxBytes.map { max(0, $0) }
+                let transfer = try await chunkedSession.chunkedTransfer(
+                    for: request,
+                    context: context,
+                    maxBytes: normalizedLimit
+                )
+                let data = try await collect(
+                    transfer: transfer,
+                    request: request,
+                    maxBytes: normalizedLimit
+                )
+                return (data, transfer.response)
+            }
             do {
                 let (bytes, response) = try await session.bytes(for: request, context: context)
                 let data = try await collect(
@@ -388,6 +407,68 @@ extension RequestExecutor {
             // on caller cancellation) so the server cannot keep sending after
             // the API has already failed.
             bytes.task.cancel()
+            throw error
+        }
+    }
+
+    /// Chunk-granular twin of ``collect(bytes:response:request:maxBytes:)``.
+    /// The transport bridge already enforces `maxBytes` incrementally while
+    /// receiving; this consumer re-checks the Content-Length preflight and
+    /// guards against returning a truncated body when the consuming task is
+    /// cancelled mid-stream.
+    func collect(
+        transfer: ChunkedTransfer,
+        request: URLRequest,
+        maxBytes: Int64?
+    ) async throws -> Data {
+        do {
+            let normalizedLimit = maxBytes.map { max(0, $0) }
+            let response = transfer.response
+            // Redirect policies may intentionally rewrite the method. Body
+            // semantics belong to the request that produced this response,
+            // not the pre-redirect request originally passed to the executor.
+            let responseRequest = transfer.finalRequest ?? request
+            let responseMayCarryBody = Self.responseMayCarryBody(
+                request: responseRequest,
+                response: response
+            )
+            if let normalizedLimit,
+                responseMayCarryBody,
+                response.expectedContentLength > normalizedLimit
+            {
+                throw NetworkError.underlying(
+                    SendableUnderlyingError(
+                        domain: NetworkError.errorDomain,
+                        code: NetworkErrorCode.responseBodyLimitExceeded.rawValue,
+                        message:
+                            "Response body of \(response.expectedContentLength) bytes exceeded the configured limit of \(normalizedLimit) bytes."
+                    ),
+                    nil
+                )
+            }
+
+            var data = Data()
+            if responseMayCarryBody, response.expectedContentLength > 0 {
+                let expectedBytes =
+                    normalizedLimit.map { min(response.expectedContentLength, $0) }
+                    ?? response.expectedContentLength
+                // Content-Length is remote input and only a capacity hint.
+                let safeReservationHint = min(expectedBytes, 1 * 1024 * 1024)
+                data.reserveCapacity(Int(clamping: safeReservationHint))
+            }
+            for try await chunk in transfer.chunks {
+                data.append(chunk)
+            }
+            // A cancelled consuming task ends the stream early without an
+            // error; surfacing the partial body as success would hand a
+            // truncated payload to interceptors and decoders.
+            try Task.checkCancellation()
+            return data
+        } catch {
+            // Abandoning the chunk stream is not a documented transport
+            // cancellation boundary; stop the underlying request explicitly
+            // so the server cannot keep sending after the API has failed.
+            transfer.cancel()
             throw error
         }
     }

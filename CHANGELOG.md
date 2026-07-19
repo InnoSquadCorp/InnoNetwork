@@ -227,6 +227,16 @@ draft release summary.
 
 ### Fixed
 
+- The default `.streaming` response buffering policy now collects bodies
+  through a chunk-granular, delegate-driven transport bridge instead of
+  iterating `URLSession.AsyncBytes` one byte per call. Byte-wise iteration
+  crossed Foundation's resilience boundary once per byte and measured well
+  under 1 MiB/s; the chunked bridge collects the same bounded body at
+  transport speed (measured ~2.5 GiB/s end to end) while enforcing the byte
+  ceiling incrementally inside the transport, so buffered memory stays
+  bounded regardless of consumer pacing. Custom `URLSessionProtocol`
+  implementations keep the byte-wise `bytes(for:context:)` fallback. A
+  `client/streaming-collect-1mib` benchmark pins the collection path.
 - `InnoNetworkClientTransportError` now conforms to `Sendable` and
   `LocalizedError`, matching every other public error type in the package.
   Transport failures can cross isolation boundaries under Swift 6 strict

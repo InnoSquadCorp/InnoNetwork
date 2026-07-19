@@ -61,6 +61,45 @@ package protocol BoundedBufferedTestSession: URLSessionProtocol {
     var allowsBoundedBufferedFallback: Bool { get }
 }
 
+/// Package-only capability for chunk-granular streaming collection.
+///
+/// `URLSession.AsyncBytes` vends one byte per `next()` call, and each call
+/// crosses Foundation's resilience boundary — measured at well under
+/// 1 MiB/s, which made the default `.streaming` buffering policy pay a
+/// four-orders-of-magnitude collection penalty against `data(for:)`.
+/// Sessions that can deliver the response body as `Data` chunks (one await
+/// per transport chunk) conform here; the executor prefers this path and
+/// falls back to the byte-wise `bytes(for:context:)` seam for custom
+/// consumer sessions.
+package protocol ChunkedTransferSession: URLSessionProtocol {
+    /// Starts the request and resumes once response metadata is available.
+    ///
+    /// `maxBytes` is enforced incrementally inside the transport bridge:
+    /// the underlying task is cancelled and the chunk stream finishes with
+    /// ``NetworkErrorCode/responseBodyLimitExceeded`` as soon as the
+    /// received byte count crosses the ceiling, so buffered memory stays
+    /// bounded regardless of consumer pacing.
+    func chunkedTransfer(
+        for request: URLRequest,
+        context: NetworkRequestContext,
+        maxBytes: Int64?
+    ) async throws -> ChunkedTransfer
+}
+
+/// Response metadata plus the chunk stream produced by a
+/// ``ChunkedTransferSession``.
+package struct ChunkedTransfer: Sendable {
+    package let response: URLResponse
+    /// The task's `currentRequest` snapshot at response time — the
+    /// post-redirect request whose method governs body semantics.
+    package let finalRequest: URLRequest?
+    package let chunks: AsyncThrowingStream<Data, Error>
+    /// Stops the underlying transport task. Abandoning the chunk stream is
+    /// not a documented cancellation boundary, so failure paths call this
+    /// explicitly (mirroring the `bytes.task.cancel()` contract).
+    package let cancel: @Sendable () -> Void
+}
+
 public extension URLSessionProtocol {
     func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
         _ = context
@@ -387,5 +426,242 @@ private final class RequestTaskDelegate: NSObject, URLSessionDataDelegate {
         completionHandler: @escaping (CachedURLResponse?) -> Void
     ) {
         completionHandler(context.allowsURLCacheStorage ? proposedResponse : nil)
+    }
+}
+
+
+extension URLSession: ChunkedTransferSession {
+    package func chunkedTransfer(
+        for request: URLRequest,
+        context: NetworkRequestContext,
+        maxBytes: Int64?
+    ) async throws -> ChunkedTransfer {
+        try validateRedirectControllableSession()
+        let policyDelegate = RequestTaskDelegate(
+            request: request,
+            context: context,
+            sessionHeaderNames: redirectSensitiveSessionHeaderNames
+        )
+        let bridge = ChunkedTransferBridge(
+            forwardingPolicyCallbacksTo: policyDelegate,
+            maxBytes: maxBytes
+        )
+        let task = dataTask(with: request)
+        task.delegate = bridge
+        do {
+            let transfer = try await bridge.start(task: task)
+            if let redirectFailure = policyDelegate.redirectFailure {
+                task.cancel()
+                throw redirectFailure
+            }
+            return transfer
+        } catch {
+            if let trustFailureReason = policyDelegate.trustFailureReason {
+                throw TrustEvaluationError.failed(trustFailureReason, error)
+            }
+            if let redirectFailure = policyDelegate.redirectFailure {
+                throw redirectFailure
+            }
+            throw error
+        }
+    }
+}
+
+/// Bridges a delegate-driven data task into a response continuation plus an
+/// `AsyncThrowingStream<Data, Error>` of body chunks. Policy callbacks
+/// (redirects, trust, metrics, caching, upload body streams) forward to the
+/// shared ``RequestTaskDelegate`` so the chunked path enforces exactly the
+/// same admission rules as the buffered and byte-wise paths.
+private final class ChunkedTransferBridge: NSObject, URLSessionDataDelegate {
+    private struct State {
+        var responseContinuation: CheckedContinuation<(URLResponse, URLRequest?), Error>?
+        var chunkContinuation: AsyncThrowingStream<Data, Error>.Continuation?
+        var observedBytes: Int64 = 0
+        var limitFinished = false
+    }
+
+    private let policyDelegate: RequestTaskDelegate
+    private let maxBytes: Int64?
+    private let state = OSAllocatedUnfairLock<State>(initialState: State())
+
+    init(forwardingPolicyCallbacksTo policyDelegate: RequestTaskDelegate, maxBytes: Int64?) {
+        self.policyDelegate = policyDelegate
+        self.maxBytes = maxBytes
+    }
+
+    func start(task: URLSessionDataTask) async throws -> ChunkedTransfer {
+        let (stream, continuation) = AsyncThrowingStream<Data, Error>.makeStream(
+            bufferingPolicy: .unbounded
+        )
+        continuation.onTermination = { [weak task] _ in
+            task?.cancel()
+        }
+        state.withLock { $0.chunkContinuation = continuation }
+
+        let (response, finalRequest) = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (checked: CheckedContinuation<(URLResponse, URLRequest?), Error>) in
+                state.withLock { $0.responseContinuation = checked }
+                task.resume()
+            }
+        } onCancel: {
+            task.cancel()
+        }
+
+        return ChunkedTransfer(
+            response: response,
+            finalRequest: finalRequest,
+            chunks: stream,
+            cancel: { [weak task] in task?.cancel() }
+        )
+    }
+
+    // MARK: Data delivery
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        let continuation = state.withLock { state -> CheckedContinuation<(URLResponse, URLRequest?), Error>? in
+            let continuation = state.responseContinuation
+            state.responseContinuation = nil
+            return continuation
+        }
+        continuation?.resume(returning: (response, dataTask.currentRequest))
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        enum Action {
+            case yield(AsyncThrowingStream<Data, Error>.Continuation)
+            case exceeded(AsyncThrowingStream<Data, Error>.Continuation, observed: Int64, limit: Int64)
+            case drop
+        }
+        let action: Action = state.withLock { state in
+            guard let continuation = state.chunkContinuation, !state.limitFinished else { return .drop }
+            let (observed, overflowed) = state.observedBytes.addingReportingOverflow(Int64(data.count))
+            guard !overflowed else {
+                state.limitFinished = true
+                return .exceeded(continuation, observed: .max, limit: maxBytes ?? .max)
+            }
+            state.observedBytes = observed
+            if let maxBytes, observed > maxBytes {
+                state.limitFinished = true
+                return .exceeded(continuation, observed: observed, limit: maxBytes)
+            }
+            return .yield(continuation)
+        }
+        switch action {
+        case .yield(let continuation):
+            continuation.yield(data)
+        case .exceeded(let continuation, let observed, let limit):
+            // Cancel before finishing so the origin cannot keep streaming
+            // into a stream nobody admits, then surface the same
+            // fail-closed error the byte-wise collector produces.
+            dataTask.cancel()
+            continuation.finish(
+                throwing: NetworkError.underlying(
+                    SendableUnderlyingError(
+                        domain: NetworkError.errorDomain,
+                        code: NetworkErrorCode.responseBodyLimitExceeded.rawValue,
+                        message:
+                            "Response body of \(observed) bytes exceeded the configured limit of \(limit) bytes."
+                    ),
+                    nil
+                )
+            )
+        case .drop:
+            break
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let (responseContinuation, chunkContinuation) = state.withLock {
+            state -> (
+                CheckedContinuation<(URLResponse, URLRequest?), Error>?,
+                AsyncThrowingStream<Data, Error>.Continuation?
+            ) in
+            let response = state.responseContinuation
+            let chunks = state.limitFinished ? nil : state.chunkContinuation
+            state.responseContinuation = nil
+            state.chunkContinuation = nil
+            return (response, chunks)
+        }
+        if let responseContinuation {
+            responseContinuation.resume(
+                throwing: error ?? URLError(.badServerResponse)
+            )
+        }
+        if let chunkContinuation {
+            if let error {
+                chunkContinuation.finish(throwing: error)
+            } else {
+                chunkContinuation.finish()
+            }
+        }
+    }
+
+    // MARK: Policy forwarding
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didFinishCollecting metrics: URLSessionTaskMetrics
+    ) {
+        policyDelegate.urlSession(session, task: task, didFinishCollecting: metrics)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        needNewBodyStream completionHandler: @escaping (InputStream?) -> Void
+    ) {
+        policyDelegate.urlSession(session, task: task, needNewBodyStream: completionHandler)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        policyDelegate.urlSession(
+            session,
+            task: task,
+            didReceive: challenge,
+            completionHandler: completionHandler
+        )
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        policyDelegate.urlSession(
+            session,
+            task: task,
+            willPerformHTTPRedirection: response,
+            newRequest: newRequest,
+            completionHandler: completionHandler
+        )
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        willCacheResponse proposedResponse: CachedURLResponse,
+        completionHandler: @escaping (CachedURLResponse?) -> Void
+    ) {
+        policyDelegate.urlSession(
+            session,
+            dataTask: dataTask,
+            willCacheResponse: proposedResponse,
+            completionHandler: completionHandler
+        )
     }
 }
