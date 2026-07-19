@@ -14,6 +14,48 @@ enum DownloadTerminalTransitionResult: Sendable, Equatable {
     case busy
 }
 
+/// Actor-owned lifecycle data for one logical download.
+///
+/// Keeping the values together makes lifecycle snapshots and reset behavior
+/// reviewable as one state model while `DownloadTask` remains the only
+/// synchronization boundary.
+private struct DownloadTaskLifecycleState {
+    var state: DownloadState = .idle
+    var progress: DownloadProgress = .zero
+    var retryCount = 0
+    var totalRetryCount = 0
+    var resumeData: Data?
+    var error: DownloadError?
+    /// Outer epoch counter. Bumped each time the download is fully re-driven.
+    var generation = 0
+    /// Per-generation attempt counter.
+    var attempt = 0
+    /// Timestamp of the most recent manager-observed download activity.
+    var lastProgressAt: ContinuousClock.Instant?
+    /// Claimed exactly once by the manager that owns this task handle.
+    var ownerID: UUID?
+    /// Bounded restoration admissions for staged completions.
+    var admitsRestoredSuccessWhilePaused = false
+    var admitsMissingSystemRestoredSuccess = false
+}
+
+/// Actor-owned serialization claims for competing lifecycle effects.
+///
+/// Claims and their waiters stay adjacent so every acquire/release pair can be
+/// audited without weakening the actor's atomic transition boundary.
+private struct DownloadTaskTransitionClaims {
+    var terminalTransitionClaimed = false
+    var terminalTransitionWaiters: [CheckedContinuation<Void, Never>] = []
+    var startPersistenceClaimed = false
+    var startPersistenceWaiters: [CheckedContinuation<Void, Never>] = []
+    var terminalPersistenceCleanupClaimed = false
+    var terminalPersistenceCleanupWaiters: [CheckedContinuation<Void, Never>] = []
+    var manualRetryInvalidatedByCancellation = false
+    var pendingCancellation = false
+    var failureFinalizationInProgress = false
+    var failureFinalizationWaiters: [CheckedContinuation<Void, Never>] = []
+}
+
 public actor DownloadTask: Identifiable {
     public nonisolated let id: String
     public nonisolated let url: URL
@@ -21,90 +63,22 @@ public actor DownloadTask: Identifiable {
 
     private static let logger = Logger(subsystem: "innosquad.network.download", category: "DownloadTask")
 
-    private var _state: DownloadState = .idle
-    private var _progress: DownloadProgress = .zero
-    private var _retryCount: Int = 0
-    private var _totalRetryCount: Int = 0
-    private var _resumeData: Data?
-    private var _error: DownloadError?
-    /// Outer epoch counter. Bumped each time the download is fully
-    /// re-driven (for example, after a hard reset that drops resume
-    /// data). Inner `attempt` counters are scoped to one generation.
-    /// Maintained by `DownloadManager` to disambiguate in-flight
-    /// callbacks across retry cycles, mirroring the `WebSocketTask`
-    /// pattern.
-    private var _generation: Int = 0
-    /// Per-generation attempt counter. Reset to `0` whenever
-    /// `_generation` advances; otherwise increments by one for each
-    /// retry of the same generation.
-    private var _attempt: Int = 0
-    /// Timestamp of the most recent download activity observed by
-    /// `DownloadManager`. Progress callbacks update it directly; the
-    /// inactivity watchdog may seed it when a task is downloading but has
-    /// not produced its first progress event yet. Consumed by
-    /// `taskInactivityTimeout` from ``DownloadTransferPack``.
-    private var _lastProgressAt: ContinuousClock.Instant?
-    /// Serializes competing completion, failure, and cancellation paths. A
-    /// completion may need to stage/move a file before it can expose the final
-    /// public state; while it owns this claim, other terminal paths must not
-    /// remove runtime or persistence state underneath it.
-    private var _terminalTransitionClaimed = false
-    private var _terminalTransitionClaimWaiters: [CheckedContinuation<Void, Never>] = []
-    /// Covers the only persistence write that can create/re-activate an
-    /// `active` row. Cancellation may still win the public state transition
-    /// while this claim is held, but it waits for the write to settle before
-    /// sealing/removing persistence so a late upsert cannot resurrect it.
-    private var _startPersistenceClaimed = false
-    private var _startPersistenceClaimWaiters: [CheckedContinuation<Void, Never>] = []
-    /// Serializes terminal persistence cleanup with a new manual generation.
-    /// The claim is acquired in the same actor turn as cancellation so a
-    /// retry cannot reopen the handle between the terminal-state check and
-    /// the old generation's marker/remove operations.
-    private var _terminalPersistenceCleanupClaimed = false
-    private var _terminalPersistenceCleanupWaiters: [CheckedContinuation<Void, Never>] = []
-    private var _manualRetryInvalidatedByCancellation = false
-    /// A cancellation requested while completion owns the terminal claim.
-    /// Other terminal paths remain blocked after a failed commit until the
-    /// cancelling manager resumes and records `.cancelled`.
-    private var _pendingCancellation = false
-    /// A failed state is publicly retryable only after its old-generation
-    /// runtime, persistence, and terminal event partition are finalized.
-    private var _failureFinalizationInProgress = false
-    private var _failureFinalizationWaiters: [CheckedContinuation<Void, Never>] = []
-    /// Manager ownership is claimed exactly once when the task first enters a
-    /// runtime registry. Keeping the token on the handle lets a manager accept
-    /// retry after terminal registry cleanup without accepting a foreign or
-    /// same-ID fabricated handle.
-    private var _ownerID: UUID?
-    /// A no-system-task `.pausing` / `.resuming` record is reconstructed as
-    /// paused while the manager drains the restoration delegate snapshot.
-    /// During that bounded window, a staged successful completion is still
-    /// authoritative and may reopen the handle for final commit. Ordinary
-    /// paused tasks never set this bit, so a late predecessor callback cannot
-    /// steal a later public resume generation.
-    private var _admitsRestoredSuccessWhilePaused = false
-    /// An active/legacy persistence row with no surviving URLSession task is
-    /// reconstructed as a synthetic restoration failure before the manager
-    /// drains the delegate snapshot captured at launch. A correlated staged
-    /// success inside that snapshot may still prove the transfer completed.
-    /// Keep this admission separate from the intermediate-pause bit so neither
-    /// recovery case can accidentally authorize the other, and consume it at
-    /// most once before the restoration FIFO boundary closes.
-    private var _admitsMissingSystemRestoredSuccess = false
+    private var lifecycle = DownloadTaskLifecycleState()
+    private var transitionClaims = DownloadTaskTransitionClaims()
 
-    public var state: DownloadState { _state }
-    public var progress: DownloadProgress { _progress }
-    public var retryCount: Int { _retryCount }
-    public var totalRetryCount: Int { _totalRetryCount }
-    public var resumeData: Data? { _resumeData }
-    public var error: DownloadError? { _error }
+    public var state: DownloadState { lifecycle.state }
+    public var progress: DownloadProgress { lifecycle.progress }
+    public var retryCount: Int { lifecycle.retryCount }
+    public var totalRetryCount: Int { lifecycle.totalRetryCount }
+    public var resumeData: Data? { lifecycle.resumeData }
+    public var error: DownloadError? { lifecycle.error }
     /// Current generation epoch maintained by `DownloadManager`.
-    public var generation: Int { _generation }
+    public var generation: Int { lifecycle.generation }
     /// Current attempt index within the active generation.
-    public var attempt: Int { _attempt }
+    public var attempt: Int { lifecycle.attempt }
     /// Timestamp of the most recent progress or watchdog-observed download
     /// activity, or `nil` before a running attempt is observed.
-    public var lastProgressAt: ContinuousClock.Instant? { _lastProgressAt }
+    public var lastProgressAt: ContinuousClock.Instant? { lifecycle.lastProgressAt }
 
     /// Construct a download task description.
     ///
@@ -123,19 +97,19 @@ public actor DownloadTask: Identifiable {
         self.id = id
         self.url = url
         self.destinationURL = destinationURL
-        self._resumeData = resumeData
+        self.lifecycle = DownloadTaskLifecycleState(resumeData: resumeData)
     }
 
     func claimOwnership(_ ownerID: UUID) -> Bool {
-        if let currentOwnerID = _ownerID {
+        if let currentOwnerID = lifecycle.ownerID {
             return currentOwnerID == ownerID
         }
-        _ownerID = ownerID
+        lifecycle.ownerID = ownerID
         return true
     }
 
     func isOwned(by ownerID: UUID) -> Bool {
-        _ownerID == ownerID
+        lifecycle.ownerID == ownerID
     }
 
     /// Apply a new state, enforcing the documented transition table from
@@ -149,7 +123,7 @@ public actor DownloadTask: Identifiable {
     /// persisted state on app launch, or test-only state injection), use
     /// ``restoreState(_:)``.
     func updateState(_ newState: DownloadState) {
-        let current = _state
+        let current = lifecycle.state
         let reduction = DownloadLifecycleReducer.reduce(
             state: current,
             event: .transition(to: newState)
@@ -161,9 +135,9 @@ public actor DownloadTask: Identifiable {
             assertionFailure("Illegal DownloadState transition: \(current) -> \(newState) for task \(self.id)")
             return
         }
-        _state = reduction.state
+        lifecycle.state = reduction.state
         if reduction.state.isTerminal {
-            _terminalTransitionClaimed = true
+            transitionClaims.terminalTransitionClaimed = true
         }
     }
 
@@ -174,72 +148,72 @@ public actor DownloadTask: Identifiable {
     /// state injection. Production lifecycle code should use
     /// ``updateState(_:)`` so unintended transitions are caught.
     func restoreState(_ newState: DownloadState) {
-        _state = newState
-        _terminalTransitionClaimed = newState.isTerminal
+        lifecycle.state = newState
+        transitionClaims.terminalTransitionClaimed = newState.isTerminal
     }
 
     func admitRestoredSuccessWhilePaused() {
-        guard _state == .paused else { return }
-        _admitsRestoredSuccessWhilePaused = true
+        guard lifecycle.state == .paused else { return }
+        lifecycle.admitsRestoredSuccessWhilePaused = true
     }
 
     func admitMissingSystemRestoredSuccess() {
-        guard _state == .failed,
-            case .restorationMissingSystemTask? = _error,
-            _terminalTransitionClaimed
+        guard lifecycle.state == .failed,
+            case .restorationMissingSystemTask? = lifecycle.error,
+            transitionClaims.terminalTransitionClaimed
         else { return }
-        _admitsMissingSystemRestoredSuccess = true
+        lifecycle.admitsMissingSystemRestoredSuccess = true
     }
 
     func endRestoredSuccessAdmission() {
-        _admitsRestoredSuccessWhilePaused = false
-        _admitsMissingSystemRestoredSuccess = false
+        lifecycle.admitsRestoredSuccessWhilePaused = false
+        lifecycle.admitsMissingSystemRestoredSuccess = false
     }
 
     func updateProgress(_ newProgress: DownloadProgress) {
-        _progress = newProgress
+        lifecycle.progress = newProgress
     }
 
     func setLastProgressAt(_ instant: ContinuousClock.Instant?) {
-        _lastProgressAt = instant
+        lifecycle.lastProgressAt = instant
     }
 
     func incrementRetryCount() -> Int {
-        _retryCount += 1
-        return _retryCount
+        lifecycle.retryCount += 1
+        return lifecycle.retryCount
     }
 
     func setRetryCount(_ retryCount: Int) {
-        _retryCount = max(0, retryCount)
+        lifecycle.retryCount = max(0, retryCount)
     }
 
     func restoreRetryCounts(retryCount: Int, totalRetryCount: Int) {
-        _retryCount = max(0, retryCount)
-        _totalRetryCount = max(0, totalRetryCount)
+        lifecycle.retryCount = max(0, retryCount)
+        lifecycle.totalRetryCount = max(0, totalRetryCount)
     }
 
     func incrementTotalRetryCount() -> Int {
-        _totalRetryCount += 1
-        return _totalRetryCount
+        lifecycle.totalRetryCount += 1
+        return lifecycle.totalRetryCount
     }
 
     func resetRetryCount() {
-        _retryCount = 0
+        lifecycle.retryCount = 0
     }
 
     func setResumeData(_ data: Data?) {
-        _resumeData = data
+        lifecycle.resumeData = data
     }
 
     func setError(_ error: DownloadError?) {
-        _error = error
+        lifecycle.error = error
     }
 
     func lifecycleSnapshot() -> DownloadTaskLifecycleSnapshot {
         DownloadTaskLifecycleSnapshot(
-            state: _state,
-            generation: _generation,
-            attempt: _attempt
+            state: lifecycle.state,
+            generation: lifecycle.generation,
+            attempt: lifecycle.attempt
         )
     }
 
@@ -247,10 +221,12 @@ public actor DownloadTask: Identifiable {
         _ progress: DownloadProgress,
         observedAt: ContinuousClock.Instant?
     ) -> DownloadTaskLifecycleSnapshot? {
-        guard !_pendingCancellation, !_terminalTransitionClaimed, _state == .downloading else { return nil }
-        _progress = progress
+        guard !transitionClaims.pendingCancellation, !transitionClaims.terminalTransitionClaimed,
+            lifecycle.state == .downloading
+        else { return nil }
+        lifecycle.progress = progress
         if let observedAt {
-            _lastProgressAt = observedAt
+            lifecycle.lastProgressAt = observedAt
         }
         return lifecycleSnapshot()
     }
@@ -259,10 +235,10 @@ public actor DownloadTask: Identifiable {
         to newState: DownloadState,
         ifMatching expected: DownloadTaskLifecycleSnapshot
     ) -> DownloadTaskLifecycleSnapshot? {
-        guard !_pendingCancellation,
-            !_terminalTransitionClaimed,
+        guard !transitionClaims.pendingCancellation,
+            !transitionClaims.terminalTransitionClaimed,
             lifecycleSnapshot() == expected,
-            _state.canTransition(to: newState)
+            lifecycle.state.canTransition(to: newState)
         else {
             return nil
         }
@@ -274,14 +250,14 @@ public actor DownloadTask: Identifiable {
         transitioningTo newState: DownloadState,
         ifMatching expected: DownloadTaskLifecycleSnapshot
     ) -> DownloadTaskLifecycleSnapshot? {
-        guard !_pendingCancellation,
-            !_terminalTransitionClaimed,
+        guard !transitionClaims.pendingCancellation,
+            !transitionClaims.terminalTransitionClaimed,
             lifecycleSnapshot() == expected,
-            _state.canTransition(to: newState)
+            lifecycle.state.canTransition(to: newState)
         else {
             return nil
         }
-        startAttempt(generation: _generation, attempt: _attempt + 1)
+        startAttempt(generation: lifecycle.generation, attempt: lifecycle.attempt + 1)
         updateState(newState)
         return lifecycleSnapshot()
     }
@@ -291,7 +267,9 @@ public actor DownloadTask: Identifiable {
         ifMatching expected: DownloadTaskLifecycleSnapshot,
         lifecycleGate: DownloadLifecycleGate
     ) -> Bool {
-        guard !_pendingCancellation, !_terminalTransitionClaimed, lifecycleSnapshot() == expected else {
+        guard !transitionClaims.pendingCancellation, !transitionClaims.terminalTransitionClaimed,
+            lifecycleSnapshot() == expected
+        else {
             return false
         }
         return lifecycleGate.resumeIfOpen(urlTask)
@@ -300,41 +278,43 @@ public actor DownloadTask: Identifiable {
     func claimStartPersistence(
         ifMatching expected: DownloadTaskLifecycleSnapshot
     ) -> Bool {
-        guard !_startPersistenceClaimed,
-            !_pendingCancellation,
-            !_state.isTerminal,
+        guard !transitionClaims.startPersistenceClaimed,
+            !transitionClaims.pendingCancellation,
+            !lifecycle.state.isTerminal,
             lifecycleSnapshot() == expected
         else { return false }
-        _startPersistenceClaimed = true
+        transitionClaims.startPersistenceClaimed = true
         return true
     }
 
     func releaseStartPersistenceClaim() {
-        guard _startPersistenceClaimed else { return }
-        _startPersistenceClaimed = false
-        let waiters = _startPersistenceClaimWaiters
-        _startPersistenceClaimWaiters.removeAll(keepingCapacity: false)
+        guard transitionClaims.startPersistenceClaimed else { return }
+        transitionClaims.startPersistenceClaimed = false
+        let waiters = transitionClaims.startPersistenceWaiters
+        transitionClaims.startPersistenceWaiters.removeAll(keepingCapacity: false)
         for waiter in waiters {
             waiter.resume()
         }
     }
 
     func waitForStartPersistenceClaimRelease() async {
-        guard _startPersistenceClaimed else { return }
+        guard transitionClaims.startPersistenceClaimed else { return }
         await withCheckedContinuation { continuation in
-            _startPersistenceClaimWaiters.append(continuation)
+            transitionClaims.startPersistenceWaiters.append(continuation)
         }
     }
 
     func claimTerminalTransition() -> Bool {
-        guard !_pendingCancellation, !_terminalTransitionClaimed, !_state.isTerminal else { return false }
-        _terminalTransitionClaimed = true
+        guard !transitionClaims.pendingCancellation, !transitionClaims.terminalTransitionClaimed,
+            !lifecycle.state.isTerminal
+        else { return false }
+        transitionClaims.terminalTransitionClaimed = true
         return true
     }
 
     func releaseTerminalTransitionClaim() {
-        guard !_state.isTerminal else { return }
-        _terminalTransitionClaimed = false
+        guard !lifecycle.state.isTerminal else { return }
+        transitionClaims.terminalTransitionClaimed = false
         resumeTerminalTransitionClaimWaiters()
     }
 
@@ -342,15 +322,15 @@ public actor DownloadTask: Identifiable {
         to newState: DownloadState,
         error: DownloadError?
     ) -> Bool {
-        guard _terminalTransitionClaimed,
-            !_state.isTerminal,
+        guard transitionClaims.terminalTransitionClaimed,
+            !lifecycle.state.isTerminal,
             newState.isTerminal,
-            _state.canTransition(to: newState)
+            lifecycle.state.canTransition(to: newState)
         else {
             return false
         }
-        _error = error
-        _pendingCancellation = false
+        lifecycle.error = error
+        transitionClaims.pendingCancellation = false
         updateState(newState)
         resumeTerminalTransitionClaimWaiters()
         return true
@@ -360,22 +340,22 @@ public actor DownloadTask: Identifiable {
         _ newState: DownloadState,
         error: DownloadError?
     ) -> DownloadTerminalTransitionResult {
-        guard !_state.isTerminal else { return .alreadyTerminal }
-        if _terminalTransitionClaimed {
+        guard !lifecycle.state.isTerminal else { return .alreadyTerminal }
+        if transitionClaims.terminalTransitionClaimed {
             if newState == .cancelled {
-                _pendingCancellation = true
+                transitionClaims.pendingCancellation = true
             }
             return .busy
         }
-        guard !_pendingCancellation || newState == .cancelled else { return .busy }
-        guard newState.isTerminal, _state.canTransition(to: newState) else {
+        guard !transitionClaims.pendingCancellation || newState == .cancelled else { return .busy }
+        guard newState.isTerminal, lifecycle.state.canTransition(to: newState) else {
             return .busy
         }
         if newState == .cancelled {
-            _pendingCancellation = false
+            transitionClaims.pendingCancellation = false
         }
-        _terminalTransitionClaimed = true
-        _error = error
+        transitionClaims.terminalTransitionClaimed = true
+        lifecycle.error = error
         updateState(newState)
         return .transitioned
     }
@@ -383,10 +363,10 @@ public actor DownloadTask: Identifiable {
     func transitionToFailureFinalizing(
         error: DownloadError
     ) -> DownloadTerminalTransitionResult {
-        guard !_failureFinalizationInProgress else { return .busy }
+        guard !transitionClaims.failureFinalizationInProgress else { return .busy }
         let result = transitionToTerminal(.failed, error: error)
         if result == .transitioned {
-            _failureFinalizationInProgress = true
+            transitionClaims.failureFinalizationInProgress = true
         }
         return result
     }
@@ -400,17 +380,17 @@ public actor DownloadTask: Identifiable {
     }
 
     func waitForFailureFinalization() async {
-        guard _failureFinalizationInProgress else { return }
+        guard transitionClaims.failureFinalizationInProgress else { return }
         await withCheckedContinuation { continuation in
-            _failureFinalizationWaiters.append(continuation)
+            transitionClaims.failureFinalizationWaiters.append(continuation)
         }
     }
 
     func finishFailureFinalization() {
-        guard _failureFinalizationInProgress else { return }
-        _failureFinalizationInProgress = false
-        let waiters = _failureFinalizationWaiters
-        _failureFinalizationWaiters.removeAll(keepingCapacity: false)
+        guard transitionClaims.failureFinalizationInProgress else { return }
+        transitionClaims.failureFinalizationInProgress = false
+        let waiters = transitionClaims.failureFinalizationWaiters
+        transitionClaims.failureFinalizationWaiters.removeAll(keepingCapacity: false)
         for waiter in waiters {
             waiter.resume()
         }
@@ -420,14 +400,14 @@ public actor DownloadTask: Identifiable {
         while true {
             let result = transitionToTerminal(.cancelled, error: .cancelled)
             if result == .transitioned || result == .alreadyTerminal {
-                guard !_terminalPersistenceCleanupClaimed else { return .busy }
-                _terminalPersistenceCleanupClaimed = true
-                if result == .alreadyTerminal, _state == .failed {
-                    _manualRetryInvalidatedByCancellation = true
+                guard !transitionClaims.terminalPersistenceCleanupClaimed else { return .busy }
+                transitionClaims.terminalPersistenceCleanupClaimed = true
+                if result == .alreadyTerminal, lifecycle.state == .failed {
+                    transitionClaims.manualRetryInvalidatedByCancellation = true
                 }
                 return result
             }
-            guard result == .busy, _pendingCancellation else { return result }
+            guard result == .busy, transitionClaims.pendingCancellation else { return result }
             await waitForTerminalTransitionClaimResolution()
         }
     }
@@ -439,23 +419,23 @@ public actor DownloadTask: Identifiable {
             guard lifecycleSnapshot() == expected else { return .busy }
             let result = transitionToTerminal(.cancelled, error: .cancelled)
             if result == .transitioned || result == .alreadyTerminal {
-                guard !_terminalPersistenceCleanupClaimed else { return .busy }
-                _terminalPersistenceCleanupClaimed = true
-                if result == .alreadyTerminal, _state == .failed {
-                    _manualRetryInvalidatedByCancellation = true
+                guard !transitionClaims.terminalPersistenceCleanupClaimed else { return .busy }
+                transitionClaims.terminalPersistenceCleanupClaimed = true
+                if result == .alreadyTerminal, lifecycle.state == .failed {
+                    transitionClaims.manualRetryInvalidatedByCancellation = true
                 }
                 return result
             }
-            guard result == .busy, _pendingCancellation else { return result }
+            guard result == .busy, transitionClaims.pendingCancellation else { return result }
             await waitForTerminalTransitionClaimResolution()
         }
     }
 
     func releaseTerminalPersistenceCleanupClaim() {
-        guard _terminalPersistenceCleanupClaimed else { return }
-        _terminalPersistenceCleanupClaimed = false
-        let waiters = _terminalPersistenceCleanupWaiters
-        _terminalPersistenceCleanupWaiters.removeAll(keepingCapacity: false)
+        guard transitionClaims.terminalPersistenceCleanupClaimed else { return }
+        transitionClaims.terminalPersistenceCleanupClaimed = false
+        let waiters = transitionClaims.terminalPersistenceCleanupWaiters
+        transitionClaims.terminalPersistenceCleanupWaiters.removeAll(keepingCapacity: false)
         for waiter in waiters {
             waiter.resume()
         }
@@ -466,21 +446,21 @@ public actor DownloadTask: Identifiable {
     func requestCancellation() async -> DownloadTerminalTransitionResult {
         while true {
             let result = transitionToTerminal(.cancelled, error: .cancelled)
-            guard result == .busy, _pendingCancellation else { return result }
+            guard result == .busy, transitionClaims.pendingCancellation else { return result }
             await waitForTerminalTransitionClaimResolution()
         }
     }
 
     func waitForTerminalTransitionClaimResolution() async {
-        guard _terminalTransitionClaimed, !_state.isTerminal else { return }
+        guard transitionClaims.terminalTransitionClaimed, !lifecycle.state.isTerminal else { return }
         await withCheckedContinuation { continuation in
-            _terminalTransitionClaimWaiters.append(continuation)
+            transitionClaims.terminalTransitionWaiters.append(continuation)
         }
     }
 
     private func resumeTerminalTransitionClaimWaiters() {
-        let waiters = _terminalTransitionClaimWaiters
-        _terminalTransitionClaimWaiters.removeAll(keepingCapacity: false)
+        let waiters = transitionClaims.terminalTransitionWaiters
+        transitionClaims.terminalTransitionWaiters.removeAll(keepingCapacity: false)
         for waiter in waiters {
             waiter.resume()
         }
@@ -491,11 +471,11 @@ public actor DownloadTask: Identifiable {
     /// value from the task actor avoids a manager-wide tombstone table whose
     /// memory would otherwise grow with every completed download.
     func terminalEvent() -> DownloadEvent? {
-        switch _state {
+        switch lifecycle.state {
         case .completed:
             return .completed(destinationURL)
         case .failed:
-            guard let error = _error else { return nil }
+            guard let error = lifecycle.error else { return nil }
             return .failed(error)
         case .cancelled:
             return .stateChanged(.cancelled)
@@ -513,30 +493,30 @@ public actor DownloadTask: Identifiable {
     ) -> DownloadTaskLifecycleSnapshot? {
         guard hasSuccessfulPayload else { return nil }
 
-        if _state == .failed,
-            case .restorationMissingSystemTask? = _error,
-            _admitsMissingSystemRestoredSuccess,
-            _terminalTransitionClaimed
+        if lifecycle.state == .failed,
+            case .restorationMissingSystemTask? = lifecycle.error,
+            lifecycle.admitsMissingSystemRestoredSuccess,
+            transitionClaims.terminalTransitionClaimed
         {
-            _admitsMissingSystemRestoredSuccess = false
-            _state = .downloading
-            _error = nil
-            _terminalTransitionClaimed = false
-            _pendingCancellation = false
+            lifecycle.admitsMissingSystemRestoredSuccess = false
+            lifecycle.state = .downloading
+            lifecycle.error = nil
+            transitionClaims.terminalTransitionClaimed = false
+            transitionClaims.pendingCancellation = false
             return lifecycleSnapshot()
         }
 
-        guard _state == .paused,
-            _admitsRestoredSuccessWhilePaused,
-            !_terminalTransitionClaimed,
-            !_pendingCancellation
+        guard lifecycle.state == .paused,
+            lifecycle.admitsRestoredSuccessWhilePaused,
+            !transitionClaims.terminalTransitionClaimed,
+            !transitionClaims.pendingCancellation
         else { return nil }
 
-        _admitsRestoredSuccessWhilePaused = false
-        _state = .downloading
-        _error = nil
-        _terminalTransitionClaimed = false
-        _pendingCancellation = false
+        lifecycle.admitsRestoredSuccessWhilePaused = false
+        lifecycle.state = .downloading
+        lifecycle.error = nil
+        transitionClaims.terminalTransitionClaimed = false
+        transitionClaims.pendingCancellation = false
         return lifecycleSnapshot()
     }
 
@@ -550,54 +530,54 @@ public actor DownloadTask: Identifiable {
         resumeData: Data?,
         ifMatching expected: DownloadTaskLifecycleSnapshot
     ) -> Bool {
-        guard !_pendingCancellation,
-            !_terminalTransitionClaimed,
+        guard !transitionClaims.pendingCancellation,
+            !transitionClaims.terminalTransitionClaimed,
             lifecycleSnapshot() == expected,
-            _state == .downloading
+            lifecycle.state == .downloading
         else {
             return false
         }
-        _resumeData = resumeData
+        lifecycle.resumeData = resumeData
         updateState(.paused)
         return true
     }
 
     func reset() {
-        _state = .idle
-        _progress = .zero
-        _retryCount = 0
-        _totalRetryCount = 0
-        _resumeData = nil
-        _error = nil
-        _generation = 0
-        _attempt = 0
-        _lastProgressAt = nil
-        _terminalTransitionClaimed = false
-        _pendingCancellation = false
-        _failureFinalizationInProgress = false
-        _admitsRestoredSuccessWhilePaused = false
-        _admitsMissingSystemRestoredSuccess = false
-        _manualRetryInvalidatedByCancellation = false
+        lifecycle.state = .idle
+        lifecycle.progress = .zero
+        lifecycle.retryCount = 0
+        lifecycle.totalRetryCount = 0
+        lifecycle.resumeData = nil
+        lifecycle.error = nil
+        lifecycle.generation = 0
+        lifecycle.attempt = 0
+        lifecycle.lastProgressAt = nil
+        transitionClaims.terminalTransitionClaimed = false
+        transitionClaims.pendingCancellation = false
+        transitionClaims.failureFinalizationInProgress = false
+        lifecycle.admitsRestoredSuccessWhilePaused = false
+        lifecycle.admitsMissingSystemRestoredSuccess = false
+        transitionClaims.manualRetryInvalidatedByCancellation = false
         releaseStartPersistenceClaim()
         resumeTerminalTransitionClaimWaiters()
-        let failureWaiters = _failureFinalizationWaiters
-        _failureFinalizationWaiters.removeAll(keepingCapacity: false)
+        let failureWaiters = transitionClaims.failureFinalizationWaiters
+        transitionClaims.failureFinalizationWaiters.removeAll(keepingCapacity: false)
         for waiter in failureWaiters {
             waiter.resume()
         }
     }
 
     func beginManualRetry() async -> DownloadTaskLifecycleSnapshot? {
-        while _terminalPersistenceCleanupClaimed {
+        while transitionClaims.terminalPersistenceCleanupClaimed {
             await withCheckedContinuation { continuation in
-                _terminalPersistenceCleanupWaiters.append(continuation)
+                transitionClaims.terminalPersistenceCleanupWaiters.append(continuation)
             }
         }
-        guard !_pendingCancellation,
-            !_manualRetryInvalidatedByCancellation,
-            _state == .failed
+        guard !transitionClaims.pendingCancellation,
+            !transitionClaims.manualRetryInvalidatedByCancellation,
+            lifecycle.state == .failed
         else { return nil }
-        let nextGeneration = _generation + 1
+        let nextGeneration = lifecycle.generation + 1
         reset()
         startAttempt(generation: nextGeneration, attempt: 0)
         return lifecycleSnapshot()
@@ -606,9 +586,9 @@ public actor DownloadTask: Identifiable {
     func advanceAttempt(
         ifMatching expected: DownloadTaskLifecycleSnapshot
     ) -> DownloadTaskLifecycleSnapshot? {
-        guard !_pendingCancellation,
-            !_terminalTransitionClaimed,
-            !_state.isTerminal,
+        guard !transitionClaims.pendingCancellation,
+            !transitionClaims.terminalTransitionClaimed,
+            !lifecycle.state.isTerminal,
             lifecycleSnapshot() == expected
         else {
             return nil
@@ -618,7 +598,7 @@ public actor DownloadTask: Identifiable {
     }
 
     func startNextAttemptInCurrentGeneration() {
-        startAttempt(generation: _generation, attempt: _attempt + 1)
+        startAttempt(generation: lifecycle.generation, attempt: lifecycle.attempt + 1)
     }
 
     /// Record the start of a new download attempt by reducing through
@@ -627,32 +607,31 @@ public actor DownloadTask: Identifiable {
     ///
     /// The reducer keeps the visible ``state`` unchanged on this path —
     /// epoch advancement is orthogonal to the transition table — so this
-    /// method only updates `_generation` / `_attempt`. This is internal
+    /// method only updates `lifecycle.generation` / `lifecycle.attempt`. This is internal
     /// lifecycle bookkeeping; public callers should observe
     /// ``generation`` and ``attempt`` instead of trying to drive them.
     func startAttempt(generation: Int, attempt: Int) {
         let reduction = DownloadLifecycleReducer.reduce(
-            state: _state,
+            state: lifecycle.state,
             event: .startAttempt(generation: generation, attempt: attempt)
         )
         for effect in reduction.effects {
             switch effect {
             case .advancedEpoch(let nextGeneration, let nextAttempt):
-                _generation = nextGeneration
-                _attempt = nextAttempt
+                lifecycle.generation = nextGeneration
+                lifecycle.attempt = nextAttempt
                 // A fresh attempt has no real progress timestamp yet. Keeping
                 // the prior epoch's value would let the inactivity watchdog
                 // cancel a freshly resumed/retried `URLSessionDownloadTask`
                 // before its first progress callback arrives — comparing
                 // `now` against a pause-era timestamp.
-                _lastProgressAt = nil
+                lifecycle.lastProgressAt = nil
             case .rejectIllegalTransition:
                 continue
             }
         }
     }
 }
-
 
 extension DownloadTask: Hashable {
     public nonisolated static func == (lhs: DownloadTask, rhs: DownloadTask) -> Bool {
