@@ -53,15 +53,15 @@ extension DownloadManager {
         defer { finishShutdownTrackedOperation() }
         guard await waitForRestore() else { return }
         guard await runtimeRegistry.owns(task) else { return }
-        guard pausingTaskIDs.insert(task.id).inserted else { return }
-        defer { pausingTaskIDs.remove(task.id) }
+        guard managerState.pausingTaskIDs.insert(task.id).inserted else { return }
+        defer { managerState.pausingTaskIDs.remove(task.id) }
 
         let expectedLifecycle = await task.lifecycleSnapshot()
         guard expectedLifecycle.state == .downloading else { return }
         guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else { return }
         let expectedTaskIdentifier = urlTask.taskIdentifier
-        pausingTaskIdentifiers[task.id] = expectedTaskIdentifier
-        defer { pausingTaskIdentifiers.removeValue(forKey: task.id) }
+        managerState.pausingTaskIdentifiers[task.id] = expectedTaskIdentifier
+        defer { managerState.pausingTaskIdentifiers.removeValue(forKey: task.id) }
 
         do {
             let markedPausing = try await persistence.transitionResumeState(
@@ -176,8 +176,8 @@ extension DownloadManager {
         defer { finishShutdownTrackedOperation() }
         guard await waitForRestore() else { return }
         guard await runtimeRegistry.owns(task) else { return }
-        guard resumingTaskIDs.insert(task.id).inserted else { return }
-        defer { resumingTaskIDs.remove(task.id) }
+        guard managerState.resumingTaskIDs.insert(task.id).inserted else { return }
+        defer { managerState.resumingTaskIDs.remove(task.id) }
         let pausedLifecycle = await task.lifecycleSnapshot()
         guard pausedLifecycle.state == .paused else { return }
         guard await claimDestructiveLifecycle(taskID: task.id) else { return }
@@ -371,8 +371,8 @@ extension DownloadManager {
         await task.waitForFailureFinalization()
         guard await claimDestructiveLifecycle(taskID: task.id) else { return }
         await task.endRestoredSuccessAdmission()
-        provisionalBackgroundRestoreFailureIDs.remove(task.id)
-        pendingRestoreFailures.remove(task.id)
+        managerState.provisionalBackgroundRestoreFailureIDs.remove(task.id)
+        managerState.pendingRestoreFailures.remove(task.id)
         // Drive the state transition only when we're leaving a non-terminal
         // state. Calling `cancel` again on an already-terminal task (for
         // example, after the first attempt's persistence removal failed)
@@ -453,8 +453,8 @@ extension DownloadManager {
         for task in tasks {
             await task.waitForFailureFinalization()
         }
-        pendingRestoreFailures.subtract(tasks.map(\.id))
-        provisionalBackgroundRestoreFailureIDs.subtract(tasks.map(\.id))
+        managerState.pendingRestoreFailures.subtract(tasks.map(\.id))
+        managerState.provisionalBackgroundRestoreFailureIDs.subtract(tasks.map(\.id))
         for task in tasks {
             await task.endRestoredSuccessAdmission()
         }

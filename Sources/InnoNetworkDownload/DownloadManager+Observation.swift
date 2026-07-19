@@ -85,7 +85,7 @@ extension DownloadManager {
     ) async {
         guard await runtimeRegistry.owns(task) else { return }
         _ = await eventHub.addListener(taskID: task.id, listener: listener)
-        if !provisionalBackgroundRestoreFailureIDs.contains(task.id),
+        if !managerState.provisionalBackgroundRestoreFailureIDs.contains(task.id),
             let terminal = await task.terminalEvent()
         {
             await eventHub.publishTerminalAndFinish(terminal, for: task.id)
@@ -101,7 +101,7 @@ extension DownloadManager {
         }
         let stream = await eventHub.stream(for: task.id)
         await flushPendingRestoreFailureIfNeeded(taskID: task.id)
-        if !provisionalBackgroundRestoreFailureIDs.contains(task.id),
+        if !managerState.provisionalBackgroundRestoreFailureIDs.contains(task.id),
             let terminal = await task.terminalEvent()
         {
             await eventHub.publishTerminalAndFinish(terminal, for: task.id)

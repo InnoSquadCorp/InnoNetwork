@@ -111,7 +111,7 @@ extension DownloadManager {
                 await rejectCompletionPayload(payload)
                 return
             }
-            pendingRestoreFailures.remove(task.id)
+            managerState.pendingRestoreFailures.remove(task.id)
             await runtimeRegistry.setMapping(downloadTask: task, for: taskIdentifier)
         }
 
@@ -124,7 +124,7 @@ extension DownloadManager {
         if let error,
             error.domain == NSURLErrorDomain,
             error.code == URLError.cancelled.rawValue,
-            pausingTaskIdentifiers[task.id] == taskIdentifier
+            managerState.pausingTaskIdentifiers[task.id] == taskIdentifier
         {
             await rejectCompletionPayload(payload)
             return
@@ -343,7 +343,7 @@ extension DownloadManager {
             }
             await self?.deferredFailureDidFinish(jobID)
         }
-        deferredFailureTasks[jobID] = job
+        managerState.deferredFailureTasks[jobID] = job
         await admission.wait()
     }
 
@@ -367,17 +367,17 @@ extension DownloadManager {
                 }
                 await self?.deferredFailureDidFinish(jobID)
             }
-            deferredFailureTasks[jobID] = job
+            managerState.deferredFailureTasks[jobID] = job
         }
     }
 
     private func deferredFailureDidFinish(_ jobID: UUID) {
-        deferredFailureTasks.removeValue(forKey: jobID)
+        managerState.deferredFailureTasks.removeValue(forKey: jobID)
     }
 
     func drainDeferredFailureTasks() async {
-        while !deferredFailureTasks.isEmpty {
-            let jobs = Array(deferredFailureTasks.values)
+        while !managerState.deferredFailureTasks.isEmpty {
+            let jobs = Array(managerState.deferredFailureTasks.values)
             for job in jobs {
                 await job.value
             }

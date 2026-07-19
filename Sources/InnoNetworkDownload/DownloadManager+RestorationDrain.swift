@@ -10,9 +10,9 @@ extension DownloadManager {
         let remainingFailures = await remainingRestoreFailures(
             from: result.failedTaskIDs
         )
-        provisionalBackgroundRestoreFailureIDs.formUnion(remainingFailures)
-        backgroundRestoreSnapshotPrepared = true
-        backgroundRestoreBoundaryPending = true
+        managerState.provisionalBackgroundRestoreFailureIDs.formUnion(remainingFailures)
+        managerState.backgroundRestoreSnapshotPrepared = true
+        managerState.backgroundRestoreBoundaryPending = true
 
         await recordPendingRestoreCompletions(result.completedTaskIDs)
         scheduleRestoredRetries(result.deferredRetries)
@@ -21,10 +21,10 @@ extension DownloadManager {
         // synthetic snapshot marker. In that ordering, its manager event only
         // records the fact; this method performs internal finalization before
         // the host application's stored completion handler is released.
-        if backgroundRestoreEventsFinished {
+        if managerState.backgroundRestoreEventsFinished {
             await finalizeBackgroundRestoreBoundary()
             await invokePendingBackgroundSessionCompletions()
-            backgroundRestoreEventsFinished = false
+            managerState.backgroundRestoreEventsFinished = false
         }
     }
 
@@ -32,20 +32,20 @@ extension DownloadManager {
         completion: (@Sendable () -> Void)?
     ) async {
         if let completion {
-            pendingBackgroundSessionCompletions.append(completion)
+            managerState.pendingBackgroundSessionCompletions.append(completion)
         }
-        backgroundRestoreEventsFinished = true
-        guard backgroundRestoreSnapshotPrepared else { return }
-        if backgroundRestoreBoundaryPending {
+        managerState.backgroundRestoreEventsFinished = true
+        guard managerState.backgroundRestoreSnapshotPrepared else { return }
+        if managerState.backgroundRestoreBoundaryPending {
             await finalizeBackgroundRestoreBoundary()
         }
         await invokePendingBackgroundSessionCompletions()
-        backgroundRestoreEventsFinished = false
+        managerState.backgroundRestoreEventsFinished = false
     }
 
     private func finalizeBackgroundRestoreBoundary() async {
-        guard backgroundRestoreBoundaryPending else { return }
-        backgroundRestoreBoundaryPending = false
+        guard managerState.backgroundRestoreBoundaryPending else { return }
+        managerState.backgroundRestoreBoundaryPending = false
 
         // Foundation has now delivered every message that was queued for the
         // reattached background session. Close the one-shot restoration
@@ -55,15 +55,15 @@ extension DownloadManager {
         }
 
         let pending = await remainingRestoreFailures(
-            from: Array(provisionalBackgroundRestoreFailureIDs)
+            from: Array(managerState.provisionalBackgroundRestoreFailureIDs)
         )
-        provisionalBackgroundRestoreFailureIDs.removeAll()
+        managerState.provisionalBackgroundRestoreFailureIDs.removeAll()
         await recordPendingRestoreFailures(pending)
     }
 
     private func invokePendingBackgroundSessionCompletions() async {
-        let completions = pendingBackgroundSessionCompletions
-        pendingBackgroundSessionCompletions.removeAll(keepingCapacity: true)
+        let completions = managerState.pendingBackgroundSessionCompletions
+        managerState.pendingBackgroundSessionCompletions.removeAll(keepingCapacity: true)
         guard !completions.isEmpty else { return }
         await MainActor.run {
             for completion in completions {
@@ -82,7 +82,7 @@ extension DownloadManager {
             else {
                 continue
             }
-            pendingRestoreCompletions.insert(taskID)
+            managerState.pendingRestoreCompletions.insert(taskID)
         }
 
         // Handlers may be installed before the one-shot restore barrier opens.
@@ -93,8 +93,8 @@ extension DownloadManager {
 
     func drainPendingRestoreCompletionsToHandlers() async {
         guard await runtimeRegistry.hasRestoreCompletionHandler else { return }
-        for taskID in pendingRestoreCompletions
-        where drainingRestoreCompletionTaskIDs.insert(taskID).inserted {
+        for taskID in managerState.pendingRestoreCompletions
+        where managerState.drainingRestoreCompletionTaskIDs.insert(taskID).inserted {
             Task { [weak self] in
                 await self?.deliverRestoredCompletionToHandlers(taskID: taskID)
             }
@@ -102,11 +102,11 @@ extension DownloadManager {
     }
 
     private func deliverRestoredCompletionToHandlers(taskID: String) async {
-        guard pendingRestoreCompletions.contains(taskID),
+        guard managerState.pendingRestoreCompletions.contains(taskID),
             let task = await runtimeRegistry.task(withId: taskID),
             await task.state == .completed
         else {
-            drainingRestoreCompletionTaskIDs.remove(taskID)
+            managerState.drainingRestoreCompletionTaskIDs.remove(taskID)
             return
         }
 
@@ -119,7 +119,7 @@ extension DownloadManager {
             task.destinationURL
         )
         guard stateCallback != nil || completionCallback != nil else {
-            drainingRestoreCompletionTaskIDs.remove(taskID)
+            managerState.drainingRestoreCompletionTaskIDs.remove(taskID)
             return
         }
 
@@ -133,8 +133,8 @@ extension DownloadManager {
     }
 
     func acknowledgeRestoredCompletionIfNeeded(taskID: String) async {
-        guard pendingRestoreCompletions.contains(taskID) else {
-            drainingRestoreCompletionTaskIDs.remove(taskID)
+        guard managerState.pendingRestoreCompletions.contains(taskID) else {
+            managerState.drainingRestoreCompletionTaskIDs.remove(taskID)
             return
         }
 
@@ -148,7 +148,7 @@ extension DownloadManager {
         else {
             return
         }
-        drainingRestoreCompletionTaskIDs.insert(taskID)
+        managerState.drainingRestoreCompletionTaskIDs.insert(taskID)
         do {
             guard
                 try await persistence.acknowledgeCommitOutcome(
@@ -169,8 +169,8 @@ extension DownloadManager {
             return
         }
 
-        pendingRestoreCompletions.remove(taskID)
-        drainingRestoreCompletionTaskIDs.remove(taskID)
+        managerState.pendingRestoreCompletions.remove(taskID)
+        managerState.drainingRestoreCompletionTaskIDs.remove(taskID)
         completionAdmissionGate.release(taskID: taskID)
         if let task = await runtimeRegistry.task(withId: taskID) {
             await runtimeRegistry.removeTaskRuntime(taskId: taskID)
@@ -228,13 +228,13 @@ extension DownloadManager {
             }
         }
 
-        pendingRestoreFailures.formUnion(sealedTaskIDs)
+        managerState.pendingRestoreFailures.formUnion(sealedTaskIDs)
         for taskID in sealedTaskIDs {
             let listenerCount = await eventHub.listenerCount(taskID: taskID)
             let streamConsumerCount = await eventHub.streamConsumerCount(taskID: taskID)
             let hasEventConsumer = listenerCount > 0 || streamConsumerCount > 0
             if hasEventConsumer,
-                pendingRestoreFailures.remove(taskID) != nil
+                managerState.pendingRestoreFailures.remove(taskID) != nil
             {
                 await drainRestoreFailure(taskID: taskID)
             }
@@ -258,21 +258,21 @@ extension DownloadManager {
     }
 
     func flushPendingRestoreFailureIfNeeded(taskID: String) async {
-        guard pendingRestoreFailures.remove(taskID) != nil else { return }
+        guard managerState.pendingRestoreFailures.remove(taskID) != nil else { return }
         await drainRestoreFailure(taskID: taskID)
     }
 
     func drainPendingRestoreFailuresToHandlers() async {
         guard await runtimeRegistry.hasRestoreFailureHandler else { return }
-        let ids = pendingRestoreFailures
-        pendingRestoreFailures.removeAll()
+        let ids = managerState.pendingRestoreFailures
+        managerState.pendingRestoreFailures.removeAll()
         for id in ids {
             await drainRestoreFailure(taskID: id)
         }
     }
 
     func drainRestoreFailure(taskID: String) async {
-        guard drainingRestoreFailureTaskIDs.insert(taskID).inserted else { return }
+        guard managerState.drainingRestoreFailureTaskIDs.insert(taskID).inserted else { return }
         defer { finishRestoreFailureDrain(taskID: taskID) }
 
         let task = await runtimeRegistry.task(withId: taskID)
@@ -301,15 +301,15 @@ extension DownloadManager {
     }
 
     func waitForRestoreFailureDrain(taskID: String) async {
-        guard drainingRestoreFailureTaskIDs.contains(taskID) else { return }
+        guard managerState.drainingRestoreFailureTaskIDs.contains(taskID) else { return }
         await withCheckedContinuation { continuation in
-            restoreFailureDrainWaiters[taskID, default: []].append(continuation)
+            managerState.restoreFailureDrainWaiters[taskID, default: []].append(continuation)
         }
     }
 
     private func finishRestoreFailureDrain(taskID: String) {
-        drainingRestoreFailureTaskIDs.remove(taskID)
-        let waiters = restoreFailureDrainWaiters.removeValue(forKey: taskID) ?? []
+        managerState.drainingRestoreFailureTaskIDs.remove(taskID)
+        let waiters = managerState.restoreFailureDrainWaiters.removeValue(forKey: taskID) ?? []
         for waiter in waiters {
             waiter.resume()
         }

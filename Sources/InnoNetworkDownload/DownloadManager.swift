@@ -3,34 +3,6 @@ import InnoNetwork
 import OSLog
 import os
 
-enum DownloadPersistenceStateError: Error {
-    case missingPausingRecord(String)
-    case missingResumingRecord(String)
-    case failedToFinalizeResumingRecord(String)
-}
-
-public enum DownloadEvent: Sendable {
-    case progress(DownloadProgress)
-    case stateChanged(DownloadState)
-    case completed(URL)
-    case failed(DownloadError)
-}
-
-public enum DownloadManagerError: Error, Sendable, Equatable {
-    case duplicateSessionIdentifier(String)
-}
-
-extension DownloadManagerError: LocalizedError {
-    public var errorDescription: String? {
-        switch self {
-        case .duplicateSessionIdentifier(let identifier):
-            return
-                "DownloadManager sessionIdentifier '\(identifier)' is already in use. Use a unique sessionIdentifier for multiple managers."
-        }
-    }
-}
-
-
 /// Manager for the download lifecycle.
 ///
 /// ## Isolation contract
@@ -85,23 +57,9 @@ public actor DownloadManager {
     let transferCoordinator: DownloadTransferCoordinator
     let restoreCoordinator: DownloadRestoreCoordinator
     let failureCoordinator: DownloadFailureCoordinator
-    var pendingRestoreFailures: Set<String> = []
-    var drainingRestoreFailureTaskIDs: Set<String> = []
-    var restoreFailureDrainWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
-    /// Durable `.terminal(.finished)` receipts reconstructed at launch remain
-    /// registered until an app callback or event consumer has accepted the
-    /// recovered completion. This prevents the same receipt from replaying on
-    /// every launch while avoiding removal before any consumer can observe it.
-    var pendingRestoreCompletions: Set<String> = []
-    var drainingRestoreCompletionTaskIDs: Set<String> = []
-    /// Background sessions can enqueue completion delegates after the
-    /// `getAllTasks` snapshot. Keep synthetic missing-task failures provisional
-    /// until Foundation's real `urlSessionDidFinishEvents` boundary arrives.
-    var provisionalBackgroundRestoreFailureIDs: Set<String> = []
-    var backgroundRestoreSnapshotPrepared = false
-    var backgroundRestoreBoundaryPending = false
-    var backgroundRestoreEventsFinished = false
-    var pendingBackgroundSessionCompletions: [@Sendable () -> Void] = []
+    /// Actor-owned manager bookkeeping. Runtime, persistence, event delivery,
+    /// and completion staging remain owned by their dedicated collaborators.
+    var managerState = DownloadManagerState()
     /// Tracks the one-shot shutdown latch. Kept `nonisolated` (and behind
     /// an `OSAllocatedUnfairLock`) so the `deinit` warning path and the
     /// actor-isolated ``shutdown()`` agree on a single state without
@@ -110,22 +68,6 @@ public actor DownloadManager {
     nonisolated let lifecycleGate: DownloadLifecycleGate
     let eventHub: TaskEventHub<DownloadEvent>
     let delegateEventChannel: DownloadDelegateEventChannel
-    /// Background task that polls in-flight downloads and cancels any that
-    /// have not received a progress callback for at least
-    /// `taskInactivityTimeout` from ``DownloadTransferPack``. `nil` when the
-    /// configuration disables the watchdog.
-    var inactivityWatchdogTask: Task<Void, Never>?
-    /// Serializes pause production per logical task while the manager actor is
-    /// reentrant at `cancelByProducingResumeData()` and persistence awaits.
-    var pausingTaskIDs: Set<String> = []
-    /// Serializes resume setup per logical task while persistence and opaque
-    /// resume-data validation suspend the manager actor.
-    var resumingTaskIDs: Set<String> = []
-    /// Pins the concrete URLSession attempt whose cancellation belongs to an
-    /// in-flight pause. The delegate may report that cancellation before
-    /// `cancelByProducingResumeData()` resumes; matching it by identifier keeps
-    /// a later resumed attempt from being mistaken for the one being paused.
-    var pausingTaskIdentifiers: [String: Int] = [:]
     /// Drains delegate events into actor-isolated handlers; finished and
     /// awaited in ``shutdown()`` so buffered completion files are consumed
     /// before teardown returns. Stored behind a nonisolated lock because it
@@ -136,37 +78,6 @@ public actor DownloadManager {
     /// to prevent late completions from racing the invalidation barrier.
     nonisolated let restorationTaskHandle =
         OSAllocatedUnfairLock<Task<Void, Never>?>(initialState: nil)
-    /// Retry/network-change waits are detached from the single delegate FIFO
-    /// so one failed download cannot block unrelated completion commits or
-    /// the app's background-session completion callback.
-    var deferredFailureTasks: [UUID: Task<Void, Never>] = [:]
-    /// Counts public lifecycle mutations that were admitted before shutdown
-    /// closed the latch. Teardown waits for them before sweeping runtime state
-    /// and invalidating the session, so an operation suspended in persistence
-    /// cannot register a new URL task after shutdown returns.
-    var shutdownTrackedOperationCount = 0
-    var shutdownTrackedOperationWaiters: [CheckedContinuation<Void, Never>] = []
-
-    // Internal so extension files in this module can pattern-match on the
-    // payload when implementing the delegate-event consumer.
-    enum DelegateEvent: Sendable {
-        case progress(
-            taskIdentifier: Int,
-            bytesWritten: Int64,
-            totalBytesWritten: Int64,
-            totalBytesExpectedToWrite: Int64
-        )
-        case completion(
-            taskIdentifier: Int,
-            taskDescription: String?,
-            originalRequestURL: URL?,
-            currentRequestURL: URL?,
-            payload: DownloadCompletionPayload?,
-            error: SendableUnderlyingError?
-        )
-        case restorationBoundary
-        case backgroundEventsFinished(completion: (@Sendable () -> Void)?)
-    }
 
     /// Creates a download manager bound to `configuration.sessionIdentifier`.
     ///
@@ -485,8 +396,8 @@ public actor DownloadManager {
         await task.waitForFailureFinalization()
         guard await claimDestructiveLifecycle(taskID: task.id) else { return }
         await task.endRestoredSuccessAdmission()
-        provisionalBackgroundRestoreFailureIDs.remove(task.id)
-        pendingRestoreFailures.remove(task.id)
+        managerState.provisionalBackgroundRestoreFailureIDs.remove(task.id)
+        managerState.pendingRestoreFailures.remove(task.id)
         // A rejected task remains public so the caller can inspect its typed
         // failure. Re-check before resetting it: otherwise `retry(_:)` could
         // turn that terminal object into a transport-policy bypass.

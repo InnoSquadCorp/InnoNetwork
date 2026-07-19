@@ -7,8 +7,8 @@ import Foundation
 extension DownloadManager {
 
     func startInactivityWatchdog(timeout: Duration) {
-        guard !isShutdown, inactivityWatchdogTask == nil else { return }
-        inactivityWatchdogTask = Task { [weak self] in
+        guard !isShutdown, managerState.inactivityWatchdogTask == nil else { return }
+        managerState.inactivityWatchdogTask = Task { [weak self] in
             await self?.runInactivityWatchdog(timeout: timeout)
         }
     }
@@ -92,7 +92,7 @@ extension DownloadManager {
             return
         }
 
-        pendingRestoreFailures.remove(task.id)
+        managerState.pendingRestoreFailures.remove(task.id)
         await task.waitForStartPersistenceClaimRelease()
         do {
             try await persistence.markTerminal(task: task)

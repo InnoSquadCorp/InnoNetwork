@@ -42,9 +42,9 @@ extension DownloadManager {
     }
 
     private func performShutdown() async {
-        let inactivityWatchdogTask = inactivityWatchdogTask
+        let inactivityWatchdogTask = managerState.inactivityWatchdogTask
         inactivityWatchdogTask?.cancel()
-        self.inactivityWatchdogTask = nil
+        managerState.inactivityWatchdogTask = nil
 
         let delegateConsumerTask = delegateConsumerTaskHandle.withLock { task -> Task<Void, Never>? in
             let current = task
@@ -201,28 +201,28 @@ extension DownloadManager {
 
     func beginShutdownTrackedOperation() -> Bool {
         guard !isShutdown else { return false }
-        shutdownTrackedOperationCount += 1
+        managerState.shutdownTrackedOperationCount += 1
         return true
     }
 
     func finishShutdownTrackedOperation() {
-        precondition(shutdownTrackedOperationCount > 0)
-        shutdownTrackedOperationCount -= 1
-        guard shutdownTrackedOperationCount == 0 else { return }
-        let waiters = shutdownTrackedOperationWaiters
-        shutdownTrackedOperationWaiters.removeAll(keepingCapacity: false)
+        precondition(managerState.shutdownTrackedOperationCount > 0)
+        managerState.shutdownTrackedOperationCount -= 1
+        guard managerState.shutdownTrackedOperationCount == 0 else { return }
+        let waiters = managerState.shutdownTrackedOperationWaiters
+        managerState.shutdownTrackedOperationWaiters.removeAll(keepingCapacity: false)
         for waiter in waiters {
             waiter.resume()
         }
     }
 
     private func waitForShutdownTrackedOperationsToDrain() async {
-        guard shutdownTrackedOperationCount > 0 else { return }
+        guard managerState.shutdownTrackedOperationCount > 0 else { return }
         await withCheckedContinuation { continuation in
-            if shutdownTrackedOperationCount == 0 {
+            if managerState.shutdownTrackedOperationCount == 0 {
                 continuation.resume()
             } else {
-                shutdownTrackedOperationWaiters.append(continuation)
+                managerState.shutdownTrackedOperationWaiters.append(continuation)
             }
         }
     }
