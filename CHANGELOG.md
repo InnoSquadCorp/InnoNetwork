@@ -12,6 +12,12 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
 
 ### Breaking
 
+- `WebSocketManager.send(_:message:)`, `send(_:string:)`, and `ping(_:)` use
+  typed throws: `async throws(WebSocketError)`. Transport failures that
+  previously escaped `send` as raw `URLError` values are now funnelled
+  through the shared error mapper, and lifecycle-gate cancellation surfaces
+  as `WebSocketError.cancelled` instead of `CancellationError`, matching the
+  core client's `throws(NetworkError)` contract.
 - `NetworkClient` is request-only. Multipart execution moves to the independent
   `UploadNetworkClient` capability; `DefaultNetworkClient` and
   `StubNetworkClient` conform to both. Existentials that invoke `upload` must

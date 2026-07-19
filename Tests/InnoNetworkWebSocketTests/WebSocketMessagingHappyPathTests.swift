@@ -167,10 +167,8 @@ struct WebSocketMessagingHappyPathTests {
         do {
             try await harness.manager.ping(task)
             Issue.record("Expected WebSocketError.pingTimeout from manual ping")
-        } catch let error as WebSocketError {
-            #expect(error == .pingTimeout)
         } catch {
-            Issue.record("Expected WebSocketError.pingTimeout, got \(error)")
+            #expect(error == .pingTimeout)
         }
 
         #expect(await recorder.waitForCount(2, timeout: 1.0))

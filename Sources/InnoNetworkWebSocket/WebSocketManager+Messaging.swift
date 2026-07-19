@@ -1,7 +1,7 @@
 import Foundation
 
 extension WebSocketManager {
-    public func send(_ task: WebSocketTask, message: Data) async throws {
+    public func send(_ task: WebSocketTask, message: Data) async throws(WebSocketError) {
         guard beginShutdownTrackedOperation() else {
             throw Self.managerShutdownError()
         }
@@ -11,7 +11,7 @@ extension WebSocketManager {
         }
     }
 
-    public func send(_ task: WebSocketTask, string: String) async throws {
+    public func send(_ task: WebSocketTask, string: String) async throws(WebSocketError) {
         guard beginShutdownTrackedOperation() else {
             throw Self.managerShutdownError()
         }
@@ -27,7 +27,7 @@ extension WebSocketManager {
     private func sendGuarded(
         task: WebSocketTask,
         _ body: @Sendable (any WebSocketURLTask) async throws -> Void
-    ) async throws {
+    ) async throws(WebSocketError) {
         let limit = configuration.sendQueueLimit
         guard let (generation, urlTask) = try await prepareSend(task: task, limit: limit) else { return }
 
@@ -36,7 +36,11 @@ extension WebSocketManager {
             await task.releaseSendSlot(generation: generation)
         } catch {
             await task.releaseSendSlot(generation: generation)
-            throw error
+            // Transport failures previously escaped unmapped, so send(_:)
+            // could throw raw URLError while ping(_:) threw WebSocketError.
+            // Funnel everything through the shared mapper to keep the typed
+            // channel exhaustive.
+            throw Self.mapWebSocketError(error)
         }
     }
 
@@ -46,8 +50,8 @@ extension WebSocketManager {
     private func prepareSend(
         task: WebSocketTask,
         limit: Int
-    ) async throws -> (generation: Int, urlTask: any WebSocketURLTask)? {
-        guard await acquireTaskLifecycleGate(taskID: task.id) else { throw CancellationError() }
+    ) async throws(WebSocketError) -> (generation: Int, urlTask: any WebSocketURLTask)? {
+        guard await acquireTaskLifecycleGate(taskID: task.id) else { throw WebSocketError.cancelled }
         defer { releaseTaskLifecycleGate(taskID: task.id) }
 
         let generation = await task.connectionGeneration
@@ -69,7 +73,7 @@ extension WebSocketManager {
         return (generation, urlTask)
     }
 
-    public func ping(_ task: WebSocketTask) async throws {
+    public func ping(_ task: WebSocketTask) async throws(WebSocketError) {
         guard beginShutdownTrackedOperation() else {
             throw Self.managerShutdownError()
         }
@@ -102,8 +106,8 @@ extension WebSocketManager {
 
     private func preparePing(
         _ task: WebSocketTask
-    ) async throws -> (Int, any WebSocketURLTask, WebSocketPingContext) {
-        guard await acquireTaskLifecycleGate(taskID: task.id) else { throw CancellationError() }
+    ) async throws(WebSocketError) -> (Int, any WebSocketURLTask, WebSocketPingContext) {
+        guard await acquireTaskLifecycleGate(taskID: task.id) else { throw WebSocketError.cancelled }
         defer { releaseTaskLifecycleGate(taskID: task.id) }
 
         let generation = await task.connectionGeneration

@@ -427,6 +427,35 @@ that was admitted just before shutdown may return a non-`nil` result whose task
 is already terminal with the manager-shutdown connection error; consume the
 returned stream rather than attempting a second registration after the race.
 
+## Catch typed WebSocket messaging errors
+
+`WebSocketManager.send(_:message:)`, `send(_:string:)`, and `ping(_:)` throw
+`WebSocketError` as a typed error in 5.0. A plain `catch` block now binds
+`WebSocketError` directly, so `catch let error as WebSocketError` casts are
+redundant. Two behavioral changes ride along: raw transport errors no longer
+escape `send` unmapped (they arrive as `WebSocketError.connectionFailed` or
+`.cancelled`), and a send or ping rejected because the task lifecycle gate is
+shutting down throws `WebSocketError.cancelled` instead of Swift's
+`CancellationError`.
+
+```swift
+// 4.x
+do {
+    try await manager.send(task, string: "hello")
+} catch let error as WebSocketError {
+    handle(error)
+} catch {
+    // raw URLError could land here
+}
+
+// 5.0
+do {
+    try await manager.send(task, string: "hello")
+} catch {
+    handle(error)  // error is WebSocketError
+}
+```
+
 ## Allow WebSocket handshake adaptation to fail
 
 `WebSocketHandshakeRequestAdapter` now stores an `async throws` closure and

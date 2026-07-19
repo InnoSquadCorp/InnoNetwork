@@ -83,7 +83,7 @@ struct WebSocketSendQueueTests {
         do {
             try await manager.send(task, message: Data("hello".utf8))
             Issue.record("Expected sendQueueOverflow")
-        } catch let error as WebSocketError {
+        } catch {
             switch error {
             case .sendQueueOverflow(let reportedLimit):
                 #expect(reportedLimit == 2)

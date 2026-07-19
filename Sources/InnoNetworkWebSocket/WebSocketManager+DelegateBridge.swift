@@ -227,6 +227,10 @@ extension WebSocketManager {
             return webSocketError
         }
 
+        if error is CancellationError {
+            return .cancelled
+        }
+
         if let urlError = error as? URLError {
             switch urlError.code {
             case .cancelled:
