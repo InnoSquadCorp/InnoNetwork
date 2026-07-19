@@ -232,6 +232,11 @@ draft release summary.
 
 ### Fixed
 
+- Bounded file-upload responses now collect through the same chunk-granular
+  transport bridge as inline requests, replacing byte-wise
+  `URLSession.AsyncBytes` iteration on the upload path. The file body still
+  streams from disk without loading into memory, and framing validation,
+  redirect, and trust behavior are unchanged.
 - The default `.streaming` response buffering policy now collects bodies
   through a chunk-granular, delegate-driven transport bridge instead of
   iterating `URLSession.AsyncBytes` one byte per call. Byte-wise iteration

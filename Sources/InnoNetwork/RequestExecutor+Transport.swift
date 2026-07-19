@@ -338,6 +338,24 @@ extension RequestExecutor {
             // explicitly opted out of a response bound.
             return try await session.upload(for: request, fromFile: fileURL, context: context)
         }
+        // Prefer chunk-granular response delivery for the same reason as
+        // `inlineData`: byte-wise AsyncBytes collection pays a per-byte
+        // resilience-boundary async call. The byte-wise seam remains the
+        // fallback for custom package sessions.
+        if let chunkedSession = session as? any ChunkedTransferSession {
+            let transfer = try await chunkedSession.chunkedTransfer(
+                for: request,
+                uploadingFileAt: fileURL,
+                context: context,
+                maxBytes: maxBytes
+            )
+            let data = try await collect(
+                transfer: transfer,
+                request: request,
+                maxBytes: maxBytes
+            )
+            return (data, transfer.response)
+        }
         guard let boundedSession = session as? any BoundedFileUploadSession else {
             // A buffered fallback would collect an arbitrarily large response
             // before the executor could inspect it. Fail closed unless the

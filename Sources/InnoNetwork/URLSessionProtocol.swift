@@ -84,6 +84,16 @@ package protocol ChunkedTransferSession: URLSessionProtocol {
         context: NetworkRequestContext,
         maxBytes: Int64?
     ) async throws -> ChunkedTransfer
+
+    /// Chunked twin of ``BoundedFileUploadSession/bytes(for:uploadingFileAt:context:)``:
+    /// streams the file body without loading it into memory and delivers the
+    /// response as bounded `Data` chunks.
+    func chunkedTransfer(
+        for request: URLRequest,
+        uploadingFileAt fileURL: URL,
+        context: NetworkRequestContext,
+        maxBytes: Int64?
+    ) async throws -> ChunkedTransfer
 }
 
 /// Response metadata plus the chunk stream produced by a
@@ -205,13 +215,14 @@ extension URLSession: URLSessionProtocol {
     }
 }
 
-extension URLSession: BoundedFileUploadSession {
-    package func bytes(
-        for request: URLRequest,
-        uploadingFileAt fileURL: URL,
-        context: NetworkRequestContext
-    ) async throws -> (URLSession.AsyncBytes, URLResponse) {
-        try validateRedirectControllableSession()
+extension URLSession {
+    /// Prepares the streamed-body request shape shared by the byte-wise and
+    /// chunked bounded file-upload paths: validates caller framing headers
+    /// against the immutable file snapshot and installs the body stream.
+    fileprivate func makeFileUploadStreamingRequest(
+        from request: URLRequest,
+        uploadingFileAt fileURL: URL
+    ) throws -> URLRequest {
         var streamingRequest = request
         streamingRequest.httpBody = nil
         let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
@@ -249,6 +260,21 @@ extension URLSession: BoundedFileUploadSession {
         }
         streamingRequest.setValue(String(fileSize), forHTTPHeaderField: "Content-Length")
         streamingRequest.httpBodyStream = bodyStream
+        return streamingRequest
+    }
+}
+
+extension URLSession: BoundedFileUploadSession {
+    package func bytes(
+        for request: URLRequest,
+        uploadingFileAt fileURL: URL,
+        context: NetworkRequestContext
+    ) async throws -> (URLSession.AsyncBytes, URLResponse) {
+        try validateRedirectControllableSession()
+        let streamingRequest = try makeFileUploadStreamingRequest(
+            from: request,
+            uploadingFileAt: fileURL
+        )
         let delegate = RequestTaskDelegate(
             request: request,
             context: context,
@@ -442,11 +468,50 @@ extension URLSession: ChunkedTransferSession {
             context: context,
             sessionHeaderNames: redirectSensitiveSessionHeaderNames
         )
+        return try await runChunkedTransfer(
+            transportRequest: request,
+            policyDelegate: policyDelegate,
+            maxBytes: maxBytes
+        )
+    }
+
+    package func chunkedTransfer(
+        for request: URLRequest,
+        uploadingFileAt fileURL: URL,
+        context: NetworkRequestContext,
+        maxBytes: Int64?
+    ) async throws -> ChunkedTransfer {
+        try validateRedirectControllableSession()
+        let streamingRequest = try makeFileUploadStreamingRequest(
+            from: request,
+            uploadingFileAt: fileURL
+        )
+        // `uploadBodyFileURL` lets the shared policy delegate replay the body
+        // stream when Foundation asks for a new one (redirects, retries of
+        // the transport handshake).
+        let policyDelegate = RequestTaskDelegate(
+            request: request,
+            context: context,
+            uploadBodyFileURL: fileURL,
+            sessionHeaderNames: redirectSensitiveSessionHeaderNames
+        )
+        return try await runChunkedTransfer(
+            transportRequest: streamingRequest,
+            policyDelegate: policyDelegate,
+            maxBytes: maxBytes
+        )
+    }
+
+    private func runChunkedTransfer(
+        transportRequest: URLRequest,
+        policyDelegate: RequestTaskDelegate,
+        maxBytes: Int64?
+    ) async throws -> ChunkedTransfer {
         let bridge = ChunkedTransferBridge(
             forwardingPolicyCallbacksTo: policyDelegate,
             maxBytes: maxBytes
         )
-        let task = dataTask(with: request)
+        let task = dataTask(with: transportRequest)
         task.delegate = bridge
         do {
             let transfer = try await bridge.start(task: task)
