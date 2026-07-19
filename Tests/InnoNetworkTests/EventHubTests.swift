@@ -1272,6 +1272,7 @@ struct EventHubTests {
         )
 
         let firstConsumerID: String
+        let firstConsumerMetricCount: Int
         do {
             let firstStream = await hub.stream(for: "stream-lifecycle")
             let firstConsumerTask = Task {
@@ -1291,6 +1292,7 @@ struct EventHubTests {
                 minimumCount: 1
             )
             firstConsumerID = try #require(firstMetrics.last?.consumerID)
+            firstConsumerMetricCount = firstMetrics.count
 
             firstConsumerTask.cancel()
             _ = await firstConsumerTask.result
@@ -1302,10 +1304,15 @@ struct EventHubTests {
         // sleeping.
         #expect(await waitForClockWaiterCount(clock, exactly: 1))
 
-        let metricsAfterShutdown = recorder.snapshot().compactMap { metric -> EventPipelineConsumerStateMetric? in
-            guard case .consumerState(let state) = metric else { return nil }
-            return state.partitionID == "stream-lifecycle" ? state : nil
-        }
+        // Consumer removal evicts aggregator state synchronously, but its
+        // terminal metric still crosses the proxy's asynchronous reporter
+        // queue. Include that final metric in the baseline before proving the
+        // stopped reconciliation task emits nothing while idle.
+        let metricsAfterShutdown = try await waitForConsumerMetrics(
+            recorder: recorder,
+            partitionID: "stream-lifecycle",
+            minimumCount: firstConsumerMetricCount + 1
+        )
         let idleBaselineCount = metricsAfterShutdown.count
 
         // Drive several full snapshot intervals of virtual time. Each advance
