@@ -46,6 +46,20 @@ class CompareBenchmarkRunsTests(unittest.TestCase):
         )
         self.assertEqual(comparison["baseline"]["guardFailures"], [])
 
+    def test_reports_relative_spread_across_samples(self) -> None:
+        comparison = build_comparison_report(
+            [report({"request": value}) for value in (100, 200, 300)],
+            [report({"request": value}) for value in (190, 200, 210)],
+            {("core", "request")},
+            20,
+        )
+
+        # base spread: (300 - 100) / 200 = 100%; head: (210 - 190) / 200 = 10%
+        self.assertAlmostEqual(comparison["results"][0]["relativeSpreadPercent"], 10)
+        delta = comparison["baseline"]["deltas"][0]
+        self.assertAlmostEqual(delta["baselineRelativeSpreadPercent"], 100)
+        self.assertAlmostEqual(delta["currentRelativeSpreadPercent"], 10)
+
     def test_reports_guarded_median_regression(self) -> None:
         comparison = build_comparison_report(
             [report({"request": value}) for value in (99, 100, 101)],

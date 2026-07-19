@@ -400,19 +400,19 @@ private enum InnoNetworkBenchmarks {
         let websocketGuardIterations = options.quick ? 500_000 : 2_000_000
 
         results.append(
-            try await measure(name: "query-encoder-small", group: "encoding", iterations: encoderIterations) {
+            try await measure(name: "query-encoder-small", group: "encoding", iterations: encoderIterations) { count in
                 let encoder = URLQueryEncoder(keyEncodingStrategy: URLQueryKeyEncodingStrategy.convertToSnakeCase)
                 let payload = SmallPayload.sample
-                for _ in 0..<encoderIterations {
+                for _ in 0..<count {
                     _ = try encoder.encode(payload)
                 }
             })
 
         results.append(
-            try await measure(name: "query-encoder-large", group: "encoding", iterations: encoderIterations) {
+            try await measure(name: "query-encoder-large", group: "encoding", iterations: encoderIterations) { count in
                 let encoder = URLQueryEncoder(keyEncodingStrategy: URLQueryKeyEncodingStrategy.convertToSnakeCase)
                 let payload = LargePayload.sample
-                for _ in 0..<encoderIterations {
+                for _ in 0..<count {
                     _ = try encoder.encode(payload)
                 }
             })
@@ -471,16 +471,26 @@ private enum InnoNetworkBenchmarks {
         return results
     }
 
+    /// Runs `work` once with a small untimed warmup count before the timed
+    /// full-count pass, so allocator, actor, and cache cold-start costs are
+    /// not folded into every sample. Benchmarks whose closure mutates state
+    /// shared with the timed pass (append-log seeding and the like) opt out
+    /// with `warmupIterations: 0`.
     private static func measure(
         name: String,
         group: String,
         iterations: Int,
-        work: () async throws -> Void
+        warmupIterations: Int? = nil,
+        work: (Int) async throws -> Void
     ) async throws -> BenchmarkResult {
+        let resolvedWarmup = warmupIterations ?? max(1, iterations / 20)
+        if resolvedWarmup > 0 {
+            try await work(resolvedWarmup)
+        }
         let clock = ContinuousClock()
         let preMemory = currentResidentMemorySnapshot()
         let start = clock.now
-        try await work()
+        try await work(iterations)
         let elapsed = start.duration(to: clock.now)
         let postMemory = currentResidentMemorySnapshot()
         let elapsedSeconds = max(
@@ -540,22 +550,22 @@ private enum InnoNetworkBenchmarks {
         listeners: Int,
         name: String
     ) async throws -> BenchmarkResult {
-        try await measure(name: name, group: "events", iterations: iterations) {
+        try await measure(name: name, group: "events", iterations: iterations) { count in
             let hub = TaskEventHub<String>(
                 policy: EventDeliveryPolicy(
-                    maxBufferedEventsPerPartition: max(1_024, iterations),
-                    maxBufferedEventsPerConsumer: max(1_024, iterations),
+                    maxBufferedEventsPerPartition: max(1_024, count),
+                    maxBufferedEventsPerConsumer: max(1_024, count),
                     overflowPolicy: .dropOldest
                 )
             )
             let counter = BenchmarkCounter()
-            await counter.reset(target: iterations * listeners)
+            await counter.reset(target: count * listeners)
             for _ in 0..<listeners {
                 _ = await hub.addListener(taskID: "fanout") { _ in
                     await counter.increment()
                 }
             }
-            for index in 0..<iterations {
+            for index in 0..<count {
                 await hub.publish("event-\(index)", for: "fanout")
             }
             await counter.wait()
@@ -564,23 +574,23 @@ private enum InnoNetworkBenchmarks {
     }
 
     private static func benchmarkTaskEventHubSlowIsolation(iterations: Int) async throws -> BenchmarkResult {
-        try await measure(name: "task-event-slow-isolation", group: "events", iterations: iterations) {
+        try await measure(name: "task-event-slow-isolation", group: "events", iterations: iterations) { count in
             let hub = TaskEventHub<String>(
                 policy: EventDeliveryPolicy(
-                    maxBufferedEventsPerPartition: max(1_024, iterations),
-                    maxBufferedEventsPerConsumer: max(1_024, iterations),
+                    maxBufferedEventsPerPartition: max(1_024, count),
+                    maxBufferedEventsPerConsumer: max(1_024, count),
                     overflowPolicy: .dropOldest
                 )
             )
             let fastCounter = BenchmarkCounter()
-            await fastCounter.reset(target: iterations)
+            await fastCounter.reset(target: count)
             _ = await hub.addListener(taskID: "fast") { _ in
                 await fastCounter.increment()
             }
             _ = await hub.addListener(taskID: "slow") { _ in
                 try? await Task.sleep(for: .milliseconds(1))
             }
-            for index in 0..<iterations {
+            for index in 0..<count {
                 await hub.publish("fast-\(index)", for: "fast")
                 await hub.publish("slow-\(index)", for: "slow")
             }
@@ -594,12 +604,14 @@ private enum InnoNetworkBenchmarks {
         let directory = try makeTemporaryDirectory(prefix: "append")
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        return try await measure(name: "append-log-write", group: "persistence", iterations: iterations) {
+        return try await measure(
+            name: "append-log-write", group: "persistence", iterations: iterations, warmupIterations: 0
+        ) { count in
             let persistence = try DownloadTaskPersistence(
                 sessionIdentifier: "bench.append",
                 baseDirectoryURL: directory
             )
-            for index in 0..<iterations {
+            for index in 0..<count {
                 try await persistence.upsert(
                     id: "task-\(index)",
                     url: URL(string: "https://example.com/\(index)")!,
@@ -622,12 +634,12 @@ private enum InnoNetworkBenchmarks {
             )
         }
 
-        return try await measure(name: "append-log-replay", group: "persistence", iterations: iterations) {
+        return try await measure(name: "append-log-replay", group: "persistence", iterations: iterations) { count in
             let replayed = try DownloadTaskPersistence(
                 sessionIdentifier: "bench.replay",
                 baseDirectoryURL: directory
             )
-            for _ in 0..<iterations {
+            for _ in 0..<count {
                 _ = await replayed.allRecords()
             }
         }
@@ -637,12 +649,14 @@ private enum InnoNetworkBenchmarks {
         let directory = try makeTemporaryDirectory(prefix: "compact")
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        return try await measure(name: "append-log-compaction", group: "persistence", iterations: iterations) {
+        return try await measure(
+            name: "append-log-compaction", group: "persistence", iterations: iterations, warmupIterations: 0
+        ) { count in
             let persistence = try DownloadTaskPersistence(
                 sessionIdentifier: "bench.compact",
                 baseDirectoryURL: directory
             )
-            for index in 0..<iterations {
+            for index in 0..<count {
                 try await persistence.upsert(
                     id: "task-\(index)",
                     url: URL(string: "https://example.com/\(index)")!,
@@ -666,7 +680,8 @@ private enum InnoNetworkBenchmarks {
         }
 
         return try await measure(name: "download-persistence-restore", group: "persistence", iterations: iterations) {
-            for _ in 0..<iterations {
+            count in
+            for _ in 0..<count {
                 let restored = try DownloadTaskPersistence(
                     sessionIdentifier: "bench.restore",
                     baseDirectoryURL: directory
@@ -677,19 +692,19 @@ private enum InnoNetworkBenchmarks {
     }
 
     private static func benchmarkReconnectDecision(iterations: Int) async throws -> BenchmarkResult {
-        try await measure(name: "websocket-reconnect-decision", group: "websocket", iterations: iterations) {
+        try await measure(name: "websocket-reconnect-decision", group: "websocket", iterations: iterations) { count in
             let runtimeRegistry = WebSocketRuntimeRegistry()
             let coordinator = WebSocketReconnectCoordinator(
                 configuration: .advanced(
                     reconnect: WebSocketReconnectPack(
                         delay: 0,
-                        maxAttempts: max(iterations, 8)
+                        maxAttempts: max(count, 8)
                     )
                 ),
                 runtimeRegistry: runtimeRegistry
             )
 
-            for index in 0..<iterations {
+            for index in 0..<count {
                 let task = WebSocketTask(url: URL(string: "wss://example.com/socket")!, id: "bench-\(index)")
                 _ = await coordinator.reconnectAction(
                     task: task,
@@ -706,6 +721,7 @@ private enum InnoNetworkBenchmarks {
     /// up here.
     private static func benchmarkCloseDispositionClassify(iterations: Int) async throws -> BenchmarkResult {
         try await measure(name: "websocket-close-disposition-classify", group: "websocket", iterations: iterations) {
+            count in
             let codes: [WebSocketCloseCode] = [
                 .normalClosure,
                 .serviceRestart,
@@ -713,7 +729,7 @@ private enum InnoNetworkBenchmarks {
                 .policyViolation,
                 .custom(4001),
             ]
-            for index in 0..<iterations {
+            for index in 0..<count {
                 let code = codes[index % codes.count]
                 _ = WebSocketCloseDisposition.classifyPeerClose(code, reason: nil)
             }
@@ -725,9 +741,9 @@ private enum InnoNetworkBenchmarks {
     /// Heartbeat loops emit this on every cycle, so it is a natural
     /// regression-guard target.
     private static func benchmarkPingContextCreation(iterations: Int) async throws -> BenchmarkResult {
-        try await measure(name: "websocket-ping-context-create", group: "websocket", iterations: iterations) {
+        try await measure(name: "websocket-ping-context-create", group: "websocket", iterations: iterations) { count in
             var attempt = 0
-            for _ in 0..<iterations {
+            for _ in 0..<count {
                 attempt &+= 1
                 let context = WebSocketPingContext(
                     attemptNumber: attempt,
@@ -739,9 +755,9 @@ private enum InnoNetworkBenchmarks {
     }
 
     private static func benchmarkWebSocketSendQueue(iterations: Int) async throws -> BenchmarkResult {
-        try await measure(name: "websocket-send-queue-reserve", group: "websocket", iterations: iterations) {
+        try await measure(name: "websocket-send-queue-reserve", group: "websocket", iterations: iterations) { count in
             let task = WebSocketTask(url: URL(string: "wss://example.com/socket")!, id: "bench-send-queue")
-            for _ in 0..<iterations {
+            for _ in 0..<count {
                 if await task.tryReserveSendSlot(limit: 1) {
                     await task.releaseSendSlot()
                 }
@@ -751,6 +767,7 @@ private enum InnoNetworkBenchmarks {
 
     private static func benchmarkWebSocketLifecycleTransitionTable(iterations: Int) async throws -> BenchmarkResult {
         try await measure(name: "websocket-lifecycle-transition-table", group: "websocket", iterations: iterations) {
+            count in
             let states: [WebSocketState] = [
                 .idle,
                 .connecting,
@@ -760,7 +777,7 @@ private enum InnoNetworkBenchmarks {
                 .reconnecting,
                 .failed,
             ]
-            for index in 0..<iterations {
+            for index in 0..<count {
                 let current = states[index % states.count]
                 let next = states[(index + 1) % states.count]
                 _ = current.canTransition(to: next)
@@ -775,7 +792,7 @@ private enum InnoNetworkBenchmarks {
     /// without any network or kernel I/O, so regressions in the actor /
     /// class isolation model surface here before they show up in production.
     private static func benchmarkRequestPipeline(iterations: Int) async throws -> BenchmarkResult {
-        try await measure(name: "request-pipeline", group: "client", iterations: iterations) {
+        try await measure(name: "request-pipeline", group: "client", iterations: iterations) { count in
             let client = DefaultNetworkClient(
                 configuration: NetworkConfiguration(
                     baseURL: URL(string: "https://benchmark.invalid")!,
@@ -783,7 +800,7 @@ private enum InnoNetworkBenchmarks {
                 ),
                 session: InstantMockSession.shared
             )
-            for _ in 0..<iterations {
+            for _ in 0..<count {
                 _ = try await client.request(BenchmarkUserRequest())
             }
         }
@@ -805,8 +822,8 @@ private enum InnoNetworkBenchmarks {
             ),
             session: session
         )
-        return try await measure(name: "streaming-collect-1mib", group: "client", iterations: iterations) {
-            for _ in 0..<iterations {
+        return try await measure(name: "streaming-collect-1mib", group: "client", iterations: iterations) { count in
+            for _ in 0..<count {
                 let blob = try await client.request(BenchmarkStreamingBlobRequest())
                 precondition(blob.count == payloadBytes)
             }
@@ -814,7 +831,7 @@ private enum InnoNetworkBenchmarks {
     }
 
     private static func benchmarkRequestCoalescing(iterations: Int) async throws -> BenchmarkResult {
-        try await measure(name: "request-coalescing-shared-get", group: "client", iterations: iterations) {
+        try await measure(name: "request-coalescing-shared-get", group: "client", iterations: iterations) { count in
             let client = DefaultNetworkClient(
                 configuration: NetworkConfiguration.advanced(
                     baseURL: URL(string: "https://benchmark.invalid")!,
@@ -826,7 +843,7 @@ private enum InnoNetworkBenchmarks {
                 session: DelayedMockSession(delayNanoseconds: 100_000)
             )
             let parallelism = 20
-            let batches = max(1, iterations / parallelism)
+            let batches = max(1, count / parallelism)
             for _ in 0..<batches {
                 try await withThrowingTaskGroup(of: Void.self) { group in
                     for _ in 0..<parallelism {
@@ -841,7 +858,7 @@ private enum InnoNetworkBenchmarks {
     }
 
     private static func benchmarkConcurrentClientThroughput(iterations: Int) async throws -> BenchmarkResult {
-        try await measure(name: "concurrent-50-requests", group: "client", iterations: iterations) {
+        try await measure(name: "concurrent-50-requests", group: "client", iterations: iterations) { count in
             let session = InstantMockSession.shared
             let client = DefaultNetworkClient(
                 configuration: NetworkConfiguration(
@@ -851,7 +868,7 @@ private enum InnoNetworkBenchmarks {
                 session: session
             )
             let parallelism = 50
-            let batches = max(1, iterations / parallelism)
+            let batches = max(1, count / parallelism)
             for _ in 0..<batches {
                 await withTaskGroup(of: Void.self) { group in
                     for _ in 0..<parallelism {
@@ -865,7 +882,7 @@ private enum InnoNetworkBenchmarks {
     }
 
     private static func benchmarkResponseCacheLookup(iterations: Int) async throws -> BenchmarkResult {
-        try await measure(name: "response-cache-lookup", group: "cache", iterations: iterations) {
+        try await measure(name: "response-cache-lookup", group: "cache", iterations: iterations) { count in
             let cache = InMemoryResponseCache(maxBytes: 1_024 * 1_024)
             let key = ResponseCacheKey(method: "GET", url: "https://benchmark.invalid/users/1")
             let cached = CachedResponse(
@@ -873,7 +890,7 @@ private enum InnoNetworkBenchmarks {
                 headers: ["Content-Type": "application/json"]
             )
             await cache.set(key, cached)
-            for _ in 0..<iterations {
+            for _ in 0..<count {
                 _ = await cache.get(key)
             }
         }
@@ -894,7 +911,7 @@ private enum InnoNetworkBenchmarks {
         iterations: Int,
         name: String
     ) async throws -> BenchmarkResult {
-        try await measure(name: name, group: "client", iterations: iterations) {
+        try await measure(name: name, group: "client", iterations: iterations) { count in
             let interceptors: [any DecodingInterceptor] =
                 Array(repeating: PassiveDecodingInterceptor(), count: depth)
             let client = DefaultNetworkClient(
@@ -907,14 +924,14 @@ private enum InnoNetworkBenchmarks {
                 ),
                 session: InstantMockSession.shared
             )
-            for _ in 0..<iterations {
+            for _ in 0..<count {
                 _ = try await client.request(BenchmarkUserRequest())
             }
         }
     }
 
     private static func benchmarkResponseCacheRevalidation(iterations: Int) async throws -> BenchmarkResult {
-        try await measure(name: "response-cache-revalidation", group: "cache", iterations: iterations) {
+        try await measure(name: "response-cache-revalidation", group: "cache", iterations: iterations) { count in
             let request = URLRequest(url: URL(string: "https://benchmark.invalid/users/1")!)
             let policy = ResponseCachePolicy.cacheFirst(maxAge: .seconds(60))
             let cached = CachedResponse(
@@ -922,7 +939,7 @@ private enum InnoNetworkBenchmarks {
                 headers: ["ETag": #""bench-etag""#, "Content-Type": "application/json"],
                 storedAt: Date(timeIntervalSince1970: 0)
             )
-            for _ in 0..<iterations {
+            for _ in 0..<count {
                 _ = policy.prepare(cached: cached)
                 _ = cachedResponseMatchesVary(cached, request: request)
             }

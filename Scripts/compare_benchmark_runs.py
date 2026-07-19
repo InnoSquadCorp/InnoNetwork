@@ -81,8 +81,14 @@ def aggregate_reports(reports: list[dict], label: str) -> dict:
             raise ValueError(
                 f"{label} samples use different iteration counts for {identifier_text(value)}"
             )
-        operations_per_second = float(
-            statistics.median(float(sample["operationsPerSecond"]) for sample in samples)
+        sample_ops = [float(sample["operationsPerSecond"]) for sample in samples]
+        operations_per_second = float(statistics.median(sample_ops))
+        # Relative spread across the interleaved samples, as a percentage of
+        # the median. Gives reviewers a per-benchmark noise floor to judge
+        # whether a delta near the guard threshold is signal or scheduling
+        # jitter.
+        relative_spread_percent = (
+            ((max(sample_ops) - min(sample_ops)) / max(operations_per_second, 0.000_001)) * 100.0
         )
         iteration_count = iterations.pop()
         aggregated.append(
@@ -92,6 +98,7 @@ def aggregate_reports(reports: list[dict], label: str) -> dict:
                 "iterations": iteration_count,
                 "elapsedSeconds": iteration_count / max(operations_per_second, 0.000_001),
                 "operationsPerSecond": operations_per_second,
+                "relativeSpreadPercent": relative_spread_percent,
                 "peakResidentBytes": median_optional_int(samples, "peakResidentBytes"),
                 "residentDeltaBytes": median_optional_int(samples, "residentDeltaBytes"),
             }
@@ -144,6 +151,8 @@ def build_comparison_report(
                 "baselineOperationsPerSecond": baseline_ops,
                 "currentOperationsPerSecond": current_ops,
                 "deltaPercent": delta,
+                "baselineRelativeSpreadPercent": baseline.get("relativeSpreadPercent"),
+                "currentRelativeSpreadPercent": result.get("relativeSpreadPercent"),
                 "isGuarded": is_guarded,
                 "maxRegressionPercent": max_regression_percent if is_guarded else None,
             }
