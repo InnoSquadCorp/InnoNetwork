@@ -351,17 +351,14 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
     /// interceptors are not part of ``StreamingAPIDefinition`` and therefore
     /// are not run for streams.
     ///
-    /// Every failure this stream finishes with is a ``NetworkError``. The
-    /// channel is declared as `any Error` only because the standard library
-    /// constrains `AsyncThrowingStream` construction to that failure type;
-    /// callers can rely on `catch let error as NetworkError` being
-    /// exhaustive. This guarantee is part of the documented API contract
-    /// (see `API_STABILITY.md`).
+    /// The returned sequence's `Failure` is ``NetworkError``: a plain
+    /// `catch` around iteration binds the typed error directly and
+    /// `do throws(NetworkError)` blocks compose without casts.
     ///
     /// - Parameter request: The streaming endpoint to subscribe to.
-    /// - Returns: An `AsyncThrowingStream<T.Output, Error>` whose values are
-    ///   the non-nil results of ``StreamingAPIDefinition/decode(line:)``.
-    public func stream<T: StreamingAPIDefinition>(_ request: T) -> AsyncThrowingStream<T.Output, Error> {
+    /// - Returns: A ``StreamingOutputSequence`` whose values are the
+    ///   non-nil results of ``StreamingAPIDefinition/decode(line:)``.
+    public func stream<T: StreamingAPIDefinition>(_ request: T) -> StreamingOutputSequence<T.Output> {
         stream(request, bufferingPolicy: .unbounded)
     }
 
@@ -375,24 +372,28 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
     /// because the resume cursor must not advance past values a slow consumer
     /// never received.
     ///
-    /// Every failure this stream finishes with is a ``NetworkError``; see
-    /// ``stream(_:)`` for the contract details.
+    /// The returned sequence's `Failure` is ``NetworkError``; see
+    /// ``stream(_:)`` for the typed-error details.
     public func stream<T: StreamingAPIDefinition>(
         _ request: T,
         bufferingPolicy: StreamingBufferingPolicy
-    ) -> AsyncThrowingStream<T.Output, Error> {
+    ) -> StreamingOutputSequence<T.Output> {
         guard !isShutdown else {
-            return AsyncThrowingStream { continuation in
-                continuation.finish(throwing: NetworkError.cancelled)
-            }
+            return StreamingOutputSequence(
+                base: AsyncThrowingStream { continuation in
+                    continuation.finish(throwing: NetworkError.cancelled)
+                }
+            )
         }
         if let incompatibleBufferingError = Self.incompatibleStreamingBufferingError(
             resumePolicy: request.resumePolicy,
             bufferingPolicy: bufferingPolicy
         ) {
-            return AsyncThrowingStream { continuation in
-                continuation.finish(throwing: incompatibleBufferingError)
-            }
+            return StreamingOutputSequence(
+                base: AsyncThrowingStream { continuation in
+                    continuation.finish(throwing: incompatibleBufferingError)
+                }
+            )
         }
 
         // Streaming responses must not silently drop server-emitted events
@@ -409,7 +410,8 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
             asyncBufferingPolicy = .bufferingOldest(max(1, limit))
         }
 
-        return AsyncThrowingStream(bufferingPolicy: asyncBufferingPolicy) { continuation in
+        let base = AsyncThrowingStream(bufferingPolicy: asyncBufferingPolicy) {
+            (continuation: AsyncThrowingStream<T.Output, Error>.Continuation) in
             let requestID = UUID()
             let inFlight = self.inFlight
             let configuration = self.configuration
@@ -452,6 +454,7 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
             inFlight.register(id: requestID, generation: generation, cancelHandler: { work.cancel() })
             startGate.open()
         }
+        return StreamingOutputSequence(base: base)
     }
 
     private static func incompatibleStreamingBufferingError(

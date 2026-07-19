@@ -681,7 +681,7 @@ struct StreamingAPIDefinitionTests {
         do {
             _ = try await iterator.next()
             Issue.record("Expected invalid request configuration for bounded resumable stream")
-        } catch let error as NetworkError {
+        } catch {
             switch error {
             case .configuration(reason: .invalidRequest(let message)):
                 #expect(message.contains("unbounded output buffering"))
@@ -710,10 +710,8 @@ struct StreamingAPIDefinitionTests {
         do {
             _ = try await iterator.next()
             Issue.record("Expected a failure from a shut-down client stream")
-        } catch let error as NetworkError {
-            #expect(error.category == .cancellation)
         } catch {
-            Issue.record("Expected NetworkError, got \(type(of: error)): \(error)")
+            #expect(error.category == .cancellation)
         }
     }
 
@@ -761,7 +759,7 @@ struct StreamingAPIDefinitionTests {
         do {
             for try await _ in client.stream(definition) {}
             Issue.record("Expected oversized stream line to fail")
-        } catch let error as NetworkError {
+        } catch {
             switch error {
             case .decoding(let stage, let underlying, let response):
                 #expect(stage == .streamFrame)
@@ -794,7 +792,7 @@ struct StreamingAPIDefinitionTests {
         do {
             for try await _ in client.stream(definition) {}
             Issue.record("Expected configured stream line limit to fail")
-        } catch let error as NetworkError {
+        } catch {
             switch error {
             case .decoding(let stage, let underlying, _):
                 #expect(stage == .streamFrame)
@@ -851,7 +849,7 @@ struct StreamingAPIDefinitionTests {
         do {
             for try await _ in client.stream(definition) {}
             Issue.record("Expected auth-required stream to fail before transport")
-        } catch let error as NetworkError {
+        } catch {
             guard case .configuration(let reason) = error else {
                 Issue.record("Expected NetworkError.configuration, got \(error)")
                 return
@@ -985,7 +983,7 @@ struct StreamingAPIDefinitionTests {
         do {
             for try await _ in client.stream(definition) {}
             Issue.record("Expected stream handshake 401 to throw")
-        } catch let error as NetworkError {
+        } catch {
             guard case .statusCode(let response) = error else {
                 Issue.record("Expected NetworkError.statusCode, got \(error)")
                 return
@@ -1156,7 +1154,7 @@ struct StreamingAPIDefinitionTests {
         do {
             _ = try await iterator.next()
             Issue.record("Expected stream timeout error")
-        } catch let error as NetworkError {
+        } catch {
             switch error {
             case .timeout(.requestTimeout, let underlying):
                 #expect(underlying?.domain == NSURLErrorDomain)
@@ -1182,7 +1180,7 @@ struct StreamingAPIDefinitionTests {
         do {
             _ = try await iterator.next()
             Issue.record("Expected stream timeout error")
-        } catch let error as NetworkError {
+        } catch {
             switch error {
             case .timeout(.requestTimeout, let underlying):
                 #expect(underlying?.domain == NSURLErrorDomain)
@@ -1205,7 +1203,7 @@ struct StreamingAPIDefinitionTests {
         do {
             _ = try await iterator.next()
             Issue.record("Expected stream connection timeout error")
-        } catch let error as NetworkError {
+        } catch {
             switch error {
             case .timeout(.connectionTimeout, let underlying):
                 #expect(underlying?.domain == NSURLErrorDomain)
@@ -1230,7 +1228,7 @@ struct StreamingAPIDefinitionTests {
         do {
             _ = try await iterator.next()
             Issue.record("Expected stream cancellation error")
-        } catch let error as NetworkError {
+        } catch {
             switch error {
             case .cancelled:
                 break
@@ -1457,7 +1455,7 @@ struct StreamingAPIDefinitionTests {
                 collected.append(event)
             }
             Issue.record("Expected mid-stream transport failure")
-        } catch let error as NetworkError {
+        } catch {
             switch error {
             case .reachability, .underlying:
                 break
@@ -1495,7 +1493,7 @@ struct StreamingAPIDefinitionTests {
                 collected.append(event)
             }
             Issue.record("Expected mid-stream transport failure")
-        } catch let error as NetworkError {
+        } catch {
             switch error {
             case .reachability, .underlying:
                 break
@@ -1534,7 +1532,7 @@ struct StreamingAPIDefinitionTests {
                 collected.append(event)
             }
             Issue.record("Expected mid-stream transport failure")
-        } catch let error as NetworkError {
+        } catch {
             switch error {
             case .reachability, .underlying:
                 break
@@ -1577,7 +1575,7 @@ struct StreamingAPIDefinitionTests {
                 collected.append(event)
             }
             Issue.record("Expected decode error to surface")
-        } catch let error as NetworkError {
+        } catch {
             switch error {
             case .decoding(let stage, let underlying, let response):
                 #expect(stage == .streamFrame)
@@ -1618,7 +1616,7 @@ struct StreamingAPIDefinitionTests {
         do {
             for try await _ in client.stream(definition) {}
             Issue.record("Expected handshake error to surface")
-        } catch let error as NetworkError {
+        } catch {
             switch error {
             case .statusCode(let response):
                 #expect(response.statusCode == 500)

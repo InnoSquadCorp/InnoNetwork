@@ -384,6 +384,9 @@ InnoNetwork	swift.method	SingleRequestExecutable.decode(data:response:)
 InnoNetwork	swift.method	SingleRequestExecutable.makePayload()
 InnoNetwork	swift.method	StreamingAPIDefinition.decode(line:)
 InnoNetwork	swift.method	StreamingAPIDefinition.eventID(from:)
+InnoNetwork	swift.method	StreamingOutputSequence.Iterator.next()
+InnoNetwork	swift.method	StreamingOutputSequence.Iterator.next(isolation:)
+InnoNetwork	swift.method	StreamingOutputSequence.makeAsyncIterator()
 InnoNetwork	swift.method	StreamingResumePolicy.isCompatible(with:)
 InnoNetwork	swift.method	StreamingResumeStrategy.isCompatible(with:)
 InnoNetwork	swift.method	TraceContextInterceptor.adapt(_:)
@@ -713,6 +716,8 @@ InnoNetwork	swift.struct	RetryIdempotencyPolicy
 InnoNetwork	swift.struct	SendableUnderlyingError
 InnoNetwork	swift.struct	SendableUnderlyingError.Frame
 InnoNetwork	swift.struct	ServerSentEvent
+InnoNetwork	swift.struct	StreamingOutputSequence
+InnoNetwork	swift.struct	StreamingOutputSequence.Iterator
 InnoNetwork	swift.struct	TraceContextInterceptor
 InnoNetwork	swift.struct	TransportPack
 InnoNetwork	swift.struct	TransportPolicy
@@ -806,3 +811,4 @@ InnoNetwork	swift.type.property	RetryIdempotencyPolicy.safeMethodsAndIdempotency
 InnoNetwork	swift.type.property	SendableUnderlyingError.maxUnderlyingDepth
 InnoNetwork	swift.typealias	EndpointBuilder.APIResponse
 InnoNetwork	swift.typealias	EndpointBuilder.Parameter
+InnoNetwork	swift.typealias	StreamingOutputSequence.Element

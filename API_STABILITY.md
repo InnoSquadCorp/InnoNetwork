@@ -166,7 +166,7 @@ acquiring a 5.x compatibility promise.
 - `RequestSigner` and `RequestBody` late body-aware signing contract
 - `JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens
 - `InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing
-- `StreamingBufferingPolicy`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, and `RequestPriority`
+- `StreamingBufferingPolicy`, `StreamingOutputSequence`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, and `RequestPriority`
 - `HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)
 - `MultipartUploadStrategy.threshold(bytes:)`
 - `StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance
@@ -337,11 +337,9 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   policy knobs, but `stream(_:)` stays lossless by default for 5.x and bounded
   buffers remain incompatible with `StreamingResumePolicy.lastEventID`.
 - `stream(_:)` / `stream(_:bufferingPolicy:)` — every failure the returned
-  stream finishes with is a `NetworkError`. The channel is declared
-  `any Error` only because the standard library constrains
-  `AsyncThrowingStream` construction to that failure type; the concrete
-  failure type is a documented contract for 5.x, so
-  `catch let error as NetworkError` is exhaustive.
+  ``StreamingOutputSequence`` finishes with is a `NetworkError`. Its iterator
+  exposes typed `throws(NetworkError)` on every supported platform floor, so
+  callers do not need a cast to exhaustively switch over the failure.
 - `TraceContextInterceptor` and `W3CTraceContext` — W3C header propagation
   remains additive; future minors may add richer correlation helpers without
   changing `NetworkEvent` case shape.
@@ -409,8 +407,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 planned 5.x release line.
 
-The machine-checked snapshot currently partitions all 1,228 declarations into
-305 Stable consumer declarations, 890 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 1,234 declarations into
+305 Stable consumer declarations, 896 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in

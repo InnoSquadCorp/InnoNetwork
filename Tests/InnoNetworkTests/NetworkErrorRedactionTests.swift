@@ -281,7 +281,7 @@ struct NetworkErrorRedactionTests {
                 collected.append(line)
             }
             Issue.record("Expected NetworkError.decoding(stage: .streamFrame)")
-        } catch let error as NetworkError {
+        } catch {
             switch error {
             case .decoding(let stage, _, let response):
                 #expect(stage == .streamFrame)
@@ -291,8 +291,6 @@ struct NetworkErrorRedactionTests {
             default:
                 Issue.record("Expected .decoding(stage: .streamFrame), got \(error)")
             }
-        } catch {
-            Issue.record("Unexpected error: \(error)")
         }
         #expect(collected == ["ok"])
     }

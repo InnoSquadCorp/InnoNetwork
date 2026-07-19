@@ -138,12 +138,13 @@ InnoNetwork out of the Combine import graph entirely.
 
 ## Streaming endpoints
 
-`StreamingAPIDefinition` returns `AsyncThrowingStream`, which has no
-direct `Publisher` analogue. Two options:
+`StreamingAPIDefinition` returns `StreamingOutputSequence`, a typed-failure
+`AsyncSequence` whose iterator throws `NetworkError`. It has no direct
+`Publisher` analogue. Two options:
 
 1. **Recommended:** consume with `for await`:
    ```swift
-   for try await event in try await client.stream(MyStream()) {
+   for try await event in client.stream(MyStream()) {
        handle(event)
    }
    ```
