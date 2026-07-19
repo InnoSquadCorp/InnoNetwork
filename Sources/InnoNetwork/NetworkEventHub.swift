@@ -49,7 +49,12 @@ package actor NetworkEventHub {
     }
 
     deinit {
-        metricsProxy?.shutdown()
+        metricsProxy?.cancelImmediately()
+    }
+
+    /// Drains metrics accepted before this actor-isolated lifecycle boundary.
+    package func shutdown() async {
+        await metricsProxy?.shutdown()
     }
 
     /// Enqueues `event` for delivery to `observers` partitioned by `requestID`.

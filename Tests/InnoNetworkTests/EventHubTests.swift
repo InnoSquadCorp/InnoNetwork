@@ -1506,6 +1506,70 @@ struct EventHubTests {
         #expect(values == [1])
     }
 
+    @Test("Metrics proxy drains accepted metrics before shutdown returns")
+    func metricsProxyDrainsAcceptedMetricsDuringShutdown() async {
+        let recorder = EventPipelineMetricRecorder()
+        let proxy = EventPipelineMetricsReporterProxy(
+            hubKind: .genericTask,
+            reporter: recorder,
+            snapshotInterval: .seconds(60)
+        )
+
+        for index in 0..<20 {
+            proxy.report(
+                .partitionState(
+                    EventPipelinePartitionStateMetric(
+                        partitionID: "shutdown-drain-\(index)",
+                        queueDepth: index,
+                        droppedEventCount: 0,
+                        oldestQueuedEventAge: nil
+                    )
+                )
+            )
+        }
+
+        await proxy.shutdown()
+
+        let drainedPartitionIDs = Set(
+            recorder.snapshot().compactMap { metric -> String? in
+                guard case .partitionState(let state) = metric else { return nil }
+                return state.partitionID.hasPrefix("shutdown-drain-") ? state.partitionID : nil
+            })
+        #expect(drainedPartitionIDs.count == 20)
+
+        proxy.report(
+            .partitionState(
+                EventPipelinePartitionStateMetric(
+                    partitionID: "shutdown-drain-late",
+                    queueDepth: 0,
+                    droppedEventCount: 0,
+                    oldestQueuedEventAge: nil
+                )
+            )
+        )
+        #expect(recorder.snapshot().count == drainedPartitionIDs.count)
+    }
+
+    @Test("Task event hub shutdown stops periodic metrics work")
+    func taskEventHubShutdownStopsPeriodicMetricsWork() async {
+        let recorder = EventPipelineMetricRecorder()
+        let clock = TestClock()
+        let hub = TaskEventHub<Int>(
+            metricsReporter: recorder,
+            metricsSnapshotInterval: .milliseconds(100),
+            clock: clock
+        )
+
+        #expect(await clock.waitForWaiters(count: 1))
+        await hub.shutdown()
+
+        #expect(clock.waiterCount == 0)
+        let metricCount = recorder.snapshot().count
+        clock.advance(by: .seconds(1))
+        await Task.yield()
+        #expect(recorder.snapshot().count == metricCount)
+    }
+
     @Test(
         "Metrics proxy carries reporter-side overflow across snapshot windows without polluting event overflow counts")
     func metricsProxyTracksReporterSideOverflow() async throws {
@@ -1520,7 +1584,7 @@ struct EventHubTests {
             snapshotInterval: .milliseconds(40),
             queueCapacity: 8
         )
-        defer { proxy.shutdown() }
+        defer { proxy.cancelImmediately() }
 
         let start = Date()
         let floodTask = Task {
@@ -1584,7 +1648,7 @@ struct EventHubTests {
             snapshotInterval: .milliseconds(1),
             queueCapacity: 256
         )
-        defer { proxy.shutdown() }
+        defer { proxy.cancelImmediately() }
 
         for index in 0..<40 {
             let consumerID = "stream-\(index)"
@@ -1637,7 +1701,7 @@ struct EventHubTests {
             snapshotInterval: .milliseconds(1),
             queueCapacity: 256
         )
-        defer { proxy.shutdown() }
+        defer { proxy.cancelImmediately() }
 
         proxy.report(
             .consumerState(
@@ -1708,7 +1772,7 @@ struct EventHubTests {
             snapshotInterval: .milliseconds(10),
             queueCapacity: 1
         )
-        defer { proxy.shutdown() }
+        defer { proxy.cancelImmediately() }
 
         proxy.report(
             .consumerState(

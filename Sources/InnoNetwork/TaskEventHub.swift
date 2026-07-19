@@ -61,7 +61,17 @@ package actor TaskEventHub<Event: Sendable> {
 
     deinit {
         streamMetricsReconciliationTask?.cancel()
-        metricsProxy?.shutdown()
+        metricsProxy?.cancelImmediately()
+    }
+
+    /// Stops periodic reconciliation and drains metrics accepted before this
+    /// actor-isolated lifecycle boundary.
+    package func shutdown() async {
+        let reconciliationTask = streamMetricsReconciliationTask
+        streamMetricsReconciliationTask = nil
+        reconciliationTask?.cancel()
+        await reconciliationTask?.value
+        await metricsProxy?.shutdown()
     }
 
     package func addListener(taskID: String, listener: @escaping Listener) async -> UUID {

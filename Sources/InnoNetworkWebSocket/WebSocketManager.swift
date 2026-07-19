@@ -442,6 +442,7 @@ public actor WebSocketManager {
         await runtimeRegistry.waitForUserCallbacksToDrain()
 
         await invalidationBarrier.wait()
+        await eventHub.shutdown()
         await shutdownCompletionBarrier.complete()
     }
 

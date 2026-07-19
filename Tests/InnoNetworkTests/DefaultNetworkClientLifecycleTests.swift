@@ -1,5 +1,7 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
+import os
 
 @testable import InnoNetwork
 
@@ -28,6 +30,19 @@ private actor SleepingURLSession: URLSessionProtocol {
         recordedRequestCount += 1
         try await Task.sleep(for: .seconds(30))
         throw URLError(.cancelled)
+    }
+}
+
+private final class LifecycleMetricRecorder: EventPipelineMetricsReporting, Sendable {
+    private let metricCount = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+    func report(_ metric: EventPipelineMetric) {
+        _ = metric
+        metricCount.withLock { $0 += 1 }
+    }
+
+    var count: Int {
+        metricCount.withLock { $0 }
     }
 }
 
@@ -83,6 +98,31 @@ struct DefaultNetworkClientLifecycleTests {
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
+    }
+
+    @Test("shutdown stops event metrics work while client remains retained")
+    func shutdownStopsEventMetricsWork() async {
+        let reporter = LifecycleMetricRecorder()
+        let clock = TestClock()
+        let configuration = NetworkConfiguration.advanced(
+            baseURL: URL(string: "https://api.example.com")!,
+            observability: ObservabilityPack(eventMetricsReporter: reporter)
+        )
+        let client = DefaultNetworkClient(
+            configuration: configuration,
+            session: MockURLSession(),
+            clock: clock
+        )
+
+        #expect(await clock.waitForWaiters(count: 1))
+        await client.shutdown()
+
+        #expect(clock.waiterCount == 0)
+        let metricCount = reporter.count
+        clock.advance(by: .seconds(60))
+        await Task.yield()
+        #expect(reporter.count == metricCount)
+        _ = client
     }
 }
 

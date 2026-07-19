@@ -248,6 +248,10 @@ draft release summary.
 
 ### Fixed
 
+- Explicit shutdown now finishes accepted event-metrics input, drains pending
+  reports, and stops periodic snapshot work for `DefaultNetworkClient`,
+  `DownloadManager`, and `WebSocketManager`, even when callers retain the
+  owning object after shutdown returns.
 - An empty streaming event ID now performs the documented cursor reset and
   permits the next resume attempt without a `Last-Event-ID` header. Invalid
   cursor values still disable resume for the current attempt.

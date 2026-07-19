@@ -513,6 +513,7 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
         guard markShutdownIfNeeded() else { return }
         inFlight.shutdownAll()
         await executionRuntime.shutdown()
+        await eventHub.shutdown()
         ownedSession?.invalidateAndCancel()
     }
 

@@ -96,7 +96,7 @@ package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMe
     }
 
     deinit {
-        shutdown()
+        cancelImmediately()
     }
 
     package func report(_ metric: EventPipelineMetric) {
@@ -113,7 +113,24 @@ package final class EventPipelineMetricsReporterProxy: Sendable, EventPipelineMe
         }
     }
 
-    package func shutdown() {
+    /// Stops metric admission and drains every metric accepted before this
+    /// boundary through the reporter.
+    ///
+    /// Lifecycle owners call this from their explicit async shutdown path so
+    /// no periodic snapshot or reporter callback outlives that boundary.
+    /// `deinit` uses ``cancelImmediately()`` instead because it cannot await.
+    package func shutdown() async {
+        inputContinuation.finish()
+        snapshotTask.cancel()
+        await snapshotTask.value
+        await ingestTask.value
+        outputContinuation.finish()
+        await reporterTask.value
+    }
+
+    /// Best-effort synchronous fallback for owners that are deallocated without
+    /// first crossing their explicit async shutdown boundary.
+    package func cancelImmediately() {
         inputContinuation.finish()
         snapshotTask.cancel()
         ingestTask.cancel()

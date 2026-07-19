@@ -191,6 +191,7 @@ extension DownloadManager {
         // after every lifecycle producer and the session have drained, then
         // wait for all callbacks accepted before that boundary.
         await callbackDeliveryQueue.finishAndDrain()
+        await eventHub.shutdown()
         Self.unregisterSessionIdentifier(configuration.sessionIdentifier)
         await shutdownBarrier.complete()
     }
