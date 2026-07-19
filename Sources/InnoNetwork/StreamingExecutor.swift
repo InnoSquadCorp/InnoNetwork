@@ -406,9 +406,7 @@ package struct StreamingExecutor: Sendable {
             }
             if let output = decoded {
                 if let eventID = request.eventID(from: output) {
-                    if eventID.isEmpty {
-                        resumeState.rejectEventID()
-                    } else if Self.isValidLastEventIDCursor(eventID) {
+                    if eventID.isEmpty || Self.isValidLastEventIDCursor(eventID) {
                         resumeState.observe(eventID: eventID)
                     } else {
                         // Do not keep sending a stale cursor after a malformed

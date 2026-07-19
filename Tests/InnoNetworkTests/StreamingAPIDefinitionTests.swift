@@ -1402,6 +1402,21 @@ struct StreamingAPIDefinitionTests {
         #expect(!state.canResume(maxAttempts: 2, completedResumeAttempts: 1))
     }
 
+    @Test("Streaming resume state distinguishes an explicit cursor reset from an invalid cursor")
+    func resumePolicyDistinguishesExplicitResetFromInvalidCursor() {
+        var state = StreamingResumeState()
+
+        state.beginAttempt()
+        state.observe(eventID: "1")
+        state.observe(eventID: "")
+        #expect(state.lastSeenEventID == nil)
+        #expect(state.canResume(maxAttempts: 2, completedResumeAttempts: 0))
+
+        state.rejectEventID()
+        #expect(state.lastSeenEventID == nil)
+        #expect(!state.canResume(maxAttempts: 2, completedResumeAttempts: 0))
+    }
+
     @Test("stream() resumes with Last-Event-ID after a mid-stream transport failure")
     func resumePolicyAttachesLastEventIDAfterMidStreamTransportFailure() async throws {
         let server = try StreamingResumeHTTPServer()
@@ -1485,31 +1500,22 @@ struct StreamingAPIDefinitionTests {
         )
 
         var collected: [ResumableEvent] = []
-        let stream = client.stream(
+        for try await event in client.stream(
             ResumableStream(resumePolicy: .lastEventID(maxAttempts: 2, retryDelay: 0))
-        )
-        do {
-            for try await event in stream {
-                collected.append(event)
-            }
-            Issue.record("Expected mid-stream transport failure")
-        } catch {
-            switch error {
-            case .reachability, .underlying:
-                break
-            default:
-                Issue.record("Expected transport failure, got \(error)")
-            }
+        ) {
+            collected.append(event)
         }
 
         #expect(
             collected == [
                 ResumableEvent(id: "1", payload: "alpha"),
                 ResumableEvent(id: "", payload: "reset"),
+                ResumableEvent(id: "2", payload: "beta"),
             ])
         let captured = server.capturedRequests()
-        #expect(captured.count == 1)
+        #expect(captured.count == 2)
         #expect(captured.first?.localizedCaseInsensitiveContains("Last-Event-ID:") == false)
+        #expect(captured.dropFirst().first?.localizedCaseInsensitiveContains("Last-Event-ID:") == false)
     }
 
     @Test("stream() clears stale Last-Event-ID when a later custom event id is unsafe")

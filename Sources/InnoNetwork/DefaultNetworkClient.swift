@@ -174,31 +174,51 @@ extension UploadNetworkClient {
 
 
 package struct StreamingResumeState: Sendable {
+    private enum AttemptCursorObservation: Sendable {
+        case unobserved
+        case valid
+        case explicitReset
+        case invalid
+
+        var permitsResume: Bool {
+            switch self {
+            case .valid, .explicitReset:
+                return true
+            case .unobserved, .invalid:
+                return false
+            }
+        }
+    }
+
     package private(set) var lastSeenEventID: String?
-    private var perAttemptSeenNewCursor = false
+    private var attemptCursorObservation = AttemptCursorObservation.unobserved
 
     package init() {}
 
     package mutating func beginAttempt() {
-        perAttemptSeenNewCursor = false
+        attemptCursorObservation = .unobserved
     }
 
     package mutating func observe(eventID: String?) {
         guard let eventID else { return }
-        lastSeenEventID = eventID
-        perAttemptSeenNewCursor = true
+        if eventID.isEmpty {
+            lastSeenEventID = nil
+            attemptCursorObservation = .explicitReset
+        } else {
+            lastSeenEventID = eventID
+            attemptCursorObservation = .valid
+        }
     }
 
     package mutating func rejectEventID() {
         lastSeenEventID = nil
-        perAttemptSeenNewCursor = false
+        attemptCursorObservation = .invalid
     }
 
     package func canResume(maxAttempts: Int, completedResumeAttempts: Int) -> Bool {
         maxAttempts > 0
             && completedResumeAttempts < maxAttempts
-            && lastSeenEventID != nil
-            && perAttemptSeenNewCursor
+            && attemptCursorObservation.permitsResume
     }
 }
 

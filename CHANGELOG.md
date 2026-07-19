@@ -12,6 +12,10 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
 
 ### Breaking
 
+- `DefaultNetworkClient.stream(_:)` and `stream(_:bufferingPolicy:)` now return
+  `StreamingOutputSequence`, whose iterator uses typed
+  `throws(NetworkError)`, instead of exposing the standard library's
+  `AsyncThrowingStream<Output, Error>` failure erasure.
 - `WebSocketManager.send(_:message:)`, `send(_:string:)`, and `ping(_:)` use
   typed throws: `async throws(WebSocketError)`. Transport failures that
   previously escaped `send` as raw `URLError` values are now funnelled
@@ -232,6 +236,9 @@ draft release summary.
 
 ### Fixed
 
+- An empty streaming event ID now performs the documented cursor reset and
+  permits the next resume attempt without a `Last-Event-ID` header. Invalid
+  cursor values still disable resume for the current attempt.
 - Bounded file-upload responses now collect through the same chunk-granular
   transport bridge as inline requests, replacing byte-wise
   `URLSession.AsyncBytes` iteration on the upload path. The file body still
