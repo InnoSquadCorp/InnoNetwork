@@ -491,6 +491,9 @@ jobs:
       - name: Resolve dependencies
         run: xcrun swift package resolve
 
+      - name: Test docs-contract assertion helpers
+        run: bash Scripts/tests/test_docs_contract_helpers.sh
+
       - name: Verify docs and stability contract
         run: bash Scripts/check_docs_contract_sync.sh
 

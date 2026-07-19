@@ -74,60 +74,9 @@ fail() {
   exit 1
 }
 
-has_rg() {
-  command -v rg > /dev/null 2>&1
-}
-
-require_line() {
-  local needle="$1"
-  local file="$2"
-  if has_rg; then
-    rg -Fqx -- "$needle" "$file" > /dev/null || fail "missing line '$needle' in $file"
-  else
-    grep -Fqx -- "$needle" "$file" > /dev/null || fail "missing line '$needle' in $file"
-  fi
-}
-
-require_contains() {
-  local needle="$1"
-  local file="$2"
-  if has_rg; then
-    rg -Fq -- "$needle" "$file" || fail "missing '$needle' in $file"
-  else
-    grep -Fq -- "$needle" "$file" || fail "missing '$needle' in $file"
-  fi
-}
-
-require_not_contains() {
-  local needle="$1"
-  local file="$2"
-  if has_rg; then
-    if rg -Fq -- "$needle" "$file"; then
-      fail "unexpected '$needle' in $file"
-    fi
-  else
-    if grep -Fq -- "$needle" "$file"; then
-      fail "unexpected '$needle' in $file"
-    fi
-  fi
-}
-
-forbidden_pattern() {
-  local pattern="$1"
-  shift
-  if has_rg; then
-    if rg -n "$pattern" "$@" > /dev/null; then
-      rg -n "$pattern" "$@" >&2
-      fail "forbidden legacy documentation pattern matched: $pattern"
-    fi
-    return
-  fi
-
-  if grep -En "$pattern" "$@" > /dev/null; then
-    grep -En "$pattern" "$@" >&2
-    fail "forbidden legacy documentation pattern matched: $pattern"
-  fi
-}
+# Assertion primitives shared with the helper unit tests.
+# shellcheck source=Scripts/_docs_contract_helpers.sh
+source "$repo_root/Scripts/_docs_contract_helpers.sh"
 
 require_line "## Stable" "$api_stability"
 require_line "## Provisionally Stable" "$api_stability"
