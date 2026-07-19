@@ -391,6 +391,69 @@ struct DownloadManagerTests {
         #expect(await waitForTaskCount(manager: harness.manager, expectedCount: 0))
     }
 
+    @Test("cancelAll(matching:) cancels only tasks that carry the tag")
+    func cancelAllMatchingTagCancelsOnlyTaggedTasks() async throws {
+        let harness = try StubDownloadHarness(label: "manager-cancelall-tag")
+        harness.stubSession.enqueue(StubDownloadURLTask())
+        harness.stubSession.enqueue(StubDownloadURLTask())
+
+        let feed = CancellationTag("feed")
+        let tagged1 = await harness.startDownload(
+            url: URL(string: "https://example.com/feed-1.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/feed-1.zip"),
+            tag: feed
+        )
+        let tagged2 = await harness.startDownload(
+            url: URL(string: "https://example.com/feed-2.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/feed-2.zip"),
+            tag: feed
+        )
+        let other = await harness.startDownload(
+            url: URL(string: "https://example.com/media.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/media.zip"),
+            tag: CancellationTag("media")
+        )
+        let untagged = await harness.startDownload(
+            url: URL(string: "https://example.com/plain.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/plain.zip")
+        )
+
+        #expect((await harness.manager.allTasks()).count == 4)
+
+        await harness.manager.cancelAll(matching: feed)
+
+        #expect(await waitForTaskCount(manager: harness.manager, expectedCount: 2))
+        #expect(await tagged1.state == .cancelled)
+        #expect(await tagged2.state == .cancelled)
+        #expect(await other.state != .cancelled)
+        #expect(await untagged.state != .cancelled)
+
+        // A second matching cancel is a no-op: the tag mapping was cleaned
+        // up together with the registry entries.
+        await harness.manager.cancelAll(matching: feed)
+        #expect((await harness.manager.allTasks()).count == 2)
+    }
+
+    @Test("cancelAll(matching:) with an unknown tag leaves every task running")
+    func cancelAllMatchingUnknownTagIsNoOp() async throws {
+        let harness = try StubDownloadHarness(label: "manager-cancelall-tag-miss")
+        harness.stubSession.enqueue(StubDownloadURLTask())
+
+        _ = await harness.startDownload(
+            url: URL(string: "https://example.com/file1.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/miss-1.zip"),
+            tag: CancellationTag("feed")
+        )
+        _ = await harness.startDownload(
+            url: URL(string: "https://example.com/file2.zip")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/miss-2.zip")
+        )
+
+        await harness.manager.cancelAll(matching: CancellationTag("unknown"))
+
+        #expect((await harness.manager.allTasks()).count == 2)
+    }
+
     @Test("cancelAll drains persistence in a single bulk call")
     func cancelAllBulkPersistenceRemove() async throws {
         // Stage many concurrent downloads so the persistence store has a

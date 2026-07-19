@@ -1,8 +1,15 @@
 import Foundation
 
 extension DownloadManager {
+    /// Starts a download. An optional ``CancellationTag`` groups the task
+    /// for ``cancelAll(matching:)``; tags are runtime-scoped and not
+    /// persisted, so tasks restored from a background session carry none.
     @discardableResult
-    public func download(url: URL, to destinationURL: URL) async -> DownloadTask {
+    public func download(
+        url: URL,
+        to destinationURL: URL,
+        tag: CancellationTag? = nil
+    ) async -> DownloadTask {
         let task = DownloadTask(url: url, destinationURL: destinationURL)
         guard beginShutdownTrackedOperation() else { return task }
         defer { finishShutdownTrackedOperation() }
@@ -11,20 +18,25 @@ extension DownloadManager {
             return task
         }
         guard admitsDownloadURL(url) else {
-            await runtimeRegistry.add(task)
+            await runtimeRegistry.add(task, tag: tag)
             await failureCoordinator.markTaskFailed(
                 task,
                 reason: .invalidURL("Rejected by URL admission policy")
             )
             return task
         }
-        await runtimeRegistry.add(task)
+        await runtimeRegistry.add(task, tag: tag)
         await transferCoordinator.startDownload(task, mode: .initial)
         return task
     }
 
     @discardableResult
-    public func download(url: URL, toDirectory directory: URL, fileName: String? = nil) async -> DownloadTask {
+    public func download(
+        url: URL,
+        toDirectory directory: URL,
+        fileName: String? = nil,
+        tag: CancellationTag? = nil
+    ) async -> DownloadTask {
         let destinationURL = DownloadDestinationResolver.resolve(
             sourceURL: url,
             directory: directory,
@@ -33,7 +45,7 @@ extension DownloadManager {
         guard await waitForRestore() else {
             return DownloadTask(url: url, destinationURL: destinationURL)
         }
-        return await download(url: url, to: destinationURL)
+        return await download(url: url, to: destinationURL, tag: tag)
     }
 
     public func pause(_ task: DownloadTask) async {
@@ -412,10 +424,27 @@ extension DownloadManager {
         guard beginShutdownTrackedOperation() else { return }
         defer { finishShutdownTrackedOperation() }
         guard await waitForRestore() else { return }
-        let allTasks = await runtimeRegistry.allTasks()
+        await cancelRegisteredTasks(runtimeRegistry.allTasks())
+    }
+
+    /// Cancels every registered download whose start carried `tag`.
+    ///
+    /// Mirrors ``DefaultNetworkClient/cancelAll(matching:)`` so per-screen
+    /// or per-feature teardown can interrupt only its own transfers. Tags
+    /// are runtime-scoped: tasks restored from a background session carry
+    /// no tag and remain reachable through ``cancelAll()`` or per-task
+    /// ``cancel(_:)``.
+    public func cancelAll(matching tag: CancellationTag) async {
+        guard beginShutdownTrackedOperation() else { return }
+        defer { finishShutdownTrackedOperation() }
+        guard await waitForRestore() else { return }
+        await cancelRegisteredTasks(runtimeRegistry.tasks(matching: tag))
+    }
+
+    private func cancelRegisteredTasks(_ candidates: [DownloadTask]) async {
         var tasks: [DownloadTask] = []
-        tasks.reserveCapacity(allTasks.count)
-        for task in allTasks {
+        tasks.reserveCapacity(candidates.count)
+        for task in candidates {
             if await claimDestructiveLifecycle(taskID: task.id) {
                 tasks.append(task)
             }

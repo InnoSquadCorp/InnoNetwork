@@ -136,6 +136,11 @@ draft release summary.
 
 ### Added
 
+- `DownloadManager.cancelAll(matching:)` cancels only the downloads whose
+  `download(url:to:tag:)` / `download(url:toDirectory:fileName:tag:)` start
+  carried the given `CancellationTag`, mirroring the core client's grouped
+  cancellation for per-screen teardown. Tags are runtime-scoped and not
+  persisted; tasks restored from a background session carry no tag.
 - `stream(_:)` and `stream(_:bufferingPolicy:)` now document a concrete
   failure-type contract: every failure the returned stream finishes with is a
   `NetworkError`, so `catch let error as NetworkError` is exhaustive. The

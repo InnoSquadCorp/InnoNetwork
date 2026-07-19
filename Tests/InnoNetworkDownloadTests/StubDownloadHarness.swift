@@ -140,11 +140,13 @@ final class StubDownloadHarness: Sendable {
     /// registered taskIdentifier.
     func startDownload(
         url: URL = URL(string: "https://example.invalid/file.zip")!,
-        destinationURL: URL = URL(fileURLWithPath: "/tmp/\(UUID().uuidString).zip")
+        destinationURL: URL = URL(fileURLWithPath: "/tmp/\(UUID().uuidString).zip"),
+        tag: CancellationTag? = nil
     ) async -> DownloadTask {
         await manager.download(
             url: url,
-            to: destinationURL
+            to: destinationURL,
+            tag: tag
         )
     }
 

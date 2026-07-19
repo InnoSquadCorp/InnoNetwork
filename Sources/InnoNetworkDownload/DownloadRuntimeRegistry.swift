@@ -70,6 +70,7 @@ package actor DownloadRuntimeRegistry {
     private var identifierToTask: [Int: DownloadTask] = [:]
     private var taskIdToIdentifier: [String: Int] = [:]
     private var taskIdToURLTask: [String: any DownloadURLTask] = [:]
+    private var taskIdToTag: [String: CancellationTag] = [:]
 
     private var _onProgress: (@Sendable (DownloadTask, DownloadProgress) async -> Void)?
     private var _onStateChanged: (@Sendable (DownloadTask, DownloadState) async -> Void)?
@@ -166,15 +167,27 @@ package actor DownloadRuntimeRegistry {
     }
 
     @discardableResult
-    package func add(_ task: DownloadTask) async -> Bool {
+    package func add(_ task: DownloadTask, tag: CancellationTag? = nil) async -> Bool {
         guard await task.claimOwnership(ownershipID) else { return false }
         tasks[task.id] = task
+        // Tags group live tasks for per-feature teardown. They are
+        // runtime-scoped on purpose: restored tasks re-enter through the
+        // restore coordinators without a tag, so persisted state stays free
+        // of caller grouping concerns.
+        if let tag {
+            taskIdToTag[task.id] = tag
+        }
         return true
     }
 
     package func remove(_ task: DownloadTask) {
         guard let registered = tasks[task.id], registered === task else { return }
         tasks.removeValue(forKey: task.id)
+        taskIdToTag.removeValue(forKey: task.id)
+    }
+
+    package func tasks(matching tag: CancellationTag) -> [DownloadTask] {
+        tasks.values.filter { taskIdToTag[$0.id] == tag }
     }
 
     package func owns(_ task: DownloadTask) async -> Bool {
