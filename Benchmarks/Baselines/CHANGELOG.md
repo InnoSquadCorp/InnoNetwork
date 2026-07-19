@@ -11,6 +11,26 @@ Record the reason every time `default.json` changes.
 - Reason:
 - Validation:
 
+## 5.0.0 (warmup methodology refresh)
+
+- Date: 2026-07-19
+- PR: N/A (5.0 direct-main preparation)
+- Runner: `macos-15`, Xcode 26.0.1. The baseline source is GitHub Actions run
+  [29670600110](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/29670600110)
+  (workflow_dispatch on `main`).
+- Benchmarks changed: all 23 (regenerated), including the first entry for
+  `client/streaming-collect-1mib`, which previously reported "no baseline
+  entry".
+- Reason: the harness gained an untimed 5% warmup pass
+  (`build: warm up benchmarks and report sample spread`), which removes the
+  cold-start bias from every sample and shifts most medians upward; the old
+  single-cold-run numbers are no longer comparable. The chunked transport
+  bridge also made `streaming-collect-1mib` a meaningful guard candidate.
+- Validation: the source run's guarded static-baseline step passed against
+  the previous baseline (only regressions fail; warmup shifts are positive),
+  and `Scripts/check_guarded_benchmark_contract.sh` passes against the
+  regenerated file.
+
 ## 5.0.0
 
 - Date: 2026-07-14
