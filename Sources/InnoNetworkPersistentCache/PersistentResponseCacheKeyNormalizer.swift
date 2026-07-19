@@ -443,7 +443,7 @@ struct PersistentCacheDiskKeyNormalizer: Sendable {
         let name = String(header[..<separator]).lowercased()
         let valueStart = header.index(after: separator)
         let trimmedValue = String(header[valueStart...]).trimmingCharacters(in: .whitespaces)
-        guard ResponseCacheHeaderPolicy.sensitiveHeaderNames.contains(name) else {
+        guard ResponseCacheKey.isSensitiveNormalizedHeader(header) else {
             return "\(name):\(trimmedValue)"
         }
         return "\(name):hmac-sha256:\(authenticationCodeHex(for: trimmedValue))"

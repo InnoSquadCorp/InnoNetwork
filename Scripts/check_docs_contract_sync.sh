@@ -321,7 +321,6 @@ expected_shipping_public_declarations=(
   Response
   ResponseBodyBufferingPolicy
   ResponseCache
-  ResponseCacheHeaderPolicy
   ResponseCacheKey
   ResponseCachePolicy
   ResponseDecodingStrategy
@@ -494,8 +493,6 @@ validate_resilience_public_api() {
   require_contains 'public enum ResponseCachePolicy' \
     "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
   require_contains 'public protocol ResponseCache' \
-    "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
-  require_contains 'public enum ResponseCacheHeaderPolicy' \
     "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"
   require_contains 'public actor InMemoryResponseCache' \
     "$repo_root/Sources/InnoNetwork/Cache/ResponseCachePolicy.swift"

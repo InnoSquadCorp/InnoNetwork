@@ -145,21 +145,29 @@ public struct ObservabilityPack: Sendable {
 public struct CachePack: Sendable {
     private let responseCachePolicy: ResponseCachePolicy?
     private let responseCache: (any ResponseCache)?
+    private let sensitiveHeaderNames: Set<String>?
     private let captureFailurePayload: Bool?
 
     public init(
         responseCachePolicy: ResponseCachePolicy? = nil,
         responseCache: (any ResponseCache)? = nil,
+        sensitiveHeaderNames: Set<String>? = nil,
         captureFailurePayload: Bool? = nil
     ) {
         self.responseCachePolicy = responseCachePolicy
         self.responseCache = responseCache
+        self.sensitiveHeaderNames = sensitiveHeaderNames
         self.captureFailurePayload = captureFailurePayload
     }
 
     package func apply(to builder: inout NetworkConfiguration.AdvancedBuilder) {
         if let responseCachePolicy { builder.responseCachePolicy = responseCachePolicy }
         if let responseCache { builder.responseCache = responseCache }
+        if let sensitiveHeaderNames {
+            builder.responseCacheSensitiveHeaderNames = Set(
+                sensitiveHeaderNames.map { $0.lowercased() }
+            )
+        }
         if let captureFailurePayload { builder.captureFailurePayload = captureFailurePayload }
     }
 }

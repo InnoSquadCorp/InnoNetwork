@@ -331,6 +331,24 @@ Pack fields default to `nil`, so specify only the axes the client owns. To
 disable a policy that a preset enables, construct an explicit advanced
 configuration instead of mutating that preset after construction.
 
+`ResponseCacheHeaderPolicy` and its process-wide mutable registry are removed.
+Scope proprietary identity headers to the client instead:
+
+```swift
+let configuration = NetworkConfiguration.advanced(
+    baseURL: baseURL,
+    cache: CachePack(
+        responseCache: cache,
+        sensitiveHeaderNames: ["X-Tenant-Token"]
+    )
+)
+```
+
+Custom cache implementations that construct keys directly can pass the same
+set to `ResponseCacheKey(..., sensitiveHeaderNames:)`. Built-in credential
+headers remain protected automatically. One client's custom names no longer
+change cache identities created by another client in the same process.
+
 ## Own reducer vocabulary at the feature boundary
 
 `StateReducer` and `StateReduction` are no longer public API. They only

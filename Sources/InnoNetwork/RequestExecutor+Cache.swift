@@ -23,7 +23,12 @@ extension RequestExecutor {
             return .bypass
         }
 
-        let cached = await cachedRespectingVary(cache, key: cacheKey, request: request)
+        let cached = await cachedRespectingVary(
+            cache,
+            key: cacheKey,
+            request: request,
+            sensitiveHeaderNames: configuration.responseCacheSensitiveHeaderNames
+        )
         return configuration.responseCachePolicy.prepare(
             cached: cached,
             now: runtime.clock.now()
@@ -287,7 +292,14 @@ extension RequestExecutor {
             return nil
         }
         let preparedCached = revalidation.cached
-        guard let cached = await cachedRespectingVary(cache, key: cacheKey, request: request) else {
+        guard
+            let cached = await cachedRespectingVary(
+                cache,
+                key: cacheKey,
+                request: request,
+                sensitiveHeaderNames: configuration.responseCacheSensitiveHeaderNames
+            )
+        else {
             throw cacheRevalidationFailed(
                 "Cached response disappeared before 304 Not Modified substitution.",
                 cached: preparedCached,
@@ -497,7 +509,11 @@ extension RequestExecutor {
             return
         }
         let varyHeaders: [String: String?]?
-        switch evaluateVary(responseHeaders: headerSnapshot, request: request) {
+        switch evaluateVary(
+            responseHeaders: headerSnapshot,
+            request: request,
+            sensitiveHeaderNames: configuration.responseCacheSensitiveHeaderNames
+        ) {
         case .wildcardSkipsCache:
             return
         case .noVary:
@@ -559,10 +575,16 @@ extension RequestExecutor {
     func cachedRespectingVary(
         _ cache: any ResponseCache,
         key: ResponseCacheKey,
-        request: URLRequest
+        request: URLRequest,
+        sensitiveHeaderNames: Set<String>
     ) async -> CachedResponse? {
         guard let cached = await cache.get(key) else { return nil }
-        return cachedResponseMatchesVary(cached, request: request) ? cached : nil
+        return
+            cachedResponseMatchesVary(
+                cached,
+                request: request,
+                sensitiveHeaderNames: sensitiveHeaderNames
+            ) ? cached : nil
     }
 }
 

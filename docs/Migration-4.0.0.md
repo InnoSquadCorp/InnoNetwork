@@ -312,7 +312,8 @@ file protection.
 
 The default privacy policy now treats credential-like key headers
 (`Authorization`, `Cookie`, `Proxy-Authorization`, `X-API-Key`, `X-Auth-Token`,
-and custom headers registered through `ResponseCacheHeaderPolicy`) as
+and custom names passed to `CachePack(sensitiveHeaderNames:)` or
+`ResponseCacheKey(..., sensitiveHeaderNames:)`) as
 authenticated. `Cache-Control: private` responses are always do-not-store.
 Even with `storesAuthenticatedResponses: true`, responses to requests carrying
 `Authorization` require `Cache-Control: public`, `must-revalidate`, or

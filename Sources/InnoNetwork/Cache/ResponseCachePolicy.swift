@@ -1,6 +1,5 @@
 import CryptoKit
 import Foundation
-import os
 
 /// Opt-in response caching policy for request/response APIs.
 public enum ResponseCachePolicy: Sendable, Equatable {
@@ -62,12 +61,24 @@ public struct ResponseCacheKey: Hashable, Sendable {
     public let url: String
     public let headers: [String]
 
-    public init(method: String, url: String, headers: [String: String] = [:]) {
+    /// Creates a cache identity while fingerprinting credential-bearing
+    /// header values. `sensitiveHeaderNames` extends the built-in set for
+    /// proprietary identity headers and is scoped to this value; it never
+    /// mutates process-wide state.
+    public init(
+        method: String,
+        url: String,
+        headers: [String: String] = [:],
+        sensitiveHeaderNames: Set<String> = []
+    ) {
         // Method tokens are case-sensitive on the wire. Keep the exact token
         // so custom methods cannot collide with differently cased methods.
         self.method = method
         self.url = Self.normalizedTargetURI(url)
-        self.headers = Self.normalizedHeaders(headers)
+        self.headers = Self.normalizedHeaders(
+            headers,
+            sensitiveHeaderNames: sensitiveHeaderNames
+        )
     }
 
     // `Authorization` is intentionally part of the cache key so that
@@ -84,19 +95,36 @@ public struct ResponseCacheKey: Hashable, Sendable {
         "user-agent",
     ]
 
-    package init?(request: URLRequest) {
+    package init?(request: URLRequest, sensitiveHeaderNames: Set<String> = []) {
         guard let url = Self.normalizedTargetURI(request.url) else { return nil }
         let headers =
             (request.allHTTPHeaderFields ?? [:])
             .filter { !Self.excludedHeaderNames.contains($0.key.lowercased()) }
-        self.init(method: request.httpMethod ?? "GET", url: url, headers: headers)
+        self.init(
+            method: request.httpMethod ?? "GET",
+            url: url,
+            headers: headers,
+            sensitiveHeaderNames: sensitiveHeaderNames
+        )
     }
 
-    private static func normalizedHeaders(_ headers: [String: String]) -> [String] {
-        headers
+    private static func normalizedHeaders(
+        _ headers: [String: String],
+        sensitiveHeaderNames: Set<String>
+    ) -> [String] {
+        let normalizedSensitiveHeaderNames =
+            HeaderValueNormalizer.defaultSensitiveHeaderNames.union(
+                sensitiveHeaderNames.map { $0.lowercased() }
+            )
+        return
+            headers
             .map { header in
                 let name = header.key.lowercased()
-                let value = HeaderValueNormalizer.normalizedValue(name: name, value: header.value)
+                let value = HeaderValueNormalizer.normalizedValue(
+                    name: name,
+                    value: header.value,
+                    sensitiveHeaderNames: normalizedSensitiveHeaderNames
+                )
                 return "\(name):\(value)"
             }
             .sorted()
@@ -124,34 +152,21 @@ public struct ResponseCacheKey: Hashable, Sendable {
         // origin contract that proves they are equivalent.
         return components.url?.absoluteString
     }
-}
 
-
-/// Public registry for cache-key sensitive header names.
-///
-/// `ResponseCacheKey` fingerprints values of headers in this registry with
-/// SHA-256 instead of including raw values, so credentials and similar secrets
-/// never appear in stored cache keys. Built-in defaults cover common
-/// authentication/identity headers; callers can register custom names for
-/// proprietary identity headers.
-public enum ResponseCacheHeaderPolicy {
-    /// Registers `name` (case-insensitive) as a sensitive header. Subsequent
-    /// cache-key derivations fingerprint values for this header. Calls are
-    /// thread-safe and idempotent.
-    public static func registerSensitiveHeader(_ name: String) {
-        HeaderValueNormalizer.registerSensitiveHeader(name)
-    }
-
-    /// Removes a previously registered sensitive header. Built-in defaults
-    /// cannot be removed.
-    public static func unregisterSensitiveHeader(_ name: String) {
-        HeaderValueNormalizer.unregisterSensitiveHeader(name)
-    }
-
-    /// Returns the union of built-in and user-registered sensitive header
-    /// names, all lowercased. Useful for diagnostics and tests.
-    public static var sensitiveHeaderNames: Set<String> {
-        HeaderValueNormalizer.allSensitiveHeaderNames()
+    /// Returns whether a normalized cache-key header represents sensitive
+    /// identity material. Persistent cache products use this package-only
+    /// boundary so custom client-scoped names do not need a second global
+    /// registry.
+    package static func isSensitiveNormalizedHeader(_ header: String) -> Bool {
+        guard let separator = header.firstIndex(of: ":") else { return false }
+        let name = String(header[..<separator])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let value = String(header[header.index(after: separator)...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return HeaderValueNormalizer.defaultSensitiveHeaderNames.contains(name)
+            || value.hasPrefix("sha256:")
+            || value.hasPrefix("hmac-sha256:")
     }
 }
 
@@ -165,31 +180,12 @@ enum HeaderValueNormalizer {
         "x-auth-token",
     ]
 
-    private static let extraSensitiveHeaders = OSAllocatedUnfairLock<Set<String>>(initialState: [])
-
-    static func registerSensitiveHeader(_ name: String) {
-        let lowered = name.lowercased()
-        guard !defaultSensitiveHeaderNames.contains(lowered) else { return }
-        extraSensitiveHeaders.withLock { _ = $0.insert(lowered) }
-    }
-
-    static func unregisterSensitiveHeader(_ name: String) {
-        let lowered = name.lowercased()
-        extraSensitiveHeaders.withLock { _ = $0.remove(lowered) }
-    }
-
-    static func allSensitiveHeaderNames() -> Set<String> {
-        extraSensitiveHeaders.withLock { defaultSensitiveHeaderNames.union($0) }
-    }
-
-    static func isSensitive(_ name: String) -> Bool {
-        let lowered = name.lowercased()
-        if defaultSensitiveHeaderNames.contains(lowered) { return true }
-        return extraSensitiveHeaders.withLock { $0.contains(lowered) }
-    }
-
-    static func normalizedValue(name: String, value: String) -> String {
-        isSensitive(name) ? fingerprint(value) : value
+    static func normalizedValue(
+        name: String,
+        value: String,
+        sensitiveHeaderNames: Set<String>
+    ) -> String {
+        sensitiveHeaderNames.contains(name.lowercased()) ? fingerprint(value) : value
     }
 
     /// Threat model: SHA-256 of the raw header value is collision-resistant
@@ -198,11 +194,8 @@ enum HeaderValueNormalizer {
     /// guessed credential matches the value that produced the cache entry,
     /// because the fingerprint is reproducible. This is acceptable for the
     /// in-process cache — the raw value lives in memory anyway — but for
-    /// the persistent cache the fingerprint should ideally be HMAC-keyed
-    /// with a per-installation salt stored next to the index. The salting
-    /// pass is tracked as a v5 hardening item; for 4.0.x we keep the
-    /// unkeyed fingerprint and rely on disk-level encryption (`Data
-    /// Protection: Complete` on Apple platforms) for at-rest secrecy.
+    /// the persistent cache the fingerprint is HMAC-keyed with a per-cache
+    /// installation key before it is written to disk.
     private static func fingerprint(_ value: String) -> String {
         let digest = SHA256.hash(data: Data(value.utf8))
         let hex = digest.map { String(format: "%02x", $0) }.joined()
@@ -551,8 +544,13 @@ package enum VaryEvaluation: Sendable, Equatable {
 
 package func evaluateVary(
     responseHeaders: [String: String],
-    request: URLRequest
+    request: URLRequest,
+    sensitiveHeaderNames: Set<String> = []
 ) -> VaryEvaluation {
+    let normalizedSensitiveHeaderNames =
+        HeaderValueNormalizer.defaultSensitiveHeaderNames.union(
+            sensitiveHeaderNames.map { $0.lowercased() }
+        )
     let varyValue = responseHeaders.first { $0.key.caseInsensitiveCompare("Vary") == .orderedSame }?.value
     guard let varyValue, !varyValue.isEmpty else {
         return .noVary
@@ -572,7 +570,11 @@ package func evaluateVary(
     for header in entries {
         let lowered = header.lowercased()
         let normalizedValue = request.value(forHTTPHeaderField: header).map {
-            HeaderValueNormalizer.normalizedValue(name: lowered, value: $0)
+            HeaderValueNormalizer.normalizedValue(
+                name: lowered,
+                value: $0,
+                sensitiveHeaderNames: normalizedSensitiveHeaderNames
+            )
         }
         snapshot.updateValue(normalizedValue, forKey: lowered)
     }
@@ -622,14 +624,23 @@ package func notModifiedRevisesVary(
 
 package func cachedResponseMatchesVary(
     _ cached: CachedResponse,
-    request: URLRequest
+    request: URLRequest,
+    sensitiveHeaderNames: Set<String> = []
 ) -> Bool {
+    let normalizedSensitiveHeaderNames =
+        HeaderValueNormalizer.defaultSensitiveHeaderNames.union(
+            sensitiveHeaderNames.map { $0.lowercased() }
+        )
     guard let storedVary = cached.varyHeaders else {
         return true
     }
     for (header, storedValue) in storedVary {
         let currentValue = request.value(forHTTPHeaderField: header).map {
-            HeaderValueNormalizer.normalizedValue(name: header, value: $0)
+            HeaderValueNormalizer.normalizedValue(
+                name: header,
+                value: $0,
+                sensitiveHeaderNames: normalizedSensitiveHeaderNames
+            )
         }
         if !varyValuesEqual(stored: storedValue, current: currentValue, headerName: header) {
             return false

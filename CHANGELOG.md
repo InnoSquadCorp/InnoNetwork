@@ -107,6 +107,11 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
 - The seven deprecated `NetworkConfiguration.with(...)` modifiers are removed.
   Compose `ResiliencePack`, `AuthPack`, `ObservabilityPack`, `CachePack`, and
   `TransportPack` through `NetworkConfiguration.advanced(...)`.
+- The process-wide mutable `ResponseCacheHeaderPolicy` registry is removed.
+  Pass proprietary identity headers through
+  `CachePack(sensitiveHeaderNames:)` or
+  `ResponseCacheKey(..., sensitiveHeaderNames:)`; built-in credential headers
+  remain protected automatically.
 - `StateReducer` and `StateReduction` are package implementation vocabulary,
   not public API. Adopters should own reducer types at their feature boundary.
 - Redirect defaults deny HTTPS downgrade and every cross-origin proposal that

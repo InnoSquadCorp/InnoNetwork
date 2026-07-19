@@ -90,6 +90,7 @@ private actor CountingResponseCache: ResponseCache {
     private(set) var getCount = 0
     private(set) var setCount = 0
     private(set) var invalidateCount = 0
+    private(set) var lastSetKey: ResponseCacheKey?
 
     init(cached: CachedResponse? = nil) {
         self.cached = cached
@@ -102,7 +103,8 @@ private actor CountingResponseCache: ResponseCache {
     }
 
     func set(_ key: ResponseCacheKey, _ value: CachedResponse) async {
-        _ = (key, value)
+        _ = value
+        lastSetKey = key
         setCount += 1
     }
 
@@ -1642,6 +1644,31 @@ struct ResiliencePolicyTests {
         #expect(first.headers.contains { $0.contains("authorization:sha256:") })
         #expect(!first.headers.contains { $0.contains("secret-one") })
         #expect(!second.headers.contains { $0.contains("secret-two") })
+    }
+
+    @Test("Client-scoped sensitive headers reach executor-owned cache keys")
+    func clientScopedSensitiveHeadersReachExecutorCacheKeys() async throws {
+        let cache = CountingResponseCache()
+        let session = try SequenceURLSession(queue: [
+            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "cached"))
+        ])
+        let configuration = NetworkConfiguration(
+            baseURL: URL(string: "https://api.example.com")!,
+            requestInterceptors: [
+                HeaderSettingInterceptor(field: "X-Tenant-Token", value: "tenant-secret")
+            ],
+            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
+            responseCache: cache,
+            responseCacheSensitiveHeaderNames: ["X-Tenant-Token"],
+            responseBodyBufferingPolicy: .buffered(maxBytes: nil)
+        )
+        let client = DefaultNetworkClient(configuration: configuration, session: session)
+
+        _ = try await client.request(ResilienceGetRequest())
+
+        let key = try #require(await cache.lastSetKey)
+        #expect(key.headers.contains { $0.hasPrefix("x-tenant-token:sha256:") })
+        #expect(key.headers.contains { $0.contains("tenant-secret") } == false)
     }
 
     @Test("Response cache key strips URL fragments")

@@ -145,6 +145,9 @@ public struct NetworkConfiguration: Sendable {
     package let responseCachePolicy: ResponseCachePolicy
     /// Cache storage used when ``responseCachePolicy`` is enabled.
     package let responseCache: (any ResponseCache)?
+    /// Additional client-scoped request header names whose values are
+    /// fingerprinted before they become part of a response-cache identity.
+    package let responseCacheSensitiveHeaderNames: Set<String>
     /// Optional per-host circuit breaker policy. Disabled by default.
     package let circuitBreakerPolicy: CircuitBreakerPolicy?
     /// Custom public execution policies wrapped around each raw transport
@@ -273,6 +276,7 @@ public struct NetworkConfiguration: Sendable {
         package var requestCoalescingPolicy: RequestCoalescingPolicy
         package var responseCachePolicy: ResponseCachePolicy
         package var responseCache: (any ResponseCache)?
+        package var responseCacheSensitiveHeaderNames: Set<String>
         package var circuitBreakerPolicy: CircuitBreakerPolicy?
         package var customExecutionPolicies: [any RequestExecutionPolicy]
         package var idempotencyKeyPolicy: IdempotencyKeyPolicy
@@ -307,6 +311,7 @@ public struct NetworkConfiguration: Sendable {
             self.requestCoalescingPolicy = preset.requestCoalescingPolicy
             self.responseCachePolicy = preset.responseCachePolicy
             self.responseCache = preset.responseCache
+            self.responseCacheSensitiveHeaderNames = preset.responseCacheSensitiveHeaderNames
             self.circuitBreakerPolicy = preset.circuitBreakerPolicy
             self.customExecutionPolicies = preset.customExecutionPolicies
             self.idempotencyKeyPolicy = preset.idempotencyKeyPolicy
@@ -344,6 +349,7 @@ public struct NetworkConfiguration: Sendable {
                 requestCoalescingPolicy: requestCoalescingPolicy,
                 responseCachePolicy: responseCachePolicy,
                 responseCache: responseCache,
+                responseCacheSensitiveHeaderNames: responseCacheSensitiveHeaderNames,
                 circuitBreakerPolicy: circuitBreakerPolicy,
                 customExecutionPolicies: customExecutionPolicies,
                 idempotencyKeyPolicy: idempotencyKeyPolicy,
@@ -406,6 +412,7 @@ public struct NetworkConfiguration: Sendable {
         requestCoalescingPolicy: RequestCoalescingPolicy = .disabled,
         responseCachePolicy: ResponseCachePolicy = .disabled,
         responseCache: (any ResponseCache)? = nil,
+        responseCacheSensitiveHeaderNames: Set<String> = [],
         circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
         customExecutionPolicies: [any RequestExecutionPolicy] = [],
         idempotencyKeyPolicy: IdempotencyKeyPolicy = .disabled,
@@ -442,6 +449,9 @@ public struct NetworkConfiguration: Sendable {
         self.requestCoalescingPolicy = requestCoalescingPolicy
         self.responseCachePolicy = responseCachePolicy
         self.responseCache = responseCache
+        self.responseCacheSensitiveHeaderNames = Set(
+            responseCacheSensitiveHeaderNames.map { $0.lowercased() }
+        )
         self.circuitBreakerPolicy = circuitBreakerPolicy
         self.customExecutionPolicies = customExecutionPolicies
         self.idempotencyKeyPolicy = idempotencyKeyPolicy
@@ -482,6 +492,7 @@ public struct NetworkConfiguration: Sendable {
         requestCoalescingPolicy: RequestCoalescingPolicy = .disabled,
         responseCachePolicy: ResponseCachePolicy = .disabled,
         responseCache: (any ResponseCache)? = nil,
+        responseCacheSensitiveHeaderNames: Set<String> = [],
         circuitBreakerPolicy: CircuitBreakerPolicy? = nil,
         customExecutionPolicies: [any RequestExecutionPolicy] = [],
         idempotencyKeyPolicy: IdempotencyKeyPolicy = .disabled,
@@ -519,6 +530,7 @@ public struct NetworkConfiguration: Sendable {
             requestCoalescingPolicy: requestCoalescingPolicy,
             responseCachePolicy: responseCachePolicy,
             responseCache: responseCache,
+            responseCacheSensitiveHeaderNames: responseCacheSensitiveHeaderNames,
             circuitBreakerPolicy: circuitBreakerPolicy,
             customExecutionPolicies: customExecutionPolicies,
             idempotencyKeyPolicy: idempotencyKeyPolicy,

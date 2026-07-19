@@ -538,7 +538,8 @@ let tunedNetwork = NetworkConfiguration.advanced(
     ),
     cache: CachePack(
         responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-        responseCache: InMemoryResponseCache()
+        responseCache: InMemoryResponseCache(),
+        sensitiveHeaderNames: ["X-Tenant-Token"]
     ),
     transport: TransportPack(
         timeout: 30,

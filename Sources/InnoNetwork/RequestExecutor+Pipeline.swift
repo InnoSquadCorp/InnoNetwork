@@ -62,7 +62,10 @@ extension RequestExecutor {
             // partitions on `allowsRequestSharing`, not on this key.
             let cacheKey: ResponseCacheKey? =
                 allowsRequestSharing && configuration.responseCache != nil
-                ? ResponseCacheKey(request: request)
+                ? ResponseCacheKey(
+                    request: request,
+                    sensitiveHeaderNames: configuration.responseCacheSensitiveHeaderNames
+                )
                 : nil
             let cachePreparation = await prepareCacheLookup(
                 cacheKey: cacheKey,

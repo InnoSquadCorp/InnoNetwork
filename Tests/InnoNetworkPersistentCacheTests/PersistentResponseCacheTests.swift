@@ -377,20 +377,19 @@ struct PersistentResponseCacheTests {
         #expect(await cache.get(key) == nil)
     }
 
-    @Test("Default policy rejects registered sensitive request keys")
-    func rejectsRegisteredSensitiveRequestKeysByDefault() async throws {
+    @Test("Default policy rejects value-scoped sensitive request keys")
+    func rejectsValueScopedSensitiveRequestKeysByDefault() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let headerName = "X-Session-\(UUID().uuidString)"
-        ResponseCacheHeaderPolicy.registerSensitiveHeader(headerName)
-        defer { ResponseCacheHeaderPolicy.unregisterSensitiveHeader(headerName) }
         let cache = try PersistentResponseCache(
             configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
         )
         let key = ResponseCacheKey(
             method: "GET",
             url: "https://example.com/me",
-            headers: [headerName: "secret"]
+            headers: [headerName: "secret"],
+            sensitiveHeaderNames: [headerName]
         )
 
         await cache.set(key, CachedResponse(data: Data("custom-auth".utf8)))

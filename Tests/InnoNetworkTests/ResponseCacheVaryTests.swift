@@ -133,6 +133,35 @@ struct ResponseCacheVaryTests {
         )
     }
 
+    @Test("Client-scoped sensitive Vary headers use the same fingerprint policy")
+    func clientScopedSensitiveVaryHeaderMatches() async throws {
+        let headerName = "X-Tenant-Token"
+        let token = "tenant-secret"
+        let sensitiveHeaderNames = Set([headerName])
+        let evaluation = evaluateVary(
+            responseHeaders: ["Vary": headerName],
+            request: request(headers: [headerName: token]),
+            sensitiveHeaderNames: sensitiveHeaderNames
+        )
+        guard case .vary(let snapshot) = evaluation else {
+            Issue.record("Expected a client-scoped Vary snapshot")
+            return
+        }
+
+        let storedValue = try #require(snapshot[headerName.lowercased()] ?? nil)
+        #expect(storedValue.hasPrefix("sha256:"))
+        #expect(storedValue.contains(token) == false)
+
+        let cached = CachedResponse(data: Data(), varyHeaders: snapshot)
+        #expect(
+            cachedResponseMatchesVary(
+                cached,
+                request: request(headers: [headerName: token]),
+                sensitiveHeaderNames: sensitiveHeaderNames
+            )
+        )
+    }
+
     // MARK: - cachedResponseMatchesVary
 
     @Test("nil varyHeaders always matches (no vary semantics)")

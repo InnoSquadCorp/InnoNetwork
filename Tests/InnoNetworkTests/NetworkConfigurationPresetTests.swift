@@ -87,6 +87,19 @@ struct NetworkConfigurationPresetTests {
         #expect(configuration.circuitBreakerPolicy == nil)
     }
 
+    @Test("CachePack scopes sensitive header names to one configuration")
+    func cachePackScopesSensitiveHeaderNames() {
+        let baseURL = URL(string: "https://api.example.com")!
+        let protected = NetworkConfiguration.advanced(
+            baseURL: baseURL,
+            cache: CachePack(sensitiveHeaderNames: ["X-Tenant-Token"])
+        )
+        let defaults = NetworkConfiguration.advanced(baseURL: baseURL)
+
+        #expect(protected.responseCacheSensitiveHeaderNames == ["x-tenant-token"])
+        #expect(defaults.responseCacheSensitiveHeaderNames.isEmpty)
+    }
+
     @Test("AuthPack supplies the refresh token policy")
     func authPackSuppliesRefreshTokenPolicy() {
         let baseURL = URL(string: "https://api.example.com")!

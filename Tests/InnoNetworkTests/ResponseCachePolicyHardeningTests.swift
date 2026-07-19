@@ -90,8 +90,8 @@ struct ResponseCacheKeyQueryNormalizationTests {
 }
 
 
-@Suite("ResponseCacheHeaderPolicy sensitive headers")
-struct ResponseCacheHeaderPolicyTests {
+@Suite("ResponseCacheKey sensitive headers")
+struct ResponseCacheKeySensitiveHeaderTests {
 
     @Test("Default sensitive headers are fingerprinted in the cache key")
     func defaultSensitiveHeadersFingerprint() throws {
@@ -126,26 +126,42 @@ struct ResponseCacheHeaderPolicyTests {
         #expect(keyA != keyB)
     }
 
-    @Test("User-registered sensitive headers are also fingerprinted")
-    func userRegisteredHeader() throws {
-        ResponseCacheHeaderPolicy.registerSensitiveHeader("X-Internal-Token")
-        defer { ResponseCacheHeaderPolicy.unregisterSensitiveHeader("X-Internal-Token") }
-
+    @Test("Value-scoped sensitive headers are also fingerprinted")
+    func valueScopedHeader() throws {
         let url = try #require(URL(string: "https://api.example.com/v1/internal"))
         var request = URLRequest(url: url)
         request.setValue("super-secret-internal", forHTTPHeaderField: "X-Internal-Token")
 
-        let key = try #require(ResponseCacheKey(request: request))
+        let key = try #require(
+            ResponseCacheKey(
+                request: request,
+                sensitiveHeaderNames: ["X-Internal-Token"]
+            )
+        )
         let joined = key.headers.joined(separator: "\n")
         #expect(joined.contains("super-secret-internal") == false)
         #expect(joined.contains("sha256:"))
-        #expect(ResponseCacheHeaderPolicy.sensitiveHeaderNames.contains("x-internal-token"))
     }
 
-    @Test("Built-in sensitive headers cannot be unregistered")
-    func cannotRemoveBuiltins() {
-        ResponseCacheHeaderPolicy.unregisterSensitiveHeader("authorization")
-        #expect(ResponseCacheHeaderPolicy.sensitiveHeaderNames.contains("authorization"))
+    @Test("Custom header policy does not leak into another cache key")
+    func customPolicyIsValueScoped() throws {
+        let url = try #require(URL(string: "https://api.example.com/v1/internal"))
+        let headers = ["X-Internal-Token": "super-secret-internal"]
+
+        let protected = ResponseCacheKey(
+            method: "GET",
+            url: url.absoluteString,
+            headers: headers,
+            sensitiveHeaderNames: ["X-Internal-Token"]
+        )
+        let defaultOnly = ResponseCacheKey(
+            method: "GET",
+            url: url.absoluteString,
+            headers: headers
+        )
+
+        #expect(protected.headers.first?.contains("super-secret-internal") == false)
+        #expect(defaultOnly.headers.first?.contains("super-secret-internal") == true)
     }
 }
 
