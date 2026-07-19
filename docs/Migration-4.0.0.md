@@ -23,7 +23,7 @@ behavior review.
 | `urlSessionConfigurationOverride` (removed in 4.x) | Build a `URLSession` from `configuration.makeURLSessionConfiguration()`, mutate it directly (`httpCookieStorage`, `assumesHTTP3Capable`, etc.), and pass it to `DefaultNetworkClient(configuration:session:)`. |
 | Synchronous calls on `WebSocketManager` (e.g. `manager.connect(...)`) | Add `await`: `WebSocketManager` is now an `actor`. See "WebSocketManager actor conversion" below. |
 | Exhaustive `switch` over `NetworkError` | Add an `@unknown default` arm. The 4.0.0 release adds `.transportSuspended` and `.cacheRevalidationFailed(underlying:cached:)` cases. See "NetworkError new cases" below. |
-| `StreamingResumePolicy.lastEventID` paired with a bounded buffering policy | Either drop the bounded buffer or disable resume. The runtime guard now routes through `StreamingResumeStrategy.isCompatible(with:)` and emits a generic "unbounded output buffering" error message. |
+| `StreamingResumePolicy.lastEventID` paired with a bounded buffering policy | Either drop the bounded buffer or disable resume. The runtime guard emits a generic "unbounded output buffering" error message. |
 
 ## WebSocketManager actor conversion
 
@@ -120,9 +120,10 @@ without touching them:
 - **`MultipartUploadStrategy.threshold(bytes:)`** — clamping factory for
   the `streamingThreshold` case. `MultipartAPIDefinition.uploadStrategy`
   default remains `.platformDefault`.
-- **`StreamingResumeStrategy` protocol** — marker conformed by
-  `StreamingResumePolicy`. Adopters who wanted to grow their own resume
-  strategy now have a single extension point.
+- **Resume compatibility guard** — `StreamingResumePolicy` rejects bounded
+  buffering when Last-Event-ID recovery requires a contiguous output stream.
+  The temporary 4.x `StreamingResumeStrategy` marker is removed by the 5.0
+  preview because the executor never accepted alternate conformers.
 - **`PersistentResponseCacheStatistics.hitCount` / `missCount` /
   `evictionCount`** — three new in-process counters on the existing
   statistics struct. The struct's initializer keeps the original

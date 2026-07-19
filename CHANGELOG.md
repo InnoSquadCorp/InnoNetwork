@@ -112,6 +112,9 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   `CachePack(sensitiveHeaderNames:)` or
   `ResponseCacheKey(..., sensitiveHeaderNames:)`; built-in credential headers
   remain protected automatically.
+- `StreamingResumeStrategy` is removed. It had one conformer and no client
+  injection point, so `StreamingResumePolicy` now keeps buffering compatibility
+  as a package-owned validation detail without changing reconnect behavior.
 - `StateReducer` and `StateReduction` are package implementation vocabulary,
   not public API. Adopters should own reducer types at their feature boundary.
 - Redirect defaults deny HTTPS downgrade and every cross-origin proposal that

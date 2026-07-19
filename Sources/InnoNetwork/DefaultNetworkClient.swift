@@ -454,12 +454,10 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
         resumePolicy: StreamingResumePolicy,
         bufferingPolicy: StreamingBufferingPolicy
     ) -> NetworkError? {
-        // The compatibility decision now flows through the
-        // ``StreamingResumeStrategy`` protocol so a future strategy
-        // (byte-offset replay, NDJSON cursor windows) can answer the
-        // same question without the executor learning a new case.
-        // `StreamingResumePolicy` conforms to the protocol, so the call
-        // site stays a single line of policy code.
+        // Compatibility belongs to the concrete value policy. There is no
+        // public strategy protocol because the executor cannot accept an
+        // alternative implementation: adding one would advertise a
+        // substitution point that does not exist.
         guard !resumePolicy.isCompatible(with: bufferingPolicy) else { return nil }
         return .configuration(
             reason: .invalidRequest(

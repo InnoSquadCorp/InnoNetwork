@@ -169,7 +169,6 @@ acquiring a 5.x compatibility promise.
 - `StreamingBufferingPolicy`, `StreamingOutputSequence`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, and `RequestPriority`
 - `HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)
 - `MultipartUploadStrategy.threshold(bytes:)`
-- `StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance
 - `PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`
 - `DownloadTask.generation` / `attempt` observation accessors
 - `NetworkErrorCode` SSOT enum (4.0.0 baseline) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case
@@ -409,8 +408,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 planned 5.x release line.
 
-The machine-checked snapshot currently partitions all 1,230 declarations into
-305 Stable consumer declarations, 892 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 1,227 declarations into
+305 Stable consumer declarations, 889 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in

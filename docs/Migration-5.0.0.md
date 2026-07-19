@@ -13,6 +13,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | --- | --- |
 | Treating `stream(_:)` as `AsyncThrowingStream<Output, Error>` and casting failures to `NetworkError` | Iterate the returned `StreamingOutputSequence`; a plain `catch` binds `NetworkError` directly |
 | Depending on `stream(_:)` to read ahead into an unbounded output queue | Accept the default lossless backpressure, or pass `.unbounded` explicitly after reviewing the memory trade-off |
+| Referencing `StreamingResumeStrategy` or calling its public `isCompatible(with:)` requirement | Configure `StreamingResumePolicy` on the endpoint; compatibility remains an executor-owned validation detail |
 | `AuthScope`, `PublicAuthScope`, `AuthRequiredScope` | `SessionAuthentication` with `.anonymous`, `.optional`, or `.required` |
 | `typealias Auth = PublicAuthScope` | `var sessionAuthentication: SessionAuthentication { .anonymous }` |
 | `typealias Auth = AuthRequiredScope` | `var sessionAuthentication: SessionAuthentication { .required }` |

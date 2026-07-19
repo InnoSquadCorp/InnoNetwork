@@ -43,35 +43,6 @@ public enum StreamingResumePolicy: Sendable, Equatable {
     }
 }
 
-/// Marker protocol for streaming resume strategies introduced by the 4.0.0
-/// line. The protocol gives future strategies (byte-offset replay, NDJSON
-/// cursor windows, vendor-specific opaque tokens) a single extension
-/// point so the streaming executor can interrogate compatibility without
-/// pattern-matching the legacy ``StreamingResumePolicy`` enum.
-///
-/// In the 4.0.0 release the only conformer is ``StreamingResumePolicy``
-/// itself; consumers should keep building the policy through that enum
-/// and rely on the protocol surface for compatibility checks. The next
-/// stage of the release wires the ``isCompatible(with:)`` decision into
-/// `DefaultNetworkClient.stream(_:bufferingPolicy:)`, where a bounded
-/// buffer paired with a non-disabled resume strategy is rejected before
-/// the transport starts.
-public protocol StreamingResumeStrategy: Sendable {
-    /// Returns whether the strategy is compatible with the supplied
-    /// buffering policy.
-    ///
-    /// A bounded buffering policy (``StreamingBufferingPolicy/bufferingNewest(_:)``
-    /// or ``StreamingBufferingPolicy/bufferingOldest(_:)``) silently drops
-    /// outputs when the consumer falls behind. Resume strategies that rely
-    /// on contiguous client-side state — Last-Event-ID is the in-tree
-    /// example — would silently lose events whose ids the dropped outputs
-    /// carried. This method lets the executor refuse the mismatch instead.
-    /// The disabled resume strategy returns `true` for every buffering
-    /// policy because nothing on the client depends on the dropped
-    /// frames.
-    func isCompatible(with bufferingPolicy: StreamingBufferingPolicy) -> Bool
-}
-
 /// Output buffering policy for ``DefaultNetworkClient/stream(_:bufferingPolicy:)``.
 ///
 /// The no-argument ``DefaultNetworkClient/stream(_:)`` path is lossless and
@@ -101,8 +72,8 @@ public enum StreamingBufferingPolicy: Sendable, Equatable {
     }
 }
 
-extension StreamingResumePolicy: StreamingResumeStrategy {
-    public func isCompatible(with bufferingPolicy: StreamingBufferingPolicy) -> Bool {
+extension StreamingResumePolicy {
+    package func isCompatible(with bufferingPolicy: StreamingBufferingPolicy) -> Bool {
         switch self {
         case .disabled:
             // The consumer has opted out of resume entirely, so a bounded

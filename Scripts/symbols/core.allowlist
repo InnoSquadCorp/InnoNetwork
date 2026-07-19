@@ -386,8 +386,6 @@ InnoNetwork	swift.method	StreamingAPIDefinition.eventID(from:)
 InnoNetwork	swift.method	StreamingOutputSequence.Iterator.next()
 InnoNetwork	swift.method	StreamingOutputSequence.Iterator.next(isolation:)
 InnoNetwork	swift.method	StreamingOutputSequence.makeAsyncIterator()
-InnoNetwork	swift.method	StreamingResumePolicy.isCompatible(with:)
-InnoNetwork	swift.method	StreamingResumeStrategy.isCompatible(with:)
 InnoNetwork	swift.method	TraceContextInterceptor.adapt(_:)
 InnoNetwork	swift.method	TrustEvaluating.evaluate(challenge:)
 InnoNetwork	swift.method	URLQueryEncoder.encode(_:rootKey:)
@@ -656,7 +654,6 @@ InnoNetwork	swift.protocol	ResponseInterceptor
 InnoNetwork	swift.protocol	RetryPolicy
 InnoNetwork	swift.protocol	SingleRequestExecutable
 InnoNetwork	swift.protocol	StreamingAPIDefinition
-InnoNetwork	swift.protocol	StreamingResumeStrategy
 InnoNetwork	swift.protocol	TrustEvaluating
 InnoNetwork	swift.protocol	URLSessionProtocol
 InnoNetwork	swift.protocol	UploadNetworkClient

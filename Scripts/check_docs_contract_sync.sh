@@ -193,7 +193,6 @@ expected_provisionally=(
 '`StreamingBufferingPolicy`, `StreamingOutputSequence`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, and `RequestPriority`'
 '`HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)'
 '`MultipartUploadStrategy.threshold(bytes:)`'
-'`StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance'
 '`PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`'
 '`DownloadTask.generation` / `attempt` observation accessors'
 '`NetworkErrorCode` SSOT enum (4.0.0 baseline) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case'
@@ -1605,15 +1604,6 @@ for symbol in "${expected_provisionally[@]}"; do
     '`MultipartUploadStrategy.threshold(bytes:)`')
       require_contains 'public static func threshold(bytes: Int64)' \
         "$repo_root/Sources/InnoNetwork/APIDefinition.swift"
-      continue
-      ;;
-    '`StreamingResumeStrategy` protocol and the `isCompatible(with:)` requirement; `StreamingResumePolicy` retroactive conformance')
-      require_contains 'public protocol StreamingResumeStrategy' \
-        "$repo_root/Sources/InnoNetwork/StreamingAPIDefinition.swift"
-      require_contains 'func isCompatible(with bufferingPolicy: StreamingBufferingPolicy) -> Bool' \
-        "$repo_root/Sources/InnoNetwork/StreamingAPIDefinition.swift"
-      require_contains 'extension StreamingResumePolicy: StreamingResumeStrategy' \
-        "$repo_root/Sources/InnoNetwork/StreamingAPIDefinition.swift"
       continue
       ;;
     '`PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`')

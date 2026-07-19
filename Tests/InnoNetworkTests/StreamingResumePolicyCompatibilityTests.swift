@@ -3,8 +3,8 @@ import Testing
 
 @testable import InnoNetwork
 
-@Suite("Streaming resume strategy compatibility")
-struct StreamingResumeStrategyCompatibilityTests {
+@Suite("Streaming resume policy compatibility")
+struct StreamingResumePolicyCompatibilityTests {
     @Test(".disabled is compatible with every buffering policy")
     func disabledCompatibleWithAll() async {
         let policy = StreamingResumePolicy.disabled
