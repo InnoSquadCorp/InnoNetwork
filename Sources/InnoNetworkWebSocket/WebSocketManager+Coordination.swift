@@ -15,61 +15,62 @@ extension WebSocketManager {
 
     func beginShutdownTrackedOperation() -> Bool {
         guard !isShutdown else { return false }
-        activeShutdownTrackedOperationCount += 1
+        coordinationState.activeShutdownTrackedOperationCount += 1
         return true
     }
 
     func finishShutdownTrackedOperation() {
-        activeShutdownTrackedOperationCount -= 1
-        guard activeShutdownTrackedOperationCount == 0 else { return }
-        let waiters = shutdownTrackedOperationDrainWaiters
-        shutdownTrackedOperationDrainWaiters.removeAll(keepingCapacity: false)
+        coordinationState.activeShutdownTrackedOperationCount -= 1
+        guard coordinationState.activeShutdownTrackedOperationCount == 0 else { return }
+        let waiters = coordinationState.shutdownTrackedOperationDrainWaiters
+        coordinationState.shutdownTrackedOperationDrainWaiters.removeAll(keepingCapacity: false)
         for waiter in waiters {
             waiter.resume()
         }
     }
 
     func waitForShutdownTrackedOperationsToDrain() async {
-        guard activeShutdownTrackedOperationCount > 0 else { return }
+        guard coordinationState.activeShutdownTrackedOperationCount > 0 else { return }
         await withCheckedContinuation { continuation in
-            shutdownTrackedOperationDrainWaiters.append(continuation)
+            coordinationState.shutdownTrackedOperationDrainWaiters.append(continuation)
         }
     }
 
     func beginEventConsumerRegistration(taskID: String) -> Bool {
-        guard !eventConsumerAdmissionClosedTaskIDs.contains(taskID) else { return false }
-        activeEventConsumerRegistrationCounts[taskID, default: 0] += 1
+        guard !coordinationState.eventConsumerAdmissionClosedTaskIDs.contains(taskID) else { return false }
+        coordinationState.activeEventConsumerRegistrationCounts[taskID, default: 0] += 1
         return true
     }
 
     func finishEventConsumerRegistration(taskID: String) {
-        guard let activeCount = activeEventConsumerRegistrationCounts[taskID], activeCount > 0 else { return }
+        guard let activeCount = coordinationState.activeEventConsumerRegistrationCounts[taskID], activeCount > 0
+        else { return }
         if activeCount > 1 {
-            activeEventConsumerRegistrationCounts[taskID] = activeCount - 1
+            coordinationState.activeEventConsumerRegistrationCounts[taskID] = activeCount - 1
             return
         }
 
-        activeEventConsumerRegistrationCounts.removeValue(forKey: taskID)
-        let waiters = eventConsumerRegistrationDrainWaiters.removeValue(forKey: taskID) ?? []
+        coordinationState.activeEventConsumerRegistrationCounts.removeValue(forKey: taskID)
+        let waiters = coordinationState.eventConsumerRegistrationDrainWaiters.removeValue(forKey: taskID) ?? []
         for waiter in waiters {
             waiter.resume()
         }
     }
 
     func closeEventConsumerAdmissionAndWait(taskID: String) async {
-        eventConsumerAdmissionClosedTaskIDs.insert(taskID)
-        guard activeEventConsumerRegistrationCounts[taskID, default: 0] > 0 else { return }
+        coordinationState.eventConsumerAdmissionClosedTaskIDs.insert(taskID)
+        guard coordinationState.activeEventConsumerRegistrationCounts[taskID, default: 0] > 0 else { return }
         await withCheckedContinuation { continuation in
-            eventConsumerRegistrationDrainWaiters[taskID, default: []].append(continuation)
+            coordinationState.eventConsumerRegistrationDrainWaiters[taskID, default: []].append(continuation)
         }
     }
 
     func reopenEventConsumerAdmission(taskID: String) {
-        eventConsumerAdmissionClosedTaskIDs.remove(taskID)
+        coordinationState.eventConsumerAdmissionClosedTaskIDs.remove(taskID)
     }
 
     func isEventConsumerAdmissionClosed(taskID: String) -> Bool {
-        eventConsumerAdmissionClosedTaskIDs.contains(taskID)
+        coordinationState.eventConsumerAdmissionClosedTaskIDs.contains(taskID)
     }
 
     /// Acquires the per-task lifecycle gate while remaining responsive to
@@ -78,9 +79,9 @@ extension WebSocketManager {
     /// of waiting for the cleanup-owned gate and forming a circular wait.
     func acquireTaskLifecycleGate(taskID: String) async -> Bool {
         guard !Task.isCancelled else { return false }
-        if taskLifecycleGateOwners.insert(taskID).inserted {
+        if coordinationState.taskLifecycleGateOwners.insert(taskID).inserted {
             guard !Task.isCancelled else {
-                taskLifecycleGateOwners.remove(taskID)
+                coordinationState.taskLifecycleGateOwners.remove(taskID)
                 return false
             }
             return true
@@ -93,7 +94,7 @@ extension WebSocketManager {
                     continuation.resume(returning: false)
                     return
                 }
-                taskLifecycleGateWaiters[taskID, default: []].append(
+                coordinationState.taskLifecycleGateWaiters[taskID, default: []].append(
                     TaskLifecycleGateWaiter(id: waiterID, continuation: continuation)
                 )
             }
@@ -113,43 +114,43 @@ extension WebSocketManager {
     /// reducer emits terminal effects it must acquire the gate even when the
     /// caller that delivered the terminal signal has itself been cancelled.
     func acquireTaskLifecycleGateUnconditionally(taskID: String) async {
-        guard !taskLifecycleGateOwners.insert(taskID).inserted else { return }
+        guard !coordinationState.taskLifecycleGateOwners.insert(taskID).inserted else { return }
         _ = await withCheckedContinuation { continuation in
-            taskLifecycleGateWaiters[taskID, default: []].append(
+            coordinationState.taskLifecycleGateWaiters[taskID, default: []].append(
                 TaskLifecycleGateWaiter(id: UUID(), continuation: continuation)
             )
         }
     }
 
     func cancelTaskLifecycleGateWaiter(taskID: String, waiterID: UUID) {
-        guard var waiters = taskLifecycleGateWaiters[taskID],
+        guard var waiters = coordinationState.taskLifecycleGateWaiters[taskID],
             let index = waiters.firstIndex(where: { $0.id == waiterID })
         else { return }
 
         let waiter = waiters.remove(at: index)
         if waiters.isEmpty {
-            taskLifecycleGateWaiters.removeValue(forKey: taskID)
+            coordinationState.taskLifecycleGateWaiters.removeValue(forKey: taskID)
         } else {
-            taskLifecycleGateWaiters[taskID] = waiters
+            coordinationState.taskLifecycleGateWaiters[taskID] = waiters
         }
         waiter.continuation.resume(returning: false)
     }
 
     func taskLifecycleGateWaiterCount(taskID: String) -> Int {
-        taskLifecycleGateWaiters[taskID]?.count ?? 0
+        coordinationState.taskLifecycleGateWaiters[taskID]?.count ?? 0
     }
 
     func releaseTaskLifecycleGate(taskID: String) {
-        guard var waiters = taskLifecycleGateWaiters[taskID], !waiters.isEmpty else {
-            taskLifecycleGateOwners.remove(taskID)
+        guard var waiters = coordinationState.taskLifecycleGateWaiters[taskID], !waiters.isEmpty else {
+            coordinationState.taskLifecycleGateOwners.remove(taskID)
             return
         }
 
         let next = waiters.removeFirst()
         if waiters.isEmpty {
-            taskLifecycleGateWaiters.removeValue(forKey: taskID)
+            coordinationState.taskLifecycleGateWaiters.removeValue(forKey: taskID)
         } else {
-            taskLifecycleGateWaiters[taskID] = waiters
+            coordinationState.taskLifecycleGateWaiters[taskID] = waiters
         }
         next.continuation.resume(returning: true)
     }

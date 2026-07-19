@@ -1496,17 +1496,17 @@ struct WebSocketManagerShutdownTests {
             error: URLError(.cannotConnectToHost)
         )
         try #require(await waitForWebSocketState(source) { $0 == .failed })
-        let trackedBeforeRetry = await harness.manager.activeShutdownTrackedOperationCount
+        let trackedBeforeRetry = await harness.manager.coordinationState.activeShutdownTrackedOperationCount
 
         let retry = Task { await harness.manager.retry(source) }
         let admissionDeadline = ContinuousClock.now + .seconds(1)
-        while await harness.manager.activeShutdownTrackedOperationCount <= trackedBeforeRetry,
+        while await harness.manager.coordinationState.activeShutdownTrackedOperationCount <= trackedBeforeRetry,
             ContinuousClock.now < admissionDeadline
         {
             await Task.yield()
         }
         try #require(
-            await harness.manager.activeShutdownTrackedOperationCount > trackedBeforeRetry
+            await harness.manager.coordinationState.activeShutdownTrackedOperationCount > trackedBeforeRetry
         )
 
         let shutdown = Task { await harness.manager.shutdown() }
@@ -1573,7 +1573,7 @@ struct WebSocketManagerShutdownTests {
 
         await harness.manager.setOnErrorHandler { [manager = harness.manager] callbackTask, _ in
             let registeredTask = await manager.task(withId: callbackTask.id)
-            let gateOwners = await manager.taskLifecycleGateOwners
+            let gateOwners = await manager.coordinationState.taskLifecycleGateOwners
             oldCallbackObservedCleanup.withLock { $0 = registeredTask == nil }
             oldCallbackObservedReleasedGate.withLock {
                 $0 = !gateOwners.contains(callbackTask.id)
@@ -1582,7 +1582,7 @@ struct WebSocketManagerShutdownTests {
         }
         await harness.manager.setOnDisconnectedHandler { [manager = harness.manager] callbackTask, _ in
             let registeredTask = await manager.task(withId: callbackTask.id)
-            let gateOwners = await manager.taskLifecycleGateOwners
+            let gateOwners = await manager.coordinationState.taskLifecycleGateOwners
             oldCallbackObservedCleanup.withLock { $0 = registeredTask == nil }
             oldCallbackObservedReleasedGate.withLock {
                 $0 = !gateOwners.contains(callbackTask.id)

@@ -79,29 +79,9 @@ public actor WebSocketManager {
     /// `nonisolated`) can assign the task while the actor's isolated
     /// `shutdown()` reads and clears it.
     nonisolated let delegateConsumerTaskLock = OSAllocatedUnfairLock<Task<Void, Never>?>(initialState: nil)
-    /// Counts public API work and internal timer transactions that passed the
-    /// shutdown admission fence. Teardown drains this set before taking its
-    /// terminal registry snapshot.
-    var activeShutdownTrackedOperationCount = 0
-    var shutdownTrackedOperationDrainWaiters: [CheckedContinuation<Void, Never>] = []
-    /// Consumer registration is a cross-actor transaction: admission is
-    /// decided on the manager, while the listener or stream is installed on
-    /// `TaskEventHub`. Terminal cleanup closes this per-task fence and drains
-    /// admitted registrations before closing the hub partition.
-    var eventConsumerAdmissionClosedTaskIDs: Set<String> = []
-    var activeEventConsumerRegistrationCounts: [String: Int] = [:]
-    var eventConsumerRegistrationDrainWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
-    /// Serializes explicit retry preparation with terminal partition cleanup.
-    /// The source-task gate is held only through retirement and replacement
-    /// registration, never through a transport start that can itself produce
-    /// a terminal lifecycle effect.
-    var taskLifecycleGateOwners: Set<String> = []
-    var taskLifecycleGateWaiters: [String: [TaskLifecycleGateWaiter]] = [:]
-
-    struct TaskLifecycleGateWaiter {
-        let id: UUID
-        let continuation: CheckedContinuation<Bool, Never>
-    }
+    /// Actor-owned coordination value. It contains only state whose mutations
+    /// are serialized by this manager's executor.
+    var coordinationState = WebSocketManagerCoordinationState()
 
     enum DelegateEvent: Sendable {
         case connected(taskIdentifier: Int, protocolName: String?)
