@@ -71,17 +71,19 @@ struct StubBehaviorTests {
     func delayedBehaviorWaitsBeforeReturningStub() async throws {
         let stub = StubProfile(id: 99, name: "Delayed")
         let request = StubbedProfileRequest()
-        let client = StubNetworkClient()
+        // Virtual clock: the delay elapses only when the test advances time,
+        // so the ordering assertion is deterministic instead of relying on a
+        // wall-clock sleep with scheduler slack.
+        let clock = TestClock()
+        let client = StubNetworkClient(clock: clock)
         client.register(stub, for: request, behavior: .delayed(seconds: 0.05))
 
-        let started = ContinuousClock.now
-        let result = try await client.request(request)
-        let elapsed = ContinuousClock.now - started
+        let pending = Task { try await client.request(request) }
+        #expect(await clock.waitForWaiters(count: 1))
+        clock.advance(by: .milliseconds(50))
+        let result = try await pending.value
 
         #expect(result == stub)
-        // Allow generous slack so CI scheduler noise does not flake the test;
-        // we only care that the stub did not short-circuit instantaneously.
-        #expect(elapsed >= .milliseconds(40))
     }
 
     @Test

@@ -1261,9 +1261,14 @@ struct EventHubTests {
     @Test("TaskEventHub stops idle stream reconciliation and restarts on a new stream")
     func taskEventHubStopsAndRestartsStreamReconciliation() async throws {
         let recorder = EventPipelineMetricRecorder()
+        // Virtual clock: the hub's reconciliation loop and the metrics
+        // proxy's snapshot loop both park on it, so idle periods are driven
+        // by advancing time instead of wall-clock sleeps.
+        let clock = TestClock()
         let hub = TaskEventHub<Int>(
             metricsReporter: recorder,
-            metricsSnapshotInterval: .milliseconds(100)
+            metricsSnapshotInterval: .milliseconds(100),
+            clock: clock
         )
 
         let firstConsumerID: String
@@ -1274,6 +1279,12 @@ struct EventHubTests {
                 while await iterator.next() != nil {}
             }
 
+            // Registration alone does not emit a consumer metric; the
+            // reconciliation loop does. Wait for both loops (reconcile +
+            // proxy snapshot) to park on the virtual clock, then advance a
+            // full interval so the first reconcile pass fires.
+            #expect(await clock.waitForWaiters(count: 2))
+            clock.advance(by: .milliseconds(150))
             let firstMetrics = try await waitForConsumerMetrics(
                 recorder: recorder,
                 partitionID: "stream-lifecycle",
@@ -1285,7 +1296,11 @@ struct EventHubTests {
             _ = await firstConsumerTask.result
         }
 
-        try await Task.sleep(for: .milliseconds(250))
+        // The reconciliation loop must stop once the last stream consumer
+        // detaches, leaving only the metrics proxy's snapshot loop parked on
+        // the clock. Wait for that state deterministically instead of
+        // sleeping.
+        #expect(await waitForClockWaiterCount(clock, exactly: 1))
 
         let metricsAfterShutdown = recorder.snapshot().compactMap { metric -> EventPipelineConsumerStateMetric? in
             guard case .consumerState(let state) = metric else { return nil }
@@ -1293,7 +1308,14 @@ struct EventHubTests {
         }
         let idleBaselineCount = metricsAfterShutdown.count
 
-        try await Task.sleep(for: .milliseconds(250))
+        // Drive several full snapshot intervals of virtual time. Each advance
+        // wakes the proxy loop; wait for it to park again before advancing so
+        // every interval actually elapses from the loop's perspective.
+        for _ in 0..<3 {
+            let enqueuedBefore = clock.enqueuedCount
+            clock.advance(by: .milliseconds(150))
+            _ = await clock.waitForEnqueuedCount(atLeast: enqueuedBefore + 1)
+        }
 
         let metricsWhileIdle = recorder.snapshot().compactMap { metric -> EventPipelineConsumerStateMetric? in
             guard case .consumerState(let state) = metric else { return nil }
@@ -1308,6 +1330,11 @@ struct EventHubTests {
                 while await iterator.next() != nil {}
             }
 
+            // The restarted reconciliation loop re-parks on the virtual
+            // clock; advance a full interval so it emits the new consumer's
+            // state.
+            #expect(await clock.waitForWaiters(count: 2))
+            clock.advance(by: .milliseconds(150))
             let resumedMetrics = try await waitForConsumerMetrics(
                 recorder: recorder,
                 partitionID: "stream-lifecycle",
@@ -1866,6 +1893,22 @@ private func waitForLatencyMetrics(
         guard case .consumerDeliveryLatency(let latency) = metric else { return nil }
         return latency.partitionID == partitionID ? latency : nil
     }
+}
+
+/// Bounded poll for an exact TestClock waiter count. Used to observe a loop
+/// stopping (waiters dropping), which waitForWaiters(count:) — an at-least
+/// condition — cannot express.
+private func waitForClockWaiterCount(
+    _ clock: TestClock,
+    exactly target: Int,
+    timeout: Duration = .seconds(2)
+) async -> Bool {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
+        if clock.waiterCount == target { return true }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return clock.waiterCount == target
 }
 
 private func waitForConsumerMetrics(

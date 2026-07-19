@@ -42,6 +42,10 @@ public final class StubNetworkClient: NetworkClient, UploadNetworkClient, Sendab
     private let fallback: (any NetworkClient)?
     private let uploadFallback: (any UploadNetworkClient)?
     private let stubs = OSAllocatedUnfairLock<[StubRequestKey: StubEntry]>(initialState: [:])
+    /// Drives ``StubBehavior/delayed(seconds:)``. Package-injectable so this
+    /// repository's own tests can substitute a virtual clock; consumers get
+    /// the real clock, matching the documented wall-clock delay semantics.
+    private let clock: any InnoNetworkClock
 
     /// Creates a stub with independently injectable request and upload
     /// fallbacks. When `fallback` also supports ``UploadNetworkClient``, it is
@@ -52,6 +56,17 @@ public final class StubNetworkClient: NetworkClient, UploadNetworkClient, Sendab
     ) {
         self.fallback = fallback
         self.uploadFallback = uploadFallback ?? (fallback as? any UploadNetworkClient)
+        self.clock = SystemClock()
+    }
+
+    package init(
+        fallback: (any NetworkClient)? = nil,
+        uploadFallback: (any UploadNetworkClient)? = nil,
+        clock: any InnoNetworkClock
+    ) {
+        self.fallback = fallback
+        self.uploadFallback = uploadFallback ?? (fallback as? any UploadNetworkClient)
+        self.clock = clock
     }
 
     public func register<Response: Decodable & Sendable>(
@@ -86,7 +101,7 @@ public final class StubNetworkClient: NetworkClient, UploadNetworkClient, Sendab
             case .delayed(let seconds):
                 if seconds > 0 {
                     do {
-                        try await Task.sleep(for: .seconds(seconds))
+                        try await clock.sleep(for: .seconds(seconds))
                     } catch is CancellationError {
                         throw NetworkError.cancelled
                     } catch {
