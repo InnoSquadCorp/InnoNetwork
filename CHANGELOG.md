@@ -112,9 +112,10 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   `CachePack(sensitiveHeaderNames:)` or
   `ResponseCacheKey(..., sensitiveHeaderNames:)`; built-in credential headers
   remain protected automatically.
-- `StreamingResumeStrategy` is removed. It had one conformer and no client
-  injection point, so `StreamingResumePolicy` now keeps buffering compatibility
-  as a package-owned validation detail without changing reconnect behavior.
+- The unused public streaming resume-strategy protocol is removed. It had one
+  conformer and no client injection point, so `StreamingResumePolicy` now keeps
+  buffering compatibility as a package-owned validation detail without changing
+  reconnect behavior.
 - `URLSessionProtocol` is package-owned. Production clients inject a concrete
   Foundation `URLSession`; consumer tests import `InnoNetworkTestSupport` and
   keep passing `MockURLSession` or `VCRURLSession` through focused overloads.
