@@ -73,6 +73,104 @@ private struct WebSocketRuntimeWorker {
     let task: Task<Void, Never>
 }
 
+/// Actor-owned logical-task and transport mappings.
+///
+/// Keeping these tables in one value makes their consistency boundary
+/// explicit without introducing another actor hop. `WebSocketRuntimeRegistry`
+/// remains the sole synchronization owner.
+private struct WebSocketTaskRuntimeState {
+    var tasks: [String: WebSocketTask] = [:]
+    var identifierToTask: [Int: WebSocketTask] = [:]
+    var identifierToGeneration: [Int: Int] = [:]
+    var taskIDToIdentifier: [String: Int] = [:]
+    var taskIDToURLTask: [String: any WebSocketURLTask] = [:]
+    var shutdownStarted = false
+
+    mutating func removeAll() {
+        tasks.removeAll(keepingCapacity: false)
+        identifierToTask.removeAll(keepingCapacity: false)
+        identifierToGeneration.removeAll(keepingCapacity: false)
+        taskIDToIdentifier.removeAll(keepingCapacity: false)
+        taskIDToURLTask.removeAll(keepingCapacity: false)
+    }
+
+    mutating func detachRuntime(taskIdentifier: Int) {
+        guard let task = identifierToTask.removeValue(forKey: taskIdentifier) else { return }
+        identifierToGeneration.removeValue(forKey: taskIdentifier)
+        taskIDToIdentifier.removeValue(forKey: task.id)
+    }
+
+    mutating func detachRuntime(taskID: String) -> (any WebSocketURLTask)? {
+        let urlTask = taskIDToURLTask.removeValue(forKey: taskID)
+        if let identifier = taskIDToIdentifier.removeValue(forKey: taskID) {
+            identifierToTask.removeValue(forKey: identifier)
+            identifierToGeneration.removeValue(forKey: identifier)
+        } else {
+            let staleIdentifiers = identifierToTask.compactMap { identifier, task in
+                task.id == taskID ? identifier : nil
+            }
+            for identifier in staleIdentifiers {
+                identifierToTask.removeValue(forKey: identifier)
+                identifierToGeneration.removeValue(forKey: identifier)
+            }
+            taskIDToIdentifier.removeValue(forKey: taskID)
+        }
+        return urlTask
+    }
+}
+
+/// Actor-owned generation-scoped worker slots.
+private struct WebSocketWorkerState {
+    var heartbeat: [String: WebSocketRuntimeWorker] = [:]
+    var messageListener: [String: WebSocketRuntimeWorker] = [:]
+    var reconnect: [String: WebSocketRuntimeWorker] = [:]
+    var closeHandshake: [String: WebSocketRuntimeWorker] = [:]
+
+    mutating func removeAll() {
+        for worker in heartbeat.values { worker.task.cancel() }
+        heartbeat.removeAll(keepingCapacity: false)
+        for worker in messageListener.values { worker.task.cancel() }
+        messageListener.removeAll(keepingCapacity: false)
+        for worker in reconnect.values { worker.task.cancel() }
+        reconnect.removeAll(keepingCapacity: false)
+        for worker in closeHandshake.values { worker.task.cancel() }
+        closeHandshake.removeAll(keepingCapacity: false)
+    }
+
+    mutating func detachAll(for taskID: String) -> [WebSocketRuntimeWorker] {
+        [
+            heartbeat.removeValue(forKey: taskID),
+            messageListener.removeValue(forKey: taskID),
+            reconnect.removeValue(forKey: taskID),
+            closeHandshake.removeValue(forKey: taskID),
+        ].compactMap { $0 }
+    }
+}
+
+/// Actor-owned callback handlers and their shutdown-drain bookkeeping.
+private struct WebSocketCallbackDrainState {
+    var onConnected: (@Sendable (WebSocketTask, String?) async -> Void)?
+    var onDisconnected: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?
+    var onMessage: (@Sendable (WebSocketTask, Data) async -> Void)?
+    var onString: (@Sendable (WebSocketTask, String) async -> Void)?
+    var onError: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?
+    var onPong: (@Sendable (WebSocketTask, WebSocketPongContext) async -> Void)?
+    var activeCount = 0
+    var activeRuntimeWorkerCounts: [UUID: Int] = [:]
+    var waiters: [CheckedContinuation<Void, Never>] = []
+    var registrationClosed = false
+
+    mutating func clearHandlers() {
+        registrationClosed = true
+        onConnected = nil
+        onDisconnected = nil
+        onMessage = nil
+        onString = nil
+        onError = nil
+        onPong = nil
+    }
+}
+
 package struct WebSocketRuntimeCallbackContext: Sendable {
     package let task: WebSocketTask
     package let generation: Int
@@ -98,73 +196,51 @@ package actor WebSocketRuntimeRegistry {
     /// happen to be running for another WebSocketManager on the same task.
     package nonisolated let callbackContextID = UUID()
 
-    private var tasks: [String: WebSocketTask] = [:]
-    private var identifierToTask: [Int: WebSocketTask] = [:]
-    private var identifierToGeneration: [Int: Int] = [:]
-    private var taskIdToIdentifier: [String: Int] = [:]
-    private var taskIdToURLTask: [String: any WebSocketURLTask] = [:]
-    private var heartbeatTasks: [String: WebSocketRuntimeWorker] = [:]
-    private var messageListenerTasks: [String: WebSocketRuntimeWorker] = [:]
-    private var reconnectTasks: [String: WebSocketRuntimeWorker] = [:]
-    private var closeHandshakeTasks: [String: WebSocketRuntimeWorker] = [:]
-    /// Set when ``markShutdownStartedAndSnapshot()`` runs. Once true, ``add(_:)``
-    /// refuses new task registrations so concurrent `connect()`/`retry()` callers
-    /// cannot leak orphan tasks past the terminal cleanup sweep performed by
-    /// `WebSocketManager.shutdown()`.
-    private var shutdownStarted = false
-
-    private var _onConnected: (@Sendable (WebSocketTask, String?) async -> Void)?
-    private var _onDisconnected: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?
-    private var _onMessage: (@Sendable (WebSocketTask, Data) async -> Void)?
-    private var _onString: (@Sendable (WebSocketTask, String) async -> Void)?
-    private var _onError: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?
-    private var _onPong: (@Sendable (WebSocketTask, WebSocketPongContext) async -> Void)?
-    private var activeUserCallbackCount = 0
-    private var activeUserCallbackRuntimeWorkerCounts: [UUID: Int] = [:]
-    private var userCallbackDrainWaiters: [CheckedContinuation<Void, Never>] = []
-    private var callbackRegistrationClosed = false
+    private var runtime = WebSocketTaskRuntimeState()
+    private var workers = WebSocketWorkerState()
+    private var callbacks = WebSocketCallbackDrainState()
 
     package init() {}
 
     package func setOnConnected(_ callback: (@Sendable (WebSocketTask, String?) async -> Void)?) {
-        guard !callbackRegistrationClosed else { return }
-        _onConnected = callback
+        guard !callbacks.registrationClosed else { return }
+        callbacks.onConnected = callback
     }
 
     package func setOnDisconnected(_ callback: (@Sendable (WebSocketTask, WebSocketError?) async -> Void)?) {
-        guard !callbackRegistrationClosed else { return }
-        _onDisconnected = callback
+        guard !callbacks.registrationClosed else { return }
+        callbacks.onDisconnected = callback
     }
 
     package func setOnMessage(_ callback: (@Sendable (WebSocketTask, Data) async -> Void)?) {
-        guard !callbackRegistrationClosed else { return }
-        _onMessage = callback
+        guard !callbacks.registrationClosed else { return }
+        callbacks.onMessage = callback
     }
 
     package func setOnString(_ callback: (@Sendable (WebSocketTask, String) async -> Void)?) {
-        guard !callbackRegistrationClosed else { return }
-        _onString = callback
+        guard !callbacks.registrationClosed else { return }
+        callbacks.onString = callback
     }
 
     package func setOnError(_ callback: (@Sendable (WebSocketTask, WebSocketError) async -> Void)?) {
-        guard !callbackRegistrationClosed else { return }
-        _onError = callback
+        guard !callbacks.registrationClosed else { return }
+        callbacks.onError = callback
     }
 
     package func setOnPong(_ callback: (@Sendable (WebSocketTask, WebSocketPongContext) async -> Void)?) {
-        guard !callbackRegistrationClosed else { return }
-        _onPong = callback
+        guard !callbacks.registrationClosed else { return }
+        callbacks.onPong = callback
     }
 
     package func notifyError(_ task: WebSocketTask, error: WebSocketError) async {
-        guard let callback = _onError else { return }
+        guard let callback = callbacks.onError else { return }
         await invokeUserCallback {
             await callback(task, error)
         }
     }
 
     package func notifyPong(_ task: WebSocketTask, context: WebSocketPongContext) async {
-        guard let callback = _onPong else { return }
+        guard let callback = callbacks.onPong else { return }
         await invokeUserCallback {
             await callback(task, context)
         }
@@ -174,7 +250,7 @@ package actor WebSocketRuntimeRegistry {
         _ task: WebSocketTask,
         protocolName: String?
     ) -> WebSocketPreparedUserCallback? {
-        _onConnected.map { callback in
+        callbacks.onConnected.map { callback in
             prepareUserCallback {
                 await callback(task, protocolName)
             }
@@ -188,7 +264,7 @@ package actor WebSocketRuntimeRegistry {
         _ task: WebSocketTask,
         error: WebSocketError?
     ) -> WebSocketPreparedUserCallback? {
-        _onDisconnected.map { callback in
+        callbacks.onDisconnected.map { callback in
             prepareUserCallback {
                 await callback(task, error)
             }
@@ -199,7 +275,7 @@ package actor WebSocketRuntimeRegistry {
         _ task: WebSocketTask,
         error: WebSocketError
     ) -> WebSocketPreparedUserCallback? {
-        _onError.map { callback in
+        callbacks.onError.map { callback in
             prepareUserCallback {
                 await callback(task, error)
             }
@@ -213,7 +289,7 @@ package actor WebSocketRuntimeRegistry {
         _ task: WebSocketTask,
         context: WebSocketPongContext
     ) -> WebSocketPreparedUserCallback? {
-        _onPong.map { callback in
+        callbacks.onPong.map { callback in
             prepareUserCallback {
                 await callback(task, context)
             }
@@ -237,14 +313,14 @@ package actor WebSocketRuntimeRegistry {
         data: Data
     ) -> WebSocketPreparedWorkerCallback {
         guard let workerID = WebSocketRuntimeWorkerContext.currentWorkerID,
-            messageListenerTasks[task.id]?.id == workerID
+            workers.messageListener[task.id]?.id == workerID
         else {
             return WebSocketPreparedWorkerCallback(
                 isCurrentWorker: false,
                 callback: nil
             )
         }
-        let callback = _onMessage.map { callback in
+        let callback = callbacks.onMessage.map { callback in
             prepareUserCallback {
                 await callback(task, data)
             }
@@ -260,14 +336,14 @@ package actor WebSocketRuntimeRegistry {
         string: String
     ) -> WebSocketPreparedWorkerCallback {
         guard let workerID = WebSocketRuntimeWorkerContext.currentWorkerID,
-            messageListenerTasks[task.id]?.id == workerID
+            workers.messageListener[task.id]?.id == workerID
         else {
             return WebSocketPreparedWorkerCallback(
                 isCurrentWorker: false,
                 callback: nil
             )
         }
-        let callback = _onString.map { callback in
+        let callback = callbacks.onString.map { callback in
             prepareUserCallback {
                 await callback(task, string)
             }
@@ -287,7 +363,7 @@ package actor WebSocketRuntimeRegistry {
         context: WebSocketPongContext
     ) -> WebSocketPreparedWorkerCallback {
         guard let workerID = WebSocketRuntimeWorkerContext.currentWorkerID,
-            heartbeatTasks[task.id]?.id == workerID
+            workers.heartbeat[task.id]?.id == workerID
         else {
             return WebSocketPreparedWorkerCallback(
                 isCurrentWorker: false,
@@ -308,7 +384,7 @@ package actor WebSocketRuntimeRegistry {
         guard let workerID = WebSocketRuntimeWorkerContext.currentWorkerID else {
             return false
         }
-        return heartbeatTasks[taskID]?.id == workerID
+        return workers.heartbeat[taskID]?.id == workerID
     }
 
     func invokePreparedUserCallback(_ prepared: WebSocketPreparedUserCallback?) async {
@@ -334,9 +410,9 @@ package actor WebSocketRuntimeRegistry {
     /// return. Notifications that reach the registry after clearing observe a
     /// nil handler and never increment the active count.
     package func waitForUserCallbacksToDrain() async {
-        guard activeUserCallbackCount > 0 else { return }
+        guard callbacks.activeCount > 0 else { return }
         await withCheckedContinuation { continuation in
-            userCallbackDrainWaiters.append(continuation)
+            callbacks.waiters.append(continuation)
         }
     }
 
@@ -375,10 +451,10 @@ package actor WebSocketRuntimeRegistry {
     }
 
     private func admitUserCallback() -> WebSocketUserCallbackAdmission {
-        activeUserCallbackCount += 1
+        callbacks.activeCount += 1
         let runtimeWorkerID = WebSocketRuntimeWorkerContext.currentWorkerID
         if let runtimeWorkerID {
-            activeUserCallbackRuntimeWorkerCounts[runtimeWorkerID, default: 0] += 1
+            callbacks.activeRuntimeWorkerCounts[runtimeWorkerID, default: 0] += 1
         }
         return WebSocketUserCallbackAdmission(
             token: WebSocketUserCallbackToken(
@@ -392,20 +468,20 @@ package actor WebSocketRuntimeRegistry {
 
     private func finishUserCallback(_ admission: WebSocketUserCallbackAdmission) {
         admission.token.deactivate()
-        activeUserCallbackCount -= 1
+        callbacks.activeCount -= 1
         if let runtimeWorkerID = admission.runtimeWorkerID,
-            let count = activeUserCallbackRuntimeWorkerCounts[runtimeWorkerID]
+            let count = callbacks.activeRuntimeWorkerCounts[runtimeWorkerID]
         {
             if count > 1 {
-                activeUserCallbackRuntimeWorkerCounts[runtimeWorkerID] = count - 1
+                callbacks.activeRuntimeWorkerCounts[runtimeWorkerID] = count - 1
             } else {
-                activeUserCallbackRuntimeWorkerCounts.removeValue(forKey: runtimeWorkerID)
+                callbacks.activeRuntimeWorkerCounts.removeValue(forKey: runtimeWorkerID)
             }
         }
 
-        if activeUserCallbackCount == 0 {
-            let waiters = userCallbackDrainWaiters
-            userCallbackDrainWaiters.removeAll(keepingCapacity: false)
+        if callbacks.activeCount == 0 {
+            let waiters = callbacks.waiters
+            callbacks.waiters.removeAll(keepingCapacity: false)
             for waiter in waiters {
                 waiter.resume()
             }
@@ -420,29 +496,29 @@ package actor WebSocketRuntimeRegistry {
     ///   already started.
     @discardableResult
     package func add(_ task: WebSocketTask) -> Bool {
-        guard !shutdownStarted else { return false }
-        tasks[task.id] = task
+        guard !runtime.shutdownStarted else { return false }
+        runtime.tasks[task.id] = task
         return true
     }
 
     package func remove(_ task: WebSocketTask) {
-        tasks.removeValue(forKey: task.id)
+        runtime.tasks.removeValue(forKey: task.id)
     }
 
     package func task(withId id: String) -> WebSocketTask? {
-        tasks[id]
+        runtime.tasks[id]
     }
 
     package func allTasks() -> [WebSocketTask] {
-        Array(tasks.values)
+        Array(runtime.tasks.values)
     }
 
     /// Marks the registry as shutting down and returns the current task
     /// snapshot in a single actor hop, so subsequent `add(_:)` calls cannot
     /// race past the snapshot.
     package func markShutdownStartedAndSnapshot() -> [WebSocketTask] {
-        shutdownStarted = true
-        return Array(tasks.values)
+        runtime.shutdownStarted = true
+        return Array(runtime.tasks.values)
     }
 
     /// Resets every task-scoped collection so no phantom mappings or
@@ -452,33 +528,22 @@ package actor WebSocketRuntimeRegistry {
     /// awaited cleanup must use `removeTaskRuntime(taskId:)` per task
     /// before this method.
     package func removeAllTasks() {
-        tasks.removeAll(keepingCapacity: false)
-        identifierToTask.removeAll(keepingCapacity: false)
-        identifierToGeneration.removeAll(keepingCapacity: false)
-        taskIdToIdentifier.removeAll(keepingCapacity: false)
-        taskIdToURLTask.removeAll(keepingCapacity: false)
-        for worker in heartbeatTasks.values { worker.task.cancel() }
-        heartbeatTasks.removeAll(keepingCapacity: false)
-        for worker in messageListenerTasks.values { worker.task.cancel() }
-        messageListenerTasks.removeAll(keepingCapacity: false)
-        for worker in reconnectTasks.values { worker.task.cancel() }
-        reconnectTasks.removeAll(keepingCapacity: false)
-        for worker in closeHandshakeTasks.values { worker.task.cancel() }
-        closeHandshakeTasks.removeAll(keepingCapacity: false)
+        runtime.removeAll()
+        workers.removeAll()
     }
 
     package func setMapping(webSocketTask: WebSocketTask, for identifier: Int, generation: Int) {
-        identifierToTask[identifier] = webSocketTask
-        identifierToGeneration[identifier] = generation
-        taskIdToIdentifier[webSocketTask.id] = identifier
+        runtime.identifierToTask[identifier] = webSocketTask
+        runtime.identifierToGeneration[identifier] = generation
+        runtime.taskIDToIdentifier[webSocketTask.id] = identifier
     }
 
     package func setURLTask(_ urlTask: any WebSocketURLTask, for taskId: String) {
-        taskIdToURLTask[taskId] = urlTask
+        runtime.taskIDToURLTask[taskId] = urlTask
     }
 
     package func webSocketTask(for identifier: Int) -> WebSocketTask? {
-        identifierToTask[identifier]
+        runtime.identifierToTask[identifier]
     }
 
     /// Snapshots the logical task and transport generation for one delegate
@@ -486,8 +551,8 @@ package actor WebSocketRuntimeRegistry {
     /// been detached is stale and must be dropped rather than rebound to the
     /// task's current generation.
     package func callbackContext(for identifier: Int) -> WebSocketRuntimeCallbackContext? {
-        guard let task = identifierToTask[identifier],
-            let generation = identifierToGeneration[identifier]
+        guard let task = runtime.identifierToTask[identifier],
+            let generation = runtime.identifierToGeneration[identifier]
         else { return nil }
         return WebSocketRuntimeCallbackContext(task: task, generation: generation)
     }
@@ -496,60 +561,38 @@ package actor WebSocketRuntimeRegistry {
         _ context: WebSocketRuntimeCallbackContext,
         for identifier: Int
     ) -> Bool {
-        identifierToTask[identifier] === context.task
-            && identifierToGeneration[identifier] == context.generation
+        runtime.identifierToTask[identifier] === context.task
+            && runtime.identifierToGeneration[identifier] == context.generation
     }
 
     package func urlTask(for taskId: String) -> (any WebSocketURLTask)? {
-        taskIdToURLTask[taskId]
+        runtime.taskIDToURLTask[taskId]
     }
 
     package func taskIdentifier(for taskId: String) -> Int? {
-        taskIdToIdentifier[taskId]
+        runtime.taskIDToIdentifier[taskId]
     }
 
     package func detachRuntime(taskIdentifier: Int) {
-        guard let task = identifierToTask.removeValue(forKey: taskIdentifier) else { return }
-        identifierToGeneration.removeValue(forKey: taskIdentifier)
-        taskIdToIdentifier.removeValue(forKey: task.id)
+        runtime.detachRuntime(taskIdentifier: taskIdentifier)
     }
 
     package func removeTaskRuntime(taskId: String) async {
-        let urlTask = taskIdToURLTask.removeValue(forKey: taskId)
-        if let identifier = taskIdToIdentifier.removeValue(forKey: taskId) {
-            identifierToTask.removeValue(forKey: identifier)
-            identifierToGeneration.removeValue(forKey: identifier)
-        } else {
-            let staleIdentifiers = identifierToTask.compactMap { identifier, task in
-                task.id == taskId ? identifier : nil
-            }
-            for identifier in staleIdentifiers {
-                identifierToTask.removeValue(forKey: identifier)
-                identifierToGeneration.removeValue(forKey: identifier)
-            }
-            taskIdToIdentifier.removeValue(forKey: taskId)
-        }
+        let urlTask = runtime.detachRuntime(taskID: taskId)
 
         // Detach every generation-scoped worker before the first suspension.
         // A retry may install a fresh runtime while cancellation of the old
         // workers is still unwinding; retaining dictionary lookups across
         // those awaits could otherwise remove the newly installed workers.
-        let heartbeatTask = heartbeatTasks.removeValue(forKey: taskId)
-        let messageListenerTask = messageListenerTasks.removeValue(forKey: taskId)
-        let reconnectTask = reconnectTasks.removeValue(forKey: taskId)
-        let closeHandshakeTask = closeHandshakeTasks.removeValue(forKey: taskId)
+        let detachedWorkers = workers.detachAll(for: taskId)
 
         urlTask?.cancel()
-        heartbeatTask?.task.cancel()
-        messageListenerTask?.task.cancel()
-        reconnectTask?.task.cancel()
-        closeHandshakeTask?.task.cancel()
+        for worker in detachedWorkers {
+            worker.task.cancel()
+        }
 
         await withTaskGroup(of: Void.self) { group in
-            let workers = [heartbeatTask, messageListenerTask, reconnectTask, closeHandshakeTask]
-                .compactMap { $0 }
-                .filter(shouldAwaitWorker)
-            for worker in workers {
+            for worker in detachedWorkers.filter(shouldAwaitWorker) {
                 group.addTask {
                     await worker.task.value
                 }
@@ -563,17 +606,17 @@ package actor WebSocketRuntimeRegistry {
         workerID: UUID = UUID(),
         for taskId: String
     ) async {
-        if let previousTask = heartbeatTasks[taskId] {
+        if let previousTask = workers.heartbeat[taskId] {
             previousTask.task.cancel()
             if shouldAwaitWorker(previousTask) {
                 await previousTask.task.value
             }
         }
-        heartbeatTasks[taskId] = WebSocketRuntimeWorker(id: workerID, task: task)
+        workers.heartbeat[taskId] = WebSocketRuntimeWorker(id: workerID, task: task)
     }
 
     package func cancelHeartbeatTask(for taskId: String) async {
-        guard let heartbeatTask = heartbeatTasks.removeValue(forKey: taskId) else { return }
+        guard let heartbeatTask = workers.heartbeat.removeValue(forKey: taskId) else { return }
         heartbeatTask.task.cancel()
         if shouldAwaitWorker(heartbeatTask) {
             await heartbeatTask.task.value
@@ -585,20 +628,20 @@ package actor WebSocketRuntimeRegistry {
         workerID: UUID = UUID(),
         for taskId: String
     ) async {
-        if let previousTask = messageListenerTasks[taskId] {
+        if let previousTask = workers.messageListener[taskId] {
             previousTask.task.cancel()
             if shouldAwaitWorker(previousTask) {
                 await previousTask.task.value
             }
         }
-        messageListenerTasks[taskId] = WebSocketRuntimeWorker(id: workerID, task: task)
+        workers.messageListener[taskId] = WebSocketRuntimeWorker(id: workerID, task: task)
     }
 
     package func createMessageListenerTask(
         for taskId: String,
         operation: @escaping @Sendable () async -> Void
     ) async {
-        if let previousTask = messageListenerTasks[taskId] {
+        if let previousTask = workers.messageListener[taskId] {
             previousTask.task.cancel()
             if shouldAwaitWorker(previousTask) {
                 await previousTask.task.value
@@ -610,11 +653,11 @@ package actor WebSocketRuntimeRegistry {
                 await operation()
             }
         }
-        messageListenerTasks[taskId] = WebSocketRuntimeWorker(id: workerID, task: listenerTask)
+        workers.messageListener[taskId] = WebSocketRuntimeWorker(id: workerID, task: listenerTask)
     }
 
     package func cancelMessageListenerTask(for taskId: String) async {
-        guard let listenerTask = messageListenerTasks.removeValue(forKey: taskId) else { return }
+        guard let listenerTask = workers.messageListener.removeValue(forKey: taskId) else { return }
         listenerTask.task.cancel()
         if shouldAwaitWorker(listenerTask) {
             await listenerTask.task.value
@@ -626,17 +669,17 @@ package actor WebSocketRuntimeRegistry {
         workerID: UUID = UUID(),
         for taskId: String
     ) async {
-        if let previousTask = reconnectTasks[taskId] {
+        if let previousTask = workers.reconnect[taskId] {
             previousTask.task.cancel()
             if shouldAwaitWorker(previousTask) {
                 await previousTask.task.value
             }
         }
-        reconnectTasks[taskId] = WebSocketRuntimeWorker(id: workerID, task: task)
+        workers.reconnect[taskId] = WebSocketRuntimeWorker(id: workerID, task: task)
     }
 
     package func cancelReconnectTask(for taskId: String) async {
-        guard let reconnectTask = reconnectTasks.removeValue(forKey: taskId) else { return }
+        guard let reconnectTask = workers.reconnect.removeValue(forKey: taskId) else { return }
         reconnectTask.task.cancel()
         if shouldAwaitWorker(reconnectTask) {
             await reconnectTask.task.value
@@ -648,22 +691,22 @@ package actor WebSocketRuntimeRegistry {
         workerID: UUID = UUID(),
         for taskId: String
     ) async {
-        guard taskIdToURLTask[taskId] != nil else {
+        guard runtime.taskIDToURLTask[taskId] != nil else {
             task.cancel()
             await task.value
             return
         }
-        if let previousTask = closeHandshakeTasks[taskId] {
+        if let previousTask = workers.closeHandshake[taskId] {
             previousTask.task.cancel()
             if shouldAwaitWorker(previousTask) {
                 await previousTask.task.value
             }
         }
-        closeHandshakeTasks[taskId] = WebSocketRuntimeWorker(id: workerID, task: task)
+        workers.closeHandshake[taskId] = WebSocketRuntimeWorker(id: workerID, task: task)
     }
 
     package func cancelCloseHandshakeTask(for taskId: String) async {
-        guard let closeTask = closeHandshakeTasks.removeValue(forKey: taskId) else { return }
+        guard let closeTask = workers.closeHandshake.removeValue(forKey: taskId) else { return }
         closeTask.task.cancel()
         if shouldAwaitWorker(closeTask) {
             await closeTask.task.value
@@ -671,10 +714,10 @@ package actor WebSocketRuntimeRegistry {
     }
 
     package func clearCloseHandshakeTask(for taskId: String) {
-        guard let closeTask = closeHandshakeTasks[taskId],
+        guard let closeTask = workers.closeHandshake[taskId],
             closeTask.id == WebSocketRuntimeWorkerContext.currentWorkerID
         else { return }
-        closeHandshakeTasks.removeValue(forKey: taskId)
+        workers.closeHandshake.removeValue(forKey: taskId)
     }
 
     /// Runtime teardown must not await a worker whose active user callback is
@@ -683,16 +726,10 @@ package actor WebSocketRuntimeRegistry {
     /// cancellation after the callback and cannot publish into a new runtime.
     private func shouldAwaitWorker(_ worker: WebSocketRuntimeWorker) -> Bool {
         worker.id != WebSocketRuntimeWorkerContext.currentWorkerID
-            && activeUserCallbackRuntimeWorkerCounts[worker.id] == nil
+            && callbacks.activeRuntimeWorkerCounts[worker.id] == nil
     }
 
     package func clearCallbacks() {
-        callbackRegistrationClosed = true
-        _onConnected = nil
-        _onDisconnected = nil
-        _onMessage = nil
-        _onString = nil
-        _onError = nil
-        _onPong = nil
+        callbacks.clearHandlers()
     }
 }
