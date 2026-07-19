@@ -354,14 +354,14 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
         )
     }
 
-    /// Begins a long-lived streaming request and returns an
-    /// `AsyncThrowingStream` of decoded line payloads.
+    /// Begins a long-lived streaming request and returns decoded line payloads
+    /// through a lossless, backpressured sequence.
     ///
     /// Streaming requests bypass the configured ``RetryPolicy`` because a
-    /// half-consumed stream cannot be replayed transparently. Outer-task
-    /// cancellation propagates to the underlying transport via
-    /// `AsyncThrowingStream.Continuation.onTermination`, and ``cancelAll()``
-    /// reaches stream tasks the same way it reaches request tasks.
+    /// half-consumed stream cannot be replayed transparently. The producer
+    /// reads at most one output ahead of the consumer. Outer-task cancellation
+    /// propagates to the underlying transport, and ``cancelAll()`` reaches
+    /// stream tasks the same way it reaches request tasks.
     ///
     /// Response interceptors on ``NetworkConfiguration`` receive only the
     /// response metadata for streaming requests. Their ``Response/data`` is
@@ -379,7 +379,7 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
     /// - Returns: A ``StreamingOutputSequence`` whose values are the
     ///   non-nil results of ``StreamingAPIDefinition/decode(line:)``.
     public func stream<T: StreamingAPIDefinition>(_ request: T) -> StreamingOutputSequence<T.Output> {
-        stream(request, bufferingPolicy: .unbounded)
+        makeStreamingSequence(request, buffering: .backpressured)
     }
 
     /// Subscribes to a streaming endpoint with an explicit output buffering policy.
@@ -398,83 +398,56 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
         _ request: T,
         bufferingPolicy: StreamingBufferingPolicy
     ) -> StreamingOutputSequence<T.Output> {
-        guard !isShutdown else {
-            return StreamingOutputSequence(
-                base: AsyncThrowingStream { continuation in
-                    continuation.finish(throwing: NetworkError.cancelled)
-                }
-            )
-        }
         if let incompatibleBufferingError = Self.incompatibleStreamingBufferingError(
             resumePolicy: request.resumePolicy,
             bufferingPolicy: bufferingPolicy
         ) {
-            return StreamingOutputSequence(
-                base: AsyncThrowingStream { continuation in
-                    continuation.finish(throwing: incompatibleBufferingError)
-                }
+            return .failure(incompatibleBufferingError)
+        }
+        return makeStreamingSequence(request, buffering: StreamingOutputBuffering(bufferingPolicy))
+    }
+
+    private func makeStreamingSequence<T: StreamingAPIDefinition>(
+        _ request: T,
+        buffering: StreamingOutputBuffering
+    ) -> StreamingOutputSequence<T.Output> {
+        guard !isShutdown else { return .failure(.cancelled) }
+
+        let (sequence, sink) = StreamingOutputSequence<T.Output>.make(buffering: buffering)
+        let requestID = UUID()
+        let inFlight = self.inFlight
+        let configuration = self.configuration
+        let executionRuntime = self.executionRuntime
+        let executor = StreamingExecutor(session: self.session, eventHub: self.eventHub)
+        let startGate = TaskStartGate()
+        let generation = inFlight.generation()
+
+        let work = Task<Void, Never> {
+            guard await startGate.wait() else {
+                inFlight.deregister(id: requestID)
+                sink.finish(throwing: .cancelled)
+                return
+            }
+            // This task exclusively owns the in-flight registration. The
+            // executor owns protocol events and sequence completion only.
+            defer { inFlight.deregister(id: requestID) }
+            guard !self.isShutdown else {
+                sink.finish(throwing: .cancelled)
+                return
+            }
+            await executor.run(
+                request: request,
+                requestID: requestID,
+                configuration: configuration,
+                executionRuntime: executionRuntime,
+                sink: sink
             )
         }
 
-        // Streaming responses must not silently drop server-emitted events
-        // (lost SSE frames, JSON-lines records, etc.), so the policy is
-        // explicit `.unbounded` by default. Bounded overloads are opt-in for
-        // streams where capped memory is more important than lossless output.
-        let asyncBufferingPolicy: AsyncThrowingStream<T.Output, Error>.Continuation.BufferingPolicy
-        switch bufferingPolicy {
-        case .unbounded:
-            asyncBufferingPolicy = .unbounded
-        case .bufferingNewest(let limit):
-            asyncBufferingPolicy = .bufferingNewest(max(1, limit))
-        case .bufferingOldest(let limit):
-            asyncBufferingPolicy = .bufferingOldest(max(1, limit))
-        }
-
-        let base = AsyncThrowingStream(bufferingPolicy: asyncBufferingPolicy) {
-            (continuation: AsyncThrowingStream<T.Output, Error>.Continuation) in
-            let requestID = UUID()
-            let inFlight = self.inFlight
-            let configuration = self.configuration
-            let executionRuntime = self.executionRuntime
-            let executor = StreamingExecutor(session: self.session, eventHub: self.eventHub)
-            let startGate = TaskStartGate()
-            let generation = inFlight.generation()
-
-            let work = Task<Void, Never> {
-                guard await startGate.wait() else {
-                    inFlight.deregister(id: requestID)
-                    continuation.finish(throwing: NetworkError.cancelled)
-                    return
-                }
-                // Match the non-streaming path: deregister from
-                // ``InFlightRegistry`` when the executor finishes, no
-                // matter whether the stream completed normally, errored,
-                // or was cancelled. Without this, a streaming request
-                // continues to occupy a slot in the registry after its
-                // backing `Task` is gone, causing `cancelAll()` and the
-                // tagged-cancel variants to hang on a stale handle.
-                defer { inFlight.deregister(id: requestID) }
-                guard !self.isShutdown else {
-                    continuation.finish(throwing: NetworkError.cancelled)
-                    return
-                }
-                await executor.run(
-                    request: request,
-                    requestID: requestID,
-                    configuration: configuration,
-                    executionRuntime: executionRuntime,
-                    inFlight: inFlight,
-                    continuation: continuation
-                )
-            }
-
-            continuation.onTermination = { _ in
-                work.cancel()
-            }
-            inFlight.register(id: requestID, generation: generation, cancelHandler: { work.cancel() })
-            startGate.open()
-        }
-        return StreamingOutputSequence(base: base)
+        sink.onTermination { work.cancel() }
+        inFlight.register(id: requestID, generation: generation, cancelHandler: { work.cancel() })
+        startGate.open()
+        return sequence
     }
 
     private static func incompatibleStreamingBufferingError(

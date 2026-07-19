@@ -334,8 +334,10 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   default implementations as additional decode-boundary use cases
   surface.
 - `StreamingBufferingPolicy` — bounded buffering cases may gain additional
-  policy knobs, but `stream(_:)` stays lossless by default for 5.x and bounded
-  buffers remain incompatible with `StreamingResumePolicy.lastEventID`.
+  policy knobs, but `stream(_:)` stays lossless and backpressured by default
+  for 5.x. Explicit bounded buffers remain incompatible with
+  `StreamingResumePolicy.lastEventID`; explicit `.unbounded` remains the
+  producer-nonsuspending, lossless opt-out.
 - `stream(_:)` / `stream(_:bufferingPolicy:)` — every failure the returned
   ``StreamingOutputSequence`` finishes with is a `NetworkError`. Its iterator
   exposes typed `throws(NetworkError)` on every supported platform floor, so

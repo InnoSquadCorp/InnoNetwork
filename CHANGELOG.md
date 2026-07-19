@@ -353,6 +353,10 @@ draft release summary.
 
 ### Changed
 
+- `DefaultNetworkClient.stream(_:)` now applies one-output producer
+  backpressure instead of accumulating an unbounded decoded-output queue.
+  Explicit `.unbounded`, `.bufferingNewest`, and `.bufferingOldest` policies
+  keep their existing opt-in semantics.
 - `DownloadManager` and `WebSocketManager` keep their existing actor-owned
   lifecycle guarantees while their transfer commands, shutdown coordination,
   messaging, observation, and destination resolution are split into focused

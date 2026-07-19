@@ -74,13 +74,14 @@ public protocol StreamingResumeStrategy: Sendable {
 
 /// Output buffering policy for ``DefaultNetworkClient/stream(_:bufferingPolicy:)``.
 ///
-/// The default streaming API uses ``unbounded`` so server-emitted frames are
-/// never silently dropped by InnoNetwork. Long-lived high-volume streams can
-/// opt into a bounded policy when the consumer prefers capped memory over
-/// lossless delivery. Bounded policies rely on Swift's `AsyncThrowingStream`
-/// buffering semantics and do not slow the underlying `URLSession` producer.
+/// The no-argument ``DefaultNetworkClient/stream(_:)`` path is lossless and
+/// backpressured: it reads at most one decoded output ahead of the consumer.
+/// This policy enum belongs to the explicit overload. Choose ``unbounded``
+/// only when producer suspension is undesirable and growing memory is an
+/// accepted risk, or choose a bounded policy when dropped outputs are valid.
 public enum StreamingBufferingPolicy: Sendable, Equatable {
-    /// Preserve every decoded output until the consumer reads it.
+    /// Preserve every decoded output without slowing the producer. Memory can
+    /// grow while the consumer is slower than the server.
     case unbounded
     /// Keep the newest `limit` outputs when the consumer falls behind.
     case bufferingNewest(Int)

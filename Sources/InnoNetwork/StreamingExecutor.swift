@@ -3,10 +3,10 @@ import Foundation
 /// Executes a ``StreamingAPIDefinition`` request as a long-lived line-delimited
 /// stream. Owns per-attempt request preparation, line iteration, optional
 /// Last-Event-ID resume, response interceptor application, and lifecycle event
-/// publication so ``DefaultNetworkClient/stream(_:)`` stays a thin
-/// `AsyncThrowingStream` factory.
+/// publication so ``DefaultNetworkClient/stream(_:)`` stays a thin sequence
+/// factory.
 ///
-/// The body of ``run(request:requestID:configuration:executionRuntime:inFlight:continuation:)``
+/// The body of ``run(request:requestID:configuration:executionRuntime:sink:)``
 /// preserves the same observable sequence the inline `stream(_:)` body emitted
 /// before extraction:
 ///
@@ -37,8 +37,7 @@ package struct StreamingExecutor: Sendable {
         requestID: UUID,
         configuration: NetworkConfiguration,
         executionRuntime: RequestExecutionRuntime,
-        inFlight: InFlightRegistry,
-        continuation: AsyncThrowingStream<T.Output, Error>.Continuation
+        sink: StreamingOutputSink<T.Output>
     ) async {
         do {
             try Self.validateSessionAuthentication(request, configuration: configuration)
@@ -55,8 +54,7 @@ package struct StreamingExecutor: Sendable {
                 observers: configuration.eventObservers
             )
             await eventHub.finish(requestID: requestID)
-            inFlight.deregister(id: requestID)
-            continuation.finish(throwing: mapped)
+            sink.finish(throwing: mapped)
             return
         }
 
@@ -79,7 +77,7 @@ package struct StreamingExecutor: Sendable {
                     executionRuntime: executionRuntime,
                     resumeState: &resumeState,
                     retryIndex: attemptRetryIndex,
-                    continuation: continuation
+                    sink: sink
                 )
 
                 switch attemptResult {
@@ -116,8 +114,7 @@ package struct StreamingExecutor: Sendable {
                         observers: configuration.eventObservers
                     )
                     await eventHub.finish(requestID: requestID)
-                    inFlight.deregister(id: requestID)
-                    continuation.finish()
+                    sink.finish()
                     return
                 }
             } catch {
@@ -151,8 +148,7 @@ package struct StreamingExecutor: Sendable {
                         observers: configuration.eventObservers
                     )
                     await eventHub.finish(requestID: requestID)
-                    inFlight.deregister(id: requestID)
-                    continuation.finish(throwing: surfaced)
+                    sink.finish(throwing: surfaced)
                     return
                 }
 
@@ -172,8 +168,7 @@ package struct StreamingExecutor: Sendable {
                     observers: configuration.eventObservers
                 )
                 await eventHub.finish(requestID: requestID)
-                inFlight.deregister(id: requestID)
-                continuation.finish(throwing: surfaced)
+                sink.finish(throwing: surfaced)
                 return
             }
         }
@@ -204,7 +199,7 @@ package struct StreamingExecutor: Sendable {
         executionRuntime: RequestExecutionRuntime,
         resumeState: inout StreamingResumeState,
         retryIndex: Int,
-        continuation: AsyncThrowingStream<T.Output, Error>.Continuation
+        sink: StreamingOutputSink<T.Output>
     ) async throws -> StreamingAttemptResult {
         var attemptStartedAt: Date?
         var retryRequest: URLRequest?
@@ -342,7 +337,7 @@ package struct StreamingExecutor: Sendable {
                 maxLineBytes: streamingLineByteLimit,
                 resumeState: &resumeState,
                 attemptStartedAt: attemptStartedAt,
-                continuation: continuation
+                sink: sink
             )
         } catch let failure as StreamingAttemptFailure {
             throw failure
@@ -359,7 +354,7 @@ package struct StreamingExecutor: Sendable {
         maxLineBytes: Int,
         resumeState: inout StreamingResumeState,
         attemptStartedAt: Date?,
-        continuation: AsyncThrowingStream<T.Output, Error>.Continuation
+        sink: StreamingOutputSink<T.Output>
     ) async throws -> StreamingAttemptResult {
         var streamedByteCount = 0
         var iterator = bytes.makeAsyncIterator()
@@ -415,7 +410,7 @@ package struct StreamingExecutor: Sendable {
                         resumeState.rejectEventID()
                     }
                 }
-                continuation.yield(output)
+                try await sink.yield(output)
             }
         }
     }

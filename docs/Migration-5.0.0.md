@@ -12,6 +12,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | 4.x usage | 5.0 replacement |
 | --- | --- |
 | Treating `stream(_:)` as `AsyncThrowingStream<Output, Error>` and casting failures to `NetworkError` | Iterate the returned `StreamingOutputSequence`; a plain `catch` binds `NetworkError` directly |
+| Depending on `stream(_:)` to read ahead into an unbounded output queue | Accept the default lossless backpressure, or pass `.unbounded` explicitly after reviewing the memory trade-off |
 | `AuthScope`, `PublicAuthScope`, `AuthRequiredScope` | `SessionAuthentication` with `.anonymous`, `.optional`, or `.required` |
 | `typealias Auth = PublicAuthScope` | `var sessionAuthentication: SessionAuthentication { .anonymous }` |
 | `typealias Auth = AuthRequiredScope` | `var sessionAuthentication: SessionAuthentication { .required }` |

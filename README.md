@@ -825,7 +825,10 @@ execution hooks remain outside the stable public contract.
 
 For long-lived line-delimited transports (Server-Sent Events, NDJSON, log
 streams), use `DefaultNetworkClient.stream(_:)` together with a
-`StreamingAPIDefinition`. To cancel every in-flight request and stream
+`StreamingAPIDefinition`. The default stream is lossless and reads at most one
+decoded output ahead of its consumer; the explicit buffering-policy overload
+offers unbounded or lossy delivery when that trade-off is intentional. To
+cancel every in-flight request and stream
 (for example, on logout or backgrounding), call
 `DefaultNetworkClient.cancelAll()`. See the draft
 [5.0 release notes](docs/releases/5.0.0.md) for preview details and the draft
