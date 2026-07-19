@@ -484,6 +484,13 @@ extension AppendLogDownloadTaskStore {
     ) async throws -> Int32 {
         let clock = ContinuousClock()
         let deadline = clock.now + .seconds(timeout)
+        // Exponential backoff from 1ms to the previous fixed 50ms cadence.
+        // In-process callers serialize on the persistence actor, so the lock
+        // is normally uncontended and acquired on the first attempt; when a
+        // sibling process (app-group sharing) briefly holds it, short early
+        // retries cut the acquisition latency without changing the flock
+        // semantics or the 10s deadline.
+        var backoffMilliseconds = 1
         while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
             let lockErrno = errno
             if lockErrno == EINTR { continue }
@@ -492,11 +499,12 @@ extension AppendLogDownloadTaskStore {
                 throw CocoaError(.fileLocking)
             }
             do {
-                try await Task.sleep(for: .milliseconds(50))
+                try await Task.sleep(for: .milliseconds(backoffMilliseconds))
             } catch {
                 close(descriptor)
                 throw error
             }
+            backoffMilliseconds = min(backoffMilliseconds * 2, 50)
         }
         return descriptor
     }

@@ -727,9 +727,12 @@ requires `@_spi` import.
 
 These notes describe behaviour changes that landed during the 4.0.0
 preparation cycle, where the published shape removes earlier
-foot-guns. Each subsection captures the breaking change, the
-rationale, and the supported migration. The matching `CHANGELOG.md`
-entries live under `[4.0.0]`.
+foot-guns. Each subsection captures the breaking change and its
+rationale. This section is the *rationale record*; the canonical
+step-by-step source migration lives in
+[docs/Migration-4.0.0.md](docs/Migration-4.0.0.md) — when the two
+disagree, the migration guide wins and this section should be
+corrected. The matching `CHANGELOG.md` entries live under `[4.0.0]`.
 
 ### `DownloadManager.shared` removed
 

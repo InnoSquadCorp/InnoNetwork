@@ -419,7 +419,10 @@ jobs:
           use_oidc: true
           files: .build/coverage/coverage.lcov
           disable_search: true
-          flags: core
+          # The same runtime report feeds both flags; codecov.yml path
+          # filters partition it so the test-support product no longer
+          # dilutes the core request-path signal.
+          flags: core,testsupport
           name: core-coverage
           # Fail the build when upload fails on canonical main pushes so a
           # Codecov outage does not silently drop coverage from the project

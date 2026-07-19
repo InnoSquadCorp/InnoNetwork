@@ -18,9 +18,14 @@ flags:
       - "Sources/InnoNetworkDownload/**/*"
       - "Sources/InnoNetworkOpenAPI/**/*"
       - "Sources/InnoNetworkPersistentCache/**/*"
-      - "Sources/InnoNetworkTestSupport/**/*"
       - "Sources/InnoNetworkTrust/**/*"
       - "Sources/InnoNetworkWebSocket/**/*"
+    carryforward: false
+  # Test-support is a shipped product but never links into production
+  # binaries; folding it into `core` diluted the request-path signal.
+  testsupport:
+    paths:
+      - "Sources/InnoNetworkTestSupport/**/*"
     carryforward: false
   macros:
     paths:
