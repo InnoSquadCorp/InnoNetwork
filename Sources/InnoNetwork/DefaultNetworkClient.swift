@@ -329,7 +329,8 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
         self.eventHub = NetworkEventHub(
             policy: configuration.eventDeliveryPolicy,
             metricsReporter: configuration.eventMetricsReporter,
-            hubKind: .networkRequest
+            hubKind: .networkRequest,
+            clock: clock
         )
     }
 

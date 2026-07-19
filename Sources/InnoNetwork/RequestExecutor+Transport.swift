@@ -265,6 +265,16 @@ extension RequestExecutor {
             // the byte-wise seam below.
             if let chunkedSession = session as? any ChunkedTransferSession {
                 let normalizedLimit = maxBytes.map { max(0, $0) }
+                // With no byte ceiling there is nothing to enforce while
+                // receiving, and the producer-driven chunk stream has no
+                // backpressure: a slow consumer could buffer a second copy
+                // of an arbitrarily large body inside the stream. Unbounded
+                // collection through the buffered transport holds exactly
+                // one copy and keeps the same delegate-enforced redirect and
+                // trust policy.
+                guard let normalizedLimit else {
+                    return try await session.data(for: request, context: context)
+                }
                 let transfer = try await chunkedSession.chunkedTransfer(
                     for: request,
                     context: context,
