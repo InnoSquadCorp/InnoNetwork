@@ -98,6 +98,17 @@ public actor PersistentResponseCache: ResponseCache {
         var telemetryEvents: [PersistentResponseCacheTelemetryEvent]
     }
 
+    enum MaintenanceOperation: String, Sendable {
+        case scrubPolicyRejected = "scrub_policy_rejected"
+        case scrubMissingBody = "scrub_missing_body"
+        case scrubOversizedBody = "scrub_oversized_body"
+        case flushReadMetadata = "flush_read_metadata"
+        case invalidateKey = "invalidate_key"
+        case invalidateTargetURI = "invalidate_target_uri"
+        case removeAllBodies = "remove_all_bodies"
+        case removeAllIndex = "remove_all_index"
+    }
+
     private let configuration: PersistentResponseCacheConfiguration
     private let fileManager: FileManager
     private let storageIO: StorageIO
@@ -105,6 +116,7 @@ public actor PersistentResponseCache: ResponseCache {
     private let bodiesDirectoryURL: URL
     private let indexURL: URL
     private let keyNormalizer: PersistentCacheDiskKeyNormalizer
+    private let maintenanceFailureObserver: @Sendable (MaintenanceOperation) -> Void
     private let identifierEncoder = JSONEncoder.persistentCache
     private var index: Index
     private var entryIDsByDiskKey: [DiskKey: Set<String>] = [:]
@@ -157,11 +169,13 @@ public actor PersistentResponseCache: ResponseCache {
     init(
         configuration: PersistentResponseCacheConfiguration,
         fileManager: FileManager,
-        storageIO: StorageIO
+        storageIO: StorageIO,
+        maintenanceFailureObserver: @escaping @Sendable (MaintenanceOperation) -> Void = { _ in }
     ) throws {
         self.configuration = configuration
         self.fileManager = fileManager
         self.storageIO = storageIO
+        self.maintenanceFailureObserver = maintenanceFailureObserver
         let storage = try AnchoredStorage.open(
             directoryURL: configuration.directoryURL,
             dataProtectionClass: configuration.dataProtectionClass,
@@ -283,7 +297,7 @@ public actor PersistentResponseCache: ResponseCache {
         var entry = selection.1
         guard shouldStore(key: entry.key, responseHeaders: entry.headers) else {
             scrubEntry(id: id, entry: entry, reason: .policyRejected)
-            try? persistIndex()
+            persistIndexBestEffort(operation: .scrubPolicyRejected)
             recordMiss()
             return nil
         }
@@ -304,7 +318,7 @@ public actor PersistentResponseCache: ResponseCache {
         } catch {
             if Self.shouldScrubBody(after: error), isCurrentEntry(id: id, entry: entry) {
                 scrubEntry(id: id, entry: entry, reason: .missingBody)
-                try? persistIndex()
+                persistIndexBestEffort(operation: .scrubMissingBody)
             }
             recordMiss()
             return nil
@@ -312,7 +326,7 @@ public actor PersistentResponseCache: ResponseCache {
         guard data.count <= configuration.maxEntryBytes else {
             if isCurrentEntry(id: id, entry: entry) {
                 scrubEntry(id: id, entry: entry, reason: .entryTooLarge)
-                try? persistIndex()
+                persistIndexBestEffort(operation: .scrubOversizedBody)
             }
             recordMiss()
             return nil
@@ -338,13 +352,10 @@ public actor PersistentResponseCache: ResponseCache {
         // and are unaffected by this counter.
         pendingReadFlushes += 1
         if pendingReadFlushes >= readFlushBatchSize {
-            do {
-                try persistIndex(durable: false)
-                pendingReadFlushes = 0
-            } catch {
-                // Keep the backlog so the next read can retry the best-effort
-                // metadata flush instead of losing all pending access times.
-            }
+            persistIndexBestEffort(
+                operation: .flushReadMetadata,
+                durable: false
+            )
         }
 
         recordHit()
@@ -510,7 +521,7 @@ public actor PersistentResponseCache: ResponseCache {
         for (id, entry) in matches {
             removeEntry(id: id, entry: entry)
         }
-        try? persistIndex()
+        persistIndexBestEffort(operation: .invalidateKey)
     }
 
     /// Remove every persisted entry whose normalized target URI matches
@@ -527,7 +538,7 @@ public actor PersistentResponseCache: ResponseCache {
         for (id, entry) in matches {
             removeEntry(id: id, entry: entry)
         }
-        try? persistIndex()
+        persistIndexBestEffort(operation: .invalidateTargetURI)
     }
 
     /// Clear all entries through the descriptors retained when the cache was
@@ -537,8 +548,12 @@ public actor PersistentResponseCache: ResponseCache {
         index.entries.removeAll()
         entryIDsByDiskKey.removeAll(keepingCapacity: true)
         runningTotalBytes = 0
-        try? storage.resetBodies()
-        try? persistIndex()
+        do {
+            try storage.resetBodies()
+        } catch {
+            reportMaintenanceFailure(.removeAllBodies, error: error)
+        }
+        persistIndexBestEffort(operation: .removeAllIndex)
     }
 
     private func evaluateStorePolicy(key: ResponseCacheKey, response: CachedResponse) -> Bool {
@@ -699,6 +714,30 @@ public actor PersistentResponseCache: ResponseCache {
         // backlog because the encoded snapshot already includes the
         // accumulated `lastAccessedAt` updates.
         pendingReadFlushes = 0
+    }
+
+    /// Persists best-effort maintenance without changing cache availability.
+    /// Failures retain their existing retry semantics and emit only an
+    /// operation label publicly; filesystem details stay private in OSLog.
+    private func persistIndexBestEffort(
+        operation: MaintenanceOperation,
+        durable: Bool = true
+    ) {
+        do {
+            try persistIndex(durable: durable)
+        } catch {
+            reportMaintenanceFailure(operation, error: error)
+        }
+    }
+
+    private func reportMaintenanceFailure(
+        _ operation: MaintenanceOperation,
+        error: any Error
+    ) {
+        maintenanceFailureObserver(operation)
+        Self.logger.error(
+            "persistent_cache_maintenance_failed operation=\(operation.rawValue, privacy: .public) error=\(String(describing: error), privacy: .private)"
+        )
     }
 
     private func identifier(for key: DiskKey) throws -> String {

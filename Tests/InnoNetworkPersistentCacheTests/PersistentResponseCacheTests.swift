@@ -1790,8 +1790,14 @@ struct PersistentResponseCacheTests {
     func getReturnsValueWhenIndexPersistenceFails() async throws {
         let directory = makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
+        let maintenanceFailures = PersistentCacheMaintenanceFailureRecorder()
         let cache = try PersistentResponseCache(
-            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory),
+            fileManager: .default,
+            storageIO: PersistentResponseCache.StorageIO(),
+            maintenanceFailureObserver: { operation in
+                maintenanceFailures.record(operation)
+            }
         )
         let key = ResponseCacheKey(method: "GET", url: "https://example.com/persist-fail")
 
@@ -1803,8 +1809,11 @@ struct PersistentResponseCacheTests {
         try FileManager.default.createDirectory(at: indexURL, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: indexURL) }
 
-        let cached = try #require(await cache.get(key))
-        #expect(cached.data == Data("payload".utf8))
+        for _ in 0..<32 {
+            let cached = try #require(await cache.get(key))
+            #expect(cached.data == Data("payload".utf8))
+        }
+        #expect(maintenanceFailures.snapshot() == [.flushReadMetadata])
     }
 
     @Test("set() preserves the old entry when index persistence fails during overwrite")
@@ -2361,6 +2370,23 @@ private final class ProtectionWriteRecorder: @unchecked Sendable {
         let pathWrites = writes[path] ?? []
         lock.unlock()
         return pathWrites
+    }
+}
+
+private final class PersistentCacheMaintenanceFailureRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var operations: [PersistentResponseCache.MaintenanceOperation] = []
+
+    func record(_ operation: PersistentResponseCache.MaintenanceOperation) {
+        lock.lock()
+        operations.append(operation)
+        lock.unlock()
+    }
+
+    func snapshot() -> [PersistentResponseCache.MaintenanceOperation] {
+        lock.lock()
+        defer { lock.unlock() }
+        return operations
     }
 }
 

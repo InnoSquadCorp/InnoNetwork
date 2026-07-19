@@ -248,6 +248,9 @@ draft release summary.
 
 ### Fixed
 
+- Persistent-cache best-effort maintenance failures now emit privacy-redacted
+  OSLog diagnostics with a stable operation label. Cache hits and invalidation
+  remain non-throwing, and no new public observability surface is introduced.
 - Explicit shutdown now finishes accepted event-metrics input, drains pending
   reports, and stops periodic snapshot work for `DefaultNetworkClient`,
   `DownloadManager`, and `WebSocketManager`, even when callers retain the
