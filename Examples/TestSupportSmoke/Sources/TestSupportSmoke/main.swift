@@ -25,6 +25,15 @@ let client = DefaultNetworkClient(
     session: session
 )
 
+let liveSession = URLSession(configuration: .ephemeral)
+let explicitSessionClient = DefaultNetworkClient(
+    configuration: .safeDefaults(baseURL: URL(string: "https://api.example.com")!),
+    session: liveSession
+)
+let recorder = VCRURLSession(mode: .record, recordingSession: liveSession)
+_ = (explicitSessionClient, recorder)
+liveSession.invalidateAndCancel()
+
 private let response = try await client.request(SmokeRequest())
 precondition(response.ok)
 precondition(session.capturedRequest?.url?.absoluteString == "https://api.example.com/smoke")

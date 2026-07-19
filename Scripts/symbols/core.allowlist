@@ -390,10 +390,6 @@ InnoNetwork	swift.method	TraceContextInterceptor.adapt(_:)
 InnoNetwork	swift.method	TrustEvaluating.evaluate(challenge:)
 InnoNetwork	swift.method	URLQueryEncoder.encode(_:rootKey:)
 InnoNetwork	swift.method	URLQueryEncoder.encodeForm(_:rootKey:)
-InnoNetwork	swift.method	URLSessionProtocol.bytes(for:context:)
-InnoNetwork	swift.method	URLSessionProtocol.data(for:)
-InnoNetwork	swift.method	URLSessionProtocol.data(for:context:)
-InnoNetwork	swift.method	URLSessionProtocol.upload(for:fromFile:context:)
 InnoNetwork	swift.method	UploadNetworkClient.upload(_:)
 InnoNetwork	swift.method	UploadNetworkClient.upload(_:tag:)
 InnoNetwork	swift.property	APIDefinition.parameters
@@ -655,7 +651,6 @@ InnoNetwork	swift.protocol	RetryPolicy
 InnoNetwork	swift.protocol	SingleRequestExecutable
 InnoNetwork	swift.protocol	StreamingAPIDefinition
 InnoNetwork	swift.protocol	TrustEvaluating
-InnoNetwork	swift.protocol	URLSessionProtocol
 InnoNetwork	swift.protocol	UploadNetworkClient
 InnoNetwork	swift.struct	AnyEncodable
 InnoNetwork	swift.struct	AnyRequestExecutionPolicy

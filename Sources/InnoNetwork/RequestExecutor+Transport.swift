@@ -362,7 +362,7 @@ extension RequestExecutor {
             // injected session explicitly supports bounded upload responses.
             throw NetworkError.configuration(
                 reason: .invalidRequest(
-                    "Bounded file-upload responses are not supported by this URLSessionProtocol implementation."
+                    "Bounded file-upload responses are not supported by this injected test transport."
                 )
             )
         }

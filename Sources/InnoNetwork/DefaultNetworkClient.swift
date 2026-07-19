@@ -227,12 +227,12 @@ package struct StreamingResumeState: Sendable {
 ///
 /// `DefaultNetworkClient` keeps request execution non-actor-isolated so
 /// concurrent `request(_:)` invocations execute in parallel as soon as they
-/// reach ``URLSessionProtocol/data(for:context:)``. Shared lifecycle state
+/// reach the underlying URL transport. Shared lifecycle state
 /// lives behind small lock/actor boundaries: in-flight request cancellation,
 /// event publication, refresh coordination, and the terminal shutdown latch.
 public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sendable {
     private let configuration: NetworkConfiguration
-    private let session: URLSessionProtocol
+    private let session: any URLSessionProtocol
     private let ownedSession: URLSession?
     private let requestBuilder = RequestBuilder()
     private let eventHub: NetworkEventHub
@@ -295,7 +295,17 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
     /// > ```
     public convenience init(
         configuration: NetworkConfiguration,
-        session: URLSessionProtocol
+        session: URLSession
+    ) {
+        self.init(configuration: configuration, session: session, ownedSession: nil)
+    }
+
+    /// Package seam used by first-party benchmarks, tests, and the optional
+    /// `InnoNetworkTestSupport` product. Production consumers inject the
+    /// concrete `URLSession` overload above.
+    package convenience init(
+        configuration: NetworkConfiguration,
+        session: any URLSessionProtocol
     ) {
         self.init(configuration: configuration, session: session, ownedSession: nil)
     }
@@ -326,7 +336,7 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
 
     package convenience init(
         configuration: NetworkConfiguration,
-        session: URLSessionProtocol,
+        session: any URLSessionProtocol,
         clock: any InnoNetworkClock
     ) {
         self.init(configuration: configuration, session: session, ownedSession: nil, clock: clock)
@@ -334,7 +344,7 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
 
     private init(
         configuration: NetworkConfiguration,
-        session: URLSessionProtocol,
+        session: any URLSessionProtocol,
         ownedSession: URLSession?,
         clock: any InnoNetworkClock = SystemClock()
     ) {

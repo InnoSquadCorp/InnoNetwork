@@ -8,8 +8,8 @@ import Foundation
 public enum ResponseBodyBufferingPolicy: Sendable, Equatable {
     /// Prefer `URLSession.bytes(for:)` and collect into a `Data` buffer.
     ///
-    /// When `maxBytes` is `nil`, a `URLSessionProtocol` implementation that
-    /// reports streaming as unsupported with
+    /// When `maxBytes` is `nil`, an internal or test transport that reports
+    /// streaming as unsupported with
     /// ``NetworkConfigurationFailureReason/invalidRequest(_:)`` falls back to
     /// the buffered `data(for:)` path. Bounded streaming (`maxBytes != nil`)
     /// does not fall back, because the buffered path cannot enforce the limit

@@ -347,7 +347,6 @@ expected_shipping_public_declarations=(
   URLQueryEncoder
   URLQueryFloatEncodingStrategy
   URLQueryKeyEncodingStrategy
-  URLSessionProtocol
   URLQueryArrayEncodingStrategy
   W3CTraceContext
   WebSocketCloseCode

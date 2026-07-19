@@ -14,6 +14,7 @@ sent on the wire differ from the request or security policy a caller declared.
 | Treating `stream(_:)` as `AsyncThrowingStream<Output, Error>` and casting failures to `NetworkError` | Iterate the returned `StreamingOutputSequence`; a plain `catch` binds `NetworkError` directly |
 | Depending on `stream(_:)` to read ahead into an unbounded output queue | Accept the default lossless backpressure, or pass `.unbounded` explicitly after reviewing the memory trade-off |
 | Referencing `StreamingResumeStrategy` or calling its public `isCompatible(with:)` requirement | Configure `StreamingResumePolicy` on the endpoint; compatibility remains an executor-owned validation detail |
+| Conforming a custom type to `URLSessionProtocol` and injecting it into `DefaultNetworkClient` | Inject a concrete Foundation `URLSession` in production, or import `InnoNetworkTestSupport` and pass `MockURLSession` / `VCRURLSession` in tests |
 | `AuthScope`, `PublicAuthScope`, `AuthRequiredScope` | `SessionAuthentication` with `.anonymous`, `.optional`, or `.required` |
 | `typealias Auth = PublicAuthScope` | `var sessionAuthentication: SessionAuthentication { .anonymous }` |
 | `typealias Auth = AuthRequiredScope` | `var sessionAuthentication: SessionAuthentication { .required }` |
@@ -809,8 +810,9 @@ checks the byte count only after the complete response has been buffered. It
 prevents an oversized body from reaching cache storage or decoding, but it is
 not an early transport or peak-memory bound. Bounded `.streaming(maxBytes:)`
 checks `Content-Length` and observed bytes while receiving the body, explicitly
-cancels the underlying task when the ceiling is crossed, and fails closed when
-a custom session cannot provide streaming bytes.
+cancels the underlying task when the ceiling is crossed. The production
+transport is a concrete Foundation `URLSession`, which provides that bounded
+path.
 
 `MockURLSession` and VCR replay mode are the intentional test-only exception.
 Their scripted fixture or cassette body is already buffered, so they use
@@ -819,7 +821,7 @@ before cache insertion, interceptors, or decoding. VCR record mode forwards to
 a backing session and fails closed under bounded streaming; use a deliberately
 configured `.buffered(maxBytes:)` profile while recording. This preserves
 ordinary consumer tests without making buffered fallback a public capability
-or silently weakening production custom sessions.
+or silently weakening the production transport path.
 
 File-backed uploads choose their Foundation task shape from the presence of a
 response bound, regardless of whether the policy case is `.streaming` or
@@ -827,9 +829,9 @@ response bound, regardless of whether the policy case is `.streaming` or
 an `httpBodyStream`, and sets an explicit `Content-Length` so the response can
 be cancelled early. An explicit `maxBytes: nil` preserves
 `URLSession.upload(for:fromFile:)`. The bounded file-upload capability is
-package-only, so an external custom `URLSessionProtocol` fails closed for a
-bounded file upload. Use Foundation `URLSession` for bounded uploads, or select
-an explicit unbounded policy only when that behavior is reviewed.
+package-only, so consumer-defined transport protocols are no longer accepted.
+Use Foundation `URLSession` for production transport and `MockURLSession` or
+`VCRURLSession` from `InnoNetworkTestSupport` in tests.
 
 ## Move macro definitions to the root package
 

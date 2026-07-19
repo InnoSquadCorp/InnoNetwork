@@ -8,7 +8,11 @@
 import Foundation
 import os
 
-public protocol URLSessionProtocol: Sendable {
+/// Package transport seam shared by the core executor, benchmarks, and the
+/// optional test-support product. Applications inject a concrete `URLSession`;
+/// consumer test doubles are adapted by `InnoNetworkTestSupport` so this
+/// implementation protocol does not become part of the production API.
+package protocol URLSessionProtocol: Sendable {
     func data(for request: URLRequest) async throws -> (Data, URLResponse)
     func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse)
     /// Begins a streaming byte transfer for the given request and returns
@@ -39,10 +43,10 @@ public protocol URLSessionProtocol: Sendable {
 }
 
 /// Package-only capability for file uploads whose response body must be
-/// bounded while it is being received. Keeping this separate from the public
-/// ``URLSessionProtocol`` avoids expanding the consumer-facing mocking
-/// surface: custom sessions either opt in inside this package, or fail closed
-/// when a bounded file-upload response is requested.
+/// bounded while it is being received. Keeping this separate from the base
+/// transport seam avoids expanding the consumer-facing mocking surface:
+/// first-party sessions either opt in inside this package or fail closed when
+/// a bounded file-upload response is requested.
 package protocol BoundedFileUploadSession: URLSessionProtocol {
     func bytes(
         for request: URLRequest,
@@ -110,7 +114,7 @@ package struct ChunkedTransfer: Sendable {
     package let cancel: @Sendable () -> Void
 }
 
-public extension URLSessionProtocol {
+package extension URLSessionProtocol {
     func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
         _ = context
         return try await data(for: request)
@@ -121,7 +125,7 @@ public extension URLSessionProtocol {
     ) {
         _ = (request, context)
         throw NetworkError.configuration(
-            reason: .invalidRequest("Streaming bytes are not supported by this URLSessionProtocol implementation."))
+            reason: .invalidRequest("Streaming bytes are not supported by this injected test transport."))
     }
 
     func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (
@@ -129,12 +133,12 @@ public extension URLSessionProtocol {
     ) {
         _ = (request, fileURL, context)
         throw NetworkError.configuration(
-            reason: .invalidRequest("File-based upload is not supported by this URLSessionProtocol implementation."))
+            reason: .invalidRequest("File-based upload is not supported by this injected test transport."))
     }
 }
 
 extension URLSession: URLSessionProtocol {
-    public func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
+    package func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
         try validateRedirectControllableSession()
         // Always install the delegate so the configured ``RedirectPolicy``
         // can enforce downgrade, unsafe replay, and sensitive-header
@@ -162,7 +166,7 @@ extension URLSession: URLSessionProtocol {
         }
     }
 
-    public func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
+    package func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
         URLSession.AsyncBytes, URLResponse
     ) {
         try validateRedirectControllableSession()
@@ -188,9 +192,11 @@ extension URLSession: URLSessionProtocol {
         }
     }
 
-    public func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws -> (
-        Data, URLResponse
-    ) {
+    package func upload(for request: URLRequest, fromFile fileURL: URL, context: NetworkRequestContext) async throws
+        -> (
+            Data, URLResponse
+        )
+    {
         try validateRedirectControllableSession()
         let delegate = RequestTaskDelegate(
             request: request,

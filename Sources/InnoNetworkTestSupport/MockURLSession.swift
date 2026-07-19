@@ -36,8 +36,8 @@ public struct MockURLSessionResponse: Sendable {
     }
 
     /// Convenience constructor for a transport-level URLError. The
-    /// `response` field is non-optional on `URLSessionProtocol`, so a
-    /// placeholder is supplied; consumers see only `error` thrown.
+    /// The test transport response field is non-optional, so a placeholder is
+    /// supplied; consumers see only `error` thrown.
     public static func failure(_ error: URLError) -> MockURLSessionResponse {
         let placeholder = HTTPURLResponse(
             url: URL(string: "https://example.com")!,
@@ -59,7 +59,7 @@ private struct MockURLSessionState {
 }
 
 
-/// In-memory `URLSessionProtocol` implementation for consumer tests.
+/// In-memory URL loading test double for consumer tests.
 ///
 /// The first-party executor recognizes this as an in-memory test session, so it
 /// works with `NetworkConfiguration.safeDefaults` even though it does not

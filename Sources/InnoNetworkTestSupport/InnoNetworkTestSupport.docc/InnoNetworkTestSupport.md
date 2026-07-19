@@ -39,8 +39,10 @@ memory or early transport cancellation.
 VCR record mode forwards to its backing session, so it fails closed with a
 bounded streaming policy instead of silently buffering a live response. Use an
 explicitly reviewed `.buffered(maxBytes:)` configuration while recording.
-Arbitrary custom `URLSessionProtocol` implementations likewise fail closed
-under a bounded streaming policy unless they implement streaming bytes.
+Core transport protocols are package implementation details in 5.0. Importing
+this test-support product adds focused `DefaultNetworkClient` initializers for
+``MockURLSession`` and ``VCRURLSession``; production code continues to inject a
+concrete Foundation `URLSession`.
 
 Use ``VCRRedactionPolicy`` before recording cassettes that may contain
 credentials or personal data. Request bodies are represented by a SHA-256

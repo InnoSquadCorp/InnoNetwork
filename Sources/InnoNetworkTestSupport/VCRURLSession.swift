@@ -138,7 +138,7 @@ public struct VCRCassette: Codable, Equatable, Sendable {
 }
 
 
-/// URLSessionProtocol wrapper that records and replays deterministic HTTP cassettes.
+/// URL loading wrapper that records and replays deterministic HTTP cassettes.
 ///
 /// Replay mode works with bounded streaming presets because cassette bodies
 /// already exist in memory and are checked before the response pipeline. Record
@@ -155,15 +155,46 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
     private let redactionPolicy: VCRRedactionPolicy
     private let state: OSAllocatedUnfairLock<State>
 
-    /// Creates a recording or replaying URL session wrapper.
-    public init(
+    /// Creates a recording or replaying wrapper backed by a concrete live URL
+    /// session. Replay mode leaves `recordingSession` as `nil`.
+    public convenience init(
         cassette: VCRCassette = VCRCassette(),
         mode: VCRMode,
-        recordingSession: (any URLSessionProtocol)? = nil,
+        recordingSession: URLSession? = nil,
         redactionPolicy: VCRRedactionPolicy = .default
     ) {
+        self.init(
+            cassette: cassette,
+            mode: mode,
+            recordingTransport: recordingSession,
+            redactionPolicy: redactionPolicy
+        )
+    }
+
+    /// Creates a recording wrapper backed by ``MockURLSession`` for fully
+    /// deterministic fixture-building tests.
+    public convenience init(
+        cassette: VCRCassette = VCRCassette(),
+        mode: VCRMode,
+        recordingSession: MockURLSession,
+        redactionPolicy: VCRRedactionPolicy = .default
+    ) {
+        self.init(
+            cassette: cassette,
+            mode: mode,
+            recordingTransport: recordingSession,
+            redactionPolicy: redactionPolicy
+        )
+    }
+
+    private init(
+        cassette: VCRCassette,
+        mode: VCRMode,
+        recordingTransport: (any URLSessionProtocol)?,
+        redactionPolicy: VCRRedactionPolicy
+    ) {
         self.mode = mode
-        self.recordingSession = recordingSession
+        self.recordingSession = recordingTransport
         self.redactionPolicy = redactionPolicy
         self.state = OSAllocatedUnfairLock(
             initialState: State(cassette: cassette, replayCursor: cassette.interactions.startIndex)

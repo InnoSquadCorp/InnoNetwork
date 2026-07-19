@@ -115,6 +115,9 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
 - `StreamingResumeStrategy` is removed. It had one conformer and no client
   injection point, so `StreamingResumePolicy` now keeps buffering compatibility
   as a package-owned validation detail without changing reconnect behavior.
+- `URLSessionProtocol` is package-owned. Production clients inject a concrete
+  Foundation `URLSession`; consumer tests import `InnoNetworkTestSupport` and
+  keep passing `MockURLSession` or `VCRURLSession` through focused overloads.
 - `StateReducer` and `StateReduction` are package implementation vocabulary,
   not public API. Adopters should own reducer types at their feature boundary.
 - Redirect defaults deny HTTPS downgrade and every cross-origin proposal that
@@ -259,8 +262,8 @@ draft release summary.
   under 1 MiB/s; the chunked bridge collects the same bounded body at
   transport speed (measured ~2.5 GiB/s end to end) while enforcing the byte
   ceiling incrementally inside the transport, so buffered memory stays
-  bounded regardless of consumer pacing. Custom `URLSessionProtocol`
-  implementations keep the byte-wise `bytes(for:context:)` fallback. A
+  bounded regardless of consumer pacing. Package-owned test transport
+  implementations keep the byte-wise fallback. A
   `client/streaming-collect-1mib` benchmark pins the collection path.
 - `InnoNetworkClientTransportError` now conforms to `Sendable` and
   `LocalizedError`, matching every other public error type in the package.
