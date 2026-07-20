@@ -5,13 +5,13 @@ import os
 
 @testable import InnoNetwork
 
-private struct ResilienceUser: Codable, Sendable, Equatable {
+struct ResilienceUser: Codable, Sendable, Equatable {
     let id: Int
     let name: String
 }
 
 
-private struct ResilienceGetRequest: APIDefinition {
+struct ResilienceGetRequest: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = ResilienceUser
 
@@ -20,22 +20,22 @@ private struct ResilienceGetRequest: APIDefinition {
     var path: String { "/users/1" }
 }
 
-private struct CacheableEmptyRequest: APIDefinition, HTTPEmptyResponseDecodable {
+struct ResilienceCacheableEmptyRequest: APIDefinition, HTTPEmptyResponseDecodable {
     typealias Parameter = EmptyParameter
-    typealias APIResponse = CacheableEmptyRequest
+    typealias APIResponse = ResilienceCacheableEmptyRequest
 
     var method: HTTPMethod { .get }
     var path: String { "/empty" }
     var sessionAuthentication: SessionAuthentication { .anonymous }
     var acceptableStatusCodes: Set<Int>? { [204] }
 
-    static func emptyResponseValue() -> CacheableEmptyRequest {
-        CacheableEmptyRequest()
+    static func emptyResponseValue() -> ResilienceCacheableEmptyRequest {
+        ResilienceCacheableEmptyRequest()
     }
 }
 
 
-private struct AuthorizedResilienceGetRequest: APIDefinition {
+struct AuthorizedResilienceGetRequest: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = ResilienceUser
 
@@ -44,12 +44,12 @@ private struct AuthorizedResilienceGetRequest: APIDefinition {
     var path: String { "/users/1" }
     var sessionAuthentication: SessionAuthentication { .anonymous }
     var requestInterceptors: [RequestInterceptor] {
-        [StaticAuthorizationInterceptor(token: token)]
+        [ResilienceStaticAuthorizationInterceptor(token: token)]
     }
 }
 
 
-private struct InterceptedResilienceGetRequest: APIDefinition {
+struct InterceptedResilienceGetRequest: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = ResilienceUser
 
@@ -61,7 +61,7 @@ private struct InterceptedResilienceGetRequest: APIDefinition {
     var requestInterceptors: [RequestInterceptor] { interceptors }
 }
 
-private actor ResponseRecorder {
+actor ResilienceResponseRecorder {
     private var responses: [Response] = []
 
     func record(_ response: Response) {
@@ -74,8 +74,8 @@ private actor ResponseRecorder {
     }
 }
 
-private struct RecordingResponseInterceptor: ResponseInterceptor {
-    let recorder: ResponseRecorder
+struct ResilienceRecordingResponseInterceptor: ResponseInterceptor {
+    let recorder: ResilienceResponseRecorder
 
     func adapt(_ urlResponse: Response, request: URLRequest) async throws -> Response {
         _ = request
@@ -85,7 +85,7 @@ private struct RecordingResponseInterceptor: ResponseInterceptor {
 }
 
 
-private actor CountingResponseCache: ResponseCache {
+actor ResilienceCountingResponseCache: ResponseCache {
     private let cached: CachedResponse?
     private(set) var getCount = 0
     private(set) var setCount = 0
@@ -115,7 +115,7 @@ private actor CountingResponseCache: ResponseCache {
 }
 
 
-private struct ResiliencePostRequest: APIDefinition {
+struct ResiliencePostRequest: APIDefinition {
     struct Body: Encodable, Sendable {
         let name: String
     }
@@ -134,7 +134,7 @@ private struct ResiliencePostRequest: APIDefinition {
 }
 
 
-private struct ResilienceMutationRequest: APIDefinition {
+struct ResilienceMutationRequest: APIDefinition {
     typealias Parameter = EmptyParameter
     typealias APIResponse = ResilienceUser
 
@@ -153,7 +153,7 @@ private struct ResilienceMutationRequest: APIDefinition {
 }
 
 
-private struct IdempotentResiliencePostRequest: APIDefinition {
+struct IdempotentResiliencePostRequest: APIDefinition {
     struct Body: Encodable, Sendable {
         let name: String
     }
@@ -177,7 +177,7 @@ private struct IdempotentResiliencePostRequest: APIDefinition {
 }
 
 
-private struct HeaderSettingInterceptor: RequestInterceptor {
+struct ResilienceHeaderSettingInterceptor: RequestInterceptor {
     let field: String
     let value: String
 
@@ -189,7 +189,7 @@ private struct HeaderSettingInterceptor: RequestInterceptor {
 }
 
 
-private struct HTTPMethodOverrideInterceptor: RequestInterceptor {
+struct ResilienceHTTPMethodOverrideInterceptor: RequestInterceptor {
     let method: String
 
     func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
@@ -200,7 +200,7 @@ private struct HTTPMethodOverrideInterceptor: RequestInterceptor {
 }
 
 
-private struct StaticAuthorizationInterceptor: RequestInterceptor {
+struct ResilienceStaticAuthorizationInterceptor: RequestInterceptor {
     let token: String
 
     func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
@@ -211,13 +211,13 @@ private struct StaticAuthorizationInterceptor: RequestInterceptor {
 }
 
 
-private struct QueuedHTTPResponse: Sendable {
+struct ResilienceQueuedHTTPResponse: Sendable {
     let data: Data
     let response: HTTPURLResponse
 }
 
 
-private actor Counter {
+actor ResilienceCounter {
     private var value = 0
 
     func increment() {
@@ -230,12 +230,12 @@ private actor Counter {
 }
 
 
-private actor SequenceURLSessionState {
-    private var queue: [QueuedHTTPResponse]
+actor ResilienceSequenceURLSessionState {
+    private var queue: [ResilienceQueuedHTTPResponse]
     private var requests: [URLRequest] = []
     private let delay: Duration
 
-    init(queue: [QueuedHTTPResponse], delay: Duration) {
+    init(queue: [ResilienceQueuedHTTPResponse], delay: Duration) {
         self.queue = queue
         self.delay = delay
     }
@@ -263,11 +263,11 @@ private actor SequenceURLSessionState {
 }
 
 
-private final class SequenceURLSession: URLSessionProtocol, Sendable {
-    private let state: SequenceURLSessionState
+final class ResilienceSequenceURLSession: URLSessionProtocol, Sendable {
+    private let state: ResilienceSequenceURLSessionState
 
-    init(queue: [QueuedHTTPResponse], delay: Duration = .zero) {
-        self.state = SequenceURLSessionState(queue: queue, delay: delay)
+    init(queue: [ResilienceQueuedHTTPResponse], delay: Duration = .zero) {
+        self.state = ResilienceSequenceURLSessionState(queue: queue, delay: delay)
     }
 
     var requestCount: Int {
@@ -292,7 +292,7 @@ private final class SequenceURLSession: URLSessionProtocol, Sendable {
 }
 
 
-private actor ResilienceTokenStore {
+actor ResilienceTokenStore {
     private var token: String
 
     init(_ token: String) {
@@ -309,7 +309,7 @@ private actor ResilienceTokenStore {
 }
 
 
-private actor RefreshTestGate {
+actor RefreshTestGate {
     private struct EntryWaiter {
         let minimumCount: Int
         let continuation: CheckedContinuation<Void, Never>
@@ -352,23 +352,23 @@ private actor RefreshTestGate {
 }
 
 
-private actor AuthorizationRoutingState {
+actor AuthorizationRoutingState {
     private struct OldRequestWaiter {
         let minimumCount: Int
         let continuation: CheckedContinuation<Void, Never>
     }
 
-    private let oldTokenResponse: QueuedHTTPResponse
-    private let newTokenResponse: QueuedHTTPResponse
+    private let oldTokenResponse: ResilienceQueuedHTTPResponse
+    private let newTokenResponse: ResilienceQueuedHTTPResponse
     private var oldTokenRequestCount = 0
     private var oldRequestWaiters: [OldRequestWaiter] = []
 
-    init(oldTokenResponse: QueuedHTTPResponse, newTokenResponse: QueuedHTTPResponse) {
+    init(oldTokenResponse: ResilienceQueuedHTTPResponse, newTokenResponse: ResilienceQueuedHTTPResponse) {
         self.oldTokenResponse = oldTokenResponse
         self.newTokenResponse = newTokenResponse
     }
 
-    func response(for request: URLRequest) -> QueuedHTTPResponse {
+    func response(for request: URLRequest) -> ResilienceQueuedHTTPResponse {
         if request.value(forHTTPHeaderField: "Authorization") == "Bearer new" {
             return newTokenResponse
         }
@@ -391,10 +391,10 @@ private actor AuthorizationRoutingState {
 }
 
 
-private final class AuthorizationRoutingURLSession: URLSessionProtocol, Sendable {
+final class AuthorizationRoutingURLSession: URLSessionProtocol, Sendable {
     private let state: AuthorizationRoutingState
 
-    init(oldTokenResponse: QueuedHTTPResponse, newTokenResponse: QueuedHTTPResponse) {
+    init(oldTokenResponse: ResilienceQueuedHTTPResponse, newTokenResponse: ResilienceQueuedHTTPResponse) {
         self.state = AuthorizationRoutingState(
             oldTokenResponse: oldTokenResponse,
             newTokenResponse: newTokenResponse
@@ -411,35 +411,35 @@ private final class AuthorizationRoutingURLSession: URLSessionProtocol, Sendable
     }
 }
 
-private final class CacheInvalidatingURLSession: URLSessionProtocol, Sendable {
+final class ResilienceCacheInvalidatingURLSession: URLSessionProtocol, Sendable {
     private let cache: InMemoryResponseCache
     private let cacheKey: ResponseCacheKey
-    private let queuedResponse: QueuedHTTPResponse
+    private let resilienceQueuedResponse: ResilienceQueuedHTTPResponse
 
     init(
         cache: InMemoryResponseCache,
         cacheKey: ResponseCacheKey,
-        queuedResponse: QueuedHTTPResponse
+        resilienceQueuedResponse: ResilienceQueuedHTTPResponse
     ) {
         self.cache = cache
         self.cacheKey = cacheKey
-        self.queuedResponse = queuedResponse
+        self.resilienceQueuedResponse = resilienceQueuedResponse
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         _ = request
         await cache.invalidate(cacheKey)
-        return (queuedResponse.data, queuedResponse.response)
+        return (resilienceQueuedResponse.data, resilienceQueuedResponse.response)
     }
 }
 
 
-private actor CancellationFirstURLSessionState {
-    private var queue: [QueuedHTTPResponse]
+actor CancellationFirstURLSessionState {
+    private var queue: [ResilienceQueuedHTTPResponse]
     private var requests: [URLRequest] = []
     private var cancellationCount = 0
 
-    init(queue: [QueuedHTTPResponse]) {
+    init(queue: [ResilienceQueuedHTTPResponse]) {
         self.queue = queue
     }
 
@@ -470,10 +470,10 @@ private actor CancellationFirstURLSessionState {
 }
 
 
-private final class CancellationFirstURLSession: URLSessionProtocol, Sendable {
+final class CancellationFirstURLSession: URLSessionProtocol, Sendable {
     private let state: CancellationFirstURLSessionState
 
-    init(queue: [QueuedHTTPResponse]) {
+    init(queue: [ResilienceQueuedHTTPResponse]) {
         self.state = CancellationFirstURLSessionState(queue: queue)
     }
 
@@ -508,13 +508,13 @@ private final class CancellationFirstURLSession: URLSessionProtocol, Sendable {
 }
 
 
-private func queuedResponse(
+func resilienceQueuedResponse(
     statusCode: Int,
     body: ResilienceUser? = nil,
     headers: [String: String] = [:]
-) throws -> QueuedHTTPResponse {
+) throws -> ResilienceQueuedHTTPResponse {
     let data = try body.map { try JSONEncoder().encode($0) } ?? Data()
-    return QueuedHTTPResponse(
+    return ResilienceQueuedHTTPResponse(
         data: data,
         response: HTTPURLResponse(
             url: URL(string: "https://api.example.com/users/1")!,
@@ -526,10 +526,10 @@ private func queuedResponse(
 }
 
 
-private let cacheFixtureAcceptLanguage = "en-US"
+let cacheFixtureAcceptLanguage = "en-US"
 
 
-private func resilienceUserCacheKey() -> ResponseCacheKey {
+func resilienceUserCacheKey() -> ResponseCacheKey {
     ResponseCacheKey(
         method: "GET",
         url: "https://api.example.com/users/1",
@@ -537,7 +537,7 @@ private func resilienceUserCacheKey() -> ResponseCacheKey {
     )
 }
 
-private func authorizedResilienceUserCacheKey(token: String) -> ResponseCacheKey {
+func authorizedResilienceUserCacheKey(token: String) -> ResponseCacheKey {
     ResponseCacheKey(
         method: "GET",
         url: "https://api.example.com/users/1",
@@ -549,7 +549,7 @@ private func authorizedResilienceUserCacheKey(token: String) -> ResponseCacheKey
 }
 
 
-private func responseHeader(_ response: Response, named name: String) -> String? {
+func resilienceResponseHeader(_ response: Response, named name: String) -> String? {
     guard
         let pair = response.response?.allHeaderFields.first(where: { pair in
             guard let key = pair.key as? String else { return false }
@@ -562,13 +562,13 @@ private func responseHeader(_ response: Response, named name: String) -> String?
 }
 
 
-private func originalRequestID(from event: NetworkEvent) -> UUID? {
+func resilienceOriginalRequestID(from event: NetworkEvent) -> UUID? {
     guard case .requestStart(let requestID, _, _, _) = event else { return nil }
     return requestID
 }
 
 
-private func recordedRevalidationEvents(
+func resilienceRecordedRevalidationEvents(
     in store: NetworkEventStore
 ) async -> [(originalID: UUID, state: CacheRevalidationState)] {
     await store.snapshot().compactMap { event in
@@ -578,7 +578,7 @@ private func recordedRevalidationEvents(
 }
 
 
-private func makeLocalizedCacheConfiguration(
+func resilienceMakeLocalizedCacheConfiguration(
     responseCachePolicy: ResponseCachePolicy,
     responseCache: any ResponseCache,
     responseInterceptors: [ResponseInterceptor] = [],
@@ -588,7 +588,7 @@ private func makeLocalizedCacheConfiguration(
         baseURL: URL(string: "https://api.example.com")!,
         eventObservers: eventObservers,
         requestInterceptors: [
-            HeaderSettingInterceptor(field: "Accept-Language", value: cacheFixtureAcceptLanguage)
+            ResilienceHeaderSettingInterceptor(field: "Accept-Language", value: cacheFixtureAcceptLanguage)
         ],
         responseInterceptors: responseInterceptors,
         responseCachePolicy: responseCachePolicy,
@@ -600,1943 +600,7 @@ private func makeLocalizedCacheConfiguration(
 
 @Suite("Resilience policies")
 struct ResiliencePolicyTests {
-    @Test("Refresh token policy replays one 401 response")
-    func refreshPolicyReplaysOnce() async throws {
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 401),
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "refreshed")),
-        ])
-        let refreshCount = Counter()
-        let policy = RefreshTokenPolicy(
-            currentToken: { "old" },
-            refreshToken: {
-                await refreshCount.increment()
-                return "new"
-            }
-        )
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                refreshTokenPolicy: policy
-            ),
-            session: session
-        )
-
-        let user = try await client.request(
-            ResilienceGetRequest(sessionAuthentication: .optional)
-        )
-
-        #expect(user == ResilienceUser(id: 1, name: "refreshed"))
-        #expect(await refreshCount.count == 1)
-        #expect(await session.requestCount == 2)
-        #expect(await session.capturedRequests.last?.value(forHTTPHeaderField: "Authorization") == "Bearer new")
-    }
-
-    @Test("Refresh replay preserves interceptor-adapted request state")
-    func refreshReplayPreservesAdaptedInterceptorHeaders() async throws {
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 401),
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "refreshed")),
-        ])
-        let policy = RefreshTokenPolicy(
-            currentToken: { "old" },
-            refreshToken: { "new" }
-        )
-        let client = DefaultNetworkClient(
-            configuration: NetworkConfiguration(
-                baseURL: URL(string: "https://api.example.com")!,
-                requestInterceptors: [
-                    HeaderSettingInterceptor(field: "X-Tenant-ID", value: "tenant-a"),
-                    HeaderSettingInterceptor(field: "X-Trace-ID", value: "trace-123"),
-                ],
-                refreshTokenPolicy: policy,
-                responseBodyBufferingPolicy: .buffered(maxBytes: nil)
-            ),
-            session: session
-        )
-
-        let user = try await client.request(
-            InterceptedResilienceGetRequest(
-                interceptors: [
-                    HeaderSettingInterceptor(field: "X-Request-Signature", value: "signed")
-                ],
-                sessionAuthentication: .optional
-            )
-        )
-        let capturedRequests = await session.capturedRequests
-
-        #expect(user == ResilienceUser(id: 1, name: "refreshed"))
-        #expect(capturedRequests.count == 2)
-        #expect(capturedRequests[0].value(forHTTPHeaderField: "X-Tenant-ID") == "tenant-a")
-        #expect(capturedRequests[0].value(forHTTPHeaderField: "X-Trace-ID") == "trace-123")
-        #expect(capturedRequests[0].value(forHTTPHeaderField: "X-Request-Signature") == "signed")
-        #expect(capturedRequests[1].value(forHTTPHeaderField: "X-Tenant-ID") == "tenant-a")
-        #expect(capturedRequests[1].value(forHTTPHeaderField: "X-Trace-ID") == "trace-123")
-        #expect(capturedRequests[1].value(forHTTPHeaderField: "X-Request-Signature") == "signed")
-        #expect(capturedRequests[1].value(forHTTPHeaderField: "Authorization") == "Bearer new")
-    }
-
-    @Test("RefreshTokenPolicy appliesTo skips token attachment and replay")
-    func refreshPolicyAppliesToSkipsTokenAttachmentAndReplay() async throws {
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 401),
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "unexpected")),
-        ])
-        let refreshCount = Counter()
-        let policy = RefreshTokenPolicy(
-            appliesTo: { $0.url?.host == "auth.example.com" },
-            currentToken: { "old" },
-            refreshToken: {
-                await refreshCount.increment()
-                return "new"
-            }
-        )
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                refreshTokenPolicy: policy
-            ),
-            session: session
-        )
-
-        await #expect(throws: NetworkError.self) {
-            try await client.request(
-                ResilienceGetRequest(sessionAuthentication: .optional)
-            )
-        }
-
-        #expect(await session.requestCount == 1)
-        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "Authorization") == nil)
-        #expect(await refreshCount.count == 0)
-    }
-
-    @Test("Concurrent 401 responses share one refresh")
-    func refreshPolicySingleFlight() async throws {
-        let body = ResilienceUser(id: 1, name: "ok")
-        let session = AuthorizationRoutingURLSession(
-            oldTokenResponse: try queuedResponse(statusCode: 401),
-            newTokenResponse: try queuedResponse(statusCode: 200, body: body)
-        )
-        let tokenStore = ResilienceTokenStore("old")
-        let refreshGate = RefreshTestGate()
-        let policy = RefreshTokenPolicy(
-            currentToken: { await tokenStore.read() },
-            refreshToken: {
-                await refreshGate.enterAndWait()
-                await tokenStore.replace(with: "new")
-                return "new"
-            }
-        )
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                refreshTokenPolicy: policy
-            ),
-            session: session
-        )
-
-        try await withThrowingTaskGroup(of: ResilienceUser.self) { group in
-            for _ in 0..<10 {
-                group.addTask {
-                    try await client.request(
-                        ResilienceGetRequest(sessionAuthentication: .optional)
-                    )
-                }
-            }
-
-            // Hold the single refresh until every caller has sent its old
-            // token. This makes the coalescing cohort explicit even when the
-            // parallel test scheduler delays individual child tasks.
-            await session.waitForOldTokenRequests(count: 10)
-            await refreshGate.release()
-
-            for try await user in group {
-                #expect(user == body)
-            }
-        }
-
-        #expect(await refreshGate.totalEntryCount == 1)
-    }
-
-    @Test("Cancelled refresh waiter does not cancel shared refresh")
-    func cancelledRefreshWaiterDoesNotCancelSharedRefresh() async throws {
-        let body = ResilienceUser(id: 1, name: "ok")
-        let session = AuthorizationRoutingURLSession(
-            oldTokenResponse: try queuedResponse(statusCode: 401),
-            newTokenResponse: try queuedResponse(statusCode: 200, body: body)
-        )
-        let tokenStore = ResilienceTokenStore("old")
-        let refreshGate = RefreshTestGate()
-        let policy = RefreshTokenPolicy(
-            currentToken: { await tokenStore.read() },
-            refreshToken: {
-                await refreshGate.enterAndWait()
-                await tokenStore.replace(with: "new")
-                return "new"
-            }
-        )
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                refreshTokenPolicy: policy
-            ),
-            session: session
-        )
-
-        let cancelled = Task {
-            try await client.request(
-                ResilienceGetRequest(sessionAuthentication: .optional)
-            )
-        }
-        await refreshGate.waitUntilEntered()
-        let remaining = Task {
-            try await client.request(
-                ResilienceGetRequest(sessionAuthentication: .optional)
-            )
-        }
-        await session.waitForOldTokenRequests(count: 2)
-        cancelled.cancel()
-
-        await expectCancelled(cancelled)
-        await refreshGate.release()
-        let user = try await remaining.value
-
-        #expect(user == body)
-        #expect(await refreshGate.totalEntryCount == 1)
-    }
-
-    @Test("Refresh failure fans out to concurrent 401 waiters")
-    func refreshFailureFansOut() async throws {
-        var responses: [QueuedHTTPResponse] = []
-        for _ in 0..<5 {
-            responses.append(try queuedResponse(statusCode: 401))
-        }
-        let session = SequenceURLSession(queue: responses)
-        let refreshCount = Counter()
-        let policy = RefreshTokenPolicy(
-            currentToken: { "old" },
-            refreshToken: {
-                await refreshCount.increment()
-                try await Task.sleep(for: .milliseconds(50))
-                throw NetworkError.configuration(reason: .invalidRequest("refresh failed"))
-            }
-        )
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                refreshTokenPolicy: policy
-            ),
-            session: session
-        )
-
-        await #expect(throws: NetworkError.self) {
-            try await withThrowingTaskGroup(of: ResilienceUser.self) { group in
-                for _ in 0..<5 {
-                    group.addTask {
-                        try await client.request(
-                            ResilienceGetRequest(sessionAuthentication: .optional)
-                        )
-                    }
-                }
-                for try await _ in group {}
-            }
-        }
-        #expect(await refreshCount.count == 1)
-        #expect(await session.requestCount == 5)
-    }
-
-    @Test("Replay stops after a second 401")
-    func refreshPolicyStopsAfterReplay() async throws {
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 401),
-            queuedResponse(statusCode: 401),
-        ])
-        let policy = RefreshTokenPolicy(currentToken: { "old" }, refreshToken: { "new" })
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                refreshTokenPolicy: policy
-            ),
-            session: session
-        )
-
-        await #expect(throws: NetworkError.self) {
-            try await client.request(
-                ResilienceGetRequest(sessionAuthentication: .optional)
-            )
-        }
-        #expect(await session.requestCount == 2)
-    }
-
-    @Test("Default retry policy does not retry unsafe methods without idempotency key")
-    func defaultRetryPolicyDoesNotRetryPostWithoutIdempotencyKey() async throws {
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 503),
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "unexpected")),
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 1, retryDelay: 0, jitterRatio: 0)
-            ),
-            session: session
-        )
-
-        await #expect(throws: NetworkError.self) {
-            try await client.request(ResiliencePostRequest())
-        }
-        #expect(await session.requestCount == 1)
-    }
-
-    @Test("Default retry policy retries unsafe methods with idempotency key")
-    func defaultRetryPolicyRetriesPostWithIdempotencyKey() async throws {
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 503),
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "created")),
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 1, retryDelay: 0, jitterRatio: 0)
-            ),
-            session: session
-        )
-
-        let user = try await client.request(IdempotentResiliencePostRequest())
-
-        #expect(user == ResilienceUser(id: 1, name: "created"))
-        #expect(await session.requestCount == 2)
-        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "Idempotency-Key") == "create-user-1")
-    }
-
-    @Test("Method-agnostic retry policy keeps legacy unsafe-method retry behavior")
-    func methodAgnosticRetryPolicyRetriesPostWithoutIdempotencyKey() async throws {
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 503),
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "legacy")),
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                retryPolicy: ExponentialBackoffRetryPolicy(
-                    maxRetries: 1,
-                    retryDelay: 0,
-                    jitterRatio: 0,
-                    idempotencyPolicy: .methodAgnostic
-                )
-            ),
-            session: session
-        )
-
-        let user = try await client.request(ResiliencePostRequest())
-
-        #expect(user == ResilienceUser(id: 1, name: "legacy"))
-        #expect(await session.requestCount == 2)
-    }
-
-    @Test("GET coalescing shares one transport")
-    func getCoalescingSharesTransport() async throws {
-        let session = try SequenceURLSession(
-            queue: [queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "shared"))],
-            delay: .milliseconds(50)
-        )
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                requestCoalescingPolicy: .getOnly
-            ),
-            session: session
-        )
-
-        try await withThrowingTaskGroup(of: ResilienceUser.self) { group in
-            for _ in 0..<20 {
-                group.addTask {
-                    try await client.request(ResilienceGetRequest())
-                }
-            }
-            for try await user in group {
-                #expect(user == ResilienceUser(id: 1, name: "shared"))
-            }
-        }
-
-        #expect(await session.requestCount == 1)
-    }
-
-    @Test("POST is not coalesced by getOnly policy")
-    func postDoesNotCoalesceByDefault() async throws {
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "one")),
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 2, name: "two")),
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                requestCoalescingPolicy: .getOnly
-            ),
-            session: session
-        )
-
-        _ = try await client.request(ResiliencePostRequest())
-        _ = try await client.request(ResiliencePostRequest())
-
-        #expect(await session.requestCount == 2)
-    }
-
-    @Test("Coalescing method allowlists preserve case-sensitive tokens")
-    func coalescingMethodAllowlistIsCaseSensitive() throws {
-        var request = URLRequest(url: URL(string: "https://api.example.com/options")!)
-        request.httpMethod = "options"
-
-        let uppercasePolicy = RequestCoalescingPolicy(methods: ["OPTIONS"])
-        #expect(uppercasePolicy.methods == ["OPTIONS"])
-        #expect(RequestDedupKey(request: request, policy: uppercasePolicy) == nil)
-
-        let lowercasePolicy = RequestCoalescingPolicy(methods: ["options"])
-        let key = try #require(RequestDedupKey(request: request, policy: lowercasePolicy))
-        #expect(key.method == "options")
-    }
-
-    @Test("Coalescing keeps different Authorization headers separate")
-    func coalescingSeparatesAuthorizationHeaders() async throws {
-        let session = try SequenceURLSession(
-            queue: [
-                queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "one")),
-                queuedResponse(statusCode: 200, body: ResilienceUser(id: 2, name: "two")),
-            ],
-            delay: .milliseconds(50)
-        )
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                requestCoalescingPolicy: .getOnly
-            ),
-            session: session
-        )
-
-        async let first = client.request(AuthorizedResilienceGetRequest(token: "one"))
-        async let second = client.request(AuthorizedResilienceGetRequest(token: "two"))
-        let users = try await [first, second]
-
-        #expect(users.contains(ResilienceUser(id: 1, name: "one")))
-        #expect(users.contains(ResilienceUser(id: 2, name: "two")))
-        #expect(await session.requestCount == 2)
-    }
-
-    @Test("Partial coalescing waiter cancellation keeps remaining waiter alive")
-    func partialCoalescingCancellationKeepsRemainingWaiterAlive() async throws {
-        let session = try SequenceURLSession(
-            queue: [queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "shared"))],
-            delay: .milliseconds(100)
-        )
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                requestCoalescingPolicy: .getOnly
-            ),
-            session: session
-        )
-
-        let cancelled = Task {
-            try await client.request(ResilienceGetRequest())
-        }
-        let remaining = Task {
-            try await client.request(ResilienceGetRequest())
-        }
-
-        try await Task.sleep(for: .milliseconds(20))
-        cancelled.cancel()
-
-        await expectCancelled(cancelled)
-        let user = try await remaining.value
-
-        #expect(user == ResilienceUser(id: 1, name: "shared"))
-        #expect(await session.requestCount == 1)
-    }
-
-    @Test("All coalescing waiter cancellation cancels shared transport")
-    func allCoalescingCancellationCancelsSharedTransport() async throws {
-        let session = try CancellationFirstURLSession(
-            queue: [
-                queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "first"))
-            ]
-        )
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                requestCoalescingPolicy: .getOnly
-            ),
-            session: session
-        )
-
-        let first = Task {
-            try await client.request(ResilienceGetRequest())
-        }
-        let second = Task {
-            try await client.request(ResilienceGetRequest())
-        }
-
-        try await waitUntil {
-            await session.requestCount == 1
-        }
-        first.cancel()
-        second.cancel()
-
-        await expectCancelled(first)
-        await expectCancelled(second)
-        try await waitUntil {
-            await session.cancelledRequestCount == 1
-        }
-
-        let recovered = try await client.request(ResilienceGetRequest())
-
-        #expect(recovered == ResilienceUser(id: 1, name: "first"))
-        #expect(await session.requestCount == 2)
-    }
-
-    @Test("Coalescer cancellation bookkeeping is TTL pruned and capped")
-    func coalescerCancellationBookkeepingIsBounded() async throws {
-        var request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
-        request.httpMethod = "GET"
-        let key = try #require(RequestDedupKey(request: request, policy: .getOnly))
-        let now = Date(timeIntervalSince1970: 62)
-        let coalescer = RequestCoalescer(
-            cancelledWaiterTTL: 30,
-            cancelledWaiterLimit: 2,
-            now: { now }
-        )
-
-        await coalescer.recordCancelledWaiterForDiagnostics(
-            key: key,
-            waiterID: UUID(),
-            recordedAt: Date(timeIntervalSince1970: 0)
-        )
-        await coalescer.recordCancelledWaiterForDiagnostics(
-            key: key,
-            waiterID: UUID(),
-            recordedAt: Date(timeIntervalSince1970: 60)
-        )
-        await coalescer.recordCancelledWaiterForDiagnostics(
-            key: key,
-            waiterID: UUID(),
-            recordedAt: Date(timeIntervalSince1970: 61)
-        )
-        await coalescer.recordCancelledWaiterForDiagnostics(
-            key: key,
-            waiterID: UUID(),
-            recordedAt: Date(timeIntervalSince1970: 62)
-        )
-
-        #expect(await coalescer.cancellationBookkeepingCount == 2)
-    }
-
-    @Test("Request runtime injects its virtual clock into coalescer pruning")
-    func runtimeClockDrivesCoalescerPruning() async throws {
-        let clock = TestClock(epoch: Date(timeIntervalSince1970: 1_000))
-        let runtime = RequestExecutionRuntime(
-            configuration: NetworkConfiguration(baseURL: URL(string: "https://api.example.com")!),
-            inFlight: InFlightRegistry(),
-            clock: clock
-        )
-        var request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
-        request.httpMethod = "GET"
-        let key = try #require(RequestDedupKey(request: request, policy: .getOnly))
-
-        await runtime.requestCoalescer.recordCancelledWaiterForDiagnostics(
-            key: key,
-            waiterID: UUID(),
-            recordedAt: clock.now()
-        )
-        #expect(await runtime.requestCoalescer.cancellationBookkeepingCount == 1)
-
-        clock.advance(by: .seconds(31))
-        #expect(await runtime.requestCoalescer.cancellationBookkeepingCount == 0)
-    }
-
-    @Test("Fresh cache returns without transport")
-    func freshCacheShortCircuitsTransport() async throws {
-        let cache = InMemoryResponseCache()
-        let key = resilienceUserCacheKey()
-        let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
-        await cache.set(key, CachedResponse(data: body, headers: ["ETag": "v1"]))
-        let session = SequenceURLSession(queue: [])
-        let client = DefaultNetworkClient(
-            configuration: makeLocalizedCacheConfiguration(
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        let user = try await client.request(ResilienceGetRequest())
-
-        #expect(user == ResilienceUser(id: 1, name: "cached"))
-        #expect(await session.requestCount == 0)
-    }
-
-    @Test("Stale cache lookup is shared with conditional revalidation")
-    func staleCacheUsesOnePreTransportLookup() async throws {
-        let cachedBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
-        let cache = CountingResponseCache(
-            cached: CachedResponse(
-                data: cachedBody,
-                headers: ["ETag": "v1"],
-                storedAt: Date(timeIntervalSince1970: 0)
-            )
-        )
-        let freshBody = ResilienceUser(id: 2, name: "fresh")
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: freshBody)
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        let user = try await client.request(ResilienceGetRequest())
-
-        #expect(user == freshBody)
-        #expect(await cache.getCount == 1)
-        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
-    }
-
-    @Test("Vary mismatch performs one lookup and skips conditional headers")
-    func varyMismatchUsesOnePreTransportLookup() async throws {
-        let cachedBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
-        let cache = CountingResponseCache(
-            cached: CachedResponse(
-                data: cachedBody,
-                headers: ["ETag": "v1", "Vary": "Accept-Language"],
-                storedAt: Date(timeIntervalSince1970: 0),
-                varyHeaders: ["accept-language": "definitely-not-the-request-language"]
-            )
-        )
-        let freshBody = ResilienceUser(id: 2, name: "fresh")
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: freshBody)
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        let user = try await client.request(ResilienceGetRequest())
-
-        #expect(user == freshBody)
-        #expect(await cache.getCount == 1)
-        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == nil)
-    }
-
-    @Test("ETag 304 response uses cached body")
-    func etagNotModifiedUsesCachedBody() async throws {
-        let cache = InMemoryResponseCache()
-        let recorder = ResponseRecorder()
-        let key = resilienceUserCacheKey()
-        let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
-        let storedAt = Date(timeIntervalSinceNow: -60)
-        await cache.set(
-            key,
-            CachedResponse(
-                data: body,
-                headers: ["ETag": "v1"],
-                storedAt: storedAt
-            )
-        )
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 304, headers: ["ETag": "v2", "Cache-Control": "max-age=60"])
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeLocalizedCacheConfiguration(
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
-                responseCache: cache,
-                responseInterceptors: [RecordingResponseInterceptor(recorder: recorder)]
-            ),
-            session: session
-        )
-
-        let user = try await client.request(ResilienceGetRequest())
-
-        #expect(user == ResilienceUser(id: 1, name: "cached"))
-        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
-        let observedResponse = try #require(await recorder.response())
-        #expect(observedResponse.statusCode == 200)
-        #expect(responseHeader(observedResponse, named: "ETag") == "v2")
-        #expect(responseHeader(observedResponse, named: "Cache-Control") == "max-age=60")
-        let refreshed = try #require(await cache.get(key))
-        #expect(refreshed.etag == "v2")
-        #expect(
-            refreshed.headers.first { $0.key.caseInsensitiveCompare("Cache-Control") == .orderedSame }?.value
-                == "max-age=60")
-        #expect(refreshed.storedAt > storedAt)
-    }
-
-    @Test("304 after cached entry disappears throws cacheRevalidationFailed")
-    func etagNotModifiedThrowsWhenCachedEntryDisappears() async throws {
-        let cache = InMemoryResponseCache()
-        let key = resilienceUserCacheKey()
-        let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
-        await cache.set(
-            key,
-            CachedResponse(
-                data: body,
-                headers: ["ETag": "v1"],
-                storedAt: Date(timeIntervalSinceNow: -60)
-            )
-        )
-        let session = CacheInvalidatingURLSession(
-            cache: cache,
-            cacheKey: key,
-            queuedResponse: try queuedResponse(statusCode: 304, headers: ["ETag": "v2"])
-        )
-        let client = DefaultNetworkClient(
-            configuration: makeLocalizedCacheConfiguration(
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        do {
-            _ = try await client.request(ResilienceGetRequest())
-            Issue.record("Expected cache-revalidation-failed underlying error, got success")
-        } catch {
-            guard case .underlying(let underlying, let cached?) = error,
-                underlying.domain == "InnoNetwork.ResponseCache"
-            else {
-                Issue.record("Expected .underlying with InnoNetwork.ResponseCache domain, got \(error)")
-                return
-            }
-            #expect(cached.statusCode == 200)
-        }
-    }
-
-    @Test("304 carrying a different Vary header preserves the stored vary snapshot")
-    func etagNotModifiedWithChangedVaryPreservesSnapshot() async throws {
-        let cache = InMemoryResponseCache()
-        let recorder = ResponseRecorder()
-        let key = resilienceUserCacheKey()
-        let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
-        let storedAt = Date(timeIntervalSinceNow: -60)
-        await cache.set(
-            key,
-            CachedResponse(
-                data: body,
-                headers: ["ETag": "v1", "Vary": "Accept-Language"],
-                storedAt: storedAt,
-                varyHeaders: ["accept-language": cacheFixtureAcceptLanguage]
-            )
-        )
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(
-                statusCode: 304,
-                headers: ["ETag": "v2", "Vary": "Accept"]
-            )
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeLocalizedCacheConfiguration(
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
-                responseCache: cache,
-                responseInterceptors: [RecordingResponseInterceptor(recorder: recorder)]
-            ),
-            session: session
-        )
-
-        let user = try await client.request(ResilienceGetRequest())
-
-        #expect(user == ResilienceUser(id: 1, name: "cached"))
-        let observedResponse = try #require(await recorder.response())
-        #expect(observedResponse.statusCode == 200)
-        #expect(responseHeader(observedResponse, named: "Vary") == "Accept-Language")
-        #expect(responseHeader(observedResponse, named: "ETag") == "v1")
-        let refreshed = try #require(await cache.get(key))
-        #expect(refreshed.varyHeaders == ["accept-language": cacheFixtureAcceptLanguage])
-        #expect(
-            refreshed.headers.first { $0.key.caseInsensitiveCompare("Vary") == .orderedSame }?.value
-                == "Accept-Language"
-        )
-        #expect(refreshed.etag == "v1")
-        #expect(refreshed.storedAt > storedAt)
-    }
-
-    @Test("SWR returns stale data and revalidates in the background")
-    func staleWhileRevalidateUpdatesCache() async throws {
-        let cache = InMemoryResponseCache()
-        let key = resilienceUserCacheKey()
-        let staleBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale"))
-        await cache.set(
-            key,
-            CachedResponse(
-                data: staleBody,
-                headers: ["ETag": "v1"],
-                storedAt: Date(timeIntervalSinceNow: -5)
-            )
-        )
-        let fresh = ResilienceUser(id: 1, name: "fresh")
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: fresh, headers: ["ETag": "v2"])
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeLocalizedCacheConfiguration(
-                responseCachePolicy: .staleWhileRevalidate(maxAge: .seconds(1), staleWindow: .seconds(10)),
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        let returned = try await client.request(ResilienceGetRequest())
-
-        #expect(returned == ResilienceUser(id: 1, name: "stale"))
-        try await waitUntil {
-            guard let cached = await cache.get(key),
-                let decoded = try? JSONDecoder().decode(ResilienceUser.self, from: cached.data)
-            else {
-                return false
-            }
-            return await session.requestCount == 1 && decoded == fresh
-        }
-        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
-    }
-
-    @Test("SWR revalidation events carry original request ID")
-    func staleWhileRevalidateRevalidationEventsUseOriginalRequestID() async throws {
-        let cache = InMemoryResponseCache()
-        let key = resilienceUserCacheKey()
-        let stale = ResilienceUser(id: 1, name: "stale")
-        let staleBody = try JSONEncoder().encode(stale)
-        await cache.set(
-            key,
-            CachedResponse(
-                data: staleBody,
-                headers: ["ETag": "v1"],
-                storedAt: Date(timeIntervalSinceNow: -5)
-            )
-        )
-        let store = NetworkEventStore()
-        let observer = RecordingNetworkEventObserver(store: store)
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "fresh"), headers: ["ETag": "v2"])
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeLocalizedCacheConfiguration(
-                responseCachePolicy: .staleWhileRevalidate(maxAge: .seconds(1), staleWindow: .seconds(10)),
-                responseCache: cache,
-                eventObservers: [observer]
-            ),
-            session: session
-        )
-
-        let returned = try await client.request(ResilienceGetRequest())
-
-        #expect(returned == stale)
-        try await waitUntil {
-            let states = await recordedRevalidationEvents(in: store).map { $0.state }
-            return states == [
-                CacheRevalidationState.scheduled,
-                CacheRevalidationState.completed(statusCode: 200),
-            ]
-        }
-
-        let events = await store.snapshot()
-        let originalRequestID = try #require(events.compactMap(originalRequestID(from:)).first)
-        let observedRevalidationEvents = await recordedRevalidationEvents(in: store)
-        #expect(!observedRevalidationEvents.isEmpty)
-        #expect(observedRevalidationEvents.allSatisfy { $0.originalID == originalRequestID })
-    }
-
-    @Test("SWR background revalidation uses request coalescing")
-    func staleWhileRevalidateBackgroundRevalidationCoalesces() async throws {
-        let cache = InMemoryResponseCache()
-        let key = resilienceUserCacheKey()
-        let stale = ResilienceUser(id: 1, name: "stale")
-        let staleBody = try JSONEncoder().encode(stale)
-        await cache.set(
-            key,
-            CachedResponse(
-                data: staleBody,
-                headers: ["ETag": "v1"],
-                storedAt: Date(timeIntervalSinceNow: -5)
-            )
-        )
-        let fresh = ResilienceUser(id: 1, name: "fresh")
-        let session = try SequenceURLSession(
-            queue: [
-                queuedResponse(statusCode: 200, body: fresh, headers: ["ETag": "v2"])
-            ],
-            delay: .milliseconds(80)
-        )
-        let client = DefaultNetworkClient(
-            configuration: NetworkConfiguration(
-                baseURL: URL(string: "https://api.example.com")!,
-                requestInterceptors: [
-                    HeaderSettingInterceptor(field: "Accept-Language", value: cacheFixtureAcceptLanguage)
-                ],
-                requestCoalescingPolicy: .getOnly,
-                responseCachePolicy: .staleWhileRevalidate(maxAge: .seconds(1), staleWindow: .seconds(10)),
-                responseCache: cache,
-                responseBodyBufferingPolicy: .buffered(maxBytes: nil)
-            ),
-            session: session
-        )
-
-        async let first = client.request(ResilienceGetRequest())
-        async let second = client.request(ResilienceGetRequest())
-        let returned = try await [first, second]
-
-        #expect(returned == [stale, stale])
-        try await waitUntil {
-            guard let cached = await cache.get(key),
-                let decoded = try? JSONDecoder().decode(ResilienceUser.self, from: cached.data)
-            else {
-                return false
-            }
-            return await session.requestCount == 1 && decoded == fresh
-        }
-        #expect(await session.requestCount == 1)
-    }
-
-    @Test("SWR background revalidation is cancelled by cancelAll")
-    func staleWhileRevalidateBackgroundTaskIsCancelledByCancelAll() async throws {
-        let cache = InMemoryResponseCache()
-        let key = resilienceUserCacheKey()
-        let stale = ResilienceUser(id: 1, name: "stale")
-        let staleBody = try JSONEncoder().encode(stale)
-        await cache.set(
-            key,
-            CachedResponse(
-                data: staleBody,
-                headers: ["ETag": "v1"],
-                storedAt: Date(timeIntervalSinceNow: -5)
-            )
-        )
-        let session = try SequenceURLSession(
-            queue: [
-                queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "fresh"), headers: ["ETag": "v2"])
-            ],
-            delay: .milliseconds(200)
-        )
-        let client = DefaultNetworkClient(
-            configuration: makeLocalizedCacheConfiguration(
-                responseCachePolicy: .staleWhileRevalidate(maxAge: .seconds(1), staleWindow: .seconds(10)),
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        let returned = try await client.request(ResilienceGetRequest())
-
-        #expect(returned == stale)
-        try await waitUntil {
-            await session.requestCount == 1
-        }
-        await client.cancelAll()
-        try await Task.sleep(for: .milliseconds(250))
-        let cached = await cache.get(key)
-        let decoded = try #require(cached.flatMap { try? JSONDecoder().decode(ResilienceUser.self, from: $0.data) })
-        #expect(decoded == stale)
-    }
-
-    @Test("Response cache keeps different Authorization headers separate")
-    func responseCacheSeparatesAuthorizationHeaders() async throws {
-        let cache = InMemoryResponseCache()
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "one")),
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 2, name: "two")),
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        let first = try await client.request(AuthorizedResilienceGetRequest(token: "one"))
-        let second = try await client.request(AuthorizedResilienceGetRequest(token: "two"))
-
-        #expect(first == ResilienceUser(id: 1, name: "one"))
-        #expect(second == ResilienceUser(id: 2, name: "two"))
-        #expect(await session.requestCount == 2)
-    }
-
-    @Test("Authorization responses without explicit RFC 9111 permission are not cached")
-    func responseCacheRejectsAuthorizedResponseWithoutPermissionDirective() async throws {
-        let cache = InMemoryResponseCache()
-        let cacheKey = authorizedResilienceUserCacheKey(token: "one")
-        await cache.set(
-            cacheKey,
-            CachedResponse(
-                data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "legacy")),
-                headers: ["Cache-Control": "public"],
-                storedAt: Date(timeIntervalSinceNow: -60)
-            )
-        )
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "fresh"))
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
-                responseCache: cache,
-                acceptLanguageProvider: { cacheFixtureAcceptLanguage }
-            ),
-            session: session
-        )
-
-        let user = try await client.request(AuthorizedResilienceGetRequest(token: "one"))
-
-        #expect(user == ResilienceUser(id: 1, name: "fresh"))
-        #expect(await cache.get(cacheKey) == nil)
-    }
-
-    @Test(
-        "Authorization responses are cached only with RFC 9111 permission directives",
-        arguments: ["public", "must-revalidate", "s-maxage=60"])
-    func responseCacheStoresAuthorizedResponsesWithPermissionDirective(cacheControl: String) async throws {
-        let cache = InMemoryResponseCache()
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(
-                statusCode: 200,
-                body: ResilienceUser(id: 1, name: cacheControl),
-                headers: ["Cache-Control": cacheControl]
-            )
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-                responseCache: cache,
-                acceptLanguageProvider: { cacheFixtureAcceptLanguage }
-            ),
-            session: session
-        )
-
-        _ = try await client.request(AuthorizedResilienceGetRequest(token: "one"))
-
-        let cacheKey = authorizedResilienceUserCacheKey(token: "one")
-        let cached = try #require(await cache.get(cacheKey))
-        let decoded = try JSONDecoder().decode(ResilienceUser.self, from: cached.data)
-        #expect(decoded == ResilienceUser(id: 1, name: cacheControl))
-    }
-
-    @Test("Response cache key fingerprints Authorization header values")
-    func responseCacheKeyFingerprintsAuthorizationHeaderValues() {
-        let first = ResponseCacheKey(
-            method: "GET",
-            url: "https://api.example.com/users/1",
-            headers: ["Authorization": "Bearer secret-one"]
-        )
-        let second = ResponseCacheKey(
-            method: "GET",
-            url: "https://api.example.com/users/1",
-            headers: ["Authorization": "Bearer secret-two"]
-        )
-
-        #expect(first != second)
-        #expect(first.headers.contains { $0.contains("authorization:sha256:") })
-        #expect(!first.headers.contains { $0.contains("secret-one") })
-        #expect(!second.headers.contains { $0.contains("secret-two") })
-    }
-
-    @Test("Client-scoped sensitive headers reach executor-owned cache keys")
-    func clientScopedSensitiveHeadersReachExecutorCacheKeys() async throws {
-        let cache = CountingResponseCache()
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "cached"))
-        ])
-        let configuration = NetworkConfiguration(
-            baseURL: URL(string: "https://api.example.com")!,
-            requestInterceptors: [
-                HeaderSettingInterceptor(field: "X-Tenant-Token", value: "tenant-secret")
-            ],
-            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-            responseCache: cache,
-            responseCacheSensitiveHeaderNames: ["X-Tenant-Token"],
-            responseBodyBufferingPolicy: .buffered(maxBytes: nil)
-        )
-        let client = DefaultNetworkClient(configuration: configuration, session: session)
-
-        _ = try await client.request(ResilienceGetRequest())
-
-        let key = try #require(await cache.lastSetKey)
-        #expect(key.headers.contains { $0.hasPrefix("x-tenant-token:sha256:") })
-        #expect(key.headers.contains { $0.contains("tenant-secret") } == false)
-    }
-
-    @Test("Response cache key strips URL fragments")
-    func responseCacheKeyStripsURLFragments() throws {
-        var firstRequest = URLRequest(url: try #require(URL(string: "https://api.example.com/users/1#first")))
-        firstRequest.httpMethod = "GET"
-        var secondRequest = URLRequest(url: try #require(URL(string: "https://api.example.com/users/1#second")))
-        secondRequest.httpMethod = "GET"
-
-        let first = try #require(ResponseCacheKey(request: firstRequest))
-        let second = try #require(ResponseCacheKey(request: secondRequest))
-
-        #expect(first == second)
-        #expect(first.url == "https://api.example.com/users/1")
-    }
-
-    @Test(
-        "Response cache stores RFC-cacheable GET status codes",
-        arguments: [203, 300, 301, 308, 404, 405, 410, 414, 501])
-    func responseCacheStoresCacheableStatusCodes(statusCode: Int) async throws {
-        let cache = InMemoryResponseCache()
-        let body = ResilienceUser(id: statusCode, name: "cached-\(statusCode)")
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: statusCode, body: body)
-        ])
-        let configuration = NetworkConfiguration(
-            baseURL: URL(string: "https://api.example.com")!,
-            acceptableStatusCodes: NetworkConfiguration.defaultAcceptableStatusCodes.union([statusCode]),
-            requestInterceptors: [
-                HeaderSettingInterceptor(field: "Accept-Language", value: cacheFixtureAcceptLanguage)
-            ],
-            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-            responseCache: cache,
-            responseBodyBufferingPolicy: .buffered(maxBytes: nil)
-        )
-        let client = DefaultNetworkClient(configuration: configuration, session: session)
-
-        let user = try await client.request(ResilienceGetRequest())
-
-        #expect(user == body)
-        let stored = try #require(await cache.get(resilienceUserCacheKey()))
-        #expect(stored.statusCode == statusCode)
-
-        let cachedOnlySession = SequenceURLSession(queue: [])
-        let cachedOnlyClient = DefaultNetworkClient(configuration: configuration, session: cachedOnlySession)
-        let cachedUser = try await cachedOnlyClient.request(ResilienceGetRequest())
-
-        #expect(cachedUser == body)
-        #expect(await cachedOnlySession.requestCount == 0)
-    }
-
-    @Test("Response cache stores 204 responses without a body")
-    func responseCacheStoresNoContentResponses() async throws {
-        let cache = InMemoryResponseCache()
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 204)
-        ])
-        let configuration = makeLocalizedCacheConfiguration(
-            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-            responseCache: cache
-        )
-        let client = DefaultNetworkClient(configuration: configuration, session: session)
-
-        _ = try await client.request(CacheableEmptyRequest())
-
-        let stored = try #require(
-            await cache.get(
-                ResponseCacheKey(
-                    method: "GET",
-                    url: "https://api.example.com/empty",
-                    headers: ["Accept-Language": cacheFixtureAcceptLanguage]
-                )
-            )
-        )
-        #expect(stored.statusCode == 204)
-    }
-
-    @Test("Cache-Control no-store invalidates existing cached entries and skips writes")
-    func cacheControlNoStoreInvalidatesExistingEntry() async throws {
-        let cache = InMemoryResponseCache()
-        let key = resilienceUserCacheKey()
-        let staleBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale"))
-        await cache.set(
-            key,
-            CachedResponse(
-                data: staleBody,
-                headers: ["ETag": "old"],
-                storedAt: Date(timeIntervalSinceNow: -60)
-            )
-        )
-        let fresh = ResilienceUser(id: 1, name: "fresh")
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: fresh, headers: ["Cache-Control": "max-age=60, no-store"])
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeLocalizedCacheConfiguration(
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        let user = try await client.request(ResilienceGetRequest())
-
-        #expect(user == fresh)
-        #expect(await cache.get(key) == nil)
-    }
-
-    @Test("RFC 9111 no-store cached entries skip conditional revalidation")
-    func rfc9111NoStoreCachedEntrySkipsConditionalRevalidation() async throws {
-        let cache = InMemoryResponseCache()
-        let key = resilienceUserCacheKey()
-        let staleBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale-no-store"))
-        await cache.set(
-            key,
-            CachedResponse(
-                data: staleBody,
-                headers: ["ETag": "old", "Cache-Control": "no-store"],
-                storedAt: Date(timeIntervalSinceNow: -60)
-            )
-        )
-        let fresh = ResilienceUser(id: 1, name: "fresh")
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: fresh, headers: ["ETag": "new"])
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeLocalizedCacheConfiguration(
-                responseCachePolicy: .rfc9111Compliant(wrapping: .cacheFirst(maxAge: .seconds(60))),
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        let user = try await client.request(ResilienceGetRequest())
-
-        #expect(user == fresh)
-        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == nil)
-        let refreshed = try #require(await cache.get(key))
-        let decoded = try JSONDecoder().decode(ResilienceUser.self, from: refreshed.data)
-        #expect(decoded == fresh)
-    }
-
-    @Test("Cache-Control private invalidates existing cached entries and skips writes")
-    func cacheControlPrivateInvalidatesExistingEntry() async throws {
-        let cache = InMemoryResponseCache()
-        let key = resilienceUserCacheKey()
-        let staleBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale"))
-        await cache.set(
-            key,
-            CachedResponse(
-                data: staleBody,
-                headers: ["ETag": "old"],
-                storedAt: Date(timeIntervalSinceNow: -60)
-            )
-        )
-        let fresh = ResilienceUser(id: 1, name: "fresh-private")
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: fresh, headers: ["Cache-Control": "max-age=60, private"])
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeLocalizedCacheConfiguration(
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        let user = try await client.request(ResilienceGetRequest())
-
-        #expect(user == fresh)
-        #expect(await cache.get(key) == nil)
-    }
-
-    @Test("Unsafe successful methods invalidate cached target URI before the next GET")
-    func unsafeSuccessInvalidatesTargetURIBeforeNextGet() async throws {
-        let cache = InMemoryResponseCache()
-        let configuration = makeLocalizedCacheConfiguration(
-            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-            responseCache: cache
-        )
-        let firstBody = ResilienceUser(id: 1, name: "cached")
-        let firstSession = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: firstBody)
-        ])
-        let firstClient = DefaultNetworkClient(configuration: configuration, session: firstSession)
-
-        let first = try await firstClient.request(ResilienceGetRequest())
-        #expect(first == firstBody)
-        #expect(await cache.get(resilienceUserCacheKey()) != nil)
-
-        let mutationSession = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "mutated"))
-        ])
-        let mutationClient = DefaultNetworkClient(configuration: configuration, session: mutationSession)
-
-        _ = try await mutationClient.request(ResilienceMutationRequest(method: .post))
-
-        #expect(await cache.get(resilienceUserCacheKey()) == nil)
-
-        let refreshedBody = ResilienceUser(id: 1, name: "refreshed")
-        let refreshedSession = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: refreshedBody)
-        ])
-        let refreshedClient = DefaultNetworkClient(configuration: configuration, session: refreshedSession)
-        let refreshed = try await refreshedClient.request(ResilienceGetRequest())
-
-        #expect(refreshed == refreshedBody)
-        #expect(await refreshedSession.requestCount == 1)
-    }
-
-    @Test("PUT PATCH DELETE and 3xx successes invalidate cached target URI")
-    func unsafeMethodsAndRedirectSuccessInvalidateTargetURI() async throws {
-        let cases: [(HTTPMethod, Int)] = [
-            (.put, 200),
-            (.patch, 201),
-            (.delete, 302),
-        ]
-
-        for (method, statusCode) in cases {
-            let cache = InMemoryResponseCache()
-            let key = resilienceUserCacheKey()
-            await cache.set(
-                key,
-                CachedResponse(
-                    data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale")),
-                    headers: ["ETag": "old"]
-                )
-            )
-            let configuration = makeLocalizedCacheConfiguration(
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-                responseCache: cache
-            )
-            let session = try SequenceURLSession(queue: [
-                queuedResponse(
-                    statusCode: statusCode,
-                    body: ResilienceUser(id: statusCode, name: method.rawValue.lowercased())
-                )
-            ])
-            let client = DefaultNetworkClient(configuration: configuration, session: session)
-
-            _ = try await client.request(
-                ResilienceMutationRequest(
-                    method: method,
-                    acceptedStatusCodes: Set(200..<400)
-                )
-            )
-
-            #expect(await cache.get(key) == nil)
-        }
-    }
-
-    @Test("Unknown and differently cased successful methods invalidate the target URI")
-    func customSuccessfulMethodsInvalidateTargetURI() async throws {
-        for method in ["PURGE", "options", "trace"] {
-            let cache = InMemoryResponseCache()
-            let key = resilienceUserCacheKey()
-            await cache.set(
-                key,
-                CachedResponse(
-                    data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale")),
-                    headers: ["ETag": "old"]
-                )
-            )
-            let configuration = makeLocalizedCacheConfiguration(
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-                responseCache: cache
-            )
-            let session = try SequenceURLSession(queue: [
-                queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: method))
-            ])
-            let client = DefaultNetworkClient(configuration: configuration, session: session)
-
-            _ = try await client.request(
-                InterceptedResilienceGetRequest(
-                    interceptors: [HTTPMethodOverrideInterceptor(method: method)]
-                )
-            )
-
-            #expect(await cache.get(key) == nil)
-        }
-    }
-
-    @Test("Unsafe error responses and transport failures keep cached target URI")
-    func unsafeErrorsAndTransportFailuresKeepTargetURI() async throws {
-        for statusCode in [400, 500] {
-            let cache = InMemoryResponseCache()
-            let key = resilienceUserCacheKey()
-            await cache.set(
-                key,
-                CachedResponse(
-                    data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale")),
-                    headers: ["ETag": "old"]
-                )
-            )
-            let configuration = makeLocalizedCacheConfiguration(
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-                responseCache: cache
-            )
-            let session = try SequenceURLSession(queue: [
-                queuedResponse(statusCode: statusCode, body: ResilienceUser(id: statusCode, name: "error"))
-            ])
-            let client = DefaultNetworkClient(configuration: configuration, session: session)
-
-            _ = try await client.request(
-                ResilienceMutationRequest(
-                    method: .delete,
-                    acceptedStatusCodes: [statusCode]
-                )
-            )
-
-            #expect(await cache.get(key) != nil)
-        }
-
-        let cache = InMemoryResponseCache()
-        let key = resilienceUserCacheKey()
-        await cache.set(
-            key,
-            CachedResponse(
-                data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale")),
-                headers: ["ETag": "old"]
-            )
-        )
-        let configuration = makeLocalizedCacheConfiguration(
-            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-            responseCache: cache
-        )
-        let client = DefaultNetworkClient(configuration: configuration, session: SequenceURLSession(queue: []))
-
-        do {
-            _ = try await client.request(ResilienceMutationRequest(method: .delete))
-            Issue.record("Expected transport failure")
-        } catch {
-            #expect(await cache.get(key) != nil)
-        }
-    }
-
-    @Test("Network-only and disabled cache policies do not invalidate unsafe successes")
-    func metadataUntouchedPoliciesSkipUnsafeInvalidation() async throws {
-        for policy in [ResponseCachePolicy.networkOnly, .disabled] {
-            let cache = InMemoryResponseCache()
-            let key = resilienceUserCacheKey()
-            await cache.set(
-                key,
-                CachedResponse(
-                    data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "stale")),
-                    headers: ["ETag": "old"]
-                )
-            )
-            let configuration = makeLocalizedCacheConfiguration(
-                responseCachePolicy: policy,
-                responseCache: cache
-            )
-            let session = try SequenceURLSession(queue: [
-                queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "mutated"))
-            ])
-            let client = DefaultNetworkClient(configuration: configuration, session: session)
-
-            _ = try await client.request(ResilienceMutationRequest(method: .post))
-
-            #expect(await cache.get(key) != nil)
-        }
-    }
-
-    @Test("Cache-Control no-cache entries are stored but always revalidated")
-    func cacheControlNoCacheForcesRevalidation() async throws {
-        let cache = InMemoryResponseCache()
-        let cached = ResilienceUser(id: 1, name: "requires-revalidation")
-        let initialSession = try SequenceURLSession(queue: [
-            queuedResponse(
-                statusCode: 200,
-                body: cached,
-                headers: ["ETag": "v1", "Cache-Control": "no-cache, max-age=60"]
-            )
-        ])
-        let configuration = makeLocalizedCacheConfiguration(
-            responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-            responseCache: cache
-        )
-        let initialClient = DefaultNetworkClient(configuration: configuration, session: initialSession)
-
-        _ = try await initialClient.request(ResilienceGetRequest())
-
-        let stored = try #require(await cache.get(resilienceUserCacheKey()))
-        #expect(stored.requiresRevalidation)
-
-        let revalidationSession = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 304, headers: ["ETag": "v2"])
-        ])
-        let revalidationClient = DefaultNetworkClient(configuration: configuration, session: revalidationSession)
-        let user = try await revalidationClient.request(ResilienceGetRequest())
-
-        #expect(user == cached)
-        #expect(await revalidationSession.requestCount == 1)
-        #expect(await revalidationSession.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
-    }
-
-    @Test("Response cache keeps different Accept-Language headers separate")
-    func responseCacheSeparatesAcceptLanguageHeaders() async throws {
-        let cache = InMemoryResponseCache()
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "ko")),
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 2, name: "en")),
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                responseCachePolicy: .cacheFirst(maxAge: .seconds(60)),
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        let korean = try await client.request(
-            InterceptedResilienceGetRequest(
-                interceptors: [HeaderSettingInterceptor(field: "Accept-Language", value: "ko-KR")]
-            )
-        )
-        let english = try await client.request(
-            InterceptedResilienceGetRequest(
-                interceptors: [HeaderSettingInterceptor(field: "Accept-Language", value: "en-US")]
-            )
-        )
-
-        #expect(korean == ResilienceUser(id: 1, name: "ko"))
-        #expect(english == ResilienceUser(id: 2, name: "en"))
-        #expect(await session.requestCount == 2)
-    }
-
-    @Test("Network-only cache policy does not substitute cached 304 bodies")
-    func networkOnlyDoesNotSubstituteNotModified() async throws {
-        let cache = InMemoryResponseCache()
-        let key = ResponseCacheKey(method: "GET", url: "https://api.example.com/users/1")
-        let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
-        await cache.set(key, CachedResponse(data: body, headers: ["ETag": "v1"]))
-        let session = try SequenceURLSession(queue: [queuedResponse(statusCode: 304)])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                responseCachePolicy: .networkOnly,
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        await #expect(throws: NetworkError.self) {
-            try await client.request(ResilienceGetRequest())
-        }
-        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == nil)
-    }
-
-    @Test("Network-only cache policy does not write the response into the cache")
-    func responseCacheNetworkOnlySkipsCacheWrite() async throws {
-        let cache = InMemoryResponseCache()
-        let body = ResilienceUser(id: 1, name: "fresh")
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 200, body: body, headers: ["ETag": "v1"])
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                responseCachePolicy: .networkOnly,
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        let user = try await client.request(ResilienceGetRequest())
-
-        #expect(user == body)
-        let stored = await cache.get(
-            ResponseCacheKey(method: "GET", url: "https://api.example.com/users/1")
-        )
-        #expect(stored == nil)
-    }
-
-    @Test("Network-only cache policy does not touch configured cache")
-    func responseCacheNetworkOnlySkipsCacheReadsWritesAndInvalidation() async throws {
-        let cachedBody = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
-        let cache = CountingResponseCache(
-            cached: CachedResponse(data: cachedBody, headers: ["ETag": "v1"])
-        )
-        let body = ResilienceUser(id: 2, name: "fresh")
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(
-                statusCode: 200,
-                body: body,
-                headers: ["Cache-Control": "no-store"]
-            )
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                responseCachePolicy: .networkOnly,
-                responseCache: cache
-            ),
-            session: session
-        )
-
-        let user = try await client.request(ResilienceGetRequest())
-
-        #expect(user == body)
-        #expect(await cache.getCount == 0)
-        #expect(await cache.setCount == 0)
-        #expect(await cache.invalidateCount == 0)
-        #expect(await session.requestCount == 1)
-    }
-
-    @Test("Circuit breaker opens after countable failure")
-    func circuitBreakerOpens() async throws {
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 500),
-            queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "unused")),
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                circuitBreakerPolicy: CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1)
-            ),
-            session: session
-        )
-
-        await #expect(throws: NetworkError.self) {
-            try await client.request(ResilienceGetRequest())
-        }
-        await #expect(throws: NetworkError.self) {
-            try await client.request(ResilienceGetRequest())
-        }
-
-        #expect(await session.requestCount == 1)
-    }
-
-    @Test("Circuit breaker policy normalizes invalid thresholds and durations")
-    func circuitBreakerPolicyNormalizesInputs() {
-        let capped = CircuitBreakerPolicy(
-            failureThreshold: 10,
-            windowSize: 2,
-            resetAfter: .seconds(-1),
-            maxResetAfter: .seconds(-2)
-        )
-        #expect(capped.windowSize == 2)
-        #expect(capped.failureThreshold == 2)
-        #expect(capped.resetAfter == .zero)
-        #expect(capped.maxResetAfter == .zero)
-
-        let minimum = CircuitBreakerPolicy(
-            failureThreshold: 0,
-            windowSize: 0,
-            resetAfter: .seconds(5),
-            maxResetAfter: .seconds(1)
-        )
-        #expect(minimum.windowSize == 1)
-        #expect(minimum.failureThreshold == 1)
-        #expect(minimum.resetAfter == .seconds(5))
-        #expect(minimum.maxResetAfter == .seconds(5))
-    }
-
-    @Test("Refresh replay clears prior Authorization header before reapplying")
-    func refreshTokenReplayClearsPreviousAuthorizationHeader() async throws {
-        let coordinator = RefreshTokenCoordinator(
-            policy: RefreshTokenPolicy(
-                currentToken: { "old" },
-                refreshToken: { "new" },
-                applyToken: { token, request in
-                    var request = request
-                    request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                    return request
-                }
-            )
-        )
-        var request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
-        request.setValue("Bearer old", forHTTPHeaderField: "Authorization")
-
-        let applied = try await coordinator.refreshAndApply(to: request)
-
-        #expect(applied.value(forHTTPHeaderField: "Authorization") == "Bearer new")
-    }
-
-    @Test("Current token application clears prior Authorization header before reapplying")
-    func currentTokenApplicationClearsPreviousAuthorizationHeader() async throws {
-        let coordinator = RefreshTokenCoordinator(
-            policy: RefreshTokenPolicy(
-                currentToken: { "current" },
-                refreshToken: { "unused" },
-                applyToken: { token, request in
-                    var request = request
-                    request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                    return request
-                }
-            )
-        )
-        var request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
-        request.setValue("Bearer endpoint", forHTTPHeaderField: "authorization")
-
-        let applied = try await coordinator.applyCurrentToken(to: request)
-        let headers = applied.allHTTPHeaderFields ?? [:]
-        let authHeaders = headers.filter { $0.key.caseInsensitiveCompare("Authorization") == .orderedSame }
-
-        #expect(authHeaders.count == 1)
-        #expect(authHeaders.first?.value == "Bearer current")
-    }
-
-    @Test("Failed refresh does not replay stale failure to subsequent callers when cooldown is disabled")
-    func refreshTokenFailedRefreshDoesNotReplayStaleFailure() async throws {
-        actor RefreshScript {
-            var calls = 0
-            func next() async throws -> String {
-                calls += 1
-                if calls == 1 {
-                    throw NetworkError.configuration(reason: .invalidRequest("first refresh fails"))
-                }
-                return "fresh"
-            }
-        }
-        let script = RefreshScript()
-        let coordinator = RefreshTokenCoordinator(
-            policy: RefreshTokenPolicy(
-                failureCooldown: .disabled,
-                currentToken: { "old" },
-                refreshToken: { try await script.next() }
-            )
-        )
-        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
-
-        await #expect(throws: NetworkError.self) {
-            _ = try await coordinator.refreshAndApply(to: request)
-        }
-        let applied = try await coordinator.refreshAndApply(to: request)
-
-        #expect(await script.calls == 2)
-        #expect(applied.value(forHTTPHeaderField: "Authorization") == "Bearer fresh")
-    }
-
-    @Test("Refresh failure cooldown throttles subsequent callers within the cooldown window")
-    func refreshTokenFailureCooldownThrottlesCallers() async throws {
-        actor RefreshScript {
-            var calls = 0
-            func next() async throws -> String {
-                calls += 1
-                throw NetworkError.configuration(reason: .invalidRequest("refresh keeps failing"))
-            }
-        }
-        let script = RefreshScript()
-        let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let nowBox = OSAllocatedUnfairLock<Date>(initialState: now)
-        let coordinator = RefreshTokenCoordinator(
-            policy: RefreshTokenPolicy(
-                failureCooldown: .exponentialBackoff(base: 5, max: 60),
-                currentToken: { "old" },
-                refreshToken: { try await script.next() }
-            ),
-            now: { nowBox.withLock { $0 } }
-        )
-        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
-
-        // First call performs refresh and fails — opens cooldown for 5s.
-        await #expect(throws: NetworkError.self) {
-            _ = try await coordinator.refreshAndApply(to: request)
-        }
-        // Second call within cooldown window must throw cached error WITHOUT
-        // invoking the refresh provider again.
-        await #expect(throws: NetworkError.self) {
-            _ = try await coordinator.refreshAndApply(to: request)
-        }
-        #expect(await script.calls == 1)
-
-        // Advancing past the cooldown window allows another attempt.
-        nowBox.withLock { $0 = now.addingTimeInterval(6) }
-        await #expect(throws: NetworkError.self) {
-            _ = try await coordinator.refreshAndApply(to: request)
-        }
-        #expect(await script.calls == 2)
-    }
-
-    @Test("Request runtime injects its virtual clock into refresh cooldown")
-    func runtimeClockDrivesRefreshCooldown() async throws {
-        actor RefreshScript {
-            var calls = 0
-            func next() async throws -> String {
-                calls += 1
-                throw NetworkError.configuration(reason: .invalidRequest("refresh keeps failing"))
-            }
-        }
-
-        let script = RefreshScript()
-        let clock = TestClock(epoch: Date(timeIntervalSince1970: 1_700_000_000))
-        let configuration = NetworkConfiguration(
-            baseURL: URL(string: "https://api.example.com")!,
-            refreshTokenPolicy: RefreshTokenPolicy(
-                failureCooldown: .exponentialBackoff(base: 5, max: 60),
-                currentToken: { "old" },
-                refreshToken: { try await script.next() }
-            )
-        )
-        let runtime = RequestExecutionRuntime(
-            configuration: configuration,
-            inFlight: InFlightRegistry(),
-            clock: clock
-        )
-        let coordinator = try #require(runtime.refreshCoordinator)
-        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
-
-        await #expect(throws: NetworkError.self) {
-            _ = try await coordinator.refreshAndApply(to: request)
-        }
-        await #expect(throws: NetworkError.self) {
-            _ = try await coordinator.refreshAndApply(to: request)
-        }
-        #expect(await script.calls == 1)
-
-        clock.advance(by: .seconds(6))
-        await #expect(throws: NetworkError.self) {
-            _ = try await coordinator.refreshAndApply(to: request)
-        }
-        #expect(await script.calls == 2)
-    }
-
-    @Test("Refresh failure cooldown normalizes invalid bounds")
-    func refreshFailureCooldownNormalizesInvalidBounds() async {
-        let disabledByNegativeInput = RefreshFailureCooldown.exponentialBackoff(base: -1, max: -5)
-        #expect(disabledByNegativeInput.cooldown(afterConsecutiveFailures: 1) == 0)
-
-        let capRaisedToBase = RefreshFailureCooldown.exponentialBackoff(base: 2, max: 1)
-        #expect(capRaisedToBase.cooldown(afterConsecutiveFailures: 1) == 2)
-        #expect(capRaisedToBase.cooldown(afterConsecutiveFailures: 2) == 2)
-    }
-
-    @Test("RefreshAndApply strips lowercase Authorization header before reapplying the new token")
-    func refreshTokenStripsCaseInsensitiveAuthorization() async throws {
-        let coordinator = RefreshTokenCoordinator(
-            policy: RefreshTokenPolicy(
-                currentToken: { "old" },
-                refreshToken: { "fresh" }
-            )
-        )
-        var request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
-        // Manually planted lowercase header — without a case-insensitive strip
-        // this would coexist with the new "Authorization" entry on the replay.
-        request.setValue("Bearer stale", forHTTPHeaderField: "authorization")
-
-        let applied = try await coordinator.refreshAndApply(to: request)
-        let headers = applied.allHTTPHeaderFields ?? [:]
-        let authHeaders = headers.filter { $0.key.caseInsensitiveCompare("Authorization") == .orderedSame }
-        #expect(authHeaders.count == 1)
-        #expect(authHeaders.first?.value == "Bearer fresh")
-    }
-
-    @Test("Half-open probe cancellation releases the host")
-    func circuitBreakerHalfOpenProbeCancellationDoesNotTrap() async throws {
-        let registry = CircuitBreakerRegistry()
-        let policy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1, resetAfter: .zero)
-        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
-
-        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
-        try await registry.prepare(request: request, policy: policy)
-        await registry.recordCancellation(request: request, policy: policy)
-
-        try await registry.prepare(request: request, policy: policy)
-    }
-
-    @Test("401 does not open circuit breaker")
-    func authFailureDoesNotOpenCircuitBreaker() async throws {
-        let session = try SequenceURLSession(queue: [
-            queuedResponse(statusCode: 401),
-            queuedResponse(statusCode: 401),
-        ])
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                circuitBreakerPolicy: CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1)
-            ),
-            session: session
-        )
-
-        await #expect(throws: NetworkError.self) {
-            try await client.request(ResilienceGetRequest())
-        }
-        await #expect(throws: NetworkError.self) {
-            try await client.request(ResilienceGetRequest())
-        }
-
-        #expect(await session.requestCount == 2)
-    }
-
-    @Test("Half-open probe receiving 4xx releases the probe slot")
-    func circuitBreakerHalfOpenProbe4xxReleasesSlot() async throws {
-        let registry = CircuitBreakerRegistry()
-        let policy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1, resetAfter: .zero)
-        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
-
-        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
-        // prepare(...) transitions open → halfOpen(probeInFlight: true) once
-        // resetAfter (here .zero) elapses.
-        try await registry.prepare(request: request, policy: policy)
-        // The probe came back with 404 — semantic failure, but the transport
-        // worked. The slot must be released so subsequent traffic is admitted.
-        await registry.recordStatus(request: request, policy: policy, statusCode: 404)
-
-        try await registry.prepare(request: request, policy: policy)
-    }
-
-    @Test("4xx response does not reset accumulated transport failures")
-    func circuitBreakerWindowSurvivesInterleaved4xx() async throws {
-        let registry = CircuitBreakerRegistry()
-        let policy = CircuitBreakerPolicy(failureThreshold: 3, windowSize: 3)
-        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
-
-        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
-        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
-        // A 4xx between transport failures must not reset the rolling window.
-        await registry.recordStatus(request: request, policy: policy, statusCode: 404)
-        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
-
-        await #expect(throws: NetworkError.self) {
-            try await registry.prepare(request: request, policy: policy)
-        }
-    }
-
-    @Test("2xx response closes the circuit and clears failures")
-    func circuitBreakerSuccessClosesCircuit() async throws {
-        let registry = CircuitBreakerRegistry()
-        let policy = CircuitBreakerPolicy(failureThreshold: 3, windowSize: 3)
-        let request = URLRequest(url: URL(string: "https://api.example.com/users/1")!)
-
-        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
-        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
-        await registry.recordStatus(request: request, policy: policy, statusCode: 200)
-        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
-        await registry.recordStatus(request: request, policy: policy, statusCode: 500)
-
-        try await registry.prepare(request: request, policy: policy)
-    }
-
-    @Test("Coalesced transport failure counts once for circuit breaker")
-    func coalescedFailureCountsOnceForCircuitBreaker() async throws {
-        let session = try SequenceURLSession(
-            queue: [
-                queuedResponse(statusCode: 500),
-                queuedResponse(statusCode: 200, body: ResilienceUser(id: 1, name: "recovered")),
-            ],
-            delay: .milliseconds(50)
-        )
-        let client = DefaultNetworkClient(
-            configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com",
-                requestCoalescingPolicy: .getOnly,
-                circuitBreakerPolicy: CircuitBreakerPolicy(failureThreshold: 2, windowSize: 2)
-            ),
-            session: session
-        )
-
-        await #expect(throws: NetworkError.self) {
-            try await withThrowingTaskGroup(of: ResilienceUser.self) { group in
-                for _ in 0..<2 {
-                    group.addTask {
-                        try await client.request(ResilienceGetRequest())
-                    }
-                }
-                for try await _ in group {}
-            }
-        }
-
-        let recovered = try await client.request(ResilienceGetRequest())
-
-        #expect(recovered == ResilienceUser(id: 1, name: "recovered"))
-        #expect(await session.requestCount == 2)
-    }
-
-    private func waitUntil(
+    func waitUntil(
         timeout: Duration = .seconds(1),
         condition: @escaping @Sendable () async -> Bool
     ) async throws {
@@ -2551,7 +615,7 @@ struct ResiliencePolicyTests {
         Issue.record("Timed out waiting for asynchronous condition.")
     }
 
-    private func expectCancelled(_ task: Task<ResilienceUser, Error>) async {
+    func expectCancelled(_ task: Task<ResilienceUser, Error>) async {
         do {
             _ = try await task.value
             Issue.record("Expected request cancellation.")
