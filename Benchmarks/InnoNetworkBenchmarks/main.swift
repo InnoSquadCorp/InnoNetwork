@@ -386,18 +386,20 @@ private enum InnoNetworkBenchmarks {
         var results: [BenchmarkResult] = []
         let encoderIterations = options.quick ? 2_000 : 20_000
         let eventIterations = options.quick ? 10_000 : 20_000
+        let guardedEventIterations = options.quick ? 300_000 : 600_000
         let persistenceIterations = options.quick ? 300 : 3_000
-        let restoreIterations = options.quick ? 100 : 500
-        let cacheIterations = options.quick ? 2_000_000 : 5_000_000
+        let restoreIterations = options.quick ? 1_000 : 2_000
+        let cacheIterations = options.quick ? 10_000_000 : 20_000_000
         let reconnectIterations = 20_000
-        let sendQueueIterations = options.quick ? 200_000 : 1_000_000
-        let lifecycleIterations = options.quick ? 200_000 : 1_000_000
+        let sendQueueIterations = options.quick ? 10_000_000 : 20_000_000
+        let lifecycleIterations = options.quick ? 20_000_000 : 40_000_000
         // The guarded websocket microbenchmarks were finishing in just a few
         // milliseconds in `--quick` mode, which made CI regressions overly
         // sensitive to runner scheduling noise. Keep the coarse smoke gate fast,
         // but run these two long enough that a brief preemption does not look
         // like a >20% regression.
-        let websocketGuardIterations = options.quick ? 1_000_000 : 2_000_000
+        let closeDispositionIterations = options.quick ? 300_000_000 : 600_000_000
+        let pingContextIterations = options.quick ? 50_000_000 : 100_000_000
 
         results.append(
             try await measure(name: "query-encoder-small", group: "encoding", iterations: encoderIterations) { count in
@@ -419,7 +421,9 @@ private enum InnoNetworkBenchmarks {
 
         results.append(
             try await benchmarkTaskEventHubFanOut(
-                iterations: eventIterations, listeners: 1, name: "task-event-fanout-single"))
+                iterations: guardedEventIterations,
+                listeners: 1,
+                name: "task-event-fanout-single"))
         results.append(
             try await benchmarkTaskEventHubFanOut(
                 iterations: eventIterations, listeners: 8, name: "task-event-fanout-many"))
@@ -429,8 +433,8 @@ private enum InnoNetworkBenchmarks {
         results.append(try await benchmarkPersistenceCompaction(iterations: max(1_050, persistenceIterations)))
         results.append(try await benchmarkPersistenceRestore(iterations: restoreIterations))
         results.append(try await benchmarkReconnectDecision(iterations: reconnectIterations))
-        results.append(try await benchmarkCloseDispositionClassify(iterations: websocketGuardIterations))
-        results.append(try await benchmarkPingContextCreation(iterations: websocketGuardIterations))
+        results.append(try await benchmarkCloseDispositionClassify(iterations: closeDispositionIterations))
+        results.append(try await benchmarkPingContextCreation(iterations: pingContextIterations))
         results.append(try await benchmarkWebSocketSendQueue(iterations: sendQueueIterations))
         results.append(try await benchmarkWebSocketLifecycleTransitionTable(iterations: lifecycleIterations))
         // These guarded async paths were previously measured for only

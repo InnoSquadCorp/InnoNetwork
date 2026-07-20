@@ -41,7 +41,9 @@ Record the reason every time `default.json` changes.
   the same machine, interleaves three samples per revision, and compares their
   medians at a 20% threshold. Both implementations use the candidate's
   benchmark harness so methodology-only changes cannot appear as runtime
-  changes. Short guarded async paths also use longer quick-mode observations.
+  changes. Short guarded async paths also use multi-second quick-mode
+  observations on hosted runners. The runtime benchmark builds with default
+  traits disabled so compiling `swift-syntax` does not dominate the gate.
   The JSON baseline remains the declaration/provenance reference; it is no
   longer used as a cross-machine pass/fail threshold.
 - Validation: `run_same_runner_benchmarks.sh` is the local and hosted proof;

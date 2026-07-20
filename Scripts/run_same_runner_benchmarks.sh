@@ -155,6 +155,7 @@ swift_build() {
   (
     cd "$package_path"
     xcrun swift build -c release \
+      --disable-default-traits \
       --product InnoNetworkBenchmarks \
       --scratch-path "$scratch_path" \
       --cache-path "$cache_path"
@@ -167,6 +168,7 @@ swift_bin_path() {
   (
     cd "$package_path"
     xcrun swift build -c release \
+      --disable-default-traits \
       --scratch-path "$scratch_path" \
       --cache-path "$cache_path" \
       --show-bin-path

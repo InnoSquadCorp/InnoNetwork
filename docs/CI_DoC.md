@@ -262,4 +262,6 @@ bash Scripts/run_same_runner_benchmarks.sh \
 The base and candidate production sources are built separately on one runner,
 but both use the candidate benchmark harness. Three samples per revision are
 interleaved and compared by median, so harness methodology and machine class do
-not masquerade as implementation regressions.
+not masquerade as implementation regressions. The runtime benchmark disables
+default traits because macro compilation is measured by the separate repeated
+macro-build baseline rather than this runtime throughput gate.

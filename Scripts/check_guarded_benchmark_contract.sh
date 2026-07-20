@@ -58,6 +58,8 @@ if runner_source.count(
     '"$repo_root/Benchmarks/InnoNetworkBenchmarks/main.swift"'
 ) != 1:
     fail(f"{runner_path} must apply the candidate benchmark harness to the base revision")
+if runner_source.count("--disable-default-traits") != 2:
+    fail(f"{runner_path} must build and resolve the runtime benchmark without macro traits")
 
 for relative_path, expected_invocations in consumer_contracts.items():
     source_path = repo_root / relative_path
