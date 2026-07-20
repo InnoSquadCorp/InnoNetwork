@@ -31,6 +31,22 @@ Record the reason every time `default.json` changes.
   and `Scripts/check_guarded_benchmark_contract.sh` passes against the
   regenerated file.
 
+### Same-runner enforcement
+
+- Date: 2026-07-20
+- Source revision: `a4aaaba8b41553033f5d1f23fa94af85b52b4c3a`
+- Reason: absolute operations-per-second values from the source run varied by
+  more than 10% across otherwise equivalent `macos-15` hosted runners. The
+  scheduled gate now builds this reviewed source revision and the candidate on
+  the same machine, interleaves three samples per revision, and compares their
+  medians at a 20% threshold. Both implementations use the candidate's
+  benchmark harness so methodology-only changes cannot appear as runtime
+  changes. Short guarded async paths also use longer quick-mode observations.
+  The JSON baseline remains the declaration/provenance reference; it is no
+  longer used as a cross-machine pass/fail threshold.
+- Validation: `run_same_runner_benchmarks.sh` is the local and hosted proof;
+  its three-by-three comparison must complete with zero guard failures.
+
 ## 5.0.0
 
 - Date: 2026-07-14

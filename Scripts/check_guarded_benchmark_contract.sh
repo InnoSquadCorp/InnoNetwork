@@ -29,24 +29,43 @@ try:
 except GuardedBenchmarkContractError as error:
     fail(str(error))
 
-runner_contracts = {
-    ".github/workflows/benchmarks.yml": 2,
+runner_path = "Scripts/run_same_runner_benchmarks.sh"
+wrapper_pattern = re.compile(
+    r"python3\s+Scripts/run_with_guarded_benchmarks\.py\s+--"
+)
+consumer_contracts = {
+    ".github/workflows/benchmarks.yml": 1,
     ".github/workflows/release.yml": 1,
     "Scripts/run_local_release_preflight.sh": 1,
     "docs/CI_DoC.md": 1,
 }
-runner_pattern = re.compile(
-    r"python3\s+Scripts/run_with_guarded_benchmarks\.py\s+--"
+consumer_pattern = re.compile(
+    r"^\s*(?:bash\s+)?Scripts/run_same_runner_benchmarks\.sh",
+    re.MULTILINE,
 )
 direct_declaration_pattern = re.compile(r"--guard-benchmark\s+[^\s\\]+")
 
-for relative_path, expected_invocations in runner_contracts.items():
+runner_source = (repo_root / runner_path).read_text(encoding="utf-8")
+wrapper_invocations = len(wrapper_pattern.findall(runner_source))
+if wrapper_invocations != 1:
+    fail(
+        f"{runner_path} must invoke the guarded benchmark runner once; "
+        f"found {wrapper_invocations}"
+    )
+if direct_declaration_pattern.search(runner_source):
+    fail(f"{runner_path} bypasses the guard source of truth")
+if runner_source.count(
+    '"$repo_root/Benchmarks/InnoNetworkBenchmarks/main.swift"'
+) != 1:
+    fail(f"{runner_path} must apply the candidate benchmark harness to the base revision")
+
+for relative_path, expected_invocations in consumer_contracts.items():
     source_path = repo_root / relative_path
     source = source_path.read_text(encoding="utf-8")
-    actual_invocations = len(runner_pattern.findall(source))
+    actual_invocations = len(consumer_pattern.findall(source))
     if actual_invocations != expected_invocations:
         fail(
-            f"{relative_path} must invoke the guarded benchmark runner "
+            f"{relative_path} must invoke the same-runner benchmark entry point "
             f"{expected_invocations} time(s); found {actual_invocations}"
         )
     if direct_declaration_pattern.search(source):
@@ -55,8 +74,15 @@ for relative_path, expected_invocations in runner_contracts.items():
             "a direct --guard-benchmark declaration"
         )
 
+source_revision_path = repo_root / "Benchmarks/Baselines/source-revision.txt"
+if not source_revision_path.is_file():
+    fail(f"baseline source revision is missing: {source_revision_path}")
+source_revision = source_revision_path.read_text(encoding="utf-8")
+if re.fullmatch(r"[0-9a-f]{40}\n?", source_revision) is None:
+    fail("baseline source revision must be one lowercase 40-character SHA")
+
 print(
     "guarded-benchmark-contract: OK "
-    f"({len(raw_lines)} guards across {len(runner_contracts)} consumers)"
+    f"({len(raw_lines)} guards across {len(consumer_contracts)} consumers)"
 )
 PY

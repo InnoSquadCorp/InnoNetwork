@@ -13,8 +13,10 @@ on:
       - "Scripts/check_guarded_benchmark_contract.sh"
       - "Scripts/guarded_benchmarks.py"
       - "Scripts/run_with_guarded_benchmarks.py"
+      - "Scripts/run_same_runner_benchmarks.sh"
       - "Scripts/tests/test_check_guarded_benchmark_contract.sh"
       - "Scripts/tests/test_run_with_guarded_benchmarks.py"
+      - "Scripts/tests/test_run_same_runner_benchmarks.sh"
       - "Scripts/tests/test_compare_benchmark_runs.py"
   workflow_dispatch:
   schedule:
@@ -69,105 +71,27 @@ jobs:
         run: |
           python3 Scripts/tests/test_compare_benchmark_runs.py
           python3 Scripts/tests/test_run_with_guarded_benchmarks.py
+          bash Scripts/tests/test_run_same_runner_benchmarks.sh
 
       - name: Verify guarded benchmark contract
         run: |
           bash Scripts/check_guarded_benchmark_contract.sh
           bash Scripts/tests/test_check_guarded_benchmark_contract.sh
 
-      - name: Build pull request benchmark binaries
-        if: github.event_name == 'pull_request'
+      - name: Compare same-runner benchmark medians
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          base_scratch="$RUNNER_TEMP/innonetwork-benchmarks/base-build"
-          head_scratch="$RUNNER_TEMP/innonetwork-benchmarks/head-build"
-          shared_cache="$GITHUB_WORKSPACE/.build/swiftpm-cache"
-
-          git checkout --detach "$BASE_SHA"
-          xcrun swift build -c release \
-            --product InnoNetworkBenchmarks \
-            --scratch-path "$base_scratch" \
-            --cache-path "$shared_cache"
-          base_bin="$(xcrun swift build -c release --scratch-path "$base_scratch" --cache-path "$shared_cache" --show-bin-path)/InnoNetworkBenchmarks"
-          test -x "$base_bin"
-
-          git checkout --detach "$HEAD_SHA"
-          xcrun swift build -c release \
-            --product InnoNetworkBenchmarks \
-            --scratch-path "$head_scratch" \
-            --cache-path "$shared_cache"
-          head_bin="$(xcrun swift build -c release --scratch-path "$head_scratch" --cache-path "$shared_cache" --show-bin-path)/InnoNetworkBenchmarks"
-          test -x "$head_bin"
-
-          echo "BASE_BENCHMARK_BIN=$base_bin" >> "$GITHUB_ENV"
-          echo "HEAD_BENCHMARK_BIN=$head_bin" >> "$GITHUB_ENV"
-
-      - name: Compare interleaved pull request medians
-        if: github.event_name == 'pull_request'
-        env:
+          PR_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
           MAX_REGRESSION_PERCENT: "20"
         run: |
           set -euo pipefail
-          mkdir -p .build/benchmarks
-
-          run_sample() {
-            executable="$1"
-            output="$2"
-            "$executable" \
-              --json-path "$output" \
-              --baseline "${output}.missing" \
-              > "${output%.json}.log"
-          }
-
-          # Balance execution-order and thermal drift across both revisions:
-          # base/head, head/base, base/head.
-          run_sample "$BASE_BENCHMARK_BIN" .build/benchmarks/base-1.json
-          run_sample "$HEAD_BENCHMARK_BIN" .build/benchmarks/head-1.json
-          run_sample "$HEAD_BENCHMARK_BIN" .build/benchmarks/head-2.json
-          run_sample "$BASE_BENCHMARK_BIN" .build/benchmarks/base-2.json
-          run_sample "$BASE_BENCHMARK_BIN" .build/benchmarks/base-3.json
-          run_sample "$HEAD_BENCHMARK_BIN" .build/benchmarks/head-3.json
-
-          python3 Scripts/run_with_guarded_benchmarks.py -- \
-            python3 Scripts/compare_benchmark_runs.py \
-            --base .build/benchmarks/base-1.json \
-            --base .build/benchmarks/base-2.json \
-            --base .build/benchmarks/base-3.json \
-            --head .build/benchmarks/head-1.json \
-            --head .build/benchmarks/head-2.json \
-            --head .build/benchmarks/head-3.json \
-            --output .build/benchmarks/results.json \
+          arguments=(
+            --output-dir .build/benchmarks
             --max-regression-percent "$MAX_REGRESSION_PERCENT"
-
-      - name: Run guarded static-baseline benchmarks
-        if: github.event_name != 'pull_request'
-        env:
-          MAX_REGRESSION_PERCENT: "10"
-        run: |
-          xcrun swift package resolve
-          mkdir -p .build/benchmarks
-          status=1
-          for attempt in 1 2 3; do
-            echo "Guarded benchmark attempt ${attempt}/3"
-            if python3 Scripts/run_with_guarded_benchmarks.py -- \
-              xcrun swift run -c release InnoNetworkBenchmarks \
-                --quick \
-                --json-path .build/benchmarks/results.json \
-                --enforce-baseline \
-                --max-regression-percent "$MAX_REGRESSION_PERCENT"; then
-              exit 0
-            else
-              status=$?
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "::warning::Guarded benchmark attempt ${attempt} failed with exit code ${status}; retrying to smooth hosted-runner microbenchmark noise."
-            fi
-          done
-          echo "::error::Guarded benchmark all 3 attempts failed with final exit code ${status}."
-          exit "$status"
+          )
+          if [[ -n "$PR_BASE_SHA" ]]; then
+            arguments+=(--base-revision "$PR_BASE_SHA")
+          fi
+          bash Scripts/run_same_runner_benchmarks.sh "${arguments[@]}"
 
       - name: Render benchmark PR comment
         if: always() && github.event_name == 'pull_request'

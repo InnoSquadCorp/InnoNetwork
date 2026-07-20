@@ -123,12 +123,15 @@ The `CI` workflow must pass all of the following:
     `swift run -c release InnoNetworkBenchmarks --quick`
     and uploads the JSON summary to prove the benchmark CLI still builds and
     emits parseable results. Regression enforcement lives in the dedicated
-    `Benchmarks` workflow: pull requests use the guarded benchmark set with
-    `--enforce-baseline --max-regression-percent 20`, while scheduled/manual
-    runs use the same guarded benchmarks with a stricter 10% threshold. Use
-    `--guard-threshold group/name=percent` for benchmark-specific exceptions
-    and `--regression-reason` when a PR intentionally updates or accepts a
-    baseline movement; both values appear in the JSON artifact and PR comment.
+    `Benchmarks` workflow: pull requests, scheduled runs, and manual runs all
+    build base and head on the same hosted runner, interleave three samples per
+    revision, and enforce the guarded median comparison at 20%. Pull requests
+    compare against their base SHA; non-PR and release runs compare against the
+    reviewed revision in `Benchmarks/Baselines/source-revision.txt`. This avoids
+    treating hosted-runner generation or load differences as source regressions.
+    Use `--regression-reason` to annotate an intentional baseline movement;
+    the reason appears in the JSON artifact and PR comment but does not bypass
+    the regression gate.
 17. `python3 Scripts/check_macro_build_baseline_contract.py` validates the
     committed five-repeat SwiftPM and Xcode macro-consumer baselines. It fails
     on missing Core-only or 0/10/50/200-endpoint phases, short sample sets,
@@ -183,7 +186,7 @@ sudo xcode-select -s /Applications/Xcode_26.0.1.app
 bash Scripts/run_local_release_preflight.sh
 
 # Before approving a release-state commit, replay every locally reproducible
-# release gate: coverage, 10% guarded benchmarks, both SBOM profiles,
+# release gate: coverage, same-runner guarded benchmarks, both SBOM profiles,
 # all-product DocC, and macOS/iOS/tvOS/watchOS/visionOS builds. Generated
 # evidence remains under .build/local-release-preflight/ for inspection.
 bash Scripts/run_local_release_preflight.sh --full
@@ -246,12 +249,17 @@ bash Scripts/generate_coverage_report.sh \
   Sources/InnoNetworkMacros
 bash Scripts/check_macro_compile_failures.sh
 
-# Optional: replay the benchmark smoke guard locally. The runner reads every
-# protected identifier from Benchmarks/guarded-benchmarks.txt and appends the
-# corresponding CLI arguments to the wrapped command.
+# Optional: replay the same three-sample median comparison used by hosted CI.
+# The runner reads every protected identifier from
+# Benchmarks/guarded-benchmarks.txt and compares the current working tree with
+# the reviewed baseline source revision on this machine.
 bash Scripts/check_guarded_benchmark_contract.sh
-python3 Scripts/run_with_guarded_benchmarks.py -- \
-  xcrun swift run -c release InnoNetworkBenchmarks --quick \
-    --enforce-baseline \
-    --max-regression-percent 20
+bash Scripts/run_same_runner_benchmarks.sh \
+  --output-dir .build/local-benchmark-comparison \
+  --max-regression-percent 20
 ```
+
+The base and candidate production sources are built separately on one runner,
+but both use the candidate benchmark harness. Three samples per revision are
+interleaved and compared by median, so harness methodology and machine class do
+not masquerade as implementation regressions.

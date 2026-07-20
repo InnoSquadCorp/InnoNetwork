@@ -501,6 +501,7 @@ jobs:
         run: |
           bash Scripts/check_guarded_benchmark_contract.sh
           bash Scripts/tests/test_check_guarded_benchmark_contract.sh
+          bash Scripts/tests/test_run_same_runner_benchmarks.sh
           python3 Scripts/tests/test_run_with_guarded_benchmarks.py
 
       - name: Verify repeated macro build baselines

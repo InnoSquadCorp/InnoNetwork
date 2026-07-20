@@ -385,10 +385,10 @@ private enum InnoNetworkBenchmarks {
     private static func runBenchmarks(options: BenchmarkOptions) async throws -> [BenchmarkResult] {
         var results: [BenchmarkResult] = []
         let encoderIterations = options.quick ? 2_000 : 20_000
-        let eventIterations = options.quick ? 2_000 : 20_000
+        let eventIterations = options.quick ? 10_000 : 20_000
         let persistenceIterations = options.quick ? 300 : 3_000
-        let restoreIterations = options.quick ? 50 : 500
-        let cacheIterations = options.quick ? 200_000 : 1_000_000
+        let restoreIterations = options.quick ? 100 : 500
+        let cacheIterations = options.quick ? 2_000_000 : 5_000_000
         let reconnectIterations = 20_000
         let sendQueueIterations = options.quick ? 200_000 : 1_000_000
         let lifecycleIterations = options.quick ? 200_000 : 1_000_000
@@ -397,7 +397,7 @@ private enum InnoNetworkBenchmarks {
         // sensitive to runner scheduling noise. Keep the coarse smoke gate fast,
         // but run these two long enough that a brief preemption does not look
         // like a >20% regression.
-        let websocketGuardIterations = options.quick ? 500_000 : 2_000_000
+        let websocketGuardIterations = options.quick ? 1_000_000 : 2_000_000
 
         results.append(
             try await measure(name: "query-encoder-small", group: "encoding", iterations: encoderIterations) { count in
@@ -433,7 +433,11 @@ private enum InnoNetworkBenchmarks {
         results.append(try await benchmarkPingContextCreation(iterations: websocketGuardIterations))
         results.append(try await benchmarkWebSocketSendQueue(iterations: sendQueueIterations))
         results.append(try await benchmarkWebSocketLifecycleTransitionTable(iterations: lifecycleIterations))
-        let clientIterations = options.quick ? 2_000 : 20_000
+        // These guarded async paths were previously measured for only
+        // 0.1-0.2 seconds in quick mode. A brief scheduler preemption could
+        // therefore move a three-sample median past the 20% gate. Keep quick
+        // runs bounded while giving each path a multi-second observation.
+        let clientIterations = 20_000
         results.append(try await benchmarkRequestPipeline(iterations: clientIterations))
         results.append(try await benchmarkRequestCoalescing(iterations: clientIterations))
         results.append(try await benchmarkConcurrentClientThroughput(iterations: clientIterations))
@@ -443,7 +447,7 @@ private enum InnoNetworkBenchmarks {
         // and were too short at 2k iterations on hosted runners. Keep them in
         // the quick smoke set, but measure a multi-second sample so transient
         // scheduling noise does not look like a real interceptor regression.
-        let interceptorIterations = 20_000
+        let interceptorIterations = options.quick ? 50_000 : 100_000
         results.append(
             try await benchmarkDecodingInterceptorChain(
                 depth: 1,

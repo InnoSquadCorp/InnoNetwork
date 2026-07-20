@@ -32,6 +32,7 @@ jobs:
           bash Scripts/tests/test_generate_sbom.sh
           bash Scripts/tests/test_generate_dependency_snapshot.sh
           bash Scripts/tests/test_check_guarded_benchmark_contract.sh
+          bash Scripts/tests/test_run_same_runner_benchmarks.sh
           python3 Scripts/tests/test_run_with_guarded_benchmarks.py
           python3 Scripts/tests/test_check_macro_build_baseline_contract.py
           python3 Scripts/tests/test_check_public_api_tiers.py
@@ -161,13 +162,9 @@ jobs:
 
       - name: Run quick benchmarks
         run: |
-          mkdir -p .build/release-artifacts
-          python3 Scripts/run_with_guarded_benchmarks.py -- \
-            xcrun swift run -c release InnoNetworkBenchmarks \
-              --quick \
-              --json-path .build/release-artifacts/benchmarks.json \
-              --enforce-baseline \
-              --max-regression-percent 10
+          bash Scripts/run_same_runner_benchmarks.sh \
+            --output-dir .build/release-artifacts/benchmarks \
+            --max-regression-percent 20
 
       - name: Run serial tests with coverage
         run: xcrun swift test --no-parallel --enable-code-coverage

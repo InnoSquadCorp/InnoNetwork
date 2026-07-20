@@ -16,7 +16,7 @@ Run the release checks that can be reproduced before a tag exists.
 
   --fast  Run deterministic contracts, consumer builds, tools, and bounded tests.
           This is the default.
-  --full  Also generate coverage and SBOMs, enforce the 10% benchmark guards,
+  --full  Also generate coverage and SBOMs, enforce same-runner benchmark guards,
           build all-product DocC, and build all five supported Apple platforms.
   --list  Print the selected gate names without running them.
 USAGE
@@ -106,6 +106,7 @@ run_release_script_fixtures() {
   bash Scripts/tests/test_generate_sbom.sh
   bash Scripts/tests/test_generate_dependency_snapshot.sh
   bash Scripts/tests/test_check_guarded_benchmark_contract.sh
+  bash Scripts/tests/test_run_same_runner_benchmarks.sh
   python3 Scripts/tests/test_run_with_guarded_benchmarks.py
   python3 Scripts/tests/test_check_macro_build_baseline_contract.py
   python3 Scripts/tests/test_check_public_api_tiers.py
@@ -193,12 +194,9 @@ run_macro_coverage() {
 }
 
 run_guarded_benchmarks() {
-  python3 Scripts/run_with_guarded_benchmarks.py -- \
-    xcrun swift run -c release InnoNetworkBenchmarks \
-      --quick \
-      --json-path "$artifacts_dir/benchmarks.json" \
-      --enforce-baseline \
-      --max-regression-percent 10
+  bash Scripts/run_same_runner_benchmarks.sh \
+    --output-dir "$artifacts_dir/benchmarks" \
+    --max-regression-percent 20
 }
 
 run_sbom_artifacts() {

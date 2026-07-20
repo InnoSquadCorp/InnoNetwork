@@ -8,8 +8,10 @@ trap 'rm -rf "$work_dir"' EXIT
 
 fixture_files=(
   "Benchmarks/Baselines/default.json"
+  "Benchmarks/Baselines/source-revision.txt"
   "Benchmarks/guarded-benchmarks.txt"
   "Scripts/guarded_benchmarks.py"
+  "Scripts/run_same_runner_benchmarks.sh"
   ".github/workflows/benchmarks.yml"
   ".github/workflows/release.yml"
   "Scripts/run_local_release_preflight.sh"
@@ -42,7 +44,7 @@ import sys
 
 path = pathlib.Path(sys.argv[1])
 lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-invocation = "python3 Scripts/run_with_guarded_benchmarks.py --"
+invocation = "bash Scripts/run_same_runner_benchmarks.sh"
 for index, line in enumerate(lines):
     if invocation in line:
         del lines[index]
@@ -57,7 +59,7 @@ if run_checker "$missing_declaration_root" \
   echo "Expected a missing workflow declaration to fail." >&2
   exit 1
 fi
-grep -Fq '.github/workflows/release.yml must invoke the guarded benchmark runner' \
+grep -Fq '.github/workflows/release.yml must invoke the same-runner benchmark entry point' \
   "$work_dir/missing-declaration.stderr"
 
 direct_declaration_root="$work_dir/direct-declaration"
@@ -110,5 +112,18 @@ if run_checker "$duplicate_root" \
   exit 1
 fi
 grep -Fq 'duplicate guard identifier(s)' "$work_dir/duplicate.stderr"
+
+invalid_source_revision_root="$work_dir/invalid-source-revision"
+make_fixture "$invalid_source_revision_root"
+printf '%s\n' 'not-a-commit' \
+  > "$invalid_source_revision_root/Benchmarks/Baselines/source-revision.txt"
+if run_checker "$invalid_source_revision_root" \
+  > "$work_dir/invalid-source-revision.stdout" \
+  2> "$work_dir/invalid-source-revision.stderr"; then
+  echo "Expected an invalid baseline source revision to fail." >&2
+  exit 1
+fi
+grep -Fq 'baseline source revision must be one lowercase 40-character SHA' \
+  "$work_dir/invalid-source-revision.stderr"
 
 echo "Guarded benchmark contract tests passed."
