@@ -45,7 +45,7 @@ public enum ResponseCachePolicy: Sendable, Equatable {
     /// `Cache-Control: max-age=...` behaviour stays predictable across
     /// origins that emit conflicting directives.
     ///
-    /// Nesting (``.rfc9111Compliant(wrapping: .rfc9111Compliant(...))``) is
+    /// Nesting (`.rfc9111Compliant(wrapping: .rfc9111Compliant(...))`) is
     /// behaviourally idempotent — each layer reads the same directives
     /// from the response and recurses into its inner policy — but is
     /// preserved in the value. Pattern matches over the policy will see

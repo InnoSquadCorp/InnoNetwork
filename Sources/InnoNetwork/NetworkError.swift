@@ -184,7 +184,7 @@ public enum NetworkError: Error, Sendable {
     /// > retain the source `URLError` instance — it captures the NSError
     /// > projection (`domain`, `code`, `message`, optional reason / recovery,
     /// > and an `NSUnderlyingErrorKey` chain). Branch on the code by
-    /// > reconstructing ``URLError/Code``:
+    /// > reconstructing `URLError.Code`:
     /// >
     /// > ```swift
     /// > catch NetworkError.underlying(let wrapped, _) {

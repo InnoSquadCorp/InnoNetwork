@@ -209,7 +209,7 @@ extension EndpointBuilder {
 
     /// Returns a copy of this endpoint with a per-endpoint override for the
     /// set of HTTP status codes treated as success. See
-    /// ``APIDefinition/acceptableStatusCodes`` for the precedence rule.
+    /// ``Endpoint/acceptableStatusCodes`` for the precedence rule.
     public func acceptableStatusCodes(_ codes: Set<Int>) -> Self {
         Self(
             method: method,

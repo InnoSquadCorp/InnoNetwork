@@ -74,7 +74,8 @@ public struct RequestExecutionNext: Sendable {
     ///
     /// - A policy may call `execute()` zero or more times. Calling it more
     ///   than once produces multiple transport attempts; the executor publishes
-    ///   one ``NetworkEvent/responseReceived`` for each successful call.
+    ///   one ``NetworkEvent/responseReceived(requestID:statusCode:byteCount:)``
+    ///   for each successful call.
     /// - A policy that returns a synthetic response without calling `execute`
     ///   bypasses the transport entirely. The executor will not record a
     ///   `responseReceived` event for that path.

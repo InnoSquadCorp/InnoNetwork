@@ -33,7 +33,7 @@ refresh, and once the refresh completes, queued requests replay with
 the new credential. The lock lives on the interceptor instance.
 
 InnoNetwork's ``RefreshTokenPolicy`` uses an actor-based
-``RefreshTokenCoordinator``: the in-flight refresh is observable as
+`RefreshTokenCoordinator`: the in-flight refresh is observable as
 actor state, and concurrent callers `await` the same task instead of
 queueing through a lock. The behavioural contract is the same —
 exactly one refresh runs for any burst of 401s — but the implementation
@@ -142,7 +142,7 @@ struct RequestIDInterceptor: RequestInterceptor {
 Throw to abort; `async`/`throws` replaces Alamofire's completion-handler
 result. Attach to a session via
 `AuthPack(additionalRequestInterceptors:)` or to a single endpoint
-via ``APIDefinition/requestInterceptors`` — see <doc:Interceptors> for
+via ``Endpoint/requestInterceptors`` — see <doc:Interceptors> for
 the onion order.
 
 ## Retry classification: how it differs

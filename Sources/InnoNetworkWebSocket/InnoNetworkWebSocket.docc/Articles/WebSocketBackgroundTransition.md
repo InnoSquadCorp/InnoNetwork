@@ -17,7 +17,7 @@ suspending the runloop. While suspended:
   silently within minutes
 
 When the app resumes, the manager cannot trust the connection's state
-without re-handshaking. ``WebSocketLifecycleReducer`` models this
+without re-handshaking. The package-owned `WebSocketLifecycleReducer` models this
 explicitly through generation counters and the
 ``WebSocketState/reconnecting`` transition.
 
@@ -26,7 +26,7 @@ explicitly through generation counters and the
 For most apps, treat the WebSocket as foreground-only:
 
 1. Subscribe to `UIScene.willDeactivateNotification` (or the AppKit
-   equivalent) and call ``WebSocketManager/disconnect(_:)`` when the
+   equivalent) and call ``WebSocketManager/disconnect(_:closeCode:)`` when the
    scene leaves the foreground.
 2. Subscribe to `UIScene.didActivateNotification` and call
    ``WebSocketManager/connect(url:subprotocols:)`` again on resume.
@@ -63,10 +63,10 @@ discarded. On the next launch:
 
 The reducer's invariant is that an event tagged with generation `N`
 can only mutate state that is also at generation `N`; the
-``WebSocketReceiveLoop`` and heartbeat coordinators carry the
+package-owned `WebSocketReceiveLoop` and heartbeat coordinators carry the
 generation they were started with, so a callback fired across a
 process restart cannot mutate a fresh generation by accident. See
-``WebSocketLifecycleReducer`` for the full transition table.
+the package-owned `WebSocketLifecycleReducer` for the full transition table.
 
 ## Reconnect policy on resume
 

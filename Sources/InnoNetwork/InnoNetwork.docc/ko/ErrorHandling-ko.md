@@ -23,10 +23,10 @@
 | ``NetworkError/statusCode(_:)`` | 서버가 비허용 status code 반환. | `.response.statusCode` 로 분기. 재시도는 `RetryPolicy` 가 결정. |
 | ``NetworkError/decoding(stage:underlying:response:)`` | 파이프라인의 특정 단계에서 디코딩 실패 (`.responseBody` 또는 `.streamFrame`). | 사용자에게 노출하고 엔드포인트 feature flag 적용 검토. 디코딩 실패는 terminal 이며 `isDecodingFailure` 가 커스텀 재시도 정책에서 명시적으로 노출됩니다. |
 | ``NetworkError/reachability(_:_:_:)`` | `URLError` 에서 분류된 DNS, 오프라인, 연결 끊김. | 네트워크 reachability 로 처리. 요청이 안전하고 정책 예산이 허용하면 재시도. |
-| ``NetworkError/underlying(_:)`` | 위 분류에 속하지 않는 Foundation/URLSession 오류 (드물게 비-HTTPURLResponse 경로도 코드 `3002` 로 래핑됨). | `SendableUnderlyingError.code` 로 더 깊은 triage. |
+| ``NetworkError/underlying(_:_:)`` | 위 분류에 속하지 않는 Foundation/URLSession 오류 (드물게 비-HTTPURLResponse 경로도 코드 `3002` 로 래핑됨). | `SendableUnderlyingError.code` 로 더 깊은 triage. |
 | ``NetworkError/trustEvaluationFailed(_:)`` | TLS pinning 또는 사용자 정의 신뢰 평가기가 인증서 체인 거부. | 사용자에게 노출. 자동 재시도 금지. |
 | ``NetworkError/cancelled`` | `Task` 취소 또는 `cancelAll()`. | 조용히 존중. 호출부의 의도된 중단. |
-| ``NetworkError/timeout(_:)`` | 요청/리소스/연결 타임아웃. | 예산이 허용하면 재시도. |
+| ``NetworkError/timeout(reason:underlying:)`` | 요청/리소스/연결 타임아웃. | 예산이 허용하면 재시도. |
 
 ## 레시피: 코드가 아닌 분류로 분기
 

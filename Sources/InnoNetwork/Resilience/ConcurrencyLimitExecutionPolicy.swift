@@ -6,8 +6,8 @@ import Foundation
 /// `ConcurrencyLimitExecutionPolicy` wraps the rest of the
 /// ``RequestExecutionPolicy`` chain in an acquire / awaited-release pair, so a
 /// request only proceeds to the underlying transport once capacity is
-/// available. Register the policy on
-/// ``ResiliencePack/customExecutionPolicies``
+/// available. Register the policy through the `customExecutionPolicies`
+/// argument of ``ResiliencePack/init(retry:coalescing:circuitBreaker:idempotency:bodyBuffering:customExecutionPolicies:)``
 /// and the surrounding execution machinery handles the token lifecycle
 /// — including transport errors and cancellation, where the policy awaits
 /// release before returning or rethrowing.

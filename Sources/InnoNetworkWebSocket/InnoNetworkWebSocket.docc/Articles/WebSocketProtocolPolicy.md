@@ -69,7 +69,7 @@ recognize:
 |---------------------------------------|-----------------------------------------|
 | Malformed application message         | ``WebSocketCloseCode/invalidFramePayloadData`` (1007) |
 | Server policy rejection (e.g. quota)  | ``WebSocketCloseCode/policyViolation`` (1008) |
-| Application-version mismatch          | ``WebSocketCloseCode/internalError`` (1011) with reason |
+| Application-version mismatch          | ``WebSocketCloseCode/internalServerError`` (1011) with reason |
 | Client-initiated close (logout)       | ``WebSocketCloseCode/normalClosure`` (1000) |
 
 Closing with a precise code lets reconnect logic on both sides

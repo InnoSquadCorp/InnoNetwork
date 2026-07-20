@@ -259,7 +259,7 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
     ///
     /// The default session is constructed with
     /// ``NetworkConfiguration/makeURLSessionConfiguration()`` plus per-client
-    /// cookie storage and an in-memory URL cache. Pass ``URLSession/shared`` or
+    /// cookie storage and an in-memory URL cache. Pass `URLSession.shared` or
     /// another explicit session only when process-wide session state is
     /// intentional.
     public convenience init(configuration: NetworkConfiguration) {

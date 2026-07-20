@@ -7,6 +7,8 @@
     }
 
     @Chapter(name: "Get started") {
+        @Image(source: "GetStarted.svg", alt: "Connected nodes representing a type-safe network request")
+
         Create your first type-safe HTTP client and make an
         unauthenticated request to the public GitHub API.
 

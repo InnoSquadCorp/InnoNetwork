@@ -84,7 +84,7 @@ spent the timeout budget waiting for an unsatisfied path.
 
 For non-interactive flows (background uploads, telemetry batching)
 where the request *should* succeed eventually, combine
-``waitForChange(from:timeout:)`` with a custom retry policy:
+``NetworkMonitoring/waitForChange(from:timeout:)`` with a custom retry policy:
 
 ```swift
 struct WaitForRecoveryRetryPolicy: RetryPolicy {
@@ -123,7 +123,7 @@ struct WaitForRecoveryRetryPolicy: RetryPolicy {
 ```
 
 This decouples the retry budget from the offline-wait time:
-``RetryPolicy.maxRetries`` still bounds attempts, but transient
+``RetryPolicy/maxRetries`` still bounds attempts, but transient
 offline windows do not burn through the budget on a tight loop.
 
 ## Why no built-in `OfflineQueuePolicy`?
@@ -157,7 +157,8 @@ try await downloader.startLargeMediaDownload()
 ```
 
 This pairs naturally with the `allowsCellularAccess` inputs on
-``TransportPack`` and ``DownloadTransferPack``.
+``TransportPack`` and the optional `DownloadTransferPack` type from
+`InnoNetworkDownload`.
 
 ## See also
 

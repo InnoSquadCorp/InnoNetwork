@@ -8,7 +8,7 @@
 
 토큰 갱신은 InnoNetwork 의 내부 실행 파이프라인에 포함된 동작이며, 공개되는
 재시도 정책이 아닙니다. 공개 표면은 좁게 유지됩니다 — 호출부는 현재 토큰을
-읽고, 갱신하고, 선택적으로 ``URLRequest`` 에 적용하는 클로저만 제공합니다.
+읽고, 갱신하고, 선택적으로 `URLRequest` 에 적용하는 클로저만 제공합니다.
 
 ```swift
 let refreshPolicy = RefreshTokenPolicy(

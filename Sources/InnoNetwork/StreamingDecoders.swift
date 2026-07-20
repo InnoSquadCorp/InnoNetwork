@@ -72,7 +72,7 @@ public final class ServerSentEventDecoder: Sendable {
     /// ``ServerSentEvent`` when a blank dispatch line completes the
     /// current frame, otherwise `nil`.
     ///
-    /// - Parameter line: One UTF-8 line from the SSE response stream.
+    /// - Parameter inputLine: One UTF-8 line from the SSE response stream.
     /// - Returns: A dispatched event, or `nil` while still aggregating
     ///   the current frame.
     public func decode(line inputLine: String) -> ServerSentEvent? {

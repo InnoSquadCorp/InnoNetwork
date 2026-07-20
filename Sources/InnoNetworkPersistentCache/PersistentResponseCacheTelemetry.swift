@@ -25,7 +25,7 @@ public struct PersistentResponseCacheStatistics: Sendable, Equatable {
     /// Cumulative count of evictions or scrubs the actor has performed in
     /// this process across all reasons (`storageBudget`, `policyRejected`,
     /// `missingBody`, `entryTooLarge`, `unreferencedBody`). The drained
-    /// ``PersistentResponseCacheTelemetryEvent/scrubbedEntries`` events
+    /// ``PersistentResponseCacheTelemetryEvent/scrubbedEntries(reason:count:byteCount:)`` events
     /// retain the per-reason breakdown.
     public let evictionCount: Int
 

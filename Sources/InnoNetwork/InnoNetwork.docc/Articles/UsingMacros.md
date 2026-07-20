@@ -40,7 +40,7 @@ rather than silently inheriting a security policy.
 literals fail with a targeted diagnostic because their source spelling cannot
 be safely re-emitted as generated interpolation. Path placeholders must match
 stored properties declared directly on the struct. Values pass through
-``EndpointPathEncoding/percentEncodedSegment(_:)``, so a slash, space, percent
+``EndpointPathEncoding/percentEncodedSegment(_:)-(String)``, so a slash, space, percent
 sign, or non-ASCII scalar stays inside one path segment.
 
 Placeholder values must be non-optional. The macro diagnoses direct `T?`,

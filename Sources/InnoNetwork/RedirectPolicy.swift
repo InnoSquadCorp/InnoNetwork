@@ -99,9 +99,9 @@ public struct DefaultRedirectPolicy: RedirectPolicy {
     ///
     /// - Parameters:
     ///   - additionalSensitiveHeaders: Application-specific session-injected
-    ///     header names to strip in addition to ``sensitiveHeaders`` and every
-    ///     header present on the original request. Built-in names cannot be
-    ///     removed.
+    ///     header names to strip in addition to the built-in sensitive-header
+    ///     set and every header present on the original request. Built-in names
+    ///     cannot be removed.
     ///   - allowsHTTPSDowngrade: Whether HTTPS-to-HTTP redirects may be
     ///     followed. Enabling this can expose the redirected request to a
     ///     plaintext transport.

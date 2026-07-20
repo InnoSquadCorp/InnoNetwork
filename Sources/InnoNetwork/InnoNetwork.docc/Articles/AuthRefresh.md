@@ -6,7 +6,7 @@ authentication response and replay the fully adapted request once.
 Auth refresh is part of InnoNetwork's internal execution pipeline, not a public
 retry policy. The public surface stays narrow: callers provide closures for
 reading the current token, refreshing it, and optionally applying it to a
-``URLRequest``.
+`URLRequest`.
 
 ```swift
 let refreshPolicy = RefreshTokenPolicy(

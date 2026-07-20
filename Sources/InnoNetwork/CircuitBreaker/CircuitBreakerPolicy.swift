@@ -42,7 +42,8 @@ public struct CircuitBreakerPolicy: Sendable, Equatable {
     }
 
     /// Validating initializer. Throws ``ConfigurationError`` if any argument
-    /// is out of range. Prefer this over the silent-clamp ``init(failureThreshold:windowSize:resetAfter:maxResetAfter:)``.
+    /// is out of range. Prefer this over the silent-clamp
+    /// `init(failureThreshold:windowSize:resetAfter:maxResetAfter:)`.
     public init(
         validatedFailureThreshold failureThreshold: Int,
         windowSize: Int,

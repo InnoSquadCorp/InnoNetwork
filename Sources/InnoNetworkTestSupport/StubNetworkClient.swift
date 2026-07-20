@@ -48,7 +48,7 @@ public final class StubNetworkClient: NetworkClient, UploadNetworkClient, Sendab
     private let clock: any InnoNetworkClock
 
     /// Creates a stub with independently injectable request and upload
-    /// fallbacks. When `fallback` also supports ``UploadNetworkClient``, it is
+    /// fallbacks. When `fallback` also supports `UploadNetworkClient`, it is
     /// reused automatically unless `uploadFallback` is supplied explicitly.
     public init(
         fallback: (any NetworkClient)? = nil,

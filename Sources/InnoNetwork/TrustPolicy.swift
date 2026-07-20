@@ -15,12 +15,12 @@ public enum TrustFailureReason: Sendable, Equatable {
     case publicKeyExtractionFailed
     /// The chain validated against the system trust store, but no
     /// extracted public-key pin matched the configured pin set for
-    /// ``host``. The associated value is the **exact lowercased host
+    /// `host`. The associated value is the **exact lowercased host
     /// from the TLS challenge** (e.g. `mobile.api.example.com`), never
     /// a wildcard pattern or the parent domain that owned the matching
-    /// entry in ``PublicKeyPinningPolicy``. Telemetry that joins on the
+    /// entry in `PublicKeyPinningPolicy`. Telemetry that joins on the
     /// configured pin host should normalise via
-    /// ``PublicKeyPinningPolicy/pins(forHost:)`` rather than expecting
+    /// `PublicKeyPinningPolicy.pins(forHost:)` rather than expecting
     /// equality.
     case pinMismatch(host: String)
     case custom(String)
@@ -56,7 +56,7 @@ public protocol TrustEvaluating: Sendable {
 
 /// Controls how TLS trust challenges are evaluated for outbound requests.
 ///
-/// Public-key pinning evaluators live in the ``InnoNetworkTrust`` product
+/// Public-key pinning evaluators live in the `InnoNetworkTrust` product
 /// — `import InnoNetworkTrust` and wrap the policy with
 /// `PublicKeyPinningEvaluator(policy:)` then pass it via
 /// ``TrustPolicy/custom(_:)``.

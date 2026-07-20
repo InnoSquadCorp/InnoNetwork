@@ -7,7 +7,8 @@ force quit cancels background transfers and prevents automatic relaunch.
 ## Overview
 
 ``DownloadConfiguration/safeDefaults(sessionIdentifier:)`` and
-``DownloadConfiguration/advanced(sessionIdentifier:_:)`` use the secure
+``DownloadConfiguration/advanced(sessionIdentifier:transfer:retry:observability:persistence:)``
+use the secure
 foreground session mode by default. Foreground mode lets InnoNetwork inspect
 each redirect before Foundation follows it.
 

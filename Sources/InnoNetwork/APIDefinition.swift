@@ -2,7 +2,8 @@ import Foundation
 
 /// Describes a request/response endpoint executed by `DefaultNetworkClient`.
 ///
-/// `APIDefinition` exposes one transport-shape entry point — ``transport`` —
+/// `APIDefinition` exposes one transport-shape entry point —
+/// ``Endpoint/transport`` —
 /// instead of separate properties for content type, request encoder, query
 /// encoder, root key, decoder, and type-erased response decoder. Endpoints
 /// that need a non-default shape build the value through the
@@ -16,7 +17,7 @@ import Foundation
 /// var transport: TransportPolicy<APIResponse> { .custom(encoding: ..., decode: ...) }
 /// ```
 ///
-/// The default ``transport`` selects
+/// The default `transport` selects
 /// ``TransportPolicy/query(encoder:rootKey:decoder:)`` for methods whose
 /// parameters conventionally belong in the URL (`GET` and `HEAD`) and
 /// ``TransportPolicy/json(encoder:decoder:)`` otherwise, so most hand-written
@@ -101,8 +102,8 @@ public enum MultipartUploadStrategy: Sendable, Equatable {
 /// Describes a multipart endpoint executed by `DefaultNetworkClient`.
 ///
 /// Multipart endpoints encode their bodies through ``multipartFormData`` and
-/// only need ``transport`` to describe how the response is decoded. The
-/// default ``transport`` is ``TransportPolicy/multipart(decoder:)``, which
+/// only need ``Endpoint/transport`` to describe how the response is decoded.
+/// The default `transport` is ``TransportPolicy/multipart(decoder:)``, which
 /// configures a JSON response decoder.
 ///
 /// HTTP envelope requirements (method, path, headers, interceptors,

@@ -86,7 +86,7 @@ public struct MultipartFormData: Sendable {
     /// File reachability is checked at append time so the encoder fails
     /// fast at the call site instead of swallowing missing files at
     /// encode time. The bytes themselves are streamed later — lazily
-    /// into memory by ``encode()`` or chunk-by-chunk to disk by
+    /// into memory by `encode()` or chunk-by-chunk to disk by
     /// ``writeEncodedData(to:)``. Prefer the latter for any payload that
     /// could exceed a few megabytes.
     ///

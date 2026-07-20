@@ -67,8 +67,8 @@ public struct HTTPHeaders: Sendable {
     /// header name with the provided `HTTPHeader`. If no matching entry
     /// exists, the header is appended.
     ///
-    /// Prefer this for single-valued headers (``Authorization``,
-    /// ``Content-Type``, etc.) so a misconfigured retry path cannot
+    /// Prefer this for single-valued headers (`Authorization`,
+    /// `Content-Type`, etc.) so a misconfigured retry path cannot
     /// accidentally accumulate duplicates.
     ///
     /// - Parameter header: The `HTTPHeader` to update or append.
@@ -118,7 +118,7 @@ public struct HTTPHeaders: Sendable {
     /// returned value is the joined RFC 7230 §3.2.2 representation
     /// (`value-1, value-2`). Callers that need to inspect each
     /// individual entry — for example to read repeated `Set-Cookie`
-    /// headers — should use ``values(for:)`` instead.
+    /// headers — should use `values(for:)` instead.
     ///
     /// - Parameter name: The name of the header to search for, case-insensitively.
     ///
@@ -166,7 +166,7 @@ public struct HTTPHeaders: Sendable {
     /// invalid. The library never sets `Set-Cookie` on outbound requests,
     /// so the join is safe in practice for the request-side use of this
     /// property; consumers reading inbound response headers should iterate
-    /// the collection or call ``values(for:)`` instead of going through
+    /// the collection or call `values(for:)` instead of going through
     /// this dictionary.
     public var dictionary: [String: String] {
         var canonicalKeys: [String: String] = [:]
@@ -258,14 +258,14 @@ extension [HTTPHeader] {
 public protocol HTTPHeaderVariant: Sendable {}
 
 /// Phantom marker for headers that take a single canonical value
-/// (``Authorization``, ``Content-Type``, ``User-Agent``, ``Host``,
-/// ``Cookie``). Subscripting an `HTTPHeaders` value with a name of
+/// (`Authorization`, `Content-Type`, `User-Agent`, `Host`,
+/// `Cookie`). Subscripting an `HTTPHeaders` value with a name of
 /// this variant routes through ``HTTPHeaders/update(_:)`` so a retry
 /// or interceptor pass cannot accumulate duplicates.
 public enum SingleValueHeader: HTTPHeaderVariant {}
 
 /// Phantom marker for headers that may legitimately repeat
-/// (``Set-Cookie``, ``WWW-Authenticate``, ``Accept`` for content
+/// (`Set-Cookie`, `WWW-Authenticate`, `Accept` for content
 /// negotiation). Names of this variant only support the append-style
 /// API, mirroring ``HTTPHeaders/add(name:value:)``.
 public enum RepeatableHeader: HTTPHeaderVariant {}
@@ -320,7 +320,7 @@ public extension HTTPHeaders {
     }
 
     /// Returns every value associated with a repeatable header, in the
-    /// order they were added. Mirrors ``values(for:)`` but takes a typed
+    /// order they were added. Mirrors `values(for:)` but takes a typed
     /// name so callers cannot accidentally read repeatable values
     /// through the comma-joined `value(for:)` accessor.
     func values(for name: HTTPHeaderName<RepeatableHeader>) -> [String] {

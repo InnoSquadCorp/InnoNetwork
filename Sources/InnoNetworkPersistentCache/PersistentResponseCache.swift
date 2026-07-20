@@ -2,7 +2,7 @@ import Foundation
 import InnoNetwork
 import OSLog
 
-/// Persistent on-disk implementation of ``ResponseCache``.
+/// Persistent on-disk implementation of `ResponseCache` from `InnoNetwork`.
 ///
 /// Stores response bodies in a flat directory keyed by SHA-256 hashes of the
 /// canonical `(method, url, vary)` tuple. Survives process restarts and app
@@ -26,11 +26,11 @@ import OSLog
 /// This cache is a storage layer, not a complete RFC 9111 implementation by
 /// itself. `RequestExecutor` applies the default write-side guardrails
 /// (`no-store`, `private`, `Vary: *`, and unsafe-method target URI
-/// invalidation) before it calls into ``ResponseCache``. Direct calls to
+/// invalidation) before it calls into `ResponseCache`. Direct calls to
 /// ``set(_:_:)`` still use only this actor's conservative persistence policy.
 ///
 /// Callers that need RFC 9111 directive semantics should wrap their
-/// policy with ``ResponseCachePolicy/rfc9111Compliant(wrapping:)``. The
+/// policy with `ResponseCachePolicy.rfc9111Compliant(wrapping:)`. The
 /// adapter implements the directive subset documented in
 /// `docs/rfcs/RFC9111-Compliance.md` (`no-store`, `must-revalidate`, and
 /// `max-age` clamping) on top of the wrapped policy without changing this
@@ -387,7 +387,7 @@ public actor PersistentResponseCache: ResponseCache {
 
     /// Saturating-add `count` evictions to the metric counter. Used by
     /// every code path that emits a
-    /// ``PersistentResponseCacheTelemetryEvent/scrubbedEntries`` event, so
+    /// ``PersistentResponseCacheTelemetryEvent/scrubbedEntries(reason:count:byteCount:)`` event, so
     /// the eviction count stays in sync with the per-reason telemetry log.
     private func recordEviction(count: Int) {
         guard count > 0 else { return }

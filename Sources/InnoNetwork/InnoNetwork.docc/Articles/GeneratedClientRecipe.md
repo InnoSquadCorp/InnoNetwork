@@ -19,7 +19,7 @@ default transport model:
 
 Generated SDKs that need transport-attempt behavior below interceptors can add
 a public ``RequestExecutionPolicy`` through ``NetworkConfiguration``. Use the
-SPI ``SingleRequestExecutable`` path only when the generated surface must stay
+SPI `SingleRequestExecutable` path only when the generated surface must stay
 independent from ``APIDefinition`` or needs custom serialization that cannot be
 represented as `Encodable`:
 
@@ -135,7 +135,7 @@ that demonstrates both the stable request path and the future-candidate wrapper
 path:
 
 - a generated REST-style operation adapted onto ``APIDefinition``
-- a richer generated operation adapted onto SPI ``SingleRequestExecutable``
+- a richer generated operation adapted onto SPI `SingleRequestExecutable`
 
 Use the `APIDefinition` and ``RequestExecutionPolicy`` portions as draft 5.0
 guidance. Treat the richer wrapper portion as revision-pinned SPI material.

@@ -1,9 +1,9 @@
 import Foundation
 
 /// Policy applied when a per-task send is dispatched while the task already
-/// has ``WebSocketConfiguration/sendQueueLimit`` operations in flight.
+/// has the configured `sendQueueLimit` operations in flight.
 public enum WebSocketSendOverflowPolicy: Sendable, Equatable {
-    /// The send fails with ``WebSocketError/sendQueueOverflow``. The caller
+    /// The send fails with ``WebSocketError/sendQueueOverflow(limit:)``. The caller
     /// keeps the message and decides whether to retry, drop, or surface to
     /// the user.
     case fail
@@ -21,7 +21,7 @@ public enum WebSocketSendOverflowPolicy: Sendable, Equatable {
 ///
 /// Use this when a reconnect attempt must fetch fresh authentication headers
 /// or rotate per-connection metadata. Static
-/// ``WebSocketConfiguration/requestHeaders`` are applied first, then
+/// Static `requestHeaders` are applied first, then
 /// subprotocol headers, then adapters in array order.
 public struct WebSocketHandshakeRequestAdapter: Sendable {
     private let adaptRequest: @Sendable (URLRequest) async throws -> URLRequest
@@ -167,11 +167,11 @@ public struct WebSocketConfiguration: Sendable {
 
     /// Maximum number of concurrent `send(_:message:)` / `send(_:string:)`
     /// operations allowed per task. Operations beyond this limit are
-    /// rejected or dropped per ``sendQueueOverflowPolicy``.
+    /// rejected or dropped per `sendQueueOverflowPolicy`.
     /// Values lower than `1` are clamped to `1`. Default is `256`.
     package let sendQueueLimit: Int
 
-    /// Behaviour when ``sendQueueLimit`` is exceeded for a task. Default is
+    /// Behaviour when `sendQueueLimit` is exceeded for a task. Default is
     /// ``WebSocketSendOverflowPolicy/fail``.
     package let sendQueueOverflowPolicy: WebSocketSendOverflowPolicy
 

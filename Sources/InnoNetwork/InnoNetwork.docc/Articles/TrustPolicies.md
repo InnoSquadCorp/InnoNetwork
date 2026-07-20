@@ -66,10 +66,11 @@ client updates as long as the intermediate stays the same.
 
 ### Host matching
 
-The default host matching strategy, ``PublicKeyPinningPolicy/HostMatchingStrategy/unionAllMatches``,
+The default host matching strategy,
+`PublicKeyPinningPolicy.HostMatchingStrategy.unionAllMatches`,
 preserves the original behavior: if both `api.example.com` and `example.com`
 match a request host, their pin sets are unioned. Choose
-``PublicKeyPinningPolicy/HostMatchingStrategy/mostSpecificHost`` when parent
+`PublicKeyPinningPolicy.HostMatchingStrategy.mostSpecificHost` when parent
 and subdomain pins must be operationally isolated. With that strategy, exact
 host pins win; otherwise only the longest matching parent-domain pins are used.
 

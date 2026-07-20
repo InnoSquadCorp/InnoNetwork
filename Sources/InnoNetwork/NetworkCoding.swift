@@ -13,10 +13,10 @@ package var defaultDateFormatter: DateFormatter { makeDefaultDateFormatter() }
 /// mutation cannot leak across endpoints or concurrent requests.
 ///
 /// The default `keyEncodingStrategy` is `.useDefaultKeys`. Codebases that ship
-/// snake_case property names should opt in via
-/// ``makeDefaultRequestEncoder(keyEncodingStrategy:)`` (or assign on the
-/// returned instance) — InnoNetwork stays neutral by default so models with
-/// custom `CodingKeys` are not silently double-translated.
+/// snake_case property names should copy `defaultRequestEncoder`, assign its
+/// `keyEncodingStrategy`, and pass it to the relevant ``TransportPolicy``
+/// factory. InnoNetwork stays neutral by default so models with custom
+/// `CodingKeys` are not silently double-translated.
 public var defaultRequestEncoder: JSONEncoder { makeDefaultRequestEncoder() }
 
 /// Canonical default `JSONDecoder` for InnoNetwork response bodies. Used as
@@ -25,8 +25,9 @@ public var defaultRequestEncoder: JSONEncoder { makeDefaultRequestEncoder() }
 /// caller mutation cannot leak across endpoints or concurrent requests.
 ///
 /// The default `keyDecodingStrategy` is `.useDefaultKeys`; opt in to
-/// snake_case translation through
-/// ``makeDefaultResponseDecoder(keyDecodingStrategy:)``.
+/// snake_case translation by copying `defaultResponseDecoder`, assigning its
+/// `keyDecodingStrategy`, and passing it to the relevant ``TransportPolicy``
+/// factory.
 public var defaultResponseDecoder: JSONDecoder { makeDefaultResponseDecoder() }
 
 package func makeDefaultDateFormatter() -> DateFormatter {

@@ -23,7 +23,7 @@ parsing magic numbers.
 | 1007 | ``WebSocketCloseCode/invalidFramePayloadData`` | Frame bytes were not consistent with the type (e.g., bad UTF-8). |
 | 1008 | ``WebSocketCloseCode/policyViolation`` | Generic policy violation. |
 | 1009 | ``WebSocketCloseCode/messageTooBig`` | Frame exceeds limits. |
-| 1010 | ``WebSocketCloseCode/mandatoryExtension`` | Server did not negotiate a required extension. |
+| 1010 | ``WebSocketCloseCode/mandatoryExtensionMissing`` | Server did not negotiate a required extension. |
 | 1011 | ``WebSocketCloseCode/internalServerError`` | Server crashed or hit an unexpected condition. |
 | 1012 | ``WebSocketCloseCode/serviceRestart`` | Server is restarting. |
 | 1013 | ``WebSocketCloseCode/tryAgainLater`` | Server is overloaded. |

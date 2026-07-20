@@ -66,7 +66,8 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
         /// Same as ``never`` for the persistent response cache: the cache
         /// rewrites the entire index on every change, so there is no
         /// distinct checkpoint boundary. Provided for API parity with
-        /// ``DownloadConfiguration/PersistenceFsyncPolicy``.
+        /// `DownloadConfiguration.PersistenceFsyncPolicy` in the optional
+        /// `InnoNetworkDownload` product.
         case onCheckpoint
         /// Rely on the OS to flush dirty pages on its own cadence.
         case never
@@ -139,7 +140,7 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     ///
     /// App Group containers are only available on Apple platforms (Darwin).
     /// Calling this on other platforms throws
-    /// ``NetworkError/configuration(reason:)`` with `.invalidRequest`.
+    /// `NetworkError.configuration(reason:)` with `.invalidRequest`.
     public static func appGroupDirectoryURL(
         groupIdentifier: String,
         fileManager: FileManager = .default

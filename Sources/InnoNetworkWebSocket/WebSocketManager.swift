@@ -141,7 +141,7 @@ public actor WebSocketManager {
     /// The initializer builds a `WebSocketSessionDelegate` with
     /// `WebSocketSessionDelegateCallbacks`, then creates a foreground
     /// `URLSession` from
-    /// ``WebSocketConfiguration/makeURLSessionConfiguration()``.
+    /// the supplied configuration's package-owned URLSession factory.
     ///
     /// - Parameter configuration: WebSocket runtime configuration. Defaults to
     ///   ``WebSocketConfiguration/safeDefaults()``.

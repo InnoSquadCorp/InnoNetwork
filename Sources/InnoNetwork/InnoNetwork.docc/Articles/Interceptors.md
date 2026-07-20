@@ -16,8 +16,8 @@ Each protocol has two attachment points:
 - **Session-level**, through `AuthPack(additionalRequestInterceptors:)` and
   `AuthPack(additionalResponseInterceptors:)`. These run for **every** request
   the client dispatches.
-- **Per-request**, on ``APIDefinition/requestInterceptors`` and
-  ``APIDefinition/responseInterceptors``. These run only for the specific
+- **Per-request**, on ``Endpoint/requestInterceptors`` and
+  ``Endpoint/responseInterceptors``. These run only for the specific
   endpoint that declares them.
 
 Cross-cutting concerns such as tenant headers, distributed-tracing headers, and

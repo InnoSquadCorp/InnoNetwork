@@ -25,10 +25,10 @@ code out of exhaustive `switch` statements while preserving the full
 | ``NetworkError/statusCode(_:)`` | Server returned a non-acceptable status. | Branch on `.response.statusCode`; let `RetryPolicy` decide retries. |
 | ``NetworkError/decoding(stage:underlying:response:)`` | Response failed to decode at a tagged pipeline stage (`.responseBody` for buffered bodies, `.streamFrame` for per-frame streaming decoders). | Surface to the user; consider feature flagging the endpoint. Decoding failures are terminal — `isDecodingFailure` makes the rule explicit in custom retry policies. |
 | ``NetworkError/reachability(_:_:_:)`` | DNS, offline, or dropped-connection failure classified from `URLError`. | Treat as network reachability; retry when the request is safe and the policy budget allows. |
-| ``NetworkError/underlying(_:)`` | Foundation/URLSession error not classified above (including the rare non-`HTTPURLResponse` path, which is wrapped with code `3002`). | Inspect `SendableUnderlyingError.code` for deeper triage. |
+| ``NetworkError/underlying(_:_:)`` | Foundation/URLSession error not classified above (including the rare non-`HTTPURLResponse` path, which is wrapped with code `3002`). | Inspect `SendableUnderlyingError.code` for deeper triage. |
 | ``NetworkError/trustEvaluationFailed(_:)`` | TLS pinning or custom trust evaluator rejected the chain. | Surface to the user; do not auto-retry. |
 | ``NetworkError/cancelled`` | `Task` cancellation or `cancelAll()`. | Honour silently — caller wanted to stop. |
-| ``NetworkError/timeout(_:)`` | Request, resource, or connection timed out. | Apply retry policy if budget allows. |
+| ``NetworkError/timeout(reason:underlying:)`` | Request, resource, or connection timed out. | Apply retry policy if budget allows. |
 
 ## Recipe: branch on classification first
 

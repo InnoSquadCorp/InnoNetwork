@@ -15,7 +15,7 @@ import Foundation
 ///    reads ``NetworkContext/current``) to their session-level
 ///    ``RequestInterceptor`` chain.
 /// 2. Wrapping the work that triggers the request in
-///    ``NetworkContext/$current``:
+///    `NetworkContext.$current`:
 ///
 ///    ```swift
 ///    NetworkContext.$current.withValue(
@@ -58,7 +58,7 @@ public struct NetworkContext: Sendable {
     }
 
     /// The currently bound context for the executing task. Defaults to an
-    /// empty value when no surrounding ``withValue(_:operation:)`` scope is
+    /// empty value when no surrounding `withValue(_:operation:)` scope is
     /// active.
     @TaskLocal public static var current: NetworkContext = NetworkContext()
 }
