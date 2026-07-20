@@ -111,8 +111,6 @@ InnoNetworkWebSocket	swift.property	WebSocketRetryResult.events
 InnoNetworkWebSocket	swift.property	WebSocketRetryResult.task
 InnoNetworkWebSocket	swift.property	WebSocketState.isTerminal
 InnoNetworkWebSocket	swift.property	WebSocketTask.attemptedReconnectCount
-InnoNetworkWebSocket	swift.property	WebSocketTask.autoReconnectEnabled
-InnoNetworkWebSocket	swift.property	WebSocketTask.awaitingCloseHandshake
 InnoNetworkWebSocket	swift.property	WebSocketTask.closeCode
 InnoNetworkWebSocket	swift.property	WebSocketTask.closeDisposition
 InnoNetworkWebSocket	swift.property	WebSocketTask.error

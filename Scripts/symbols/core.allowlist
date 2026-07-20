@@ -415,8 +415,6 @@ InnoNetwork	swift.property	CircuitBreakerPolicy.numberOfProbesRequiredToClose
 InnoNetwork	swift.property	CircuitBreakerPolicy.resetAfter
 InnoNetwork	swift.property	CircuitBreakerPolicy.windowSize
 InnoNetwork	swift.property	ConcurrencyLimitExecutionPolicy.maxConcurrent
-InnoNetwork	swift.property	CorrelationIDInterceptor.correlationHeader
-InnoNetwork	swift.property	CorrelationIDInterceptor.traceHeader
 InnoNetwork	swift.property	CurlCommandOptions.bodyFileURL
 InnoNetwork	swift.property	CurlCommandOptions.includesBody
 InnoNetwork	swift.property	CurlCommandOptions.includesHeaderValues
@@ -481,10 +479,6 @@ InnoNetwork	swift.property	ExponentialBackoffRetryPolicy.maxTotalRetries
 InnoNetwork	swift.property	ExponentialBackoffRetryPolicy.networkChangeTimeout
 InnoNetwork	swift.property	ExponentialBackoffRetryPolicy.retryDelay
 InnoNetwork	swift.property	ExponentialBackoffRetryPolicy.waitsForNetworkChanges
-InnoNetwork	swift.property	HMACRequestInterceptor.algorithm
-InnoNetwork	swift.property	HMACRequestInterceptor.keyID
-InnoNetwork	swift.property	HMACRequestInterceptor.keyIDHeaderName
-InnoNetwork	swift.property	HMACRequestInterceptor.signatureHeaderName
 InnoNetwork	swift.property	HTTPHeader.description
 InnoNetwork	swift.property	HTTPHeader.name
 InnoNetwork	swift.property	HTTPHeader.value
@@ -497,9 +491,6 @@ InnoNetwork	swift.property	HTTPMethod.rawValue
 InnoNetwork	swift.property	IdempotencyKeyPolicy.headerName
 InnoNetwork	swift.property	IdempotencyKeyPolicy.keyProvider
 InnoNetwork	swift.property	IdempotencyKeyPolicy.methods
-InnoNetwork	swift.property	JWTBearerInterceptor.headerName
-InnoNetwork	swift.property	JWTBearerInterceptor.scheme
-InnoNetwork	swift.property	JWTBearerInterceptor.tokenProvider
 InnoNetwork	swift.property	MultipartAPIDefinition.multipartFormData
 InnoNetwork	swift.property	MultipartAPIDefinition.transport
 InnoNetwork	swift.property	MultipartAPIDefinition.uploadStrategy
@@ -613,9 +604,6 @@ InnoNetwork	swift.property	StreamingAPIDefinition.requestSigners
 InnoNetwork	swift.property	StreamingAPIDefinition.resumePolicy
 InnoNetwork	swift.property	StreamingAPIDefinition.sessionAuthentication
 InnoNetwork	swift.property	StreamingBufferingPolicy.maySilentlyDropOutputs
-InnoNetwork	swift.property	TraceContextInterceptor.generateWhenMissing
-InnoNetwork	swift.property	TraceContextInterceptor.sampled
-InnoNetwork	swift.property	TraceContextInterceptor.tracestate
 InnoNetwork	swift.property	TransportPolicy.requestEncoding
 InnoNetwork	swift.property	TransportPolicy.responseDecoder
 InnoNetwork	swift.property	TransportPolicy.responseDecoding

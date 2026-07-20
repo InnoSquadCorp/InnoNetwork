@@ -53,10 +53,10 @@ public struct HMACRequestInterceptor: RequestSigner {
         case sha512
     }
 
-    public let keyID: String
-    public let algorithm: Algorithm
-    public let signatureHeaderName: String
-    public let keyIDHeaderName: String
+    private let keyID: String
+    private let algorithm: Algorithm
+    private let signatureHeaderName: String
+    private let keyIDHeaderName: String
 
     private let key: SymmetricKey
 

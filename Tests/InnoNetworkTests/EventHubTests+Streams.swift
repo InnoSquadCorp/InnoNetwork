@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import InnoNetworkTestSupport
 import Testing
 
 @testable import InnoNetwork

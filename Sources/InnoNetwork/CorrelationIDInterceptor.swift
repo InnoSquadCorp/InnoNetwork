@@ -28,8 +28,8 @@ import Foundation
 /// names if your gateway expects a different convention (e.g. the W3C
 /// `traceparent` header for distributed tracing).
 public struct CorrelationIDInterceptor: RequestInterceptor {
-    public let traceHeader: String
-    public let correlationHeader: String
+    private let traceHeader: String
+    private let correlationHeader: String
 
     public init(
         traceHeader: String = "X-Trace-ID",

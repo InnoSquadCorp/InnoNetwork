@@ -47,17 +47,17 @@ public struct JWTBearerInterceptor: RequestSigner {
     /// Closure that mints the JWT for a given request. Invoked once per
     /// request attempt; rate-limit and cache inside the closure if the
     /// minting cost is non-trivial.
-    public let tokenProvider: @Sendable (URLRequest) async throws -> String
+    private let tokenProvider: @Sendable (URLRequest) async throws -> String
 
     /// Authorization scheme written into the header. Defaults to `Bearer`,
     /// which matches RFC 6750. Override when the backend expects a custom
     /// scheme (e.g. `JWT`, `Token`).
-    public let scheme: String
+    private let scheme: String
 
     /// Header into which the token is written. Defaults to `Authorization`.
     /// Override when the backend uses a non-standard header (e.g.
     /// `X-Auth-Token`).
-    public let headerName: String
+    private let headerName: String
 
     /// Creates a new JWT bearer interceptor.
     ///

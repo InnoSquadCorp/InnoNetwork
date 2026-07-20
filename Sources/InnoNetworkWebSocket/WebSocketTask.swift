@@ -65,10 +65,10 @@ public actor WebSocketTask: Identifiable {
     public var closeDisposition: WebSocketCloseDisposition? { _closeDisposition }
 
     /// Whether automatic reconnect is currently allowed for this task.
-    public var autoReconnectEnabled: Bool { lifecycleState.autoReconnectEnabled }
+    package var autoReconnectEnabled: Bool { lifecycleState.autoReconnectEnabled }
 
     /// Whether the task is waiting for a peer close acknowledgement after a caller-initiated close.
-    public var awaitingCloseHandshake: Bool { lifecycleState.awaitingCloseHandshake }
+    package var awaitingCloseHandshake: Bool { lifecycleState.awaitingCloseHandshake }
     package var connectionGeneration: Int { lifecycleState.generation }
     package var currentLifecycleState: WebSocketLifecycleState { lifecycleState }
 

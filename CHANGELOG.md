@@ -40,6 +40,12 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
   `NoOpNetworkLogger`, redirect sensitive-header set, and diagnostic URL helper
   also leave the public contract. Generated-client SPI executables inherit
   logger and empty-interceptor defaults when those witnesses are omitted.
+- HMAC, JWT bearer, correlation-ID, and W3C trace interceptors now expose only
+  their construction and protocol behavior; constructor-captured fields are
+  implementation state rather than duplicate read-only API. WebSocket close
+  handshake and automatic-reconnect flags are likewise manager-owned runtime
+  state; observe `WebSocketTask.state`, errors, close disposition, and reconnect
+  counters instead.
 - Download and WebSocket advanced configuration now use immutable thematic
   packs, matching Core. Their mutable `AdvancedBuilder` types are package-only;
   configuration values remain public read-only properties on the final

@@ -86,20 +86,6 @@ private struct WebSocketTaskRuntimeState {
     var taskIDToURLTask: [String: any WebSocketURLTask] = [:]
     var shutdownStarted = false
 
-    mutating func removeAll() {
-        tasks.removeAll(keepingCapacity: false)
-        identifierToTask.removeAll(keepingCapacity: false)
-        identifierToGeneration.removeAll(keepingCapacity: false)
-        taskIDToIdentifier.removeAll(keepingCapacity: false)
-        taskIDToURLTask.removeAll(keepingCapacity: false)
-    }
-
-    mutating func detachRuntime(taskIdentifier: Int) {
-        guard let task = identifierToTask.removeValue(forKey: taskIdentifier) else { return }
-        identifierToGeneration.removeValue(forKey: taskIdentifier)
-        taskIDToIdentifier.removeValue(forKey: task.id)
-    }
-
     mutating func detachRuntime(taskID: String) -> (any WebSocketURLTask)? {
         let urlTask = taskIDToURLTask.removeValue(forKey: taskID)
         if let identifier = taskIDToIdentifier.removeValue(forKey: taskID) {
@@ -125,17 +111,6 @@ private struct WebSocketWorkerState {
     var messageListener: [String: WebSocketRuntimeWorker] = [:]
     var reconnect: [String: WebSocketRuntimeWorker] = [:]
     var closeHandshake: [String: WebSocketRuntimeWorker] = [:]
-
-    mutating func removeAll() {
-        for worker in heartbeat.values { worker.task.cancel() }
-        heartbeat.removeAll(keepingCapacity: false)
-        for worker in messageListener.values { worker.task.cancel() }
-        messageListener.removeAll(keepingCapacity: false)
-        for worker in reconnect.values { worker.task.cancel() }
-        reconnect.removeAll(keepingCapacity: false)
-        for worker in closeHandshake.values { worker.task.cancel() }
-        closeHandshake.removeAll(keepingCapacity: false)
-    }
 
     mutating func detachAll(for taskID: String) -> [WebSocketRuntimeWorker] {
         [
@@ -521,17 +496,6 @@ package actor WebSocketRuntimeRegistry {
         return Array(runtime.tasks.values)
     }
 
-    /// Resets every task-scoped collection so no phantom mappings or
-    /// background coordinators outlive the wipe. Background coordinator
-    /// tasks (heartbeat / message listener / reconnect / close handshake)
-    /// are dropped without awaiting cancellation; callers that need
-    /// awaited cleanup must use `removeTaskRuntime(taskId:)` per task
-    /// before this method.
-    package func removeAllTasks() {
-        runtime.removeAll()
-        workers.removeAll()
-    }
-
     package func setMapping(webSocketTask: WebSocketTask, for identifier: Int, generation: Int) {
         runtime.identifierToTask[identifier] = webSocketTask
         runtime.identifierToGeneration[identifier] = generation
@@ -571,10 +535,6 @@ package actor WebSocketRuntimeRegistry {
 
     package func taskIdentifier(for taskId: String) -> Int? {
         runtime.taskIDToIdentifier[taskId]
-    }
-
-    package func detachRuntime(taskIdentifier: Int) {
-        runtime.detachRuntime(taskIdentifier: taskIdentifier)
     }
 
     package func removeTaskRuntime(taskId: String) async {

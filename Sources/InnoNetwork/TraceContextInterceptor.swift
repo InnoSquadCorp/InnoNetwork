@@ -105,11 +105,11 @@ public struct W3CTraceContext: Sendable, Equatable {
 /// sampled trace.
 public struct TraceContextInterceptor: RequestInterceptor {
     /// Whether to create a new trace when no valid task-local context exists.
-    public let generateWhenMissing: Bool
+    private let generateWhenMissing: Bool
     /// Sampling flag used when generating a new context or parent span.
-    public let sampled: Bool
+    private let sampled: Bool
     /// Optional `tracestate` value to attach when the request has none.
-    public let tracestate: String?
+    private let tracestate: String?
 
     public init(
         generateWhenMissing: Bool = true,

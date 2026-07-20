@@ -24,6 +24,9 @@ package-owned; explicit tuning goes through thematic packs passed to
 `advanced(...)`. Core, Download, and WebSocket configuration values are opaque
 commands: their runtime fields are package-owned, while presets, pack inputs,
 and documented escape-hatch methods form the public configuration contract.
+Interceptor configuration follows the same boundary: callers construct HMAC,
+JWT bearer, correlation-ID, and W3C trace interceptors through their named
+initializers, while the captured values remain implementation state.
 `WebSocketTask`
 construction is manager-owned so every public handle has connection and
 ownership state. The duplicate `DownloadManager.make(configuration:)` factory

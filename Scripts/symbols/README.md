@@ -23,26 +23,26 @@ Stable compatibility promise.
 
 | Product | Public declarations |
 |---|---:|
-| `InnoNetwork` (core) | 798 |
-| `InnoNetworkWebSocket` | 132 |
+| `InnoNetwork` (core) | 786 |
+| `InnoNetworkWebSocket` | 130 |
 | `InnoNetworkDownload` | 94 |
 | `InnoNetworkTestSupport` | 84 |
 | `InnoNetworkPersistentCache` | 51 |
 | `InnoNetworkOpenAPI` | 36 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
-| **Total** | **1,222** |
+| **Total** | **1,208** |
 
 | Compatibility tier | Public declarations |
 |---|---:|
 | Stable consumer API | 305 |
-| Provisionally Stable consumer API | 884 |
+| Provisionally Stable consumer API | 870 |
 | `@_spi(GeneratedClientSupport)` | 33 |
-| **Total** | **1,222** |
+| **Total** | **1,208** |
 
 ## Why this matters
 
-For a single-maintainer client-side Swift networking library, 1,222 public
+For a single-maintainer client-side Swift networking library, 1,208 public
 declarations is unusually large — roughly 4× `Get`'s surface and ~10× the
 `URLSession`-only "two functions and a `Decoder`" baseline.
 
@@ -77,9 +77,12 @@ removal.
 ## Working with the allowlists
 
 ```bash
-# Regenerate from the current symbol-graph dump
-swift build --target InnoNetwork -Xswiftc -emit-symbol-graph \
-  -Xswiftc -emit-symbol-graph-dir -Xswiftc .build/symbolgraph
+# Regenerate the same public/SPI graph shape used by the contract gate
+find .build -path '*/symbolgraph/*.symbols.json' -type f -delete
+swift package dump-symbol-graph \
+  --minimum-access-level public \
+  --include-spi-symbols \
+  --skip-synthesized-members >/dev/null
 python3 Scripts/collect_public_symbols.py .
 
 # Validate the allowlists match the symbol-graph dump
