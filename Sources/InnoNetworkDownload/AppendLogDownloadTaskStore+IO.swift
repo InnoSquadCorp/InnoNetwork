@@ -482,31 +482,45 @@ extension AppendLogDownloadTaskStore {
         descriptor: Int32,
         timeout: TimeInterval
     ) async throws -> Int32 {
+        guard flock(descriptor, LOCK_EX | LOCK_NB) != 0 else {
+            return descriptor
+        }
+        return try await awaitContendedDirectoryLock(
+            descriptor: descriptor,
+            timeout: timeout,
+            initialErrno: errno
+        )
+    }
+
+    private static func awaitContendedDirectoryLock(
+        descriptor: Int32,
+        timeout: TimeInterval,
+        initialErrno: Int32
+    ) async throws -> Int32 {
         let clock = ContinuousClock()
         let deadline = clock.now + .seconds(timeout)
-        // Exponential backoff from 1ms to the previous fixed 50ms cadence.
-        // In-process callers serialize on the persistence actor, so the lock
-        // is normally uncontended and acquired on the first attempt; when a
-        // sibling process (app-group sharing) briefly holds it, short early
-        // retries cut the acquisition latency without changing the flock
-        // semantics or the 10s deadline.
         var backoffMilliseconds = 1
-        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
-            let lockErrno = errno
-            if lockErrno == EINTR { continue }
-            if lockErrno != EWOULDBLOCK && lockErrno != EAGAIN || clock.now >= deadline {
-                close(descriptor)
-                throw CocoaError(.fileLocking)
+        var lockErrno = initialErrno
+        while true {
+            if lockErrno != EINTR {
+                if lockErrno != EWOULDBLOCK && lockErrno != EAGAIN || clock.now >= deadline {
+                    close(descriptor)
+                    throw CocoaError(.fileLocking)
+                }
+                do {
+                    try await Task.sleep(for: .milliseconds(backoffMilliseconds))
+                } catch {
+                    close(descriptor)
+                    throw error
+                }
+                backoffMilliseconds = min(backoffMilliseconds * 2, 50)
             }
-            do {
-                try await Task.sleep(for: .milliseconds(backoffMilliseconds))
-            } catch {
-                close(descriptor)
-                throw error
+
+            if flock(descriptor, LOCK_EX | LOCK_NB) == 0 {
+                return descriptor
             }
-            backoffMilliseconds = min(backoffMilliseconds * 2, 50)
+            lockErrno = errno
         }
-        return descriptor
     }
 
     static func releaseDirectoryLock(_ descriptor: Int32) {
