@@ -107,6 +107,9 @@ The `CI` workflow must pass all of the following:
    POST endpoints through the public `DefaultNetworkClient` and
    `InnoNetworkTestSupport` boundary so path/query/body/auth generation is a
    runtime release gate rather than compile-only evidence.
+   `Examples/OpenAPIAdopterSmoke` independently imports the optional OpenAPI
+   product, adapts an `OpenAPIRestOperation`, and verifies query encoding and
+   response decoding through the public client and test-support boundaries.
    SwiftPM 6.2 can still resolve, fetch, or list manifest-level dependencies
    during a core-only build; the invariant is that macro products are absent
    from compilation. Traits are unified per package, so another dependency

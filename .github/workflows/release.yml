@@ -152,6 +152,9 @@ jobs:
       - name: Run macro adopter smoke
         run: xcrun swift run --package-path Examples/MacroAdopterSmoke
 
+      - name: Run OpenAPI adopter smoke
+        run: xcrun swift run --package-path Examples/OpenAPIAdopterSmoke
+
       - name: Build openapi-to-innonetwork CLI
         working-directory: Tools/openapi-to-innonetwork
         run: xcrun swift build

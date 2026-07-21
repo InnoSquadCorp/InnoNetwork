@@ -179,6 +179,13 @@ requests through `DefaultNetworkClient`. CI verifies path/query encoding, JSON
 body inference, response decoding, and required-auth token application at
 runtime.
 
+### [OpenAPIAdopterSmoke](./OpenAPIAdopterSmoke)
+
+Executable downstream-package smoke for the optional OpenAPI boundary. It
+imports only public products, adapts an `OpenAPIRestOperation` through
+`OpenAPIRequest`, and executes it through `DefaultNetworkClient`. CI verifies
+query encoding and response decoding without relying on package-only APIs.
+
 ### [TestSupportSmoke](./TestSupportSmoke)
 
 Compile-only package that imports `InnoNetworkTestSupport` the way consumer test

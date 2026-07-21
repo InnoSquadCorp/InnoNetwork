@@ -158,6 +158,9 @@ draft release summary.
 
 ### Added
 
+- An independent `OpenAPIAdopterSmoke` package now executes an
+  `OpenAPIRestOperation` through the public `InnoNetworkOpenAPI`, core, and
+  test-support products in CI, release validation, and local preflight.
 - `DownloadManager.cancelAll(matching:)` cancels only the downloads whose
   `download(url:to:tag:)` / `download(url:toDirectory:fileName:tag:)` start
   carried the given `CancellationTag`, mirroring the core client's grouped

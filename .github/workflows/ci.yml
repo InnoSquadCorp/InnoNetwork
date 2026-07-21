@@ -663,6 +663,9 @@ jobs:
       - name: Run macro adopter smoke
         run: xcrun swift run --package-path Examples/MacroAdopterSmoke
 
+      - name: Run OpenAPI adopter smoke
+        run: xcrun swift run --package-path Examples/OpenAPIAdopterSmoke
+
       - name: Test macros from source (with code coverage)
         run: |
           xcrun swift test \
