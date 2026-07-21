@@ -45,6 +45,11 @@ def validate(path: Path = WORKFLOW) -> None:
         fail("release candidate validation must be workflow_dispatch-only")
     if "bash Scripts/validate_release_candidate.sh" not in validation:
         fail("manual validation must invoke validate_release_candidate.sh")
+    if (
+        "bash Scripts/prepare_release_artifacts.sh .build/release-artifacts"
+        not in validation
+    ):
+        fail("validation must prepare the exact release artifact manifest")
 
     publication = job_section(workflow, "publish-release")
     if publication.count(TAG_ONLY_CONDITION) != 1:

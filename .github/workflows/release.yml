@@ -30,6 +30,7 @@ jobs:
           bash Scripts/tests/test_validate_release_ref.sh
           bash Scripts/tests/test_validate_release_candidate.sh
           bash Scripts/tests/test_generate_sbom.sh
+          bash Scripts/tests/test_prepare_release_artifacts.sh
           bash Scripts/tests/test_generate_dependency_snapshot.sh
           bash Scripts/tests/test_check_guarded_benchmark_contract.sh
           bash Scripts/tests/test_run_same_runner_benchmarks.sh
@@ -225,6 +226,9 @@ jobs:
             bash Scripts/generate-sbom.sh .build/release-artifacts/sbom.cdx.json
           SBOM_TRAIT_PROFILE=core-only \
             bash Scripts/generate-sbom.sh .build/release-artifacts/sbom-core-only.cdx.json
+
+      - name: Prepare release artifact manifest
+        run: bash Scripts/prepare_release_artifacts.sh .build/release-artifacts
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
