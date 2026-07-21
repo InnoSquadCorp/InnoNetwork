@@ -23,11 +23,9 @@ Everything else—including Download, WebSocket, persistent cache, OpenAPI, AWS
 signing, pinning, and test support—is an optional product selected only when
 that capability is required.
 
-> **Release status:** `4.0.0` is the latest tagged stable release and the
-> actively security-supported line. The `main` branch is an unreleased,
-> source-breaking 5.0 preview; no `5.0.0` tag exists yet. Unless a section says
-> otherwise, the API examples below describe the current `main` preview and
-> may not compile against 4.x.
+> **Release status:** `5.0.0` is the latest tagged stable release and the
+> actively security-supported line. The API examples below describe the 5.x
+> contract and may not compile against 4.x.
 
 ## Product Selection Guide
 
@@ -149,43 +147,27 @@ Does this endpoint belong in the application's named API catalog?
 
 ### Install
 
-For released applications, consume the tagged 4.x line:
+For released applications, consume the tagged 5.x line:
 
 ```swift
 dependencies: [
     .package(
         url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
-        .upToNextMajor(from: "4.0.0")
+        .upToNextMajor(from: "5.0.0")
     )
 ]
 ```
 
-To evaluate the breaking 5.0 preview, opt into `main` explicitly. Prefer a
-specific revision in CI so preview updates are deliberate:
-
-```swift
-dependencies: [
-    .package(
-        url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
-        branch: "main"
-    )
-]
-```
-
-> Do not treat `main` as a released SemVer dependency. The draft Stable /
-> Provisionally Stable ledger in `API_STABILITY.md` becomes the 5.x contract
-> only when `5.0.0` is tagged.
->
 > InnoNetwork also intentionally requires Swift 6.2+ and current Apple OS
 > baselines (iOS 16, macOS 14, tvOS 16, watchOS 9, visionOS 1). That keeps
 > the package aligned with strict concurrency and modern URLSession behavior,
 > but apps with older deployment targets should keep a thin compatibility
 > client until they can raise their platform floor.
 
-### First 30 Minutes: Explicit Endpoints, Macro-Assisted (5.0 Preview)
+### First 30 Minutes: Explicit Endpoints, Macro-Assisted
 
-The following current API uses the unreleased 5.0 preview. For the tagged 4.x
-API, start with the 4.0 release and migration documents instead.
+The following API uses the released 5.x contract. For the previous 4.x API,
+start with the 4.0 release and migration documents instead.
 
 ```swift
 import Foundation
@@ -514,7 +496,7 @@ observability, or transport tuning. There is intentionally no universal
 "production" preset: retry, circuit-breaker, and idempotency semantics depend
 on the server contract and should not be enabled by a generic label.
 
-In the 5.0 preview, `safeDefaults` and the `advanced` preset cap collected
+In the 5.x contract, `safeDefaults` and the `advanced` preset cap collected
 responses, including file-upload responses, at 5 MiB by default.
 Set an explicit `.streaming(maxBytes: nil)` or `.buffered(maxBytes: nil)` only
 when an unbounded response is a deliberate, reviewed choice.
@@ -811,16 +793,15 @@ examples.
 
 ## Stability
 
-Public releases follow semantic versioning. `4.0.0` is the latest tagged
-compatibility baseline. The current `main` branch is preparing the breaking
-5.0 contract, but that contract is still a preview until `5.0.0` is tagged.
+Public releases follow semantic versioning. `5.0.0` is the latest tagged
+compatibility baseline for the 5.x contract.
 
 - Stable public API: [API_STABILITY.md](API_STABILITY.md)
 - Release rules and compatibility policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration expectations: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
 
 `safeDefaults` is the canonical secure entry point. The duplicate legacy
-configuration aliases are absent from the 5.0 preview; examples and new
+configuration aliases are absent from the 5.x contract; examples and new
 integrations use the named factory so the selected policy is visible.
 
 `NetworkClient.request` and `UploadNetworkClient.upload` are the recommended
@@ -837,10 +818,9 @@ decoded output ahead of its consumer; the explicit buffering-policy overload
 offers unbounded or lossy delivery when that trade-off is intentional. To
 cancel every in-flight request and stream
 (for example, on logout or backgrounding), call
-`DefaultNetworkClient.cancelAll()`. See the draft
-[5.0 release notes](docs/releases/5.0.0.md) for preview details and the draft
-[5.0 migration guide](docs/Migration-5.0.0.md) for source changes being
-prepared. Neither document announces a tagged release.
+`DefaultNetworkClient.cancelAll()`. See the
+[5.0 release notes](docs/releases/5.0.0.md) for release details and the
+[5.0 migration guide](docs/Migration-5.0.0.md) for source changes.
 
 ## Benchmarks
 
@@ -994,14 +974,14 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - Release Policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
 - Migration Guides: [docs/MigrationGuides.md](docs/MigrationGuides.md)
-- Draft 5.0 Migration Guide: [docs/Migration-5.0.0.md](docs/Migration-5.0.0.md)
+- 5.0 Migration Guide: [docs/Migration-5.0.0.md](docs/Migration-5.0.0.md)
 - Alamofire Migration Cookbook: [docs/MigrationFromAlamofire.md](docs/MigrationFromAlamofire.md)
 - Moya Migration Cookbook: [docs/MigrationFromMoya.md](docs/MigrationFromMoya.md)
 - DocC Deployment: [docs/DocC_Deployment.md](docs/DocC_Deployment.md)
 - Query Encoding Reference: [docs/QueryEncoding.md](docs/QueryEncoding.md)
 - WebSocket Lifecycle: [docs/WebSocketLifecycle.md](docs/WebSocketLifecycle.md)
 - Task Ownership: [docs/TaskOwnership.md](docs/TaskOwnership.md)
-- Draft 5.0 Release Notes: [docs/releases/5.0.0.md](docs/releases/5.0.0.md)
+- 5.0 Release Notes: [docs/releases/5.0.0.md](docs/releases/5.0.0.md)
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 - 한국어 문서: [docs/ko/README.md](docs/ko/README.md)
 

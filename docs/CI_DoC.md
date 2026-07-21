@@ -155,7 +155,7 @@ release artifacts are generated.
 ## Pass/Fail Policy
 
 - A PR is considered complete only when all CI checks are green.
-- During the unreleased 5.0 preview, organization administrators may use the
+- During a pre-release staging cycle, organization administrators may use the
   documented ruleset bypass for the staged direct-to-`main` workflow. The same
   checks still run on the resulting `main` SHA and must be green before the
   next stage proceeds. Remove or narrow that bypass before tagging 5.0.0.

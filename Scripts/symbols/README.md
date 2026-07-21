@@ -19,7 +19,7 @@ are snapshotted separately; every remaining consumer declaration defaults to
 Provisionally Stable. A new public symbol therefore cannot silently inherit a
 Stable compatibility promise.
 
-## Current sizes (2026-07, unreleased 5.0 preview snapshot)
+## Current sizes (5.0.0 release baseline)
 
 | Product | Public declarations |
 |---|---:|
@@ -50,8 +50,8 @@ At release, every public symbol becomes:
 
 - A regression-testing obligation in CI (the allowlists make this concrete).
 - A backwards-compatibility promise for the lifetime of the surrounding
-  contract tier after 5.0.0 is tagged (Stable / Provisionally Stable, see
-  `API_STABILITY.md`). The current preview can still change before that tag.
+  contract tier throughout 5.x (Stable / Provisionally Stable, see
+  `API_STABILITY.md`).
 - A documentation obligation — DocC catalogues are spot-checked by
   `check_docs_contract_sync.sh`.
 
@@ -62,14 +62,14 @@ visibility, not `public`.
 
 ## Reduction roadmap
 
-The 5.0 preview has removed the deprecated configuration modifiers, readable
+The 5.0 release removed the deprecated configuration modifiers, readable
 configuration-state mirrors (configuration is now an opaque command composed
 through presets and packs), package
 lifecycle reducer vocabulary, manual task-listener subscriptions, public
 transition-table helpers, and optional observability no-op implementations
-from this inventory. Before the tag, any further demotion still requires a dependency-graph audit:
+from this inventory. Any further demotion requires a dependency-graph audit:
 which package target uses the symbol, which DocC link references it, and
-whether a consumer recipe exposes it. After 5.0.0, further demotions require
+whether a consumer recipe exposes it. During 5.x, further demotions require
 another major release as well as that audit. The allowlists remain the measured
 source of truth rather than a numeric target that could encourage unsafe bulk
 removal.

@@ -136,12 +136,9 @@ they're frequent and not interesting on their own unless they fail.
 
 ## Versioning and compatibility
 
-The current observability surface belongs to the unreleased 5.0 preview.
-Adapter packages evaluating it should pin a reviewed `main` revision and bump
-that revision deliberately on every observability surface change; do not ship
-a moving branch dependency in production. Released applications should remain
-on the tagged 4.x line until `5.0.0` exists. After 5.0 is tagged, adapter
-packages can pin a 5.x minor range. The planned 5.x line aims to keep changes
+The current observability surface belongs to the Provisionally Stable 5.x
+contract. Adapter packages should pin a 5.x minor range or an exact version
+when reproducibility is required. The 5.x line aims to keep changes
 additive; adapters should include a `default:` case in event switches so new
 ``NetworkEvent`` cases do not break compilation before the adapter has mapped
 them.

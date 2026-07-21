@@ -8,10 +8,8 @@ The ordinary path has only three concepts: one endpoint struct, one macro
 attribute, and one `client.request(...)` call. Configuration packs and optional
 products are not prerequisites.
 
-> Important: This page follows the unreleased 5.0 preview on `main`.
-> `4.0.0` remains the latest tagged stable release. Pin a reviewed revision
-> for preview evaluation and do not ship a moving branch dependency in
-> production.
+> Important: This page follows the released 5.x contract. Start from the
+> `5.0.0` tag or a compatible 5.x version range in production.
 
 ## Create a client
 
@@ -108,8 +106,8 @@ Stay on ``NetworkClient/request(_:)`` for normal typed requests and
 protocols only at a boundary that actually performs both operations.
 
 Low-level generated-client hooks are `@_spi(GeneratedClientSupport)`, outside
-the draft 5.0 public contract, and may change at any time during the preview or
-break in a minor release after 5.0 is tagged. Use them only when a wrapper owns
+the 5.x public contract, and may change or break in a minor release. Use them
+only when a wrapper owns
 an exact source pin and migration budget. The root macro does not bridge or
 expose this SPI.
 

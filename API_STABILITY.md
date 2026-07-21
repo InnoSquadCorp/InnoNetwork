@@ -1,12 +1,9 @@
-# API Stability (5.0 Draft)
+# API Stability (5.x)
 
-This document drafts the intended compatibility contract for the future
-InnoNetwork 5.x release line. No `5.0.0` tag exists yet: `4.0.0` remains the
-latest tagged stable baseline, and `main` is a source-breaking 5.0 preview.
-Until `5.0.0` is tagged, every ledger below describes the proposed contract
-and may still change before release.
+This document defines the compatibility contract for the InnoNetwork 5.x
+release line. `5.0.0` is the public compatibility baseline for this contract.
 
-The planned 5.0.0 baseline will remove the deprecated 4.x
+The 5.0.0 baseline removes the deprecated 4.x
 `NetworkConfiguration.with(...)` modifier family, replace the type-level
 auth-scope markers with an explicit `SessionAuthentication` value on every
 endpoint shape, remove the raw-string `NetworkClient.request(_:method:tag:)`
@@ -41,7 +38,7 @@ API. Any listener-based test plumbing is an implementation detail.
 Lifecycle transition tables are also manager-owned, while public state values
 retain `isTerminal` for application observation. Optional observability hooks
 use `nil` or an empty observer collection instead of public no-op helper types.
-Preview adopters should migrate configuration to
+5.x adopters should migrate configuration to
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.
 
@@ -106,19 +103,18 @@ and own application reducer types in their feature or architecture layer.
 - `DecodingInterceptor` (promoted from Provisionally Stable in 4.x.x)
 - `WebSocketCloseDisposition` (promoted from Provisionally Stable in 4.x.x)
 
-> **When tagged, 5.0.0 will be the compatibility reset for the 5.x line.**
-> From that release onward, the Stable ledger will only grow during 5.x;
+> **5.0.0 is the compatibility reset for the 5.x line.**
+> From this release onward, the Stable ledger will only grow during 5.x;
 > entries will not move back into Provisionally Stable, and breaking changes
-> will wait for a future major. Those guarantees do not apply to the current
-> `main` preview.
+> will wait for a future major.
 
 ## Stable Examples
 
-A subset of `Examples/` is designated to participate in the SemVer-protected
-stable contract once 5.0.0 is tagged. For each entry below the directory must
+A subset of `Examples/` participates in the SemVer-protected stable contract.
+For each entry below the directory must
 exist, contain at least one Swift source file, ship a `README.md`, and compile
-against the current preview package. The exact wording of the example is
-**not** contractual. After the tag, the copyable Swift starting points must
+against the current package. The exact wording of the example is **not**
+contractual. The copyable Swift starting points must
 stay source-compatible with the 5.0.0 public API.
 The `Scripts/check_stable_examples.sh` gate, wired into the docs-contract
 job, fails CI if a stable example is removed, emptied, loses its README, or
@@ -142,11 +138,9 @@ part of the compatibility contract.
 
 ## Provisionally Stable
 
-Symbols in this section are public in the preview and are intended to be
-supported after 5.0.0, but they may still change before that tag. During the
-future 5.x line they may grow new cases, parameters, or shape, with each change
-shipping release notes and a migration path. See "Version Pinning Guidance"
-below for the currently released 4.x line and explicit preview opt-in.
+Symbols in this section are public in 5.0.0 and may evolve during the 5.x line
+by gaining new cases, parameters, or shape, with each change shipping release
+notes and a migration path. See "Version Pinning Guidance" below.
 For budget enforcement, every non-SPI public declaration that is not matched
 by the explicit Stable ledger is classified as Provisionally Stable. This
 conservative default prevents an undocumented declaration from accidentally
@@ -185,7 +179,7 @@ acquiring a 5.x compatibility promise.
 
 ## 5.x Evolution Boundaries
 
-Per-symbol compatibility boundaries intended for the future 5.x line follow.
+Per-symbol compatibility boundaries for the 5.x line follow.
 Stable entries describe commitments that stay source-compatible throughout
 5.x; Provisionally Stable entries describe their explicitly allowed evolution.
 
@@ -226,7 +220,7 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 - `URLQueryEncoder` — the default array convention remains indexed brackets
   for 4.0.0 compatibility, while ``URLQueryArrayEncodingStrategy`` can opt in
   to bracketed or repeated-key arrays per provider.
-- `HTTPMethod` — the planned 5.0 value type accepts any valid, case-sensitive
+- `HTTPMethod` — the 5.0 value type accepts any valid, case-sensitive
   RFC 9110 method token through its failable `init(rawValue:)`; the standard
   GET, HEAD, POST, PUT, PATCH, DELETE, CONNECT, OPTIONS, and TRACE constants
   will remain available throughout 5.x. URLSession-backed execution fails
@@ -267,7 +261,7 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   `invalidBaseURL` / `invalidRequest` / `offline` cases. The standalone
   `NetworkError.invalidBaseURL` and
   `NetworkError.invalidRequestConfiguration` cases are not part of the
-  proposed 5.0 surface; preview adopters switch on this reason payload directly.
+  5.x surface; adopters switch on this reason payload directly.
 - `ReachabilityCheckExecutionPolicy` — `RequestExecutionPolicy` that
   consults a `NetworkMonitoring` source and short-circuits requests
   when the path is `.unsatisfied`. `.requiresConnection` waits up to
@@ -355,7 +349,7 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   request-ID invariant.
 - `RequestPriority` and network-condition request controls — additional
   platform mappings may be added while preserving current defaults.
-- `NetworkConfiguration` response buffering — the planned 5.0 baseline caps inline
+- `NetworkConfiguration` response buffering — the 5.0 baseline caps inline
   response collection at 5 MiB in `safeDefaults` and the `advanced` preset;
   explicit nil limits remain the opt-out.
 - `NetworkConfiguration.init(...)` — the direct 32-parameter public
@@ -385,23 +379,20 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 
 ## Version Pinning Guidance
 
-Released applications should consume the tagged 4.x line:
+Applications using only Stable API may consume the tagged 5.x line:
 
 ```swift
-.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMajor(from: "4.0.0"))
+.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMajor(from: "5.0.0"))
 ```
 
-To evaluate the source-breaking 5.0 preview, opt into `main` explicitly and pin
-a specific revision in CI when reproducibility matters:
+Applications using Provisionally Stable API should prefer a minor-bound range:
 
 ```swift
-.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", branch: "main")
+.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "5.0.0"))
 ```
 
-The preview has no SemVer compatibility guarantee. After `5.0.0` is tagged,
-applications that use Provisionally Stable APIs should prefer
-`.upToNextMinor(from:)`; applications that exclusively use the Stable ledger
-may choose `.upToNextMajor(from:)`.
+Pin the exact `5.0.0` version when a reproducible release build must not accept
+any dependency update.
 
 ## Public Declaration Ledger
 
@@ -409,7 +400,7 @@ The docs-contract gate extracts public symbols from Swift symbol graphs and
 compares them with `Scripts/symbols/*.allowlist`. That catches nested public
 types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
-planned 5.x release line.
+5.x release line.
 
 The machine-checked snapshot currently partitions all 1,208 declarations into
 305 Stable consumer declarations, 870 Provisionally Stable consumer
@@ -613,8 +604,7 @@ audits against external `@_spi` consumers, and Issues that report
 this section. Specifically:
 
 - **Build errors** after a minor bump are expected and not regressions.
-- **Pin the current preview to an exact commit revision** if you import
-  `@_spi`. After 5.0.0 is released, pin its exact tag; a moving branch or
+- **Pin an exact released tag** if you import `@_spi`; a moving branch or
   `.upToNextMinor` is *not* tight enough.
 - **Treat `@_spi` upgrades as code-level reviews** — diff the SPI
   surface in `Sources/InnoNetwork/...` and re-run your generator.
@@ -709,7 +699,7 @@ requires `@_spi` import.
   `NetworkError` should add `@unknown default` to keep their code
   forward-compatible across minor bumps.
 - `NetworkError.errorDescription` localization keys are intended to be a
-  provisionally stable behaviour contract after 5.0.0. The package ships the
+  Provisionally Stable behaviour contract in 5.x. The package ships the
   English catalogue;
   applications own end-user localization. Existing key meanings are not
   repurposed without a changelog entry.

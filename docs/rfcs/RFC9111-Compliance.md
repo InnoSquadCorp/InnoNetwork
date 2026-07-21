@@ -2,7 +2,7 @@
 
 This RFC pins the exact subset of [RFC 9111: HTTP Caching](https://www.rfc-editor.org/rfc/rfc9111)
 that `InnoNetworkPersistentCache` and the in-memory `ResponseCachePolicy`
-honour in the unreleased 5.0 preview on `main`. The intent is to give operators a single sheet
+honour in the released 5.x contract. The intent is to give operators a single sheet
 to reason about cache-driven behavior without re-reading the executor or
 the cache actor.
 
@@ -10,10 +10,10 @@ the cache actor.
 
 The cache module always reads requests and responses through the
 `ResponseCacheKey` / `CachedResponse` value types; this matrix maps RFC
-9111 directives to whether the planned 5.0 line consumes, persists, or ignores
+9111 directives to whether the 5.x line consumes, persists, or ignores
 them.
 
-| RFC 9111 directive / header | Status | Behavior in the 5.0 preview |
+| RFC 9111 directive / header | Status | Behavior in 5.x |
 | --- | --- | --- |
 | `Cache-Control: no-store` (request and response) | ✅ Honored | Skips writes, invalidates an existing key. Applied in `RequestExecutor.storeCacheIfNeeded`. When the policy is wrapped via `ResponseCachePolicy.rfc9111Compliant(wrapping:)`, the directive additionally suppresses cache reads against an entry that was somehow persisted before the wrap (defence in depth). |
 | `Cache-Control: no-cache` | ✅ Honored | Stored but flagged as `requiresRevalidation`; the next read forces conditional revalidation. |
@@ -31,7 +31,7 @@ them.
 | `Set-Cookie` | ✅ Honored | Refused by default (`storesSetCookieResponses = false`); operators can opt in. |
 | `Authorization` (request key) | ✅ Honored | Refused by default (`storesAuthenticatedResponses = false`). Even after opt-in, storage requires `Cache-Control: public`, `must-revalidate`, or `s-maxage` per RFC 9111 §3.5. |
 | `ETag` | ✅ Honored | Captured for conditional revalidation via `If-None-Match`. |
-| `Last-Modified` | ⚠️ Adapter-only freshness / partial revalidation | When `max-age` and `Expires` are absent, `ResponseCachePolicy.rfc9111Compliant(wrapping:)` applies the RFC 9111 §4.2.2 10% heuristic freshness calculation capped at 24 hours. Conditional revalidation in the 5.0 preview still keys on `If-None-Match` rather than `If-Modified-Since`. |
+| `Last-Modified` | ⚠️ Adapter-only freshness / partial revalidation | When `max-age` and `Expires` are absent, `ResponseCachePolicy.rfc9111Compliant(wrapping:)` applies the RFC 9111 §4.2.2 10% heuristic freshness calculation capped at 24 hours. Conditional revalidation in 5.x still keys on `If-None-Match` rather than `If-Modified-Since`. |
 | `Age` | ❌ Not emitted | The cache does not synthesize an `Age` header on cached responses. |
 
 ## Unsafe Method Invalidation
@@ -42,12 +42,12 @@ InnoNetwork applies that rule in `RequestExecutor` after refresh-token
 replay has been decided and before response interceptors or status
 validation run:
 
-| Trigger | Status | Behavior in the 5.0 preview |
+| Trigger | Status | Behavior in 5.x |
 | --- | --- | --- |
 | `POST`, `PUT`, `PATCH`, `DELETE`, or any safety-unknown method with a `2xx` / `3xx` origin response | ✅ Honored | Calls `ResponseCache.invalidateTargetURI(_:)` for the normalized target URI when `responseCachePolicy.allowsCacheWrite` is true. |
 | Unsafe method with `4xx` / `5xx` response or transport failure | ✅ Preserved | Existing cache entries are kept. |
 | `.disabled` / `.networkOnly` cache policy | ✅ Preserved | Cache metadata stays untouched, matching the policy contract. |
-| `Location` / `Content-Location` candidate URI invalidation | ❌ Not consumed | RFC 9111 marks these invalidations as MAY; the 5.0 preview limits the implementation to the mandatory target URI rule. |
+| `Location` / `Content-Location` candidate URI invalidation | ❌ Not consumed | RFC 9111 marks these invalidations as MAY; 5.x limits the implementation to the mandatory target URI rule. |
 
 ## Directive-Aware Adapter (`rfc9111Compliant(wrapping:)`)
 
@@ -88,7 +88,7 @@ Notable exclusions:
 - `206 Partial Content` is not stored. Range-aware caching is out of scope.
 - `307 Temporary Redirect` is not stored even though it is technically
   cacheable when paired with `Cache-Control: max-age`. Storing it would
-  silently change observed redirect behaviour, so the 5.0 preview refuses
+  silently change observed redirect behaviour, so 5.x refuses
   the cache write.
 
 ## Eviction and Privacy

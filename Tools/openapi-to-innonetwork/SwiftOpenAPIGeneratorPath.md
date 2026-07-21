@@ -1,6 +1,6 @@
-# Apple swift-openapi-generator integration (5.0 preview)
+# Apple swift-openapi-generator integration (5.x)
 
-The unreleased InnoNetwork 5.0 preview on `main` provides two OpenAPI runtime
+InnoNetwork 5.x provides two OpenAPI runtime
 paths. They are complementary, but they do not provide the same execution
 behavior. Choose the entry point whose types your application already owns.
 

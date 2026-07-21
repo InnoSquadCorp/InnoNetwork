@@ -7,8 +7,7 @@ Versioning.
 
 ## [Unreleased]
 
-`main` is the source-breaking 5.0 preview. These changes have not been tagged
-or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
+## [5.0.0] - 2026-07-21
 
 ### Breaking
 
@@ -154,7 +153,7 @@ or released as `5.0.0`; `4.0.0` remains the latest tagged stable release.
 
 See [`docs/Migration-5.0.0.md`](docs/Migration-5.0.0.md) for before/after
 examples and [`docs/releases/5.0.0.md`](docs/releases/5.0.0.md) for the
-draft release summary.
+release summary.
 
 ### Added
 
@@ -408,7 +407,7 @@ draft release summary.
 - External WebSocket shutdown waits for already-admitted manager callbacks;
   reentrant shutdown from one of those callbacks initiates teardown and returns
   so a later external call can await the full boundary.
-- Guarded benchmarks build in release mode, and the 5.0 preview prepares an
+- Guarded benchmarks build in release mode, and the 5.0 release establishes an
   explicit API, migration, macro-trait, and release-integrity contract.
 - Hosted benchmark baselines are recalibrated from a complete release-mode
   artifact after the systematic shift was confirmed across three successful

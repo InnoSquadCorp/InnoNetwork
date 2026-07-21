@@ -1,17 +1,16 @@
 # Code Generation for InnoNetwork
 
 When you have more than ~30 endpoints, hand-rolling `APIDefinition` structs
-can become the bottleneck. The unreleased 5.0 preview on `main` supports three
+can become the bottleneck. The released 5.x contract supports three
 distinct OpenAPI integration paths; choose based on the generated type shape
 and whether the request must use the full InnoNetwork execution pipeline.
-`4.0.0` remains the latest tagged stable release.
 
 ## Choose an integration path
 
 | Scenario | Recommendation | Runtime behavior |
 | --- | --- | --- |
 | 5–30 endpoints, frequent ad-hoc tweaks | Hand-write `APIDefinition` structs or `EndpointBuilder` calls. | Full `DefaultNetworkClient` pipeline. |
-| A narrow OpenAPI 3 subset is sufficient and you want generated `APIDefinition` types | Use `Tools/openapi-to-innonetwork` (5.x preview). | Generated requests use the full pipeline. |
+| A narrow OpenAPI 3 subset is sufficient and you want generated `APIDefinition` types | Use the provisional `Tools/openapi-to-innonetwork` tool. | Generated requests use the full pipeline. |
 | Generated or hand-written metadata can conform to `OpenAPIRestOperation` | Wrap the operation in `OpenAPIRequest` from `InnoNetworkOpenAPI`. | Full retry, interceptor, cache, trust, and observability pipeline. |
 | An `apple/swift-openapi-generator` `Client` is already the application entry point | Supply `InnoNetworkClientTransport` from `InnoNetworkOpenAPI`. | Thin caller-owned `URLSession` transport only; no InnoNetwork retry, refresh, interceptor, cache, coalescing, circuit-breaker, signing, or trust pipeline. |
 | Custom generated serialization upstream of `APIDefinition` | Use the `@_spi(GeneratedClientSupport)` SPI surface. | Full pipeline through a best-effort SPI contract. |
@@ -19,7 +18,7 @@ and whether the request must use the full InnoNetwork execution pipeline.
 
 ## `Tools/openapi-to-innonetwork`
 
-The 5.x preview tool accepts JSON or YAML input, emits Codable schema structs
+The provisional 5.x tool accepts JSON or YAML input, emits Codable schema structs
 for `components.schemas`, and wires typed `Parameter` / `APIResponse` aliases
 when operations use `$ref`. It explicitly emits
 `sessionAuthentication: SessionAuthentication { .anonymous }` for every

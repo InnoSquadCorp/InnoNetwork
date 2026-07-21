@@ -1,7 +1,6 @@
 # Policy Interactions
 
-This page documents the policy order in the unreleased 5.0 preview on `main`.
-It describes the planned 5.0 contract, not a tagged release. Use it when
+This page documents the policy order in the released 5.x contract. Use it when
 combining retry, auth refresh, late request signing, response cache,
 coalescing, circuit breaker, redirect handling, and custom execution policies.
 
@@ -50,7 +49,7 @@ sequenceDiagram
 
 ## Interaction Matrix
 
-| Scenario | 5.0 preview behavior |
+| Scenario | 5.x behavior |
 | --- | --- |
 | Circuit open | Request fails before transport and is considered by the retry policy like any other `NetworkError`. |
 | 401 with refresh policy | The current token is applied after request interceptors; one refresh replay uses the fully adapted request with the new token. |

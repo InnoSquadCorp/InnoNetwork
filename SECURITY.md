@@ -18,8 +18,8 @@ request before the maintainers have acknowledged the report.
 
 Whichever channel you use, please include:
 
-- affected module and version (e.g. `InnoNetworkPersistentCache @ 4.0.0`, or
-  `main` plus the tested commit revision for the 5.0 preview)
+- affected module and version (e.g. `InnoNetworkPersistentCache @ 5.0.0`, or
+  `main` plus the tested commit revision for an unreleased fix)
 - reproduction steps (minimal failing case if possible)
 - expected impact and threat model (confidentiality / integrity /
   availability, attacker preconditions)
@@ -29,9 +29,9 @@ Whichever channel you use, please include:
 
 ## Supported Versions
 
-- `4.x` is the actively supported tagged public release line.
-- The unreleased 5.0 preview on `main` is hardened before release, but it is
-  not yet a tagged support line and carries no SemVer compatibility promise.
+- `5.x` is the actively supported tagged public release line.
+- `4.x` receives no further routine maintenance after the 5.0 compatibility
+  reset; security reports are still assessed according to impact.
 - Earlier release lines are unsupported.
 
 ## Disclosure

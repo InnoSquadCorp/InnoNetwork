@@ -1,6 +1,6 @@
 # Migration Guide: 5.0.0
 
-This guide describes the unreleased 5.0 draft. There is no `5.0.0` tag yet.
+This guide describes the released 5.0.0 compatibility reset.
 
 InnoNetwork 5.0 makes endpoint authentication, request identity, signing,
 transport admission, and configuration composition explicit. The changes
@@ -896,15 +896,13 @@ Consumers that do not use macros can disable the default trait:
 ```swift
 .package(
     url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
-    branch: "main",
+    .upToNextMajor(from: "5.0.0"),
     traits: []
 )
 ```
 
-`5.0.0` is not published yet, so this branch dependency is a moving preview
-and must not be treated as a stable production pin. Replace the branch
-requirement with a version-based requirement only after the annotated release
-tag is published.
+Use `exact: "5.0.0"` instead when a reproducible release build must not accept
+any dependency update.
 
 This excludes the macro declaration and compiler plug-in products from the
 target graph and compilation. SwiftPM can still resolve or fetch the
@@ -1006,7 +1004,7 @@ stable failure categories instead of potentially sensitive error payload text.
 default rather than trying to identify sensitive custom header names. Its
 secure error path logs the same stable failure category used by events.
 
-The 5.0 preview removes `CurlCommandOptions.redactedHeaderNames`,
+The 5.0 release removes `CurlCommandOptions.redactedHeaderNames`,
 `CurlCommandOptions.defaultRedactedHeaderNames`, and
 `NetworkLoggingOptions.sensitiveHeaderNames`. Replace selective deny-lists with
 the fail-closed defaults. A controlled local diagnostic that truly needs raw
@@ -1042,9 +1040,9 @@ fails instead of producing an advisory skip. Dependency review is also
 blocking; the repository dependency graph must be enabled and
 dependency-policy findings must be resolved.
 
-The 5.0 release notes begin with `<!-- release-status: draft -->` while this
-migration is under development. Do not tag from a draft. Release publication
-requires the exact top-of-file `<!-- release-status: ready -->` marker in
+During development, the 5.0 release notes began with
+`<!-- release-status: draft -->`. Release publication requires the exact
+top-of-file `<!-- release-status: ready -->` marker in
 addition to the remaining release checks. The ready marker is not a standalone
 switch: README, API stability, CHANGELOG, security support, the public-symbol
 baseline, this guide, release-note status, and release date must move to the

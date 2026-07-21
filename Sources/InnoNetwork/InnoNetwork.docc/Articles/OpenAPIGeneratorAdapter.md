@@ -43,10 +43,9 @@ struct UsersGeneratedClient: Sendable {
 
 Use the SPI path only when a generated operation owns serialization or decoding
 that does not fit `Encodable` / `Decodable`. The package must explicitly import
-the SPI and pin a reviewed `main` revision while 5.0 remains unreleased because
-this hook is not part of the draft public contract. Do not ship a moving branch
-dependency in production; SPI remains outside SemVer guarantees even after a
-tagged release.
+the SPI and pin an exact released tag because this hook is not part of the
+public contract. Do not ship a moving branch dependency in production; SPI
+remains outside SemVer guarantees.
 
 ```swift
 import Foundation

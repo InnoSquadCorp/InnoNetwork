@@ -165,7 +165,7 @@ resume data in persistence, and transitions the task to `.paused`. `resume(_:)` 
 the task with the saved resume data and clears the stored resume payload once the new
 system task is created.
 
-The InnoNetwork 5.0 preview treats resume data as best-effort durable state. Process termination
+InnoNetwork 5.x treats resume data as best-effort durable state. Process termination
 after `pause(_:)` completes can resume from persisted `resumeData` on the next launch.
 Server-side invalidation, OS resume-data incompatibility, or cache/range-policy changes
 can still force a fresh download from byte 0.

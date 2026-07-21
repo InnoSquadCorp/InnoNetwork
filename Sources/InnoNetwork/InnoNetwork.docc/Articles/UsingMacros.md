@@ -183,22 +183,21 @@ types through the core endpoint contract.
 ## Disabling macro support
 
 Consumers that never use macros can disable the default trait on the package
-dependency. The following dependency tracks the unreleased 5.0 preview because
-the current macro API has not been tagged:
+dependency:
 
 ```swift
 dependencies: [
     .package(
         url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
-        branch: "main",
+        .upToNextMajor(from: "5.0.0"),
         traits: []
     )
 ]
 ```
 
-Do not ship a moving `main` dependency in production. Pin a reviewed revision
-while evaluating the preview, or use the tagged 4.x line until `5.0.0` is
-released. The 4.x package does not expose the 5.0 macro contract shown here.
+Use `exact: "5.0.0"` when a reproducible release build must not accept any
+dependency update. The 4.x package does not expose the 5.0 macro contract
+shown here.
 
 With `traits: []`, the macro declaration is absent and the compiler plug-in
 products are excluded from the target graph and compilation. SwiftPM still

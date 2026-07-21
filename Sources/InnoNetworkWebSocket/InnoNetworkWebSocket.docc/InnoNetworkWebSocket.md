@@ -31,8 +31,8 @@ in the core module.
 
 ### Observing heartbeat attempts
 
-The unreleased 5.0 preview emits a `.ping` event before each heartbeat or
-manual ping attempt, as planned for the future 5.x contract. Pair it with
+The 5.x contract emits a `.ping` event before each heartbeat or manual ping
+attempt. Pair it with
 `.pong` and `.error(.pingTimeout)` to track heartbeat success, timeout, and
 approximate round-trip timing in application code.
 
