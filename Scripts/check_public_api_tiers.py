@@ -73,13 +73,50 @@ def load_budgets(path: Path) -> dict[str, int]:
     return budgets
 
 
+def validate_documented_counts(repo_root: Path, counts: dict[str, int]) -> None:
+    api_stability = repo_root / "API_STABILITY.md"
+    symbols_readme = repo_root / "Scripts" / "symbols" / "README.md"
+    for path in (api_stability, symbols_readme):
+        if not path.is_file():
+            fail(f"required public API contract document is missing: {path}")
+
+    stable = counts["STABLE_CONSUMER"]
+    provisional = counts["PROVISIONAL"]
+    spi = counts["SPI"]
+    total = counts["TOTAL"]
+
+    expected_ledger = (
+        f"The machine-checked snapshot currently partitions all {total:,} declarations into\n"
+        f"{stable:,} Stable consumer declarations, {provisional:,} Provisionally Stable consumer\n"
+        f"declarations, and {spi:,} opt-in SPI declarations."
+    )
+    if expected_ledger not in api_stability.read_text():
+        fail(
+            "API_STABILITY.md public declaration ledger does not match the "
+            f"machine inventory ({total:,} = {stable:,} stable + "
+            f"{provisional:,} provisional + {spi:,} SPI)"
+        )
+
+    symbols_snapshot = symbols_readme.read_text()
+    expected_rows = (
+        f"| Stable consumer API | {stable:,} |",
+        f"| Provisionally Stable consumer API | {provisional:,} |",
+        f"| `@_spi(GeneratedClientSupport)` | {spi:,} |",
+        f"| **Total** | **{total:,}** |",
+    )
+    for row in expected_rows:
+        if row not in symbols_snapshot:
+            fail(f"Scripts/symbols/README.md is missing current tier row: {row}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "repo_root", nargs="?", type=Path, default=Path(__file__).resolve().parent.parent
     )
     args = parser.parse_args()
-    symbols_dir = args.repo_root.resolve() / "Scripts" / "symbols"
+    repo_root = args.repo_root.resolve()
+    symbols_dir = repo_root / "Scripts" / "symbols"
 
     allowlists = sorted(symbols_dir.glob("*.allowlist"))
     if not allowlists:
@@ -113,6 +150,8 @@ def main() -> None:
     for tier, actual in counts.items():
         if actual > budgets[tier]:
             fail(f"{tier} exports {actual} declarations (budget: {budgets[tier]})")
+
+    validate_documented_counts(repo_root, counts)
 
     print(
         "public-api-tiers: OK "

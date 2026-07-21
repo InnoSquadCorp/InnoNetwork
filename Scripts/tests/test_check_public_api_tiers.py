@@ -23,6 +23,17 @@ def write_fixture(root: Path) -> None:
     (symbols / "tier-budgets.tsv").write_text(
         "STABLE_CONSUMER\t1\nPROVISIONAL\t1\nSPI\t1\nTOTAL\t3\n"
     )
+    (root / "API_STABILITY.md").write_text(
+        "The machine-checked snapshot currently partitions all 3 declarations into\n"
+        "1 Stable consumer declarations, 1 Provisionally Stable consumer\n"
+        "declarations, and 1 opt-in SPI declarations.\n"
+    )
+    (symbols / "README.md").write_text(
+        "| Stable consumer API | 1 |\n"
+        "| Provisionally Stable consumer API | 1 |\n"
+        "| `@_spi(GeneratedClientSupport)` | 1 |\n"
+        "| **Total** | **3** |\n"
+    )
 
 
 def run(root: Path) -> subprocess.CompletedProcess[str]:
@@ -70,5 +81,30 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     result = run(fixture)
     assert result.returncode != 0
     assert "PROVISIONAL exports 1 declarations" in result.stderr
+
+with tempfile.TemporaryDirectory() as temporary_directory:
+    fixture = Path(temporary_directory)
+    write_fixture(fixture)
+    (fixture / "API_STABILITY.md").write_text(
+        "The machine-checked snapshot currently partitions all 4 declarations into\n"
+        "1 Stable consumer declarations, 2 Provisionally Stable consumer\n"
+        "declarations, and 1 opt-in SPI declarations.\n"
+    )
+    result = run(fixture)
+    assert result.returncode != 0
+    assert "public declaration ledger does not match" in result.stderr
+
+with tempfile.TemporaryDirectory() as temporary_directory:
+    fixture = Path(temporary_directory)
+    write_fixture(fixture)
+    (fixture / "Scripts" / "symbols" / "README.md").write_text(
+        "| Stable consumer API | 1 |\n"
+        "| Provisionally Stable consumer API | 2 |\n"
+        "| `@_spi(GeneratedClientSupport)` | 1 |\n"
+        "| **Total** | **4** |\n"
+    )
+    result = run(fixture)
+    assert result.returncode != 0
+    assert "missing current tier row" in result.stderr
 
 print("public-api-tier fixtures: OK")
