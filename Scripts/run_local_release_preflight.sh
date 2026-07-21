@@ -104,6 +104,7 @@ run_release_script_fixtures() {
   bash Scripts/tests/test_validate_release_ref.sh
   bash Scripts/tests/test_validate_release_candidate.sh
   bash Scripts/tests/test_generate_sbom.sh
+  bash Scripts/tests/test_prepare_release_artifacts.sh
   bash Scripts/tests/test_generate_dependency_snapshot.sh
   bash Scripts/tests/test_check_guarded_benchmark_contract.sh
   bash Scripts/tests/test_run_same_runner_benchmarks.sh

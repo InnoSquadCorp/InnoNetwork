@@ -59,6 +59,15 @@ def main() -> None:
         ),
         "release-ref validation",
     )
+    expect_failure(
+        validator,
+        workflow.replace(
+            "        run: bash Scripts/prepare_release_artifacts.sh .build/release-artifacts\n",
+            "",
+            1,
+        ),
+        "exact release artifact manifest",
+    )
     publish_condition = (
         "    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')\n"
     )
