@@ -912,6 +912,13 @@ manifest-level `swift-syntax` dependency. Traits are unified per package across
 the resolved graph, so every dependency path must keep `Macros` disabled for a
 core-only build.
 
+Tuist adopters using XcodeProj-based dependency integration must use a release
+that maps SwiftPM package traits. InnoNetwork's adopter smoke is verified with
+Tuist 4.202.5; Tuist 4.67.2 drops the default `Macros` trait while generating
+the dependency project and fails at the endpoint with
+`unknown attribute 'APIDefinition'`. Upgrade Tuist or temporarily use Xcode's
+native SwiftPM integration instead of adding a second macro import/product.
+
 ## Add OpenAPI auth metadata and honor no-body responses
 
 Every `OpenAPIRestOperation` now has the same explicit auth witness as a manual
@@ -1088,6 +1095,8 @@ tagged Git tree and fails closed on a mixed transition.
   `.completeUnlessOpen` was the persistent-cache default.
 - [ ] If using `traits: []`, verify no other dependency path re-enables the
   default `Macros` trait.
+- [ ] For Tuist-generated projects, use a package-trait-aware Tuist release and
+  compile at least one real `@APIDefinition` endpoint in the app graph.
 - [ ] Run the required macOS/iOS/tvOS/watchOS/visionOS build matrix and resolve
   blocking dependency-review findings before changing release status to
   `ready`.

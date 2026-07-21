@@ -309,6 +309,12 @@ Traits are unified per package across the resolved graph, so every dependency
 path must keep `Macros` disabled; another dependency that enables the default
 trait re-enables it for that package instance.
 
+Tuist XcodeProj integration must include SwiftPM package-trait support. The
+5.0 adopter smoke is verified with Tuist 4.202.5; Tuist 4.67.2 ignores the
+conditional macro dependency and reports `unknown attribute 'APIDefinition'`.
+Upgrade Tuist (or use Xcode's native SwiftPM integration) before migrating a
+Tuist-generated project.
+
 ### Advanced Surfaces
 
 Use these after the first request path is stable:

@@ -9,6 +9,18 @@ def fail(message: str) -> None:
     raise SystemExit(message)
 
 
+def dependency_name_and_condition(dependency: dict) -> tuple[str | None, dict | None]:
+    for kind in ("target", "product"):
+        value = dependency.get(kind)
+        if not isinstance(value, list) or not value or not isinstance(value[0], str):
+            continue
+
+        condition = value[-1] if isinstance(value[-1], dict) else None
+        return value[0], condition
+
+    return None, None
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         fail("Usage: check_macro_trait_manifest.py <package-dump.json>")
@@ -89,6 +101,53 @@ def main() -> None:
             "The InnoNetworkMacros dependency must remain available on all "
             "declared platforms."
         )
+
+    macro_test_targets = [
+        target
+        for target in targets
+        if isinstance(target, dict) and target.get("name") == "InnoNetworkMacroTests"
+    ]
+    if len(macro_test_targets) != 1:
+        fail("The package must contain exactly one InnoNetworkMacroTests target.")
+
+    macro_test_dependencies = macro_test_targets[0].get("dependencies")
+    if not isinstance(macro_test_dependencies, list):
+        fail("InnoNetworkMacroTests must contain a dependencies array.")
+
+    expected_host_dependencies = {
+        "InnoNetworkMacros",
+        "SwiftDiagnostics",
+        "SwiftSyntaxMacros",
+        "SwiftSyntaxMacrosTestSupport",
+    }
+    host_dependency_conditions: dict[str, dict | None] = {}
+    for dependency in macro_test_dependencies:
+        if not isinstance(dependency, dict):
+            continue
+        name, condition = dependency_name_and_condition(dependency)
+        if name not in expected_host_dependencies:
+            continue
+        if name in host_dependency_conditions:
+            fail(f"Duplicate InnoNetworkMacroTests dependency: {name}")
+        host_dependency_conditions[name] = condition
+
+    missing_host_dependencies = expected_host_dependencies - host_dependency_conditions.keys()
+    if missing_host_dependencies:
+        fail(
+            "InnoNetworkMacroTests is missing host-only dependencies: "
+            + ", ".join(sorted(missing_host_dependencies))
+        )
+
+    for name in sorted(expected_host_dependencies):
+        condition = host_dependency_conditions[name]
+        if not isinstance(condition, dict):
+            fail(f"The {name} macro-test dependency must have a host condition.")
+        if condition.get("traits") != ["Macros"]:
+            fail(f"The {name} macro-test dependency must be conditioned on Macros.")
+        if condition.get("platformNames") != ["macos"]:
+            fail(
+                f"The {name} macro-test dependency must remain constrained to macOS."
+            )
 
 
 if __name__ == "__main__":

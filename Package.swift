@@ -314,22 +314,22 @@ let package = Package(
                 "InnoNetworkTestSupport",
                 .target(
                     name: "InnoNetworkMacros",
-                    condition: .when(traits: ["Macros"])
+                    condition: .when(platforms: [.macOS], traits: ["Macros"])
                 ),
                 .product(
                     name: "SwiftDiagnostics",
                     package: "swift-syntax",
-                    condition: .when(traits: ["Macros"])
+                    condition: .when(platforms: [.macOS], traits: ["Macros"])
                 ),
                 .product(
                     name: "SwiftSyntaxMacros",
                     package: "swift-syntax",
-                    condition: .when(traits: ["Macros"])
+                    condition: .when(platforms: [.macOS], traits: ["Macros"])
                 ),
                 .product(
                     name: "SwiftSyntaxMacrosTestSupport",
                     package: "swift-syntax",
-                    condition: .when(traits: ["Macros"])
+                    condition: .when(platforms: [.macOS], traits: ["Macros"])
                 ),
             ],
             path: "Tests/InnoNetworkMacroTests",
