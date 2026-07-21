@@ -16,6 +16,10 @@ fixture_files=(
   ".github/workflows/release.yml"
   "Scripts/run_local_release_preflight.sh"
   "docs/CI_DoC.md"
+  "Benchmarks/README.md"
+  "CHANGELOG.md"
+  "docs/RELEASE_POLICY.md"
+  "docs/releases/5.0.0.md"
 )
 
 make_fixture() {
@@ -74,6 +78,46 @@ if run_checker "$direct_declaration_root" \
 fi
 grep -Fq 'bypasses the guarded benchmark runner' \
   "$work_dir/direct-declaration.stderr"
+
+wrong_threshold_root="$work_dir/wrong-threshold"
+make_fixture "$wrong_threshold_root"
+python3 - "$wrong_threshold_root/Scripts/run_local_release_preflight.sh" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+source = path.read_text(encoding="utf-8")
+source = source.replace("--max-regression-percent 20", "--max-regression-percent 10")
+path.write_text(source, encoding="utf-8")
+PY
+if run_checker "$wrong_threshold_root" \
+  > "$work_dir/wrong-threshold.stdout" \
+  2> "$work_dir/wrong-threshold.stderr"; then
+  echo "Expected a stale guarded benchmark threshold to fail." >&2
+  exit 1
+fi
+grep -Fq 'must keep the guarded benchmark threshold at 20%' \
+  "$work_dir/wrong-threshold.stderr"
+
+stale_docs_root="$work_dir/stale-docs"
+make_fixture "$stale_docs_root"
+python3 - "$stale_docs_root/docs/RELEASE_POLICY.md" <<'PY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+source = path.read_text(encoding="utf-8")
+source = source.replace("same guard list and 20% threshold", "same guard list and 10% threshold")
+path.write_text(source, encoding="utf-8")
+PY
+if run_checker "$stale_docs_root" \
+  > "$work_dir/stale-docs.stdout" \
+  2> "$work_dir/stale-docs.stderr"; then
+  echo "Expected stale guarded benchmark documentation to fail." >&2
+  exit 1
+fi
+grep -Fq 'must document the guarded benchmark threshold as 20%' \
+  "$work_dir/stale-docs.stderr"
 
 missing_baseline_root="$work_dir/missing-baseline"
 make_fixture "$missing_baseline_root"

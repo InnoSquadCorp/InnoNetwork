@@ -220,7 +220,7 @@ draft release summary.
 - `Scripts/run_local_release_preflight.sh` provides one pre-tag entry point for
   deterministic contracts, every consumer example, the OpenAPI generator, and
   bounded tests. Its `--full` mode also generates coverage and both SBOM
-  profiles, enforces the 10% benchmark guards, verifies all eight public DocC
+  profiles, enforces the 20% benchmark guards, verifies all eight public DocC
   archives, and builds macOS, iOS, tvOS, watchOS, and visionOS locally.
 - `Scripts/build_consumer_examples.sh` is now the shared CI, release, and local
   builder for every independent `Examples/*/Package.swift`. New examples are

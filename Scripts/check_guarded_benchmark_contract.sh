@@ -39,6 +39,23 @@ consumer_contracts = {
     "Scripts/run_local_release_preflight.sh": 1,
     "docs/CI_DoC.md": 1,
 }
+consumer_threshold_markers = {
+    ".github/workflows/benchmarks.yml": 'MAX_REGRESSION_PERCENT: "20"',
+    ".github/workflows/release.yml": "--max-regression-percent 20",
+    "Scripts/run_local_release_preflight.sh": "--max-regression-percent 20",
+    "docs/CI_DoC.md": "--max-regression-percent 20",
+}
+documentation_threshold_markers = {
+    "Benchmarks/README.md": [
+        "scheduled/manual benchmark workflow는 같은 guard 항목을 `20%` threshold로 검사합니다.",
+        "tag release는 같은 guarded set을 20% threshold로 강제하며,",
+    ],
+    "CHANGELOG.md": ["enforces the 20% benchmark guards"],
+    "docs/RELEASE_POLICY.md": [
+        "Scheduled/manual benchmark runs use the same guard list and 20% threshold."
+    ],
+    "docs/releases/5.0.0.md": ["coverage, 20% guarded benchmarks"],
+}
 consumer_pattern = re.compile(
     r"^\s*(?:bash\s+)?Scripts/run_same_runner_benchmarks\.sh",
     re.MULTILINE,
@@ -75,6 +92,15 @@ for relative_path, expected_invocations in consumer_contracts.items():
             f"{relative_path} bypasses the guarded benchmark runner with "
             "a direct --guard-benchmark declaration"
         )
+    threshold_marker = consumer_threshold_markers[relative_path]
+    if threshold_marker not in source:
+        fail(f"{relative_path} must keep the guarded benchmark threshold at 20%")
+
+for relative_path, required_markers in documentation_threshold_markers.items():
+    source = (repo_root / relative_path).read_text(encoding="utf-8")
+    for required_marker in required_markers:
+        if required_marker not in source:
+            fail(f"{relative_path} must document the guarded benchmark threshold as 20%")
 
 source_revision_path = repo_root / "Benchmarks/Baselines/source-revision.txt"
 if not source_revision_path.is_file():

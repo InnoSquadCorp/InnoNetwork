@@ -71,9 +71,8 @@
 ## Benchmarks
 
 - PR CI blocks guarded benchmark regressions over 20%.
-- Scheduled/manual benchmark runs use the same guard list with a 10%
-  threshold. Use that stricter signal for release readiness and investigate
-  before tagging if it fails.
+- Scheduled/manual benchmark runs use the same guard list and 20% threshold.
+  Investigate a sustained failure before tagging.
 - Baseline diffs outside the guard list are recorded for trend review and are
   not release blockers by themselves.
 

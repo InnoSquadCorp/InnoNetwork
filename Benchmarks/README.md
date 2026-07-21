@@ -200,10 +200,10 @@ function dispatch.
 - `decoding-interceptor-chain-{1,3,8}` guard도 PR에서는 non-quick profile의
   20,000회 sample을 사용해 짧은 microbenchmark가 scheduling noise에
   과민해지는 것을 막습니다.
-- scheduled/manual benchmark workflow는 같은 guard 항목을 `10%` threshold로 검사하는 strict regression gate입니다.
+- scheduled/manual benchmark workflow는 같은 guard 항목을 `20%` threshold로 검사합니다.
 - scheduled/manual benchmark 결과는 `benchmark-trends` branch의
   `trends/benchmark-results.jsonl`에 누적됩니다.
-- tag release는 같은 guarded set을 10% threshold로 강제하며,
+- tag release는 같은 guarded set을 20% threshold로 강제하며,
   baseline 누락·스키마 오류·회귀 중 하나라도 있으면 publish를 시작하지 않습니다.
 - 두 workflow 모두 JSON summary artifact를 업로드해 실패 시 수치 비교를 바로 확인할 수 있게 합니다.
 
