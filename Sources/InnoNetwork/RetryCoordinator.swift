@@ -3,6 +3,11 @@ import Foundation
 package struct RequestExecutionFailure: Error {
     let error: NetworkError
     let request: URLRequest?
+
+    package init(error: NetworkError, request: URLRequest?) {
+        self.error = error
+        self.request = request
+    }
 }
 
 

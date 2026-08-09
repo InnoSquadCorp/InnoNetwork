@@ -290,4 +290,26 @@ public struct NetworkRequestContext: Sendable {
             allowsURLCacheStorage: false
         )
     }
+
+    /// Returns an attempt-scoped copy while preserving the caller-owned
+    /// transport, metrics, redirect, and observer policy.
+    ///
+    /// Companion products use this to give every logical request a stable ID
+    /// across retries without rebuilding or weakening the original context.
+    package func replacingCorrelation(
+        requestID: UUID,
+        retryIndex: Int
+    ) -> NetworkRequestContext {
+        NetworkRequestContext(
+            requestID: requestID,
+            retryIndex: retryIndex,
+            metricsReporter: metricsReporter,
+            trustPolicy: trustPolicy,
+            eventObservers: eventObservers,
+            redirectPolicy: redirectPolicy,
+            allowsInsecureHTTP: allowsInsecureHTTP,
+            allowsAutomaticRedirects: allowsAutomaticRedirects,
+            allowsURLCacheStorage: allowsURLCacheStorage
+        )
+    }
 }
