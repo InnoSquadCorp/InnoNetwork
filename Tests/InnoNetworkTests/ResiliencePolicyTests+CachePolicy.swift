@@ -208,7 +208,7 @@ extension ResiliencePolicyTests {
 
     @Test("Unknown and differently cased successful methods invalidate the target URI")
     func customSuccessfulMethodsInvalidateTargetURI() async throws {
-        for method in ["PURGE", "options", "trace"] {
+        for method in ["PURGE", "purge", "trace"] {
             let cache = InMemoryResponseCache()
             let key = resilienceUserCacheKey()
             await cache.set(

@@ -56,16 +56,16 @@ extension ResiliencePolicyTests {
 
     @Test("Coalescing method allowlists preserve case-sensitive tokens")
     func coalescingMethodAllowlistIsCaseSensitive() throws {
-        var request = URLRequest(url: URL(string: "https://api.example.com/options")!)
-        request.httpMethod = "options"
+        var request = URLRequest(url: URL(string: "https://api.example.com/trace")!)
+        request.httpMethod = "trace"
 
-        let uppercasePolicy = RequestCoalescingPolicy(methods: ["OPTIONS"])
-        #expect(uppercasePolicy.methods == ["OPTIONS"])
+        let uppercasePolicy = RequestCoalescingPolicy(methods: ["TRACE"])
+        #expect(uppercasePolicy.methods == ["TRACE"])
         #expect(RequestDedupKey(request: request, policy: uppercasePolicy) == nil)
 
-        let lowercasePolicy = RequestCoalescingPolicy(methods: ["options"])
+        let lowercasePolicy = RequestCoalescingPolicy(methods: ["trace"])
         let key = try #require(RequestDedupKey(request: request, policy: lowercasePolicy))
-        #expect(key.method == "options")
+        #expect(key.method == "trace")
     }
 
     @Test("Coalescing keeps different Authorization headers separate")

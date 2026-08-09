@@ -43,6 +43,7 @@ struct DownloadRetryPersistenceTests {
 
         #expect(runtimeIdentifier == harness.stubTaskIdentifier)
         #expect(harness.stubSession.lastURL == sourceURL)
+        #expect(await waitForResumeCount(harness.stubTask, atLeast: 1))
         #expect(harness.stubTask.resumeCount == 1)
         #expect(await restored.state == .downloading)
         #expect(await restored.retryCount == 2)
