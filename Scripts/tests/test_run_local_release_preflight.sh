@@ -24,6 +24,7 @@ documentation-smoke
 consumer-examples
 openapi-generator
 bounded-tests
+apple-hls-conformance
 runtime-coverage
 macro-coverage
 guarded-benchmarks

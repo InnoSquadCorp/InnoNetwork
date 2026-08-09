@@ -2,9 +2,126 @@ import Foundation
 import InnoNetwork
 import InnoNetworkAuthAWS
 import InnoNetworkDownload
+import InnoNetworkHLS
+import InnoNetworkHLSAVFoundation
+import InnoNetworkHLSLive
 import InnoNetworkOpenAPI
 import InnoNetworkPersistentCache
 import InnoNetworkWebSocket
+
+private let smokeHLSResolver = PlaylistResolver()
+private let smokeHLSSelector = VariantSelector()
+private let smokeHLSDownloader = HLSDownloader()
+private let smokeHLSLiveClient = HLSLivePlaylistClient(
+    configuration: .advanced(
+        reload: HLSLiveReloadPack(
+            prefersBlockingReloads: true,
+            allowsDeltaUpdates: true
+        )
+    )
+)
+private let smokeHLSAssetSessionPack = HLSAssetDownloadSessionPack(
+    identifier: "com.example.innonetwork.doc-smoke.hls"
+)
+private let smokeHLSAssetSessionType = HLSAssetDownloadSession.self
+private let smokeHLSAssetLibraryType = HLSAssetDownloadLibrary.self
+private let smokeHLSFairPlaySessionType = HLSFairPlaySession.self
+private let smokeHLSFairPlayPersistentKeyWorkflowType =
+    HLSFairPlayPersistentKeyWorkflow.self
+private let smokeHLSFairPlayPersistentKeyConfiguration =
+    HLSFairPlayPersistentKeyConfiguration.advanced(
+        limits: HLSFairPlayPersistentKeyLimitPack()
+    )
+private let smokeHLSPlaybackHealthAnalyzerType =
+    HLSPlaybackHealthAnalyzer.self
+private let smokeHLSPlaybackHealthConfiguration =
+    HLSPlaybackHealthConfiguration.advanced(
+        thresholds: HLSPlaybackHealthThresholdPack(
+            observationWindow: 60
+        )
+    )
+private let smokeHLSConfiguration = HLSDownloadConfiguration.advanced(
+    storage: HLSStoragePack(
+        maximumTotalDownloadBytes: 4 * 1_024 * 1_024 * 1_024,
+        diskCapacityPolicy: .required(
+            minimumAvailableCapacity: 512 * 1_024 * 1_024
+        )
+    ),
+    variantSelectionPolicy: .maximumResolution(width: 1_920, height: 1_080),
+    transfer: HLSTransferPack(
+        maximumConcurrentResourceTransfers: 2,
+        retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 2)
+    )
+)
+private let smokeHLSRequestPolicy = HLSRequestPolicy(
+    eventObservers: [SmokeHLSRequestObserver()]
+) { request, context in
+    _ = (
+        context.requestID,
+        context.purpose,
+        context.resourceIndex,
+        context.retryIndex
+    )
+    return request
+}
+private let smokeHLSConfiguredResolver = PlaylistResolver(
+    session: .shared,
+    requestContext: NetworkRequestContext(),
+    requestPolicy: smokeHLSRequestPolicy
+)
+private let smokeHLSConfiguredDownloader = HLSDownloader(
+    session: .shared,
+    configuration: smokeHLSConfiguration,
+    requestContext: NetworkRequestContext(),
+    requestAdapter: { $0 }
+)
+private let smokeHLSOfflineConfiguration =
+    HLSOfflinePackageConfiguration.advanced(
+        storage: HLSOfflinePackageStoragePack(
+            diskCapacityPolicy: .disabled
+        ),
+        renditions: HLSOfflineRenditionPack(
+            audio: .preferredLanguages(["ko", "en"]),
+            video: .defaultOrFirst,
+            subtitles: .all,
+            includesIFrameTrickPlay: true
+        ),
+        transfer: HLSTransferPack(
+            maximumConcurrentResourceTransfers: 2
+        )
+    )
+private let smokeHLSOfflineDownloader = HLSOfflinePackageDownloader(
+    configuration: smokeHLSOfflineConfiguration
+)
+private let smokeHLSConfiguredOfflineDownloader =
+    HLSOfflinePackageDownloader(
+        session: .shared,
+        configuration: smokeHLSOfflineConfiguration,
+        requestPolicy: smokeHLSRequestPolicy
+    )
+private let smokeHLSExternalResourceResolver =
+    HLSExternalResourceResolver(
+        configuration: HLSExternalResourcePack(
+            maximumSessionDataBytes: 256 * 1_024,
+            maximumInterstitialAssetCount: 100
+        )
+    )
+
+private struct SmokeHLSRequestObserver: HLSRequestEventObserving {
+    func hlsRequestDidEmit(_ event: HLSRequestEvent) async {
+        switch event {
+        case .requestStarted(let context):
+            _ = context.purpose
+        case .responseReceived(let context, let statusCode):
+            _ = (context.requestID, statusCode)
+        case .requestFailed(let context, let failure):
+            switch failure {
+            case .adaptation, .urlAdmission, .transport, .cancellation:
+                _ = context.retryIndex
+            }
+        }
+    }
+}
 
 private struct SmokeUser: Decodable, Sendable {
     let id: Int
@@ -159,6 +276,121 @@ private func compileWebSocketArticleExamples() async {
     await manager.disconnect(task, closeCode: .custom(4001))
 }
 
+private func compileHLSArticleExamples() async throws {
+    let sourceURL = URL(string: "https://media.example/master.m3u8")!
+    let inspection = smokeHLSResolver.inspect(
+        """
+        #EXTM3U
+        #EXT-X-ENDLIST
+        """,
+        relativeTo: sourceURL
+    )
+    _ = inspection.isValid
+    _ = inspection.canDownloadAsSingleFile
+    _ = inspection.canCreateOfflinePackage
+    _ = inspection.diagnostics.map {
+        ($0.code, $0.severity, $0.scope, $0.lineNumber)
+    }
+    let secondEdition = try smokeHLSResolver.resolve(
+        """
+        #EXTM3U
+        #EXT-X-VERSION:12
+        #EXT-X-STREAM-INF:BANDWIDTH=1000,VIDEO-RANGE=PQ,HDCP-LEVEL=TYPE-1,ALLOWED-CPC="com.example.drm:HW",REQ-VIDEO-LAYOUT="CH-STEREO/PROJ-HEQU"
+        hdr.m3u8
+        """,
+        relativeTo: sourceURL
+    )
+    if let variant = secondEdition.variants.first {
+        _ = variant.hdcpLevel == .type1
+        _ = variant.allowedContentProtectionConfigurations
+        _ = variant.requiredVideoLayouts
+    }
+    let mediaMetadata = try smokeHLSResolver.resolve(
+        """
+        #EXTM3U
+        #EXT-X-TARGETDURATION:4
+        #EXT-X-MEDIA-SEQUENCE:20
+        #EXT-X-DISCONTINUITY-SEQUENCE:3
+        #EXT-X-PLAYLIST-TYPE:VOD
+        #EXT-X-BITRATE:900
+        #EXTINF:4,
+        segment.ts
+        #EXT-X-ENDLIST
+        """,
+        relativeTo: sourceURL
+    )
+    _ = (
+        mediaMetadata.targetDuration,
+        mediaMetadata.mediaSequence,
+        mediaMetadata.discontinuitySequence,
+        mediaMetadata.mediaPlaylistType,
+        mediaMetadata.segmentBitrates
+    )
+    let destinationURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("video.ts")
+    let downloader = HLSDownloader(configuration: smokeHLSConfiguration)
+    let preparation = try await downloader.prepare(sourceURL: sourceURL)
+    _ = preparation.resourceTransferCount
+
+    for await event in downloader.download(
+        sourceURL: sourceURL,
+        destinationURL: destinationURL
+    ) {
+        switch event {
+        case .progress(let progress):
+            if let percent = progress.percentCompleted {
+                _ = percent
+            } else {
+                _ = progress.totalBytesWritten
+            }
+        case .completed(let fileURL):
+            _ = fileURL
+        case .failed(let error):
+            _ = error.code
+        case .cancelled:
+            break
+        }
+    }
+
+    _ = try await downloader.downloadFile(
+        sourceURL: sourceURL,
+        destinationURL: destinationURL
+    )
+    let receipt = try await downloader.downloadReceipt(
+        sourceURL: sourceURL,
+        destinationURL:
+            destinationURL
+            .appendingPathExtension("receipt")
+    )
+    _ = receipt.resumedResourceTransferCount
+
+    let packagePreparation =
+        try await smokeHLSOfflineDownloader.prepare(
+            sourceURL: sourceURL
+        )
+    _ = packagePreparation.tracks
+    _ = packagePreparation.selectedIFrameVariant
+    let packageDirectoryURL =
+        FileManager.default.temporaryDirectory
+        .appendingPathComponent("video.hlspkg")
+    for await event in smokeHLSOfflineDownloader.download(
+        sourceURL: sourceURL,
+        destinationDirectoryURL: packageDirectoryURL
+    ) {
+        switch event {
+        case .progress(let progress):
+            _ = progress.fractionCompleted
+        case .completed(let receipt):
+            _ = receipt.entryPlaylistURL
+            _ = receipt.selectedIFrameVariant
+        case .failed(let error):
+            _ = error.code
+        case .cancelled:
+            break
+        }
+    }
+}
+
 private func runDocSmoke() {
     let client = DefaultNetworkClient(
         baseURL: URL(string: "https://api.example.com/v1")!
@@ -230,5 +462,6 @@ private func runDocSmoke() {
 
 _ = compileBackgroundDownloadArticleExamples
 _ = compileWebSocketArticleExamples
+_ = compileHLSArticleExamples
 runDocSmoke()
 print("InnoNetworkDocSmoke OK")

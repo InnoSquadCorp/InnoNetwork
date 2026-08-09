@@ -325,6 +325,10 @@ jobs:
           xcrun swift test --no-parallel --enable-code-coverage
           echo "✅ Tests completed successfully!"
 
+      - name: Repeat deterministic HLS quality gates
+        if: matrix.xcode.required == true && steps.toolchain-compatibility.outputs.compatible == 'true'
+        run: bash Scripts/run_hls_quality_gates.sh --skip-build
+
       - name: Generate runtime coverage report
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: |
@@ -519,7 +523,9 @@ jobs:
         run: bash Scripts/tests/test_generate_dependency_snapshot.sh
 
       - name: Verify local release preflight contract
-        run: bash Scripts/tests/test_run_local_release_preflight.sh
+        run: |
+          bash Scripts/tests/test_run_local_release_preflight.sh
+          bash Scripts/tests/test_validate_hls_with_apple_tools.sh
 
       - name: Verify release workflow contract
         run: |

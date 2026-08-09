@@ -26,23 +26,26 @@ Stable compatibility promise.
 | `InnoNetwork` (core) | 786 |
 | `InnoNetworkWebSocket` | 130 |
 | `InnoNetworkDownload` | 94 |
+| `InnoNetworkHLS` | 614 |
+| `InnoNetworkHLSLive` | 100 |
+| `InnoNetworkHLSAVFoundation` | 359 |
 | `InnoNetworkTestSupport` | 84 |
 | `InnoNetworkPersistentCache` | 51 |
 | `InnoNetworkOpenAPI` | 36 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
-| **Total** | **1,208** |
+| **Total** | **2,281** |
 
 | Compatibility tier | Public declarations |
 |---|---:|
 | Stable consumer API | 305 |
-| Provisionally Stable consumer API | 870 |
+| Provisionally Stable consumer API | 1,943 |
 | `@_spi(GeneratedClientSupport)` | 33 |
-| **Total** | **1,208** |
+| **Total** | **2,281** |
 
 ## Why this matters
 
-For a single-maintainer client-side Swift networking library, 1,208 public
+For a single-maintainer client-side Swift networking library, 2,281 public
 declarations is unusually large — roughly 4× `Get`'s surface and ~10× the
 `URLSession`-only "two functions and a `Decoder`" baseline.
 
@@ -79,7 +82,7 @@ removal.
 ```bash
 # Regenerate the same public/SPI graph shape used by the contract gate
 find .build -path '*/symbolgraph/*.symbols.json' -type f -delete
-swift package dump-symbol-graph \
+swift package -Xswiftc -include-spi-symbols dump-symbol-graph \
   --minimum-access-level public \
   --include-spi-symbols \
   --skip-synthesized-members >/dev/null
