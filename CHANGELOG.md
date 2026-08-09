@@ -7,6 +7,230 @@ Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `HLSPlaybackConfigurator` applies an immutable, value-typed command to a
+  caller-owned `AVPlayerItem`. It configures variant and expensive-network
+  limits, live-edge offset, server interstitial handling, and validated media
+  commands without taking over player lifecycle. Version 26 systems use
+  native Custom Media Selection Schemes; earlier systems deterministically
+  match BCP 47 language and authored media characteristics.
+- `HLSInterstitialPlaybackMonitor` exposes the caller-owned player's
+  interstitial schedule, current event, asset-list status, system skip state,
+  and terminal lifecycle as bounded, cancellation-safe `Sendable` events. The
+  read-only bridge redacts asset URLs, response bodies, custom attributes, and
+  underlying errors while AVFoundation retains schedule and skip-control
+  ownership.
+- `InnoNetworkHLSLive` adds an optional live-presentation reload companion.
+  It accepts direct media or multivariant entry URLs, performs deterministic
+  variant and Content Steering selection, preserves parent variable imports,
+  and exposes selected variant, pathway, and rendition metadata on each
+  snapshot. Compatible stable-variant pathways recover failed reloads, using
+  rendition reports for bounded LL-HLS tune-in. It negotiates blocking reload
+  and delta updates from typed server-control metadata, reconstructs skipped
+  segments and Date Ranges by media sequence, falls back once to a query-clean
+  full reload when history is unavailable, disables HTTP caching for every
+  reload, and closes its bounded-memory snapshot stream at `EXT-X-ENDLIST`.
+  Reload requests retain the shared typed request-policy, URL-admission,
+  redirect, body-boundary, and value-redacted pathway-observation behavior.
+- `HLSLiveDVRRecorder` captures complete live TS or fMP4 segments into a
+  bounded, URL-free local VOD package. It supports record-from-now and
+  current-window starts, exact byte-range validation, progress events,
+  in-process plus cross-process destination exclusion, and atomic commit.
+  Encrypted media, gaps, external renditions or timeline resources,
+  missing/changing initialization maps, and lost live-window history fail
+  explicitly without exposing a partial package.
+- `HLSExternalResourceResolver` resolves inline or bounded remote
+  `EXT-X-SESSION-DATA` plus Apple interstitial `ASSETS` JSON. Typed request
+  purposes let authentication distinguish Session Data from asset lists;
+  finite byte, asset-count, and timeout boundaries precede JSON validation,
+  while direct interstitial assets require no network request.
+- Date Range preload resources and `com.apple.hls.daterange-schedule` JSON are
+  typed and opt-in. Matching preloaded bytes avoid a duplicate schedule
+  request; nested schedules preserve server order while enforcing parent
+  bounds, cue semantics, playlist-wide identifier uniqueness, live-join
+  offsets, and finite byte, entry-count, and depth limits.
+- `EXT-X-PRELOAD-HINT:TYPE=KEY` now exposes method, key-format, format-version,
+  range, and estimated first-use metadata. The live companion accepts an
+  opt-in application key preloader and spreads one callback across the
+  projected first-use window without requesting or storing key bytes itself.
+- `_hls.media-presentation-settings` Session Data now resolves into a bounded
+  Custom Media Selection Scheme. Typed selectors, localized setting names,
+  language decorations, and deterministic language/selector-priority matching
+  let applications build custom rendition controls without parsing JSON or
+  raw `EXT-X-MEDIA` attributes.
+- HLS release validation now pins embedded media fixtures by SHA-256 and
+  container structure, runs deterministic parser mutations, rejects
+  quadratic large-playlist scaling, and repeats live-stream plus
+  AVFoundation event-delivery races. The bounded release shard inventory now
+  includes all three HLS test products. A fail-closed full-release gate
+  materializes the same pinned MPEG-TS and fragmented-MP4 fixtures for Apple's
+  separately installed Media Stream Validator and HLS Report, rejects
+  validator errors and report `Must Fix` findings, and retains diagnostic
+  artifacts.
+
+- `InnoNetworkHLSAVFoundation` adds an optional native companion for
+  system-managed HLS persistence. It owns a reconnectable
+  `AVAssetDownloadURLSession`, restores tasks by a caller-stable background
+  identifier, exposes bounded event streams plus pause/resume/cancel controls,
+  and hands background completion back to the host application. A synchronous
+  main-actor configuration closure covers media selection without crossing a
+  non-`Sendable` AVFoundation boundary. A bounded, versioned Codable library
+  groups validated `.movpkg` references without taking metadata-persistence
+  ownership. `HLSFairPlaySession` retains the application key delegate,
+  validates and attaches assets before loading, and exposes explicit detach
+  and expiration while SPC/CKC transport and persistent-key storage remain
+  application-owned. HTTPS admission, optional app-group storage, artwork
+  bounds, duplicate-session rejection, and invalidation-safe lifecycle gates
+  make the platform limitations explicit. The companion also bridges
+  `AVPlayerItem.allMetrics()` into bounded, independently cancellable playback
+  streams whose typed events remove URLs, headers, session identifiers, task
+  metrics, arbitrary error values, and non-finite measurements.
+  `HLSPlaybackHealthAnalyzer` deterministically reduces those delivered events
+  into bounded rolling counters, stable diagnostic issues, and
+  healthy/degraded/critical snapshots without taking observation, UI, or
+  alerting ownership.
+  `HLSFairPlayPersistentKeyWorkflow` adds a bounded stored-key-first
+  restore-or-create path with app-injected license transport and secure
+  storage, typed value-redacted failures, cancellation preservation, updated
+  key forwarding, and no library-owned credentials, Keychain schema, or key
+  files.
+
+- `InnoNetworkHLS` adds an optional companion product with bounded playlist
+  resolution, explicit quality/bandwidth variant policies, browser-free VOD
+  segment download, ordered TS or fragmented-MP4 assembly events, caller-
+  injected transport policy, per-resource and whole-download byte budgets,
+  required/best-effort/disabled destination-capacity policy, observable core
+  retry-policy backoff, explicit indeterminate progress, bounded parallel
+  prefetch, stable error codes with preserved underlying transport context,
+  event-stream and one-shot download surfaces, and exclusive destination
+  commits. Single-file capability validation rejects discontinuities, gaps,
+  I-frame-only playlists, and multiple initialization sections before media
+  transfer. Byte-range and CMAF resources use exact partial-response validation
+  and bounded contiguous-range coalescing. Destination-scoped checkpoints
+  resume interrupted VODs at durable resource boundaries, while shared
+  write-time capacity reservations prevent parallel staging and assembly from
+  overcommitting the configured free-space floor. Real MPEG-TS and
+  fragmented-MP4 fixtures verify AVFoundation readability. Bundle the matching
+  disk-space Required Reason API privacy manifest. Multivariant parsing now
+  exposes typed audio/subtitle renditions and codec, frame-rate, subtitle-group,
+  and video-range metadata; deterministic rendition selection and an opaque
+  playback-capabilities pack support language- and device-aware planning.
+  Advisory preparation snapshots expose the selected media plan without
+  creating files, while committed receipts report the output size, container,
+  selected variant, and resumed transfer count. A multi-rendition offline
+  package path now preserves the selected primary stream plus explicit
+  external audio and subtitle renditions as separate local playlists and
+  resources. It rewrites byte ranges to complete local files, generates a
+  local multivariant entry playlist and URL-free manifest, enforces one shared
+  media-byte budget, bounds external rendition fan-out per kind, and atomically
+  commits or removes the complete directory. Both download paths now combine
+  their in-process destination registry with a crash-safe OS advisory lock so
+  app, extension, and helper processes sharing a container fail fast with
+  `destinationInUse` instead of writing the same destination concurrently.
+  Identity-format `METHOD=AES-128` VOD resources now use exact 16-byte key
+  responses plus explicit or media-sequence-derived IVs for streaming
+  AES-CBC/PKCS#7 decryption before assembly. Keys remain memory-only, key
+  fingerprints invalidate stale resume boundaries, encrypted byte ranges keep
+  independent IV boundaries, and localized offline playlists remove source
+  key declarations. SAMPLE-AES and FairPlay key formats remain typed
+  unsupported cases.
+- HLS transport customization now has a purpose-aware
+  `HLSRequestPolicy`. Entry and media playlists, media resources, AES-128 keys,
+  and Content Steering manifests receive typed request contexts without URL
+  suffix inference. Optional HLS request observers receive only request IDs,
+  purpose, resource/retry indexes, HTTP status, and stable failure
+  classifications; URLs, headers, query values, bodies, and arbitrary error
+  messages are absent by construction. Existing untyped request adapters
+  remain source-compatible.
+- `InnoNetworkHLS` offline packages now use manifest schema 3 with exact file
+  membership, byte counts, and streaming SHA-256 integrity records.
+  `HLSOfflinePackageStore` reopens committed packages as receipts and rejects
+  traversal, symbolic links, missing or unreferenced files, malformed local
+  playlists, checksum mismatches, and unknown schemas. Schema 1/2 packages
+  remain readable with structural validation; checksums detect corruption but
+  are not an authenticity signature.
+- Offline package downloads now default to destination-scoped automatic resume.
+  Each completed resource receives a constant-size durable checkpoint, retained
+  files are checksum-validated before reuse, and any source, playlist identity,
+  rendition, resource, HTTP validator, or AES-key-plan change restarts cleanly.
+  `HLSOfflinePackageStoragePack` accepts `.disabled`, receipts report the reused
+  transfer count, and only the complete package directory remains public.
+- `InnoNetworkHLS` now exposes HLS 2nd Edition selection metadata including
+  playlist protocol version and independent-segment signaling, video and
+  closed-caption renditions, stable rendition/variant IDs, associated
+  languages, accessibility characteristics, audio channel/bit-depth/sample-
+  rate hints, author scores, supplemental codecs, and pathway IDs. Attribute
+  lists reject duplicate or malformed fields. Offline package manifests
+  preserve applicable rendition and variant metadata without retaining source
+  URLs.
+- HLS 2nd Edition draft-22 inspection now exposes media target duration,
+  media/discontinuity sequences, `EVENT`/`VOD` mutability, applied
+  `EXT-X-BITRATE` values, and typed variant HDCP, allowed content-protection,
+  and required video-layout metadata. Content Steering clones and offline
+  package manifests preserve the new variant constraints. Apple authoring
+  inspection additionally checks TLS, frame rate, mixed-range declarations,
+  score consistency, caption language, steered identity, and LL-HLS
+  program-date-time/partial hold-back guidance.
+- HLS playlist resolution now supports bounded HLS 2nd Edition
+  `EXT-X-DEFINE` substitution across URI, quoted-string, and hexadecimal
+  values. Explicit media-playlist imports receive only variables declared by
+  their multivariant parent, `QUERYPARAM` reads the final redirected playlist
+  URL, protocol compatibility is enforced, and offline packages remove
+  definitions and signed values from persisted playlists.
+- HLS multivariant resolution now executes bounded Content Steering manifests,
+  including TTL and reload caching, initial-pathway fallback, ordered pathway
+  failover, data URLs, and VERSION 1 pathway cloning with host, query, stable-
+  variant, and stable-rendition URI replacement. Both single-file and offline
+  planners share the same steering catalog; offline steering additionally
+  rejects pathway sets that cannot prove stable variant and rendition identity.
+- Single-file HLS downloads can now recover from a transient media-resource
+  failure by lazily activating a lower-priority Content Steering pathway after
+  normal retries are exhausted. Recovery requires stable variant identity and
+  an equivalent resource plan, shares concurrent pathway activation, can be
+  disabled independently, and emits value-redacted typed decision events.
+- `InnoNetworkHLSAVFoundation` now provides validated, Codable `.movpkg`
+  references and an actor-isolated storage lifecycle surface for availability,
+  automatic-purge policy, and idempotent removal. Policy calls fail safely in
+  unidentified host processes and removal rejects symbolic-link packages.
+- Playlist resolution and inspection now expose typed Low-Latency HLS server
+  control, partial segments, preload hints, rendition reports, and delta
+  updates. Cross-field timing/range/version rules are validated, while
+  resource-bearing LL-HLS tags explicitly block persistence paths that do not
+  retain them.
+- Playlist inspection now accepts an opt-in
+  `HLSPlaylistInspectionPack.appleAuthoring` profile. It emits line-addressable
+  advisory findings for target duration, independent segments, variant
+  ordering, codecs, average bandwidth, resolution, and protocol versions while
+  keeping runtime capability decisions separate.
+- Multivariant parsing now exposes typed `EXT-X-SESSION-DATA` and
+  `EXT-X-SESSION-KEY` metadata with language-aware identity, resolved resource
+  URLs, key formats, versions, and IVs. Playlist inspection never fetches key
+  bytes, and diagnostics remain value-redacted.
+- Low-Latency HLS relationship checks now follow feature-specific
+  compatibility versions, require valid skip/hold-back bounds, enforce partial
+  duration exceptions and VOD preload constraints, and accept advisory or
+  inherited rendition-report forms without over-rejecting valid playlists.
+- HLS multivariant parsing now exposes `EXT-X-I-FRAME-STREAM-INF` entries as a
+  separate trick-play variant collection. Content Steering clones and fails
+  over those variants with the regular pathway catalog. Offline rendition
+  packs can opt into external VIDEO renditions and I-frame-only playlists,
+  including alternative I-frame video groups; generated package indexes,
+  durable resume plans, schema 3 manifests, reopen validation, preparation,
+  and receipts preserve the selected layout. Raw single-file assembly still
+  rejects I-frame-only media.
+- HLS playlist inspection now returns value-redacted structured diagnostics
+  with stable codes, severity, operation scope, and optional one-based source
+  lines. Callers can distinguish document validity from raw single-file and
+  offline-package capability without copying source URLs, attributes, or signed
+  query values into diagnostic payloads.
+- HLS terminal failures now match the core client's diagnostic ergonomics:
+  English and Korean descriptions, actionable recovery suggestions,
+  conservative retry hints, and user-visibility guidance are available from
+  `HLSDownloadError` and its `NSError` bridge. AVFoundation session admission
+  and lifecycle failures provide the same localized recovery guidance and a
+  narrow retry hint for transient task-creation failure.
+
 ## [5.0.0] - 2026-07-21
 
 ### Breaking

@@ -57,6 +57,16 @@ The `CI` workflow must pass all of the following:
    four-process bound. Direct bundle loading avoids SwiftPM's shared `.build`
    lock; the script also proves that every discovered test belongs to exactly
    one shard.
+   The extensions shard includes `InnoNetworkHLSTests`,
+   `InnoNetworkHLSLiveTests`, and
+   `InnoNetworkHLSAVFoundationTests`.
+   The canonical coverage lane also repeats the deterministic fixture,
+   mutation, scaling, and race subset through
+   `bash Scripts/run_hls_quality_gates.sh --skip-build`. That command also runs
+   Apple's Media Stream Validator and HLS Report when their separate developer
+   download is installed; otherwise it prints `NOT RUN`. The full local release
+   preflight passes `--require-apple-tools` and fails closed when either binary
+   is unavailable.
 6. `rg -n "@unchecked Sendable"` across production targets, including
    `Sources/InnoNetworkMacros`, returns no matches.
 7. `bash Scripts/check_shared_coders_mutation.sh` confirms the shared default
@@ -211,6 +221,8 @@ xcrun swift build
 # Match both blocking test lanes.
 bash Scripts/run_bounded_parallel_tests.sh
 xcrun swift test --no-parallel --enable-code-coverage
+bash Scripts/run_hls_quality_gates.sh --skip-build
+bash Scripts/run_hls_quality_gates.sh --skip-build --require-apple-tools
 rg -n "@unchecked Sendable" \
   Sources/InnoNetwork \
   Sources/InnoNetworkMacros \

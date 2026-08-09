@@ -9,11 +9,16 @@
 > 우선합니다.
 
 InnoNetwork 는 Apple 플랫폼을 위한 타입 안전한 Swift 네트워킹 패키지입니다. root runtime package 는
-여덟 개의 공개 product 로 구성되어 있습니다.
+열한 개의 공개 product 로 구성되어 있습니다.
 
 - `InnoNetwork` — 요청/응답 API
 - `InnoNetworkAuthAWS` — body-aware AWS SigV4 reference signer
 - `InnoNetworkDownload` — 다운로드 생명주기 관리
+- `InnoNetworkHLS` — 값 노출 없는 Apple 저작 진단과 요청 관측, 목적별 요청 정책, HLS 2nd Edition draft-22 선택·보호·비디오 레이아웃·세션·LL-HLS 메타데이터와 I-frame trick-play 해석, AES-128 비 DRM VOD 조립, 외부 오디오·비디오·자막을 보존하는 로컬 오프라인 패키지
+- `InnoNetworkHLSLive` — blocking reload와 delta window 복구를 제공하는 bounded async media-playlist snapshot stream
+- `InnoNetworkHLSAVFoundation` — AVFoundation 기반 백그라운드 HLS 저장,
+  버전형 오프라인 에셋 라이브러리, 값이 제거된 재생 상태 분석,
+  앱 소유 라이선스 통신·보안 저장소를 유지하는 FairPlay 영구 키 흐름
 - `InnoNetworkWebSocket` — 연결 지향 실시간 흐름
 - `InnoNetworkPersistentCache` — 보수적인 디스크 응답 캐시
 - `InnoNetworkTrust` — 선택형 공개키 pinning 평가
@@ -279,6 +284,13 @@ InnoNetwork 기반 클라이언트를 출시하기 전에 점검해야 할 운�
   크래시 로그/분석에 남지 않도록 릴리즈 빌드에서는 비활성화 상태를 유지하세요.
 - **이벤트 옵저버 부착.** `NetworkEventObserving` 옵저버는 앱 시작 시 부착하고 로그아웃 / 계정
   전환 시 분리합니다. 사용자 취소 이후 발생하는 이벤트도 옵저버는 모두 받습니다.
+- **HLS 요청 경계.** `HLSRequestPolicy` 는 entry/media/live reload playlist, media resource,
+  AES key, Content Steering manifest, Session Data, interstitial asset list 를 URL 확장자 없이
+  구분합니다. `HLSRequestEventObserving` 이벤트에는
+  request ID, 목적, resource/retry index, HTTP 상태와 안정된 실패 분류만 포함되며 URL, header,
+  query 값, body, 임의 오류 문자열은 포함되지 않습니다.
+- **HLS 외부 메타데이터.** `HLSExternalResourceResolver` 는 inline/remote Session Data와
+  Apple interstitial asset list를 명시적인 byte·asset 수·timeout 경계 안에서 해석합니다.
 
 ### 회복탄력성
 

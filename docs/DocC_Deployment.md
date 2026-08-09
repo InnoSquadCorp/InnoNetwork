@@ -11,11 +11,14 @@ The workflow builds and publishes DocC archives for all public products:
 1. `InnoNetwork`
 2. `InnoNetworkAuthAWS`
 3. `InnoNetworkDownload`
-4. `InnoNetworkWebSocket`
-5. `InnoNetworkPersistentCache`
-6. `InnoNetworkOpenAPI`
-7. `InnoNetworkTrust`
-8. `InnoNetworkTestSupport`
+4. `InnoNetworkHLS`
+5. `InnoNetworkHLSLive`
+6. `InnoNetworkHLSAVFoundation`
+7. `InnoNetworkWebSocket`
+8. `InnoNetworkPersistentCache`
+9. `InnoNetworkOpenAPI`
+10. `InnoNetworkTrust`
+11. `InnoNetworkTestSupport`
 
 Each public product owns a same-named DocC catalog. This keeps the generated
 module landing page and curated topic groups from depending on DocC's
@@ -33,6 +36,9 @@ The workflow deploys a static site to GitHub Pages with module-specific entry po
 - `/<repo>/InnoNetwork/documentation/innonetwork`
 - `/<repo>/InnoNetworkAuthAWS/documentation/innonetworkauthaws`
 - `/<repo>/InnoNetworkDownload/documentation/innonetworkdownload`
+- `/<repo>/InnoNetworkHLS/documentation/innonetworkhls`
+- `/<repo>/InnoNetworkHLSLive/documentation/innonetworkhlslive`
+- `/<repo>/InnoNetworkHLSAVFoundation/documentation/innonetworkhlsavfoundation`
 - `/<repo>/InnoNetworkWebSocket/documentation/innonetworkwebsocket`
 - `/<repo>/InnoNetworkPersistentCache/documentation/innonetworkpersistentcache`
 - `/<repo>/InnoNetworkOpenAPI/documentation/innonetworkopenapi`
@@ -41,7 +47,7 @@ The workflow deploys a static site to GitHub Pages with module-specific entry po
 
 It also publishes a root index page linking to every module. Before upload, the
 workflow requires each module's transformed landing HTML and render-node JSON
-to exist and requires the root index to link to all eight routes. After Pages
+to exist and requires the root index to link to all eleven routes. After Pages
 deployment, it requests the root and every module URL with bounded retries so a
 bad hosting base path or missing route fails the deployment job.
 

@@ -156,6 +156,9 @@ acquiring a 5.x compatibility promise.
 - `MultipartResponseDecoder` buffered multipart response parsing surface
 - `MultipartStreamingResponseDecoder` streaming multipart response parsing surface
 - `InnoNetworkOpenAPI` companion product
+- `InnoNetworkHLS` companion product and its public playlist, variant selection, single-file download, offline package, event, and error symbols
+- `InnoNetworkHLSLive` companion product and its public live reload, bounded DVR recording, snapshot, configuration, and error symbols
+- `InnoNetworkHLSAVFoundation` companion product and its public download, playback configuration, playback metrics, playback health, interstitial observation, and FairPlay symbols
 - `@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait
 - `PersistentResponseCache` statistics and telemetry surfaces
 - `WebSocketError.unsupportedProtocolFeature`
@@ -402,8 +405,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 1,208 declarations into
-305 Stable consumer declarations, 870 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 2,281 declarations into
+305 Stable consumer declarations, 1,943 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -466,6 +469,111 @@ Stable.
 - `DownloadConfiguration`, `DownloadError`, `DownloadEvent`,
   `DownloadManager`, `DownloadManagerError`,
   `DownloadProgress`, `DownloadState`, and `DownloadTask`.
+
+### InnoNetworkHLS
+
+- Playlist and inspection: `HLSByteRange`, `HLSClosedCaptionReference`,
+  `HLSDateRange`, `HLSDateRangeCue`, `HLSDateRangePreload`,
+  `HLSDateRangeResource`, `HLSDateRangeSchedule`,
+  `HLSDateRangeScheduleEntry`, `HLSPreloadedDateRangeResource`,
+  `HLSInterstitial`, `HLSInterstitialSource`, `HLSMediaContainer`,
+  `HLSMediaPlaylistType`, `HLSPlaylist`, `HLSPlaylistDiagnostic`,
+  `HLSPlaylistInspection`,
+  `HLSPlaylistInspectionPack`, `HLSPreferredStartPosition`,
+  `HLSProgramDateTime`, `HLSRendition`, `HLSRenditionKind`,
+  `HLSRenditionSelectionPolicy`, `HLSRequiredVideoLayout`,
+  `HLSSegmentBitrate`, `HLSUnsupportedMediaFeature`, `HLSVariant`,
+  `HLSVariantSelectionPolicy`, `HLSVideoChannelLayout`,
+  `HLSVideoProjection`, `CustomMediaSelector`, `PlaylistResolver`,
+  `RenditionSelector`, and `VariantSelector`.
+- Session, Low-Latency HLS, and Content Steering:
+  `HLSAllowedContentProtectionConfiguration`, `HLSContentSteering`,
+  `HLSContentSteeringEvent`,
+  `HLSContentSteeringEventObserving`, `HLSContentSteeringPack`,
+  `HLSContentSteeringPhase`, `HLSCustomMediaSelectionPreferences`,
+  `HLSCustomMediaSelectionScheme`, `HLSDeltaUpdate`,
+  `HLSEncryptionKeyPreload`, `HLSHDCPLevel`, `HLSLanguageDecoration`,
+  `HLSLowLatencyMetadata`, `HLSMediaPresentationSelector`,
+  `HLSMediaPresentationSetting`, `HLSMediaPresentationType`,
+  `HLSPartialSegment`, `HLSPreloadHint`, `HLSPreloadHintType`,
+  `HLSRenditionReport`, `HLSServerControl`, `HLSSessionData`,
+  `HLSSessionDataContent`, `HLSSessionDataFormat`, `HLSSessionDataValue`, and
+  `HLSSessionKey`.
+- External resources: `HLSExternalResourceError`,
+  `HLSExternalResourcePack`, `HLSExternalResourceResolver`, and
+  `HLSInterstitialAsset`. The resolver's public Date Range operations load
+  bounded preload bytes and resolve nested schedules with explicit collision,
+  depth, and entry-count boundaries.
+- Request policy and observation: `HLSRequestContext`, `HLSRequestEvent`,
+  `HLSRequestEventObserving`, `HLSRequestFailure`, `HLSRequestPolicy`, and
+  `HLSRequestPurpose`.
+- Single-file download: `HLSDiskCapacityPolicy`, `HLSDownloadConfiguration`,
+  `HLSDownloadError`, `HLSDownloadErrorCode`, `HLSDownloader`,
+  `HLSDownloadEvent`, `HLSDownloadPreparation`, `HLSDownloadProgress`,
+  `HLSDownloadReceipt`, `HLSPlaybackCapabilities`, `HLSResumePolicy`,
+  `HLSStoragePack`, and `HLSTransferPack`.
+- Offline packages:
+  `HLSOfflinePackageConfiguration`, `HLSOfflinePackageDownloader`,
+  `HLSOfflinePackageEvent`, `HLSOfflinePackagePreparation`,
+  `HLSOfflinePackageReceipt`, `HLSOfflinePackageStore`,
+  `HLSOfflinePackageStoragePack`, `HLSOfflinePackageTrack`,
+  `HLSOfflinePackageTrackKind`,
+  `HLSOfflineRenditionPack`, and `HLSOfflineRenditionSelectionPolicy`.
+
+### InnoNetworkHLSAVFoundation
+
+- `HLSAssetDownload`, `HLSAssetDownloadContentPack`,
+  `HLSAssetDownloadEvent`, `HLSAssetDownloadEvictionPriority`,
+  `HLSAssetDownloadLibrary`, `HLSAssetDownloadLibraryError`,
+  `HLSAssetDownloadLibraryItem`, `HLSAssetDownloadRequest`,
+  `HLSAssetDownloadSession`, `HLSAssetDownloadSessionError`,
+  `HLSAssetDownloadSessionPack`, `HLSAssetDownloadStorage`,
+  `HLSAssetDownloadStorageError`, `HLSAssetDownloadStoragePolicy`,
+  `HLSFairPlaySession`, `HLSFairPlaySessionError`, `HLSStoredAsset`, and
+  `HLSStoredAssetAvailability`.
+- FairPlay persistent keys: `HLSFairPlayKeyID`,
+  `HLSFairPlayLicenseRequest`, `HLSFairPlayLicenseTransporting`,
+  `HLSFairPlayPersistentKeyAcquisition`,
+  `HLSFairPlayPersistentKeyConfiguration`,
+  `HLSFairPlayPersistentKeyDisposition`, `HLSFairPlayPersistentKeyError`,
+  `HLSFairPlayPersistentKeyLimitPack`, `HLSFairPlayPersistentKeyStoring`, and
+  `HLSFairPlayPersistentKeyWorkflow`. The workflow coordinates bounded
+  restore-or-create requests while transport, secure storage, expiry,
+  invalidation, and deletion remain application-owned.
+- Playback configuration: `HLSPlaybackAppliedMediaSelection`,
+  `HLSPlaybackConfiguration`, `HLSPlaybackConfigurationError`,
+  `HLSPlaybackConfigurationResult`, `HLSPlaybackConfigurator`,
+  `HLSPlaybackInterstitialPolicy`, `HLSPlaybackLivePack`,
+  `HLSPlaybackMediaKind`, `HLSPlaybackMediaPreference`,
+  `HLSPlaybackMediaSelection`, `HLSPlaybackMediaSelectionResolution`, and
+  `HLSPlaybackVariantPack`.
+- Playback metrics: `HLSPlaybackMetricContext`, `HLSPlaybackMetricEvent`,
+  `HLSPlaybackMetricMediaType`, `HLSPlaybackMetrics`,
+  `HLSPlaybackMetricsError`, `HLSPlaybackMetricSummary`, `HLSPlaybackMode`,
+  `HLSPlaybackTransferMetric`, and `HLSPlaybackVariantSwitchPhase`. The bridge
+  emits bounded, independently cancellable streams and removes transport
+  identifiers, arbitrary errors, and non-finite numeric values.
+- Playback health: `HLSPlaybackHealthAnalyzer`,
+  `HLSPlaybackHealthConfiguration`, `HLSPlaybackHealthIssue`,
+  `HLSPlaybackHealthSnapshot`, `HLSPlaybackHealthStatus`, and
+  `HLSPlaybackHealthThresholdPack`. The value reducer keeps rolling counts
+  bounded, reconciles delivered summaries, and leaves observation, UI, and
+  alerting policy with the application.
+- Interstitial playback: `HLSInterstitialAssetListStatus`,
+  `HLSInterstitialEventSnapshot`, `HLSInterstitialPlaybackMonitor`,
+  `HLSInterstitialRuntimeEvent`, and `HLSInterstitialSkippableState`. The
+  observation-only bridge emits bounded, value-redacted lifecycle streams
+  while AVFoundation owns scheduling and system skip controls.
+
+### InnoNetworkHLSLive
+
+- `HLSLiveConfiguration`, `HLSLiveEncryptionKeyPreloading`, `HLSLiveError`,
+  `HLSLivePartialSegment`, `HLSLiveDVRConfiguration`, `HLSLiveDVRError`,
+  `HLSLiveDVREvent`, `HLSLiveDVRLimitPack`, `HLSLiveDVRProgress`,
+  `HLSLiveDVRReceipt`, `HLSLiveDVRRecorder`, `HLSLiveDVRStartPosition`,
+  `HLSLiveDVRUnsupportedFeature`,
+  `HLSLivePlaylistClient`, `HLSLivePlaylistSnapshot`, `HLSLiveReloadPack`, and
+  `HLSLiveSegment`.
 
 ### InnoNetworkWebSocket
 

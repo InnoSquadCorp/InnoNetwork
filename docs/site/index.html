@@ -278,7 +278,7 @@
       <h1>InnoNetwork Documentation</h1>
       <p>
         Type-safe request execution and focused companion modules for authentication, downloads,
-        realtime flows, caching, OpenAPI, trust, and testing on current Apple platforms. The
+        HLS media, realtime flows, caching, OpenAPI, trust, and testing on current Apple platforms. The
         documentation site is organized by product so teams can start from the module they need.
       </p>
       <div class="hero-actions">
@@ -288,8 +288,8 @@
       </div>
       <div class="metrics">
         <div class="metric">
-          <strong>8 Products</strong>
-          <span>One core library and seven opt-in companion modules.</span>
+          <strong>11 Products</strong>
+          <span>One core library and ten opt-in companion modules.</span>
         </div>
         <div class="metric">
           <strong>Swift 6.2+</strong>
@@ -351,6 +351,63 @@
           </ul>
           <div class="link-row">
             <a class="pill" href="./InnoNetworkDownload/documentation/innonetworkdownload">Module Docs</a>
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>InnoNetworkHLS</h3>
+          <p>
+            Typed HLS 2nd Edition metadata, AES-128 non-DRM VOD assembly,
+            and atomic local packages for selected external audio and subtitles.
+          </p>
+          <ul>
+            <li>Bounded playlist parsing and relative URL resolution</li>
+            <li>Stable IDs, accessibility, audio-format, and pathway metadata</li>
+            <li>Typed HDCP, content-protection, video-layout, and live-sequence metadata</li>
+            <li>Opt-in Apple authoring and LL-HLS guidance</li>
+            <li>Purpose-aware request policy and value-redacted HLS request events</li>
+            <li>Explicit quality, resolution, and bandwidth variant policies</li>
+            <li>Event-stream or one-shot ordered TS/fMP4 assembly</li>
+            <li>Local multivariant packages with rewritten rendition playlists</li>
+            <li>Localized recovery guidance, retry hints, and explicit storage policy</li>
+          </ul>
+          <div class="link-row">
+            <a class="pill" href="./InnoNetworkHLS/documentation/innonetworkhls">Module Docs</a>
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>InnoNetworkHLSLive</h3>
+          <p>
+            Media-playlist reloads with negotiated blocking requests, delta
+            reconstruction, and bounded async snapshot delivery.
+          </p>
+          <ul>
+            <li>Typed blocking, part, and skip request negotiation</li>
+            <li>Sequence-based delta and Date Range reconstruction</li>
+            <li>Uncached reloads with one clean full-reload recovery</li>
+            <li>Polling fallback and deterministic ENDLIST completion</li>
+          </ul>
+          <div class="link-row">
+            <a class="pill" href="./InnoNetworkHLSLive/documentation/innonetworkhlslive">Module Docs</a>
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>InnoNetworkHLSAVFoundation</h3>
+          <p>
+            Native, system-managed HLS persistence for applications that need
+            background asset downloads, media selections, or FairPlay setup.
+          </p>
+          <ul>
+            <li>Reconnectable AVFoundation background sessions</li>
+            <li>Task restoration with bounded progress and terminal streams</li>
+            <li>Versioned, bounded Codable offline-asset libraries</li>
+            <li>Typed FairPlay session attachment and expiration lifecycle</li>
+            <li>Localized app-group, HTTPS, and lifecycle diagnostics</li>
+          </ul>
+          <div class="link-row">
+            <a class="pill" href="./InnoNetworkHLSAVFoundation/documentation/innonetworkhlsavfoundation">Module Docs</a>
           </div>
         </article>
 
