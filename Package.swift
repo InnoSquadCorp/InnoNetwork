@@ -47,6 +47,18 @@ let package = Package(
             targets: ["InnoNetworkDownload"]
         ),
         .library(
+            name: "InnoNetworkHLS",
+            targets: ["InnoNetworkHLS"]
+        ),
+        .library(
+            name: "InnoNetworkHLSLive",
+            targets: ["InnoNetworkHLSLive"]
+        ),
+        .library(
+            name: "InnoNetworkHLSAVFoundation",
+            targets: ["InnoNetworkHLSAVFoundation"]
+        ),
+        .library(
             name: "InnoNetworkWebSocket",
             targets: ["InnoNetworkWebSocket"]
         ),
@@ -181,6 +193,31 @@ let package = Package(
             swiftSettings: strictSettings
         ),
         .target(
+            name: "InnoNetworkHLS",
+            dependencies: ["InnoNetwork"],
+            path: "Sources/InnoNetworkHLS",
+            // Bundles `Resources/PrivacyInfo.xcprivacy` for the disk-capacity
+            // preflight's Required Reason API declaration.
+            resources: [.process("Resources")],
+            swiftSettings: strictSettings
+        ),
+        .target(
+            name: "InnoNetworkHLSLive",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkHLS",
+            ],
+            path: "Sources/InnoNetworkHLSLive",
+            swiftSettings: strictSettings
+        ),
+        .target(
+            name: "InnoNetworkHLSAVFoundation",
+            dependencies: ["InnoNetwork"],
+            path: "Sources/InnoNetworkHLSAVFoundation",
+            resources: [.process("Resources")],
+            swiftSettings: strictSettings
+        ),
+        .target(
             name: "InnoNetworkWebSocket",
             dependencies: ["InnoNetwork"],
             path: "Sources/InnoNetworkWebSocket",
@@ -251,6 +288,9 @@ let package = Package(
                 "InnoNetwork",
                 "InnoNetworkAuthAWS",
                 "InnoNetworkDownload",
+                "InnoNetworkHLS",
+                "InnoNetworkHLSLive",
+                "InnoNetworkHLSAVFoundation",
                 "InnoNetworkOpenAPI",
                 "InnoNetworkPersistentCache",
                 "InnoNetworkWebSocket",
@@ -348,6 +388,31 @@ let package = Package(
             name: "InnoNetworkDownloadTests",
             dependencies: ["InnoNetworkDownload", "InnoNetworkTestSupport"],
             path: "Tests/InnoNetworkDownloadTests",
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "InnoNetworkHLSTests",
+            dependencies: ["InnoNetwork", "InnoNetworkHLS"],
+            path: "Tests/InnoNetworkHLSTests",
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "InnoNetworkHLSLiveTests",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkHLS",
+                "InnoNetworkHLSLive",
+            ],
+            path: "Tests/InnoNetworkHLSLiveTests",
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "InnoNetworkHLSAVFoundationTests",
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkHLSAVFoundation",
+            ],
+            path: "Tests/InnoNetworkHLSAVFoundationTests",
             swiftSettings: strictSettings
         ),
         .testTarget(

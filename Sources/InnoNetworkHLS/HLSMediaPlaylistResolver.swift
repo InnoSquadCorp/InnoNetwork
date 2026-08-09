@@ -1,0 +1,202 @@
+import Foundation
+
+struct HLSResolvedMediaSelection: Sendable {
+    let playlist: HLSPlaylist
+    let mediaPlaylistIdentity: HLSContentIdentity
+    let selectedVariant: HLSVariant?
+    let renditions: [HLSRendition]
+    let pathwayID: String?
+    let multivariantVariables: [String: String]
+    let fallbackCandidates: [HLSMediaPlaylistCandidate]
+}
+
+struct HLSMediaPlaylistCandidate: Sendable {
+    let pathwayID: String?
+    let variant: HLSVariant
+    let renditions: [HLSRendition]
+    let multivariantVariables: [String: String]
+}
+
+struct HLSMediaPlaylistResolver: Sendable {
+    private let playlistResolver: PlaylistResolver
+    private let variantSelector: VariantSelector
+    private let selectionPolicy: HLSVariantSelectionPolicy
+    private let contentSteeringResolver: HLSContentSteeringResolver
+    private let contentSteering: HLSContentSteeringSettings
+
+    init(
+        client: HLSHTTPClient,
+        selectionPolicy: HLSVariantSelectionPolicy,
+        contentSteering: HLSContentSteeringSettings
+    ) {
+        self.playlistResolver = PlaylistResolver(client: client)
+        self.variantSelector = VariantSelector()
+        self.selectionPolicy = selectionPolicy
+        self.contentSteering = contentSteering
+        self.contentSteeringResolver = HLSContentSteeringResolver(
+            client: client,
+            settings: contentSteering
+        )
+    }
+
+    func resolve(
+        from sourceURL: URL,
+        requestTimeout: TimeInterval = 15,
+        disablesCaching: Bool = false
+    ) async throws -> HLSResolvedMediaSelection {
+        let document = try await playlistResolver.resolveDocument(
+            from: sourceURL,
+            requestTimeout: requestTimeout,
+            disablesCaching: disablesCaching
+        )
+        let playlist = document.playlist
+        guard playlist.kind == .multivariant else {
+            return HLSResolvedMediaSelection(
+                playlist: playlist,
+                mediaPlaylistIdentity: document.identity,
+                selectedVariant: nil,
+                renditions: [],
+                pathwayID: nil,
+                multivariantVariables: [:],
+                fallbackCandidates: []
+            )
+        }
+
+        let catalog = try await contentSteeringResolver.catalog(
+            for: playlist
+        )
+        let candidates = try makeCandidates(
+            from: catalog,
+            multivariantVariables: document.variables
+        )
+        var terminalError: (any Error)?
+        for (index, candidate) in candidates.enumerated() {
+            await contentSteering.emit(
+                .pathwayAttempt(
+                    pathwayID: candidate.pathwayID,
+                    phase: .mediaPlaylist,
+                    resourceIndex: nil
+                )
+            )
+            do {
+                let mediaDocument =
+                    try await playlistResolver.resolveDocument(
+                        from: candidate.variant.url,
+                        multivariantVariables:
+                            candidate.multivariantVariables,
+                        purpose: .mediaPlaylist,
+                        requestTimeout: requestTimeout,
+                        disablesCaching: disablesCaching
+                    )
+                guard mediaDocument.playlist.kind == .media else {
+                    throw HLSDownloadError.invalidPlaylist
+                }
+                await contentSteering.emit(
+                    .pathwaySelected(
+                        pathwayID: candidate.pathwayID,
+                        phase: .mediaPlaylist,
+                        resourceIndex: nil
+                    )
+                )
+                return HLSResolvedMediaSelection(
+                    playlist: mediaDocument.playlist,
+                    mediaPlaylistIdentity: mediaDocument.identity,
+                    selectedVariant: candidate.variant,
+                    renditions: candidate.renditions,
+                    pathwayID: candidate.pathwayID,
+                    multivariantVariables:
+                        candidate.multivariantVariables,
+                    fallbackCandidates: Array(
+                        candidates.dropFirst(index + 1)
+                    )
+                )
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                terminalError = error
+                await contentSteering.emit(
+                    .pathwayFailed(
+                        pathwayID: candidate.pathwayID,
+                        phase: .mediaPlaylist,
+                        resourceIndex: nil,
+                        errorCode: Self.errorCode(for: error)
+                    )
+                )
+            }
+        }
+        if let terminalError {
+            throw terminalError
+        }
+        throw HLSDownloadError.emptyMediaPlaylist
+    }
+
+    private func makeCandidates(
+        from catalog: HLSPathwayCatalog,
+        multivariantVariables: [String: String]
+    ) throws -> [HLSMediaPlaylistCandidate] {
+        var candidates: [HLSMediaPlaylistCandidate] = []
+        var terminalError: HLSDownloadError?
+        for pathway in catalog.pathways {
+            let separateAudioGroupIDs = Set(
+                Dictionary(
+                    grouping: pathway.renditions.filter {
+                        $0.kind == .audio
+                    }
+                ) { $0.groupID }.compactMap { groupID, renditions in
+                    renditions.allSatisfy { $0.url != nil }
+                        ? groupID
+                        : nil
+                }
+            )
+            let supportedVariants = pathway.variants.filter { variant in
+                guard let audioGroupID = variant.audioGroupID else {
+                    return true
+                }
+                return !separateAudioGroupIDs.contains(audioGroupID)
+            }
+            guard !supportedVariants.isEmpty else {
+                if let audioGroupID = pathway.variants
+                    .compactMap(\.audioGroupID)
+                    .first(where: { separateAudioGroupIDs.contains($0) })
+                {
+                    terminalError =
+                        HLSDownloadError
+                        .separateAudioRenditionUnsupported(
+                            groupID: audioGroupID
+                        )
+                }
+                continue
+            }
+            guard
+                let variant = variantSelector.select(
+                    in: supportedVariants,
+                    policy: selectionPolicy
+                )
+            else {
+                terminalError =
+                    HLSDownloadError.noVariantMatchesSelectionPolicy(
+                        selectionPolicy
+                    )
+                continue
+            }
+            candidates.append(
+                HLSMediaPlaylistCandidate(
+                    pathwayID: pathway.id,
+                    variant: variant,
+                    renditions: pathway.renditions,
+                    multivariantVariables: multivariantVariables
+                )
+            )
+        }
+        if candidates.isEmpty, let terminalError {
+            throw terminalError
+        }
+        return candidates
+    }
+
+    private static func errorCode(
+        for error: any Error
+    ) -> HLSDownloadErrorCode {
+        (error as? HLSDownloadError)?.code ?? .transferFailed
+    }
+}
