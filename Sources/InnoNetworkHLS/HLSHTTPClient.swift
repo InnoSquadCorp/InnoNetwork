@@ -108,7 +108,7 @@ package struct HLSHTTPClient: Sendable {
         do {
             transfer = try await session.chunkedTransfer(
                 for: admittedRequest,
-                context: requestContext.replacingCorrelation(
+                context: attemptRequestContext(
                     requestID: requestID,
                     retryIndex: retryIndex
                 ),
@@ -150,6 +150,28 @@ package struct HLSHTTPClient: Sendable {
             finalURL: finalURL,
             chunks: transfer.chunks,
             cancel: transfer.cancel
+        )
+    }
+
+    /// Keeps HLS retry correlation local to the companion product while
+    /// preserving every transport and observability policy from the caller.
+    ///
+    /// Keep this initializer exhaustive so newly added request policies fail
+    /// to compile here instead of being silently dropped across retries.
+    private func attemptRequestContext(
+        requestID: UUID,
+        retryIndex: Int
+    ) -> NetworkRequestContext {
+        NetworkRequestContext(
+            requestID: requestID,
+            retryIndex: retryIndex,
+            metricsReporter: requestContext.metricsReporter,
+            trustPolicy: requestContext.trustPolicy,
+            eventObservers: requestContext.eventObservers,
+            redirectPolicy: requestContext.redirectPolicy,
+            allowsInsecureHTTP: requestContext.allowsInsecureHTTP,
+            allowsAutomaticRedirects: requestContext.allowsAutomaticRedirects,
+            allowsURLCacheStorage: requestContext.allowsURLCacheStorage
         )
     }
 
