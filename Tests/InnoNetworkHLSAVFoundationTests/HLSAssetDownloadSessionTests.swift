@@ -152,7 +152,7 @@ struct HLSAssetDownloadSessionTests {
             title: "Interstitial"
         )
 
-        #if os(macOS) && compiler(<6.4)
+        #if compiler(<6.4)
         #expect(
             throws:
                 HLSAssetDownloadSessionError

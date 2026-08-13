@@ -13,10 +13,10 @@ enum HLSAssetInterstitialConfiguration {
             return
         }
 
-        // Xcode 26.0.1 imports this API as unavailable for macOS even though
-        // the framework header declares macOS 15 support. Keep the feature on
-        // newer SDKs while preserving the package's required Xcode 26 build.
-        #if os(macOS) && compiler(<6.4)
+        // Xcode 26.0.1 imports this API as unavailable on every platform.
+        // Keep the feature on newer SDKs while preserving the package's
+        // required Xcode 26 build.
+        #if compiler(<6.4)
         throw HLSAssetDownloadSessionError
             .interstitialAssetsUnavailable
         #else

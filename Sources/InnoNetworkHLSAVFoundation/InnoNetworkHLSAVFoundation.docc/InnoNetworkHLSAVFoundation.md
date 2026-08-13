@@ -59,10 +59,10 @@ let download = try session.start(
 The typed pack fails on operating-system versions that do not expose the
 corresponding AVFoundation capability instead of silently omitting the
 interstitial assets. Xcode 26 also imports this AVFoundation option as
-unavailable when compiling for macOS, so the typed pack reports
+unavailable on every platform, so the typed pack reports
 ``HLSAssetDownloadSessionError/interstitialAssetsUnavailable`` there; builds
-made with Xcode 27 or newer enable it on supported macOS versions. The
-configuration closure remains available for advanced media-selection and
+made with Xcode 27 or newer enable it on supported operating-system versions.
+The configuration closure remains available for advanced media-selection and
 variant controls.
 
 Downloaded assets must remain at the system-provided URL. Do not move them into
