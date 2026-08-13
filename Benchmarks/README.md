@@ -211,7 +211,9 @@ function dispatch.
 
 Guarded benchmark set:
 
-- `events/task-event-fanout-single`: event delivery의 최소 fan-out baseline.
+- `events/task-event-fanout-single`: single-listener admission-to-handler
+  delivery baseline. 각 이벤트의 delivery 완료를 기다려 burst backlog나
+  hosted-runner scheduling phase를 회귀 신호로 오인하지 않습니다.
 - `persistence/download-persistence-restore`: background download resume/restore 경로 baseline.
 - `persistence/append-log-compaction`: append-log snapshot compaction 경로 baseline.
 - `websocket/websocket-close-disposition-classify`: close callback마다 실행되는 분류 hot path.

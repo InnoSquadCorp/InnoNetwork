@@ -63,6 +63,21 @@ Record the reason every time `default.json` changes.
   change become non-regressions under the paired calculation without changing
   the 20% threshold or guarded benchmark inventory.
 
+### Deterministic single-listener event delivery
+
+- Date: 2026-08-13
+- Source revision: `c83d4b3fc0e1fd4b18743308d5064d18cf5a5987`
+- Reason: the previous `events/task-event-fanout-single` sample admitted
+  300,000 events into a buffered pipeline before waiting for its detached
+  delivery task. Equivalent base/head binaries varied from 3,825 to 15,834
+  ops/s on one hosted runner, and three paired deltas spanned 101 percentage
+  points. The guard now waits for each event's complete listener delivery and
+  uses a 50,000-event quick sample. Buffered multi-listener throughput remains
+  covered independently by `events/task-event-fanout-many`.
+- Validation: the candidate harness is still copied to both revisions by the
+  same-runner workflow; local and hosted three-pair results must complete with
+  zero guard failures and a reviewable paired spread.
+
 ## 5.0.0
 
 - Date: 2026-07-14
