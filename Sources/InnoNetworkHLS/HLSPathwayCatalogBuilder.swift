@@ -38,7 +38,7 @@ enum HLSPathwayCatalogBuilder {
                 ] != nil
             }
             let clonedRenditions: [HLSRendition] = baseRenditions.compactMap {
-                rendition in
+                rendition -> HLSRendition? in
                 let key = GroupKey(
                     kind: rendition.kind,
                     groupID: rendition.groupID

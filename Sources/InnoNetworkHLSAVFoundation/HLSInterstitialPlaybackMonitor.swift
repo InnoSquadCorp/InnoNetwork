@@ -132,9 +132,11 @@ public final class HLSInterstitialPlaybackMonitor {
                 .eventsDidChangeNotification,
             AVPlayerInterstitialEventMonitor
                 .currentEventDidChangeNotification,
-            AVPlayerInterstitialEventMonitor
-                .assetListResponseStatusDidChangeNotification,
         ]
+        names.append(
+            contentsOf:
+                HLSInterstitialAssetListMapper.notificationNames
+        )
         if #available(macOS 26,
         iOS 26,
         tvOS 26,
@@ -154,17 +156,11 @@ public final class HLSInterstitialPlaybackMonitor {
                 ]
             )
         }
-        if #available(macOS 26.4,
-        iOS 26.4,
-        tvOS 26.4,
-        watchOS 26.4,
-        visionOS 26.4,
-        *) {
-            names.append(
-                AVPlayerInterstitialEventMonitor
-                    .ScheduleRequestCompleted.name
-            )
-        }
+        names.append(
+            contentsOf:
+                HLSInterstitialScheduleRequestMapper
+                .notificationNames
+        )
         return names
     }
 }
@@ -186,11 +182,9 @@ enum HLSInterstitialRuntimeMapper {
             return .currentEventChanged(
                 monitor.currentEvent.map(snapshot)
             )
-        case AVPlayerInterstitialEventMonitor
-            .assetListResponseStatusDidChangeNotification:
-            return mapAssetList(notification)
         default:
-            return mapNewerNotification(notification)
+            return HLSInterstitialAssetListMapper.map(notification)
+                ?? mapNewerNotification(notification)
         }
     }
 
@@ -218,46 +212,6 @@ enum HLSInterstitialRuntimeMapper {
             templateItemCount: max(0, event.templateItems.count),
             resumptionOffset: finite(event.resumptionOffset),
             playoutLimit: finiteNonnegative(event.playoutLimit)
-        )
-    }
-
-    private static func mapAssetList(
-        _ notification: Notification
-    ) -> HLSInterstitialRuntimeEvent? {
-        guard
-            let event = notification.userInfo?[
-                AVPlayerInterstitialEventMonitor
-                    .assetListResponseStatusDidChangeEventKey
-            ] as? AVPlayerInterstitialEvent,
-            let rawStatus =
-                (notification.userInfo?[
-                    AVPlayerInterstitialEventMonitor
-                        .assetListResponseStatusDidChangeStatusKey
-                ] as? NSNumber)?.intValue
-        else {
-            return nil
-        }
-        let status: HLSInterstitialAssetListStatus
-        switch AVPlayerInterstitialEventAssetListResponseStatus(
-            rawValue: rawStatus
-        ) {
-        case .available:
-            status = .available
-        case .cleared:
-            status = .cleared
-        case .unavailable:
-            status = .unavailable
-        default:
-            status = .other
-        }
-        return .assetListStatusChanged(
-            snapshot(event),
-            status: status,
-            hadError:
-                notification.userInfo?[
-                    AVPlayerInterstitialEventMonitor
-                        .assetListResponseStatusDidChangeErrorKey
-                ] != nil
         )
     }
 
@@ -326,37 +280,9 @@ extension HLSInterstitialRuntimeMapper {
             .interstitialEventDidFinishNotification:
             return mapFinished(notification)
         default:
-            if #available(macOS 26.4,
-            iOS 26.4,
-            tvOS 26.4,
-            watchOS 26.4,
-            visionOS 26.4,
-            *),
-                notification.name
-                    == AVPlayerInterstitialEventMonitor
-                    .ScheduleRequestCompleted.name
-            {
-                guard
-                    let message =
-                        AVPlayerInterstitialEventMonitor
-                        .ScheduleRequestCompleted.makeMessage(
-                            notification
-                        )
-                else {
-                    return nil
-                }
-                let succeeded: Bool
-                switch message.result {
-                case .success:
-                    succeeded = true
-                case .failure:
-                    succeeded = false
-                }
-                return .scheduleRequestCompleted(
-                    succeeded: succeeded
-                )
-            }
-            return nil
+            return HLSInterstitialScheduleRequestMapper.map(
+                notification
+            )
         }
     }
 

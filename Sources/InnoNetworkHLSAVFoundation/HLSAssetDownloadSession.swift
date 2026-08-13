@@ -263,15 +263,10 @@ public final class HLSAssetDownloadSession: Sendable {
         _ content: HLSAssetDownloadContentPack,
         to configuration: AVAssetDownloadConfiguration
     ) throws {
-        guard content.includesInterstitialAssets else {
-            return
-        }
-        if #available(macOS 15.0, iOS 18.0, watchOS 11.0, visionOS 2.0, *) {
-            configuration.downloadsInterstitialAssets = true
-        } else {
-            throw HLSAssetDownloadSessionError
-                .interstitialAssetsUnavailable
-        }
+        try HLSAssetInterstitialConfiguration.apply(
+            content,
+            to: configuration
+        )
     }
 
     /// Returns all tasks currently known to the background session.

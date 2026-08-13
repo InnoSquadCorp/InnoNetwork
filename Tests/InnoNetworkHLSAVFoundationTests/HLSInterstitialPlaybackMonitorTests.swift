@@ -116,6 +116,25 @@ struct HLSInterstitialPlaybackMonitorTests {
     }
 
     @available(
+        macOS 13.3,
+        iOS 16.4,
+        tvOS 16.4,
+        watchOS 9.4,
+        visionOS 1,
+        *
+    )
+    @Test("asset-list status changes are observed on supported systems")
+    func assetListStatusChangesAreObserved() {
+        #expect(
+            HLSInterstitialAssetListMapper.notificationNames
+                == [
+                    AVPlayerInterstitialEventMonitor
+                        .assetListResponseStatusDidChangeNotification
+                ]
+        )
+    }
+
+    @available(
         macOS 26,
         iOS 26,
         tvOS 26,
@@ -177,6 +196,28 @@ struct HLSInterstitialPlaybackMonitorTests {
                 )
         )
     }
+
+    #if compiler(>=6.4)
+    @available(
+        macOS 26.4,
+        iOS 26.4,
+        tvOS 26.4,
+        watchOS 26.4,
+        visionOS 26.4,
+        *
+    )
+    @Test("schedule request completion is observed on supported SDKs")
+    func scheduleRequestCompletionIsObserved() {
+        #expect(
+            HLSInterstitialScheduleRequestMapper
+                .notificationNames
+                == [
+                    AVPlayerInterstitialEventMonitor
+                        .ScheduleRequestCompleted.name
+                ]
+        )
+    }
+    #endif
 
     private func makeMonitor(
         maximumBufferedEventCount: Int = 64

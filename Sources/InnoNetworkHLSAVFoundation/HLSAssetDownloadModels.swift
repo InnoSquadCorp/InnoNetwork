@@ -146,7 +146,7 @@ public enum HLSAssetDownloadSessionError: Error, Equatable, Sendable {
     /// Encoded artwork exceeded the session's admission limit.
     case artworkTooLarge(limit: Int)
 
-    /// Interstitial downloads require a newer operating-system version.
+    /// Interstitial downloads require a supporting operating system and SDK.
     case interstitialAssetsUnavailable
 
     /// AVFoundation could not create a new asset task.

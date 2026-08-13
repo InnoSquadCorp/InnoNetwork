@@ -152,7 +152,20 @@ struct HLSAssetDownloadSessionTests {
             title: "Interstitial"
         )
 
-        if #available(macOS 15.0, iOS 18.0, watchOS 11.0, visionOS 2.0, *) {
+        #if os(macOS) && compiler(<6.4)
+        #expect(
+            throws:
+                HLSAssetDownloadSessionError
+                .interstitialAssetsUnavailable
+        ) {
+            try session.start(
+                request,
+                content: pack,
+                startsImmediately: false
+            ) { _ in }
+        }
+        #else
+        if #available(macOS 15, iOS 18, watchOS 11, visionOS 2, *) {
             let observed = OSAllocatedUnfairLock(initialState: false)
             let download = try session.start(
                 request,
@@ -180,6 +193,7 @@ struct HLSAssetDownloadSessionTests {
                 ) { _ in }
             }
         }
+        #endif
         await session.shutdown(cancelRunningTasks: true)
     }
 

@@ -378,18 +378,10 @@ enum HLSPlaybackMetricMapper {
                 summary: summary(event)
             )
         default:
-            if #available(macOS 27,
-            iOS 27,
-            tvOS 27,
-            watchOS 27,
-            visionOS 27,
-            *), let event = metric as? AVMetricPlaybackModeSwitchEvent {
-                return .playbackModeChanged(
-                    context,
-                    mode: playbackMode(event.mode)
-                )
-            }
-            return .unclassified(context)
+            return HLSPlaybackModeMetricMapper.map(
+                metric,
+                context: context
+            ) ?? .unclassified(context)
         }
     }
 
@@ -486,27 +478,6 @@ enum HLSPlaybackMetricMapper {
         case .muxed:
             return .muxed
         default:
-            return .other
-        }
-    }
-
-    @available(
-        macOS 27,
-        iOS 27,
-        tvOS 27,
-        watchOS 27,
-        visionOS 27,
-        *
-    )
-    private static func playbackMode(
-        _ mode: AVMetricPlaybackMode
-    ) -> HLSPlaybackMode {
-        switch mode {
-        case .local:
-            return .local
-        case .airPlayVideo:
-            return .airPlayVideo
-        @unknown default:
             return .other
         }
     }

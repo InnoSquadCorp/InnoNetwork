@@ -20,6 +20,14 @@ actor HLSLiveKeyPreloadCoordinator {
         let keyFormat: String
         let keyFormatVersions: [Int]
         let estimatedFirstUseDate: Date?
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(url)
+            hasher.combine(method)
+            hasher.combine(keyFormat)
+            hasher.combine(keyFormatVersions)
+            hasher.combine(estimatedFirstUseDate)
+        }
     }
 
     private struct ScheduledTask {
