@@ -5,11 +5,6 @@ import InnoNetwork
 import FoundationNetworking
 #endif
 
-struct HLSStagedResource: Sendable {
-    let index: Int
-    let fileURL: URL
-}
-
 struct HLSResourceLoader: Sendable {
     private let client: HLSHTTPClient
     private let maximumMediaResourceBytes: Int
@@ -52,7 +47,7 @@ struct HLSResourceLoader: Sendable {
         in directoryURL: URL,
         budget: HLSDownloadBudget,
         diskCapacityGuard: HLSDiskCapacityGuard
-    ) async throws -> HLSStagedResource {
+    ) async throws -> URL {
         var pathwayResource = HLSPathwayResource(
             pathwayID: pathwayID,
             transfer: resource,
@@ -116,7 +111,7 @@ struct HLSResourceLoader: Sendable {
         in directoryURL: URL,
         budget: HLSDownloadBudget,
         diskCapacityGuard: HLSDiskCapacityGuard
-    ) async throws -> HLSStagedResource {
+    ) async throws -> URL {
         let resource = pathwayResource.transfer
         var mutableRequest = URLRequest(url: resource.url)
         mutableRequest.timeoutInterval = 60
@@ -139,7 +134,7 @@ struct HLSResourceLoader: Sendable {
         }
         let request = mutableRequest
         let requestID = UUID()
-        let result: Result<HLSStagedResource, HLSDownloadError>
+        let result: Result<URL, HLSDownloadError>
         do {
             result = try await retryCoordinator.execute(
                 retryPolicy: retryPolicy,
@@ -223,7 +218,7 @@ struct HLSResourceLoader: Sendable {
         requestID: UUID,
         retryIndex: Int,
         aes128KeySet: HLSAES128KeySet
-    ) async throws -> HLSStagedResource {
+    ) async throws -> URL {
         try Task.checkCancellation()
         let transferByteLimit =
             byteRange.map { Int($0.length) }
@@ -405,7 +400,7 @@ struct HLSResourceLoader: Sendable {
         }
 
         completed = true
-        return HLSStagedResource(index: index, fileURL: outputURL)
+        return outputURL
     }
 
     private func recordAndWrite(

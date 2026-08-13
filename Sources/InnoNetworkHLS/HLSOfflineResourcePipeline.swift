@@ -3,7 +3,7 @@ import Foundation
 struct HLSOfflineResourcePipeline: Sendable {
     private struct PersistedResource: Sendable {
         let localIndex: Int
-        let staged: HLSStagedResource
+        let stagedURL: URL
     }
 
     private let loader: HLSResourceLoader
@@ -81,7 +81,7 @@ struct HLSOfflineResourcePipeline: Sendable {
                 group.addTask {
                     PersistedResource(
                         localIndex: localIndex,
-                        staged: try await loader.stage(
+                        stagedURL: try await loader.stage(
                             resource: resource,
                             at: globalIndex,
                             in: stagingDirectoryURL,
@@ -107,7 +107,7 @@ struct HLSOfflineResourcePipeline: Sendable {
                     resourceFileNames[persisted.localIndex]
                 )
                 try fileManager.moveItem(
-                    at: persisted.staged.fileURL,
+                    at: persisted.stagedURL,
                     to: targetURL
                 )
                 let globalIndex =

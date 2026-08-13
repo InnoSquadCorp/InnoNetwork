@@ -1,6 +1,8 @@
 import Foundation
 
 struct HLSResourcePipeline: Sendable {
+    private typealias StagedResource = (index: Int, fileURL: URL)
+
     private static let assemblyChunkBytes = 64 * 1_024
 
     private let loader: HLSResourceLoader
@@ -37,12 +39,12 @@ struct HLSResourcePipeline: Sendable {
         }
 
         try await withThrowingTaskGroup(
-            of: HLSStagedResource.self
+            of: StagedResource.self
         ) { group in
             var nextResourceIndex = startingResourceIndex
             var nextAssemblyIndex = startingResourceIndex
             var inFlightCount = 0
-            var readyResources: [Int: HLSStagedResource] = [:]
+            var readyResources: [Int: URL] = [:]
 
             while inFlightCount + readyResources.count
                 < maximumConcurrentTransfers,
@@ -51,13 +53,14 @@ struct HLSResourcePipeline: Sendable {
                 let index = nextResourceIndex
                 let resource = resources[index]
                 group.addTask {
-                    try await loader.stage(
+                    let fileURL = try await loader.stage(
                         resource: resource,
                         at: index,
                         in: stagingDirectoryURL,
                         budget: budget,
                         diskCapacityGuard: diskCapacityGuard
                     )
+                    return (index, fileURL)
                 }
                 inFlightCount += 1
                 nextResourceIndex += 1
@@ -71,7 +74,8 @@ struct HLSResourcePipeline: Sendable {
                     )
                 }
                 inFlightCount -= 1
-                readyResources[stagedResource.index] = stagedResource
+                readyResources[stagedResource.index] =
+                    stagedResource.fileURL
 
                 while let readyResource =
                     readyResources.removeValue(
@@ -80,7 +84,7 @@ struct HLSResourcePipeline: Sendable {
                 {
                     try Task.checkCancellation()
                     try await append(
-                        stagedResource: readyResource,
+                        stagedFileURL: readyResource,
                         to: outputFileHandle,
                         diskCapacityGuard: diskCapacityGuard
                     )
@@ -97,7 +101,7 @@ struct HLSResourcePipeline: Sendable {
                         Int64(outputOffset)
                     )
                     try? fileManager.removeItem(
-                        at: readyResource.fileURL
+                        at: readyResource
                     )
                     nextAssemblyIndex += 1
                 }
@@ -109,13 +113,14 @@ struct HLSResourcePipeline: Sendable {
                     let index = nextResourceIndex
                     let resource = resources[index]
                     group.addTask {
-                        try await loader.stage(
+                        let fileURL = try await loader.stage(
                             resource: resource,
                             at: index,
                             in: stagingDirectoryURL,
                             budget: budget,
                             diskCapacityGuard: diskCapacityGuard
                         )
+                        return (index, fileURL)
                     }
                     inFlightCount += 1
                     nextResourceIndex += 1
@@ -125,12 +130,12 @@ struct HLSResourcePipeline: Sendable {
     }
 
     private func append(
-        stagedResource: HLSStagedResource,
+        stagedFileURL: URL,
         to outputFileHandle: FileHandle,
         diskCapacityGuard: HLSDiskCapacityGuard
     ) async throws {
         let inputFileHandle = try FileHandle(
-            forReadingFrom: stagedResource.fileURL
+            forReadingFrom: stagedFileURL
         )
         defer {
             try? inputFileHandle.close()
