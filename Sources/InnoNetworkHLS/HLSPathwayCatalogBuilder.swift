@@ -37,42 +37,11 @@ enum HLSPathwayCatalogBuilder {
                     )
                 ] != nil
             }
-            let clonedRenditions: [HLSRendition] = baseRenditions.compactMap {
-                rendition -> HLSRendition? in
-                let key = GroupKey(
-                    kind: rendition.kind,
-                    groupID: rendition.groupID
-                )
-                guard let clonedGroupID = groupMappings[key] else {
-                    return nil
-                }
-                let transformedURL = rendition.url.flatMap {
-                    transformedURL(
-                        $0,
-                        stableID: rendition.stableID,
-                        overrideURLs: clone.perRenditionURLs,
-                        clone: clone
-                    )
-                }
-                guard rendition.url == nil || transformedURL != nil else {
-                    return nil
-                }
-                return HLSRendition(
-                    kind: rendition.kind,
-                    groupID: clonedGroupID,
-                    name: rendition.name,
-                    language: rendition.language,
-                    associatedLanguage: rendition.associatedLanguage,
-                    stableID: rendition.stableID,
-                    instreamID: rendition.instreamID,
-                    characteristics: rendition.characteristics,
-                    channels: rendition.channels,
-                    audioBitDepth: rendition.audioBitDepth,
-                    audioSampleRate: rendition.audioSampleRate,
-                    url: transformedURL,
-                    isDefault: rendition.isDefault,
-                    isAutoselect: rendition.isAutoselect,
-                    isForced: rendition.isForced
+            let clonedRenditions = baseRenditions.compactMap {
+                clonedRendition(
+                    $0,
+                    groupMappings: groupMappings,
+                    clone: clone
                 )
             }
             let clonedVariants = baseVariants.compactMap {
@@ -127,6 +96,48 @@ enum HLSPathwayCatalogBuilder {
             )
         }
         return HLSPathwayCatalog(pathways: pathways)
+    }
+
+    private static func clonedRendition(
+        _ rendition: HLSRendition,
+        groupMappings: [GroupKey: String],
+        clone: HLSContentSteeringManifest.PathwayClone
+    ) -> HLSRendition? {
+        let key = GroupKey(
+            kind: rendition.kind,
+            groupID: rendition.groupID
+        )
+        guard let clonedGroupID = groupMappings[key] else {
+            return nil
+        }
+        let clonedURL = rendition.url.flatMap {
+            transformedURL(
+                $0,
+                stableID: rendition.stableID,
+                overrideURLs: clone.perRenditionURLs,
+                clone: clone
+            )
+        }
+        guard rendition.url == nil || clonedURL != nil else {
+            return nil
+        }
+        return HLSRendition(
+            kind: rendition.kind,
+            groupID: clonedGroupID,
+            name: rendition.name,
+            language: rendition.language,
+            associatedLanguage: rendition.associatedLanguage,
+            stableID: rendition.stableID,
+            instreamID: rendition.instreamID,
+            characteristics: rendition.characteristics,
+            channels: rendition.channels,
+            audioBitDepth: rendition.audioBitDepth,
+            audioSampleRate: rendition.audioSampleRate,
+            url: clonedURL,
+            isDefault: rendition.isDefault,
+            isAutoselect: rendition.isAutoselect,
+            isForced: rendition.isForced
+        )
     }
 
     private static func clonedVariant(
