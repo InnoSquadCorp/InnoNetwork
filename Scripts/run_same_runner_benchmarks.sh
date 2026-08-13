@@ -14,8 +14,8 @@ usage() {
   cat <<'USAGE'
 Usage: bash Scripts/run_same_runner_benchmarks.sh [options]
 
-Build and interleave three release-mode benchmark samples for a base revision
-and the current working tree, then enforce the guarded median comparison.
+Build and interleave three release-mode benchmark sample pairs for a base
+revision and the current working tree, then enforce the paired-median guard.
 
   --base-revision SHA       Override the reviewed source revision (for example,
                             with a possibly divergent pull-request base SHA).
@@ -193,7 +193,8 @@ run_sample() {
     > "${output%.json}.log"
 }
 
-# Balance execution order and thermal drift across revisions.
+# Balance execution order and thermal drift across revisions. The comparison
+# keeps these numbered base/head pairs together before taking its median.
 run_sample "$base_bin" "$output_dir/base-1.json"
 run_sample "$head_bin" "$output_dir/head-1.json"
 run_sample "$head_bin" "$output_dir/head-2.json"

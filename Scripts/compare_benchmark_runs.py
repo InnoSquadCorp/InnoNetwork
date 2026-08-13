@@ -135,6 +135,14 @@ def build_comparison_report(
 
     deltas: list[dict] = []
     failures: list[dict] = []
+    base_sample_maps = [
+        result_map(report, f"base sample {index}")[1]
+        for index, report in enumerate(base_reports, start=1)
+    ]
+    head_sample_maps = [
+        result_map(report, f"head sample {index}")[1]
+        for index, report in enumerate(head_reports, start=1)
+    ]
     for result in head["results"]:
         value = identifier(result)
         baseline = base_map.get(value)
@@ -142,7 +150,31 @@ def build_comparison_report(
             continue
         baseline_ops = float(baseline["operationsPerSecond"])
         current_ops = float(result["operationsPerSecond"])
-        delta = ((current_ops - baseline_ops) / max(baseline_ops, 0.000_001)) * 100.0
+        unpaired_delta = (
+            (current_ops - baseline_ops) / max(baseline_ops, 0.000_001)
+        ) * 100.0
+        paired_deltas = [
+            (
+                (
+                    float(head_sample[value]["operationsPerSecond"])
+                    - float(base_sample[value]["operationsPerSecond"])
+                )
+                / max(float(base_sample[value]["operationsPerSecond"]), 0.000_001)
+            )
+            * 100.0
+            for base_sample, head_sample in zip(
+                base_sample_maps,
+                head_sample_maps,
+                strict=True,
+            )
+        ]
+        # Samples are deliberately run as base/head, head/base, base/head
+        # neighbors. Compare each thermal pair first, then take the median so
+        # runner phase drift cannot turn two matching implementations into a
+        # regression merely because their independent medians land in
+        # different phases.
+        delta = float(statistics.median(paired_deltas))
+        paired_delta_spread = max(paired_deltas) - min(paired_deltas)
         is_guarded = value in guarded
         deltas.append(
             {
@@ -151,6 +183,8 @@ def build_comparison_report(
                 "baselineOperationsPerSecond": baseline_ops,
                 "currentOperationsPerSecond": current_ops,
                 "deltaPercent": delta,
+                "unpairedMedianDeltaPercent": unpaired_delta,
+                "pairedDeltaSpreadPercent": paired_delta_spread,
                 "baselineRelativeSpreadPercent": baseline.get("relativeSpreadPercent"),
                 "currentRelativeSpreadPercent": result.get("relativeSpreadPercent"),
                 "isGuarded": is_guarded,
@@ -168,7 +202,9 @@ def build_comparison_report(
             )
 
     head["baseline"] = {
-        "baselinePath": f"same-runner median ({len(base_reports)} base samples)",
+        "baselinePath": (
+            f"same-runner paired median ({len(base_reports)} base/head pairs)"
+        ),
         "enforceBaseline": True,
         "maxRegressionPercent": max_regression_percent,
         "guardThresholds": [],

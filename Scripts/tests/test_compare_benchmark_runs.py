@@ -73,6 +73,30 @@ class CompareBenchmarkRunsTests(unittest.TestCase):
         self.assertAlmostEqual(failure["deltaPercent"], -21)
         self.assertEqual(failure["regressionReason"], "intentional test")
 
+    def test_uses_paired_deltas_to_cancel_runner_phase_drift(self) -> None:
+        comparison = build_comparison_report(
+            [report({"request": value}) for value in (100, 300, 500)],
+            [report({"request": value}) for value in (105, 220, 510)],
+            {("core", "request")},
+            20,
+        )
+
+        delta = comparison["baseline"]["deltas"][0]
+        self.assertAlmostEqual(delta["deltaPercent"], 2)
+        self.assertAlmostEqual(delta["unpairedMedianDeltaPercent"], -26.6666666667)
+        self.assertEqual(comparison["baseline"]["guardFailures"], [])
+
+    def test_reports_sustained_paired_regression_despite_phase_drift(self) -> None:
+        comparison = build_comparison_report(
+            [report({"request": value}) for value in (100, 300, 500)],
+            [report({"request": value}) for value in (70, 210, 350)],
+            {("core", "request")},
+            20,
+        )
+
+        failure = comparison["baseline"]["guardFailures"][0]
+        self.assertAlmostEqual(failure["deltaPercent"], -30)
+
     def test_rejects_mismatched_sample_sets(self) -> None:
         with self.assertRaisesRegex(ValueError, "different benchmark set"):
             build_comparison_report(

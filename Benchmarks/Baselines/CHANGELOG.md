@@ -49,6 +49,20 @@ Record the reason every time `default.json` changes.
 - Validation: `run_same_runner_benchmarks.sh` is the local and hosted proof;
   its three-by-three comparison must complete with zero guard failures.
 
+### Paired same-runner enforcement
+
+- Date: 2026-08-13
+- Source revision: `c83d4b3fc0e1fd4b18743308d5064d18cf5a5987`
+- Reason: hosted runner samples showed 50-150% thermal and scheduling spread.
+  The runner already interleaved base/head neighbors, but the comparator
+  discarded those pairs and compared two independent medians. The guard now
+  takes the median of the three paired head/base deltas while continuing to
+  report both absolute medians and sample spread for review.
+- Validation: comparator unit tests cover phase drift, stable measurements,
+  and a sustained paired regression. The two noisy PR runs that motivated the
+  change become non-regressions under the paired calculation without changing
+  the 20% threshold or guarded benchmark inventory.
+
 ## 5.0.0
 
 - Date: 2026-07-14
