@@ -61,8 +61,8 @@ if [[ -n "${DYLD_LIBRARY_PATH:-}" ]]; then
 fi
 
 run_swift_testing() {
-  local module="$1"
-  local test_binary="$bin_path/$module.xctest/Contents/MacOS/$module"
+  local bundle="$1"
+  local test_binary="$bin_path/$bundle.xctest/Contents/MacOS/$bundle"
   shift
   if [[ ! -f "$test_binary" ]]; then
     echo "bounded-tests: test bundle binary is missing: $test_binary" >&2
@@ -93,7 +93,7 @@ if [[ -n "$duplicate_modules" ]]; then
   exit 1
 fi
 expected_modules="$(sort -u "$inventory_file")"
-discovered_modules="$(
+discovered_bundles="$(
   for bundle in "$bin_path"/*.xctest; do
     if [[ -d "$bundle" ]]; then
       basename "$bundle" .xctest
@@ -101,33 +101,42 @@ discovered_modules="$(
   done | sort -u
 )"
 
-if [[ -z "$discovered_modules" ]]; then
+if [[ -z "$discovered_bundles" ]]; then
   echo "bounded-tests: SwiftPM produced no discoverable test bundles in $bin_path" >&2
   exit 1
 fi
 
-if [[ "$discovered_modules" != "$expected_modules" ]]; then
+package_bundle=""
+# Swift 6.2 emits one package-wide bundle, while newer toolchains emit one
+# bundle per test target. Preserve the same logical module shards for both.
+if [[ "$discovered_bundles" == "InnoNetworkPackageTests" ]]; then
+  package_bundle="InnoNetworkPackageTests"
+elif [[ "$discovered_bundles" != "$expected_modules" ]]; then
   echo "bounded-tests: shard inventory does not match discovered test targets" >&2
   echo "Expected:" >&2
   printf '%s\n' "$expected_modules" >&2
   echo "Discovered:" >&2
-  printf '%s\n' "$discovered_modules" >&2
+  printf '%s\n' "$discovered_bundles" >&2
   exit 1
 fi
 
 test_list="$work_dir/test-list.txt"
 : > "$test_list"
-while IFS= read -r module; do
-  run_swift_testing "$module" --list-tests >> "$test_list"
-done <<< "$discovered_modules"
+if [[ -n "$package_bundle" ]]; then
+  run_swift_testing "$package_bundle" --list-tests >> "$test_list"
+else
+  while IFS= read -r module; do
+    run_swift_testing "$module" --list-tests >> "$test_list"
+  done <<< "$discovered_bundles"
+fi
 
 listed_modules="$({
   awk -F. '/^[[:alnum:]_]+\./ { print $1 }' "$test_list"
 } | sort -u)"
-if [[ "$listed_modules" != "$discovered_modules" ]]; then
+if [[ "$listed_modules" != "$expected_modules" ]]; then
   echo "bounded-tests: listed tests do not match built test bundles" >&2
-  echo "Bundles:" >&2
-  printf '%s\n' "$discovered_modules" >&2
+  echo "Expected:" >&2
+  printf '%s\n' "$expected_modules" >&2
   echo "Listed:" >&2
   printf '%s\n' "$listed_modules" >&2
   exit 1
@@ -156,7 +165,14 @@ for index in "${!shard_names[@]}"; do
   echo "Starting ${shard_names[index]} shard ($expected_count tests; ${shard_modules[index]})..."
   (
     for module in "${modules[@]}"; do
-      run_swift_testing "$module" --no-parallel
+      if [[ -n "$package_bundle" ]]; then
+        run_swift_testing \
+          "$package_bundle" \
+          --filter "^${module}\\." \
+          --no-parallel
+      else
+        run_swift_testing "$module" --no-parallel
+      fi
     done
   ) > "${logs[index]}" 2>&1 &
   pids[index]=$!
