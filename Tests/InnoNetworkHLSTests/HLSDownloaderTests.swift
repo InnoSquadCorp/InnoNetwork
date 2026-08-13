@@ -1399,7 +1399,10 @@ struct HLSDownloaderTests {
     @Test("an OS destination lease blocks another downloader")
     func crossProcessDestinationLeaseIsRejected() async throws {
         let playlistURL = try #require(
-            URL(string: "https://media.example/playlist.m3u8")
+            URL(
+                string:
+                    "https://cross-process-lease.example/playlist.m3u8"
+            )
         )
         let session = makeSession()
         defer {
@@ -1444,7 +1447,11 @@ struct HLSDownloaderTests {
                 return false
             }()
         )
-        #expect(HLSURLProtocol.capturedRequests().isEmpty)
+        #expect(
+            !HLSURLProtocol.capturedRequests().contains {
+                $0.url == playlistURL
+            }
+        )
         let lockFileNames = try FileManager.default.contentsOfDirectory(
             atPath:
                 directoryURL.appendingPathComponent(
