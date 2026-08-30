@@ -5,6 +5,7 @@ enum HLSMediaFixtures {
     static let transportStreamPlaylist = """
         #EXTM3U
         #EXT-X-VERSION:3
+        #EXT-X-INDEPENDENT-SEGMENTS
         #EXT-X-TARGETDURATION:1
         #EXT-X-MEDIA-SEQUENCE:0
         #EXT-X-PLAYLIST-TYPE:VOD
@@ -17,6 +18,7 @@ enum HLSMediaFixtures {
     static let fragmentedMP4Playlist = """
         #EXTM3U
         #EXT-X-VERSION:7
+        #EXT-X-INDEPENDENT-SEGMENTS
         #EXT-X-TARGETDURATION:1
         #EXT-X-MEDIA-SEQUENCE:0
         #EXT-X-PLAYLIST-TYPE:VOD

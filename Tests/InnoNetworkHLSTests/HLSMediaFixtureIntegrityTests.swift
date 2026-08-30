@@ -4,6 +4,22 @@ import Testing
 
 @Suite("HLS media fixture integrity")
 struct HLSMediaFixtureIntegrityTests {
+    @Test("embedded video playlists satisfy independent-segment authoring")
+    func independentSegmentDeclarations() {
+        let playlists = [
+            HLSMediaFixtures.transportStreamPlaylist,
+            HLSMediaFixtures.fragmentedMP4Playlist,
+        ]
+
+        for playlist in playlists {
+            #expect(
+                playlist.split(separator: "\n").contains(
+                    "#EXT-X-INDEPENDENT-SEGMENTS"
+                )
+            )
+        }
+    }
+
     @Test("embedded media fixtures retain exact provenance hashes")
     func provenanceHashes() throws {
         let fixtures: [(Data, String)] = [
