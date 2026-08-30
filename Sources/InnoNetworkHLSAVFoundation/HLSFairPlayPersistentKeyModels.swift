@@ -37,13 +37,22 @@ public struct HLSFairPlayPersistentKeyAcquisition: Sendable {
     /// The opaque content identifier used to create the SPC.
     public let contentIdentifier: Data
 
+    /// FairPlay protocol versions supported by the application's key server.
+    ///
+    /// Version `1` preserves AVFoundation's default. Advertise newer versions
+    /// only after the corresponding KSM and credential set pass Apple's SDK
+    /// test vectors. Supply one to 16 unique positive values.
+    public let supportedProtocolVersions: [Int]
+
     /// Creates acquisition inputs for one key request.
     public init(
         applicationCertificate: Data,
-        contentIdentifier: Data
+        contentIdentifier: Data,
+        supportedProtocolVersions: [Int] = [1]
     ) {
         self.applicationCertificate = applicationCertificate
         self.contentIdentifier = contentIdentifier
+        self.supportedProtocolVersions = supportedProtocolVersions
     }
 }
 
@@ -184,6 +193,9 @@ public enum HLSFairPlayPersistentKeyError: Error, Equatable, Sendable {
     /// The content identifier is empty or exceeds its byte limit.
     case invalidContentIdentifier
 
+    /// The supported FairPlay protocol-version list is empty or malformed.
+    case invalidProtocolVersions
+
     /// No stored key or online acquisition inputs were available.
     case persistableKeyUnavailable
 
@@ -234,6 +246,8 @@ extension HLSFairPlayPersistentKeyError: LocalizedError {
             return "invalidApplicationCertificate"
         case .invalidContentIdentifier:
             return "invalidContentIdentifier"
+        case .invalidProtocolVersions:
+            return "invalidProtocolVersions"
         case .persistableKeyUnavailable:
             return "persistableKeyUnavailable"
         case .persistentRequestRejected:
@@ -263,6 +277,8 @@ extension HLSFairPlayPersistentKeyError: LocalizedError {
             return "provideCertificate"
         case .invalidContentIdentifier:
             return "provideContentIdentifier"
+        case .invalidProtocolVersions:
+            return "chooseProtocolVersions"
         case .persistableKeyUnavailable:
             return "provideAcquisition"
         case .persistentRequestRejected:

@@ -344,6 +344,12 @@ passes it to ``HLSFairPlayLicenseTransporting``. Apps can implement that
 transport with an `@APIDefinition` endpoint and `DefaultNetworkClient` while
 retaining authentication, retry, trust, and response-decoding policy.
 
+Acquisition defaults to FairPlay protocol version `1`, matching AVFoundation's
+compatibility behavior. Set `supportedProtocolVersions` to a list such as
+`[3, 2, 1]` only after the application's KSM and credential set pass the
+matching Apple FairPlay Streaming Server SDK test vectors. Empty, duplicate,
+non-positive, or lists with more than 16 values fail before SPC creation.
+
 The workflow validates every material boundary, converts CKC bytes into a
 persistable key, requires the app store to commit it before fulfilling the
 AVFoundation request, and reports only

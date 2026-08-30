@@ -35,6 +35,12 @@ struct HLSFairPlayPersistentKeyWorkflowTests {
             limits.maximumPersistableKeyBytes
                 == 16 * 1_024 * 1_024
         )
+        #expect(
+            HLSFairPlayPersistentKeyAcquisition(
+                applicationCertificate: Data("certificate".utf8),
+                contentIdentifier: Data("content".utf8)
+            ).supportedProtocolVersions == [1]
+        )
     }
 
     @Test("stored keys fulfill requests without online acquisition")
@@ -85,7 +91,8 @@ struct HLSFairPlayPersistentKeyWorkflowTests {
         )
         let acquisition = HLSFairPlayPersistentKeyAcquisition(
             applicationCertificate: Data("certificate".utf8),
-            contentIdentifier: Data("content".utf8)
+            contentIdentifier: Data("content".utf8),
+            supportedProtocolVersions: [3, 2, 1]
         )
 
         let disposition = try await workflow.fulfill(
@@ -102,6 +109,10 @@ struct HLSFairPlayPersistentKeyWorkflowTests {
         #expect(
             request.snapshot().contentIdentifier
                 == acquisition.contentIdentifier
+        )
+        #expect(
+            request.snapshot().supportedProtocolVersions
+                == acquisition.supportedProtocolVersions
         )
         #expect(
             request.snapshot().licenseResponses
@@ -267,10 +278,11 @@ struct HLSFairPlayPersistentKeyWorkflowTests {
     @Test("invalid acquisition inputs fail before SPC generation")
     func validatesAcquisitionInputs() async throws {
         let keyID = try HLSFairPlayKeyID("invalid-acquisition")
+        let transport = LicenseTransportDouble(
+            response: Data("unused".utf8)
+        )
         let workflow = HLSFairPlayPersistentKeyWorkflow(
-            transport: LicenseTransportDouble(
-                response: Data("unused".utf8)
-            ),
+            transport: transport,
             storage: PersistentKeyStorageDouble()
         )
         let certificateRequest = PersistableKeyRequestDouble()
@@ -316,6 +328,41 @@ struct HLSFairPlayPersistentKeyWorkflowTests {
             identifierRequest.snapshot()
                 .applicationCertificate == nil
         )
+
+        let invalidProtocolVersions = [
+            [Int](),
+            [1, 1],
+            [0],
+            Array(1...17),
+        ]
+        for versions in invalidProtocolVersions {
+            let protocolRequest = PersistableKeyRequestDouble()
+            await #expect(
+                throws:
+                    HLSFairPlayPersistentKeyError
+                    .invalidProtocolVersions
+            ) {
+                try await workflow.fulfill(
+                    protocolRequest,
+                    keyID: keyID,
+                    acquisition:
+                        HLSFairPlayPersistentKeyAcquisition(
+                            applicationCertificate:
+                                Data("cert".utf8),
+                            contentIdentifier: Data("id".utf8),
+                            supportedProtocolVersions: versions
+                        )
+                )
+            }
+            #expect(
+                protocolRequest.snapshot().failureCodes == [22]
+            )
+            #expect(
+                protocolRequest.snapshot()
+                    .applicationCertificate == nil
+            )
+        }
+        #expect(await transport.requests().isEmpty)
     }
 
     @Test("key conversion failures do not write or fulfill")
@@ -528,6 +575,11 @@ struct HLSFairPlayPersistentKeyWorkflowTests {
         #expect(!error.localizedDescription.isEmpty)
         #expect(error.recoverySuggestion?.isEmpty == false)
         #expect(!error.localizedDescription.contains("certificate-data"))
+
+        let protocolError =
+            HLSFairPlayPersistentKeyError.invalidProtocolVersions
+        #expect(!protocolError.localizedDescription.isEmpty)
+        #expect(protocolError.recoverySuggestion?.contains("16") == true)
     }
 }
 
@@ -554,6 +606,7 @@ private final class PersistableKeyRequestDouble:
     struct Snapshot {
         let applicationCertificate: Data?
         let contentIdentifier: Data?
+        let supportedProtocolVersions: [Int]?
         let licenseResponses: [Data]
         let processedKeys: [Data]
         let failureCodes: [Int]
@@ -565,6 +618,7 @@ private final class PersistableKeyRequestDouble:
     private let failsPersistableKeyCreation: Bool
     private var applicationCertificate: Data?
     private var contentIdentifier: Data?
+    private var supportedProtocolVersions: [Int]?
     private var licenseResponses: [Data] = []
     private var processedKeys: [Data] = []
     private var failureCodes: [Int] = []
@@ -582,11 +636,14 @@ private final class PersistableKeyRequestDouble:
 
     func makeSPC(
         applicationCertificate: Data,
-        contentIdentifier: Data
+        contentIdentifier: Data,
+        supportedProtocolVersions: [Int]
     ) async throws -> Data {
         lock.withLock {
             self.applicationCertificate = applicationCertificate
             self.contentIdentifier = contentIdentifier
+            self.supportedProtocolVersions =
+                supportedProtocolVersions
         }
         return spc
     }
@@ -620,6 +677,8 @@ private final class PersistableKeyRequestDouble:
             Snapshot(
                 applicationCertificate: applicationCertificate,
                 contentIdentifier: contentIdentifier,
+                supportedProtocolVersions:
+                    supportedProtocolVersions,
                 licenseResponses: licenseResponses,
                 processedKeys: processedKeys,
                 failureCodes: failureCodes

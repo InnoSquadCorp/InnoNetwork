@@ -55,6 +55,7 @@
 "HLSFairPlayPersistentKeyError.invalidKeyIdentifier" = "The FairPlay persistent-key identifier is empty or unsafe.";
 "HLSFairPlayPersistentKeyError.invalidApplicationCertificate" = "The FairPlay application certificate is empty or exceeds its byte limit.";
 "HLSFairPlayPersistentKeyError.invalidContentIdentifier" = "The FairPlay content identifier is empty or exceeds its byte limit.";
+"HLSFairPlayPersistentKeyError.invalidProtocolVersions" = "The FairPlay protocol-version list is empty or malformed.";
 "HLSFairPlayPersistentKeyError.persistableKeyUnavailable" = "No stored FairPlay key or online acquisition inputs are available.";
 "HLSFairPlayPersistentKeyError.persistentRequestRejected" = "AVFoundation could not create a persistable FairPlay key request.";
 "HLSFairPlayPersistentKeyError.storageReadFailed" = "Application-owned FairPlay key storage could not be read.";
@@ -67,6 +68,7 @@
 "HLSFairPlayPersistentKeyError.recovery.useOpaqueIdentifier" = "Provide a trimmed application-owned identifier without control characters.";
 "HLSFairPlayPersistentKeyError.recovery.provideCertificate" = "Provide the bounded FairPlay application certificate when online acquisition is allowed.";
 "HLSFairPlayPersistentKeyError.recovery.provideContentIdentifier" = "Provide the bounded opaque content identifier for this key request.";
+"HLSFairPlayPersistentKeyError.recovery.chooseProtocolVersions" = "Advertise one to 16 unique positive versions supported by the application key server.";
 "HLSFairPlayPersistentKeyError.recovery.provideAcquisition" = "Connect to the license service and provide acquisition inputs, or restore the key in app-owned storage.";
 "HLSFairPlayPersistentKeyError.recovery.handlePersistableDelegate" = "Implement the AVContentKeySession persistable-request callback before requesting persistence.";
 "HLSFairPlayPersistentKeyError.recovery.checkStorage" = "Check the app's secure key-storage availability and atomic-write behavior.";

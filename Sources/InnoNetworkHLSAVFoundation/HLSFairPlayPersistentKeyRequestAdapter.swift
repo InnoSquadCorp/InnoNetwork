@@ -9,7 +9,8 @@ protocol HLSFairPlayPersistenceRequesting: Sendable {
 protocol HLSFairPlayPersistableRequestHandling: Sendable {
     func makeSPC(
         applicationCertificate: Data,
-        contentIdentifier: Data
+        contentIdentifier: Data,
+        supportedProtocolVersions: [Int]
     ) async throws -> Data
 
     func makePersistableKey(
@@ -42,13 +43,17 @@ struct HLSFairPlayPersistableRequestAdapter:
 
     func makeSPC(
         applicationCertificate: Data,
-        contentIdentifier: Data
+        contentIdentifier: Data,
+        supportedProtocolVersions: [Int]
     ) async throws -> Data {
         try await withCheckedThrowingContinuation { continuation in
             request.makeStreamingContentKeyRequestData(
                 forApp: applicationCertificate,
                 contentIdentifier: contentIdentifier,
-                options: nil
+                options: [
+                    AVContentKeyRequestProtocolVersionsKey:
+                        supportedProtocolVersions
+                ]
             ) { data, error in
                 do {
                     continuation.resume(

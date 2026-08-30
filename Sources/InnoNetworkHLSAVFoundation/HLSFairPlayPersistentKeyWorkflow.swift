@@ -7,6 +7,8 @@ import Foundation
 /// The workflow retains transport and storage services, but never independently
 /// persists or logs certificate, SPC, license-response, or key bytes.
 public struct HLSFairPlayPersistentKeyWorkflow: Sendable {
+    private static let maximumProtocolVersionCount = 16
+
     private let transport: any HLSFairPlayLicenseTransporting
     private let storage: any HLSFairPlayPersistentKeyStoring
     private let configuration: HLSFairPlayPersistentKeyConfiguration
@@ -161,7 +163,9 @@ public struct HLSFairPlayPersistentKeyWorkflow: Sendable {
                 applicationCertificate:
                     acquisition.applicationCertificate,
                 contentIdentifier:
-                    acquisition.contentIdentifier
+                    acquisition.contentIdentifier,
+                supportedProtocolVersions:
+                    acquisition.supportedProtocolVersions
             )
         } catch {
             if Self.isCancellation(error) {
@@ -253,6 +257,16 @@ public struct HLSFairPlayPersistentKeyWorkflow: Sendable {
             throw HLSFairPlayPersistentKeyError
                 .invalidContentIdentifier
         }
+        let protocolVersions = acquisition.supportedProtocolVersions
+        guard
+            !protocolVersions.isEmpty,
+            protocolVersions.count <= Self.maximumProtocolVersionCount,
+            protocolVersions.allSatisfy({ $0 > 0 }),
+            Set(protocolVersions).count == protocolVersions.count
+        else {
+            throw HLSFairPlayPersistentKeyError
+                .invalidProtocolVersions
+        }
     }
 
     private func isValidPersistableKey(_ data: Data) -> Bool {
@@ -294,6 +308,8 @@ public struct HLSFairPlayPersistentKeyWorkflow: Sendable {
             return 11
         case .invalidContentIdentifier:
             return 12
+        case .invalidProtocolVersions:
+            return 22
         case .persistableKeyUnavailable:
             return 13
         case .persistentRequestRejected:

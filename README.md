@@ -572,7 +572,8 @@ for await event in await manager.events(for: task) {
 - `HLSFairPlaySession` for delegate retention, HTTPS asset admission,
   pre-load `AVContentKeySession` recipient attachment, explicit detachment,
   and normal expiration, plus a bounded restore-or-create persistent-key
-  workflow with app-injected SPC/CKC transport and secure storage; credentials,
+  workflow with app-injected SPC/CKC transport, secure storage, and opt-in
+  FairPlay protocol-version negotiation after KSM validation; credentials,
   Keychain schema, key files, expiry, and deletion remain application-owned
 - HTTPS admission and bounded artwork input; AVFoundation remains responsible
   for media requests, redirects, trust, content keys, and the asset location
